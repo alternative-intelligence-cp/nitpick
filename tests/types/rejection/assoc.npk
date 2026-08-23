@@ -1,0 +1,37 @@
+// ASSOCIATED TYPES (D-160, 1.0.6). Before this the spec's own flagship trait did
+// not typecheck: `Item` inside `trait:Iterator` resolved to "there is no type
+// named `Item`", because an assoc is a member of its TRAIT and is in no scope.
+
+trait:Iterator = {
+    assoc:Item;
+    assoc:Error = int32;          // a DEFAULT, inherited where an impl omits it
+    func:next = Item(Self:self);
+    func:last_error = Error(Self:self);
+};
+
+struct:Counter = { int32:n; };
+
+// ACCEPTED, and reported here so the rule is not merely "refuse everything":
+// `Item` binds, `Error` is inherited, and both methods match the trait's
+// signature after substitution.
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32(Counter:self) { pass self.n; };
+    func:last_error = int32(Counter:self) { pass 0i32; };
+};
+
+// AN ASSOC-MENTIONING SIGNATURE IS NOT OBJECT-SAFE (D-160, and D-157's argument
+// exactly): behind a vtable the projection's layout is unknowable, the same
+// reason `Self` outside the receiver disqualifies a trait. Two methods mention
+// one, so the trait is refused twice — once per method, as the other rules do.
+// expect-error: NITPICK-TYPE-015
+// expect-error: NITPICK-TYPE-015
+func:erased = NIL(dyn Iterator:d) { pass NIL; };
+
+// A TRAIT WITH NO ASSOC IS STILL OBJECT-SAFE, so this file must not refuse it.
+trait:Plain = { func:go = int32(Self:self); };
+impl:Counter:Plain = { func:go = int32(Counter:self) { pass 1i32; }; };
+func:fine = NIL(dyn Plain:d) { pass NIL; };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

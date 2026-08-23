@@ -63,6 +63,19 @@ uses the operators and never a trait method. The rows stay as the record:
 
 ---
 
+## 1b. Raised DURING cycle 1.0 — still open
+
+Section 1's rows were the cycle's opening blockers and are closed. These were
+found while implementing it, so they are recorded here rather than folded into a
+closed table.
+
+| # | Proposed | Item | Blocks | Source |
+|---|---|---|---|---|
+| **C-20** | — | **How is an associated type PROJECTED from outside its trait?** D-160 says `T.Item` "rides the EXISTING dotted-path type grammar **if the parser already admits it**". **It does not** — measured at 1.0.6, six `NITPICK-PARSE-001` — and the fallback the decision names, `Iterator.Item`, is dotted too, so its "no new token, no new node kind" is unachievable for either candidate. Neither the spec (§2.3 shows declaration and binding only) nor the prototype (`AssociatedTypeDecl`/`AssociatedTypeBinding`, no projection node) has ever had one, so this is D-160's own addition rather than a restatement. **It matters**: every binding spells its type, so generic code over `Iterator` cannot declare a variable holding what `next()` returned. Candidates: add `.Name` as a type suffix (one branch in `p_suffixes` plus one `TypeKind`, and it also gives qualified type paths, which are impossible today — but it REOPENS D-159's tie, and needs a bound-ambiguity rule for a `T` whose two bounds both declare `Item`); or descope external projection by decision. **Gated on C-21**: the non-projection route has to work before the comparison is real. | 1.0.7 | 1.0.6 |
+| **C-21** | — | **A generic trait used as a generic function's BOUND breaks the trait's own parameter.** `trait:Producer<T> = { func:make = T(Self:self); };` typechecks alone and with an impl; adding `func:twice<P: Producer<int32>> = …` makes the TRAIT's own `T` report `NITPICK-TYPE-001` at its declaration. **Verified pre-existing** by building HEAD in a separate worktree, so it predates 1.0.6. It means the "use a generic trait instead of an associated type" route does not currently work — which is why C-20 cannot be decided against it yet. Owned by **1.0.6b**. | 1.0.6b | 1.0.6 |
+
+---
+
 ## 2. Decisions blocking 1.1 (async, concurrency) — and the 0.10 dependency
 
 1.1 additionally **hard-depends on cycle 0.10** (arenas). Beyond that:

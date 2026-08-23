@@ -10747,6 +10747,33 @@ onward) needs it. What lands at 1.0.6:
   caller cannot know the projection's layout behind a vtable). `dyn
   Iterator` is therefore refused; iterate through generics instead.
 
+> **Implemented at 1.0.6 EXCEPT the projection, whose premise was false.**
+> `TY_ASSOC`, in-trait resolution, impl binding with substitution, inherited
+> defaults and the object-safety exclusion all landed, and the spec's flagship
+> `Iterator` typechecks for the first time.
+>
+> **The external-projection clause does not survive contact.** It says `T.Item`
+> rides the existing dotted-path type grammar "if the parser already admits it"
+> — measured at 1.0.6, it does not (six `NITPICK-PARSE-001`) — and the fallback
+> named in the same sentence, `Iterator.Item`, is dotted as well, so "no new
+> token, no new node kind beyond the type kind" is unachievable for EITHER
+> candidate. Neither authority has ever had a projection: `TRAITS_REFERENCE`
+> §2.3 shows declaration and binding only, and the prototype has
+> `AssociatedTypeDecl` and `AssociatedTypeBinding` and no projection node at all.
+> So this clause was this decision's own addition rather than a restatement of
+> anything, and it is reopened as **OPEN_DECISIONS C-20**.
+>
+> It is gated on **C-21**, a pre-existing defect found while testing the
+> alternative: a generic trait named as a generic function's BOUND makes the
+> trait's own parameter stop resolving. Until that works, "declare the trait
+> generic instead of using an assoc" is not a route the projection can be
+> weighed against.
+>
+> **One rule this decision did not state, added at 1.0.6**: an impl that omits a
+> required binding is reported ONCE, by the completeness walk that names the
+> associated type — the signature mismatch it also causes is suppressed, because
+> it points at the method rather than at the omission.
+
 ## D-161 — Impls over generic families: the target between generics and trait — **SETTLED**
 
 OPEN_DECISIONS C-6 — and the audit's premise half-dissolved on probing:

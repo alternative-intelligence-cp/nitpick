@@ -173,6 +173,11 @@ pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
     r.generics = e.generics;
     r.enclosing = e.enclosing;
     r.self_type = e.self_type;
+    // AND THE TRAIT (D-160). The comment above is about exactly this: a field
+    // this constructor forgets gives a resolver that is subtly not the
+    // checker's, and `Item` inside its own trait would resolve to "there is no
+    // type named `Item`".
+    r.self_trait = e.self_trait;
     pass r;
 };
 

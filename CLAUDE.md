@@ -98,6 +98,7 @@ parse failure some lines away from the mistake:
 | `as` | a keyword |
 | `comptime`, `derive` | keywords — so `mod:comptime;` and `mod:derive;` are not modules, and the loader reports `NITPICK-RESOLVE-005` at the `mod:` line as though the file were missing |
 | `move`, `buffer`, `raw` | keywords that read like ordinary local names |
+| `assoc` | the associated-type keyword (D-160) — so `bool:assoc;` is not a field |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

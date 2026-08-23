@@ -79,6 +79,17 @@ pub struct:TypeResolver = {
     // a state the resolver can see rather than a rule it has to remember.
     int32:self_type;
 
+    // THE TRAIT WHOSE BODY IS BEING RESOLVED, or 0 (D-160, 1.0.6). An associated
+    // type is spelled BARE inside its trait — `func:next = Item(Self:self)` —
+    // and `Item` is in no scope: it is a member of the trait, the way `Self` is
+    // the trait's implementor. This is what makes it findable.
+    //
+    // CARRIED BESIDE `Self` RATHER THAN FOLDED INTO IT, the same choice the
+    // checker's `self_trait` made at 1.0.4: `Self` is D-103's anonymous
+    // placeholder and carries no declaration, so the trait has to travel
+    // separately or neither question can be answered.
+    int32:self_trait;
+
     // TWO LAYERS, because the language has exactly two. A method inside
     // `impl:<T: Printable>:Loggable` sees the impl's `T` and its own `<U>`, and
     // nothing nests deeper — a function cannot declare a function. The
@@ -135,7 +146,7 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    DiagList->:diags, InstanceTable->:instances) {
     TypeResolver:r = TypeResolver{ ast: ast, types: types, tab: tab,
                                    interns: interns, diags: diags,
-                                   self_type: 0i32,
+                                   self_type: 0i32, self_trait: 0i32,
                                    generics: raw generic_scope_none(),
                                    enclosing: raw generic_scope_none(),
                                    instances: instances, depth: 0i32,
@@ -349,6 +360,16 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // scope a caller passed.
     ParamBind:gb = relay generic_lookup(r, name);
     if (gb.found) { pass (gb.type_id); }
+
+    // AN ASSOCIATED TYPE IS A MEMBER OF ITS TRAIT, NOT A NAME IN A SCOPE
+    // (D-160). Inside `trait:Iterator`, `Item` means "whatever the implementor
+    // binds" — so it is asked of the enclosing trait, before the scope, for the
+    // same reason a generic parameter is: the nearer binding wins, and a
+    // module-level `Item` is not what the trait body meant.
+    if (r.self_trait != 0i32) {
+        int32:at = relay assoc_of_trait(r, r.self_trait, name);
+        if (at != 0i32) { pass at; }
+    }
 
     int32:sym = raw scope_lookup(r.tab, scope, name);
     if (sym == 0i32) {
@@ -1632,6 +1653,39 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
 //     Both are refused here: `<comptime int32:LEVEL>` monomorphizes exactly as a
 //     type parameter does, so it cannot sit in a vtable either, and the message
 //     names which kind it found.
+// `Item` on this trait, as a `TY_ASSOC`, or 0. Supertraits are NOT searched: a
+// trait's own declaration list is its guarantee (the same rule D-158 gives `dyn`
+// dispatch), and an assoc reached through a supertrait would be a member of a
+// different trait wearing this one's name.
+func:assoc_of_trait = int32(TypeResolver->:r, int32:trait_decl, int32:name) {
+    DeclNode:td = relay ast_decl(r.ast, DeclId{ index: trait_decl });
+    int32:k = 0i32;
+    while (k < (raw item_member_count(r.ast, td))) {
+        DeclNode:m = relay ast_decl(r.ast, raw item_member(r.ast, td, k));
+        if (m.kind == DeclKind.DeclAssocTypeDecl) {
+            if ((raw decl_name(m)) == name) {
+                pass (raw tt_assoc(r.types, trait_decl, name));
+            }
+        }
+        k = k + 1i32;
+    }
+    pass 0i32;
+};
+
+// Does this trait declare an assoc called `name`?
+func:trait_declares_assoc = bool(Ast->:ast, int32:trait_decl, int32:name) {
+    DeclNode:td = relay ast_decl(ast, DeclId{ index: trait_decl });
+    int32:k = 0i32;
+    while (k < (raw item_member_count(ast, td))) {
+        DeclNode:m = relay ast_decl(ast, raw item_member(ast, td, k));
+        if (m.kind == DeclKind.DeclAssocTypeDecl) {
+            if ((raw decl_name(m)) == name) { pass true; }
+        }
+        k = k + 1i32;
+    }
+    pass false;
+};
+
 // --- the `Self` walk (D-157) -------------------------------------------------
 //
 // `Self` MAY APPEAR IN EXACTLY ONE PLACE: as the receiver's type. Anywhere else
@@ -1648,10 +1702,16 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
 struct:SelfScan = {
     bool:found;
     bool:exhausted;
+    // AN ASSOCIATED TYPE DISQUALIFIES A TRAIT TOO (D-160), for the same erasure
+    // reason `Self` does: behind a vtable the projection's layout is unknowable,
+    // so `dyn Iterator` cannot be built. Asked by the SAME walk rather than a
+    // second one — it is the same tree, and two walks over one tree is two
+    // things to keep in step.
+    bool:assoc_type;
 };
 
 func:scan_clear = SelfScan() {
-    SelfScan:s = SelfScan{ found: false, exhausted: false };
+    SelfScan:s = SelfScan{ found: false, exhausted: false, assoc_type: false };
     pass s;
 };
 
@@ -1662,9 +1722,10 @@ func:SELF_SCAN_FUEL = int32() { pass 64i32; };
 // tree the walk could not finish would be a safety check that fails OPEN on the
 // one input it could not read — so `found` is set too, and the caller reports
 // the internal defect alongside the refusal rather than instead of it.
-func:type_mentions_self = SelfScan(Ast->:ast, TypeId:id, int32:fuel) {
+func:type_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
+                                   TypeId:id, int32:fuel) {
     if (fuel <= 0i32) {
-        SelfScan:x = SelfScan{ found: true, exhausted: true };
+        SelfScan:x = SelfScan{ found: true, exhausted: true, assoc_type: false };
         pass x;
     }
     if (raw type_is_none(id)) { pass (raw scan_clear()); }
@@ -1672,40 +1733,56 @@ func:type_mentions_self = SelfScan(Ast->:ast, TypeId:id, int32:fuel) {
     TypeNode:n = relay ast_type(ast, id);
 
     if (n.kind == TypeKind.TypeSelfType) {
-        SelfScan:f = SelfScan{ found: true, exhausted: false };
+        SelfScan:f = SelfScan{ found: true, exhausted: false, assoc_type: false };
         pass f;
     }
 
     // A NAMED TYPE'S ARGUMENTS ARE PART OF IT — `Optional<Self>` and
     // `Handle<Self>` are the two D-157 names, and both arrive here.
     if (n.kind == TypeKind.TypeNamedType) {
-        pass (relay window_mentions_self(ast, raw type_args_start(n),
+        // A BARE NAME MAY BE ONE OF THIS TRAIT'S ASSOCS. It is matched by name
+        // rather than by resolving, because object safety is asked about the
+        // trait's own declarations where the assoc is in scope by construction —
+        // and resolving here would need a scope this walk does not carry.
+        if (trait_decl != 0i32) {
+            if (relay trait_declares_assoc(ast, trait_decl,
+                    (raw type_name_index(n)) =>! int32)) {
+                SelfScan:a = SelfScan{ found: false, exhausted: false,
+                                       assoc_type: true };
+                pass a;
+            }
+        }
+        pass (relay window_mentions_self(ast, trait_decl,
+                                         raw type_args_start(n),
                                          raw type_args_count(n), fuel));
     }
 
     // One child in `a`. An array's `b` is an EXPRESSION, not a type, so it is
     // not walked: `Self[N]` hides its `Self` in the element, never the size.
     if (n.kind == TypeKind.TypePointerType) {
-        pass (relay type_mentions_self(ast, raw type_pointee(n), fuel - 1i32));
+        pass (relay type_mentions_self(ast, trait_decl, raw type_pointee(n), fuel - 1i32));
     }
     if (n.kind == TypeKind.TypeOptionalType) {
-        pass (relay type_mentions_self(ast, raw type_inner(n), fuel - 1i32));
+        pass (relay type_mentions_self(ast, trait_decl, raw type_inner(n), fuel - 1i32));
     }
     if (n.kind == TypeKind.TypeArrayType) {
-        pass (relay type_mentions_self(ast, raw type_element(n), fuel - 1i32));
+        pass (relay type_mentions_self(ast, trait_decl, raw type_element(n), fuel - 1i32));
     }
 
     // `func Self(Self)` — a function TYPE hides one in either half.
     if (n.kind == TypeKind.TypeFuncType) {
-        SelfScan:ps = relay window_mentions_self(ast, raw type_param_start(n),
+        SelfScan:ps = relay window_mentions_self(ast, trait_decl,
+                                                raw type_param_start(n),
                                                 raw type_param_count(n), fuel);
         if (ps.found) { pass ps; }
-        pass (relay type_mentions_self(ast, raw type_return(n), fuel - 1i32));
+        if (ps.assoc_type) { pass ps; }
+        pass (relay type_mentions_self(ast, trait_decl, raw type_return(n), fuel - 1i32));
     }
 
     // `dyn A & B` — the trait operands share the window slots.
     if (n.kind == TypeKind.TypeDynType) {
-        pass (relay window_mentions_self(ast, raw type_args_start(n),
+        pass (relay window_mentions_self(ast, trait_decl,
+                                         raw type_args_start(n),
                                          raw type_args_count(n), fuel));
     }
 
@@ -1713,13 +1790,14 @@ func:type_mentions_self = SelfScan(Ast->:ast, TypeId:id, int32:fuel) {
     pass (raw scan_clear());
 };
 
-func:window_mentions_self = SelfScan(Ast->:ast, int32:start, int32:count,
-                                     int32:fuel) {
+func:window_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
+                                     int32:start, int32:count, int32:fuel) {
     int32:i = 0i32;
     while (i < count) {
         TypeId:c = TypeId{ index: relay ast_id_at(ast, start, i) };
-        SelfScan:s = relay type_mentions_self(ast, c, fuel - 1i32);
+        SelfScan:s = relay type_mentions_self(ast, trait_decl, c, fuel - 1i32);
         if (s.found) { pass s; }
+        if (s.assoc_type) { pass s; }
         i = i + 1i32;
     }
     pass (raw scan_clear());
@@ -1772,6 +1850,7 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
                                Span:at, bool:report) {
     string:mname = relay intern_get(r.interns, raw decl_name(m));
     bool:bad = false;
+    int32:tdecl = raw type_decl_of(r.types, trait_id);
 
     // Rule 1 — a receiver to dispatch on.
     bool:has_self = false;
@@ -1819,7 +1898,7 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
         }
 
         if (!recv_is_self) {
-            SelfScan:sc = relay type_mentions_self(r.ast, ptype,
+            SelfScan:sc = relay type_mentions_self(r.ast, tdecl, ptype,
                                                    raw SELF_SCAN_FUEL());
             if (sc.found) {
                 bad = true;
@@ -1832,6 +1911,14 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
                         at);
                 }
             }
+            if (sc.assoc_type) {
+                bad = true;
+                if (report) {
+                    drop not_object_safe(r, trait_id, mname,
+                        "mentions an associated type, whose layout is unknowable once the concrete type is erased — the same reason `Self` outside the receiver disqualifies a trait (D-160)",
+                        at);
+                }
+            }
             if (sc.exhausted) {
                 bad = true;
                 if (report) { drop self_scan_defect(r, mname, at); }
@@ -1840,13 +1927,22 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
         pidx = pidx + 1i32;
     }
 
-    SelfScan:rsc = relay type_mentions_self(r.ast, raw fn_return(r.ast, m),
+    SelfScan:rsc = relay type_mentions_self(r.ast, tdecl,
+                                            raw fn_return(r.ast, m),
                                             raw SELF_SCAN_FUEL());
     if (rsc.found) {
         bad = true;
         if (report) {
             drop not_object_safe(r, trait_id, mname,
                 "mentions `Self` in its return type, whose size is unknown once the concrete type is erased", at);
+        }
+    }
+    if (rsc.assoc_type) {
+        bad = true;
+        if (report) {
+            drop not_object_safe(r, trait_id, mname,
+                "returns an associated type, whose layout is unknowable once the concrete type is erased — the same reason `Self` in a return does (D-160)",
+                at);
         }
     }
     if (rsc.exhausted) {

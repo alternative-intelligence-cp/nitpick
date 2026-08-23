@@ -1233,7 +1233,14 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     DeclId:tfid = DeclId{ index: trait_fn };
     DeclNode:tf = relay ast_decl(r.ast, tfid);
     r.self_type = raw tt_self(r.types);
+    // THE TRAIT'S SIGNATURE MENTIONS THE TRAIT'S ASSOCS (D-160). `func:next =
+    // Item(Self:self)` resolves `Item` the way it resolves `Self` — through the
+    // enclosing trait — so the trait has to be set while its signature is read,
+    // and cleared before the IMPL's is.
+    int32:saved_st = r.self_trait;
+    r.self_trait = raw type_decl_of(r.types, e.trait_id);
     int32:want = relay fn_type(r, tfid, raw decl_name(tf), scope);
+    r.self_trait = saved_st;
 
     // THE IMPL'S SIGNATURE IS RESOLVED WITH THE IMPL'S OWN PARAMETERS, which for
     // a blanket impl is where its `T` comes from — `func:log_str = string(T:self)`
@@ -1257,7 +1264,8 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, want)) { pass NIL; }
     if (raw type_is_invalid(r.types, got)) { pass NIL; }
-    if (relay same_signature(r, want, got, e.target)) { pass NIL; }
+    SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
+    if (relay same_signature(r, want, got, sc)) { pass NIL; }
 
     string:m1 = relay string_concat("`",
                     relay intern_get(r.interns, raw decl_name(f)));
@@ -1294,7 +1302,18 @@ func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) {
 // case is one integer compare; the walk exists only for the signatures that
 // mention `Self`, where the trait's and the impl's are DIFFERENT interned types
 // naming the same shape.
-func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target) {
+// WHAT ONE SIGNATURE COMPARISON NEEDS TO KNOW BESIDES THE TWO TYPES: which type
+// `Self` stands for, which impl's assoc bindings apply, and the scope those
+// bindings' annotations resolve in. Three values that always travel together,
+// carried as one rather than as three parameters through four functions — the
+// same shape `MethodFind` and `FnSig` use.
+pub struct:SigCtx = {
+    int32:target;
+    int32:impl_decl;
+    int32:scope;
+};
+
+func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) != (raw type_kind(r.types, got))) { pass false; }
     if (!(raw type_is_func(r.types, want))) { pass false; }
@@ -1312,7 +1331,7 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target
     // `Self->` and `Self[]` are still refused, and that is a different case — those
     // wrappers are ones somebody wrote.
     if (!(relay same_return(r, raw type_elem(r.types, want),
-                            raw type_elem(r.types, got), target))) {
+                            raw type_elem(r.types, got), sc))) {
         pass false;
     }
     int32:n = raw type_param_count_of(r.types, want);
@@ -1321,7 +1340,7 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target
     while (i < n) {
         int32:a = raw type_param_at_of(r.ast, r.types, want, i);
         int32:b = raw type_param_at_of(r.ast, r.types, got, i);
-        if (!(relay same_after_self(r, a, b, target))) { pass false; }
+        if (!(relay same_after_self(r, a, b, sc))) { pass false; }
         i = i + 1i32;
     }
     pass true;
@@ -1333,23 +1352,86 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target
 // silently mismatched, because a trait method taking `Self->` is a shape somebody
 // meant and a diagnostic saying the signature disagrees would send them looking at
 // the wrong thing.
-func:same_return = bool(TypeResolver->:r, int32:want, int32:got, int32:target) {
+func:same_return = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) == (raw TY_RESULT())) {
         if ((raw type_kind(r.types, got)) == (raw TY_RESULT())) {
             pass (relay same_after_self(r, raw type_elem(r.types, want),
-                                        raw type_elem(r.types, got), target));
+                                        raw type_elem(r.types, got), sc));
         }
     }
-    pass (relay same_after_self(r, want, got, target));
+    pass (relay same_after_self(r, want, got, sc));
 };
 
-func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got, int32:target) {
+func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
+                            SigCtx:sc) {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) == (raw TY_SELF())) {
-        pass (got == target);
+        pass (got == sc.target);
+    }
+    // AN ASSOCIATED TYPE SUBSTITUTES TO THIS IMPL'S BINDING (D-160), which is
+    // the same one level `Self` gets and for the same reason: `Item` is a whole
+    // type where it appears, and `Item->` or `Item[]` would need the
+    // substitution to rebuild the wrapper. Those stay refused rather than
+    // silently mismatched.
+    if ((raw type_kind(r.types, want)) == (raw TY_ASSOC())) {
+        int32:bound = relay assoc_binding(r, sc,
+                          raw type_assoc_trait(r.types, want),
+                          raw type_assoc_name(r.types, want));
+        // NO BINDING IS ALREADY REPORTED, and reporting it again here would be
+        // one mistake described twice — the second time as a signature
+        // mismatch, which sends the reader to the method rather than to the
+        // `assoc:Item = …;` they omitted. The completeness walk above refuses a
+        // required assoc the impl does not bind, and that is exactly the case
+        // that reaches this branch with 0, so the impl is refused either way and
+        // only a misleading second line is dropped. Same judgment as D-157's
+        // rules 1 and 2, which do not both fire for one mistake.
+        if (bound == 0i32) { pass true; }
+        pass (got == bound);
     }
     pass false;
+};
+
+// WHAT THIS IMPL BINDS `name` TO, or the trait's DEFAULT, or 0 (D-160). An impl
+// that omits a binding inherits the trait's — D-028's surviving half — and one
+// that omits a binding the trait gave no default for is an incomplete impl,
+// which the caller reports as the signature mismatch it causes.
+pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
+                               int32:trait_decl, int32:name) {
+    if (sc.impl_decl != 0i32) {
+        DeclNode:id = relay ast_decl(r.ast, DeclId{ index: sc.impl_decl });
+        int32:i = 0i32;
+        while (i < (raw impl_member_count(r.ast, id))) {
+            DeclNode:m = relay ast_decl(r.ast, raw impl_member(r.ast, id, i));
+            if (m.kind == DeclKind.DeclAssocTypeDecl) {
+                if ((raw decl_name(m)) == name) {
+                    TypeId:b = raw assoc_default(m);
+                    if (!(raw type_is_none(b))) {
+                        pass (relay resolve_type(r, b, sc.scope));
+                    }
+                }
+            }
+            i = i + 1i32;
+        }
+    }
+    // THE TRAIT'S DEFAULT, inherited by any impl that omits the binding.
+    if (trait_decl != 0i32) {
+        DeclNode:td = relay ast_decl(r.ast, DeclId{ index: trait_decl });
+        int32:k = 0i32;
+        while (k < (raw item_member_count(r.ast, td))) {
+            DeclNode:m2 = relay ast_decl(r.ast, raw item_member(r.ast, td, k));
+            if (m2.kind == DeclKind.DeclAssocTypeDecl) {
+                if ((raw decl_name(m2)) == name) {
+                    TypeId:d2 = raw assoc_default(m2);
+                    if (!(raw type_is_none(d2))) {
+                        pass (relay resolve_type(r, d2, sc.scope));
+                    }
+                }
+            }
+            k = k + 1i32;
+        }
+    }
+    pass 0i32;
 };
 
 // --- `dyn` assignment (TRAITS_REFERENCE 5.2, 5.3) ----------------------------------------
