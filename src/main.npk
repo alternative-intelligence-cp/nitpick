@@ -36,39 +36,19 @@ use "./backend/emit_program.npk".*;
 use "./frontend/resolve_type.npk".*;
 use "./frontend/types.npk".*;
 
-func:emit_line = NIL(NioW->:out, SourceManager->:sm, Diagnostic:d) {
-    string:pre = "";
-    if (d.severity == 0i32) { pre = "note "; }
-    string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
-    // THE FILE IS PART OF THE SPAN. `line:col` alone was the whole address while
-    // every tool took one file; a module graph makes it ambiguous across sixty,
-    // and the first self-check run (119 findings, no way to say where) is what
-    // forced the format to say what it always knew.
-    //
-    // A SPANLESS DIAGNOSTIC IS RENDERED, NOT LOST (D-162, 1.0.1). `span_none()`
-    // carries file = -1; `srcmgr_path` fails on it, and before this the failure
-    // relayed out through `report` and was dropped -- a refusal that exited 1
-    // and printed nothing. A diagnostic a reader cannot act on is worse than no
-    // check; `<no span>` at least names the code.
-    if (d.span.file < 0i32) {
-        m1 = relay string_concat(m1, "<no span>");
-        pass (relay nio_line(out, m1));
-    }
-    m1 = relay string_concat(m1, relay srcmgr_path(sm, d.span.file));
-    m1 = relay string_concat(m1, ":");
-    string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
-    string:m3 = relay string_concat(m2, ":");
-    string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
-    pass (relay nio_line(out, m4));
-};
-
+// EVERY DIAGNOSTIC THROUGH THE ONE RENDERER (1.0.8). This driver defined its
+// own `emit_line` until then — `CODE path:line:col`, the message dropped — and
+// so did three others, no two alike; `diag_line` is the only formatter now and
+// the overflow note reaches the reader too, which it never did from a driver.
 func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
     while (d < n) {
-        Result<NIL>:r = emit_line(out, sm, raw diaglist_at(diags, d));
-        if (r.is_error) { fail r.error; }
+        drop nio_line(out, relay diag_line(raw diaglist_at(diags, d), sm));
         d = d + 1i64;
+    }
+    if (diags.overflowed) {
+        drop nio_line(out, raw diag_overflow_line());
     }
     pass NIL;
 };

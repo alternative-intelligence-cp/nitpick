@@ -1057,7 +1057,7 @@ func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
     if (d.kind != DeclKind.DeclParamDecl) { pass NIL; }
     ExprNode:anode2 = relay ast_expr(x.ast, a);
     drop escape_err(x, raw BORROW_STORED(),
-        "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-004 rule B; F-1)",
+        "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-117 rule B, as repaired by D-146 F-1)",
         anode2.span);
     pass NIL;
 };

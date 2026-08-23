@@ -1345,8 +1345,13 @@ func:p_parse_failure = DeclId(Parser->:p) {
         pass (relay ast_add_decl(p.ast, DeclKind.DeclFailsOn, sp,
                                  pred.index, errno, 0i32, 0i64));
     }
+    // THE RATIONALE IS D-002's AND IT IS RETIRED (1.0.8): D-149 makes `extern`
+    // a driver interface with one wire convention, and the checker will refuse
+    // a contract on an `extern` declaration when the Bridge lands (1.1). The
+    // parser still implements D-002's requirement until then; the message no
+    // longer cites C for it.
     drop p_error(p, raw PARSE_EXTERN_NO_CONTRACT(),
-        "an `extern` function must state `fails on ...` or `never fails`; C has no universal failure convention, so it cannot be inferred");
+        "an `extern` function must state `fails on ...` or `never fails` at this rung (D-002); the driver interface D-149 replaces this with the wire's own convention at cycle 1.1");
     pass (raw decl_none());
 };
 

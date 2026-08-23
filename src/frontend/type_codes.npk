@@ -128,3 +128,10 @@ pub func:TYPE_FLOAT_RULES = string()   { pass "NITPICK-TYPE-030"; };
 // Until 0.9.9 nothing checked this anywhere: `int8:a = 300i8;` survived to the
 // backend and emitted `i8 300`, which is not even valid IR.
 pub func:TYPE_LIT_RANGE = string()     { pass "NITPICK-TYPE-031"; };
+
+// THERE IS NO SUCH CONVERSION (1.0.8). Split from `TYPE_LOSSY_CAST`, which
+// covered both "`=>` refuses this; write `=>!`" and "no spelling does this"
+// under one code — so a log filtered on TYPE-009 could not separate the
+// opt-out case from the impossible one, and the messages said opposite things
+// about `=>!` under the same number. `cast_class`'s third answer gets its own.
+pub func:TYPE_NO_CAST = string()       { pass "NITPICK-TYPE-032"; };

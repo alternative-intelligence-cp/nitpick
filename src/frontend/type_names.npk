@@ -159,6 +159,46 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
                         relay type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (relay string_concat(r1, ">"));
     }
+    // THE REST OF THE ONE-OPERAND KINDS (1.0.8). Each printed `<type>` — so
+    // "`<type>` and `<type>` are different types" was the whole of a refusal
+    // between two `Handle`s, and `arr.nope` on an array reported "`<type>` has
+    // no member `nope`". Every kind that carries an operand spells it.
+    if (k == (raw TY_ARRAY())) {
+        string:a1 = relay string_concat(
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)), "[");
+        string:a2 = relay string_concat(a1,
+                        raw int_to_string((raw type_array_count(tyt, t)) => int64));
+        pass (relay string_concat(a2, "]"));
+    }
+    if (k == (raw TY_HANDLE())) {
+        string:h1 = relay string_concat("Handle<",
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (relay string_concat(h1, ">"));
+    }
+    if (k == (raw TY_ARENA())) {
+        string:n1 = relay string_concat("arena<",
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (relay string_concat(n1, ">"));
+    }
+    if (k == (raw TY_SHARED_ARENA())) {
+        string:s1 = relay string_concat("shared_arena<",
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (relay string_concat(s1, ">"));
+    }
+    // A RANGE IS `{ T, T }` (D-093), spelled as the value that makes one.
+    if (k == (raw TY_RANGE())) {
+        string:g1 = relay string_concat(
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)), "..");
+        pass (relay string_concat(g1,
+                  relay type_display(tyt, interns, raw type_elem(tyt, t))));
+    }
+    // A PROJECTION IS SPELLED AS ONE (D-164): `T.Item`.
+    if (k == (raw TY_ASSOC())) {
+        string:p1 = relay string_concat(
+                        relay type_display(tyt, interns, raw type_assoc_base(tyt, t)), ".");
+        pass (relay string_concat(p1,
+                  relay intern_get(interns, raw type_assoc_name(tyt, t))));
+    }
     // A FUNCTION PRINTS ITS RETURN AND ITS SHAPE, not `<type>`. `type_elem` on a
     // function is its return type, and the two kinds are told apart in the one
     // place a reader looks — a diagnostic saying "`func Result<int64>(…)` is not

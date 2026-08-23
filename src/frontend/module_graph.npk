@@ -341,7 +341,16 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) {
         // `mod:name = { … };` has its members already and loads nothing.
         if (d.kind == DeclKind.DeclModuleDecl) {
             if ((raw item_member_count(@g.ast, d)) == 0i32) {
-                drop graph_load_file_module(g, from, d);
+                // THE FILE'S OWN HEADER IS THE FIRST ITEM, and a header that
+                // does not match the basename is the commonest way to reach
+                // "cannot find module `bar`" — which told the reader to create
+                // `bar.npk` when the fix is the name (1.0.8; CLAUDE.md lists
+                // this as a trap it cost a cycle to learn). Said as what it is.
+                // THE FILE'S OWN HEADER IS INDISTINGUISHABLE FROM AN IMPORT
+                // written first — both are a member-less `mod:name;` — so the
+                // loader cannot say "your header is wrong"; what it can do is
+                // name that reading when the file is not found (1.0.8).
+                drop graph_load_file_module(g, from, d, i == 0i32);
             }
         }
         i = i + 1i32;
@@ -371,7 +380,8 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
 // declaring file. FINDING BOTH IS AN ERROR by the same rule as 0.3.2: two files
 // can supply one module, and picking one silently makes the answer depend on
 // something the reader cannot see.
-func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
+func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
+                                  bool:first_item) {
     string:name = relay intern_get(g.interns, raw decl_name(d));
     string:dir = relay path_dirname(from);
 
@@ -407,6 +417,18 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
     string:n3 = relay string_concat(n2, flat);
     string:n4 = relay string_concat(n3, " nor ");
     string:n5 = relay string_concat(n4, nested);
+    // THE COMMONEST WAY HERE IS A FILE WHOSE HEADER DOES NOT MATCH ITS NAME
+    // (1.0.8; CLAUDE.md lists it as a trap that cost a cycle) — and a header is
+    // the file's first item. The message names that reading rather than
+    // sending the reader to create a file.
+    if (first_item) {
+        string:base = relay path_basename(from);
+        if (!(raw string_eq(name, base))) {
+            string:h1 = relay string_concat(n5, "; if this line is the file's own header, note that this file is `");
+            string:h2 = relay string_concat(h1, base);
+            n5 = relay string_concat(h2, ".npk` and a file's module name must match its basename");
+        }
+    }
     drop diaglist_push(g.diags,
         raw diag_error(raw RESOLVE_NO_SUCH_FILE(), n5, d.span));
     pass NIL;
@@ -456,7 +478,15 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
         }
         pass (relay direct_named_type(ast, raw type_element(n)));
     }
-    // A pointer or an optional breaks the dependency: one word, regardless.
+    // AN OPTIONAL LAYS ITS VALUE OUT INLINE — `{ i8, T }` (TYPE_REFERENCE
+    // §11.1), so `struct:A = { A?:a; }` is as infinite as `A:a;` would be.
+    // This said "a pointer or an optional breaks the dependency: one word",
+    // and `tt_optional` has never laid it out as one: the self-containing
+    // struct escaped the RESOLVE-006 check (found by the 1.0.8 audit, fixed
+    // before any program relied on it). A pointer IS one word.
+    if (n.kind == TypeKind.TypeOptionalType) {
+        pass (relay direct_named_type(ast, raw type_element(n)));
+    }
     pass 0i32;
 };
 
@@ -839,13 +869,42 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                     if (report) {
                     string:nm = relay intern_get(g.interns, s.name);
                     string:m1 = relay string_concat("`", nm);
+                    // WHICH CLASH (1.0.8). `symtab_bind_import` declines for any
+                    // earlier binding, and an earlier IMPORT is one: with two
+                    // wildcard imports exporting one name, this said "declared
+                    // here … the local declaration wins" about a file that
+                    // declares nothing of the sort, at the `use` line. An
+                    // import-against-import is the loader's ambiguity (D-159);
+                    // an import-against-declaration is the shadowing, and the
+                    // declaration is where "here" is.
+                    int32:clash = raw scope_lookup_local(@g.tab, scope, s.name);
+                    bool:prior_import = false;
+                    if (clash != 0i32) {
+                        prior_import = raw symbol_is_imported(raw symtab_get(@g.tab, clash));
+                    }
+                    if (prior_import) {
+                        string:i2 = relay string_concat(m1,
+                            "` is exported by an earlier import and also by `");
+                        string:i3 = relay string_concat(i2, target);
+                        drop diaglist_push(g.diags,
+                            raw diag_warning(raw RESOLVE_SHADOWED(),
+                                relay string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
+                                at));
+                    } else {
                     string:m2 = relay string_concat(m1,
-                        "` is declared here and also exported by `");
+                        "` is declared in this file and also exported by `");
                     string:m3 = relay string_concat(m2, target);
                     string:m4 = relay string_concat(m3,
                         "`; the local declaration wins");
                     drop diaglist_push(g.diags,
                         raw diag_warning(raw RESOLVE_SHADOWED(), m4, at));
+                    if (clash != 0i32) {
+                        drop diaglist_push(g.diags,
+                            raw diag_note(raw RESOLVE_SHADOWED(),
+                                relay string_concat(m1, "` is declared here"),
+                                raw symbol_span(@g.ast, @g.tab, clash)));
+                    }
+                    }
                     }
                 }
             }
@@ -869,7 +928,14 @@ func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
         if (!report) { pass NIL; }
         string:nm = relay intern_get(g.interns, name);
         string:m1 = relay string_concat("`", nm);
+        // DECLARED, OR IMPORTED EARLIER — two different fixes (1.0.8).
+        int32:clash = raw scope_lookup_local(@g.tab, scope, name);
         string:m2 = relay string_concat(m1, "` is already declared in this module");
+        if (clash != 0i32) {
+            if (raw symbol_is_imported(raw symtab_get(@g.tab, clash))) {
+                m2 = relay string_concat(m1, "` is already imported into this module by an earlier `use`");
+            }
+        }
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
     }

@@ -15,8 +15,8 @@ builds the checker once and then answers in milliseconds.
 Rebuild after every edit to `src/` -- it does not watch anything, and a stale
 binary answering an old question is the failure mode to expect from it.
 
-Output is `<file>: <exit code>` followed by whatever the checker printed, which is
-codes and spans only (BUILD_REFERENCE 7.1).
+Output is `<file>: <exit code>` followed by whatever the checker printed --
+`CODE path:line:col: message` per diagnostic (BUILD_REFERENCE 7.1).
 """
 import os
 import subprocess

@@ -326,6 +326,13 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
             StmtId:st = StmtId{ index: origin };
             here = (relay ast_stmt(ast, st)).span;
         }
+        // A PATTERN BINDING HAS A PLACE TOO (1.0.8): `Net.Disconnect(a, a)`
+        // reported its duplicate with no span at all, because this listed two
+        // of the three origin kinds `symbol_span` already knows.
+        if (origin_kind == (raw SYM_PAT())) {
+            PatId:pt = PatId{ index: origin };
+            here = (relay ast_pat(ast, pt)).span;
+        }
         drop diaglist_push(diags,
             raw diag_error(raw RESOLVE_DUPLICATE(),
                            "this name is already declared in this scope", here));

@@ -41,16 +41,34 @@ use "./ir/ir_stmt.npk".*;
 // rung that enables it.
 func:refuse = NIL(DiagList->:diags, IrVal:v) {
     if (v.state == (raw LL_RUNG())) {
+        // A RUNG NAMES A CYCLE ("1.1") OR A ROW ("a later cycle (G-2)"); the
+        // sentence reads differently for each (1.0.8 — the row form rendered
+        // "enabled by cycle a later cycle (G-2)").
         string:m1 = relay string_concat(v.what,
             " is not supported at this backend rung; enabled by cycle ");
+        if (v.rung.len > 0i64) {
+            if (v.rung.ptr[0i64] < 48u8) {
+                m1 = relay string_concat(v.what,
+                    " is not supported at this backend rung; owned by ");
+            } else {
+                if (v.rung.ptr[0i64] > 57u8) {
+                    m1 = relay string_concat(v.what,
+                        " is not supported at this backend rung; owned by ");
+                }
+            }
+        }
         drop diaglist_push(diags,
             raw diag_error(raw RUNG_UNSUPPORTED(),
                            relay string_concat(m1, v.rung), v.at));
         pass NIL;
     }
+    // EVERY `iv_broken` ARRIVES HERE, not only an unclassified kind — a
+    // pattern with no variant, a slot nothing opened. What they share is that
+    // the frontend promised this program valid and the emitter could not keep
+    // the promise; the sentence says that, and no more (1.0.8).
     drop diaglist_push(diags,
         raw diag_error(raw EMIT_INTERNAL(),
-            "the emitter met a node it has no classification for; this is a defect in the compiler, not in this program",
+            "the emitter could not lower this, although the frontend accepted it; a defect in the compiler rather than in this program — report it with the construct at this position",
             v.at));
     pass NIL;
 };

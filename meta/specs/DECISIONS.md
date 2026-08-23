@@ -640,13 +640,19 @@ the standard Nitpick treatment for an operation that suspends a guarantee.
 ## D-009 — `?!` takes exactly one argument — **SETTLED**
 
 ```nitpick
-int32:val = read_file() ?! 99i32;   // on error: failsafe(99i32)
+int32:val = read_file() ?! 99tbb32;   // on error: failsafe(99tbb32)
 ```
 
 `?!` triggers `failsafe` on a failed unwrap, and `failsafe` has the fixed
 signature `func:failsafe = int32(tbb32:err)` — exactly one argument. `?!`
 therefore takes exactly one, and it is the error code handed to `failsafe`.
 The argument is typed `tbb32` to match.
+
+> The example was written `?! 99i32` until 1.0.8, and the checker refuses that
+> spelling — the argument is a `tbb32`, as the paragraph above says, and an
+> unsuffixed or `i32` literal is not one (D-092 has no conversion). The 1.0.8
+> message audit found the checker's advice for it pointing at this example;
+> the example is corrected rather than the rule relaxed.
 
 Resolves `PRE_PLANNING_REVIEW.md` §3.3. Three sources already agreed
 (`TYPE_REFERENCE.md` §11.2, `AST_REFERENCE.md` §3 `EmphaticUnwrapExpr`, prototype
@@ -10848,7 +10854,7 @@ which is why this is decided rather than raised.
 > original resolution's "the inherent family falls out" does not hold under
 > the amendment. So a generic struct cannot carry inherent methods; they go
 > through a trait — and a trait method cannot take `Self->`, so no method of a
-> generic struct can mutate it. Raised as **D-171** at 1.0.9 with a
+> generic struct can mutate it. Raised as **T-7** at 1.0.9 with a
 > recommendation (the blanket form takes an explicit target,
 > `impl:<T: P>:T:Loggable`, and every impl reads by one rule); the first
 > generic collection (1.0.7) spells its mutators as free generic functions

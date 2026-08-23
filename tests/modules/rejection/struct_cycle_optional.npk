@@ -1,0 +1,14 @@
+// expect-error: NITPICK-RESOLVE-006
+//
+// AN OPTIONAL FIELD CONTAINS ITS VALUE INLINE — `{ i8, T }` (TYPE_REFERENCE
+// §11.1) — so a struct holding an `Optional` of itself is as infinite as one
+// holding itself. The containment walk treated an optional as "one word,
+// regardless", a sentence true of a pointer and never of this type, and the
+// struct below escaped the cycle check (found by the 1.0.8 message audit). A
+// pointer does break it: `A->:next` is the legal spelling of a self-reference.
+mod:struct_cycle_optional;
+
+struct:A = { int32:v; A?:more; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

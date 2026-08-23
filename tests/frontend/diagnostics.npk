@@ -1,15 +1,50 @@
-// Exercises the diagnostics core (cycle 0.0.6).
+// Exercises the diagnostics core (cycle 0.0.6), and since 1.0.8 the ONE
+// renderer every driver prints through.
 //
 // The sink is a PARAMETER, never a global (D-075), which is what makes this
 // testable at all: the same code path that writes to stderr in production
 // writes to a memory buffer here, and the test reads it back.
+//
+// THE RENDERED LINE IS ASSERTED HERE AND NOWHERE ELSE. The harness's readers
+// discard everything but code, line and column — codes are stable identifiers
+// and wording must stay free to improve — so this is the one place a rendered
+// string exists to check. It pins the SHAPE: `CODE path:line:col: message`,
+// the severity word in front for a note or a warning, `<no span>` for a
+// spanless diagnostic (D-162), and the overflow note the drivers now print.
 
 use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/source.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
+
+// Does the sink hold `needle` anywhere? A byte scan, because the sink exposes
+// bytes and the test should not depend on a string library to read them.
+func:sink_has = bool(Sink->:out, string:needle) {
+    int64:n = raw sink_length(out);
+    int64:i = 0i64;
+    while (i + needle.len <= n) {
+        int64:j = 0i64;
+        bool:same = true;
+        while (j < needle.len) {
+            if ((raw sink_byte_at(out, i + j)) != needle.ptr[j]) {
+                same = false;
+                j = needle.len;
+            } else {
+                j = j + 1i64;
+            }
+        }
+        if (same) { pass true; }
+        i = i + 1i64;
+    }
+    pass false;
+};
 
 func:main = int32(cstring[]:_~argv) {
     DiagList:list = raw diaglist_init();
     Sink:out = raw sink_to_buffer(4096i64);
+    SourceManager:sm = raw srcmgr_init();
+    int32:f = raw srcmgr_add(@sm, "a.npk", "func:main = int32(cstring[]:_~argv) { };");
+    if (f != 0i32) { exit 10i32; }
 
     // Pushed OUT OF ORDER on purpose. Rendering sorts by span, so that two runs
     // over the same input produce byte-identical output (D-078) -- discovery
@@ -19,20 +54,41 @@ func:main = int32(cstring[]:_~argv) {
 
     drop diaglist_push(@list, raw diag_error("NITPICK-019", "use after move", late));
     drop diaglist_push(@list, raw diag_warning("NITPICK-040", "await outside async", early));
+    // A SPANLESS note (D-162): rendered, never dropped.
+    drop diaglist_push(@list, raw diag_note("NITPICK-001", "no span to point at", raw span_none()));
 
-    if (raw diaglist_count(@list) != 2i64) { exit 11i32; }
+    if (raw diaglist_count(@list) != 3i64) { exit 11i32; }
     if (!(raw diaglist_has_errors(@list)))  { exit 12i32; }
 
-    drop diaglist_render(@list, @out);
+    drop diaglist_render(@list, @sm, @out);
 
     if (raw sink_length(@out) == 0i64) { exit 13i32; }
 
-    // The line-3 warning must render FIRST, so byte 0 is '3' (51), not '9'.
-    // That is the sort, asserted rather than assumed.
-    uint8:first = raw sink_byte_at(@out, 0i64);
-    if (first != 51u8) { exit 14i32; }
+    // THE SHAPE, LINE BY LINE. Each part in its place: the severity word only
+    // for a warning or a note, the code, the path with its line and column,
+    // the separator, the message.
+    if (!(raw sink_has(@out, "warning NITPICK-040 a.npk:3:5: await outside async\n"))) { exit 14i32; }
+    if (!(raw sink_has(@out, "note NITPICK-001 <no span>: no span to point at\n")))  { exit 16i32; }
+    if (!(raw sink_has(@out, "NITPICK-019 a.npk:9:1: use after move\n")))            { exit 15i32; }
+    // An error carries no severity word: the unmarked case.
+    if (raw sink_has(@out, "error NITPICK-019"))                                      { exit 17i32; }
 
-    wild_release_all();
+    // `diag_line` is the same formatter, one line, which is what the drivers
+    // call.
+    string:one = relay diag_line(raw diag_error("NITPICK-019", "use after move", late), @sm);
+    if (!(raw string_eq(one, "NITPICK-019 a.npk:9:1: use after move")))             { exit 18i32; }
+
+    // A file the manager does not hold renders rather than failing (the same
+    // rule as `<no span>`).
+    Span:elsewhere = raw span_point(7i32, 0i32, 1i32, 1i32);
+    string:lost = relay diag_line(raw diag_error("NITPICK-019", "x", elsewhere), @sm);
+    if (!(raw string_eq(lost, "NITPICK-019 <unknown file>:1:1: x")))                 { exit 19i32; }
+
+    // The overflow note is one fixed line, shared with the drivers.
+
+    // The overflow note is one fixed line, shared with the drivers.
+    string:ovf = raw diag_overflow_line();
+    if (!(raw string_eq(ovf, "note NITPICK-DIAG-001 <no span>: further diagnostics suppressed"))) { exit 20i32; }
 
     wild_release_all();
     exit 0i32;

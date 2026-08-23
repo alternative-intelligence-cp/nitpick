@@ -741,9 +741,24 @@ func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) {
     if (hi == (raw LOCK_NONE_MAX())) { pass NIL; }
     if (hi <= bound) { pass NIL; }
 
-    string:m1 = relay string_concat("this declares `acquires <= ",
-                                    raw int_to_string(bound => int64));
-    string:m2 = relay string_concat(m1, "` and can reach level ");
+    // WHO DECLARED THE BOUND (1.0.8). A trait method's bound is inherited by
+    // the implementation whether or not it repeats the clause
+    // (`inherit_trait_bound`), and this is reported at the IMPLEMENTATION —
+    // so "this declares" was said about a method that wrote no clause.
+    LevelRead:own = raw read_acquires(x, d);
+    string:m1 = "";
+    if (own.found) {
+        m1 = relay string_concat("this declares `acquires <= ",
+                                 raw int_to_string(bound => int64));
+    } else {
+        m1 = relay string_concat("this implementation is bound by `acquires <= ",
+                                 raw int_to_string(bound => int64));
+        m1 = relay string_concat(m1, "`, declared by the trait method it implements, and can reach level ");
+    }
+    string:m2 = m1;
+    if (own.found) {
+        m2 = relay string_concat(m1, "` and can reach level ");
+    }
     string:m3 = relay string_concat(m2, raw int_to_string(hi => int64));
     string:m4 = relay string_concat(m3,
         "; a call through a trait object must have a finite acquisition set, and the bound is what makes it one (D-056)");

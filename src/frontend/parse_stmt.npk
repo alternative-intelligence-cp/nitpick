@@ -285,7 +285,7 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
     // program the checker would accept can be. Saying so beats a cascade of
     // comparison errors pointing at a declaration.
     drop p_error(p, raw PARSE_EXPECTED(),
-        "this statement is more than 512 tokens long without a `;`, so the parser cannot tell a declaration from an expression; a type that large is past the 64-level cap on generic instantiation (D-064)");
+        "this statement is more than 512 tokens long without a `;`, so the parser cannot tell a declaration from an expression; no type the checker accepts is that long (the 64-level cap on generic instantiation, D-064, is under 200 tokens)");
     pass false;
 };
 

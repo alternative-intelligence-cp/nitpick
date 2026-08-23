@@ -81,6 +81,13 @@ pub struct:ExprTyper = {
     int32:fn_success;
     bool:fn_terminal;
 
+    // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
+    // names the innermost one's counter; outside any, it names nothing — and
+    // until 1.0.8 nothing said so before the EMITTER, which reported it as an
+    // internal defect ("a node it has no classification for") in the program's
+    // own fault.
+    int32:counted_depth;
+
     // THE MODULE'S `impl` BLOCKS. A method call resolves through this rather than
     // through the scope, because an `impl` declares nothing at module scope
     // (0.3.1, deferring the question to here) — so before 0.4.6 the only method
@@ -152,6 +159,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false,
+                             counted_depth: 0i32,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -331,7 +339,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
             }
             if (sig > 15i32) {
                 pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
-                    "a `flt32` literal carries at most 15 significant digits (D-143); write the `f64` value you mean and cast",
+                    "a `flt32` literal carries at most 15 significant digits (D-143); shorten it, or write it as a `flt64` literal (`…f64`) and narrow it with `=>!` — `flt64 => flt32` is a lossy cast",
                     n.span));
             }
         }
@@ -359,6 +367,20 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
         if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
             pass (relay lit_ranged(e, n, want));
         }
+    }
+    // TWO REFUSALS, SAID APART (1.0.8). With no context the literal is homeless;
+    // with a context of the WRONG FAMILY (`r ?! 99` wants a `tbb32`, `fail 5;`
+    // too, a `string` slot, a struct) something here does say what the slot is,
+    // and "write `42i32`" was advice the next check refused: an unsuffixed
+    // literal takes its width only from a slot of its own family.
+    if (want != 0i32) {
+        string:w1 = relay string_concat("this unsuffixed literal sits in a `",
+                        relay type_display(e.types, e.interns, want));
+        string:w2 = relay string_concat(w1,
+            "` slot, and a literal takes its width only from a slot of its own family; write a `");
+        string:w3 = relay string_concat(w2, relay type_display(e.types, e.interns, want));
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            relay string_concat(w3, "` value, or change the slot"), n.span));
     }
     string:m = relay string_concat(
         "this literal has no width suffix and nothing here says what it should be; write `",
@@ -527,6 +549,16 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
         if (lt == rt) { pass lt; }
     }
+    // A `tbb` MIXED WITH ANYTHING ELSE — a plain integer, or another `tbb`
+    // width — is the refusal, and it is said as one (1.0.8). This fell through
+    // to "is not a number, so it has no arithmetic", which contradicted the
+    // branch above it and blamed the type rather than the mixing.
+    if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
+        pass (relay te_tbb_mixed(e, at, lt, rt));
+    }
+    if ((raw type_kind(e.types, rt)) == (raw TY_TBB())) {
+        pass (relay te_tbb_mixed(e, at, rt, lt));
+    }
 
     // D-143: `flt128` stores and moves; it does not compute. (Soft-float
     // binary128 is verification-grade work with no consumer; the decision is
@@ -552,6 +584,16 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     pass common;
 };
 
+func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) {
+    string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, tbb));
+    string:m2 = relay string_concat(m1, "` computes only with another `");
+    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, tbb));
+    string:m4 = relay string_concat(m3, "`: a `tbb`'s arithmetic carries ERR, stickiness and saturation (D-008), so it does not mix with `");
+    string:m5 = relay string_concat(m4, relay type_display(e.types, e.interns, other));
+    string:m6 = relay string_concat(m5, "`; cast the other operand to the same `tbb` width");
+    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m6, at));
+};
+
 // The message names the TYPE that made it wrong, and says why that type is not a
 // number — because "./invalid operand" leaves the reader to work out which of two
 // familiar-looking things the compiler objected to.
@@ -574,7 +616,7 @@ pub func:why_not_numeric = string(ExprTyper->:e, int32:t) {
         pass "a character is not its code point (D-005); cast if you mean the number";
     }
     if (k == (raw TY_TBB())) {
-        pass "a `tbb` is an error-code type, and its arithmetic carries ERR, stickiness and saturation (D-008) rather than being `+`";
+        pass "a `tbb` computes only with another `tbb` of its own width: its arithmetic carries ERR, stickiness and saturation (D-008), which no other type's does";
     }
     if (k == (raw TY_KERNEL())) {
         pass "a kernel identifier compares but does not compute (D-042): an `fd` plus one is not an `fd`";
@@ -702,7 +744,7 @@ func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) {
     string:m1 = relay string_concat("`", d);
     string:m2 = relay string_concat(m1, "` has no bitwise operations");
     if (t == e.types.t_bool) {
-        m2 = relay string_concat(m2, "; `&&` and `||` are the logical operators");
+        m2 = relay string_concat(m2, "; `!`, `&&` and `||` are the logical operators");
     }
     pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
 };
@@ -1143,11 +1185,15 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
                 pass (relay resolve_type(@r, raw generic_value_type(dnode), e.scope));
             }
         }
-        // A TYPE NAME IN VALUE POSITION says what it is rather than "unknown".
+        // A NAME THAT IS NOT A VALUE SAYS WHAT IT IS rather than "unknown" — and
+        // WHICH kind it is (1.0.8): a macro, a module, a `Rules` block and an
+        // enum variant all fell through to "is a type, not a value".
         string:text = relay intern_get(e.interns, s.name);
         string:m1 = relay string_concat("`", text);
+        string:m2 = relay string_concat(m1, "` is ");
+        string:m3 = relay string_concat(m2, raw decl_kind_article(dnode));
         pass (relay te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(m1, "` is a type, not a value"), n.span));
+            relay string_concat(m3, ", not a value"), n.span));
     }
 
     // A `pick` destructuring binding takes its type from the scrutinee, which
@@ -1256,7 +1302,11 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                 "`#size_of` takes exactly one type argument", n.span));
         }
         if (argc != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            // A VALUE-argument count is a call-arity mistake and carries the
+            // call code, as `check_args` does; the type-argument count above
+            // keeps `TYPE_GENERIC_ARITY` ("an arity mistake is in the
+            // annotation"). Two codes for two questions (1.0.8).
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`#size_of` takes no value arguments; it is a question about a type",
                 n.span));
         }
@@ -1272,7 +1322,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                 n.span));
         }
         if (argc != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`#wild_ptr` takes exactly one value argument, the address", n.span));
         }
         int32:pointee = relay resolve_type(@r,
@@ -1295,7 +1345,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                 n.span));
         }
         if (argc != 2i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`#wild_slice` takes two value arguments, a pointer and an element count",
                 n.span));
         }
@@ -1345,6 +1395,13 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     int32:want = raw expected_value(e);
     if (want != 0i32) {
         if (raw type_is_integer(e.types, want)) { pass want; }
+        // The slot SAYS what it is, and it is not an integer (1.0.8): the
+        // unsuffixed `comptime` value cannot take a width from it.
+        string:c1 = relay string_concat("this `comptime` value has no width and sits in a `",
+                        relay type_display(e.types, e.interns, want));
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            relay string_concat(c1, "` slot, which is not an integer; write a suffix inside it"),
+            n.span));
     }
     pass (relay te_error(e, raw TYPE_UNKNOWN(),
         "this `comptime` value has no width and nothing here says what it should be; write a suffix inside it or give the surrounding expression a type",
@@ -1562,6 +1619,11 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
     }
 
     if (elem == 0i32) {
+        // EVERY ELEMENT ALREADY FAILED (1.0.8): a non-empty literal reaches here
+        // with no element type only when each element reported its own error,
+        // and "an empty array literal" about a two-element one was a second,
+        // false description of the same mistake.
+        if (cnt > 0i32) { pass 0i32; }
         // An EMPTY literal with no annotation describes nothing. `int32[0]:a = [];`
         // is fine; a bare `[]` is a value whose type nobody wrote.
         pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
@@ -1592,7 +1654,7 @@ func:type_pipe = int32(ExprTyper->:e, ExprNode:n) {
     if (np != 1i32) {
         string:p1 = relay string_concat("a pipe passes exactly one value, and this function takes ",
                         raw int_to_string(np => int64));
-        pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
             relay string_concat(p1, " parameter(s)"), n.span));
     }
     int32:want = raw type_param_at_of(e.ast, e.types, rt, 0i32);
@@ -1849,6 +1911,11 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
 
     // `$` inside `loop`/`till` — a counter with a type and no declaration.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
+        if (e.counted_depth == 0i32) {
+            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+                "`$` is the innermost counted loop's counter, and no `loop` or `till` encloses this",
+                n.span));
+        }
         pass (raw tt_int(e.types, 64i32, true));
     }
 

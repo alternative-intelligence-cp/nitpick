@@ -117,8 +117,12 @@ func:p_parse_pattern = PatId(Parser->:p) {
     if (relay p_at(p, TokenKind.OpBang)) {
         if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PRParen) {
             drop p_advance(p);
+            // `#unreachable()` IS THE SPEC'S ANSWER (D-061) AND IS NOT PROVIDED
+            // YET — the builtins are `#size_of`, `#wild_ptr`, `#wild_slice` —
+            // so the message says so rather than sending the reader to a
+            // `NITPICK-MACRO-001` (1.0.8; the builtin is 1.0.9's).
             drop p_error(p, raw PARSE_UNREACHABLE_MARKER(),
-                "`(!)` is removed; write the arm normally with `#unreachable()` as its body, which traps");
+                "`(!)` is removed (D-061); write the arm normally — its body is `#unreachable()`, which traps, once that builtin is provided (cycle 1.0.9), and an explicit `!!! code;` until then");
             pass (raw pat_none());
         }
     }
@@ -144,8 +148,11 @@ func:p_parse_pattern = PatId(Parser->:p) {
         pass (raw pat_none());
     }
     if (raw token_kind_is_builtin_type(relay p_kind(p))) {
+        // A BUILTIN TYPE KEYWORD IN A PATTERN. There is no "match on a type",
+        // and a scalar cannot be destructured, so the old advice ("use a
+        // destructuring pattern") could not be followed (1.0.8).
         drop p_error(p, raw PARSE_BAD_PATTERN(),
-            "a pattern matches a value, and this is a type; to match on a type use a destructuring pattern");
+            "a pattern matches a value, and this is a type name; write the value to compare against — `(0i32)` — or `(*)` for any");
         drop p_advance(p);
         pass (raw pat_none());
     }

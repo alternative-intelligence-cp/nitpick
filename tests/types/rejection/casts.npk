@@ -13,11 +13,24 @@ func:narrowing = int32(int64:wide) {
 };
 
 // A cast between types that are not numbers at all is not a width question. A
-// character is not its code point (D-005).
-// expect-error: NITPICK-TYPE-009
+// character is not its code point (D-005) — and there is NO conversion to
+// `bool`, so this is not the lossy code but its own (1.0.8): `=>!` opts out of
+// a check, and there is no check here to opt out of.
+// expect-error: NITPICK-TYPE-032
 func:char_to_bool = bool(char8:c) {
     bool:b = c => bool;
     pass b;
+};
+
+// A STRUCT IS NOT A DESCRIPTOR (1.0.8). Until then the kernel-identifier arm
+// tested only the target, so `Point =>! fd` — and a string, a pointer, a float
+// — was accepted as an "opt-out": a value with no meaning as a handle, asserted
+// into one. Only an integer may be (D-042, D-095), and only with `=>!`.
+// expect-error: NITPICK-TYPE-032
+struct:Point = { int32:x; int32:y; };
+func:forged = fd(Point:p) {
+    fd:h = p =>! fd;
+    pass h;
 };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };

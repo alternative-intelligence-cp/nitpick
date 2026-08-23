@@ -31,3 +31,12 @@ pub func:DERIVE_DUPLICATE = string()    { pass "NITPICK-DERIVE-003"; };
 // FROM a type's shape — fields, or variants — so there is nothing to generate from
 // on a function or a module.
 pub func:DERIVE_TARGET = string()       { pass "NITPICK-DERIVE-004"; };
+
+// ONE OF THE SEVEN, REFUSED RATHER THAN GENERATED (1.0.8). `Hash`, and `Ord`
+// on an enum, are names `#[derive]` knows and does not yet write a body for;
+// both carried `DERIVE_UNKNOWN` — "a name that is not one of the seven" — for
+// names that are, and their messages gave reasons the language has since
+// removed (`s.ptr[i]` exposes a string's bytes since 0.7.8; `enum =>! int32`
+// reads a tag since 0.8.0). The honest state is its own code: the generator
+// is owed (1.0.9), and a reader filtering on "unknown name" should not find it.
+pub func:DERIVE_NOT_GENERATED = string(){ pass "NITPICK-DERIVE-005"; };

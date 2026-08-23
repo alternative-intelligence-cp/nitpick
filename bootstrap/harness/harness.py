@@ -511,6 +511,7 @@ SLOT_SITE_PAIRS = {
     "check_assign":        {"emit_assign"},
     "check_pass":          {"emit_pass"},
     "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call"},
+    "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
     "check_ctor_args":     {"emit_ctor"},
     "type_struct_literal": {"emit_struct_lit"},
     "type_array_literal":  {"emit_array_lit"},
@@ -599,6 +600,46 @@ def check_slot_sites_agree():
         if b not in claimed:
             fails.append("slot-sites: `%s` calls `emit_fit` (%s) and no `fits` "
                          "site is paired with it" % (b, ", ".join(where)))
+    return fails
+
+
+def check_one_renderer():
+    """Every driver prints diagnostics through `diag_line`, and no diagnostic is
+    constructed with an empty message (1.0.8).
+
+    Five renderers existed and no two agreed; the two that ran dropped the
+    message, so 79 hand-written messages never reached a reader and were never
+    reviewed -- 1.0.4c wrote one whose two halves were bound to declaration
+    order, backwards, and nothing could have shown it. The drift was possible
+    only because a second renderer was allowed to exist, so this pins the
+    thing that broke: no `func:emit_line` in a driver, and every driver that
+    reports at all names `diag_line`. The empty-message rule is cheap and
+    catches the construction site that writes the code and forgets the rest.
+    """
+    fails = []
+    drivers = [os.path.join(ROOT, "src", "main.npk")] + sorted(
+        glob.glob(os.path.join(ROOT, "tools", "*.npk")))
+    for p in drivers:
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        rel = os.path.relpath(p, ROOT)
+        if re.search(r"^\s*(?:pub )?func:emit_line\b", text, re.M):
+            fails.append("%s defines its own `emit_line` -- diagnostics render "
+                         "through `diag_line` (diagnostics.npk) and nowhere else"
+                         % rel)
+        if "diaglist_at(" in text and "diag_line(" not in text:
+            fails.append("%s walks a diagnostic list without `diag_line` -- a "
+                         "second renderer, or none" % rel)
+    ctors = r"\b(te_error|ty_error|p_error|diag_error|diag_warning|diag_note|diag_make)\("
+    for p in glob.glob(os.path.join(ROOT, "src", "**", "*.npk"), recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                if line.lstrip().startswith("//"):
+                    continue
+                if re.search(ctors, line) and re.search(r',\s*""\s*[,)]', line):
+                    fails.append("%s:%d constructs a diagnostic with an EMPTY "
+                                 "message -- a reader cannot act on a code alone"
+                                 % (os.path.relpath(p, ROOT), i))
     return fails
 
 
@@ -1087,12 +1128,23 @@ def check_module_rejection(binary, path, name, exp):
         return ["%s: expected %s, but it resolved cleanly"
                 % (name, [c for c, _, _ in exp.errors])]
 
-    # `CODE line:col`, and `note CODE line:col` for a note.
+    # `CODE path:line:col: message` (1.0.8), and `note CODE …` / `warning CODE …`
+    # in front of it for those severities; an error is the unmarked case.
     #
     # NOTES ARE NOT FINDINGS AND ARE NOT ASSERTED. `NITPICK-MACRO-009` says where a
     # macro body was expanded; making every expansion-related rejection test list a
     # code about a LOCATION would be asserting the wrong thing, and a suite that
     # could not tell the two apart would have to.
+    #
+    # KEYED ON POSITION, NOT ON TOKEN COUNT. This accepted a line only when it
+    # split into exactly two tokens -- `CODE path:line:col` -- so the day the
+    # message was appended (1.0.8) every line grew past two tokens, matched
+    # nothing, and every rejection test failed at once with "expected [CODE],
+    # got []", which reads like the checker broke rather than like the printer
+    # changed. The code is token 0, the span is token 1 (its trailing colon is
+    # the separator before the message), and everything after is the message,
+    # which expectations deliberately never assert -- codes are stable
+    # identifiers, wording stays free to improve.
     got = []
     notes = []
     # Diagnostics arrive on STDERR since 0.8.5 (D-141): stdout is the product
@@ -1103,17 +1155,27 @@ def check_module_rejection(binary, path, name, exp):
         if parts and parts[0] == "note":
             parts = parts[1:]
             into = notes
-        if len(parts) == 2 and ":" in parts[1]:
+        elif parts and parts[0] == "warning":
+            parts = parts[1:]
+        if len(parts) >= 2 and ":" in parts[1]:
             # `CODE path:line:col` since 0.8.0 (`CODE line:col` before a module
             # graph made bare line numbers ambiguous across sixty files). The
             # span is the LAST two fields; everything before them is the path,
             # which expectations deliberately do not assert.
-            pieces = parts[1].rsplit(":", 2)
+            span = parts[1].rstrip(":")
+            pieces = span.rsplit(":", 2)
             if len(pieces) == 3:
                 _, ln, cl = pieces
             else:
-                ln, _, cl = parts[1].partition(":")
-            into.append((parts[0], int(ln), int(cl)))
+                ln, _, cl = span.partition(":")
+            try:
+                into.append((parts[0], int(ln), int(cl)))
+            except ValueError:
+                # A line whose second token is not `path:line:col` -- the
+                # `<unknown file>` fallback -- is not a positioned finding, as
+                # `CODE <no span>: …` never was (its second token has no colon
+                # and never reached here).
+                continue
 
     fails = []
     for code, line, col in exp.errors:
@@ -1514,6 +1576,7 @@ def main(argv):
         failures += check_codes_centralised()
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
+        failures += check_one_renderer()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
 

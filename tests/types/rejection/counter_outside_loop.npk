@@ -1,0 +1,15 @@
+// expect-error: NITPICK-TYPE-001
+//
+// `$` NAMES THE INNERMOST COUNTED LOOP'S COUNTER, and outside any `loop`/`till`
+// it names nothing (1.0.8). Until then the checker typed it `int64` anywhere
+// and the EMITTER refused it — as an internal defect, "a node it has no
+// classification for; this is a defect in the compiler, not in this program",
+// which was backwards: the program was wrong and the compiler said it was not.
+mod:counter_outside_loop;
+
+func:main = int32(cstring[]:_~argv) {
+    int64:x = $;
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

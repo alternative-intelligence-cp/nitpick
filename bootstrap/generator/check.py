@@ -647,15 +647,19 @@ class Checker:
             if isinstance(obj, T.Ptr):
                 obj = obj.elem
             if isinstance(obj, T.Prim) and obj.name == "string":
+                # A STRING'S BYTES ARE `uint8`, as the real checker types them
+                # (type_access.npk, 0.7.8): a code unit is 0..255. The seed said
+                # `int8` until 1.0.8, so `(s.ptr[i]) => int64` sign-extended a
+                # UTF-8 lead byte to a negative number in seed-built code.
                 if e.name == "ptr":
-                    return T.Ptr(T.Prim("int8"))
+                    return T.Ptr(T.Prim("uint8"))
                 if e.name in ("len", "cap"):
                     return T.I64
             if isinstance(obj, T.Prim) and obj.name == "cstring":
                 # {ptr, i64} and no cap: a cstring is never grown and is not ours
                 # to free (D-049).
                 if e.name == "ptr":
-                    return T.Ptr(T.Prim("int8"))
+                    return T.Ptr(T.Prim("uint8"))
                 if e.name == "len":
                     return T.I64
             if isinstance(obj, T.Slice) and e.name == "len":

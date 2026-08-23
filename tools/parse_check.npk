@@ -38,14 +38,6 @@ use "../src/frontend/parse_pick.npk".*;
 use "../src/frontend/parse_decl.npk".*;
 use "../src/frontend/source.npk".*;
 
-func:emit_line = NIL(NioW->:out, Diagnostic:d) {
-    string:m1 = raw string_concat(d.code, " ");
-    string:m2 = raw string_concat(m1, raw int_to_string(d.span.line => int64));
-    string:m3 = raw string_concat(m2, ":");
-    string:m4 = raw string_concat(m3, raw int_to_string(d.span.col => int64));
-    pass (relay nio_line(out, m4));
-};
-
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         NioW:uw = raw nio_stderr();
@@ -91,13 +83,13 @@ func:main = int32(cstring[]:argv) {
     int64:i = 0i64;
     NioW:ew = raw nio_stderr();
     while (i < (raw diaglist_count(@lexed))) {
-        drop emit_line(@ew, raw diaglist_at(@lexed, i));
+        drop nio_line(@ew, relay diag_line(raw diaglist_at(@lexed, i), @sm));
         n = n + 1i64;
         i = i + 1i64;
     }
     i = 0i64;
     while (i < (raw diaglist_count(@parsed))) {
-        drop emit_line(@ew, raw diaglist_at(@parsed, i));
+        drop nio_line(@ew, relay diag_line(raw diaglist_at(@parsed, i), @sm));
         n = n + 1i64;
         i = i + 1i64;
     }

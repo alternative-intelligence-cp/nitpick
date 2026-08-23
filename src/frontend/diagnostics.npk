@@ -10,6 +10,7 @@ use "./source_location.npk".*;
 // than a cycle — which matters here, because the seed emits in dependency order
 // and 0.4.6 found a back edge making it emit a caller before its callee.
 use "./intern.npk".*;
+use "./source.npk".*;   // srcmgr_path, for the one renderer (1.0.8)
 
 pub enum:Severity = {
     Note    = 0i32;
@@ -262,41 +263,71 @@ pub func:sink_byte_at = uint8(Sink->:out, int64:i) {
 // concatenation.
 // ---------------------------------------------------------------------------
 
-pub func:severity_name = string(int32:sev) {
-    if (sev == 2i32) {
-        pass "error";
+// ONE LINE, ONE FORMATTER (1.0.8). `CODE path:line:col: message` — the code
+// FIRST, where a reader scanning a wall of output finds the stable identifier
+// in the same column every time; a note or a warning says so in front of it,
+// an error is the unmarked case; a spanless diagnostic renders `<no span>`
+// rather than being dropped (D-162); and the MESSAGE, which is the only part
+// that says what to do about the refusal.
+//
+// Until 1.0.8 there were five renderers and no two agreed: the two real drivers
+// printed `CODE path:line:col` and dropped the message, the two single-file
+// tools printed `CODE line:col` and dropped both, and the one that kept the
+// message (this file's, reached from one test) dropped the path. Seventy-nine
+// messages had been written and none had reached a reader — which is also
+// why none had been reviewed. The string is built here and WRITTEN by the
+// caller, because the drivers write to a `NioW` and the tests to a `Sink`,
+// and a renderer per sink is how the drift began.
+pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) {
+    string:m = "";
+    if (d.severity == 0i32) { m = "note "; }
+    if (d.severity == 1i32) { m = "warning "; }
+    m = relay string_concat(m, d.code);
+    m = relay string_concat(m, " ");
+    if (d.span.file < 0i32) {
+        m = relay string_concat(m, "<no span>");
+    } else {
+        // A FILE THE MANAGER DOES NOT HOLD is rendered, not lost: the same rule
+        // as `<no span>`, for the same reason. (Spelled out rather than with
+        // `?`, which the seed that still builds this file cannot lower.)
+        Result<string>:pr = srcmgr_path(sm, d.span.file);
+        if (pr.is_error) {
+            m = relay string_concat(m, "<unknown file>");
+        } else {
+            m = relay string_concat(m, pr.value);
+        }
+        m = relay string_concat(m, ":");
+        m = relay string_concat(m, raw int_to_string(d.span.line => int64));
+        m = relay string_concat(m, ":");
+        m = relay string_concat(m, raw int_to_string(d.span.col => int64));
     }
-    if (sev == 1i32) {
-        pass "warning";
-    }
-    pass "note";
+    m = relay string_concat(m, ": ");
+    m = relay string_concat(m, d.message);
+    pass m;
 };
 
-pub func:diag_render = NIL(Diagnostic:d, Sink->:out) {
-    if (raw span_has_location(d.span)) {
-        drop sink_write(out, raw int_to_string(d.span.line => int64));
-        drop sink_write(out, ":");
-        drop sink_write(out, raw int_to_string(d.span.col => int64));
-        drop sink_write(out, ": ");
-    }
-    drop sink_write(out, raw severity_name(d.severity));
-    drop sink_write(out, "[");
-    drop sink_write(out, d.code);
-    drop sink_write(out, "]: ");
-    drop sink_write(out, d.message);
+// The line that says the list was capped — the drivers print it too (1.0.8);
+// before, only the test sink ever mentioned that anything had been dropped.
+pub func:diag_overflow_line = string() {
+    pass "note NITPICK-DIAG-001 <no span>: further diagnostics suppressed";
+};
+
+pub func:diag_render = NIL(Diagnostic:d, SourceManager->:sm, Sink->:out) {
+    drop sink_write(out, relay diag_line(d, sm));
     drop sink_write(out, "\n");
     pass NIL;
 };
 
-pub func:diaglist_render = NIL(DiagList->:list, Sink->:out) {
+pub func:diaglist_render = NIL(DiagList->:list, SourceManager->:sm, Sink->:out) {
     drop diaglist_sort(list);
     int64:i = 0i64;
     while (i < list.count) {
-        drop diag_render(list.items[i], out);
+        drop diag_render(list.items[i], sm, out);
         i = i + 1i64;
     }
     if (list.overflowed) {
-        drop sink_write(out, "note[NITPICK-DIAG-001]: further diagnostics suppressed\n");
+        drop sink_write(out, raw diag_overflow_line());
+        drop sink_write(out, "\n");
     }
     pass NIL;
 };

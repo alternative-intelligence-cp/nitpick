@@ -91,10 +91,16 @@ func:main = int32(cstring[]:_~argv) {
     // a bare name two things could plausibly mean is worth a word.
     DiagList:d5 = raw diaglist_init();
     Loaded:l5 = raw load("tests/modules/vis/shadow.npk", @it, @d5);
-    if (raw diaglist_count(@d5) != 1i64)              { exit 50i32; }
+    // THE WARNING AND ITS NOTE (1.0.8): the warning sits at the `use`, and the
+    // note says where the local declaration it describes actually is — the
+    // message used to claim "declared here" about the import line.
+    if (raw diaglist_count(@d5) != 2i64)              { exit 50i32; }
     Diagnostic:w = raw diaglist_at(@d5, 0i64);
     if (!(raw string_eq(w.code, raw RESOLVE_SHADOWED())) ) { exit 51i32; }
     if (w.severity != ((Severity.Warning => int32)))  { exit 52i32; }
+    Diagnostic:wn = raw diaglist_at(@d5, 1i64);
+    if (!(raw string_eq(wn.code, raw RESOLVE_SHADOWED())) ) { exit 56i32; }
+    if (wn.severity != ((Severity.Note => int32)))    { exit 57i32; }
     // The local declaration is what `shared` means here, so the symbol is NOT an
     // import.
     int32:shared_n = raw intern_add(@it, "shared");

@@ -408,14 +408,49 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 k = k + 1i64;
             }
         } else {
-            cp = q => int64;
-            drop lexer_advance(lx);
+            // ONE CODE POINT, NOT ONE BYTE (1.0.8): a character literal holds
+            // a SourceCharacter (LEXICAL_REFERENCE §6.3), so `'é'` is legal and
+            // was reported as unterminated, the closing quote being one byte
+            // further on than the lexer looked.
+            EscapeResult:u = raw utf8_decode(lx.text, lx.pos);
+            if (!(u.valid)) {
+                Span:sp = raw lexer_span_from(lx, start, line, col);
+                drop diaglist_push(diags,
+                    raw diag_error(raw LEX_UNTERMINATED_CHAR(),
+                        "this character literal does not hold valid UTF-8", sp));
+                pass (raw token_make(TokenKind.Error, sp, 0i64));
+            }
+            cp = u.codepoint;
+            int64:uk = 0i64;
+            while (uk < u.consumed) {
+                drop lexer_advance(lx);
+                uk = uk + 1i64;
+            }
         }
         if ((raw lexer_peek(lx)) != 39u8) {
             Span:sp = raw lexer_span_from(lx, start, line, col);
+            // TWO MISTAKES, TWO SENTENCES: a literal that never closes, and one
+            // that holds more than one character (`'ab'`) — the second is what
+            // a reader who wrote two characters needs to hear.
+            string:cmsg = "unterminated character literal";
+            uint8:nx = raw lexer_peek(lx);
+            if (nx != 0u8) {
+                if (nx != 10u8) {
+                    cmsg = "a character literal holds exactly one character; this one holds more";
+                    // RESYNC PAST THE CLOSING QUOTE on this line, so the rest
+                    // of `'ab'` is not re-lexed as a second, unterminated
+                    // literal — one mistake, one diagnostic.
+                    uint8:sk = raw lexer_peek(lx);
+                    while (sk != 0u8) {
+                        if (sk == 10u8) { sk = 0u8; } else {
+                            drop lexer_advance(lx);
+                            if (sk == 39u8) { sk = 0u8; } else { sk = raw lexer_peek(lx); }
+                        }
+                    }
+                }
+            }
             drop diaglist_push(diags,
-                raw diag_error(raw LEX_UNTERMINATED_CHAR(),
-                    "unterminated character literal", sp));
+                raw diag_error(raw LEX_UNTERMINATED_CHAR(), cmsg, sp));
             pass (raw token_make(TokenKind.Error, sp, 0i64));
         }
         drop lexer_advance(lx);
@@ -425,10 +460,10 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     }
 
     if ((raw is_ident_start(c)) || (raw is_digit(c))) {
-        // One maximal [0-9a-zA-Z_] run. A hex literal can begin with a letter
-        // (`FFhex`), so a numeric literal and an identifier are the same
-        // characters until the end -- only reading the run from the RIGHT tells
-        // them apart (numeric.npk).
+        // One maximal [0-9a-zA-Z_] run. Every numeric literal begins with a
+        // decimal digit since D-147 (`0FFhex`, never `FFhex`), so the first
+        // character decides; the run is still read whole, and numeric.npk
+        // classifies it from the RIGHT (the base suffix).
         while (raw is_ident_part(raw lexer_peek(lx))) {
             drop lexer_advance(lx);
         }

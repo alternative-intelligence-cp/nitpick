@@ -15,6 +15,7 @@
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
+use "./token_name.npk".*;   // token_kind_name, for the arity message (1.0.8)
 use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
@@ -353,20 +354,34 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
             string:a4 = relay string_concat(a3, "` and `");
             string:a5 = relay string_concat(a4,
                             relay type_display(r.types, r.interns, other));
+            // NO TRAIT-QUALIFIED PROJECTION EXISTS (D-164 gives `T.Item` and
+            // nothing else), so the advice names what can be written (1.0.8).
             pass (relay ty_error(r, raw TYPE_AMBIGUOUS_METHOD(),
                 relay string_concat(a5,
-                    "`; there is no rule to choose by, so name the trait whose associated type you mean"),
+                    "`; there is no rule to choose by, and no spelling names the trait — bound the parameter by only the trait whose associated type is meant, or split the two traits across two parameters"),
                 n.span));
         }
         if (found != 0i32) { pass found; }
+        string:u1 = relay string_concat("`",
+                        relay type_display(r.types, r.interns, base));
+        string:u2 = relay string_concat(u1, "` has no associated type `");
+        string:u3 = relay string_concat(u2, relay intern_get(r.interns, name));
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+            relay string_concat(u3, "`; none of its bounds declares one"), n.span));
     }
 
+    // A PROJECTION FROM A CONCRETE TYPE cannot be answered HERE (1.0.8): the
+    // impl that binds it lives in the impl table, which type resolution does
+    // not hold (D-164 — `type_subst` normalises `Counter.Item` where the table
+    // is in hand). This said "`Counter` has no associated type `Item`" about an
+    // impl that exists; it says what it knows now.
     string:m1 = relay string_concat("`",
                     relay type_display(r.types, r.interns, base));
-    string:m2 = relay string_concat(m1, "` has no associated type `");
+    string:m2 = relay string_concat(m1, ".");
     string:m3 = relay string_concat(m2, relay intern_get(r.interns, name));
     pass (relay ty_error(r, raw TYPE_UNKNOWN(),
-        relay string_concat(m3, "`"), n.span));
+        relay string_concat(m3, "` projects from a concrete type, which this position cannot resolve; write the bound type itself, or project from a bounded parameter (`T.Item`)"),
+        n.span));
 };
 
 // A pointer's pointee, which is the one position where a bare `any` is legal.
@@ -422,7 +437,10 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
     // A BUILTIN TYPE KEYWORD THE TABLES DO NOT KNOW. Reaching here means the
     // keyword list and the type tables have drifted apart, which is a compiler
     // defect rather than a program one.
-    pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+    // Under the DEFECT code (1.0.8): `type_codes.npk` says a compiler defect is
+    // `TYPE_INTERNAL` "and not `TYPE_UNKNOWN`", and a reader filtering on the
+    // unknown-name code should not find the compiler's own holes in it.
+    pass (relay ty_error(r, raw TYPE_INTERNAL(),
         "this builtin type keyword has no entry in the type tables", n.span));
 };
 
@@ -489,6 +507,14 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // "`helper` is a function, not a type" ends the search immediately.
     string:text = relay intern_get(r.interns, name);
     string:k1 = relay string_concat("`", text);
+    // AN `opaque struct` IS A TYPE WITH NO VALUE TYPE BEHIND IT YET (D-066,
+    // D-149): said as the refusal it is, rather than "is an opaque type, not a
+    // type" — a sentence that contradicts itself (1.0.8).
+    if (dnode.kind == DeclKind.DeclOpaqueDecl) {
+        pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(),
+            relay string_concat(k1, "` is an `opaque struct`: a layout this program cannot see (D-066), and no rung gives it a value type yet — that arrives with the driver interface (D-149, cycle 1.1)"),
+            n.span));
+    }
     string:k2 = relay string_concat(k1, "` is ");
     string:k3 = relay string_concat(k2, raw decl_kind_article(dnode));
     string:k4 = relay string_concat(k3, ", not a type");
@@ -1505,18 +1531,29 @@ func:arity_error = int32(TypeResolver->:r, TypeNode:n, int32:name,
     pass (relay ty_error(r, raw TYPE_GENERIC_ARITY(), m5, n.span));
 };
 
+// EVERY KIND HAS A NAME (1.0.8): this answered "not a type" for an enum, a
+// trait, a generic parameter and an associated type — all of them types — so
+// `Color{ x: 1i32 }` reported "`Color` is not a type, and a `{ … }` literal
+// builds a struct", and a bare macro or module in value position reported
+// "is a type, not a value". The article is the noun the reader needs.
 pub func:decl_kind_article = string(DeclNode:d) {
-    if (d.kind == DeclKind.DeclFunctionDecl) { pass "a function"; }
-    if (d.kind == DeclKind.DeclGlobalDecl)   { pass "a global"; }
-    if (d.kind == DeclKind.DeclModuleDecl)   { pass "a module"; }
-    if (d.kind == DeclKind.DeclParamDecl)    { pass "a parameter"; }
-    if (d.kind == DeclKind.DeclFieldDecl)    { pass "a field"; }
-    if (d.kind == DeclKind.DeclEnumVariant)  { pass "an enum variant"; }
-    if (d.kind == DeclKind.DeclMacroDecl)    { pass "a macro"; }
-    if (d.kind == DeclKind.DeclRuleDecl)     { pass "a `Rules` block"; }
-    if (d.kind == DeclKind.DeclExternFn)     { pass "an extern function"; }
-    if (d.kind == DeclKind.DeclOpaqueDecl)   { pass "an opaque type"; }
-    pass "not a type";
+    if (d.kind == DeclKind.DeclFunctionDecl)  { pass "a function"; }
+    if (d.kind == DeclKind.DeclGlobalDecl)    { pass "a global"; }
+    if (d.kind == DeclKind.DeclModuleDecl)    { pass "a module"; }
+    if (d.kind == DeclKind.DeclParamDecl)     { pass "a parameter"; }
+    if (d.kind == DeclKind.DeclFieldDecl)     { pass "a field"; }
+    if (d.kind == DeclKind.DeclEnumVariant)   { pass "an enum variant"; }
+    if (d.kind == DeclKind.DeclMacroDecl)     { pass "a macro"; }
+    if (d.kind == DeclKind.DeclRuleDecl)      { pass "a `Rules` block"; }
+    if (d.kind == DeclKind.DeclExternFn)      { pass "an extern function"; }
+    if (d.kind == DeclKind.DeclOpaqueDecl)    { pass "an `opaque struct`"; }
+    if (d.kind == DeclKind.DeclStructDecl)    { pass "a struct"; }
+    if (d.kind == DeclKind.DeclEnumDecl)      { pass "an enum"; }
+    if (d.kind == DeclKind.DeclTraitDecl)     { pass "a trait"; }
+    if (d.kind == DeclKind.DeclImplDecl)      { pass "an impl"; }
+    if (d.kind == DeclKind.DeclGenericParam)  { pass "a generic parameter"; }
+    if (d.kind == DeclKind.DeclAssocTypeDecl) { pass "an associated type"; }
+    pass "a declaration of another kind";
 };
 
 // `Result<T>` and `Optional<T>` — one argument each, and the argument is a type.
@@ -1539,8 +1576,11 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
 
     int32:count = raw type_args_count(n);
     if (count != 1i32) {
-        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
-            "this type takes exactly one type argument", n.span));
+        // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).
+        string:g1 = relay string_concat("`",
+                        relay token_kind_name(as_kind));
+        pass (relay ty_error(r, raw TYPE_GENERIC_ARITY(),
+            relay string_concat(g1, "` takes exactly one type argument"), n.span));
     }
     TypeId:arg = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), 0i32) };
     int32:inner = relay resolve_type(r, arg, scope);
@@ -1856,6 +1896,12 @@ func:type_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
     if (n.kind == TypeKind.TypeOptionalType) {
         pass (relay type_mentions_self(ast, trait_decl, raw type_inner(n), fuel - 1i32));
     }
+    // A PROJECTION MENTIONS ITS BASE (D-164's obligation on every walker,
+    // missed until the 1.0.8 audit): `Self.Item` in a non-receiver position
+    // is `Self` in a non-receiver position.
+    if (n.kind == TypeKind.TypeProjection) {
+        pass (relay type_mentions_self(ast, trait_decl, raw type_projection_base(n), fuel - 1i32));
+    }
     if (n.kind == TypeKind.TypeArrayType) {
         pass (relay type_mentions_self(ast, trait_decl, raw type_element(n), fuel - 1i32));
     }
@@ -2048,8 +2094,12 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
         if (report) {
             DeclId:g0 = raw fn_generic(r.ast, m, 0i32);
             DeclNode:gn = relay ast_decl(r.ast, g0);
-            string:what = "a comptime type parameter";
-            if (raw generic_is_value(gn)) { what = "a comptime value parameter"; }
+            // `comptime` IS THE MARKER FOR A VALUE PARAMETER (D-064; the note
+            // at `value_param_in_type_position` says so) — an un-marked `<T>`
+            // is a type parameter, and calling it "comptime" sent the reader
+            // looking for a keyword that is not there (1.0.8).
+            string:what = "a type parameter";
+            if (raw generic_is_value(gn)) { what = "a `comptime` value parameter"; }
             string:w1 = relay string_concat("has ", what);
             drop not_object_safe(r, trait_id, mname,
                 relay string_concat(w1,

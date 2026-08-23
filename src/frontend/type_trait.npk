@@ -156,15 +156,25 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
             pass NIL;
         }
 
+        // THE SEGMENT RESOLVES UNDER THE IMPL'S OWN PARAMETERS (1.0.8), as the
+        // family path below resolves its target — so `impl:<T>:List<T> = …`
+        // yields one refusal about the impl rather than "there is no type
+        // named `T`" first. What the author wrote there is an inherent impl
+        // over a family, which D-161's segment rule cannot admit (T-7, raised
+        // at 1.0.9); the message says so instead of "not a trait".
+        IdSpan:bgw = raw decl_generic_window(r.ast, d);
+        GenericScope:bsaved = r.generics;
+        r.generics = GenericScope{ params_start: bgw.start, params_count: bgw.count,
+                                   args_start: 0i32, args_count: 0i32 };
         int32:bt = relay resolve_type(r, btt, scope);
+        r.generics = bsaved;
         if (bt == 0i32) { pass NIL; }
         if (raw type_is_invalid(r.types, bt)) { pass NIL; }
         if ((raw type_kind(r.types, bt)) != (raw TY_TRAIT())) {
             string:n1 = relay string_concat("`", relay type_display(r.types, r.interns, bt));
-            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                relay string_concat(n1,
-                    "` is not a trait, so it cannot be implemented; in `impl:<T: Bound>:Trait` the trait comes last"),
-                d.span));
+            string:n2 = relay string_concat(n1,
+                "` is not a trait, so this impl implements nothing: an impl that declares parameters names a trait last (`impl:<T>:Target<T>:Trait`), and an INHERENT impl over a generic family is not admitted (T-7)");
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), n2, d.span));
             pass NIL;
         }
 
@@ -1195,10 +1205,17 @@ func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) {
     string:m4 = relay string_concat(m3, " of `");
     string:m5 = relay string_concat(m4,
                     relay type_display(r.types, r.interns, e.trait_id));
+    // A METHOD WITH NO TRAIT BEHIND IT belongs in an inherent block; an
+    // ASSOCIATED TYPE with none belongs nowhere — it is declared in the trait
+    // and bound in its impls, and an inherent block's `assoc` is read by
+    // nothing (1.0.8: the one tail sent the reader to write a declaration
+    // nothing would read).
+    string:tail = "`; an inherent `impl:Type = { … };` is where a member with no trait behind it belongs";
+    if (raw string_eq(what, "associated type")) {
+        tail = "`; an associated type is declared in the trait (`assoc:Item;`) and bound in its impls, and this trait declares no such name";
+    }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5,
-            "`; an inherent `impl:Type = { … };` is where a member with no trait behind it belongs"),
-        m.span));
+        relay string_concat(m5, tail), m.span));
     pass NIL;
 };
 
@@ -1767,7 +1784,7 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) {
                 DeclNode:bm = relay ast_decl(r.ast, bid);
                 if (bm.kind == DeclKind.DeclFunctionDecl) {
                     if ((raw decl_name(bm)) == (raw decl_name(am))) {
-                        drop dup_error(r, e, am, bm);
+                        drop dup_error(r, e, am, bm, false);
                     }
                 }
                 j = j + 1i32;
@@ -1795,7 +1812,7 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
             if (other != 0i32) {
                 DeclId:oid = DeclId{ index: other };
                 DeclNode:om = relay ast_decl(r.ast, oid);
-                drop dup_error(r, first, am, om);
+                drop dup_error(r, first, am, om, true);
             }
         }
         i = i + 1i32;
@@ -1806,8 +1823,11 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
 // The SECOND declaration carries the span and the first one's line is named, the
 // same shape the coherence diagnostic uses — a reader told only that something is
 // duplicated has to go and find the other one.
+// `across` says which rule fired (1.0.8): the one tail — "two inherent blocks
+// are one namespace" — was written for `dup_across` and printed for
+// `dup_within` too, which runs on EVERY impl, trait impls included.
 func:dup_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:first,
-                     DeclNode:second) {
+                     DeclNode:second, bool:across) {
     string:m1 = relay string_concat("`",
                     relay intern_get(r.interns, raw decl_name(second)));
     string:m2 = relay string_concat(m1, "` is already a method of `");
@@ -1815,9 +1835,11 @@ func:dup_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:first,
                     relay type_display(r.types, r.interns, e.target));
     string:m4 = relay string_concat(m3, "`, declared at line ");
     string:m5 = relay string_concat(m4, raw int_to_string(first.span.line => int64));
+    string:tail = "; a name may be declared once in an impl block";
+    if (across) {
+        tail = "; two inherent blocks are one namespace, so a name may be declared in only one of them";
+    }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5,
-            "; two inherent blocks are one namespace, so a name may be declared in only one of them"),
-        second.span));
+        relay string_concat(m5, tail), second.span));
     pass NIL;
 };

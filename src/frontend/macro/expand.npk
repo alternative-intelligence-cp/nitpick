@@ -1638,8 +1638,17 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) {
             if (inside) { inside = (g.span.line >= e.lo); }
             if (inside) { inside = (g.span.line <= e.hi); }
             if (inside) {
+                // THE NOTE NAMES THE DIAGNOSTIC IT ANNOTATES (1.0.8): it sits
+                // at the INVOCATION, which is not "inside a macro body", and
+                // after sorting it may be far from the line it explains — so
+                // the line is in the sentence.
+                string:n1 = relay string_concat("the ", g.code);
+                string:n2 = relay string_concat(n1, " at line ");
+                string:n3 = relay string_concat(n2,
+                                raw int_to_string(g.span.line => int64));
                 drop diaglist_push(d, raw diag_note(raw MACRO_EXPANDED_HERE(),
-                    "this is inside a macro body, expanded here",
+                    relay string_concat(n3,
+                        " lies in a macro body that this invocation expanded"),
                     e.site));
             }
             s = s + 1i32;
@@ -1859,14 +1868,14 @@ func:splice_field = DeclId(Expander->:x, StmtId:src) {
             v.span);
         pass (raw decl_none());
     }
-    if ((relay stmt_quals(x.ast, v)) != 0i32) {
-        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
-            "a field carries no qualifiers, so this declaration cannot be spliced into a struct body with one written on it",
-            v.span);
-        pass (raw decl_none());
-    }
+    // THE QUALIFIER TRAVELS (1.0.8). A field DOES carry qualifiers — slot `c`,
+    // read by `p_qualifiers` exactly as a statement declaration's is — and this
+    // refused a `wild int8->:buf;` in a macro body with "a field carries no
+    // qualifiers", blaming the language for what the splice dropped: it wrote
+    // `0i32` into the slot. The same bits, copied across.
     pass (relay ast_add_decl(x.ast, DeclKind.DeclFieldDecl, v.span,
-                             (raw stmt_decl_type(v)).index, 0i32, 0i32, v.payload));
+                             (raw stmt_decl_type(v)).index, 0i32,
+                             relay stmt_quals(x.ast, v), v.payload));
 };
 
 // ONE SPLICE, INSTANTIATED. Returns how many declarations it pushed, because the

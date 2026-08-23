@@ -258,7 +258,9 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) {
         drop type_of_expr(e, relay stmt_counted_arg(e.ast, s, i));
         i = i + 1i32;
     }
+    e.counted_depth = e.counted_depth + 1i32;
     drop check_stmt(e, raw stmt_counted_body(s));
+    e.counted_depth = e.counted_depth - 1i32;
     pass NIL;
 };
 

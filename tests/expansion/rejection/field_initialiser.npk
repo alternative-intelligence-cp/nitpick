@@ -4,8 +4,11 @@
 // a field. Refused rather than dropped: splicing this quietly would lose the value
 // the author wrote, and losing it silently is worse than not accepting it.
 //
-// The same holds for a qualifier — `fixed int32:a;` spliced as a field would lose
-// the `fixed`, which is a safety property rather than a convenience.
+// A QUALIFIER IS CARRIED, NOT REFUSED (1.0.8): `wild int8->:buf;` in a macro
+// body splices as the `wild` field it is — a field has the same qualifier slot
+// a declaration has, and until 1.0.8 the splice wrote zero into it and refused
+// the declaration for "carrying" what the field "could not". Covered by the
+// accept suite's splice cases, not here: this file is the refusal.
 mod:field_initialiser;
 
 macro:with_init = () { int32:a = 5i32; };

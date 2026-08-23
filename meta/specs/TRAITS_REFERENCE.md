@@ -132,7 +132,7 @@ language (D-006).
 > receiver by pointer (`Self->` is refused in a trait signature), no method of a
 > generic struct can mutate it: mutators are free generic functions over
 > `List<T>->`, called `list_push(@l, v)` — `TokenList`'s own shape. The
-> spelling is raised as **D-171** (1.0.9) with a recommendation; this note is
+> spelling is raised as **T-7** (1.0.9) with a recommendation; this note is
 > struck when it lands.
 
 ### 2.5 Derive Attributes

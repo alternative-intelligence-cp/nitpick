@@ -245,6 +245,10 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@x1) != 1i64)                               { exit 90i32; }
     Cx:x2 = raw cx("\"hi\" =>! int32", @it);
     if (raw errs(@x2) != 1i64)                               { exit 91i32; }
+    // AND THEY CARRY DIFFERENT CODES (1.0.8): a filter on the lossy code must
+    // not pull in the conversions that do not exist.
+    if (!(raw string_eq(raw code0(@x1), raw TYPE_NO_CAST())))  { exit 95i32; }
+    if (!(raw string_eq(raw code0(@b2), raw TYPE_NO_CAST())))  { exit 96i32; }
 
     // A cast to the SAME type is a no-op and always fine, including for types
     // that convert to nothing else.

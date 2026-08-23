@@ -174,7 +174,16 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
     // contract, and it keeps "where does this code manufacture a handle" a grep.
     // `nlibc` needs it — a syscall returns an integer that has to become an `fd`
     // — and it should be the only place that does.
-    if (tk == (raw TY_KERNEL())) { pass (raw CAST_LOSSY()); }
+    //
+    // ONLY AN INTEGER (1.0.8). This admitted ANY source — `Point =>! fd`,
+    // `string =>! fd`, a pointer, a float — because the arm tested the target
+    // alone; D-095 and the paragraph above license `int32 =>! fd` and nothing
+    // else, and a struct asserted into a descriptor is not an opt-out of a
+    // check, it is a value with no meaning as one.
+    if (tk == (raw TY_KERNEL())) {
+        if (fk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
+        pass (raw CAST_IMPOSSIBLE());
+    }
 
     // --- pointers ------------------------------------------------------------------
     //
@@ -280,10 +289,21 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
     if (c == (raw CAST_LOSSY())) {
         if (unchecked) { pass to; }
         string:m1 = relay string_concat("`", relay type_display(tyt, interns, from));
-        string:m2 = relay string_concat(m1, "` does not fit in `");
-        string:m3 = relay string_concat(m2, relay type_display(tyt, interns, to));
-        string:m4 = relay string_concat(m3,
-            "`, so this conversion can lose information: ");
+        // "DOES NOT FIT … CAN LOSE INFORMATION" IS A RANGE FACT (1.0.8), true
+        // of the numeric narrowings and false of the four classes `cast_class`
+        // marks unchecked for another reason — a handle, a pointer, an enum's
+        // tag in either direction lose nothing; what they need is the bang
+        // because the conversion ASSERTS something. The lead-in says which.
+        string:m4 = "";
+        if (raw cast_is_assertion(tyt, from, to)) {
+            string:a2 = relay string_concat(m1, "` => `");
+            string:a3 = relay string_concat(a2, relay type_display(tyt, interns, to));
+            m4 = relay string_concat(a3, "` is not a checked conversion: ");
+        } else {
+            string:m2 = relay string_concat(m1, "` does not fit in `");
+            string:m3 = relay string_concat(m2, relay type_display(tyt, interns, to));
+            m4 = relay string_concat(m3, "`, so this conversion can lose information: ");
+        }
         m4 = relay string_concat(m4, relay why_lossy(tyt, from, to));
         m4 = relay string_concat(m4, ". Write `=>!` to accept that.");
         drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), m4, at));
@@ -300,25 +320,52 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
     string:n4 = relay string_concat(n3, "`: ");
     n4 = relay string_concat(n4, relay why_impossible(tyt, from, to));
     n4 = relay string_concat(n4, ". `=>!` does not help — it opts out of a check, not of a meaning.");
-    drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), n4, at));
+    drop diaglist_push(diags, raw diag_error(raw TYPE_NO_CAST(), n4, at));
     pass to;
 };
 
 // The reason, not just the refusal. Which of two familiar-looking widths was too
 // small is the whole content of the message.
+// Is this `=>!`-only conversion one that loses nothing and ASSERTS something
+// instead — a handle manufactured, a pointer retyped, a tag read or forged?
+// The lead-in of the refusal reads differently for those (1.0.8).
+pub func:cast_is_assertion = bool(TypeTable->:tyt, int32:from, int32:to) {
+    int32:fk = raw type_kind(tyt, from);
+    int32:tk = raw type_kind(tyt, to);
+    if (tk == (raw TY_KERNEL()))  { pass true; }
+    if (tk == (raw TY_POINTER())) { pass true; }
+    if (fk == (raw TY_ENUM()))    { pass true; }
+    if (tk == (raw TY_ENUM()))    { pass true; }
+    pass false;
+};
+
 pub func:why_lossy = string(TypeTable->:tyt, int32:from, int32:to) {
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
     if (fk == (raw TY_FLOAT())) {
-        if (tk != (raw TY_FLOAT())) {
-            pass "the fractional part has nowhere to go";
+        if (tk == (raw TY_FLOAT())) {
+            pass "the narrower float carries fewer significand bits and a smaller exponent range, so precision and magnitude can both be lost";
         }
+        pass "the fractional part has nowhere to go";
     }
     if (tk == (raw TY_KERNEL())) {
         pass "a kernel identifier cannot be manufactured from a number the compiler has not seen the kernel return (D-042)";
     }
     if (tk == (raw TY_POINTER())) {
-        pass "giving a type-erased pointer a type is an assertion about memory that nothing here can check";
+        if ((raw type_kind(tyt, raw type_elem(tyt, from))) == (raw TY_ANY())) {
+            pass "giving a type-erased pointer a type is an assertion about memory that nothing here can check";
+        }
+        pass "reinterpreting what a pointer points at is an assertion about memory that nothing here can check";
+    }
+    // AN ENUM'S TAG, READ OR FORGED (1.0.8). These fell through to the range
+    // sentences — "the target is narrower", "the source can be negative" —
+    // because an enum has no value range; the reasons are the ones
+    // `cast_class` gives in its own comments.
+    if (fk == (raw TY_ENUM())) {
+        pass "this reads a variant's tag as a number — identity treated as quantity, which is an assertion rather than a conversion";
+    }
+    if (tk == (raw TY_ENUM())) {
+        pass "this manufactures a tag, and nothing checks that the number names a variant — a `pick` proven complete would miss it";
     }
     ValueRange:fr = raw type_range(tyt, from);
     ValueRange:tr = raw type_range(tyt, to);
@@ -348,13 +395,21 @@ pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) {
         pass "a `bool` converts to a number, but not to this";
     }
     if (fk == (raw TY_TBB())) {
-        pass "a `tbb` carries an ERR state that this type has nowhere to put (D-008)";
+        pass "a `tbb` converts only to another `tbb`, an integer or a float (D-008); this type is none of those";
     }
     if (tk == (raw TY_TBB())) {
         pass "only a number can become a `tbb`, because the conversion has to range-check against the ERR sentinel (D-008)";
     }
+    // THE `#wild_ptr` HINT BELONGS TO THE INTEGER-TO-POINTER DIRECTION (1.0.8);
+    // it sat on the pointer-to-integer arm, advising the opposite conversion.
+    if (tk == (raw TY_POINTER())) {
+        pass "an integer does not become a pointer by casting; `#wild_ptr<T>(addr)` in `wild` context is the one way an address becomes one (D-019)";
+    }
     if (fk == (raw TY_POINTER())) {
-        pass "a pointer converts only to another pointer; `#wild_ptr<T>(addr)` is how an address becomes one";
+        pass "a pointer converts only to another pointer; its address is not a number a cast reads";
+    }
+    if (tk == (raw TY_KERNEL())) {
+        pass "only an integer can be asserted into a kernel identifier, and only with `=>!` (D-042, D-095)";
     }
     pass "these types have no values in common";
 };

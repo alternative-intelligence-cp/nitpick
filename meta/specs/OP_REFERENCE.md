@@ -184,7 +184,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 |---|---|---|---|
 | `?` | Safe Unwrap | Unwraps a **`Result`**. If error, evaluates to right-hand side default. | `val = fn() ? 0i32;` |
 | `??` | Null Coalesce | Unwraps an **`Optional`**. If `NIL`, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
-| `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(errCode)`. **Takes exactly one argument.** | `val = fn() ?! 99i32;` |
+| `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(errCode)`. **Takes exactly one argument**, a `tbb32` (D-009). | `val = fn() ?! 99tbb32;` |
 
 > **`?` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?`).
 | `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |

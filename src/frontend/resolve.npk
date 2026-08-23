@@ -129,10 +129,15 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
     if (raw ast_expr_flag(r.ast, id, raw HYG_CALLER())) {
         m2 = relay string_concat(m1, "` at the invocation site; `#caller` names something there, and nothing of that name is in scope where this macro was invoked");
     } else {
-        if (look == r.module_scope) {
-            if (look != scope) {
-                m2 = relay string_concat(m1, "` in the scope this macro was written in; an identifier in a macro body resolves there and never at the invocation site, and `#caller(name)` is the only way to reach the caller's scope");
-            }
+        // INSIDE AN EXPANSION is `caller_scope != 0` — it is set around every
+        // expansion and cleared after (1.0.8). The test used to be
+        // `look != scope`, and in this branch `look` IS `scope`, so the one
+        // sentence written for D-057's case was unreachable: the hygiene
+        // refusal printed the generic "cannot find it in this scope" at a
+        // macro body, the answer about a scope the reader is not reading that
+        // the comment above says it avoids.
+        if (r.caller_scope != 0i32) {
+            m2 = relay string_concat(m1, "` in the scope this macro was written in; an identifier in a macro body resolves there and never at the invocation site, and `#caller(name)` is the only way to reach the caller's scope");
         }
     }
     drop diaglist_push(r.diags,

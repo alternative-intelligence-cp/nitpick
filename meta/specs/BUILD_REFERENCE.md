@@ -318,7 +318,14 @@ Three rules make this worth having rather than decorative:
 
 - **Assert on codes and spans, never on message text.** Messages must stay free
   to improve without breaking the suite, which is why diagnostic codes are
-  stable identifiers rather than prose.
+  stable identifiers rather than prose. The rendered line is
+  `CODE path:line:col: message` (1.0.8), with `note ` or `warning ` in front
+  for those severities — an error is the unmarked case — and `<no span>` in
+  place of the position for a spanless diagnostic (D-162). One formatter
+  (`diag_line`, `diagnostics.npk`) renders it for every driver, and the
+  harness reads the code as the first token and the span as the second,
+  ignoring everything after; the format's shape is pinned once, in
+  `tests/frontend/diagnostics.npk`.
 - **A negative test with no `expect-error` is a failing test.** Asserting only
   *"it did not compile"* stops noticing when a test starts failing for a
   different reason than the one it was written to guard.

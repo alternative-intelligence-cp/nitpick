@@ -1,16 +1,15 @@
-// expect-error: NITPICK-DERIVE-001
-// expect-error: NITPICK-DERIVE-001
+// expect-error: NITPICK-DERIVE-005
+// expect-error: NITPICK-DERIVE-005
 //
-// THE TWO OF THE SEVEN THAT ARE REFUSED RATHER THAN GUESSED AT.
+// THE TWO OF THE SEVEN THAT ARE REFUSED RATHER THAN GENERATED — under their own
+// code since 1.0.8, because they are names `#[derive]` knows, not unknown ones.
 //
-// `Hash` FOLDS BYTES, and nothing in `builtins.npk` exposes a `string`'s bytes to
-// Nitpick source. An integer, `bool` or `char` field can supply its bits through
-// `=>!`, and a nested type that derived `Hash` can supply its own — but a derived
-// hash that quietly skipped string fields would vary with data it ignored, which is
-// worse than not having one. What unblocks it is one primitive.
+// `Hash` FOLDS BYTES with FNV-1a (D-123). The premise this file carried — that
+// nothing exposes a `string`'s bytes to Nitpick source — has been false since
+// 0.7.8 (`s.ptr[i]`); what is missing is the generator, owed at 1.0.9.
 //
-// `Ord` ON AN ENUM means comparing a variant's tag, and no operator yields one:
-// `<` on an enum is refused by the type checker. Measured, not assumed.
+// `Ord` ON AN ENUM means comparing a variant's tag, which `enum =>! int32` has
+// read since 0.8.0; the generator that writes that comparison is owed at 1.0.9.
 //
 // Both refuse HERE rather than generating code that fails to type-check, because a
 // diagnostic inside generated code points at a line nobody wrote.

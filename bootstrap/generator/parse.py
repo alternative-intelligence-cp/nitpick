@@ -29,20 +29,32 @@ class ParseError(diag.NpkError):
         self.tok = tok
 
 
-# Binary precedence, tightest first. Levels are OP_REFERENCE section 0 with the
+# Binary precedence, LOOSEST first. Levels are OP_REFERENCE section 0 with the
 # Result-unary level (2) handled separately as a prefix, and assignment handled
 # as a STATEMENT (D-060) rather than an operator.
+#
+# LOOSEST FIRST BECAUSE OF HOW `parse_binary` RECURSES: level N parses its
+# operands at level N + 1, so the first row is the OUTERMOST -- the one that
+# binds least tightly. Until 1.0.8 this list was written tightest-first under a
+# comment saying so, which made `*` the loosest operator and `||` the tightest:
+# `i + k <= n` compiled as `i + (k <= n)`, and a byte scan in a test ran past
+# its buffer into a SIGBUS. Nothing in `src/` ever depended on it -- every
+# expression there is parenthesised to one operator, and the stage-1/stage-2
+# fixpoint (the real parser's precedence against the seed's) has been
+# byte-identical throughout, which is the proof -- but every seed-compiled
+# TEST written from now on would have had to know. The seed is a throwaway
+# generator (D-085), so this is a regeneration, not a change to any artifact.
 BINARY_LEVELS = [
-    ["*", "/", "%"],
-    ["+", "-"],
-    ["<<", ">>"],
-    ["<", "<=", ">", ">=", "<=>"],
-    ["==", "!="],
-    ["&"],
-    ["^"],
-    ["|"],
-    ["&&"],
     ["||"],
+    ["&&"],
+    ["|"],
+    ["^"],
+    ["&"],
+    ["==", "!="],
+    ["<", "<=", ">", ">=", "<=>"],
+    ["<<", ">>"],
+    ["+", "-"],
+    ["*", "/", "%"],
 ]
 
 ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="}

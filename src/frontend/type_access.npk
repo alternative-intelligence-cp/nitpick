@@ -189,7 +189,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
                                             relay intern_get(e.interns, s.name));
             string:m2 = relay string_concat(m1, "` has no member `");
             string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
-            drop te_error(e, raw TYPE_MISMATCH(),
+            drop te_error(e, raw TYPE_NO_METHOD(),
                           relay string_concat(m3, "`"), n.span);
             pass (raw ns_yes(0i32));
         }
@@ -299,11 +299,18 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
 
 // The message NAMES THE TYPE the member was sought on. "no member `x`" leaves the
 // reader to work out which of a chain's several types was being asked.
+// UNDER THE CODE `type_codes.npk` DEFINES FOR IT (1.0.8): "the receiver has
+// no member by that name" is `TYPE_NO_METHOD`'s own sentence, and this carried
+// the mismatch code, so a filter on "no such member" found the method cases
+// and not the field ones. An enum's missing variant says "variant".
 func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
     string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, base));
     string:m2 = relay string_concat(m1, "` has no member `");
+    if ((raw type_kind(e.types, base)) == (raw TY_ENUM())) {
+        m2 = relay string_concat(m1, "` has no variant `");
+    }
     string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
-    pass (relay te_error(e, raw TYPE_MISMATCH(),
+    pass (relay te_error(e, raw TYPE_NO_METHOD(),
                          relay string_concat(m3, "`"), at));
 };
 
@@ -487,10 +494,10 @@ func:type_ctor_named = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         i = i + 1i32;
     }
     drop type_args_only(e, start, count);
-    string:m1 = relay string_concat("`",
-                    relay type_display(e.types, e.interns, enum_ty));
-    pass (relay te_error(e, raw TYPE_UNKNOWN(),
-              relay string_concat(m1, "` has no variant by this name"), n.span));
+    // ONE MISTAKE, ONE SENTENCE, ONE CODE (1.0.8): `Net.Nope` through the
+    // member path and `Net.Nope(1i32)` through this one said different things
+    // under different codes for the same missing variant.
+    pass (relay te_no_member(e, enum_ty, vname, n.span));
 };
 
 func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
@@ -523,8 +530,13 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         e.expected = saved;
         if (at != 0i32) {
             if (!(raw type_is_invalid(e.types, at))) {
+                // A SLOT'S SENTENCE (1.0.8): "expected X, found Y". The
+                // operand helper's "`A` and `B` are different types; write the
+                // cast you mean" is for two operands meeting at an operator; a
+                // payload, an arena element or a handle has a FIXED type, and
+                // for `string` into `int32` the cast it advised does not exist.
                 if (!(raw fits(e, pt, at))) {
-                    drop te_mismatch(e, n.span, pt, at);
+                    drop te_mismatch_at(e, pt, at, n.span);
                 }
             }
         }
@@ -884,8 +896,14 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         string:a4 = relay string_concat(a3, "` and `");
         string:a5 = relay string_concat(a4,
                         relay type_display(e.types, e.interns, found.other));
+        // D-102 PROMISED "the free-function form, which UFCS guarantees is
+        // available" — and no such form exists: an impl's method declares
+        // nothing at module scope, and `Trait.method(p)` resolves `Trait` as a
+        // type, not a value (measured at 1.0.8). Until a qualified call
+        // spelling is decided (raised at 1.0.9), the advice names what IS
+        // possible rather than a call that would be refused.
         pass (relay te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
-            relay string_concat(a5, "`; call the one you mean by its function form"),
+            relay string_concat(a5, "`, and the compiler will not choose between them (D-102); no call spelling names one of the two yet, so implement only one of the traits on this type, or rename one method"),
             n.span));
     }
     if (found.found) { did_index = found.decl; }
@@ -1041,7 +1059,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     int32:p0 = raw type_param_at_of(e.ast, e.types, ft, 0i32);
-    if (recv != p0) {
+    // THE RECEIVER IS A SLOT LIKE ANY OTHER (1.0.8): `p.f()` and `f(p)` are one
+    // call (D-006), and `f(Point?:x)` accepted `f(p)` while `p.f()` reported
+    // "expected `Point?`, found `Point`" — an equality test where every other
+    // slot asks `fits`. The emitter fits the receiver to parameter 0 too.
+    if (!(raw fits(e, p0, recv))) {
         drop te_mismatch_at(e, p0, recv, n.span);
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
@@ -1089,6 +1111,12 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
             m2 = relay string_concat(m2, raw int_to_string(fixed_count => int64));
         } else {
             m2 = relay string_concat(m2, raw int_to_string(total => int64));
+        }
+        // ON A METHOD CALL THE RECEIVER FILLED ONE PARAMETER (1.0.8): `p.f(1)`
+        // against `f(Point:a, int32:b, int32:c)` said "takes 2" to a reader
+        // who counts three, so the count says what it excludes.
+        if (skip > 0i32) {
+            m2 = relay string_concat(m2, " after the receiver");
         }
         drop te_error(e, raw TYPE_MISMATCH(), m2, at);
     }
@@ -1322,14 +1350,14 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
 
     if (raw string_eq(m, "alloc")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`alloc` takes no arguments; the arena knows its element type", n.span));
         }
         pass (raw tt_handle(e.types, elem));
     }
     if (raw string_eq(m, "get")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`get` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1338,7 +1366,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "put")) {
         if (count != 2i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`put` takes exactly two arguments, the handle and the value", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1349,7 +1377,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
                 if (!(raw fits(e, elem, got))) {
-                    drop te_mismatch(e, n.span, elem, got);
+                    drop te_mismatch_at(e, elem, got, n.span);
                 }
             }
         }
@@ -1357,7 +1385,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "free")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`free` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1365,14 +1393,14 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "reset")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`reset` takes no arguments", n.span));
         }
         pass (e.types.t_nil);
     }
     if (raw string_eq(m, "destroy")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
         }
         pass (e.types.t_nil);
@@ -1396,7 +1424,7 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) {
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (!(raw fits(e, want, got))) {
         ExprNode:an = relay ast_expr(e.ast, arg);
-        drop te_mismatch(e, an.span, want, got);
+        drop te_mismatch_at(e, want, got, an.span);
     }
     pass NIL;
 };
@@ -1415,7 +1443,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
 
     if (raw string_eq(m, "alloc")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "a shared arena's `alloc` takes exactly one argument, the value — there is no `put`, so the slot is written once, here (D-154)",
                 n.span));
         }
@@ -1426,7 +1454,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
                 if (!(raw fits(e, elem, got))) {
-                    drop te_mismatch(e, n.span, elem, got);
+                    drop te_mismatch_at(e, elem, got, n.span);
                 }
             }
         }
@@ -1434,7 +1462,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "get")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`get` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1443,7 +1471,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "destroy")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
         }
         pass (e.types.t_nil);

@@ -97,6 +97,18 @@ trait:Storage = {
     #sigs();
 };
 
+// A QUALIFIED FIELD SPLICES WITH ITS QUALIFIER (1.0.8). A field has the same
+// qualifier slot a declaration has; the splice used to write zero into it and
+// refuse the declaration for carrying what a field "could not".
+macro:buffer_fields = () {
+    wild int8->:buf;
+    int64:len;
+};
+
+struct:Bytes = {
+    #buffer_fields();
+};
+
 func:main = int32(cstring[]:_~argv) {
     Point:pt = Point{ x: 3i32, y: 4i32 };
     Quad:q = Quad{ a: 1i32, b: 2i32, c: 3i32, d: 4i32 };
@@ -105,5 +117,9 @@ func:main = int32(cstring[]:_~argv) {
     if ((pt.x + pt.y) != 7i32)                    { exit 2i32; }
     if ((q.a + q.b + q.c + q.d) != 10i32)         { exit 3i32; }
     if ((t.p + t.q + t.r) != 20i32)               { exit 4i32; }
+
+    wild int8->:mem = alloc(4i64);
+    Bytes:by = Bytes{ buf: mem, len: 4i64 };
+    if (by.len != 4i64)                           { exit 5i32; }
     exit 0i32;
 };

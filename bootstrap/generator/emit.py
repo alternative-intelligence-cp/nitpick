@@ -626,10 +626,19 @@ class Emitter:
         r = self.tmp()
         if a > b:
             self.w("%s = trunc %s %s to %s" % (r, v.ty, v.ref, wl))
-        elif T.is_int(want) and T.is_signed(want):
-            self.w("%s = sext %s %s to %s" % (r, v.ty, v.ref, wl))
         else:
-            self.w("%s = zext %s %s to %s" % (r, v.ty, v.ref, wl))
+            # WIDENING EXTENDS BY THE SOURCE'S SIGNEDNESS, not the target's
+            # (1.0.8). This chose `sext` whenever the TARGET was signed, so
+            # `uint8 => int64` of 195 came out -61 and a UTF-8 lead byte read
+            # as ASCII. `src/` never widened a byte past 127 (its sources are
+            # ASCII), which is why the fixpoint never saw it; the real backend
+            # has always done this by the source. Fall back to the target only
+            # where the source's Nitpick type is unknown.
+            src = v.npk if (v.npk is not None and T.is_int(v.npk)) else want
+            if T.is_int(src) and T.is_signed(src):
+                self.w("%s = sext %s %s to %s" % (r, v.ty, v.ref, wl))
+            else:
+                self.w("%s = zext %s %s to %s" % (r, v.ty, v.ref, wl))
         return Val(wl, r, want)
 
     def _expr(self, e):

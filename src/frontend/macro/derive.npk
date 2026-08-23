@@ -583,9 +583,13 @@ func:enum_order_error = NIL(DiagList->:diags, DeclNode:d, string:tn, string:tr) 
     string:m1 = relay string_concat("`", tr);
     string:m2 = relay string_concat(m1, "` cannot be derived for the enum `");
     string:m3 = relay string_concat(m2, tn);
+    // THE REASON IS THE GENERATOR, NOT THE LANGUAGE (1.0.8): `enum =>! int32`
+    // reads a variant's tag since 0.8.0, so the comparison CAN be written; the
+    // body that writes it is not generated yet (1.0.9), and the message says
+    // exactly that rather than "no operator yields one".
     string:m4 = relay string_concat(m3,
-        "`: ordering a variant means comparing its tag, and no operator yields one — `<` on an enum is refused. Write the comparison, and then the order the variants are in is a thing somebody chose");
-    drop diaglist_push(diags, raw diag_error(raw DERIVE_UNKNOWN(), m4, d.span));
+        "`: not generated yet — the comparison would read each tag with `=>! int32`, a choice the author should make visibly until the generator writes it (1.0.9); write `cmp` by hand, and the order the variants are in is then a thing somebody chose");
+    drop diaglist_push(diags, raw diag_error(raw DERIVE_NOT_GENERATED(), m4, d.span));
     pass NIL;
 };
 
@@ -601,9 +605,13 @@ func:enum_order_error = NIL(DiagList->:diags, DeclNode:d, string:tn, string:tr) 
 // with data it ignored. That is worse than not having one.
 func:hash_unavailable = NIL(DiagList->:diags, DeclNode:d, string:tn) {
     string:m1 = relay string_concat("`Hash` cannot be derived for `", tn);
+    // THE PREMISE IS STALE (1.0.8): `s.ptr[i]` has exposed a string's bytes
+    // since 0.7.8 — the compiler's own `sink_write` walks them that way. What
+    // is missing is the FNV-1a generator over every field (D-123), which is
+    // 1.0.9's; until it exists the refusal says so.
     string:m2 = relay string_concat(m1,
-        "` yet: FNV-1a folds bytes, and nothing exposes a `string`'s bytes to Nitpick source — a derived hash that skipped string fields would vary with data it ignored");
-    drop diaglist_push(diags, raw diag_error(raw DERIVE_UNKNOWN(), m2, d.span));
+        "` yet: the FNV-1a generator over its fields (D-123) has not been written (1.0.9); write `hash` by hand until it has");
+    drop diaglist_push(diags, raw diag_error(raw DERIVE_NOT_GENERATED(), m2, d.span));
     pass NIL;
 };
 

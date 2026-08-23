@@ -95,6 +95,48 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) {
     pass (raw esc_fail());
 };
 
+// --- UTF-8 decoding ---------------------------------------------------------
+//
+// ONE CODE POINT FROM THE BYTES AT `pos` (1.0.8). A character literal holds a
+// SourceCharacter (LEXICAL_REFERENCE §6.3), which is a code point, and the
+// lexer took one BYTE — so `'é'` was reported as an unterminated literal. The
+// inverse of `utf8_encode`, by the lead byte; an invalid lead or a truncated
+// sequence answers `valid: false`, which the caller reports as its own mistake.
+pub func:utf8_decode = EscapeResult(string:text, int64:pos) {
+    if (pos >= text.len) { pass (raw esc_fail()); }
+    int64:b0 = (text.ptr[pos]) => int64;
+    if (b0 < 128i64) {
+        EscapeResult:one = EscapeResult{ valid: true, codepoint: b0, consumed: 1i64 };
+        pass one;
+    }
+    int64:need = 0i64;
+    int64:cp = 0i64;
+    if (b0 >= 240i64) {
+        need = 3i64;
+        cp = b0 - 240i64;
+    } else {
+        if (b0 >= 224i64) {
+            need = 2i64;
+            cp = b0 - 224i64;
+        } else {
+            if (b0 < 192i64) { pass (raw esc_fail()); }
+            need = 1i64;
+            cp = b0 - 192i64;
+        }
+    }
+    if ((pos + need) >= text.len) { pass (raw esc_fail()); }
+    int64:k = 1i64;
+    while (k <= need) {
+        int64:bk = (text.ptr[pos + k]) => int64;
+        if (bk < 128i64) { pass (raw esc_fail()); }
+        if (bk >= 192i64) { pass (raw esc_fail()); }
+        cp = (cp * 64i64) + (bk - 128i64);
+        k = k + 1i64;
+    }
+    EscapeResult:r = EscapeResult{ valid: true, codepoint: cp, consumed: need + 1i64 };
+    pass r;
+};
+
 // --- UTF-8 encoding ---------------------------------------------------------
 //
 // A decoded code point goes back into the buffer as UTF-8, because the source is

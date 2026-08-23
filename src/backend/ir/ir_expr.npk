@@ -938,7 +938,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // and `NIL != a` are THE test, in either order. The sentinel side is never
     // emitted: it has no bytes worth reading. Two `Optional`s that are neither
     // `NIL` fall through to the non-scalar refusal below; what that comparison
-    // MEANS is D-169's (1.0.9), the same question for every aggregate.
+    // MEANS is T-5's (1.0.9), the same question for every aggregate.
     if ((raw type_kind(x.fe.ctx.types, raw exprtypes_get(x.et, raw expr_lhs(n))))
             == (raw TY_OPTIONAL())) {
         bool:is_eq = (op == TokenKind.OpEqEq);
@@ -983,7 +983,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // `llc` refused with "icmp requires integer operands" — failing closed, but
     // not by name, and the checker accepts the comparison (`type_comparison`
     // unifies and checks ordering only). What such a comparison MEANS is a
-    // decision (D-169, 1.0.9); until then it is a rung, not invalid IR.
+    // decision (T-5, 1.0.9); until then it is a rung, not invalid IR.
     string:cmp0 = raw icmp_name(op, false);
     if (cmp0.len > 0i64) {
         if (!(raw ll_is_scalar_int(raw ll_ok(lhs.ll)))) {
@@ -1730,7 +1730,14 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     IrVal:fp = relay emit_expr(x, raw expr_callee(n));
     if (!(raw iv_is_ok(fp))) { pass fp; }
     int32:gcount = raw expr_generic_count(n);
-    if (gcount > 0i32) { pass (raw iv_rung("a generic call", "1.0", n.span)); }
+    // TYPE ARGUMENTS ON A CALL THROUGH A FUNCTION VALUE. A function value has
+    // a concrete type and no parameters to bind, so this is the frontend's to
+    // refuse (1.0.9 converts it); the string says what was written rather than
+    // "a generic call", which lowers since 1.0.2b (1.0.8).
+    if (gcount > 0i32) {
+        pass (raw iv_rung("type arguments on a call through a function value",
+                          "1.0", n.span));
+    }
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
     int32:ift = raw exprtypes_callee_ft(x.et, id);
@@ -2806,6 +2813,13 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         drop irw_line(x.fe.w, relay cat3(dyn_fn, " = load ptr, ptr ", sp));
         args = relay string_concat("ptr ", dat);
     } else {
+        // THE RECEIVER IS FIT TO PARAMETER 0 (1.0.8) — a UFCS call on a free
+        // function whose first parameter is a `T?` or a `dyn` takes the same
+        // wrap or widening `f(p)` would. Not on the erased path above: there
+        // the receiver IS the `dyn`, and the thunk loads the concrete value.
+        rv = relay emit_fit(x, raw call_param_want(x, raw exprtypes_callee_ft(x.et, id), 0i32),
+                            rv, n.span);
+        if (!(raw iv_is_ok(rv))) { pass rv; }
         args = relay cat3(rv.ll, " ", rv.ref);
     }
 
