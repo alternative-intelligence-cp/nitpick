@@ -692,7 +692,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv_rung("`await`", "1.1", n.span));
     }
     if (n.kind == ExprKind.ExprDynCastExpr) {
-        pass (raw iv_rung("a `dyn` cast", "1.0", n.span));
+        // A `dyn` CAST IS THE FIT TO THE `dyn` TARGET (D-158/D-159): the same
+        // fat-pointer build a `dyn`-typed slot triggers implicitly, only written
+        // out. `emit_fit` picks between building from a concrete value and
+        // widening an existing `dyn`, so the explicit `=>` and the implicit
+        // coercion lower through one path and cannot drift apart.
+        IrVal:dv = relay emit_expr(x, raw expr_operand(n));
+        if (!(raw iv_is_ok(dv))) { pass dv; }
+        pass (relay emit_fit(x, raw exprtypes_get(x.et, id), dv, n.span));
     }
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
@@ -2651,13 +2658,16 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
         int32:sym = raw vtmap_find(x.fe.ctx,
                                    raw subst_emitted_param(x.fe.ctx, v.type_id),
                                    tt);
-        // NO TABLE MEANS NO `dyn`, and it is a rung rather than a wrong answer.
-        // A family impl has no single table (its target is a template), which is
-        // the one reachable way to get here.
-        if (sym == 0i32) {
-            pass (raw iv_rung("a `dyn` over a trait implemented by a generic family",
-                              "1.0", at));
-        }
+        // NO TABLE IS NOW A DEFECT, NOT A RUNG (1.0.9b). A family impl's table
+        // is per instantiation, registered and emitted by the pre-pass in
+        // `emit_all` for every family instance a `dyn` coercion recorded — and a
+        // coercion is the only way a value reaches this slot, so a missing table
+        // means the checker accepted a `dyn` the emitter did not build a table
+        // for. That is a broken promise, which fails closed; it was a rung
+        // ("enabled by cycle 1.0") until the pre-pass made the case real, and
+        // leaving that message would claim a future cycle enables what this one
+        // already does.
+        if (sym == 0i32) { pass (raw iv_broken(at)); }
         string:nx = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(nx, " = insertvalue ", dll.text,
                           relay cat3(" ", cur, ", ptr "),
@@ -2781,6 +2791,54 @@ func:dyn_slot_of = DynSlot(ExprEmitter->:x, int32:dyn_ty, int32:decl) {
 // `Point->:self` called on a `Point` place takes its address, the same one-level
 // adjustment `.` already makes for access (D-098); a by-value parameter takes
 // the value.
+// Is this method call's operand a trait name — the `Trait.method(…)` form
+// (D-172)? The checker accepted it; the emitter tells it from an ordinary
+// method call the same way, by the operand's symbol.
+func:emit_is_trait_qualified = bool(ExprEmitter->:x, ExprNode:n) {
+    ExprId:bid = raw expr_operand(n);
+    if (raw expr_is_none(bid)) { pass false; }
+    ExprNode:bn = relay ast_expr(x.ast, bid);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (bn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, bn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: s.origin });
+    pass (d.kind == DeclKind.DeclTraitDecl);
+};
+
+// `Trait.method(recv, …)` lowered as a direct call to the impl's method symbol
+// (D-172), the receiver being argument 0 like any other. The symbol and the
+// signature were recorded by the checker; this is the named-call shape with
+// no `skip`.
+func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    int32:sym = raw exprtypes_callee_sym(x.et, id);
+    string:fname = relay intern_get(x.interns, sym);
+    string:callsym = relay mangled_fn_sym(x.fe.ctx,
+                         raw exprtypes_callee(x.et, id), fname);
+    int32:mft = raw exprtypes_callee_ft(x.et, id);
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    string:args = "";
+    int32:i = 0i32;
+    while (i < count) {
+        IrVal:av = relay emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) });
+        if (!(raw iv_is_ok(av))) { pass av; }
+        av = relay emit_fit(x, raw call_param_want(x, mft, i), av, n.span);
+        if (!(raw iv_is_ok(av))) { pass av; }
+        if (i > 0i32) { args = relay string_concat(args, ", "); }
+        args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
+        i = i + 1i32;
+    }
+    LlType:ret = relay node_ll(x, id);
+    if (ret.state != (raw LL_OK())) {
+        pass (relay iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
+    }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret.text, " ",
+                      relay cat4(callsym, "(", args, ")")));
+    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+};
+
 func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:decl = raw exprtypes_callee(x.et, id);
     if (decl == 0i32) { pass (raw iv_broken(n.span)); }
@@ -2788,6 +2846,14 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     DeclNode:d = relay ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(n.span)); }
     if ((raw fn_param_count(x.ast, d)) == 0i32) { pass (raw iv_broken(n.span)); }
+
+    // `Trait.method(recv, …)` — a DIRECT CALL, receiver as argument 0 (D-172).
+    // The operand is a trait name, not a value, so it is not emitted as a
+    // receiver; the checker recorded the impl's symbol and every argument
+    // (including the receiver) is a plain call argument.
+    if (raw emit_is_trait_qualified(x, n)) {
+        pass (relay emit_qualified_call(x, id, n));
+    }
 
     // THE RECEIVER'S OWN TYPE DECIDES THE FORM, not the parameter's annotation
     // (1.0.4). Resolving the parameter would resolve `Self` for a trait
@@ -2828,14 +2894,35 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         drop irw_line(x.fe.w, relay cat3(dyn_fn, " = load ptr, ptr ", sp));
         args = relay string_concat("ptr ", dat);
     } else {
-        // THE RECEIVER IS FIT TO PARAMETER 0 (1.0.8) — a UFCS call on a free
-        // function whose first parameter is a `T?` or a `dyn` takes the same
-        // wrap or widening `f(p)` would. Not on the erased path above: there
-        // the receiver IS the `dyn`, and the thunk loads the concrete value.
-        rv = relay emit_fit(x, raw call_param_want(x, raw exprtypes_callee_ft(x.et, id), 0i32),
-                            rv, n.span);
-        if (!(raw iv_is_ok(rv))) { pass rv; }
-        args = relay cat3(rv.ll, " ", rv.ref);
+        int32:p0w = raw call_param_want(x, raw exprtypes_callee_ft(x.et, id), 0i32);
+        // A POINTER RECEIVER IS PASSED BY ADDRESS (1.0.9b): a method
+        // `set = NIL(Box<T>->:self, …)` called `b.set(x)` takes `@b`, the dual
+        // of the auto-dereference a value receiver gets. The receiver must be a
+        // place — a temporary has no address, which the checker's mutation
+        // rules already require anyway.
+        bool:want_ptr = false;
+        if (p0w != 0i32) {
+            int32:p0k = raw type_kind(x.fe.ctx.types,
+                            raw subst_emitted_param(x.fe.ctx, p0w));
+            if (p0k == (raw TY_POINTER())) {
+                if ((raw type_kind(x.fe.ctx.types, rv.type_id)) != (raw TY_POINTER())) {
+                    want_ptr = true;
+                }
+            }
+        }
+        if (want_ptr) {
+            PlaceVal:rp = relay addr_of(x, rid);
+            if (rp.state != (raw LL_OK())) { pass (relay iv_from_place(rp)); }
+            args = relay string_concat("ptr ", rp.addr);
+        } else {
+            // THE RECEIVER IS FIT TO PARAMETER 0 (1.0.8) — a UFCS call on a free
+            // function whose first parameter is a `T?` or a `dyn` takes the same
+            // wrap or widening `f(p)` would. Not on the erased path above: there
+            // the receiver IS the `dyn`, and the thunk loads the concrete value.
+            rv = relay emit_fit(x, p0w, rv, n.span);
+            if (!(raw iv_is_ok(rv))) { pass rv; }
+            args = relay cat3(rv.ll, " ", rv.ref);
+        }
     }
 
     int32:start = raw expr_list_start(n);

@@ -601,14 +601,14 @@ func:main = int32(cstring[]:_~argv) {
     //
     // A type satisfying the bound gets the trait — and the method.
     Gx:k1 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
         @it);
     if (raw errs(@k1) != 0i64)                                  { exit 110i32; }
 
     // …and a type NOT satisfying the bound does not. Without this the case above
     // would pass against a checker that handed every type every blanket method.
     Gx:k2 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
         @it);
     if (raw errs(@k2) != 1i64)                                  { exit 111i32; }
     if (!(raw string_eq(raw code0(@k2), raw TYPE_NO_METHOD())))  { exit 112i32; }
@@ -616,7 +616,7 @@ func:main = int32(cstring[]:_~argv) {
     // A BLANKET IMPL SATISFIES A BOUND, which is the same fact asked the other
     // way: `Box<U: Lo>` accepts `Point` because the blanket impl reaches it.
     Gx:k3 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; struct:Box<U: Lo> = { U:held; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; struct:Box<U: Lo> = { U:held; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@k3) != 0i64)                                  { exit 113i32; }
 
@@ -624,7 +624,7 @@ func:main = int32(cstring[]:_~argv) {
     // and that is NOT an ambiguity — it is the priority the specification states,
     // expressed as the order the question is asked.
     Gx:k4 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 3i32; }; }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 3i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
         @it);
     if (raw errs(@k4) != 0i64)                                  { exit 114i32; }
 
@@ -633,7 +633,7 @@ func:main = int32(cstring[]:_~argv) {
     // and `Qr` both — and with no specialization (D-064 section 7) there is no
     // rule to choose by.
     Gx:k5 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; }; impl:<U: Qr>:Lo = { func:l = int32(U:self) { pass 2i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; }; impl:<U: Qr>:U:Lo = { func:l = int32(U:self) { pass 2i32; }; };",
         @it);
     if (raw errs(@k5) != 1i64)                                  { exit 115i32; }
     if (!(raw string_eq(raw code0(@k5), raw TYPE_COHERENCE())))  { exit 116i32; }
@@ -641,7 +641,7 @@ func:main = int32(cstring[]:_~argv) {
     // …while a blanket impl beside a CONCRETE one is not a conflict (D-105).
     // Overlapping is the point; §2.6 already says which wins.
     Gx:k6 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 2i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; };",
         @it);
     if (raw errs(@k6) != 0i64)                                  { exit 117i32; }
 
@@ -649,7 +649,7 @@ func:main = int32(cstring[]:_~argv) {
     // because a zero target cannot be compared against anything; the target is
     // the parameter now, so `Self` substitutes and the missing method is seen.
     Gx:k7 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); func:m = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); func:m = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
         @it);
     if (raw errs(@k7) != 1i64)                                  { exit 118i32; }
     if (!(raw string_eq(raw code0(@k7), raw TYPE_IMPL_INCOMPLETE()))) { exit 119i32; }
@@ -658,7 +658,7 @@ func:main = int32(cstring[]:_~argv) {
     // `Self` matches one the trait declares with `Self`. This is D-103's
     // substitution reaching a case it could not reach while the target was zero.
     Gx:k8 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(Self:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(Self:self) { pass 1i32; }; };",
         @it);
     if (raw errs(@k8) != 0i64)                                  { exit 120i32; }
 
@@ -667,7 +667,7 @@ func:main = int32(cstring[]:_~argv) {
     // satisfying a bound, which is adding methods to types it does not own. §2.6
     // gives the form with a trait and only with one.
     Gx:k9 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; impl:<T: Pr> = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; impl:<T: Pr>:T = { func:l = int32(T:self) { pass 1i32; }; };",
         @it);
     if (raw errs(@k9) != 1i64)                                  { exit 121i32; }
     if (!(raw string_eq(raw code0(@k9), raw TYPE_NOT_A_TRAIT()))) { exit 122i32; }
@@ -676,14 +676,14 @@ func:main = int32(cstring[]:_~argv) {
     // requiring `Pr` and a blanket impl bounded only by `Qr` cannot promise it,
     // and skipping blanket impls left that unenforced.
     Gx:k10 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Qr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Qr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
         @it);
     if (raw errs(@k10) != 1i64)                                 { exit 123i32; }
 
     // …and bounded by the supertrait it is satisfied, since a parameter satisfies
     // a bound by declaring it.
     Gx:k11 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
         @it);
     if (raw errs(@k11) != 0i64)                                 { exit 124i32; }
 

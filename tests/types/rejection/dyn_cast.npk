@@ -1,0 +1,21 @@
+// A `dyn` CAST TO A TRAIT THE VALUE DOES NOT IMPLEMENT (D-158, 1.0.9b).
+//
+// `x => dyn Speaks` builds a fat pointer whose vtable word is `x`'s type's
+// `Speaks` table — and a type that implements no `Speaks` has no such table, so
+// the cast has nothing to point at. The checker refuses it where it types the
+// cast (`type_dyn_cast`), the same TYPE-017 an implicit coercion into a `dyn`
+// slot gives, because the cast is the explicit spelling of that coercion.
+mod:dyn_cast;
+
+trait:Speaks = { func:say = int32(Self:self); };
+struct:Mute  = { int32:v; };
+
+// expect-error: NITPICK-TYPE-017
+func:cast_a_mute = NIL(cstring[]:_~argv) {
+    Mute:m = Mute{ v: 0i32 };
+    dyn Speaks:s = m => dyn Speaks;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -18,9 +18,9 @@ trait:Logged = { func:log = int32(Self:self); };
 // TWO BLANKET IMPLS OF ONE TRAIT OVERLAP. The language has no negative bounds, so
 // nothing stops a type satisfying both `Alpha` and `Beta` — and with no
 // specialization there is no rule to choose by.
-impl:<T: Alpha>:Logged = { func:log = int32(T:self) { pass 1i32; }; };
+impl:<T: Alpha>:T:Logged = { func:log = int32(T:self) { pass 1i32; }; };
 // expect-error: NITPICK-TYPE-013
-impl:<U: Beta>:Logged = { func:log = int32(U:self) { pass 2i32; }; };
+impl:<U: Beta>:U:Logged = { func:log = int32(U:self) { pass 2i32; }; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

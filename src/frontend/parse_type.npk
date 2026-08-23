@@ -165,6 +165,19 @@ pub func:p_parse_type = TypeId(Parser->:p) {
                                  w.start, w.count, 0i32, 0i64));
     }
 
+    // `(` Type `)` GROUPS A TYPE (D-170), exactly as parentheses group an
+    // expression: the group IS its inner type, and the suffixes bind to the
+    // group. No new node kind — `(dyn A & B)[2]` is an array of the `dyn`,
+    // where `dyn A & B[2]` could only be read as `dyn (A & B[2])`, an array
+    // that is not a trait. The inner `p_parse_type` consumes any suffixes
+    // written INSIDE the parens; `p_suffixes` here takes the ones after.
+    if (k == TokenKind.PLParen) {
+        drop p_advance(p);
+        TypeId:inner = relay p_parse_type(p);
+        drop p_expect(p, TokenKind.PRParen);
+        pass (relay p_suffixes(p, inner));
+    }
+
     // `cstring` and `any` are BUILTIN TYPE KEYWORDS with nodes of their own, so
     // they must be taken before the named-type path folds every keyword into a
     // NamedType. Both were unreachable until 0.2.8 for exactly that reason.

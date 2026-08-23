@@ -780,17 +780,20 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
     pass NIL;
 };
 
-// `Self` INSIDE AN `impl` BLOCK IS THE TARGET, and for a blanket impl it is the
-// parameter (D-111) — which `impl_target` cannot give, because a blanket impl
-// writes no type in that position at all.
+// `Self` INSIDE AN `impl` BLOCK IS ITS TARGET (D-171): the target is written in
+// every form now — `T` for a blanket, `Box<T>` for a family, `Point` for a
+// concrete one — so it resolves the same way for all three, under the impl's
+// own parameters (a blanket's `T` and a family's `Box<T>` both need them).
 func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) {
-    if (relay impl_is_blanket(e.ast, d)) {
-        if ((relay impl_generic_count(e.ast, d)) == 0i32) { pass 0i32; }
-        DeclId:gp = relay impl_generic(e.ast, d, 0i32);
-        DeclNode:gpn = relay ast_decl(e.ast, gp);
-        pass (raw tt_param(e.types, gp.index, raw decl_name(gpn)));
-    }
+    TypeId:tgt = raw impl_target(e.ast, d);
+    if (raw type_is_none(tgt)) { pass 0i32; }
     TypeResolver:r = raw etyper_resolver(e);
-    pass (relay resolve_type(@r, relay impl_target(e.ast, d), scope));
+    IdSpan:gw = raw decl_generic_window(e.ast, d);
+    GenericScope:saved = r.generics;
+    r.generics = GenericScope{ params_start: gw.start, params_count: gw.count,
+                               args_start: 0i32, args_count: 0i32 };
+    int32:st = relay resolve_type(@r, tgt, scope);
+    r.generics = saved;
+    pass st;
 };
 

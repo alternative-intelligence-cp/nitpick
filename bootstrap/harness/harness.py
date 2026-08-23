@@ -510,7 +510,8 @@ SLOT_SITE_PAIRS = {
     "check_var_decl":      {"emit_vardecl"},
     "check_assign":        {"emit_assign"},
     "check_pass":          {"emit_pass"},
-    "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call"},
+    "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call",
+                            "emit_qualified_call"},   # `Trait.method(recv, …)` (D-172, 1.0.9b)
     "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
     "check_ctor_args":     {"emit_ctor"},
     "type_struct_literal": {"emit_struct_lit"},

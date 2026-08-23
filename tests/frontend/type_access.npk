@@ -694,7 +694,7 @@ func:main = int32(cstring[]:_~argv) {
     // construct no rung can lower yet gets a BACKEND diagnostic, never a parse
     // error. Bound satisfaction and monomorphization are 0.4.7's; this asserts it
     // parses and is recorded, which is what lets 0.4.7 find them.
-    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
 

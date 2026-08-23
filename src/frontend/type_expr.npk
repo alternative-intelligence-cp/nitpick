@@ -1260,7 +1260,15 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
     // fat pointer either way — it is a question about what was implemented, and
     // the impl table is the only thing that can answer it.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
-        pass (relay dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got));
+        bool:ok = relay dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got);
+        // A COERCION IS A COMMIT, SO IT IS WHERE THE FAMILY INSTANTIATION IS
+        // NOTED (1.0.9b). `fits` is a predicate everywhere else; the one place
+        // it is a predicate the checker acts on is a `dyn` slot accepting a
+        // value, and the vtable that acceptance implies is emitted from a
+        // recorded instantiation, which a call would have recorded and a bare
+        // coercion would not. Guarded to a family instance inside the recorder.
+        if (ok) { drop record_dyn_family_methods(e, want, got); }
+        pass ok;
     }
     pass false;
 };
@@ -1684,7 +1692,10 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
     int32:i = 0i32;
     while (i < cnt) {
         TypeId:trait_ty = TypeId{ index: raw ast_id_at(e.ast, start, i) };
-        int32:tr = relay resolve_type(@r, trait_ty, e.scope);
+        // A `dyn` CAST'S OPERANDS ARE TRAITS (D-172's door): resolved where a
+        // trait is wanted, so a bare trait name is not the "not a value type"
+        // refusal D-171 gives it everywhere else.
+        int32:tr = relay resolve_trait_type(@r, trait_ty, e.scope);
         drop ast_scratch_push(e.ast, tr);
 
         if (!(raw type_is_invalid(e.types, tr))) {

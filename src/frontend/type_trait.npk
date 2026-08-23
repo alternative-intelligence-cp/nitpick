@@ -142,46 +142,42 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // through the machinery D-103 already built, and completeness, supertraits and
     // duplicate names all run on a blanket impl unchanged rather than being
     // skipped. A zero could do none of that, because a zero is not a type.
+    // A BLANKET IMPL — its target is a bare parameter (D-171): `impl:<T: P>:T:Loggable`.
+    // The target `T` and the trait both resolve under the impl's own parameters.
     if (relay impl_is_blanket(r.ast, d)) {
-        TypeId:btt = relay impl_trait(r.ast, d);
-
-        // A BLANKET IMPL IMPLEMENTS A TRAIT. `impl:<T: Bound> = { … };` parses —
-        // the grammar is never partial (D-085) — and means adding methods to every
-        // type satisfying a bound, which is adding methods to types the writer
-        // does not own. §2.6 gives the form with a trait and only with one.
-        if (raw type_is_none(btt)) {
-            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                "a blanket impl implements a TRAIT for every type satisfying its bound, so it is written `impl:<T: Bound>:Trait`; an inherent one would add methods to types it does not own",
-                d.span));
-            pass NIL;
-        }
-
-        // THE SEGMENT RESOLVES UNDER THE IMPL'S OWN PARAMETERS (1.0.8), as the
-        // family path below resolves its target — so `impl:<T>:List<T> = …`
-        // yields one refusal about the impl rather than "there is no type
-        // named `T`" first. What the author wrote there is an inherent impl
-        // over a family, which D-161's segment rule cannot admit (T-7, raised
-        // at 1.0.9); the message says so instead of "not a trait".
         IdSpan:bgw = raw decl_generic_window(r.ast, d);
         GenericScope:bsaved = r.generics;
         r.generics = GenericScope{ params_start: bgw.start, params_count: bgw.count,
                                    args_start: 0i32, args_count: 0i32 };
+        int32:btarget = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+
+        // A BLANKET IMPL IMPLEMENTS A TRAIT. `impl:<T: Bound>:T = { … };` means
+        // adding methods to every type satisfying a bound, which is adding
+        // methods to types the writer does not own; §2.6 gives the form with a
+        // trait and only with one (an inherent impl on a CONCRETE type is fine,
+        // and an inherent FAMILY impl is the family branch below — this refusal
+        // is only for the every-type case).
+        TypeId:btt = relay impl_trait(r.ast, d);
+        if (raw type_is_none(btt)) {
+            r.generics = bsaved;
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                "a blanket impl adds methods to every type satisfying its bound, so it must name a trait — `impl:<T: Bound>:T:Trait`; an inherent one would add methods to types it does not own",
+                d.span));
+            pass NIL;
+        }
         int32:bt = relay resolve_trait_type(r, btt, scope);
         r.generics = bsaved;
+        if (btarget == 0i32) { pass NIL; }
         if (bt == 0i32) { pass NIL; }
         if (raw type_is_invalid(r.types, bt)) { pass NIL; }
         if ((raw type_kind(r.types, bt)) != (raw TY_TRAIT())) {
             string:n1 = relay string_concat("`", relay type_display(r.types, r.interns, bt));
-            string:n2 = relay string_concat(n1,
-                "` is not a trait, so this impl implements nothing: an impl that declares parameters names a trait last (`impl:<T>:Target<T>:Trait`), and an INHERENT impl over a generic family is not admitted (T-7)");
-            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), n2, d.span));
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                relay string_concat(n1, "` is not a trait, so it cannot be the trait a blanket impl provides"),
+                d.span));
             pass NIL;
         }
-
-        DeclId:gp = relay impl_generic(r.ast, d, 0i32);
-        DeclNode:gpn = relay ast_decl(r.ast, gp);
-        drop impl_push(t, raw tt_param(r.types, gp.index, raw decl_name(gpn)),
-                       bt, id.index, true, scope);
+        drop impl_push(t, btarget, bt, id.index, true, scope);
         pass NIL;
     }
 
@@ -195,18 +191,59 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     GenericScope:isaved = r.generics;
     r.generics = GenericScope{ params_start: igw.start, params_count: igw.count,
                                args_start: 0i32, args_count: 0i32 };
+
+    // AN OLD BLANKET SPELLING, CAUGHT BY NAME (D-171, 1.0.9b). Before D-171 a
+    // blanket impl had no target — `impl:<T: Bound>:Trait` — and named the trait
+    // where a target now goes. That form reaches here (it is not the parameter
+    // `impl_is_blanket` recognises), and resolving its trait as the target's
+    // VALUE type would report the generic "is a trait, not a value type"
+    // (TYPE-002), which says nothing about what changed. A GENERIC impl whose
+    // target slot resolves to a trait is unambiguously the old form: a modern
+    // family impl's target is a type mentioning its parameters (`Box<T>`), and a
+    // modern blanket's is the bare parameter, already handled above. So this
+    // names the new spelling instead of the generic refusal.
+    if (igw.count > 0i32) {
+        int32:as_trait = relay resolve_trait_type(r,
+                             relay impl_target(r.ast, d), scope);
+        if (as_trait != 0i32) {
+            if (!(raw type_is_invalid(r.types, as_trait))) {
+                if ((raw type_kind(r.types, as_trait)) == (raw TY_TRAIT())) {
+                    r.generics = isaved;
+                    string:o1 = relay string_concat("`",
+                        relay type_display(r.types, r.interns, as_trait));
+                    string:o2 = relay string_concat(o1,
+                        "` is a trait where an impl's target belongs; a blanket impl names its parameter as the target now (D-171) — write `impl:<T: Bound>:T:");
+                    string:o3 = relay string_concat(o2,
+                        relay type_display(r.types, r.interns, as_trait));
+                    drop diaglist_push(r.diags,
+                        raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                            relay string_concat(o3, "`"), d.span));
+                    pass NIL;
+                }
+            }
+        }
+    }
+
     int32:target = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+    // THE TRAIT SEGMENT RESOLVES UNDER THE IMPL'S PARAMETERS TOO (1.0.9b): a
+    // parameterised trait may take one — `impl:<T>:Box<T>:Iterable<T>` — so the
+    // generics stay in scope while it is read, as the target was. Restored
+    // after both, not between them.
+    TypeId:tyt = relay impl_trait(r.ast, d);
+    int32:trait_id = 0i32;
+    bool:has_trait = !(raw type_is_none(tyt));
+    if (has_trait) {
+        trait_id = relay resolve_trait_type(r, tyt, scope);
+    }
     r.generics = isaved;
     if (target == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, target)) { pass NIL; }
 
-    TypeId:tyt = relay impl_trait(r.ast, d);
-    if (raw type_is_none(tyt)) {
+    if (!has_trait) {
         drop impl_push(t, target, 0i32, id.index, false, scope);
         pass NIL;
     }
 
-    int32:trait_id = relay resolve_trait_type(r, tyt, scope);
     if (trait_id == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, trait_id)) { pass NIL; }
 
@@ -913,9 +950,22 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     // An inherent method ends the search: nothing outranks it,
                     // and a second inherent one is a duplicate-name error that
                     // belongs to the declaration, not to this lookup.
+                    //
+                    // A PARAMETERISED INHERENT IMPL STILL NEEDS ITS INSTANCE
+                    // BOUND (1.0.9b): `impl:<T>:Box<T> = { func:get = T(…) }`'s
+                    // `get` returns `T`, and the call site binds `T` from the
+                    // receiver exactly as a family TRAIT impl does — so
+                    // `blanket_impl` names the impl here too when it declares
+                    // parameters, rather than the 0 that left `T` unbound and
+                    // rendered the receiver `Box<<unresolved>>`.
+                    int32:inh_bl = 0i32;
+                    if ((raw impl_generic_count(ast, relay ast_decl(ast,
+                             DeclId{ index: e.decl }))) > 0i32) {
+                        inh_bl = e.decl;
+                    }
                     MethodFind:m = MethodFind{ found: true, ambiguous: false,
                                                decl: mdecl, owner: 0i32,
-                                               other: 0i32, blanket_impl: 0i32,
+                                               other: 0i32, blanket_impl: inh_bl,
                                                owner_impl: e.decl };
                     pass m;
                 }

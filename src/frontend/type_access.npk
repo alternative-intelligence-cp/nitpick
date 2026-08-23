@@ -375,6 +375,112 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
 
 // --- calls -----------------------------------------------------------------------------
 
+// Is this call `Trait.method(…)` — a member access whose base names a trait
+// (D-172, 1.0.9b)? Returns the trait TYPE, or 0. A trait name in expression
+// position is otherwise refused as "not a value" (D-171), so this is the one
+// place it means something: the namespace of the trait's methods.
+func:trait_qualified_trait = int32(ExprTyper->:e, ExprNode:n) {
+    ExprId:bid = raw expr_operand(n);
+    if (raw expr_is_none(bid)) { pass 0i32; }
+    ExprNode:bn = relay ast_expr(e.ast, bid);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (bn.a == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(e.tab, bn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:d = relay ast_decl(e.ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclTraitDecl) { pass 0i32; }
+    pass (raw tt_trait(e.types, s.origin, s.name));
+};
+
+// `Trait.method(recv, …)` (D-172). The receiver is the first argument, matched
+// against the method's own receiver parameter like any argument; the impl is
+// the one for the receiver's type under the named trait, and the ambiguity
+// D-102 refuses cannot arise because the trait is written.
+func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
+                                       int32:trait_ty) {
+    int32:mname = n.payload =>! int32;
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    if (count == 0i32) {
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            "a `Trait.method(…)` call takes the receiver as its first argument, and none was given",
+            n.span));
+    }
+    int32:recv = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    if (recv == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, recv)) { pass 0i32; }
+
+    int32:trait_decl = raw type_decl_of(e.types, trait_ty);
+    // THE IMPL OF (receiver, this trait). A loop over the table, because the
+    // question names a specific trait — `find_method` searches every trait and
+    // reports the two-trait case as ambiguous, which is exactly what the
+    // qualified form exists to resolve.
+    int32:mdecl = 0i32;
+    int32:owner_impl = 0i32;
+    int32:i = 0i32;
+    while (i < (raw impl_count(e.impls))) {
+        ImplEntry:en = relay impl_at(e.impls, i);
+        if (en.trait_id != 0i32) {
+            if ((raw type_decl_of(e.types, en.trait_id)) == trait_decl) {
+                bool:hit = (en.target == recv);
+                if (!hit) {
+                    if ((raw impl_generic_count(e.ast, relay ast_decl(e.ast,
+                             DeclId{ index: en.decl }))) > 0i32) {
+                        if (en.target != 0i32) {
+                            if ((raw type_decl_of(e.types, en.target))
+                                    == (raw type_decl_of(e.types, recv))) {
+                                if ((raw type_decl_of(e.types, recv)) != 0i32) { hit = true; }
+                            }
+                        }
+                    }
+                }
+                if (hit) {
+                    int32:md = relay impl_method_named(e.ast, e.interns, en.decl, mname);
+                    if (md == 0i32) {
+                        md = relay trait_default_named(e.ast, e.interns, e.types,
+                                 trait_ty, mname);
+                    }
+                    if (md != 0i32) { mdecl = md; owner_impl = en.decl; i = raw impl_count(e.impls); }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    if (mdecl == 0i32) {
+        string:q1 = relay string_concat("`",
+                        relay type_display(e.types, e.interns, recv));
+        string:q2 = relay string_concat(q1, "` does not implement `");
+        string:q3 = relay string_concat(q2, relay type_display(e.types, e.interns, trait_ty));
+        string:q4 = relay string_concat(q3, "`, or that trait has no method `");
+        string:q5 = relay string_concat(q4, relay intern_get(e.interns, mname));
+        pass (relay te_error(e, raw TYPE_NO_METHOD(),
+                  relay string_concat(q5, "`"), n.span));
+    }
+
+    TypeResolver:r = raw etyper_resolver(e);
+    // A FAMILY IMPL'S METHOD IS A TEMPLATE, bound by the receiver's arguments,
+    // exactly as a `recv.method()` call binds it (1.0.4b/1.0.6b).
+    if ((raw impl_generic_count(e.ast, relay ast_decl(e.ast,
+             DeclId{ index: owner_impl }))) > 0i32) {
+        r.enclosing = relay bind_blanket(e, owner_impl, recv);
+    }
+    r.self_trait = trait_decl;
+    int32:ft = relay fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
+
+    // Record what a `recv.method()` call records, so the emitter dispatches to
+    // the same symbol: the impl method, its trait, its symbol, its signature.
+    drop exprtypes_set_callee(e.expr_types, id, mdecl);
+    drop exprtypes_set_callee_trait(e.expr_types, id, trait_ty);
+    drop exprtypes_set_callee_sym(e.expr_types, id,
+            relay intern_add(e.interns,
+                relay method_symbol_name(e.types, e.interns, recv, trait_ty,
+                    relay intern_get(e.interns, mname))));
+    drop exprtypes_set_callee_ft(e.expr_types, id, ft);
+    // The receiver is argument 0, matched against the method's receiver
+    // parameter like any other — no `skip`.
+    pass (relay check_args(e, ft, start, count, 0i32, n.span));
+};
+
 pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     int32:callee = relay type_of_expr(e, raw expr_callee(n));
     int32:gcount = raw expr_generic_count(n);
@@ -840,6 +946,15 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
 // the method name is resolved as an ordinary function and the receiver becomes
 // its first argument.
 pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+    // `Trait.method(recv, …)` PARSES AS A METHOD CALL whose operand is the
+    // trait name (D-172): the method resolved for the receiver's type through
+    // the named trait, which chooses the one of two same-named traits D-102
+    // will not choose on its own. Caught before the operand is typed as a
+    // value, because a bare trait name is not one (D-171).
+    int32:tqt = relay trait_qualified_trait(e, n);
+    if (tqt != 0i32) {
+        pass (relay type_trait_qualified_call(e, id, n, tqt));
+    }
     // `Ev.Move(5i32)` PARSES AS A METHOD CALL — the parser folds `.name(` into
     // one node deliberately — so a VARIANT CONSTRUCTOR arrives here, not at
     // `type_call`. The receiver is an identifier naming an enum DECLARATION,
@@ -907,14 +1022,25 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         string:a4 = relay string_concat(a3, "` and `");
         string:a5 = relay string_concat(a4,
                         relay type_display(e.types, e.interns, found.other));
-        // D-102 PROMISED "the free-function form, which UFCS guarantees is
-        // available" — and no such form exists: an impl's method declares
-        // nothing at module scope, and `Trait.method(p)` resolves `Trait` as a
-        // type, not a value (measured at 1.0.8). Until a qualified call
-        // spelling is decided (raised at 1.0.9), the advice names what IS
-        // possible rather than a call that would be refused.
+        // NAME THE ONE YOU MEAN (D-172, 1.0.9b). D-102 promised "the
+        // free-function form, which UFCS guarantees is available" — and no such
+        // form existed: an impl's method declares nothing at module scope. The
+        // qualified call `Trait.method(recv, …)` is that spelling now, so the
+        // advice names it — one form per trait, built from the two names already
+        // in this message — rather than telling the author to give a method up.
+        string:mname = relay intern_get(e.interns, name);
+        string:q1 = relay string_concat(a5, "`; name the one you mean — `");
+        string:q2 = relay string_concat(q1,
+                        relay type_display(e.types, e.interns, found.owner));
+        string:q3 = relay string_concat(q2,
+                        relay string_concat(".", mname));
+        string:q4 = relay string_concat(q3, "(recv, …)` or `");
+        string:q5 = relay string_concat(q4,
+                        relay type_display(e.types, e.interns, found.other));
+        string:q6 = relay string_concat(q5,
+                        relay string_concat(".", mname));
         pass (relay te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
-            relay string_concat(a5, "`, and the compiler will not choose between them (D-102); no call spelling names one of the two yet, so implement only one of the traits on this type, or rename one method"),
+            relay string_concat(q6, "(recv, …)` (D-172), or implement only one of the traits on this type"),
             n.span));
     }
     if (found.found) { did_index = found.decl; }
@@ -1070,12 +1196,23 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     int32:p0 = raw type_param_at_of(e.ast, e.types, ft, 0i32);
-    // THE RECEIVER IS A SLOT LIKE ANY OTHER (1.0.8): `p.f()` and `f(p)` are one
-    // call (D-006), and `f(Point?:x)` accepted `f(p)` while `p.f()` reported
-    // "expected `Point?`, found `Point`" — an equality test where every other
-    // slot asks `fits`. The emitter fits the receiver to parameter 0 too.
-    if (!(raw fits(e, p0, recv))) {
-        drop te_mismatch_at(e, p0, recv, n.span);
+    // A POINTER RECEIVER IS TAKEN BY ADDRESS (1.0.9b), the dual of the one-level
+    // auto-dereference `.` already does (D-098): a method `set = NIL(Box<T>->:self,
+    // …)` mutates its receiver, and `b.set(x)` passes `@b`. Without it a mutating
+    // method could not be CALLED — any explicit `(@b)` is auto-dereferenced back
+    // to `b` by the `.`, so auto-ref is the only spelling that reaches it, and it
+    // is what makes a generic struct's method able to mutate (T-7). The emitter
+    // passes the receiver's address for this shape.
+    bool:ptr_recv = false;
+    if ((raw type_kind(e.types, p0)) == (raw TY_POINTER())) {
+        if ((raw type_elem(e.types, p0)) == recv) { ptr_recv = true; }
+    }
+    // THE RECEIVER IS OTHERWISE A SLOT LIKE ANY OTHER (1.0.8): `p.f()` and
+    // `f(p)` are one call (D-006), so it asks `fits`, as every other slot does.
+    if (!ptr_recv) {
+        if (!(raw fits(e, p0, recv))) {
+            drop te_mismatch_at(e, p0, recv, n.span);
+        }
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     pass (relay check_args(e, ft, start, count, 1i32, n.span));
@@ -1215,7 +1352,12 @@ func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
     IdSpan:pw = raw decl_generic_window(e.ast, bd);
     int32:mark = raw ast_scratch_mark(e.ast);
 
-    if (raw type_is_none(raw impl_target(e.ast, bd))) {
+    // A BLANKET IMPL'S PARAMETER IS THE RECEIVER (D-171): `impl:<T: P>:T:Trait`
+    // called on a `Point` binds `T` = `Point`. A FAMILY impl's parameters are
+    // the receiver's own type ARGUMENTS: `Box<int32>` binds `T` = `int32`,
+    // positionally. The two are told apart by the target's shape, not by
+    // whether a target was written (both write one now).
+    if (relay impl_is_blanket(e.ast, bd)) {
         drop ast_scratch_push(e.ast, recv);
     } else {
         int32:rargs = raw type_args_start_of(e.types, recv);
@@ -1231,6 +1373,107 @@ func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
     GenericScope:g = GenericScope{ params_start: pw.start, params_count: pw.count,
                                    args_start: aw.start, args_count: aw.count };
     pass g;
+};
+
+// A `dyn` OVER A FAMILY INSTANCE NEEDS A VTABLE, AND A VTABLE NEEDS METHODS TO
+// POINT AT (1.0.9b). A concrete value in a `dyn` slot is a fat pointer whose
+// trait word addresses THUNKS over that concrete type's methods. When the impl
+// supplying them is a FAMILY impl — `impl:<T>:Box<T>:Sized` — those methods are
+// templates, emitted one specialization per RECORDED instantiation, exactly as
+// a generic function is (1.0.4b). A method CALL records that instantiation; a
+// coercion did not, so `dyn Sized:s = box` reached the backend with no vtable
+// and was refused. This records the instantiation the coercion implies — EVERY
+// one of the trait's methods, because a vtable is all-or-nothing — so the
+// emitter has a body per thunk. It only records (the checker has just proved
+// `got` implements the trait through `dyn_accepts`, so each instantiation is
+// well-formed); nothing here can turn an accepted program into a refused one.
+func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) {
+    int32:gd = raw type_decl_of(e.types, got);
+    if (gd == 0i32) { pass 0i32; }
+    int32:i = 0i32;
+    while (i < (raw impl_count(e.impls))) {
+        ImplEntry:en = relay impl_at(e.impls, i);
+        if (!en.blanket) {
+            if (en.trait_id == tr_id) {
+                if (en.target != 0i32) {
+                    if ((raw impl_generic_count(e.ast,
+                             relay ast_decl(e.ast, DeclId{ index: en.decl })))
+                                > 0i32) {
+                        if ((raw type_decl_of(e.types, en.target)) == gd) {
+                            pass (en.decl);
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+// This impl's own method called `name`, or 0 when it inherits the trait default.
+func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) {
+    int32:i = 0i32;
+    while (i < (raw impl_member_count(ast, d))) {
+        DeclId:mid = raw impl_member(ast, d, i);
+        DeclNode:m = relay ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == name) { pass (mid.index); }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
+                                      int32:got, int32:tr_id) {
+    int32:tdecl = raw type_decl_of(e.types, tr_id);
+    if (tdecl == 0i32) { pass NIL; }
+    DeclNode:bd = relay ast_decl(e.ast, DeclId{ index: impl_decl });
+    DeclNode:td = relay ast_decl(e.ast, DeclId{ index: tdecl });
+    GenericScope:g = relay bind_blanket(e, impl_decl, got);
+
+    TypeResolver:r = raw etyper_resolver(e);
+    r.self_type = got;
+    r.self_trait = tdecl;
+    r.generics = g;
+    r.enclosing = g;
+
+    int32:k = 0i32;
+    while (k < (raw item_member_count(e.ast, td))) {
+        DeclId:tmid = raw item_member(e.ast, td, k);
+        DeclNode:tm = relay ast_decl(e.ast, tmid);
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            int32:name = raw decl_name(tm);
+            int32:mdecl = raw impl_own_member_idx(e.ast, bd, name);
+            if (mdecl == 0i32) { mdecl = tmid.index; }
+            int32:ft = relay fn_type(@r, DeclId{ index: mdecl }, name, e.scope);
+            drop fninst_record(e.fninsts, e.ast, mdecl,
+                               g.args_start, g.args_count,
+                               g.params_start, g.params_count,
+                               impl_decl, ft, raw span_none());
+        }
+        k = k + 1i32;
+    }
+    pass NIL;
+};
+
+pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
+                                         int32:got) {
+    if ((raw type_kind(e.types, got)) == (raw TY_DYN()))   { pass NIL; }
+    if ((raw type_kind(e.types, got)) == (raw TY_PARAM())) { pass NIL; }
+    int32:tn = raw type_dyn_count(e.types, want_dyn);
+    int32:ts = raw type_dyn_start(e.types, want_dyn);
+    int32:i = 0i32;
+    while (i < tn) {
+        int32:tr_id = raw ast_id_at(e.ast, ts, i);
+        int32:impl_decl = raw find_family_impl_for(e, got, tr_id);
+        if (impl_decl != 0i32) {
+            drop record_family_impl_methods(e, impl_decl, got, tr_id);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
 };
 
 // An argument's own span, falling back to the call's when the argument is the

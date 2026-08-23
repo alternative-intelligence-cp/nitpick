@@ -1800,7 +1800,7 @@ the lexical grammar as an explicit parser interaction rather than left implicit.
 
 ---
 
-## D-031 — `impl` syntax: no connector, type first — **SETTLED**
+## D-031 — `impl` syntax: no connector, type first — **SETTLED; amended by D-171 (every impl now names its target, so the blanket examples below read `impl:<T: Bound>:T:Trait`)**
 
 ```ebnf
 ImplDeclaration ::= "impl" ":" TypeOrParam (":" TraitName)? "=" "{" ImplBody "}" ";"
@@ -10844,7 +10844,7 @@ onward) needs it. What lands at 1.0.6:
 > associated type — the signature mismatch it also causes is suppressed, because
 > it points at the method rather than at the omission.
 
-## D-161 — Impls over generic families: the target between generics and trait — **SETTLED**
+## D-161 — Impls over generic families: the target between generics and trait — **SETTLED; superseded by D-171 (the segment/shape rule is retired — every impl names its target explicitly)**
 
 OPEN_DECISIONS C-6 — and the audit's premise half-dissolved on probing:
 **per-instance impls (`impl:Box<int32>:Sized2`) already parse, resolve, and

@@ -1,0 +1,53 @@
+// expect-exit: 42
+//
+// A TYPE IS GROUPED WITH PARENTHESES (D-170, 1.0.9b). Before, no spelling
+// existed for an array, a pointer or an `Optional` OF a trait object:
+// `dyn Speaks[2]` can only parse as `dyn (Speaks[2])`, and an array is not a
+// trait. `(dyn Speaks)[2]` is an array of trait objects; `(dyn Speaks)?` an
+// optional one; the group is its inner type, and the suffix binds to the group.
+//
+// The one implicit conversion is ONE level (D-099): a bare `Dog` becomes a
+// `dyn Speaks` at a `dyn` slot, and a `dyn Speaks` becomes a `dyn Speaks?` at
+// an optional slot — but not both at once, so the intermediate `dyn` is
+// written where an optional-of-dyn is filled.
+mod:type_group;
+
+trait:Speaks = { func:say = int32(Self:self); };
+struct:Dog = { int32:v; };
+struct:Cat = { int32:v; };
+impl:Dog:Speaks = { func:say = int32(Dog:self) { pass 1i32; }; };
+impl:Cat:Speaks = { func:say = int32(Cat:self) { pass 5i32; }; };
+
+// An array of trait objects as a parameter, iterated.
+func:total = int32((dyn Speaks)[2]:pair) {
+    int32:sum = 0i32;
+    for (dyn Speaks:s in pair) { sum = sum + (raw s.say()); }
+    pass sum;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Dog:d = Dog{ v: 0i32 };
+    Cat:c = Cat{ v: 0i32 };
+
+    // an array of trait objects, mixed
+    (dyn Speaks)[2]:arr = [d, c];
+    if ((raw arr[0].say()) != 1i32)          { exit 10i32; }
+    if ((raw arr[1].say()) != 5i32)          { exit 11i32; }
+    if ((raw total(arr)) != 6i32)            { exit 12i32; }
+
+    // an optional trait object: empty, then holding a pre-built dyn
+    (dyn Speaks)?:maybe = NIL;
+    if (maybe != NIL)                        { exit 13i32; }
+    dyn Speaks:s = c;
+    maybe = s;
+    if (maybe == NIL)                        { exit 14i32; }
+
+    // a pointer to a trait object
+    dyn Speaks:one = d;
+    (dyn Speaks)->:p = @one;
+    if ((raw (<-p).say()) != 1i32)           { exit 15i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

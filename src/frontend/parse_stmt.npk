@@ -236,6 +236,12 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
     if (raw token_kind_is_builtin_type(first)) { startable = true; }
     if (first == TokenKind.KwDyn)  { startable = true; }
     if (first == TokenKind.KwSelf) { startable = true; }
+    // A LEADING `(` OPENS A PARENTHESISED TYPE (D-170, 1.0.9b): `(dyn A)[2]:x`.
+    // It is ambiguous with a parenthesised EXPRESSION statement — `(a + b) * c;`
+    // — and the scan below resolves it exactly as it resolves a bare-name one:
+    // a `:` at depth zero after a complete type is a declaration, a `.`, a
+    // call, a `,` or an assignment at depth zero is an expression.
+    if (first == TokenKind.PLParen) { startable = true; }
     if (!startable) { pass false; }
 
     int64:k = 0i64;
@@ -256,7 +262,13 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
         if (!nested) {
             // At depth zero these end any hope of a type: a call, a member
             // access, an argument separator, an assignment.
-            if (t == TokenKind.PLParen) { pass false; }
+            //
+            // A `(` AT THE VERY FIRST TOKEN is the exception (D-170): it opens a
+            // type group, not a call. A later depth-zero `(` is still a call —
+            // `(f)()` reaches the second `(` at k>0 and bails, an expression.
+            if (t == TokenKind.PLParen) {
+                if (k != 0i64) { pass false; }
+            }
             if (t == TokenKind.PDot)    { pass false; }
             if (t == TokenKind.PComma)  { pass false; }
             if (raw p_is_assign_op(t))  { pass false; }
@@ -277,6 +289,17 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
 
         k = k + 1i64;
     }
+
+    // A LEADING `(` THAT DID NOT RESOLVE IN BUDGET IS AN EXPRESSION, NOT AN
+    // ERROR (D-170, 1.0.9b). A parenthesised TYPE closes fast — types cap near
+    // 200 tokens (D-064) — so a group that has not ended a type in 512 was never
+    // one; it is a long parenthesised expression, which is unbounded and legal,
+    // and belongs to the expression parser (a `too_deep` macro call is refused
+    // for its depth LATER, not here). Before D-170 a leading `(` short-circuited
+    // to `false` above and never scanned; this restores that answer for the one
+    // case the scan cannot settle. A bare-name lead has no such escape: it falls
+    // through to the error below, because a 512-token type IS the defect.
+    if (first == TokenKind.PLParen) { pass false; }
 
     // RUNNING OUT OF BUDGET IS NOT AN ANSWER, and returning `false` as though it
     // were is how the old limit misparsed. Nothing that reaches here terminated

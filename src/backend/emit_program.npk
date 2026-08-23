@@ -363,6 +363,48 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     pass sym;
 };
 
+// ONE FAMILY-INSTANCE VTABLE (1.0.9b), registered in `vtmap` and emitted, with
+// `Self` bound to this instantiation's target and the impl's parameters bound to
+// its arguments — the same two bindings `emit_family_instance` makes for the
+// methods, and here for the same reason: the thunks resolve the trait's
+// signature and name the concrete target. Built only once per (instance, trait)
+// — the `vtmap` guard — and only when every slot has a recorded method
+// (`family_vtable_ready`), so a plain call to one method never emits a
+// half-built table. The thunks may forward-reference method bodies the fninst
+// loop emits later, which is legal within a module.
+func:emit_family_vtable = NIL(ExprEmitter->:x, DiagList->:diags,
+                              FnInstance:fvi) {
+    DeclNode:fvd = relay ast_decl(x.ast, DeclId{ index: fvi.owner_impl });
+    TypeId:fvtr = raw impl_trait(x.ast, fvd);
+    if (raw type_is_none(fvtr)) { pass NIL; }
+    int32:fvtrait = relay resolve_trait_type(x.tr, fvtr, x.scope);
+    if (fvtrait == 0i32) { pass NIL; }
+
+    TypeId:fvtgt = raw impl_target(x.ast, fvd);
+    IdSpan:fvpw = raw decl_generic_window(x.ast, fvd);
+    GenericScope:fvg = GenericScope{
+        params_start: fvpw.start, params_count: fvpw.count,
+        args_start: fvi.args_start, args_count: fvi.args_count };
+    x.tr.generics = fvg;
+    x.tr.enclosing = fvg;
+    int32:fvself = relay type_subst(x.tr,
+                       relay resolve_type(x.tr, fvtgt, x.scope),
+                       fvg, fvd.span, 64i32, x.fe.ctx.impls);
+
+    if ((raw vtmap_find(x.fe.ctx, fvself, fvtrait)) != 0i32) { pass NIL; }
+    if (!(relay family_vtable_ready(x, fvtrait, fvi.owner_impl,
+                                    fvi.args_start, fvi.args_count))) {
+        pass NIL;
+    }
+    x.tr.self_type = fvself;
+    drop vtmap_add(x.fe.ctx, fvself, fvtrait,
+        raw intern_add(x.interns,
+            relay mangled_fn_sym(x.fe.ctx, fvi.owner_impl,
+                relay vtable_stem_of(x.fe.ctx, x.interns, fvself, fvtrait))));
+    drop emit_vtable(x, diags, DeclId{ index: fvi.owner_impl }, fvself, fvtrait);
+    pass NIL;
+};
+
 // One body per recorded instantiation of this family impl's methods, with the
 // impl's parameters bound to that instantiation's arguments and `Self` bound to
 // the substituted target (`Box<int32>`, not the template's `Box<T>`).
@@ -419,6 +461,68 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     x.tr.self_type = ss;
     if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
     pass NIL;
+};
+
+// IS EVERY SLOT OF THIS FAMILY INSTANCE'S VTABLE FILLED? (1.0.9b). A vtable is
+// all-or-nothing — a thunk per trait method, each pointing at a method body — so
+// it can be emitted only once every one of the trait's methods has a recorded
+// instantiation for THIS (impl, arguments). A `dyn` coercion records them all at
+// once; a call records one; this is the test that tells a complete table from a
+// half-built one, so a plain call to one method of a family never emits a table
+// with holes.
+func:family_vtable_ready = bool(ExprEmitter->:x, int32:trait_ty,
+                                int32:impl_decl, int32:args_start,
+                                int32:args_count) {
+    int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
+    if (tdecl == 0i32) { pass false; }
+    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+    int32:k = 0i32;
+    while (k < (raw item_member_count(x.ast, td))) {
+        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, k));
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            if (!(relay family_method_recorded(x, raw decl_name(tm), impl_decl,
+                                               args_start, args_count))) {
+                pass false;
+            }
+        }
+        k = k + 1i32;
+    }
+    pass true;
+};
+
+// Was a method of this NAME recorded for this family impl at these arguments?
+// The recorded declaration is the impl's own member or the trait default, so it
+// is matched by name, not by declaration index — the same name the vtable's
+// thunk and the emitted body agree on.
+func:family_method_recorded = bool(ExprEmitter->:x, int32:name,
+                                   int32:impl_decl, int32:args_start,
+                                   int32:args_count) {
+    int32:i = 0i32;
+    while (i < (raw fninst_count(x.fninsts))) {
+        FnInstance:e = relay fninst_at(x.fninsts, i);
+        if (e.owner_impl == impl_decl) {
+            if (e.args_count == args_count) {
+                bool:same = true;
+                int32:j = 0i32;
+                while (j < args_count) {
+                    if ((relay ast_id_at(x.ast, e.args_start, j))
+                            != (relay ast_id_at(x.ast, args_start, j))) {
+                        same = false;
+                        j = args_count;
+                    } else {
+                        j = j + 1i32;
+                    }
+                }
+                if (same) {
+                    DeclNode:md = relay ast_decl(x.ast,
+                                      DeclId{ index: e.decl });
+                    if ((raw decl_name(md)) == name) { pass true; }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 // The interned symbol name for one of this impl's methods (D-156 amended).
@@ -756,6 +860,30 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     drop emit_runtime_declares(w);
 
     FnEmitter:fe = raw fnem_init(w, @c);
+
+    // FAMILY-INSTANCE VTABLES, BEFORE ANY BODY THAT BUILDS A `dyn` FROM ONE
+    // (1.0.9b). `build_vtmap` pre-registers every per-instance impl's table, so
+    // a `dyn` coercion in any function finds it; a FAMILY impl's table is per
+    // instantiation and is known only from the recorded set, so it is
+    // registered and emitted here — after the preamble, before the function
+    // loop where `emit_dyn_from` reads `vtmap`. The emitter is built at the
+    // impl's home scope and handed to `emit_family_vtable`, where `Self` and the
+    // impl's parameters bind — the same shape `emit_family_instance` takes, and
+    // the reason it is a function rather than inline: a resolver reached through
+    // a LOCAL emitter is a borrow the escape analysis cannot name (BORROW-009),
+    // while one reached through a parameter is.
+    int32:fv = 0i32;
+    while (fv < (raw fninst_count(fninsts))) {
+        FnInstance:fvi = relay fninst_at(fninsts, fv);
+        if (fvi.owner_impl != 0i32) {
+            int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
+            ExprEmitter:fvx = raw exprem_init(@fe, @g.ast, ets, @g.tab,
+                                  interns, @st, tr, fninsts, fvhs);
+            drop emit_family_vtable(@fvx, diags, fvi);
+        }
+        fv = fv + 1i32;
+    }
+
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);

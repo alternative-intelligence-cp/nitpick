@@ -1,0 +1,50 @@
+// expect-exit: 42
+//
+// D-171 — EVERY IMPL NAMES ITS TARGET, and the two parameterised shapes it
+// distinguishes both run here.
+//
+//   * A BLANKET IMPL in the new spelling: `impl:<T: Base>:T:Doubled`. The
+//     target is the parameter `T`, so the impl supplies `Doubled` to EVERY type
+//     that implements `Base` — `N` reaches `doubled` without an impl of its
+//     own. Before D-171 this was `impl:<T: Base>:Doubled` (no target), which
+//     the segment rule could not tell from a family impl of a trait named after
+//     `T`; naming the target settles it with no heuristic (T-7).
+//   * AN INHERENT FAMILY IMPL: `impl:<T>:Box<T>` with trait 0. Its methods are
+//     templates over the impl's `T`, emitted one specialization per instance
+//     through the family machinery — and one of them MUTATES through a
+//     `Box<T>->:self` receiver, which an inherent method may take today (a
+//     TRAIT method's by-pointer receiver is D-166's `Self->`, a different
+//     question). The mutation is the point: `set` writes the field the free
+//     function `tokenlist_push` writes by hand in `src/`.
+mod:impl_target;
+
+trait:Base    = { func:base    = int32(Self:self); };
+trait:Doubled = { func:doubled = int32(Self:self); };
+
+// BLANKET: everything that is `Base` is `Doubled`, at twice its base value.
+impl:<T: Base>:T:Doubled = {
+    func:doubled = int32(T:self) { pass ((raw self.base()) * 2i32); };
+};
+
+struct:N = { int32:v; };
+impl:N:Base = { func:base = int32(N:self) { pass self.v; }; };
+
+// INHERENT FAMILY, with a mutating method through a pointer receiver.
+struct:Box<T> = { T:v; };
+impl:<T>:Box<T> = {
+    func:set = NIL(Box<T>->:self, T:v) { self.v = v; pass NIL; };
+    func:get = T(Box<T>:self)          { pass self.v; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    N:n = N{ v: 10i32 };
+    int32:d = raw n.doubled();          // 20, through the blanket
+
+    Box<int32>:b = Box{ v: 5i32 };
+    drop b.set(17i32);                  // the mutating inherent family method
+    int32:g = raw b.get();             // 17
+
+    exit d + g + 5i32;                 // 20 + 17 + 5 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

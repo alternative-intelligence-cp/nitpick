@@ -227,14 +227,30 @@ pub func:impl_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
 // which is to say the one that declared generics and wrote NO target, so the
 // parameter stands in the target position (D-105).
 //
-// GENERICS ALONE ARE NOT THE TEST (1.0.4b). A FAMILY impl
-// (`impl:<T>:Box<T>:Sized2`) declares generics too and names a real target; the
-// two are told apart by whether slot 0 is empty, exactly as the parser fills
-// it. Reading the generic count alone made every family impl a blanket one,
-// discarding its target and reporting its methods as not matching the trait.
+// A BLANKET IMPL'S TARGET IS A BARE PARAMETER (D-171). Every parameterised
+// impl names its target now — `impl:<T: P>:T:Loggable` (blanket, target `T`) vs
+// `impl:<T>:Box<T>:Sized` (family, target `Box<T>`) — so the two are told apart
+// by the SHAPE of that target: a blanket's is an argument-less name that IS one
+// of the declared parameters; a family's is an instantiation that mentions
+// them. This reads the AST alone (the target NamedType and the parameter
+// names), so it is answerable before resolution, where its callers need it.
 pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) {
-    if ((raw impl_generic_count(ast, d)) == 0i32) { pass false; }
-    pass (raw type_is_none(raw impl_target(ast, d)));
+    int32:gc = raw impl_generic_count(ast, d);
+    if (gc == 0i32) { pass false; }
+    TypeId:tgt = raw impl_target(ast, d);
+    if (raw type_is_none(tgt)) { pass false; }
+    TypeNode:tn = relay ast_type(ast, tgt);
+    if (tn.kind != TypeKind.TypeNamedType) { pass false; }
+    if ((raw type_args_count(tn)) > 0i32) { pass false; }
+    if (raw type_name_is_builtin(tn)) { pass false; }
+    int64:nm = raw type_name_index(tn);
+    int32:i = 0i32;
+    while (i < gc) {
+        DeclNode:gpn = relay ast_decl(ast, raw impl_generic(ast, d, i));
+        if ((raw decl_name(gpn)) == (nm =>! int32)) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 // --- MacroDecl ----------------------------------------------------------------------
@@ -974,41 +990,16 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     drop p_expect(p, TokenKind.KwImpl);
     drop p_expect(p, TokenKind.PColon);
 
-    // `impl:<T: Printable>:Loggable` -- A BLANKET IMPL (TRAITS_REFERENCE 2.6),
-    // and it did not parse at all: this position expected a TYPE, and `<` is not
-    // one, so the form the specification gives for implementing a trait over
-    // every type satisfying a bound answered "expected a type".
-    //
-    // That is a D-085 violation rather than a missing feature. The frontend
-    // accepts the WHOLE GRAMMAR from day one; a construct no rung can lower yet
-    // produces a BACKEND diagnostic, never a parse error -- and the rule exists
-    // so the grammar is never partial and never has to be re-widened.
-    //
-    // THE GENERIC LIST STANDS IN THE TARGET POSITION. `impl:<T: Printable>:Loggable`
-    // writes no type there at all — the parameter it declares IS what is being
-    // implemented on — so slot 0 is empty for a blanket impl and the generics
-    // window is what says which type it means. Reading `impl_generic_count` is
-    // therefore the test for "is this blanket", and it needs no separate flag.
+    // The generics window, then the target. `<T: P>` and nothing standing in
+    // the target position was the blanket form until D-171; now every impl
+    // names its target (below).
     IdSpan:generics = relay p_parse_generics(p);
 
-    // THE SEGMENT COUNT DECIDES (D-161 as amended at 1.0.4b), and it decides
-    // without a lookahead heuristic because D-111 already settled the shape:
-    // **a blanket impl must name a trait**. So after a generics window:
-    //
-    //   ONE segment  — `impl:<T: Printable>:Loggable`  — is the blanket form,
-    //                  and the segment is its TRAIT (the parameter it declared
-    //                  is the target, D-105: slot 0 stays empty).
-    //   TWO segments — `impl:<T>:Box<T>:Sized2`        — is the FAMILY form:
-    //                  target, then trait.
-    //
-    // The first attempt (1.0.4) parsed a type unconditionally and treated a
-    // following `:` as the discriminator, which consumed the blanket form's
-    // TRAIT as a target and broke it. Reading the count instead is what makes
-    // the two unambiguous: a family impl always has a trait segment, because a
-    // trait-less one would be an inherent impl over a family — which is
-    // `impl:<T>:Box<T>` with no trait, the one-segment case, and is refused
-    // for the same reason D-111 refuses a trait-less blanket (it would add
-    // methods to types the writer does not own).
+    // SLOT 1 IS ALWAYS THE TARGET (D-031, made universal by D-171): the type
+    // being implemented on, whether or not the impl declares parameters. An
+    // optional second `:`-segment is the trait. A blanket impl names its target
+    // too now — `impl:<T: P>:T:Loggable` — so there is one shape,
+    // `impl:<params>:Target(:Trait)?`, and no segment count to read.
     int32:target = 0i32;
     int32:trait_ty = 0i32;
     if (generics.count == 0i32) {
@@ -1017,15 +1008,11 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
             trait_ty = (relay p_parse_type(p)).index;
         }
     } else {
-        // The generics window ends before the `:` that introduces the next
-        // segment, so each segment is `:` then a type.
+        // The generics window ends before the `:` that introduces the target.
         if (relay p_accept(p, TokenKind.PColon)) {
-            int32:first = (relay p_parse_type(p)).index;
+            target = (relay p_parse_type(p)).index;
             if (relay p_accept(p, TokenKind.PColon)) {
-                target = first;
                 trait_ty = (relay p_parse_type(p)).index;
-            } else {
-                trait_ty = first;
             }
         }
     }

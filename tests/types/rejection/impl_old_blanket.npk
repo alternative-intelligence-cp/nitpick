@@ -1,0 +1,20 @@
+// The OLD blanket spelling, refused with the new form named (D-171, 1.0.9b).
+//
+// Before D-171 a blanket impl had no target — `impl:<T: Bound>:Trait` named the
+// trait where a target now goes. Making the target mandatory left that form
+// reading as an INHERENT impl on the trait (a trait in a value-type position),
+// which the generic "is a trait, not a value type" would report without saying
+// what changed. A GENERIC impl whose target slot resolves to a trait is
+// unambiguously the old form — a modern family impl's target is a type
+// (`Box<T>`), a modern blanket's is the bare parameter — so it is caught by name
+// and the message names the new spelling `impl:<T: Bound>:T:Trait`.
+mod:impl_old_blanket;
+
+trait:Base    = { func:base    = int32(Self:self); };
+trait:Doubled = { func:doubled = int32(Self:self); };
+
+// expect-error: NITPICK-TYPE-012
+impl:<T: Base>:Doubled = { func:doubled = int32(T:self) { pass 2i32; }; };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

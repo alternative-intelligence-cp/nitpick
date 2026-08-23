@@ -1,0 +1,25 @@
+// expect-exit: 42
+//
+// D-172 — `Trait.method(recv, …)`. Two traits declare a method of the SAME
+// name, one type implements both, and each method is reached by naming the
+// trait it belongs to. The receiver is fitted as parameter 0 and the call
+// lowers as a direct call to that impl's method (T-8) — the "a call through a
+// member" rung retires for this shape. The UNQUALIFIED `p.name()` is refused as
+// ambiguous by name; that rejection is `tests/types/rejection/`.
+mod:trait_qualified;
+
+trait:Ta = { func:name = int32(Self:self); };
+trait:Tb = { func:name = int32(Self:self); };
+
+struct:P = { int32:v; };
+impl:P:Ta = { func:name = int32(P:self) { pass 1i32; }; };
+impl:P:Tb = { func:name = int32(P:self) { pass 2i32; }; };
+
+func:main = int32(cstring[]:_~argv) {
+    P:p = P{ v: 0i32 };
+    int32:a = raw Ta.name(p);          // 1, through Ta's impl
+    int32:b = raw Tb.name(p);          // 2, through Tb's impl
+    exit a + b + 39i32;                // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

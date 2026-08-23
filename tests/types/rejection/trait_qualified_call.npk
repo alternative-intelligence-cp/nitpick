@@ -1,0 +1,27 @@
+// `Trait.method(recv, …)` — the two ways it is refused (D-172, 1.0.9b).
+//
+//   * QUALIFIED ON A TYPE THAT DOES NOT IMPLEMENT THE TRAIT. `Ta.name(q)` asks
+//     for `Ta`'s `name` specialised to `Q`, and `Q` implements no `Ta`, so
+//     there is no method to call — the same TYPE-019 an absent method gives.
+//   * UNQUALIFIED WHERE TWO TRAITS SUPPLY ONE NAME. `p.name()` cannot choose
+//     between `Ta`'s and `Tb`'s `name` (D-102, no meaning-by-position); the
+//     diagnostic now names the qualified form as the fix rather than telling the
+//     author to give a method up.
+mod:trait_qualified_call;
+
+trait:Ta = { func:name = int32(Self:self); };
+trait:Tb = { func:name = int32(Self:self); };
+
+struct:Q = { int32:v; };
+struct:P = { int32:v; };
+impl:P:Ta = { func:name = int32(P:self) { pass 1i32; }; };
+impl:P:Tb = { func:name = int32(P:self) { pass 2i32; }; };
+
+// expect-error: NITPICK-TYPE-019
+func:on_a_non_implementor = int32(Q:q) { pass (raw Ta.name(q)); };
+
+// expect-error: NITPICK-TYPE-020
+func:still_ambiguous_unqualified = int32(P:p) { pass (raw p.name()); };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

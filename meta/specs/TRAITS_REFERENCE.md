@@ -125,15 +125,25 @@ Inherent methods dispatch **statically via UFCS** — `p.magnitude()` resolves t
 `Point_magnitude(p)`. This is an independent confirmation that UFCS is part of the
 language (D-006).
 
-> **On a GENERIC subject there is no inherent impl today (found at 1.0.7).**
-> `impl:<T>:List<T> = { … }` is read by D-161's segment rule as a blanket impl
-> of a trait named `List<T>` and refused. A generic struct's methods go through
-> a trait (`impl:<T>:List<T>:Sized`), and since a trait method cannot take its
-> receiver by pointer (`Self->` is refused in a trait signature), no method of a
-> generic struct can mutate it: mutators are free generic functions over
-> `List<T>->`, called `list_push(@l, v)` — `TokenList`'s own shape. The
-> spelling is raised as **T-7** (1.0.9) with a recommendation; this note is
-> struck when it lands.
+**A trait name is a namespace, so a method may be called qualified** (D-172):
+`Ta.tag(p)` is `p.tag()` with the trait said out loud — it resolves `tag` in
+`Ta` for `p`'s type, passes `p` as the receiver, and is refused by name when
+`p`'s type does not implement `Ta`. This is how a call disambiguates when two
+traits a type implements declare one name (`p.tag()` alone cannot choose, D-102),
+and it reaches a method on a generic receiver through the receiver's bound. No
+new syntax — a trait name in expression position takes members the way an enum or
+a module does.
+
+> **A GENERIC subject has inherent impls now (D-171, 1.0.9b).**
+> `impl:<T>:List<T> = { … }` names its target and is read as an inherent family
+> impl — its methods are templates over the impl's `T`, one specialization per
+> instance. An inherent family method may take its receiver **by pointer**
+> (`List<T>->:self`), so a generic struct's methods can mutate it: `l.push(v)`
+> beside the free `list_push(@l, v)`. (A *trait* method's by-pointer receiver is
+> D-166's `Self->`, a separate question.) This was **T-7** — the segment rule
+> could not tell `impl:<T>:List<T>` from a blanket impl of a trait named
+> `List<T>`; D-171 settles it by making every impl name its target,
+> `impl:<params>:Target(:Trait)?`.
 
 ### 2.5 Derive Attributes
 
@@ -229,12 +239,14 @@ reason rather than guessed at (D-133):
 A blanket impl implements a trait for every type satisfying a bound:
 
 ```nitpick
-impl:<T: Printable>:Loggable = {
+impl:<T: Printable>:T:Loggable = {
     func:log_str = string(T:self) { pass("[LOG]"); };
 };
 ```
 
-`T` is substituted with each concrete type implementing `Printable`. **Concrete
+The target is the bare parameter `T` (D-171): a blanket impl names it where a
+concrete impl names a type. `T` is substituted with each concrete type
+implementing `Printable`. **Concrete
 impls take priority** over blanket-generated ones — expressed as the *order* the
 method lookup asks its question, so there is never a moment at which two
 candidates exist and something has to choose (D-111).
@@ -242,15 +254,15 @@ candidates exist and something has to choose (D-111).
 Three rules complete the form, all D-111:
 
 - **At most one blanket impl per trait.** The language has no negative bounds, so
-  nothing stops a type satisfying two different bounds — `impl:<T: A>:Loggable`
-  and `impl:<T: B>:Loggable` genuinely overlap, and with no specialization
+  nothing stops a type satisfying two different bounds — `impl:<T: A>:T:Loggable`
+  and `impl:<T: B>:T:Loggable` genuinely overlap, and with no specialization
   (D-064 §7) there is no rule to choose by. Both are named in the diagnostic. A
   blanket impl beside a *concrete* one is not a conflict: overlapping is the point.
-- **A blanket impl must name a trait.** `impl:<T: Bound> = { … };` parses, and
-  would add methods to every type satisfying a bound — methods on types the writer
-  does not own.
+- **A blanket impl must name a trait.** `impl:<T: Bound>:T = { … };` names its
+  target but no trait, and would add methods to every type satisfying a bound —
+  methods on types the writer does not own; it is refused for that.
 - **A blanket impl does not apply to itself.** Otherwise
-  `impl:<T: Loggable>:Loggable` would be true of everything by circular reasoning.
+  `impl:<T: Loggable>:T:Loggable` would be true of everything by circular reasoning.
 
 `Self` inside the block is the parameter, and the block is checked for
 completeness, supertraits and duplicate names exactly as a concrete impl is.
