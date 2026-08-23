@@ -69,9 +69,19 @@ this one file", there is a faster loop that builds the checker once:
 python3 bootstrap/harness/quickcheck.py tests/types/rejection/borrows.npk
 ```
 
-It is **not** a substitute for the harness and skips every whole-suite check.
-Rebuild it after every edit to `src/` — it watches nothing, and a stale binary
-answering an old question is the failure mode to expect.
+And the same loop for the backend — build `npkc` once, then compile, link and
+RUN programs with it, printing the exit code (or the refusal, or llc's first
+error; `--ir` prints the IR too, `--keep` leaves the `.ll`/`.o`/binary behind):
+
+```
+python3 bootstrap/harness/quickemit.py tests/backend/programs/dyn_slots.npk
+```
+
+Neither is a substitute for the harness; both skip every whole-suite check.
+`quickcheck` watches nothing — rebuild it after every edit to `src/`, since a
+stale binary answering an old question is the failure mode to expect;
+`quickemit` rebuilds itself when anything under `src/`, `lib/` or `bootstrap/`
+is newer than its cached `npkc`.
 
 Three things to know before you use it:
 
@@ -99,6 +109,7 @@ parse failure some lines away from the mistake:
 | `comptime`, `derive` | keywords — so `mod:comptime;` and `mod:derive;` are not modules, and the loader reports `NITPICK-RESOLVE-005` at the `mod:` line as though the file were missing |
 | `move`, `buffer`, `raw` | keywords that read like ordinary local names |
 | `assoc` | the associated-type keyword (D-160) — so `bool:assoc;` is not a field |
+| `on` | a keyword — so `Node?:on = nd;` is parsed as the expression `Node ? …` and fails at the `:` |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

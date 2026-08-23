@@ -1,0 +1,133 @@
+// expect-exit: 42
+//
+// A CONCRETE VALUE REACHES A `dyn` SLOT THROUGH EVERY SLOT KIND (1.0.6e).
+//
+// `fits` admits a concrete value into a `dyn` slot wherever a value meets a
+// slot, and until 1.0.6e the emitter built the fat pointer at ONE of those
+// sites — the declaration initialiser — and stored the raw value at the rest.
+// A call argument and a `pass` were refused by `llc` (`%Dog` where `{ ptr, ptr }`
+// was declared); an ASSIGNMENT into an existing `dyn` compiled, wrote the
+// 4-byte `Cat` over the 16-byte fat pointer, dispatched through what was left,
+// and segfaulted. `dyn_vtable.npk` covers the declaration form thoroughly; this
+// file covers the other fifteen, and each case dispatches afterwards and checks
+// for the answer the OTHER implementor would not give — so a slot that stored
+// the raw value cannot pass by luck.
+//
+// Same finding as 1.0.6b's: `dyn` and every slot kind each had coverage, and
+// `dyn` × slot had one of sixteen.
+
+mod:dyn_slots;
+
+trait:Speaks = { func:say = int32(Self:self); };
+
+struct:Dog = { int32:v; };
+struct:Cat = { int32:v; };
+
+impl:Dog:Speaks = { func:say = int32(Dog:self) { pass 1i32; }; };
+impl:Cat:Speaks = { func:say = int32(Cat:self) { pass 5i32; }; };
+
+struct:Holder = { dyn Speaks:s; int32:n; };
+
+// AN ARRAY OF `dyn` THROUGH A GENERIC FIELD. No type spelling groups a suffix
+// around a `dyn` today — `dyn Speaks[2]` parses as `dyn (Speaks[2])`, which is
+// refused because an array is not a trait — so the array-element slot is
+// reached by substitution: `Pair<dyn Speaks>`'s `items` is a `dyn Speaks[2]`
+// (the grammar question is raised at 1.0.9, D-170).
+struct:Pair<T> = { T[2]:items; };
+
+enum:Slot = {
+    Empty;
+    Held(dyn Speaks);
+};
+
+// A CALL ARGUMENT.
+func:speak = int32(dyn Speaks:s) { pass (raw s.say()); };
+
+// A METHOD-CALL ARGUMENT (parameter 1, behind the receiver).
+impl:Holder = {
+    func:compare = int32(Holder:self, dyn Speaks:other) {
+        pass ((raw self.s.say()) + (raw other.say()));
+    };
+};
+
+// A `pass`.
+func:choose = dyn Speaks(bool:b, Dog:d, Cat:c) { if (b) { pass d; } pass c; };
+
+// A `Result{…}` VALUE through the explicit `return`.
+func:boxed = dyn Speaks(Cat:c) { return Result{ value: c, error: 0tbb32 }; };
+
+// A FAILING CALL, so `?`'s default is reached.
+func:broken = dyn Speaks() { fail 3tbb32; };
+
+// A GENERIC FUNCTION with a `dyn` parameter: the specialization is matched by
+// the signature the checker recorded, not by the arguments' own types — a
+// `Cat` arriving where `dyn Speaks` is declared must still find `twice<int32>`.
+func:twice<T> = int32(T:_~tag, dyn Speaks:s) { pass ((raw s.say()) * 2i32); };
+
+func:main = int32(cstring[]:_~argv) {
+    Dog:d = Dog{ v: 0i32 };
+    Cat:c = Cat{ v: 0i32 };
+
+    // call argument
+    if ((raw speak(d)) != 1i32) { exit 10i32; }
+    if ((raw speak(c)) != 5i32) { exit 11i32; }
+
+    // pass
+    dyn Speaks:p = raw choose(false, d, c);
+    if ((raw p.say()) != 5i32) { exit 12i32; }
+
+    // ASSIGNMENT into an existing dyn — the regression. `q` was built from
+    // `d`; storing `c` raw left Dog's vtable word over Cat's bytes.
+    dyn Speaks:q = d;
+    q = c;
+    if ((raw q.say()) != 5i32) { exit 13i32; }
+    q = d;
+    if ((raw q.say()) != 1i32) { exit 14i32; }
+
+    // struct literal field, then field assignment
+    Holder:h = Holder{ s: d, n: 0i32 };
+    if ((raw h.s.say()) != 1i32) { exit 15i32; }
+    h.s = c;
+    if ((raw h.s.say()) != 5i32) { exit 16i32; }
+
+    // method-call argument
+    if ((raw h.compare(d)) != 6i32) { exit 17i32; }
+
+    // array literal elements (through a substituted field type), then an
+    // index assignment
+    Pair<dyn Speaks>:pr = Pair{ items: [d, c] };
+    if ((raw pr.items[0].say()) != 1i32) { exit 18i32; }
+    if ((raw pr.items[1].say()) != 5i32) { exit 19i32; }
+    pr.items[0] = c;
+    if ((raw pr.items[0].say()) != 5i32) { exit 20i32; }
+
+    // Result{…} value
+    dyn Speaks:b = raw boxed(c);
+    if ((raw b.say()) != 5i32) { exit 21i32; }
+
+    // `?` default
+    dyn Speaks:f = broken() ? c;
+    if ((raw f.say()) != 5i32) { exit 22i32; }
+
+    // a pick arm's give
+    int32:sel = 2i32;
+    dyn Speaks:g = pick (sel) {
+        (1i32) { give d; },
+        (*)    { give c; }
+    };
+    if ((raw g.say()) != 5i32) { exit 23i32; }
+
+    // a variant's payload
+    Slot:sl = Slot.Held(c);
+    pick (sl) {
+        (Slot.Held(inner)) { if ((raw inner.say()) != 5i32) { exit 24i32; } },
+        (Slot.Empty) { exit 25i32; }
+    }
+
+    // a generic function's dyn parameter
+    if ((raw twice::<int32>(0i32, c)) != 10i32) { exit 26i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

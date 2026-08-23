@@ -80,6 +80,18 @@ pub struct:ExprTypes = {
     // what `P` became but not which trait supplied the method. `callee_sym`
     // covers the concrete-receiver case; this covers the substituted one.
     wild int32->:callee_trait;
+
+    // THE CALLEE'S FUNCTION TYPE AS THIS CALL SAW IT, or 0 (1.0.6e). `check_args`
+    // measures every argument against a parameter of this type through `fits`,
+    // which admits two things the argument's own type does not say: a bare `T`
+    // into an `Optional<T>` slot (D-099) and a concrete value into a `dyn` slot
+    // (D-158). The emitter has to build both, and it cannot re-derive the
+    // signature — for a generic or family-impl call it is the SUBSTITUTED one,
+    // computed under a binding only the checker held. So the type travels on the
+    // call, beside the callee it belongs to, and the emitter reads the same
+    // parameter `fits` read. An indirect call records the value's own function
+    // type; a variant constructor records 0 and reads the payload instead.
+    wild int32->:callee_ft;
     int32:count;
 };
 
@@ -91,12 +103,14 @@ pub func:exprtypes_init = ExprTypes(int32:n) {
     wild int8->:cal = alloc(size * #size_of<int32>());
     wild int8->:cim = alloc(size * #size_of<int32>());
     wild int8->:ctr = alloc(size * #size_of<int32>());
+    wild int8->:cft = alloc(size * #size_of<int32>());
 
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
                              callee: cal =>! wild int32->,
                              callee_sym: cim =>! wild int32->,
                              callee_trait: ctr =>! wild int32->,
+                             callee_ft: cft =>! wild int32->,
                              count: size =>! int32 };
     int64:i = 0i64;
     while (i < size) {
@@ -105,6 +119,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) {
         t.callee[i] = 0i32;
         t.callee_sym[i] = 0i32;
         t.callee_trait[i] = 0i32;
+        t.callee_ft[i] = 0i32;
         i = i + 1i64;
     }
     pass t;
@@ -185,6 +200,20 @@ pub func:exprtypes_callee_trait = int32(ExprTypes->:t, ExprId:id) {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee_trait[id.index => int64]);
+};
+
+// The function type a call's arguments were checked against (1.0.6e), or 0.
+pub func:exprtypes_set_callee_ft = NIL(ExprTypes->:t, ExprId:id, int32:ft) {
+    if (id.index < 0i32) { fail 24tbb32; }
+    if (id.index >= t.count) { fail 24tbb32; }
+    t.callee_ft[id.index => int64] = ft;
+    pass NIL;
+};
+
+pub func:exprtypes_callee_ft = int32(ExprTypes->:t, ExprId:id) {
+    if (id.index < 0i32) { pass 0i32; }
+    if (id.index >= t.count) { pass 0i32; }
+    pass (t.callee_ft[id.index => int64]);
 };
 
 pub func:exprtypes_count = int32(ExprTypes->:t) { pass t.count; };

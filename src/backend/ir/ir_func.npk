@@ -123,6 +123,7 @@ pub struct:FnEmitter = {
     wild string->:pick_dones;
     wild string->:pick_slots;      // "" for a statement pick
     wild string->:pick_lls;
+    wild int32->:pick_tids;        // the give slot's TYPE, for `emit_fit` (1.0.6e)
     wild int32->:pick_starts;
     wild int32->:pick_counts;
     wild int32->:pick_seqs;
@@ -163,6 +164,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
         pick_dones: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         pick_slots: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         pick_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        pick_tids: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_starts: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_counts: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_seqs: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -437,7 +439,8 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) {
 };
 
 pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
-                              string:ll, int32:start, int32:count, int32:seq) {
+                              string:ll, int32:slot_ty, int32:start,
+                              int32:count, int32:seq) {
     if (fe.pick_count >= fe.pick_cap) {
         int32:nc = fe.pick_cap * 2i32;
         wild int8->:a = ralloc(fe.pick_dones =>! wild int8->,
@@ -446,6 +449,7 @@ pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
                                (nc => int64) * #size_of<string>());
         wild int8->:c = ralloc(fe.pick_lls =>! wild int8->,
                                (nc => int64) * #size_of<string>());
+        wild int8->:t = ralloc(fe.pick_tids =>! wild int8->, (nc =>! int64) * 4i64);
         wild int8->:d = ralloc(fe.pick_starts =>! wild int8->, (nc =>! int64) * 4i64);
         wild int8->:e = ralloc(fe.pick_counts =>! wild int8->, (nc =>! int64) * 4i64);
         wild int8->:f = ralloc(fe.pick_seqs =>! wild int8->, (nc =>! int64) * 4i64);
@@ -453,6 +457,7 @@ pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
         fe.pick_dones = a =>! wild string->;
         fe.pick_slots = b =>! wild string->;
         fe.pick_lls = c =>! wild string->;
+        fe.pick_tids = t =>! wild int32->;
         fe.pick_starts = d =>! wild int32->;
         fe.pick_counts = e =>! wild int32->;
         fe.pick_seqs = f =>! wild int32->;
@@ -462,6 +467,7 @@ pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
     fe.pick_dones[fe.pick_count => int64] = done;
     fe.pick_slots[fe.pick_count => int64] = slot;
     fe.pick_lls[fe.pick_count => int64] = ll;
+    fe.pick_tids[fe.pick_count => int64] = slot_ty;
     fe.pick_starts[fe.pick_count => int64] = start;
     fe.pick_counts[fe.pick_count => int64] = count;
     fe.pick_seqs[fe.pick_count => int64] = seq;
@@ -483,6 +489,9 @@ pub func:fnem_pick_slot = string(FnEmitter->:fe) {
 };
 pub func:fnem_pick_ll = string(FnEmitter->:fe) {
     pass fe.pick_lls[(fe.pick_count - 1i32) => int64];
+};
+pub func:fnem_pick_tid = int32(FnEmitter->:fe) {
+    pass fe.pick_tids[(fe.pick_count - 1i32) => int64];
 };
 pub func:fnem_pick_start = int32(FnEmitter->:fe) {
     pass fe.pick_starts[(fe.pick_count - 1i32) => int64];

@@ -494,6 +494,114 @@ def check_identity_by_decl():
     return fails
 
 
+# THE SLOT SITES, PAIRED (1.0.6e). Every frontend function that asks `fits` --
+# "may a value of this type be written where that type is expected" -- against
+# the backend function that BUILDS the value into that slot with `emit_fit`.
+# `fits` admits two things the argument's own type does not say (a concrete
+# value into a `dyn`, a `T` into a `T?`), so a `fits` site with no `emit_fit`
+# partner is a slot the emitter stores raw -- which is how an assignment into a
+# `dyn` wrote 4 bytes over a 16-byte fat pointer and segfaulted.
+#
+# A value is a set of backend functions, or a string `refused: <construct>`
+# naming the rung string the backend refuses that construct with: the check
+# then requires that rung string to still exist, so the day the construct is
+# lowered the pairing must be written rather than forgotten.
+SLOT_SITE_PAIRS = {
+    "check_var_decl":      {"emit_vardecl"},
+    "check_assign":        {"emit_assign"},
+    "check_pass":          {"emit_pass"},
+    "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call"},
+    "check_ctor_args":     {"emit_ctor"},
+    "type_struct_literal": {"emit_struct_lit"},
+    "type_array_literal":  {"emit_array_lit"},
+    "type_result_literal": {"emit_result_lit"},
+    "arm_give_type":       {"emit_give"},
+    "type_safe_unwrap":    {"emit_expr_kind"},      # `r ? d` lowers inline
+    "type_arena_method":   {"emit_arena_method"},
+    "type_sarena_method":  {"emit_sarena_method"},
+    # The Handle argument is checked by equality; `fits` is used there so the
+    # diagnostic is the same one every slot gives. Nothing is built for it,
+    # and the arena emitter is where it would be.
+    "want_handle_of":      {"emit_arena_method"},
+    "type_null_coalesce":  "refused: the `??` operator",
+    "type_pipe":           "refused: the pipe operator",
+    "check_decl":          "refused: a module-level binding",
+}
+
+
+def _sites_by_function(pattern, paths, definition):
+    """Every non-comment line matching `pattern`, keyed by its enclosing
+    `func:` -- the definition line itself excluded."""
+    found = {}
+    for p in paths:
+        cur = None
+        with open(p, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                m = re.match(r"\s*(?:pub )?func:(\w+)\s*=", line)
+                if m:
+                    cur = m.group(1)
+                if line.lstrip().startswith("//"):
+                    continue
+                if re.search(definition, line):
+                    continue
+                if re.search(pattern, line):
+                    found.setdefault(cur, []).append(
+                        "%s:%d" % (os.path.relpath(p, ROOT), i))
+    return found
+
+
+def check_slot_sites_agree():
+    """Every `fits` site has an `emit_fit` partner, by the table above.
+
+    Three ways to fail: a frontend function asks `fits` and is not in the
+    table; a backend function calls `emit_fit` and no row names it; a row names
+    a backend function that no longer calls `emit_fit`, or a `refused:` row
+    whose rung string is gone. The last is the one that matters over time --
+    it is how lowering `??` at 1.0.7 is forced to write its pairing.
+    """
+    fails = []
+    fe = _sites_by_function(r"\bfits\(",
+                            glob.glob(os.path.join(ROOT, "src", "frontend", "*.npk")),
+                            r"func:fits\b")
+    be = _sites_by_function(r"\bemit_fit\(",
+                            glob.glob(os.path.join(ROOT, "src", "backend", "**", "*.npk"),
+                                      recursive=True),
+                            r"func:emit_fit\b")
+    backend_text = ""
+    for p in glob.glob(os.path.join(ROOT, "src", "backend", "**", "*.npk"),
+                       recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            backend_text += fh.read()
+
+    for fn, where in sorted(fe.items()):
+        if fn not in SLOT_SITE_PAIRS:
+            fails.append("slot-sites: `%s` asks `fits` (%s) and has no `emit_fit` "
+                         "partner in SLOT_SITE_PAIRS -- a slot the emitter would "
+                         "store raw" % (fn, ", ".join(where)))
+    claimed = set()
+    for fn, partner in SLOT_SITE_PAIRS.items():
+        if fn not in fe:
+            fails.append("slot-sites: SLOT_SITE_PAIRS names `%s`, which no longer "
+                         "asks `fits`" % fn)
+        if isinstance(partner, str):
+            what = partner[len("refused:"):].strip()
+            if ('iv_rung("%s"' % what) not in backend_text:
+                fails.append("slot-sites: `%s` is paired with the refusal \"%s\", "
+                             "and no backend rung refuses it any more -- write its "
+                             "`emit_fit` pairing" % (fn, what))
+            continue
+        for b in partner:
+            claimed.add(b)
+            if b not in be:
+                fails.append("slot-sites: `%s` is paired with `%s`, which does not "
+                             "call `emit_fit`" % (fn, b))
+    for b, where in sorted(be.items()):
+        if b not in claimed:
+            fails.append("slot-sites: `%s` calls `emit_fit` (%s) and no `fits` "
+                         "site is paired with it" % (b, ", ".join(where)))
+    return fails
+
+
 def check_ll_types_agree():
     """The two emitters must lower a type to the SAME LLVM text.
 
@@ -1405,6 +1513,7 @@ def main(argv):
         failures += check_codes_tested()
         failures += check_codes_centralised()
         failures += check_identity_by_decl()
+        failures += check_slot_sites_agree()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
 

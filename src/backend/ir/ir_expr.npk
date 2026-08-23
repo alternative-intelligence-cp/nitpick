@@ -252,7 +252,65 @@ func:node_ll = LlType(ExprEmitter->:x, ExprId:id) {
 
 // --- dispatch -----------------------------------------------------------------------
 
+// EVERY VALUE LEAVES HERE CARRYING ITS RECORDED TYPE (1.0.6e). The kind walk
+// below returns from sixty-odd places, and several of them answer with a bare
+// `iv("i8", …, 0i32)` — a comparison, a `bool` literal — because nothing
+// downstream asked. `emit_fit` asks: it decides whether a value needs building
+// into the slot it is going to by the value's TYPE, and a `true` going into a
+// `bool?` slot with no type recorded would be stored bare. One stamp here
+// rather than sixty — the same wrapper shape `type_of_expr` uses for the same
+// reason, and only where the kind walk left the field empty, since a call's
+// value deliberately carries its `Result` type.
 pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
+    IrVal:v = relay emit_expr_kind(x, id);
+    if (v.state != (raw LL_OK())) { pass v; }
+    if (v.type_id == 0i32) {
+        if (raw exprtypes_known(x.et, id)) {
+            v.type_id = raw exprtypes_get(x.et, id);
+        }
+    }
+    pass v;
+};
+
+// THE BACKEND'S HALF OF `fits` (1.0.6e). The checker's `fits` is the one place
+// that says what may be written where a slot expects something else, and it
+// admits exactly two shapes beyond equality: a concrete value into a `dyn`
+// slot, built into a fat pointer (D-158/D-159), and — from 1.0.7 — a bare `T`
+// into an `Optional<T>` slot, wrapped (D-099). Nothing else is coerced (D-092).
+//
+// THIS IS THE ONLY PLACE A VALUE IS BUILT INTO A SLOT, and it is called at every
+// site `fits` is: a declaration's initialiser, an assignment, a call argument,
+// `pass`, a literal's field or element, a `pick` arm's `give`, an unwrap's
+// default. Before it existed the declaration site widened inline and the other
+// fifteen stored the raw value — an assignment of a `Cat` into a `dyn` slot
+// wrote 4 bytes over a 16-byte fat pointer and dispatched through what was
+// left. `check_slot_sites_agree` pairs the two lists so a `fits` site cannot
+// be added without its partner.
+//
+// SUBSTITUTED FIRST. Inside a specialization the value's recorded type may still
+// be the parameter `T` (D-107), so both sides are read through the binding
+// before their kinds are compared; `ll_type` does the same for the text.
+pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, IrVal:v, Span:at) {
+    if (v.state != (raw LL_OK())) { pass v; }
+    if (want == 0i32) { pass v; }
+    if (v.type_id == want) { pass v; }
+    if (v.type_id == 0i32) { pass v; }
+    int32:w = raw subst_emitted_param(x.fe.ctx, want);
+    int32:g = raw subst_emitted_param(x.fe.ctx, v.type_id);
+    if (w == g) { pass v; }
+    int32:wk = raw type_kind(x.fe.ctx.types, w);
+    if (wk == (raw TY_DYN())) {
+        if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_DYN())) {
+            pass (relay emit_dyn_from(x, w, v, at));
+        }
+        // `dyn A & B` TO `dyn A` IS A REBUILD, not a store: the shapes differ
+        // by a word per dropped bound (D-159).
+        pass (relay emit_dyn_widen(x, w, v, at));
+    }
+    pass v;
+};
+
+func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
     ExprNode:n = relay ast_expr(x.ast, id);
 
     if (n.kind == ExprKind.ExprIntLiteral)    { pass (relay emit_int(x, id, n)); }
@@ -376,6 +434,9 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         drop irw_line(x.fe.w, relay cat3("br label %", qj_l, ""));
         drop irw_label(x.fe.w, qd_l);
         IrVal:qdv = relay emit_expr(x, raw expr_rhs(n));
+        if (!(raw iv_is_ok(qdv))) { pass qdv; }
+        // THE DEFAULT IS A SLOT (1.0.6e), of the Result's `T`.
+        qdv = relay emit_fit(x, qtid, qdv, n.span);
         if (!(raw iv_is_ok(qdv))) { pass qdv; }
         drop irw_line(x.fe.w, relay cat5("store ", qdv.ll, " ", qdv.ref,
                           relay string_concat(", ptr ", qslot)));
@@ -581,7 +642,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         string:pslot = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", pll2.text));
         IrVal:pc2 = relay emit_pick_chain(x, psv, pstid, pdisc, pdll,
-                        n.b, n.c, pslot, pll2.text);
+                        n.b, n.c, pslot, pll2.text, ptid);
         if (!(raw iv_is_ok(pc2))) { pass pc2; }
         string:pout = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(pout, " = load ", pll2.text, ", ptr ",
@@ -1522,6 +1583,43 @@ func:ll_int_width = int64(string:ll) {
 
 // --- calls --------------------------------------------------------------------------
 
+
+// THE PARAMETER AN ARGUMENT IS FIT TO (1.0.6e): position `i` of the function
+// type the checker recorded on the call — the SUBSTITUTED one for a generic or
+// family-impl call, which is why it is read rather than re-derived. 0 past the
+// fixed window (a variadic tail; 1.1's) or when no type was recorded (a
+// builtin), and `emit_fit` treats 0 as "nothing to do".
+func:call_param_want = int32(ExprEmitter->:x, int32:ft, int32:i) {
+    if (ft == 0i32) { pass 0i32; }
+    if (i >= (raw type_param_count_of(x.fe.ctx.types, ft))) { pass 0i32; }
+    pass (relay ast_id_at(x.ast, raw type_param_start_of(x.fe.ctx.types, ft), i));
+};
+
+// TWO FUNCTION TYPES THAT SAY THE SAME THING (1.0.6e). `tt_func` interns the
+// parameter window's start index, so two computations of one signature are
+// two ids (the artifact `types_agree` exists for on the checking side); the
+// parameters themselves are canonical ids, so they are what is compared.
+func:fn_types_same = bool(ExprEmitter->:x, int32:a, int32:b) {
+    if (a == b) { pass true; }
+    if (a == 0i32) { pass false; }
+    if (b == 0i32) { pass false; }
+    int32:pc = raw type_param_count_of(x.fe.ctx.types, a);
+    if (pc != (raw type_param_count_of(x.fe.ctx.types, b))) { pass false; }
+    if ((raw type_elem(x.fe.ctx.types, a)) != (raw type_elem(x.fe.ctx.types, b))) {
+        pass false;
+    }
+    int32:sa = raw type_param_start_of(x.fe.ctx.types, a);
+    int32:sb = raw type_param_start_of(x.fe.ctx.types, b);
+    int32:k = 0i32;
+    while (k < pc) {
+        if ((relay ast_id_at(x.ast, sa, k)) != (relay ast_id_at(x.ast, sb, k))) {
+            pass false;
+        }
+        k = k + 1i32;
+    }
+    pass true;
+};
+
 // A call through a FUNCTION VALUE (0.9.6, D-087): the callee is one machine
 // word, the return contract is the same `Result<T>` every named call has, and
 // the checker already held the arguments to the function TYPE's parameters.
@@ -1532,11 +1630,14 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if (gcount > 0i32) { pass (raw iv_rung("a generic call", "1.0", n.span)); }
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
+    int32:ift = raw exprtypes_callee_ft(x.et, id);
     string:args = "";
     int32:i = 0i32;
     while (i < count) {
         ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
         IrVal:av = relay emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        av = relay emit_fit(x, raw call_param_want(x, ift, i), av, n.span);
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = relay string_concat(args, ", "); }
         args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
@@ -1591,14 +1692,20 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         pass (relay call_builtin(x, id, n, cnode, start, count));
     }
 
-    // Arguments in source order, each with its own frontend-recorded type. No
-    // `want` coercion anywhere: D-092 has no implicit widening, so the checker
-    // already made every argument EXACTLY its parameter's type.
+    // Arguments in source order, each FIT TO ITS PARAMETER (1.0.6e). This loop
+    // used to say "no `want` coercion anywhere: D-092 has no implicit widening,
+    // so the checker already made every argument EXACTLY its parameter's type"
+    // — which is true of widening and false of `fits`' two admissions, a
+    // concrete value into a `dyn` and a `T` into a `T?`. A `Dog` passed where
+    // `dyn Speaks` was declared reached `llc` as `%Dog` and was refused there.
+    int32:cft = raw exprtypes_callee_ft(x.et, id);
     string:args = "";
     int32:i = 0i32;
     while (i < count) {
         ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
         IrVal:av = relay emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        av = relay emit_fit(x, raw call_param_want(x, cft, i), av, n.span);
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = relay string_concat(args, ", "); }
         args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
@@ -1625,7 +1732,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     string:sym = relay mangled_fn_sym(x.fe.ctx, s.origin, fname);
     DeclNode:cdecl = relay ast_decl(x.ast, DeclId{ index: s.origin });
     if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
-        int32:spec = relay fninst_for_call(x, s.origin, start, count);
+        int32:spec = relay fninst_for_call(x, s.origin, id);
         if (spec != 0i32) {
             sym = relay mangled_fn_sym(x.fe.ctx, s.origin,
                       relay intern_get(x.interns, spec));
@@ -2110,6 +2217,9 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // put: store the value through the slot, or report stale
     IrVal:vv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast, start, 1i32) });
     if (!(raw iv_is_ok(vv))) { pass vv; }
+    // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
+    vv = relay emit_fit(x, elem, vv, n.span);
+    if (!(raw iv_is_ok(vv))) { pass vv; }
     string:pslot = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", "{ i32 }"));
     string:p_ok = relay irw_new_label(x.fe.w, "ap.ok");
@@ -2159,6 +2269,9 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(m, "alloc")) {
         IrVal:vv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast,
                                        start, 0i32) });
+        if (!(raw iv_is_ok(vv))) { pass vv; }
+        // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
+        vv = relay emit_fit(x, elem, vv, n.span);
         if (!(raw iv_is_ok(vv))) { pass vv; }
         string:idx = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(idx,
@@ -2274,31 +2387,22 @@ func:pv_broken = PlaceVal(Span:at) {
 // Which recorded instantiation of `decl` does this call reach? Matched on the
 // call's argument types against the instantiation's substituted parameter types
 // (1.0.2b). Returns the interned specialized NAME (`extract<int32>`), or 0.
-func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, int32:start,
-                             int32:count) {
+//
+// MATCHED BY THE SIGNATURE THE CHECKER RECORDED ON THE CALL (1.0.6e), not by
+// the arguments' own types. Until 1.0.6e this compared each argument's recorded
+// type with the instantiation's parameter type, which is exact only while the
+// two are equal — and `fits` admits a `Dog` where `dyn Speaks` is declared and
+// an `int32` where `int32?` is. Either would have matched no instantiation and
+// called the template's symbol, which does not exist. `callee_ft` IS the
+// instantiation's substituted signature, so the match is the signature itself.
+func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, ExprId:call) {
+    int32:ft = raw exprtypes_callee_ft(x.et, call);
     int32:i = 0i32;
     while (i < (raw fninst_count(x.fninsts))) {
         FnInstance:e = relay fninst_at(x.fninsts, i);
         if (e.decl == decl) {
-            int32:pc = raw type_param_count_of(x.fe.ctx.types, e.type_id);
-            if (pc == count) {
-                int32:ps = raw type_param_start_of(x.fe.ctx.types, e.type_id);
-                bool:same = true;
-                int32:k = 0i32;
-                while (k < count) {
-                    ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, k) };
-                    int32:at = raw exprtypes_get(x.et, aid);
-                    int32:pt = relay ast_id_at(x.ast, ps, k);
-                    if (at != pt) {
-                        same = false;
-                        k = count;
-                    } else {
-                        k = k + 1i32;
-                    }
-                }
-                if (same) {
-                    pass (relay fninst_name_of(x, e));
-                }
+            if (raw fn_types_same(x, e.type_id, ft)) {
+                pass (relay fninst_name_of(x, e));
             }
         }
         i = i + 1i32;
@@ -2352,7 +2456,12 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
     int32:i = 0i32;
     while (i < n) {
         int32:tt = relay ast_id_at(x.ast, start, i);
-        int32:sym = raw vtmap_find(x.fe.ctx, v.type_id, tt);
+        // THE SOURCE TYPE IS READ THROUGH THE BINDING (1.0.6e): inside a
+        // specialization a `T:x` bound to a `dyn` slot carries `T`, and the
+        // table is keyed by what `T` became.
+        int32:sym = raw vtmap_find(x.fe.ctx,
+                                   raw subst_emitted_param(x.fe.ctx, v.type_id),
+                                   tt);
         // NO TABLE MEANS NO `dyn`, and it is a rung rather than a wrong answer.
         // A family impl has no single table (its target is a template), which is
         // the one reachable way to get here.
@@ -2535,10 +2644,15 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
+    // THE RECEIVER FILLED PARAMETER 0, so argument `i` is fit to parameter
+    // `i + 1` (1.0.6e) — the same `skip` the checker's `check_args` applies.
+    int32:mft = raw exprtypes_callee_ft(x.et, id);
     int32:i = 0i32;
     while (i < count) {
         ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
         IrVal:av = relay emit_expr(x, aid);
+        if (!(raw iv_is_ok(av))) { pass av; }
+        av = relay emit_fit(x, raw call_param_want(x, mft, i + 1i32), av, n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
         args = relay string_concat(args, ", ");
         args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
@@ -2917,6 +3031,13 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, 0i32) };
         IrVal:av = relay emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
+        // THE PAYLOAD IS A SLOT (1.0.6e), of the variant's declared payload type
+        // — resolved in the ENUM's home scope, as `check_ctor_args` resolved it.
+        int32:phome = raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
+                                                                etid), x.scope);
+        int32:ptid = relay resolve_type(x.tr, vi.payload_ty, phome);
+        av = relay emit_fit(x, ptid, av, at);
+        if (!(raw iv_is_ok(av))) { pass av; }
         string:pp = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", ell.text,
                           ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
@@ -3171,6 +3292,9 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         if (!fi.found) { pass (raw iv_broken(n.span)); }
         IrVal:v = relay emit_expr(x, vid);
         if (!(raw iv_is_ok(v))) { pass v; }
+        // A FIELD IS A SLOT (1.0.6e): `Holder{ s: d }` with `dyn Speaks:s`.
+        v = relay emit_fit(x, fi.type_id, v, n.span);
+        if (!(raw iv_is_ok(v))) { pass v; }
         string:r = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(r, " = insertvalue ", sll.text, " ",
                           relay cat5(acc, ", ", v.ll, " ",
@@ -3196,6 +3320,9 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         ExprId:eid = ExprId{ index: relay ast_id_at(x.ast,
                                  raw expr_list_start(n), i) };
         IrVal:v = relay emit_expr(x, eid);
+        if (!(raw iv_is_ok(v))) { pass v; }
+        // AN ELEMENT IS A SLOT (1.0.6e), of the array's element type.
+        v = relay emit_fit(x, raw type_elem(x.fe.ctx.types, atid), v, n.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         string:r = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(r, " = insertvalue ", all.text, " ",
@@ -3238,6 +3365,9 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     ExprId:ve = raw expr_lhs(n);
     if (!(raw expr_is_none(ve))) {
         IrVal:vv = relay emit_expr(x, ve);
+        if (!(raw iv_is_ok(vv))) { pass vv; }
+        // THE VALUE HALF IS A SLOT (1.0.6e), of the Result's `T`.
+        vv = relay emit_fit(x, inner, vv, n.span);
         if (!(raw iv_is_ok(vv))) { pass vv; }
         vref = vv.ref;
     }

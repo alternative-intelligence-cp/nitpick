@@ -46,7 +46,7 @@ pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         pass (relay type_member_access(e, n, true));
     }
     if (n.kind == ExprKind.ExprIndexExpr)      { pass (relay type_index(e, n)); }
-    if (n.kind == ExprKind.ExprCallExpr)       { pass (relay type_call(e, n)); }
+    if (n.kind == ExprKind.ExprCallExpr)       { pass (relay type_call(e, id, n)); }
     if (n.kind == ExprKind.ExprMethodCallExpr) { pass (relay type_method_call(e, id, n)); }
     pass 0i32;
 };
@@ -368,7 +368,7 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
 
 // --- calls -----------------------------------------------------------------------------
 
-pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
+pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     int32:callee = relay type_of_expr(e, raw expr_callee(n));
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
@@ -382,7 +382,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
     if (d.kind == DeclKind.DeclFunctionDecl) {
         IdSpan:gp = raw decl_generic_window(e.ast, d);
         if (gp.count > 0i32) {
-            pass (relay type_generic_call(e, n, d, gp, callee, gcount, start, count));
+            pass (relay type_generic_call(e, id, n, d, gp, callee, gcount, start, count));
         }
         // NOT GENERIC AND GIVEN ARGUMENTS ANYWAY. The turbofish names type
         // arguments, so a function with no type parameters has nowhere to put
@@ -447,6 +447,10 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         string:m2 = relay string_concat(m1, "` is not a function");
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
+    // THE SIGNATURE TRAVELS ON THE CALL (1.0.6e): whatever `check_args` measures
+    // the arguments against, the emitter fits them to. A function value's own
+    // type serves an indirect call the same way.
+    drop exprtypes_set_callee_ft(e.expr_types, id, callee);
     pass (relay check_args(e, callee, start, count, 0i32, n.span));
 };
 
@@ -577,9 +581,9 @@ func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
 //   3. THE SIGNATURE IS SUBSTITUTED AND THEN CHECKED like any other. The body is
 //      NOT re-checked -- it was checked once at its definition -- so what happens
 //      here is only that the arguments satisfy the bounds and fill the parameters.
-func:type_generic_call = int32(ExprTyper->:e, ExprNode:n, DeclNode:d, IdSpan:gp,
-                               int32:generic_ft, int32:gcount, int32:start,
-                               int32:count) {
+func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
+                               DeclNode:d, IdSpan:gp, int32:generic_ft,
+                               int32:gcount, int32:start, int32:count) {
     if (gcount > gp.count) {
         string:m1 = relay string_concat("this call supplies ",
                                         raw int_to_string(gcount => int64));
@@ -657,6 +661,9 @@ func:type_generic_call = int32(ExprTyper->:e, ExprNode:n, DeclNode:d, IdSpan:gp,
                        args.start, args.count, gp.start, gp.count, 0i32, ft,
                        n.span);
 
+    // The SUBSTITUTED signature is the one the emitter must fit arguments to —
+    // and the one `fninst_for_call` matches the specialization by (1.0.6e).
+    drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     pass (relay check_args(e, ft, start, count, 0i32, n.span));
 };
 
@@ -1037,6 +1044,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (recv != p0) {
         drop te_mismatch_at(e, p0, recv, n.span);
     }
+    drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     pass (relay check_args(e, ft, start, count, 1i32, n.span));
 };
 

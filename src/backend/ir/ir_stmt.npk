@@ -205,23 +205,14 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (!(raw expr_is_none(init))) {
         IrVal:v = relay emit_expr(x, init);
         if (!(raw iv_is_ok(v))) { pass v; }
-        // A CONCRETE VALUE BOUND TO A `dyn` IS WIDENED, NOT STORED (1.0.5c).
-        // Storing it wrote 4 bytes into a 16-byte slot and left the vtable word
-        // uninitialised — which read back as a plausible answer rather than a
-        // crash, and is why the shape was not lowered until this existed.
-        if ((raw type_kind(x.fe.ctx.types, dty)) == (raw TY_DYN())) {
-            if ((raw type_kind(x.fe.ctx.types, v.type_id)) != (raw TY_DYN())) {
-                v = relay emit_dyn_from(x, dty, v, s.span);
-                if (!(raw iv_is_ok(v))) { pass v; }
-            } else {
-                // AND `dyn A & B` TO `dyn A` IS A REBUILD, not a store: the
-                // shapes differ by a word per dropped bound (D-159).
-                if (dty != v.type_id) {
-                    v = relay emit_dyn_widen(x, dty, v, s.span);
-                    if (!(raw iv_is_ok(v))) { pass v; }
-                }
-            }
-        }
+        // THE VALUE IS FIT TO THE SLOT, NOT STORED (1.0.5c, generalised at
+        // 1.0.6e). A concrete value bound to a `dyn` is widened into a fat
+        // pointer; storing it wrote 4 bytes into a 16-byte slot and left the
+        // vtable word uninitialised — which read back as a plausible answer
+        // rather than a crash. 1.0.5c did this here and nowhere else; `emit_fit`
+        // is the one place now, and this is one of its sites.
+        v = relay emit_fit(x, dty, v, s.span);
+        if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
                           relay string_concat(", ptr ", slot)));
     }
@@ -256,6 +247,11 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
     TokenKind:op = raw stmt_op(s);
     if (op == TokenKind.OpAssign) {
         IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
+        if (!(raw iv_is_ok(v))) { pass v; }
+        // FIT TO THE PLACE'S TYPE (1.0.6e). This is the site that segfaulted:
+        // `q = c;` with `q` a `dyn` stored the 4-byte `Cat` over the fat
+        // pointer and dispatched through the remains.
+        v = relay emit_fit(x, place.type_id, v, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
                           relay string_concat(", ptr ", place.addr)));
@@ -677,6 +673,10 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (!(raw expr_is_none(val))) {
         IrVal:v = relay emit_expr(x, val);
         if (!(raw iv_is_ok(v))) { pass v; }
+        // THE DECLARED `T` IS A SLOT (1.0.6e): `pass d;` from a function
+        // returning `dyn Speaks` builds the fat pointer here.
+        v = relay emit_fit(x, x.fe.ret_type, v, s.span);
+        if (!(raw iv_is_ok(v))) { pass v; }
         vref = v.ref;
     }
     IrVal:d = relay run_all_defers(x);
@@ -865,6 +865,9 @@ func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (slot.len == 0i64) { pass (raw iv_broken(s.span)); }
     IrVal:v = relay emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    // THE PICK'S SLOT IS A SLOT (1.0.6e): each arm's `give` is fit to it.
+    v = relay emit_fit(x, raw fnem_pick_tid(x.fe), v, s.span);
+    if (!(raw iv_is_ok(v))) { pass v; }
     IrVal:d = relay run_defers_down_to(x, raw fnem_pick_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
     drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
@@ -930,7 +933,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     }
     if (chain) {
         pass (relay emit_pick_chain(x, sel, sel_tid, disc, disc_ll,
-                  raw pick_arm_start(s), count, "", ""));
+                  raw pick_arm_start(s), count, "", "", 0i32));
     }
 
     int32:seq = raw fnem_next_pick_seq(x.fe);
@@ -969,7 +972,8 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
     // The frame is what `fall` (and, in the expression form, `give`) resolve
     // against.
-    drop fnem_pick_push(x.fe, done_l, "", "", raw pick_arm_start(s), count, seq);
+    drop fnem_pick_push(x.fe, done_l, "", "", 0i32, raw pick_arm_start(s), count,
+                        seq);
     i = 0i32;
     while (i < count) {
         StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
@@ -998,10 +1002,11 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
 pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                                  string:disc, string:disc_ll, int32:start,
                                  int32:count, string:give_slot,
-                                 string:give_ll) {
+                                 string:give_ll, int32:give_tid) {
     int32:seq = raw fnem_next_pick_seq(x.fe);
     string:done_l = raw pk_named(seq, ".done");
-    drop fnem_pick_push(x.fe, done_l, give_slot, give_ll, start, count, seq);
+    drop fnem_pick_push(x.fe, done_l, give_slot, give_ll, give_tid, start, count,
+                        seq);
 
     bool:sel_signed = true;
     if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_INT())) {
