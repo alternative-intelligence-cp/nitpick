@@ -65,6 +65,14 @@ pub func:type_is_slice = bool(TypeNode:t) {
 // here and a TypeId on every other node that uses it -- reading one through
 // `type_pointee` would hand a type-node index to something expecting an
 // expression, which is the misreading the named accessors exist to prevent.
+// `T.Item` — the base is `a`, the name is the payload (D-164).
+pub func:type_projection_base = TypeId(TypeNode:t) {
+    TypeId:i = TypeId{ index: t.a };
+    pass i;
+};
+
+pub func:type_projection_name = int64(TypeNode:t) { pass t.payload; };
+
 pub func:type_comptime_value = ExprId(TypeNode:t) {
     ExprId:e = ExprId{ index: t.a };
     pass e;
@@ -268,6 +276,32 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
     while (true) {
         Span:sp = relay p_span(p);
 
+        // `T.Item` — AN ASSOCIATED TYPE, PROJECTED (D-164). It is a suffix
+        // because that is what it is: a base type with one more thing applied,
+        // exactly like `->`, `?` and `[]` beside it. And it is `.` because an
+        // associated type is a MEMBER of its trait and `.` is the language's one
+        // member-access operator — the same reasoning that removed `->` from
+        // member access for pointing the wrong way.
+        //
+        // There is no ambiguity with expression-position `.`: types and
+        // expressions are separate grammars with separate entry points, and an
+        // array size is the only expression inside a type, parsed by
+        // `p_parse_expr` between its own brackets.
+        if (relay p_accept(p, TokenKind.PDot)) {
+            // THE NAME IS TAKEN WHATEVER IT IS, and `p_expect` reports it if it
+            // is not an identifier. Consuming it either way keeps the suffix
+            // loop moving, which is how the parser stays able to describe a
+            // whole program rather than stopping at the first mistake.
+            int64:pnm = 0i64;
+            if (relay p_at(p, TokenKind.Ident)) {
+                pnm = (relay p_advance(p)).payload;
+            } else {
+                drop p_expect(p, TokenKind.Ident);
+            }
+            cur = relay ast_add_type(p.ast, TypeKind.TypeProjection, sp,
+                                     cur.index, 0i32, 0i32, pnm);
+        } else {
+
         if (relay p_accept(p, TokenKind.OpArrowTo)) {
             cur = relay ast_add_type(p.ast, TypeKind.TypePointerType, sp,
                                      cur.index, 0i32, 0i32, 0i64);
@@ -298,6 +332,7 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
                     break;
                 }
             }
+        }
         }
     }
     pass cur;

@@ -135,9 +135,14 @@ pub enum:TypeKind = {
     TypeAnyType                  = 8i32;
     TypeSelfType                 = 9i32;
     TypeComptimeArg              = 10i32;
+    // `T.Item` — an associated type projected from a type (D-164). `a` is the
+    // base, the payload is the name. It is a TYPE node rather than a path
+    // because `.` here brings a member of the base toward you, which is what `.`
+    // means everywhere else in the language.
+    TypeProjection               = 11i32;
 };
 
-pub func:TYPE_KIND_MAX = int32() { pass 10i32; };
+pub func:TYPE_KIND_MAX = int32() { pass 11i32; };
 
 pub enum:VerifyKind = {
     VerifyNone                   = 0i32;   // no node / not yet set

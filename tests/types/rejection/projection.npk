@@ -1,0 +1,44 @@
+// `T.Item` — AN ASSOCIATED TYPE, PROJECTED (D-164, 1.0.6c). A dotted suffix in
+// type position, beside `->`, `?` and `[]`: an associated type is a MEMBER of
+// its trait, and `.` is the language's one member-access operator.
+//
+// This is a NEW GRAMMAR PRODUCTION and a new AST type kind, which is why it is
+// pinned here as well as exercised: a type-node walker that does not know the
+// kind gives a silent wrong answer rather than an error, and this file is fed
+// through the real parser on every harness run.
+
+trait:Iterator = {
+    assoc:Item;
+    func:next = Item(Self:self);
+};
+
+trait:Producer = {
+    assoc:Item;                       // the SAME name, a DIFFERENT trait
+    func:make = Item(Self:self);
+};
+
+struct:Counter = { int32:n; };
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32(Counter:self) { pass self.n; };
+};
+
+// ACCEPTED: the projection resolves through the bound, and the signature that
+// mentions it is legal. Reported here so the rule is not merely "refuse
+// everything".
+func:element<T: Iterator> = T.Item(T:it) { pass (raw it.next()); };
+
+// A NAME NO BOUND DECLARES is refused BY NAME. Falling through to the invalid
+// type would be the silent wrong answer a new type kind most easily becomes.
+// expect-error: NITPICK-TYPE-001
+func:missing<T: Iterator> = T.Nope(T:it) { pass (raw it.next()); };
+
+// TWO BOUNDS DECLARING ONE ASSOC is an ambiguity naming both — the answer D-158
+// gives a method supplied by two bounds, and for the same reason: an ordering
+// tiebreak would be meaning-by-position, and after D-159's canonical ordering
+// "first" would be decided by how the traits are SPELT.
+// expect-error: NITPICK-TYPE-020
+func:ambiguous<T: Iterator & Producer> = T.Item(T:it) { pass (raw it.next()); };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

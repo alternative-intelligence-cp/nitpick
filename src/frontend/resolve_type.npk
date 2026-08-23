@@ -284,7 +284,89 @@ pub func:resolve_type = int32(TypeResolver->:r, TypeId:id, int32:scope) {
         pass (r.self_type);
     }
 
+    if (n.kind == TypeKind.TypeProjection) {
+        pass (relay resolve_projection(r, n, scope));
+    }
+
     pass 0i32;
+};
+
+// `T.Item` — AN ASSOCIATED TYPE, PROJECTED FROM A TYPE (D-164).
+//
+// The base decides where to look, and the two cases are the two things a base
+// can be:
+//
+//   * A GENERIC PARAMETER. `T` is a type that does not exist yet, so its BOUNDS
+//     are everything known about it (D-107) — the same rule `find_in_bounds`
+//     follows for methods. The assoc is sought among the traits `T` is bounded
+//     by, and two of them declaring one name is an ambiguity naming both, which
+//     is the answer D-158 gives a method supplied by two bounds and for the same
+//     reason: an ordering tiebreak would be meaning-by-position.
+//   * A CONCRETE TYPE. `Counter.Item` is the binding the impl wrote, so the impl
+//     table is asked. This is the case that makes a projection usable outside
+//     generic code at all.
+//
+// A NAME NO BOUND DECLARES IS REFUSED BY NAME. Falling through to the invalid
+// type would be the silent wrong answer a new type kind most easily becomes.
+func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
+    int32:base = relay resolve_type(r, raw type_projection_base(n), scope);
+    if (base == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(r.types, base)) { pass base; }
+
+    int32:name = (raw type_projection_name(n)) =>! int32;
+    int32:found = 0i32;
+    int32:owner = 0i32;
+    int32:other = 0i32;
+
+    if ((raw type_kind(r.types, base)) == (raw TY_PARAM())) {
+        // THE BOUNDS ARE READ FROM THE PARAMETER'S DECLARATION, not from the
+        // bound table. The window travels with the declaration, so the answer
+        // does not depend on which scope a caller passed — the same reasoning
+        // `generic_lookup` gives above — and the resolver needs no new required
+        // pointer to answer a question the AST already holds.
+        DeclNode:pdn = relay ast_decl(r.ast,
+                           DeclId{ index: raw type_decl_of(r.types, base) });
+        int32:bstart = raw generic_bound_start(pdn);
+        int32:bcount = raw generic_bound_count(pdn);
+        int32:i = 0i32;
+        while (i < bcount) {
+            TypeId:bt = TypeId{ index: relay ast_id_at(r.ast, bstart, i) };
+            int32:btrait = relay resolve_type(r, bt, scope);
+            int32:tdecl = raw type_decl_of(r.types, btrait);
+            if (tdecl != 0i32) {
+                int32:hit = relay assoc_of_trait(r, tdecl, name);
+                if (hit != 0i32) {
+                    if (found != 0i32) { other = btrait; } else {
+                        found = raw tt_assoc(r.types, base, tdecl, name);
+                        owner = btrait;
+                    }
+                }
+            }
+            i = i + 1i32;
+        }
+        if (other != 0i32) {
+            string:a1 = relay string_concat("`",
+                            relay intern_get(r.interns, name));
+            string:a2 = relay string_concat(a1, "` is declared by both `");
+            string:a3 = relay string_concat(a2,
+                            relay type_display(r.types, r.interns, owner));
+            string:a4 = relay string_concat(a3, "` and `");
+            string:a5 = relay string_concat(a4,
+                            relay type_display(r.types, r.interns, other));
+            pass (relay ty_error(r, raw TYPE_AMBIGUOUS_METHOD(),
+                relay string_concat(a5,
+                    "`; there is no rule to choose by, so name the trait whose associated type you mean"),
+                n.span));
+        }
+        if (found != 0i32) { pass found; }
+    }
+
+    string:m1 = relay string_concat("`",
+                    relay type_display(r.types, r.interns, base));
+    string:m2 = relay string_concat(m1, "` has no associated type `");
+    string:m3 = relay string_concat(m2, relay intern_get(r.interns, name));
+    pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+        relay string_concat(m3, "`"), n.span));
 };
 
 // A pointer's pointee, which is the one position where a bare `any` is legal.
@@ -1664,7 +1746,16 @@ func:assoc_of_trait = int32(TypeResolver->:r, int32:trait_decl, int32:name) {
         DeclNode:m = relay ast_decl(r.ast, raw item_member(r.ast, td, k));
         if (m.kind == DeclKind.DeclAssocTypeDecl) {
             if ((raw decl_name(m)) == name) {
-                pass (raw tt_assoc(r.types, trait_decl, name));
+                // THE BASE IS WHATEVER `Self` MEANS HERE, not the literal
+                // `Self` type. Inside the trait's own body that IS `Self`; at a
+                // call site the resolver has been told the receiver, so `Item`
+                // in the signature means the RECEIVER's `Item`. Hardcoding
+                // `tt_self()` made `T.Item` and the `Item` in `next`'s
+                // signature two different types, so the function that returned
+                // one and called the other did not typecheck.
+                int32:abase = r.self_type;
+                if (abase == 0i32) { abase = raw tt_self(r.types); }
+                pass (raw tt_assoc(r.types, abase, trait_decl, name));
             }
         }
         k = k + 1i32;

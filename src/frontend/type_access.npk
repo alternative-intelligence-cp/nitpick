@@ -993,6 +993,13 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         if ((raw type_args_count_of(e.types, found.owner)) > 0i32) {
             r.enclosing = relay trait_binding(@r, found.owner);
         }
+        // AND THE TRAIT ITSELF, so an ASSOCIATED TYPE in the signature resolves
+        // (D-160, 1.0.6c). `func:next = Item(Self:self)` names a member of the
+        // trait, in no scope — the same problem the trait's PARAMETERS have one
+        // line up, and the same shape C-21 was: a bound plus a call, breaking a
+        // name inside the trait's own declaration. Both halves of what a trait's
+        // signature can mention are bound here now.
+        r.self_trait = raw type_decl_of(e.types, found.owner);
     }
 
     if (found.blanket_impl != 0i32) {

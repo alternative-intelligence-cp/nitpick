@@ -11335,5 +11335,36 @@ only some keywords per step — and not about freezing the grammar. Adding a
 production because the language needs one is ordinary work; `CLAUDE.md` now says
 so.
 
-**Implemented at 1.0.6c.**
+**Implemented at 1.0.6c — the grammar and the resolution. Normalisation is
+1.0.6d.**
+
+> `T.Item` parses as a suffix beside `->`, `?` and `[]`, resolves through the
+> parameter's bounds, refuses an unknown name BY NAME rather than falling through
+> to the invalid type, and refuses two bounds declaring one assoc naming both. A
+> generic function can declare and return the projected type.
+>
+> **Two things this decision did not anticipate**, both found by building it:
+>
+> - The call site must bind the TRAIT, not only its parameters. 1.0.6b bound a
+>   generic trait's parameters there; an assoc in the same signature needs the
+>   trait itself, since it is a member of it and in no scope. The same defect in
+>   the same place, for the other half of what a trait signature can mention.
+> - **`TY_ASSOC` must carry its BASE.** With only (trait, name), `T.Item` and
+>   `U.Item` interned as ONE type, so a function generic over two iterators had
+>   one element type and substitution had nothing to substitute. And the base is
+>   whatever `Self` MEANS where it is resolved, not the literal `Self` type.
+>
+> **What is not done: normalising `Counter.Item` to what the impl bound.** It
+> cannot live in `resolve_type` — `ImplTable` is declared in `type_trait.npk`,
+> which imports it, so a resolver field is a real import cycle (tried and
+> reverted). Nor should it: this architecture answers anything needing impls with
+> a LATER PASS, which is why instantiations are recorded and
+> `check_instantiations` runs after the table exists. **Where that normalisation
+> lives is 1.0.6d's opening decision**, with three candidate homes and their
+> costs written down there. A concrete call through a projection REFUSES until
+> then, which is the right failure mode but not the finished feature.
+>
+> **The D-159 obligation is now live.** A dotted type spelling parses, so `a.S`
+> is expressible and the tie D-159's amendment closed by measuring it impossible
+> is open again. Nothing exercises it yet; 1.0.6d owns it.
 

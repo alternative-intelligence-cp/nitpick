@@ -577,9 +577,14 @@ pub func:tt_self = int32(TypeTable->:t) {
 // `Iterator`'s `Item` — the DECLARING TRAIT and the NAME, interned as a pair.
 // Not the name alone: two traits each declaring `Item` declare two types, and
 // merging them would let an impl of one satisfy the other.
-pub func:tt_assoc = int32(TypeTable->:t, int32:trait_decl, int32:name) {
-    pass (raw tt_intern(t, raw TY_ASSOC(), trait_decl, name, 0i32, 0i64, 1i32,
+pub func:tt_assoc = int32(TypeTable->:t, int32:base, int32:trait_decl,
+                          int32:name) {
+    pass (raw tt_intern(t, raw TY_ASSOC(), base, trait_decl, name, 0i64, 1i32,
                         0i32));
+};
+
+pub func:type_assoc_base = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).a);
 };
 
 // Is this a generic parameter? Asked by the emitter, which must substitute one
@@ -589,11 +594,11 @@ pub func:type_is_param_kind = bool(TypeTable->:t, int32:id) {
 };
 
 pub func:type_assoc_trait = int32(TypeTable->:t, int32:id) {
-    pass ((raw tt_get(t, id)).a);
+    pass ((raw tt_get(t, id)).b);
 };
 
 pub func:type_assoc_name = int32(TypeTable->:t, int32:id) {
-    pass ((raw tt_get(t, id)).b);
+    pass ((raw tt_get(t, id)).c);
 };
 
 // A comptime value argument. Zero-sized like `NIL`, because it is not a value the
@@ -991,6 +996,6 @@ pub func:type_decl_of = int32(TypeTable->:t, int32:id) {
     // AN ASSOC NAMES ITS DECLARING TRAIT (D-160). Answering 0 here would make
     // every "which declaration is this" question silently miss one, and 1.0.4c's
     // coherence check is one of them.
-    if (k == (raw TY_ASSOC()))  { pass ((raw tt_get(t, id)).a); }
+    if (k == (raw TY_ASSOC()))  { pass ((raw tt_get(t, id)).b); }
     pass 0i32;
 };
