@@ -125,6 +125,16 @@ Inherent methods dispatch **statically via UFCS** — `p.magnitude()` resolves t
 `Point_magnitude(p)`. This is an independent confirmation that UFCS is part of the
 language (D-006).
 
+> **On a GENERIC subject there is no inherent impl today (found at 1.0.7).**
+> `impl:<T>:List<T> = { … }` is read by D-161's segment rule as a blanket impl
+> of a trait named `List<T>` and refused. A generic struct's methods go through
+> a trait (`impl:<T>:List<T>:Sized`), and since a trait method cannot take its
+> receiver by pointer (`Self->` is refused in a trait signature), no method of a
+> generic struct can mutate it: mutators are free generic functions over
+> `List<T>->`, called `list_push(@l, v)` — `TokenList`'s own shape. The
+> spelling is raised as **D-171** (1.0.9) with a recommendation; this note is
+> struck when it lands.
+
 ### 2.5 Derive Attributes
 
 ```nitpick

@@ -999,9 +999,9 @@ func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
 // bodiless declaration is a requirement, not a default — an impl that omits one
 // of those is incomplete, which is a different diagnostic (and a different
 // check) from a method it simply inherited.
-func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
-                                 TypeTable->:types, int32:trait_id,
-                                 int32:name) {
+pub func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
+                                     TypeTable->:types, int32:trait_id,
+                                     int32:name) {
     int32:tdecl = raw type_decl_of(types, trait_id);
     if (tdecl == 0i32) { pass 0i32; }
     DeclNode:td = relay ast_decl(ast, DeclId{ index: tdecl });
@@ -1023,8 +1023,8 @@ func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
 };
 
 // A function member of one `impl` block, by name.
-func:impl_method_named = int32(Ast->:ast, InternTable->:interns, int32:decl,
-                               int32:name) {
+pub func:impl_method_named = int32(Ast->:ast, InternTable->:interns,
+                                   int32:decl, int32:name) {
     DeclId:id = DeclId{ index: decl };
     DeclNode:d = relay ast_decl(ast, id);
     int32:n = relay impl_member_count(ast, d);
@@ -1504,8 +1504,27 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (!e.blanket) {
-            if (e.target == target) {
-                if (e.trait_id == trait_id) { pass true; }
+            if (e.trait_id == trait_id) {
+                if (e.target == target) { pass true; }
+                // A FAMILY IMPL COVERS EVERY INSTANCE OF ITS TARGET (1.0.4b's
+                // rule in `find_method`, and the fourth source here, 1.0.7):
+                // `impl:<T>:List<T>:Sized` has target `List<T>`, and
+                // `List<int32>` is a different interned type that shares its
+                // DECLARATION — which is what identity is (D-090). Without this
+                // a family impl satisfied a method call and no BOUND, so
+                // `total<S: Sized>(li)` was refused for a type whose `size()`
+                // the same table had just resolved.
+                if ((raw impl_generic_count(ast, relay ast_decl(ast,
+                         DeclId{ index: e.decl }))) > 0i32) {
+                    if (e.target != 0i32) {
+                        int32:ed = raw type_decl_of(types, e.target);
+                        if (ed != 0i32) {
+                            if (ed == (raw type_decl_of(types, target))) {
+                                pass true;
+                            }
+                        }
+                    }
+                }
             }
         }
         i = i + 1i32;

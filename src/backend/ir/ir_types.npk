@@ -30,6 +30,7 @@
 
 mod:ir_types;
 
+use "../../frontend/source_location.npk".*;   // span_none, for the late substitution
 use "../../frontend/intern.npk".*;
 use "../../frontend/ast_kind.npk".*;
 use "../../frontend/ast.npk".*;
@@ -52,7 +53,7 @@ pub struct:LlType = {
     string:rung;     // meaningful when LL_RUNG
 };
 
-func:ll_ok = LlType(string:text) {
+pub func:ll_ok = LlType(string:text) {
     LlType:t = LlType{ state: raw LL_OK(), text: text, rung: "" };
     pass t;
 };
@@ -259,6 +260,93 @@ pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) {
     pass id;
 };
 
+// DOES THIS TYPE MENTION A GENERIC PARAMETER anywhere in its structure? (1.0.7)
+// A `List<T>` recorded for a literal inside `list_make<T>`'s body is
+// template-shaped: it names the declaration's own parameter, and has no
+// representation until the parameter is bound. Walked by kind, because each
+// kind keeps its operands in different slots (the accessors above say which).
+pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
+                                    int32:fuel) {
+    if (fuel <= 0i32) { pass false; }
+    if (id == 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_PARAM())) { pass true; }
+    if (k == (raw TY_ASSOC())) {
+        pass (raw type_mentions_param(t, ast, raw type_assoc_base(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT())) { pass (raw args_mention_param(t, ast, id, fuel)); }
+    if (k == (raw TY_ENUM()))   { pass (raw args_mention_param(t, ast, id, fuel)); }
+    if (k == (raw TY_FUNC())) {
+        if (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32)) {
+            pass true;
+        }
+        int32:ps = (raw tt_get(t, id)).b;
+        int32:pc = (raw tt_get(t, id)).c;
+        int32:i = 0i32;
+        while (i < pc) {
+            if (raw type_mentions_param(t, ast, raw ast_id_at(ast, ps, i), fuel - 1i32)) {
+                pass true;
+            }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    if (k == (raw TY_DYN()))    { pass false; }
+    if (k == (raw TY_TRAIT()))  { pass false; }
+    // Every remaining kind with an operand keeps it in slot `a`: pointer,
+    // slice, array, `Optional`, `Result`, arena, shared arena, `Handle`, range.
+    bool:has_elem = false;
+    if (k == (raw TY_POINTER()))      { has_elem = true; }
+    if (k == (raw TY_SLICE()))        { has_elem = true; }
+    if (k == (raw TY_ARRAY()))        { has_elem = true; }
+    if (k == (raw TY_OPTIONAL()))     { has_elem = true; }
+    if (k == (raw TY_RESULT()))       { has_elem = true; }
+    if (k == (raw TY_ARENA()))        { has_elem = true; }
+    if (k == (raw TY_SHARED_ARENA())) { has_elem = true; }
+    if (k == (raw TY_HANDLE()))       { has_elem = true; }
+    if (k == (raw TY_RANGE()))        { has_elem = true; }
+    if (has_elem) {
+        pass (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32));
+    }
+    pass false;
+};
+
+func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) {
+    int32:n = raw type_args_count_of(t, id);
+    int32:start = raw type_args_start_of(t, id);
+    int32:i = 0i32;
+    while (i < n) {
+        if (raw type_mentions_param(t, ast, raw ast_id_at(ast, start, i), fuel - 1i32)) {
+            pass true;
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// WHAT A TYPE STANDS FOR IN THE SPECIALIZATION BEING EMITTED (1.0.7), or
+// itself when it names no bound parameter, or when nothing is bound. A bare
+// parameter, a parameter inside an instantiation's window, a parameter behind
+// a pointer or in an array — one walk, `type_subst`'s, the one the frontend
+// uses, so a type arrived at here is interned exactly as the checker would
+// have interned it. The scope is the one `llctx_set_subst` holds — the same
+// four numbers a `GenericScope` is.
+pub func:subst_emitted_scope = GenericScope(LlCtx->:c) {
+    GenericScope:g = GenericScope{ params_start: c.subst_params_start,
+                                   params_count: c.subst_params_count,
+                                   args_start: c.subst_args_start,
+                                   args_count: c.subst_params_count };
+    pass g;
+};
+
+pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) {
+    if (c.subst_params_count == 0i32) { pass id; }
+    if (c.tr == NULL) { pass id; }
+    if (!(raw type_mentions_param(c.types, c.ast, id, 64i32))) { pass id; }
+    pass (relay type_subst(c.tr, id, raw subst_emitted_scope(c), raw span_none(),
+                           raw SUBST_FUEL_LL(), c.impls));
+};
+
 // --- the lowering -----------------------------------------------------------------
 
 pub func:ll_type = LlType(LlCtx->:c, int32:id) {
@@ -341,7 +429,17 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // points at.
     if (k == (raw TY_ANY()))      { pass (raw ll_rung("1.0")); }
 
-    if (k == (raw TY_OPTIONAL())) { pass (raw ll_rung("1.0")); }
+    // `Optional<T>` IS `{ i8, T }`, TAG FIRST (TYPE_REFERENCE §11.1; 1.0.7) — the
+    // layout `tt_optional` interned, and compiler-known exactly as `Result<T>`
+    // is, for the same reason: D-099 strikes its readable members, so a library
+    // struct would have been a struct whose fields are not members. An `i8`
+    // rather than an `i1` because a bit is not addressable.
+    if (k == (raw TY_OPTIONAL())) {
+        LlType:oel = relay ll_type(c, raw type_elem(c.types, id));
+        if (oel.state != (raw LL_OK())) { pass oel; }
+        pass (raw ll_ok(relay string_concat("{ i8, ",
+                            relay string_concat(oel.text, " }"))));
+    }
 
     // A TRAIT IS NOT A VALUE TYPE. `dyn Trait` is; the bare trait names a
     // contract and has no representation of its own, which is why this stays a
@@ -429,8 +527,24 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_ARENA()))    { pass (raw ll_ok("{ ptr, ptr, i64, i64, i64 }")); }
     if (k == (raw TY_HANDLE()))   { pass (raw ll_ok("{ i64, i32 }")); }
     if (k == (raw TY_SHARED_ARENA())) { pass (raw ll_ok("ptr")); }
-    if (k == (raw TY_STRUCT()))   { pass (relay ll_named(c, id)); }
-    if (k == (raw TY_ENUM()))     { pass (relay ll_enum(c, id)); }
+    // AN INSTANTIATION THAT NAMES THE PARAMETER BEING EMITTED (1.0.7). A
+    // `List{ … }` literal inside `list_make<T>`'s body is recorded as `List<T>`
+    // (D-107: the body is typed once with `T` opaque), and in the
+    // specialization its name, its header and its layout are `List<int32>`'s.
+    // `subst_emitted_param` answers for a bare `T`; this is the same answer for
+    // a `T` inside an instance's argument window, walked by `type_subst`, which
+    // re-interns the instance and RECORDS it — so an instance no annotation ever
+    // named still gets its header, after the bodies (`emit_late_headers`).
+    if (k == (raw TY_STRUCT())) {
+        int32:si = raw subst_emitted_type(c, id);
+        if (si != id) { pass (relay ll_type(c, si)); }
+        pass (relay ll_named(c, id));
+    }
+    if (k == (raw TY_ENUM())) {
+        int32:ei = raw subst_emitted_type(c, id);
+        if (ei != id) { pass (relay ll_type(c, ei)); }
+        pass (relay ll_enum(c, id));
+    }
 
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. A kind added without a case here
     // must refuse rather than fall through to something plausible — the whole
@@ -539,7 +653,7 @@ func:ll_enum = LlType(LlCtx->:c, int32:id) {
 // Mirrors `type_generic`'s own SUBST_FUEL: a substituted instance has its own
 // arguments substituted in turn, so the walk follows a type's structure and is
 // bounded the same way the frontend bounds it.
-func:SUBST_FUEL_LL = int32() { pass 64i32; };
+pub func:SUBST_FUEL_LL = int32() { pass 64i32; };
 
 pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
                                  int32:scope) {

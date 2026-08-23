@@ -1,0 +1,143 @@
+// expect-exit: 42
+//
+// `Optional<T>` LOWERS (1.0.7, D-099, TYPE_REFERENCE §11.1): `{ i8, T }`, tag
+// first, exactly as `Result<T>` is compiler-known — no library struct, no
+// readable members. Built by writing a value (the wrap is `emit_fit`'s second
+// case) or `NIL` (a `zeroinitializer`: tag 0 and a ZEROED value half, never
+// `undef`); tested by `== NIL` / `!= NIL` (a tag test, both operand orders);
+// read by `??` (lazy — the default runs only on the empty path) and by `?.`
+// (the absence survives the access, and an `Optional` field is not wrapped
+// twice). Each case checks for the answer the OTHER state would give.
+
+mod:optional;
+
+struct:Point = { int32:x; int32:y; };
+struct:Node  = { int32:v; int32?:tag; Point?:at; };
+
+// `pass NIL;` in a function returning `T?` is the empty one; `pass v;` wraps.
+func:first_even = int32?(int32:a, int32:b) {
+    if (a % 2i32 == 0i32) { pass a; }
+    if (b % 2i32 == 0i32) { pass b; }
+    pass NIL;
+};
+
+// An `Optional` parameter: a bare `T` and `NIL` both arrive through the slot.
+func:or_ten = int32(int32?:v) { pass (v ?? 10i32); };
+
+// A side effect, to prove `??` evaluates its default lazily.
+func:bump = int32(int32->:counter) {
+    <-counter = (<-counter) + 1i32;
+    pass 100i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32?:a = NIL;
+    int32?:b = 42i32;
+
+    // the test, both orders, both operators
+    if (a != NIL)     { exit 10i32; }
+    if (!(NIL != b))  { exit 11i32; }
+    if (!(a == NIL))  { exit 12i32; }
+    if (b == NIL)     { exit 13i32; }
+    if (!(NIL == a))  { exit 14i32; }
+
+    // `??` reads the value, or the default
+    if ((b ?? 7i32) != 42i32) { exit 15i32; }
+    if ((a ?? 7i32) != 7i32)  { exit 16i32; }
+
+    // LAZY: the default runs only when empty
+    int32:n = 0i32;
+    int32:r1 = b ?? (raw bump(@n));
+    if (n != 0i32)    { exit 17i32; }
+    if (r1 != 42i32)  { exit 18i32; }
+    int32:r2 = a ?? (raw bump(@n));
+    if (n != 1i32)    { exit 19i32; }
+    if (r2 != 100i32) { exit 20i32; }
+
+    // assignment both ways
+    a = 5i32;
+    if ((a ?? 0i32) != 5i32) { exit 21i32; }
+    a = NIL;
+    if (a != NIL)            { exit 22i32; }
+
+    // `pass NIL;` / `pass v;`
+    int32?:e = raw first_even(3i32, 5i32);
+    if (e != NIL)            { exit 23i32; }
+    int32?:f = raw first_even(3i32, 8i32);
+    if ((f ?? 0i32) != 8i32) { exit 24i32; }
+
+    // the slot at a call: a bare value and `NIL`
+    if ((raw or_ten(32i32)) != 32i32) { exit 25i32; }
+    if ((raw or_ten(NIL)) != 10i32)   { exit 26i32; }
+
+    // `Optional` fields, and `?.` on a struct field
+    Node:nd = Node{ v: 1i32, tag: NIL, at: Point{ x: 3i32, y: 4i32 } };
+    if (nd.tag != NIL)              { exit 27i32; }
+    Point?:p = nd.at;
+    if ((p?.x ?? 0i32) != 3i32)     { exit 28i32; }
+    Point?:q = NIL;
+    if ((q?.y ?? 9i32) != 9i32)     { exit 29i32; }
+    if (q?.y != NIL)                { exit 30i32; }
+
+    // `?.` FLATTENS: `Node?` reaching an `int32?` field is an `int32?`
+    Node?:opt = nd;
+    int32?:t = opt?.tag;
+    if (t != NIL)                   { exit 31i32; }
+    if ((opt?.v ?? 0i32) != 1i32)    { exit 32i32; }
+    nd.tag = 6i32;
+    opt = nd;
+    if ((opt?.tag ?? 0i32) != 6i32)  { exit 33i32; }
+
+    // an `Optional<Point>`: the layout is not int-shaped
+    Point?:pp = Point{ x: 20i32, y: 22i32 };
+    Point:pv = pp ?? Point{ x: 0i32, y: 0i32 };
+    if (pv.x + pv.y != 42i32)       { exit 34i32; }
+
+    // an array of optionals, and an index assignment
+    int32?[2]:arr = [NIL, 6i32];
+    if (arr[0] != NIL)              { exit 35i32; }
+    if ((arr[1] ?? 0i32) != 6i32)   { exit 36i32; }
+    arr[0] = 1i32;
+    if ((arr[0] ?? 0i32) != 1i32)   { exit 37i32; }
+
+    // a `bool?` — the value whose literal carried no type before 1.0.6e
+    bool?:ok = true;
+    if ((ok ?? false) != true)      { exit 38i32; }
+
+    // THE LAYOUT PIN: the frontend's `#size_of` against LLVM's own stride.
+    // Two elements' worth of zeroed bytes; a store through element 1 lands where
+    // LLVM's `{ i8, T }` stride puts it, and the first non-zero byte — element
+    // 1's tag — must sit exactly `#size_of` in. A table that disagreed would
+    // under-allocate every `wild T?->` buffer. (`type_layout.npk` cannot ask:
+    // the seed compiles it, and the seed refuses `Optional`.)
+    wild int8->:bytes = alloc(2i64 * #size_of<int32?>());
+    int64:i = 0i64;
+    while (i < 2i64 * #size_of<int32?>()) { bytes[i] = 0i8; i = i + 1i64; }
+    wild int32?->:qp = bytes =>! wild int32?->;
+    qp[1] = 7i32;
+    int64:first = 0i64 - 1i64;
+    i = 0i64;
+    while (i < 2i64 * #size_of<int32?>()) {
+        if (bytes[i] != 0i8) { if (first < 0i64) { first = i; } }
+        i = i + 1i64;
+    }
+    if (first != #size_of<int32?>())  { exit 39i32; }
+    if ((qp[1] ?? 0i32) != 7i32)       { exit 40i32; }
+
+    wild int8->:pb = alloc(2i64 * #size_of<Point?>());
+    i = 0i64;
+    while (i < 2i64 * #size_of<Point?>()) { pb[i] = 0i8; i = i + 1i64; }
+    wild Point?->:pq = pb =>! wild Point?->;
+    pq[1] = Point{ x: 1i32, y: 1i32 };
+    first = 0i64 - 1i64;
+    i = 0i64;
+    while (i < 2i64 * #size_of<Point?>()) {
+        if (pb[i] != 0i8) { if (first < 0i64) { first = i; } }
+        i = i + 1i64;
+    }
+    if (first != #size_of<Point?>())  { exit 41i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

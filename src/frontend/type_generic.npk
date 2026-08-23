@@ -181,8 +181,8 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 
     int32:mangled = relay intern_add(r.interns,
                         relay mangle_instance(r, raw type_name_of_decl(r, decl), w));
-    int32:out = raw tt_instance(r.types, raw type_kind(r.types, t), decl, mangled,
-                                w.start, w.count, 0i64, 1i32);
+    int32:out = raw tt_instance(r.types, r.ast, raw type_kind(r.types, t), decl,
+                                mangled, w.start, w.count, 0i64, 1i32);
     // RECORDED LIKE ANY OTHER INSTANTIATION, so its bounds are judged. A
     // `Container<T>` that becomes `Container<Point>` at a call site is exactly as
     // much an instantiation as one somebody wrote down.
@@ -237,7 +237,7 @@ func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // `dyn B & A` are one interned type with one layout.
     drop dyn_sort_bounds(r.ast, r.types, r.interns, mark);
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_dyn(r.types, w.start, w.count));
+    pass (raw tt_dyn(r.types, r.ast, r.interns, w.start, w.count));
 };
 
 pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,

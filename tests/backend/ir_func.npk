@@ -30,10 +30,13 @@ func:main = int32(cstring[]:_~argv) {
 
     int32:i32t = raw tt_int(@types, 32i32, true);
     int32:i64t = raw tt_int(@types, 64i32, true);
-    // Optional refuses until 1.0 — the stable stand-in since floats lower
-    // (0.9.4); this fixture's case is about REFUSAL PROPAGATION, not floats.
+    // A VARIADIC FUNCTION TYPE refuses until 1.1 — the stand-in since
+    // `Optional` lowers (1.0.7), as `Optional` was the stand-in since floats
+    // lowered (0.9.4); this fixture's case is about REFUSAL PROPAGATION, not
+    // about which type refuses. An empty window: the rung answers before the
+    // window is read.
     int32:i32t_r = raw tt_int(@types, 32i32, true);
-    int32:f32t = raw tt_optional(@types, i32t_r, 4i64, 4i32);
+    int32:f32t = raw tt_func_variadic(@types, i32t_r, 0i32, 0i32);
     int32:nx = relay intern_add(@it, "x");
     int32:ny = relay intern_add(@it, "y");
 
@@ -143,7 +146,7 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f8 = raw fnem_init(@w8, @c);
     LlType:bad = relay fnem_begin(@f8, "f", 0i32, f32t);
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
-    if (!(raw string_eq(bad.rung, "1.0")))                 { exit 51i32; }
+    if (!(raw string_eq(bad.rung, "1.1")))                 { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
     LlType:badp = relay fnem_param(@f8, nx, f32t);
     if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }

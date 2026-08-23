@@ -255,9 +255,13 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw ll_is_ok(wide)))                             { exit 82i32; }
     if (!(raw string_eq(wide.text, "i128")))               { exit 83i32; }
 
+    // `Optional<T>` LOWERS since 1.0.7 — `{ i8, T }`, tag first (TYPE_REFERENCE
+    // §11.1) — so this case asserts the answer where it asserted the rung. No
+    // `// ll:` marker: the seed refuses `Optional`, so the harness's seed diff
+    // cannot be asked about it.
     LlType:op = relay ll_type(@c, opti);
-    if (op.state != (raw LL_RUNG()))                       { exit 84i32; }
-    if (!(raw string_eq(op.rung, "1.0")))                  { exit 85i32; }
+    if (!(raw ll_is_ok(op)))                               { exit 84i32; }
+    if (!(raw string_eq(op.text, "{ i8, i32 }")))          { exit 85i32; }
 
     // TYPE 0 IS THE INVALID TYPE, which means resolution already failed and
     // already said so.

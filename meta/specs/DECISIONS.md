@@ -7558,6 +7558,36 @@ every diagnostic about an instantiation says which one without anything extra.
 A mangled name contains `<`, which no identifier does, so it cannot collide with a
 plain named type.
 
+> **Amended at 1.0.7: the identity is the declaration and the argument
+> CONTENTS; the name is a derivation.** The "total function" claim fails
+> exactly when an argument is a generic PARAMETER: a parameter renders by its
+> name, and two declarations may each call theirs `T`. `func:first<T> =
+> T(List<T>:l)` and `func:second<T> = T(List<T>:l)` both spelled `List<T>`,
+> so the second's was the first's instance — its argument window held the
+> first function's parameter — and `l.items[0]` in the second reported
+> "expected `T`, found `T`". Found writing the first generic collection
+> (1.0.7); every earlier program had one generic function per generic struct,
+> or different parameter names. `tt_instance` now compares the window's
+> contents element-wise (each argument is itself an interned id, so that is
+> canonical), which is what the paragraph above said could not be compared —
+> the START cannot, the CONTENTS can. Nothing else in this section changes: a
+> concrete instantiation's name is still unique, still the source spelling,
+> still hash-free, and still what D-156's symbols are built from. Only a
+> template-shaped instance can share its name with another, and those are
+> never emitted (1.0.7 skips them at the instance loop and substitutes them
+> transitively — `pair_of<T>` calling `list_make::<T>` records `list_make<int64>`
+> while `pair_of<int64>` is emitted).
+>
+> **The same defect one table away, fixed the same day:** a `dyn`'s identity
+> was its bound WINDOW's start, so two spellings of `dyn Speaks` were two
+> types with two layout entries — masked while `Pair<dyn Speaks>` deduped by
+> name, exposed the moment it deduped by contents (`llc`: "redefinition of
+> type"). `tt_dyn` compares contents too, and interns the spelling
+> (`dyn Speaks & Walks`, canonical order) as the type's name, so
+> `type_display` renders it and `Pair<dyn Speaks>` mangles reversibly — it
+> was `Pair<<type>>`, one symbol for every `Pair<dyn …>` a program could
+> write.
+
 ### 2. Bound satisfaction is a pass; arity is decided at the annotation
 
 `resolve_type` runs during **collection** — `collect_impls` resolves an impl's
@@ -10809,6 +10839,20 @@ which is why this is decided rather than raised.
 > segment is the blanket form's trait, two are a family impl's target and
 > trait. None of the three heuristics floated below was needed. Family impls
 > parse, resolve, check, dispatch, emit and run as of 1.0.4b.
+>
+> **A consequence found at 1.0.7, stated so it is not mistaken for a gap in
+> the implementation:** the segment rule IS the "no inherent families"
+> candidate listed below, adopted without saying so. `impl:<T>:List<T> = { … }`
+> has one segment after the generics window and is read as a blanket impl of
+> a trait named `List<T>` (refused: `NITPICK-TYPE-012`, not a trait). The
+> original resolution's "the inherent family falls out" does not hold under
+> the amendment. So a generic struct cannot carry inherent methods; they go
+> through a trait — and a trait method cannot take `Self->`, so no method of a
+> generic struct can mutate it. Raised as **D-171** at 1.0.9 with a
+> recommendation (the blanket form takes an explicit target,
+> `impl:<T: P>:T:Loggable`, and every impl reads by one rule); the first
+> generic collection (1.0.7) spells its mutators as free generic functions
+> over `List<T>->`, which is `TokenList`'s own shape.
 >
 > **Both clauses 1.0.4b left owed are met as of 1.0.4c**, and both landed on
 > the better of the two branches this decision allowed:

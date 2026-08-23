@@ -483,34 +483,53 @@ pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
     pass (raw tt_intern(t, raw TY_ENUM(), decl, 0i32, 0i32, size, align, name));
 };
 
-// AN INSTANTIATION'S IDENTITY IS ITS MANGLED NAME (D-064 §6).
+// AN INSTANTIATION'S IDENTITY IS ITS DECLARATION AND ITS ARGUMENTS (D-064 §6).
 //
 // `tt_intern` compares every slot, and an argument WINDOW cannot be compared that
 // way. Two spellings of `Container<int32>` commit two windows at two different
-// starts, so field equality would make them two types — and `type_eq` is an
-// integer compare everywhere else in this compiler, so the two would silently
-// fail to be the same type in every comparison downstream.
+// starts, so comparing the START would make them two types — and `type_eq` is
+// an integer compare everywhere else in this compiler, so the two would
+// silently fail to be the same type in every comparison downstream. The
+// window's CONTENTS are compared instead: each argument is itself an interned
+// id, so element-wise equality is canonical.
 //
-// The NAME identifies them instead, and doing so is sound rather than convenient:
-// the mangled name is a TOTAL FUNCTION of the declaration and the arguments, so
-// two entries carrying one name necessarily hold equal arguments. The window is
-// then a DERIVATION of the identity rather than part of it, which is exactly why
-// it can be read back for substitution without ever being compared.
+// UNTIL 1.0.7 THE NAME WAS THE IDENTITY, on the claim that the mangled name is
+// a total function of the declaration and the arguments. It is not: a generic
+// PARAMETER renders by its name, and two declarations may each call theirs
+// `T`. `func:first<T> = T(List<T>:l)` and `func:second<T> = T(List<T>:l)` both
+// spelled `List<T>`, so the second's was the FIRST's instance, whose argument
+// window held the first's parameter — and `l.items[0]` in the second reported
+// "expected `T`, found `T`". Found at 1.0.7 writing the first generic
+// collection; every earlier program had one generic function per generic
+// struct, or different parameter names.
 //
-// It cannot collide with a plain named type: a mangled name contains `<`, and no
-// identifier does. That is also why the name is readable and reversible with NO
-// HASH — `Container<int32>` maps back to its declaration by inspection, which is
-// what an auditor reading a verification report has to do, and a hash makes it a
-// lookup against a table that may not have survived.
-pub func:tt_instance = int32(TypeTable->:t, int32:kind, int32:decl, int32:name,
-                             int32:arg_start, int32:arg_count,
+// The name stays what it was for: DISPLAY and D-156's symbols, readable and
+// reversible with NO HASH — `Container<int32>` maps back to its declaration by
+// inspection, which is what an auditor reading a verification report has to
+// do. A concrete instantiation's name is still unique; only a template-shaped
+// one can share its name with another, and those are never emitted.
+pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
+                             int32:name, int32:arg_start, int32:arg_count,
                              int64:size, int32:align) {
     int32:i = 0i32;
     while (i < t.count) {
         Type:e = t.items[i => int64];
         if (e.kind == kind) {
             if (e.a == decl) {
-                if (e.name == name) { pass i; }
+                if (e.c == arg_count) {
+                    bool:same = true;
+                    int32:k = 0i32;
+                    while (k < arg_count) {
+                        if ((relay ast_id_at(ast, e.b, k))
+                                != (relay ast_id_at(ast, arg_start, k))) {
+                            same = false;
+                            k = arg_count;
+                        } else {
+                            k = k + 1i32;
+                        }
+                    }
+                    if (same) { pass i; }
+                }
             }
         }
         i = i + 1i32;
@@ -529,11 +548,64 @@ pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
 // and was told it had two, so the last two vtable pointers had nowhere to live.
 // The bound window arrives CANONICALLY ORDERED (`dyn_sort_bounds`), which is
 // what makes each word's slot a compile-time constant.
-pub func:tt_dyn = int32(TypeTable->:t, int32:start, int32:count) {
+//
+// A `dyn`'s IDENTITY IS ITS BOUND SET, NOT ITS WINDOW (1.0.7). `tt_intern`
+// compares slots, and the window START is a slot — so two spellings of
+// `dyn Speaks` committed two windows and were two types, each with its own
+// layout entry. Nothing compared two `dyn` ids directly while names masked it:
+// `fits` reaches `dyn_accepts` for dyn-to-dyn, and an instance `Pair<dyn S>`
+// deduped by its mangled NAME. When instance identity became its arguments
+// (`tt_instance`), `Pair<dyn Speaks>` interned once per spelling and `llc`
+// refused the redefinition — the same defect one table away. The contents
+// are compared, as for an instance; the bounds arrive canonically ordered
+// (`dyn_sort_bounds`), so element-wise equality is set equality.
+//
+// AND IT CARRIES ITS SPELLING AS ITS NAME (1.0.7) — `dyn Speaks & Walks`, the
+// bounds' own names in canonical order — so `type_display` renders it and an
+// instance over it mangles reversibly: `Pair<dyn Speaks>` was `Pair<<type>>`,
+// one symbol for every `Pair<dyn …>` a program could write. Trait names are
+// program-unique (the loader refuses two modules exporting one name,
+// NITPICK-RESOLVE-008), so the spelling identifies the set.
+pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
+                        int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        Type:e = t.items[i => int64];
+        if (e.kind == (raw TY_DYN())) {
+            if (e.b == count) {
+                bool:same = true;
+                int32:k = 0i32;
+                while (k < count) {
+                    if ((relay ast_id_at(ast, e.a, k))
+                            != (relay ast_id_at(ast, start, k))) {
+                        same = false;
+                        k = count;
+                    } else {
+                        k = k + 1i32;
+                    }
+                }
+                if (same) { pass i; }
+            }
+        }
+        i = i + 1i32;
+    }
     int32:words = count + 1i32;
     if (count < 1i32) { words = 2i32; }
     int64:size = (words => int64) * 8i64;
-    pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, size, 8i32, 0i32));
+    string:spelled = "dyn ";
+    int32:j = 0i32;
+    while (j < count) {
+        if (j > 0i32) { spelled = relay string_concat(spelled, " & "); }
+        int32:tn = raw type_name(t, relay ast_id_at(ast, start, j));
+        if (raw intern_is_none(tn)) {
+            spelled = relay string_concat(spelled, "<trait>");
+        } else {
+            spelled = relay string_concat(spelled, relay intern_get(interns, tn));
+        }
+        j = j + 1i32;
+    }
+    pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, size, 8i32,
+                        raw intern_add(interns, spelled)));
 };
 
 // `func RetType(ParamTypes)` (D-087). One word: a code address, with no captured

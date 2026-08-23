@@ -523,7 +523,7 @@ SLOT_SITE_PAIRS = {
     # diagnostic is the same one every slot gives. Nothing is built for it,
     # and the arena emitter is where it would be.
     "want_handle_of":      {"emit_arena_method"},
-    "type_null_coalesce":  "refused: the `??` operator",
+    "type_null_coalesce":  {"emit_coalesce"},          # lowered at 1.0.7
     "type_pipe":           "refused: the pipe operator",
     "check_decl":          "refused: a module-level binding",
 }

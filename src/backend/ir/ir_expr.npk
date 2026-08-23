@@ -48,6 +48,8 @@ use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
 use "../../frontend/resolve_type.npk".*;
+use "../../frontend/type_generic.npk".*;   // type_subst, for transitive instantiation (1.0.7)
+use "../../frontend/type_trait.npk".*;     // the impl table, for a family instance reached through a bound (1.0.7)
 use "./ir_runtime.npk".*;
 // THE DECLARED CYCLE with the statement walker — `relay` exits the function,
 // which runs the defer stack, which emits statements. Same shape, same reason,
@@ -307,7 +309,32 @@ pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, IrVal:v, Span:at) {
         // by a word per dropped bound (D-159).
         pass (relay emit_dyn_widen(x, w, v, at));
     }
+    // A BARE `T` INTO AN `Optional<T>` SLOT IS WRAPPED (D-099, 1.0.7): the one
+    // implicit conversion in the language, and the only way an `Optional`
+    // holding a value is built, since there is no constructor to write.
+    if (wk == (raw TY_OPTIONAL())) {
+        if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_OPTIONAL())) {
+            pass (relay emit_opt_wrap(x, w, v, at));
+        }
+    }
     pass v;
+};
+
+// `{ i8 1, T v }` — the tag over a zeroed aggregate, then the value. Two
+// `insertvalue`s over `zeroinitializer` rather than one over a spelled-out
+// constant, so the value half's text never has to be written here.
+pub func:emit_opt_wrap = IrVal(ExprEmitter->:x, int32:opt_ty, IrVal:v,
+                               Span:at) {
+    LlType:oll = relay ll_type(x.fe.ctx, opt_ty);
+    if (!(raw ll_is_ok(oll))) { pass (relay iv_from_ll_at(x, oll, opt_ty, at)); }
+    string:tagged = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(tagged, " = insertvalue ",
+                      relay string_concat(oll.text, " zeroinitializer, i8 1, 0")));
+    string:full = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(full, " = insertvalue ", oll.text, " ",
+                      relay cat5(tagged, ", ", v.ll, " ",
+                          relay string_concat(v.ref, ", 1"))));
+    pass (raw iv(oll.text, full, opt_ty));
 };
 
 func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
@@ -326,7 +353,23 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         // to hand `Result<NIL>` machinery. NULL is the pointer. ERR (0.9.5) is
         // the `tbb` taint (D-008): the sentinel of whatever width the checker
         // gave this position, from the one shared table.
-        if (n.payload == 0i64) { pass (raw iv("i32", "0", 0i32)); }
+        // `NIL` WHERE AN `Optional<T>` IS EXPECTED IS THE EMPTY ONE (D-099,
+        // 1.0.7): the checker typed it AS the `Optional`, and it lowers to
+        // `zeroinitializer` — tag 0 and a ZEROED value half, never `undef`. The
+        // spec's IR comment writes `i32 undef` for the empty value; a defined
+        // byte is what the `fail` desugar already chooses for a `Result`'s
+        // value half (§11.2), and what a verifier can reason about.
+        if (n.payload == 0i64) {
+            int32:ntid = raw exprtypes_get(x.et, id);
+            if ((raw type_kind(x.fe.ctx.types, ntid)) == (raw TY_OPTIONAL())) {
+                LlType:nll = relay ll_type(x.fe.ctx, ntid);
+                if (!(raw ll_is_ok(nll))) {
+                    pass (relay iv_from_ll_at(x, nll, ntid, n.span));
+                }
+                pass (raw iv(nll.text, "zeroinitializer", ntid));
+            }
+            pass (raw iv("i32", "0", 0i32));
+        }
         if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
         int32:stid = raw exprtypes_get(x.et, id);
         int32:sbits2 = raw type_int_bits(x.fe.ctx.types, stid);
@@ -398,12 +441,8 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         }
         pass (relay emit_method_call(x, id, n));
     }
-    if (n.kind == ExprKind.ExprSafeNavExpr) {
-        pass (raw iv_rung("the `?.` operator", "1.0", n.span));
-    }
-    if (n.kind == ExprKind.ExprNullCoalesceExpr) {
-        pass (raw iv_rung("the `??` operator", "1.0", n.span));
-    }
+    if (n.kind == ExprKind.ExprSafeNavExpr)     { pass (relay emit_safe_nav(x, id, n)); }
+    if (n.kind == ExprKind.ExprNullCoalesceExpr) { pass (relay emit_coalesce(x, id, n)); }
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
         // `r ? default` (0.9.7): the value, or the default — LAZY, so the
         // default only evaluates on the error path.
@@ -882,16 +921,80 @@ func:icmp_name = string(TokenKind:op, bool:signed) {
     pass "";
 };
 
+// Is this expression the `NIL` sentinel, written as such? (1.0.7)
+func:expr_is_nil_literal = bool(ExprEmitter->:x, ExprId:e) {
+    ExprNode:en = relay ast_expr(x.ast, e);
+    if (en.kind != ExprKind.ExprSentinelLiteral) { pass false; }
+    pass (en.payload == 0i64);
+};
+
 func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     TokenKind:op = raw expr_op(n);
 
     if (op == TokenKind.OpAndAnd) { pass (relay emit_shortcircuit(x, n, true)); }
     if (op == TokenKind.OpOrOr)   { pass (relay emit_shortcircuit(x, n, false)); }
 
+    // AN `Optional` COMPARES AGAINST `NIL` BY ITS TAG (D-099, 1.0.7) — `a == NIL`
+    // and `NIL != a` are THE test, in either order. The sentinel side is never
+    // emitted: it has no bytes worth reading. Two `Optional`s that are neither
+    // `NIL` fall through to the non-scalar refusal below; what that comparison
+    // MEANS is D-169's (1.0.9), the same question for every aggregate.
+    if ((raw type_kind(x.fe.ctx.types, raw exprtypes_get(x.et, raw expr_lhs(n))))
+            == (raw TY_OPTIONAL())) {
+        bool:is_eq = (op == TokenKind.OpEqEq);
+        if (is_eq || (op == TokenKind.OpNotEq)) {
+            ExprId:other = raw expr_lhs(n);
+            bool:found_nil = false;
+            if (raw expr_is_nil_literal(x, raw expr_rhs(n))) {
+                found_nil = true;
+            } else {
+                if (raw expr_is_nil_literal(x, raw expr_lhs(n))) {
+                    found_nil = true;
+                    other = raw expr_rhs(n);
+                }
+            }
+            if (found_nil) {
+                IrVal:ov = relay emit_expr(x, other);
+                if (ov.state != (raw LL_OK())) { pass ov; }
+                string:otag = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(otag, " = extractvalue ", ov.ll, " ",
+                                  relay string_concat(ov.ref, ", 0")));
+                string:opred = "eq";
+                if (!is_eq) { opred = "ne"; }
+                string:oc = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(oc, " = icmp ", opred, " i8 ",
+                                  relay string_concat(otag, ", 0")));
+                string:oz = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat3(oz, " = zext i1 ",
+                                  relay string_concat(oc, " to i8")));
+                pass (raw iv("i8", oz, 0i32));
+            }
+        }
+    }
+
     IrVal:lhs = relay emit_expr(x, raw expr_lhs(n));
     if (lhs.state != (raw LL_OK())) { pass lhs; }
     IrVal:rhs = relay emit_expr(x, raw expr_rhs(n));
     if (rhs.state != (raw LL_OK())) { pass rhs; }
+
+    // A COMPARISON ON A NON-SCALAR REFUSES BY NAME (1.0.7). `icmp` takes
+    // integers, pointers and nothing else; a struct, an array, a `Result`, an
+    // `Optional` or a `string` reaching here was an `icmp` on an aggregate that
+    // `llc` refused with "icmp requires integer operands" — failing closed, but
+    // not by name, and the checker accepts the comparison (`type_comparison`
+    // unifies and checks ordering only). What such a comparison MEANS is a
+    // decision (D-169, 1.0.9); until then it is a rung, not invalid IR.
+    string:cmp0 = raw icmp_name(op, false);
+    if (cmp0.len > 0i64) {
+        if (!(raw ll_is_scalar_int(raw ll_ok(lhs.ll)))) {
+            if (!(raw ll_is_float_text(lhs.ll))) {
+                if (!(raw string_eq(lhs.ll, "ptr"))) {
+                    pass (raw iv_rung("`==`/`!=`/ordering on a non-scalar type",
+                                      "1.0", n.span));
+                }
+            }
+        }
+    }
 
     // SIGNEDNESS COMES FROM THE OPERANDS' TYPE, and the two sides agree because
     // the checker made them (D-092: no implicit widening — a mixed comparison
@@ -2402,12 +2505,76 @@ func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, ExprId:call) {
         FnInstance:e = relay fninst_at(x.fninsts, i);
         if (e.decl == decl) {
             if (raw fn_types_same(x, e.type_id, ft)) {
-                pass (relay fninst_name_of(x, e));
+                pass (relay fninst_name_of(x, relay fninst_concrete(x, e, call)));
             }
         }
         i = i + 1i32;
     }
     pass 0i32;
+};
+
+// A TEMPLATE-SHAPED INSTANCE BECOMES THE CONCRETE ONE THIS SPECIALIZATION ASKS
+// FOR (1.0.7). `pair_of<T>` calling `list_make::<T>(…)` recorded `list_make<T>`
+// with `T` opaque (D-107) — a request on behalf of whatever `pair_of` is
+// instantiated at. Emitting `pair_of<int64>`, its arguments are read through
+// the binding, the concrete request is RECORDED (deduped by arguments, D-108's
+// rule, so two callers of one instance record it once), and the instance loop
+// in `emit_program`, which re-reads the table's count, emits it after this
+// body. Nothing is recorded when no argument names a parameter: a concrete
+// instance is its own answer. This is transitive monomorphization, and the
+// table is its worklist.
+func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) {
+    if (x.fe.ctx.subst_params_count == 0i32) { pass e; }
+    bool:shaped = false;
+    int32:i = 0i32;
+    while (i < e.args_count) {
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast,
+                                    relay ast_id_at(x.ast, e.args_start, i),
+                                    64i32)) {
+            shaped = true;
+        }
+        i = i + 1i32;
+    }
+    if (!shaped) { pass e; }
+
+    int32:mark = raw ast_scratch_mark(x.ast);
+    i = 0i32;
+    while (i < e.args_count) {
+        drop ast_scratch_push(x.ast, raw subst_emitted_type(x.fe.ctx,
+                                  relay ast_id_at(x.ast, e.args_start, i)));
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+    ExprNode:cn = relay ast_expr(x.ast, call);
+    int32:ft = relay type_subst(x.tr, e.type_id,
+                                raw subst_emitted_scope(x.fe.ctx), cn.span,
+                                raw SUBST_FUEL_LL(), x.fe.ctx.impls);
+    drop fninst_record(x.fninsts, x.ast, e.decl, w.start, w.count,
+                       e.params_start, e.params_count, e.owner_impl, ft, cn.span);
+    // The recorded one — the first with these arguments, which is the one the
+    // loop will emit and whose name the call must use.
+    int32:k = 0i32;
+    while (k < (raw fninst_count(x.fninsts))) {
+        FnInstance:r = relay fninst_at(x.fninsts, k);
+        if (r.decl == e.decl) {
+            if (r.args_count == w.count) {
+                bool:same = true;
+                int32:j = 0i32;
+                while (j < w.count) {
+                    if ((relay ast_id_at(x.ast, r.args_start, j))
+                            != (relay ast_id_at(x.ast, w.start, j))) {
+                        same = false;
+                        j = w.count;
+                    } else {
+                        j = j + 1i32;
+                    }
+                }
+                if (same) { pass r; }
+            }
+        }
+        k = k + 1i32;
+    }
+    pass e;
 };
 
 // `extract<int32>` — the same D-108 spelling `emit_program` gives the definition,
@@ -2696,11 +2863,22 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         // call through a bound emitted a reference to a symbol that no longer
         // existed. No test called a method through a generic parameter's bound,
         // so the suite stayed green over a program `llc` refuses.
-        if (raw type_is_param_kind(x.fe.ctx.types, rty)) {
-            int32:conc = raw subst_emitted_param(x.fe.ctx, rty);
+        //
+        // AND A RECEIVER THAT MENTIONS THE PARAMETER ANYWHERE (1.0.7): `P`
+        // itself, or `Box<P>` — a concrete instance of a family whose argument
+        // is the parameter, whose recorded symbol would still spell `Box<P>`.
+        // Both read through the binding. When the impl that answers is a FAMILY
+        // impl, the instance it needs is recorded here — the checker saw `P`
+        // and could not — and the instance loop, which re-reads the table,
+        // emits it after this body (transitive monomorphization, as for a
+        // generic free function).
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
+            int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
             if (conc != rty) {
+                int32:btrait = raw exprtypes_callee_trait(x.et, id);
                 fname = relay method_symbol_name(x.fe.ctx.types, x.interns,
-                            conc, raw exprtypes_callee_trait(x.et, id), fname);
+                            conc, btrait, fname);
+                drop note_family_instance(x, conc, btrait, raw decl_name(d), n.span);
             }
         }
     }
@@ -2725,6 +2903,64 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         if (raw ll_is_ok(il)) { out.inner = il.text; }
     }
     pass out;
+};
+
+// A CALL THAT LANDS ON A FAMILY IMPL AT A CONCRETE RECEIVER RECORDS THE
+// INSTANCE IT NEEDS (1.0.7). `impl:<T>:List<T>:Sized` is a template; its
+// `size` for `List<int32>` is one body per instantiation, recorded in the
+// same table a generic function's specializations are (1.0.4b). The checker
+// records it when the receiver is concrete at check time; through a bound, or
+// through a receiver that mentions the enclosing parameter, the receiver is
+// concrete only HERE. Bound positionally from the receiver's own arguments,
+// exactly as `bind_blanket` binds them on the checking side. Nothing is
+// recorded for a per-instance impl (its block emits its methods) or when no
+// family impl answers (the checker already accepted the call, so one does).
+func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
+                                int32:name, Span:at) {
+    if (x.fe.ctx.impls == NULL) { pass NIL; }
+    wild ImplTable->:t = x.fe.ctx.impls;
+    int32:cdecl = raw type_decl_of(x.fe.ctx.types, conc);
+    if (cdecl == 0i32) { pass NIL; }
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:e = relay impl_at(t, i);
+        if (!e.blanket) {
+            if (e.trait_id == trait_ty) {
+                if (e.target == conc) { pass NIL; }    // per-instance: its block emits it
+                if (e.target != 0i32) {
+                    DeclNode:idn = relay ast_decl(x.ast, DeclId{ index: e.decl });
+                    if ((raw impl_generic_count(x.ast, idn)) > 0i32) {
+                        if ((raw type_decl_of(x.fe.ctx.types, e.target)) == cdecl) {
+                            int32:mdecl = relay impl_method_named(x.ast, x.interns,
+                                              e.decl, name);
+                            if (mdecl == 0i32) {
+                                mdecl = relay trait_default_named(x.ast, x.interns,
+                                            x.fe.ctx.types, trait_ty, name);
+                            }
+                            if (mdecl == 0i32) { pass NIL; }
+                            IdSpan:pw = raw decl_generic_window(x.ast, idn);
+                            int32:mark = raw ast_scratch_mark(x.ast);
+                            int32:rargs = raw type_args_start_of(x.fe.ctx.types, conc);
+                            int32:rn = raw type_args_count_of(x.fe.ctx.types, conc);
+                            int32:k = 0i32;
+                            while (k < rn) {
+                                drop ast_scratch_push(x.ast,
+                                    relay ast_id_at(x.ast, rargs, k));
+                                k = k + 1i32;
+                            }
+                            IdSpan:aw = raw ast_scratch_commit(x.ast, mark);
+                            drop fninst_record(x.fninsts, x.ast, mdecl, aw.start,
+                                               aw.count, pw.start, pw.count,
+                                               e.decl, 0i32, at);
+                            pass NIL;
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
 };
 
 pub func:iv_from_place = IrVal(PlaceVal:p) {
@@ -3056,15 +3292,130 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
 // One shape for every base, including one that has no address at all
 // (`(raw f()).len`); the whole-aggregate load a pointer base implies is what
 // naive lowering means, and `opt` scalarises it.
+// `a ?? d` (D-099, 1.0.7): the value, or the default — LAZY, so the default
+// only evaluates on the empty path, the shape `?` on a `Result` has (0.9.7)
+// with the tag in place of the error word. The default meets the inner type
+// through `emit_fit`, since the checker typed it with `fits(inner, d)`.
+func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    IrVal:cv = relay emit_expr(x, raw expr_lhs(n));
+    if (!(raw iv_is_ok(cv))) { pass cv; }
+    int32:ctid = raw exprtypes_get(x.et, id);
+    LlType:cll = relay ll_type(x.fe.ctx, ctid);
+    if (!(raw ll_is_ok(cll))) { pass (relay iv_from_ll_at(x, cll, ctid, n.span)); }
+    string:cslot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(cslot, " = alloca ", cll.text));
+    string:ctag = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(ctag, " = extractvalue ", cv.ll, " ",
+                      relay string_concat(cv.ref, ", 0")));
+    string:cempty = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(cempty, " = icmp eq i8 ",
+                      relay string_concat(ctag, ", 0")));
+    string:cd_l = relay irw_new_label(x.fe.w, "nc.def");
+    string:co_l = relay irw_new_label(x.fe.w, "nc.some");
+    string:cj_l = relay irw_new_label(x.fe.w, "nc.done");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", cempty, ", label %", cd_l,
+                      relay string_concat(", label %", co_l)));
+    drop irw_label(x.fe.w, co_l);
+    string:cin = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cin, " = extractvalue ", cv.ll, " ",
+                      relay string_concat(cv.ref, ", 1")));
+    drop irw_line(x.fe.w, relay cat5("store ", cll.text, " ", cin,
+                      relay string_concat(", ptr ", cslot)));
+    drop irw_line(x.fe.w, relay cat3("br label %", cj_l, ""));
+    drop irw_label(x.fe.w, cd_l);
+    IrVal:cdv = relay emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    // THE DEFAULT IS A SLOT, of the inner type (D-099's list names it).
+    cdv = relay emit_fit(x, ctid, cdv, n.span);
+    if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    drop irw_line(x.fe.w, relay cat5("store ", cdv.ll, " ", cdv.ref,
+                      relay string_concat(", ptr ", cslot)));
+    drop irw_line(x.fe.w, relay cat3("br label %", cj_l, ""));
+    drop irw_label(x.fe.w, cj_l);
+    string:cout = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cout, " = load ", cll.text, ", ptr ",
+                      relay string_concat(cslot, "")));
+    pass (raw iv(cll.text, cout, ctid));
+};
+
+// `a?.f` (D-099, 1.0.7): the field, still wrapped — the absence survives the
+// access. Empty yields `zeroinitializer` of the RESULT type; present extracts
+// the value, reads the field through the same path `.` uses, and wraps it —
+// unless the field is itself an `Optional`, in which case the checker already
+// flattened the type (TYPE_REFERENCE §11.1) and the field is stored as it is.
+func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    ExprId:base_id = raw expr_operand(n);
+    IrVal:bv = relay emit_expr(x, base_id);
+    if (!(raw iv_is_ok(bv))) { pass bv; }
+    int32:otid = raw exprtypes_get(x.et, base_id);
+    if ((raw type_kind(x.fe.ctx.types, otid)) != (raw TY_OPTIONAL())) {
+        pass (raw iv_broken(n.span));
+    }
+    int32:inner_tid = raw type_elem(x.fe.ctx.types, otid);
+    LlType:ill = relay ll_type(x.fe.ctx, inner_tid);
+    if (!(raw ll_is_ok(ill))) { pass (relay iv_from_ll_at(x, ill, inner_tid, n.span)); }
+    int32:rtid = raw exprtypes_get(x.et, id);
+    LlType:rll = relay ll_type(x.fe.ctx, rtid);
+    if (!(raw ll_is_ok(rll))) { pass (relay iv_from_ll_at(x, rll, rtid, n.span)); }
+
+    string:sslot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(sslot, " = alloca ", rll.text));
+    string:stag = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(stag, " = extractvalue ", bv.ll, " ",
+                      relay string_concat(bv.ref, ", 0")));
+    string:sempty = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(sempty, " = icmp eq i8 ",
+                      relay string_concat(stag, ", 0")));
+    string:sn_l = relay irw_new_label(x.fe.w, "sn.none");
+    string:ss_l = relay irw_new_label(x.fe.w, "sn.some");
+    string:sj_l = relay irw_new_label(x.fe.w, "sn.done");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", sempty, ", label %", sn_l,
+                      relay string_concat(", label %", ss_l)));
+    drop irw_label(x.fe.w, sn_l);
+    drop irw_line(x.fe.w, relay cat5("store ", rll.text, " zeroinitializer, ptr ",
+                      sslot, ""));
+    drop irw_line(x.fe.w, relay cat3("br label %", sj_l, ""));
+    drop irw_label(x.fe.w, ss_l);
+    string:sin = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(sin, " = extractvalue ", bv.ll, " ",
+                      relay string_concat(bv.ref, ", 1")));
+    IrVal:fv = relay emit_member_from(x, id, n, raw iv(ill.text, sin, inner_tid),
+                                      inner_tid);
+    if (!(raw iv_is_ok(fv))) { pass fv; }
+    // NOT WRAPPED TWICE: a field that is itself an `Optional` IS the result.
+    if ((raw type_kind(x.fe.ctx.types, fv.type_id)) != (raw TY_OPTIONAL())) {
+        fv = relay emit_opt_wrap(x, rtid, fv, n.span);
+        if (!(raw iv_is_ok(fv))) { pass fv; }
+    }
+    drop irw_line(x.fe.w, relay cat5("store ", fv.ll, " ", fv.ref,
+                      relay string_concat(", ptr ", sslot)));
+    drop irw_line(x.fe.w, relay cat3("br label %", sj_l, ""));
+    drop irw_label(x.fe.w, sj_l);
+    string:sout = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(sout, " = load ", rll.text, ", ptr ",
+                      relay string_concat(sslot, "")));
+    pass (raw iv(rll.text, sout, rtid));
+};
+
 func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if ((raw member_enum_decl(x, n)) != 0i32) {
         pass (relay emit_variant_ref(x, id, n));
     }
 
     ExprId:base_id = raw expr_operand(n);
-    IrVal:bv = relay emit_expr(x, base_id);
-    if (!(raw iv_is_ok(bv))) { pass bv; }
-    int32:btid = raw exprtypes_get(x.et, base_id);
+    IrVal:bv0 = relay emit_expr(x, base_id);
+    if (!(raw iv_is_ok(bv0))) { pass bv0; }
+    pass (relay emit_member_from(x, id, n, bv0, raw exprtypes_get(x.et, base_id)));
+};
+
+// THE READ, GIVEN THE BASE VALUE (split out at 1.0.7 so `?.` can hand in the
+// value it unwrapped). The result is typed as the FIELD's own type for a
+// struct field, and as the node's recorded type for a builtin member — the
+// same answers `emit_member` always gave.
+func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                              IrVal:bv_in, int32:btid_in) {
+    IrVal:bv = bv_in;
+    int32:btid = btid_in;
 
     if ((raw type_kind(x.fe.ctx.types, btid)) == (raw TY_POINTER())) {
         btid = raw type_elem(x.fe.ctx.types, btid);

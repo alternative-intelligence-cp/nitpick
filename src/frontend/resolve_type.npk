@@ -567,7 +567,7 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
 
     int32:mangled = relay intern_add(r.interns,
                         relay mangle_instance(r, name, w));
-    int32:t = raw tt_instance(r.types, kind, d.index, mangled,
+    int32:t = raw tt_instance(r.types, r.ast, kind, d.index, mangled,
                               w.start, w.count, 0i64, 1i32);
     drop inst_record(r.instances, t, n.span);
     pass t;
@@ -1704,7 +1704,7 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
     // `dyn B & A` are one interned type with one layout.
     drop dyn_sort_bounds(r.ast, r.types, r.interns, mark);
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_dyn(r.types, w.start, w.count));
+    pass (raw tt_dyn(r.types, r.ast, r.interns, w.start, w.count));
 };
 
 // --- object safety (TRAITS_REFERENCE 4.2) ------------------------------------------------

@@ -761,9 +761,22 @@ identical.
 ; .value at offset 4 (4 bytes)
 ; Total: 8 bytes
 
-; int32?:a = NIL;    = { i8 0, i32 undef }
+; int32?:a = NIL;    = { i8 0, i32 0 }      ; zeroinitializer -- the value half is ZEROED, never undef
 ; int32?:b = 42i32;  = { i8 1, i32 42 }
 ```
+
+> **Lowered at 1.0.7, compiler-known exactly as `Result<T>` is.** `ll_type`
+> answers `{ i8, T }`; `NIL` where an `Optional` is expected lowers to
+> `zeroinitializer` (the earlier comment's `undef` is struck — a defined byte is
+> what the `fail` desugar already chooses for a `Result`'s value half, and what
+> a verifier can reason about); the wrap from `T` is built at every slot by the
+> emitter's one slot helper (`emit_fit`, 1.0.6e); `== NIL`/`!= NIL` is a tag
+> test in either operand order; `??` evaluates its default only on the empty
+> path; `?.` yields `zeroinitializer` of the result type when empty and wraps
+> the field when present — or stores it as it is when the field is itself an
+> `Optional`, the flattening rule below. No library struct declares it: D-099
+> strikes its readable members, and a struct whose fields are not members would
+> be the kind of special case the blueprint rule forbids.
 
 **There is no constructor, and none is needed (D-099).** An `Optional<T>` is built
 by writing the value; it is emptied by writing `NIL`. That is the pair the

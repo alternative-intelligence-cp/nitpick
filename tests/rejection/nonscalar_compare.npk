@@ -1,0 +1,22 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// `==` ON A NON-SCALAR REFUSES BY NAME (1.0.7). The checker accepts a struct
+// compared with `==` (`type_comparison` unifies the operands and checks only
+// ordering), and until 1.0.7 the emitter wrote `icmp eq %P …`, which `llc`
+// refused with "icmp requires integer operands" — failing closed, but not by
+// name, and about a program the checker had called valid. What such a
+// comparison MEANS (fieldwise, `Eq`-dispatched, or refused at the checker) is
+// D-169's, settled at 1.0.9; until then it is a rung, and this file pins that it
+// is one rather than invalid IR.
+
+struct:P = { int32:x; int32:y; };
+
+func:main = int32(cstring[]:_~argv) {
+    P:a = P{ x: 1i32, y: 2i32 };
+    P:b = P{ x: 1i32, y: 2i32 };
+    if (a == b) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -129,15 +129,14 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     TypeId:tgt = raw impl_target(x.ast, d);
     if (raw type_is_none(tgt)) { pass NIL; }
 
-    // A FAMILY IMPL EMITS ITS RECORDED INSTANTIATIONS, HERE (1.0.4b). Its
-    // methods are templates over the impl's parameters AND over `Self`, and
-    // this is the one place both are bound — the global instantiation walk sits
-    // outside that binding, which is why emitting from there reported `T` (or
-    // `Self`) unbound however many windows were threaded into it.
-    if ((raw impl_generic_count(x.ast, d)) > 0i32) {
-        drop emit_family_instances(x, diags, item, d, tgt);
-        pass NIL;
-    }
+    // A FAMILY IMPL EMITS NOTHING HERE (1.0.4b, moved at 1.0.7). Its methods
+    // are templates over the impl's parameters AND over `Self`; each recorded
+    // instantiation is emitted by the instance loop at the end of the module
+    // walk, through `emit_family_instance`, which binds both. It was emitted
+    // from this block until 1.0.7, which reached only the instances recorded
+    // BEFORE the block — and a call through a bound records its instance while
+    // a specialization is emitted, after every block has been walked.
+    if ((raw impl_generic_count(x.ast, d)) > 0i32) { pass NIL; }
     int32:self_ty = relay resolve_type(x.tr, tgt,
                         raw symtab_home_scope(x.tab, item.index, x.scope));
 
@@ -349,59 +348,58 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
 // One body per recorded instantiation of this family impl's methods, with the
 // impl's parameters bound to that instantiation's arguments and `Self` bound to
 // the substituted target (`Box<int32>`, not the template's `Box<T>`).
-func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
-                                 DeclId:item, DeclNode:d, TypeId:tgt) {
+// ONE RECORDED INSTANTIATION OF A FAMILY IMPL'S METHOD (1.0.4b; one at a time
+// from the instance loop since 1.0.7). The impl's parameters are bound to the
+// instance's arguments and `Self` to the instantiated target — the two
+// bindings a family's method body needs and the global walk did not have.
+func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
+                                FnInstance:inst) {
+    DeclId:item = DeclId{ index: inst.owner_impl };
+    DeclNode:d = relay ast_decl(x.ast, item);
+    TypeId:tgt = raw impl_target(x.ast, d);
+    if (raw type_is_none(tgt)) { pass NIL; }
     IdSpan:pw = raw decl_generic_window(x.ast, d);
     int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
 
-    // Half of every method symbol this block emits; 0 for an inherent family.
+    // Half of every method symbol this instance emits; 0 for an inherent family.
     int32:fam_trait_ty = 0i32;
     TypeId:ftr = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(ftr))) {
         fam_trait_ty = relay resolve_type(x.tr, ftr, home);
     }
 
-    int32:i = 0i32;
-    while (i < (raw fninst_count(x.fninsts))) {
-        FnInstance:inst = relay fninst_at(x.fninsts, i);
-        if (inst.owner_impl == item.index) {
-            GenericScope:g = GenericScope{
-                params_start: pw.start, params_count: pw.count,
-                args_start: inst.args_start, args_count: inst.args_count };
+    GenericScope:g = GenericScope{
+        params_start: pw.start, params_count: pw.count,
+        args_start: inst.args_start, args_count: inst.args_count };
 
-            GenericScope:gs = x.tr.generics;
-            GenericScope:es = x.tr.enclosing;
-            int32:ss = x.tr.self_type;
-            x.tr.generics = g;
-            x.tr.enclosing = g;
-            int32:fam_saved_trait = x.cur_trait;
-            x.cur_trait = fam_trait_ty;
-            // `Self` is THIS instantiation's target.
-            x.tr.self_type = relay type_subst(x.tr,
-                                 relay resolve_type(x.tr, tgt, home),
-                                 g, d.span, 64i32, x.fe.ctx.impls);
+    GenericScope:gs = x.tr.generics;
+    GenericScope:es = x.tr.enclosing;
+    int32:ss = x.tr.self_type;
+    x.tr.generics = g;
+    x.tr.enclosing = g;
+    int32:fam_saved_trait = x.cur_trait;
+    x.cur_trait = fam_trait_ty;
+    // `Self` is THIS instantiation's target.
+    x.tr.self_type = relay type_subst(x.tr,
+                         relay resolve_type(x.tr, tgt, home),
+                         g, d.span, 64i32, x.fe.ctx.impls);
 
-            // THE SPECIALIZATION'S SYMBOL NAMES ITS INSTANTIATED TARGET
-            // (D-156 amended). This passed 0 — the plain method name — so
-            // `impl:<T>:Box<T>:S` emitted `w` for EVERY instantiation, and two
-            // of them collided exactly as two per-instance impls did. `Self` is
-            // already bound to this instantiation's target above, which is the
-            // spelling that separates them.
-            DeclNode:im = relay ast_decl(x.ast, DeclId{ index: inst.decl });
-            IrVal:r = relay emit_fn_instance(x, DeclId{ index: inst.decl },
-                          inst.args_start, inst.args_count,
-                          inst.params_start, inst.params_count,
-                          relay impl_method_sym(x, x.tr.self_type,
-                                                fam_trait_ty, im));
+    // THE SPECIALIZATION'S SYMBOL NAMES ITS INSTANTIATED TARGET (D-156
+    // amended). This passed 0 — the plain method name — so `impl:<T>:Box<T>:S`
+    // emitted `w` for EVERY instantiation, and two of them collided exactly as
+    // two per-instance impls did. `Self` is already bound to this
+    // instantiation's target above, which is the spelling that separates them.
+    DeclNode:im = relay ast_decl(x.ast, DeclId{ index: inst.decl });
+    IrVal:r = relay emit_fn_instance(x, DeclId{ index: inst.decl },
+                  inst.args_start, inst.args_count,
+                  inst.params_start, inst.params_count,
+                  relay impl_method_sym(x, x.tr.self_type, fam_trait_ty, im));
 
-            x.cur_trait = fam_saved_trait;
-            x.tr.generics = gs;
-            x.tr.enclosing = es;
-            x.tr.self_type = ss;
-            if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
-        }
-        i = i + 1i32;
-    }
+    x.cur_trait = fam_saved_trait;
+    x.tr.generics = gs;
+    x.tr.enclosing = es;
+    x.tr.self_type = ss;
+    if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
     pass NIL;
 };
 
@@ -434,6 +432,9 @@ func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     if (k != (raw TY_STRUCT())) {
         if (k != (raw TY_ENUM())) { pass NIL; }
     }
+    // A TEMPLATE-SHAPED INSTANCE — `List<T>`, recorded for a literal inside a
+    // generic body — has no representation; its specializations do (1.0.7).
+    if (raw type_mentions_param(c.types, c.ast, t, 64i32)) { pass NIL; }
     LlType:name = relay ll_type(c, t);
     if (!(raw ll_is_ok(name))) { pass NIL; }
     if (raw string_eq(name.text, "i32")) { pass NIL; }   // payload-less enum
@@ -733,6 +734,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
     drop irw_blank(w);
     drop emit_type_headers(w, tr, @c, diags, g);
+    int32:headers_before = raw tt_count(c.types);
     drop emit_runtime_declares(w);
 
     FnEmitter:fe = raw fnem_init(w, @c);
@@ -790,7 +792,30 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         FnInstance:inst = relay fninst_at(fninsts, fi);
         // An impl-owned instantiation is emitted by its own impl block, where
         // `Self` and the impl's parameters are bound (1.0.4b).
+        //
+        // A TEMPLATE-SHAPED INSTANTIATION IS NOT EMITTED (1.0.7). `pair_of<T>`
+        // calling `list_make::<T>(…)` records `list_make<T>` with T opaque
+        // (D-107); that is a request made on behalf of whatever `pair_of` is
+        // instantiated at, and it is honoured when `pair_of<int64>`'s body is
+        // emitted — `emit_call` substitutes the arguments and records
+        // `list_make<int64>`, which this loop then reaches, since it re-reads
+        // the count. Emitting the template itself put `T` in front of
+        // `ll_type` with nothing bound, and refused a valid program.
+        if (raw fninst_is_template(@g.ast, @c, inst)) {
+            fi = fi + 1i32;
+        } else {
         if (inst.owner_impl != 0i32) {
+            // AN IMPL-OWNED INSTANTIATION, emitted at its IMPL's home scope
+            // with the impl's parameters and `Self` bound (1.0.4b, here since
+            // 1.0.7 so that an instance recorded by a later specialization is
+            // still reached).
+            // AN IMPL HAS NO SYMBOL, so `symtab_home_scope` cannot place it;
+            // the impl table recorded the scope it was collected in for
+            // exactly this kind of question.
+            int32:ihs = raw impl_scope_of(impls, inst.owner_impl);
+            ExprEmitter:xf = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns,
+                                             @st, tr, fninsts, ihs);
+            drop emit_family_instance(@xf, diags, inst);
             fi = fi + 1i32;
         } else {
         int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
@@ -803,10 +828,54 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
         fi = fi + 1i32;
         }
+        }
     }
 
     drop strtab_write_all(@st, w);
+    // INSTANCES THE BODIES CREATED (1.0.7): a `List<int64>` that exists only
+    // because `list_make<int64>`'s body built one. Textual IR resolves a named
+    // type wherever its definition appears, so the late ones go at the end.
+    drop emit_late_headers(w, tr, @c, diags, g, headers_before);
     pass ((raw diaglist_count(diags)) == before);
+};
+
+func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
+                             DiagList->:diags, ModuleGraph->:g, int32:from) {
+    int32:t = from;
+    bool:some = false;
+    while (t < (raw tt_count(c.types))) {
+        if ((raw type_args_count_of(c.types, t)) > 0i32) {
+            if (!some) { drop irw_blank(w); some = true; }
+            drop emit_instance_header(w, tr, c, diags, g, t);
+        }
+        t = t + 1i32;
+    }
+    pass NIL;
+};
+
+// The scope an impl was collected in (its module's), or 0.
+func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:e = relay impl_at(t, i);
+        if (e.decl == impl_decl) { pass e.scope; }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+// Does any of this instantiation's arguments still name a parameter? (1.0.7)
+func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) {
+    int32:i = 0i32;
+    while (i < inst.args_count) {
+        if (raw type_mentions_param(c.types, ast,
+                                    relay ast_id_at(ast, inst.args_start, i),
+                                    64i32)) {
+            pass true;
+        }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 // `extract<int32>` — the D-108 spelling for a function instantiation: the
