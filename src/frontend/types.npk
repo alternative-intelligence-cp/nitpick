@@ -582,6 +582,12 @@ pub func:tt_assoc = int32(TypeTable->:t, int32:trait_decl, int32:name) {
                         0i32));
 };
 
+// Is this a generic parameter? Asked by the emitter, which must substitute one
+// before it can name the impl a call through a bound reaches.
+pub func:type_is_param_kind = bool(TypeTable->:t, int32:id) {
+    pass ((raw type_kind(t, id)) == (raw TY_PARAM()));
+};
+
 pub func:type_assoc_trait = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).a);
 };

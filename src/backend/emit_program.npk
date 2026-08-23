@@ -27,6 +27,7 @@ use "../frontend/expr_types.npk".*;
 use "../frontend/resolve_type.npk".*;
 use "../frontend/type_layout.npk".*;
 use "../frontend/type_names.npk".*;
+use "../frontend/type_trait.npk".*;   // trait_binding, for a generic trait's thunk
 use "../frontend/type_generic.npk".*;
 use "./ir/emit_codes.npk".*;
 use "./ir/ir_writer.npk".*;
@@ -285,12 +286,25 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
     string:mname = relay intern_get(x.interns, raw decl_name(tm));
 
+    // A GENERIC TRAIT'S PARAMETERS ARE BOUND FROM THE IMPL'S INSTANCE OF IT
+    // (1.0.6b). `impl:IntBox:Producer<int32>` means `T = int32` in everything
+    // `Producer` declares, and the signature read below is the TRAIT'S — so
+    // without this, `func:make = T(Self:self)` resolved `T` against nothing and
+    // reported "there is no type named `T`" AT THE TRAIT'S DECLARATION, from the
+    // backend, for a program the frontend had already accepted.
+    //
+    // A REGRESSION THIS SUBCYCLE FOUND IN THE LAST ONE: 1.0.5c added this
+    // signature read and no test had a generic trait with an impl, so the suite
+    // was green over a program `npkc` could not compile.
+    GenericScope:saved_tb = x.tr.enclosing;
+    x.tr.enclosing = relay trait_binding(x.tr, trait_ty);
+
     // THE TRAIT'S SIGNATURE IS THE ERASED ONE. Object safety guarantees every
     // part of it but the receiver is concrete already (D-157), which is exactly
     // what makes a single thunk shape possible.
     int32:ret = relay resolve_type(x.tr, raw fn_return(x.ast, tm), home);
     LlType:rll = relay ll_wrap_result(x.fe.ctx, ret);
-    if (!(raw ll_is_ok(rll))) { pass ""; }
+    if (!(raw ll_is_ok(rll))) { x.tr.enclosing = saved_tb; pass ""; }
 
     string:params = "ptr %d";
     string:args = relay string_concat(sll.text, " %r0");
@@ -300,7 +314,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
         DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, tm, i));
         int32:pt = relay resolve_type(x.tr, raw param_type(pd), home);
         LlType:pll = relay ll_type(x.fe.ctx, pt);
-        if (!(raw ll_is_ok(pll))) { pass ""; }
+        if (!(raw ll_is_ok(pll))) { x.tr.enclosing = saved_tb; pass ""; }
         string:an = relay string_concat("%a", raw int_to_string(i => int64));
         params = relay string_concat(params,
                      relay cat4(", ", pll.text, " ", an));
@@ -308,6 +322,8 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
                    relay cat4(", ", pll.text, " ", an));
         i = i + 1i32;
     }
+
+    x.tr.enclosing = saved_tb;
 
     string:sym = relay mangled_fn_sym(x.fe.ctx, item.index,
                      relay string_concat(vtn, relay string_concat(".", mname)));

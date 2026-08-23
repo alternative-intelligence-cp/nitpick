@@ -230,10 +230,21 @@ rung by rung. The entire point of this arrangement is to avoid rewriting the
 parser at every bootstrap stage — a failure mode that the predecessor efforts hit
 repeatedly.
 
+**"Built once" means do not REBUILD — not do not extend.** The failure this was
+written against is concrete: the previous attempt's parser supported only certain
+keywords at each step, so every rung meant going back and teaching it more
+syntax. The fix was to have the parser accept the whole language and forward what
+it does not yet understand, letting the BACKEND carry the incompleteness as a
+named refusal. That is where the ladder lives.
+
 Practical consequence when proposing changes: treat the frontend as the stable
 component and the backend as the part that advances. A change that would require
-reworking the lexer/parser/AST to unblock a backend rung is almost always the
-wrong shape, and should be raised rather than implemented.
+reworking the lexer/parser/AST **to unblock a backend rung** is almost always the
+wrong shape — the rung should refuse by name instead. But **adding a production
+because the LANGUAGE genuinely needs one is ordinary work**, not a violation of
+this; judge it on its real costs (node-kind coverage across every walker,
+verification surface, downstream obligations). Raise it either way, because a
+grammar change is a language change and those are the user's call.
 
 ## Memory model
 

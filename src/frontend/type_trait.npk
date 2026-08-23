@@ -1285,7 +1285,11 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
 // A NON-GENERIC TRAIT BINDS NOTHING, which is the empty scope rather than a
 // special case — `params_count == 0` makes every lookup miss, which is exactly
 // right for a trait that declares no parameters.
-func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) {
+// A GENERIC TRAIT'S PARAMETERS, BOUND FROM AN INSTANCE OF IT. `Producer<int32>`
+// means `T = int32` in everything `Producer` declares. Public since 1.0.6b: the
+// impl check has always needed it, and so does a CALL through a bound, which
+// reads the same trait declaration.
+pub func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) {
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass (raw generic_scope_none()); }
     DeclId:did = DeclId{ index: decl };

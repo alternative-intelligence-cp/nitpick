@@ -219,6 +219,24 @@ pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) {
               relay string_concat(body, "\"")));
 };
 
+// WHAT A GENERIC PARAMETER STANDS FOR IN THE SPECIALIZATION BEING EMITTED, or
+// the parameter itself outside one. Factored out of `ll_type` at 1.0.6b because
+// a second caller needs the substituted TYPE rather than its LLVM text: a method
+// call through a bound has to name `IntBox:Producer.make`, and the receiver's
+// recorded type is the parameter `P`.
+pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) {
+    if ((raw type_kind(c.types, id)) != (raw TY_PARAM())) { pass id; }
+    int32:pd = raw type_decl_of(c.types, id);
+    int32:pi = 0i32;
+    while (pi < c.subst_params_count) {
+        if ((relay ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
+            pass (relay ast_id_at(c.ast, c.subst_args_start, pi));
+        }
+        pi = pi + 1i32;
+    }
+    pass id;
+};
+
 // --- the lowering -----------------------------------------------------------------
 
 pub func:ll_type = LlType(LlCtx->:c, int32:id) {
@@ -337,15 +355,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_PARAM())) {
         // Inside a specialization the parameter IS its argument (1.0.4c);
         // outside one it is a template's type and has no representation.
-        int32:pd = raw type_decl_of(c.types, id);
-        int32:pi = 0i32;
-        while (pi < c.subst_params_count) {
-            if ((relay ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
-                pass (relay ll_type(c,
-                          relay ast_id_at(c.ast, c.subst_args_start, pi)));
-            }
-            pi = pi + 1i32;
-        }
+        int32:sub = raw subst_emitted_param(c, id);
+        if (sub != id) { pass (relay ll_type(c, sub)); }
         pass (raw ll_rung("1.0"));
     }
 

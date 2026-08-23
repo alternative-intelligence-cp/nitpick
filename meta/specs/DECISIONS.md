@@ -11260,3 +11260,80 @@ behavior lands and the notes flip from "proposed" to describing current state.
   (the parameter type needs `never fails`), D-156 (mangling includes the flag).
 - `PROTOTYPE_DELTA.md`; `CLAUDE.md`'s "what it refuses" list; `SUBSET_1.md`
   where it describes `raw` / `drop` / statement calls.
+
+## D-164 — Projecting an associated type: `T.Item`, a dotted type suffix — **SETTLED**
+
+OPEN_DECISIONS C-20, raised at 1.0.6 when D-160's own clause did not survive
+contact, and decidable only after C-21 closed at 1.0.6b.
+
+**The problem.** D-160 said `T.Item` "rides the EXISTING dotted-path type
+grammar **if the parser already admits it**". It does not — measured, six
+`NITPICK-PARSE-001` — and the fallback named in the same sentence,
+`Iterator.Item`, is dotted too, so its "no new token, no new node kind" is
+unachievable for either candidate. Neither authority has ever had a projection:
+`TRAITS_REFERENCE` §2.3 shows declaration and binding only, and the prototype
+carries `AssociatedTypeDecl` and `AssociatedTypeBinding` and no projection node
+at all.
+
+**Why it cannot simply be dropped.** Every binding in this language spells its
+type, so generic code over a trait with an assoc can call `next()` and then do
+nothing with the result — there is no way to name what came back. An `assoc`
+trait would be usable concretely and useless generically.
+
+### Three candidates, and why this one
+
+- **Descope: use a generic trait when generic code needs the element type.**
+  This works today — 1.0.6b made `func:twice<P: Producer<int32>>` compile and
+  run. **Rejected**, because it makes the choice between `assoc:Item` and a
+  trait parameter depend on whether some DOWNSTREAM consumer wants generic
+  code: the trait's author would have to change the declaration when somebody
+  else writes a generic function over it. The distinction between the two is
+  meant to be semantic — an assoc is determined BY the implementor, one per
+  type; a parameter is chosen by the caller, many per type — and that is a
+  property of the trait, not of who consumes it.
+
+- **A bare `Item`, resolved through the enclosing function's bounds.** No
+  grammar change at all: the same mechanism 1.0.6 built for in-trait resolution,
+  extended to a function's bound list. Genuinely tempting, and **rejected for
+  ambiguity**: with `<A: Iterator, B: Iterator>` a bare `Item` names neither,
+  and resolving it by position or by declaration order would be
+  meaning-by-context. Explicit beats implicit here as everywhere else.
+
+- **`T.Item` — a dotted suffix in type position. ADOPTED.** `.` is already *the*
+  member-access operator and an associated type is a member of its trait, so the
+  notation agrees with the operation; `->` was removed from member access
+  (blueprint facet 2) precisely for pointing the wrong way, and `.` points the
+  right one here. It is explicit about which parameter it projects from, which
+  is what the bare form cannot be.
+
+**Reasoning disclosure**: the input-versus-output distinction above is general
+language design rather than anything the specs or the prototype state. It is the
+argument, not a citation.
+
+### What it costs, stated rather than discovered
+
+- **A new AST `TypeKind`** (base type + name), plus one branch in `p_suffixes`
+  beside `->`, `?`, `[]`. Every walker over type nodes must handle it —
+  `resolve_type`, `type_mentions_self`, `type_subst`, and the seed if `src/`
+  ever uses one (C-13's rule). A missed walker is a silent wrong answer, which
+  this codebase has been bitten by before (`ast.npk`'s note on a literal's width
+  suffix landing in slot `a`).
+- **A bound-ambiguity rule**: `T.Item` where two of `T`'s bounds declare `Item`
+  is refused naming both, the same answer D-158 gives a method supplied by two
+  bounds, and for the same reason — an ordering tiebreak would be
+  meaning-by-position.
+- **It REOPENS D-159's tie**, exactly as that decision's amendment says it
+  would. Once `a.S` is a type spelling, two same-named traits from different
+  modules can both be named in one file, so `dyn a.S & b.S` becomes expressible
+  and the canonical bound order needs a module-qualified key. **That obligation
+  is part of this decision, not a follow-up** — D-159 records that it must land
+  in the same change.
+
+**It is not a violation of the capability ladder.** That rule is about not
+REBUILDING the frontend at every rung — the previous attempt's parser supported
+only some keywords per step — and not about freezing the grammar. Adding a
+production because the language needs one is ordinary work; `CLAUDE.md` now says
+so.
+
+**Implemented at 1.0.6c.**
+

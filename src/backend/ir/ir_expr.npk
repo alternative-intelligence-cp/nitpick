@@ -2568,6 +2568,27 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
                             x.tr.self_type, x.cur_trait, fname);
             }
         }
+
+        // A CALL THROUGH A BOUND NAMES THE SPECIALIZATION'S IMPL (1.0.6b).
+        // `func:twice<P: Producer>` calling `p.make()` records no symbol,
+        // because at check time the receiver is the PARAMETER `P` — there is no
+        // impl yet. Here there is: `P` has been substituted, and the trait the
+        // method came through was recorded, so the two combine into the name the
+        // impl was emitted under.
+        //
+        // BROKEN SINCE 1.0.5b AND CAUGHT AT 1.0.6b. Before the symbols carried
+        // their impl, both ends said `@npk.m.make` and matched by accident;
+        // afterwards the definition moved and this call site did not, so every
+        // call through a bound emitted a reference to a symbol that no longer
+        // existed. No test called a method through a generic parameter's bound,
+        // so the suite stayed green over a program `llc` refuses.
+        if (raw type_is_param_kind(x.fe.ctx.types, rty)) {
+            int32:conc = raw subst_emitted_param(x.fe.ctx, rty);
+            if (conc != rty) {
+                fname = relay method_symbol_name(x.fe.ctx.types, x.interns,
+                            conc, raw exprtypes_callee_trait(x.et, id), fname);
+            }
+        }
     }
     string:sym = relay mangled_fn_sym(x.fe.ctx, decl, fname);
     // An erased call names the LOADED slot rather than a symbol: behind the

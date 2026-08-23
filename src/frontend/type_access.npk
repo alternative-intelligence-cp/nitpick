@@ -933,6 +933,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // ONLY WHEN AN IMPL SUPPLIED IT. `found.owner_impl` of 0 is the
     // free-function case the scope lookup below answers, and a free function
     // keeps its own name.
+    // AND THE TRAIT IT CAME THROUGH (1.0.6b), for the case the name above cannot
+    // cover: a receiver that is a generic PARAMETER has no concrete type here, so
+    // the emitter substitutes it and combines the two.
+    drop exprtypes_set_callee_trait(e.expr_types, id, found.owner);
+
     if (found.owner_impl != 0i32) {
         drop exprtypes_set_callee_sym(e.expr_types, id,
             raw intern_add(e.interns,
@@ -973,6 +978,23 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // the window is one entry long and `generic_bind_in` leaves anything past its
     // end opaque, which is the right answer for a parameter the receiver does not
     // determine.
+    // A GENERIC TRAIT'S PARAMETERS ARE BOUND FROM THE BOUND THAT NAMED IT
+    // (1.0.6b). `func:twice<P: Producer<int32>>` calling `p.make()` reads
+    // `Producer`'s declaration, where the method is `func:make = T(Self:self)` —
+    // and `T` belongs to the TRAIT, not to this function. Without binding it,
+    // `T` was looked up among the caller's own parameters, missed, and reported
+    // as "there is no type named `T`" AT THE TRAIT'S DECLARATION, lines away
+    // from the call that caused it.
+    //
+    // `check_signature` has always done this for the impl side (D-111); this is
+    // the same binding on the call side, from the same function, because it is
+    // the same question — what does this trait's parameter stand for here.
+    if (found.found) {
+        if ((raw type_args_count_of(e.types, found.owner)) > 0i32) {
+            r.enclosing = relay trait_binding(@r, found.owner);
+        }
+    }
+
     if (found.blanket_impl != 0i32) {
         r.enclosing = relay bind_blanket(e, found.blanket_impl, recv);
     }
