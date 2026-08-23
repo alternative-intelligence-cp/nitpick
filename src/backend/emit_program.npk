@@ -208,9 +208,126 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         }
     }
 
+    // AND ITS VTABLE (D-158, 1.0.5c). Emitted here because this is where `Self`
+    // is bound and the trait is known — the same reason the methods are.
+    if (impl_trait_ty != 0i32) {
+        drop emit_vtable(x, diags, item, self_ty, impl_trait_ty);
+    }
+
     x.cur_trait = saved_trait;
     x.tr.self_type = saved;
     pass NIL;
+};
+
+// ONE TABLE PER (IMPL, TRAIT), ENTRIES IN TRAIT DECLARATION ORDER (D-158). The
+// slot is the declaration index: stable, source-derived, hash-free — the same
+// property D-156's symbols have and for the same auditing reason.
+//
+// EACH ENTRY IS AN ADAPTER THUNK, not the method itself. The erased caller holds
+// one `ptr` and the method takes its receiver BY VALUE, so something has to load
+// it — and the thunk is the one place that knows the concrete type well enough
+// to. That is what lets an impl keep its natural `Point:self` signature instead
+// of every method being rewritten to take a pointer.
+//
+// A NON-OBJECT-SAFE TRAIT GETS NO TABLE, and that is not a refusal: its `dyn`
+// was already refused at every use (D-157), so no table is ever loaded. Building
+// one anyway would mean thunking methods that cannot be thunked — a method
+// returning `Self` has no erased signature — and would turn a legal program
+// (a non-object-safe trait nobody uses as `dyn`) into a rung.
+func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
+                       int32:self_ty, int32:trait_ty) {
+    if (!(relay trait_is_object_safe(x.tr, trait_ty))) { pass NIL; }
+
+    int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
+    if (tdecl == 0i32) { pass NIL; }
+    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+
+    LlType:sll = relay ll_type(x.fe.ctx, self_ty);
+    if (!(raw ll_is_ok(sll))) { pass NIL; }
+
+    string:vtn = relay vtable_stem_of(x.fe.ctx, x.interns, self_ty, trait_ty);
+    string:entries = "";
+    int32:slots = 0i32;
+
+    int32:k = 0i32;
+    while (k < (raw item_member_count(x.ast, td))) {
+        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, k));
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            string:thunk = relay emit_thunk(x, item, td, tm, self_ty, trait_ty,
+                                            sll, vtn);
+            if (thunk.len == 0i64) { pass NIL; }
+            if (slots > 0i32) { entries = relay string_concat(entries, ", "); }
+            entries = relay string_concat(entries,
+                          relay string_concat("ptr ", thunk));
+            slots = slots + 1i32;
+        }
+        k = k + 1i32;
+    }
+
+    string:g1 = relay string_concat(
+                    relay mangled_fn_sym(x.fe.ctx, item.index, vtn),
+                    " = internal constant [");
+    string:g2 = relay string_concat(g1, raw int_to_string(slots => int64));
+    string:g3 = relay string_concat(g2, " x ptr] [");
+    drop irw_raw(x.fe.w, relay string_concat(g3,
+                     relay string_concat(entries, "]")));
+    drop irw_blank(x.fe.w);
+    pass NIL;
+};
+
+// One thunk: take the data pointer plus the erased arguments, load the concrete
+// receiver, call the real method, return what it returned. Empty on refusal —
+// the caller then emits no table, which is right, because a table with a hole
+// is not a table minus a hole.
+func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
+                         DeclNode:tm, int32:self_ty, int32:trait_ty,
+                         LlType:sll, string:vtn) {
+    int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
+    string:mname = relay intern_get(x.interns, raw decl_name(tm));
+
+    // THE TRAIT'S SIGNATURE IS THE ERASED ONE. Object safety guarantees every
+    // part of it but the receiver is concrete already (D-157), which is exactly
+    // what makes a single thunk shape possible.
+    int32:ret = relay resolve_type(x.tr, raw fn_return(x.ast, tm), home);
+    LlType:rll = relay ll_wrap_result(x.fe.ctx, ret);
+    if (!(raw ll_is_ok(rll))) { pass ""; }
+
+    string:params = "ptr %d";
+    string:args = relay string_concat(sll.text, " %r0");
+    int32:pc = relay fn_param_count(x.ast, tm);
+    int32:i = 1i32;
+    while (i < pc) {
+        DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, tm, i));
+        int32:pt = relay resolve_type(x.tr, raw param_type(pd), home);
+        LlType:pll = relay ll_type(x.fe.ctx, pt);
+        if (!(raw ll_is_ok(pll))) { pass ""; }
+        string:an = relay string_concat("%a", raw int_to_string(i => int64));
+        params = relay string_concat(params,
+                     relay cat4(", ", pll.text, " ", an));
+        args = relay string_concat(args,
+                   relay cat4(", ", pll.text, " ", an));
+        i = i + 1i32;
+    }
+
+    string:sym = relay mangled_fn_sym(x.fe.ctx, item.index,
+                     relay string_concat(vtn, relay string_concat(".", mname)));
+    string:real = relay mangled_fn_sym(x.fe.ctx, item.index,
+                      relay method_symbol_name(x.fe.ctx.types, x.interns,
+                          self_ty, trait_ty, mname));
+
+    drop irw_begin_function(x.fe.w);
+    drop irw_raw(x.fe.w, relay cat5("define internal ", rll.text, " ", sym,
+                             relay cat3("(", params, ") {")));
+    drop irw_label(x.fe.w, "entry");
+    drop irw_line(x.fe.w, relay cat3("%r0 = load ", sll.text, ", ptr %d"));
+    string:rv = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(rv, " = call ", rll.text, " ",
+                             relay cat4(real, "(", args, ")")));
+    drop irw_line(x.fe.w, relay cat3("ret ", rll.text,
+                             relay string_concat(" ", rv)));
+    drop irw_raw(x.fe.w, "}");
+    drop irw_blank(x.fe.w);
+    pass sym;
 };
 
 // One body per recorded instantiation of this family impl's methods, with the
@@ -395,6 +512,74 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
     pass NIL;
 };
 
+// EVERY IMPL'S VTABLE NAME, BEFORE ANY BODY IS EMITTED (1.0.5c). A `dyn`
+// construction knows the concrete type and its traits; the table is named in the
+// IMPL's module (D-156) and the construction site cannot reach that. Emitting
+// impls first would not fix it either — impls and functions interleave in module
+// order, so a function that builds a `dyn` can be emitted before the impl whose
+// table it needs. Same answer as `build_modmap`: walk once, record, look up.
+func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) {
+    int32:m = 0i32;
+    while (m < (raw graph_count(g))) {
+        ModuleEntry:me = raw graph_at(g, m);
+        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        drop vtmap_members(g, tr, c, mn, me.scope);
+        m = m + 1i32;
+    }
+    pass NIL;
+};
+
+func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
+                         DeclNode:mn, int32:scope) {
+    int32:k = raw item_member_count(@g.ast, mn);
+    int32:i = 0i32;
+    while (i < k) {
+        DeclId:item = raw item_member(@g.ast, mn, i);
+        DeclNode:d = relay ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            drop vtmap_members(g, tr, c, d, scope);
+        }
+        if (d.kind == DeclKind.DeclImplDecl) {
+            // A FAMILY IMPL HAS NO ONE TABLE. Its target is a template, and each
+            // instantiation would need its own — which nothing constructs a
+            // `dyn` from yet, so it is a rung rather than a silent omission.
+            if ((raw impl_generic_count(@g.ast, d)) == 0i32) {
+                TypeId:tg = raw impl_target(@g.ast, d);
+                TypeId:tr0 = raw impl_trait(@g.ast, d);
+                if (!(raw type_is_none(tg))) {
+                    if (!(raw type_is_none(tr0))) {
+                        int32:home = raw symtab_home_scope(@g.tab, item.index,
+                                                           scope);
+                        int32:sty = relay resolve_type(tr, tg, home);
+                        int32:tty = relay resolve_type(tr, tr0, home);
+                        if (sty != 0i32) {
+                            if (tty != 0i32) {
+                                drop vtmap_add(c, sty, tty,
+                                    raw intern_add(g.interns,
+                                        relay mangled_fn_sym(c, item.index,
+                                            relay vtable_stem_of(c, g.interns,
+                                                                 sty, tty))));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// `vt.<Type>.<Trait>` — D-156 names the table; the thunks append their method.
+func:vtable_stem_of = string(LlCtx->:c, InternTable->:interns, int32:self_ty,
+                             int32:trait_ty) {
+    string:v1 = relay string_concat("vt.",
+                    relay type_display(c.types, interns, self_ty));
+    pass (relay string_concat(v1,
+              relay string_concat(".",
+                  relay type_display(c.types, interns, trait_ty))));
+};
+
 func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                           string:canon) {
     int32:k = raw item_member_count(@g.ast, mn);
@@ -526,6 +711,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
     drop build_modmap(g, @c);
+    drop build_vtmap(g, tr, @c);
     StrTable:st = raw strtab_init();
     drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
     drop irw_blank(w);

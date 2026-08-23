@@ -10637,14 +10637,35 @@ OPEN_DECISIONS C-3, with the prototype as the behavioral oracle
   refuses returned borrows language-wide, so the prototype's NITPICK-053
   case cannot arise here.
 
-> **Dispatch implemented at 1.0.5; the vtable and its thunks are 1.0.5b.**
+> **Dispatch implemented at 1.0.5; the vtable and its thunks at 1.0.5c.**
 > `find_method` had no `TY_DYN` path at all, so every method call on a `dyn`
 > fell through to the impl-table walk — which looks up by the RECEIVER's type
 > and finds nothing, making the construct unusable end to end rather than merely
 > unlowered. `find_in_dyn` searches the named traits' own member lists in bound
 > order; the supertrait exclusion falls out of "own lists only" and is pinned by
 > a test rather than assumed. The answer is the TRAIT's declaration, which is
-> the D-163 hook. `ll_type` still answers `NITPICK-RUNG-001` for `TY_DYN`.
+> the D-163 hook.
+>
+> **The tables landed at 1.0.5c** and a `dyn` runs: one per (impl, trait),
+> entries in trait declaration order, each an adapter thunk that loads the
+> by-value receiver from the data pointer and calls the real method — which is
+> what lets an impl keep its natural `Point:self` signature while the erased
+> caller passes one `ptr`. The slot is the declaration index and the vtable word
+> is the bound's canonical position, so both are compile-time constants and no
+> runtime table is consulted.
+>
+> Two things the decision did not say, found by building it. **The table's NAME
+> needs a pre-pass**: a construction site knows the concrete type and its traits
+> and nothing about the impl, and this decision's own scheme names the table in
+> the IMPL's module — so `build_vtmap` walks every impl before any body is
+> emitted, the same answer `build_modmap` gives. And **a non-object-safe trait
+> gets no table**, deliberately: its `dyn` was refused at every use (D-157) so
+> none is ever loaded, while building one would mean thunking a method that
+> returns `Self` and would turn a legal program into a rung.
+>
+> **A family impl has no single table** — its target is a template, so each
+> instantiation would need its own — so a `dyn` over a trait implemented by a
+> generic family is a named rung rather than a silent omission.
 
 ## D-159 — Multi-bound `dyn` ABI: data + one vtable word per trait, canonically ordered — **SETTLED**
 
@@ -10664,12 +10685,17 @@ type_trait.npk's N+1 words:
   no prefix/subview scheme. O(retained words) at the widening site,
   nothing anywhere else.
 
-> **Layout and ordering implemented at 1.0.5; widening is 1.0.5b.** `tt_dyn`
+> **Layout and ordering implemented at 1.0.5; widening at 1.0.5c.** `tt_dyn`
 > computes `(N+1) x 8`, and `dyn_sort_bounds` canonicalises the window before
 > interning, so `dyn A & B` and `dyn B & A` collapse to one type. This needed
 > `name_lt`, the tree's first string ordering — named for its domain because it
 > compares bytes as int8, which is lexicographic only while they are ASCII, as
 > every identifier is.
+>
+> **Widening landed at 1.0.5c** and is the value rebuild this decision describes:
+> the data word and the retained traits' words copied into the narrower shape,
+> every position read off the canonical order at compile time. No runtime table,
+> no prefix or subview scheme, and the cost paid once at the widening site.
 >
 > **The sort key's tie is UNREACHABLE — settled at 1.0.5b by measurement, not by
 > plumbing.** The concern was that "sorted by trait name" leaves two same-named

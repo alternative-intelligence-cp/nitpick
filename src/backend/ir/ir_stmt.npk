@@ -205,6 +205,23 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (!(raw expr_is_none(init))) {
         IrVal:v = relay emit_expr(x, init);
         if (!(raw iv_is_ok(v))) { pass v; }
+        // A CONCRETE VALUE BOUND TO A `dyn` IS WIDENED, NOT STORED (1.0.5c).
+        // Storing it wrote 4 bytes into a 16-byte slot and left the vtable word
+        // uninitialised — which read back as a plausible answer rather than a
+        // crash, and is why the shape was not lowered until this existed.
+        if ((raw type_kind(x.fe.ctx.types, dty)) == (raw TY_DYN())) {
+            if ((raw type_kind(x.fe.ctx.types, v.type_id)) != (raw TY_DYN())) {
+                v = relay emit_dyn_from(x, dty, v, s.span);
+                if (!(raw iv_is_ok(v))) { pass v; }
+            } else {
+                // AND `dyn A & B` TO `dyn A` IS A REBUILD, not a store: the
+                // shapes differ by a word per dropped bound (D-159).
+                if (dty != v.type_id) {
+                    v = relay emit_dyn_widen(x, dty, v, s.span);
+                    if (!(raw iv_is_ok(v))) { pass v; }
+                }
+            }
+        }
         drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
                           relay string_concat(", ptr ", slot)));
     }

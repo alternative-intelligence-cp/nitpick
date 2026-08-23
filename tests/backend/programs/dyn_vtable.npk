@@ -1,0 +1,80 @@
+// expect-exit: 42
+//
+// THE FIRST `dyn` THIS COMPILER RUNS (D-158/D-159, 1.0.5c). Everything below
+// was `NITPICK-RUNG-001` until the vtable existed to dispatch through.
+//
+// The IR this produces, for the single-bound case:
+//
+//     %s = alloca %Dog                      ; the value spilled, so the erased
+//     store %Dog %v, ptr %s                 ;   half has something to point at
+//     %f = insertvalue { ptr, ptr } undef, ptr %s, 0
+//     %g = insertvalue { ptr, ptr } %f, ptr @"npk.m.vt.Dog.Speaks", 1
+//     ...
+//     %d = extractvalue { ptr, ptr } %g, 0  ; the receiver the thunk will load
+//     %t = extractvalue { ptr, ptr } %g, 1  ; this trait's table
+//     %p = getelementptr ptr, ptr %t, i64 0 ; the method's DECLARATION index
+//     %h = load ptr, ptr %p
+//     call { i32, i32 } %h(ptr %d)          ; indirect, through the slot
+//
+// Both positions are compile-time constants — the vtable word because D-159
+// orders the bounds canonically, the slot because D-158 indexes by declaration
+// order. No runtime table is consulted.
+//
+// LOWERING THE SHAPE ALONE WAS TRIED FIRST AND REVERTED. With a real
+// `{ ptr, ptr }` but no construction, the assignment stored a 4-byte `Dog` into
+// the 16-byte slot, loaded 16 bytes back with 12 uninitialised, and called the
+// CONCRETE method directly — returning the RIGHT ANSWER, because the struct's
+// one field sits at offset 0. That is why this test reads the mechanism and not
+// only the number.
+
+trait:Speaks = { func:say  = int32(Self:self); };
+trait:Walks  = { func:step = int32(Self:self); };
+
+trait:Greets = {
+    func:tag = int32(Self:self);
+    // A DEFAULT FILLS ITS IMPL'S SLOT (D-158), and calls back into the impl —
+    // which the thunk reaches through the symbol 1.0.5b gave it.
+    func:hello = int32(Self:self) { pass ((raw self.tag()) + 100i32); };
+};
+
+struct:Dog = { int32:v; };
+struct:Cat = { int32:v; };
+
+impl:Dog:Speaks = { func:say  = int32(Dog:self) { pass 1i32; }; };
+impl:Dog:Walks  = { func:step = int32(Dog:self) { pass 2i32; }; };
+impl:Dog:Greets = { func:tag  = int32(Dog:self) { pass 7i32; }; };
+
+// A SECOND IMPLEMENTOR, so the tables are genuinely per (impl, trait) and the
+// dispatch genuinely picks one — with a single implementor a direct call would
+// pass this test too.
+impl:Cat:Speaks = { func:say  = int32(Cat:self) { pass 5i32; }; };
+
+func:main = int32(cstring[]:_~argv) {
+    Dog:d = Dog{ v: 0i32 };
+    Cat:c = Cat{ v: 0i32 };
+
+    // The single-bound case, and two implementors reached through one type.
+    dyn Speaks:s1 = d;
+    dyn Speaks:s2 = c;
+    if ((raw s1.say()) != 1i32)  { exit 10i32; }
+    if ((raw s2.say()) != 5i32)  { exit 11i32; }
+
+    // MULTI-BOUND: `{ data, vtSpeaks, vtWalks }`, a method from each word.
+    dyn Speaks & Walks:m = d;
+    if ((raw m.say()) != 1i32)   { exit 12i32; }
+    if ((raw m.step()) != 2i32)  { exit 13i32; }
+
+    // WIDENING IS A VALUE REBUILD (D-159): copy the data word and the retained
+    // trait's word into the narrower shape, then dispatch through it.
+    dyn Speaks:w = m;
+    if ((raw w.say()) != 1i32)   { exit 14i32; }
+
+    // A slot filled by an INHERITED DEFAULT, which calls back into the impl.
+    dyn Greets:g = d;
+    if ((raw g.hello()) != 107i32) { exit 15i32; }
+    if ((raw g.tag()) != 7i32)     { exit 16i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

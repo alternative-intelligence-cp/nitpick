@@ -94,14 +94,66 @@ pub struct:LlCtx = {
     int32:subst_params_start;
     int32:subst_params_count;
     int32:subst_args_start;
+
+    // (self type, trait) -> the vtable's symbol, interned (1.0.5c). Built by a
+    // pre-pass over every impl, for the same reason `mod_of` is: the place that
+    // NEEDS the name is not the place that can derive it. A `dyn` construction
+    // knows the concrete type and the traits and nothing about the impl — and
+    // the vtable is named in the IMPL's module (D-156), which the construction
+    // site has no way to reach. Emitting impls first is not an option either:
+    // impls and functions interleave in module order, so a function that builds
+    // a `dyn` can be emitted before the impl it needs.
+    wild int32->:vt_self;
+    wild int32->:vt_trait;
+    wild int32->:vt_sym;
+    int32:vt_count;
+    int32:vt_cap;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) {
+    int64:vn = 16i64;
     LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
                      mod_of: NULL, mod_n: 0i32,
                      subst_params_start: 0i32, subst_params_count: 0i32,
-                     subst_args_start: 0i32 };
+                     subst_args_start: 0i32,
+                     vt_self: (alloc(vn * #size_of<int32>())) =>! wild int32->,
+                     vt_trait: (alloc(vn * #size_of<int32>())) =>! wild int32->,
+                     vt_sym: (alloc(vn * #size_of<int32>())) =>! wild int32->,
+                     vt_count: 0i32, vt_cap: vn =>! int32 };
     pass c;
+};
+
+// Record one impl's table. Called by the pre-pass; the emitter reads it back
+// when it builds a `dyn`.
+pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) {
+    if (c.vt_count >= c.vt_cap) {
+        int32:nc = c.vt_cap * 2i32;
+        int64:sz = (nc => int64) * #size_of<int32>();
+        c.vt_self = (ralloc(c.vt_self =>! wild int8->, sz)) =>! wild int32->;
+        c.vt_trait = (ralloc(c.vt_trait =>! wild int8->, sz)) =>! wild int32->;
+        c.vt_sym = (ralloc(c.vt_sym =>! wild int8->, sz)) =>! wild int32->;
+        c.vt_cap = nc;
+    }
+    c.vt_self[c.vt_count => int64] = self_ty;
+    c.vt_trait[c.vt_count => int64] = trait_ty;
+    c.vt_sym[c.vt_count => int64] = sym;
+    c.vt_count = c.vt_count + 1i32;
+    pass NIL;
+};
+
+// The table for this (type, trait), or 0. Coherence makes the pair unique
+// program-wide (TRAITS_REFERENCE 4.1), so the first match is the only one.
+pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) {
+    int32:i = 0i32;
+    while (i < c.vt_count) {
+        if (c.vt_self[i => int64] == self_ty) {
+            if (c.vt_trait[i => int64] == trait_ty) {
+                pass (c.vt_sym[i => int64]);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
 };
 
 // Bind a specialization's parameters while its body is emitted; counts of 0
@@ -256,16 +308,27 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // rung while `TY_DYN` below became real at 1.0.5b.
     if (k == (raw TY_TRAIT()))    { pass (raw ll_rung("1.0")); }
 
-    // `dyn A & B` IS THE DATA WORD AND ONE VTABLE WORD PER TRAIT (D-159) — and
-    // it stays a RUNG until the vtable exists to put in it (1.0.5b). Lowering
-    // the SHAPE alone was tried and reverted: with a real `{ ptr, ptr }` the
-    // assignment stored a 4-byte `Dog` into a 16-byte slot, loaded 16 bytes back
-    // with 12 of them uninitialised, and called the CONCRETE method directly
-    // with the result. It returned the right answer, because the struct's one
-    // field sits at offset 0 — a silent miscompile that passes its test is worse
-    // than the refusal it replaced, so the refusal stands until construction and
-    // dispatch land with it.
-    if (k == (raw TY_DYN()))      { pass (raw ll_rung("1.0")); }
+    // `dyn A & B` — THE DATA WORD AND ONE VTABLE WORD PER TRAIT (D-159), in the
+    // canonical bound order the frontend interned it with, so every word's slot
+    // is a compile-time constant.
+    //
+    // THE SHAPE ALONE IS NOT ENOUGH, and lowering it alone was tried and
+    // reverted at 1.0.5b's opening: with a real `{ ptr, ptr }` but no
+    // construction, an assignment stored a 4-byte `Dog` into the 16-byte slot,
+    // loaded 16 bytes back with 12 uninitialised, and called the CONCRETE method
+    // directly with the result — returning the right answer, because the
+    // struct's one field sits at offset 0. It landed here only once
+    // `emit_dyn_from` and the dispatch path landed with it.
+    if (k == (raw TY_DYN())) {
+        int32:nb = raw type_dyn_count(c.types, id);
+        string:dt = "{ ptr";
+        int32:bi = 0i32;
+        while (bi < nb) {
+            dt = relay string_concat(dt, ", ptr");
+            bi = bi + 1i32;
+        }
+        pass (raw ll_ok(relay string_concat(dt, " }")));
+    }
 
     // `Self` AND A GENERIC PARAMETER ARE REAL TYPES THAT HAVE NOT BEEN SUBSTITUTED
     // YET, so they are a rung rather than broken: both live inside `trait` and
