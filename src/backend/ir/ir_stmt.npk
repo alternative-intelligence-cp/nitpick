@@ -1167,6 +1167,16 @@ pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
 };
 
 pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
+    pass (relay emit_function_named(x, did, 0i32));
+};
+
+// The same emission under a GIVEN name. An impl's method carries its impl in its
+// symbol (D-156 as amended at 1.0.5b), and the name is computed where the impl
+// is known — which is the only place that knows it, since a trait DEFAULT is one
+// declaration emitted once per implementing impl and the declaration cannot say
+// which of those a body is.
+pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
+                                     int32:name_intern) {
     DeclNode:d = relay ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
 
@@ -1174,7 +1184,7 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
     // specializations are emitted from the recorded instantiations (1.0.2b), the
     // same rule a generic struct follows.
     if ((raw decl_generic_window(x.ast, d)).count > 0i32) { pass (raw iv_nil()); }
-    pass (relay emit_function_body_subst(x, did, d, 0i32,
+    pass (relay emit_function_body_subst(x, did, d, name_intern,
               raw generic_scope_none(), false));
 };
 

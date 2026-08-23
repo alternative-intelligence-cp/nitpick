@@ -61,6 +61,18 @@ pub struct:ExprTypes = {
     // its `never fails` contract, and a method call's is exactly this slot —
     // `x.m()` answers as readily as `f(x)`.
     wild int32->:callee;
+
+    // THE CALLEE'S SYMBOL NAME, interned (1.0.5b), or 0 for "its own name".
+    // D-156's amendment makes a method's symbol carry its impl —
+    // `Dog:Speaks.say` — and the two facts that name needs, the receiver's type
+    // and the owning trait, are both in hand HERE and in neither table the
+    // emitter holds. So the checker builds the name once and records it, exactly
+    // as it records the callee beside it; the emitter reads a slot.
+    //
+    // THE NAME, NOT THE INGREDIENTS. Recording the impl or the trait would leave
+    // the emitter to reassemble the spelling, which is a second derivation of
+    // one string — the shape this table's own comment was written about.
+    wild int32->:callee_sym;
     int32:count;
 };
 
@@ -70,16 +82,19 @@ pub func:exprtypes_init = ExprTypes(int32:n) {
     wild int8->:mem = alloc(size * #size_of<int32>());
     wild int8->:flags = alloc(size * #size_of<bool>());
     wild int8->:cal = alloc(size * #size_of<int32>());
+    wild int8->:cim = alloc(size * #size_of<int32>());
 
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
                              callee: cal =>! wild int32->,
+                             callee_sym: cim =>! wild int32->,
                              count: size =>! int32 };
     int64:i = 0i64;
     while (i < size) {
         t.items[i] = 0i32;
         t.known[i] = false;
         t.callee[i] = 0i32;
+        t.callee_sym[i] = 0i32;
         i = i + 1i64;
     }
     pass t;
@@ -132,6 +147,21 @@ pub func:exprtypes_callee = int32(ExprTypes->:t, ExprId:id) {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee[id.index => int64]);
+};
+
+// The interned symbol name a method call's callee is emitted under (1.0.5b).
+// 0 means "its own name" — a free function, or anything no impl supplied.
+pub func:exprtypes_set_callee_sym = NIL(ExprTypes->:t, ExprId:id, int32:nm) {
+    if (id.index < 0i32) { fail 24tbb32; }
+    if (id.index >= t.count) { fail 24tbb32; }
+    t.callee_sym[id.index => int64] = nm;
+    pass NIL;
+};
+
+pub func:exprtypes_callee_sym = int32(ExprTypes->:t, ExprId:id) {
+    if (id.index < 0i32) { pass 0i32; }
+    if (id.index >= t.count) { pass 0i32; }
+    pass (t.callee_sym[id.index => int64]);
 };
 
 pub func:exprtypes_count = int32(ExprTypes->:t) { pass t.count; };

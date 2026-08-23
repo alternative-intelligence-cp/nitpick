@@ -1163,6 +1163,44 @@ def check_zero_dependency(obj, allow, name):
             "verified IR" % (name, ", ".join(sorted(extra)))]
 
 
+DEFINE_RE = re.compile(r"^\s*define[^@]*(@(?:\"[^\"]*\"|[\w.$-]+))\s*\(",
+                       re.MULTILINE)
+GLOBAL_RE = re.compile(r"^\s*(@(?:\"[^\"]*\"|[\w.$-]+))\s*=\s*(?!.*\bexternal\b)",
+                       re.MULTILINE)
+
+
+def check_symbols_unique(ll_text, name):
+    """No symbol may be DEFINED twice in one emitted module.
+
+    D-156 says a symbol collision "is caught at emit by the generalized collision
+    check"; that forward reference pointed at a check retired at 1.0.1, so from
+    1.0.1 until 1.0.5b nothing was looking. What it would have caught: a method's
+    symbol did not name its impl, so two impls of one trait on different types
+    both rendered `@"npk.<module>.<name>"` -- invalid LLVM for a program with
+    nothing wrong with it.
+
+    `llc` reports the redefinition too, and that is not a reason to skip this.
+    llc says a name is defined twice; the invariant this states is the
+    compiler's, in the compiler's terms, and it runs over the self-compile as
+    well -- where a duplicate would otherwise surface as one line of llc output
+    about a sixty-module artifact.
+    """
+    seen = {}
+    dupes = []
+    for pat in (DEFINE_RE, GLOBAL_RE):
+        for m in pat.finditer(ll_text):
+            sym = m.group(1)
+            if sym in seen:
+                dupes.append(sym)
+            seen[sym] = True
+    if not dupes:
+        return []
+    return ["%s: %s defined more than once in one module -- the emitter "
+            "produced two definitions of one symbol, which is invalid LLVM and "
+            "means two declarations rendered the same name (D-156)"
+            % (name, ", ".join(sorted(set(dupes))))]
+
+
 def runtime_allowlist():
     """Every symbol npkrt.ll defines, plus `main` -- which is the one symbol the
     RUNTIME is allowed to need, because the program provides it."""
@@ -1202,6 +1240,9 @@ def check_emitted_program(binary, path, name, exp, tmp):
     base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
     with open(base + ".ll", "wb") as fh:
         fh.write(r.stdout)
+    dupes = check_symbols_unique(r.stdout.decode("utf-8", "replace"), name)
+    if dupes:
+        return dupes
     r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -1640,6 +1681,14 @@ def main(argv):
                 with open(s1 + ".ll", "rb") as fh:
                     stage1_ir = fh.read()
                 ok = True
+                # THE COMPILER'S OWN OUTPUT IS THE BIGGEST MODULE IT EMITS, so
+                # it is the one where a duplicate symbol is hardest to read off
+                # an llc error. Checked here first, in the compiler's terms.
+                dupes = check_symbols_unique(
+                    stage1_ir.decode("utf-8", "replace"), "stage1.ll")
+                if dupes:
+                    failures += dupes
+                    ok = False
                 rr = subprocess.run(["llc", "-O0", "-filetype=obj",
                                      "-relocation-model=static",
                                      s1 + ".ll", "-o", s1 + ".o"],

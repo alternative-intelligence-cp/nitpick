@@ -751,12 +751,26 @@ pub struct:MethodFind = {
     // call bind?" -- is one question; `bind_impl_params` reads the impl to see
     // which shape it is.
     int32:blanket_impl;
+
+    // THE IMPL THIS METHOD WAS FOUND IN, or 0 when no impl supplied it (a
+    // trait's own body, a `dyn`, a bound). D-156's amendment needs it: a
+    // method's SYMBOL names its impl, so the call site has to know which impl
+    // it reached, and re-deriving that in the backend is impossible — the
+    // emitter holds neither the impl table nor the bound table, which is the
+    // same reason `exprtypes_callee` exists at all.
+    //
+    // DISTINCT FROM `blanket_impl`, which is set only for a PARAMETERISED impl
+    // and answers "whose parameters must this call bind?". This one is set
+    // whenever an impl answered, parameterised or not, and answers "whose
+    // symbol is it?". Two questions, two slots — folding them would make the
+    // non-parameterised case indistinguishable from no impl at all.
+    int32:owner_impl;
 };
 
 func:method_none = MethodFind() {
     MethodFind:m = MethodFind{ found: false, ambiguous: false,
                                decl: 0i32, owner: 0i32, other: 0i32,
-                               blanket_impl: 0i32 };
+                               blanket_impl: 0i32, owner_impl: 0i32 };
     pass m;
 };
 
@@ -801,7 +815,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             if (sm != 0i32) {
                 MethodFind:sf = MethodFind{ found: true, ambiguous: false,
                                             decl: sm, owner: 0i32,
-                                            other: 0i32, blanket_impl: 0i32 };
+                                            other: 0i32, blanket_impl: 0i32,
+                                            owner_impl: 0i32 };
                 pass sf;
             }
         }
@@ -817,7 +832,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             if (m != 0i32) {
                 MethodFind:sm = MethodFind{ found: true, ambiguous: false,
                                             decl: m, owner: target,
-                                            other: 0i32, blanket_impl: 0i32 };
+                                            other: 0i32, blanket_impl: 0i32,
+                                            owner_impl: 0i32 };
                 pass sm;
             }
         }
@@ -889,7 +905,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     // belongs to the declaration, not to this lookup.
                     MethodFind:m = MethodFind{ found: true, ambiguous: false,
                                                decl: mdecl, owner: 0i32,
-                                               other: 0i32, blanket_impl: 0i32 };
+                                               other: 0i32, blanket_impl: 0i32,
+                                               owner_impl: e.decl };
                     pass m;
                 }
                 if (best.found) {
@@ -899,6 +916,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     best.found = true;
                     best.decl = mdecl;
                     best.owner = e.trait_id;
+                    best.owner_impl = e.decl;
                     if (parameterised) { best.blanket_impl = e.decl; }
                 }
             }
@@ -929,6 +947,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                             best.found = true;
                             best.decl = mdecl;
                             best.owner = e.trait_id;
+                            best.owner_impl = e.decl;
                             best.blanket_impl = e.decl;
                         }
                     }

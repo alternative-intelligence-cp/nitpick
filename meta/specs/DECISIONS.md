@@ -10671,16 +10671,30 @@ type_trait.npk's N+1 words:
 > compares bytes as int8, which is lexicographic only while they are ASCII, as
 > every identifier is.
 >
-> **Amendment owed, and owned by 1.0.5b: the sort key ties.** This decision says
-> "sorted by trait name" and stops there, but **two same-named traits from
-> different modules produce equal keys** — reachable, since D-162's
-> `same_name_two_modules` proves same-named types in two modules are
-> representable. The tie is currently broken by declaration index, which is
-> deterministic within a compilation but SHIFTS when an unrelated declaration is
-> added earlier: an ABI that moves for an edit that touched nothing. The stable
-> key is the MODULE-QUALIFIED name; the data exists (`build_modmap` walks the
-> module graph) but is built in the backend, so reaching it from interning needs
-> the map available to `TypeResolver`. Not left implied — 1.0.5b owns it.
+> **The sort key's tie is UNREACHABLE — settled at 1.0.5b by measurement, not by
+> plumbing.** The concern was that "sorted by trait name" leaves two same-named
+> traits from different modules with equal keys, tie-broken by declaration index,
+> which shifts under an unrelated edit. Before building the module-qualified key
+> that would fix it, the premise was tested: **two same-named traits cannot both
+> be named in one file at all.**
+>
+> - A glob import of both is `NITPICK-RESOLVE-008`, the loader's ambiguity — the
+>   same rule `same_name_two_modules` relies on, and whose comment says so
+>   ("two `Local`s in one scope would be the loader's ambiguity").
+> - The qualified form (`dyn a.S & b.S`) does not parse: a dotted path is not a
+>   type spelling. Measured — six `NITPICK-PARSE-001`.
+>
+> So no `dyn` can carry two traits whose names are equal, and the
+> declaration-index fallback is a defensive tiebreak nothing can currently
+> reach. It stays, because a total order should be total whether or not the tie
+> arises.
+>
+> **This reopens if qualified type paths are ever added** (`a.S` as a type
+> spelling). Nothing tracks that today — it is in no spec and no
+> `OPEN_DECISIONS` row — so the dependency is recorded here rather than in a
+> plan that would outlive its cycle: **whoever adds a dotted type spelling must
+> give this sort a module-qualified key in the same change**, or `dyn a.S & b.S`
+> and `dyn b.S & a.S` become two types with two layouts again.
 
 ## D-160 — Associated types: kind, in-trait resolution, impl binding, projection — **SETTLED**
 

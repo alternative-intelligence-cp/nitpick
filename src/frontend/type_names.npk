@@ -28,11 +28,14 @@ use "./types.npk".*;
 // Insertion sort: a `dyn` names a handful of traits, and an insertion sort over
 // a handful is smaller to audit than anything asymptotically better.
 //
-// SAME-NAMED TRAITS FROM TWO MODULES TIE, and the tie is broken by declaration
-// index — deterministic within a compilation, but not stable under an edit that
-// renumbers declarations. The stable key is the MODULE-QUALIFIED name, which
-// needs the decl-to-module map the backend builds (`build_modmap`) available at
-// interning; that plumbing is owned by 1.0.5b rather than left implied here.
+// THE TIE IS UNREACHABLE, and the fallback is defensive (measured at 1.0.5b).
+// Two same-named traits would produce equal keys — but they cannot both be
+// named in one file: a glob import of both is the loader's ambiguity
+// (`NITPICK-RESOLVE-008`), and the qualified form `a.S` does not parse, because
+// a dotted path is not a type spelling. The declaration-index tiebreak below
+// stays anyway, since a total order should be total whether or not the tie
+// arises. IF A DOTTED TYPE SPELLING IS EVER ADDED, this needs a
+// module-qualified key in the same change — D-159 records that dependency.
 pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
                                InternTable->:interns, int32:mark) {
     // `ast_scratch_mark` READ NOW is the current top, so the difference is the
@@ -74,6 +77,38 @@ func:bound_name = string(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
     if (d == 0i32) { pass ""; }
     DeclNode:dn = relay ast_decl(ast, DeclId{ index: d });
     pass (relay intern_get(interns, raw decl_name(dn)));
+};
+
+// A METHOD'S NAME CARRIES ITS IMPL (D-156 as amended at 1.0.5b). Before this a
+// method's symbol was its module and its own name, so two impls of one trait on
+// different types both rendered `@"npk.<module>.say"` and `llc` refused the
+// module — `invalid redefinition of function`. The qualifier is the pair D-158
+// already says a vtable is per:
+//
+//     Dog:Speaks.say     a trait impl's method
+//     Dog.say            an inherent impl's method
+//     say                a free function — `self_ty` of 0 says so
+//
+// THE RECEIVER'S CONCRETE TYPE, NOT THE IMPL'S DECLARED TARGET. A family impl
+// `impl:<T>:Box<T>:S` emits one body per instantiation and each needs its own
+// symbol — `Box<int32>:S.w`, not two of `Box<T>:S.w`. Both ends already hold the
+// substituted type, so using it separates the specializations with no second
+// rule.
+//
+// IT LIVES IN THE FRONTEND because the CHECKER computes it: the checker is where
+// the receiver type and the owning trait are both known, and the emitter would
+// have to redo a lookup it holds neither table for. Same reasoning as
+// `exprtypes_callee` — one computation, recorded, rather than two that can drift.
+pub func:method_symbol_name = string(TypeTable->:tyt, InternTable->:interns,
+                                     int32:self_ty, int32:trait_ty,
+                                     string:name) {
+    if (self_ty == 0i32) { pass name; }
+    string:q = relay type_display(tyt, interns, self_ty);
+    if (trait_ty != 0i32) {
+        q = relay string_concat(q,
+                relay string_concat(":", relay type_display(tyt, interns, trait_ty)));
+    }
+    pass (relay string_concat(q, relay string_concat(".", name)));
 };
 
 pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) {

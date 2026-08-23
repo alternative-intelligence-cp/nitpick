@@ -1,0 +1,63 @@
+// expect-exit: 42
+//
+// A METHOD'S SYMBOL NAMES ITS IMPL (D-156 as amended at 1.0.5b). Every shape
+// below produced INVALID LLVM before this — `llc: invalid redefinition of
+// function` — because a method's symbol was its module and its own name, and
+// nothing that reached the backend had ever implemented one trait twice.
+//
+// The four collisions, in order:
+//
+//   1. Two impls of one trait on different types. Each writes its own `say`.
+//   2. Two impls INHERITING one trait default. 1.0.4 emits a default once per
+//      implementing impl — correctly, since its `Self` differs in each — but
+//      all those emissions share ONE declaration index, so no map keyed by
+//      declaration could have separated them.
+//   3. An INHERENT method and a TRAIT method of one name on one type. Both are
+//      legal: `find_method` lets them coexist and refuses only an ambiguous
+//      call, and the inherent one ends the search.
+//   4. A default calling BACK into the impl (`self.tag()` below). The trait
+//      body is typed once with `Self` opaque, so the checker cannot record a
+//      per-impl symbol for it; the emitter substitutes, the same shape 1.0.2b
+//      uses for a generic body.
+
+trait:Speaks = { func:say = int32(Self:self); };
+
+trait:Greets = {
+    func:tag = int32(Self:self);
+    // Calls back into the impl. One typed body, one emission per implementor.
+    func:hello = int32(Self:self) { pass ((raw self.tag()) + 100i32); };
+};
+
+struct:Dog = { int32:v; };
+struct:Cat = { int32:v; };
+
+impl:Dog:Speaks = { func:say = int32(Dog:self) { pass 1i32; }; };
+impl:Cat:Speaks = { func:say = int32(Cat:self) { pass 2i32; }; };
+
+impl:Dog:Greets = { func:tag = int32(Dog:self) { pass 10i32; }; };
+impl:Cat:Greets = { func:tag = int32(Cat:self) { pass 20i32; }; };
+
+// An inherent `say` beside the trait's. The inherent one wins the lookup.
+impl:Dog = { func:say = int32(Dog:self) { pass 3i32; }; };
+
+func:main = int32(cstring[]:_~argv) {
+    Dog:d = Dog{ v: 0i32 };
+    Cat:c = Cat{ v: 0i32 };
+
+    // 3 — the INHERENT one, which outranks the trait's.
+    if ((raw d.say()) != 3i32)     { exit 10i32; }
+    // 2 — `Cat` has no inherent `say`, so the trait impl answers.
+    if ((raw c.say()) != 2i32)     { exit 11i32; }
+
+    // The defaults, each reaching ITS OWN impl's `tag`.
+    if ((raw d.hello()) != 110i32) { exit 12i32; }
+    if ((raw c.hello()) != 120i32) { exit 13i32; }
+
+    // And the overridden methods directly.
+    if ((raw d.tag()) != 10i32)    { exit 14i32; }
+    if ((raw c.tag()) != 20i32)    { exit 15i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -923,6 +923,23 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // Recorded on the expression, the same key its type is recorded under.
     drop exprtypes_set_callee(e.expr_types, id, did_index);
 
+    // AND THE SYMBOL IT IS EMITTED UNDER (1.0.5b). D-156's amendment makes a
+    // method's symbol carry its impl, and the two facts that takes — the
+    // RECEIVER's type and the owning TRAIT — are both here and in neither table
+    // the emitter holds. A trait DEFAULT is one declaration emitted once per
+    // implementing impl, so the declaration alone could never have said which
+    // body a call meant; the receiver is what separates them.
+    //
+    // ONLY WHEN AN IMPL SUPPLIED IT. `found.owner_impl` of 0 is the
+    // free-function case the scope lookup below answers, and a free function
+    // keeps its own name.
+    if (found.owner_impl != 0i32) {
+        drop exprtypes_set_callee_sym(e.expr_types, id,
+            raw intern_add(e.interns,
+                relay method_symbol_name(e.types, e.interns, recv, found.owner,
+                    relay intern_get(e.interns, name))));
+    }
+
     DeclId:did = DeclId{ index: did_index };
     DeclNode:d = relay ast_decl(e.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) {

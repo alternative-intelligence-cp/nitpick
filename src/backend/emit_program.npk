@@ -142,13 +142,28 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
 
     int32:saved = x.tr.self_type;
     x.tr.self_type = self_ty;
+
+    // THE TRAIT THIS IMPL IMPLEMENTS, resolved once — it is half of every method
+    // symbol this block emits (D-156 as amended at 1.0.5b), and 0 for an
+    // inherent impl.
+    int32:impl_trait_ty = 0i32;
+    TypeId:trt0 = raw impl_trait(x.ast, d);
+    if (!(raw type_is_none(trt0))) {
+        impl_trait_ty = relay resolve_type(x.tr, trt0,
+                            raw symtab_home_scope(x.tab, item.index, x.scope));
+    }
+
+    int32:saved_trait = x.cur_trait;
+    x.cur_trait = impl_trait_ty;
+
     int32:i = 0i32;
     while (i < (raw impl_member_count(x.ast, d))) {
         DeclId:mid = raw impl_member(x.ast, d, i);
         DeclNode:m = relay ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if (!(raw decl_has(m, raw DECL_COMPTIME()))) {
-                IrVal:r = relay emit_function(x, mid);
+                IrVal:r = relay emit_function_named(x, mid,
+                    relay impl_method_sym(x, self_ty, impl_trait_ty, m));
                 if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
             }
         }
@@ -163,8 +178,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // the default) and the symbol did not exist.
     TypeId:trt = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(trt))) {
-        int32:trait_ty = relay resolve_type(x.tr, trt,
-                             raw symtab_home_scope(x.tab, item.index, x.scope));
+        int32:trait_ty = impl_trait_ty;
         int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
         if (tdecl != 0i32) {
             DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
@@ -177,7 +191,14 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                         // only when THIS impl did not write its own
                         if ((relay impl_own_member(x.ast, d,
                                  raw decl_name(tm))) == 0i32) {
-                            IrVal:r2 = relay emit_function(x, tmid);
+                            // THE DEFAULT'S SYMBOL IS THIS IMPL'S, not the
+                            // trait's. One declaration, one body per
+                            // implementing impl — so the name has to come from
+                            // where the emission stands, or every implementor
+                            // renders the same symbol and `llc` refuses the
+                            // module.
+                            IrVal:r2 = relay emit_function_named(x, tmid,
+                                relay impl_method_sym(x, self_ty, trait_ty, tm));
                             if (!(raw iv_is_ok(r2))) { drop refuse(diags, r2); }
                         }
                     }
@@ -187,6 +208,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         }
     }
 
+    x.cur_trait = saved_trait;
     x.tr.self_type = saved;
     pass NIL;
 };
@@ -198,6 +220,13 @@ func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
                                  DeclId:item, DeclNode:d, TypeId:tgt) {
     IdSpan:pw = raw decl_generic_window(x.ast, d);
     int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
+
+    // Half of every method symbol this block emits; 0 for an inherent family.
+    int32:fam_trait_ty = 0i32;
+    TypeId:ftr = raw impl_trait(x.ast, d);
+    if (!(raw type_is_none(ftr))) {
+        fam_trait_ty = relay resolve_type(x.tr, ftr, home);
+    }
 
     int32:i = 0i32;
     while (i < (raw fninst_count(x.fninsts))) {
@@ -212,15 +241,27 @@ func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
             int32:ss = x.tr.self_type;
             x.tr.generics = g;
             x.tr.enclosing = g;
+            int32:fam_saved_trait = x.cur_trait;
+            x.cur_trait = fam_trait_ty;
             // `Self` is THIS instantiation's target.
             x.tr.self_type = relay type_subst(x.tr,
                                  relay resolve_type(x.tr, tgt, home),
                                  g, d.span, 64i32);
 
+            // THE SPECIALIZATION'S SYMBOL NAMES ITS INSTANTIATED TARGET
+            // (D-156 amended). This passed 0 — the plain method name — so
+            // `impl:<T>:Box<T>:S` emitted `w` for EVERY instantiation, and two
+            // of them collided exactly as two per-instance impls did. `Self` is
+            // already bound to this instantiation's target above, which is the
+            // spelling that separates them.
+            DeclNode:im = relay ast_decl(x.ast, DeclId{ index: inst.decl });
             IrVal:r = relay emit_fn_instance(x, DeclId{ index: inst.decl },
                           inst.args_start, inst.args_count,
-                          inst.params_start, inst.params_count, 0i32);
+                          inst.params_start, inst.params_count,
+                          relay impl_method_sym(x, x.tr.self_type,
+                                                fam_trait_ty, im));
 
+            x.cur_trait = fam_saved_trait;
             x.tr.generics = gs;
             x.tr.enclosing = es;
             x.tr.self_type = ss;
@@ -229,6 +270,14 @@ func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
         i = i + 1i32;
     }
     pass NIL;
+};
+
+// The interned symbol name for one of this impl's methods (D-156 amended).
+func:impl_method_sym = int32(ExprEmitter->:x, int32:self_ty, int32:trait_ty,
+                             DeclNode:m) {
+    pass (raw intern_add(x.interns,
+              relay method_symbol_name(x.fe.ctx.types, x.interns, self_ty,
+                  trait_ty, relay intern_get(x.interns, raw decl_name(m)))));
 };
 
 // Did this impl write its own method called `name`? 0 when it inherits.

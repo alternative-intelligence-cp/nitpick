@@ -222,6 +222,16 @@ pub struct:ExprEmitter = {
     // The generic-function instantiations the frontend recorded (1.0.2b). A
     // generic call reads this to name its specialization; nothing else does.
     FnInstTable->:fninsts;
+
+    // THE TRAIT OF THE IMPL BEING EMITTED, or 0 outside one (1.0.5b). It is the
+    // other half of a method symbol, and the half a `Self`-receiver call cannot
+    // get any other way: a trait DEFAULT is typed ONCE with `Self` opaque, so
+    // the checker cannot record a per-impl symbol for `self.size()` inside it —
+    // there is no one impl at that point. The emitter is where there is: the
+    // default is emitted once per implementing impl, and this plus
+    // `tr.self_type` say which. Same substitution shape as 1.0.2b's generic
+    // bodies, for the same reason.
+    int32:cur_trait;
 };
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
@@ -230,7 +240,8 @@ pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
                                    FnInstTable->:fninsts, int32:scope) {
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
                                  interns: interns, strs: strs, tr: tr,
-                                 fninsts: fninsts, scope: scope };
+                                 fninsts: fninsts, scope: scope,
+                                 cur_trait: 0i32 };
     pass x;
 };
 
@@ -2360,7 +2371,30 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         i = i + 1i32;
     }
 
+    // THE SYMBOL IS READ, NOT REBUILT (1.0.5b). A method's symbol carries its
+    // impl (D-156 amended), and the receiver type and owning trait that name
+    // needs live in the checker's tables, not here — so the checker interned the
+    // name and this reads it, the same slot-not-lookup rule `exprtypes_callee`
+    // is built on. 0 means a free function reached through UFCS, which keeps its
+    // own name.
     string:fname = relay intern_get(x.interns, raw decl_name(d));
+    int32:msym = raw exprtypes_callee_sym(x.et, id);
+    if (msym != 0i32) { fname = relay intern_get(x.interns, msym); }
+
+    // A `Self` RECEIVER MEANS THE IMPL BEING EMITTED. Inside a trait default,
+    // `self.size()` was typed with `Self` opaque, so nothing was recorded — and
+    // the default is emitted once per implementing impl, each needing its own
+    // impl's `size`. `tr.self_type` is bound to that impl's target here, which
+    // is what turns one typed body into the right call in each copy.
+    if (msym == 0i32) {
+        int32:rty = raw exprtypes_get(x.et, rid);
+        if ((raw type_kind(x.fe.ctx.types, rty)) == (raw TY_SELF())) {
+            if (x.tr.self_type != 0i32) {
+                fname = relay method_symbol_name(x.fe.ctx.types, x.interns,
+                            x.tr.self_type, x.cur_trait, fname);
+            }
+        }
+    }
     string:sym = relay mangled_fn_sym(x.fe.ctx, decl, fname);
     LlType:ret = relay node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
