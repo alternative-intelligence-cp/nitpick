@@ -1240,7 +1240,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     FnSig:sg = relay fn_signature(x.tr, did, name, x.scope);
     int32:succ = sg.success;
     if (specialize) {
-        succ = relay type_subst(x.tr, succ, g, d.span, 64i32);
+        succ = relay type_subst(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
     }
 
     LlType:rt = relay fnem_begin(x.fe, fname, did.index, succ);
@@ -1275,7 +1275,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = psaved;
         x.tr.enclosing = pesaved;
         if (specialize) {
-            pt = relay type_subst(x.tr, pt, g, pd.span, 64i32);
+            pt = relay type_subst(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
         }
         LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
         if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll_at(x, pl, pt, pd.span)); }

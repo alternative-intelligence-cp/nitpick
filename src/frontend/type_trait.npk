@@ -1400,6 +1400,41 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
 // that omits a binding inherits the trait's — D-028's surviving half — and one
 // that omits a binding the trait gave no default for is an incomplete impl,
 // which the caller reports as the signature mismatch it causes.
+// WHAT THE IMPL OF `trait_decl` FOR `base` BINDS `name` TO, or 0 (D-164).
+//
+// Coherence makes (type, trait) unique program-wide (§4.1, and 1.0.4c refuses
+// the overlaps), so the first match is the only one. The impl's OWN scope is
+// used to resolve the binding's annotation — an impl carries it for exactly this
+// reason, and a single scope passed in would resolve one module's impls against
+// another module's names, which is not an error but a different answer.
+//
+// A NULL TABLE ANSWERS 0. The backend substitutes with no impl table, because by
+// then every assoc a valid program can contain has been normalised; one that
+// survives to lowering means the frontend missed it, and `ll_type` fails closed
+// on it — which is the answer wanted there, not a substitution that papers over
+// it.
+pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
+                                  int32:base, int32:trait_decl, int32:name) {
+    if (t == NULL)        { pass 0i32; }
+    if (base == 0i32)     { pass 0i32; }
+    if (trait_decl == 0i32) { pass 0i32; }
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:e = relay impl_at(t, i);
+        if (!e.blanket) {
+            if (e.target == base) {
+                if ((raw type_decl_of(r.types, e.trait_id)) == trait_decl) {
+                    SigCtx:sc = SigCtx{ target: base, impl_decl: e.decl,
+                                        scope: e.scope };
+                    pass (relay assoc_binding(r, sc, trait_decl, name));
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
 pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
                                int32:trait_decl, int32:name) {
     if (sc.impl_decl != 0i32) {

@@ -48,8 +48,20 @@ use "./type_trait.npk".*;
 // program writes.
 func:SUBST_FUEL = int32() { pass 64i32; };
 
+// SUBSTITUTION IS WHERE AN ASSOCIATED TYPE BECOMES CONCRETE (D-164, 1.0.6d), so
+// it takes the impl table. That is not a concern leaking downward: `T.Item` is a
+// type whose value depends on WHICH impl `T` turns out to be, so the step that
+// decides what `T` is, is the only step that can decide what `T.Item` is.
+//
+// A SECOND WALK WAS THE ALTERNATIVE AND IS WORSE. Normalising after substitution
+// means traversing the same type structure twice with two pieces of code that
+// must agree — the shape this compiler's own notes call out as having cost it
+// defects repeatedly (`expr_types.npk`'s header lists four).
+//
+// `impls` MAY BE NULL, and the backend passes NULL deliberately: see
+// `assoc_binding_of`.
 pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel) {
+                            int32:fuel, wild ImplTable->:impls) {
     if (fuel <= 0i32) { pass t; }
     if (t == 0i32) { pass t; }
     if (g.params_count == 0i32) { pass t; }
@@ -61,28 +73,44 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // types, told apart by the declaration each was declared in.
     if (k == (raw TY_PARAM())) { pass (relay subst_param(r, t, g)); }
 
+    // `T.Item` BECOMES WHAT THE IMPL BOUND once `T` is known. The base is
+    // substituted first, and if that made it concrete the impl of the declaring
+    // trait for it supplies the answer; otherwise the projection is rebuilt
+    // around the new base and stays a projection, which is correct inside code
+    // that is still generic.
+    if (k == (raw TY_ASSOC())) {
+        int32:ab = raw type_assoc_base(r.types, t);
+        int32:atr = raw type_assoc_trait(r.types, t);
+        int32:anm = raw type_assoc_name(r.types, t);
+        int32:nb = relay type_subst(r, ab, g, at, fuel - 1i32, impls);
+        int32:bound = relay assoc_binding_of(r, impls, nb, atr, anm);
+        if (bound != 0i32) { pass bound; }
+        if (nb == ab) { pass t; }
+        pass (raw tt_assoc(r.types, nb, atr, anm));
+    }
+
     if (k == (raw TY_POINTER())) {
         pass (raw tt_pointer(r.types,
-                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32)));
+                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
     if (k == (raw TY_SLICE())) {
         pass (raw tt_slice(r.types,
-                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32)));
+                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
     if (k == (raw TY_ARRAY())) {
-        int32:el = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        int32:el = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_array(r.types, el, raw type_array_count(r.types, t),
                            raw type_size(r.types, el),
                            raw type_align(r.types, el)));
     }
     if (k == (raw TY_OPTIONAL())) {
-        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_optional(r.types, inner,
                               raw type_size(r.types, inner),
                               raw type_align(r.types, inner)));
     }
     if (k == (raw TY_RESULT())) {
-        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_result(r.types, inner,
                             raw type_size(r.types, inner),
                             raw type_align(r.types, inner)));
@@ -92,12 +120,12 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // becomes `Container<int32>`, a different interned type with its own mangled
     // name. A trait instance is the same case: `Printable<T>` as a BOUND is a
     // different bound once `T` is known.
-    if (k == (raw TY_STRUCT())) { pass (relay subst_instance(r, t, g, at, fuel)); }
-    if (k == (raw TY_ENUM()))   { pass (relay subst_instance(r, t, g, at, fuel)); }
-    if (k == (raw TY_TRAIT()))  { pass (relay subst_instance(r, t, g, at, fuel)); }
+    if (k == (raw TY_STRUCT())) { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_ENUM()))   { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_TRAIT()))  { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
 
-    if (raw type_is_func(r.types, t)) { pass (relay subst_func(r, t, g, at, fuel)); }
-    if (k == (raw TY_DYN()))          { pass (relay subst_dyn(r, t, g, at, fuel)); }
+    if (raw type_is_func(r.types, t)) { pass (relay subst_func(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_DYN()))          { pass (relay subst_dyn(r, t, g, at, fuel, impls)); }
 
     // EVERY SCALAR, `Self`, and the comptime values. Nothing to substitute, and
     // returning `t` is the answer rather than a fallthrough — a type with no
@@ -126,7 +154,7 @@ func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) {
 };
 
 func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel) {
+                            int32:fuel, wild ImplTable->:impls) {
     int32:n = raw type_args_count_of(r.types, t);
     if (n == 0i32) { pass t; }
     int32:start = raw type_args_start_of(r.types, t);
@@ -137,7 +165,7 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     bool:changed = false;
     while (i < n) {
         int32:was = relay ast_id_at(r.ast, start, i);
-        int32:now = relay type_subst(r, was, g, at, fuel - 1i32);
+        int32:now = relay type_subst(r, was, g, at, fuel - 1i32, impls);
         if (now != was) { changed = true; }
         drop ast_scratch_push(r.ast, now);
         i = i + 1i32;
@@ -171,8 +199,8 @@ func:type_name_of_decl = int32(TypeResolver->:r, int32:decl) {
 };
 
 func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                        int32:fuel) {
-    int32:ret = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+                            int32:fuel, wild ImplTable->:impls) {
+    int32:ret = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
     int32:n = raw type_param_count_of(r.types, t);
     int32:start = raw type_param_start_of(r.types, t);
 
@@ -180,7 +208,7 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:i = 0i32;
     while (i < n) {
         drop ast_scratch_push(r.ast,
-            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32));
+            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
         i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
@@ -195,14 +223,14 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 };
 
 func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                       int32:fuel) {
+                            int32:fuel, wild ImplTable->:impls) {
     int32:n = raw type_dyn_count(r.types, t);
     int32:start = raw type_dyn_start(r.types, t);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     while (i < n) {
         drop ast_scratch_push(r.ast,
-            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32));
+            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
         i = i + 1i32;
     }
     // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and

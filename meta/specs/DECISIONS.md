@@ -10715,12 +10715,19 @@ type_trait.npk's N+1 words:
 > reach. It stays, because a total order should be total whether or not the tie
 > arises.
 >
-> **This reopens if qualified type paths are ever added** (`a.S` as a type
-> spelling). Nothing tracks that today — it is in no spec and no
-> `OPEN_DECISIONS` row — so the dependency is recorded here rather than in a
-> plan that would outlive its cycle: **whoever adds a dotted type spelling must
-> give this sort a module-qualified key in the same change**, or `dyn a.S & b.S`
-> and `dyn b.S & a.S` become two types with two layouts again.
+> **This reopens if a MODULE path becomes a type spelling.** D-164 added a
+> dotted suffix in type position at 1.0.6c and it does NOT reopen this, checked
+> at 1.0.6d: that production projects an associated type from a TYPE, and a
+> module is not a type — `dyn_a.S` reports "there is no type named `dyn_a`". The
+> loader also still refuses two modules exporting one name, for non-glob imports
+> as well as glob ones.
+>
+> So the dependency stands, narrowed to what actually triggers it: **whoever
+> makes a MODULE nameable in type position must give this sort a
+> module-qualified key in the same change**, or `dyn a.S & b.S` and
+> `dyn b.S & a.S` become two types with two layouts again. Nothing tracks that
+> today, which is why it is recorded on the decision rather than in a plan that
+> would outlive its cycle.
 
 ## D-160 — Associated types: kind, in-trait resolution, impl binding, projection — **SETTLED**
 
@@ -11322,12 +11329,19 @@ argument, not a citation.
   is refused naming both, the same answer D-158 gives a method supplied by two
   bounds, and for the same reason — an ordering tiebreak would be
   meaning-by-position.
-- **It REOPENS D-159's tie**, exactly as that decision's amendment says it
-  would. Once `a.S` is a type spelling, two same-named traits from different
-  modules can both be named in one file, so `dyn a.S & b.S` becomes expressible
-  and the canonical bound order needs a module-qualified key. **That obligation
-  is part of this decision, not a follow-up** — D-159 records that it must land
-  in the same change.
+- **It was expected to REOPEN D-159's tie, and it does NOT — measured at
+  1.0.6d.** The reasoning was that once `a.S` is a type spelling, two same-named
+  traits become nameable in one file. It is not: this production projects from a
+  TYPE, and a module is not a type, so `dyn_a.S` reports "there is no type named
+  `dyn_a`". Both of D-159's barriers still stand — the loader refuses two modules
+  exporting one name (`NITPICK-RESOLVE-008`, and not only for glob imports), and
+  there is still no module-qualified type spelling. The obligation is not due,
+  and D-159's amendment is unchanged: it reopens if a MODULE path in type
+  position is added, which this is not.
+
+  An earlier draft of this decision also claimed the production "gives qualified
+  type paths, which are impossible today" as a side benefit. **That was wrong**
+  and is corrected here: it gives projection from a type, and nothing else.
 
 **It is not a violation of the capability ladder.** That rule is about not
 REBUILDING the frontend at every rung — the previous attempt's parser supported
@@ -11335,8 +11349,8 @@ only some keywords per step — and not about freezing the grammar. Adding a
 production because the language needs one is ordinary work; `CLAUDE.md` now says
 so.
 
-**Implemented at 1.0.6c — the grammar and the resolution. Normalisation is
-1.0.6d.**
+**Implemented at 1.0.6c (grammar and resolution) and 1.0.6d (normalisation).
+Complete.**
 
 > `T.Item` parses as a suffix beside `->`, `?` and `[]`, resolves through the
 > parameter's bounds, refuses an unknown name BY NAME rather than falling through
@@ -11354,17 +11368,22 @@ so.
 >   one element type and substitution had nothing to substitute. And the base is
 >   whatever `Self` MEANS where it is resolved, not the literal `Self` type.
 >
-> **What is not done: normalising `Counter.Item` to what the impl bound.** It
-> cannot live in `resolve_type` — `ImplTable` is declared in `type_trait.npk`,
-> which imports it, so a resolver field is a real import cycle (tried and
-> reverted). Nor should it: this architecture answers anything needing impls with
-> a LATER PASS, which is why instantiations are recorded and
-> `check_instantiations` runs after the table exists. **Where that normalisation
-> lives is 1.0.6d's opening decision**, with three candidate homes and their
-> costs written down there. A concrete call through a projection REFUSES until
-> then, which is the right failure mode but not the finished feature.
+> **Normalisation landed at 1.0.6d, in `type_subst`.** It cannot live in
+> `resolve_type` — `ImplTable` is declared in `type_trait.npk`, which imports it,
+> so a resolver field is a real import cycle (tried and reverted). It cannot be a
+> LATER PASS either, which is what 1.0.6d's plan recommended and its own caveat
+> disproved: a generic call's result type is compared against the declared type
+> in the same expression check, so a pass running afterwards arrives after the
+> mismatch is reported. `type_generic.npk` already imports `type_trait.npk` with
+> no cycle back, so substitution sees the impl table and normalises inside the
+> walk it already does — one walk rather than two.
 >
-> **The D-159 obligation is now live.** A dotted type spelling parses, so `a.S`
-> is expressible and the tie D-159's amendment closed by measuring it impossible
-> is open again. Nothing exercises it yet; 1.0.6d owns it.
+> **Three places needed it, and only the first was predicted**: substitution of a
+> generic call's signature; the BACKEND's re-substitution of a specialization's
+> signature (which first passed no table, on the wrong assumption that everything
+> was normalised by then); and `ll_type`, because a generic BODY's expression
+> types were recorded with the parameter opaque (D-107) — `it.next()` arrives
+> carrying `T.Item` exactly as `self.v` arrived at 1.0.4c carrying `T`. It is
+> normalised INSIDE `ll_type` rather than around it, since a projection can be
+> nested and that is the walk which recurses.
 

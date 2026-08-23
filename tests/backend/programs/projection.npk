@@ -1,0 +1,48 @@
+// expect-exit: 7
+//
+// A PROJECTION, END TO END (D-164, 1.0.6d). A generic function declares its
+// return as `T.Item`, calls the trait method through the bound, and is called
+// from concrete code — which is the whole point of associated types and was
+// impossible until this landed.
+//
+// THE EXIT CODE IS NOT THE ASSERTION; the emitted symbols are, and this comment
+// is where they are pinned, because a program with one implementor can pass by
+// accident:
+//
+//     define { i32, i32 } @"npk.projection.first<Counter>"(%"...Counter" %a0)
+//       ...  call { i32, i32 } @"npk.projection.Counter:Iterator.next"(...)
+//
+// The specialization returns `{ i32, i32 }` — `Result<int32>` — which is only
+// true if `T.Item` became `int32`, the type the impl bound. Had normalisation
+// been missed the return would have been an unlowerable associated type and the
+// program would not have compiled at all.
+//
+// THREE PLACES NEEDED THE NORMALISATION, and only the first was predicted:
+// `type_subst` for the signature, the BACKEND's re-substitution of a
+// specialization's signature (which first passed no impl table, on the wrong
+// assumption that everything was already normalised by then), and `ll_type` for
+// a generic BODY's expression types — recorded with the parameter opaque
+// (D-107), so `it.next()` arrives carrying `T.Item` exactly as `self.v` arrived
+// at 1.0.4c carrying `T`.
+
+trait:Iterator = {
+    assoc:Item;
+    func:next = Item(Self:self);
+};
+
+struct:Counter = { int32:n; };
+
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32(Counter:self) { pass self.n; };
+};
+
+func:first<T: Iterator> = T.Item(T:it) { pass (raw it.next()); };
+
+func:main = int32(cstring[]:_~argv) {
+    Counter:c = Counter{ n: 7i32 };
+    int32:v = raw first(c);
+    exit v;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

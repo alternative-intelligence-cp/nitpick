@@ -36,6 +36,7 @@ use "../../frontend/ast.npk".*;
 use "../../frontend/parse_decl.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/type_names.npk".*;   // type_display, for D-156's method names
+use "../../frontend/type_trait.npk".*;   // ImplTable, for D-164 normalisation
 use "../../frontend/resolve_type.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/type_layout.npk".*;
@@ -103,6 +104,20 @@ pub struct:LlCtx = {
     // site has no way to reach. Emitting impls first is not an option either:
     // impls and functions interleave in module order, so a function that builds
     // a `dyn` can be emitted before the impl it needs.
+    // A RESOLVER, or NULL — needed only to answer what an impl bound an
+    // associated type to, which takes resolving the binding's own annotation in
+    // the impl's scope. Carried rather than passed because `ll_type` recurses,
+    // and a projection can be nested (`T.Item[]`): normalising outside the walk
+    // would only reach the top level.
+    wild TypeResolver->:tr;
+
+    // THE IMPL TABLE, or NULL. The backend re-substitutes a specialization's
+    // signature when it emits one, and `T.Item` becomes what the impl bound
+    // during substitution (D-164) — so the emitter needs the same table the
+    // checker used, or an associated type survives to lowering and fails closed.
+    // Learned by watching exactly that happen.
+    wild ImplTable->:impls;
+
     wild int32->:vt_self;
     wild int32->:vt_trait;
     wild int32->:vt_sym;
@@ -115,7 +130,7 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
     LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
                      mod_of: NULL, mod_n: 0i32,
                      subst_params_start: 0i32, subst_params_count: 0i32,
-                     subst_args_start: 0i32,
+                     subst_args_start: 0i32, impls: NULL, tr: NULL,
                      vt_self: (alloc(vn * #size_of<int32>())) =>! wild int32->,
                      vt_trait: (alloc(vn * #size_of<int32>())) =>! wild int32->,
                      vt_sym: (alloc(vn * #size_of<int32>())) =>! wild int32->,
@@ -163,6 +178,13 @@ pub func:llctx_set_subst = NIL(LlCtx->:c, int32:params_start,
     c.subst_params_start = params_start;
     c.subst_params_count = params_count;
     c.subst_args_start = args_start;
+    pass NIL;
+};
+
+pub func:llctx_set_impls = NIL(LlCtx->:c, wild ImplTable->:t,
+                               wild TypeResolver->:r) {
+    c.impls = t;
+    c.tr = r;
     pass NIL;
 };
 
@@ -352,6 +374,27 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // YET, so they are a rung rather than broken: both live inside `trait` and
     // `impl` bodies and generic declarations, which cycle 1.0 is what enables.
     if (k == (raw TY_SELF()))     { pass (raw ll_rung("1.0")); }
+
+    // AN ASSOCIATED TYPE IS WHAT THE IMPL BOUND (D-164). The signature is
+    // normalised during substitution, but a generic BODY's expression types were
+    // recorded with the parameter opaque (D-107) — so `it.next()` reaches here
+    // carrying `T.Item`, exactly as `self.v` reached 1.0.4c carrying `T`. The
+    // base is substituted through the specialization being emitted and the
+    // impl's binding is the answer.
+    //
+    // STILL FAILS CLOSED when there is no answer: a projection nobody bound is a
+    // missed normalisation, and a guessed representation would turn an accepted
+    // program into a wrong one.
+    if (k == (raw TY_ASSOC())) {
+        if (c.tr != NULL) {
+            int32:ab = raw subst_emitted_param(c, raw type_assoc_base(c.types, id));
+            int32:bound = relay assoc_binding_of(c.tr, c.impls, ab,
+                              raw type_assoc_trait(c.types, id),
+                              raw type_assoc_name(c.types, id));
+            if (bound != 0i32) { pass (relay ll_type(c, bound)); }
+        }
+        pass (raw ll_broken());
+    }
     if (k == (raw TY_PARAM())) {
         // Inside a specialization the parameter IS its argument (1.0.4c);
         // outside one it is a template's type and has no representation.
@@ -533,7 +576,8 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
         DeclNode:m = relay ast_decl(c.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:ft0 = relay resolve_type(r, raw field_type(m), scope);
-            int32:ft = relay type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL());
+            int32:ft = relay type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
+                            c.impls);
             LlType:ll = relay ll_type(c, ft);
             if (ll.state != (raw LL_OK())) {
                 r.generics = saved;

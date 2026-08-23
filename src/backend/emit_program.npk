@@ -379,7 +379,7 @@ func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
             // `Self` is THIS instantiation's target.
             x.tr.self_type = relay type_subst(x.tr,
                                  relay resolve_type(x.tr, tgt, home),
-                                 g, d.span, 64i32);
+                                 g, d.span, 64i32, x.fe.ctx.impls);
 
             // THE SPECIALIZATION'S SYMBOL NAMES ITS INSTANTIATED TARGET
             // (D-156 amended). This passed 0 — the plain method name — so
@@ -723,9 +723,10 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
 pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              InternTable->:interns, ExprTypes->:ets,
                              TypeResolver->:tr, FnInstTable->:fninsts,
-                             DiagList->:diags) {
+                             wild ImplTable->:impls, DiagList->:diags) {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
+    drop llctx_set_impls(@c, impls, tr);
     drop build_modmap(g, @c);
     drop build_vtmap(g, tr, @c);
     StrTable:st = raw strtab_init();
