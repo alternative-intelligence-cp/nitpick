@@ -538,6 +538,13 @@ abstraction zero-cost and lets LLVM inline aggressively.
 
 ### 5.2 Dynamic (`dyn`)
 
+> **A bare trait is not a value type** — `Shape:x` as a parameter, field, local
+> or return annotation is refused at the checker (`NITPICK-TYPE-002`, 1.0.9);
+> `dyn Shape` is the type of a value that implements it, and `T: Shape` bounds
+> a parameter by it. A trait name resolves to a trait only where a trait is
+> asked for: a `dyn` operand, a bound, an impl's trait segment, a supertrait, a
+> projection.
+
 Explicit opt-in to runtime polymorphism, constructing a fat pointer
 (`{ data_ptr, vtable_ptr }`, 16 bytes on 64-bit — that is the SINGLE-bound
 shape; §5.3 gives the general one). Dispatch (D-158): a call

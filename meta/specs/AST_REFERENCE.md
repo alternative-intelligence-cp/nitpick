@@ -411,7 +411,7 @@ the parse path — so it is recorded here rather than left to the semantic phase
 | `SafeUnwrapExpr` | `expr`, `default` | `e ? d` |
 | `NullCoalesceExpr` | `expr`, `default` | `e ?? d` |
 | `EmphaticUnwrapExpr` | `expr`, `error_code` | **`e ?! code`** — exactly one `tbb32` argument (D-009) |
-| `DefaultsExpr` | `expr`, `fallback` | `?\|` / `defaults` |
+| `DefaultsExpr` | `expr`, `fallback` | `?\|` / `defaults` — **struck (D-167)**; the node is still built so the parser never restricts, and refused by name |
 | `RawUnwrapExpr` | `expr` | `raw e` / `_! e` |
 | `DropExpr` | `expr` | `drop e` / `_? e` |
 | **`RelayExpr`** | `expr` | **`relay e` / `_^ e`** (D-080) — on error, returns the same code from the enclosing function; otherwise yields `.value` |

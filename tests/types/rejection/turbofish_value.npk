@@ -1,0 +1,17 @@
+// expect-error: NITPICK-TYPE-016
+//
+// A FUNCTION VALUE TAKES NO TYPE ARGUMENTS (1.0.9): it is one body, already
+// instantiated (D-018, D-087), so a turbofish on a call through a local or a
+// parameter names nothing. This reached the backend, which refused it as a
+// rung — and a rung names valid Nitpick.
+mod:turbofish_value;
+
+func:g = int32(int32:x) { pass x; };
+
+func:main = int32(cstring[]:_~argv) {
+    func int32(int32):f = g;
+    int32:v = raw f::<int32>(1i32);
+    exit v;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

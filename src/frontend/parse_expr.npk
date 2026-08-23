@@ -147,6 +147,14 @@ func:p_ternary = ExprId(Parser->:p) {
                 break;
             }
         }
+        // STRUCK (D-167, 1.0.9). The prototype defined `expr ? fallback` and
+        // `expr ?| fallback` as ONE node; this compiler lowers `?` since 0.9.7,
+        // and a second spelling differing only in precedence is what D-021 and
+        // D-123 struck before. Still parsed — the grammar is never partial
+        // (D-085) — and refused by name with the answer; the fallback is read
+        // and dropped so the rest of the statement still checks.
+        drop p_error(p, raw PARSE_DEFAULTS_REMOVED(),
+            "`?|` / `defaults` is removed (D-167): `?` is the one spelling of a `Result` fallback — write `expr ? fallback`, with parentheses for any wider scope");
         ExprId:rhs = relay p_coalesce(p);
         lhs = relay ast_add_expr(p.ast, ExprKind.ExprDefaultsExpr, sp,
                                  lhs.index, rhs.index, 0i32, 0i64);

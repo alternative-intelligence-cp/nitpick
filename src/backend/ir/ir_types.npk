@@ -424,10 +424,12 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
         pass (raw ll_broken());
     }
 
-    // BARE `any` HAS NO REPRESENTATION and the frontend already refuses it as a
-    // type. `any->` never reaches here: a pointer is `ptr` without asking what it
-    // points at.
-    if (k == (raw TY_ANY()))      { pass (raw ll_rung("1.0")); }
+    // BARE `any` HAS NO REPRESENTATION and the frontend refuses it as a type
+    // (`NITPICK-TYPE-003`, measured at 1.0.9). `any->` never reaches here: a
+    // pointer is `ptr` without asking what it points at. Reaching this is a
+    // broken promise, not a rung — "enabled by cycle 1.0" was never going to
+    // be true of it (converted 1.0.9).
+    if (k == (raw TY_ANY()))      { pass (raw ll_broken()); }
 
     // `Optional<T>` IS `{ i8, T }`, TAG FIRST (TYPE_REFERENCE §11.1; 1.0.7) — the
     // layout `tt_optional` interned, and compiler-known exactly as `Result<T>`
@@ -442,9 +444,12 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     }
 
     // A TRAIT IS NOT A VALUE TYPE. `dyn Trait` is; the bare trait names a
-    // contract and has no representation of its own, which is why this stays a
-    // rung while `TY_DYN` below became real at 1.0.5b.
-    if (k == (raw TY_TRAIT()))    { pass (raw ll_rung("1.0")); }
+    // contract and has no representation of its own. The checker refuses a
+    // trait in every value position since 1.0.9 (`resolve_user_named`, unless
+    // the caller asked for a trait through `resolve_trait_type`), so this is a
+    // broken promise rather than the rung it was while `TY_DYN` below became
+    // real at 1.0.5b.
+    if (k == (raw TY_TRAIT()))    { pass (raw ll_broken()); }
 
     // `dyn A & B` — THE DATA WORD AND ONE VTABLE WORD PER TRAIT (D-159), in the
     // canonical bound order the frontend interned it with, so every word's slot
@@ -468,10 +473,12 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
         pass (raw ll_ok(relay string_concat(dt, " }")));
     }
 
-    // `Self` AND A GENERIC PARAMETER ARE REAL TYPES THAT HAVE NOT BEEN SUBSTITUTED
-    // YET, so they are a rung rather than broken: both live inside `trait` and
-    // `impl` bodies and generic declarations, which cycle 1.0 is what enables.
-    if (k == (raw TY_SELF()))     { pass (raw ll_rung("1.0")); }
+    // `Self` IS SUBSTITUTED BEFORE IT IS LOWERED: a trait default is emitted
+    // per implementing impl with `tr.self_type` bound (1.0.4), an impl method
+    // with its target, and outside a trait or impl body the checker refuses
+    // it outright (`NITPICK-TYPE-005`, measured at 1.0.9). A `Self` reaching
+    // here is a substitution hole to fix, not a rung (converted 1.0.9).
+    if (k == (raw TY_SELF()))     { pass (raw ll_broken()); }
 
     // AN ASSOCIATED TYPE IS WHAT THE IMPL BOUND (D-164). The signature is
     // normalised during substitution, but a generic BODY's expression types were
@@ -495,10 +502,13 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     }
     if (k == (raw TY_PARAM())) {
         // Inside a specialization the parameter IS its argument (1.0.4c);
-        // outside one it is a template's type and has no representation.
+        // outside one it is a template's type and has no representation —
+        // and no template body is emitted (1.0.7 skips template-shaped
+        // instances), so a bare parameter here is a missed substitution, not
+        // a rung (converted 1.0.9).
         int32:sub = raw subst_emitted_param(c, id);
         if (sub != id) { pass (relay ll_type(c, sub)); }
-        pass (raw ll_rung("1.0"));
+        pass (raw ll_broken());
     }
 
     // `lo..hi` IS A TYPED VALUE (D-093): `{ T, T }`, ALWAYS HALF-OPEN — the

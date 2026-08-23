@@ -278,13 +278,16 @@ pub func:fnem_open = NIL(FnEmitter->:fe) {
     drop irw_raw(fe.w, relay cat5("define ", fe.ret_ll, " ", fe.sym,
                                   relay cat3("(", params, ") {")));
     drop irw_label(fe.w, "entry");
+    // The define line and `entry:` are in the module stream; from here allocas
+    // and body buffer separately and splice back at close (1.0.9a).
+    drop irw_open_fn(fe.w);
 
     i = 0i32;
     while (i < fe.pcount) {
         string:ll = fe.plls[i => int64];
         string:arg = relay string_concat("%a", raw int_to_string(i => int64));
         string:slot = relay irw_temp(fe.w);
-        drop irw_line(fe.w, relay cat3(slot, " = alloca ", ll));
+        drop irw_alloca(fe.w, slot, ll);
         drop irw_line(fe.w, relay cat5("store ", ll, " ", arg,
                                        relay string_concat(", ptr ", slot)));
         drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
@@ -304,12 +307,15 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id)
     pass NIL;
 };
 
-// A local: an alloca in whatever block is current, bound from here to the end of
-// its enclosing scope. The caller supplies the lowered text it already has —
+// A local: its alloca HOISTED to the entry block (D-173), bound from here to the
+// end of its enclosing scope. This is the site most locals come through — a
+// `pick` arm's binding, a `for` element, a destructured payload — and each is
+// inside a branch or loop, so emitting the alloca inline is the loop-body
+// overflow D-173 fixes. The caller supplies the lowered text it already has —
 // lowering again here would be a second chance for the two to differ.
 pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) {
     string:slot = relay irw_temp(fe.w);
-    drop irw_line(fe.w, relay cat3(slot, " = alloca ", ll));
+    drop irw_alloca(fe.w, slot, ll);
     drop fnem_bind(fe, name, slot, type_id);
     pass slot;
 };
@@ -602,6 +608,8 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) {
             drop irw_line(fe.w, relay cat3("ret ", fe.ret_ll, " zeroinitializer"));
         }
     }
+    // The hoisted allocas, then the body, into the module stream (1.0.9a).
+    drop irw_close_fn(fe.w);
     drop irw_raw(fe.w, "}");
     drop irw_blank(fe.w);
     pass NIL;

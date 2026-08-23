@@ -2143,6 +2143,10 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     }
     if (op == TokenKind.OpMinus) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+        // NEGATION IS TOTAL ON A `tbb` (D-008 §2, admitted at 1.0.9): the
+        // sentinel is the one value whose negation would overflow, and it is
+        // not a value. `-x` is the same `tbb`, and ERR stays ERR (sticky).
+        if ((raw type_kind(e.types, t)) == (raw TY_TBB())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
             pass (relay te_operand_error(e, n.span, t));
         }

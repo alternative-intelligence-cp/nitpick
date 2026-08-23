@@ -452,7 +452,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         LlType:qll = relay ll_type(x.fe.ctx, qtid);
         if (!(raw ll_is_ok(qll))) { pass (relay iv_from_ll_at(x, qll, qtid, n.span)); }
         string:qslot = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat3(qslot, " = alloca ", qll.text));
+        drop irw_alloca(x.fe.w, qslot, qll.text);
         string:qerr = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(qerr, " = extractvalue ", qv.ll, " ",
                           relay string_concat(qv.ref, ", 1")));
@@ -562,7 +562,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         LlType:tll = relay ll_type(x.fe.ctx, ttid);
         if (!(raw ll_is_ok(tll))) { pass (relay iv_from_ll_at(x, tll, ttid, n.span)); }
         string:slot = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", tll.text));
+        drop irw_alloca(x.fe.w, slot, tll.text);
         IrVal:tc = relay emit_cond(x, ExprId{ index: n.a });
         if (!(raw iv_is_ok(tc))) { pass tc; }
         string:then_l = relay irw_new_label(x.fe.w, "is.then");
@@ -679,7 +679,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
             }
         }
         string:pslot = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", pll2.text));
+        drop irw_alloca(x.fe.w, pslot, pll2.text);
         IrVal:pc2 = relay emit_pick_chain(x, psv, pstid, pdisc, pdll,
                         n.b, n.c, pslot, pll2.text, ptid);
         if (!(raw iv_is_ok(pc2))) { pass pc2; }
@@ -775,6 +775,25 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         // (it loses -0.0: 0.0 - 0.0 is +0.0, while -(0.0) is -0.0).
         if (raw ll_is_float_text(v.ll)) {
             drop irw_line(x.fe.w, relay cat5(r, " = fneg ", v.ll, " ", v.ref));
+            pass (raw iv(v.ll, r, v.type_id));
+        }
+        // A `tbb` NEGATES STICKILY (D-008 §2, 1.0.9): ERR stays ERR, and
+        // every other value's negation is representable by construction —
+        // the sentinel is the one two's-complement value `sub 0, x` would
+        // overflow on, and it is not a value. A select, branch-free, the
+        // same shape the type's arithmetic has.
+        int32:utid = raw exprtypes_get(x.et, raw expr_operand(n));
+        if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TBB())) {
+            string:tmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, utid));
+            if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:neg = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(neg, " = sub ", v.ll, " 0, ", v.ref));
+            string:iserr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(iserr, " = icmp eq ", v.ll, " ",
+                              relay cat3(v.ref, ", ", tmn)));
+            drop irw_line(x.fe.w, relay cat5(r, " = select i1 ", iserr, ", ",
+                              relay cat5(v.ll, " ", tmn, ", ",
+                                  relay cat3(v.ll, " ", neg))));
             pass (raw iv(v.ll, r, v.type_id));
         }
         drop irw_line(x.fe.w, relay cat5(r, " = sub ", v.ll, " 0, ", v.ref));
@@ -1296,7 +1315,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 // exists so the right side is not evaluated when the left decides.
 func:emit_shortcircuit = IrVal(ExprEmitter->:x, ExprNode:n, bool:is_and) {
     string:slot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay string_concat(slot, " = alloca i8"));
+    drop irw_alloca(x.fe.w, slot, "i8");
     string:rhs_l = relay irw_new_label(x.fe.w, "sc.rhs");
     string:done_l = relay irw_new_label(x.fe.w, "sc.done");
 
@@ -1730,14 +1749,10 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     IrVal:fp = relay emit_expr(x, raw expr_callee(n));
     if (!(raw iv_is_ok(fp))) { pass fp; }
     int32:gcount = raw expr_generic_count(n);
-    // TYPE ARGUMENTS ON A CALL THROUGH A FUNCTION VALUE. A function value has
-    // a concrete type and no parameters to bind, so this is the frontend's to
-    // refuse (1.0.9 converts it); the string says what was written rather than
-    // "a generic call", which lowers since 1.0.2b (1.0.8).
-    if (gcount > 0i32) {
-        pass (raw iv_rung("type arguments on a call through a function value",
-                          "1.0", n.span));
-    }
+    // TYPE ARGUMENTS ON A CALL THROUGH A FUNCTION VALUE are refused by the
+    // checker (1.0.9): a function value is one body, already instantiated.
+    // Reaching here with any is the frontend's promise broken, not a rung.
+    if (gcount > 0i32) { pass (raw iv_broken(n.span)); }
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
     int32:ift = raw exprtypes_callee_ft(x.et, id);
@@ -2288,7 +2303,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         LlType:rll = relay ll_type(x.fe.ctx, rtid);
         if (!(raw ll_is_ok(rll))) { pass (relay iv_from_ll_at(x, rll, rtid, n.span)); }
         string:slot = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", rll.text));
+        drop irw_alloca(x.fe.w, slot, rll.text);
         string:l_ok = relay irw_new_label(x.fe.w, "ar.ok");
         string:l_st = relay irw_new_label(x.fe.w, "ar.stale");
         string:l_dn = relay irw_new_label(x.fe.w, "ar.done");
@@ -2331,7 +2346,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     vv = relay emit_fit(x, elem, vv, n.span);
     if (!(raw iv_is_ok(vv))) { pass vv; }
     string:pslot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", "{ i32 }"));
+    drop irw_alloca(x.fe.w, pslot, "{ i32 }");
     string:p_ok = relay irw_new_label(x.fe.w, "ap.ok");
     string:p_st = relay irw_new_label(x.fe.w, "ap.stale");
     string:p_dn = relay irw_new_label(x.fe.w, "ap.done");
@@ -2431,7 +2446,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     LlType:ell = relay ll_type(x.fe.ctx, elem);
     if (!(raw ll_is_ok(ell))) { pass (relay iv_from_ll_at(x, ell, elem, n.span)); }
     string:slot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", rll.text));
+    drop irw_alloca(x.fe.w, slot, rll.text);
     string:l_ok = relay irw_new_label(x.fe.w, "sg.ok");
     string:l_st = relay irw_new_label(x.fe.w, "sg.stale");
     string:l_dn = relay irw_new_label(x.fe.w, "sg.done");
@@ -2617,7 +2632,7 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
     if (!(raw ll_is_ok(dll))) { pass (relay iv_from_ll_at(x, dll, dyn_ty, at)); }
 
     string:spill = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(spill, " = alloca ", v.ll));
+    drop irw_alloca(x.fe.w, spill, v.ll);
     drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
                       relay string_concat(", ptr ", spill)));
 
@@ -3007,8 +3022,12 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         LocalSlot:s = raw fnem_lookup(x.fe, n.payload =>! int32);
         if (!s.found) {
+            // A module-level binding, lowered at 1.0.9d (D-165). This string
+            // said "0.8" — a cycle closed two cycles ago — until
+            // `check_rung_names_open_cycle`'s first run found it (1.0.9):
+            // 0.9.7's sweep grepped `iv_rung` and this is a `pv_rung`.
             pass (raw pv_rung("assignment to a name that is not a local",
-                              "0.8", n.span));
+                              "1.0", n.span));
         }
         pass (raw pv(s.slot, s.type_id));
     }
@@ -3270,7 +3289,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
     // leaves no undefined bytes in the slot.
     string:tag = raw int_to_string(vi.tag => int64);
     string:tmp = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(tmp, " = alloca ", ell.text));
+    drop irw_alloca(x.fe.w, tmp, ell.text);
     drop irw_line(x.fe.w, relay cat5("store ", ell.text, " zeroinitializer, ptr ",
                       tmp, ""));
     string:tp = relay irw_temp(x.fe.w);
@@ -3317,7 +3336,7 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     LlType:cll = relay ll_type(x.fe.ctx, ctid);
     if (!(raw ll_is_ok(cll))) { pass (relay iv_from_ll_at(x, cll, ctid, n.span)); }
     string:cslot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(cslot, " = alloca ", cll.text));
+    drop irw_alloca(x.fe.w, cslot, cll.text);
     string:ctag = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(ctag, " = extractvalue ", cv.ll, " ",
                       relay string_concat(cv.ref, ", 0")));
@@ -3373,7 +3392,7 @@ func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if (!(raw ll_is_ok(rll))) { pass (relay iv_from_ll_at(x, rll, rtid, n.span)); }
 
     string:sslot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(sslot, " = alloca ", rll.text));
+    drop irw_alloca(x.fe.w, sslot, rll.text);
     string:stag = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(stag, " = extractvalue ", bv.ll, " ",
                       relay string_concat(bv.ref, ", 0")));

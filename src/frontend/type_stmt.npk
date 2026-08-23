@@ -99,7 +99,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     if (s.kind == StmtKind.StmtTillStmt) { drop check_counted(e, s); pass NIL; }
 
     if (s.kind == StmtKind.StmtForStmt) {
-        drop type_of_expr(e, relay stmt_for_iter(e.ast, s));
+        drop check_for(e, s);
         drop check_stmt(e, relay stmt_for_body(e.ast, s));
         pass NIL;
     }
@@ -247,6 +247,57 @@ func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) {
     while (i < count) {
         drop check_stmt(e, raw pick_arm_at(e.ast, start, i));
         i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// `for (T:x in e)` — WHAT `e` IS, AND THAT `T` IS ITS ELEMENT (D-166, 1.0.9).
+// Until 1.0.9 this typed the iterable and the body and never looked at the
+// binding: `for (int8:i in 300i64..302i64)` passed and `llc` refused the IR,
+// and `for (int32:v in p)` over a struct reached the backend, which refused
+// it as a rung — calling it valid. A range, a slice and an array iterate
+// their element; an `Iterator` implementor joins them at 1.0.9d with its
+// lowering; anything else is refused here by name.
+func:check_for = NIL(ExprTyper->:e, StmtNode:s) {
+    int32:it = relay type_of_expr(e, relay stmt_for_iter(e.ast, s));
+    if (it == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, it)) { pass NIL; }
+    // ONE LEVEL OF AUTO-DEREFERENCE (D-098), as `.` and UFCS do: `for` over a
+    // BORROW of a collection — `@arr`, an `int32[4]->` — reaches the element,
+    // and the borrow analysis is what refuses it (D-004: a for-binding over a
+    // borrowed collection is untracked). Preempting it here with a type error
+    // would move a safety refusal to the wrong stage and lose its diagnostic.
+    int32:it1 = it;
+    if ((raw type_kind(e.types, it)) == (raw TY_POINTER())) {
+        it1 = raw type_elem(e.types, it);
+    }
+    int32:k = raw type_kind(e.types, it1);
+    int32:elem = 0i32;
+    if (k == (raw TY_RANGE())) { elem = raw type_elem(e.types, it1); }
+    if (k == (raw TY_SLICE())) { elem = raw type_elem(e.types, it1); }
+    if (k == (raw TY_ARRAY())) { elem = raw type_elem(e.types, it1); }
+    if (elem == 0i32) {
+        string:n1 = relay string_concat("`",
+                        relay type_display(e.types, e.interns, it));
+        drop te_error(e, raw TYPE_NOT_ITERABLE(),
+            relay string_concat(n1,
+                "` is not iterable: `for` takes a range, a slice or an array (D-023, D-166); `loop`/`till` count, and an `Iterator` implementor arrives with 1.0.9d"),
+            s.span);
+        pass NIL;
+    }
+    TypeResolver:r = raw etyper_resolver(e);
+    DeclNode:bd = relay ast_decl(e.ast, raw stmt_for_binding(s));
+    int32:bt = relay resolve_type(@r, raw param_type(bd), e.scope);
+    if (bt == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, bt)) { pass NIL; }
+    // EQUAL, NOT `fits`: a typed binding is the element, with no wrap and no
+    // widening — the same rule every other typed binding has (D-092).
+    if (bt != elem) {
+        string:b1 = relay string_concat("a `for` binding's type is the element type: this iterable yields `",
+                        relay type_display(e.types, e.interns, elem));
+        string:b2 = relay string_concat(b1, "` and the binding declares `");
+        string:b3 = relay string_concat(b2, relay type_display(e.types, e.interns, bt));
+        drop te_error(e, raw TYPE_MISMATCH(), relay string_concat(b3, "`"), bd.span);
     }
     pass NIL;
 };

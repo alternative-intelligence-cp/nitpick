@@ -223,7 +223,7 @@ compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
 | Macro | Return | Description |
 |---|---|---|
 | `#size_of<T>` | `int64` | Returns the size in bytes of the type `T` at compile time. |
-| `#wild_ptr<T>(addr)` | `wild T` | Constructs a pointer from an integer address. **Legal only in `wild` context** — the single suspension of the general prohibition on integer→pointer casting (D-019). Exists because the allocator must turn an `mmap` result into a `wild int8->`. |
+| `#wild_ptr<T>(addr)` | `wild T->` | Constructs a pointer from an integer address. **Legal only in `wild` context** — the single suspension of the general prohibition on integer→pointer casting (D-019). Exists because the allocator must turn an `mmap` result into a `wild int8->`. |
 | `#wild_slice<T>(ptr, len)` | `T[]` | Constructs a slice from a raw pointer and an element count. **Legal only in `wild` context** (D-070). Deliberately parallel to `#wild_ptr` — an extent the compiler cannot verify is exactly as privileged as an address it cannot verify. This is how a slice is laid over memory the type system did not allocate — a `sys`-returned mapping, a `wild` region — now that nothing address-shaped crosses an `extern` boundary at all (D-149). |
 <!-- builtins:end -->
 

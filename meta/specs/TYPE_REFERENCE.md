@@ -1438,7 +1438,7 @@ level, because `q.x` does.
 ### Comparison
 | Operator | Meaning | IR | Notes |
 |---|---|---|---|
-| `==` | equal | `icmp eq`/`fcmp oeq` | |
+| `==` | equal | `icmp eq`/`fcmp oeq` | Scalars, pointers, and an `Optional` against `NIL`. **A struct, array, `Result`, `string` or `dyn` does not compare with `==`** (D-169; refused at the checker from 1.0.9c, a named rung until then) — implement `Eq` and call `a.eq(b)`; `string_eq` for strings. |
 | `!=` | not equal | `icmp ne`/`fcmp one` | |
 | `<` | less than | `icmp slt`/`fcmp olt` | |
 | `<=` | less or equal | `icmp sle`/`fcmp ole` | |

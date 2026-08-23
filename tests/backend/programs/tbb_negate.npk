@@ -1,0 +1,26 @@
+// expect-exit: 42
+//
+// NEGATION IS TOTAL ON A `tbb` (D-008 §2, admitted at 1.0.9). The sentinel is
+// the one two's-complement value `sub 0, x` would overflow on, and it is not a
+// value: ERR negates to ERR (sticky), everything else to its negation, and the
+// result is the same `tbb` width. The checker refused `-x` on a `tbb` until
+// the 1.0.8 audit read D-008 against it.
+mod:tbb_negate;
+
+func:main = int32(cstring[]:_~argv) {
+    tbb32:a = 21tbb32;
+    tbb32:b = -a;
+    tbb32:c = -b;                       // back to 21
+    if (is_err(b))                      { exit 10i32; }
+    if (b != -21tbb32)                  { exit 11i32; }
+    if (c != 21tbb32)                   { exit 12i32; }
+    tbb32:e = ERR;
+    tbb32:ne = -e;
+    if (!(is_err(ne)))                  { exit 13i32; }   // ERR stays ERR
+    tbb8:small = -127tbb8;
+    tbb8:flipped = -small;
+    if (flipped != 127tbb8)             { exit 14i32; }
+    exit ((c =>! int32) * 2i32);
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

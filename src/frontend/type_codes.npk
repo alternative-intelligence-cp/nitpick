@@ -135,3 +135,9 @@ pub func:TYPE_LIT_RANGE = string()     { pass "NITPICK-TYPE-031"; };
 // opt-out case from the impossible one, and the messages said opposite things
 // about `=>!` under the same number. `cast_class`'s third answer gets its own.
 pub func:TYPE_NO_CAST = string()       { pass "NITPICK-TYPE-032"; };
+
+// `for` OVER SOMETHING THAT DOES NOT ITERATE (D-166, 1.0.9). A range, a slice,
+// an array, or — from 1.0.9d — a type implementing `Iterator`; anything else
+// is refused HERE by name. It reached the backend, which refused it as a
+// rung, and a rung names valid Nitpick.
+pub func:TYPE_NOT_ITERABLE = string()  { pass "NITPICK-TYPE-033"; };

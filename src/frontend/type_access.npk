@@ -399,6 +399,17 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                 "this function is not generic, so it takes no type arguments",
                 n.span);
         }
+    } else {
+        // A FUNCTION VALUE HAS NO TYPE PARAMETERS (1.0.9): an instantiation
+        // and a code address is one body (D-018, D-087), so a turbofish on a
+        // call through a local, a parameter or a field names nothing. This
+        // reached the backend, which refused it as a rung — a rung names
+        // valid Nitpick, and this is not.
+        if (gcount > 0i32) {
+            drop te_error(e, raw TYPE_GENERIC_ARITY(),
+                "this callee takes no type arguments: it is not a generic function, and a function value is one body, already instantiated",
+                n.span);
+        }
     }
 
     if (callee == 0i32) {

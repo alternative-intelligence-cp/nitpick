@@ -258,8 +258,23 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(dw2.code, raw PARSE_WRAPPER_FIELD()))) { exit 203i32; }
 
 
-    wild_release_all();
-
+    // --- `?|` / `defaults` is removed (D-167, 1.0.9) ---------------------------
+    // The prototype had it as the SAME node as `?`; a second spelling differing
+    // only in precedence is struck, parsed, and refused by name with the answer.
+    TokenList:kd = raw lex_all(0i32, "a ?| b", @it, @ld);
+    Ast:ad = raw ast_init();
+    DiagList:gd = raw diaglist_init();
+    Parser:pd = raw parser_init(@kd, @ad, @gd, @it);
+    drop p_parse_expr(@pd);
+    if (raw diaglist_count(@gd) != 1i64)                 { exit 90i32; }
+    Diagnostic:dd = raw diaglist_at(@gd, 0i64);
+    if (!(raw string_eq(dd.code, raw PARSE_DEFAULTS_REMOVED()))) { exit 91i32; }
+    TokenList:ke = raw lex_all(0i32, "a defaults b", @it, @ld);
+    Ast:ae = raw ast_init();
+    DiagList:ge = raw diaglist_init();
+    Parser:pe = raw parser_init(@ke, @ae, @ge, @it);
+    drop p_parse_expr(@pe);
+    if (raw diaglist_count(@ge) != 1i64)                 { exit 92i32; }
 
     wild_release_all();
     exit 0i32;

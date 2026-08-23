@@ -643,6 +643,58 @@ def check_one_renderer():
     return fails
 
 
+def check_rung_names_open_cycle():
+    """Every backend refusal names a cycle that is still open, or a row that
+    exists (1.0.9).
+
+    0.9 closed on the rule that a cycle does not close while a refusal string
+    names it, checked by a grep at 0.9.7 -- and the same sweep re-pointed every
+    stale "0.8" string at "1.0" as the NEXT cycle rather than an owner, which
+    is how 1.0 opened its tail with 27 strings to honour. This makes the grep a
+    check: the moment a cycle's folder moves under `meta/roadmap/done/`, any
+    `iv_rung`/`ll_rung` still naming it fails the harness. A rung may name a
+    cycle ("1.1") or a cycle with its row ("1.1 (G-3)") or a row alone
+    ("a later cycle (G-2)"); a row must exist in OPEN_DECISIONS.md.
+    """
+    fails = []
+    done = set(os.listdir(os.path.join(ROOT, "meta", "roadmap", "done")))
+    with open(os.path.join(ROOT, "meta", "roadmap", "OPEN_DECISIONS.md"),
+              encoding="utf-8") as fh:
+        rows = set(re.findall(r"\*\*([A-Z]+-\d+)\*\*", fh.read()))
+    # A call may break its line between the construct and the rung, so the
+    # FILE is scanned, not its lines: `iv_rung("what", "rung", …)` and
+    # `pv_rung("what", "rung", …)` carry the rung second, `ll_rung("rung")`
+    # first. Comment lines are blanked first so a quoted example in prose
+    # does not count.
+    two = re.compile(r'\b(?:iv_rung|pv_rung)\(\s*"[^"]*"\s*,\s*"([^"]*)"', re.S)
+    one = re.compile(r'\bll_rung\(\s*"([^"]*)"')
+    for p in glob.glob(os.path.join(ROOT, "src", "backend", "**", "*.npk"),
+                       recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            text = "".join(("\n" if ln.lstrip().startswith("//") else ln)
+                           for ln in fh.read().splitlines(True))
+        hits = [(m.start(), m.group(1)) for m in two.finditer(text)]
+        hits += [(m.start(), m.group(1)) for m in one.finditer(text)]
+        for at, rung in hits:
+            key = "%s:%d" % (os.path.relpath(p, ROOT), text.count("\n", 0, at) + 1)
+            m = re.match(r"(\d+\.\d+)", rung)
+            row = re.search(r"\(([A-Z]+-\d+)\)", rung)
+            if m:
+                if m.group(1) in done:
+                    fails.append("%s refuses with rung %r, and cycle %s is CLOSED "
+                                 "(meta/roadmap/done/%s) -- a refusal may not name a "
+                                 "cycle that will never enable it; lower it, convert "
+                                 "it, or re-point it BY NAME"
+                                 % (key, rung, m.group(1), m.group(1)))
+            elif row is None:
+                fails.append("%s refuses with rung %r, which names neither a cycle "
+                             "nor an OPEN_DECISIONS row" % (key, rung))
+            if row is not None and row.group(1) not in rows:
+                fails.append("%s refuses with rung %r, and row %s is not in "
+                             "OPEN_DECISIONS.md" % (key, rung, row.group(1)))
+    return fails
+
+
 def check_ll_types_agree():
     """The two emitters must lower a type to the SAME LLVM text.
 
@@ -1371,6 +1423,47 @@ def check_symbols_unique(ll_text, name):
             % (name, ", ".join(sorted(set(dupes))))]
 
 
+def check_allocas_hoisted(ll_text, name):
+    """Every `alloca` is in its function's entry block (D-173, 1.0.9a).
+
+    An `alloca` in a loop body allocates stack each iteration and reclaims none
+    until return, so a walk that scales with the program overflows the stack --
+    which is how the seed-built npkc came to segfault compiling `src/`. The fix
+    hoists every alloca to the entry block; this pins it, so a later lowering
+    that writes an alloca inline instead of through `irw_alloca`/`self.alloca`
+    fails here rather than as a crash on a large input. The entry block is
+    everything from `entry:` to the first terminator; an alloca after any
+    branch, return, or later label is in a body block.
+    """
+    bad = []
+    fn = None
+    in_entry = False
+    for raw_line in ll_text.splitlines():
+        line = raw_line.strip()
+        m = DEFINE_RE.search(raw_line)
+        if m:
+            fn = m.group(1)
+            in_entry = False
+            continue
+        if fn is None:
+            continue
+        if line == "entry:":
+            in_entry = True
+            continue
+        if line.endswith(":") and " " not in line:   # a basic-block label
+            in_entry = False
+            continue
+        if line.startswith("br ") or line.startswith("ret ") or line == "unreachable":
+            in_entry = False
+            continue
+        if re.match(r"%\S+ = alloca ", line) and not in_entry:
+            bad.append("%s: `%s` in `%s` is not in the entry block -- an alloca "
+                       "in a loop body overflows the stack over a large input; "
+                       "route it through irw_alloca (D-173)"
+                       % (name, line, fn))
+    return bad
+
+
 def runtime_allowlist():
     """Every symbol npkrt.ll defines, plus `main` -- which is the one symbol the
     RUNTIME is allowed to need, because the program provides it."""
@@ -1410,9 +1503,13 @@ def check_emitted_program(binary, path, name, exp, tmp):
     base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
     with open(base + ".ll", "wb") as fh:
         fh.write(r.stdout)
-    dupes = check_symbols_unique(r.stdout.decode("utf-8", "replace"), name)
+    ir_text = r.stdout.decode("utf-8", "replace")
+    dupes = check_symbols_unique(ir_text, name)
     if dupes:
         return dupes
+    hoist = check_allocas_hoisted(ir_text, name)
+    if hoist:
+        return hoist
     r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -1577,6 +1674,7 @@ def main(argv):
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
         failures += check_one_renderer()
+        failures += check_rung_names_open_cycle()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
 

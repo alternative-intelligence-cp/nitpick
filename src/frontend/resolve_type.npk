@@ -80,6 +80,16 @@ pub struct:TypeResolver = {
     // a state the resolver can see rather than a rule it has to remember.
     int32:self_type;
 
+    // A TRAIT IS WANTED HERE (1.0.9). A trait name resolves to a `TY_TRAIT` only
+    // where the caller asks for a trait — a `dyn` operand, a bound, an impl's
+    // trait segment, a supertrait, a projection's bound — and is refused as a
+    // VALUE type everywhere else. Until 1.0.9 `Shape:x` was a well-formed
+    // annotation for a parameter, a field or a local, and the backend refused
+    // it as a rung, which calls it valid Nitpick; TRAITS_REFERENCE §5 says a
+    // trait is a contract and `dyn Shape` is the value type. Set and restored
+    // by `resolve_trait_type`, never by a caller directly.
+    bool:trait_ok;
+
     // THE TRAIT WHOSE BODY IS BEING RESOLVED, or 0 (D-160, 1.0.6). An associated
     // type is spelled BARE inside its trait — `func:next = Item(Self:self)` —
     // and `Item` is in no scope: it is a member of the trait, the way `Self` is
@@ -148,6 +158,7 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
     TypeResolver:r = TypeResolver{ ast: ast, types: types, tab: tab,
                                    interns: interns, diags: diags,
                                    self_type: 0i32, self_trait: 0i32,
+                                   trait_ok: false,
                                    generics: raw generic_scope_none(),
                                    enclosing: raw generic_scope_none(),
                                    instances: instances, depth: 0i32,
@@ -159,13 +170,14 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
 };
 
 // A NAME THAT IS A GENERIC PARAMETER OF SOMETHING CURRENTLY IN SCOPE.
-pub func:generic_lookup = ParamBind(TypeResolver->:r, int32:name) {
-    ParamBind:own = relay generic_bind_in(r, r.generics, name);
+pub func:generic_lookup = ParamBind(TypeResolver->:r, int32:name, Span:at) {
+    ParamBind:own = relay generic_bind_in(r, r.generics, name, at);
     if (own.found) { pass own; }
-    pass (relay generic_bind_in(r, r.enclosing, name));
+    pass (relay generic_bind_in(r, r.enclosing, name, at));
 };
 
-func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name) {
+func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name,
+                                 Span:at) {
     int32:i = 0i32;
     while (i < g.params_count) {
         // NOT `pid` — one of the five kernel identifier types (D-042), and a type
@@ -179,7 +191,7 @@ func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name) {
             // fails somewhere further along with a worse message.
             if (raw generic_is_value(pn)) {
                 ParamBind:v = ParamBind{ found: true,
-                    type_id: relay value_param_in_type_position(r, pn) };
+                    type_id: relay value_param_in_type_position(r, pn, at) };
                 pass v;
             }
             // BOUND OR OPAQUE. Fewer arguments than parameters is an arity error
@@ -200,12 +212,15 @@ func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name) {
     pass none;
 };
 
-func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn) {
+// REPORTED AT THE USE, not at the parameter's declaration (1.0.9; the 1.0.8
+// audit found it pointing at `<comptime int32:LEVEL>` for a `LEVEL:x` written
+// lines away).
+func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn, Span:at) {
     string:m1 = relay string_concat("`", relay intern_get(r.interns, raw decl_name(pn)));
     pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(),
         relay string_concat(m1,
             "` is a `comptime` value parameter, not a type; it supplies a constant, and `comptime` is the marker that says which of the two a parameter is (D-064)"),
-        pn.span));
+        at));
 };
 
 func:ty_error = int32(TypeResolver->:r, string:code, string:message, Span:at) {
@@ -214,6 +229,17 @@ func:ty_error = int32(TypeResolver->:r, string:code, string:message, Span:at) {
 };
 
 // --- the entry ---------------------------------------------------------------------
+
+// RESOLVE A TYPE WHERE A TRAIT IS WHAT IS WANTED (1.0.9): the one door through
+// which a trait name becomes a `TY_TRAIT`. Everything else that names a trait
+// in type position gets the value-type refusal in `resolve_user_named`.
+pub func:resolve_trait_type = int32(TypeResolver->:r, TypeId:id, int32:scope) {
+    bool:saved = r.trait_ok;
+    r.trait_ok = true;
+    int32:t = relay resolve_type(r, id, scope);
+    r.trait_ok = saved;
+    pass t;
+};
 
 pub func:resolve_type = int32(TypeResolver->:r, TypeId:id, int32:scope) {
     if (raw type_is_none(id)) {
@@ -332,7 +358,7 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
         int32:i = 0i32;
         while (i < bcount) {
             TypeId:bt = TypeId{ index: relay ast_id_at(r.ast, bstart, i) };
-            int32:btrait = relay resolve_type(r, bt, scope);
+            int32:btrait = relay resolve_trait_type(r, bt, scope);
             int32:tdecl = raw type_decl_of(r.types, btrait);
             if (tdecl != 0i32) {
                 int32:hit = relay assoc_of_trait(r, tdecl, name);
@@ -458,7 +484,7 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // resolved on demand from wherever the access happened to be written. The
     // window travels with the declaration, so the answer does not depend on which
     // scope a caller passed.
-    ParamBind:gb = relay generic_lookup(r, name);
+    ParamBind:gb = relay generic_lookup(r, name, n.span);
     if (gb.found) { pass (gb.type_id); }
 
     // AN ASSOCIATED TYPE IS A MEMBER OF ITS TRAIT, NOT A NAME IN A SCOPE
@@ -496,6 +522,16 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // parses, and this built a `tt_trait` from the declaration and dropped the
     // arguments — making `Printable<int32>` and `Printable<string>` one trait.
     if (dnode.kind == DeclKind.DeclTraitDecl) {
+        if (!r.trait_ok) {
+            string:tn = relay intern_get(r.interns, name);
+            string:t1 = relay string_concat("`", tn);
+            string:t2 = relay string_concat(t1, "` is a trait, not a value type; `dyn ");
+            string:t3 = relay string_concat(t2, tn);
+            string:t4 = relay string_concat(t3, "` is the type of a value that implements it, and `T: ");
+            string:t5 = relay string_concat(t4, tn);
+            pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(),
+                relay string_concat(t5, "` bounds a parameter by it"), n.span));
+        }
         pass (relay resolve_aggregate(r, n, name, d, dnode, scope, raw TY_TRAIT()));
     }
     if (dnode.kind == DeclKind.DeclGenericParam) {
@@ -1722,7 +1758,7 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
     int32:i = 0i32;
     while (i < (raw type_args_count(n))) {
         TypeId:operand = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), i) };
-        int32:t = relay resolve_type(r, operand, scope);
+        int32:t = relay resolve_trait_type(r, operand, scope);
         // EVERY OPERAND OF `dyn` MUST BE A TRAIT. `dyn int32` is not a dynamic
         // anything, and catching it here means 0.4.6 can assume it has traits.
         if (!(raw type_is_invalid(r.types, t))) {

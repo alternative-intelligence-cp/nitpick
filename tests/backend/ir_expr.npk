@@ -216,7 +216,7 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_ret_pass(@f1, v1.ref);
     drop fnem_close(@f1, true);
     if (!(raw string_eq(relay irw_text(@w1),
-        "define { i32, i32 } @npk_calc(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = load i32, ptr %t1\n  %t4 = add i32 %t2, %t3\n  %t5 = mul i32 %t4, 3\n  %t6 = insertvalue { i32, i32 } undef, i32 %t5, 0\n  %t7 = insertvalue { i32, i32 } %t6, i32 0, 1\n  ret { i32, i32 } %t7\n}\n\n"))) { exit 11i32; }
+        "define { i32, i32 } @npk_calc(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = load i32, ptr %t1\n  %t4 = add i32 %t2, %t3\n  %t5 = mul i32 %t4, 3\n  %t6 = insertvalue { i32, i32 } undef, i32 %t5, 0\n  %t7 = insertvalue { i32, i32 } %t6, i32 0, 1\n  ret { i32, i32 } %t7\n}\n\n"))) { exit 11i32; }
 
     // --- COMPARISON SIGNEDNESS IS THE OPERAND'S: char8 ult, int32 slt ---------
     IrWriter:w2 = raw irw_to_buffer();
@@ -233,7 +233,7 @@ func:main = int32(cstring[]:_~argv) {
     IrVal:vi = relay emit_expr(@x2, cmp_i);
     if (!(raw iv_is_ok(vi)))                                 { exit 21i32; }
     if (!(raw string_eq(relay irw_text(@w2),
-        "define { i8, i32 } @npk_cmp(i8 %a0, i8 %a1, i32 %a2, i32 %a3) {\nentry:\n  %t0 = alloca i8\n  store i8 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = alloca i32\n  store i32 %a2, ptr %t2\n  %t3 = alloca i32\n  store i32 %a3, ptr %t3\n  %t4 = load i8, ptr %t0\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ult i8 %t4, %t5\n  %t7 = zext i1 %t6 to i8\n  %t8 = load i32, ptr %t2\n  %t9 = load i32, ptr %t3\n  %t10 = icmp slt i32 %t8, %t9\n  %t11 = zext i1 %t10 to i8\n"))) { exit 22i32; }
+        "define { i8, i32 } @npk_cmp(i8 %a0, i8 %a1, i32 %a2, i32 %a3) {\nentry:\n  %t0 = alloca i8\n  %t1 = alloca i8\n  %t2 = alloca i32\n  %t3 = alloca i32\n  store i8 %a0, ptr %t0\n  store i8 %a1, ptr %t1\n  store i32 %a2, ptr %t2\n  store i32 %a3, ptr %t3\n  %t4 = load i8, ptr %t0\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ult i8 %t4, %t5\n  %t7 = zext i1 %t6 to i8\n  %t8 = load i32, ptr %t2\n  %t9 = load i32, ptr %t3\n  %t10 = icmp slt i32 %t8, %t9\n  %t11 = zext i1 %t10 to i8\n"))) { exit 22i32; }
 
     // --- CASTS: trunc DOWN, extension BY THE SOURCE'S SIGN --------------------
     IrWriter:w3 = raw irw_to_buffer();
@@ -249,7 +249,7 @@ func:main = int32(cstring[]:_~argv) {
     IrVal:ci = relay emit_expr(@x3, widen_i);
     IrVal:cs = relay emit_expr(@x3, shrink);
     if (!(raw string_eq(relay irw_text(@w3),
-        "define { i32, i32 } @npk_casts(i32 %a0, i32 %a1, i64 %a2) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 %a1, ptr %t1\n  %t2 = alloca i64\n  store i64 %a2, ptr %t2\n  %t3 = load i32, ptr %t0\n  %t4 = zext i32 %t3 to i64\n  %t5 = load i32, ptr %t1\n  %t6 = sext i32 %t5 to i64\n  %t7 = load i64, ptr %t2\n  %t8 = trunc i64 %t7 to i32\n"))) { exit 31i32; }
+        "define { i32, i32 } @npk_casts(i32 %a0, i32 %a1, i64 %a2) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  %t2 = alloca i64\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  store i64 %a2, ptr %t2\n  %t3 = load i32, ptr %t0\n  %t4 = zext i32 %t3 to i64\n  %t5 = load i32, ptr %t1\n  %t6 = sext i32 %t5 to i64\n  %t7 = load i64, ptr %t2\n  %t8 = trunc i64 %t7 to i32\n"))) { exit 31i32; }
 
     // --- `&&` SHORT-CIRCUITS THROUGH A SLOT, and the rhs never runs early -----
     IrWriter:w4 = raw irw_to_buffer();
@@ -262,7 +262,7 @@ func:main = int32(cstring[]:_~argv) {
     IrVal:va = relay emit_expr(@x4, conj);
     if (!(raw iv_is_ok(va)))                                 { exit 40i32; }
     if (!(raw string_eq(relay irw_text(@w4),
-        "define { i8, i32 } @npk_andand(i8 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i8\n  store i8 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = alloca i8\n  %t3 = load i8, ptr %t0\n  %t4 = icmp ne i8 %t3, 0\n  store i8 0, ptr %t2\n  br i1 %t4, label %sc.rhs0, label %sc.done1\nsc.rhs0:\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ne i8 %t5, 0\n  %t7 = zext i1 %t6 to i8\n  store i8 %t7, ptr %t2\n  br label %sc.done1\nsc.done1:\n  %t8 = load i8, ptr %t2\n"))) { exit 41i32; }
+        "define { i8, i32 } @npk_andand(i8 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i8\n  %t1 = alloca i8\n  %t2 = alloca i8\n  store i8 %a0, ptr %t0\n  store i8 %a1, ptr %t1\n  %t3 = load i8, ptr %t0\n  %t4 = icmp ne i8 %t3, 0\n  store i8 0, ptr %t2\n  br i1 %t4, label %sc.rhs0, label %sc.done1\nsc.rhs0:\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ne i8 %t5, 0\n  %t7 = zext i1 %t6 to i8\n  store i8 %t7, ptr %t2\n  br label %sc.done1\nsc.done1:\n  %t8 = load i8, ptr %t2\n"))) { exit 41i32; }
 
     // --- UNARY: negate is `sub 0`, `!` derives from the value ALREADY emitted -
     IrWriter:w5 = raw irw_to_buffer();
@@ -275,7 +275,7 @@ func:main = int32(cstring[]:_~argv) {
     drop emit_expr(@x5, neg);
     drop emit_expr(@x5, not_b);
     if (!(raw string_eq(relay irw_text(@w5),
-        "define { i32, i32 } @npk_unary(i32 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = sub i32 0, %t2\n  %t4 = load i8, ptr %t1\n  %t5 = icmp ne i8 %t4, 0\n  %t6 = xor i1 %t5, true\n  %t7 = zext i1 %t6 to i8\n"))) { exit 50i32; }
+        "define { i32, i32 } @npk_unary(i32 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i8\n  store i32 %a0, ptr %t0\n  store i8 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = sub i32 0, %t2\n  %t4 = load i8, ptr %t1\n  %t5 = icmp ne i8 %t4, 0\n  %t6 = xor i1 %t5, true\n  %t7 = zext i1 %t6 to i8\n"))) { exit 50i32; }
 
     // --- CALLS: the floor by its table, a user function by its symbol ---------
     //

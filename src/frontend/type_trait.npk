@@ -166,7 +166,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         GenericScope:bsaved = r.generics;
         r.generics = GenericScope{ params_start: bgw.start, params_count: bgw.count,
                                    args_start: 0i32, args_count: 0i32 };
-        int32:bt = relay resolve_type(r, btt, scope);
+        int32:bt = relay resolve_trait_type(r, btt, scope);
         r.generics = bsaved;
         if (bt == 0i32) { pass NIL; }
         if (raw type_is_invalid(r.types, bt)) { pass NIL; }
@@ -206,7 +206,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         pass NIL;
     }
 
-    int32:trait_id = relay resolve_type(r, tyt, scope);
+    int32:trait_id = relay resolve_trait_type(r, tyt, scope);
     if (trait_id == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, trait_id)) { pass NIL; }
 
@@ -570,7 +570,7 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
     int32:n = raw item_extra_count(r.ast, td);
     int32:j = 0i32;
     while (j < n) {
-        int32:sup = relay resolve_type(r, relay item_extra(r.ast, td, j), scope);
+        int32:sup = relay resolve_trait_type(r, relay item_extra(r.ast, td, j), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
                 // A supertrait that is not a trait is reported by
@@ -609,7 +609,7 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
         // and a type name is not an identifier.
         TypeId:bid = TypeId{ index: relay ast_id_at(r.ast,
                                                     raw generic_bound_start(g), i) };
-        int32:bound_id = relay resolve_type(r, bid, scope);
+        int32:bound_id = relay resolve_trait_type(r, bid, scope);
         if (bound_id != 0i32) {
             if (!(raw type_is_invalid(r.types, bound_id))) {
                 if ((raw type_kind(r.types, bound_id)) != (raw TY_TRAIT())) {
@@ -1678,7 +1678,7 @@ func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
     int32:n = raw item_extra_count(r.ast, td);
     int32:i = 0i32;
     while (i < n) {
-        int32:sup = relay resolve_type(r, relay item_extra(r.ast, td, i), scope);
+        int32:sup = relay resolve_trait_type(r, relay item_extra(r.ast, td, i), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
                 if ((raw type_kind(r.types, sup)) != (raw TY_TRAIT())) {

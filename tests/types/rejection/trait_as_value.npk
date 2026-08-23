@@ -1,0 +1,26 @@
+// expect-error: NITPICK-TYPE-002
+// expect-error: NITPICK-TYPE-002
+// expect-error: NITPICK-TYPE-002
+//
+// A TRAIT IS NOT A VALUE TYPE (TRAITS_REFERENCE §5; refused at the checker
+// since 1.0.9). `Shape:x` was a well-formed annotation for a parameter, a field
+// and a local until then — the backend refused the type as a rung, which calls
+// it valid Nitpick. `dyn Shape` is the type of a value that implements the
+// trait, and `T: Shape` bounds a parameter by it; the bare name is a contract,
+// and resolves to one only where a contract is asked for.
+mod:trait_as_value;
+
+trait:Shape = { func:area = int32(Self:self); };
+struct:Sq = { int32:s; };
+impl:Sq:Shape = { func:area = int32(Sq:self) { pass self.s; }; };
+
+func:takes = int32(Shape:x) { pass 1i32; };
+struct:Holder = { Shape:inner; };
+
+func:main = int32(cstring[]:_~argv) {
+    Sq:q = Sq{ s: 2i32 };
+    Shape:v = q;
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

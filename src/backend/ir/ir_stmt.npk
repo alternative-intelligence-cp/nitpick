@@ -200,7 +200,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
     // on the way out), so `int32:x = x;` reads the OUTER `x`, not the slot being
     // created.
     string:slot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", ll.text));
+    drop irw_alloca(x.fe.w, slot, ll.text);
     ExprId:init = raw stmt_decl_init(x.ast, s);
     if (!(raw expr_is_none(init))) {
         IrVal:v = relay emit_expr(x, init);
@@ -359,7 +359,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) {
     drop irw_label(x.fe.w, go_l);
 
     string:slot = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(slot, " = alloca i64", ""));
+    drop irw_alloca(x.fe.w, slot, "i64");
     drop irw_line(x.fe.w, relay cat5("store i64 ", sv, ", ptr ", slot, ""));
     string:asc = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(asc, " = icmp slt i64 ", sv, ", ", lv));
@@ -416,7 +416,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
     }
     string:flag = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(flag, " = alloca i8", ""));
+    drop irw_alloca(x.fe.w, flag, "i8");
     drop irw_line(x.fe.w, relay cat3("store i8 0, ptr ", flag, ""));
 
     string:head_l = relay irw_new_label(x.fe.w, "wn.head");
@@ -568,7 +568,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
         len = l2;
     }
     string:idx = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(idx, " = alloca i64", ""));
+    drop irw_alloca(x.fe.w, idx, "i64");
     drop irw_line(x.fe.w, relay cat3("store i64 0, ptr ", idx, ""));
     string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
     string:head_l = relay irw_new_label(x.fe.w, "fe.head");
@@ -842,7 +842,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // only carry one machine word (a string payload truncated to its pointer
     // under the old shape).
     string:tmp = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(tmp, " = alloca ", sel.ll));
+    drop irw_alloca(x.fe.w, tmp, sel.ll);
     drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
                       relay string_concat(", ptr ", tmp)));
     string:pp = relay irw_temp(x.fe.w);

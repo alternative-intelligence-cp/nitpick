@@ -1,0 +1,21 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-033
+//
+// A `for` BINDING IS THE ELEMENT, and a `for` NEEDS SOMETHING THAT ITERATES
+// (D-023, D-166; both checked since 1.0.9). Until then the binding's type was
+// never compared with the element's — `for (int8:i in 300i64..302i64)` passed
+// and `llc` refused the IR — and a struct was accepted as an iterable and
+// refused by the backend as a rung, which calls it valid Nitpick.
+mod:for_iterable;
+
+struct:P = { int32:x; };
+
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int8:i in 300i64..302i64) { acc = acc + 1i64; }
+    P:p = P{ x: 1i32 };
+    for (int32:v in p) { acc = acc + 1i64; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

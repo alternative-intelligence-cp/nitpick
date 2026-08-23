@@ -120,6 +120,18 @@ class Emitter:
     def raw(self, line):
         self.out.append(line)
 
+    def alloca(self, slot, ty_text):
+        # HOISTED TO THE ENTRY BLOCK (1.0.9a). An `alloca` inside a loop body
+        # allocates fresh stack on every iteration and reclaims none until the
+        # function returns, so a walk over a large program -- `expand_audit`
+        # over `src/`'s ~100k expressions -- overflows the 8 MB stack. Every
+        # real compiler hoists allocas to entry for exactly this; the line is
+        # INSERTED right after `entry:` (the cursor advances so they stay in
+        # creation order) rather than appended, and the value name is unchanged,
+        # so nothing that refers to the slot moves.
+        self.out.insert(self.alloca_ip, "  %s = alloca %s" % (slot, ty_text))
+        self.alloca_ip += 1
+
     def start_block(self, name):
         self.raw("%s:" % name)
         self.terminated = False
@@ -200,11 +212,14 @@ class Emitter:
             params.append("%s %%a%d" % (T.llvm(pty), i))
         self.raw("define %s %s(%s) {" % (ll_ret, sym(fn.name), ", ".join(params)))
         self.start_block("entry")
+        # Allocas insert here, just after `entry:`, and this cursor advances as
+        # each is added so they keep their creation order (1.0.9a).
+        self.alloca_ip = len(self.out)
 
         for i, p in enumerate(fn.params):
             pty = self.ck.resolve_type(p.type)
             slot = self.tmp()
-            self.w("%s = alloca %s" % (slot, T.llvm(pty)))
+            self.alloca(slot, T.llvm(pty))
             self.w("store %s %%a%d, ptr %s" % (T.llvm(pty), i, slot))
             self.locals[p.name] = (slot, pty)
 
@@ -255,7 +270,7 @@ class Emitter:
         elif isinstance(st, S.VarDecl):
             ty = self.ck.resolve_type(st.type)
             slot = self.tmp()
-            self.w("%s = alloca %s" % (slot, T.llvm(ty)))
+            self.alloca(slot, T.llvm(ty))
             if st.init is not None:
                 v = self.expr(st.init, want=ty)
                 self.w("store %s %s, ptr %s" % (v.ty, v.ref, slot))
@@ -439,7 +454,7 @@ class Emitter:
         self.w("%s = extractvalue %s %s, 1" % (wide, sel.ty, sel.ref))
         v = self.narrow(Val("i64", wide, T.I64), payload_ty)
         slot = self.tmp()
-        self.w("%s = alloca %s" % (slot, T.llvm(payload_ty)))
+        self.alloca(slot, T.llvm(payload_ty))
         self.w("store %s %s, ptr %s" % (v.ty, v.ref, slot))
         self.locals[pat.bindings[0]] = (slot, payload_ty)
 
@@ -784,7 +799,7 @@ class Emitter:
         if e.op in ("&&", "||"):
             # Short-circuiting, without phi: a slot the two paths write.
             slot = self.tmp()
-            self.w("%s = alloca i8" % slot)
+            self.alloca(slot, "i8")
             rhs, done = self.label("sc.rhs"), self.label("sc.done")
             l = self.cond(e.lhs)
             self.w("store i8 %s, ptr %s" % ("1" if e.op == "||" else "0", slot))

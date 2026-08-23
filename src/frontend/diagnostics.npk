@@ -251,6 +251,29 @@ pub func:sink_byte_at = uint8(Sink->:out, int64:i) {
     pass (out.buf[i] =>! uint8);
 };
 
+// Empty a sink for reuse; the buffer is kept (1.0.8 gave the IR writer a
+// second sink per function, and it is reset at each function's start).
+pub func:sink_reset = NIL(Sink->:out) {
+    out.len = 0i64;
+    pass NIL;
+};
+
+// Append one sink's bytes to another — how the IR writer splices a function's
+// hoisted allocas and its body into the module stream at the function's close
+// (1.0.9a).
+pub func:sink_append = NIL(Sink->:dst, Sink->:src) {
+    if ((dst.len + src.len) > dst.cap) {
+        drop sink_grow(dst, dst.len + src.len);
+    }
+    int64:i = 0i64;
+    while (i < src.len) {
+        dst.buf[dst.len] = src.buf[i];
+        dst.len = dst.len + 1i64;
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
 // ---------------------------------------------------------------------------
 // Rendering
 //

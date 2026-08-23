@@ -167,7 +167,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     int32:impl_trait_ty = 0i32;
     TypeId:trt0 = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(trt0))) {
-        impl_trait_ty = relay resolve_type(x.tr, trt0,
+        impl_trait_ty = relay resolve_trait_type(x.tr, trt0,
                             raw symtab_home_scope(x.tab, item.index, x.scope));
     }
 
@@ -383,7 +383,7 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     int32:fam_trait_ty = 0i32;
     TypeId:ftr = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(ftr))) {
-        fam_trait_ty = relay resolve_type(x.tr, ftr, home);
+        fam_trait_ty = relay resolve_trait_type(x.tr, ftr, home);
     }
 
     GenericScope:g = GenericScope{
@@ -586,7 +586,7 @@ func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
                         int32:home = raw symtab_home_scope(@g.tab, item.index,
                                                            scope);
                         int32:sty = relay resolve_type(tr, tg, home);
-                        int32:tty = relay resolve_type(tr, tr0, home);
+                        int32:tty = relay resolve_trait_type(tr, tr0, home);
                         if (sty != 0i32) {
                             if (tty != 0i32) {
                                 drop vtmap_add(c, sty, tty,

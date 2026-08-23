@@ -29,7 +29,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | 15 | Logical AND | `&&` (short-circuiting) |
 | 16 | Logical OR | `\|\|` (short-circuiting) |
 | 17 | Null Coalescing | `??` |
-| 18 | Ternary / Defaults | `is` `?\|` `defaults` |
+| 18 | Ternary | `is` (`?\|` / `defaults` struck, D-167) |
 | 19 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
 
 > **Level 2 is new (D-081).** `raw`, `drop`, `await`, and `relay` previously
@@ -66,12 +66,12 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
   > a program that cannot be written. Conditions must still be a strict `bool`.
 - **`&&` and `||` short-circuit** and require strictly boolean operands.
 - **`<=>`** (spaceship) yields `int32`: `-1`, `0`, or `1`.
-- **`?|` / `defaults`** is a scoped fallback for an entire expression chain, where
-  the fallback must be a literal or a simple identifier:
-  ```nitpick
-  int32:val = (complex_func() + 5i32) ?| 0i32;
-  int32:val = (complex_func() + 5i32) defaults 0i32;
-  ```
+- **`?|` / `defaults` is struck (D-167, 1.0.9).** The prototype defined it as
+  the SAME node as `?` ("scoped Result fallback", `'expr ? fallback' / 'expr
+  ?| fallback'`), so it was a second spelling of `?` differing only in
+  precedence — the shape D-021 and D-123 struck before. `expr ? fallback` is
+  the one spelling; parentheses give any scope a reader wants. The parser still
+  reads the old form and refuses it by name (`NITPICK-PARSE-009`).
 
 ---
 
@@ -188,7 +188,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 
 > **`?` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?`).
 | `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |
-| `?\|` | Defaults | Desugars to the `defaults` keyword at parse time. | `expr ?\| default;` |
+| `?\|` | ~~Defaults~~ | **Struck (D-167).** A second spelling of `?`; refused by name. | — |
 | `_?` | Drop | Desugars to `drop expr` — the "void call" of a `never fails`, `NIL`-returning function (**D-163, proposed, 1.1**; no longer discards an error). | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unwrap the value of a `never fails` call (**D-163, proposed, 1.1**: a checked, zero-cost unwrap, not a bypass). | `val = _! my_func();` |
 | **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |

@@ -389,16 +389,14 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@tn4) != 0i64)                                { exit 144i32; }
     if ((raw type_int_bits(@tn4.types, tn4.result)) != 64i32)  { exit 145i32; }
 
-    // --- `?|` and `defaults` are the same operator, spelled twice -----------------------------
+    // --- `?|` and `defaults` are struck (D-167, 1.0.9) ---------------------------------------
+    // The prototype had them as the SAME node as `?`; a second spelling
+    // differing only in precedence is refused by the parser now (PARSE-009),
+    // so the expression carries a diagnostic rather than typing.
     Ex:df1 = raw ex("1i32 ?| 0i32", @it);
-    if (raw errs(@df1) != 0i64)                                { exit 150i32; }
+    if (raw errs(@df1) != (0i64 - 1i64))                       { exit 150i32; }
     Ex:df2 = raw ex("1i32 defaults 0i32", @it);
-    if (raw errs(@df2) != 0i64)                                { exit 151i32; }
-    if (df2.result != df1.result)                              { exit 152i32; }
-    // A fallback of a different type defeats the point: the reader cannot tell
-    // which one they got, so both must land on one type.
-    Ex:df3 = raw ex("1i32 defaults true", @it);
-    if (raw errs(@df3) != 1i64)                                { exit 153i32; }
+    if (raw errs(@df2) != (0i64 - 1i64))                       { exit 151i32; }
 
     // --- `++` / `--` are arithmetic, and answer to the same rule ------------------------------
     Ex:pp1 = raw ex("1i32++", @it);

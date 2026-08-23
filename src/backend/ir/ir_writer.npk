@@ -33,6 +33,20 @@ pub struct:IrWriter = {
     // than what was written, with nothing reporting it.
     Sink:out;
 
+    // A FUNCTION'S BODY AND ITS HOISTED ALLOCAS, buffered separately while the
+    // function is emitted and spliced into `out` at its close (1.0.9a). An
+    // `alloca` inside a loop body allocates fresh stack every iteration and
+    // reclaims none until the function returns, so a walk over a large program
+    // overflows the stack; every alloca is emitted into `allocas` and placed
+    // once, right after `entry:`, regardless of where in the body it was
+    // discovered — the entry block dominates everything, so this is always
+    // valid, and the value name is unchanged. While `in_fn` is set, `irw_line`,
+    // `irw_label` and `irw_raw` write to `body`; `irw_alloca` writes to
+    // `allocas`; outside a function they write to `out` as before.
+    Sink:allocas;
+    Sink:body;
+    bool:in_fn;
+
     // `%t0`, `%t1`, … WITHIN ONE FUNCTION. Reset at each function's start, so a
     // function's IR depends on that function alone — which is what makes a
     // one-function change produce a one-function diff.
@@ -44,8 +58,46 @@ pub struct:IrWriter = {
 
 pub func:irw_to_buffer = IrWriter() {
     IrWriter:w = IrWriter{ out: raw sink_to_buffer(4096i64),
+                           allocas: raw sink_to_buffer(1024i64),
+                           body: raw sink_to_buffer(4096i64),
+                           in_fn: false,
                            next_temp: 0i32, next_label: 0i32 };
     pass w;
+};
+
+// THE SINK A NON-ALLOCA LINE GOES TO: the body while a function is open, the
+// module stream otherwise.
+func:irw_sink = Sink->(IrWriter->:w) {
+    if (w.in_fn) { pass (@w.body); }
+    pass (@w.out);
+};
+
+// OPEN A FUNCTION'S BUFFERS (1.0.9a). The define line and `entry:` label are
+// written to `out` BEFORE this, so allocas and body land after them at close.
+pub func:irw_open_fn = NIL(IrWriter->:w) {
+    drop sink_reset(@w.allocas);
+    drop sink_reset(@w.body);
+    w.in_fn = true;
+    pass NIL;
+};
+
+// CLOSE A FUNCTION: allocas first, then the body, into the module stream.
+pub func:irw_close_fn = NIL(IrWriter->:w) {
+    w.in_fn = false;
+    drop sink_append(@w.out, @w.allocas);
+    drop sink_append(@w.out, @w.body);
+    pass NIL;
+};
+
+// AN ALLOCA, HOISTED (1.0.9a). Always inside a function; the line goes to the
+// alloca buffer and is placed right after `entry:` at close.
+pub func:irw_alloca = NIL(IrWriter->:w, string:slot, string:ty_text) {
+    drop sink_write(@w.allocas, "  ");
+    drop sink_write(@w.allocas, slot);
+    drop sink_write(@w.allocas, " = alloca ");
+    drop sink_write(@w.allocas, ty_text);
+    drop sink_write(@w.allocas, "\n");
+    pass NIL;
 };
 
 
@@ -53,8 +105,9 @@ pub func:irw_to_buffer = IrWriter() {
 
 // A line at module level: a type definition, a declaration, a function header.
 pub func:irw_raw = NIL(IrWriter->:w, string:text) {
-    drop sink_write(@w.out, text);
-    drop sink_write(@w.out, "\n");
+    Sink->:s = raw irw_sink(w);
+    drop sink_write(s, text);
+    drop sink_write(s, "\n");
     pass NIL;
 };
 
@@ -62,21 +115,23 @@ pub func:irw_raw = NIL(IrWriter->:w, string:text) {
 // here anyway: the IR is read by people during bootstrap far more often than it is
 // read by `llc`.
 pub func:irw_line = NIL(IrWriter->:w, string:text) {
-    drop sink_write(@w.out, "  ");
-    drop sink_write(@w.out, text);
-    drop sink_write(@w.out, "\n");
+    Sink->:s = raw irw_sink(w);
+    drop sink_write(s, "  ");
+    drop sink_write(s, text);
+    drop sink_write(s, "\n");
     pass NIL;
 };
 
 pub func:irw_blank = NIL(IrWriter->:w) {
-    drop sink_write(@w.out, "\n");
+    drop sink_write(raw irw_sink(w), "\n");
     pass NIL;
 };
 
 // A label, which is a line at column zero inside a function body.
 pub func:irw_label = NIL(IrWriter->:w, string:name) {
-    drop sink_write(@w.out, name);
-    drop sink_write(@w.out, ":\n");
+    Sink->:s = raw irw_sink(w);
+    drop sink_write(s, name);
+    drop sink_write(s, ":\n");
     pass NIL;
 };
 
@@ -156,5 +211,17 @@ pub func:irw_byte_at = uint8(IrWriter->:w, int64:i) {
 };
 
 pub func:irw_text = string(IrWriter->:w) {
-    pass (raw string_from_bytes(w.out.buf, w.out.len));
+    // MID-FUNCTION, the allocas and body are still in their own sinks (1.0.9a),
+    // not yet spliced into `out` — so a read taken before the function closes
+    // (a unit test emitting expressions and checking the text) must assemble
+    // the view: `out`, then the hoisted allocas, then the body. Outside a
+    // function both are empty of anything current and `out` holds it all.
+    string:t = relay string_from_bytes(w.out.buf, w.out.len);
+    if (w.in_fn) {
+        t = relay string_concat(t,
+                relay string_from_bytes(w.allocas.buf, w.allocas.len));
+        t = relay string_concat(t,
+                relay string_from_bytes(w.body.buf, w.body.len));
+    }
+    pass t;
 };

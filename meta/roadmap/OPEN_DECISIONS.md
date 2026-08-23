@@ -9,7 +9,8 @@
 >
 > Proposed decision numbers start at **D-142** (last settled: D-141). Numbers
 > are suggestions; the letters (LIVE-*, B-*, C-*) are the stable handles the
-> cycle plans cite.
+> cycle plans cite. (1.0.9 settled D-165–D-172 for its own T-1…T-8, so the
+> numbers once suggested for G-2 and G-3 are taken; they read "next free".)
 
 **Priority order for every judgement below: safety > correctness > performance >
 developer comfort.**
@@ -125,8 +126,8 @@ These would force token-table renumbering *after* the "built once, in full" free
 | # | Proposed | Item | Source |
 |---|---|---|---|
 | **G-1** | D-164 | **D-044's seven bitflag types** (`oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence`) are listed in AST_REFERENCE as parser-known builtins, are required by every syscall wrapper, and exist nowhere — a user type named `oflags` silently shadows a decided builtin. Run the generator to add them now, or supersede D-044 with a library-enum design. Decide before the frontend freeze. | grammar #9 |
-| **G-3** | D-166 | **The exotic numeric tier has no owner.** `vec2/vec3`, `matrix`, `tensor`, `tfp*`, `frac*`, `dim256`, `simd`, `complex` parse and resolve (they exist for Nikola's numerics, made primitives on an explicit performance hypothesis) but NO cycle in the 0.9–1.4 plan lowers them — 0.9.7's exit sweep found their refusals naming a cycle that was closing. The rung strings now cite this row ("1.1 (G-3)"). Decide their owner: a dedicated subcycle in 1.1 beside the driver/numerics work, a new cycle, or explicit descope-until-consumer per the D-143 precedent. | before 1.1 closes | 0.9.7 sweep |
-| **G-2** | D-165 | **The full integer-width set** (`int1/2/4`, `int512`–`int4096`) is accepted by lexer/impl but has no layout in TYPE_REFERENCE, and `tt_int` computes size/align 0 for sub-byte widths. Enumerate with a stored-as-byte rule, or trim the grammar. | type-sys #18 |
+| **G-3** | next free | **The exotic numeric tier has no owner.** `vec2/vec3`, `matrix`, `tensor`, `tfp*`, `frac*`, `dim256`, `simd`, `complex` parse and resolve (they exist for Nikola's numerics, made primitives on an explicit performance hypothesis) but NO cycle in the 0.9–1.4 plan lowers them — 0.9.7's exit sweep found their refusals naming a cycle that was closing. The rung strings now cite this row ("1.1 (G-3)"). Decide their owner: a dedicated subcycle in 1.1 beside the driver/numerics work, a new cycle, or explicit descope-until-consumer per the D-143 precedent. | before 1.1 closes | 0.9.7 sweep |
+| **G-2** | next free | **The full integer-width set** (`int1/2/4`, `int512`–`int4096`) is accepted by lexer/impl but has no layout in TYPE_REFERENCE, and `tt_int` computes size/align 0 for sub-byte widths. Enumerate with a stored-as-byte rule, or trim the grammar. | type-sys #18 |
 | **G-4** | D-163 | **`raw` and `drop` are unchecked, and a bare `f();` discards a `Result` with no keyword.** `type_unwrap` verifies only that the operand is a `Result<T>`; `emit_raw` is an unguarded `extractvalue`; `drop` evaluates and discards; `check_stmt` types an expression statement without reading its type. The `never fails` contract (D-002) names the property all three depend on but is attached to nothing they can see, and D-149 is retiring it. Measured: 262–300 `raw` sites and **741 `drop` sites** in `src/` sit on callees that `fail` — the table accessors (`ast_id_at` ×92 …) and the driver's own stage calls (`drop check_module(…)`), each continuing on node 0 or past a failed stage. Decide: `never fails` on any function, checked; `raw` and `drop` licensed only by it; the value-less statement forms a closed list; the spawn form's error routed to the D-062 join; always on. **SETTLED as D-163** (post-1.0.0); implement as 1.1's opening three subcycles. | user, post-1.0.0 |
 
 ---

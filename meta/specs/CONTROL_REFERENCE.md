@@ -163,6 +163,13 @@ for (int64:i in 1..3) {
 >
 > The typed binding is required because the language forbids implicit type
 > inference outright — there is no `auto`, `var`, or `let`.
+>
+> **What `for` iterates (D-166, 1.0.9):** a range, a slice, an array, or a
+> value whose type implements the prelude trait `Iterator` —
+> `assoc:Item; func:next = Item?(Self->:self);`, `NIL` ending the loop (the
+> `Iterator` form lands at 1.0.9d). **The binding's type must equal the element
+> type**: no wrap, no widening. Anything else is refused at the checker by
+> name (`NITPICK-TYPE-033`), never at a backend rung.
 
 ### 2.4 Counted Iteration (`loop` and `till`)
 For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.

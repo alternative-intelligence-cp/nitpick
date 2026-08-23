@@ -468,6 +468,12 @@ Excluding the most negative value makes **negation and absolute value total**:
 An entire family of asymmetry bugs is eliminated structurally rather than by
 runtime checks.
 
+> **Amended at 1.0.9:** the checker refused unary `-` on a `tbb` (its
+> `type_is_numeric` excluded the type) while this section makes negation
+> total on it — found by the 1.0.8 audit. Unary minus on a `tbb` is admitted,
+> typed as the same `tbb`, and lowered as `0 - x` under the sticky rule (an
+> ERR operand yields ERR), which is what §1's encoding makes total.
+
 ### 3. Stickiness — ERR is absorbing, and it beats identities
 
 **The total rule: any operation on an ERR value yields ERR.** No exceptions among
@@ -1299,8 +1305,17 @@ become a `wild int8->`.
 greppable construct, legal only in `wild` context:
 
 ```nitpick
-wild int8->:page = #wild_ptr<int8->>(addr);
+wild int8->:page = #wild_ptr<int8>(addr);
 ```
+
+> **Corrected at 1.0.9:** this example was written `#wild_ptr<int8->>(addr)`
+> — the pointer type as the argument — while the implementation, its
+> diagnostics and `tests/grammar/whole_grammar.npk` take the POINTEE and the
+> builtin adds the `->`, as its sibling `#wild_slice<int8>(p, n)` takes the
+> element and adds the `[]` (D-070). One rule for the family: the type
+> argument is what is pointed at or held, and the builtin supplies the shape.
+> The example and `BUILTIN_REFERENCE.md`'s row are corrected; the code was
+> right.
 
 ### Why a builtin rather than a cast operator
 
@@ -6594,6 +6609,18 @@ narrowing. `TYPE_REFERENCE` §5 supersedes that explicitly — *"not a runtime t
 and not a warning"* — so the spec is followed and the prototype is the lagging
 artifact here. Recorded in `PROTOTYPE_DELTA.md`.
 
+> **Amended at 1.0.9 — retyping a pointer is `=>!` in BOTH directions.** This
+> decision settled `any-> => T->` as `=>!`-only and said nothing about
+> erasure, `T-> => any->`; the implementation made every pointer-to-pointer
+> cast `=>!`-only and the 1.0.8 audit asked whether erasure should be the
+> checked form, since it asserts nothing. It stays `=>!`: an erased pointer's
+> only use is to be retyped back, so the pair of casts is one assertion split
+> across two sites, and keeping both under the bang keeps "where does this
+> program retype a pointer" one grep — the property D-019 built `#wild_ptr`
+> for. A conversion that loses nothing but still needs the bang is the class
+> `cast_class` already has (a handle manufactured, a tag read), and the
+> refusal's lead-in says so since 1.0.8.
+
 ---
 
 ## D-096 — `is_err` and `Result{…}` are keyword forms with nodes of their own
@@ -11437,3 +11464,270 @@ Complete.**
 > normalised INSIDE `ll_type` rather than around it, since a projection can be
 > nested and that is the walk which recurses.
 
+
+## D-165 — A module-level binding is a compile-time constant, lowered to an LLVM global — **SETTLED**
+
+1.0.9's T-1. The parser and checker accept a module-level binding (D-010's
+definite-assignment rules apply, D-086 refuses an initialiser cycle), and the
+backend refused every one at its declaration ("a module-level binding",
+re-pointed from "0.8" to "1.0" at 0.9.7 as the next cycle rather than an
+owner). `MODULE_REFERENCE.md` §1 already states the principle — "Nitpick has no
+module-level execution: a module is a set of declarations, globals are
+compile-time-initialised, and there is nothing to sequence" — and
+`TYPE_REFERENCE.md`'s `fixed` section already gives the lowering
+(`@name = global T val`). This decision makes both precise enough to build.
+
+**The initialiser is a compile-time constant expression:** a literal of any
+kind (a string literal included — diagnostic codes are module-level strings),
+a sentinel (`NIL`, `NULL`, `ERR`), a struct or array literal whose every
+member is one, a reference to another module-level binding (acyclic, which
+D-086's check already enforces), or a `comptime(…)`. **A call is refused by
+name** — a new code, `TYPE_GLOBAL_NOT_CONSTANT` — and so is any expression the
+folder cannot fold. No module initialiser runs before `main`: an initialiser
+that called a function would run in an order nobody wrote down, across
+modules whose imports impose none (`use` imports no initialisation order,
+MODULE_REFERENCE §1), which is a value appearing in an order nobody chose —
+D-010's objection, one level up — and it is the one thing a verifier cannot
+read off the declaration.
+
+**Lowering.** `const T:name = v;` → `@"npk.<module>.name" = constant <T> <v>`;
+`fixed` and plain bindings → `global`. The symbol follows D-156's scheme. A
+string constant is a constant `{ptr, len, cap}` whose `ptr` names a private
+constant byte array, as a string literal in a function already does.
+
+**Mutability and threads.** A plain `pub int32:counter = 0i32;` is a mutable
+global today (the accept suite has one) and this decision does not change
+that; what a thread may do with one is 1.1's concurrency decision set
+(C-7…C-9), already scheduled, and it is noted here so it cannot be forgotten.
+
+**Considered and rejected:** a lazily-initialised global (a function call on
+first read) — a hidden call on a read, the context-dependent behaviour the
+blueprint rule forbids, and a data race under 1.1; and refusing all globals
+— the compiler's own sources want constants, and the spec already promises
+them.
+
+## D-166 — What `for` iterates: a range, a slice, an array, or an `Iterator` — **SETTLED**
+
+1.0.9's T-2. D-023 said "a range or collection" and the backend lowered ranges,
+slices and arrays, refusing "a `for` over this iterable" for anything else;
+TRAITS_REFERENCE §2 showed an `Iterator` trait whose `next` returns a bare
+`Item`, with no way to say the iteration is over. The 1.0.8 audit also found
+the checker never compares a `for` binding's type with the element type
+(`for (int8:i in 300i64..302i64)` reached `llc`) and accepts a struct as an
+iterable (refused as a rung, i.e. called valid).
+
+**Settled:** `for (T:x in e)` iterates `e` when `e` is a range, a slice, an
+array, or a value whose type implements the prelude trait `Iterator`:
+
+```nitpick
+trait:Iterator = {
+    assoc:Item;
+    func:next = Item?(Self->:self);
+};
+```
+
+`NIL` from `next` ends the loop — `Item?` is the reason this was undecidable
+before 1.0.7 lowered `Optional`. **The binding's type must equal the element
+type** (`Item`, or the range/slice/array element): no wrap, no widening, the
+same equality every other typed binding has. A `for` over anything else is
+refused at the CHECKER by name (`TYPE_NOT_ITERABLE`), never at a rung.
+
+**`Self->` as a receiver is admitted in a trait signature.** `next` must
+advance its receiver, and a by-value `Self` receiver is a copy — so until now
+no trait method could mutate what it was called on, and the checker's
+one-level `Self` substitution refused `Self->` outright. The receiver position
+is the one place a pointer to `Self` is a fact about HOW the value is reached
+rather than a second mention of `Self` in a signature, so `check_signature`
+substitutes through the receiver's pointer wrapper (`Self->` ↔ `Target->`);
+every other position keeps D-157's refusal of `Self->`. Object safety treats a
+`Self->` receiver as a receiver: behind a vtable the data word IS a pointer to
+the value, which is what a by-pointer receiver takes. (An `Iterator` is not
+object-safe regardless, since `next` mentions `Item` — D-160 — which is the
+right answer: a `dyn Iterator` would need a type for `Item` that erasure has
+thrown away.) A call `it.next()` on a VALUE passes `@it`, as `f(@it)` would
+(D-006: the same call).
+
+**Lowering.** A `for` over an `Iterator` is the loop `T?:n = next(@it);
+if (n == NIL) break; T:x = n ?? <unreachable>; body` — with the unwrap emitted
+as a plain extract, because the test just proved the tag. Ranges, slices and
+arrays keep their counted lowering (0.9.7).
+
+**Considered and rejected:** duck-typed iteration (anything with a `next`) —
+D-107's "no duck typing" property; an `Iterator` over a by-value receiver
+(returning a new state each step) — allocates or copies per element, and
+makes the spec's example wrong in a second way.
+
+## D-167 — `?|` / `defaults` is struck; `?` is the one spelling of a `Result` fallback — **SETTLED**
+
+1.0.9's T-3, decided by measuring the prototype, as D-097's countermeasure
+asks. `OP_REFERENCE.md` §0 described `expr ?| fallback` as "a scoped fallback
+for an entire expression chain"; the checker typed it as "both sides one
+type" with nothing that said WHEN the fallback is taken; no rung lowered it.
+
+**What the prototype actually had.** Its changelog (v0.4.3 onward) defines
+one node, `DEFAULTS`, spelled two ways: `'expr ? fallback' / 'expr ?|
+fallback' — scoped Result fallback`. Every test of it
+(`tests/feature_validation/defaults_basic.npk`) applies `?|` to the `Result`
+immediately to its left — `fail_always() ?| 99i32`, `succeed(fail_always() ?|
+10i32)` — exactly as this compiler's `?` behaves since 0.9.7. "Entire
+expression chain" was never more than precedence (level 18, below `??`), and
+under D-013 and D-092 a `Result` cannot sit inside an arithmetic chain at all,
+so there is no chain for a looser operator to scope over.
+
+**So it is a second spelling of `?`**, differing only in precedence — the shape
+D-021 struck for casts and D-123 for `Display`. It is struck: the parser still
+reads `?|` and `defaults` (the grammar is never partial, D-085) and refuses
+them by name, `PARSE_DEFAULTS_REMOVED`, with the answer (`expr ? d`, and
+parentheses for any scope a reader wants). The `defaults` keyword stays
+reserved, as `(!)` did under D-061, so old code gets the message and not a
+stranger one.
+
+## D-168 — `&{ x }` renders through `ToString`; a `string` is itself — **SETTLED**
+
+1.0.9's T-4. D-053 moved all formatting to `&{ }` interpolation in backtick
+templates, and nothing said how a value becomes text. **Settled:** inside a
+template, a `string` interpolates as itself; any other type interpolates by
+calling the prelude trait `ToString`'s `to_string` on it — statically, at the
+value's concrete type — and a type with no `ToString` impl is refused at the
+CHECKER by name (`TYPE_NOT_STRINGABLE`), never at a rung. The prelude supplies
+`impl:<width>:ToString` for the builtin scalars — the integer widths, the
+floats, `bool`, the characters, the `tbb` widths (ERR renders as `ERR`), the
+kernel identifiers — over runtime conversions in the floor, so a program need
+not write them. A template lowers to a `string_concat` chain over its parts.
+**No format specifiers:** a width, a radix or a precision is a `to_string`
+variant somebody writes and calls (`&{ pad(x, 8) }`); a mini-language inside
+the braces is a second language with its own rules to remember.
+
+`ToString` is the one trait (D-123 struck `Display` as its second name); a
+derived `ToString` (D-123) renders a struct's fields with the same rule, and
+`Debug` stays the separate question it is.
+
+## D-169 — `==` on a non-scalar type is refused; equality is `Eq` — **SETTLED**
+
+1.0.9's T-5. `type_comparison` unified its operands and checked only ordering,
+so `==` on two structs typechecked and reached `llc` as `icmp` on an
+aggregate; 1.0.7 made it a named refusal at the rung. **Settled:** `==` and
+`!=` take two scalars — integers, floats (D-143), characters, `bool`, `tbb`,
+kernel identifiers, pointers (address equality) — and an `Optional` against
+`NIL` (D-099's test). On a struct, an array, a `Result`, two `Optional`s that
+are neither `NIL`, a `string` or a `dyn` they are refused at the CHECKER
+(`TYPE_NOT_COMPARABLE`, with the spelling that works). A type that wants
+equality implements `Eq` and is compared with `a.eq(b)` — which
+`#[derive(Eq)]` already writes fieldwise; `string` equality is `string_eq`,
+as `src/` spells it everywhere.
+
+**Why not a fieldwise `==`:** it would make `Eq` a second spelling of it (the
+D-123 objection), a `dyn` comparing by pointer would be a third meaning under
+one symbol, and a `string` comparing by pointer would be a silent wrong
+answer — three context-dependent readings of `==`, the thing the blueprint
+rule exists to prevent.
+
+## D-170 — Parentheses group a type: `(dyn A & B)[2]` — **SETTLED**
+
+1.0.9's T-6, found at 1.0.6e. The `dyn` production parses each operand with
+the full type grammar and takes no suffix of its own, so `dyn Speaks[2]` can
+only mean `dyn (Speaks[2])` — refused, an array is not a trait — and **no
+spelling existed** for an array, a pointer or an `Optional` of a trait object;
+the only reachable form was by substitution (`Pair<dyn Speaks>`'s `T[2]`).
+
+**Settled:** one production, `Type ::= "(" Type ")" Suffix*` — parentheses
+group a type exactly as they group an expression, and the suffixes apply to
+the group: `(dyn A & B)[2]`, `(dyn Speaks)->`, `(dyn Speaks)?`. No new node
+kind: the group IS its inner type. **Rejected:** "suffixes after a `dyn` set
+apply to the whole set" — one fewer token, but a precedence rule a reader has
+to know, and `dyn A & B[2]` genuinely reads two ways.
+
+## D-171 — Every impl names its target: `impl:<params>:Target(:Trait)?` — **SETTLED; amends D-031 and D-161**
+
+1.0.9's T-7, found at 1.0.7. D-031's rule is "slot 1 is always the type being
+implemented on", and D-031's blanket form `impl:<T: Printable>:Loggable` let
+the parameter WINDOW double as that slot. D-161's family form
+`impl:<T>:Box<T>:Trait` then had a window that is NOT the slot, and the
+segment-count rule that told the two apart (1.0.4b) made the inherent family
+`impl:<T>:List<T> = { … }` unspellable — one segment after a window reads as
+a blanket impl of a trait named `List<T>`. So a generic struct could carry no
+methods of its own, and since a trait method could not take `Self->` (until
+D-166), no method of a generic struct could mutate it at all.
+
+**Settled:** the blanket form names its target. `impl:<T: Printable>:T:Loggable`
+— "for every `T` that is `Printable`, implement `Loggable`" — and every impl
+then reads by ONE rule:
+
+| Form | Params | Slot 1 (the target) | Trait |
+|---|---|---|---|
+| `impl:Point` | — | `Point` | — |
+| `impl:Message:Serializable` | — | `Message` | `Serializable` |
+| `impl:<T: Printable>:T:Loggable` | `<T: Printable>` | `T` | `Loggable` |
+| `impl:<T>:List<T>:Sized` | `<T>` | `List<T>` | `Sized` |
+| `impl:<T>:List<T>` | `<T>` | `List<T>` | — |
+
+The window declares parameters and nothing else; slot 1 is always the target,
+D-031's own principle, now true of every row. It also closes a correctness
+hole the old form had: with two parameters, `impl:<T: A, U: B>:Trait` never
+said which was the target. A parameterised impl whose slot 1 is a bare
+parameter is a blanket impl; whose slot 1 mentions its parameters inside an
+instantiation is a family impl; no segment is counted and no shape is
+inspected. **Cost:** one token on every blanket impl, and the existing blanket
+impls in `tests/` and the specs are rewritten (none in `src/`, which the seed
+builds).
+
+## D-172 — A trait name is a namespace: `Trait.method(recv, …)` — **SETTLED; amends D-102**
+
+1.0.9's T-8, found by the 1.0.8 audit. D-102 refused to choose between two
+traits supplying one method name and told the reader to "call the one you
+mean by its function form, which UFCS guarantees is available" — and no such
+form exists: an impl's method declares nothing at module scope, and
+`Ta.tag(p)` resolved `Ta` as a type in value position. The promise was never
+implemented.
+
+**Settled:** in expression position a trait name is a namespace whose members
+are the trait's methods, exactly as an enum's are its variants and a module's
+its declarations (`namespace_member`). `Ta.tag(p)` is `p.tag()` with the
+trait said out loud: it resolves `tag` in `Ta` for `p`'s type (statically; a
+generic receiver through its bound), passes `p` as the receiver with the same
+fit every receiver gets, and is refused by name when `p`'s type does not
+implement `Ta`. No new syntax — `Net.Disconnect(x)` already parses this way —
+and it retires the backend's "a call through a member" refusal for this
+shape. The ambiguity diagnostic names it. The same form disambiguates two
+BOUNDS on a generic parameter, which the old promise could not reach.
+
+## D-173 — Allocas are hoisted to the entry block — **SETTLED**
+
+Cycle 1.0.9a, found when part one's added source made the seed-built `npkc`
+segfault compiling `src/`. Recorded as a decision, not only a fix, because it
+is a standing codegen invariant every later lowering must keep.
+
+**The rule.** Every `alloca` a function emits is placed in that function's
+ENTRY block, executed once per call, regardless of where in the body the local
+is declared. A local declared inside a loop reuses one stack slot across
+iterations rather than allocating a fresh one each time.
+
+**Why.** An `alloca` in a loop body allocates stack on every iteration and
+reclaims none until the function returns (LLVM `alloca` is frame-lifetime, not
+scope-lifetime). A walk that scales with the program — `expand_audit` over
+`src/`'s ~100k expressions — then overflows the stack, which is an uncontrolled
+crash, the physical-safety event the language exists to prevent. Hoisting is
+what every production compiler does and is the standard shape mem2reg expects.
+
+**Why it is sound.** The entry block dominates every other block, so an alloca
+placed there is valid at every use; the value name does not move, so nothing
+that refers to the slot changes. Reusing one slot across loop iterations is
+correct because each iteration writes the slot before reading it, and a local
+whose address outlives its iteration is already refused by the escape analysis
+(D-004) — so nothing the language admits depends on a fresh slot per iteration.
+
+**Both codegens, by the same transform.** The seed (`emit.py`) inserts each
+alloca line at a cursor just after `entry:`; the real backend (`ir_writer.npk`)
+buffers a function's allocas and body in separate sinks and splices them
+(allocas first) into the module stream at the function's close. Both move each
+alloca line from its body position to the entry region in creation order, and
+both produced byte-identical IR before, so both produce byte-identical IR
+after — the stage-1/stage-2 fixpoint is the check. `irw_text` assembles the
+in-progress view (out + allocas + body) so a read taken before a function
+closes still sees the whole function.
+
+**Standing obligation.** A new lowering that emits an `alloca` must route it
+through `irw_alloca` (the real backend) / `self.alloca` (the seed), never write
+the line inline. There is no instrument yet; a `check_allocas_hoisted` scanning
+emitted IR for an `alloca` outside an entry block is the natural one and is
+noted for when a lowering next adds an alloca.
