@@ -1297,6 +1297,52 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
 // with no context and reported the sentinel as homeless — while `p == NULL` and
 // `opt == NIL`, the same question asked the other way round, worked. One list,
 // and a sentinel that gains a context gains its place in the order with it.
+// A `&{ }` TEMPLATE (D-168, 1.0.9d). Its parts are string literals and
+// interpolations mixed; each renders to a `string`, and the whole is a `string`.
+// A `string` part renders as itself; any other interpolation renders through the
+// prelude trait `ToString`, so a type with no `ToString` impl is refused by name
+// here — the backend has no `to_string` to call for it.
+func:type_template = int32(ExprTyper->:e, ExprNode:n) {
+    int32:ts_name = raw intern_add(e.interns, "ToString");
+    int32:ts_type = 0i32;
+    int32:ts_sym = raw scope_lookup(e.tab, e.scope, ts_name);
+    if (ts_sym != 0i32) {
+        Symbol:tss = raw symtab_get(e.tab, ts_sym);
+        if (tss.origin_kind == (raw SYM_DECL())) {
+            ts_type = raw tt_trait(e.types, tss.origin, ts_name);
+        }
+    }
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:itmid = ExprId{ index: raw ast_id_at(e.ast, start, i) };
+        int32:pt = relay type_of_expr(e, itmid);
+        if (pt != 0i32) {
+            if (!(raw type_is_invalid(e.types, pt))) {
+                if (pt != e.types.t_string) {
+                    bool:ok = false;
+                    if (ts_type != 0i32) {
+                        ok = relay type_implements(e.impls, e.bounds, e.ast,
+                                 e.types, pt, ts_type, raw IMPL_FUEL());
+                    }
+                    if (!ok) {
+                        ExprNode:pn = relay ast_expr(e.ast, itmid);
+                        string:m1 = relay string_concat("`",
+                            relay type_display(e.types, e.interns, pt));
+                        drop te_error(e, raw TYPE_NOT_STRINGABLE(),
+                            relay string_concat(m1,
+                                "` has no `ToString`, so it cannot be interpolated in a `&{ }` template — a `string` renders as itself, any other type through `ToString`'s `to_string` (D-168); derive or implement it"),
+                            pn.span);
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass (e.types.t_string);
+};
+
 pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) {
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = relay ast_expr(e.ast, id);
@@ -2028,7 +2074,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     if (n.kind == ExprKind.ExprStringLiteral)      { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (e.types.t_string); }
-    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (e.types.t_string); }
+    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (relay type_template(e, n)); }
 
     if (n.kind == ExprKind.ExprSentinelLiteral) {
         pass (relay type_sentinel(e, n));

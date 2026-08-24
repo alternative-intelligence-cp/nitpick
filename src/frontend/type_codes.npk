@@ -155,3 +155,9 @@ pub func:TYPE_NOT_COMPARABLE = string() { pass "NITPICK-TYPE-034"; };
 // would appear in an order nobody wrote. It reached the backend as "a
 // module-level binding" (a rung); the refusal is the checker's now, by name.
 pub func:TYPE_GLOBAL_NOT_CONSTANT = string() { pass "NITPICK-TYPE-035"; };
+
+// AN INTERPOLATION `&{ x }` WHOSE TYPE HAS NO `ToString` (D-168, 1.0.9d). Inside
+// a template a `string` renders as itself; anything else renders through the
+// prelude trait `ToString`, and a type with no impl is refused by name — the
+// backend cannot lower `&{ x }` for a value it has no `to_string` to call.
+pub func:TYPE_NOT_STRINGABLE = string() { pass "NITPICK-TYPE-036"; };

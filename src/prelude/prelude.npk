@@ -82,3 +82,18 @@ pub trait:Iterator = {
     assoc:Item;
     func:next = Item?(Self->:self);
 };
+
+// `to_string` FOR THE BUILTIN SCALARS (D-168, 1.0.9d), so `&{ x }` renders
+// without a program writing the impl. The integers widen losslessly into `i64`
+// and go through the floor's `int_to_string`; `bool` is its two words. The
+// remaining scalars — the characters (UTF-8), the `tbb` widths (ERR), the kernel
+// identifiers, `uint64` (its high bit) and the floats (a correct float->decimal
+// in the floor) — arrive with their own careful conversions.
+impl:int8:ToString   = { func:to_string = string(int8:self)   { pass (raw int_to_string(self => int64)); }; };
+impl:int16:ToString  = { func:to_string = string(int16:self)  { pass (raw int_to_string(self => int64)); }; };
+impl:int32:ToString  = { func:to_string = string(int32:self)  { pass (raw int_to_string(self => int64)); }; };
+impl:int64:ToString  = { func:to_string = string(int64:self)  { pass (raw int_to_string(self)); }; };
+impl:uint8:ToString  = { func:to_string = string(uint8:self)  { pass (raw int_to_string(self => int64)); }; };
+impl:uint16:ToString = { func:to_string = string(uint16:self) { pass (raw int_to_string(self => int64)); }; };
+impl:uint32:ToString = { func:to_string = string(uint32:self) { pass (raw int_to_string(self => int64)); }; };
+impl:bool:ToString   = { func:to_string = string(bool:self)   { if (self) { pass "true"; } pass "false"; }; };

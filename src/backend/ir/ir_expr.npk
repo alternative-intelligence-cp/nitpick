@@ -518,7 +518,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv(ell2.text, ein, etid2));
     }
     if (n.kind == ExprKind.ExprTemplateLiteral) {
-        pass (raw iv_rung("a template literal", "1.0", n.span));
+        pass (relay emit_template(x, id, n));
     }
     if (n.kind == ExprKind.ExprComptimeExpr) {
         // THE FOLDED CONSTANT (1.0.9c). `comptime(expr)` forced the fold at check
@@ -746,6 +746,122 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     }
     pass (raw iv(t.text, raw int_to_string(n.payload),
                  raw exprtypes_get(x.et, id)));
+};
+
+// A `&{ }` TEMPLATE (D-168, 1.0.9d): each part rendered to a `string` and the
+// lot joined with `string_concat`. A `string` part is itself; any other is
+// `to_string`'d at its concrete type. The checker proved every part stringable,
+// so a missing `to_string` here is a defect, not a rung.
+func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    string:acc = "";
+    bool:have = false;
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:item = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        int32:itype = raw exprtypes_get(x.et, item);
+        string:sref = "";
+        if ((raw type_kind(x.fe.ctx.types, itype)) == (raw TY_STRING())) {
+            IrVal:sv = relay emit_expr(x, item);
+            if (!(raw iv_is_ok(sv))) { pass sv; }
+            sref = sv.ref;
+        } else {
+            IrVal:tv = relay emit_tostring(x, item, itype);
+            if (!(raw iv_is_ok(tv))) { pass tv; }
+            sref = tv.ref;
+        }
+        if (!have) {
+            acc = sref;
+            have = true;
+        } else {
+            string:cc = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(cc,
+                " = call { { ptr, i64, i64 }, i32 } @npk_string_concat({ ptr, i64, i64 } ",
+                acc, ", { ptr, i64, i64 } ",
+                relay cat3(sref, ")", "")));
+            string:cv = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(cv,
+                " = extractvalue { { ptr, i64, i64 }, i32 } ",
+                relay string_concat(cc, ", 0")));
+            acc = cv;
+        }
+        i = i + 1i32;
+    }
+    if (!have) {
+        // An empty template is the empty string.
+        string:g = relay strtab_add(x.strs, "");
+        string:a = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat4(a,
+            " = insertvalue { ptr, i64, i64 } undef, ptr ", g, ", 0"));
+        string:b = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(b,
+            " = insertvalue { ptr, i64, i64 } ", a, ", i64 0", ", 1"));
+        string:c = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(c,
+            " = insertvalue { ptr, i64, i64 } ", b, ", i64 0", ", 2"));
+        pass (raw iv("{ ptr, i64, i64 }", c, raw exprtypes_get(x.et, id)));
+    }
+    pass (raw iv("{ ptr, i64, i64 }", acc, raw exprtypes_get(x.et, id)));
+};
+
+// CALL `to_string` FOR A VALUE (D-168): resolve the `ToString` impl for its
+// concrete type, call the impl's method by value, and hand back the `string` the
+// Result carries. A per-type impl (the prelude scalars) is matched by target;
+// the checker admitted the interpolation, so one exists.
+func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) {
+    Span:at = (relay ast_expr(x.ast, item)).span;
+    int32:ts_sym = raw scope_lookup(x.tab, x.scope,
+                       raw intern_add(x.interns, "ToString"));
+    if (ts_sym == 0i32) { pass (raw iv_broken(at)); }
+    Symbol:tss = raw symtab_get(x.tab, ts_sym);
+    if (tss.origin_kind != (raw SYM_DECL())) { pass (raw iv_broken(at)); }
+
+    int32:impl_decl = 0i32;
+    int32:trait_ty = 0i32;
+    int32:j = 0i32;
+    while (j < (raw impl_count(x.fe.ctx.impls))) {
+        ImplEntry:e = relay impl_at(x.fe.ctx.impls, j);
+        if (!e.blanket) {
+            if (e.target == itype) {
+                if ((raw type_decl_of(x.fe.ctx.types, e.trait_id)) == tss.origin) {
+                    impl_decl = e.decl;
+                    trait_ty = e.trait_id;
+                    j = raw impl_count(x.fe.ctx.impls);
+                } else { j = j + 1i32; }
+            } else { j = j + 1i32; }
+        } else { j = j + 1i32; }
+    }
+    if (impl_decl == 0i32) { pass (raw iv_broken(at)); }
+
+    DeclNode:idecl = relay ast_decl(x.ast, DeclId{ index: impl_decl });
+    int32:ts_name = raw intern_add(x.interns, "to_string");
+    int32:m_decl = 0i32;
+    int32:mi = 0i32;
+    while (mi < (raw impl_member_count(x.ast, idecl))) {
+        DeclId:mid = raw impl_member(x.ast, idecl, mi);
+        DeclNode:m = relay ast_decl(x.ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == ts_name) { m_decl = mid.index; }
+        }
+        mi = mi + 1i32;
+    }
+    if (m_decl == 0i32) { pass (raw iv_broken(at)); }
+    string:sym = relay mangled_fn_sym(x.fe.ctx, m_decl,
+                     relay method_symbol_name(x.fe.ctx.types, x.interns, itype,
+                         trait_ty, "to_string"));
+
+    IrVal:av = relay emit_expr(x, item);
+    if (!(raw iv_is_ok(av))) { pass av; }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat4(r,
+        " = call { { ptr, i64, i64 }, i32 } ", sym,
+        relay cat5("(", av.ll, " ", av.ref, ")")));
+    string:sv = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(sv,
+        " = extractvalue { { ptr, i64, i64 }, i32 } ",
+        relay string_concat(r, ", 0")));
+    pass (raw iv("{ ptr, i64, i64 }", sv, 0i32));
 };
 
 func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) {

@@ -1,0 +1,17 @@
+// expect-error: NITPICK-TYPE-036
+//
+// A `&{ }` INTERPOLATION OF A TYPE WITH NO `ToString` (D-168). A `string` renders
+// as itself and the prelude supplies `ToString` for the scalars; a struct has
+// none, so it is refused by name — derive or implement `ToString` for it. The
+// backend has no `to_string` to call otherwise.
+mod:not_stringable;
+
+struct:Point = { int32:x; int32:y; };
+
+func:main = int32(cstring[]:_~argv) {
+    Point:p = Point{ x: 1i32, y: 2i32 };
+    string:m = `point is &{p}`;
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

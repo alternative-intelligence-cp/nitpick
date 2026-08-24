@@ -181,7 +181,15 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) {
 
 pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                             DiagList->:diags) {
-    drop lexer_skip_trivia(lx, diags);
+    // INSIDE A TEMPLATE, WHITESPACE IS CONTENT (D-168, 1.0.9d). Skipping trivia
+    // first ate the leading space of a part that followed an interpolation
+    // (`&{a} b` rendered "…b", not "… b") — and would eat a `//` in the text as a
+    // comment. A template part is lexed verbatim; only ordinary code skips
+    // trivia. During an interpolation's own expression `in_template` is false, so
+    // that lexes normally.
+    if (!lx.in_template) {
+        drop lexer_skip_trivia(lx, diags);
+    }
 
     int64:start = lx.pos;
     int32:line = lx.line;

@@ -1,0 +1,21 @@
+// expect-exit: 42
+//
+// `&{ }` TEMPLATE INTERPOLATION (D-168, 1.0.9d). Inside a backtick template a
+// `string` renders as itself; any other type renders through the prelude trait
+// `ToString`, and the whole template lowers to a `string_concat` chain. The
+// prelude supplies `ToString` for the integer widths and `bool` over the floor's
+// `int_to_string`. A literal part keeps its whitespace — the lexer treats a
+// template part as verbatim content, not code to skip trivia in.
+mod:template;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:n = 7i32;
+    bool:ok = true;
+    string:who = "world";
+    string:msg = `n=&{n} ok=&{ok} hi &{who}`;   // "n=7 ok=true hi world" = 20 bytes
+    int64:len = raw string_byte_length(msg);
+    if (len != 20i64) { exit (len =>! int32); }
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };
