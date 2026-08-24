@@ -1,0 +1,13 @@
+// expect-error: NITPICK-TYPE-035
+//
+// A MODULE-LEVEL BINDING'S INITIALISER MUST BE A COMPILE-TIME CONSTANT (D-165).
+// No module initialiser runs before `main`, so a value that had to run — a call
+// — would appear in an order nobody wrote. Refused by name; the fix is
+// `comptime(…)` if the value truly folds, or a function called from `main`.
+mod:global_not_constant;
+
+func:make = int32() { pass 5i32; };
+int32:BAD = make() ? 0i32;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

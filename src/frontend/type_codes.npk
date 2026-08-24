@@ -148,3 +148,10 @@ pub func:TYPE_NOT_ITERABLE = string()  { pass "NITPICK-TYPE-033"; };
 // reached the backend, which refused an `icmp` on an aggregate as a rung; the
 // refusal is the checker's now, with the spelling that works. `== NIL` stays.
 pub func:TYPE_NOT_COMPARABLE = string() { pass "NITPICK-TYPE-034"; };
+
+// A MODULE-LEVEL BINDING'S INITIALISER THAT IS NOT A COMPILE-TIME CONSTANT
+// (D-165, 1.0.9c/1.0.9d). A call, or any expression the folder cannot fold, is
+// refused: no module initialiser runs before `main`, so a value that had to run
+// would appear in an order nobody wrote. It reached the backend as "a
+// module-level binding" (a rung); the refusal is the checker's now, by name.
+pub func:TYPE_GLOBAL_NOT_CONSTANT = string() { pass "NITPICK-TYPE-035"; };

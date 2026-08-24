@@ -17,6 +17,7 @@ use "../frontend/intern.npk".*;
 use "../frontend/ast_kind.npk".*;
 use "../frontend/ast.npk".*;
 use "../frontend/parse_decl.npk".*;
+use "../frontend/parser.npk".*;   // QUAL_CONST (D-165)
 use "../frontend/diagnostics.npk".*;
 use "../frontend/symbols.npk".*;
 use "../frontend/module_graph.npk".*;
@@ -808,6 +809,47 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
 // since 0.9.1). Functions emit — their signatures resolve in their own home
 // scopes (D-137), so the caller's emitter serves — and the members a rung
 // refuses refuse here exactly as at top level.
+// A MODULE-LEVEL BINDING, LOWERED TO AN LLVM GLOBAL (D-165, 1.0.9d). `const`
+// gives an immutable `constant`; `fixed` and a plain binding give a `global`.
+// The initialiser is a compile-time constant the checker has already held to
+// that shape (`TYPE_GLOBAL_NOT_CONSTANT`), rendered by `emit_global_const`. The
+// symbol follows D-156. No initialiser runs before `main`: the value is the
+// constant, emitted once, in no order anyone has to have chosen.
+func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
+                           DeclNode:d) {
+    int32:saved_scope = x.scope;
+    int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
+    x.scope = home;
+    int32:gt = relay resolve_type(x.tr, raw global_type(d), home);
+    LlType:gll = relay ll_type(x.fe.ctx, gt);
+    if (!(raw ll_is_ok(gll))) {
+        x.scope = saved_scope;
+        drop refuse(diags, relay iv_from_ll_at(x, gll, gt, d.span));
+        pass NIL;
+    }
+    string:cval = "";
+    ExprId:init = raw global_init(d);
+    if (raw expr_is_none(init)) {
+        cval = "zeroinitializer";
+    } else {
+        cval = relay emit_global_const(x, init);
+    }
+    x.scope = saved_scope;
+    if (cval.len == 0i64) {
+        // The checker proved the initialiser constant, so a failure to render is
+        // a defect, not a rung.
+        drop refuse(diags, raw iv_broken(d.span));
+        pass NIL;
+    }
+    string:kw = "global";
+    if ((raw global_quals(d) & (raw QUAL_CONST())) != 0i32) { kw = "constant"; }
+    string:sym = relay mangled_fn_sym(x.fe.ctx, item.index,
+                     relay intern_get(x.interns, raw decl_name(d)));
+    drop irw_raw(x.fe.w, relay cat5(sym, " = ", kw, " ",
+                     relay cat3(gll.text, " ", cval)));
+    pass NIL;
+};
+
 func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
     int32:i = 0i32;
     while (i < (raw item_member_count(x.ast, m))) {
@@ -826,7 +868,7 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
             drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
         }
         if (d.kind == DeclKind.DeclGlobalDecl) {
-            drop refuse(diags, raw iv_rung("a module-level binding", "1.0", d.span));
+            drop emit_one_global(x, diags, item, d);
         }
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop emit_nested_module(x, diags, d);
@@ -917,7 +959,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                 drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
             }
             if (d.kind == DeclKind.DeclGlobalDecl) {
-                drop refuse(diags, raw iv_rung("a module-level binding", "1.0", d.span));
+                drop emit_one_global(@x, diags, item, d);
             }
             if (d.kind == DeclKind.DeclModuleDecl) {
                 drop emit_nested_module(@x, diags, d);

@@ -473,6 +473,12 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
         }
 
         ExprNode:ie = relay ast_expr(x.ast, init);
+        // AGGREGATE LITERALS ARE CONSTANT WHEN THEIR MEMBERS ARE (D-165, 1.0.9d).
+        // The folder does not fold a struct or array literal, so it is admitted
+        // here by shape; the checker's `TYPE_GLOBAL_NOT_CONSTANT` validates the
+        // members, so this does not weaken the rule.
+        if (ie.kind == ExprKind.ExprStructLiteralExpr) { pass NIL; }
+        if (ie.kind == ExprKind.ExprArrayLiteralExpr)  { pass NIL; }
         // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is
         // the same question — is this expression constant — and now the same
         // evaluator answers it. A reader filtering on this code is asking one thing.

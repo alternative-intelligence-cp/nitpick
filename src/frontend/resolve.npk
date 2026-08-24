@@ -795,6 +795,21 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) {
     // expression reads a node from the wrong array, so each is walked as what it
     // is. An id that is not an expression resolves to node 0 and stops.
     if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        // A STRUCT LITERAL'S WINDOW ALTERNATES NAME, VALUE — the names are
+        // intern indices, not expressions, so only the values are walked (else a
+        // field-name index is read from the expression array as a stray node,
+        // the false self-reference D-165's aggregate globals hit, 1.0.9d).
+        if (e.kind == ExprKind.ExprStructLiteralExpr) {
+            int32:spairs = (raw expr_list_count(e)) / 2i32;
+            int32:sli = 0i32;
+            while (sli < spairs) {
+                ExprId:sv = ExprId{ index: raw ast_id_at(r.ast,
+                                raw expr_list_start(e), (sli * 2i32) + 1i32) };
+                if (relay init_reaches(r, sv, target, fuel - 1i32)) { pass true; }
+                sli = sli + 1i32;
+            }
+            pass false;
+        }
         if (e.kind == ExprKind.ExprPickExpr) {
             ExprId:sel = raw pickx_selector(e);
             pass (relay init_reaches(r, sel, target, fuel - 1i32));

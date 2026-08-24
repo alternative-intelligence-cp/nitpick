@@ -22,6 +22,7 @@ use "./type_codes.npk".*;
 use "./types.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
+use "./parser.npk".*;   // QUAL_CONST (D-165)
 use "./parse_expr.npk".*;
 use "./parse_pick.npk".*;
 use "./parse_decl.npk".*;
@@ -767,16 +768,72 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
             if (want != 0i32) {
                 if (got != 0i32) {
                     if (!(raw type_is_invalid(e.types, got))) {
-                        if (!(raw fits(e, want, got))) {
-                            drop te_assign_mismatch(e, want, got, d.span);
+                        // EXACT, NOT `fits` (D-165): a module binding's value is
+                        // a compile-time constant, and a constant is not coerced
+                        // — a `T` into an `Optional<T>` or a concrete value into
+                        // a `dyn` both need construction that only runs at run
+                        // time. `NIL` into an `Optional` is the one wrap that
+                        // survives, and it survives because the sentinel types AS
+                        // the `Optional` here, so the two already agree.
+                        if (want != got) {
+                            if (!(raw types_agree(e, want, got))) {
+                                drop te_assign_mismatch(e, want, got, d.span);
+                            }
                         }
                     }
+                }
+            }
+            // D-165: A NON-CONST BINDING'S INITIALISER MUST STILL BE A
+            // COMPILE-TIME CONSTANT. No module initialiser runs before `main`, so
+            // a value that had to run would appear in an order nobody wrote —
+            // refused by name. A `const` binding's constness is the analysis
+            // pass's (`TYPE_NOT_CONSTANT`), so this covers `fixed` and plain.
+            if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) {
+                if (!(relay is_const_initialiser(e, init))) {
+                    drop te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                        "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
+                        d.span);
                 }
             }
         }
         pass NIL;
     }
     pass NIL;
+};
+
+// D-165: IS THIS A COMPILE-TIME CONSTANT INITIALISER for a module-level binding?
+// Struct and array literals are constant when every member is; everything else
+// is constant exactly when the folder folds it (a literal, a sentinel, an
+// arithmetic expression, another module binding, a `comptime(…)`). A call folds
+// to nothing, which is the refusal D-165 wants.
+func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) {
+    ExprNode:n = relay ast_expr(e.ast, eid);
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:pairs = (raw expr_list_count(n)) / 2i32;
+        int32:i = 0i32;
+        while (i < pairs) {
+            ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
+                             raw expr_list_start(n), (i * 2i32) + 1i32) };
+            if (!(relay is_const_initialiser(e, vid))) { pass false; }
+            i = i + 1i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr) {
+        int32:c = raw expr_list_count(n);
+        int32:i = 0i32;
+        while (i < c) {
+            ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
+                             raw expr_list_start(n), i) };
+            if (!(relay is_const_initialiser(e, vid))) { pass false; }
+            i = i + 1i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
+    TypeResolver:cr = raw etyper_resolver(e);
+    ConstVal:cv = relay fold_const(@cr, eid, e.scope);
+    pass (raw cv_folded(cv));
 };
 
 // A STRUCT'S FIELD TYPES. Resolving them IS the layout walk, so asking for the

@@ -1,0 +1,26 @@
+// expect-exit: 42
+//
+// MODULE-LEVEL BINDINGS (D-165, 1.0.9d). A binding at module scope is a
+// compile-time constant lowered to an LLVM global — `const` gives a `constant`,
+// a plain binding a `global`. The initialiser is a literal, a `comptime(…)`, a
+// reference to another binding, or a struct/array of those; no initialiser runs
+// before `main`. A global struct's field and a global array's element are read
+// through the global's own address (D-156's symbol), the way a local's are.
+mod:module_globals;
+
+int32:BASE = 40i32;
+int32:OFFSET = comptime(1i32 + 1i32);
+const string:CODE = "NITPICK-X-001";      // a diagnostic-code string constant
+
+struct:Pair = { int32:a; int32:b; };
+const Pair:P = Pair{ a: 3i32, b: 4i32 };
+const int32[3]:XS = [ 10i32, 20i32, 30i32 ];
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw string_byte_length(CODE)) != 13i64) { exit 91i32; }
+    int32:agg = P.a + P.b + XS[0] + XS[1] + XS[2];   // 3+4+10+20+30 = 67
+    if (agg != 67i32) { exit 92i32; }
+    exit BASE + OFFSET;                               // 40 + 2 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

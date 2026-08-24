@@ -528,7 +528,6 @@ SLOT_SITE_PAIRS = {
     # and the arena emitter is where it would be.
     "want_handle_of":      {"emit_arena_method"},
     "type_null_coalesce":  {"emit_coalesce"},          # lowered at 1.0.7
-    "check_decl":          "refused: a module-level binding",
 }
 
 

@@ -780,11 +780,28 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
                                  relay mangled_fn_sym(x.fe.ctx, fsym.origin, fnm),
                                  raw exprtypes_get(x.et, id)));
                 }
+                // A MODULE-LEVEL BINDING IS LOADED FROM ITS GLOBAL (D-165,
+                // 1.0.9d): the value the constant/global holds, under D-156's
+                // symbol — the same one `emit_one_global` wrote.
+                if (fdecl.kind == DeclKind.DeclGlobalDecl) {
+                    int32:gtid = raw exprtypes_get(x.et, id);
+                    LlType:gll = relay node_ll(x, id);
+                    if (gll.state != (raw LL_OK())) {
+                        pass (relay iv_from_ll_at(x, gll, gtid, n.span));
+                    }
+                    string:gsym = relay mangled_fn_sym(x.fe.ctx, fsym.origin,
+                                      relay intern_get(x.interns, fsym.name));
+                    string:gr = relay irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, relay cat5(gr, " = load ", gll.text,
+                                      ", ptr ", gsym));
+                    pass (raw iv(gll.text, gr, gtid));
+                }
             }
         }
-        // Not a local and not a function: a module-level global, which this
-        // rung refuses at its declaration already.
-        pass (raw iv_rung("a name that is not a local", "1.0", n.span));
+        // Not a local, a function or a global: the checker refuses an unknown
+        // name, so reaching here is a defect, not a rung (D-165 retired the
+        // "a name that is not a local" rung, 1.0.9d).
+        pass (raw iv_broken(n.span));
     }
     // The SLOT's type, not the table's: the binding is the local truth, and for
     // a name the checker recorded (every ordinary local) the two are the same id
@@ -3262,12 +3279,25 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         LocalSlot:s = raw fnem_lookup(x.fe, n.payload =>! int32);
         if (!s.found) {
-            // A module-level binding, lowered at 1.0.9d (D-165). This string
-            // said "0.8" — a cycle closed two cycles ago — until
-            // `check_rung_names_open_cycle`'s first run found it (1.0.9):
-            // 0.9.7's sweep grepped `iv_rung` and this is a `pv_rung`.
-            pass (raw pv_rung("assignment to a name that is not a local",
-                              "1.0", n.span));
+            // A MODULE-LEVEL BINDING'S PLACE IS ITS GLOBAL (D-165, 1.0.9d): the
+            // address is the D-156 symbol itself, so a global struct's field and
+            // a global array's element are read (and a mutable global written)
+            // through the same GEP path a local's are.
+            if (n.a != 0i32) {
+                Symbol:gsym = raw symtab_get(x.tab, n.a);
+                if (gsym.origin_kind == (raw SYM_DECL())) {
+                    DeclNode:gd = relay ast_decl(x.ast,
+                                      DeclId{ index: gsym.origin });
+                    if (gd.kind == DeclKind.DeclGlobalDecl) {
+                        string:gs = relay mangled_fn_sym(x.fe.ctx, gsym.origin,
+                                        relay intern_get(x.interns, gsym.name));
+                        pass (raw pv(gs, raw exprtypes_get(x.et, id)));
+                    }
+                }
+            }
+            // The checker refuses an unknown name, so anything else here is a
+            // defect, not a rung.
+            pass (raw pv_broken(n.span));
         }
         pass (raw pv(s.slot, s.type_id));
     }
@@ -3975,6 +4005,113 @@ func:emit_deref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 // `Point{ x: 1i32, y: 2i32 }` — one insertvalue per field, AT THE FIELD'S
 // DECLARED INDEX, so the literal's written order never matters to the layout.
 // The checker already refused an omitted field; this never re-checks.
+// A MODULE-LEVEL BINDING'S INITIALISER, RENDERED AS AN LLVM CONSTANT (D-165,
+// 1.0.9d). Returns the constant's VALUE text — the caller writes
+// `constant/global <ll> <this>` — or "" when the initialiser is not a
+// compile-time constant (which the checker has already refused by name, so ""
+// here is a defect). Recurses for struct and array literals; everything the
+// folder handles (scalars, strings, arithmetic, `comptime`, a reference to
+// another module binding) goes through `fold_const`.
+pub func:emit_global_const = string(ExprEmitter->:x, ExprId:eid) {
+    ExprNode:n = relay ast_expr(x.ast, eid);
+    int32:gcid = raw exprtypes_get(x.et, eid);
+
+    if (n.kind == ExprKind.ExprSentinelLiteral) {
+        if (n.payload == 0i64) {
+            if ((raw type_kind(x.fe.ctx.types, gcid)) == (raw TY_OPTIONAL())) {
+                pass "zeroinitializer";
+            }
+            pass "0";
+        }
+        if (n.payload == 1i64) { pass "null"; }
+        int32:sb = raw type_int_bits(x.fe.ctx.types, gcid);
+        pass (raw tbb_min_decimal(sb));
+    }
+
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        pass (relay emit_global_struct_const(x, eid, n, gcid));
+    }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr) {
+        pass (relay emit_global_array_const(x, eid, n, gcid));
+    }
+
+    ConstVal:cv = relay fold_const(x.tr, eid, x.scope);
+    if (!(raw cv_folded(cv))) { pass ""; }
+    if (cv.kind == (raw CV_STRING())) {
+        string:g = relay strtab_add(x.strs, cv.text);
+        string:ln = raw int_to_string(cv.text.len);
+        pass (relay cat5("{ ptr ", g, ", i64 ",
+                  relay cat5(ln, ", i64 ", ln, " }", ""), ""));
+    }
+    pass (raw int_to_string(cv.num));
+};
+
+// A struct literal as a constant: every field in DECLARATION order, each
+// typed, so `{ i32 5, { ptr, i64, i64 } {…} }` matches the struct's layout.
+func:emit_global_struct_const = string(ExprEmitter->:x, ExprId:eid,
+                                       ExprNode:n, int32:stid) {
+    DeclId:sdid = DeclId{ index: raw type_decl(x.fe.ctx.types, stid) };
+    DeclNode:sd = relay ast_decl(x.ast, sdid);
+    int32:pairs = (raw expr_list_count(n)) / 2i32;
+    string:out = "{ ";
+    int32:emitted = 0i32;
+    int32:fi = 0i32;
+    while (fi < (raw item_member_count(x.ast, sd))) {
+        DeclNode:fdecl = relay ast_decl(x.ast, raw item_member(x.ast, sd, fi));
+        if (fdecl.kind == DeclKind.DeclFieldDecl) {
+            int32:fname = raw decl_name(fdecl);
+            // find this field's value in the literal
+            ExprId:vid = ExprId{ index: 0i32 };
+            bool:found = false;
+            int32:pi = 0i32;
+            while (pi < pairs) {
+                int32:lname = raw ast_id_at(x.ast, raw expr_list_start(n),
+                                            pi * 2i32);
+                if (lname == fname) {
+                    vid = ExprId{ index: raw ast_id_at(x.ast,
+                              raw expr_list_start(n), (pi * 2i32) + 1i32) };
+                    found = true;
+                    pi = pairs;
+                } else {
+                    pi = pi + 1i32;
+                }
+            }
+            if (!found) { pass ""; }
+            FieldInfo:info = relay struct_field(x.tr, stid, fname, x.scope);
+            if (!info.found) { pass ""; }
+            LlType:fll = relay ll_type(x.fe.ctx, info.type_id);
+            if (!(raw ll_is_ok(fll))) { pass ""; }
+            string:fc = relay emit_global_const(x, vid);
+            if (fc.len == 0i64) { pass ""; }
+            if (emitted > 0i32) { out = relay string_concat(out, ", "); }
+            out = relay cat3(out, fll.text, relay string_concat(" ", fc));
+            emitted = emitted + 1i32;
+        }
+        fi = fi + 1i32;
+    }
+    pass (relay string_concat(out, " }"));
+};
+
+// An array literal as a constant: every element typed the same, in order.
+func:emit_global_array_const = string(ExprEmitter->:x, ExprId:eid,
+                                      ExprNode:n, int32:atid) {
+    int32:elem = raw type_elem(x.fe.ctx.types, atid);
+    LlType:ell = relay ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(ell))) { pass ""; }
+    int32:count = raw expr_list_count(n);
+    string:out = "[ ";
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:vid = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+        string:ec = relay emit_global_const(x, vid);
+        if (ec.len == 0i64) { pass ""; }
+        if (i > 0i32) { out = relay string_concat(out, ", "); }
+        out = relay cat3(out, ell.text, relay string_concat(" ", ec));
+        i = i + 1i32;
+    }
+    pass (relay string_concat(out, " ]"));
+};
+
 func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:stid = raw exprtypes_get(x.et, id);
     LlType:sll = relay ll_type(x.fe.ctx, stid);
