@@ -248,7 +248,7 @@ pub func:is_keyword = bool(string:text) {
     wl.append("pub func:num_width_bits = int32(NumWidth:w) {")
     for s2 in sfx:
         m = re.match(r'^([a-z]+)(\d+)$', s2)
-        if m and m.group(1) in ("u", "i", "f", "tbb", "frac", "tfp"):
+        if m and m.group(1) in ("u", "i", "f", "tbb", "frac", "tfp", "char"):
             wl.append("    if (w == NumWidth.%s) { pass %si32; }"
                       % (width_variant(s2), m.group(2)))
     wl.append("    pass 0i32;")
@@ -566,7 +566,12 @@ pub func:is_keyword = bool(string:text) {
     # lookup and `Result<int32>` -- which D-091 requires to stay writable, and
     # which the compiler's own sources use throughout -- reported "there is no
     # type named" against a token kind reinterpreted as an intern index.
-    GENERIC = {"Result": "TY_RESULT", "Optional": "TY_OPTIONAL"}
+    # `arena`, `Handle` and `shared_arena` have real kinds now (their `dyn`/
+    # collection lowerings landed); the rest of NOT_SCALAR still arrives at a
+    # later rung and is `builtin_is_generic` only.
+    GENERIC = {"Result": "TY_RESULT", "Optional": "TY_OPTIONAL",
+               "arena": "TY_ARENA", "Handle": "TY_HANDLE",
+               "shared_arena": "TY_SHARED_ARENA"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

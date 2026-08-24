@@ -38,6 +38,24 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 | `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. |
 | `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. |
 
+### Arenas, wild tracking, and W^X memory
+
+Type-directed arena constructors (D-152, D-154), the wild-allocation counters the
+controlled `exit`/`failsafe` path uses (D-062, D-151), and the W^X executable
+memory the JIT is built on (`wildx`, W^X invariant — a page is never writable and
+executable at once).
+
+| Built-in | Signature | Description |
+|---|---|---|
+| `arena_make` | `int64:cap → arena<T>` | A bump/slab arena for `T`, its element stride taken from the annotation the call is given (D-152) — type-directed, so the element type is never written as an argument. |
+| `shared_arena_make` | `int64:cap → shared_arena<T>` | The atomically-shared arena (D-154), likewise type-directed. |
+| `wild_live_count` | `() → int64` | How many `wild` allocations are live — what the controlled `exit` checks so a leak traps rather than passing silently (D-062). |
+| `wild_release_all` | `() → NIL` | Releases every live `wild` allocation at once; the cleanup `failsafe` may run before exiting positive (D-151). |
+| `wildx_alloc` | `int64:size → wildx int8->` | Allocates writable-not-executable pages for the JIT to fill. |
+| `wildx_seal` | `wildx int8->:ptr → NIL` | Flips the pages to executable-not-writable — the one W^X transition, never the reverse. |
+| `wildx_call` | `(wildx int8->:ptr, int64:arg) → int64` | Calls into sealed executable memory. |
+| `wildx_free` | `wildx int8->:ptr → NIL` | Releases W^X pages. |
+
 <!-- builtins:end -->
 
 *(Note: **`malloc` and `free` are not builtins and are not aliases.** They are C
