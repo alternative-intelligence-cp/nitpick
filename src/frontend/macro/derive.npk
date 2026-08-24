@@ -278,6 +278,75 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     pass (relay string_concat(s, "pass Ordering.Equal; }; };\n"));
 };
 
+// ORD / PARTIALORD ON AN ENUM ORDER BY TAG (D-123, 1.0.9d): `enum =>! int32`
+// reads a variant's tag (0.8.0), and the tag IS the declaration order — so a
+// later variant is greater. A payload is not compared; the order is over the
+// variants, which is what deriving `Ord` on an enum has always meant. The same
+// body serves `PartialOrd`: `pass Ordering.Less` wraps into `Ordering?` (D-099),
+// so a total order reads as an always-present one.
+func:gen_cmp_enum = string(string:tn, bool:partial, string:head) {
+    string:tr = "Ord";
+    string:mn = "cmp";
+    string:rt = "Ordering";
+    if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
+    string:s = relay string_concat(head, tn);
+    s = relay string_concat(s, ":");
+    s = relay string_concat(s, tr);
+    s = relay string_concat(s, " = { pub func:");
+    s = relay string_concat(s, mn);
+    s = relay string_concat(s, " = ");
+    s = relay string_concat(s, rt);
+    s = relay string_concat(s, "(");
+    s = relay string_concat(s, tn);
+    s = relay string_concat(s, ":self, ");
+    s = relay string_concat(s, tn);
+    s = relay string_concat(s, ":other) {\n");
+    s = relay string_concat(s, "int32:a = self =>! int32;\n");
+    s = relay string_concat(s, "int32:b = other =>! int32;\n");
+    s = relay string_concat(s, "if (a < b) { pass Ordering.Less; }\n");
+    s = relay string_concat(s, "if (a > b) { pass Ordering.Greater; }\n");
+    pass (relay string_concat(s, "pass Ordering.Equal; }; };\n"));
+};
+
+// A DERIVED STRUCT HASH COMBINES ITS FIELDS' HASHES (D-123, FNV-1a): each field
+// mixes its own hash into the running one, so the whole is FNV-1a over the
+// parts. Every field type must be `Hash` — the prelude supplies the scalars, a
+// nested struct or enum supplies its own derived one.
+func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
+                              string:tn, string:head) {
+    string:s = relay string_concat(head, tn);
+    s = relay string_concat(s, ":Hash = { pub func:hash = uint64(");
+    s = relay string_concat(s, tn);
+    s = relay string_concat(s, ":self) {\n");
+    s = relay string_concat(s, "uint64:h = raw fnv_offset();\n");
+    int32:n = raw item_member_count(ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            string:f = relay intern_get(interns, raw decl_name(m));
+            s = relay string_concat(s, "h = raw fnv_mix(h, raw self.");
+            s = relay string_concat(s, f);
+            s = relay string_concat(s, ".hash());\n");
+        }
+        i = i + 1i32;
+    }
+    pass (relay string_concat(s, "pass h; }; };\n"));
+};
+
+// A DERIVED ENUM HASH HASHES THE TAG (D-123). A payload is not mixed, so two
+// values of one variant collide — which a hash is allowed to do (equal implies
+// equal hash, not the reverse); the identity a `pick` sees is the tag.
+func:gen_hash_enum = string(string:tn, string:head) {
+    string:s = relay string_concat(head, tn);
+    s = relay string_concat(s, ":Hash = { pub func:hash = uint64(");
+    s = relay string_concat(s, tn);
+    s = relay string_concat(s, ":self) {\n");
+    s = relay string_concat(s, "int32:t = self =>! int32;\n");
+    pass (relay string_concat(s,
+        "pass (raw fnv_mix(raw fnv_offset(), t =>! uint64)); }; };\n"));
+};
+
 // `pass self` IS THE CLONE. A struct is a value; passing one is a copy, and the
 // prototype's derived `clone` is the same single statement.
 func:gen_clone = string(string:tn, string:head) {
@@ -565,54 +634,19 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
     // rather than generated into something that does not compile, because a
     // diagnostic inside generated code points at a line nobody wrote.
     if (raw derive_wants(want, raw DERIVE_ORD())) {
-        if (is_enum) { drop enum_order_error(diags, d, bare, "Ord"); }
+        if (is_enum) { s = relay string_concat(s, relay gen_cmp_enum(tn, false, head)); }
         else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, false, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_PARTIAL_ORD())) {
-        if (is_enum) { drop enum_order_error(diags, d, bare, "PartialOrd"); }
+        if (is_enum) { s = relay string_concat(s, relay gen_cmp_enum(tn, true, head)); }
         else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, true, head)); }
     }
 
     if (raw derive_wants(want, raw DERIVE_HASH())) {
-        drop hash_unavailable(diags, d, bare);
+        if (is_enum) { s = relay string_concat(s, relay gen_hash_enum(tn, head)); }
+        else { s = relay string_concat(s, relay gen_hash_struct(ast, interns, d, tn, head)); }
     }
     pass s;
-};
-
-func:enum_order_error = NIL(DiagList->:diags, DeclNode:d, string:tn, string:tr) {
-    string:m1 = relay string_concat("`", tr);
-    string:m2 = relay string_concat(m1, "` cannot be derived for the enum `");
-    string:m3 = relay string_concat(m2, tn);
-    // THE REASON IS THE GENERATOR, NOT THE LANGUAGE (1.0.8): `enum =>! int32`
-    // reads a variant's tag since 0.8.0, so the comparison CAN be written; the
-    // body that writes it is not generated yet (1.0.9), and the message says
-    // exactly that rather than "no operator yields one".
-    string:m4 = relay string_concat(m3,
-        "`: not generated yet — the comparison would read each tag with `=>! int32`, a choice the author should make visibly until the generator writes it (1.0.9); write `cmp` by hand, and the order the variants are in is then a thing somebody chose");
-    drop diaglist_push(diags, raw diag_error(raw DERIVE_NOT_GENERATED(), m4, d.span));
-    pass NIL;
-};
-
-// `Hash` IS THE ONE OF THE SEVEN THAT CANNOT BE WRITTEN YET, and it is refused
-// rather than skipped: a derive that silently generated nothing would leave
-// `#[derive(Hash)]` meaning nothing at all, which is the shape 0.6.5 exists to
-// remove.
-//
-// WHAT IS MISSING IS A BYTE VIEW OF A `string`. FNV-1a folds bytes; an integer,
-// `bool` or `char` field can supply its bits through `=>!`, and a nested type that
-// derived `Hash` can supply its own — but nothing in `builtins.npk` exposes a
-// string's bytes, and a derived hash that quietly skipped string fields would vary
-// with data it ignored. That is worse than not having one.
-func:hash_unavailable = NIL(DiagList->:diags, DeclNode:d, string:tn) {
-    string:m1 = relay string_concat("`Hash` cannot be derived for `", tn);
-    // THE PREMISE IS STALE (1.0.8): `s.ptr[i]` has exposed a string's bytes
-    // since 0.7.8 — the compiler's own `sink_write` walks them that way. What
-    // is missing is the FNV-1a generator over every field (D-123), which is
-    // 1.0.9's; until it exists the refusal says so.
-    string:m2 = relay string_concat(m1,
-        "` yet: the FNV-1a generator over its fields (D-123) has not been written (1.0.9); write `hash` by hand until it has");
-    drop diaglist_push(diags, raw diag_error(raw DERIVE_NOT_GENERATED(), m2, d.span));
-    pass NIL;
 };
 
 pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,

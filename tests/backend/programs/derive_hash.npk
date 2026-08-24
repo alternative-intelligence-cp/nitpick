@@ -1,0 +1,26 @@
+// expect-exit: 42
+//
+// `#[derive(Hash)]` (D-123, 1.0.9d). The derived `hash` combines each field's
+// own hash with FNV-1a (the combiner is specified so the hash is the same across
+// builds — a verified compiler cannot have one that drifts). Equal values hash
+// equal; a string field hashes its bytes; an enum hashes its tag. The prelude
+// supplies `Hash` for every scalar so a struct of them derives without a bound.
+mod:derive_hash;
+
+#[derive(Hash)]
+struct:Key = { int32:a; string:b; };
+
+#[derive(Hash)]
+enum:Tag = { Red; Green; Blue; };
+
+func:main = int32(cstring[]:_~argv) {
+    Key:k1 = Key{ a: 7i32, b: "hi" };
+    Key:k2 = Key{ a: 7i32, b: "hi" };
+    Key:k3 = Key{ a: 7i32, b: "ho" };
+    if ((raw k1.hash()) != (raw k2.hash())) { exit 90i32; }   // equal -> equal hash
+    if ((raw k1.hash()) == (raw k3.hash())) { exit 91i32; }   // differ -> (a.s.) differ
+    if ((raw Tag.Green.hash()) == (raw Tag.Blue.hash())) { exit 92i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

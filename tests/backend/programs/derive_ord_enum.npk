@@ -1,0 +1,24 @@
+// expect-exit: 42
+//
+// `#[derive(Ord)]` ON AN ENUM (D-123, 1.0.9d). The order is the variants'
+// declaration order, read through `enum =>! int32` — a later variant is greater.
+// The same body serves `PartialOrd`, whose `Ordering?` wraps the total order as
+// an always-present one.
+mod:derive_ord_enum;
+
+#[derive(Ord)]
+enum:Level = { Low; Mid; High; };
+
+func:main = int32(cstring[]:_~argv) {
+    Level:lo = Level.Low;
+    Level:hi = Level.High;
+    Level:m1 = Level.Mid;
+    Level:m2 = Level.Mid;
+    int32:acc = 0i32;
+    pick (raw lo.cmp(hi))  { (Ordering.Less)    { acc = acc + 20i32; }, (*) { } }
+    pick (raw hi.cmp(lo))  { (Ordering.Greater) { acc = acc + 20i32; }, (*) { } }
+    pick (raw m1.cmp(m2))  { (Ordering.Equal)   { acc = acc + 2i32; },  (*) { } }
+    exit acc;                                    // 20 + 20 + 2 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

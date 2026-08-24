@@ -145,3 +145,49 @@ pub func:uint_to_decimal = string(uint64:v) {
     }
     pass acc;
 };
+
+// FNV-1a, THE DERIVED HASH (D-123). The combiner is specified so a derived hash
+// is the same across builds -- a verified compiler cannot have one that drifts.
+// The offset basis (0xcbf29ce484222325) is past the 64-bit literal envelope, so it
+// is built from its two words; the prime fits.
+pub func:fnv_offset = uint64() { pass ((3421887204u64 << 32u64) | 2216829733u64); };
+pub func:fnv_mix = uint64(uint64:h, uint64:v) { pass ((h ^ v) * 1099511628211u64); };
+
+// A SCALAR HASHES ITS VALUE (D-123); a derived struct hash combines its fields
+// the same way, so the whole is FNV-1a over the parts.
+impl:int8:Hash = { func:hash = uint64(int8:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int16:Hash = { func:hash = uint64(int16:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int32:Hash = { func:hash = uint64(int32:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int64:Hash = { func:hash = uint64(int64:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint8:Hash = { func:hash = uint64(uint8:self) { pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:uint16:Hash = { func:hash = uint64(uint16:self) { pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:uint32:Hash = { func:hash = uint64(uint32:self) { pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:uint64:Hash = { func:hash = uint64(uint64:self) { pass (raw fnv_mix(raw fnv_offset(), self)); }; };
+impl:bool:Hash = { func:hash = uint64(bool:self) { pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:char8:Hash = { func:hash = uint64(char8:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:char16:Hash = { func:hash = uint64(char16:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:char32:Hash = { func:hash = uint64(char32:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:fd:Hash = { func:hash = uint64(fd:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:pid:Hash = { func:hash = uint64(pid:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tid:Hash = { func:hash = uint64(tid:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uid:Hash = { func:hash = uint64(uid:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:gid:Hash = { func:hash = uint64(gid:self) { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+
+// A tbb HASHES ERR AS A FIXED WORD, ITS VALUE OTHERWISE (D-008): the checked read
+// cannot touch ERR, so the guard comes first.
+impl:tbb8:Hash = { func:hash = uint64(tbb8:self) { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:tbb16:Hash = { func:hash = uint64(tbb16:self) { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:tbb32:Hash = { func:hash = uint64(tbb32:self) { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+impl:tbb64:Hash = { func:hash = uint64(tbb64:self) { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+
+// A string HASHES ITS BYTES (D-123) -- FNV-1a is over bytes, and self.ptr[i] walks
+// them.
+impl:string:Hash = { func:hash = uint64(string:self) {
+    uint64:h = raw fnv_offset();
+    int64:i = 0i64;
+    while (i < self.len) {
+        h = raw fnv_mix(h, self.ptr[i] => uint64);
+        i = i + 1i64;
+    }
+    pass h;
+}; };
