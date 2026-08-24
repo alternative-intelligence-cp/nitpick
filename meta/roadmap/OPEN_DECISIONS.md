@@ -145,6 +145,24 @@ does not silently regrow.
 
 ---
 
+## 6b. Float and char `ToString` await floor support (D-168, deferred at 1.0.9d)
+
+D-168 renders `&{ x }` through `ToString`, and the prelude supplies it for every
+scalar EXCEPT the floats and the characters. **Floats**: a correct `flt32`/`flt64`
+-> decimal string needs a shortest-round-trip conversion the floor does not have,
+and a naive one drifts -- the exact numeric-drift failure the safety rationale
+forbids. **Characters**: rendering a code point needs an OWNED string built from
+its UTF-8 bytes, and the floor's `string_from_bytes` only WRAPS bytes (it would
+leak the wild buffer per call), so this needs a floor `npk_char_to_string` (or a
+copying builder). Landed at 1.0.9d for the integer widths, `bool`, the `tbb`
+widths (ERR), the kernel identifiers, and `uint64` (unsigned rendering in the
+prelude); a `flt`/`char` interpolation refuses `TYPE_NOT_STRINGABLE` until the
+floor gains `npk_flt_to_string` / `npk_char_to_string`. **Owner: a dedicated
+numeric/encoding task, scheduled post-1.0** -- small in surface, correctness-
+critical, so each gets its own careful attention rather than riding a larger commit.
+This was the user's call at 1.0.9d ("go with your recommendation... so long as it
+all gets done eventually").
+
 ## 7. Ordering
 
 1. **LIVE-1, LIVE-2 first** (0.9.0) — shipped safety holes.

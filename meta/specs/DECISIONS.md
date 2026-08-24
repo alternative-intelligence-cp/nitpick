@@ -11584,7 +11584,7 @@ parentheses for any scope a reader wants). The `defaults` keyword stays
 reserved, as `(!)` did under D-061, so old code gets the message and not a
 stranger one.
 
-## D-168 — `&{ x }` renders through `ToString`; a `string` is itself — **SETTLED**
+## D-168 — `&{ x }` renders through `ToString`; a `string` is itself — **SETTLED; implemented 1.0.9d for the exact scalars, `char`/`flt` `ToString` scheduled post-1.0 (OPEN_DECISIONS §6b)**
 
 1.0.9's T-4. D-053 moved all formatting to `&{ }` interpolation in backtick
 templates, and nothing said how a value becomes text. **Settled:** inside a

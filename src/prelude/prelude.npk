@@ -97,3 +97,51 @@ impl:uint8:ToString  = { func:to_string = string(uint8:self)  { pass (raw int_to
 impl:uint16:ToString = { func:to_string = string(uint16:self) { pass (raw int_to_string(self => int64)); }; };
 impl:uint32:ToString = { func:to_string = string(uint32:self) { pass (raw int_to_string(self => int64)); }; };
 impl:bool:ToString   = { func:to_string = string(bool:self)   { if (self) { pass "true"; } pass "false"; }; };
+
+impl:uint64:ToString = { func:to_string = string(uint64:self) { pass (raw uint_to_decimal(self)); }; };
+
+// THE `tbb` WIDTHS RENDER `ERR` OR THE NUMBER (D-008, D-168). ERR is the taint,
+// shown as itself; everything else is the value, read through the checked cast
+// the `is_err` guard makes safe.
+impl:tbb8:ToString  = { func:to_string = string(tbb8:self)  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:tbb16:ToString = { func:to_string = string(tbb16:self) { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:tbb32:ToString = { func:to_string = string(tbb32:self) { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:tbb64:ToString = { func:to_string = string(tbb64:self) { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+
+// THE KERNEL IDENTIFIERS RENDER THEIR NUMBER (D-042, D-168): a handle's value is
+// readable even though a handle is not forgeable.
+impl:fd:ToString  = { func:to_string = string(fd:self)  { pass (raw int_to_string(self => int64)); }; };
+impl:pid:ToString = { func:to_string = string(pid:self) { pass (raw int_to_string(self => int64)); }; };
+impl:tid:ToString = { func:to_string = string(tid:self) { pass (raw int_to_string(self => int64)); }; };
+impl:uid:ToString = { func:to_string = string(uid:self) { pass (raw int_to_string(self => int64)); }; };
+impl:gid:ToString = { func:to_string = string(gid:self) { pass (raw int_to_string(self => int64)); }; };
+
+// UNSIGNED DECIMAL (D-168), for `uint64`, whose high half the floor's signed
+// `int_to_string` renders as a negative. Unsigned division here is the language's
+// own — `uint64 / 10` and `% 10` are unsigned because the type is — so the digits
+// come out right whatever the high bit. The lower unsigned widths fit in `int64`
+// and go through `int_to_string` losslessly; only `uint64` needs this.
+pub func:digit_char = string(uint64:d) {
+    if (d == 0u64) { pass "0"; }
+    if (d == 1u64) { pass "1"; }
+    if (d == 2u64) { pass "2"; }
+    if (d == 3u64) { pass "3"; }
+    if (d == 4u64) { pass "4"; }
+    if (d == 5u64) { pass "5"; }
+    if (d == 6u64) { pass "6"; }
+    if (d == 7u64) { pass "7"; }
+    if (d == 8u64) { pass "8"; }
+    pass "9";
+};
+
+pub func:uint_to_decimal = string(uint64:v) {
+    if (v == 0u64) { pass "0"; }
+    string:acc = "";
+    uint64:n = v;
+    while (n > 0u64) {
+        string:d = raw digit_char(n % 10u64);
+        acc = raw string_concat(d, acc);
+        n = n / 10u64;
+    }
+    pass acc;
+};
