@@ -444,8 +444,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprSafeNavExpr)     { pass (relay emit_safe_nav(x, id, n)); }
     if (n.kind == ExprKind.ExprNullCoalesceExpr) { pass (relay emit_coalesce(x, id, n)); }
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
-        // `r ? default` (0.9.7): the value, or the default — LAZY, so the
-        // default only evaluates on the error path.
+        // `r ?| default` (D-175): the value, or the default — LAZY, so the
+        // default only evaluates on the error path. Reached via `?|` now (D-175
+        // restored it as the fallback); a bare `?` is refused at parse.
         IrVal:qv = relay emit_expr(x, raw expr_lhs(n));
         if (!(raw iv_is_ok(qv))) { pass qv; }
         int32:qtid = raw exprtypes_get(x.et, id);
@@ -654,8 +655,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (relay emit_pipe(x, id, n));
     }
     if (n.kind == ExprKind.ExprDefaultsExpr) {
-        // `?|`/`defaults` is struck (D-167): a second spelling of `?`. The
-        // parser refuses it by name (`PARSE-009`), so this is a defensive
+        // The node a struck bare `?` and the word `defaults` build (D-175): the
+        // fallback is `?|`, which builds ExprSafeUnwrapExpr instead. The parser
+        // refuses `?`/`defaults` by name (`PARSE-011`), so this is a defensive
         // confession -- a clean program never reaches it.
         pass (raw iv_broken(n.span));
     }

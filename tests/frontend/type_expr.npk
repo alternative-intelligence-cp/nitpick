@@ -389,11 +389,11 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@tn4) != 0i64)                                { exit 144i32; }
     if ((raw type_int_bits(@tn4.types, tn4.result)) != 64i32)  { exit 145i32; }
 
-    // --- `?|` and `defaults` are struck (D-167, 1.0.9) ---------------------------------------
-    // The prototype had them as the SAME node as `?`; a second spelling
-    // differing only in precedence is refused by the parser now (PARSE-009),
-    // so the expression carries a diagnostic rather than typing.
-    Ex:df1 = raw ex("1i32 ?| 0i32", @it);
+    // --- a bare `?` and `defaults` are struck; the `Result` fallback is `?|` (D-175) ---
+    // D-167 kept the wrong survivor; `?` reads as Rust's error-propagation while
+    // Nitpick's fallback yields a value. Both are refused at PARSE (errs == -1);
+    // `?|` itself is exercised on a real `Result` in type_result.npk.
+    Ex:df1 = raw ex("1i32 ? 0i32", @it);
     if (raw errs(@df1) != (0i64 - 1i64))                       { exit 150i32; }
     Ex:df2 = raw ex("1i32 defaults 0i32", @it);
     if (raw errs(@df2) != (0i64 - 1i64))                       { exit 151i32; }

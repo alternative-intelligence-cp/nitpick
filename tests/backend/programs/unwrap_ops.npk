@@ -1,6 +1,6 @@
 // expect-exit: 26
 //
-// ? and ?! (0.9.7): the fallback is LAZY and the emphatic unwrap routes the
+// ?| and ?! (D-175): the fallback is LAZY and the emphatic unwrap routes the
 // CALLER'S code to failsafe through the D-142 trap — exit 26 proves the
 // error path carried 77.
 
@@ -10,9 +10,9 @@ func:half = int32(int32:v) {
     pass (v / 2i32);
 };
 func:main = int32(cstring[]:argv) {
-    int32:a = half(10i32) ? 99i32;
+    int32:a = half(10i32) ?| 99i32;
     if (a != 5i32)  { exit 10i32; }
-    int32:b = half(0i32 - 4i32) ? 99i32;
+    int32:b = half(0i32 - 4i32) ?| 99i32;
     if (b != 99i32) { exit 11i32; }
     int32:c = half(8i32) ?! 77tbb32;
     if (c != 4i32)  { exit 12i32; }

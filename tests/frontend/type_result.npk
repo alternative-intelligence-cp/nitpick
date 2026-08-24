@@ -224,16 +224,16 @@ func:main = int32(cstring[]:_~argv) {
     Rx:rl3 = raw rx("_^ (Result{value: 1i32, error: 0tbb32})", true, @it);
     if (raw errs(@rl3) != 1i64)                                { exit 33i32; }
 
-    // --- `?` UNWRAPS A `Result`, `??` UNWRAPS AN `Optional` ---------------------
+    // --- `?|` UNWRAPS A `Result`, `??` UNWRAPS AN `Optional` --------------------
     // Two operators one character apart doing different things, so both are
     // pinned rather than assumed.
-    Rx:q1 = raw rx("(Result{value: 1i32, error: 0tbb32}) ? 0i32", false, @it);
+    Rx:q1 = raw rx("(Result{value: 1i32, error: 0tbb32}) ?| 0i32", false, @it);
     if (raw errs(@q1) != 0i64)                                 { exit 40i32; }
     if ((raw type_int_bits(@q1.types, q1.result)) != 32i32)    { exit 41i32; }
 
     // The fallback must be the SUCCESS type: a default of another type would make
     // the expression's type depend on which way it went at runtime.
-    Rx:q2 = raw rx("(Result{value: 1i32, error: 0tbb32}) ? true", false, @it);
+    Rx:q2 = raw rx("(Result{value: 1i32, error: 0tbb32}) ?| true", false, @it);
     if (raw errs(@q2) != 1i64)                                 { exit 42i32; }
 
     // `??` ON A `Result` SAYS WHICH OPERATOR WAS MEANT, which is the whole value

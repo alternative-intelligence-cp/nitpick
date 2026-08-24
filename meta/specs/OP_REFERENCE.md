@@ -29,7 +29,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | 15 | Logical AND | `&&` (short-circuiting) |
 | 16 | Logical OR | `\|\|` (short-circuiting) |
 | 17 | Null Coalescing | `??` |
-| 18 | Ternary | `is` (`?\|` / `defaults` struck, D-167) |
+| 18 | Ternary / Fallback | `is`, `?\|` (bare `?` and `defaults` struck, D-175) |
 | 19 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
 
 > **Level 2 is new (D-081).** `raw`, `drop`, `await`, and `relay` previously
@@ -66,12 +66,12 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
   > a program that cannot be written. Conditions must still be a strict `bool`.
 - **`&&` and `||` short-circuit** and require strictly boolean operands.
 - **`<=>`** (spaceship) yields `int32`: `-1`, `0`, or `1`.
-- **`?|` / `defaults` is struck (D-167, 1.0.9).** The prototype defined it as
-  the SAME node as `?` ("scoped Result fallback", `'expr ? fallback' / 'expr
-  ?| fallback'`), so it was a second spelling of `?` differing only in
-  precedence — the shape D-021 and D-123 struck before. `expr ? fallback` is
-  the one spelling; parentheses give any scope a reader wants. The parser still
-  reads the old form and refuses it by name (`NITPICK-PARSE-009`).
+- **The `Result` fallback is `?|`, not a bare `?` (D-175, amends D-167).**
+  `expr ?| fallback` yields `expr`'s value, or `fallback` if it errored. D-167
+  struck `?|` and kept a bare `?` — the wrong survivor: a lone `?` reads as
+  Rust's error-propagation, while Nitpick's fallback yields a value, and `?|` is
+  the deliberate two-character `?`-family form (`?|` / `??` / `?!`). A bare `?`
+  and the word `defaults` are refused by name (`NITPICK-PARSE-011`).
 - **`++` / `--` are struck (D-174, 1.0.9d).** The prototype had the C increment (postfix yields the old value, prefix the new, both mutating). As a statement `x++` is just `x += 1`; the value form hides a write inside an expression — the blueprint philosophy forbids that, and it is pure comfort. `x += 1` / `x -= 1` are the spellings. The parser still reads the old form and refuses it by name (`NITPICK-PARSE-010`).
 
 ---
@@ -181,13 +181,13 @@ value is ERR, so the taint cannot cross silently. See D-008.
 
 | Operator | Name | Description | Example |
 |---|---|---|---|
-| `?` | Safe Unwrap | Unwraps a **`Result`**. If error, evaluates to right-hand side default. | `val = fn() ? 0i32;` |
+| `?\|` | Result Fallback | Unwraps a **`Result`**. If error, evaluates to the right-hand-side default. | `val = fn() ?\| 0i32;` |
 | `??` | Null Coalesce | Unwraps an **`Optional`**. If `NIL`, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
 | `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(errCode)`. **Takes exactly one argument**, a `tbb32` (D-009). | `val = fn() ?! 99tbb32;` |
 
-> **`?` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?`).
+> **`?\|` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?\|`).
 | `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |
-| `?\|` | ~~Defaults~~ | **Struck (D-167).** A second spelling of `?`; refused by name. | — |
+| `?` | ~~Safe Unwrap~~ | **Struck (D-175, amends D-167).** A bare `?` mirrors Rust's error-propagation; the `Result` fallback is `?\|`. Refused by name. | — |
 | `_?` | Drop | Desugars to `drop expr` — the "void call" of a `never fails`, `NIL`-returning function (**D-163, proposed, 1.1**; no longer discards an error). | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unwrap the value of a `never fails` call (**D-163, proposed, 1.1**: a checked, zero-cost unwrap, not a bypass). | `val = _! my_func();` |
 | **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |
@@ -196,7 +196,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 
 > ### One wrapper per unwrap operator (D-099)
 >
-> **`?` takes a `Result`. `??` takes an `Optional`. Neither takes a pointer.**
+> **`?\|` takes a `Result`. `??` takes an `Optional`. Neither takes a pointer.**
 >
 > The prototype overloaded both by operand type — its `?` accepted `Result<T>`,
 > `Optional<T>` *or* `ptr T`, and its `??` accepted `Optional<T>` or `ptr T`,

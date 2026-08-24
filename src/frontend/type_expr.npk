@@ -993,7 +993,7 @@ func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) {
     pass (raw type_elem(e.types, t));
 };
 
-// `e ? d` — unwrap with a fallback. The fallback must be the SUCCESS type: a
+// `e ?| d` — unwrap with a fallback (D-175). The fallback must be the SUCCESS type: a
 // default of another type would make the expression's type depend on which way it
 // went at runtime.
 func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
@@ -1001,7 +1001,7 @@ func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        pass (relay te_not_result(e, n, t, "?"));
+        pass (relay te_not_result(e, n, t, "?|"));
     }
     int32:inner = raw type_elem(e.types, t);
 
@@ -2149,7 +2149,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
         pass (relay type_unwrap(e, n, "await"));
     }
 
-    // `e ? d` — a fallback. `e ?! c` — trap with a code. Both yield `T`.
+    // `e ?| d` — a fallback. `e ?! c` — trap with a code. Both yield `T`.
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
         pass (relay type_safe_unwrap(e, n));
     }

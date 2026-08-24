@@ -138,26 +138,36 @@ func:p_ternary = ExprId(Parser->:p) {
     }
     ExprId:lhs = relay p_coalesce(p);
     while (true) {
+        Span:qsp = relay p_span(p);
         if (relay p_at(p, TokenKind.OpQuestionPipe)) {
+            // `?|` IS the `Result` fallback (D-175, restoring the design and
+            // amending D-167): `expr ?| fallback` yields `expr`'s value, or
+            // `fallback` if it errored. D-167 kept the wrong survivor — it
+            // struck `?|` and left a bare `?`, which reads as Rust's
+            // error-propagation while Nitpick's fallback yields a value. `?|` is
+            // the two-character `?`-family form (`?|` / `??` / `?!`). It builds
+            // the SafeUnwrap node — the same one the seed produces for `?|`
+            // — so the AST agrees; a bare `?` and the word `defaults` are
+            // refused (the `?` in p_coalesce, `defaults` just below).
             drop p_advance(p);
+            ExprId:rhs = relay p_coalesce(p);
+            lhs = relay ast_add_expr(p.ast, ExprKind.ExprSafeUnwrapExpr, qsp,
+                                     lhs.index, rhs.index, 0i32, 0i64);
         } else {
             if (relay p_at(p, TokenKind.KwDefaults)) {
                 drop p_advance(p);
+                // The word `defaults` is not a spelling of the fallback (D-175):
+                // `?|` is the one form. Parsed (grammar never partial, D-085),
+                // refused by name, filed under the otherwise-unused ExprDefaultsExpr.
+                drop p_error(p, raw PARSE_BARE_QUESTION_REMOVED(),
+                    "`defaults` is not the `Result` fallback (D-175): write `expr ?| fallback`");
+                ExprId:drhs = relay p_coalesce(p);
+                lhs = relay ast_add_expr(p.ast, ExprKind.ExprDefaultsExpr, qsp,
+                                         lhs.index, drhs.index, 0i32, 0i64);
             } else {
                 break;
             }
         }
-        // STRUCK (D-167, 1.0.9). The prototype defined `expr ? fallback` and
-        // `expr ?| fallback` as ONE node; this compiler lowers `?` since 0.9.7,
-        // and a second spelling differing only in precedence is what D-021 and
-        // D-123 struck before. Still parsed — the grammar is never partial
-        // (D-085) — and refused by name with the answer; the fallback is read
-        // and dropped so the rest of the statement still checks.
-        drop p_error(p, raw PARSE_DEFAULTS_REMOVED(),
-            "`?|` / `defaults` is removed (D-167): `?` is the one spelling of a `Result` fallback — write `expr ? fallback`, with parentheses for any wider scope");
-        ExprId:rhs = relay p_coalesce(p);
-        lhs = relay ast_add_expr(p.ast, ExprKind.ExprDefaultsExpr, sp,
-                                 lhs.index, rhs.index, 0i32, 0i64);
     }
     pass lhs;
 };
@@ -170,10 +180,18 @@ func:p_coalesce = ExprId(Parser->:p) {
         TokenKind:k = relay p_kind(p);
         ExprKind:node = ExprKind.ExprNone;
         if (k == TokenKind.OpQuestionQuestion) { node = ExprKind.ExprNullCoalesceExpr; }
-        if (k == TokenKind.OpQuestion)         { node = ExprKind.ExprSafeUnwrapExpr; }
+        // A bare `?` is STRUCK (D-175): it mirrors Rust's error-propagation but
+        // Nitpick's fallback yields a value; the fallback is `?|` (p_ternary).
+        // Filed under the otherwise-unused ExprDefaultsExpr so the kind stays
+        // reachable, and refused by name after the advance.
+        if (k == TokenKind.OpQuestion)         { node = ExprKind.ExprDefaultsExpr; }
         if (k == TokenKind.OpQuestionBang)     { node = ExprKind.ExprEmphaticUnwrapExpr; }
         if (node == ExprKind.ExprNone) { break; }
         drop p_advance(p);
+        if (k == TokenKind.OpQuestion) {
+            drop p_error(p, raw PARSE_BARE_QUESTION_REMOVED(),
+                "a bare `?` is not the `Result` fallback (D-175): write `expr ?| fallback` — `?` reads as Rust's error-propagation, but Nitpick's fallback yields a value");
+        }
         ExprId:rhs = relay p_binary(p, 16i32);
         lhs = relay ast_add_expr(p.ast, node, sp, lhs.index, rhs.index, 0i32, 0i64);
     }

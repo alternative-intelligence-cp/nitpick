@@ -11559,7 +11559,7 @@ D-107's "no duck typing" property; an `Iterator` over a by-value receiver
 (returning a new state each step) — allocates or copies per element, and
 makes the spec's example wrong in a second way.
 
-## D-167 — `?|` / `defaults` is struck; `?` is the one spelling of a `Result` fallback — **SETTLED**
+## D-167 — `?|` / `defaults` is struck; `?` is the one spelling of a `Result` fallback — **SETTLED; its CHOICE OF SURVIVOR REVERSED by D-175**
 
 1.0.9's T-3, decided by measuring the prototype, as D-097's countermeasure
 asks. `OP_REFERENCE.md` §0 described `expr ?| fallback` as "a scoped fallback
@@ -11773,3 +11773,39 @@ grammar is never partial, D-085) and refuses them by name,
 `x -= 1`. The backend guard for `ExprPostfixExpr` becomes a defensive
 `iv_broken`: a clean program never reaches it. `OP_REFERENCE.md` §1 loses the
 two rows.
+
+---
+
+## D-175 — The `Result` fallback is `?|`, not a bare `?`; D-167 kept the wrong survivor — **SETTLED; amends D-167**
+
+D-167 was right that `?` and `?|` were redundant — one operation, two spellings —
+but it kept the *accidental* spelling and struck the *intended* one. The user's
+design, stated directly: the fallback is `?|`, and a bare `?` was never meant to
+exist. `?` "snuck in" and is confusing precisely because it mirrors Rust's `?`
+(which propagates errors) while Nitpick's fallback yields a value.
+
+**The principle it serves.** Anything that could be mistaken for a C/Rust
+construct but behaves differently is deliberately renamed or respelled in this
+language — `const` → `fixed`, the ternary `?:` → `is`, `switch` → `pick` — so a
+reader's habit from another language cannot mislead them. The operators were
+designed as consistent two-character families for the same reason: the `?`-family
+is `?|` (a `Result` fallback), `??` (an `Optional`/`NIL` coalesce), `?!`
+(unwrap-or-`failsafe`); the `_`-family is `_!` (`raw`), `_?` (`drop`), `_^`
+(`relay`). A lone `?` breaks that family and re-introduces exactly the C/Rust
+collision the family was built to avoid.
+
+**No owner, tiny cost.** A bare `?` fallback appeared in zero source lines (the
+one match was D-167's own diagnostic text) and about nine test lines — so this is
+not a D-163-style sweep. The change:
+
+- The parser makes `?|` the working fallback — building the `SafeUnwrap` node,
+  the same one the seed already produces for `?|`, so the AST agrees. A bare `?`
+  and the word `defaults` are refused by name, `PARSE_BARE_QUESTION_REMOVED`
+  (`NITPICK-PARSE-011`), pointing at `?|`. The grammar is never partial (D-085):
+  both are still read, then refused. `PARSE-009` (which removed `?|`) is retired.
+- `OP_REFERENCE.md` restores `?|` as the fallback and marks a bare `?` struck.
+- The ~nine test uses of `?` become `?|`; the parse/type fixtures now assert
+  `?|` parses and a bare `?`/`defaults` are refused.
+
+Discovered when the user, reviewing the 1.0 close, explained the design history
+behind `?|` — the reason it was chosen over `?` in the first place.

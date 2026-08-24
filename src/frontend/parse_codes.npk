@@ -30,14 +30,15 @@ pub func:PARSE_UNREACHABLE_MARKER = string() { pass "NITPICK-PARSE-007"; };
 // generic "unexpected token" cannot.
 pub func:PARSE_WRAPPER_FIELD = string() { pass "NITPICK-PARSE-008"; };
 
-// D-167: `?|` / `defaults`, the removed second spelling of `?`. Its own code for
-// the reason PARSE-007 has one -- somebody writing it learned it from an older
-// document (or the prototype, where it was literally the same node as `?`), and
-// the diagnostic has to say what to write instead.
-pub func:PARSE_DEFAULTS_REMOVED = string() { pass "NITPICK-PARSE-009"; };
-
 // `++` / `--` (D-174). Struck for the same reason as `?|`: a construct the
 // prototype carried that this language does not want -- an increment that also
 // YIELDS a value hides a write inside an expression, and `x += 1` already does
 // the job with no hidden mutation. The diagnostic names the replacement.
 pub func:PARSE_INCDEC_REMOVED = string() { pass "NITPICK-PARSE-010"; };
+
+// D-175 (amends D-167): a bare `?` and the word `defaults` are NOT the `Result`
+// fallback -- `?|` is. D-167 kept the wrong survivor; `?` reads as Rust's
+// error-propagation while Nitpick's fallback yields a value, and `?|` is the
+// two-character `?`-family form (`?|` / `??` / `?!`). Named so old code learns
+// the spelling. (PARSE-009, which removed `?|`, retired with the reversal.)
+pub func:PARSE_BARE_QUESTION_REMOVED = string() { pass "NITPICK-PARSE-011"; };
