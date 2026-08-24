@@ -1056,6 +1056,24 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // whole answer, so a miss there is a miss.
     bool:opaque_recv = ((raw type_kind(e.types, recv)) == (raw TY_PARAM()));
     if (did_index == 0i32) {
+        // A FUNCTION-VALUED FIELD IS CALLED THROUGH (1.0.9c). `s.f(x)` where `f`
+        // is a field of function type is `(s.f)(x)` — an indirect call, the
+        // field loaded first. The field is the more specific reading of `.f`
+        // than a UFCS free function `f(s, x)`, exactly as `s.f` alone reads the
+        // field, so it is tried before the scope lookup. Only a FUNCTION-typed
+        // field qualifies; a data field cannot be called and falls through. The
+        // signature travels on the call, the same slot an indirect call uses.
+        if ((raw type_kind(e.types, recv)) == (raw TY_STRUCT())) {
+            TypeResolver:fr = raw etyper_resolver(e);
+            FieldInfo:fld = relay struct_field(@fr, recv, name, e.scope);
+            if (fld.found) {
+                if (raw type_is_func(e.types, fld.type_id)) {
+                    drop exprtypes_set_callee_ft(e.expr_types, id, fld.type_id);
+                    pass (relay check_args(e, fld.type_id, start, count, 0i32,
+                                           n.span));
+                }
+            }
+        }
         int32:sym = 0i32;
         if (!opaque_recv) { sym = raw scope_lookup(e.tab, e.scope, name); }
         if (sym == 0i32) {

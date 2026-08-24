@@ -1,0 +1,24 @@
+// expect-exit: 42
+//
+// `#unreachable()` IN AN EXCLUDED ARM (D-061, 1.0.9c). The replacement for the
+// removed `(!)`: a point a stricter analysis has excluded, whose body traps
+// through D-142's route (`UNREACHABLE`, −4102) if control ever reaches it. Here
+// the `Stop` arm is never taken, so the program runs to a normal exit; reached,
+// it would be a controlled stop to `failsafe`, not undefined behaviour.
+mod:unreachable_arm;
+
+enum:Ev = { Go; Stop; };
+
+func:handle = int32(Ev:e) {
+    pick (e) {
+        (Ev.Go)   { pass 42i32; },
+        (Ev.Stop) { pass #unreachable(); }
+    }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit (handle(Ev.Go) ? 7i32);
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

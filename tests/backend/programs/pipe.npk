@@ -1,0 +1,19 @@
+// expect-exit: 42
+//
+// THE PIPE OPERATOR (1.0.9c). `x |> g` is `g(x)` written the other way round —
+// the value on the left is `g`'s one argument, and the result is `g`'s, a
+// `Result<T>` handled like any call's (a latent `type_pipe` bug that returned
+// the bare success was fixed with the lowering). The right side is a named
+// function here; a function value would lower as an indirect call.
+mod:pipe;
+
+func:dbl = int32(int32:x) { pass x * 2i32; };
+func:inc = int32(int32:x) { pass x + 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = (20i32 |> dbl) ? 0i32;      // dbl(20) = 40
+    int32:b = (1i32  |> inc) ? 0i32;      // inc(1)  = 2
+    exit a + b;                           // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

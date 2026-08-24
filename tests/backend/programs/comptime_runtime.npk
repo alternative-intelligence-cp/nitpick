@@ -1,0 +1,18 @@
+// expect-exit: 42
+//
+// `comptime(…)` IN A VALUE POSITION (1.0.9c). The forcing form folds at check
+// time (`type_comptime`), and the emitter emits the FOLDED CONSTANT — not the
+// runtime evaluation of the expression — which is the point of writing
+// `comptime` in a value position. It folds a plain arithmetic expression and a
+// call to a `comptime func:`, both consumed before the backend runs.
+mod:comptime_runtime;
+
+comptime func:table_size = int32() { pass 40i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = comptime(6i32 * 7i32);      // 42 by arithmetic
+    int32:b = comptime(table_size());     // 40 through a comptime func
+    exit a + b - 40i32;                   // 42 + 40 - 40 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

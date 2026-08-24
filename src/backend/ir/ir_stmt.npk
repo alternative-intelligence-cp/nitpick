@@ -795,8 +795,11 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
     if (pn.kind == PatKind.PatRange) {
         pass (raw iv_broken(at));
     }
+    // A STRUCT DESTRUCTURE NEVER REACHES `pattern_const` (1.0.9c): it is
+    // irrefutable, so the chain sets its match to `true` before asking for a
+    // constant. Reaching here is a routing defect, not a rung.
     if (pn.kind == PatKind.PatStructDestructure) {
-        pass (raw iv_rung("struct destructuring in `pick`", "1.0", at));
+        pass (raw iv_broken(at));
     }
     // `ERR:` matches the sentinel (0.9.5) — the pick's OWN compare, which is
     // deliberately unguarded: pick-with-ERR-arm is the sanctioned branch on a
@@ -815,6 +818,32 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
 // same declared type in.
 func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                           IrVal:sel, Span:at) {
+    // A STRUCT DESTRUCTURE BINDS EACH NAMED FIELD (1.0.9c): `(Point{ x, y })`
+    // reads `x` and `y` out of the selector by field. The pattern is
+    // irrefutable, so the arm always runs; this is the binding half of that.
+    if (pn.kind == PatKind.PatStructDestructure) {
+        int32:sbc = raw pat_bind_count(pn);
+        int32:sbs = raw pat_bind_start(pn);
+        int32:si = 0i32;
+        while (si < sbc) {
+            int32:fname = raw ast_id_at(x.ast, sbs, si);
+            FieldInfo:fi = relay struct_field(x.tr, sel_tid, fname, x.scope);
+            if (!fi.found) { pass (raw iv_broken(at)); }
+            LlType:fll = relay ll_type(x.fe.ctx, fi.type_id);
+            if (!(raw ll_is_ok(fll))) {
+                pass (relay iv_from_ll_at(x, fll, fi.type_id, at));
+            }
+            string:fv = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(fv, " = extractvalue ", sel.ll, " ",
+                              relay cat3(sel.ref, ", ",
+                                  raw int_to_string(fi.index => int64))));
+            string:fslot = relay fnem_local(x.fe, fname, fi.type_id, fll.text);
+            drop irw_line(x.fe.w, relay cat5("store ", fll.text, " ", fv,
+                              relay string_concat(", ptr ", fslot)));
+            si = si + 1i32;
+        }
+        pass (raw iv_nil());
+    }
     if (pn.kind != PatKind.PatEnumDestructure) { pass (raw iv_nil()); }
     if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) { pass (raw iv_nil()); }
 
@@ -830,31 +859,68 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     LlType:pll = relay ll_type(x.fe.ctx, pty);
     if (!(raw ll_is_ok(pll))) { pass (relay iv_from_ll_at(x, pll, pty, at)); }
 
-    // MULTI-PAYLOAD BINDING is the pattern tail's (0.9.7), and it refuses by
-    // name until then — the construction side refuses symmetrically.
-    if ((raw pat_enum_bind_count(x.ast, pn)) > 1i32) {
-        pass (raw iv_rung("a multi-payload binding", "1.0", at));
+    // THE GENERAL SINGLE BINDING (0.9.2): spill the selector, address its
+    // payload slot, and load the VARIANT'S OWN TYPE through the pointer — the
+    // mirror of construction, and the end of the widen-narrow contract that
+    // could only carry one machine word (a string payload truncated to its
+    // pointer under the old shape). Kept byte-identical (1.0.9c wraps it in the
+    // count guard and adds the multi case below).
+    if ((raw pat_enum_bind_count(x.ast, pn)) == 1i32) {
+        string:tmp = relay irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, tmp, sel.ll);
+        drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
+                          relay string_concat(", ptr ", tmp)));
+        string:pp = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", sel.ll,
+                          ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
+        string:val = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(val, " = load ", pll.text, ", ptr ",
+                          relay string_concat(pp, "")));
+        string:slot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
+                                       pty, pll.text);
+        drop irw_line(x.fe.w, relay cat5("store ", pll.text, " ", val,
+                          relay string_concat(", ptr ", slot)));
+        pass (raw iv_nil());
     }
 
-    // THE GENERAL BINDING (0.9.2): spill the selector, address its payload
-    // slot, and load the VARIANT'S OWN TYPE through the pointer — the mirror
-    // of construction, and the end of the widen-narrow contract that could
-    // only carry one machine word (a string payload truncated to its pointer
-    // under the old shape).
-    string:tmp = relay irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, tmp, sel.ll);
+    // MULTI-PAYLOAD BINDING (1.0.9c): each binding reads its payload from the
+    // struct offset construction wrote it to. Binding i is payload i — the
+    // checker holds the counts equal — and `variant_payload_slot` gives each
+    // one's type and offset, the same source of truth the constructor used, so
+    // the two cannot drift.
+    string:mtmp = relay irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, mtmp, sel.ll);
     drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
-                      relay string_concat(", ptr ", tmp)));
-    string:pp = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", sel.ll,
-                      ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
-    string:val = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(val, " = load ", pll.text, ", ptr ",
-                      relay string_concat(pp, "")));
-    string:slot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
-                                   pty, pll.text);
-    drop irw_line(x.fe.w, relay cat5("store ", pll.text, " ", val,
-                      relay string_concat(", ptr ", slot)));
+                      relay string_concat(", ptr ", mtmp)));
+    int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
+    int32:bc = raw pat_enum_bind_count(x.ast, pn);
+    int32:bi = 0i32;
+    while (bi < bc) {
+        PayloadSlot:bs = raw variant_payload_slot(x, sel_tid, vn2, bi);
+        if (!bs.ok) { pass (raw iv_broken(at)); }
+        LlType:bpll = relay ll_type(x.fe.ctx, bs.type_id);
+        if (!(raw ll_is_ok(bpll))) {
+            pass (relay iv_from_ll_at(x, bpll, bs.type_id, at));
+        }
+        string:bbase = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(bbase, " = getelementptr ", sel.ll,
+                          ", ptr ", relay string_concat(mtmp, ", i32 0, i32 1")));
+        string:bpp = bbase;
+        if (bs.offset != 0i64) {
+            string:bpp2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(bpp2, " = getelementptr i8, ptr ",
+                              bbase, ", i64 ", raw int_to_string(bs.offset)));
+            bpp = bpp2;
+        }
+        string:bval = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(bval, " = load ", bpll.text, ", ptr ",
+                          relay string_concat(bpp, "")));
+        string:bslot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, bi),
+                                        bs.type_id, bpll.text);
+        drop irw_line(x.fe.w, relay cat5("store ", bpll.text, " ", bval,
+                          relay string_concat(", ptr ", bslot)));
+        bi = bi + 1i32;
+    }
     pass (raw iv_nil());
 };
 
@@ -922,6 +988,13 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     // order. Bare-constant picks keep the switch.
     int32:count = raw pick_arm_count(s);
     bool:chain = raw string_eq(disc_ll, "{ ptr, i64, i64 }");
+    // A STRUCT SELECTOR CANNOT RIDE THE SWITCH (1.0.9c): its discriminant is the
+    // whole aggregate, which `switch` cannot take. Its only arms are irrefutable
+    // destructures (D-169: a struct has no `==`), so the chain runs the first
+    // and binds its fields.
+    if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_STRUCT())) {
+        chain = true;
+    }
     int32:ci2 = 0i32;
     while (ci2 < count) {
         StmtNode:carm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
@@ -1036,6 +1109,13 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         // --- the pattern's truth -------------------------------------------
         string:hit = "";
         if (pn.kind == PatKind.PatWildcard) {
+            hit = "true";
+        }
+        // A STRUCT DESTRUCTURE IS IRREFUTABLE (1.0.9c): it always matches and
+        // binds its fields, so it is `true` like a wildcard — and the selector
+        // is an aggregate, which is exactly why a struct `pick` takes the chain
+        // and never the switch.
+        if (pn.kind == PatKind.PatStructDestructure) {
             hit = "true";
         }
         if (hit.len == 0i64) {

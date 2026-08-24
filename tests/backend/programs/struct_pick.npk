@@ -1,0 +1,24 @@
+// expect-exit: 42
+//
+// STRUCT DESTRUCTURING IN `pick` (1.0.9c). A struct pattern is irrefutable — it
+// binds the struct's fields by name and always matches — so it covers the
+// selector like a wildcard (a struct has no `==`, D-169, so this and a wildcard
+// are the only exhaustive arms). The selector is an aggregate, so the pick takes
+// the compare chain, not the switch.
+mod:struct_pick;
+
+struct:Point = { int32:x; int32:y; };
+
+func:sum = int32(Point:p) {
+    pick (p) {
+        (Point{ x, y }) { pass x + y; }
+    }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Point:pt = Point{ x: 20i32, y: 22i32 };
+    exit (sum(pt) ? 0i32);
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

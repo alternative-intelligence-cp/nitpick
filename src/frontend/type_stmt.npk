@@ -195,7 +195,10 @@ pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) {
 // with that lift; until then those bindings stay unknown exactly as before.
 func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
     if (selt == 0i32) { pass NIL; }
-    if ((raw type_kind(e.types, selt)) != (raw TY_ENUM())) { pass NIL; }
+    int32:sk = raw type_kind(e.types, selt);
+    if (sk != (raw TY_ENUM())) {
+        if (sk != (raw TY_STRUCT())) { pass NIL; }
+    }
     int32:i = 0i32;
     while (i < (raw pick_arm_count(s))) {
         StmtNode:arm = relay ast_stmt(e.ast, raw pick_arm_at(e.ast,
@@ -204,9 +207,10 @@ func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
         if (!(raw pat_is_none(pid2))) {
             PatNode:pn = relay ast_pat(e.ast, pid2);
             if (pn.kind == PatKind.PatEnumDestructure) {
-                if ((relay pat_enum_bind_count(e.ast, pn)) == 1i32) {
-                    drop type_one_binding(e, pid2, pn, selt);
-                }
+                drop type_enum_bindings(e, pid2, pn, selt);
+            }
+            if (pn.kind == PatKind.PatStructDestructure) {
+                drop type_struct_bindings(e, pid2, pn, selt);
             }
         }
         i = i + 1i32;
@@ -214,31 +218,74 @@ func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
     pass NIL;
 };
 
-func:type_one_binding = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn, int32:selt) {
+// A WINDOW OF BINDING TYPES, one per binding in binding order, its start on the
+// pattern's payload slot (1.0.9c). A single-payload enum used to record its one
+// type on slot `a`; a multi-payload binding recorded nothing and typed as
+// unknown, and a struct binding was skipped entirely — both left the arm body
+// checked against nothing. `type_ident` reads a binding's type back by finding
+// its index among the pattern's names, so the checker holds the body to the
+// destructured types the way construction and binding do at the backend.
+func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
+                              int32:selt) {
+    int32:bc = relay pat_enum_bind_count(e.ast, pn);
+    if (bc == 0i32) { pass NIL; }
     int32:segs = relay pat_enum_segment_count(e.ast, pn);
     if (segs <= 0i32) { pass NIL; }
     int32:vname = relay pat_enum_segment(e.ast, pn, segs - 1i32);
     DeclId:did = DeclId{ index: raw type_decl(e.types, selt) };
     DeclNode:d = relay ast_decl(e.ast, did);
-    int32:i = 0i32;
-    while (i < (raw item_member_count(e.ast, d))) {
-        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, i));
+    int32:home = raw symtab_home_scope(e.tab, did.index, e.scope);
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:vi = 0i32;
+    while (vi < (raw item_member_count(e.ast, d))) {
+        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, vi));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
-                if ((raw variant_payload_count(m)) == 1i32) {
-                    TypeResolver:r = raw etyper_resolver(e);
-                    int32:home = raw symtab_home_scope(e.tab, did.index, e.scope);
-                    int32:pt = relay resolve_type(@r,
-                        TypeId{ index: relay ast_id_at(e.ast,
-                                    raw variant_payload_start(m), 0i32) },
-                        home);
-                    drop ast_set_pat_a(e.ast, pid2, pt);
+                int32:mark = raw ast_scratch_mark(e.ast);
+                int32:j = 0i32;
+                while (j < bc) {
+                    int32:pt = 0i32;
+                    if (j < (raw variant_payload_count(m))) {
+                        pt = relay resolve_type(@r,
+                            TypeId{ index: relay ast_id_at(e.ast,
+                                        raw variant_payload_start(m), j) },
+                            home);
+                    }
+                    drop ast_scratch_push(e.ast, pt);
+                    j = j + 1i32;
                 }
+                IdSpan:w = raw ast_scratch_commit(e.ast, mark);
+                drop ast_set_pat_payload(e.ast, pid2, w.start => int64);
                 pass NIL;
             }
         }
-        i = i + 1i32;
+        vi = vi + 1i32;
     }
+    pass NIL;
+};
+
+// A STRUCT PATTERN'S BINDINGS ARE ITS FIELDS BY NAME (1.0.9c): `(Point{ x, y })`
+// binds `x` and `y` to the fields so named. The window holds each binding's
+// field type in binding order; a name that is no field is left `0` (unknown),
+// the struct-literal checker's own "no such field" is the diagnostic for it.
+func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
+                                int32:selt) {
+    int32:bc = raw pat_bind_count(pn);
+    if (bc == 0i32) { pass NIL; }
+    int32:bstart = raw pat_bind_start(pn);
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:mark = raw ast_scratch_mark(e.ast);
+    int32:j = 0i32;
+    while (j < bc) {
+        int32:fname = raw ast_id_at(e.ast, bstart, j);
+        FieldInfo:fi = relay struct_field(@r, selt, fname, e.scope);
+        int32:ft = 0i32;
+        if (fi.found) { ft = fi.type_id; }
+        drop ast_scratch_push(e.ast, ft);
+        j = j + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(e.ast, mark);
+    drop ast_set_pat_payload(e.ast, pid2, w.start => int64);
     pass NIL;
 };
 

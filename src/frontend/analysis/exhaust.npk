@@ -182,6 +182,21 @@ pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
     // EVERYTHING ELSE: a wildcard covers whatever the arms did not.
     if (has_wild) { pass NIL; }
 
+    // A STRUCT-DESTRUCTURE ARM IS IRREFUTABLE (1.0.9c): it binds the struct's
+    // fields and always matches, so one covers the selector exactly as `(*)`
+    // does. A struct has no listable values and no `==` (D-169), so a
+    // destructure (or a wildcard) is the only way a struct `pick` is exhaustive.
+    if (kind == (raw TY_STRUCT())) {
+        int32:si = 0i32;
+        while (si < count) {
+            StmtNode:sarm = relay ast_stmt(x.ast,
+                                relay pick_arm_at(x.ast, start, si));
+            PatNode:spn = relay ast_pat(x.ast, raw arm_pattern(sarm));
+            if (spn.kind == PatKind.PatStructDestructure) { pass NIL; }
+            si = si + 1i32;
+        }
+    }
+
     if (kind == (raw TY_ENUM())) {
         drop check_enum_coverage(x, ty, start, count, at);
         pass NIL;

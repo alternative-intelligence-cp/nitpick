@@ -352,6 +352,20 @@ pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) {
     pass NIL;
 };
 
+// The PATTERN's payload slot, where the checker records the START of a window of
+// its bindings' resolved types (1.0.9c) — one per binding, in binding order.
+// Enum (single or multi) and struct destructure alike use it; the reference
+// checker finds a binding's index by name and reads the type back. Free (zero)
+// until the pick that owns the arm is checked, on both pattern kinds.
+pub func:ast_set_pat_payload = NIL(Ast->:ast, PatId:id, int64:value) {
+    if (id.index < 0i32) { fail 7tbb32; }
+    if (id.index >= ast.pat_count) { fail 7tbb32; }
+    PatNode:n = ast.pats[id.index => int64];
+    n.payload = value;
+    ast.pats[id.index => int64] = n;
+    pass NIL;
+};
+
 // --- what a node was made by ---------------------------------------------------
 //
 // THE AST IS WRITE-ONCE AFTER EXPANSION, and expansion is the one pass that

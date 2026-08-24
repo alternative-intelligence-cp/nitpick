@@ -9807,6 +9807,8 @@ trap codes continue that region below `E_EOF`:
 | −4098 | `INT_MIN_OVERFLOW` | `INT_MIN / -1` or `INT_MIN % -1` — no representable result, and D-008 already refused inventing one for a plain integer, so it traps rather than wraps |
 | −4099 | `OUT_OF_BOUNDS` | a slice/array index past the end, or a range view that does not fit its source (D-070; registered 0.9.2) |
 | −4100 | `TBB_ERR` | an ERR value at a bare comparison, or a checked cast out of tbb — the taint about to steer control flow or launder into a number (D-008 §5, D-144; registered 0.9.5) |
+| −4101 | `BAD_STEP` | a counted loop's step was not positive at runtime where it could not be a literal (registered 0.9.9) |
+| −4102 | `UNREACHABLE` | `#unreachable()` was reached — an arm a stricter analysis had excluded turned out to be reachable, made a controlled stop rather than undefined behaviour (D-061; registered 1.0.9c) |
 
 The guards are emitted in EVERY build — D-068's rule, restated at the emission
 site: a build without the verifier still emits the check, and 1.3's static

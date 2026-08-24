@@ -1,0 +1,19 @@
+// expect-error: NITPICK-TYPE-032
+//
+// AN INTEGER CANNOT FORGE A PAYLOAD-CARRYING ENUM (1.0.9c). `intN =>! enum`
+// forges a TAG — legal for a payload-less enum, whose value is its tag, and the
+// round-trip the compiler's own tag storage depends on. A payload-carrying enum
+// is a `{tag, payload}` value; a tag alone leaves the payload invented, which is
+// not a cast. It reached the backend as "a cast between non-scalar types" (a
+// rung); the refusal is the checker's now, by name — construct the variant with
+// its payload instead.
+mod:cast_payload_enum;
+
+enum:E = { A(int32); B; };
+
+func:main = int32(cstring[]:_~argv) {
+    E:e = 0i32 =>! E;
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

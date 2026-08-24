@@ -141,3 +141,10 @@ pub func:TYPE_NO_CAST = string()       { pass "NITPICK-TYPE-032"; };
 // is refused HERE by name. It reached the backend, which refused it as a
 // rung, and a rung names valid Nitpick.
 pub func:TYPE_NOT_ITERABLE = string()  { pass "NITPICK-TYPE-033"; };
+
+// `==`/`!=` ON AN AGGREGATE (D-169, 1.0.9c). A struct, array, `Result`, `string`,
+// `dyn`, two non-`NIL` `Optional`s or a payload-carrying enum has no built-in
+// equality the language will pick a meaning for — derive or implement `Eq`. It
+// reached the backend, which refused an `icmp` on an aggregate as a rung; the
+// refusal is the checker's now, with the spelling that works. `== NIL` stays.
+pub func:TYPE_NOT_COMPARABLE = string() { pass "NITPICK-TYPE-034"; };

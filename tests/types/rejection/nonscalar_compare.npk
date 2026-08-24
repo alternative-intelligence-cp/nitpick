@@ -1,0 +1,19 @@
+// expect-error: NITPICK-TYPE-034
+//
+// `==` ON AN AGGREGATE IS REFUSED AT THE CHECKER (D-169, 1.0.9c). Equality on a
+// struct has no one meaning the language will pick — `Eq` gives it one — so it
+// is refused here with `TYPE_NOT_COMPARABLE` naming that spelling. Until 1.0.9c
+// the checker accepted it and the emitter refused an `icmp` on an aggregate as a
+// rung; T-5 settled that the refusal belongs at the checker, and this file moved
+// from `tests/rejection/` (a backend rung) to here (a type rule) with it.
+
+struct:P = { int32:x; int32:y; };
+
+func:main = int32(cstring[]:_~argv) {
+    P:a = P{ x: 1i32, y: 2i32 };
+    P:b = P{ x: 1i32, y: 2i32 };
+    if (a == b) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

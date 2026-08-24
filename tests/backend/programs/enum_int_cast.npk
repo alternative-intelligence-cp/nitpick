@@ -1,0 +1,20 @@
+// expect-exit: 42
+//
+// A NON-SCALAR CAST THAT LOWERS (1.0.9c). `enum =>! intN` reads the tag; a
+// payload-less enum's value IS its tag, so `intN =>! enum` forges it back — the
+// round-trip 88 sites in the compiler depend on. Every non-scalar cast the
+// checker admits lowers; the ones it refuses (a struct, an integer forging a
+// payload-carrying enum) never reach the retired backend rung.
+mod:enum_int_cast;
+
+enum:Color = { Red; Green; Blue; };
+
+func:main = int32(cstring[]:_~argv) {
+    Color:c = Color.Blue;
+    int32:t = c =>! int32;             // read the tag -> 2
+    Color:back = t =>! Color;          // forge it back -> Blue
+    int32:t2 = back =>! int32;         // -> 2
+    exit t + t2 + 38i32;               // 2 + 2 + 38 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

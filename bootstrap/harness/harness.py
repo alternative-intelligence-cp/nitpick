@@ -511,8 +511,10 @@ SLOT_SITE_PAIRS = {
     "check_assign":        {"emit_assign"},
     "check_pass":          {"emit_pass"},
     "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call",
-                            "emit_qualified_call"},   # `Trait.method(recv, …)` (D-172, 1.0.9b)
+                            "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)
+                            "emit_field_call"},       # `s.f(x)` through a fn-valued field (1.0.9c)
     "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
+    "type_pipe":           {"emit_pipe"},             # `x |> g` fits x to g's parameter (1.0.9c)
     "check_ctor_args":     {"emit_ctor"},
     "type_struct_literal": {"emit_struct_lit"},
     "type_array_literal":  {"emit_array_lit"},
@@ -526,7 +528,6 @@ SLOT_SITE_PAIRS = {
     # and the arena emitter is where it would be.
     "want_handle_of":      {"emit_arena_method"},
     "type_null_coalesce":  {"emit_coalesce"},          # lowered at 1.0.7
-    "type_pipe":           "refused: the pipe operator",
     "check_decl":          "refused: a module-level binding",
 }
 

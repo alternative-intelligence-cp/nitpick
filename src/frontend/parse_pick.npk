@@ -92,6 +92,33 @@ pub func:pat_enum_bind = int32(Ast->:ast, PatNode:p, int32:i) {
     pass (raw ast_id_at(ast, p.b, base + i));
 };
 
+// WHICH BINDING OF THIS PATTERN IS `name`, or −1. A pattern's bindings are named
+// in order — an enum destructure's after its segments, a struct destructure's in
+// its brace list — and the checker keys a binding's recorded type by this index
+// (1.0.9c). Kept beside the accessors it reads so the two orders cannot drift.
+pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) {
+    if (p.kind == PatKind.PatEnumDestructure) {
+        int32:bc = raw pat_enum_bind_count(ast, p);
+        int32:i = 0i32;
+        while (i < bc) {
+            if ((raw pat_enum_bind(ast, p, i)) == name) { pass i; }
+            i = i + 1i32;
+        }
+        pass (0i32 - 1i32);
+    }
+    if (p.kind == PatKind.PatStructDestructure) {
+        int32:bc = raw pat_bind_count(p);
+        int32:bs = raw pat_bind_start(p);
+        int32:i = 0i32;
+        while (i < bc) {
+            if ((raw ast_id_at(ast, bs, i)) == name) { pass i; }
+            i = i + 1i32;
+        }
+        pass (0i32 - 1i32);
+    }
+    pass (0i32 - 1i32);
+};
+
 // --- patterns ---------------------------------------------------------------------
 
 // The contents of one `( … )`.
@@ -117,12 +144,12 @@ func:p_parse_pattern = PatId(Parser->:p) {
     if (relay p_at(p, TokenKind.OpBang)) {
         if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PRParen) {
             drop p_advance(p);
-            // `#unreachable()` IS THE SPEC'S ANSWER (D-061) AND IS NOT PROVIDED
-            // YET — the builtins are `#size_of`, `#wild_ptr`, `#wild_slice` —
-            // so the message says so rather than sending the reader to a
-            // `NITPICK-MACRO-001` (1.0.8; the builtin is 1.0.9's).
+            // `#unreachable()` IS THE SPEC'S ANSWER (D-061), AND IT IS PROVIDED
+            // (1.0.9c): a `#`-builtin that traps through D-142's route
+            // (`UNREACHABLE`, −4102) if control ever reaches it. So the message
+            // sends the reader to it directly now.
             drop p_error(p, raw PARSE_UNREACHABLE_MARKER(),
-                "`(!)` is removed (D-061); write the arm normally — its body is `#unreachable()`, which traps, once that builtin is provided (cycle 1.0.9), and an explicit `!!! code;` until then");
+                "`(!)` is removed (D-061); write the arm normally, with `#unreachable()` as its body — a builtin that traps if control ever reaches it");
             pass (raw pat_none());
         }
     }

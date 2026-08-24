@@ -1,0 +1,20 @@
+// expect-exit: 42
+//
+// A CALL THROUGH A FUNCTION-VALUED MEMBER (1.0.9c). `f` is a struct field of
+// function type; `(o.f)(x)` and `o.f(x)` both call it — the field loaded first,
+// then an indirect call. `o.f(x)` reads the field before a UFCS free function,
+// the same way `o.f` alone reads the field. The "a call through a member" rung
+// retires for this shape.
+mod:fn_field_call;
+
+func:dbl = int32(int32:x) { pass x * 2i32; };
+struct:Ops = { func int32(int32):op; };
+
+func:main = int32(cstring[]:_~argv) {
+    Ops:o = Ops{ op: dbl };
+    int32:a = (o.op)(20i32) ? 0i32;       // CallExpr, member-access callee
+    int32:b = o.op(1i32) ? 0i32;          // method-call parse shape
+    exit a + b;                           // 40 + 2 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -682,8 +682,59 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
             m2 = relay string_concat(m2, relay why_not_ordered(e, common));
             drop te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span);
         }
+    } else {
+        // `==`/`!=` ON AN AGGREGATE IS REFUSED HERE (D-169, 1.0.9c). Equality on
+        // a struct, array, `Result`, `string`, `dyn`, a payload-carrying enum,
+        // or two non-`NIL` `Optional`s has no one meaning the language will pick
+        // — `Eq` is the spelling that gives it one. It reached the backend as an
+        // `icmp` on an aggregate, refused there as a rung (which names valid
+        // Nitpick); the refusal is the checker's now. `x == NIL` is the one
+        // aggregate equality that stays, because it asks something unambiguous.
+        if (!(raw equatable(e, n, common))) {
+            string:e1 = relay string_concat("`",
+                            relay type_display(e.types, e.interns, common));
+            string:e2 = relay string_concat(e1,
+                "` has no built-in `==`: derive or implement `Eq` and compare with `a.eq(b)`");
+            drop te_error(e, raw TYPE_NOT_COMPARABLE(), e2, n.span);
+        }
     }
     pass (e.types.t_bool);
+};
+
+// MAY `==`/`!=` COMPARE THESE (D-169)? Scalars, pointers and kernel identifiers
+// have a built-in equality; aggregates do not. The one aggregate exception is
+// `x == NIL` — one operand written as the `NIL` sentinel — which asks whether an
+// `Optional` holds a value, an unambiguous question the backend answers by tag.
+// The `NIL` side is found on the AST, not by type: an unsuffixed `NIL` in a
+// comparison takes the `Optional`'s type by context (D-092), so by the time this
+// runs neither operand's TYPE is `TY_NIL` any more.
+func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) {
+    int32:k = raw type_kind(e.types, common);
+    if (k == (raw TY_STRUCT())) { pass false; }
+    if (k == (raw TY_ARRAY()))  { pass false; }
+    if (k == (raw TY_RESULT())) { pass false; }
+    if (k == (raw TY_STRING())) { pass false; }
+    if (k == (raw TY_DYN()))    { pass false; }
+    if (k == (raw TY_OPTIONAL())) {
+        if (raw expr_is_nil_lit(e, raw expr_lhs(n))) { pass true; }
+        if (raw expr_is_nil_lit(e, raw expr_rhs(n))) { pass true; }
+        pass false;
+    }
+    if (k == (raw TY_ENUM())) {
+        // A payload-less enum is its tag — an integer compare; one that carries
+        // a payload is an aggregate, and `Eq` is how its payloads compare.
+        pass (!(relay enum_has_payload(e.ast, e.types, common)));
+    }
+    pass true;
+};
+
+// The `NIL` sentinel written as such — `ExprSentinelLiteral` with payload 0
+// (NULL and ERR are the other two, with non-zero payloads). Mirrors the
+// backend's `expr_is_nil_literal`, so both sides admit the same `== NIL`.
+func:expr_is_nil_lit = bool(ExprTyper->:e, ExprId:eid) {
+    ExprNode:en = relay ast_expr(e.ast, eid);
+    if (en.kind != ExprKind.ExprSentinelLiteral) { pass false; }
+    pass (en.payload == 0i64);
 };
 
 pub func:why_not_ordered = string(ExprTyper->:e, int32:t) {
@@ -890,6 +941,30 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
     e.expected = saved;
 
     if (from == 0i32) { pass to; }
+
+    // FORGING A PAYLOAD-CARRYING ENUM FROM AN INTEGER IS REFUSED AT THE CHECKER
+    // (1.0.9c). `intN =>! enum` forges a TAG — legal for a payload-LESS enum,
+    // whose value IS its tag, and the round-trip 88 sites depend on (D-... the
+    // `payload =>! TokenKind` case). A payload-carrying enum is a `{tag,
+    // payload}` value; a tag alone leaves the payload invented, which is not a
+    // cast. It reached the backend as "a cast between non-scalar types" — a rung,
+    // which names valid Nitpick — so the refusal moves here, by name.
+    if (!(raw type_is_invalid(e.types, from))) {
+        if (!(raw type_is_invalid(e.types, to))) {
+            if (raw type_is_integer(e.types, from)) {
+                if ((raw type_kind(e.types, to)) == (raw TY_ENUM())) {
+                    if (relay enum_has_payload(e.ast, e.types, to)) {
+                        string:ce1 = relay string_concat("`",
+                            relay type_display(e.types, e.interns, to));
+                        pass (relay te_error(e, raw TYPE_NO_CAST(),
+                            relay string_concat(ce1,
+                                "` carries a payload, so an integer cannot forge it — a tag is not a whole `{tag, payload}` value; construct the variant with its payload, `E.Variant(…)`"),
+                            n.span));
+                    }
+                }
+            }
+        }
+    }
     pass (relay check_cast(e.types, e.interns, e.diags, from, to, unchecked, n.span));
 };
 
@@ -1135,7 +1210,17 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
     // unknown propagates silently.
     if (s.origin_kind == (raw SYM_PAT())) {
         PatNode:pn = relay ast_pat(e.ast, PatId{ index: s.origin });
-        pass pn.a;
+        // THE BINDING'S TYPE, FROM THE WINDOW THE PICK CHECK RECORDED (1.0.9c).
+        // A pattern's bindings sit in a window on its payload slot, one type per
+        // binding in binding order; this reference's index is where its name
+        // sits among the pattern's bindings. Unset (0) is a binding the pick
+        // check could not type — unknown, which propagates silently, as it did
+        // before any binding was typed at all.
+        int32:widx = raw pat_binding_index(e.ast, pn, s.name);
+        if (widx < 0i32) { pass 0i32; }
+        int32:wstart = pn.payload =>! int32;
+        if (wstart == 0i32) { pass 0i32; }
+        pass (raw ast_id_at(e.ast, wstart, widx));
     }
 
     if (s.origin_kind == (raw SYM_STMT())) {
@@ -1375,6 +1460,26 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
             }
         }
         pass (raw tt_slice(e.types, elem));
+    }
+
+    if (raw string_eq(name, "unreachable")) {
+        if (gc != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#unreachable` takes no type arguments", n.span));
+        }
+        if (argc != 0i32) {
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
+                "`#unreachable` takes no arguments; it marks a point control never reaches (D-061)",
+                n.span));
+        }
+        // IT PRODUCES NO VALUE (D-061): control never returns from it, so it
+        // takes whatever type its position expects — a `pick` arm's, an
+        // assignment's — the way a diverging expression fits anywhere. With no
+        // context (a bare `#unreachable();` statement) it is `NIL`, which the
+        // statement discards.
+        int32:uw = raw expected_value(e);
+        if (uw != 0i32) { pass uw; }
+        pass (e.types.t_nil);
     }
 
     drop diaglist_push(e.diags, raw diag_error(raw TYPE_INTERNAL(),
@@ -1673,7 +1778,16 @@ func:type_pipe = int32(ExprTyper->:e, ExprNode:n) {
             }
         }
     }
-    pass (raw type_elem(e.types, rt));
+    // THE PIPE'S TYPE IS `Result<success>`, EXACTLY AS THE CALL'S IS (D-069). A
+    // pipe is `g(x)` written the other way round (DECISIONS §D-... the pipe
+    // passes the value, not the `Result`), so it returns what the call returns —
+    // the func type stores the success slot, and the wrap happens here, the same
+    // one rule `check_args` applies. Returning the bare success (before 1.0.9c)
+    // made `x |> g` and `g(x)` two different types for one operation, which
+    // nothing had lowered so nothing had caught.
+    int32:psucc = raw type_elem(e.types, rt);
+    pass (raw tt_result(e.types, psucc, raw type_size(e.types, psucc),
+                        raw type_align(e.types, psucc)));
 };
 
 // `x => dyn Trait` — THE TARGET HAS TO IMPLEMENT IT, AND IT HAS TO BE OBJECT-SAFE.
