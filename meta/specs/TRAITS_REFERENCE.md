@@ -54,6 +54,14 @@ invalid anywhere else.
 > added because a connector carries no information that position does not already
 > carry.
 
+An impl's method must have the signature the trait declares — **including the
+contract** (D-163, checked since 1.1.0): an impl may not drop a trait method's
+`never fails` (`NITPICK-TYPE-041`), because a caller dispatching through the
+trait relies on the trait's promise. The reverse is fine — an impl may be
+`never fails` where its trait is not, and the guarantee is then visible on the
+concrete receiver only. `#[derive]`-generated impls carry whatever the trait
+declares.
+
 ### 2.1 Default Methods
 
 A trait may supply a default body. Impls that omit the method inherit it; any impl

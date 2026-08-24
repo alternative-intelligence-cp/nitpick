@@ -33,6 +33,7 @@ use "./type_layout.npk".*;
 use "./expr_types.npk".*;
 use "./type_expr.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
+use "./builtins.npk".*;     // is_builtin_name (D-163 rule 6)
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
 //
@@ -127,7 +128,11 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
 
     if (s.kind == StmtKind.StmtDeferStmt) {
         StmtId:body = StmtId{ index: s.a };
+        // D-163 rule 7: `fail`/`relay` are refused anywhere in a `defer` body.
+        bool:saved_defer = e.in_defer;
+        e.in_defer = true;
         drop check_stmt(e, body);
+        e.in_defer = saved_defer;
         pass NIL;
     }
 
@@ -139,9 +144,94 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
     if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
 
-    // One expression in slot `a`, typed for its own sake: an expression
-    // statement, `trap`, `discard`, `give`, `prove`, `assert_static`. A mistake
-    // inside one is worth reporting even where the value goes nowhere.
+    // A BARE EXPRESSION STATEMENT — rule 6 of D-163's closed list. A `Result`
+    // may never be discarded without a keyword, and every call yields one. The
+    // handled forms are accepted by SHAPE — `drop`, `relay`, `?!`, `?|` each
+    // deal with the error — and everything else is refused: a bare call (its
+    // `Result` dropped), a computed value thrown away, or `raw` in statement
+    // position (its unwrapped value discarded).
+    if (s.kind == StmtKind.StmtExprStmt) {
+        ExprId:xid = raw stmt_expr(s);
+        ExprNode:xn = relay ast_expr(e.ast, xid);
+        if (xn.kind == ExprKind.ExprDropExpr)          { drop type_of_expr(e, xid); pass NIL; }
+        bool:kw = xn.kind == ExprKind.ExprRelayExpr;
+        if (xn.kind == ExprKind.ExprEmphaticUnwrapExpr) { kw = true; }
+        if (xn.kind == ExprKind.ExprSafeUnwrapExpr)     { kw = true; }
+        if (kw) {
+            // `relay f();` / `f() ?! c;` / `f() ?| NIL;` — the keyword deals
+            // with the ERROR; the statement's own type must still be `NIL`, or
+            // a VALUE is being discarded (rule 6: `discard(…)` is the spelling
+            // for that, and it must be deliberate).
+            int32:kt = relay type_of_expr(e, xid);
+            if (kt == 0i32) { pass NIL; }
+            if (raw type_is_invalid(e.types, kt)) { pass NIL; }
+            if (kt != e.types.t_nil) {
+                drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                    "the error is handled but the VALUE is discarded (D-163): a statement is an effect — `discard(…)` it deliberately, or use the value",
+                    s.span);
+            }
+            pass NIL;
+        }
+        if (xn.kind == ExprKind.ExprRawUnwrapExpr) {
+            drop type_of_expr(e, xid);
+            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                "`raw f()` in statement position discards the unwrapped value; run it for effect with `drop f();` (D-163)",
+                s.span);
+            pass NIL;
+        }
+        // A BARE BUILTIN CALL types as unknown (no signature in the checker),
+        // so the Result test below cannot see it — but the closed list is by
+        // SHAPE: every call takes a keyword. `drop dalloc(p);` is the spelling.
+        if (xn.kind == ExprKind.ExprCallExpr) {
+            ExprNode:xcal = relay ast_expr(e.ast, raw expr_callee(xn));
+            if (xcal.kind == ExprKind.ExprIdentifierExpr) {
+                if (xcal.a == 0i32) {
+                    if (raw is_builtin_name(relay intern_get(e.interns,
+                                                xcal.payload =>! int32))) {
+                        drop type_of_expr(e, xid);
+                        drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                            "a bare call discards its outcome (D-163): run a builtin for effect with `drop`",
+                            s.span);
+                        pass NIL;
+                    }
+                }
+            }
+        }
+        int32:xt = relay type_of_expr(e, xid);
+        if (xt == 0i32) { pass NIL; }
+        if (raw type_is_invalid(e.types, xt)) { pass NIL; }
+        if ((raw type_kind(e.types, xt)) == (raw TY_RESULT())) {
+            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                "a `Result` is discarded here with no keyword (D-163): `drop` it (a `never fails` call), `relay` it, or handle it with `?|`, `?!`, `is_err`, or a `pick`",
+                s.span);
+            pass NIL;
+        }
+        if (xt != e.types.t_nil) {
+            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                "this expression's value is discarded (D-163): a statement is an effect, not a computed value thrown away",
+                s.span);
+            pass NIL;
+        }
+        pass NIL;
+    }
+    // `discard(expr)` throws away a plain value ON PURPOSE — but a `Result` is
+    // not a plain value, and must be handled, not discarded (D-163 rule 6).
+    if (s.kind == StmtKind.StmtDiscardStmt) {
+        ExprId:did = raw stmt_expr(s);
+        int32:dt = relay type_of_expr(e, did);
+        if (dt == 0i32) { pass NIL; }
+        if (raw type_is_invalid(e.types, dt)) { pass NIL; }
+        if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
+            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                "`discard` throws away a plain value; a `Result` must be handled — `drop`, `relay`, `?|`, `?!`, or `is_err`/`pick` (D-163)",
+                s.span);
+        }
+        pass NIL;
+    }
+
+    // One expression in slot `a`, typed for its own sake: `trap`, `give`,
+    // `prove`, `assert_static`. A mistake inside one is worth reporting even
+    // where the value goes nowhere.
     if (raw stmt_carries_expr(s.kind)) {
         drop type_of_expr(e, raw stmt_expr(s));
         pass NIL;
@@ -544,9 +634,19 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
 // no `Result` to fail into, and an error leaving the program's last frame has
 // nowhere to go. That is the uncontrolled stop the discipline exists to prevent.
 func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
+    if (e.in_defer) {
+        drop te_error(e, raw TYPE_DEFER_EXIT(),
+            "a `defer` body may not `fail` (D-163): a cleanup runs while the scope unwinds and must not itself exit; handle the error inside the `defer`",
+            s.span);
+    }
     if (e.fn_terminal) {
         drop te_error(e, raw TYPE_RESULT_RETURN(),
             "`fail` returns an error from the enclosing function, and `main` and `failsafe` return no `Result` to fail into; `exit` is how a program stops",
+            s.span);
+    }
+    if (e.fn_never_fails) {
+        drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+            "a `never fails` function may not `fail` (D-163): drop the clause, or handle the error and `pass`",
             s.span);
     }
     ExprId:c = raw stmt_operand(s);
@@ -572,6 +672,11 @@ func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
 // the success path, one of which silently supplies an error field nobody wrote.
 func:check_return = NIL(ExprTyper->:e, StmtNode:s) {
     ExprId:v = raw stmt_operand(s);
+    if (e.fn_never_fails) {
+        drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+            "a `never fails` function returns with `pass`; an explicit `return Result{…}` can carry an error (D-163)",
+            s.span);
+    }
     if (raw expr_is_none(v)) {
         drop te_error(e, raw TYPE_RESULT_RETURN(),
             "`return` takes a `Result{…}` literal; `pass` and `fail` are the shorthands for one field at a time",
@@ -887,6 +992,47 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
     e.generics = g;
     e.fn_success = sg.success;
     e.fn_terminal = sg.terminal;
+    e.fn_never_fails = relay fn_declares_never_fails(e.ast, d);
+    if (e.fn_never_fails) {
+        // A terminal function returns no `Result`, so `never fails` says nothing
+        // there; and `never fails` may not combine with the verification
+        // contracts, which are the verifier's obligations, not this one (D-163).
+        if (e.fn_terminal) {
+            drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                "`main`/`failsafe` return no `Result`, so `never fails` says nothing there (D-163)",
+                d.span);
+        }
+        int32:nci = 0i32;
+        while (nci < (raw fn_contract_count(e.ast, d))) {
+            VerifyNode:ncv = relay ast_verify(e.ast, raw fn_contract(e.ast, d, nci));
+            if (ncv.kind == VerifyKind.VerifyContractNode) {
+                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                    "a `never fails` function may not also state `requires`/`ensures` (D-163)",
+                    ncv.span);
+            }
+            if (ncv.kind == VerifyKind.VerifyLimitNode) {
+                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                    "a `never fails` function may not carry `limit<Rules>` (D-163): the limit is a verifier obligation this contract cannot hold",
+                    ncv.span);
+            }
+            nci = nci + 1i32;
+        }
+        if (raw decl_has(d, raw DECL_ASYNC())) {
+            drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                "an `async` function may not be `never fails` (D-163): a suspended task can be cancelled, and cancellation is an error the contract would deny",
+                d.span);
+        }
+        int32:npi = 0i32;
+        while (npi < (raw fn_param_count(e.ast, d))) {
+            DeclNode:npd = relay ast_decl(e.ast, raw fn_param(e.ast, d, npi));
+            if (!(raw verify_is_none(raw param_limit(npd)))) {
+                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                    "a `never fails` function may not carry `limit<Rules>` on a parameter (D-163): the limit is a verifier obligation this contract cannot hold",
+                    npd.span);
+            }
+            npi = npi + 1i32;
+        }
+    }
 
     // A TRAIT METHOD WITH NO BODY IS A DECLARATION, not an empty function. The
     // absence is real (`parse_decls.npk` says so), so there is nothing to walk —

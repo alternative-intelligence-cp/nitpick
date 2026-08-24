@@ -292,6 +292,13 @@ class Parser:
                 self.parse_expr()
                 has_contract = True
                 continue
+            # `never fails` (D-163) -- parsed and carried as a fact, WITHOUT
+            # has_contract: the checker rung-refuses the verification contracts
+            # as 1.3 work, and this one changes no lowering. The real frontend
+            # is what enforces it.
+            if self.accept("never"):
+                self.expect("fails")
+                continue
             break
         body = None
         if self.at("{"):

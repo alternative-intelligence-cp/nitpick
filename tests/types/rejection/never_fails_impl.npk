@@ -1,0 +1,19 @@
+// expect-error: NITPICK-TYPE-041
+//
+// D-163: an impl may not DROP the `never fails` its trait method declares — a
+// caller dispatching through the trait relies on the trait's contract, and an
+// impl without it un-makes a promise the caller cannot see broken.
+mod:never_fails_impl;
+
+trait:Steady = {
+    func:value = int32(Self:self) never fails;
+};
+
+struct:Box = { int32:v; };
+
+impl:Box:Steady = {
+    func:value = int32(Self:self) { pass self.v; };
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

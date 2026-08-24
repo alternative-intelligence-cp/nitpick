@@ -30,9 +30,11 @@ double-frees, takes the address of a temporary, leaves a `pick` arm uncovered, l
 `(*)` swallow ERR, reads a tainted `Result.value`, acquires a lock downward, expands
 a macro without bound, names something in a macro body its defining scope does not
 have, splices a body where it does not fit, evaluates a `comptime` that never
-finishes, derives a trait that cannot be derived, or writes a struct literal that
-omits a field — each with its own code, its own span, and a case in one of the six
-rejection suites showing it refuse.
+finishes, derives a trait that cannot be derived, writes a struct literal that
+omits a field, discards a `Result` with a bare `f();`, lets a `never fails`
+function `fail`/`relay`, drops a trait's `never fails` in an impl, or `fail`s
+inside a `defer` (D-163, 1.1.0) — each with its own code, its own span, and a
+case in one of the six rejection suites showing it refuse.
 
 **Seven whole-tree checks run on every harness invocation** and each found
 something on its first run: `check_kinds_typed` (every expression kind is typed),

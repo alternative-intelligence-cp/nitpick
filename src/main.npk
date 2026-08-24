@@ -141,7 +141,7 @@ func:main = int32(cstring[]:argv) {
             drop nio_line(@ew, "npkc: cannot write the output file");
             exit 2i32;
         }
-        wild_release_all();
+        drop wild_release_all();
         exit 0i32;
     }
     // The IR is BYTES already carrying its `\n`s — the byte path, not a text
@@ -153,7 +153,7 @@ func:main = int32(cstring[]:argv) {
         drop nio_line(@ew, "npkc: cannot write the IR to stdout");
         exit 2i32;
     }
-    wild_release_all();
+    drop wild_release_all();
     exit 0i32;
 };
 

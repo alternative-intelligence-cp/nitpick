@@ -678,6 +678,30 @@ pub func:is_keyword = bool(string:text) {
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")
+    # THE `fails` COLUMN (D-163, 1.1.0). A builtin is declared in no module, so
+    # the `never fails` licence cannot read a declaration for it -- it reads
+    # THIS, generated from the reference's own Fails column, which was filled by
+    # reading each builtin's floor signature (a `{ T, i32 }` return is may-fail;
+    # a plain value or void is not -- traps are not Result errors, D-150).
+    nf = []
+    for m in re.finditer(r'^\|\s*`(\w+)[`(][^\n]*\|\s*([^|]*)\|\s*$', br, re.M):
+        if "never fails" in m.group(2) and m.group(1) not in nf:
+            nf.append(m.group(1))
+    nf.sort()
+    missing = [n for n in names if n not in nf
+               and not re.search(r'^\|\s*`%s[`(][^\n]*may fail' % n, br, re.M)]
+    if missing:
+        raise SystemExit("BUILTIN_REFERENCE.md Fails column missing for: %s"
+                         % ", ".join(missing))
+    bl.append("")
+    bl.append("// Which bare-name builtins are `never fails` (D-163) -- the reference's")
+    bl.append("// Fails column, generated. The licence reads this where a declared")
+    bl.append("// function's contract window would be read.")
+    bl.append("pub func:builtin_never_fails = bool(string:name) {")
+    for n in nf:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
     # THE `#`-SIGIL BUILTINS, which are a different list and a different question.
     # A bare-name builtin is looked up because it is declared in no module; a
     # `#`-name is looked up because `#foo(...)` is ALSO how a macro is invoked

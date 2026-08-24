@@ -112,6 +112,16 @@ pub func:divide = int32(int32:a, int32:b)
 
 pub func:extract<T> = T(Container<T>:c) { pass c.value; };
 
+// `never fails` (D-163): on an ordinary function, on a trait method, and on a
+// function TYPE — the three homes the contract has.
+func:steady = int32(int32:v) never fails { pass v; };
+trait:Steadier = {
+    func:value = int32(Self:self) never fails;
+};
+func:takes_nf = int32(func int32(int32) never fails:f) never fails {
+    pass 0i32;
+};
+
 pub func:bounded<T: Renderable & Serializable> = NIL(T:item) { pass NIL; };
 
 pub func:staged<comptime int32:LEVEL> = int32() { pass LEVEL; };
@@ -253,7 +263,7 @@ func:every_statement = NIL(int32:n) {
 
     { plain = 9i32; }
 
-    defer { dalloc(raw_mem); }
+    defer { drop dalloc(raw_mem); }
     discard(side_effect());
     _~ side_effect();
     prove(plain >= 0i32);

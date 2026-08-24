@@ -27,16 +27,16 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. They all return `wild` pointers — unmanaged memory outside RAII tracking, which the programmer must free. There is no garbage collector (D-003).
 *Security constraint: every allocation carries a hidden 16-byte header — size plus a secret-keyed magic word, **not a CRC** (the "8-byte CRC32" an earlier revision claimed was wrong three ways — see `MEMORY_REFERENCE.md` §3). Double-free, corruption, and a foreign or misaligned pointer trap to `failsafe` with `-4102`; OOM with `-4103`; a malformed request (negative size, checked `calloc` multiply overflow, `ralloc(p, 0)`, bad alignment) with `-4104`. Double-free of a tracked binding is already a compile-time error (D-119); the runtime check covers what the analysis cannot follow.*
 
-| Built-in | Signature | Description |
-|---|---|---|
-| `alloc` | `int64:size → wild int8->` | Allocates `size` uninitialized bytes, 16-aligned. `alloc(0)` is a real, unique, freeable block (D-150). Triggers failsafe on OOM. |
-| `aalloc` | `int64:size, int64:align → wild int8->` | Allocates with the requested power-of-two alignment (0.10.0); `align <= 16` is the ordinary path. |
-| `calloc` | `(int64:count, int64:size) → wild int8->` | Allocates `count*size` zero-initialized bytes. Prefer this over `alloc` + `memset`. |
-| `ralloc` | `(wild any->:ptr, int64:new_size) → wild int8->` | Resizes an allocation; grows in place where the class or mapping allows, else allocates, copies (bounded by the OLD size), and frees. The old pointer is invalid after calling. `ralloc(NULL, n)` is a fresh allocation; `ralloc(p, 0)` traps (`-4104`, D-150) — freeing is spelled `dalloc`. |
-| `dalloc` | `wild any->:ptr → void` | Deallocates a pointer, really (0.10.0): the slot is recycled. `dalloc(NULL)` **traps** (`-4102`, D-150) — `alloc` never returns null, so a null here is a state the author did not intend; there is no C-style free(NULL) cleanup idiom to serve. Double-free and foreign pointers trap deterministically. |
-| `mcpy` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **NO overlap allowed**. Maps to `llvm.memcpy`. |
-| `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. |
-| `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. |
+| Built-in | Signature | Description | Fails |
+|---|---|---|---|
+| `alloc` | `int64:size → wild int8->` | Allocates `size` uninitialized bytes, 16-aligned. `alloc(0)` is a real, unique, freeable block (D-150). Triggers failsafe on OOM. | **never fails** (traps on misuse) |
+| `aalloc` | `int64:size, int64:align → wild int8->` | Allocates with the requested power-of-two alignment (0.10.0); `align <= 16` is the ordinary path. | **never fails** (traps on misuse) |
+| `calloc` | `(int64:count, int64:size) → wild int8->` | Allocates `count*size` zero-initialized bytes. Prefer this over `alloc` + `memset`. | **never fails** (traps on misuse) |
+| `ralloc` | `(wild any->:ptr, int64:new_size) → wild int8->` | Resizes an allocation; grows in place where the class or mapping allows, else allocates, copies (bounded by the OLD size), and frees. The old pointer is invalid after calling. `ralloc(NULL, n)` is a fresh allocation; `ralloc(p, 0)` traps (`-4104`, D-150) — freeing is spelled `dalloc`. | **never fails** (traps on misuse) |
+| `dalloc` | `wild any->:ptr → void` | Deallocates a pointer, really (0.10.0): the slot is recycled. `dalloc(NULL)` **traps** (`-4102`, D-150) — `alloc` never returns null, so a null here is a state the author did not intend; there is no C-style free(NULL) cleanup idiom to serve. Double-free and foreign pointers trap deterministically. | **never fails** (traps on misuse) |
+| `mcpy` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **NO overlap allowed**. Maps to `llvm.memcpy`. | **never fails** (traps on misuse) |
+| `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. | **never fails** (traps on misuse) |
+| `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. | **never fails** (traps on misuse) |
 
 ### Arenas, wild tracking, and W^X memory
 
@@ -45,16 +45,16 @@ controlled `exit`/`failsafe` path uses (D-062, D-151), and the W^X executable
 memory the JIT is built on (`wildx`, W^X invariant — a page is never writable and
 executable at once).
 
-| Built-in | Signature | Description |
-|---|---|---|
-| `arena_make` | `int64:cap → arena<T>` | A bump/slab arena for `T`, its element stride taken from the annotation the call is given (D-152) — type-directed, so the element type is never written as an argument. |
-| `shared_arena_make` | `int64:cap → shared_arena<T>` | The atomically-shared arena (D-154), likewise type-directed. |
-| `wild_live_count` | `() → int64` | How many `wild` allocations are live — what the controlled `exit` checks so a leak traps rather than passing silently (D-062). |
-| `wild_release_all` | `() → NIL` | Releases every live `wild` allocation at once; the cleanup `failsafe` may run before exiting positive (D-151). |
-| `wildx_alloc` | `int64:size → wildx int8->` | Allocates writable-not-executable pages for the JIT to fill. |
-| `wildx_seal` | `wildx int8->:ptr → NIL` | Flips the pages to executable-not-writable — the one W^X transition, never the reverse. |
-| `wildx_call` | `(wildx int8->:ptr, int64:arg) → int64` | Calls into sealed executable memory. |
-| `wildx_free` | `wildx int8->:ptr → NIL` | Releases W^X pages. |
+| Built-in | Signature | Description | Fails |
+|---|---|---|---|
+| `arena_make` | `int64:cap → arena<T>` | A bump/slab arena for `T`, its element stride taken from the annotation the call is given (D-152) — type-directed, so the element type is never written as an argument. | **never fails** (traps on misuse) |
+| `shared_arena_make` | `int64:cap → shared_arena<T>` | The atomically-shared arena (D-154), likewise type-directed. | **never fails** (traps on misuse) |
+| `wild_live_count` | `() → int64` | How many `wild` allocations are live — what the controlled `exit` checks so a leak traps rather than passing silently (D-062). | **never fails** (traps on misuse) |
+| `wild_release_all` | `() → NIL` | Releases every live `wild` allocation at once; the cleanup `failsafe` may run before exiting positive (D-151). | **never fails** (traps on misuse) |
+| `wildx_alloc` | `int64:size → wildx int8->` | Allocates writable-not-executable pages for the JIT to fill. | **never fails** (traps on misuse) |
+| `wildx_seal` | `wildx int8->:ptr → NIL` | Flips the pages to executable-not-writable — the one W^X transition, never the reverse. | **never fails** (traps on misuse) |
+| `wildx_call` | `(wildx int8->:ptr, int64:arg) → int64` | Calls into sealed executable memory. | **never fails** (traps on misuse) |
+| `wildx_free` | `wildx int8->:ptr → NIL` | Releases W^X pages. | **never fails** (traps on misuse) |
 
 <!-- builtins:end -->
 
@@ -128,21 +128,21 @@ signature set exist by necessity — the runtime defines, the seed declares for
 stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 `check_runtime_sigs_agree` diffs all three on every harness run.
 
-| Built-in | Signature | Notes |
-|---|---|---|
-| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. |
-| `int_to_string` | `int64 → Result<string>` | Decimal rendering. |
-| `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. |
-| `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. |
-| `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). |
-| `read_file` | `cstring → Result<string>` | Whole file. |
-| `read_stdin` | `() → Result<string>` | Whole stream. |
-| `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. |
-| `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. |
-| `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. |
-| `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. |
-| `read` | `(fd, ptr, int64:cap) → Result<int64>` | ONE kernel read; bytes delivered. Zero asked is zero delivered; end-of-input is the error code E_EOF, never a zero in the value channel (D-075). |
-| `write` | `(fd, ptr, int64:len) → Result<int64>` | ONE kernel write; bytes taken, short counts included — the write-all loop is the library's. Replaced 0.8.3's write_raw (D-141). |
+| Built-in | Signature | Notes | Fails |
+|---|---|---|---|
+| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. | `Result` — may fail |
+| `int_to_string` | `int64 → Result<string>` | Decimal rendering. | `Result` — may fail |
+| `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. | `Result` — may fail |
+| `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. | **never fails** (traps on misuse) |
+| `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). | `Result` — may fail |
+| `read_file` | `cstring → Result<string>` | Whole file. | `Result` — may fail |
+| `read_stdin` | `() → Result<string>` | Whole stream. | `Result` — may fail |
+| `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. | **never fails** (traps on misuse) |
+| `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. | `Result` — may fail |
+| `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. | `Result` — may fail |
+| `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. | `Result` — may fail |
+| `read` | `(fd, ptr, int64:cap) → Result<int64>` | ONE kernel read; bytes delivered. Zero asked is zero delivered; end-of-input is the error code E_EOF, never a zero in the value channel (D-075). | `Result` — may fail |
+| `write` | `(fd, ptr, int64:len) → Result<int64>` | ONE kernel write; bytes taken, short counts included — the write-all loop is the library's. Replaced 0.8.3's write_raw (D-141). | `Result` — may fail |
 
 Error slots across the floor carry the kernel's own negative codes, exactly as
 the syscall returned them (ENOENT is −2). Conditions the floor detects itself
@@ -160,11 +160,11 @@ belong to programs. The full statements are D-141 and D-142.
 The three string names the compiler EVALUATES during `comptime` folding
 (`fold_string_builtin`, 0.6.4) — magic by definition, so they stay builtins:
 
-| Built-in | Signature | Notes |
-|---|---|---|
-| `string_equals` | `(string, string) → bool` | Folds at comptime; `nlibc` provides the runtime body. |
-| `string_byte_length` | `string → int64` | Folds at comptime. |
-| `string_is_empty` | `string → bool` | Folds at comptime. |
+| Built-in | Signature | Notes | Fails |
+|---|---|---|---|
+| `string_equals` | `(string, string) → bool` | Folds at comptime; `nlibc` provides the runtime body. | **never fails** (traps on misuse) |
+| `string_byte_length` | `string → int64` | Folds at comptime. | **never fails** (traps on misuse) |
+| `string_is_empty` | `string → bool` | Folds at comptime. | **never fails** (traps on misuse) |
 
 (`string_concat` also folds, and is already floor.)
 
@@ -172,9 +172,9 @@ The three string names the compiler EVALUATES during `comptime` folding
 
 Direct access to operating system syscalls. 
 
-| Built-in | Return | Description |
-|---|---|---|
-| `sys(CONST, ..*int64[])` | `Result<int64>` | The only syscall form. Reaches any OS syscall; returns `tbb32` error codes (negative for system errors). |
+| Built-in | Return | Description | Fails |
+|---|---|---|---|
+| `sys(CONST, ..*int64[])` | `Result<int64>` | The only syscall form. Reaches any OS syscall; returns `tbb32` error codes (negative for system errors). | `Result` — may fail |
 
 > ### There is one syscall form, not three (D-048)
 >

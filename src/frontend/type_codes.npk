@@ -161,3 +161,18 @@ pub func:TYPE_GLOBAL_NOT_CONSTANT = string() { pass "NITPICK-TYPE-035"; };
 // prelude trait `ToString`, and a type with no impl is refused by name — the
 // backend cannot lower `&{ x }` for a value it has no `to_string` to call.
 pub func:TYPE_NOT_STRINGABLE = string() { pass "NITPICK-TYPE-036"; };
+
+// D-163, `never fails`. A marked function's body may not `fail`, `relay`, or
+// `return Result{…}`, and may not carry a `requires`/`ensures`/`limit`, the
+// `async` modifier, or be `main`/`failsafe` — each is a way it could fail or a
+// contract it cannot hold. One code, the message naming the offender.
+pub func:TYPE_NEVER_FAILS_CAN_FAIL = string() { pass "NITPICK-TYPE-037"; };
+// A may-fail function value assigned where a `never fails` one is expected.
+pub func:TYPE_NEVER_FAILS_ASSIGN = string() { pass "NITPICK-TYPE-038"; };
+// A `Result` (or any non-`NIL` value) discarded by a bare expression statement,
+// with no keyword — rule 6's closed list.
+pub func:TYPE_RESULT_DISCARDED = string() { pass "NITPICK-TYPE-039"; };
+// `fail` or `relay` inside a `defer` body (rule 7): a cleanup must not exit.
+pub func:TYPE_DEFER_EXIT = string() { pass "NITPICK-TYPE-040"; };
+// An impl method dropping the `never fails` its trait declares.
+pub func:TYPE_NEVER_FAILS_IMPL = string() { pass "NITPICK-TYPE-041"; };

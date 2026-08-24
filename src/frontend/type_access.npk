@@ -1577,6 +1577,23 @@ func:bounds_note = string(ExprTyper->:e, int32:param) {
 };
 
 pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+    // D-163: a may-fail function where a `never fails` one is expected gets its
+    // own code — the shapes agree and only the contract differs, and the
+    // generic message would show two near-identical types without saying so.
+    // The same specialisation as `te_assign_mismatch`; this is the ARGUMENT
+    // path's reporter.
+    if (raw type_is_func(e.types, want)) {
+        if (raw type_is_func(e.types, got)) {
+            if (raw func_never_fails(e.types, want)) {
+                if (!(raw func_never_fails(e.types, got))) {
+                    drop te_error(e, raw TYPE_NEVER_FAILS_ASSIGN(),
+                        "a may-fail function cannot fill a `never fails` slot (D-163): the contract is part of the type, and this function does not make the guarantee",
+                        at);
+                    pass NIL;
+                }
+            }
+        }
+    }
     string:m1 = relay string_concat("expected `",
                                     relay type_display(e.types, e.interns, want));
     string:m2 = relay string_concat(m1, "`, found `");

@@ -217,9 +217,9 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // still variadic, and rebuilding it as a fixed one would make every call check
     // as fixed arity — which is the exact defect D-100 was written about.
     if (raw type_is_variadic(r.types, t)) {
-        pass (raw tt_func_variadic(r.types, ret, w.start, w.count));
+        pass (raw tt_func_variadic(r.types, ret, w.start, w.count, false));
     }
-    pass (raw tt_func(r.types, ret, w.start, w.count));
+    pass (raw tt_func(r.types, ret, w.start, w.count, false));
 };
 
 func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,

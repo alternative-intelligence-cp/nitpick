@@ -126,13 +126,13 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 
 One of the most powerful features of Nitpick's DbC implementation is how it interacts with the type system. If a function declares a `requires` clause, **Nitpick implicitly ensures its return type is wrapped in a `Result<T>`**. 
 
-If a caller violates the precondition at runtime, the function immediately intercepts execution and returns a `Result` error rather than crashing or triggering the failsafe. This heavily intertwines contract programming with Nitpick's sticky error propagation system, forcing the caller to explicitly unwrap or handle potential contract violations using `raw`, `drop`, or `.is_error`.
+If a caller violates the precondition at runtime, the function immediately intercepts execution and returns a `Result` error rather than crashing or triggering the failsafe. This heavily intertwines contract programming with Nitpick's sticky error propagation system: the caller handles the potential contract violation like any other error — `?|` a default, `?!` to trap, `relay` it, or branch on it. (`raw` is D-163's checked unwrap of a `never fails` callee, and a function with a `requires` can refuse its inputs, so it is never `never fails` — `raw` does not apply here.)
 
 ```nitpick
 func:main = int32() {
-    // Because `divide` has a `requires` contract, we must 
-    // unwrap it with `raw` or handle the potential failure.
-    int32:y = raw divide(10i32, 2i32);
+    // Because `divide` has a `requires` contract, the call can fail, and
+    // the failure is handled like any other -- here, trapped.
+    int32:y = divide(10i32, 2i32) ?! 7tbb32;
     
     exit 0i32;
 };

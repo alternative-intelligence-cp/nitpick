@@ -1331,6 +1331,23 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, want)) { pass NIL; }
     if (raw type_is_invalid(r.types, got)) { pass NIL; }
+    // D-163: an impl may not DROP the `never fails` its trait method declares —
+    // a caller trusting the trait's contract would be relying on a guarantee the
+    // impl no longer makes. (The reverse, a stronger impl of a may-fail method,
+    // is fine.) `same_signature` compares shape and ignores the bit, so the
+    // contract is compared here, by name.
+    if (raw func_never_fails(r.types, want)) {
+        if (!(raw func_never_fails(r.types, got))) {
+            string:nf1 = relay string_concat("`",
+                relay intern_get(r.interns, raw decl_name(f)));
+            drop diaglist_push(r.diags,
+                raw diag_error(raw TYPE_NEVER_FAILS_IMPL(),
+                    relay string_concat(nf1,
+                        "` drops the `never fails` its trait declares (D-163); the impl must keep the contract"),
+                    im.span));
+            pass NIL;
+        }
+    }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
     if (relay same_signature(r, want, got, sc)) { pass NIL; }
 

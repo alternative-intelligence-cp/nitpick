@@ -65,7 +65,7 @@ it on the executor:
 drop work();        // runs concurrently; VALUE discarded, ERROR joined (D-163)
 ```
 
-> **The error is not discarded (D-163, proposed, implemented 1.1 via C-7/C-9).**
+> **The error is not discarded (D-163, settled; the join lands via C-7/C-9).**
 > `drop work()` keeps its spelling, but the spawned task's `Result` error reaches
 > the enclosing scope's D-062 join, which relays the **first child error,
 > verbatim (D-080), after every child has finished**, as the enclosing `async`

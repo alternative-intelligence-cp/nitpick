@@ -55,10 +55,20 @@ func:main = int32(cstring[]:_~argv) {
     Result<Token>:oob = tokenlist_at(@list, 5000i64);
     if (!(oob.is_error))                       { exit 25i32; }
 
-    wild_release_all();
+    // `never fails` in a SEED-COMPILED program (D-163, 1.1.0): this file is
+    // built by the throwaway seed, so the clause parsing here proves the seed
+    // learned the word — on a declaration, and licensing a `raw` at the site.
+    int32:nf = raw steady(20i32);
+    if (nf != 21i32)                           { exit 26i32; }
 
-    wild_release_all();
+    drop wild_release_all();
+
+    drop wild_release_all();
     exit 0i32;
+};
+
+func:steady = int32(int32:v) never fails {
+    pass v + 1i32;
 };
 
 func:failsafe = int32(tbb32:_~err) {

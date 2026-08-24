@@ -1441,8 +1441,13 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     int32:ccount = raw fn_contract_count(x.ast, d);
     while (ci < ccount) {
         VerifyNode:cv = relay ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
-        if (cv.a != (raw CONTRACT_ACQUIRES())) {
-            pass (raw iv_rung("a `requires`/`ensures` contract", "1.3", cv.span));
+        // `never fails` (D-163) is NOT a 1.3 contract: it is checked entirely
+        // by the frontend and changes no emitted byte — the backend owes it
+        // nothing, so it passes through where `requires`/`ensures` still rung.
+        if (cv.kind != VerifyKind.VerifyNeverFails) {
+            if (cv.a != (raw CONTRACT_ACQUIRES())) {
+                pass (raw iv_rung("a `requires`/`ensures` contract", "1.3", cv.span));
+            }
         }
         ci = ci + 1i32;
     }

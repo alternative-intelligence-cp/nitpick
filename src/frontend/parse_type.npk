@@ -48,6 +48,8 @@ pub func:type_element = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a 
 pub func:type_array_size = ExprId(TypeNode:t)   { ExprId:i = ExprId{ index: t.b }; pass i; };
 // FuncType: a,b = the parameter-type window, c = the return type.
 pub func:type_return = TypeId(TypeNode:t)       { TypeId:i = TypeId{ index: t.c }; pass i; };
+// `never fails` on a function TYPE (D-163) rides the node's payload slot.
+pub func:type_func_never_fails = bool(TypeNode:t) { pass (t.payload != 0i64); };
 pub func:type_param_start = int32(TypeNode:t)   { pass t.a; };
 pub func:type_param_count = int32(TypeNode:t)   { pass t.b; };
 pub func:type_param_at = TypeId(Ast->:ast, TypeNode:t, int32:i) {
@@ -214,9 +216,16 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         }
         drop p_expect(p, TokenKind.PRParen);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+        // `never fails` after the parameter list (D-163) — the func type's
+        // contract, stored in the node's payload slot and read at resolve.
+        int64:nf = 0i64;
+        if (relay p_accept(p, TokenKind.KwNever)) {
+            drop p_expect(p, TokenKind.KwFails);
+            nf = 1i64;
+        }
         pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeFuncType,
                                                      sp, w.start, w.count,
-                                                     ret.index, 0i64)));
+                                                     ret.index, nf)));
     }
 
     if (k == TokenKind.KwSelf) {

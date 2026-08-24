@@ -1,0 +1,48 @@
+// expect-error: NITPICK-TYPE-037
+// expect-error: NITPICK-TYPE-037
+// expect-error: NITPICK-TYPE-037
+// expect-error: NITPICK-TYPE-037
+// expect-error: NITPICK-TYPE-037
+// expect-error: NITPICK-TYPE-037
+//
+// D-163: `never fails` is a CHECKED claim. A marked function may not `fail`,
+// `relay`, or `return Result{…}` — each is a way an error could leave it — and
+// may not combine the clause with `requires`/`ensures` (a verifier obligation),
+// the `async` modifier (cancellation is an error), or sit on `main`/`failsafe`
+// (terminal functions return no `Result`, so the claim says nothing).
+mod:never_fails;
+
+func:with_fail = int32(int32:v) never fails {
+    if (v < 0i32) { fail 3tbb32; }
+    pass v;
+};
+
+func:helper = int32(int32:v) {
+    if (v < 0i32) { fail 4tbb32; }
+    pass v;
+};
+
+func:with_relay = int32(int32:v) never fails {
+    int32:a = relay helper(v);
+    pass a;
+};
+
+func:with_return = int32(int32:v) never fails {
+    return Result{ value: v, error: 0tbb32 };
+};
+
+func:with_requires = int32(int32:v) never fails requires v >= 0i32 {
+    pass v;
+};
+
+async func:with_async = int32(int32:v) never fails {
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) never fails {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) {
+    exit 1i32;
+};

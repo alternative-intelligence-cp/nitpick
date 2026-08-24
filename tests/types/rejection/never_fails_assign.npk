@@ -1,0 +1,24 @@
+// expect-error: NITPICK-TYPE-038
+//
+// D-163: the contract is part of the function TYPE. A `never fails` slot
+// promises its holder never yields an error, so a may-fail function cannot
+// fill it — the reverse of the always-legal widening (a marked function in a
+// may-fail slot just never uses the error).
+mod:never_fails_assign;
+
+func:mayfail = int32(int32:v) {
+    if (v < 0i32) { fail 3tbb32; }
+    pass v;
+};
+
+func:takes_nf = int32(func int32(int32) never fails:f, int32:v) never fails {
+    int32:r = raw f(v);
+    pass r;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = takes_nf(mayfail, 4i32) ?| 0i32;
+    exit r;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

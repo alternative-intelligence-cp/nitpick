@@ -80,6 +80,11 @@ pub struct:ExprTyper = {
     // D-013 rather than an oversight.
     int32:fn_success;
     bool:fn_terminal;
+    // D-163: the enclosing function declared `never fails` — its body may not
+    // `fail`, `relay`, or `return Result{…}`.
+    bool:fn_never_fails;
+    // D-163 rule 7: inside a `defer` body, where `fail`/`relay` are refused.
+    bool:in_defer;
 
     // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
     // names the innermost one's counter; outside any, it names nothing — and
@@ -158,7 +163,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
-                             fn_success: 0i32, fn_terminal: false,
+                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false,
                              counted_depth: 0i32,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
@@ -1382,6 +1387,17 @@ pub func:expected_value = int32(ExprTyper->:e) {
 // is no second level for this to reach through.
 pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
     if (want == got) { pass true; }
+    // D-163: a `never fails` function SATISFIES a may-fail expectation (it just
+    // never uses the error), but a may-fail function CANNOT fill a never-fails
+    // slot. `types_agree` compares only the shape (it ignores the never-fails
+    // bit), so the one-directional refusal is applied here, before it.
+    if (raw type_is_func(e.types, want)) {
+        if (raw type_is_func(e.types, got)) {
+            if (raw func_never_fails(e.types, want)) {
+                if (!(raw func_never_fails(e.types, got))) { pass false; }
+            }
+        }
+    }
     if (raw types_agree(e, want, got)) { pass true; }
     if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
@@ -1580,6 +1596,23 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // One message for every "this value does not fit there", naming both types in
 // the order the reader wrote them.
 pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+    // D-163: a may-fail function where a `never fails` one is expected gets its
+    // OWN code and message — the shapes agree and only the contract differs, so
+    // the generic mismatch would name two types that look almost identical
+    // without saying which part disagrees.
+    if (raw type_is_func(e.types, want)) {
+        if (raw type_is_func(e.types, got)) {
+            if (raw func_never_fails(e.types, want)) {
+                if (!(raw func_never_fails(e.types, got))) {
+                    drop diaglist_push(e.diags, raw diag_error(
+                        raw TYPE_NEVER_FAILS_ASSIGN(),
+                        "a may-fail function cannot fill a `never fails` slot (D-163): the contract is part of the type, and this function does not make the guarantee",
+                        at));
+                    pass NIL;
+                }
+            }
+        }
+    }
     string:m1 = relay string_concat("expected `",
                                     relay type_display(e.types, e.interns, want));
     string:m2 = relay string_concat(m1, "`, found `");
@@ -2128,12 +2161,22 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
         pass (relay type_unwrap(e, n, "raw"));
     }
     if (n.kind == ExprKind.ExprRelayExpr) {
+        if (e.in_defer) {
+            drop te_error(e, raw TYPE_DEFER_EXIT(),
+                "a `defer` body may not `relay` (D-163): a cleanup must not propagate an error out while the scope unwinds; handle it inside the `defer`",
+                n.span);
+        }
         // `relay` IN `main` OR `failsafe` IS REFUSED. There is no `Result` to
         // relay into: the program ends there, so an error propagating out of it
         // has nowhere to go — the uncontrolled stop the discipline prevents.
         if (e.fn_terminal) {
             drop te_error(e, raw TYPE_RESULT_RETURN(),
                 "`relay` returns the error from the enclosing function, and `main` and `failsafe` return no `Result` to relay into; handle it here with `?`, `?!` or a `pick`",
+                n.span);
+        }
+        if (e.fn_never_fails) {
+            drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                "a `never fails` function may not `relay` (D-163): it propagates an error the contract says cannot occur; handle it with `?`, `?!` or a `pick`",
                 n.span);
         }
         pass (relay type_unwrap(e, n, "relay"));

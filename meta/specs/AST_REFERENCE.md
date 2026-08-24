@@ -31,7 +31,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 |---|---|---|
 | `ModuleDecl` | `name`, `visibility`, `items: Decl[]` | file scope, **`mod:name = { … };`**, or **`mod:name;`** for a file (D-088) |
 | `ImportDecl` | `path`, `kind`, `names: Ident[]`, `alias` | `kind` ∈ wildcard / single / selective / namespace |
-| `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: ContractNode[]`, `body: BlockStmt?` | see §1.1 |
+| `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: (ContractNode \| NeverFails)[]`, `body: BlockStmt?` | see §1.1; the contracts window holds `requires`/`ensures`/`acquires` and the `never fails` marker (D-163) |
 | `StructDecl` | `name`, `visibility`, `generics`, `fields: FieldDecl[]`, `attributes` | |
 | `EnumDecl` | `name`, `visibility`, `generics`, `variants: EnumVariant[]` | variants may carry payloads |
 | `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
@@ -54,7 +54,7 @@ FunctionDecl
   params       : ParamDecl[]
   variadic     : VariadicSpec?         // see below
   return_type  : TypeNode              // the SUCCESS type; Result<T> is implicit
-  contracts    : ContractNode[]        // requires / ensures
+  contracts    : (ContractNode | NeverFails)[]   // requires / ensures / never fails (D-163)
   body         : BlockStmt?            // absent in trait declarations
 ```
 
@@ -178,7 +178,7 @@ so `Type` is no longer a keyword at all and the ambiguity cannot recur.
 | `BlockStmt` | `stmts: Stmt[]` — introduces a scope |
 | `VarDeclStmt` | `qualifiers`, `limit: LimitNode?`, `type`, `name`, `init: Expr?`, `attributes` |
 | `AssignStmt` | `target: Expr`, `op`, `value: Expr` |
-| `ExprStmt` | `expr` |
+| `ExprStmt` | `expr` | must have type `NIL`, and the value-less forms are a CLOSED list (D-163 rule 6): `drop f();` / `relay f();` / `f() ?! c;` / `f() ?\| NIL;` — a bare call discards a `Result` (`TYPE-039`) |
 | `IfStmt` | `cond`, `then_block`, `else_branch: IfStmt \| BlockStmt \| none` |
 | `PickStmt` | `selector: Expr`, `arms: PickArm[]` |
 | `WhileStmt` | `label: Ident?`, `cond`, `invariants: InvariantNode[]`, `body` |
@@ -482,9 +482,9 @@ are ordinary values referenced by `IdentifierExpr`.
 | `PointerType` | `pointee` | `T->` — **thin**, one word, no bounds metadata (D-038) |
 | `OptionalType` | `inner` | `T?` |
 | `ArrayType` | `element`, `size: Expr?` | value type; does not decay |
-| `FuncType` | `params`, `return_type` | |
+| `FuncType` | `params`, `return_type`, `never_fails: bool` | D-163 |
 | `DynType` | `traits: TypeNode[]` | `dyn A & B` |
-| `FuncType` | `params`, `return_type` | **`func RetType(ParamTypes)`** (D-087) — the same three parts, in the same order, as the declaration it is the type of |
+| `FuncType` | `params`, `return_type`, `never_fails: bool` | **`func RetType(ParamTypes) [never fails]`** (D-087; D-163) — the same parts, in the same order, as the declaration it is the type of; the contract is part of the type's identity, and a may-fail function cannot fill a `never fails` slot |
 | `CStringType` | — | **`cstring`** — NUL-terminated, `{ptr, len}` (D-049). Inhabited by string literals (checked at compile time) and by `to_cstring` |
 | `AnyType` | — | **`any`** — the type-erased pointer, C's `void*`. **Only legal under `->`**; bare `any` is a type error |
 | `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
@@ -539,6 +539,7 @@ families `oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence` (D-044)
 | `ContractNode` | `kind: requires \| ensures`, `condition: Expr` |
 | `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
 | `LimitNode` | `rule: Ident` — `limit<r_pos>` on a declaration or parameter |
+| `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
 
 `ensures` may reference the special `result` identifier.
 

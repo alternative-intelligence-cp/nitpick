@@ -20,7 +20,7 @@ func:passing_does_not_move = NIL() {
     wild int8->:p = alloc(8i64);
     drop takes(p);
     drop takes(p);
-    dalloc(p);
+    drop dalloc(p);
     pass NIL;
 };
 
@@ -28,7 +28,7 @@ func:assigning_does_not_move = NIL() {
     wild int8->:p = alloc(8i64);
     wild int8->:alias = p;
     discard(alias);
-    dalloc(p);
+    drop dalloc(p);
     pass NIL;
 };
 
@@ -40,16 +40,16 @@ func:reinitialised_after_a_move = NIL() {
     wild int8->:p = alloc(8i64);
     wild int8->:taken = move(p);
     p = alloc(8i64);
-    dalloc(p);
-    dalloc(taken);
+    drop dalloc(p);
+    drop dalloc(taken);
     pass NIL;
 };
 
 func:reinitialised_after_a_free = NIL() {
     wild int8->:p = alloc(8i64);
-    dalloc(p);
+    drop dalloc(p);
     p = alloc(16i64);
-    dalloc(p);
+    drop dalloc(p);
     pass NIL;
 };
 
@@ -66,8 +66,8 @@ func:moved_and_restored_on_both = NIL(bool:c) {
         q = move(p);
         p = alloc(16i64);
     }
-    dalloc(p);
-    dalloc(q);
+    drop dalloc(p);
+    drop dalloc(q);
     pass NIL;
 };
 
@@ -131,9 +131,9 @@ func:main = int32(cstring[]:_~argv) {
 func:wildx_correct_lifecycle = NIL() {
     wildx uint8->:page = wildx_alloc(16i64);
     page[0i64] = 195u8;
-    wildx_seal(page);
+    drop wildx_seal(page);
     int64:r = wildx_call(page, 0i64);
     discard(r);
-    wildx_free(page);
+    drop wildx_free(page);
     pass NIL;
 };

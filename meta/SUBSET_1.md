@@ -118,9 +118,9 @@ sidestep needing `arena<T>` — which is generic and therefore out.
 | `p[i]` on a pointer, `a[i]` on an array or slice | |
 | assignment to a **place** — `x.f = v`, `a[i] = v` | not just to a bare name |
 | `s.ptr` / `s.len` / `s.cap` on a `string` | |
-| `raw` / `_!` | unwrap without checking |
+| `raw` / `_!` | unwrap — D-163 (1.1.0) makes the contract checkable; the licence (a `never fails` callee) flips at 1.1.2 |
 | `relay` / `_^` | **propagate** (D-080) |
-| `drop` / `_?` | discard a `Result` |
+| `drop` / `_?` | the `void` call — D-163; a bare `f();` is refused since 1.1.0 (`TYPE-039`) |
 | `fixed` | immutable binding — **enforced by the seed** |
 | `defer` | runs on normal exit paths |
 | casts `=>` / `=>!` | |

@@ -1,0 +1,88 @@
+// D-163's PERMITTED forms, all in one place — the counterweight (the 0.5
+// lesson: over-refusal is only caught by a program that must stay silent).
+// A `never fails` function may handle a may-fail callee with `?|`, `?!`,
+// `is_err`, or a `pick` `ERR:` arm; the keyworded statements are legal;
+// a marked trait method takes a marked impl; a marked function fills both a
+// marked and an unmarked function-type slot; a `defer` handles its own
+// cleanup with `?!`.
+mod:never_fails;
+
+func:mayfail = int32(int32:v) {
+    if (v < 0i32) { fail 3tbb32; }
+    pass v;
+};
+
+func:gives_tbb = tbb32(int32:v) {
+    if (v < 0i32) { fail 4tbb32; }
+    pass (v =>! tbb32);
+};
+
+// Every permitted HANDLING form, inside a marked function.
+func:handles = int32(int32:v) never fails {
+    int32:a = mayfail(v) ?| 0i32;
+    int32:b = mayfail(v) ?! 9tbb32;
+    tbb32:t = gives_tbb(v) ?| ERR;
+    int32:c = 0i32;
+    if (is_err(t)) { c = 1i32; }
+    pick (t) {
+        ERR: { c = c + 1i32; },
+        (*) { c = c + 2i32; }
+    }
+    pass a + b + c;
+};
+
+// The keyworded statement forms (rule 6's closed list). The statement's own
+// type must be `NIL` — the keyword deals with the error, and a VALUE thrown
+// away would still need `discard` — so the effect helper returns `NIL`.
+func:effect = NIL(int32:v) {
+    if (v < 0i32) { fail 5tbb32; }
+    pass NIL;
+};
+func:statements = int32(int32:v) {
+    relay effect(v);
+    effect(v) ?! 9tbb32;
+    effect(v) ?| NIL;
+    drop effect(v);
+    pass v;
+};
+
+// A marked trait method with a marked impl.
+trait:Steady = {
+    func:value = int32(Self:self) never fails;
+};
+struct:Box = { int32:v; };
+impl:Box:Steady = {
+    func:value = int32(Self:self) never fails { pass self.v; };
+};
+
+// A marked function fills a marked slot — and an unmarked one (widening).
+func:nf_id = int32(int32:v) never fails { pass v; };
+func:wants_marked = int32(func int32(int32) never fails:f, int32:v) never fails {
+    int32:r = raw f(v);
+    pass r;
+};
+func:wants_plain = int32(func int32(int32):f, int32:v) never fails {
+    int32:r = f(v) ?| 0i32;
+    pass r;
+};
+
+// A `defer` that handles a may-fail cleanup with `?!` — legal under rule 7.
+func:cleanup = int32(int32:v) {
+    defer {
+        effect(v) ?! 8tbb32;
+    }
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Box:bx = Box{ v: 4i32 };
+    int32:s = bx.value() ?| 0i32;
+    int32:h = handles(3i32) ?| 0i32;
+    int32:st = statements(2i32) ?| 0i32;
+    int32:m = wants_marked(nf_id, 1i32) ?| 0i32;
+    int32:p = wants_plain(mayfail, 1i32) ?| 0i32;
+    int32:cl = cleanup(1i32) ?| 0i32;
+    exit s + h + st + m + p + cl - s - h - st - m - p - cl;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

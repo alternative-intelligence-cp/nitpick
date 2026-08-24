@@ -50,6 +50,34 @@ pub func:is_builtin_name = bool(string:name) {
     pass false;
 };
 
+// Which bare-name builtins are `never fails` (D-163) -- the reference's
+// Fails column, generated. The licence reads this where a declared
+// function's contract window would be read.
+pub func:builtin_never_fails = bool(string:name) {
+    if (raw string_eq(name, "aalloc")) { pass true; }
+    if (raw string_eq(name, "alloc")) { pass true; }
+    if (raw string_eq(name, "arena_make")) { pass true; }
+    if (raw string_eq(name, "calloc")) { pass true; }
+    if (raw string_eq(name, "dalloc")) { pass true; }
+    if (raw string_eq(name, "mcpy")) { pass true; }
+    if (raw string_eq(name, "memset")) { pass true; }
+    if (raw string_eq(name, "mmov")) { pass true; }
+    if (raw string_eq(name, "path_exists")) { pass true; }
+    if (raw string_eq(name, "ralloc")) { pass true; }
+    if (raw string_eq(name, "shared_arena_make")) { pass true; }
+    if (raw string_eq(name, "string_byte_length")) { pass true; }
+    if (raw string_eq(name, "string_equals")) { pass true; }
+    if (raw string_eq(name, "string_from_bytes")) { pass true; }
+    if (raw string_eq(name, "string_is_empty")) { pass true; }
+    if (raw string_eq(name, "wild_live_count")) { pass true; }
+    if (raw string_eq(name, "wild_release_all")) { pass true; }
+    if (raw string_eq(name, "wildx_alloc")) { pass true; }
+    if (raw string_eq(name, "wildx_call")) { pass true; }
+    if (raw string_eq(name, "wildx_free")) { pass true; }
+    if (raw string_eq(name, "wildx_seal")) { pass true; }
+    pass false;
+};
+
 // The `#`-sigil builtins -- the OTHER kind, the ones the compiler treats
 // specially. `#foo(...)` is also how a macro is invoked (D-046), so this is
 // what tells a builtin that survived expansion from a macro that was never

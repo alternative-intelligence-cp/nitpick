@@ -332,6 +332,25 @@ class Checker:
             self._expr(st.value)
 
         elif isinstance(st, S.ExprStmt):
+            # D-163 rule 6: the value-less statement forms are a CLOSED list.
+            # `drop f();` / `relay f();` / `f() ?! c;` / `f() ?| d;` each deal
+            # with the outcome; a bare call discards a Result with no keyword,
+            # `raw f();` discards the unwrapped value, and a bare value
+            # statement throws away a computation. The real checker refuses the
+            # same shapes (TYPE-039); the seed refusing them too is what keeps
+            # the two frontends agreeing on what compiles.
+            e = st.expr
+            keyworded = (isinstance(e, S.ResultUnary) and e.op in ("drop", "relay")) \
+                or isinstance(e, (S.Emphatic, S.SafeUnwrap))
+            if not keyworded:
+                if isinstance(e, S.ResultUnary) and e.op == "raw":
+                    raise CheckError("`raw f()` in statement position discards "
+                                     "the unwrapped value; run it for effect "
+                                     "with `drop f();` (D-163)", st)
+                raise CheckError("a bare expression statement discards its "
+                                 "outcome (D-163): `drop` it, `relay` it, or "
+                                 "handle it with `?|`, `?!`, `is_err`, or a "
+                                 "`pick`", st)
             self._expr(st.expr)
 
         elif isinstance(st, S.If):

@@ -33,7 +33,7 @@ remains the single explicit, greppable, auditable bypass.
 
 ---
 
-## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead; D-163 (proposed) then gives `never fails` a GENERAL home — a checked contract on any function, not just an `extern` — and licenses `raw`/`drop` by it)
+## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead; D-163 then gives `never fails` a GENERAL home — a checked contract on any function, not just an `extern` (landed 1.1.0) — and licenses `raw`/`drop` by it (the refusal flips at 1.1.2))
 
 `TYPE_REFERENCE.md` §11.2 currently specifies that when a C function "does not
 provide error information, the result defaults to `Ok(val)`". **This is not the
@@ -965,7 +965,7 @@ This needs settling before `defer` lowering is implemented.
 
 ---
 
-## D-014 — `defer` does not run on a trap; `failsafe` requirements — **SETTLED; D-163 (proposed) adds what a `defer` BODY may do**: `fail`/`relay` are refused inside one (cleanup runs on an exit already decided), and a cleanup call that can fail is handled in the body with `?!`, an `is_err` branch, or an explicit `? NIL`**
+## D-014 — `defer` does not run on a trap; `failsafe` requirements — **SETTLED; D-163 adds what a `defer` BODY may do (checked since 1.1.0)**: `fail`/`relay` are refused inside one (cleanup runs on an exit already decided), and a cleanup call that can fail is handled in the body with `?!`, an `is_err` branch, or an explicit `?| NIL`**
 
 Resolves the open follow-on from D-013.
 
@@ -3944,7 +3944,7 @@ the stdlib were written before the feature existed, in a style that predates it.
 
 ---
 
-## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED; D-163 (proposed) adds the STATEMENT-side closed list**: a value-less statement is one of `drop f();` / `relay f();` / `f() ?! c;` / `f() ? NIL;`, and a bare `f();` on a `Result` is refused — the statement-side counterpart of this decision**
+## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED; D-163 adds the STATEMENT-side closed list (checked since 1.1.0)**: a value-less statement is one of `drop f();` / `relay f();` / `f() ?! c;` / `f() ?| NIL;`, and a bare `f();` on a `Result` is refused — the statement-side counterpart of this decision**
 
 Resolves conflicts **24** and **18**, which are the same question.
 
@@ -5442,9 +5442,9 @@ every call site. The three convenient alternatives are all worse:
 
 | Reached for instead | What it actually does |
 |---|---|
-| `raw` / `_!` | bypasses the `Result` discipline entirely — the one escape hatch the language has |
+| `raw` / `_!` | *(as this was written)* bypassed the `Result` discipline entirely; **D-163 re-grounds it** — a checked, zero-cost unwrap licensed only by a `never fails` callee (the refusal flips at 1.1.2) |
 | `?!` | escalates a **recoverable** error into whole-program shutdown |
-| `?` with a default | substitutes a value for an error — the D-002 failure mode, silent success |
+| `?|` with a default | substitutes a value for an error — the D-002 failure mode, silent success |
 
 So the missing operator applies steady pressure toward exactly the constructs the
 safety case exists to make rare.
@@ -5942,7 +5942,7 @@ states that "function pointers are ordinary values referenced by
 
 ```nitpick
 func int32(int32, int32):op = @add;        // a variable holding a function
-func:apply = int32(func int32(int32):f, int32:x) { pass raw f(x); };
+func:apply = int32(func int32(int32) never fails:f, int32:x) never fails { pass raw f(x); };
 func NIL():callback;                        // no parameters, no return value
 ```
 
@@ -6075,7 +6075,7 @@ identifier and gives a reader a keyword they cannot look up.**
 
 ---
 
-## D-089 — `main` takes `cstring[]:argv` and nothing else; the declaration-site `_~` is restored — **SETTLED; D-163 (proposed) sharpens `discard`**: it takes a VALUE, never a `Result` — a never-failing value ignored is `discard(raw f())`, and a `Result` in statement position needs a keyword (`drop`/`relay`/`?!`/`? NIL`)**
+## D-089 — `main` takes `cstring[]:argv` and nothing else; the declaration-site `_~` is restored — **SETTLED; D-163 sharpens `discard` (checked since 1.1.0)**: it takes a VALUE, never a `Result` — a never-failing value ignored is `discard(raw f())`, and a `Result` in statement position needs a keyword (`drop`/`relay`/`?!`/`?| NIL`)**
 
 Two features the prototype implements and the carried-over spec set lost. Both
 are recovered here, and one of them is corrected on the way in.
@@ -8131,7 +8131,7 @@ correct `Result<T>` and populate the error field when the call fails". What was
 missing was only the construction. Three consequences follow and all three are
 wanted:
 
-- **A caller writes `raw`, `relay`, `drop` or `?` on a foreign call, exactly as on
+- **A caller writes `relay` or `?|` on a foreign call, exactly as on
   a domestic one.** The blueprint philosophy's first facet in its purest form: a
   caller never has to ask whether *this particular* function needs error handling,
   and "is it foreign?" would be precisely such a question.
@@ -10078,7 +10078,7 @@ The repairs:
 `tests/frontend/lexer_numeric.npk` locks the exact guard on the basis
 constant that used to wrap.
 
-## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 (proposed) reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
+## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
 
 Post-0.9, at the user's direction. Generalizes D-055; supersedes the contract
 half of D-002; supersedes the C-pointer half of D-066.
@@ -10629,6 +10629,13 @@ delivered is reversible module-qualified names, generic-instantiation naming
 (1.0.2), 1.2-separate-compilation readiness, and — once D-162 landed —
 same-named-type coexistence.
 
+**D-163 (1.1.0)**: where a FUNCTION TYPE appears as a generic argument, the
+instantiation's mangled name is built from the type's display, which now
+carries the `never fails` contract — so a family instantiated over a marked
+function type and one over its unmarked twin get distinct symbols, matching
+their distinct interned types. Unmarked function types display exactly as
+before, so every pre-D-163 symbol is unchanged.
+
 ## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
 
 OPEN_DECISIONS C-2, a safety hole: `check_object_safe` inspected only the
@@ -11010,7 +11017,7 @@ retired guard had been exiting 1 while printing NOTHING. `emit_line` now
 renders `<no span>` — a refusal a reader cannot act on is worse than no
 check.
 
-## D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never discarded without a keyword; `never fails` is checked — **PROPOSED**
+## D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never discarded without a keyword; `never fails` is checked — **SETTLED; the contract, its checks, and the statement rules landed at 1.1.0 (rules 1–2, 5–9); the `raw`/`drop` licence (rules 3–4) flips at 1.1.2, after the sweeps drive `check_raw_licensed` to zero**
 
 Raised by the user post-1.0.0, in two parts. *"The purpose of `raw` was to skip
 checks for a function that cannot return an error"* — and the compiler has
@@ -11088,7 +11095,7 @@ naming the statement:
 | the `async` modifier | the executor can fail a task independently of its body (deadline, D-056) |
 | the clause on `main` / `failsafe` | they return no `Result`; the claim is vacuous |
 
-Permitted, because none of them *returns* an error: `?` with a default, `?!`
+Permitted, because none of them *returns* an error: `?|` with a default, `?!`
 (a trap is Layer 3, a different channel, and already greppable), `drop` and
 `raw` of `never fails` callees, `is_err` branches, `pick` with an `ERR:` arm.
 
@@ -11106,7 +11113,7 @@ must be a **call** — direct, UFCS / method, trait-dispatched, `dyn`,
 function-pointer, or builtin — whose resolved callee carries the contract.
 Refused otherwise: a callee without it (the message names the callee, its
 declaration line, and the honest spellings — declare it `never fails` if it
-cannot fail; `?!` if this call must succeed; `relay` / `?` / `is_err`
+cannot fail; `?!` if this call must succeed; `relay` / `?|` / `is_err`
 otherwise); a binding (`raw r` — the language already has the checked `.value`
 read, D-007; a second spelling of it would be two mechanisms for one job); any
 non-call expression.
@@ -11116,7 +11123,7 @@ non-call expression.
 type is `NIL`**. `drop f();` then means exactly what it was for: *call a
 function that has nothing to return and cannot fail*. Refused otherwise:
 
-- a callee that can fail → `relay f();`, `f() ?! c;`, or `f() ? NIL;` (rule 6);
+- a callee that can fail → `relay f();`, `f() ?! c;`, or `f() ?| NIL;` (rule 6);
 - a callee with a value → the value is not "dropped", it is *discarded*:
   `discard(raw f());` — two words, two claims, both checked (the call cannot
   fail; the value is deliberately unused), the D-089 spelling for a value
@@ -11156,7 +11163,7 @@ have type `NIL`, and must be one of:
 | `drop f();` | the `void` call — `f` is `never fails` and returns `NIL` |
 | `relay f();` | run `f`; its error, if any, returns to the caller |
 | `f() ?! c;` | run `f`; its error, if any, traps |
-| `f() ? NIL;` | run `f`; its error, if any, is deliberately ignored — the one explicit swallow, written as what it is: a default of nothing. **Settled with the user** as the sanctioned spelling; an auditor greps `? NIL` |
+| `f() ?| NIL;` | run `f`; its error, if any, is deliberately ignored — the one explicit swallow, written as what it is: a default of nothing. **Settled with the user** as the sanctioned spelling; an auditor greps `?| NIL` |
 
 Refused in statement position: a bare call (`f();` — a `Result` with nothing
 said about it, `TYPE_RESULT_DISCARDED`); any expression of a non-`NIL` type (a
@@ -11172,7 +11179,7 @@ looking, not by remembering.
 already decided, and the backend would re-run the defer frames from inside one.
 A cleanup call that can fail is handled in the body with `?!` (a cleanup
 failure is a `failsafe` event — "a failed close is reported, never swallowed"),
-an `is_err` branch, or the explicit `? NIL`. `drop` in a defer is licensed as
+an `is_err` branch, or the explicit `?| NIL`. `drop` in a defer is licensed as
 anywhere else.
 
 **8. Function types.** `func T(P…) never fails` is a distinct interned type. A
@@ -11205,11 +11212,11 @@ Neither is an opt-out. `raw` is a checked, **zero-cost** unwrap: the compiler
 proves the check redundant, and the zero-cost path is exactly the never-failing
 set, which is where the performance argument for `raw` ever applied. `drop` is
 the `void` call, and says so. The `Result` discipline then has **no silent
-sink** — every way past a possible error is spelled and means one thing: `? d`
+sink** — every way past a possible error is spelled and means one thing: `?| d`
 (a visible default), `?! c` (trap), `relay` (propagate), `is_err` / `ERR:`
 (handle). Nothing expressible is lost: the old `raw f()` on a may-fail `f` was
-`f() ? <zero of T>` with the default unwritten; the old `drop f()` was
-`f() ? NIL;` with the swallow unwritten. An unwritten default is precisely what
+`f() ?| <zero of T>` with the default unwritten; the old `drop f()` was
+`f() ?| NIL;` with the swallow unwritten. An unwritten default is precisely what
 explicit-over-implicit forbids, and both spellings exist for anyone who meant
 them.
 
@@ -11263,7 +11270,7 @@ this one there would make the default build the one that trusts the author.
   should reach the caller (the driver's stage calls; an out-of-range index is an
   internal defect that should surface as a diagnostic, not as node 0); `?!`
   where the failure is an invariant violation with no caller able to act;
-  `is_err` where it is meaningful. Never `? NIL` / `? <zero>` as a mechanical
+  `is_err` where it is meaningful. Never `?| NIL` / `?| <zero>` as a mechanical
   replacement — that is the old behaviour with the swallow written down, and
   the point of the sweep is to stop continuing past failures.
 - **~90 `drop` sites** on never-failing value-returning callees become
@@ -11308,18 +11315,16 @@ this one there would make the default build the one that trusts the author.
 
 ### Amendment status (recorded at adoption, D-163)
 
-The amendments below are the doc-sync obligation this decision carries. Because
-D-163 is **PROPOSED and implemented at 1.1**, they are made as **forward
-references to D-163**, not rewrites to the post-1.1 state — a spec must not
-describe `raw`/`drop` as "licensed" while the code still leaves them unchecked
-(the stale-spec-ahead-of-code hazard is as real as the reverse). At adoption the
-high-value passages that would actively mislead an implementer or auditor were
-given forward-reference notes: `SAFETY_ARCHITECTURE`'s Escape Hatches / `raw`
-bullet, `TYPE_REFERENCE`'s `raw`/`drop`/`discard` note, `OP_REFERENCE`'s `_!`/`_?`
-rows, `CONCURRENCY_REFERENCE` §2.2 (the spawn error-join, which C-7/C-9 build
-against), and the `DECISIONS` cross-refs D-002/D-014/D-060/D-089/D-149. The
-remainder of the list is the **1.1.0 doc-sync obligation**, made when the
-behavior lands and the notes flip from "proposed" to describing current state.
+The amendments below are the doc-sync obligation this decision carries, and
+**1.1.0 made the pass**: everything that LANDED there — the contract and its
+body check (rules 1–2), trait conformance (5), the statement-side closed list
+(6), the `defer` rule (7), function types (8), the builtin `fails` column
+(9) — is now described as current state, and the amendment notes flipped from
+"proposed" accordingly. What has NOT landed is rules 3–4's refusal itself:
+`raw` and `drop` still work unlicensed until 1.1.2 flips
+`TYPE_RAW_UNLICENSED` on, once the 1.1.1/1.1.2 sweeps drive
+`check_raw_licensed`'s counts to zero — and the specs say so wherever they
+describe the licence.
 
 ### Amendments this forces
 

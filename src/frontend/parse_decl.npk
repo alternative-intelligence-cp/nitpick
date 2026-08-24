@@ -173,6 +173,20 @@ pub func:fn_contract = VerifyId(Ast->:ast, DeclNode:d, int32:i) {
                  + (raw fn_param_count(ast, d));
     VerifyId:c = VerifyId{ index: raw d_at(ast, d, base + i) }; pass c;
 };
+
+// Does this function's contract window carry `never fails`? (D-163) The func
+// type built from the declaration reads this to set its never-fails bit, and the
+// body check reads it to enforce the contract.
+pub func:fn_declares_never_fails = bool(Ast->:ast, DeclNode:d) {
+    int32:c = 0i32;
+    int32:cn = raw fn_contract_count(ast, d);
+    while (c < cn) {
+        VerifyNode:v = relay ast_verify(ast, raw fn_contract(ast, d, c));
+        if (v.kind == VerifyKind.VerifyNeverFails) { pass true; }
+        c = c + 1i32;
+    }
+    pass false;
+};
 pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
     int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
                  + (raw fn_param_count(ast, d)) + (raw fn_contract_count(ast, d));

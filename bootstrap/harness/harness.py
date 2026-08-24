@@ -1046,6 +1046,63 @@ def check_kinds_lowered_or_refused():
     return fails
 
 
+def check_raw_licensed(tc):
+    """D-163's instrument -- REPORTS, never fails (1.1.0).
+
+    For each tree, how far it stands from the licence: the count of `raw` and
+    `drop` sites whose resolved callee does not declare `never fails`, split
+    may-fail / builtin / other. RESOLUTION, not regex -- `check --raw-report`
+    runs the real frontend, so UFCS and imports are answered correctly. The
+    refusal is 1.1.2's closing act, once the sweeps drive `mayfail` to zero;
+    until then this prints the debt on every full run, the way
+    `check_decisions_current` prints doc-sync candidates.
+    """
+    per_file = {}
+    skipped = []
+
+    def run(root):
+        try:
+            r = subprocess.run([tc, root, "--raw-report"], capture_output=True,
+                               text=True, timeout=180)
+        except Exception:
+            skipped.append(root)
+            return
+        if r.returncode != 0:
+            skipped.append(root)
+            return
+        for m in re.finditer(r"^(\S+)  mayfail=(\d+) builtin=(\d+) other=(\d+)$",
+                             r.stdout, re.M):
+            per_file[os.path.relpath(m.group(1), ROOT)
+                     if os.path.isabs(m.group(1)) else m.group(1)] = (
+                int(m.group(2)), int(m.group(3)), int(m.group(4)))
+
+    # ONE run over src/main.npk (~45s -- it fronts the whole compiler, and
+    # lib/ rides in with it), plus the fast test trees (each loads only the
+    # prelude and itself). The tools roots are deliberately absent: each one
+    # imports all of src/ (another ~45s for three files' own sites); their
+    # counts are in the committed worklist (raw_sweep_worklist.md), measured
+    # once at 1.1.0.
+    roots = [os.path.join(ROOT, "src", "main.npk")]
+    for sub in (("tests", "accept"), ("tests", "conformance"),
+                ("tests", "backend", "programs"), ("tests", "frontend")):
+        roots += sorted(glob.glob(os.path.join(ROOT, *sub, "*.npk")))
+    for root in roots:
+        run(root)
+
+    trees = {}
+    for path, (may, bi, ot) in per_file.items():
+        tree = path.split(os.sep)[0]
+        t = trees.setdefault(tree, [0, 0, 0])
+        t[0] += may; t[1] += bi; t[2] += ot
+    lines = []
+    for tree in sorted(trees):
+        may, bi, ot = trees[tree]
+        lines.append("%s: mayfail=%d builtin=%d other=%d"
+                     % (tree, may, bi, ot))
+    worst = sorted(per_file.items(), key=lambda kv: -kv[1][0])[:5]
+    return lines, worst, len(skipped)
+
+
 def check_decisions_current():
     """Candidates for stale decision-log entries -- REPORTED, never failing.
 
@@ -1778,6 +1835,17 @@ def main(argv):
         if isinstance(tc, str) and not os.path.exists(tc):
             failures.append("tools/check.npk did not build: %s" % tc)
         elif tc:
+            # D-163's instrument -- REPORTED, never failing (1.1.0): the
+            # distance of each tree from the raw/drop licence, printed on
+            # every full run until 1.1.1/1.1.2 drive it to zero and flip
+            # the refusal on.
+            rl_lines, rl_worst, rl_skipped = check_raw_licensed(tc)
+            print("  raw-licence: unlicensed `raw`/`drop` sites by tree "
+                  "(D-163; %d root(s) skipped un-runnable):" % rl_skipped)
+            for ln in rl_lines:
+                print("    ~ %s" % ln)
+            for path, (may, bi, ot) in rl_worst:
+                print("      worst: %-46s mayfail=%d" % (path, may))
             n = 0
             for p in sorted(glob.glob(os.path.join(ROOT, "tests", "types",
                                                    "rejection", "**", "*.npk"),
@@ -1882,6 +1950,28 @@ def main(argv):
                                                   exp, tmp)
                 n += 1
             print("  %-11s %2d real-backend program(s)" % ("programs", n))
+
+            # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
+            # conformance/nf_twin/ differ only in their `never fails` clauses
+            # and must emit byte-identical IR -- the contract is a checked
+            # claim, never a codegen hint.
+            twa = os.path.join(ROOT, "tests", "conformance", "nf_twin",
+                               "with", "nf_inert.npk")
+            twb = os.path.join(ROOT, "tests", "conformance", "nf_twin",
+                               "without", "nf_inert.npk")
+            ra = subprocess.run([ec, twa], capture_output=True, text=True)
+            rb = subprocess.run([ec, twb], capture_output=True, text=True)
+            if ra.returncode != 0 or rb.returncode != 0:
+                failures.append("nf_twin: a twin failed to emit "
+                                "(with=%d, without=%d)"
+                                % (ra.returncode, rb.returncode))
+            elif ra.stdout != rb.stdout:
+                failures.append("nf_twin: `never fails` changed the emitted "
+                                "IR -- D-163 is a checked claim, not a "
+                                "codegen hint")
+            else:
+                print("  %-11s the `never fails` twins emit byte-identical IR"
+                      % "nf-inert")
 
             # --- RUNTIME-FLOOR UNIT TESTS (0.10.3) --------------------------
             #

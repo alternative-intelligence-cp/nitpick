@@ -36,7 +36,7 @@ func:main = int32(cstring[]:_~argv) {
     // about which type refuses. An empty window: the rung answers before the
     // window is read.
     int32:i32t_r = raw tt_int(@types, 32i32, true);
-    int32:f32t = raw tt_func_variadic(@types, i32t_r, 0i32, 0i32);
+    int32:f32t = raw tt_func_variadic(@types, i32t_r, 0i32, 0i32, false);
     int32:nx = relay intern_add(@it, "x");
     int32:ny = relay intern_add(@it, "y");
 
@@ -180,9 +180,9 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_close(@fa, true);
     if (!(raw string_eq(relay irw_text(@wa), relay irw_text(@w2)))) { exit 61i32; }
 
-    wild_release_all();
+    drop wild_release_all();
 
-    wild_release_all();
+    drop wild_release_all();
     exit 0i32;
 };
 

@@ -610,15 +610,32 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
 
 // `func RetType(ParamTypes)` (D-087). One word: a code address, with no captured
 // environment, because closures are removed (D-018).
-pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count) {
-    pass (raw tt_intern(t, raw TY_FUNC(), ret, start, count, 8i64, 8i32, 0i32));
+// THE `never_fails` BIT RIDES THE `name` SLOT (D-163). A func type has no name,
+// so the slot is free, and `tt_intern` keys identity on it — so a `never fails`
+// function type and an otherwise-identical may-fail one intern as DISTINCT types,
+// which is exactly what `fits` and the D-156 mangle need, with no new `Type` slot.
+pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count,
+                         bool:never_fails) {
+    int32:nf = 0i32;
+    if (never_fails) { nf = 1i32; }
+    pass (raw tt_intern(t, raw TY_FUNC(), ret, start, count, 8i64, 8i32, nf));
 };
 
 // `func RetType(ParamTypes, ..*T[])`. Same shape, different kind, and the last
 // entry of the window is the `T[]` the variadic parameter is bound to.
 pub func:tt_func_variadic = int32(TypeTable->:t, int32:ret, int32:start,
-                                  int32:count) {
-    pass (raw tt_intern(t, raw TY_FUNC_VARIADIC(), ret, start, count, 8i64, 8i32, 0i32));
+                                  int32:count, bool:never_fails) {
+    int32:nf = 0i32;
+    if (never_fails) { nf = 1i32; }
+    pass (raw tt_intern(t, raw TY_FUNC_VARIADIC(), ret, start, count, 8i64, 8i32, nf));
+};
+
+// The never-fails bit of a function type (D-163), read from the `name` slot.
+// `false` for anything that is not a function type — the slot is a name there,
+// and the callers guard on `type_is_func` first.
+pub func:func_never_fails = bool(TypeTable->:t, int32:id) {
+    Type:e = raw tt_get(t, id);
+    pass (e.name != 0i32);
 };
 
 // IS THIS CALLABLE AT ALL? Two kinds now, and every place that asked

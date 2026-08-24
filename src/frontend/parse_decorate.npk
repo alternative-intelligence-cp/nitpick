@@ -156,30 +156,42 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) {
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
         Span:sp = relay p_span(p);
-        int32:kind = 0i32;
-        if (relay p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
-        if (relay p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
-        if (relay p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
-        if (kind == 0i32) { break; }
-        drop p_advance(p);
+        // `never fails` (D-163) — a marker contract with no predicate, filed in
+        // the contracts window as `VerifyNeverFails`. The body check reads it.
+        // A following `requires`/`ensures` still parses (the grammar is never
+        // partial, D-085); the body check is what refuses the combination.
+        if (relay p_at(p, TokenKind.KwNever)) {
+            drop p_advance(p);
+            drop p_expect(p, TokenKind.KwFails);
+            VerifyId:nf = relay ast_add_verify(p.ast, VerifyKind.VerifyNeverFails, sp,
+                                               0i32, 0i32, 0i32, 0i64);
+            drop ast_scratch_push(p.ast, nf.index);
+        } else {
+            int32:kind = 0i32;
+            if (relay p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
+            if (relay p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
+            if (relay p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
+            if (kind == 0i32) { break; }
+            drop p_advance(p);
 
-        // `acquires <= N` — the BOUND form. The `<=` is consumed here rather than
-        // parsed as a comparison, because `acquires x <= 3i32` is not a predicate
-        // about anything: the level stands alone and the operator is part of the
-        // clause's shape.
-        int32:flags = 0i32;
-        if (kind == (raw CONTRACT_ACQUIRES())) {
-            if (relay p_accept(p, TokenKind.OpLtEq)) {
-                flags = raw CONTRACT_BOUNDED();
+            // `acquires <= N` — the BOUND form. The `<=` is consumed here rather
+            // than parsed as a comparison, because `acquires x <= 3i32` is not a
+            // predicate about anything: the level stands alone and the operator
+            // is part of the clause's shape.
+            int32:flags = 0i32;
+            if (kind == (raw CONTRACT_ACQUIRES())) {
+                if (relay p_accept(p, TokenKind.OpLtEq)) {
+                    flags = raw CONTRACT_BOUNDED();
+                }
             }
-        }
 
-        // `ensures` may name `result`, which is an ordinary identifier here and
-        // is given meaning by the verifier, not by the grammar.
-        ExprId:cond = relay p_parse_expr(p);
-        VerifyId:c = relay ast_add_verify(p.ast, VerifyKind.VerifyContractNode, sp,
-                                          kind, cond.index, flags, 0i64);
-        drop ast_scratch_push(p.ast, c.index);
+            // `ensures` may name `result`, which is an ordinary identifier here
+            // and is given meaning by the verifier, not by the grammar.
+            ExprId:cond = relay p_parse_expr(p);
+            VerifyId:c = relay ast_add_verify(p.ast, VerifyKind.VerifyContractNode, sp,
+                                              kind, cond.index, flags, 0i64);
+            drop ast_scratch_push(p.ast, c.index);
+        }
     }
     pass (raw ast_scratch_commit(p.ast, mark));
 };

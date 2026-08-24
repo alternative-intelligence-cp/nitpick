@@ -8,8 +8,8 @@
 func:seal_after_free = NIL() {
     // the jit.npk bug: free, then seal the freed page (use-after-free)
     wildx int8->:page = wildx_alloc(64i64);
-    wildx_free(page);
-    wildx_seal(page);
+    drop wildx_free(page);
+    drop wildx_seal(page);
     pass NIL;
 };
 
@@ -19,9 +19,9 @@ func:write_after_seal = NIL() {
     // once — the invariant wildx exists to prevent
     wildx uint8->:page = wildx_alloc(64i64);
     page[0i64] = 72u8;
-    wildx_seal(page);
+    drop wildx_seal(page);
     page[0i64] = 99u8;
-    wildx_free(page);
+    drop wildx_free(page);
     pass NIL;
 };
 
@@ -32,16 +32,16 @@ func:exec_before_seal = NIL() {
     page[0i64] = 195u8;
     int64:r = wildx_call(page, 5i64);
     discard(r);
-    wildx_free(page);
+    drop wildx_free(page);
     pass NIL;
 };
 
 // expect-error: NITPICK-MOVE-002
 func:double_free = NIL() {
     wildx int8->:page = wildx_alloc(64i64);
-    wildx_seal(page);
-    wildx_free(page);
-    wildx_free(page);
+    drop wildx_seal(page);
+    drop wildx_free(page);
+    drop wildx_free(page);
     pass NIL;
 };
 

@@ -63,6 +63,11 @@ VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "acquires"
                       | "invariant" | "fails" | "on" | "with" | "never"
 
+; the contract position after a parameter list (D-163):
+;   Contracts ::= ( "requires" Expr | "ensures" Expr
+;                 | "acquires" ["<="] Expr | "never" "fails" )*
+; `never fails` is also legal after a function TYPE's parameter list.
+
 AsyncKeyword        ::= "async" | "await"
 
 ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"

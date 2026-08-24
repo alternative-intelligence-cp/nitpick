@@ -206,12 +206,16 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_FUNC())) {
         string:f1 = relay string_concat("func ",
                         relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(f1, "(…)"));
+        string:f2 = relay string_concat(f1, "(…)");
+        if (raw func_never_fails(tyt, t)) { pass (relay string_concat(f2, " never fails")); }
+        pass f2;
     }
     if (k == (raw TY_FUNC_VARIADIC())) {
         string:f1 = relay string_concat("func ",
                         relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(f1, "(…, ..*T[])"));
+        string:f2 = relay string_concat(f1, "(…, ..*T[])");
+        if (raw func_never_fails(tyt, t)) { pass (relay string_concat(f2, " never fails")); }
+        pass f2;
     }
     // `Self` HAS NO NAME TO CARRY, so without this it printed `<type>` — and it
     // appears in exactly the diagnostics where the reader needs to see it, since

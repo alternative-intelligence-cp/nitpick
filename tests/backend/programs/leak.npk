@@ -18,7 +18,7 @@ func:main = int32(cstring[]:_~argv) {
     int64:n2 = wild_live_count();
     if (n2 != 2i64) { exit 12i32; }
 
-    dalloc(q);
+    drop dalloc(q);
     int64:n3 = wild_live_count();
     if (n3 != 1i64) { exit 13i32; }
 
@@ -26,8 +26,8 @@ func:main = int32(cstring[]:_~argv) {
     wild int8->:big = alloc(100000i64);
     int64:n4 = wild_live_count();
     if (n4 != 2i64) { exit 14i32; }
-    dalloc(big);
-    dalloc(p);
+    drop dalloc(big);
+    drop dalloc(p);
     int64:n5 = wild_live_count();
     if (n5 != 0i64) { exit 15i32; }
 

@@ -126,6 +126,9 @@ pub func:fn_type = int32(TypeResolver->:r, DeclId:did, int32:name, int32:scope) 
 
 func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) {
     FnSig:s = relay fn_signature_bound(r, d, name, scope);
+    // D-163: a `never fails` declaration builds a never-fails function type,
+    // distinct in identity from the may-fail one (types.npk `name` slot).
+    bool:nf = relay fn_declares_never_fails(r.ast, d);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     while (i < (raw fn_param_count(r.ast, d))) {
@@ -154,14 +157,14 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
         // declaration must encode the same slot the annotation encodes, or the
         // two spellings of one type never unify. Storing `s.result` here was
         // exactly that mismatch, invisible until function values existed.
-        pass (raw tt_func(r.types, s.success, w.start, w.count));
+        pass (raw tt_func(r.types, s.success, w.start, w.count, nf));
     }
 
     DeclNode:vn = relay ast_decl(r.ast, vd);
     int32:vt = relay resolve_type(r, raw variadic_type(vn), scope);
     drop ast_scratch_push(r.ast, relay require_variadic_slice(r, vt, vn.span));
     IdSpan:wv = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_func_variadic(r.types, s.success, wv.start, wv.count));
+    pass (raw tt_func_variadic(r.types, s.success, wv.start, wv.count, nf));
 };
 
 // AN `extern` FUNCTION'S TYPE — and it is a `Result<T>` like every other (D-002).
@@ -219,7 +222,7 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
         i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_func(r.types, wrapped, w.start, w.count));
+    pass (raw tt_func(r.types, wrapped, w.start, w.count, false));
 };
 
 // `..*T[]` AND NOT `..*T`. The brackets are the type — `rest` is bound to a slice
