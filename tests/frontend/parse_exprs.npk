@@ -276,6 +276,25 @@ func:main = int32(cstring[]:_~argv) {
     drop p_parse_expr(@pe);
     if (raw diaglist_count(@ge) != 1i64)                 { exit 92i32; }
 
+    // --- `++` / `--` are removed (D-174, 1.0.9d) -------------------------------
+    // Struck for the reason `?|` was: the prototype carried a C increment, this
+    // language does not want a mutation that also YIELDS a value. Parsed (the
+    // grammar is never partial, D-085) and refused by name with the replacement.
+    TokenList:kg = raw lex_all(0i32, "a ++", @it, @ld);
+    Ast:ag = raw ast_init();
+    DiagList:gg = raw diaglist_init();
+    Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
+    drop p_parse_expr(@pg);
+    if (raw diaglist_count(@gg) != 1i64)                 { exit 100i32; }
+    Diagnostic:dg = raw diaglist_at(@gg, 0i64);
+    if (!(raw string_eq(dg.code, raw PARSE_INCDEC_REMOVED()))) { exit 101i32; }
+    TokenList:kh = raw lex_all(0i32, "a --", @it, @ld);
+    Ast:ah = raw ast_init();
+    DiagList:gh = raw diaglist_init();
+    Parser:ph = raw parser_init(@kh, @ah, @gh, @it);
+    drop p_parse_expr(@ph);
+    if (raw diaglist_count(@gh) != 1i64)                 { exit 102i32; }
+
     wild_release_all();
     exit 0i32;
 };

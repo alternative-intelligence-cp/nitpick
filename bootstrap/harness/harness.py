@@ -938,17 +938,20 @@ KIND_STATUS = {
     "ExprMoveExpr": "lowered",         # yields its place; the transfer is static (D-065)
     "ExprFloatLiteral": "lowered",   # 0.9.4
     "ExprSentinelLiteral": "lowered", # 0.9.5 — NIL/NULL always were; ERR joined
-    "ExprTemplateLiteral": "rung", "ExprPostfixExpr": "rung",
-    "ExprPipeExpr": "rung", "ExprRangeExpr": "lowered",   # 0.9.6
+    "ExprTemplateLiteral": "lowered",   # 1.0.9d — &{ } via ToString (D-168)
+    "ExprPostfixExpr": "inert: `++`/`--` struck at parse (D-174, PARSE-010); the backend guard is a defensive confession",
+    "ExprPipeExpr": "lowered",   # 1.0.9c
+    "ExprRangeExpr": "lowered",   # 0.9.6
     "ExprSpreadExpr": "rung",
     "ExprTernaryExpr": "lowered",  # 0.9.6 — lazy, branch-based
     "ExprIsErrExpr": "lowered",  # 0.9.5
-    "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "rung",
+    "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "lowered",  # 1.0.9c — folded at check time
     "ExprSafeUnwrapExpr": "lowered", "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
-    "ExprNullCoalesceExpr": "rung", "ExprDefaultsExpr": "rung",
+    "ExprNullCoalesceExpr": "rung",
+    "ExprDefaultsExpr": "inert: `?|`/`defaults` struck at parse (D-167, PARSE-009); the backend guard is a defensive confession",
     "ExprVectorCtorExpr": "rung", "ExprAwaitExpr": "rung",
     "ExprIterationVarExpr": "lowered",  # 0.9.7
-    "ExprDynCastExpr": "rung",
+    "ExprDynCastExpr": "lowered",  # 1.0.9b — the fit to the dyn target
     "ExprPickExpr": "lowered",  # 0.9.7
     # --- StmtKind ---------------------------------------------------------
     "StmtBlockStmt": "lowered", "StmtVarDeclStmt": "lowered",

@@ -35,3 +35,9 @@ pub func:PARSE_WRAPPER_FIELD = string() { pass "NITPICK-PARSE-008"; };
 // document (or the prototype, where it was literally the same node as `?`), and
 // the diagnostic has to say what to write instead.
 pub func:PARSE_DEFAULTS_REMOVED = string() { pass "NITPICK-PARSE-009"; };
+
+// `++` / `--` (D-174). Struck for the same reason as `?|`: a construct the
+// prototype carried that this language does not want -- an increment that also
+// YIELDS a value hides a write inside an expression, and `x += 1` already does
+// the job with no hidden mutation. The diagnostic names the replacement.
+pub func:PARSE_INCDEC_REMOVED = string() { pass "NITPICK-PARSE-010"; };

@@ -11733,3 +11733,43 @@ through `irw_alloca` (the real backend) / `self.alloca` (the seed), never write
 the line inline. There is no instrument yet; a `check_allocas_hoisted` scanning
 emitted IR for an `alloca` outside an entry block is the natural one and is
 noted for when a lowering next adds an alloca.
+
+---
+
+## D-174 — `++` / `--` are struck; an increment is `x += 1`, not a value — **SETTLED**
+
+Closing cycle 1.0, `++`/`--` (`ExprPostfixExpr`) was the last "1.0" backend rung
+with no owner. The disposition table's instruction was "enumerate, then lower —
+one shape remains; name it": 0.9.7 lowered the postfix *access* operators
+(`()`, `[]`, `.`, `?.`); the one shape left was the C increment/decrement.
+
+**What the prototype had.** `../nitpick` implements them C-style —
+`codegen_expr_binary.cpp` returns `expr->isn ? oldVal : newVal`, so postfix
+yields the OLD value and prefix the new, both mutating the operand.
+`OP_REFERENCE.md` §1 carried the row (`i++` / `++i`, "Post/pre-increment"). But
+this compiler only ever parsed the POSTFIX form — there is no prefix `++` node —
+so "post/pre" was already half-fiction, and no rung lowered either.
+
+**Why struck, not lowered.** Three independent reasons converge:
+
+- **Redundant.** `x += 1` / `x -= 1` already exist and lower (`compound_op`,
+  `ir_stmt`). As a *statement*, `x++` is exactly `x += 1` — a second spelling,
+  the shape D-021 struck for casts, D-123 for `Display`, D-167 for `?|`.
+- **Hidden mutation in expression position.** The only thing `++`/`--` add over
+  `+= 1` is the *value* form (`y = x++` mutates `x` and yields its old value).
+  A write hidden inside an expression is exactly what the blueprint philosophy
+  ("explicit over implicit", one meaning everywhere, no silent side effects)
+  exists to forbid, and it is pure developer comfort — subordinate to safety and
+  correctness. It also opens the sequence-point class of bugs (`a[i++] = i++`)
+  that a safety-critical language must not carry.
+- **No owner cycle.** The roadmap runs 1.0 generics · 1.1 async · 1.2
+  self-hosting · 1.3 verification · 1.4 Astrée. None would ever lower an
+  increment operator — evidence it was never a planned feature, only an
+  unremoved prototype inheritance.
+
+**The strike.** Mirroring D-167: the parser still reads `a++` and `a--` (the
+grammar is never partial, D-085) and refuses them by name,
+`PARSE_INCDEC_REMOVED` (`NITPICK-PARSE-010`), with the answer — `x += 1` /
+`x -= 1`. The backend guard for `ExprPostfixExpr` becomes a defensive
+`iv_broken`: a clean program never reaches it. `OP_REFERENCE.md` §1 loses the
+two rows.

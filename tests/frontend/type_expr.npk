@@ -398,15 +398,16 @@ func:main = int32(cstring[]:_~argv) {
     Ex:df2 = raw ex("1i32 defaults 0i32", @it);
     if (raw errs(@df2) != (0i64 - 1i64))                       { exit 151i32; }
 
-    // --- `++` / `--` are arithmetic, and answer to the same rule ------------------------------
+    // --- `++` / `--` are struck (D-174, 1.0.9d) ----------------------------------------------
+    // Redundant with `x += 1`, and the value form hides a write inside an
+    // expression; the parser refuses them by name (PARSE-010), so the
+    // expression carries a diagnostic rather than typing — whatever the operand.
     Ex:pp1 = raw ex("1i32++", @it);
-    if (raw errs(@pp1) != 0i64)                                { exit 160i32; }
-    // A `char8++` walking to the next code point would make a character an
-    // integer in exactly one corner of the grammar.
+    if (raw errs(@pp1) != (0i64 - 1i64))                       { exit 160i32; }
     Ex:pp2 = raw ex("'a'++", @it);
-    if (raw errs(@pp2) != 1i64)                                { exit 161i32; }
+    if (raw errs(@pp2) != (0i64 - 1i64))                       { exit 161i32; }
     Ex:pp3 = raw ex("true--", @it);
-    if (raw errs(@pp3) != 1i64)                                { exit 162i32; }
+    if (raw errs(@pp3) != (0i64 - 1i64))                       { exit 162i32; }
 
     wild_release_all();
 

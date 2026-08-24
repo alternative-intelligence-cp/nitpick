@@ -619,7 +619,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv(tll.text, out, ttid));
     }
     if (n.kind == ExprKind.ExprPostfixExpr) {
-        pass (raw iv_rung("a postfix operator", "1.0", n.span));
+        // `++`/`--` are struck (D-174): redundant with `x += 1`, hidden mutation
+        // in expression position, and no cycle ever owned them. The parser
+        // refuses them by name (`PARSE-010`), so this is a defensive confession.
+        pass (raw iv_broken(n.span));
     }
     // A float literal (0.9.4). The lexer kept the TEXT; LLVM's parser converts
     // decimal to double with correct rounding, so `double <text>` is exact for
@@ -651,7 +654,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (relay emit_pipe(x, id, n));
     }
     if (n.kind == ExprKind.ExprDefaultsExpr) {
-        pass (raw iv_rung("the defaults operator", "1.0", n.span));
+        // `?|`/`defaults` is struck (D-167): a second spelling of `?`. The
+        // parser refuses it by name (`PARSE-009`), so this is a defensive
+        // confession -- a clean program never reaches it.
+        pass (raw iv_broken(n.span));
     }
     // `is_err(x)` — THE test that does not trap (D-008 §5): ERR flows through
     // data and stops at branches, and this is the sanctioned way to look.
@@ -2263,8 +2269,10 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                               relay string_concat(serr, ", 1")));
             pass (raw iv("{ i64, i32 }", sb2, 0i32));
         }
-        string:what = relay cat3("the builtin `", name, "`");
-        pass (raw iv_rung(what, "1.0", cnode.span));
+        // UNREACHABLE. Every `is_builtin_name` (builtins.npk) is served above:
+        // four lower inline, `sys` is handled in this block, and the rest have an
+        // `rt_sig` entry -- the resolver admits no other name as a builtin.
+        pass (raw iv_broken(cnode.span));
     }
 
     // THE FLOOR'S SIGNATURE IS THE COERCION AUTHORITY. Builtin arguments are
@@ -3682,7 +3690,9 @@ func:emit_enum_ctor = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                             ExprNode:cnode) {
     int32:etid = raw exprtypes_get(x.et, id);
     if ((raw type_kind(x.fe.ctx.types, etid)) != (raw TY_ENUM())) {
-        pass (raw iv_rung("a call through a member", "1.0", n.span));
+        // UNREACHABLE. `emit_call` sends a function-valued member to
+        // `emit_indirect_call`; this path is a checker-confirmed enum ctor.
+        pass (raw iv_broken(n.span));
     }
     int32:gcount = raw expr_generic_count(n);
     pass (relay emit_ctor(x, id, n.span, etid, cnode.payload =>! int32,
@@ -3693,7 +3703,8 @@ func:emit_enum_ctor = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
                        int32:vname, int32:start, int32:count) {
     if ((raw type_kind(x.fe.ctx.types, etid)) != (raw TY_ENUM())) {
-        pass (raw iv_rung("a call through a member", "1.0", at));
+        // UNREACHABLE, as in `emit_enum_ctor`: only a confirmed enum ctor calls in.
+        pass (raw iv_broken(at));
     }
     VariantInfo:vi = raw variant_info(x, etid, vname);
     if (!vi.found) { pass (raw iv_broken(at)); }

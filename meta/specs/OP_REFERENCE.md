@@ -12,7 +12,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 
 | | Level | Operators |
 |---|---|---|
-| 1 | Postfix | `++` `--` `()` `[]` `.` `?.` |
+| 1 | Postfix | `()` `[]` `.` `?.` (`++` / `--` struck, D-174) |
 | **2** | **Result unary** *(right-assoc)* | **`raw` `_!`** · **`drop` `_?`** · **`await`** · **`relay` `_^`** |
 | 3 | Pipeline | `\|>` `<\|` |
 | 4 | Cast | `=>` `=>!` |
@@ -72,6 +72,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
   precedence — the shape D-021 and D-123 struck before. `expr ? fallback` is
   the one spelling; parentheses give any scope a reader wants. The parser still
   reads the old form and refuses it by name (`NITPICK-PARSE-009`).
+- **`++` / `--` are struck (D-174, 1.0.9d).** The prototype had the C increment (postfix yields the old value, prefix the new, both mutating). As a statement `x++` is just `x += 1`; the value form hides a write inside an expression — the blueprint philosophy forbids that, and it is pure comfort. `x += 1` / `x -= 1` are the spellings. The parser still reads the old form and refuses it by name (`NITPICK-PARSE-010`).
 
 ---
 
@@ -84,8 +85,6 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | `*` | Multiply | Safe multiplication. | `a * b` |
 | `/` | Divide | Safe division. Divide-by-zero behavior is **type-directed** — see below. | `a / b` |
 | `%` | Modulo | Remainder operation. Same divide-by-zero rule as `/`. | `a % b` |
-| `++` | Increment | Post/pre-increment. | `i++` or `++i` |
-| `--` | Decrement | Post/pre-decrement. | `i--` or `--i` |
 | `**` | Power | Exponentiation (Standard Library expansion). | `2 ** 8` |
 
 ### 1.1 Division by zero and overflow

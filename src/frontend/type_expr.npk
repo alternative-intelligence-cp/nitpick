@@ -800,9 +800,10 @@ func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) {
     pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
 };
 
-// `++` / `--`. Numbers only — the same rule as `+`, because that is what they
-// are, and a `char8++` that walked to the next code point would make a character
-// an integer in exactly one place in the grammar.
+// `++` / `--` are STRUCK at parse (D-174) — the parser refuses them by name
+// before the checker runs, so this never fires on a clean program. It stays
+// because `ExprPostfixExpr` must be typed (`check_kinds_typed`): numbers only,
+// the same rule as `+`, so a stray node reached defensively still types honestly.
 func:type_postfix = int32(ExprTyper->:e, ExprNode:n) {
     int32:t = relay type_of_expr(e, raw expr_operand(n));
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }

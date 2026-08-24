@@ -547,7 +547,10 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (raw iterator_impl_of(x, itid) != 0i32) {
         pass (relay emit_for_iterator(x, s, iter, itid, bind, btid, bll));
     }
-    pass (raw iv_rung("a `for` over this iterable", "1.0", s.span));
+    // UNREACHABLE. The five arms above -- range, slice, array, pointer, and an
+    // `Iterator` implementor -- are exactly the set `check_for` (D-166) admits;
+    // everything else it refuses with `TYPE_NOT_ITERABLE` before the backend.
+    pass (raw iv_broken(s.span));
 };
 
 // The impl of the prelude `Iterator` for `it1` (0 for none): a non-blanket impl

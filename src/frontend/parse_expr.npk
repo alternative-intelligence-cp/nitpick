@@ -422,11 +422,15 @@ func:p_postfix = ExprId(Parser->:p) {
         // node discriminated by `op` would leave the position unrecorded.
         if (k == TokenKind.OpPlusPlus) {
             drop p_advance(p);
+            drop p_error(p, raw PARSE_INCDEC_REMOVED(),
+                "`++` / `--` are removed (D-174): write `x += 1` or `x -= 1` — an increment that also yields a value hides a write inside an expression, and `+=` already does the job");
             e = relay ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
                                    e.index, 0i32, 0i32, (k =>! int32) =>! int64);
         } else {
         if (k == TokenKind.OpMinusMinus) {
             drop p_advance(p);
+            drop p_error(p, raw PARSE_INCDEC_REMOVED(),
+                "`++` / `--` are removed (D-174): write `x += 1` or `x -= 1` — an increment that also yields a value hides a write inside an expression, and `+=` already does the job");
             e = relay ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
                                    e.index, 0i32, 0i32, (k =>! int32) =>! int64);
         } else {
