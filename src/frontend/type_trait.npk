@@ -1440,6 +1440,27 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
     if ((raw type_kind(r.types, want)) == (raw TY_SELF())) {
         pass (got == sc.target);
     }
+    // SUBSTITUTION REBUILDS THE WRAPPER (D-166, 1.0.9d). `Self` and an associated
+    // type are whole types where they appear, but a trait method may wrap them —
+    // `Iterator`'s `next` returns `Item?` and takes `Self->` — so a wrapper in
+    // the trait matches the SAME wrapper in the impl with the substitution
+    // carried inside it. `Optional` and pointer are the two the language forms
+    // here; recursion keeps `Item?->` and the like honest, and a wrapper the impl
+    // did not match still fails, so nothing is hidden.
+    if ((raw type_kind(r.types, want)) == (raw TY_OPTIONAL())) {
+        if ((raw type_kind(r.types, got)) == (raw TY_OPTIONAL())) {
+            pass (relay same_after_self(r, raw type_elem(r.types, want),
+                      raw type_elem(r.types, got), sc));
+        }
+        pass false;
+    }
+    if ((raw type_kind(r.types, want)) == (raw TY_POINTER())) {
+        if ((raw type_kind(r.types, got)) == (raw TY_POINTER())) {
+            pass (relay same_after_self(r, raw type_elem(r.types, want),
+                      raw type_elem(r.types, got), sc));
+        }
+        pass false;
+    }
     // AN ASSOCIATED TYPE SUBSTITUTES TO THIS IMPL'S BINDING (D-160), which is
     // the same one level `Self` gets and for the same reason: `Item` is a whole
     // type where it appears, and `Item->` or `Item[]` would need the

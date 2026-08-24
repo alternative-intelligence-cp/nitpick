@@ -73,3 +73,12 @@ pub trait:ToString = {
 pub trait:Debug = {
     func:debug = string(Self:self);
 };
+
+// WHAT A `for` LOOP DRIVES (D-166). `next` advances and yields the element, or
+// `NIL` when the iteration is over — `Item?` is why this was undecidable before
+// `Optional` lowered (1.0.7). The receiver is `Self->`: `next` mutates the
+// iterator's position, so it takes it by pointer, the one trait method that does.
+pub trait:Iterator = {
+    assoc:Item;
+    func:next = Item?(Self->:self);
+};

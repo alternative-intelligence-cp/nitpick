@@ -43,6 +43,8 @@ use "../../frontend/expr_types.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/resolve_type.npk".*;
 use "../../frontend/type_decl.npk".*;
+use "../../frontend/type_trait.npk".*;   // impl_count/impl_at, method_symbol_name (D-166)
+use "../../frontend/type_names.npk".*;   // method_symbol_name (D-166)
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
@@ -539,7 +541,135 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (ikind == (raw TY_ARRAY())) {
         pass (relay emit_for_indexed(x, s, iter, bind, btid, bll, true));
     }
+    if (ikind == (raw TY_POINTER())) {
+        pass (relay emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+    }
+    if (raw iterator_impl_of(x, itid) != 0i32) {
+        pass (relay emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+    }
     pass (raw iv_rung("a `for` over this iterable", "1.0", s.span));
+};
+
+// The impl of the prelude `Iterator` for `it1` (0 for none): a non-blanket impl
+// whose target is `it1` and whose trait is `Iterator`. Its `.decl` is the impl,
+// `.trait_id` the interned `Iterator` type the method symbol is named under.
+func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) {
+    int32:it1 = itid;
+    if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_POINTER())) {
+        it1 = raw type_elem(x.fe.ctx.types, itid);
+    }
+    int32:iter_sym = raw scope_lookup(x.tab, x.scope,
+                         raw intern_add(x.interns, "Iterator"));
+    if (iter_sym == 0i32) { pass 0i32; }
+    Symbol:isym = raw symtab_get(x.tab, iter_sym);
+    if (isym.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    int32:i = 0i32;
+    while (i < (raw impl_count(x.fe.ctx.impls))) {
+        ImplEntry:e = relay impl_at(x.fe.ctx.impls, i);
+        if (!e.blanket) {
+            if (e.target == it1) {
+                if ((raw type_decl_of(x.fe.ctx.types, e.trait_id))
+                        == isym.origin) {
+                    pass (i + 1i32);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+// `for (T:x in it)` OVER AN `Iterator` (D-166, 1.0.9d): call `next(@it)` until it
+// yields `NIL`. `next`'s receiver is `Self->`, so the iterable's ADDRESS is the
+// argument — its own when the loop is over a pointer, its place otherwise. The
+// call returns `Result<Item?>`; the loop reads the `Optional` out of the Result
+// (its value word), ends on the empty tag, and binds the value word otherwise.
+// `continue` re-calls `next` (head), `break` leaves (done).
+func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
+                               int32:itid, DeclNode:bind, int32:btid,
+                               LlType:bll) {
+    int32:idx = raw iterator_impl_of(x, itid);
+    if (idx == 0i32) { pass (raw iv_broken(s.span)); }
+    ImplEntry:e = relay impl_at(x.fe.ctx.impls, idx - 1i32);
+
+    int32:it1 = itid;
+    string:recv = "";
+    if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_POINTER())) {
+        it1 = raw type_elem(x.fe.ctx.types, itid);
+        IrVal:pv = relay emit_expr(x, iter);
+        if (!(raw iv_is_ok(pv))) { pass pv; }
+        recv = pv.ref;
+    } else {
+        PlaceVal:apv = relay addr_of(x, iter);
+        if (apv.state != (raw LL_OK())) { pass (relay iv_from_place(apv)); }
+        recv = apv.addr;
+    }
+
+    // The impl's `next` method and its D-156 symbol.
+    DeclNode:idecl = relay ast_decl(x.ast, DeclId{ index: e.decl });
+    int32:next_name = raw intern_add(x.interns, "next");
+    int32:next_decl = 0i32;
+    int32:mi = 0i32;
+    while (mi < (raw impl_member_count(x.ast, idecl))) {
+        DeclId:mid = raw impl_member(x.ast, idecl, mi);
+        DeclNode:m = relay ast_decl(x.ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == next_name) { next_decl = mid.index; }
+        }
+        mi = mi + 1i32;
+    }
+    if (next_decl == 0i32) { pass (raw iv_broken(s.span)); }
+    string:sym = relay mangled_fn_sym(x.fe.ctx, next_decl,
+                     relay method_symbol_name(x.fe.ctx.types, x.interns, it1,
+                         e.trait_id, "next"));
+
+    // `next`'s return: `Result<Optional<Item>>`, and `Item` is the binding type
+    // (the checker held them equal, D-166).
+    int32:opt_tid = raw tt_optional(x.fe.ctx.types, btid,
+                        raw type_size(x.fe.ctx.types, btid),
+                        raw type_align(x.fe.ctx.types, btid));
+    int32:ret_tid = raw tt_result(x.fe.ctx.types, opt_tid,
+                        raw type_size(x.fe.ctx.types, opt_tid),
+                        raw type_align(x.fe.ctx.types, opt_tid));
+    LlType:ret_ll = relay ll_type(x.fe.ctx, ret_tid);
+    if (!(raw ll_is_ok(ret_ll))) { pass (relay iv_from_ll_at(x, ret_ll, ret_tid, s.span)); }
+    LlType:opt_ll = relay ll_type(x.fe.ctx, opt_tid);
+    if (!(raw ll_is_ok(opt_ll))) { pass (relay iv_from_ll_at(x, opt_ll, opt_tid, s.span)); }
+
+    string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    string:head_l = relay irw_new_label(x.fe.w, "fi.head");
+    string:body_l = relay irw_new_label(x.fe.w, "fi.body");
+    string:done_l = relay irw_new_label(x.fe.w, "fi.done");
+    drop s_br(x, head_l);
+    drop s_start(x, head_l);
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret_ll.text, " ",
+                      relay cat5(sym, "(ptr ", recv, ")", "")));
+    string:opt = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(opt, " = extractvalue ", ret_ll.text, " ",
+                      relay string_concat(r, ", 0")));
+    string:tag = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(tag, " = extractvalue ", opt_ll.text, " ",
+                      relay string_concat(opt, ", 0")));
+    string:empty = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(empty, " = icmp eq i8 ",
+                      relay string_concat(tag, ", 0")));
+    drop irw_line(x.fe.w, relay cat5("br i1 ", empty, ", label %", done_l,
+                      relay string_concat(", label %", body_l)));
+    x.fe.terminated = true;
+    drop s_start(x, body_l);
+    string:val = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(val, " = extractvalue ", opt_ll.text, " ",
+                      relay string_concat(opt, ", 1")));
+    drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", val,
+                      relay string_concat(", ptr ", slot)));
+    drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
+    IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+    drop fnem_loop_pop(x.fe);
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop s_br(x, head_l);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
 };
 
 // The slice/array half: index 0..len, element copied into the binding.

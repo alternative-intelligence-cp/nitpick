@@ -10,7 +10,7 @@
 // accident:
 //
 //     define { i32, i32 } @"npk.projection.first<Counter>"(%"...Counter" %a0)
-//       ...  call { i32, i32 } @"npk.projection.Counter:Iterator.next"(...)
+//       ...  call { i32, i32 } @"npk.projection.Counter:Seq.next"(...)
 //
 // The specialization returns `{ i32, i32 }` — `Result<int32>` — which is only
 // true if `T.Item` became `int32`, the type the impl bound. Had normalisation
@@ -25,19 +25,19 @@
 // (D-107), so `it.next()` arrives carrying `T.Item` exactly as `self.v` arrived
 // at 1.0.4c carrying `T`.
 
-trait:Iterator = {
+trait:Seq = {
     assoc:Item;
     func:next = Item(Self:self);
 };
 
 struct:Counter = { int32:n; };
 
-impl:Counter:Iterator = {
+impl:Counter:Seq = {
     assoc:Item = int32;
     func:next = int32(Counter:self) { pass self.n; };
 };
 
-func:first<T: Iterator> = T.Item(T:it) { pass (raw it.next()); };
+func:first<T: Seq> = T.Item(T:it) { pass (raw it.next()); };
 
 func:main = int32(cstring[]:_~argv) {
     Counter:c = Counter{ n: 7i32 };

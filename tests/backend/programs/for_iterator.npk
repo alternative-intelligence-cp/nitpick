@@ -1,0 +1,31 @@
+// expect-exit: 42
+//
+// `for` OVER AN `Iterator` (D-166, 1.0.9d). A type implementing the prelude
+// `Iterator` trait — `assoc:Item; func:next = Item?(Self->:self);` — drives a
+// `for` loop: the loop calls `next(@it)` until it yields `NIL`, binding the
+// value each time. `next` takes its receiver BY POINTER (`Self->`), the one
+// trait method that does, because it advances the iterator's position — which is
+// why `check_signature` now substitutes `Self` through the pointer wrapper, and
+// `Item` through the `Optional` of the return.
+mod:for_iterator;
+
+struct:Counter = { int32:cur; int32:hi; };
+
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32?(Counter->:self) {
+        if (self.cur >= self.hi) { pass NIL; }
+        int32:v = self.cur;
+        self.cur = self.cur + 1i32;
+        pass v;
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Counter:c = Counter{ cur: 0i32, hi: 9i32 };
+    int32:sum = 0i32;
+    for (int32:x in c) { sum = sum + x; }   // 0+1+…+8 = 36
+    exit sum + 6i32;                         // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

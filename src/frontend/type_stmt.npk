@@ -32,6 +32,7 @@ use "./type_decl.npk".*;
 use "./type_layout.npk".*;
 use "./expr_types.npk".*;
 use "./type_expr.npk".*;
+use "./type_trait.npk".*;   // assoc_binding_of (D-166)
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
 //
@@ -320,20 +321,35 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) {
         it1 = raw type_elem(e.types, it);
     }
     int32:k = raw type_kind(e.types, it1);
+    TypeResolver:r = raw etyper_resolver(e);
     int32:elem = 0i32;
     if (k == (raw TY_RANGE())) { elem = raw type_elem(e.types, it1); }
     if (k == (raw TY_SLICE())) { elem = raw type_elem(e.types, it1); }
     if (k == (raw TY_ARRAY())) { elem = raw type_elem(e.types, it1); }
+    // AN `Iterator` IMPLEMENTOR (D-166, 1.0.9d): the element is the trait's
+    // `Item` associated type as this type binds it. `assoc_binding_of` returns 0
+    // when the type has no `Iterator` impl, which is exactly the not-iterable
+    // case below — so no separate `type_implements` is needed.
+    if (elem == 0i32) {
+        int32:iter_name = raw intern_add(e.interns, "Iterator");
+        int32:iter_sym = raw scope_lookup(e.tab, e.scope, iter_name);
+        if (iter_sym != 0i32) {
+            Symbol:isym = raw symtab_get(e.tab, iter_sym);
+            if (isym.origin_kind == (raw SYM_DECL())) {
+                elem = raw assoc_binding_of(@r, e.impls, it1, isym.origin,
+                           raw intern_add(e.interns, "Item"));
+            }
+        }
+    }
     if (elem == 0i32) {
         string:n1 = relay string_concat("`",
                         relay type_display(e.types, e.interns, it));
         drop te_error(e, raw TYPE_NOT_ITERABLE(),
             relay string_concat(n1,
-                "` is not iterable: `for` takes a range, a slice or an array (D-023, D-166); `loop`/`till` count, and an `Iterator` implementor arrives with 1.0.9d"),
+                "` is not iterable: `for` takes a range, a slice, an array, or a type implementing `Iterator` (D-023, D-166); `loop`/`till` count"),
             s.span);
         pass NIL;
     }
-    TypeResolver:r = raw etyper_resolver(e);
     DeclNode:bd = relay ast_decl(e.ast, raw stmt_for_binding(s));
     int32:bt = relay resolve_type(@r, raw param_type(bd), e.scope);
     if (bt == 0i32) { pass NIL; }
