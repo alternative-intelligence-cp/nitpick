@@ -131,17 +131,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     drop irw_stmt_mark(x.fe.w);
 
     if (s.kind == StmtKind.StmtBlockStmt)   { pass (raw emit_block(x, sid)); }
-    if (s.kind == StmtKind.StmtVarDeclStmt) {
-        // STAGE C's CROSSING RUNG (D-177): the suspend walk marked this local
-        // as live across a suspension, and until stage D lays it into the
-        // frame, an alloca that dies between resumes cannot carry it.
-        if (x.fe.is_async) {
-            if (raw exprtypes_crossing(x.et, sid.index)) {
-                pass (raw iv_rung("a local live across `await`", "1.1", s.span));
-            }
-        }
-        pass (raw emit_vardecl(x, s));
-    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) { pass (raw emit_vardecl(x, s, sid)); }
     if (s.kind == StmtKind.StmtAssignStmt)  { pass (raw emit_assign(x, s)); }
 
     if (s.kind == StmtKind.StmtExprStmt) {
@@ -204,7 +194,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 
 // --- declarations and assignment ----------------------------------------------------
 
-func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // LIVE-1's repair (0.9.0): a `limit<Rules>` that lowered to a bare alloca
     // told the program its rule held while nothing checked it — the worst
     // outcome D-068 names. Refused until 1.3 emits the real check; the same
@@ -221,8 +211,29 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // the name is not bound until after the initialiser runs (`fnem_local` binds
     // on the way out), so `int32:x = x;` reads the OUTER `x`, not the slot being
     // created.
-    string:slot = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, slot, ll.text);
+    //
+    // A CROSSING LOCAL LIVES IN THE FRAME (D-177, stage D): the suspend walk
+    // marked it, the pre-scan reserved its slot, and the entry block cut its
+    // GEP — an alloca would die between `resume` calls. A marked local with
+    // no reserved slot is one the pre-scan could not reach (a decl inside a
+    // value-`pick`), and it refuses rather than silently taking an alloca.
+    string:slot = "";
+    bool:framed = false;
+    if (x.fe.is_async) {
+        if (raw exprtypes_crossing(x.et, sid.index)) {
+            int32:cidx = raw fnem_cross_find(x.fe, sid.index);
+            if (cidx < 0i32) {
+                pass (raw iv_rung("a local live across `await` inside a value `pick`",
+                                  "1.1", s.span));
+            }
+            slot = raw fnem_cross_gep(x.fe, cidx);
+            framed = true;
+        }
+    }
+    if (!framed) {
+        slot = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, slot, ll.text);
+    }
     ExprId:init = raw stmt_decl_init(x.ast, s);
     if (!(raw expr_is_none(init))) {
         IrVal:v = raw emit_expr(x, init);
@@ -1445,6 +1456,82 @@ pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
               raw generic_scope_none(), false));
 };
 
+// THE CROSSING PRE-SCAN (stage D): before the frame type is fixed, find every
+// var-decl the suspend walk marked and register its slot. Statement positions
+// only — a var-decl lives in statement position, and the one place a nested
+// one can hide from this walk is inside a value-`pick`'s arms, which is
+// exactly where `emit_await` still rungs; a marked decl this scan missed
+// falls to the declaration-site rung below, so the answer is refusal, never
+// a dead slot.
+func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass (raw iv_nil()); }
+    if (fuel <= 0i32) { pass (raw iv_nil()); }
+    StmtNode:s = raw ast_stmt(x.ast, sid);
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        if (raw exprtypes_crossing(x.et, sid.index)) {
+            int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
+            LlType:ll = raw ll_type(x.fe.ctx, dty);
+            if (!(raw ll_is_ok(ll))) {
+                pass (raw iv_from_ll_at(x, ll, dty, s.span));
+            }
+            drop fnem_cross_add(x.fe, sid.index, dty, ll.text);
+        }
+        pass (raw iv_nil());
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(s))) {
+            IrVal:r = raw scan_crossing(x, StmtId{ index: raw ast_id_at(x.ast,
+                          raw stmt_list_start(s), i) }, fuel - 1i32);
+            if (!(raw iv_is_ok(r))) { pass r; }
+            i = i + 1i32;
+        }
+        pass (raw iv_nil());
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        IrVal:r1 = raw scan_crossing(x, raw stmt_then(s), fuel - 1i32);
+        if (!(raw iv_is_ok(r1))) { pass r1; }
+        pass (raw scan_crossing(x, raw stmt_else(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        pass (raw scan_crossing(x, raw stmt_body(x.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        IrVal:r2 = raw scan_crossing(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
+        if (!(raw iv_is_ok(r2))) { pass r2; }
+        IrVal:r3 = raw scan_crossing(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
+        if (!(raw iv_is_ok(r3))) { pass r3; }
+        pass (raw scan_crossing(x, raw stmt_when_end(x.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        pass (raw scan_crossing(x, raw stmt_counted_body(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        pass (raw scan_crossing(x, raw stmt_counted_body(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        pass (raw scan_crossing(x, raw stmt_for_body(x.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        int32:j = 0i32;
+        while (j < (raw pick_arm_count(s))) {
+            IrVal:r4 = raw scan_crossing(x, StmtId{ index: raw ast_id_at(x.ast,
+                           raw pick_arm_start(s), j) }, fuel - 1i32);
+            if (!(raw iv_is_ok(r4))) { pass r4; }
+            j = j + 1i32;
+        }
+        pass (raw iv_nil());
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        pass (raw scan_crossing(x, raw arm_body(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        pass (raw scan_crossing(x, StmtId{ index: s.a }, fuel - 1i32));
+    }
+    pass (raw iv_nil());
+};
+
 func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                                       int32:mangled_name, GenericScope:g,
                                       bool:specialize) never fails {
@@ -1495,6 +1582,19 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.fe.is_async = true;
         x.fe.frame_ty = raw frame_ty_sym(x.fe.ctx, did.index, fname);
         x.fe.resume_sym = raw resume_fn_sym(x.fe.ctx, did.index, fname);
+        // The crossing pre-scan (stage D), under the same instantiation
+        // binding the body will use — the frame type is fixed at open, so
+        // the slots must be known now.
+        GenericScope:cssaved = x.tr.generics;
+        GenericScope:cesaved = x.tr.enclosing;
+        if (specialize) {
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+        }
+        IrVal:cs = raw scan_crossing(x, raw fn_body(x.ast, d), 256i32);
+        x.tr.generics = cssaved;
+        x.tr.enclosing = cesaved;
+        if (!(raw iv_is_ok(cs))) { pass cs; }
     }
 
     int32:i = 0i32;

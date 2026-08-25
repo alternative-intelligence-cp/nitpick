@@ -1,0 +1,71 @@
+// expect-exit: 42
+//
+// CROSSING LOCALS ARE FRAME-RESIDENT (D-177, 1.1.4 stage D). The suspend
+// walk marks every local whose live range crosses a suspension; the
+// pre-scan reserves a frame slot per marked var-decl before the frame type
+// is fixed; the declaration site binds the name to an entry-cut GEP instead
+// of an alloca. Exercised here: scalars held across one and several awaits;
+// a STRUCT local written field-by-field between suspensions; an
+// address-taken local mutated through a borrow across an await (the walk
+// keeps it alive to the function's end, and the frame gives `@z` a stable
+// heap address); and a crossing local beside a `wild` allocation whose
+// `defer` runs on the post-resume exit path.
+mod:async_locals;
+
+struct:Pair = { int32:x; int32:y; };
+
+async func:step = int32(int32:v) {
+    if (v > 100i32) { fail 6tbb32; }
+    pass v + 1i32;
+};
+
+func:bump = NIL(int32->:p) never fails {
+    <-p = (<-p) + 1i32;
+    pass NIL;
+};
+
+async func:held = int32(int32:v) {
+    int32:a = relay await step(v);       // crosses the next two awaits
+    int32:b = relay await step(a);       // crosses the next await
+    int32:c = await step(200i32) ?| 3i32; // fail 6tbb32 -> 3
+    pass a + b + c;
+};
+
+async func:structy = int32(int32:v) {
+    Pair:pr = Pair{ x: v, y: 2i32 };
+    discard(await step(0i32) ?| 0i32);
+    pr.y = pr.y + 3i32;
+    discard(await step(0i32) ?| 0i32);
+    pass pr.x + pr.y;                    // v + 5
+};
+
+async func:addressed = int32(int32:v) {
+    int32:z = v;
+    drop bump(@z);
+    discard(await step(0i32) ?| 0i32);
+    drop bump(@z);
+    pass z;                              // v + 2
+};
+
+async func:deferred = int32(int32:v) {
+    wild int8->:p = alloc(4i64);
+    defer { drop dalloc(p); }
+    int32:k = v * 2i32;
+    discard(await step(0i32) ?| 0i32);
+    pass k;                              // v * 2
+};
+
+async func:tail = int32(int32:acc) {
+    int32:c = await deferred(5i32) ?| 0i32;   // 10
+    pass acc + c;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await held(1i32) ?| 0i32;       // 2 + 3 + 3 = 8
+    int32:b = await structy(2i32) ?| 0i32;    // 7 — crosses the next awaits
+    int32:c = await addressed(5i32) ?| 0i32;  // 7
+    int32:r = await tail(a + b + c) ?| 0i32;  // 22 + 10
+    exit r + 10i32;                           // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 99i32; };

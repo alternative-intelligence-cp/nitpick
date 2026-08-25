@@ -152,6 +152,18 @@ pub struct:FnEmitter = {
     int32:seg_count;
     int32:seg_cap;
     int32:for_depth;               // inside a `for` body (stage-C rung guard)
+
+    // CROSSING LOCALS (stage D): the pre-scan registers each var-decl the
+    // suspend walk marked, by stmt index, before `fnem_open` fixes the frame
+    // type — slot `7 + pcount + j`. The GEPs are cut in the entry block at
+    // open, and the declaration site binds the name to its slot instead of
+    // an alloca.
+    wild int32->:cross_stmts;
+    wild int32->:cross_types;
+    wild string->:cross_lls;
+    wild string->:cross_geps;
+    int32:cross_count;
+    int32:cross_cap;
 };
 
 pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
@@ -194,7 +206,12 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         is_async: false, frame_ty: "", resume_sym: "",
         state_gep: "", windup_gep: "", result_gep: "", awaitee_gep: "",
         seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        seg_count: 0i32, seg_cap: 8i32, for_depth: 0i32
+        seg_count: 0i32, seg_cap: 8i32, for_depth: 0i32,
+        cross_stmts: (alloc(8i64 * 4i64)) =>! wild int32->,
+        cross_types: (alloc(8i64 * 4i64)) =>! wild int32->,
+        cross_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        cross_geps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        cross_count: 0i32, cross_cap: 8i32
     };
     pass fe;
 };
@@ -247,6 +264,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.resume_sym = "";
     fe.seg_count = 0i32;
     fe.for_depth = 0i32;
+    fe.cross_count = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
     drop irw_begin_function(fe.w);
@@ -330,6 +348,46 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     pass NIL;
 };
 
+// One crossing local, registered by the pre-scan (stage D). Idempotent on the
+// stmt index for the same reason the walk's mark is.
+pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:type_id,
+                              string:ll) never fails {
+    if ((raw fnem_cross_find(fe, stmt_index)) >= 0i32) { pass NIL; }
+    if (fe.cross_count >= fe.cross_cap) {
+        int64:ncap = (fe.cross_cap => int64) * 2i64;
+        wild int8->:na = ralloc(fe.cross_stmts =>! wild int8->, ncap * 4i64);
+        wild int8->:nb = ralloc(fe.cross_types =>! wild int8->, ncap * 4i64);
+        wild int8->:nc = ralloc(fe.cross_lls =>! wild int8->,
+                                ncap * #size_of<string>());
+        wild int8->:nd = ralloc(fe.cross_geps =>! wild int8->,
+                                ncap * #size_of<string>());
+        fe.cross_stmts = na =>! wild int32->;
+        fe.cross_types = nb =>! wild int32->;
+        fe.cross_lls = nc =>! wild string->;
+        fe.cross_geps = nd =>! wild string->;
+        fe.cross_cap = ncap =>! int32;
+    }
+    fe.cross_stmts[fe.cross_count => int64] = stmt_index;
+    fe.cross_types[fe.cross_count => int64] = type_id;
+    fe.cross_lls[fe.cross_count => int64] = ll;
+    fe.cross_geps[fe.cross_count => int64] = "";
+    fe.cross_count = fe.cross_count + 1i32;
+    pass NIL;
+};
+
+pub func:fnem_cross_find = int32(FnEmitter->:fe, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < fe.cross_count) {
+        if (fe.cross_stmts[i => int64] == stmt_index) { pass i; }
+        i = i + 1i32;
+    }
+    pass 0i32 - 1i32;
+};
+
+pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
+    pass fe.cross_geps[idx => int64];
+};
+
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
 //
 // The frame type, the resume function's header, and the entry block that makes
@@ -349,6 +407,11 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
         slots = raw cat3(slots, ", ", fe.plls[i => int64]);
         i = i + 1i32;
     }
+    i = 0i32;
+    while (i < fe.cross_count) {
+        slots = raw cat3(slots, ", ", fe.cross_lls[i => int64]);
+        i = i + 1i32;
+    }
     drop irw_raw(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
     drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr) {", ""));
     drop irw_label(fe.w, "entry");
@@ -363,6 +426,12 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     while (i < fe.pcount) {
         string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 7i32 + i);
         drop fnem_bind(fe, fe.pnames[i => int64], pg, fe.ptypes[i => int64]);
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while (i < fe.cross_count) {
+        fe.cross_geps[i => int64] =
+            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 7i32 + fe.pcount + i);
         i = i + 1i32;
     }
 
