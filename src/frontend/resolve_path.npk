@@ -39,14 +39,14 @@ pub struct:RootList = {
     int32:cap;
 };
 
-pub func:rootlist_init = RootList() {
+pub func:rootlist_init = RootList() never fails {
     int64:n = 8i64;
     wild int8->:mem = alloc(n * #size_of<Root>());
     RootList:r = RootList{ items: mem =>! wild Root->, count: 0i32, cap: 8i32 };
     pass r;
 };
 
-func:rootlist_grow = NIL(RootList->:l) {
+func:rootlist_grow = NIL(RootList->:l) never fails {
     int32:nc = l.cap * 2i32;
     wild int8->:bigger = ralloc(l.items =>! wild int8->,
                                 (nc => int64) * #size_of<Root>());
@@ -57,20 +57,20 @@ func:rootlist_grow = NIL(RootList->:l) {
 
 // A dependency declared at `../nfs` roots at `../nfs/src` (BUILD_REFERENCE §3),
 // so the `/src` is appended HERE rather than at every use site.
-pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) {
+pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) never fails {
     if (l.count >= l.cap) {
         drop rootlist_grow(l);
     }
-    Root:r = Root{ name: name, dir: relay path_join(dir, "src") };
+    Root:r = Root{ name: name, dir: raw path_join(dir, "src") };
     l.items[l.count => int64] = r;
     l.count = l.count + 1i32;
     pass NIL;
 };
 
-pub func:rootlist_count = int32(RootList->:l) { pass l.count; };
-pub func:rootlist_at = Root(RootList->:l, int32:i) {
-    if (i < 0i32) { fail 12tbb32; }
-    if (i >= l.count) { fail 12tbb32; }
+pub func:rootlist_count = int32(RootList->:l) never fails { pass l.count; };
+pub func:rootlist_at = Root(RootList->:l, int32:i) never fails {
+    if (i < 0i32) { !!! 12tbb32; }
+    if (i >= l.count) { !!! 12tbb32; }
     pass l.items[i => int64];
 };
 
@@ -78,9 +78,9 @@ pub func:rootlist_at = Root(RootList->:l, int32:i) {
 //
 // A resolution either found exactly one file or it did not, and "did not" splits
 // into two cases a reader acts on differently: nothing matched, or several did.
-pub func:RESOLVED_OK = int32()        { pass 0i32; };
-pub func:RESOLVED_NOT_FOUND = int32() { pass 1i32; };
-pub func:RESOLVED_AMBIGUOUS = int32() { pass 2i32; };
+pub func:RESOLVED_OK = int32() never fails        { pass 0i32; };
+pub func:RESOLVED_NOT_FOUND = int32() never fails { pass 1i32; };
+pub func:RESOLVED_AMBIGUOUS = int32() never fails { pass 2i32; };
 
 pub struct:Resolution = {
     int32:status;
@@ -92,29 +92,33 @@ pub struct:Resolution = {
 // --- resolving ---------------------------------------------------------------------
 
 pub func:resolve_use = Resolution(string:from, string:target, RootList->:roots,
-                                  string:stdlib) {
+                                  string:stdlib) never fails {
     if (raw path_is_relative(target)) {
-        pass (relay resolve_relative(from, target));
+        pass (raw resolve_relative(from, target));
     }
     if (raw path_is_absolute(target)) {
         // An absolute path names one file and consults no root at all.
-        pass (relay resolve_single(relay path_normalise(target)));
+        pass (raw resolve_single(raw path_normalise(target)));
     }
-    pass (relay resolve_in_roots(target, roots, stdlib));
+    pass (raw resolve_in_roots(target, roots, stdlib));
 };
 
-func:resolve_single = Resolution(string:candidate) {
+func:resolve_single = Resolution(string:candidate) never fails {
     Resolution:r = Resolution{ status: raw RESOLVED_NOT_FOUND(),
                                path: candidate, first: "", second: "" };
-    cstring:c = relay to_cstring(candidate);
-    if (path_exists(c)) {
-        r.status = raw RESOLVED_OK();
+    // A candidate with an interior NUL names no file (D-049): not-found,
+    // never an error — the NUL can only come from a user-written import.
+    Result<cstring>:c = to_cstring(candidate);
+    if (!c.is_error) {
+        if (path_exists(c.value)) {
+            r.status = raw RESOLVED_OK();
+        }
     }
     pass r;
 };
 
-func:resolve_relative = Resolution(string:from, string:target) {
-    pass (relay resolve_single(relay path_relative_to(from, target)));
+func:resolve_relative = Resolution(string:from, string:target) never fails {
+    pass (raw resolve_single(raw path_relative_to(from, target)));
 };
 
 // EVERY root is probed before deciding.
@@ -124,17 +128,19 @@ func:resolve_relative = Resolution(string:from, string:target) {
 // declare first. Adding a dependency could silently change which file an
 // existing `use` resolves to, in a module nobody edited — so the build fails and
 // names both instead (BUILD_REFERENCE §3).
-func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdlib) {
+func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdlib) never fails {
     Resolution:r = Resolution{ status: raw RESOLVED_NOT_FOUND(),
                                path: target, first: "", second: "" };
     int32:found = 0i32;
 
     int32:i = 0i32;
     while (i < (raw rootlist_count(roots))) {
-        Root:root = relay rootlist_at(roots, i);
-        string:candidate = relay path_normalise(relay path_join(root.dir, target));
-        cstring:c = relay to_cstring(candidate);
-        if (path_exists(c)) {
+        Root:root = raw rootlist_at(roots, i);
+        string:candidate = raw path_normalise(raw path_join(root.dir, target));
+        Result<cstring>:c = to_cstring(candidate);
+        bool:c_there = false;
+        if (!c.is_error) { c_there = path_exists(c.value); }
+        if (c_there) {
             if (found == 0i32) {
                 r.path = candidate;
                 r.first = candidate;
@@ -153,9 +159,11 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
     // ambiguous, because silently preferring one is the behaviour this rule
     // exists to prevent.
     if (stdlib.len != 0i64) {
-        string:scand = relay path_normalise(relay path_join(stdlib, target));
-        cstring:sc = relay to_cstring(scand);
-        if (path_exists(sc)) {
+        string:scand = raw path_normalise(raw path_join(stdlib, target));
+        Result<cstring>:sc = to_cstring(scand);
+        bool:sc_there = false;
+        if (!sc.is_error) { sc_there = path_exists(sc.value); }
+        if (sc_there) {
             if (found == 0i32) {
                 r.path = scand;
                 r.first = scand;
@@ -184,22 +192,22 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
 // The diagnostic NAMES BOTH candidates. "Ambiguous path" on its own tells a
 // reader they have a problem and not which two files to choose between.
 pub func:report_resolution = NIL(DiagList->:diags, Resolution:r,
-                                 string:target, Span:span) {
+                                 string:target, Span:span) never fails {
     if (r.status == (raw RESOLVED_OK())) {
         pass NIL;
     }
     if (r.status == (raw RESOLVED_AMBIGUOUS())) {
-        string:m1 = relay string_concat("`", target);
-        string:m2 = relay string_concat(m1, "` is supplied by more than one root: ");
-        string:m3 = relay string_concat(m2, r.first);
-        string:m4 = relay string_concat(m3, " and ");
-        string:m5 = relay string_concat(m4, r.second);
+        string:m1 = raw string_concat("`", target);
+        string:m2 = raw string_concat(m1, "` is supplied by more than one root: ");
+        string:m3 = raw string_concat(m2, r.first);
+        string:m4 = raw string_concat(m3, " and ");
+        string:m5 = raw string_concat(m4, r.second);
         drop diaglist_push(diags,
             raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, span));
         pass NIL;
     }
-    string:n1 = relay string_concat("cannot find `", target);
-    string:n2 = relay string_concat(n1, "`");
+    string:n1 = raw string_concat("cannot find `", target);
+    string:n2 = raw string_concat(n1, "`");
     drop diaglist_push(diags,
         raw diag_error(raw RESOLVE_NO_SUCH_FILE(), n2, span));
     pass NIL;

@@ -32,8 +32,8 @@ use "./parse_expr.npk".*;
 
 // --- accessors ------------------------------------------------------------------
 
-pub func:CONTRACT_REQUIRES = int32() { pass 1i32; };
-pub func:CONTRACT_ENSURES = int32()  { pass 2i32; };
+pub func:CONTRACT_REQUIRES = int32() never fails { pass 1i32; };
+pub func:CONTRACT_ENSURES = int32() never fails  { pass 2i32; };
 
 // `acquires N` and `acquires <= N` — the third contract kind (D-113, D-056).
 //
@@ -46,35 +46,35 @@ pub func:CONTRACT_ENSURES = int32()  { pass 2i32; };
 // A declaration and an obligation on the same axis, which is why they share a
 // keyword rather than getting two — and the `<=` is what a reader sees the
 // difference in, at the point where it matters.
-pub func:CONTRACT_ACQUIRES = int32() { pass 3i32; };
+pub func:CONTRACT_ACQUIRES = int32() never fails { pass 3i32; };
 
 // Set on an `acquires` contract whose form is `<= N` rather than bare `N`.
-pub func:CONTRACT_BOUNDED = int32()  { pass 1i32; };
+pub func:CONTRACT_BOUNDED = int32() never fails  { pass 1i32; };
 
-pub func:contract_kind = int32(VerifyNode:v) { pass v.a; };
-pub func:contract_cond = ExprId(VerifyNode:v) { ExprId:e = ExprId{ index: v.b }; pass e; };
+pub func:contract_kind = int32(VerifyNode:v) never fails { pass v.a; };
+pub func:contract_cond = ExprId(VerifyNode:v) never fails { ExprId:e = ExprId{ index: v.b }; pass e; };
 
 // Is this `acquires` clause the `<= N` form? Named rather than read as `v.c != 0`
 // at each site, because a raw slot read is a comment that cannot be checked.
-pub func:contract_is_bounded = bool(VerifyNode:v) {
+pub func:contract_is_bounded = bool(VerifyNode:v) never fails {
     pass ((v.c & (raw CONTRACT_BOUNDED())) != 0i32);
 };
-pub func:invariant_start = int32(VerifyNode:v) { pass v.b; };
-pub func:invariant_count = int32(VerifyNode:v) { pass v.c; };
-pub func:limit_rule = int32(VerifyNode:v) { pass (v.payload =>! int32); };
+pub func:invariant_start = int32(VerifyNode:v) never fails { pass v.b; };
+pub func:invariant_count = int32(VerifyNode:v) never fails { pass v.c; };
+pub func:limit_rule = int32(VerifyNode:v) never fails { pass (v.payload =>! int32); };
 
-pub func:attr_arg_start = int32(DeclNode:d) { pass d.b; };
-pub func:attr_arg_count = int32(DeclNode:d) { pass d.c; };
-pub func:attr_name = int32(DeclNode:d) { pass (d.payload =>! int32); };
+pub func:attr_arg_start = int32(DeclNode:d) never fails { pass d.b; };
+pub func:attr_arg_count = int32(DeclNode:d) never fails { pass d.c; };
+pub func:attr_name = int32(DeclNode:d) never fails { pass (d.payload =>! int32); };
 
 // --- attributes ------------------------------------------------------------------
 //
 // `#[name]` and `#[name(args)]`. `#` is one token and the `[` is what separates
 // an attribute from `#name(…)`, which is a builtin or a macro invocation (D-020,
 // D-046) -- so one token of lookahead decides, with no speculative parse.
-pub func:p_at_attribute = bool(Parser->:p) {
-    if (!(relay p_at(p, TokenKind.Hash))) { pass false; }
-    pass ((relay p_peek_at(p, 1i64)).kind == TokenKind.PLBracket);
+pub func:p_at_attribute = bool(Parser->:p) never fails {
+    if (!(raw p_at(p, TokenKind.Hash))) { pass false; }
+    pass ((raw p_peek_at(p, 1i64)).kind == TokenKind.PLBracket);
 };
 
 // AN ATTRIBUTE'S NAME IS ALWAYS AN INTERN INDEX, whatever kind of token spelled it.
@@ -89,23 +89,23 @@ pub func:p_at_attribute = bool(Parser->:p) {
 // 0.6.5. Interning the keyword's spelling here means one representation with one
 // reading, rather than a slot that means an intern index on some attributes and
 // nothing on others.
-func:p_attr_name = int32(Parser->:p, Token:name) {
+func:p_attr_name = int32(Parser->:p, Token:name) never fails {
     if (name.payload != 0i64) { pass ((name.payload) =>! int32); }
-    pass (relay intern_add(p.interns, raw token_kind_name(name.kind)));
+    pass (raw intern_add(p.interns, raw token_kind_name(name.kind)));
 };
 
-pub func:p_parse_attribute = DeclId(Parser->:p) {
-    Span:sp = relay p_span(p);
+pub func:p_parse_attribute = DeclId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
     drop p_expect(p, TokenKind.Hash);
     drop p_expect(p, TokenKind.PLBracket);
-    Token:name = relay p_advance(p);
+    Token:name = raw p_advance(p);
     int32:mark = raw ast_scratch_mark(p.ast);
-    if (relay p_accept(p, TokenKind.PLParen)) {
-        if (!(relay p_at(p, TokenKind.PRParen))) {
-            ExprId:a1 = relay p_parse_expr(p);
+    if (raw p_accept(p, TokenKind.PLParen)) {
+        if (!(raw p_at(p, TokenKind.PRParen))) {
+            ExprId:a1 = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, a1.index);
-            while (relay p_accept(p, TokenKind.PComma)) {
-                ExprId:argN = relay p_parse_expr(p);
+            while (raw p_accept(p, TokenKind.PComma)) {
+                ExprId:argN = raw p_parse_expr(p);
                 drop ast_scratch_push(p.ast, argN.index);
             }
         }
@@ -113,16 +113,16 @@ pub func:p_parse_attribute = DeclId(Parser->:p) {
     }
     drop p_expect(p, TokenKind.PRBracket);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_decl(p.ast, DeclKind.DeclAttribute, sp,
+    pass (raw ast_add_decl(p.ast, DeclKind.DeclAttribute, sp,
                              0i32, w.start, w.count,
-                             (relay p_attr_name(p, name)) => int64));
+                             (raw p_attr_name(p, name)) => int64));
 };
 
 // Gather however many attributes precede something.
-pub func:p_parse_attributes = IdSpan(Parser->:p) {
+pub func:p_parse_attributes = IdSpan(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
     while (raw p_at_attribute(p)) {
-        DeclId:a = relay p_parse_attribute(p);
+        DeclId:a = raw p_parse_attribute(p);
         drop ast_scratch_push(p.ast, a.index);
     }
     pass (raw ast_scratch_commit(p.ast, mark));
@@ -135,13 +135,13 @@ pub func:p_parse_attributes = IdSpan(Parser->:p) {
 // checked at runtime (D-068). That is why it is a node on the declaration and
 // not a comment on it -- a build without the verifier still has to emit the
 // check.
-pub func:p_parse_limit = VerifyId(Parser->:p) {
-    Span:sp = relay p_span(p);
+pub func:p_parse_limit = VerifyId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
     drop p_expect(p, TokenKind.KwLimit);
     drop p_expect(p, TokenKind.OpLt);
-    Token:rule = relay p_advance(p);
+    Token:rule = raw p_advance(p);
     drop p_expect_gt(p);
-    pass (relay ast_add_verify(p.ast, VerifyKind.VerifyLimitNode, sp,
+    pass (raw ast_add_verify(p.ast, VerifyKind.VerifyLimitNode, sp,
                                0i32, 0i32, 0i32, rule.payload));
 };
 
@@ -152,25 +152,25 @@ pub func:p_parse_limit = VerifyId(Parser->:p) {
 // `if` / `while`. The line is drawn by position rather than taste:
 // expression-site conditions take parentheses, declaration-site contracts take
 // keywords and bare predicates (D-002).
-pub func:p_parse_contracts = IdSpan(Parser->:p) {
+pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
-        Span:sp = relay p_span(p);
+        Span:sp = raw p_span(p);
         // `never fails` (D-163) — a marker contract with no predicate, filed in
         // the contracts window as `VerifyNeverFails`. The body check reads it.
         // A following `requires`/`ensures` still parses (the grammar is never
         // partial, D-085); the body check is what refuses the combination.
-        if (relay p_at(p, TokenKind.KwNever)) {
+        if (raw p_at(p, TokenKind.KwNever)) {
             drop p_advance(p);
             drop p_expect(p, TokenKind.KwFails);
-            VerifyId:nf = relay ast_add_verify(p.ast, VerifyKind.VerifyNeverFails, sp,
+            VerifyId:nf = raw ast_add_verify(p.ast, VerifyKind.VerifyNeverFails, sp,
                                                0i32, 0i32, 0i32, 0i64);
             drop ast_scratch_push(p.ast, nf.index);
         } else {
             int32:kind = 0i32;
-            if (relay p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
-            if (relay p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
-            if (relay p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
+            if (raw p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
+            if (raw p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
+            if (raw p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
             if (kind == 0i32) { break; }
             drop p_advance(p);
 
@@ -180,15 +180,15 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) {
             // is part of the clause's shape.
             int32:flags = 0i32;
             if (kind == (raw CONTRACT_ACQUIRES())) {
-                if (relay p_accept(p, TokenKind.OpLtEq)) {
+                if (raw p_accept(p, TokenKind.OpLtEq)) {
                     flags = raw CONTRACT_BOUNDED();
                 }
             }
 
             // `ensures` may name `result`, which is an ordinary identifier here
             // and is given meaning by the verifier, not by the grammar.
-            ExprId:cond = relay p_parse_expr(p);
-            VerifyId:c = relay ast_add_verify(p.ast, VerifyKind.VerifyContractNode, sp,
+            ExprId:cond = raw p_parse_expr(p);
+            VerifyId:c = raw ast_add_verify(p.ast, VerifyKind.VerifyContractNode, sp,
                                               kind, cond.index, flags, 0i64);
             drop ast_scratch_push(p.ast, c.index);
         }
@@ -205,20 +205,20 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) {
 //
 // Returns the reserved NONE handle when there is no clause, so "this loop has no
 // invariant" is a value rather than an absence to test for.
-pub func:p_parse_invariant = VerifyId(Parser->:p) {
-    if (!(relay p_at(p, TokenKind.KwInvariant))) {
+pub func:p_parse_invariant = VerifyId(Parser->:p) never fails {
+    if (!(raw p_at(p, TokenKind.KwInvariant))) {
         pass (raw verify_none());
     }
-    Span:sp = relay p_span(p);
+    Span:sp = raw p_span(p);
     drop p_advance(p);
     int32:mark = raw ast_scratch_mark(p.ast);
-    ExprId:c1 = relay p_parse_expr(p);
+    ExprId:c1 = raw p_parse_expr(p);
     drop ast_scratch_push(p.ast, c1.index);
-    while (relay p_accept(p, TokenKind.PComma)) {
-        ExprId:condN = relay p_parse_expr(p);
+    while (raw p_accept(p, TokenKind.PComma)) {
+        ExprId:condN = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, condN.index);
     }
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_verify(p.ast, VerifyKind.VerifyInvariantNode, sp,
+    pass (raw ast_add_verify(p.ast, VerifyKind.VerifyInvariantNode, sp,
                                0i32, w.start, w.count, 0i64));
 };

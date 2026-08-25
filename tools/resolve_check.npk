@@ -54,7 +54,7 @@ use "../src/frontend/resolve.npk".*;
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         NioW:uw = raw nio_stderr();
-        drop nio_line(@uw, "usage: resolve_check <root.npk>");
+        nio_line(@uw, "usage: resolve_check <root.npk>") ?| NIL;
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -111,7 +111,7 @@ func:main = int32(cstring[]:argv) {
     int64:d = 0i64;
     NioW:ew = raw nio_stderr();
     while (d < n) {
-        drop nio_line(@ew, relay diag_line(raw diaglist_at(@diags, d), @g.sm));
+        nio_line(@ew, raw diag_line(raw diaglist_at(@diags, d), @g.sm)) ?| NIL;
         d = d + 1i64;
     }
 

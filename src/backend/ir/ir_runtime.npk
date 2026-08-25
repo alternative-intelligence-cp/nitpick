@@ -40,7 +40,7 @@ pub struct:RtSig = {
 };
 
 func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
-                int32:argc, string:a0, string:a1, string:a2, string:a3) {
+                int32:argc, string:a0, string:a1, string:a2, string:a3) never fails {
     RtSig:s = RtSig{ found: true, sym: sym, ret: ret, wrapped: wrapped,
                      inner: inner, argc: argc, a0: a0, a1: a1, a2: a2, a3: a3 };
     pass s;
@@ -49,7 +49,7 @@ func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
 // The floor, one entry per symbol `npkrt.ll` defines for programs. `npk_start`
 // is the entry shim and not callable; `npk_exit` is here because `exit` lowers
 // to it (0.7.6), argc 1, void.
-pub func:rt_sig = RtSig(string:name) {
+pub func:rt_sig = RtSig(string:name) never fails {
     if (raw string_eq(name, "aalloc")) {
         pass (raw rt("@npk_aalloc", "ptr", false, "", 2i32, "i64", "i64", "", ""));
     }
@@ -201,9 +201,9 @@ pub func:rt_sig = RtSig(string:name) {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() { pass 39i32; };
+pub func:rt_count = int32() never fails { pass 39i32; };
 
-pub func:rt_name_at = string(int32:i) {
+pub func:rt_name_at = string(int32:i) never fails {
     if (i == 0i32)  { pass "aalloc"; }
     if (i == 1i32)  { pass "alloc"; }
     if (i == 2i32)  { pass "arena_alloc"; }
@@ -245,7 +245,7 @@ pub func:rt_name_at = string(int32:i) {
     pass "write_file";
 };
 
-pub func:rt_arg = string(RtSig:s, int32:i) {
+pub func:rt_arg = string(RtSig:s, int32:i) never fails {
     if (i == 0i32) { pass s.a0; }
     if (i == 1i32) { pass s.a1; }
     if (i == 2i32) { pass s.a2; }

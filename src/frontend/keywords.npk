@@ -10,7 +10,7 @@
 use "./token_kind.npk".*;
 use "./intern.npk".*;
 
-pub func:keyword_kind_of = TokenKind(string:text) {
+pub func:keyword_kind_of = TokenKind(string:text) never fails {
     int64:n = text.len;
     if (n == 2i64) {
         if (raw string_eq(text, "as")) { pass TokenKind.KwAs; }
@@ -189,7 +189,7 @@ pub func:keyword_kind_of = TokenKind(string:text) {
     pass TokenKind.Ident;
 };
 
-pub func:is_keyword = bool(string:text) {
+pub func:is_keyword = bool(string:text) never fails {
     TokenKind:k = raw keyword_kind_of(text);
     pass (k != TokenKind.Ident);
 };

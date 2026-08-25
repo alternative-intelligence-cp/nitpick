@@ -21,42 +21,42 @@
 // not assert on.
 
 // Rule 2 — a borrow in the value of `pass`, `fail`, or `return`.
-pub func:BORROW_RETURNED = string()  { pass "NITPICK-BORROW-001"; };
+pub func:BORROW_RETURNED = string() never fails  { pass "NITPICK-BORROW-001"; };
 
 // Rule 3 — a borrow stored into something not provably shorter-lived.
-pub func:BORROW_STORED = string()    { pass "NITPICK-BORROW-002"; };
+pub func:BORROW_STORED = string() never fails    { pass "NITPICK-BORROW-002"; };
 
 // Rule 4, first crossing — a borrow passed to an `extern` function. Its own code
 // and not a shared "rule 4", because this is the one that can fire today and the
 // one whose reason is different in kind: the callee is not Nitpick, so nothing
 // downstream can be checked at all.
-pub func:BORROW_EXTERN = string()    { pass "NITPICK-BORROW-003"; };
+pub func:BORROW_EXTERN = string() never fails    { pass "NITPICK-BORROW-003"; };
 
 // Rule 4, second crossing — a borrow carried into a spawned thread.
-pub func:BORROW_SPAWNED = string()   { pass "NITPICK-BORROW-004"; };
+pub func:BORROW_SPAWNED = string() never fails   { pass "NITPICK-BORROW-004"; };
 
 // Rule 4, third crossing — a borrow held across an `await`. Cycle 1.1 lowers
 // `async`; the rule exists now because adding it after the analysis is verified
 // is a re-verification nobody can afford.
-pub func:BORROW_SUSPENDED = string() { pass "NITPICK-BORROW-005"; };
+pub func:BORROW_SUSPENDED = string() never fails { pass "NITPICK-BORROW-005"; };
 
 // Rule 5 — a closure capturing a borrow. Closures are removed (D-018), so this
 // cannot fire; see `escape.npk` for why it is written anyway.
-pub func:BORROW_CAPTURED = string()  { pass "NITPICK-BORROW-006"; };
+pub func:BORROW_CAPTURED = string() never fails  { pass "NITPICK-BORROW-006"; };
 
 // NOT A RULE VIOLATION — the analysis could not decide. A derivation chain deeper
 // than `BORROW_FUEL` is refused rather than guessed at, and it says so in its own
 // words instead of being reported as one of the five rules. A reader who sees this
 // has written something the checker cannot classify, which is a different problem
 // from having written an escape.
-pub func:BORROW_TOO_DEEP = string()  { pass "NITPICK-BORROW-007"; };
+pub func:BORROW_TOO_DEEP = string() never fails  { pass "NITPICK-BORROW-007"; };
 
 // A DEFECT IN THE COMPILER, not in the program: an expression kind with no entry
 // in `expr_shape`, so the walk cannot reach its children and cannot promise it
 // looked everywhere. `RESOLVE_INTERNAL` and `TYPE_INTERNAL` exist for the same
 // situation and for the same reason — a reader who sees it has found a hole in an
 // analysis and there is nothing they can change in their source to fix it.
-pub func:BORROW_INTERNAL = string()  { pass "NITPICK-BORROW-008"; };
+pub func:BORROW_INTERNAL = string() never fails  { pass "NITPICK-BORROW-008"; };
 
 // ALSO NOT A RULE VIOLATION — a borrow reaches a binding this analysis does not
 // track, so it is refused rather than followed.
@@ -67,7 +67,7 @@ pub func:BORROW_INTERNAL = string()  { pass "NITPICK-BORROW-008"; };
 // a destructuring the analysis would have to model to say anything about. Silently
 // answering "not a borrow" for those two would be an escape hatch, so a borrow
 // reaching either is refused with a sentence that says which.
-pub func:BORROW_UNTRACKED = string()  { pass "NITPICK-BORROW-009"; };
+pub func:BORROW_UNTRACKED = string() never fails  { pass "NITPICK-BORROW-009"; };
 
 // THE MARKING FIXPOINT DID NOT SETTLE within its round bound, so the analysis does
 // not know which bindings hold a borrow and refuses to guess (D-116).
@@ -78,7 +78,7 @@ pub func:BORROW_UNTRACKED = string()  { pass "NITPICK-BORROW-009"; };
 // longer than the rounds allow — and a shared code would make them one finding to
 // anything reading a build log, which is the "distinction that lives only in the
 // wording" cycle 0.4 kept paying for.
-pub func:BORROW_UNSETTLED = string()  { pass "NITPICK-BORROW-010"; };
+pub func:BORROW_UNSETTLED = string() never fails  { pass "NITPICK-BORROW-010"; };
 
 // --- D-010: definite assignment (0.5.2) ---------------------------------------
 //
@@ -87,21 +87,21 @@ pub func:BORROW_UNSETTLED = string()  { pass "NITPICK-BORROW-010"; };
 // makes it IMPOSSIBLE. These codes are that analysis reporting.
 
 // A read of a binding that is not assigned on every path reaching it.
-pub func:ASSIGN_UNASSIGNED = string() { pass "NITPICK-ASSIGN-001"; };
+pub func:ASSIGN_UNASSIGNED = string() never fails { pass "NITPICK-ASSIGN-001"; };
 
 // A second assignment to a `fixed` binding, or to a `const` global. One code for
 // both, because it is one rule — assigned once, where it is declared — and a
 // reader filtering a log is asking the same question either way.
-pub func:ASSIGN_IMMUTABLE = string()  { pass "NITPICK-ASSIGN-002"; };
+pub func:ASSIGN_IMMUTABLE = string() never fails  { pass "NITPICK-ASSIGN-002"; };
 
 // NOT A RULE VIOLATION — the walk hit its depth bound. Refused rather than
 // assumed assigned, because "./we stopped looking" and "it is assigned" are the two
 // answers this analysis exists to keep apart.
-pub func:ASSIGN_TOO_DEEP = string()   { pass "NITPICK-ASSIGN-003"; };
+pub func:ASSIGN_TOO_DEEP = string() never fails   { pass "NITPICK-ASSIGN-003"; };
 
 // A DEFECT IN THE COMPILER: a statement or expression kind the walk has no entry
 // for, so it cannot promise it looked everywhere.
-pub func:ASSIGN_INTERNAL = string()   { pass "NITPICK-ASSIGN-004"; };
+pub func:ASSIGN_INTERNAL = string() never fails   { pass "NITPICK-ASSIGN-004"; };
 
 // --- D-065: `move`, and what a moved-from binding is (0.5.3) --------------------
 //
@@ -111,20 +111,20 @@ pub func:ASSIGN_INTERNAL = string()   { pass "NITPICK-ASSIGN-004"; };
 // ownership.
 
 // A read of a binding that was moved out of.
-pub func:MOVE_USE_AFTER = string()      { pass "NITPICK-MOVE-001"; };
+pub func:MOVE_USE_AFTER = string() never fails      { pass "NITPICK-MOVE-001"; };
 
 // A read of a binding whose allocation was handed to a deallocator. ITS OWN CODE
 // rather than sharing with the above, because D-065 requires both sentences — the
 // prototype's negative test asks for "use after move" AND "cannot free moved
 // variable" — and a reader who sees this one has a dangling pointer rather than a
 // transferred value.
-pub func:MOVE_USE_AFTER_FREE = string() { pass "NITPICK-MOVE-002"; };
+pub func:MOVE_USE_AFTER_FREE = string() never fails { pass "NITPICK-MOVE-002"; };
 
 // `nodrop` on a binding that is not `wild` or `wildx`. The qualifier suppresses
 // the drop of a manual allocation, which is the one case where not dropping is
 // correct rather than a leak; on anything else it suppresses nothing and says
 // something untrue about the binding it is written on.
-pub func:MOVE_NODROP_MANAGED = string() { pass "NITPICK-MOVE-003"; };
+pub func:MOVE_NODROP_MANAGED = string() never fails { pass "NITPICK-MOVE-003"; };
 
 // --- exhaustiveness (0.5.4) ----------------------------------------------------
 //
@@ -133,34 +133,34 @@ pub func:MOVE_NODROP_MANAGED = string() { pass "NITPICK-MOVE-003"; };
 // A case the arms do not cover. The message NAMES the missing variants, because
 // "this `pick` is not exhaustive" makes the reader enumerate the type themselves —
 // the one thing the compiler already did.
-pub func:PICK_NOT_EXHAUSTIVE = string()  { pass "NITPICK-PICK-001"; };
+pub func:PICK_NOT_EXHAUSTIVE = string() never fails  { pass "NITPICK-PICK-001"; };
 
 // A `tbb` selector with no explicit `ERR:` arm. ITS OWN CODE rather than sharing
 // with the above: a `pick` can have `(*)` and still be missing this, and reporting
 // "not exhaustive" would send the author to add the wildcard they already wrote.
-pub func:PICK_NO_ERR_ARM = string()      { pass "NITPICK-PICK-002"; };
+pub func:PICK_NO_ERR_ARM = string() never fails      { pass "NITPICK-PICK-002"; };
 
 // A selector whose values cannot be listed — an integer, a float, a `char`. ITS
 // OWN CODE because the fix differs: an enum with a variant missing needs an arm,
 // and this needs a wildcard. A reader told "not exhaustive" about an `int32` goes
 // looking for the variant they forgot.
-pub func:PICK_NEEDS_WILDCARD = string()  { pass "NITPICK-PICK-003"; };
+pub func:PICK_NEEDS_WILDCARD = string() never fails  { pass "NITPICK-PICK-003"; };
 
 // An arm nothing can reach: after an unguarded `(*)`, or naming a variant an
 // earlier arm already matched. One code for both, because it is one mistake —
 // something earlier already matches everything this arm could.
-pub func:PICK_UNREACHABLE_ARM = string() { pass "NITPICK-PICK-004"; };
+pub func:PICK_UNREACHABLE_ARM = string() never fails { pass "NITPICK-PICK-004"; };
 
 // A DEFECT IN THE COMPILER: a node kind the walk has no entry for, so it cannot
 // promise it found every `pick`.
-pub func:PICK_INTERNAL = string()        { pass "NITPICK-PICK-005"; };
+pub func:PICK_INTERNAL = string() never fails        { pass "NITPICK-PICK-005"; };
 
 // --- D-007: the `unknown` taint on `Result.value` (0.5.5) -----------------------
 
 // A read of `.value` on a `Result` nothing has checked for an error. `unknown` is
 // compiler-assigned and not user-writable (`TYPE_REFERENCE` §27), so this is the
 // only place the taint arises and the only place it is reported.
-pub func:TAINT_UNCHECKED_VALUE = string() { pass "NITPICK-TAINT-001"; };
+pub func:TAINT_UNCHECKED_VALUE = string() never fails { pass "NITPICK-TAINT-001"; };
 
 // --- D-056: lock levels (0.5.6) -------------------------------------------------
 //
@@ -171,31 +171,31 @@ pub func:TAINT_UNCHECKED_VALUE = string() { pass "NITPICK-TAINT-001"; };
 // A downward acquisition: holding level N and able to reach a level <= N. The
 // message names BOTH levels, because "./acquisition must increase" without them makes
 // the reader work out which two locks are involved.
-pub func:LOCK_ORDER = string()          { pass "NITPICK-LOCK-001"; };
+pub func:LOCK_ORDER = string() never fails          { pass "NITPICK-LOCK-001"; };
 
 // An implementation that can reach above the bound its trait method declared. Its
 // own code: the fix is to lower what the implementation acquires or raise the
 // declared bound, and neither is what a reader of an ordering error would try.
-pub func:LOCK_EXCEEDS_BOUND = string()  { pass "NITPICK-LOCK-002"; };
+pub func:LOCK_EXCEEDS_BOUND = string() never fails  { pass "NITPICK-LOCK-002"; };
 
 // An `acquires` level that is not a constant. Shares nothing with `TYPE_NOT_CONSTANT`
 // because the two are found at different stages and a reader filtering a log is
 // asking a different question — but the rule is deliberately the same, and since
 // 0.6.4 the same EVALUATOR answers it: `acquires LOW` and `acquires BASE + 1i32`
 // fold exactly as an array size does.
-pub func:LOCK_NOT_CONSTANT = string()   { pass "NITPICK-LOCK-003"; };
+pub func:LOCK_NOT_CONSTANT = string() never fails   { pass "NITPICK-LOCK-003"; };
 
 // A DEFECT IN THE COMPILER, or a program the walk could not follow: a node kind
 // with no entry, or rounds that did not settle.
-pub func:LOCK_INTERNAL = string()       { pass "NITPICK-LOCK-004"; };
+pub func:LOCK_INTERNAL = string() never fails       { pass "NITPICK-LOCK-004"; };
 
 // The wildx W^X state machine (D-035/D-155, 0.10.5). Write after seal, and
 // execute before seal, are the two transitions the seal state forbids; the
 // rest (seal-after-free, double-free, leak) fall out of the move machinery
 // and the exit-time registry.
-pub func:WILDX_WRITE_SEALED = string()  { pass "NITPICK-WILDX-001"; };
-pub func:WILDX_EXEC_UNSEALED = string() { pass "NITPICK-WILDX-002"; };
+pub func:WILDX_WRITE_SEALED = string() never fails  { pass "NITPICK-WILDX-001"; };
+pub func:WILDX_EXEC_UNSEALED = string() never fails { pass "NITPICK-WILDX-002"; };
 // `--extra-picky=no-wildx` — a high-assurance build mode that excludes
 // runtime code generation entirely (D-035's certification note). Separate
 // from `no-wild`: manual memory and executable memory are different risks.
-pub func:WILDX_EXCLUDED = string()      { pass "NITPICK-WILDX-003"; };
+pub func:WILDX_EXCLUDED = string() never fails      { pass "NITPICK-WILDX-003"; };

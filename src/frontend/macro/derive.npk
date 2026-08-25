@@ -36,17 +36,17 @@ use "./derive_codes.npk".*;
 // Named by index rather than by string at every call site, for the reason the token
 // table is generated rather than hand-listed: a name compared in two places is a
 // name that can be spelled differently in one of them.
-pub func:DERIVE_NONE = int32()       { pass 0i32; };
-pub func:DERIVE_EQ = int32()         { pass 1i32; };
-pub func:DERIVE_ORD = int32()        { pass 2i32; };
-pub func:DERIVE_PARTIAL_ORD = int32(){ pass 3i32; };
-pub func:DERIVE_CLONE = int32()      { pass 4i32; };
-pub func:DERIVE_HASH = int32()       { pass 5i32; };
-pub func:DERIVE_TO_STRING = int32()  { pass 6i32; };
-pub func:DERIVE_DEBUG = int32()      { pass 7i32; };
-pub func:DERIVE_MAX = int32()        { pass 7i32; };
+pub func:DERIVE_NONE = int32() never fails       { pass 0i32; };
+pub func:DERIVE_EQ = int32() never fails         { pass 1i32; };
+pub func:DERIVE_ORD = int32() never fails        { pass 2i32; };
+pub func:DERIVE_PARTIAL_ORD = int32() never fails{ pass 3i32; };
+pub func:DERIVE_CLONE = int32() never fails      { pass 4i32; };
+pub func:DERIVE_HASH = int32() never fails       { pass 5i32; };
+pub func:DERIVE_TO_STRING = int32() never fails  { pass 6i32; };
+pub func:DERIVE_DEBUG = int32() never fails      { pass 7i32; };
+pub func:DERIVE_MAX = int32() never fails        { pass 7i32; };
 
-pub func:derive_of_name = int32(string:n) {
+pub func:derive_of_name = int32(string:n) never fails {
     if (raw string_eq(n, "Eq"))         { pass (raw DERIVE_EQ()); }
     if (raw string_eq(n, "Ord"))        { pass (raw DERIVE_ORD()); }
     if (raw string_eq(n, "PartialOrd")) { pass (raw DERIVE_PARTIAL_ORD()); }
@@ -59,14 +59,14 @@ pub func:derive_of_name = int32(string:n) {
 
 // WHY A REMOVED ONE IS NOT DERIVABLE, in the message rather than in a document the
 // reader has to go and find. Both sentences are D-123's, compressed.
-func:removed_reason = string(string:n) {
+func:removed_reason = string(string:n) never fails {
     if (raw string_eq(n, "Default")) {
         pass "`Default` is not derivable: deriving it means the compiler choosing values that carry meaning, and several obvious choices are false here — `fd` zero is stdin, `tbb32` zero claims `no error`, a pointer zero is NULL. If a type wants a default, write one, and then the reason it is that value is somewhere a reviewer can read";
     }
     pass "`Display` is not derivable: it was a second name for `ToString`'s job, and both would generate a function returning `string` since formatting is `&{ }` interpolation. Derive `ToString`";
 };
 
-func:is_removed = bool(string:n) {
+func:is_removed = bool(string:n) never fails {
     if (raw string_eq(n, "Default")) { pass true; }
     pass (raw string_eq(n, "Display"));
 };
@@ -81,7 +81,7 @@ pub struct:DeriveSet = {
     int32:count;
 };
 
-pub func:deriveset_none = DeriveSet() {
+pub func:deriveset_none = DeriveSet() never fails {
     // EIGHT `false`S, WRITTEN OUT. The fill loop this replaces was refused by
     // definite assignment (a loop that happens to cover every index is coverage
     // the analysis cannot see), and `[]` — D-139's zero array — is not usable
@@ -94,7 +94,7 @@ pub func:deriveset_none = DeriveSet() {
     pass s;
 };
 
-pub func:derive_wants = bool(DeriveSet:s, int32:which) {
+pub func:derive_wants = bool(DeriveSet:s, int32:which) never fails {
     if (which < 0i32) { pass false; }
     if (which > (raw DERIVE_MAX())) { pass false; }
     pass (s.wanted[which => int64]);
@@ -106,12 +106,12 @@ pub func:derive_wants = bool(DeriveSet:s, int32:which) {
 // the rule depend on how the author happened to lay it out.
 pub func:read_derives = DeriveSet(Ast->:ast, InternTable->:interns,
                                   DiagList->:diags, DeclNode:d, int32:attr_count,
-                                  bool:is_type) {
+                                  bool:is_type) never fails {
     DeriveSet:want = raw deriveset_none();
     int32:a = 0i32;
     while (a < attr_count) {
-        DeclNode:at = relay ast_decl(ast, raw item_attr(ast, d, a));
-        string:aname = relay intern_get(interns, raw attr_name(at));
+        DeclNode:at = raw ast_decl(ast, raw item_attr(ast, d, a));
+        string:aname = raw intern_get(interns, raw attr_name(at));
         if (raw string_eq(aname, "derive")) {
             drop read_one_derive(ast, interns, diags, at, @want, is_type);
         }
@@ -121,7 +121,7 @@ pub func:read_derives = DeriveSet(Ast->:ast, InternTable->:interns,
 };
 
 func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                           DeclNode:at, DeriveSet->:want, bool:is_type) {
+                           DeclNode:at, DeriveSet->:want, bool:is_type) never fails {
     // THE TARGET IS CHECKED ONCE, AT THE ATTRIBUTE, and before the names are. Every
     // one of the seven is generated FROM a type's shape, so on a function there is
     // nothing to generate from and the names do not matter yet.
@@ -136,7 +136,7 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
     int32:i = 0i32;
     while (i < n) {
         ExprId:arg = ExprId{ index: raw ast_id_at(ast, raw attr_arg_start(at), i) };
-        ExprNode:ae = relay ast_expr(ast, arg);
+        ExprNode:ae = raw ast_expr(ast, arg);
 
         // A DERIVE ARGUMENT IS A BARE NAME. Anything else is a program that means
         // something the attribute cannot express, and reading only the ones that
@@ -149,7 +149,7 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
             continue;
         }
 
-        string:tname = relay intern_get(interns, (raw expr_name(ae)) =>! int32);
+        string:tname = raw intern_get(interns, (raw expr_name(ae)) =>! int32);
         if (raw is_removed(tname)) {
             drop diaglist_push(diags, raw diag_error(raw DERIVE_REMOVED(),
                 raw removed_reason(tname), ae.span));
@@ -159,8 +159,8 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 
         int32:which = raw derive_of_name(tname);
         if (which == (raw DERIVE_NONE())) {
-            string:m1 = relay string_concat("`", tname);
-            string:m2 = relay string_concat(m1,
+            string:m1 = raw string_concat("`", tname);
+            string:m2 = raw string_concat(m1,
                 "` is not one of the seven traits `#[derive]` can generate: Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug. A trait the program declares is implemented by writing an `impl`, because the compiler has no way to know what its methods should do");
             drop diaglist_push(diags, raw diag_error(raw DERIVE_UNKNOWN(), m2, ae.span));
             i = i + 1i32;
@@ -168,8 +168,8 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
         }
 
         if (want.wanted[which => int64]) {
-            string:d1 = relay string_concat("`", tname);
-            string:d2 = relay string_concat(d1,
+            string:d1 = raw string_concat("`", tname);
+            string:d2 = raw string_concat(d1,
                 "` is derived twice for this type, which would generate two implementations of one trait — the thing coherence refuses when they are written by hand");
             drop diaglist_push(diags, raw diag_error(raw DERIVE_DUPLICATE(), d2, ae.span));
             i = i + 1i32;
@@ -195,13 +195,13 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 // It is also readable. `--emit-derived` is a thing a driver can offer later, and
 // what it would print is exactly what is built here.
 
-func:PRIME_TEXT = string() { pass "100000001B3hexu64"; };
+func:PRIME_TEXT = string() never fails { pass "100000001B3hexu64"; };
 // The FNV-1a 64 offset basis is 0xCBF29CE484222325 = 14695981039346656037,
 // which is ABOVE the 64-bit literal envelope (D-148): values past 2^63-1 are
 // constructed, not spelled. 2^64 - 14695981039346656037 = 3750763034362895579,
 // and unsigned subtraction wraps by definition (D-037), so this difference IS
 // the basis, bit for bit.
-func:BASIS_TEXT = string() { pass "(0u64 - 3750763034362895579u64)"; };
+func:BASIS_TEXT = string() never fails { pass "(0u64 - 3750763034362895579u64)"; };
 
 // `impl:Point:Eq = { pub func:eq = bool(Point:self, Point:other) { … }; };`
 //
@@ -209,73 +209,73 @@ func:BASIS_TEXT = string() { pass "(0u64 - 3750763034362895579u64)"; };
 // field's own `eq` — the language has the operator, and a derived implementation
 // that went through a trait would need `int32` to implement one.
 func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                            string:tn, string:head) {
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":Eq = { pub func:eq = bool(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self, ");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":other) {\n");
+                            string:tn, string:head) never fails {
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":Eq = { pub func:eq = bool(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self, ");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":other) {\n");
 
     int32:n = raw item_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            string:f = relay intern_get(interns, raw decl_name(m));
-            s = relay string_concat(s, "if (self.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, " != other.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, ") { pass false; }\n");
+            string:f = raw intern_get(interns, raw decl_name(m));
+            s = raw string_concat(s, "if (self.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, " != other.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, ") { pass false; }\n");
         }
         i = i + 1i32;
     }
-    pass (relay string_concat(s, "pass true; }; };\n"));
+    pass (raw string_concat(s, "pass true; }; };\n"));
 };
 
 // LEXICOGRAPHIC, IN DECLARATION ORDER (D-123). The cost is stated rather than
 // hidden: reordering a struct's fields becomes a semantic change.
 func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                             string:tn, bool:partial, string:head) {
+                             string:tn, bool:partial, string:head) never fails {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
     if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
 
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":");
-    s = relay string_concat(s, tr);
-    s = relay string_concat(s, " = { pub func:");
-    s = relay string_concat(s, mn);
-    s = relay string_concat(s, " = ");
-    s = relay string_concat(s, rt);
-    s = relay string_concat(s, "(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self, ");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":other) {\n");
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":");
+    s = raw string_concat(s, tr);
+    s = raw string_concat(s, " = { pub func:");
+    s = raw string_concat(s, mn);
+    s = raw string_concat(s, " = ");
+    s = raw string_concat(s, rt);
+    s = raw string_concat(s, "(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self, ");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":other) {\n");
 
     int32:n = raw item_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            string:f = relay intern_get(interns, raw decl_name(m));
-            s = relay string_concat(s, "if (self.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, " < other.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, ") { pass Ordering.Less; }\n");
-            s = relay string_concat(s, "if (self.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, " > other.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, ") { pass Ordering.Greater; }\n");
+            string:f = raw intern_get(interns, raw decl_name(m));
+            s = raw string_concat(s, "if (self.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, " < other.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, ") { pass Ordering.Less; }\n");
+            s = raw string_concat(s, "if (self.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, " > other.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, ") { pass Ordering.Greater; }\n");
         }
         i = i + 1i32;
     }
-    pass (relay string_concat(s, "pass Ordering.Equal; }; };\n"));
+    pass (raw string_concat(s, "pass Ordering.Equal; }; };\n"));
 };
 
 // ORD / PARTIALORD ON AN ENUM ORDER BY TAG (D-123, 1.0.9d): `enum =>! int32`
@@ -284,28 +284,28 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // variants, which is what deriving `Ord` on an enum has always meant. The same
 // body serves `PartialOrd`: `pass Ordering.Less` wraps into `Ordering?` (D-099),
 // so a total order reads as an always-present one.
-func:gen_cmp_enum = string(string:tn, bool:partial, string:head) {
+func:gen_cmp_enum = string(string:tn, bool:partial, string:head) never fails {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
     if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":");
-    s = relay string_concat(s, tr);
-    s = relay string_concat(s, " = { pub func:");
-    s = relay string_concat(s, mn);
-    s = relay string_concat(s, " = ");
-    s = relay string_concat(s, rt);
-    s = relay string_concat(s, "(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self, ");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":other) {\n");
-    s = relay string_concat(s, "int32:a = self =>! int32;\n");
-    s = relay string_concat(s, "int32:b = other =>! int32;\n");
-    s = relay string_concat(s, "if (a < b) { pass Ordering.Less; }\n");
-    s = relay string_concat(s, "if (a > b) { pass Ordering.Greater; }\n");
-    pass (relay string_concat(s, "pass Ordering.Equal; }; };\n"));
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":");
+    s = raw string_concat(s, tr);
+    s = raw string_concat(s, " = { pub func:");
+    s = raw string_concat(s, mn);
+    s = raw string_concat(s, " = ");
+    s = raw string_concat(s, rt);
+    s = raw string_concat(s, "(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self, ");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":other) {\n");
+    s = raw string_concat(s, "int32:a = self =>! int32;\n");
+    s = raw string_concat(s, "int32:b = other =>! int32;\n");
+    s = raw string_concat(s, "if (a < b) { pass Ordering.Less; }\n");
+    s = raw string_concat(s, "if (a > b) { pass Ordering.Greater; }\n");
+    pass (raw string_concat(s, "pass Ordering.Equal; }; };\n"));
 };
 
 // A DERIVED STRUCT HASH COMBINES ITS FIELDS' HASHES (D-123, FNV-1a): each field
@@ -313,99 +313,99 @@ func:gen_cmp_enum = string(string:tn, bool:partial, string:head) {
 // parts. Every field type must be `Hash` — the prelude supplies the scalars, a
 // nested struct or enum supplies its own derived one.
 func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                              string:tn, string:head) {
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":Hash = { pub func:hash = uint64(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self) {\n");
-    s = relay string_concat(s, "uint64:h = raw fnv_offset();\n");
+                              string:tn, string:head) never fails {
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":Hash = { pub func:hash = uint64(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self) {\n");
+    s = raw string_concat(s, "uint64:h = raw fnv_offset();\n");
     int32:n = raw item_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            string:f = relay intern_get(interns, raw decl_name(m));
-            s = relay string_concat(s, "h = raw fnv_mix(h, raw self.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, ".hash());\n");
+            string:f = raw intern_get(interns, raw decl_name(m));
+            s = raw string_concat(s, "h = raw fnv_mix(h, raw self.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, ".hash());\n");
         }
         i = i + 1i32;
     }
-    pass (relay string_concat(s, "pass h; }; };\n"));
+    pass (raw string_concat(s, "pass h; }; };\n"));
 };
 
 // A DERIVED ENUM HASH HASHES THE TAG (D-123). A payload is not mixed, so two
 // values of one variant collide — which a hash is allowed to do (equal implies
 // equal hash, not the reverse); the identity a `pick` sees is the tag.
-func:gen_hash_enum = string(string:tn, string:head) {
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":Hash = { pub func:hash = uint64(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self) {\n");
-    s = relay string_concat(s, "int32:t = self =>! int32;\n");
-    pass (relay string_concat(s,
+func:gen_hash_enum = string(string:tn, string:head) never fails {
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":Hash = { pub func:hash = uint64(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self) {\n");
+    s = raw string_concat(s, "int32:t = self =>! int32;\n");
+    pass (raw string_concat(s,
         "pass (raw fnv_mix(raw fnv_offset(), t =>! uint64)); }; };\n"));
 };
 
 // `pass self` IS THE CLONE. A struct is a value; passing one is a copy, and the
 // prototype's derived `clone` is the same single statement.
-func:gen_clone = string(string:tn, string:head) {
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":Clone = { pub func:clone = ");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, "(");
-    s = relay string_concat(s, tn);
-    pass (relay string_concat(s, ":self) { pass self; }; };\n"));
+func:gen_clone = string(string:tn, string:head) never fails {
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":Clone = { pub func:clone = ");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, "(");
+    s = raw string_concat(s, tn);
+    pass (raw string_concat(s, ":self) { pass self; }; };\n"));
 };
 
 // `Point { x: &{self.x}, y: &{self.y} }`, built with interpolation (D-053) because
 // that is the only formatting mechanism the language has.
 func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                   string:tn, bool:dbg, string:head) {
+                                   string:tn, bool:dbg, string:head) never fails {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
 
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":");
-    s = relay string_concat(s, tr);
-    s = relay string_concat(s, " = { pub func:");
-    s = relay string_concat(s, mn);
-    s = relay string_concat(s, " = string(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self) { pass `");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, " { ");
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":");
+    s = raw string_concat(s, tr);
+    s = raw string_concat(s, " = { pub func:");
+    s = raw string_concat(s, mn);
+    s = raw string_concat(s, " = string(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self) { pass `");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, " { ");
 
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            string:f = relay intern_get(interns, raw decl_name(m));
-            if (!first) { s = relay string_concat(s, ", "); }
+            string:f = raw intern_get(interns, raw decl_name(m));
+            if (!first) { s = raw string_concat(s, ", "); }
             first = false;
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, ": &{self.");
-            s = relay string_concat(s, f);
-            s = relay string_concat(s, "}");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, ": &{self.");
+            s = raw string_concat(s, f);
+            s = raw string_concat(s, "}");
         }
         i = i + 1i32;
     }
-    pass (relay string_concat(s, " }`; }; };\n"));
+    pass (raw string_concat(s, " }`; }; };\n"));
 };
 
 // AN ENUM COMPARES BY `==` AND NOTHING ELSE. `<` on an enum is refused by the type
 // checker (measured), so ordering a variant would need its tag, which no operator
 // yields — that is why `Ord` on an enum is refused rather than generated.
-func:gen_eq_enum = string(string:tn, string:head) {
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":Eq = { pub func:eq = bool(");
-    s = relay string_concat(s, tn);
-    s = relay string_concat(s, ":self, ");
-    s = relay string_concat(s, tn);
-    pass (relay string_concat(s, ":other) { pass (self == other); }; };\n"));
+func:gen_eq_enum = string(string:tn, string:head) never fails {
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":Eq = { pub func:eq = bool(");
+    s = raw string_concat(s, tn);
+    s = raw string_concat(s, ":self, ");
+    s = raw string_concat(s, tn);
+    pass (raw string_concat(s, ":other) { pass (self == other); }; };\n"));
 };
 
 // THE VARIANT'S NAME, through a `pick` — which is expressible, exhaustive by
@@ -414,47 +414,47 @@ func:gen_eq_enum = string(string:tn, string:head) {
 // NOT `&{self}`: interpolation is what CALLS `to_string`, so a body built out of it
 // would call itself.
 func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                 string:tn, bool:dbg, string:head) {
+                                 string:tn, bool:dbg, string:head) never fails {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
 
-    string:s = relay string_concat(head, tn);
-    s = relay string_concat(s, ":");
-    s = relay string_concat(s, tr);
-    s = relay string_concat(s, " = { pub func:");
-    s = relay string_concat(s, mn);
-    s = relay string_concat(s, " = string(");
-    s = relay string_concat(s, tn);
+    string:s = raw string_concat(head, tn);
+    s = raw string_concat(s, ":");
+    s = raw string_concat(s, tr);
+    s = raw string_concat(s, " = { pub func:");
+    s = raw string_concat(s, mn);
+    s = raw string_concat(s, " = string(");
+    s = raw string_concat(s, tn);
     // `pick (selector) { (pattern) { … }, … }` — THE SELECTOR IS PARENTHESISED and
     // THE ARMS ARE COMMA-SEPARATED. Written from memory the first time and neither
     // was right, which is what the generated source being real source catches: it
     // failed to parse, loudly, instead of building a tree nobody could have read.
-    s = relay string_concat(s, ":self) {\npick (self) {\n");
+    s = raw string_concat(s, ":self) {\npick (self) {\n");
 
     int32:n = raw item_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:m = relay ast_decl(ast, raw item_member(ast, d, i));
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
-            string:v = relay intern_get(interns, raw decl_name(m));
-            s = relay string_concat(s, "(");
-            s = relay string_concat(s, tn);
-            s = relay string_concat(s, ".");
-            s = relay string_concat(s, v);
-            s = relay string_concat(s, ") { pass \"");
+            string:v = raw intern_get(interns, raw decl_name(m));
+            s = raw string_concat(s, "(");
+            s = raw string_concat(s, tn);
+            s = raw string_concat(s, ".");
+            s = raw string_concat(s, v);
+            s = raw string_concat(s, ") { pass \"");
             if (dbg) {
-                s = relay string_concat(s, tn);
-                s = relay string_concat(s, ".");
+                s = raw string_concat(s, tn);
+                s = raw string_concat(s, ".");
             }
-            s = relay string_concat(s, v);
-            s = relay string_concat(s, "\"; }");
-            if (i < (n - 1i32)) { s = relay string_concat(s, ","); }
-            s = relay string_concat(s, "\n");
+            s = raw string_concat(s, v);
+            s = raw string_concat(s, "\"; }");
+            if (i < (n - 1i32)) { s = raw string_concat(s, ","); }
+            s = raw string_concat(s, "\n");
         }
         i = i + 1i32;
     }
-    pass (relay string_concat(s, "}\n}; };\n"));
+    pass (raw string_concat(s, "}\n}; };\n"));
 };
 
 // --- the walk -------------------------------------------------------------------
@@ -467,7 +467,7 @@ func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // downstream — collection, coherence, completeness — sees them as members like any
 // other. That is what makes a derived impl beside a hand-written one a coherence
 // violation rather than a special case.
-pub func:derive_apply = NIL(ModuleGraph->:g) {
+pub func:derive_apply = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
     while (i < (raw graph_count(g))) {
         ModuleEntry:e = raw graph_at(g, i);
@@ -479,25 +479,25 @@ pub func:derive_apply = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
-func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) {
+func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never fails {
     drop derive_module(@g.ast, g.interns, g.diags, mod_id);
 
-    string:src = relay derive_text(@g.ast, g.interns, g.diags, mod_id);
+    string:src = raw derive_text(@g.ast, g.interns, g.diags, mod_id);
     if (src.len == 0i64) { pass NIL; }
 
     // THE GENERATED TEXT IS A MODULE, PARSED LIKE ANY OTHER. Its own name is
     // irrelevant — only its members are taken — but it needs one, because a source
     // file without a `mod:` line is not a source file.
-    string:path = relay string_concat("<derived-",
-                      relay string_concat(raw int_to_string(index => int64), ">"));
-    string:full = relay string_concat("mod:derived;\n", src);
-    int32:file = relay srcmgr_add(@g.sm, path, full);
+    string:path = raw string_concat("<derived-",
+                      raw string_concat(raw int_to_string(index => int64), ">"));
+    string:full = raw string_concat("mod:derived;\n", src);
+    int32:file = raw srcmgr_add(@g.sm, path, full);
     TokenList:toks = raw lex_all(file, full, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
-    DeclId:groot = relay p_parse_module(@p);
+    DeclId:groot = raw p_parse_module(@p);
 
-    DeclNode:gm = relay ast_decl(@g.ast, groot);
-    DeclNode:m = relay ast_decl(@g.ast, mod_id);
+    DeclNode:gm = raw ast_decl(@g.ast, groot);
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
     int32:gc = raw item_generic_count(@g.ast, m);
     int32:mc = raw item_member_count(@g.ast, m);
     int32:ac = raw item_attr_count(@g.ast, m);
@@ -551,22 +551,22 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) {
 // because a parse is a lexer, a token list and a parser, and the number of them is
 // not something the number of `#[derive]`s in a file should decide.
 func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                          DeclId:mod_id) {
-    DeclNode:m = relay ast_decl(ast, mod_id);
+                          DeclId:mod_id) never fails {
+    DeclNode:m = raw ast_decl(ast, mod_id);
     string:out = "";
     int32:n = raw item_member_count(ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:id = raw item_member(ast, m, i);
-        DeclNode:d = relay ast_decl(ast, id);
+        DeclNode:d = raw ast_decl(ast, id);
         bool:is_struct = (d.kind == DeclKind.DeclStructDecl);
         bool:is_enum = (d.kind == DeclKind.DeclEnumDecl);
         if (is_struct || is_enum) {
             DeriveSet:want = raw read_derives(ast, interns, diags, d,
                                               raw item_attr_count(ast, d), true);
             if (want.count > 0i32) {
-                out = relay string_concat(out,
-                          relay derive_one(ast, interns, diags, d, want, is_enum));
+                out = raw string_concat(out,
+                          raw derive_one(ast, interns, diags, d, want, is_enum));
             }
         }
         i = i + 1i32;
@@ -575,8 +575,8 @@ func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
 };
 
 func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                         DeclNode:d, DeriveSet:want, bool:is_enum) {
-    string:bare = relay intern_get(interns, raw decl_name(d));
+                         DeclNode:d, DeriveSet:want, bool:is_enum) never fails {
+    string:bare = raw intern_get(interns, raw decl_name(d));
 
     // A GENERIC SUBJECT DERIVES THE FAMILY FORM (D-161, 1.0.4c). `#[derive(Eq)]`
     // on `struct:Box<T>` used to synthesize `impl:Box:Eq` — the bare
@@ -599,34 +599,34 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
         string:params = "<";
         int32:gi = 0i32;
         while (gi < gw.count) {
-            if (gi > 0i32) { params = relay string_concat(params, ", "); }
-            DeclNode:gp = relay ast_decl(ast,
-                              DeclId{ index: relay ast_id_at(ast, gw.start, gi) });
-            params = relay string_concat(params,
-                         relay intern_get(interns, raw decl_name(gp)));
+            if (gi > 0i32) { params = raw string_concat(params, ", "); }
+            DeclNode:gp = raw ast_decl(ast,
+                              DeclId{ index: raw ast_id_at(ast, gw.start, gi) });
+            params = raw string_concat(params,
+                         raw intern_get(interns, raw decl_name(gp)));
             gi = gi + 1i32;
         }
-        params = relay string_concat(params, ">");
-        tn = relay string_concat(bare, params);
-        head = relay string_concat("impl:", relay string_concat(params, ":"));
+        params = raw string_concat(params, ">");
+        tn = raw string_concat(bare, params);
+        head = raw string_concat("impl:", raw string_concat(params, ":"));
     }
 
     string:s = "";
 
     if (raw derive_wants(want, raw DERIVE_CLONE())) {
-        s = relay string_concat(s, relay gen_clone(tn, head));
+        s = raw string_concat(s, raw gen_clone(tn, head));
     }
     if (raw derive_wants(want, raw DERIVE_EQ())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_eq_enum(tn, head)); }
-        else { s = relay string_concat(s, relay gen_eq_struct(ast, interns, d, tn, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_eq_enum(tn, head)); }
+        else { s = raw string_concat(s, raw gen_eq_struct(ast, interns, d, tn, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_TO_STRING())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, false, head)); }
-        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, false, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, false, head)); }
+        else { s = raw string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, false, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_DEBUG())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, true, head)); }
-        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, true, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, true, head)); }
+        else { s = raw string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, true, head)); }
     }
 
     // ORDERING AN ENUM NEEDS ITS TAG, WHICH NO OPERATOR YIELDS. `<` on an enum is
@@ -634,29 +634,29 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
     // rather than generated into something that does not compile, because a
     // diagnostic inside generated code points at a line nobody wrote.
     if (raw derive_wants(want, raw DERIVE_ORD())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_cmp_enum(tn, false, head)); }
-        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, false, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_cmp_enum(tn, false, head)); }
+        else { s = raw string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, false, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_PARTIAL_ORD())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_cmp_enum(tn, true, head)); }
-        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, true, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_cmp_enum(tn, true, head)); }
+        else { s = raw string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, true, head)); }
     }
 
     if (raw derive_wants(want, raw DERIVE_HASH())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_hash_enum(tn, head)); }
-        else { s = relay string_concat(s, relay gen_hash_struct(ast, interns, d, tn, head)); }
+        if (is_enum) { s = raw string_concat(s, raw gen_hash_enum(tn, head)); }
+        else { s = raw string_concat(s, raw gen_hash_struct(ast, interns, d, tn, head)); }
     }
     pass s;
 };
 
 pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                             DeclId:mod_id) {
-    DeclNode:m = relay ast_decl(ast, mod_id);
+                             DeclId:mod_id) never fails {
+    DeclNode:m = raw ast_decl(ast, mod_id);
     int32:n = raw item_member_count(ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:id = raw item_member(ast, m, i);
-        DeclNode:d = relay ast_decl(ast, id);
+        DeclNode:d = raw ast_decl(ast, id);
 
         bool:is_type = (d.kind == DeclKind.DeclStructDecl);
         if (d.kind == DeclKind.DeclEnumDecl) { is_type = true; }
@@ -691,15 +691,15 @@ pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 };
 
 // The set is read for its diagnostics here; generation is what will consume it.
-func:discard_set = NIL(DeriveSet:_~s) { pass NIL; };
+func:discard_set = NIL(DeriveSet:_~s) never fails { pass NIL; };
 
 func:derive_on_function = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                              DeclNode:d) {
+                              DeclNode:d) never fails {
     int32:n = raw fn_attr_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:at = relay ast_decl(ast, raw fn_attr(ast, d, i));
-        string:aname = relay intern_get(interns, raw attr_name(at));
+        DeclNode:at = raw ast_decl(ast, raw fn_attr(ast, d, i));
+        string:aname = raw intern_get(interns, raw attr_name(at));
         if (raw string_eq(aname, "derive")) {
             drop diaglist_push(diags, raw diag_error(raw DERIVE_TARGET(),
                 "`#[derive]` generates an implementation from a type's shape — its fields, or its variants — so it belongs on a `struct` or an `enum` and there is nothing here to generate from",

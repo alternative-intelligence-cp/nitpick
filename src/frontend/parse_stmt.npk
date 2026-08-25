@@ -54,26 +54,26 @@ use "./parse_pick.npk".*;
 // An absent label, name or target is intern index 0, which intern.npk reserves
 // for the empty string precisely so that absence has a value of its own.
 
-pub func:stmt_list_start = int32(StmtNode:s)   { pass s.b; };
-pub func:stmt_list_count = int32(StmtNode:s)   { pass s.c; };
-pub func:stmt_cond = ExprId(StmtNode:s)        { ExprId:i = ExprId{ index: s.a }; pass i; };
-pub func:stmt_then = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.b }; pass i; };
-pub func:stmt_else = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.c }; pass i; };
-pub func:stmt_expr = ExprId(StmtNode:s)        { ExprId:i = ExprId{ index: s.a }; pass i; };
-pub func:stmt_target = ExprId(StmtNode:s)      { ExprId:i = ExprId{ index: s.a }; pass i; };
+pub func:stmt_list_start = int32(StmtNode:s) never fails   { pass s.b; };
+pub func:stmt_list_count = int32(StmtNode:s) never fails   { pass s.c; };
+pub func:stmt_cond = ExprId(StmtNode:s) never fails        { ExprId:i = ExprId{ index: s.a }; pass i; };
+pub func:stmt_then = StmtId(StmtNode:s) never fails        { StmtId:i = StmtId{ index: s.b }; pass i; };
+pub func:stmt_else = StmtId(StmtNode:s) never fails        { StmtId:i = StmtId{ index: s.c }; pass i; };
+pub func:stmt_expr = ExprId(StmtNode:s) never fails        { ExprId:i = ExprId{ index: s.a }; pass i; };
+pub func:stmt_target = ExprId(StmtNode:s) never fails      { ExprId:i = ExprId{ index: s.a }; pass i; };
 // ASSIGNMENT'S right-hand side, in slot `b`. The name is deliberately about the
 // assignment and not about "the value a statement carries" -- 0.4.4 reached for
 // it on a `pass` and got slot `b` of a node whose operand is in slot `a`, which
 // typed as whatever node index happened to sit there. `stmt_operand` below is
 // the one the value-statements want.
-pub func:stmt_assigned = ExprId(StmtNode:s)    { ExprId:i = ExprId{ index: s.b }; pass i; };
+pub func:stmt_assigned = ExprId(StmtNode:s) never fails    { ExprId:i = ExprId{ index: s.b }; pass i; };
 
 // `pass v;` `fail c;` `return r;` `exit n;` `discard e;` -- the single operand a
 // value-statement carries, in slot `a`.
-pub func:stmt_operand = ExprId(StmtNode:s)     { ExprId:i = ExprId{ index: s.a }; pass i; };
-pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload =>! int32) =>! TokenKind); };
-pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload =>! int32); };
-pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload =>! int32); };
+pub func:stmt_operand = ExprId(StmtNode:s) never fails     { ExprId:i = ExprId{ index: s.a }; pass i; };
+pub func:stmt_op = TokenKind(StmtNode:s) never fails       { pass ((s.payload =>! int32) =>! TokenKind); };
+pub func:stmt_label = int32(StmtNode:s) never fails        { pass (s.payload =>! int32); };
+pub func:stmt_name = int32(StmtNode:s) never fails         { pass (s.payload =>! int32); };
 
 // WHICH STATEMENT KINDS CARRY AN EXPRESSION IN SLOT `a`.
 //
@@ -89,7 +89,7 @@ pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload =>! int32); };
 // A FALL-THROUGH: `resolve_stmt` ends with an unguarded `resolve_expr(stmt_expr)`
 // for "everything left", which silently absorbs any kind added later and reads
 // slot `a` as an expression whether or not it holds one.
-pub func:stmt_carries_expr = bool(StmtKind:k) {
+pub func:stmt_carries_expr = bool(StmtKind:k) never fails {
     if (k == StmtKind.StmtExprStmt)         { pass true; }
     if (k == StmtKind.StmtTrapStmt)         { pass true; }
     if (k == StmtKind.StmtDiscardStmt)      { pass true; }
@@ -99,61 +99,61 @@ pub func:stmt_carries_expr = bool(StmtKind:k) {
 };
 
 
-func:s_at = int32(Ast->:ast, StmtNode:s, int32:i) {
+func:s_at = int32(Ast->:ast, StmtNode:s, int32:i) never fails {
     pass (raw ast_id_at(ast, s.b, i));
 };
 
 // VarDeclStmt: a = type; header [0] init, [1] qualifier bits, [2] limit,
 // [3] attribute count, then the attributes.
-func:VAR_HDR = int32() { pass 4i32; };
+func:VAR_HDR = int32() never fails { pass 4i32; };
 
-pub func:stmt_decl_type = TypeId(StmtNode:s) { TypeId:i = TypeId{ index: s.a }; pass i; };
-pub func:stmt_decl_init = ExprId(Ast->:ast, StmtNode:s) {
+pub func:stmt_decl_type = TypeId(StmtNode:s) never fails { TypeId:i = TypeId{ index: s.a }; pass i; };
+pub func:stmt_decl_init = ExprId(Ast->:ast, StmtNode:s) never fails {
     ExprId:e = ExprId{ index: raw s_at(ast, s, 0i32) }; pass e;
 };
-pub func:stmt_quals = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 1i32)); };
-pub func:stmt_decl_limit = VerifyId(Ast->:ast, StmtNode:s) {
+pub func:stmt_quals = int32(Ast->:ast, StmtNode:s) never fails { pass (raw s_at(ast, s, 1i32)); };
+pub func:stmt_decl_limit = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
 };
-pub func:stmt_decl_attr_count = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 3i32)); };
-pub func:stmt_decl_attr = DeclId(Ast->:ast, StmtNode:s, int32:i) {
+pub func:stmt_decl_attr_count = int32(Ast->:ast, StmtNode:s) never fails { pass (raw s_at(ast, s, 3i32)); };
+pub func:stmt_decl_attr = DeclId(Ast->:ast, StmtNode:s, int32:i) never fails {
     DeclId:d = DeclId{ index: raw s_at(ast, s, (raw VAR_HDR()) + i) }; pass d;
 };
 
 // WhileStmt: a = cond; header [0] body, [1] invariant.
-pub func:stmt_body = StmtId(Ast->:ast, StmtNode:s) {
+pub func:stmt_body = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 0i32) }; pass i;
 };
-pub func:stmt_while_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+pub func:stmt_while_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 1i32) }; pass v;
 };
 
 // ForStmt: a = binding; header [0] iterable, [1] body, [2] invariant.
-pub func:stmt_for_binding = DeclId(StmtNode:s) { DeclId:i = DeclId{ index: s.a }; pass i; };
-pub func:stmt_for_iter = ExprId(Ast->:ast, StmtNode:s) {
+pub func:stmt_for_binding = DeclId(StmtNode:s) never fails { DeclId:i = DeclId{ index: s.a }; pass i; };
+pub func:stmt_for_iter = ExprId(Ast->:ast, StmtNode:s) never fails {
     ExprId:e = ExprId{ index: raw s_at(ast, s, 0i32) }; pass e;
 };
-pub func:stmt_for_body = StmtId(Ast->:ast, StmtNode:s) {
+pub func:stmt_for_body = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 1i32) }; pass i;
 };
-pub func:stmt_for_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+pub func:stmt_for_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
 };
 
 // Loop/TillStmt: a = body; header [0] invariant, [1] head-argument count, then
 // the head arguments.
-func:COUNTED_HDR = int32() { pass 2i32; };
+func:COUNTED_HDR = int32() never fails { pass 2i32; };
 
-pub func:stmt_counted_body = StmtId(StmtNode:s){ StmtId:i = StmtId{ index: s.a }; pass i; };
-pub func:stmt_counted_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+pub func:stmt_counted_body = StmtId(StmtNode:s) never fails{ StmtId:i = StmtId{ index: s.a }; pass i; };
+pub func:stmt_counted_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 0i32) }; pass v;
 };
-pub func:stmt_counted_argc = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 1i32)); };
+pub func:stmt_counted_argc = int32(Ast->:ast, StmtNode:s) never fails { pass (raw s_at(ast, s, 1i32)); };
 
 // `loop(start, limit, step)` and `till(limit, step)` -- the head arguments, by
 // position. Reading them out is the same operation for both, and the checker is
 // what knows how many each requires (D-022).
-pub func:stmt_counted_arg = ExprId(Ast->:ast, StmtNode:s, int32:i) {
+pub func:stmt_counted_arg = ExprId(Ast->:ast, StmtNode:s, int32:i) never fails {
     if (i >= (raw stmt_counted_argc(ast, s))) { pass (raw expr_none()); }
     ExprId:e = ExprId{ index: raw s_at(ast, s, (raw COUNTED_HDR()) + i) };
     pass e;
@@ -163,20 +163,20 @@ pub func:stmt_counted_arg = ExprId(Ast->:ast, StmtNode:s, int32:i) {
 // so an absent block is a zero handle in a fixed slot rather than a shorter
 // window. A variable-length window would make "which block is missing" something
 // every reader has to work out for itself.
-pub func:stmt_when_body = StmtId(Ast->:ast, StmtNode:s) {
+pub func:stmt_when_body = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 0i32) }; pass i;
 };
-pub func:stmt_when_then = StmtId(Ast->:ast, StmtNode:s) {
+pub func:stmt_when_then = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 1i32) }; pass i;
 };
-pub func:stmt_when_end = StmtId(Ast->:ast, StmtNode:s) {
+pub func:stmt_when_end = StmtId(Ast->:ast, StmtNode:s) never fails {
     StmtId:i = StmtId{ index: raw s_at(ast, s, 2i32) }; pass i;
 };
-pub func:stmt_when_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+pub func:stmt_when_invariant = VerifyId(Ast->:ast, StmtNode:s) never fails {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 3i32) }; pass v;
 };
 
-pub func:p_is_assign_op = bool(TokenKind:k) {
+pub func:p_is_assign_op = bool(TokenKind:k) never fails {
     if (k == TokenKind.OpAssign)        { pass true; }
     if (k == TokenKind.OpPlusAssign)    { pass true; }
     if (k == TokenKind.OpMinusAssign)   { pass true; }
@@ -214,24 +214,24 @@ pub func:p_is_assign_op = bool(TokenKind:k) {
 // binding limit and it says so when it binds. Two limits where one is reachable
 // is one limit; two where both are is a program whose refusal depends on which
 // fires first.
-func:DECL_SCAN_LIMIT = int64() { pass 512i64; };
+func:DECL_SCAN_LIMIT = int64() never fails { pass 512i64; };
 
-pub func:p_looks_like_decl = bool(Parser->:p) {
-    if ((raw p_qualifier_bit(relay p_kind(p))) != 0i32) {
+pub func:p_looks_like_decl = bool(Parser->:p) never fails {
+    if ((raw p_qualifier_bit(raw p_kind(p))) != 0i32) {
         // A qualifier can begin nothing else, so this is settled already.
         pass true;
     }
     // So can `limit<Rule>`: it binds a ruleset to a declaration and appears in no
     // other statement position.
-    if (relay p_at(p, TokenKind.KwLimit)) { pass true; }
+    if (raw p_at(p, TokenKind.KwLimit)) { pass true; }
     // And so can `func`, which in a STATEMENT can only begin a function type
     // (D-087) -- there is no `func` expression. It needs its own early exit
     // because the scan below bails at a `(` seen outside any nesting, and a
     // function type's parameter list is exactly that: `func int32(int32):op`.
     // The rule the scan encodes -- "a `(` at depth zero means this was never a
     // declaration" -- was true until a type could contain one.
-    if (relay p_at(p, TokenKind.KwFunc)) { pass true; }
-    TokenKind:first = relay p_kind(p);
+    if (raw p_at(p, TokenKind.KwFunc)) { pass true; }
+    TokenKind:first = raw p_kind(p);
     bool:startable = (first == TokenKind.Ident);
     if (raw token_kind_is_builtin_type(first)) { startable = true; }
     if (first == TokenKind.KwDyn)  { startable = true; }
@@ -249,7 +249,7 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
     int32:paren = 0i32;
     int32:brack = 0i32;
     while (k < (raw DECL_SCAN_LIMIT())) {
-        TokenKind:t = (relay p_peek_at(p, k)).kind;
+        TokenKind:t = (raw p_peek_at(p, k)).kind;
         if (t == TokenKind.Eof)     { pass false; }
         if (t == TokenKind.PSemi)   { pass false; }
         if (t == TokenKind.PLBrace) { pass false; }
@@ -275,7 +275,7 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
             if (t == TokenKind.PColon) {
                 // `Type:name`, and the name must be an identifier -- otherwise
                 // this was something else that happened to contain a colon.
-                pass ((relay p_peek_at(p, k + 1i64)).kind == TokenKind.Ident);
+                pass ((raw p_peek_at(p, k + 1i64)).kind == TokenKind.Ident);
             }
         }
 
@@ -314,15 +314,15 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
 
 // --- blocks --------------------------------------------------------------------
 
-pub func:p_parse_block = StmtId(Parser->:p) {
-    Span:sp = relay p_span(p);
+pub func:p_parse_block = StmtId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
     drop p_expect(p, TokenKind.PLBrace);
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
-        if (relay p_at(p, TokenKind.PRBrace)) { break; }
-        if (relay p_at_end(p)) { break; }
+        if (raw p_at(p, TokenKind.PRBrace)) { break; }
+        if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
-        StmtId:s = relay p_parse_stmt(p);
+        StmtId:s = raw p_parse_stmt(p);
         drop ast_scratch_push(p.ast, s.index);
         // Leave panic mode at the statement boundary, or the first error in this
         // block silences every one after it.
@@ -338,50 +338,50 @@ pub func:p_parse_block = StmtId(Parser->:p) {
     // OPENING brace. "expected `}`, found <eof>" names the end of the file,
     // which is the one place the mistake certainly is not -- the reader needs to
     // know which `{` never closed.
-    if (relay p_at_end(p)) {
+    if (raw p_at_end(p)) {
         drop p_error_at(p, raw PARSE_UNCLOSED(),
             "this `{` is never closed", sp);
         // Commit anyway. Abandoning the mark would leave this block's children
         // on the scratch stack, where the NEXT node's window would swallow them.
         IdSpan:partial = raw ast_scratch_commit(p.ast, mark);
-        pass (relay ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp,
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp,
                                  0i32, partial.start, partial.count, 0i64));
     }
     drop p_expect(p, TokenKind.PRBrace);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp,
                              0i32, w.start, w.count, 0i64));
 };
 
 // --- statements -----------------------------------------------------------------
 
-pub func:p_parse_stmt = StmtId(Parser->:p) {
-    Span:sp = relay p_span(p);
+pub func:p_parse_stmt = StmtId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
 
     // Attributes attach to the declaration they precede; on anything else they
     // are gathered and the semantic phase reports them, because "./attribute on a
     // `while`" is a better diagnostic than "expected a statement".
-    IdSpan:attrs = relay p_parse_attributes(p);
+    IdSpan:attrs = raw p_parse_attributes(p);
 
-    TokenKind:k = relay p_kind(p);
+    TokenKind:k = raw p_kind(p);
 
-    if (k == TokenKind.PLBrace) { pass (relay p_parse_block(p)); }
-    if (k == TokenKind.KwIf)    { pass (relay p_parse_if(p)); }
+    if (k == TokenKind.PLBrace) { pass (raw p_parse_block(p)); }
+    if (k == TokenKind.KwIf)    { pass (raw p_parse_if(p)); }
 
     if (k == TokenKind.KwDefer) {
         drop p_advance(p);
         // The body is a BLOCK, not a statement (AST_REFERENCE section 2). One
         // spelling, so there is no `defer f();` reading as something narrower
         // than it defers.
-        StmtId:b = relay p_parse_block(p);
-        pass (relay ast_add_stmt(p.ast, StmtKind.StmtDeferStmt, sp,
+        StmtId:b = raw p_parse_block(p);
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtDeferStmt, sp,
                                  b.index, 0i32, 0i32, 0i64));
     }
 
     // A labelled loop: `outer: while (…) { … }`.
     if (k == TokenKind.Ident) {
-        if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
-            TokenKind:after = (relay p_peek_at(p, 2i64)).kind;
+        if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
+            TokenKind:after = (raw p_peek_at(p, 2i64)).kind;
             bool:loopish = false;
             if (after == TokenKind.KwWhile) { loopish = true; }
             if (after == TokenKind.KwFor)   { loopish = true; }
@@ -389,143 +389,143 @@ pub func:p_parse_stmt = StmtId(Parser->:p) {
             if (after == TokenKind.KwTill)  { loopish = true; }
             if (after == TokenKind.KwWhen)  { loopish = true; }
             if (loopish) {
-                Token:lbl = relay p_advance(p);
+                Token:lbl = raw p_advance(p);
                 drop p_advance(p);
-                pass (relay p_parse_loop(p, sp, lbl.payload));
+                pass (raw p_parse_loop(p, sp, lbl.payload));
             }
         }
     }
 
-    if (k == TokenKind.KwWhile) { pass (relay p_parse_loop(p, sp, 0i64)); }
-    if (k == TokenKind.KwFor)   { pass (relay p_parse_loop(p, sp, 0i64)); }
-    if (k == TokenKind.KwLoop)  { pass (relay p_parse_loop(p, sp, 0i64)); }
-    if (k == TokenKind.KwTill)  { pass (relay p_parse_loop(p, sp, 0i64)); }
-    if (k == TokenKind.KwWhen)  { pass (relay p_parse_loop(p, sp, 0i64)); }
+    if (k == TokenKind.KwWhile) { pass (raw p_parse_loop(p, sp, 0i64)); }
+    if (k == TokenKind.KwFor)   { pass (raw p_parse_loop(p, sp, 0i64)); }
+    if (k == TokenKind.KwLoop)  { pass (raw p_parse_loop(p, sp, 0i64)); }
+    if (k == TokenKind.KwTill)  { pass (raw p_parse_loop(p, sp, 0i64)); }
+    if (k == TokenKind.KwWhen)  { pass (raw p_parse_loop(p, sp, 0i64)); }
 
     // `pass` and `return` take an OPTIONAL value; the rest are mandatory, and
     // that difference sits in the grammar rather than in a later check.
     if (k == TokenKind.KwPass) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtPassStmt, true));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtPassStmt, true));
     }
     if (k == TokenKind.KwReturn) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtReturnStmt, true));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtReturnStmt, true));
     }
     if (k == TokenKind.KwFail) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtFailStmt, false));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtFailStmt, false));
     }
     if (k == TokenKind.KwExit) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtExitStmt, false));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtExitStmt, false));
     }
     if (k == TokenKind.OpBangBangBang) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtTrapStmt, false));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtTrapStmt, false));
     }
     // `give e;` yields the value of an expression-`pick` (D-059). Legal only in
     // a `PickArm` body -- a SEMANTIC restriction, checked later. The parser never
     // restricts (D-085), and refusing it here could only report "expected a
     // statement", naming neither the construct nor the rule it broke.
     if (k == TokenKind.KwGive) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtGiveStmt, false));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtGiveStmt, false));
     }
 
     // `prove`, `assert_static` and `discard` all take a PARENTHESISED operand, so
     // they parse identically and differ only in the node they build.
     if (k == TokenKind.KwProve) {
-        pass (relay p_paren_stmt(p, sp, StmtKind.StmtProveStmt));
+        pass (raw p_paren_stmt(p, sp, StmtKind.StmtProveStmt));
     }
     if (k == TokenKind.KwAssert_static) {
-        pass (relay p_paren_stmt(p, sp, StmtKind.StmtAssertStaticStmt));
+        pass (raw p_paren_stmt(p, sp, StmtKind.StmtAssertStaticStmt));
     }
     if (k == TokenKind.KwDiscard) {
-        pass (relay p_paren_stmt(p, sp, StmtKind.StmtDiscardStmt));
+        pass (raw p_paren_stmt(p, sp, StmtKind.StmtDiscardStmt));
     }
     // `_~ e;` -- the symbol spelling of `discard(e)`, and the SAME node
     // (AST_REFERENCE section 2). Two spellings of one idea is the language's
     // choice, not this parser's; what would be wrong is two nodes.
     if (k == TokenKind.OpUnderTilde) {
-        pass (relay p_value_stmt(p, sp, StmtKind.StmtDiscardStmt, false));
+        pass (raw p_value_stmt(p, sp, StmtKind.StmtDiscardStmt, false));
     }
 
     if (k == TokenKind.KwBreak) {
-        pass (relay p_label_stmt(p, sp, StmtKind.StmtBreakStmt, true));
+        pass (raw p_label_stmt(p, sp, StmtKind.StmtBreakStmt, true));
     }
     if (k == TokenKind.KwContinue) {
-        pass (relay p_label_stmt(p, sp, StmtKind.StmtContinueStmt, true));
+        pass (raw p_label_stmt(p, sp, StmtKind.StmtContinueStmt, true));
     }
     // `fall label;` -- the target is REQUIRED. A `pick` never falls through on
     // its own, so a bare `fall` names nothing to fall to.
     if (k == TokenKind.KwFall) {
-        pass (relay p_label_stmt(p, sp, StmtKind.StmtFallStmt, false));
+        pass (raw p_label_stmt(p, sp, StmtKind.StmtFallStmt, false));
     }
 
     // A statement-`pick`. The arms live in parse_pick.npk, which the expression
     // parser also reaches -- `pick` is both, and its arms decide which (D-059).
     // That mutual import is legal (D-086).
-    if (k == TokenKind.KwPick) { pass (relay p_parse_pick_stmt(p)); }
+    if (k == TokenKind.KwPick) { pass (raw p_parse_pick_stmt(p)); }
 
     if (raw p_looks_like_decl(p)) {
-        pass (relay p_parse_vardecl(p, sp, attrs));
+        pass (raw p_parse_vardecl(p, sp, attrs));
     }
 
     // An expression, then possibly an assignment.
-    ExprId:lhs = relay p_parse_expr(p);
-    TokenKind:op = relay p_kind(p);
+    ExprId:lhs = raw p_parse_expr(p);
+    TokenKind:op = raw p_kind(p);
     if (raw p_is_assign_op(op)) {
         drop p_advance(p);
-        ExprId:rhs = relay p_parse_expr(p);
+        ExprId:rhs = raw p_parse_expr(p);
         // `a = b = 5` arrives here: after the value sits another assignment
         // operator. Saying so beats "expected `;`, found `=`" -- the mistake was
         // a chained assignment, not a missing semicolon, and a diagnostic naming
         // the wrong thing sends the reader to the wrong place.
-        if (raw p_is_assign_op(relay p_kind(p))) {
+        if (raw p_is_assign_op(raw p_kind(p))) {
             drop p_error(p, raw PARSE_ASSIGN_EXPR(),
                 "assignment is a statement, not an expression, so it does not chain");
             drop p_sync(p);
-            pass (relay ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
+            pass (raw ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
                                      lhs.index, rhs.index, 0i32,
                                      (op =>! int32) =>! int64));
         }
         drop p_expect(p, TokenKind.PSemi);
-        pass (relay ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
                                  lhs.index, rhs.index, 0i32,
                                  (op =>! int32) =>! int64));
     }
     drop p_expect(p, TokenKind.PSemi);
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtExprStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtExprStmt, sp,
                              lhs.index, 0i32, 0i32, 0i64));
 };
 
 // `kw expr;`, or `kw;` when the value is optional.
-func:p_value_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) {
+func:p_value_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) never fails {
     drop p_advance(p);
     int32:v = 0i32;
     if (optional) {
-        if (!(relay p_at(p, TokenKind.PSemi))) {
-            v = (relay p_parse_expr(p)).index;
+        if (!(raw p_at(p, TokenKind.PSemi))) {
+            v = (raw p_parse_expr(p)).index;
         }
     } else {
-        v = (relay p_parse_expr(p)).index;
+        v = (raw p_parse_expr(p)).index;
     }
     drop p_expect(p, TokenKind.PSemi);
-    pass (relay ast_add_stmt(p.ast, kind, sp, v, 0i32, 0i32, 0i64));
+    pass (raw ast_add_stmt(p.ast, kind, sp, v, 0i32, 0i32, 0i64));
 };
 
 // `kw(expr);`
-func:p_paren_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind) {
+func:p_paren_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind) never fails {
     drop p_advance(p);
     drop p_expect(p, TokenKind.PLParen);
-    ExprId:e = relay p_parse_expr(p);
+    ExprId:e = raw p_parse_expr(p);
     drop p_expect(p, TokenKind.PRParen);
     drop p_expect(p, TokenKind.PSemi);
-    pass (relay ast_add_stmt(p.ast, kind, sp, e.index, 0i32, 0i32, 0i64));
+    pass (raw ast_add_stmt(p.ast, kind, sp, e.index, 0i32, 0i32, 0i64));
 };
 
 // `kw;` / `kw label;` -- optional for `break` and `continue`, required for
 // `fall`.
-func:p_label_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) {
+func:p_label_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) never fails {
     drop p_advance(p);
     int64:lbl = 0i64;
-    if (relay p_at(p, TokenKind.Ident)) {
-        lbl = (relay p_advance(p)).payload;
+    if (raw p_at(p, TokenKind.Ident)) {
+        lbl = (raw p_advance(p)).payload;
     } else {
         if (!optional) {
             drop p_error(p, raw PARSE_EXPECTED(),
@@ -533,24 +533,24 @@ func:p_label_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) {
         }
     }
     drop p_expect(p, TokenKind.PSemi);
-    pass (relay ast_add_stmt(p.ast, kind, sp, 0i32, 0i32, 0i32, lbl));
+    pass (raw ast_add_stmt(p.ast, kind, sp, 0i32, 0i32, 0i32, lbl));
 };
 
-func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) {
-    int32:quals = relay p_qualifiers(p);
+func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) never fails {
+    int32:quals = raw p_qualifiers(p);
     // `limit<r_pos> int32:x = 5i32;` -- the rule binds to the DECLARATION, so it
     // sits with the qualifiers rather than inside the type (AST_REFERENCE
     // section 4: qualifiers are not part of the type).
     int32:lim = 0i32;
-    if (relay p_at(p, TokenKind.KwLimit)) {
-        lim = (relay p_parse_limit(p)).index;
+    if (raw p_at(p, TokenKind.KwLimit)) {
+        lim = (raw p_parse_limit(p)).index;
     }
-    TypeId:ty = relay p_parse_type(p);
+    TypeId:ty = raw p_parse_type(p);
     drop p_expect(p, TokenKind.PColon);
-    Token:name = relay p_advance(p);
+    Token:name = raw p_advance(p);
     int32:init = 0i32;
-    if (relay p_accept(p, TokenKind.OpAssign)) {
-        init = (relay p_parse_expr(p)).index;
+    if (raw p_accept(p, TokenKind.OpAssign)) {
+        init = (raw p_parse_expr(p)).index;
     }
     drop p_expect(p, TokenKind.PSemi);
 
@@ -561,52 +561,52 @@ func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) {
     drop ast_scratch_push(p.ast, attrs.count);
     drop ast_copy_window(p.ast, attrs);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtVarDeclStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtVarDeclStmt, sp,
                              ty.index, w.start, w.count, name.payload));
 };
 
-func:p_parse_if = StmtId(Parser->:p) {
-    Span:sp = relay p_span(p);
+func:p_parse_if = StmtId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
     drop p_expect(p, TokenKind.KwIf);
     drop p_expect(p, TokenKind.PLParen);
-    ExprId:cond = relay p_parse_expr(p);
+    ExprId:cond = raw p_parse_expr(p);
     drop p_expect(p, TokenKind.PRParen);
     // The branches are BLOCKS. There is no braceless form, so there is no
     // dangling `else` to resolve and no `if (c) a(); b();` that reads as two
     // guarded calls.
-    StmtId:then_b = relay p_parse_block(p);
+    StmtId:then_b = raw p_parse_block(p);
     int32:else_b = 0i32;
-    if (relay p_accept(p, TokenKind.KwElse)) {
-        if (relay p_at(p, TokenKind.KwIf)) {
-            else_b = (relay p_parse_if(p)).index;
+    if (raw p_accept(p, TokenKind.KwElse)) {
+        if (raw p_at(p, TokenKind.KwIf)) {
+            else_b = (raw p_parse_if(p)).index;
         } else {
-            else_b = (relay p_parse_block(p)).index;
+            else_b = (raw p_parse_block(p)).index;
         }
     }
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtIfStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtIfStmt, sp,
                              cond.index, then_b.index, else_b, 0i64));
 };
 
 // while / for / loop / till / when share one entry because they share a shape:
 // an optional label, a head, and a body.
-func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
-    TokenKind:k = relay p_kind(p);
+func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) never fails {
+    TokenKind:k = raw p_kind(p);
 
     if (k == TokenKind.KwWhile) {
         drop p_advance(p);
         drop p_expect(p, TokenKind.PLParen);
-        ExprId:c = relay p_parse_expr(p);
+        ExprId:c = raw p_parse_expr(p);
         drop p_expect(p, TokenKind.PRParen);
         // `while (i < n) invariant total >= 0i32, i >= 0i32 { … }` -- between the
         // head and the body, comma-separated and unparenthesised like the
         // contracts it belongs with.
-        VerifyId:inv = relay p_parse_invariant(p);
-        StmtId:b = relay p_parse_block(p);
+        VerifyId:inv = raw p_parse_invariant(p);
+        StmtId:b = raw p_parse_block(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         drop ast_scratch_push(p.ast, b.index);
         drop ast_scratch_push(p.ast, inv.index);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-        pass (relay ast_add_stmt(p.ast, StmtKind.StmtWhileStmt, sp,
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtWhileStmt, sp,
                                  c.index, w.start, w.count, label));
     }
 
@@ -617,26 +617,26 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
         // `for (int64:i in 1..3)`. The C three-clause form and untyped bindings
         // are both rejected (D-023) -- and note they are rejected by there being
         // no shape here that accepts them, not by a rule that checks for them.
-        TypeId:bt = relay p_parse_type(p);
+        TypeId:bt = raw p_parse_type(p);
         drop p_expect(p, TokenKind.PColon);
-        Token:bindN = relay p_advance(p);
+        Token:bindN = raw p_advance(p);
         // ParamDecl slots: a = type, b = default value, c = flags,
         // payload = name. 0.2.5 builds the same node for function parameters and
         // keeps this layout.
-        DeclId:binding = relay ast_add_decl(p.ast, DeclKind.DeclParamDecl,
+        DeclId:binding = raw ast_add_decl(p.ast, DeclKind.DeclParamDecl,
                                             bindN.span, bt.index, 0i32, 0i32,
                                             bindN.payload);
         drop p_expect(p, TokenKind.KwIn);
-        ExprId:iter = relay p_parse_expr(p);
+        ExprId:iter = raw p_parse_expr(p);
         drop p_expect(p, TokenKind.PRParen);
-        VerifyId:inv = relay p_parse_invariant(p);
-        StmtId:b = relay p_parse_block(p);
+        VerifyId:inv = raw p_parse_invariant(p);
+        StmtId:b = raw p_parse_block(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         drop ast_scratch_push(p.ast, iter.index);
         drop ast_scratch_push(p.ast, b.index);
         drop ast_scratch_push(p.ast, inv.index);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-        pass (relay ast_add_stmt(p.ast, StmtKind.StmtForStmt, sp,
+        pass (raw ast_add_stmt(p.ast, StmtKind.StmtForStmt, sp,
                                  binding.index, w.start, w.count, label));
     }
 
@@ -650,11 +650,11 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
     // `)`".
     if (k == TokenKind.KwLoop) {
         drop p_advance(p);
-        pass (relay p_counted(p, sp, label, StmtKind.StmtLoopStmt));
+        pass (raw p_counted(p, sp, label, StmtKind.StmtLoopStmt));
     }
     if (k == TokenKind.KwTill) {
         drop p_advance(p);
-        pass (relay p_counted(p, sp, label, StmtKind.StmtTillStmt));
+        pass (raw p_counted(p, sp, label, StmtKind.StmtTillStmt));
     }
 
     // `when (cond) { } then { } end { }` -- `then` runs if the body ran at least
@@ -663,56 +663,56 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
     // outcomes.
     drop p_expect(p, TokenKind.KwWhen);
     drop p_expect(p, TokenKind.PLParen);
-    ExprId:wc = relay p_parse_expr(p);
+    ExprId:wc = raw p_parse_expr(p);
     drop p_expect(p, TokenKind.PRParen);
     // `when` takes an invariant like every other loop. AST_REFERENCE section 2
     // omitted the field while VERIFICATION_REFERENCE section 4 listed `when`
     // among the constructs that accept one; the spec now says so too.
-    VerifyId:winv = relay p_parse_invariant(p);
+    VerifyId:winv = raw p_parse_invariant(p);
     int32:mark = raw ast_scratch_mark(p.ast);
-    StmtId:wb = relay p_parse_block(p);
+    StmtId:wb = raw p_parse_block(p);
     drop ast_scratch_push(p.ast, wb.index);
-    if (relay p_accept(p, TokenKind.KwThen)) {
-        StmtId:tb = relay p_parse_block(p);
+    if (raw p_accept(p, TokenKind.KwThen)) {
+        StmtId:tb = raw p_parse_block(p);
         drop ast_scratch_push(p.ast, tb.index);
     } else {
         drop ast_scratch_push(p.ast, 0i32);
     }
-    if (relay p_accept(p, TokenKind.KwEnd)) {
-        StmtId:eb = relay p_parse_block(p);
+    if (raw p_accept(p, TokenKind.KwEnd)) {
+        StmtId:eb = raw p_parse_block(p);
         drop ast_scratch_push(p.ast, eb.index);
     } else {
         drop ast_scratch_push(p.ast, 0i32);
     }
     drop ast_scratch_push(p.ast, winv.index);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtWhenStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtWhenStmt, sp,
                              wc.index, w.start, w.count, label));
 };
 
-func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) {
+func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) never fails {
     drop p_expect(p, TokenKind.PLParen);
     int32:amark = raw ast_scratch_mark(p.ast);
     int32:argc = 0i32;
-    if (!(relay p_at(p, TokenKind.PRParen))) {
-        ExprId:a1 = relay p_parse_expr(p);
+    if (!(raw p_at(p, TokenKind.PRParen))) {
+        ExprId:a1 = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
         argc = 1i32;
-        while (relay p_accept(p, TokenKind.PComma)) {
-            ExprId:argN = relay p_parse_expr(p);
+        while (raw p_accept(p, TokenKind.PComma)) {
+            ExprId:argN = raw p_parse_expr(p);
             drop ast_scratch_push(p.ast, argN.index);
             argc = argc + 1i32;
         }
     }
     IdSpan:args = raw ast_scratch_commit(p.ast, amark);
     drop p_expect(p, TokenKind.PRParen);
-    VerifyId:inv = relay p_parse_invariant(p);
-    StmtId:b = relay p_parse_block(p);
+    VerifyId:inv = raw p_parse_invariant(p);
+    StmtId:b = raw p_parse_block(p);
 
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, inv.index);
     drop ast_scratch_push(p.ast, argc);
     drop ast_copy_window(p.ast, args);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_stmt(p.ast, kind, sp, b.index, w.start, w.count, label));
+    pass (raw ast_add_stmt(p.ast, kind, sp, b.index, w.start, w.count, label));
 };

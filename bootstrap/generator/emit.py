@@ -726,6 +726,9 @@ class Emitter:
         if isinstance(e, S.ResultUnary):
             return self.result_unary(e)
 
+        if isinstance(e, (S.SafeUnwrap, S.Emphatic)):
+            return self.unwrap_op(e)
+
         if isinstance(e, S.Call):
             return self.call(e)
 
@@ -847,6 +850,64 @@ class Emitter:
         r = self.tmp()
         self.w("%s = %s %s %s, %s" % (r, name, lhs.ty, lhs.ref, rhs.ref))
         return Val(lhs.ty, r, ty)
+
+    def unwrap_op(self, e):
+        """`e ?| d` and `e ?! c` (1.1.1).
+
+        The fallback is LAZY (evaluated only on the error path) and `?!` traps
+        with the CALLER's code (D-009), running no defers (D-014) -- the same
+        shapes the real backend lowers.
+        """
+        inner_ty = self.ty(e.expr)
+        v = self._expr(e.expr)
+        if not isinstance(inner_ty, T.ResultT):
+            return v          # already unwrapped; nothing to test
+        res_t = inner_ty.inner
+        err_idx = 0 if res_t == T.NIL else 1
+        err = self.tmp()
+        self.w("%s = extractvalue %s %s, %d" % (err, v.ty, v.ref, err_idx))
+        bad = self.tmp()
+        self.w("%s = icmp ne i32 %s, 0" % (bad, err))
+
+        if isinstance(e, S.Emphatic):
+            # `?! c`: the error path is a trap with the caller's code.
+            t_err, t_ok = self.label("emph.err"), self.label("emph.ok")
+            self.w("br i1 %s, label %%%s, label %%%s" % (bad, t_err, t_ok))
+            self.w("%s:" % t_err)
+            c = self.expr(e.code, want=T.TBB32)
+            r = self.tmp()
+            self.w("%s = call i32 @npk_failsafe(i32 %s)" % (r, c.ref))
+            self.w("call void @npk_exit(i32 %s)" % r)
+            self.w("unreachable")
+            self.w("%s:" % t_ok)
+            if res_t == T.NIL:
+                return Val("i32", "0", T.NIL)
+            val = self.tmp()
+            self.w("%s = extractvalue %s %s, 0" % (val, v.ty, v.ref))
+            return Val(T.llvm(res_t), val, res_t)
+
+        # `?| d`: the value, or the LAZILY-evaluated default.
+        if res_t == T.NIL:
+            # both arms yield nothing; the test alone decides nothing to keep
+            return Val("i32", "0", T.NIL)
+        ll = T.llvm(res_t)
+        slot = self.tmp()
+        self.alloca(slot, ll)
+        d_l, ok_l, done_l = self.label("qp.def"), self.label("qp.ok"), self.label("qp.done")
+        self.w("br i1 %s, label %%%s, label %%%s" % (bad, d_l, ok_l))
+        self.w("%s:" % d_l)
+        dv = self.expr(e.default, want=res_t)
+        self.w("store %s %s, ptr %s" % (ll, dv.ref, slot))
+        self.w("br label %%%s" % done_l)
+        self.w("%s:" % ok_l)
+        val = self.tmp()
+        self.w("%s = extractvalue %s %s, 0" % (val, v.ty, v.ref))
+        self.w("store %s %s, ptr %s" % (ll, val, slot))
+        self.w("br label %%%s" % done_l)
+        self.w("%s:" % done_l)
+        out = self.tmp()
+        self.w("%s = load %s, ptr %s" % (out, ll, slot))
+        return Val(ll, out, res_t)
 
     def result_unary(self, e):
         inner_ty = self.ty(e.operand)

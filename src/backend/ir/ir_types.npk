@@ -43,9 +43,9 @@ use "../../frontend/symbols.npk".*;
 use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_generic.npk".*;
 
-pub func:LL_OK = int32()     { pass 0i32; };
-pub func:LL_RUNG = int32()   { pass 1i32; };
-pub func:LL_BROKEN = int32() { pass 2i32; };
+pub func:LL_OK = int32() never fails     { pass 0i32; };
+pub func:LL_RUNG = int32() never fails   { pass 1i32; };
+pub func:LL_BROKEN = int32() never fails { pass 2i32; };
 
 pub struct:LlType = {
     int32:state;
@@ -53,22 +53,22 @@ pub struct:LlType = {
     string:rung;     // meaningful when LL_RUNG
 };
 
-pub func:ll_ok = LlType(string:text) {
+pub func:ll_ok = LlType(string:text) never fails {
     LlType:t = LlType{ state: raw LL_OK(), text: text, rung: "" };
     pass t;
 };
 
-func:ll_rung = LlType(string:rung) {
+func:ll_rung = LlType(string:rung) never fails {
     LlType:t = LlType{ state: raw LL_RUNG(), text: "", rung: rung };
     pass t;
 };
 
-func:ll_broken = LlType() {
+func:ll_broken = LlType() never fails {
     LlType:t = LlType{ state: raw LL_BROKEN(), text: "", rung: "" };
     pass t;
 };
 
-pub func:ll_is_ok = bool(LlType:t) { pass (t.state == (raw LL_OK())); };
+pub func:ll_is_ok = bool(LlType:t) never fails { pass (t.state == (raw LL_OK())); };
 
 // WHAT THE EMITTER NEEDS TO ASK A TYPE. Three tables rather than three parameters
 // threaded through every recursive call: the type table for the kind, the AST for
@@ -126,7 +126,7 @@ pub struct:LlCtx = {
     int32:vt_cap;
 };
 
-pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) {
+pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) never fails {
     int64:vn = 16i64;
     LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
                      mod_of: NULL, mod_n: 0i32,
@@ -141,7 +141,7 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
 
 // Record one impl's table. Called by the pre-pass; the emitter reads it back
 // when it builds a `dyn`.
-pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) {
+pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) never fails {
     if (c.vt_count >= c.vt_cap) {
         int32:nc = c.vt_cap * 2i32;
         int64:sz = (nc => int64) * #size_of<int32>();
@@ -159,7 +159,7 @@ pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) {
 
 // The table for this (type, trait), or 0. Coherence makes the pair unique
 // program-wide (TRAITS_REFERENCE 4.1), so the first match is the only one.
-pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) {
+pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) never fails {
     int32:i = 0i32;
     while (i < c.vt_count) {
         if (c.vt_self[i => int64] == self_ty) {
@@ -175,7 +175,7 @@ pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) {
 // Bind a specialization's parameters while its body is emitted; counts of 0
 // clear it. Saved and restored by the caller, like every other emission scope.
 pub func:llctx_set_subst = NIL(LlCtx->:c, int32:params_start,
-                               int32:params_count, int32:args_start) {
+                               int32:params_count, int32:args_start) never fails {
     c.subst_params_start = params_start;
     c.subst_params_count = params_count;
     c.subst_args_start = args_start;
@@ -183,13 +183,13 @@ pub func:llctx_set_subst = NIL(LlCtx->:c, int32:params_start,
 };
 
 pub func:llctx_set_impls = NIL(LlCtx->:c, wild ImplTable->:t,
-                               wild TypeResolver->:r) {
+                               wild TypeResolver->:r) never fails {
     c.impls = t;
     c.tr = r;
     pass NIL;
 };
 
-pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) {
+pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) never fails {
     c.mod_of = m;
     c.mod_n = n;
     pass NIL;
@@ -197,13 +197,13 @@ pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) {
 
 // The canonical module name for a declaration, or "" when there is none
 // (D-156). "" routes the caller to the pre-scheme fallback.
-pub func:mod_canonical = string(LlCtx->:c, int32:decl_index) {
+pub func:mod_canonical = string(LlCtx->:c, int32:decl_index) never fails {
     if (c.mod_n == 0i32)         { pass ""; }
     if (decl_index < 0i32)       { pass ""; }
     if (decl_index >= c.mod_n)   { pass ""; }
     int32:ci = c.mod_of[decl_index => int64];
     if (ci == 0i32)              { pass ""; }
-    pass (relay intern_get(c.interns, ci));
+    pass (raw intern_get(c.interns, ci));
 };
 
 // `@"npk.<module>.<name>"` for a function, quoted (the spelling embeds `<`,
@@ -213,33 +213,33 @@ pub func:mod_canonical = string(LlCtx->:c, int32:decl_index) {
 // pre-scheme `@npk_<name>`: builtins and runtime symbols reach ir_symbol
 // through the rt table, not here, so the fallback is only ever hit by a
 // symbol the modmap did not cover, which stays linkable.
-pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) {
+pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
     if (raw string_eq(name, "main"))     { pass "@main"; }
     if (raw string_eq(name, "failsafe")) { pass "@npk_failsafe"; }
-    string:canon = relay mod_canonical(c, decl_index);
+    string:canon = raw mod_canonical(c, decl_index);
     if (canon.len == 0i64) {
-        pass (relay string_concat("@npk_", name));
+        pass (raw string_concat("@npk_", name));
     }
-    string:body = relay string_concat("npk.",
-                      relay string_concat(canon,
-                          relay string_concat(".", name)));
-    pass (relay string_concat("@\"",
-              relay string_concat(body, "\"")));
+    string:body = raw string_concat("npk.",
+                      raw string_concat(canon,
+                          raw string_concat(".", name)));
+    pass (raw string_concat("@\"",
+              raw string_concat(body, "\"")));
 };
 
 // `%"npk.<module>.<Name>"` for a named aggregate. No name exceptions -- no
 // type is named main or failsafe. The `%Name` fallback keeps a mapless
 // context (the header tests) rendering as before.
-pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) {
-    string:canon = relay mod_canonical(c, decl_index);
+pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) never fails {
+    string:canon = raw mod_canonical(c, decl_index);
     if (canon.len == 0i64) {
-        pass (relay string_concat("%", name));
+        pass (raw string_concat("%", name));
     }
-    string:body = relay string_concat("npk.",
-                      relay string_concat(canon,
-                          relay string_concat(".", name)));
-    pass (relay string_concat("%\"",
-              relay string_concat(body, "\"")));
+    string:body = raw string_concat("npk.",
+                      raw string_concat(canon,
+                          raw string_concat(".", name)));
+    pass (raw string_concat("%\"",
+              raw string_concat(body, "\"")));
 };
 
 // WHAT A GENERIC PARAMETER STANDS FOR IN THE SPECIALIZATION BEING EMITTED, or
@@ -247,13 +247,13 @@ pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) {
 // a second caller needs the substituted TYPE rather than its LLVM text: a method
 // call through a bound has to name `IntBox:Producer.make`, and the receiver's
 // recorded type is the parameter `P`.
-pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) {
+pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) never fails {
     if ((raw type_kind(c.types, id)) != (raw TY_PARAM())) { pass id; }
     int32:pd = raw type_decl_of(c.types, id);
     int32:pi = 0i32;
     while (pi < c.subst_params_count) {
-        if ((relay ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
-            pass (relay ast_id_at(c.ast, c.subst_args_start, pi));
+        if ((raw ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
+            pass (raw ast_id_at(c.ast, c.subst_args_start, pi));
         }
         pi = pi + 1i32;
     }
@@ -266,7 +266,7 @@ pub func:subst_emitted_param = int32(LlCtx->:c, int32:id) {
 // representation until the parameter is bound. Walked by kind, because each
 // kind keeps its operands in different slots (the accessors above say which).
 pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
-                                    int32:fuel) {
+                                    int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     if (id == 0i32) { pass false; }
     int32:k = raw type_kind(t, id);
@@ -311,7 +311,7 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     pass false;
 };
 
-func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) {
+func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) never fails {
     int32:n = raw type_args_count_of(t, id);
     int32:start = raw type_args_start_of(t, id);
     int32:i = 0i32;
@@ -331,7 +331,7 @@ func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) {
 // uses, so a type arrived at here is interned exactly as the checker would
 // have interned it. The scope is the one `llctx_set_subst` holds — the same
 // four numbers a `GenericScope` is.
-pub func:subst_emitted_scope = GenericScope(LlCtx->:c) {
+pub func:subst_emitted_scope = GenericScope(LlCtx->:c) never fails {
     GenericScope:g = GenericScope{ params_start: c.subst_params_start,
                                    params_count: c.subst_params_count,
                                    args_start: c.subst_args_start,
@@ -339,17 +339,17 @@ pub func:subst_emitted_scope = GenericScope(LlCtx->:c) {
     pass g;
 };
 
-pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) {
+pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
     if (c.subst_params_count == 0i32) { pass id; }
     if (c.tr == NULL) { pass id; }
     if (!(raw type_mentions_param(c.types, c.ast, id, 64i32))) { pass id; }
-    pass (relay type_subst(c.tr, id, raw subst_emitted_scope(c), raw span_none(),
+    pass (raw type_subst(c.tr, id, raw subst_emitted_scope(c), raw span_none(),
                            raw SUBST_FUEL_LL(), c.impls));
 };
 
 // --- the lowering -----------------------------------------------------------------
 
-pub func:ll_type = LlType(LlCtx->:c, int32:id) {
+pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     int32:k = raw type_kind(c.types, id);
 
     // Resolution already failed and already said so. Anything said here would be
@@ -390,7 +390,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // and a `pid` are the same thirty-two bits.
     if (k == (raw TY_KERNEL()))   { pass (raw ll_ok("i32")); }
 
-    if (k == (raw TY_INT()))      { pass (relay ll_int_bits(raw type_int_bits(c.types, id))); }
+    if (k == (raw TY_INT()))      { pass (raw ll_int_bits(raw type_int_bits(c.types, id))); }
 
     // `char8` IS A BYTE AND IS NOT AN INTEGER. The representation is shared and
     // the arithmetic is not (D-005); `char16` and `char32` wait for 0.9.
@@ -410,7 +410,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_TBB())) {
         // Every tbb width lowers as its carrier (0.9.3); the ARITHMETIC — ERR,
         // stickiness, saturation — is 0.9.5's and refuses at the operator.
-        pass (relay ll_int_bits(raw type_int_bits(c.types, id)));
+        pass (raw ll_int_bits(raw type_int_bits(c.types, id)));
     }
 
     // `flt32`/`flt64` compute; `flt128` is STORAGE ONLY (D-143) — it lowers
@@ -437,10 +437,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // struct would have been a struct whose fields are not members. An `i8`
     // rather than an `i1` because a bit is not addressable.
     if (k == (raw TY_OPTIONAL())) {
-        LlType:oel = relay ll_type(c, raw type_elem(c.types, id));
+        LlType:oel = raw ll_type(c, raw type_elem(c.types, id));
         if (oel.state != (raw LL_OK())) { pass oel; }
-        pass (raw ll_ok(relay string_concat("{ i8, ",
-                            relay string_concat(oel.text, " }"))));
+        pass (raw ll_ok(raw string_concat("{ i8, ",
+                            raw string_concat(oel.text, " }"))));
     }
 
     // A TRAIT IS NOT A VALUE TYPE. `dyn Trait` is; the bare trait names a
@@ -467,10 +467,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
         string:dt = "{ ptr";
         int32:bi = 0i32;
         while (bi < nb) {
-            dt = relay string_concat(dt, ", ptr");
+            dt = raw string_concat(dt, ", ptr");
             bi = bi + 1i32;
         }
-        pass (raw ll_ok(relay string_concat(dt, " }")));
+        pass (raw ll_ok(raw string_concat(dt, " }")));
     }
 
     // `Self` IS SUBSTITUTED BEFORE IT IS LOWERED: a trait default is emitted
@@ -493,10 +493,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_ASSOC())) {
         if (c.tr != NULL) {
             int32:ab = raw subst_emitted_param(c, raw type_assoc_base(c.types, id));
-            int32:bound = relay assoc_binding_of(c.tr, c.impls, ab,
+            int32:bound = raw assoc_binding_of(c.tr, c.impls, ab,
                               raw type_assoc_trait(c.types, id),
                               raw type_assoc_name(c.types, id));
-            if (bound != 0i32) { pass (relay ll_type(c, bound)); }
+            if (bound != 0i32) { pass (raw ll_type(c, bound)); }
         }
         pass (raw ll_broken());
     }
@@ -507,7 +507,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
         // instances), so a bare parameter here is a missed substitution, not
         // a rung (converted 1.0.9).
         int32:sub = raw subst_emitted_param(c, id);
-        if (sub != id) { pass (relay ll_type(c, sub)); }
+        if (sub != id) { pass (raw ll_type(c, sub)); }
         pass (raw ll_broken());
     }
 
@@ -515,12 +515,12 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // inclusive spelling was normalized away at construction (D-145), so no
     // consumer ever asks which kind it holds.
     if (k == (raw TY_RANGE())) {
-        LlType:rel = relay ll_type(c, raw type_elem(c.types, id));
+        LlType:rel = raw ll_type(c, raw type_elem(c.types, id));
         if (rel.state != (raw LL_OK())) { pass rel; }
-        string:ra = relay string_concat("{ ", rel.text);
-        ra = relay string_concat(ra, ", ");
-        ra = relay string_concat(ra, rel.text);
-        ra = relay string_concat(ra, " }");
+        string:ra = raw string_concat("{ ", rel.text);
+        ra = raw string_concat(ra, ", ");
+        ra = raw string_concat(ra, rel.text);
+        ra = raw string_concat(ra, " }");
         pass (raw ll_ok(ra));
     }
 
@@ -532,8 +532,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_FUNC()))          { pass (raw ll_ok("ptr")); }
     if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("1.1")); }
 
-    if (k == (raw TY_ARRAY()))    { pass (relay ll_array(c, id)); }
-    if (k == (raw TY_RESULT()))   { pass (relay ll_result(c, id)); }
+    if (k == (raw TY_ARRAY()))    { pass (raw ll_array(c, id)); }
+    if (k == (raw TY_RESULT()))   { pass (raw ll_result(c, id)); }
     if (k == (raw TY_ARENA()))    { pass (raw ll_ok("{ ptr, ptr, i64, i64, i64 }")); }
     if (k == (raw TY_HANDLE()))   { pass (raw ll_ok("{ i64, i32 }")); }
     if (k == (raw TY_SHARED_ARENA())) { pass (raw ll_ok("ptr")); }
@@ -547,13 +547,13 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // named still gets its header, after the bodies (`emit_late_headers`).
     if (k == (raw TY_STRUCT())) {
         int32:si = raw subst_emitted_type(c, id);
-        if (si != id) { pass (relay ll_type(c, si)); }
-        pass (relay ll_named(c, id));
+        if (si != id) { pass (raw ll_type(c, si)); }
+        pass (raw ll_named(c, id));
     }
     if (k == (raw TY_ENUM())) {
         int32:ei = raw subst_emitted_type(c, id);
-        if (ei != id) { pass (relay ll_type(c, ei)); }
-        pass (relay ll_enum(c, id));
+        if (ei != id) { pass (raw ll_type(c, ei)); }
+        pass (raw ll_enum(c, id));
     }
 
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. A kind added without a case here
@@ -571,7 +571,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
 // 256 bits and beyond as inline expansion — an executed probe took `udiv
 // i4096` through llc whole. Sub-byte widths (`int1/2/4`) have no layout and
 // wait on decision G-2; they refuse rather than guess.
-func:ll_int_bits = LlType(int32:bits) {
+func:ll_int_bits = LlType(int32:bits) never fails {
     if (bits == 8i32)    { pass (raw ll_ok("i8")); }
     if (bits == 16i32)   { pass (raw ll_ok("i16")); }
     if (bits == 32i32)   { pass (raw ll_ok("i32")); }
@@ -590,14 +590,14 @@ func:ll_int_bits = LlType(int32:bits) {
 // `[N x T]` — A VALUE TYPE THAT DOES NOT DECAY. Its element's refusal is its own:
 // an array of something unlowerable is unlowerable, and reporting it as the array
 // would name the wrong construct.
-func:ll_array = LlType(LlCtx->:c, int32:id) {
-    LlType:el = relay ll_type(c, raw type_elem(c.types, id));
+func:ll_array = LlType(LlCtx->:c, int32:id) never fails {
+    LlType:el = raw ll_type(c, raw type_elem(c.types, id));
     if (el.state != (raw LL_OK())) { pass el; }
-    string:a = relay string_concat("[",
+    string:a = raw string_concat("[",
                    raw int_to_string((raw type_array_count(c.types, id)) => int64));
-    string:b = relay string_concat(a, " x ");
-    string:d = relay string_concat(b, el.text);
-    pass (raw ll_ok(relay string_concat(d, "]")));
+    string:b = raw string_concat(a, " x ");
+    string:d = raw string_concat(b, el.text);
+    pass (raw ll_ok(raw string_concat(d, "]")));
 };
 
 // `{T, i32}` (D-069) — NO `is_error` FIELD, because `.is_error` is derived as
@@ -605,22 +605,22 @@ func:ll_array = LlType(LlCtx->:c, int32:id) {
 //
 // `Result<NIL>` IS `{i32}` and not `{void, i32}`: `NIL` is zero-sized (D-084), and
 // `void` is not a type LLVM will put in a struct.
-func:ll_result = LlType(LlCtx->:c, int32:id) {
-    pass (relay ll_wrap_result(c, raw type_elem(c.types, id)));
+func:ll_result = LlType(LlCtx->:c, int32:id) never fails {
+    pass (raw ll_wrap_result(c, raw type_elem(c.types, id)));
 };
 
 // THE SAME RULE, KEYED ON THE INNER TYPE — because the wrap is usually IMPLICIT.
 // Every function returns `Result<T>` while declaring `T` (D-069), so the emitter
 // mostly holds a `T` with no interned `Result<T>` beside it. One body serving both
 // spellings is what keeps "what does a Result look like" a single place.
-pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) {
+pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) never fails {
     if ((raw type_kind(c.types, inner)) == (raw TY_NIL())) {
         pass (raw ll_ok("{ i32 }"));
     }
-    LlType:it = relay ll_type(c, inner);
+    LlType:it = raw ll_type(c, inner);
     if (it.state != (raw LL_OK())) { pass it; }
-    string:a = relay string_concat("{ ", it.text);
-    pass (raw ll_ok(relay string_concat(a, ", i32 }")));
+    string:a = raw string_concat("{ ", it.text);
+    pass (raw ll_ok(raw string_concat(a, ", i32 }")));
 };
 
 // A NAMED AGGREGATE PRINTS AS `%Name`, and its body is emitted once at module
@@ -633,23 +633,23 @@ pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) {
 // symbol in quotes. `%"npk.mod.Container<int32>"` is legal and reversible, so the
 // instance renders like any other named aggregate; what distinguishes it is the
 // BODY, which substitutes (`ll_struct_body`).
-func:ll_named = LlType(LlCtx->:c, int32:id) {
+func:ll_named = LlType(LlCtx->:c, int32:id) never fails {
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
-    pass (raw ll_ok(relay mangled_type_name(c, raw type_decl_of(c.types, id),
-                        relay intern_get(c.interns, nm))));
+    pass (raw ll_ok(raw mangled_type_name(c, raw type_decl_of(c.types, id),
+                        raw intern_get(c.interns, nm))));
 };
 
 // A PAYLOAD-LESS ENUM IS A PLAIN `i32` AND HAS NO DEFINITION AT ALL
 // (TYPE_REFERENCE §9.3: "Enum values are plain i32 constants"). Only a tagged one
 // is an aggregate, and SUBSET_1 §1.2's one-machine-word payload fixes its shape at
 // `{i32, i64}` — uniform, with no max-payload sizing and no alignment puzzles.
-func:ll_enum = LlType(LlCtx->:c, int32:id) {
-    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_ok("i32")); }
+func:ll_enum = LlType(LlCtx->:c, int32:id) never fails {
+    if (!(raw enum_has_payload(c.ast, c.types, id))) { pass (raw ll_ok("i32")); }
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
-    pass (raw ll_ok(relay mangled_type_name(c, raw type_decl_of(c.types, id),
-                        relay intern_get(c.interns, nm))));
+    pass (raw ll_ok(raw mangled_type_name(c, raw type_decl_of(c.types, id),
+                        raw intern_get(c.interns, nm))));
 };
 
 // --- what the module preamble writes ------------------------------------------------
@@ -663,14 +663,14 @@ func:ll_enum = LlType(LlCtx->:c, int32:id) {
 // Mirrors `type_generic`'s own SUBST_FUEL: a substituted instance has its own
 // arguments substituted in turn, so the walk follows a type's structure and is
 // bounded the same way the frontend bounds it.
-pub func:SUBST_FUEL_LL = int32() { pass 64i32; };
+pub func:SUBST_FUEL_LL = int32() never fails { pass 64i32; };
 
 pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
-                                 int32:scope) {
+                                 int32:scope) never fails {
     if ((raw type_kind(c.types, id)) != (raw TY_STRUCT())) { pass (raw ll_broken()); }
 
     DeclId:did = DeclId{ index: raw type_decl(c.types, id) };
-    DeclNode:d = relay ast_decl(c.ast, did);
+    DeclNode:d = raw ast_decl(c.ast, did);
 
     // AN INSTANTIATION SUBSTITUTES ITS ARGUMENTS INTO EVERY FIELD (1.0.2).
     // `Container<int32>`'s body is the declaration's fields with `T` replaced —
@@ -697,18 +697,18 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
     int32:i = 0i32;
     while (i < (raw item_member_count(c.ast, d))) {
         DeclId:mid = raw item_member(c.ast, d, i);
-        DeclNode:m = relay ast_decl(c.ast, mid);
+        DeclNode:m = raw ast_decl(c.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft0 = relay resolve_type(r, raw field_type(m), scope);
-            int32:ft = relay type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
+            int32:ft0 = raw resolve_type(r, raw field_type(m), scope);
+            int32:ft = raw type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
                             c.impls);
-            LlType:ll = relay ll_type(c, ft);
+            LlType:ll = raw ll_type(c, ft);
             if (ll.state != (raw LL_OK())) {
                 r.generics = saved;
                 pass ll;
             }
-            if (n > 0i32) { body = relay string_concat(body, ", "); }
-            body = relay string_concat(body, ll.text);
+            if (n > 0i32) { body = raw string_concat(body, ", "); }
+            body = raw string_concat(body, ll.text);
             n = n + 1i32;
         }
         i = i + 1i32;
@@ -716,8 +716,8 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
     r.generics = saved;
     if (n == 0i32) { body = "i8"; }
 
-    string:a = relay string_concat("{ ", body);
-    pass (raw ll_ok(relay string_concat(a, " }")));
+    string:a = raw string_concat("{ ", body);
+    pass (raw ll_ok(raw string_concat(a, " }")));
 };
 
 // THE PAYLOAD SLOT (0.9.2): `{ i32, [N x iK] }`, DERIVED from the layout the
@@ -736,7 +736,7 @@ pub struct:EnumSlot = {
     int64:count;
 };
 
-pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) {
+pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) never fails {
     EnumSlot:bad = EnumSlot{ ok: false, kbits: 0i32, count: 0i64 };
     int64:sz = raw type_size(c.types, id);
     int32:al = raw type_align(c.types, id);
@@ -755,18 +755,18 @@ pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) {
     pass out;
 };
 
-pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
+pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) never fails {
     if ((raw type_kind(c.types, id)) != (raw TY_ENUM())) { pass (raw ll_broken()); }
     // A payload-less enum has no body to ask for; the question itself is the
     // mistake (internal — every caller filters first).
-    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_broken()); }
+    if (!(raw enum_has_payload(c.ast, c.types, id))) { pass (raw ll_broken()); }
     EnumSlot:sl = raw enum_payload_slot(c, id);
     if (!sl.ok) { pass (raw ll_broken()); }
-    string:a = relay string_concat("{ i32, [",
+    string:a = raw string_concat("{ i32, [",
                    raw int_to_string(sl.count));
-    string:b = relay string_concat(a, " x i");
-    string:d2 = relay string_concat(b, raw int_to_string(sl.kbits => int64));
-    pass (raw ll_ok(relay string_concat(d2, "] }")));
+    string:b = raw string_concat(a, " x i");
+    string:d2 = raw string_concat(b, raw int_to_string(sl.kbits => int64));
+    pass (raw ll_ok(raw string_concat(d2, "] }")));
 };
 
 // The ERR sentinel per tbb width, as decimal text (D-008: the most negative
@@ -774,7 +774,7 @@ pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
 // it — the arithmetic saturation, the sentinel maps in casts, `is_err`, the
 // `ERR` literal, and the `ERR:` pick arm — so no two sites can disagree about
 // which bit pattern taint is.
-pub func:tbb_min_decimal = string(int32:bits) {
+pub func:tbb_min_decimal = string(int32:bits) never fails {
     if (bits == 8i32)   { pass "-128"; }
     if (bits == 16i32)  { pass "-32768"; }
     if (bits == 32i32)  { pass "-2147483648"; }
@@ -786,7 +786,7 @@ pub func:tbb_min_decimal = string(int32:bits) {
 
 // The widest VALID magnitude per tbb width — MIN's mirror, for the range
 // checks the cast matrix emits.
-pub func:tbb_max_decimal = string(int32:bits) {
+pub func:tbb_max_decimal = string(int32:bits) never fails {
     if (bits == 8i32)   { pass "127"; }
     if (bits == 16i32)  { pass "32767"; }
     if (bits == 32i32)  { pass "2147483647"; }
@@ -805,7 +805,7 @@ pub func:tbb_max_decimal = string(int32:bits) {
 
 // True when this lowered to a plain `iN`, which is exactly the set of types one
 // LLVM instruction — `add`, `icmp`, `zext` — is valid over.
-pub func:ll_is_scalar_int = bool(LlType:t) {
+pub func:ll_is_scalar_int = bool(LlType:t) never fails {
     if (t.state != (raw LL_OK())) { pass false; }
     if (t.text.len < 2i64) { pass false; }
     if (t.text.ptr[0i64] != 105u8) { pass false; }   // 'i'
@@ -819,14 +819,14 @@ pub func:ll_is_scalar_int = bool(LlType:t) {
 };
 
 // The three float texts, asked of the TEXT like the neighbours above.
-pub func:ll_is_float_text = bool(string:t) {
+pub func:ll_is_float_text = bool(string:t) never fails {
     if (raw string_eq(t, "float"))  { pass true; }
     if (raw string_eq(t, "double")) { pass true; }
     if (raw string_eq(t, "fp128"))  { pass true; }
     pass false;
 };
 
-pub func:ll_is_pointer = bool(LlType:t) {
+pub func:ll_is_pointer = bool(LlType:t) never fails {
     if (t.state != (raw LL_OK())) { pass false; }
     pass (raw string_eq(t.text, "ptr"));
 };
@@ -836,7 +836,7 @@ pub func:ll_is_pointer = bool(LlType:t) {
 //
 // Derived from the TEXT for the same reason as the two above: a table keyed by
 // Nitpick kind would be a second list to keep in step with the first.
-pub func:ll_zero = string(LlType:t) {
+pub func:ll_zero = string(LlType:t) never fails {
     if (raw ll_is_scalar_int(t)) { pass "0"; }
     if (raw ll_is_pointer(t))    { pass "null"; }
     pass "zeroinitializer";

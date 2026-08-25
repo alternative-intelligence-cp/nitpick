@@ -74,7 +74,7 @@ RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
 USE_RE = re.compile(r'use\s+"([^"]+)"')
 
 # `pub func:TYPE_MISMATCH = string() { pass "NITPICK-TYPE-007"; };`
-CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)\s*\{\s*pass "([A-Z0-9\-]+)"')
+CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)(?: never fails)?\s*\{\s*pass "([A-Z0-9\-]+)"')
 
 
 # --- expectations ------------------------------------------------------------

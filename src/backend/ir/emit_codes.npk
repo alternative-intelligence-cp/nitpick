@@ -10,10 +10,10 @@ mod:emit_codes;
 // CONSTRUCT and the RUNG that enables it, so the message is actionable rather
 // than a refusal — and it is NEVER a parse error, because the parser never
 // restricts (D-085).
-pub func:RUNG_UNSUPPORTED = string() { pass "NITPICK-RUNG-001"; };
+pub func:RUNG_UNSUPPORTED = string() never fails { pass "NITPICK-RUNG-001"; };
 
 // The emitter met a node it has no classification for. This is a defect in the
 // COMPILER, not in the program: Phase A promised the program is valid, and a
 // kind nobody classified is a hole in Phase B's coverage of that promise. A
 // distinct code so it can never be mistaken for the program's fault.
-pub func:EMIT_INTERNAL = string() { pass "NITPICK-EMIT-002"; };
+pub func:EMIT_INTERNAL = string() never fails { pass "NITPICK-EMIT-002"; };

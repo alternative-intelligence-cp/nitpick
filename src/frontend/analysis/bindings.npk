@@ -70,7 +70,7 @@ use "../type_codes.npk".*;
 use "./analysis_codes.npk".*;
 use "./exhaust.npk".*;
 
-pub func:ASSIGN_DEPTH = int32() { pass 256i32; };
+pub func:ASSIGN_DEPTH = int32() never fails { pass 256i32; };
 
 // THE STATE AT A POINT IN THE PROGRAM. Indexed by the index of the statement that
 // DECLARED the binding, which is what `Symbol.origin` holds for a local.
@@ -154,14 +154,14 @@ pub struct:Assign = {
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
                               InternTable->:interns, TypeTable->:types,
                               ExprTypes->:etypes, DiagList->:diags,
-                              TypeResolver->:tyres) {
+                              TypeResolver->:tyres) never fails {
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
                        etypes: etypes, diags: diags, tyres: tyres,
                        quiet: false };
     pass x;
 };
 
-pub func:state_new = AssignState(int32:n) {
+pub func:state_new = AssignState(int32:n) never fails {
     int64:size = n => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:m1 = alloc(size * #size_of<bool>());
@@ -193,7 +193,7 @@ pub func:state_new = AssignState(int32:n) {
     pass s;
 };
 
-func:state_copy = AssignState(AssignState:src) {
+func:state_copy = AssignState(AssignState:src) never fails {
     AssignState:d = raw state_new(src.count);
     int64:i = 0i64;
     while (i < (src.count => int64)) {
@@ -209,7 +209,7 @@ func:state_copy = AssignState(AssignState:src) {
     pass d;
 };
 
-func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
+func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = src.must[i];
@@ -232,7 +232,7 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
 // would forget that `x` was assigned. That is not a refinement — it is the
 // difference between accepting correct code and refusing it.
 func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
-                       AssignState:b, bool:b_exits) {
+                       AssignState:b, bool:b_exits) never fails {
     if (a_exits) {
         if (b_exits) {
             // Nothing reaches here at all. `dst` keeps the state from before the
@@ -279,7 +279,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
 // A LOOP BODY MAY RUN ZERO TIMES, so nothing it assigns is assigned after it — but
 // everything it assigns is still POSSIBLY assigned, which is what stops a `fixed`
 // binding being written once per iteration.
-func:state_absorb_may = NIL(AssignState:dst, AssignState:body) {
+func:state_absorb_may = NIL(AssignState:dst, AssignState:body) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.may[i] = dst.may[i] || body.may[i];
@@ -300,7 +300,7 @@ func:state_absorb_may = NIL(AssignState:dst, AssignState:body) {
 // AN ASSIGNMENT MAKES A BINDING VALID AGAIN. D-065: a moved-from binding "may be
 // reinitialized by assignment, after which it is live again" — so writing to one
 // clears both invalidations rather than only recording a new write.
-func:state_mark = NIL(AssignState:s, int32:slot) {
+func:state_mark = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)        { pass NIL; }
     if (slot >= s.count)    { pass NIL; }
     s.must[slot => int64] = true;
@@ -316,40 +316,40 @@ func:state_mark = NIL(AssignState:s, int32:slot) {
     pass NIL;
 };
 
-func:state_mark_checked = NIL(AssignState:s, int32:slot) {
+func:state_mark_checked = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass NIL; }
     if (slot >= s.count) { pass NIL; }
     s.checked[slot => int64] = true;
     pass NIL;
 };
 
-func:state_checked = bool(AssignState:s, int32:slot) {
+func:state_checked = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.checked[slot => int64]);
 };
 
-func:state_mark_moved = NIL(AssignState:s, int32:slot) {
+func:state_mark_moved = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass NIL; }
     if (slot >= s.count) { pass NIL; }
     s.moved[slot => int64] = true;
     pass NIL;
 };
 
-func:state_mark_freed = NIL(AssignState:s, int32:slot) {
+func:state_mark_freed = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass NIL; }
     if (slot >= s.count) { pass NIL; }
     s.freed[slot => int64] = true;
     pass NIL;
 };
 
-func:state_moved = bool(AssignState:s, int32:slot) {
+func:state_moved = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.moved[slot => int64]);
 };
 
-func:state_freed = bool(AssignState:s, int32:slot) {
+func:state_freed = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.freed[slot => int64]);
@@ -357,7 +357,7 @@ func:state_freed = bool(AssignState:s, int32:slot) {
 
 // `wildx_seal(p)` marks BOTH seal columns: the page is now sealed on this path
 // (forbidding writes) and firmly sealed (permitting execute). D-155.
-func:state_mark_sealed = NIL(AssignState:s, int32:slot) {
+func:state_mark_sealed = NIL(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass NIL; }
     if (slot >= s.count) { pass NIL; }
     s.sealed[slot => int64] = true;
@@ -367,7 +367,7 @@ func:state_mark_sealed = NIL(AssignState:s, int32:slot) {
 
 // May-sealed: true if the page could be sealed on some path — writing is
 // then refused (a prohibition fires on any path).
-func:state_sealed = bool(AssignState:s, int32:slot) {
+func:state_sealed = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.sealed[slot => int64]);
@@ -375,19 +375,19 @@ func:state_sealed = bool(AssignState:s, int32:slot) {
 
 // Firmly-sealed: true only if sealed on every path — executing is permitted
 // only then (a permission holds on all paths).
-func:state_sealed_firm = bool(AssignState:s, int32:slot) {
+func:state_sealed_firm = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.sealed_firm[slot => int64]);
 };
 
-func:state_must = bool(AssignState:s, int32:slot) {
+func:state_must = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.must[slot => int64]);
 };
 
-func:state_may = bool(AssignState:s, int32:slot) {
+func:state_may = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.may[slot => int64]);
@@ -397,7 +397,7 @@ func:state_may = bool(AssignState:s, int32:slot) {
 // rather than derived from `expr_shape`, because "./has no child expressions" and
 // "is a constant" are different questions that agree today — an identifier is a
 // leaf and is not a constant.
-func:expr_is_literal = bool(ExprKind:k) {
+func:expr_is_literal = bool(ExprKind:k) never fails {
     if (k == ExprKind.ExprIntLiteral)         { pass true; }
     if (k == ExprKind.ExprFloatLiteral)       { pass true; }
     if (k == ExprKind.ExprCharLiteral)        { pass true; }
@@ -408,7 +408,7 @@ func:expr_is_literal = bool(ExprKind:k) {
     pass (k == ExprKind.ExprSentinelLiteral);
 };
 
-func:assign_err = NIL(Assign->:x, string:code, string:msg, Span:sp) {
+func:assign_err = NIL(Assign->:x, string:code, string:msg, Span:sp) never fails {
     if (x.quiet) { pass NIL; }
     drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
     pass NIL;
@@ -420,8 +420,8 @@ func:assign_err = NIL(Assign->:x, string:code, string:msg, Span:sp) {
 // a function inside an `impl`, a trait's default body and a function inside a
 // nested `mod` are all function bodies.
 
-pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) {
-    DeclNode:m = relay ast_decl(x.ast, mod_id);
+pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) never fails {
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -431,8 +431,8 @@ pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) {
     pass NIL;
 };
 
-func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
-    DeclNode:d = relay ast_decl(x.ast, id);
+func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         StmtId:body = raw fn_body(x.ast, d);
@@ -472,7 +472,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
             pass NIL;
         }
 
-        ExprNode:ie = relay ast_expr(x.ast, init);
+        ExprNode:ie = raw ast_expr(x.ast, init);
         // AGGREGATE LITERALS ARE CONSTANT WHEN THEIR MEMBERS ARE (D-165, 1.0.9d).
         // The folder does not fold a struct or array literal, so it is admitted
         // here by shape; the checker's `TYPE_GLOBAL_NOT_CONSTANT` validates the
@@ -482,7 +482,9 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
         // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is
         // the same question — is this expression constant — and now the same
         // evaluator answers it. A reader filtering on this code is asking one thing.
-        ConstVal:cv = relay fold_const(x.tyres, init, scope);
+        // The checker already folded every global initialiser (D-165's
+        // constancy rule); failing to RE-fold here is an internal inconsistency.
+        ConstVal:cv = fold_const(x.tyres, init, scope) ?! 25tbb32;
         if (!(raw cv_folded(cv))) {
             if (raw fold_gave_up(x.tyres)) { pass NIL; }
             drop assign_err(x, raw TYPE_NOT_CONSTANT(),
@@ -493,10 +495,10 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
     }
 
     if (d.kind == DeclKind.DeclImplDecl) {
-        int32:mn = relay impl_member_count(x.ast, d);
+        int32:mn = raw impl_member_count(x.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            drop assign_decl(x, relay impl_member(x.ast, d, j), scope);
+            drop assign_decl(x, raw impl_member(x.ast, d, j), scope);
             j = j + 1i32;
         }
         pass NIL;
@@ -522,10 +524,10 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
 // failed to assign is then treated as assigned by the other arm alone. So the
 // answer is `false` for everything not listed, and each `true` is one this walk
 // has actually looked at.
-func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) {
+func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) never fails {
     if (depth <= 0i32)         { pass false; }
     if (raw stmt_is_none(id))  { pass false; }
-    StmtNode:s = relay ast_stmt(x.ast, id);
+    StmtNode:s = raw ast_stmt(x.ast, id);
 
     if (s.kind == StmtKind.StmtPassStmt)     { pass true; }
     if (s.kind == StmtKind.StmtFailStmt)     { pass true; }
@@ -547,7 +549,7 @@ func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) {
         int32:i = 0i32;
         while (i < n) {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
-            if (relay stmt_exits(x, sub, depth - 1i32)) { pass true; }
+            if (raw stmt_exits(x, sub, depth - 1i32)) { pass true; }
             i = i + 1i32;
         }
         pass false;
@@ -558,8 +560,8 @@ func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) {
     if (s.kind == StmtKind.StmtIfStmt) {
         StmtId:e = raw stmt_else(s);
         if (raw stmt_is_none(e)) { pass false; }
-        if (!(relay stmt_exits(x, raw stmt_then(s), depth - 1i32))) { pass false; }
-        pass (relay stmt_exits(x, e, depth - 1i32));
+        if (!(raw stmt_exits(x, raw stmt_then(s), depth - 1i32))) { pass false; }
+        pass (raw stmt_exits(x, e, depth - 1i32));
     }
 
     pass false;
@@ -567,16 +569,16 @@ func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) {
 
 // --- statements --------------------------------------------------------------
 
-func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
+func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
     if (depth <= 0i32) {
-        StmtNode:deep = relay ast_stmt(x.ast, id);
+        StmtNode:deep = raw ast_stmt(x.ast, id);
         drop assign_err(x, raw ASSIGN_TOO_DEEP(),
             "this statement nests deeper than the definite-assignment analysis will follow, so its bindings cannot be shown assigned before use",
             deep.span);
         pass NIL;
     }
-    StmtNode:s = relay ast_stmt(x.ast, id);
+    StmtNode:s = raw ast_stmt(x.ast, id);
     int32:d = depth - 1i32;
 
     // A DECLARATION. The initialiser is walked BEFORE the binding is marked, which
@@ -591,7 +593,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
     // program order that happens to be wrong.
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         drop check_qualifiers(x, s);
-        ExprId:init = relay stmt_decl_init(x.ast, s);
+        ExprId:init = raw stmt_decl_init(x.ast, s);
         if (raw expr_is_none(init)) { pass NIL; }
         drop assign_expr(x, st, init, d);
         drop state_mark(st, id.index);
@@ -621,7 +623,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
         // the whole of how the taint is cleared. The early-exit form falls out of
         // this for free: a `then` arm that leaves contributes nothing to the merge,
         // so what survives is the else arm's state, checked and all.
-        ErrTest:et = relay err_test_of(x, raw stmt_cond(s));
+        ErrTest:et = raw err_test_of(x, raw stmt_cond(s));
 
         AssignState:a = raw state_copy(st);
         if (et.found) {
@@ -639,8 +641,8 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
         // is the untouched copy, so the intersection below is exactly "assigned
         // before the `if` as well" — which is why a one-armed `if` cannot make
         // anything definitely assigned.
-        drop state_merge(st, a, relay stmt_exits(x, then_id, raw ASSIGN_DEPTH()),
-                         b, relay stmt_exits(x, else_id, raw ASSIGN_DEPTH()));
+        drop state_merge(st, a, raw stmt_exits(x, then_id, raw ASSIGN_DEPTH()),
+                         b, raw stmt_exits(x, else_id, raw ASSIGN_DEPTH()));
         pass NIL;
     }
 
@@ -649,12 +651,12 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
     // it assigns does not survive the loop.
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop assign_expr(x, st, raw stmt_cond(s), d);
-        drop assign_loop_body(x, st, relay stmt_body(x.ast, s), d);
+        drop assign_loop_body(x, st, raw stmt_body(x.ast, s), d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
-        drop assign_expr(x, st, relay stmt_for_iter(x.ast, s), d);
-        drop assign_loop_body(x, st, relay stmt_for_body(x.ast, s), d);
+        drop assign_expr(x, st, raw stmt_for_iter(x.ast, s), d);
+        drop assign_loop_body(x, st, raw stmt_for_body(x.ast, s), d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
@@ -673,9 +675,9 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
     // something nobody has asked for.
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop assign_expr(x, st, raw stmt_cond(s), d);
-        drop assign_loop_body(x, st, relay stmt_when_body(x.ast, s), d);
-        drop assign_loop_body(x, st, relay stmt_when_then(x.ast, s), d);
-        drop assign_loop_body(x, st, relay stmt_when_end(x.ast, s), d);
+        drop assign_loop_body(x, st, raw stmt_when_body(x.ast, s), d);
+        drop assign_loop_body(x, st, raw stmt_when_then(x.ast, s), d);
+        drop assign_loop_body(x, st, raw stmt_when_end(x.ast, s), d);
         pass NIL;
     }
 
@@ -730,7 +732,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
 };
 
 func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
-                              int32:count, int32:depth) {
+                              int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
         StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
@@ -762,7 +764,7 @@ func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
 // is set by an assignment statement and by `$$m`, and neither chains: one walk
 // visits every assignment in the body whatever its order or nesting, so the second
 // walk starts from the answer.
-func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) {
+func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) never fails {
     if (raw stmt_is_none(body)) { pass NIL; }
 
     bool:saved = x.quiet;
@@ -778,18 +780,18 @@ func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth
     pass NIL;
 };
 
-func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop assign_expr(x, st, relay stmt_counted_arg(x.ast, s, i), depth);
+        drop assign_expr(x, st, raw stmt_counted_arg(x.ast, s, i), depth);
         i = i + 1i32;
     }
     drop assign_loop_body(x, st, raw stmt_counted_body(s), depth);
     pass NIL;
 };
 
-func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
+func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = dst.must[i] && other.must[i];
@@ -803,7 +805,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
     pass NIL;
 };
 
-func:state_take_must = NIL(AssignState:dst, AssignState:src) {
+func:state_take_must = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = src.must[i];
@@ -828,17 +830,17 @@ func:state_take_must = NIL(AssignState:dst, AssignState:src) {
 // `pick_covers_all` takes no `DiagList` and therefore cannot report. Two analyses
 // looking at one `pick` must not both be able to speak about it, or the same
 // construct produces two findings a reader cannot tell apart.
-func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count) {
-    pass (relay pick_covers_all(x.ast, x.types, x.etypes, selector, start, count));
+func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count) never fails {
+    pass (raw pick_covers_all(x.ast, x.types, x.etypes, selector, start, count));
 };
 
-func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     drop assign_expr(x, st, raw pick_selector(s), depth);
-    ErrTest:et = relay err_test_of(x, raw pick_selector(s));
+    ErrTest:et = raw err_test_of(x, raw pick_selector(s));
 
     int32:start = raw pick_arm_start(s);
     int32:count = raw pick_arm_count(s);
-    bool:total = relay pick_is_total(x, raw pick_selector(s), start, count);
+    bool:total = raw pick_is_total(x, raw pick_selector(s), start, count);
 
     AssignState:acc = raw state_new(st.count);
     bool:seen = false;
@@ -855,8 +857,8 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
 
     int32:i = 0i32;
     while (i < count) {
-        StmtId:aid = relay pick_arm_at(x.ast, start, i);
-        StmtNode:arm = relay ast_stmt(x.ast, aid);
+        StmtId:aid = raw pick_arm_at(x.ast, start, i);
+        StmtNode:arm = raw ast_stmt(x.ast, aid);
 
         AssignState:one = raw state_copy(pristine);
         if (et.found) {
@@ -866,7 +868,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
             // idiomatic form, which is the opposite of what an analysis should do.
             int32:want = 2i32;
             if (et.then_checked) { want = 1i32; }
-            if ((relay arm_bool(x.ast, arm)) == want) {
+            if ((raw arm_bool(x.ast, arm)) == want) {
                 drop state_mark_checked(one, et.slot);
             }
         }
@@ -874,7 +876,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
         drop assign_stmt(x, one, raw arm_body(arm), depth);
         drop state_absorb_may(mayacc, one);
 
-        if (!(relay stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()))) {
+        if (!(raw stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()))) {
             if (seen) {
                 drop state_intersect_must(acc, one);
             } else {
@@ -901,7 +903,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
 
 // --- assignment --------------------------------------------------------------
 
-func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
 
@@ -910,7 +912,7 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     drop assign_expr(x, st, val, depth);
 
     if (raw expr_is_none(tgt)) { pass NIL; }
-    ExprNode:tn = relay ast_expr(x.ast, tgt);
+    ExprNode:tn = raw ast_expr(x.ast, tgt);
 
     // A BARE NAME IS THE ONLY THING THAT ASSIGNS THE WHOLE BINDING. `h.field = v`
     // and `arr[i] = v` write a PART, and reaching the part means the aggregate has
@@ -954,7 +956,7 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     // it is checked here because this is where an assignment to one arrives.
     if (sym.origin_kind == (raw SYM_DECL())) {
         DeclId:did = DeclId{ index: sym.origin };
-        DeclNode:gd = relay ast_decl(x.ast, did);
+        DeclNode:gd = raw ast_decl(x.ast, did);
         if (gd.kind == DeclKind.DeclGlobalDecl) {
             if (((raw global_quals(gd)) & (raw QUAL_CONST())) != 0i32) {
                 drop assign_err(x, raw ASSIGN_IMMUTABLE(),
@@ -971,9 +973,9 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     // point: `if (c) { k = 1i32; } k = 2i32;` writes twice on the path that took
     // the branch, and `must` says nothing about it.
     StmtId:decl = StmtId{ index: sym.origin };
-    StmtNode:dnode = relay ast_stmt(x.ast, decl);
+    StmtNode:dnode = raw ast_stmt(x.ast, decl);
     if (dnode.kind == StmtKind.StmtVarDeclStmt) {
-        if (((relay stmt_quals(x.ast, dnode)) & (raw QUAL_FIXED())) != 0i32) {
+        if (((raw stmt_quals(x.ast, dnode)) & (raw QUAL_FIXED())) != 0i32) {
             if (raw state_may(st, sym.origin)) {
                 drop assign_err(x, raw ASSIGN_IMMUTABLE(),
                     "a `fixed` binding is assigned once and this may be the second time; drop `fixed` if it is meant to change",
@@ -1001,9 +1003,9 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
 // `@` is plain address-of with nothing in it that says which way the data will
 // travel. So both are reads, and `$$m` is the explicit, greppable way to say
 // otherwise — which is the shape every other opt-out in this language has.
-func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
+func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
 
     if (depth <= 0i32) {
         drop assign_err(x, raw ASSIGN_TOO_DEEP(),
@@ -1118,7 +1120,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
                 arenaish = true;
             }
             if (arenaish) {
-                string:mname = relay intern_get(x.interns, n.payload =>! int32);
+                string:mname = raw intern_get(x.interns, n.payload =>! int32);
                 if (raw string_eq(mname, "destroy")) {
                     drop invalidate_place(x, st, recv, true);
                 }
@@ -1172,7 +1174,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
 };
 
 func:assign_expr_window = NIL(Assign->:x, AssignState:st, int32:start,
-                              int32:count, int32:depth) {
+                              int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -1183,7 +1185,7 @@ func:assign_expr_window = NIL(Assign->:x, AssignState:st, int32:start,
 };
 
 // ONE MENTION OF A BINDING, READ.
-func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
+func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     if (n.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, n.a);
 
@@ -1221,12 +1223,12 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
 // `$$m place` — the binding under the place becomes assigned, because the callee
 // this is handed to may write it. The place itself is NOT walked as a read, which
 // is the point.
-func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:depth) {
+func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:depth) never fails {
     if (raw expr_is_none(place)) { pass NIL; }
-    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
 
     // A DERIVED PLACE STILL NEEDS ITS BASE. `$$m rec.field` writes one field and
     // reads `rec` to find it, so the base is a read and only a bare name is a
@@ -1278,14 +1280,14 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
 // use-after-free, seal-after-free, leak-at-exit) falls out of the move
 // machinery and the exit registry with no new state.
 func:wildx_transition = NIL(Assign->:x, AssignState:st, ExprNode:n,
-                            int32:start, int32:count) {
+                            int32:start, int32:count) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass NIL; }
-    ExprNode:cnode = relay ast_expr(x.ast, c);
+    ExprNode:cnode = raw ast_expr(x.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (cnode.a != 0i32) { pass NIL; }
     if (count < 1i32) { pass NIL; }
-    string:name = relay intern_get(x.interns, raw expr_name(cnode) =>! int32);
+    string:name = raw intern_get(x.interns, raw expr_name(cnode) =>! int32);
     ExprId:arg0 = ExprId{ index: raw ast_id_at(x.ast, start, 0i32) };
     int32:slot = raw binding_slot(x, arg0);
     if (slot < 0i32) { pass NIL; }
@@ -1296,7 +1298,7 @@ func:wildx_transition = NIL(Assign->:x, AssignState:st, ExprNode:n,
     }
     if (raw string_eq(name, "wildx_call")) {
         if (!(raw state_sealed_firm(st, slot))) {
-            ExprNode:an = relay ast_expr(x.ast, arg0);
+            ExprNode:an = raw ast_expr(x.ast, arg0);
             drop assign_err(x, raw WILDX_EXEC_UNSEALED(),
                 "this `wildx` page is executed before it is sealed (D-035): calling code on a writable page is exactly the state the seal transition exists to close. `wildx_seal` it first",
                 an.span);
@@ -1306,10 +1308,10 @@ func:wildx_transition = NIL(Assign->:x, AssignState:st, ExprNode:n,
     pass NIL;
 };
 
-func:callee_frees = bool(Assign->:x, ExprNode:n) {
+func:callee_frees = bool(Assign->:x, ExprNode:n) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cnode = relay ast_expr(x.ast, c);
+    ExprNode:cnode = raw ast_expr(x.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
 
     // A BARE-NAME BUILTIN RESOLVES TO NO SYMBOL, which is what tells it apart from
@@ -1317,7 +1319,7 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) {
     // and it is not this one.
     if (cnode.a != 0i32) { pass false; }
 
-    string:name = relay intern_get(x.interns, raw expr_name(cnode) =>! int32);
+    string:name = raw intern_get(x.interns, raw expr_name(cnode) =>! int32);
     if (raw string_eq(name, "dalloc")) { pass true; }
     if (raw string_eq(name, "wildx_free")) { pass true; }
     pass (raw string_eq(name, "ralloc"));
@@ -1330,12 +1332,12 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) {
 // the same complexity D-004 chose second-class borrows to avoid — and the
 // conservative answer refuses code that is fine rather than accepting code that is
 // not.
-func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed) {
+func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed) never fails {
     if (raw expr_is_none(place)) { pass NIL; }
-    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted)            { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, rn.a);
@@ -1364,8 +1366,8 @@ func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed
 // nothing reads it". `stack` and `wild` got their meaning from the escape rules in
 // 0.5.1, `fixed` from assignment in 0.5.2, and this one had nowhere to attach until
 // there was an ownership analysis to attach it to.
-func:check_qualifiers = NIL(Assign->:x, StmtNode:s) {
-    int32:q = relay stmt_quals(x.ast, s);
+func:check_qualifiers = NIL(Assign->:x, StmtNode:s) never fails {
+    int32:q = raw stmt_quals(x.ast, s);
     if ((q & (raw QUAL_NODROP())) == 0i32) { pass NIL; }
 
     int32:manual = (raw QUAL_WILD()) | (raw QUAL_WILDX());
@@ -1413,7 +1415,7 @@ pub struct:ErrTest = {
     bool:then_checked;   // does the TRUE branch prove the value is safe to read?
 };
 
-func:no_err_test = ErrTest() {
+func:no_err_test = ErrTest() never fails {
     ErrTest:t = ErrTest{ found: false, slot: 0i32, then_checked: false };
     pass t;
 };
@@ -1426,14 +1428,14 @@ func:no_err_test = ErrTest() {
 // behind it — so there is nothing else to recognise, and a spelling this does not
 // know simply fails to clear the taint rather than being mistaken for one that
 // does.
-func:err_test_of = ErrTest(Assign->:x, ExprId:cond) {
+func:err_test_of = ErrTest(Assign->:x, ExprId:cond) never fails {
     if (raw expr_is_none(cond)) { pass (raw no_err_test()); }
-    ExprNode:n = relay ast_expr(x.ast, cond);
+    ExprNode:n = raw ast_expr(x.ast, cond);
 
     // `!c` — the same test with the arms swapped.
     if (n.kind == ExprKind.ExprUnaryExpr) {
         if ((raw expr_op(n)) == TokenKind.OpBang) {
-            ErrTest:inner = relay err_test_of(x, raw expr_operand(n));
+            ErrTest:inner = raw err_test_of(x, raw expr_operand(n));
             if (!inner.found) { pass (raw no_err_test()); }
             ErrTest:flipped = ErrTest{ found: true, slot: inner.slot,
                                        then_checked: !inner.then_checked };
@@ -1443,10 +1445,10 @@ func:err_test_of = ErrTest(Assign->:x, ExprId:cond) {
     }
 
     if (n.kind != ExprKind.ExprMemberAccessExpr) { pass (raw no_err_test()); }
-    string:f = relay intern_get(x.interns, (raw expr_name(n)) =>! int32);
+    string:f = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
     if (!(raw string_eq(f, "is_error"))) { pass (raw no_err_test()); }
 
-    int32:slot = relay binding_slot(x, raw expr_operand(n));
+    int32:slot = raw binding_slot(x, raw expr_operand(n));
     if (slot < 0i32) { pass (raw no_err_test()); }
 
     // `r.is_error` being TRUE means the value is NOT safe, so the THEN branch is
@@ -1456,12 +1458,12 @@ func:err_test_of = ErrTest(Assign->:x, ExprId:cond) {
 };
 
 // The declaring statement of the binding a place expression is rooted at, or -1.
-func:binding_slot = int32(Assign->:x, ExprId:place) {
+func:binding_slot = int32(Assign->:x, ExprId:place) never fails {
     if (raw expr_is_none(place)) { pass (0i32 - 1i32); }
-    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted)            { pass (0i32 - 1i32); }
     if (raw expr_is_none(r.id)) { pass (0i32 - 1i32); }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (0i32 - 1i32); }
     if (rn.a == 0i32) { pass (0i32 - 1i32); }
     Symbol:s = raw symtab_get(x.tab, rn.a);
@@ -1476,8 +1478,8 @@ func:binding_slot = int32(Assign->:x, ExprId:place) {
 // and there is no way to have checked THAT temporary — the check would call `f` a
 // second time and get a different `Result`. So the idiom is to bind it, and the
 // binding is what this tracks.
-func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
-    string:f = relay intern_get(x.interns, (raw expr_name(n)) =>! int32);
+func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
+    string:f = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
     if (!(raw string_eq(f, "value"))) { pass NIL; }
 
     ExprId:base = raw expr_operand(n);
@@ -1491,9 +1493,9 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
     // untracked-binding posture: bind the Result to a local, check that. The
     // one documented exception stays: a call-rooted temporary (`f().value`)
     // cannot be checked at all, and binding it is the idiom.
-    ExprNode:basen = relay ast_expr(x.ast, base);
+    ExprNode:basen = raw ast_expr(x.ast, base);
     if (basen.kind != ExprKind.ExprIdentifierExpr) {
-        if (relay place_rooted_at_ident(x, base)) {
+        if (raw place_rooted_at_ident(x, base)) {
             drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
                 "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local, test `is_error` on that, or use `raw` to say the check is not wanted (D-007)",
                 n.span);
@@ -1501,7 +1503,7 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
         pass NIL;
     }
 
-    int32:slot = relay binding_slot(x, base);
+    int32:slot = raw binding_slot(x, base);
     if (slot < 0i32) {
         // A bare identifier that is not a tracked local: a PARAMETER'S Result
         // — unwitnessable here, same conservative answer.
@@ -1522,10 +1524,10 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
 // the member path) rather than at a call's temporary? The distinction decides
 // F-4's conservative refusal: an ident-rooted path COULD have been bound and
 // checked; a temporary could not.
-func:place_rooted_at_ident = bool(Assign->:x, ExprId:place) {
-    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+func:place_rooted_at_ident = bool(Assign->:x, ExprId:place) never fails {
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted)            { pass false; }
     if (raw expr_is_none(r.id)) { pass false; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     pass (rn.kind == ExprKind.ExprIdentifierExpr);
 };

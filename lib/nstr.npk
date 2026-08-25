@@ -18,7 +18,7 @@ mod:nstr;
 
 // Byte equality. The floor has `string_equals` for generated code; this is the
 // same answer as library code, and the test holds the two to each other.
-pub func:nstr_eq = bool(string:a, string:b) {
+pub func:nstr_eq = bool(string:a, string:b) never fails {
     if (a.len != b.len) { pass false; }
     int64:i = 0i64;
     while (i < a.len) {
@@ -28,7 +28,7 @@ pub func:nstr_eq = bool(string:a, string:b) {
     pass true;
 };
 
-pub func:nstr_starts_with = bool(string:s, string:prefix) {
+pub func:nstr_starts_with = bool(string:s, string:prefix) never fails {
     if (prefix.len > s.len) { pass false; }
     int64:i = 0i64;
     while (i < prefix.len) {
@@ -38,7 +38,7 @@ pub func:nstr_starts_with = bool(string:s, string:prefix) {
     pass true;
 };
 
-pub func:nstr_ends_with = bool(string:s, string:suffix) {
+pub func:nstr_ends_with = bool(string:s, string:suffix) never fails {
     if (suffix.len > s.len) { pass false; }
     int64:base = s.len - suffix.len;
     int64:i = 0i64;
@@ -52,7 +52,7 @@ pub func:nstr_ends_with = bool(string:s, string:suffix) {
 // First byte offset of `needle`, or -1. An empty needle is AT 0, which is the
 // convention every search API that came before this one settled on — differing
 // from it would be a quirk with no purpose.
-pub func:nstr_index_of = int64(string:s, string:needle) {
+pub func:nstr_index_of = int64(string:s, string:needle) never fails {
     if (needle.len == 0i64) { pass 0i64; }
     if (needle.len > s.len) { pass (0i64 - 1i64); }
     int64:last = s.len - needle.len;
@@ -70,7 +70,7 @@ pub func:nstr_index_of = int64(string:s, string:needle) {
     pass (0i64 - 1i64);
 };
 
-pub func:nstr_contains = bool(string:s, string:needle) {
+pub func:nstr_contains = bool(string:s, string:needle) never fails {
     pass ((raw nstr_index_of(s, needle)) >= 0i64);
 };
 

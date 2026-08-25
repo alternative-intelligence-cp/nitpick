@@ -160,7 +160,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  BoundTable->:bounds,
                                  InstanceTable->:instances,
                                  FnInstTable->:fninsts,
-                                 ExprTypes->:expr_types) {
+                                 ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false,
@@ -181,7 +181,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
 // "there is no type named `T`" inside the one declaration where `T` is guaranteed
 // to exist. Context that every resolution needs belongs to the constructor, not
 // to whoever remembers.
-pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
+pub func:etyper_resolver = TypeResolver(ExprTyper->:e) never fails {
     TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags, e.instances);
     r.generics = e.generics;
     r.enclosing = e.enclosing;
@@ -194,7 +194,7 @@ pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
     pass r;
 };
 
-pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
+pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) never fails {
     drop diaglist_push(e.diags, raw diag_error(code, message, at));
     pass 0i32;
 };
@@ -211,12 +211,12 @@ pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
 // ONE HELPER FOR ALL FOUR, because it is one rule. Written at each site it would be
 // four chances for one to drift, and the drift had already happened in the form of
 // nobody writing it anywhere.
-pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
+pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    if (relay expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
-    ExprNode:n = relay ast_expr(e.ast, id);
-    string:m1 = relay string_concat("`", what);
-    string:m2 = relay string_concat(m1, "` needs a place — a name, a field or element of one, or what a pointer points at — and this expression is a value with no address");
+    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    string:m1 = raw string_concat("`", what);
+    string:m2 = raw string_concat(m1, "` needs a place — a name, a field or element of one, or what a pointer points at — and this expression is a value with no address");
     drop te_error(e, raw TYPE_NOT_A_PLACE(), m2, n.span);
     pass NIL;
 };
@@ -246,7 +246,7 @@ pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
 // literal takes its type from context, so `x + 1` where `x` is `int64` has two
 // `int64` operands by the time they get here. Nothing is converted; the literal
 // simply had no width of its own to begin with.
-pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) {
+pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) never fails {
     if (a == b) { pass a; }
     // FUNCTION TYPES COMPARE STRUCTURALLY (0.9.6). `tt_func` interns the
     // parameter window's START INDEX — an allocation artifact — so two
@@ -259,7 +259,7 @@ pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) {
 
 // Structural agreement for the window-carrying callable kinds; everything else
 // is its interned id, exactly as before.
-pub func:types_agree = bool(ExprTyper->:e, int32:a, int32:b) {
+pub func:types_agree = bool(ExprTyper->:e, int32:a, int32:b) never fails {
     if (a == b) { pass true; }
     int32:ka = raw type_kind(e.types, a);
     if (ka != (raw type_kind(e.types, b))) { pass false; }
@@ -268,15 +268,15 @@ pub func:types_agree = bool(ExprTyper->:e, int32:a, int32:b) {
     pass false;
 };
 
-func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) {
+func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) never fails {
     Type:ta = raw tt_get(e.types, a);
     Type:tb = raw tt_get(e.types, b);
     if (ta.c != tb.c) { pass false; }
     if (!(raw types_agree(e, ta.a, tb.a))) { pass false; }
     int32:i = 0i32;
     while (i < ta.c) {
-        int32:pa = relay ast_id_at(e.ast, ta.b, i);
-        int32:pb = relay ast_id_at(e.ast, tb.b, i);
+        int32:pa = raw ast_id_at(e.ast, ta.b, i);
+        int32:pb = raw ast_id_at(e.ast, tb.b, i);
         if (!(raw types_agree(e, pa, pb))) { pass false; }
         i = i + 1i32;
     }
@@ -296,13 +296,13 @@ func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) {
 // while carrying one, and `1.5tfp256` typed as a `flt256` because the float test
 // had swept `tfp` in with the floats. The kind now comes from the generated
 // table, so a suffix cannot be silently unclassified.
-func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
+func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) never fails {
     NumWidth:w = raw expr_num_width(n);
     int32:kind = raw num_width_kind(w);
     int32:bits = raw num_width_bits(w);
 
     if (kind == (raw TY_INT())) {
-        pass (relay lit_ranged(e, n,
+        pass (raw lit_ranged(e, n,
                   raw tt_int(e.types, bits, raw num_width_signed(w))));
     }
     if (kind == (raw TY_FLOAT())) {
@@ -310,7 +310,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
         // cannot even be spelled in the IR without soft-float semantics this
         // implementation deliberately does not provide).
         if (bits == 128i32) {
-            pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+            pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
                 "`flt128` is a storage format (D-143): it holds and moves values but has no literals, arithmetic, or comparison",
                 n.span));
         }
@@ -321,7 +321,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
         // double rounding can differ and the value would be implementation-
         // defined, which a literal must never be.
         if (bits == 32i32) {
-            string:txt = relay intern_get(e.interns, n.payload =>! int32);
+            string:txt = raw intern_get(e.interns, n.payload =>! int32);
             int32:sig = 0i32;
             bool:lead = true;
             int64:ti = 0i64;
@@ -343,22 +343,22 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
                 ti = ti + 1i64;
             }
             if (sig > 15i32) {
-                pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+                pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
                     "a `flt32` literal carries at most 15 significant digits (D-143); shorten it, or write it as a `flt64` literal (`…f64`) and narrow it with `=>!` — `flt64 => flt32` is a lossy cast",
                     n.span));
             }
         }
         pass (raw tt_float(e.types, bits));
     }
-    if (kind == (raw TY_TBB()))   { pass (relay lit_ranged(e, n, raw tt_tbb(e.types, bits))); }
-    if (kind == (raw TY_CHAR()))  { pass (relay lit_ranged(e, n, raw tt_char(e.types, bits))); }
+    if (kind == (raw TY_TBB()))   { pass (raw lit_ranged(e, n, raw tt_tbb(e.types, bits))); }
+    if (kind == (raw TY_CHAR()))  { pass (raw lit_ranged(e, n, raw tt_char(e.types, bits))); }
 
     // A SUFFIX IS PRESENT AND NAMES A TYPE NO RUNG SUPPLIES YET — `frac`, `tfp`,
     // `dim256`. Saying "no suffix" would be false and would send the reader to
     // add one they already wrote (D-085: the parser never restricts, so this is
     // where the rung is named).
     if (w != NumWidth.WNone) {
-        pass (relay te_error(e, raw TYPE_UNKNOWN(),
+        pass (raw te_error(e, raw TYPE_UNKNOWN(),
             "this literal's type is not available at this rung yet",
             n.span));
     }
@@ -370,7 +370,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     int32:want = raw expected_value(e);
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
-            pass (relay lit_ranged(e, n, want));
+            pass (raw lit_ranged(e, n, want));
         }
     }
     // TWO REFUSALS, SAID APART (1.0.8). With no context the literal is homeless;
@@ -379,19 +379,19 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     // and "write `42i32`" was advice the next check refused: an unsuffixed
     // literal takes its width only from a slot of its own family.
     if (want != 0i32) {
-        string:w1 = relay string_concat("this unsuffixed literal sits in a `",
-                        relay type_display(e.types, e.interns, want));
-        string:w2 = relay string_concat(w1,
+        string:w1 = raw string_concat("this unsuffixed literal sits in a `",
+                        raw type_display(e.types, e.interns, want));
+        string:w2 = raw string_concat(w1,
             "` slot, and a literal takes its width only from a slot of its own family; write a `");
-        string:w3 = relay string_concat(w2, relay type_display(e.types, e.interns, want));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(w3, "` value, or change the slot"), n.span));
+        string:w3 = raw string_concat(w2, raw type_display(e.types, e.interns, want));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(w3, "` value, or change the slot"), n.span));
     }
-    string:m = relay string_concat(
+    string:m = raw string_concat(
         "this literal has no width suffix and nothing here says what it should be; write `",
         example);
-    pass (relay te_error(e, raw TYPE_UNKNOWN(),
-        relay string_concat(m, "` or give the surrounding expression a type"),
+    pass (raw te_error(e, raw TYPE_UNKNOWN(),
+        raw string_concat(m, "` or give the surrounding expression a type"),
         n.span));
 };
 
@@ -419,7 +419,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
 // literal) -- it is spelled in a balanced base or constructed arithmetically,
 // the same rule the 64-bit envelope edge and the wide integers already live
 // under.
-func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) {
+func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) never fails {
     int64:v = n.payload;
     int32:k = raw type_kind(e.types, ty);
     int32:bits = raw type_int_bits(e.types, ty);
@@ -449,7 +449,7 @@ func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) {
     if (k == (raw TY_CHAR())) {
         if (bits == 32i32) {
             if ((v >= 55296i64) && (v <= 57343i64)) {
-                pass (relay te_error(e, raw TYPE_LIT_RANGE(),
+                pass (raw te_error(e, raw TYPE_LIT_RANGE(),
                     "this `char32` literal is a surrogate code point (U+D800..U+DFFF), which is not a Unicode scalar value",
                     n.span));
             }
@@ -462,10 +462,10 @@ func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) {
 
     if (check) {
         if ((v < lo) || (v > hi)) {
-            string:m1 = relay string_concat("the value of this literal does not fit `",
-                relay type_display(e.types, e.interns, ty));
-            pass (relay te_error(e, raw TYPE_LIT_RANGE(),
-                relay string_concat(m1,
+            string:m1 = raw string_concat("the value of this literal does not fit `",
+                raw type_display(e.types, e.interns, ty));
+            pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                raw string_concat(m1,
                     "` (D-148): the number in the program would not be the number written; a signed type's most negative value is spelled in a balanced base or constructed arithmetically"),
                 n.span));
         }
@@ -476,7 +476,7 @@ func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) {
 // An unsuffixed literal may only take a context type of its OWN family: `42` can
 // become an `int64` and never a `flt64`, because `42` and `42.0` are different
 // tokens and the one that was written is the one that counts.
-func:kind_wanted = int32(ExprTyper->:_~e, string:example) {
+func:kind_wanted = int32(ExprTyper->:_~e, string:example) never fails {
     if (raw string_eq(example, "42i32")) { pass (raw TY_INT()); }
     pass (raw TY_FLOAT());
 };
@@ -497,7 +497,7 @@ func:kind_wanted = int32(ExprTyper->:_~e, string:example) {
 // before this: it typed as the unit value everywhere, so `int32?:a = NIL;` — the
 // spelling the prototype's own `test_nil_optional.npk` is built out of — reported
 // a mismatch against the very type it constructs.
-func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
+func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
     int64:which = n.payload;
     // `ERR` takes the WIDTH OF ITS SLOT (0.9.5): the sentinel is a state every
     // tbb width has, and `tbb64:e = ERR;` typing as tbb32 was a mismatch about
@@ -531,7 +531,7 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
             pass want;
         }
     }
-    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+    pass (raw te_error(e, raw TYPE_UNKNOWN(),
         "`NULL` is valid only where a pointer type is expected, and nothing here says which pointer",
         n.span));
 };
@@ -540,7 +540,7 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
 
 // Arithmetic: `+ - * / %`. NUMBERS ONLY, and `type_is_numeric` is deliberately
 // narrow (0.4.0).
-pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
+pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) never fails {
     // A type that already failed produces no second complaint.
     if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
@@ -559,10 +559,10 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     // to "is not a number, so it has no arithmetic", which contradicted the
     // branch above it and blamed the type rather than the mixing.
     if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
-        pass (relay te_tbb_mixed(e, at, lt, rt));
+        pass (raw te_tbb_mixed(e, at, lt, rt));
     }
     if ((raw type_kind(e.types, rt)) == (raw TY_TBB())) {
-        pass (relay te_tbb_mixed(e, at, rt, lt));
+        pass (raw te_tbb_mixed(e, at, rt, lt));
     }
 
     // D-143: `flt128` stores and moves; it does not compute. (Soft-float
@@ -570,49 +570,49 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     // recorded, not deferred.)
     if ((raw type_kind(e.types, lt)) == (raw TY_FLOAT())) {
         if ((raw type_int_bits(e.types, lt)) == 128i32) {
-            pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+            pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
                 "`flt128` is a storage format (D-143): it holds and moves values but has no arithmetic",
                 at));
         }
     }
     if (!(raw type_is_numeric(e.types, lt))) {
-        pass (relay te_operand_error(e, at, lt));
+        pass (raw te_operand_error(e, at, lt));
     }
     if (!(raw type_is_numeric(e.types, rt))) {
-        pass (relay te_operand_error(e, at, rt));
+        pass (raw te_operand_error(e, at, rt));
     }
 
     int32:common = raw unify(e, lt, rt);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, at, lt, rt));
+        pass (raw te_mismatch(e, at, lt, rt));
     }
     pass common;
 };
 
-func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) {
-    string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, tbb));
-    string:m2 = relay string_concat(m1, "` computes only with another `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, tbb));
-    string:m4 = relay string_concat(m3, "`: a `tbb`'s arithmetic carries ERR, stickiness and saturation (D-008), so it does not mix with `");
-    string:m5 = relay string_concat(m4, relay type_display(e.types, e.interns, other));
-    string:m6 = relay string_concat(m5, "`; cast the other operand to the same `tbb` width");
-    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m6, at));
+func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) never fails {
+    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, tbb));
+    string:m2 = raw string_concat(m1, "` computes only with another `");
+    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, tbb));
+    string:m4 = raw string_concat(m3, "`: a `tbb`'s arithmetic carries ERR, stickiness and saturation (D-008), so it does not mix with `");
+    string:m5 = raw string_concat(m4, raw type_display(e.types, e.interns, other));
+    string:m6 = raw string_concat(m5, "`; cast the other operand to the same `tbb` width");
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m6, at));
 };
 
 // The message names the TYPE that made it wrong, and says why that type is not a
 // number — because "./invalid operand" leaves the reader to work out which of two
 // familiar-looking things the compiler objected to.
-func:te_operand_error = int32(ExprTyper->:e, Span:at, int32:t) {
-    string:d = relay type_display(e.types, e.interns, t);
-    string:m1 = relay string_concat("`", d);
-    string:m2 = relay string_concat(m1, "` is not a number, so it has no arithmetic: ");
-    string:m3 = relay string_concat(m2, relay why_not_numeric(e, t));
-    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m3, at));
+func:te_operand_error = int32(ExprTyper->:e, Span:at, int32:t) never fails {
+    string:d = raw type_display(e.types, e.interns, t);
+    string:m1 = raw string_concat("`", d);
+    string:m2 = raw string_concat(m1, "` is not a number, so it has no arithmetic: ");
+    string:m3 = raw string_concat(m2, raw why_not_numeric(e, t));
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m3, at));
 };
 
 // Each of these is representationally an integer, so the reason has to be stated
 // or the diagnostic looks arbitrary.
-pub func:why_not_numeric = string(ExprTyper->:e, int32:t) {
+pub func:why_not_numeric = string(ExprTyper->:e, int32:t) never fails {
     int32:k = raw type_kind(e.types, t);
     if (k == (raw TY_BOOL())) {
         pass "a `bool` is two values, not a small integer";
@@ -632,32 +632,32 @@ pub func:why_not_numeric = string(ExprTyper->:e, int32:t) {
     pass "it is not a numeric type";
 };
 
-pub func:te_mismatch = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
-    string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, lt));
-    string:m2 = relay string_concat(m1, "` and `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, rt));
-    string:m4 = relay string_concat(m3, "` are different types; write the cast you mean");
+pub func:te_mismatch = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) never fails {
+    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, lt));
+    string:m2 = raw string_concat(m1, "` and `");
+    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, rt));
+    string:m4 = raw string_concat(m3, "` are different types; write the cast you mean");
     // Two integers differing only in width is the case that looks like it ought
     // to work, so it gets the reason rather than just the refusal.
     if (raw type_is_integer(e.types, lt)) {
         if (raw type_is_integer(e.types, rt)) {
             if ((raw type_is_signed(e.types, lt)) == (raw type_is_signed(e.types, rt))) {
-                m4 = relay string_concat(m4,
+                m4 = raw string_concat(m4,
                     "; a widening would decide which width this operation happens in, and that decision must be visible in the source rather than following from the operands");
             } else {
-                m4 = relay string_concat(m4,
+                m4 = raw string_concat(m4,
                     "; signed and unsigned are not two sizes of one thing, and converting between them maps every negative value onto a large positive one");
             }
         }
     }
-    pass (relay te_error(e, raw TYPE_MISMATCH(), m4, at));
+    pass (raw te_error(e, raw TYPE_MISMATCH(), m4, at));
 };
 
 // Comparison: `== != < <= > >= <=>`. Wider than arithmetic — the types that
 // COMPARE but do not compute are exactly `tbb` and the kernel identifiers, and
 // comparison is what they are for.
 func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
-                             bool:ordered) {
+                             bool:ordered) never fails {
     if (raw type_is_invalid(e.types, lt)) { pass (e.types.t_bool); }
     if (raw type_is_invalid(e.types, rt)) { pass (e.types.t_bool); }
 
@@ -682,9 +682,9 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
     // ordinary; `<` on either is a question nobody means to ask.
     if (ordered) {
         if (!(raw type_is_ordered(e.types, common))) {
-            string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, common));
-            string:m2 = relay string_concat(m1, "` has no ordering: ");
-            m2 = relay string_concat(m2, relay why_not_ordered(e, common));
+            string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, common));
+            string:m2 = raw string_concat(m1, "` has no ordering: ");
+            m2 = raw string_concat(m2, raw why_not_ordered(e, common));
             drop te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span);
         }
     } else {
@@ -696,9 +696,9 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
         // Nitpick); the refusal is the checker's now. `x == NIL` is the one
         // aggregate equality that stays, because it asks something unambiguous.
         if (!(raw equatable(e, n, common))) {
-            string:e1 = relay string_concat("`",
-                            relay type_display(e.types, e.interns, common));
-            string:e2 = relay string_concat(e1,
+            string:e1 = raw string_concat("`",
+                            raw type_display(e.types, e.interns, common));
+            string:e2 = raw string_concat(e1,
                 "` has no built-in `==`: derive or implement `Eq` and compare with `a.eq(b)`");
             drop te_error(e, raw TYPE_NOT_COMPARABLE(), e2, n.span);
         }
@@ -713,7 +713,7 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
 // The `NIL` side is found on the AST, not by type: an unsuffixed `NIL` in a
 // comparison takes the `Optional`'s type by context (D-092), so by the time this
 // runs neither operand's TYPE is `TY_NIL` any more.
-func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) {
+func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) never fails {
     int32:k = raw type_kind(e.types, common);
     if (k == (raw TY_STRUCT())) { pass false; }
     if (k == (raw TY_ARRAY()))  { pass false; }
@@ -728,7 +728,7 @@ func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) {
     if (k == (raw TY_ENUM())) {
         // A payload-less enum is its tag — an integer compare; one that carries
         // a payload is an aggregate, and `Eq` is how its payloads compare.
-        pass (!(relay enum_has_payload(e.ast, e.types, common)));
+        pass (!(raw enum_has_payload(e.ast, e.types, common)));
     }
     pass true;
 };
@@ -736,13 +736,13 @@ func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) {
 // The `NIL` sentinel written as such — `ExprSentinelLiteral` with payload 0
 // (NULL and ERR are the other two, with non-zero payloads). Mirrors the
 // backend's `expr_is_nil_literal`, so both sides admit the same `== NIL`.
-func:expr_is_nil_lit = bool(ExprTyper->:e, ExprId:eid) {
-    ExprNode:en = relay ast_expr(e.ast, eid);
+func:expr_is_nil_lit = bool(ExprTyper->:e, ExprId:eid) never fails {
+    ExprNode:en = raw ast_expr(e.ast, eid);
     if (en.kind != ExprKind.ExprSentinelLiteral) { pass false; }
     pass (en.payload == 0i64);
 };
 
-pub func:why_not_ordered = string(ExprTyper->:e, int32:t) {
+pub func:why_not_ordered = string(ExprTyper->:e, int32:t) never fails {
     int32:k = raw type_kind(e.types, t);
     if (k == (raw TY_BOOL())) {
         pass "`false < true` is an accident of representation, not a fact about booleans";
@@ -759,18 +759,18 @@ pub func:why_not_ordered = string(ExprTyper->:e, int32:t) {
 // `&& || !` take `bool` AND NOTHING ELSE. There is no truthiness: an integer is
 // not a condition, a pointer is not a condition, and `if (n)` is not a shorthand
 // for `if (n != 0i32)`.
-func:type_logical = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+func:type_logical = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) never fails {
     drop require_bool(e, lt, n.span);
     drop require_bool(e, rt, n.span);
     pass (e.types.t_bool);
 };
 
-pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) {
+pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) never fails {
     if (raw type_is_invalid(e.types, t)) { pass NIL; }
     if (t == e.types.t_bool) { pass NIL; }
-    string:m1 = relay string_concat("this must be a `bool`, and is `",
-                                    relay type_display(e.types, e.interns, t));
-    string:m2 = relay string_concat(m1,
+    string:m1 = raw string_concat("this must be a `bool`, and is `",
+                                    raw type_display(e.types, e.interns, t));
+    string:m2 = raw string_concat(m1,
         "`; there is no truthiness in Nitpick, so write the comparison you mean");
     drop te_error(e, raw TYPE_MISMATCH(), m2, at);
     pass NIL;
@@ -778,65 +778,65 @@ pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) {
 
 // Bitwise `& | ^ << >>`: INTEGERS ONLY. Not `bool` — `&&` is the logical
 // operator and a bitwise `&` on two booleans is someone reaching for it.
-pub func:type_bitwise = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
+pub func:type_bitwise = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) never fails {
     if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
 
     if (!(raw type_is_integer(e.types, lt))) {
-        pass (relay te_bitwise_error(e, at, lt));
+        pass (raw te_bitwise_error(e, at, lt));
     }
     if (!(raw type_is_integer(e.types, rt))) {
-        pass (relay te_bitwise_error(e, at, rt));
+        pass (raw te_bitwise_error(e, at, rt));
     }
     int32:common = raw unify(e, lt, rt);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, at, lt, rt));
+        pass (raw te_mismatch(e, at, lt, rt));
     }
     pass common;
 };
 
-func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) {
-    string:d = relay type_display(e.types, e.interns, t);
-    string:m1 = relay string_concat("`", d);
-    string:m2 = relay string_concat(m1, "` has no bitwise operations");
+func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) never fails {
+    string:d = raw type_display(e.types, e.interns, t);
+    string:m1 = raw string_concat("`", d);
+    string:m2 = raw string_concat(m1, "` has no bitwise operations");
     if (t == e.types.t_bool) {
-        m2 = relay string_concat(m2, "; `!`, `&&` and `||` are the logical operators");
+        m2 = raw string_concat(m2, "; `!`, `&&` and `||` are the logical operators");
     }
-    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
 };
 
 // `++` / `--` are STRUCK at parse (D-174) — the parser refuses them by name
 // before the checker runs, so this never fires on a clean program. It stays
 // because `ExprPostfixExpr` must be typed (`check_kinds_typed`): numbers only,
 // the same rule as `+`, so a stray node reached defensively still types honestly.
-func:type_postfix = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
+func:type_postfix = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if (t == 0i32) { pass 0i32; }
     if (!(raw type_is_numeric(e.types, t))) {
-        pass (relay te_operand_error(e, n.span, t));
+        pass (raw te_operand_error(e, n.span, t));
     }
     pass t;
 };
 
 // `<-p` — full dereference. The arrow points back because it brings the value
 // back (the blueprint reading), and the type is what it points at.
-func:type_deref = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
+func:type_deref = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if (t == 0i32) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_POINTER())) {
-        string:m1 = relay string_concat("`<-` needs a pointer, and this is `",
-                                        relay type_display(e.types, e.interns, t));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-                             relay string_concat(m1, "`"), n.span));
+        string:m1 = raw string_concat("`<-` needs a pointer, and this is `",
+                                        raw type_display(e.types, e.interns, t));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                             raw string_concat(m1, "`"), n.span));
     }
     int32:pointee = raw type_elem(e.types, t);
     // DEREFERENCING AN `any->` IS REFUSED HERE, not left to the backend. The
     // pointee is type-erased, so there is no type to produce and no size to load;
     // `p => T` first is the only correct route (TYPE_REFERENCE §27).
     if ((raw type_kind(e.types, pointee)) == (raw TY_ANY())) {
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
             "`any->` is type-erased and cannot be dereferenced; cast it to a concrete pointer first",
             n.span));
     }
@@ -846,19 +846,19 @@ func:type_deref = int32(ExprTyper->:e, ExprNode:n) {
 // `lo..hi` / `lo...hi` (D-093). The endpoints must have a common type AND that
 // type must have an ordering, because a range whose ends cannot be ordered
 // describes no set of values.
-func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
+func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:saved = e.expected;
     int32:lo = 0i32;
     int32:hi = 0i32;
     if (raw takes_type_from_context(e, raw expr_lhs(n))) {
-        hi = relay type_of_expr(e, raw expr_rhs(n));
+        hi = raw type_of_expr(e, raw expr_rhs(n));
         if (hi != 0i32) { e.expected = hi; }
-        lo = relay type_of_expr(e, raw expr_lhs(n));
+        lo = raw type_of_expr(e, raw expr_lhs(n));
         e.expected = saved;
     } else {
-        lo = relay type_of_expr(e, raw expr_lhs(n));
+        lo = raw type_of_expr(e, raw expr_lhs(n));
         if (lo != 0i32) { e.expected = lo; }
-        hi = relay type_of_expr(e, raw expr_rhs(n));
+        hi = raw type_of_expr(e, raw expr_rhs(n));
         e.expected = saved;
     }
     if (raw type_is_invalid(e.types, lo)) { pass 0i32; }
@@ -866,22 +866,22 @@ func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
 
     int32:common = raw unify(e, lo, hi);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n.span, lo, hi));
+        pass (raw te_mismatch(e, n.span, lo, hi));
     }
     // D-145: a range normalizes to half-open at construction, which needs a
     // DISCRETE successor — floats have none (`hi + 1` means nothing at 1e300),
     // so floats may not form ranges.
     if ((raw type_kind(e.types, common)) == (raw TY_FLOAT())) {
-        pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+        pass (raw te_error(e, raw TYPE_FLOAT_RULES(),
             "floats may not form ranges (D-145): a range is half-open over a discrete successor, which a float does not have",
             n.span));
     }
     if (!(raw type_is_ordered(e.types, common))) {
-        string:m1 = relay string_concat("a range needs an ordered type, and `",
-                                        relay type_display(e.types, e.interns, common));
-        string:m2 = relay string_concat(m1, "` has none: ");
-        pass (relay te_error(e, raw TYPE_NOT_NUMERIC(),
-                             relay string_concat(m2, relay why_not_ordered(e, common)),
+        string:m1 = raw string_concat("a range needs an ordered type, and `",
+                                        raw type_display(e.types, e.interns, common));
+        string:m2 = raw string_concat(m1, "` has none: ");
+        pass (raw te_error(e, raw TYPE_NOT_NUMERIC(),
+                             raw string_concat(m2, raw why_not_ordered(e, common)),
                              n.span));
     }
     pass (raw tt_range(e.types, common,
@@ -892,21 +892,21 @@ func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
 // `is (c) : a : b`. The condition is a strict `bool` like every other condition,
 // and the two arms must have a common type — a conditional that produced one type
 // or another depending on which way it went would have no type at all.
-func:type_ternary = int32(ExprTyper->:e, ExprNode:n) {
-    int32:c = relay type_of_expr(e, raw expr_lhs(n));
+func:type_ternary = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:c = raw type_of_expr(e, raw expr_lhs(n));
     drop require_bool(e, c, n.span);
 
     int32:saved = e.expected;
-    int32:a = relay type_of_expr(e, raw expr_rhs(n));
+    int32:a = raw type_of_expr(e, raw expr_rhs(n));
     if (a != 0i32) { e.expected = a; }
-    int32:b = relay type_of_expr(e, raw expr_third(n));
+    int32:b = raw type_of_expr(e, raw expr_third(n));
     e.expected = saved;
 
     if (raw type_is_invalid(e.types, a)) { pass 0i32; }
     if (raw type_is_invalid(e.types, b)) { pass 0i32; }
     int32:common = raw unify(e, a, b);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n.span, a, b));
+        pass (raw te_mismatch(e, n.span, a, b));
     }
     pass common;
 };
@@ -914,18 +914,18 @@ func:type_ternary = int32(ExprTyper->:e, ExprNode:n) {
 // `expr ?| fallback` / `expr defaults fallback` — a scoped fallback for an entire
 // expression chain (OP_REFERENCE §0.1). Both sides must land on one type, since
 // the point is that the reader cannot tell which one they got.
-func:type_defaults = int32(ExprTyper->:e, ExprNode:n) {
+func:type_defaults = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:saved = e.expected;
-    int32:a = relay type_of_expr(e, raw expr_lhs(n));
+    int32:a = raw type_of_expr(e, raw expr_lhs(n));
     if (a != 0i32) { e.expected = a; }
-    int32:b = relay type_of_expr(e, raw expr_rhs(n));
+    int32:b = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     if (raw type_is_invalid(e.types, a)) { pass 0i32; }
     if (raw type_is_invalid(e.types, b)) { pass 0i32; }
     int32:common = raw unify(e, a, b);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n.span, a, b));
+        pass (raw te_mismatch(e, n.span, a, b));
     }
     pass common;
 };
@@ -936,14 +936,14 @@ func:type_defaults = int32(ExprTyper->:e, ExprNode:n) {
 // an unsuffixed literal in a cast takes the target's type and the cast is then a
 // no-op. Without that, the one place a programmer states a type outright would
 // be the one place a bare literal could not be written.
-func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
+func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:target_node = TypeId{ index: n.b };
-    int32:to = relay resolve_type(@r, target_node, e.scope);
+    int32:to = raw resolve_type(@r, target_node, e.scope);
 
     int32:saved = e.expected;
     e.expected = to;
-    int32:from = relay type_of_expr(e, raw expr_operand(n));
+    int32:from = raw type_of_expr(e, raw expr_operand(n));
     e.expected = saved;
 
     if (from == 0i32) { pass to; }
@@ -959,11 +959,11 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
         if (!(raw type_is_invalid(e.types, to))) {
             if (raw type_is_integer(e.types, from)) {
                 if ((raw type_kind(e.types, to)) == (raw TY_ENUM())) {
-                    if (relay enum_has_payload(e.ast, e.types, to)) {
-                        string:ce1 = relay string_concat("`",
-                            relay type_display(e.types, e.interns, to));
-                        pass (relay te_error(e, raw TYPE_NO_CAST(),
-                            relay string_concat(ce1,
+                    if (raw enum_has_payload(e.ast, e.types, to)) {
+                        string:ce1 = raw string_concat("`",
+                            raw type_display(e.types, e.interns, to));
+                        pass (raw te_error(e, raw TYPE_NO_CAST(),
+                            raw string_concat(ce1,
                                 "` carries a payload, so an integer cannot forge it — a tag is not a whole `{tag, payload}` value; construct the variant with its payload, `E.Variant(…)`"),
                             n.span));
                     }
@@ -971,7 +971,7 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
             }
         }
     }
-    pass (relay check_cast(e.types, e.interns, e.diags, from, to, unchecked, n.span));
+    pass (raw check_cast(e.types, e.interns, e.diags, from, to, unchecked, n.span));
 };
 
 // --- unwrapping a `Result` -----------------------------------------------------------------
@@ -983,17 +983,17 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
 // permissive `raw` on a non-`Result` would be the kind of harmless-looking
 // tolerance that lets `raw x` survive a refactor after `x` stopped being a call
 // — and then the next reader believes there is error handling there.
-func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) {
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
+func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) never fails {
+    int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
 
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        string:m1 = relay string_concat("`", op);
-        string:m2 = relay string_concat(m1, "` needs a `Result`, and this is `");
-        string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, t));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-                             relay string_concat(m3, "`"), n.span));
+        string:m1 = raw string_concat("`", op);
+        string:m2 = raw string_concat(m1, "` needs a `Result`, and this is `");
+        string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, t));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                             raw string_concat(m3, "`"), n.span));
     }
     pass (raw type_elem(e.types, t));
 };
@@ -1001,18 +1001,18 @@ func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) {
 // `e ?| d` — unwrap with a fallback (D-175). The fallback must be the SUCCESS type: a
 // default of another type would make the expression's type depend on which way it
 // went at runtime.
-func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_lhs(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        pass (relay te_not_result(e, n, t, "?|"));
+        pass (raw te_not_result(e, n, t, "?|"));
     }
     int32:inner = raw type_elem(e.types, t);
 
     int32:saved = e.expected;
     e.expected = inner;
-    int32:d = relay type_of_expr(e, raw expr_rhs(n));
+    int32:d = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     if (d == 0i32) { pass inner; }
@@ -1034,31 +1034,31 @@ func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
 // that bringing a value back is visible in the source. It would also give one
 // operator two meanings chosen by operand type, which is the thing the blueprint
 // philosophy forbids first.
-func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_lhs(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_OPTIONAL())) {
-        string:m1 = relay string_concat("`??` unwraps an `Optional`, and this is `",
-                                        relay type_display(e.types, e.interns, t));
-        string:m2 = relay string_concat(m1, "`");
+        string:m1 = raw string_concat("`??` unwraps an `Optional`, and this is `",
+                                        raw type_display(e.types, e.interns, t));
+        string:m2 = raw string_concat(m1, "`");
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
-            m2 = relay string_concat(m2, "; `?` is the one that unwraps a `Result`");
+            m2 = raw string_concat(m2, "; `?` is the one that unwraps a `Result`");
         }
         // A POINTER IS THE MISTAKE WORTH NAMING, because the prototype accepted
         // it and somebody may arrive expecting it to work. Both halves of what it
         // did are still writable — they are just written down.
         if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) {
-            m2 = relay string_concat(m2,
+            m2 = raw string_concat(m2,
                 "; a pointer is not an `Optional` — `p == NULL` asks whether it points anywhere and `<-p` brings the value back");
         }
-        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     int32:inner = raw type_elem(e.types, t);
 
     int32:saved = e.expected;
     e.expected = inner;
-    int32:d = relay type_of_expr(e, raw expr_rhs(n));
+    int32:d = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
@@ -1074,22 +1074,22 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
 // A `tbb32` that is itself ERR is LEGAL here and deliberately so — `failsafe`
 // receiving a tainted code means "the failure code could not itself be computed",
 // which is information, not a mistake.
-func:type_emphatic_unwrap = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+func:type_emphatic_unwrap = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_lhs(n));
 
     int32:saved = e.expected;
     e.expected = e.types.t_tbb32;
-    int32:c = relay type_of_expr(e, raw expr_rhs(n));
+    int32:c = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     if (c != 0i32) {
         if (!(raw type_is_invalid(e.types, c))) {
             if (c != e.types.t_tbb32) {
-                string:m1 = relay string_concat(
+                string:m1 = raw string_concat(
                     "`?!` hands its argument to `failsafe`, which takes one `tbb32`, and this is `",
-                    relay type_display(e.types, e.interns, c));
+                    raw type_display(e.types, e.interns, c));
                 drop te_error(e, raw TYPE_MISMATCH(),
-                              relay string_concat(m1, "`"), n.span);
+                              raw string_concat(m1, "`"), n.span);
             }
         }
     }
@@ -1097,17 +1097,17 @@ func:type_emphatic_unwrap = int32(ExprTyper->:e, ExprNode:n) {
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        pass (relay te_not_result(e, n, t, "?!"));
+        pass (raw te_not_result(e, n, t, "?!"));
     }
     pass (raw type_elem(e.types, t));
 };
 
-func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) {
-    string:m1 = relay string_concat("`", op);
-    string:m2 = relay string_concat(m1, "` needs a `Result`, and this is `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, t));
-    pass (relay te_error(e, raw TYPE_MISMATCH(),
-                         relay string_concat(m3, "`"), n.span));
+func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) never fails {
+    string:m1 = raw string_concat("`", op);
+    string:m2 = raw string_concat(m1, "` needs a `Result`, and this is `");
+    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, t));
+    pass (raw te_error(e, raw TYPE_MISMATCH(),
+                         raw string_concat(m3, "`"), n.span));
 };
 
 // `is_err(tbbValue)` — THE ONE TEST IN THE LANGUAGE GUARANTEED NOT TO TRAP.
@@ -1123,18 +1123,18 @@ func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) {
 // flow analysis and 0.7's lowering both have to SEE which construct carries that
 // guarantee. Recovering it from a callee's spelling is a string comparison
 // standing in for a language rule.
-func:type_is_err = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
+func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
-        string:m1 = relay string_concat("`is_err` tests a `tbb` for ERR, and this is `",
-                                        relay type_display(e.types, e.interns, t));
-        string:m2 = relay string_concat(m1, "`");
+        string:m1 = raw string_concat("`is_err` tests a `tbb` for ERR, and this is `",
+                                        raw type_display(e.types, e.interns, t));
+        string:m2 = raw string_concat(m1, "`");
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
-            m2 = relay string_concat(m2, "; a `Result` answers that with `.is_error`");
+            m2 = raw string_concat(m2, "; a `Result` answers that with `.is_error`");
         }
-        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     pass (e.types.t_bool);
 };
@@ -1152,14 +1152,14 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) {
 // read, so there is nothing for it to disagree with — a stored flag would be a
 // second source of truth about one fact, and two sources of truth eventually
 // differ. The prototype stored one; this is a deliberate departure.
-func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
+func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:want = e.fn_success;
 
     int32:saved = e.expected;
     e.expected = want;
-    int32:vt = relay type_of_expr(e, raw expr_lhs(n));
+    int32:vt = raw type_of_expr(e, raw expr_lhs(n));
     e.expected = e.types.t_tbb32;
-    int32:et = relay type_of_expr(e, raw expr_rhs(n));
+    int32:et = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     // An omitted field is the zero for its side, which is what the desugar of
@@ -1169,10 +1169,10 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
 
     if (et != e.types.t_tbb32) {
         if (!(raw type_is_invalid(e.types, et))) {
-            string:m1 = relay string_concat("a `Result`'s `error` is a `tbb32`, and this is `",
-                                            relay type_display(e.types, e.interns, et));
+            string:m1 = raw string_concat("a `Result`'s `error` is a `tbb32`, and this is `",
+                                            raw type_display(e.types, e.interns, et));
             drop te_error(e, raw TYPE_MISMATCH(),
-                          relay string_concat(m1, "`"), n.span);
+                          raw string_concat(m1, "`"), n.span);
         }
     }
     // OUTSIDE A FUNCTION there is no success type to infer from, and inventing one
@@ -1199,7 +1199,7 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
 // slot holds a symbol index and not a child expression is safe because
 // `expr_shape` files this kind as a LEAF — which is the difference between an
 // undocumented reuse and a declared one (D-094).
-func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
+func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:sym = n.a;
     if (sym == 0i32) {
         // A bare-name builtin resolves to no symbol and that is correct
@@ -1215,7 +1215,7 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
     // when it checked the `pick` (0.7.7); before that this answered UNKNOWN and
     // unknown propagates silently.
     if (s.origin_kind == (raw SYM_PAT())) {
-        PatNode:pn = relay ast_pat(e.ast, PatId{ index: s.origin });
+        PatNode:pn = raw ast_pat(e.ast, PatId{ index: s.origin });
         // THE BINDING'S TYPE, FROM THE WINDOW THE PICK CHECK RECORDED (1.0.9c).
         // A pattern's bindings sit in a window on its payload slot, one type per
         // binding in binding order; this reference's index is where its name
@@ -1231,38 +1231,38 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
 
     if (s.origin_kind == (raw SYM_STMT())) {
         StmtId:sid = StmtId{ index: s.origin };
-        StmtNode:sn = relay ast_stmt(e.ast, sid);
+        StmtNode:sn = raw ast_stmt(e.ast, sid);
         TypeId:ty = TypeId{ index: sn.a };
-        pass (relay resolve_type(@r, ty, e.scope));
+        pass (raw resolve_type(@r, ty, e.scope));
     }
 
     if (s.origin_kind == (raw SYM_DECL())) {
         DeclId:did = DeclId{ index: s.origin };
-        DeclNode:dnode = relay ast_decl(e.ast, did);
+        DeclNode:dnode = raw ast_decl(e.ast, did);
         if (dnode.kind == DeclKind.DeclParamDecl) {
             // READING A DISCARDED PARAMETER IS AN ERROR (D-089). `Type:_~name`
             // says the parameter is deliberately unused, so a later use is either
             // a mistake or a stale annotation — and both are worth hearing about.
             if (raw param_is_discarded(dnode)) {
-                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
                     "this parameter is declared discarded with `_~`, so it cannot be read; drop the `_~` if it is wanted",
                     n.span));
             }
-            pass (relay resolve_type(@r, raw param_type(dnode), e.scope));
+            pass (raw resolve_type(@r, raw param_type(dnode), e.scope));
         }
         if (dnode.kind == DeclKind.DeclFunctionDecl) {
-            pass (relay fn_type(@r, did, s.name, e.scope));
+            pass (raw fn_type(@r, did, s.name, e.scope));
         }
         // AN `extern` FUNCTION IS A FUNCTION. Missing here, its name fell through
         // to the "is a type, not a value" ending below — so every call to a
         // foreign function was refused, and refused with a sentence about the
         // wrong thing.
         if (dnode.kind == DeclKind.DeclExternFn) {
-            pass (relay extern_fn_type(@r, dnode, e.scope));
+            pass (raw extern_fn_type(@r, dnode, e.scope));
         }
         if (dnode.kind == DeclKind.DeclGlobalDecl) {
             TypeId:ty = TypeId{ index: dnode.a };
-            pass (relay resolve_type(@r, ty, e.scope));
+            pass (raw resolve_type(@r, ty, e.scope));
         }
         // `<comptime int32:LEVEL>` IS A VALUE, and `pass LEVEL;` reads it as one.
         // Its type is the one the parameter declares — that is the whole content
@@ -1273,18 +1273,18 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
         // exactly right: `T` names a type and `pass T;` names nothing.
         if (dnode.kind == DeclKind.DeclGenericParam) {
             if (raw generic_is_value(dnode)) {
-                pass (relay resolve_type(@r, raw generic_value_type(dnode), e.scope));
+                pass (raw resolve_type(@r, raw generic_value_type(dnode), e.scope));
             }
         }
         // A NAME THAT IS NOT A VALUE SAYS WHAT IT IS rather than "unknown" — and
         // WHICH kind it is (1.0.8): a macro, a module, a `Rules` block and an
         // enum variant all fell through to "is a type, not a value".
-        string:text = relay intern_get(e.interns, s.name);
-        string:m1 = relay string_concat("`", text);
-        string:m2 = relay string_concat(m1, "` is ");
-        string:m3 = relay string_concat(m2, raw decl_kind_article(dnode));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(m3, ", not a value"), n.span));
+        string:text = raw intern_get(e.interns, s.name);
+        string:m1 = raw string_concat("`", text);
+        string:m2 = raw string_concat(m1, "` is ");
+        string:m3 = raw string_concat(m2, raw decl_kind_article(dnode));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(m3, ", not a value"), n.span));
     }
 
     // A `pick` destructuring binding takes its type from the scrutinee, which
@@ -1308,7 +1308,7 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
 // A `string` part renders as itself; any other interpolation renders through the
 // prelude trait `ToString`, so a type with no `ToString` impl is refused by name
 // here — the backend has no `to_string` to call for it.
-func:type_template = int32(ExprTyper->:e, ExprNode:n) {
+func:type_template = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:ts_name = raw intern_add(e.interns, "ToString");
     int32:ts_type = 0i32;
     int32:ts_sym = raw scope_lookup(e.tab, e.scope, ts_name);
@@ -1323,21 +1323,21 @@ func:type_template = int32(ExprTyper->:e, ExprNode:n) {
     int32:i = 0i32;
     while (i < count) {
         ExprId:itmid = ExprId{ index: raw ast_id_at(e.ast, start, i) };
-        int32:pt = relay type_of_expr(e, itmid);
+        int32:pt = raw type_of_expr(e, itmid);
         if (pt != 0i32) {
             if (!(raw type_is_invalid(e.types, pt))) {
                 if (pt != e.types.t_string) {
                     bool:ok = false;
                     if (ts_type != 0i32) {
-                        ok = relay type_implements(e.impls, e.bounds, e.ast,
+                        ok = raw type_implements(e.impls, e.bounds, e.ast,
                                  e.types, pt, ts_type, raw IMPL_FUEL());
                     }
                     if (!ok) {
-                        ExprNode:pn = relay ast_expr(e.ast, itmid);
-                        string:m1 = relay string_concat("`",
-                            relay type_display(e.types, e.interns, pt));
+                        ExprNode:pn = raw ast_expr(e.ast, itmid);
+                        string:m1 = raw string_concat("`",
+                            raw type_display(e.types, e.interns, pt));
                         drop te_error(e, raw TYPE_NOT_STRINGABLE(),
-                            relay string_concat(m1,
+                            raw string_concat(m1,
                                 "` has no `ToString`, so it cannot be interpolated in a `&{ }` template — a `string` renders as itself, any other type through `ToString`'s `to_string` (D-168); derive or implement it"),
                             pn.span);
                     }
@@ -1349,9 +1349,9 @@ func:type_template = int32(ExprTyper->:e, ExprNode:n) {
     pass (e.types.t_string);
 };
 
-pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) {
+pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass false; }
-    ExprNode:n = relay ast_expr(e.ast, id);
+    ExprNode:n = raw ast_expr(e.ast, id);
     // `ERR` is a `tbb32` wherever it appears and is deliberately absent here.
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass (n.payload != 2i64); }
     if (n.kind != ExprKind.ExprIntLiteral) { pass false; }
@@ -1365,7 +1365,7 @@ pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) {
 // sentinels are the exception and read `e.expected` itself, because `NIL` is a
 // fact about the wrapper rather than about a value inside it; that is why this is
 // a separate accessor instead of a rewrite of `e.expected` at the push sites.
-pub func:expected_value = int32(ExprTyper->:e) {
+pub func:expected_value = int32(ExprTyper->:e) never fails {
     if (e.expected == 0i32) { pass 0i32; }
     if ((raw type_kind(e.types, e.expected)) == (raw TY_OPTIONAL())) {
         pass (raw type_elem(e.types, e.expected));
@@ -1385,7 +1385,7 @@ pub func:expected_value = int32(ExprTyper->:e) {
 // no pointer decay. And the wrap is ONE LEVEL, like D-098's dereference: an
 // `Optional<Optional<U>>` cannot be written down (see `resolve_type`), so there
 // is no second level for this to reach through.
-pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
+pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
     if (want == got) { pass true; }
     // D-163: a `never fails` function SATISFIES a may-fail expectation (it just
     // never uses the error), but a may-fail function CANNOT fill a never-fails
@@ -1408,7 +1408,7 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
     // fat pointer either way — it is a question about what was implemented, and
     // the impl table is the only thing that can answer it.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
-        bool:ok = relay dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got);
+        bool:ok = raw dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got);
         // A COERCION IS A COMMIT, SO IT IS WHERE THE FAMILY INSTANTIATION IS
         // NOTED (1.0.9b). `fits` is a predicate everywhere else; the one place
         // it is a predicate the checker acts on is a `dyn` slot accepting a
@@ -1445,8 +1445,8 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
 // `#wild_ptr<int8>(a)` is an `int8->` and `#wild_slice<int8>(p, n)` is an `int8[]`,
 // which is the reading that makes the two consistent rather than one naming the
 // pointee and the other the pointer.
-func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
-    string:name = relay intern_get(e.interns, raw builtin_name(n));
+func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    string:name = raw intern_get(e.interns, raw builtin_name(n));
     int32:gc = raw builtin_generic_count(n);
     int32:start = raw expr_list_start(n);
     int32:argc = (raw expr_list_count(n)) - gc;
@@ -1454,7 +1454,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 
     if (raw string_eq(name, "size_of")) {
         if (gc != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#size_of` takes exactly one type argument", n.span));
         }
         if (argc != 0i32) {
@@ -1462,7 +1462,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
             // call code, as `check_args` does; the type-argument count above
             // keeps `TYPE_GENERIC_ARITY` ("an arity mistake is in the
             // annotation"). Two codes for two questions (1.0.8).
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`#size_of` takes no value arguments; it is a question about a type",
                 n.span));
         }
@@ -1473,20 +1473,20 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 
     if (raw string_eq(name, "wild_ptr")) {
         if (gc != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#wild_ptr` takes exactly one type argument, the type it points at",
                 n.span));
         }
         if (argc != 1i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`#wild_ptr` takes exactly one value argument, the address", n.span));
         }
-        int32:pointee = relay resolve_type(@r,
+        int32:pointee = raw resolve_type(@r,
                             TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
-        int32:addr = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        int32:addr = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
         if (!(raw type_is_invalid(e.types, addr))) {
             if (!(raw type_is_integer(e.types, addr))) {
-                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
                     "`#wild_ptr` takes an integer address; it is the one place an integer becomes a pointer (D-019), and that only reads as deliberate if an address is what was written",
                     n.span));
             }
@@ -1496,29 +1496,29 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 
     if (raw string_eq(name, "wild_slice")) {
         if (gc != 1i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#wild_slice` takes exactly one type argument, the element type",
                 n.span));
         }
         if (argc != 2i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`#wild_slice` takes two value arguments, a pointer and an element count",
                 n.span));
         }
-        int32:elem = relay resolve_type(@r,
+        int32:elem = raw resolve_type(@r,
                           TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
-        int32:ptr = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
-        int32:len = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
+        int32:ptr = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        int32:len = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
         if (!(raw type_is_invalid(e.types, ptr))) {
             if ((raw type_kind(e.types, ptr)) != (raw TY_POINTER())) {
-                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
                     "`#wild_slice` takes a pointer and an element count; an extent the compiler cannot verify is exactly as privileged as an address it cannot verify (D-070)",
                     n.span));
             }
         }
         if (!(raw type_is_invalid(e.types, len))) {
             if (!(raw type_is_integer(e.types, len))) {
-                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
                     "`#wild_slice`'s second argument is an element count", n.span));
             }
         }
@@ -1527,11 +1527,11 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 
     if (raw string_eq(name, "unreachable")) {
         if (gc != 0i32) {
-            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#unreachable` takes no type arguments", n.span));
         }
         if (argc != 0i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`#unreachable` takes no arguments; it marks a point control never reaches (D-061)",
                 n.span));
         }
@@ -1557,12 +1557,12 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // AN UNTYPED RESULT TAKES THE CONTEXT TYPE, exactly as an unsuffixed literal does
 // (D-092): `int64:n = comptime(2i32 * 2i32)` gets its width from the same place
 // `int64:n = 4` would.
-func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     TypeResolver:r = raw etyper_resolver(e);
-    ConstVal:cv = relay fold_const(@r, ExprId{ index: n.a }, e.scope);
+    ConstVal:cv = raw fold_const(@r, ExprId{ index: n.a }, e.scope);
     if (!(raw cv_folded(cv))) {
         if (raw fold_gave_up(@r)) { pass 0i32; }
-        pass (relay te_error(e, raw TYPE_NOT_CONSTANT(),
+        pass (raw te_error(e, raw TYPE_NOT_CONSTANT(),
             "`comptime` requires an expression that folds at compile time, and this one does not",
             n.span));
     }
@@ -1573,13 +1573,13 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         if (raw type_is_integer(e.types, want)) { pass want; }
         // The slot SAYS what it is, and it is not an integer (1.0.8): the
         // unsuffixed `comptime` value cannot take a width from it.
-        string:c1 = relay string_concat("this `comptime` value has no width and sits in a `",
-                        relay type_display(e.types, e.interns, want));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(c1, "` slot, which is not an integer; write a suffix inside it"),
+        string:c1 = raw string_concat("this `comptime` value has no width and sits in a `",
+                        raw type_display(e.types, e.interns, want));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "` slot, which is not an integer; write a suffix inside it"),
             n.span));
     }
-    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+    pass (raw te_error(e, raw TYPE_UNKNOWN(),
         "this `comptime` value has no width and nothing here says what it should be; write a suffix inside it or give the surrounding expression a type",
         n.span));
 };
@@ -1595,7 +1595,7 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // one anybody declared.
 // One message for every "this value does not fit there", naming both types in
 // the order the reader wrote them.
-pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
     // D-163: a may-fail function where a `never fails` one is expected gets its
     // OWN code and message — the shapes agree and only the contract differs, so
     // the generic mismatch would name two types that look almost identical
@@ -1613,16 +1613,16 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
             }
         }
     }
-    string:m1 = relay string_concat("expected `",
-                                    relay type_display(e.types, e.interns, want));
-    string:m2 = relay string_concat(m1, "`, found `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
-    string:m4 = relay string_concat(m3, "`");
+    string:m1 = raw string_concat("expected `",
+                                    raw type_display(e.types, e.interns, want));
+    string:m2 = raw string_concat(m1, "`, found `");
+    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, got));
+    string:m4 = raw string_concat(m3, "`");
     // The widths case is worth naming, since it is the one that looks like it
     // ought to work and no longer does (D-092, corrected).
     if (raw type_is_integer(e.types, want)) {
         if (raw type_is_integer(e.types, got)) {
-            m4 = relay string_concat(m4,
+            m4 = raw string_concat(m4,
                 "; there is no implicit widening, so write the cast");
         }
     }
@@ -1646,7 +1646,7 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
 // something the language has not decided, and `simd<T, N>` in §14 is Tier 0 with a
 // different spelling that has no lexer support at all, so there is a real question
 // about which of the two `vec2` should be.
-func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) {
+func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
     // The components are still typed, so a mistake inside one is reported rather
     // than hidden behind the tier.
     int32:start = raw expr_list_start(n);
@@ -1656,7 +1656,7 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) {
         drop type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i) });
         i = i + 1i32;
     }
-    pass (relay te_error(e, raw TYPE_TIER(),
+    pass (raw te_error(e, raw TYPE_TIER(),
         "vector, matrix and tensor types are Tier 1 (`TYPE_REFERENCE` section 15) and no rung supplies one yet, so there is no type for this constructor to build",
         n.span));
 };
@@ -1675,7 +1675,7 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) {
 // THE TYPE COMES FROM THE FIRST `give`, and the rest are measured against it — the
 // same rule the array literal uses, and for the same reason: choosing a "common"
 // type would need a widening rule, and D-092 says there is not one.
-func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) {
+func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     drop type_of_expr(e, raw pickx_selector(n));
 
     int32:start = raw pickx_arm_start(n);
@@ -1686,19 +1686,19 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) {
     int32:i = 0i32;
     while (i < cnt) {
         StmtId:arm = StmtId{ index: raw ast_id_at(e.ast, start, i) };
-        StmtNode:a = relay ast_stmt(e.ast, arm);
+        StmtNode:a = raw ast_stmt(e.ast, arm);
         drop type_of_expr(e, raw arm_guard(a));
 
         // EVERY ARM IS WALKED AS A STATEMENT, so a mistake anywhere in its body is
         // reported; the `give` is then looked for on top of that rather than
         // instead of it.
         drop check_stmt(e, raw arm_body(a));
-        result = relay arm_give_type(e, raw arm_body(a), result, n.span);
+        result = raw arm_give_type(e, raw arm_body(a), result, n.span);
         i = i + 1i32;
     }
 
     if (result == 0i32) {
-        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
+        pass (raw te_error(e, raw TYPE_CANNOT_INFER(),
             "this `pick` is used as a value and no arm gives one; an arm that falls off its end has nothing to produce",
             n.span));
     }
@@ -1710,9 +1710,9 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) {
 // One level, because `give` belongs to the arm it is written in: a `give` nested
 // inside an `if` inside an arm is a shape the corpus does not write, and walking for
 // one would mean deciding what an arm with two of them means.
-func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) {
+func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) never fails {
     if (raw stmt_is_none(body)) { pass sofar; }
-    StmtNode:b = relay ast_stmt(e.ast, body);
+    StmtNode:b = raw ast_stmt(e.ast, body);
     if (b.kind != StmtKind.StmtBlockStmt) { pass sofar; }
 
     int32:n = raw stmt_list_count(b);
@@ -1720,12 +1720,12 @@ func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) {
     int32:cur = sofar;
     int32:i = 0i32;
     while (i < n) {
-        StmtNode:st = relay ast_stmt(e.ast,
+        StmtNode:st = raw ast_stmt(e.ast,
                           StmtId{ index: raw ast_id_at(e.ast, start, i) });
         if (st.kind == StmtKind.StmtGiveStmt) {
             int32:saved = e.expected;
             e.expected = cur;
-            int32:got = relay type_of_expr(e, ExprId{ index: st.a });
+            int32:got = raw type_of_expr(e, ExprId{ index: st.a });
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {
                 if (got != 0i32) {
@@ -1751,7 +1751,7 @@ func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) {
 // one the literal describes itself — its element type from its first element, its
 // length from how many there are — which is the only answer available and is never
 // wrong, just less useful.
-func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
+func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:start = raw expr_list_start(n);
     int32:cnt = raw expr_list_count(n);
 
@@ -1770,13 +1770,13 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
             // first three, then zeros" is a meaning the reader must guess.
             if (cnt == 0i32) { pass want; }
             if ((raw type_array_count(e.types, want)) != cnt) {
-                string:c1 = relay string_concat("this array literal has ",
+                string:c1 = raw string_concat("this array literal has ",
                                 raw int_to_string(cnt => int64));
-                string:c2 = relay string_concat(c1, " element(s) and `");
-                string:c3 = relay string_concat(c2,
-                                relay type_display(e.types, e.interns, want));
+                string:c2 = raw string_concat(c1, " element(s) and `");
+                string:c3 = raw string_concat(c2,
+                                raw type_display(e.types, e.interns, want));
                 drop te_error(e, raw TYPE_MISMATCH(),
-                    relay string_concat(c3, "` has a fixed length; an array's length is part of its type"),
+                    raw string_concat(c3, "` has a fixed length; an array's length is part of its type"),
                     n.span);
             }
         }
@@ -1791,7 +1791,7 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
         ExprId:v = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         int32:saved = e.expected;
         e.expected = elem;
-        int32:got = relay type_of_expr(e, v);
+        int32:got = raw type_of_expr(e, v);
         e.expected = saved;
 
         if (!(raw type_is_invalid(e.types, got))) {
@@ -1819,7 +1819,7 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
         if (cnt > 0i32) { pass 0i32; }
         // An EMPTY literal with no annotation describes nothing. `int32[0]:a = [];`
         // is fine; a bare `[]` is a value whose type nobody wrote.
-        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
+        pass (raw te_error(e, raw TYPE_CANNOT_INFER(),
             "an empty array literal has no element type, and nothing here says what it should be",
             n.span));
     }
@@ -1833,22 +1833,22 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
 // side has to BE a function of one parameter, and the left has to fit that
 // parameter. Reusing `type_call` is not possible — it reads its arguments out of
 // the call node's own window, and a pipe's argument is a sibling node.
-func:type_pipe = int32(ExprTyper->:e, ExprNode:n) {
-    int32:lt = relay type_of_expr(e, raw expr_lhs(n));
-    int32:rt = relay type_of_expr(e, raw expr_rhs(n));
+func:type_pipe = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:lt = raw type_of_expr(e, raw expr_lhs(n));
+    int32:rt = raw type_of_expr(e, raw expr_rhs(n));
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
 
     if (!(raw type_is_func(e.types, rt))) {
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
             "the right side of a pipe is the function the value is passed to, and this is not a function",
             n.span));
     }
     int32:np = raw type_param_count_of(e.types, rt);
     if (np != 1i32) {
-        string:p1 = relay string_concat("a pipe passes exactly one value, and this function takes ",
+        string:p1 = raw string_concat("a pipe passes exactly one value, and this function takes ",
                         raw int_to_string(np => int64));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(p1, " parameter(s)"), n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(p1, " parameter(s)"), n.span));
     }
     int32:want = raw type_param_at_of(e.ast, e.types, rt, 0i32);
     if (!(raw type_is_invalid(e.types, lt))) {
@@ -1876,8 +1876,8 @@ func:type_pipe = int32(ExprTyper->:e, ExprNode:n) {
 // case, so a `dyn` cast of a type implementing nothing produced the invalid type and
 // no diagnostic. The node carries the trait window directly (AST_REFERENCE 3.6),
 // which is why this does not go back through the type.
-func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
-    int32:src = relay type_of_expr(e, raw expr_operand(n));
+func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:src = raw type_of_expr(e, raw expr_operand(n));
     TypeResolver:r = raw etyper_resolver(e);
 
     int32:start = raw expr_list_start(n);
@@ -1889,7 +1889,7 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
         // A `dyn` CAST'S OPERANDS ARE TRAITS (D-172's door): resolved where a
         // trait is wanted, so a bare trait name is not the "not a value type"
         // refusal D-171 gives it everywhere else.
-        int32:tr = relay resolve_trait_type(@r, trait_ty, e.scope);
+        int32:tr = raw resolve_trait_type(@r, trait_ty, e.scope);
         drop ast_scratch_push(e.ast, tr);
 
         if (!(raw type_is_invalid(e.types, tr))) {
@@ -1898,13 +1898,13 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
                 if (src != 0i32) {
                     if (!(raw type_implements(e.impls, e.bounds, e.ast, e.types,
                                               src, tr, raw IMPL_FUEL()))) {
-                        string:d1 = relay string_concat("`",
-                                        relay type_display(e.types, e.interns, src));
-                        string:d2 = relay string_concat(d1, "` does not implement `");
-                        string:d3 = relay string_concat(d2,
-                                        relay type_display(e.types, e.interns, tr));
+                        string:d1 = raw string_concat("`",
+                                        raw type_display(e.types, e.interns, src));
+                        string:d2 = raw string_concat(d1, "` does not implement `");
+                        string:d3 = raw string_concat(d2,
+                                        raw type_display(e.types, e.interns, tr));
                         drop te_error(e, raw TYPE_BOUND_UNMET(),
-                            relay string_concat(d3, "`, so it cannot become a `dyn` of it"),
+                            raw string_concat(d3, "`, so it cannot become a `dyn` of it"),
                             n.span);
                     }
                 }
@@ -1933,7 +1933,7 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
 // omitted field has no value — and an unassigned binding is exactly what D-010's
 // definite assignment refuses everywhere else. It is a safety property, not a
 // convenience.
-func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
+func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:name = (n.payload) =>! int32;
 
     // D-162: THE LITERAL'S TYPE IS THE DECLARATION ITS NAME RESOLVES TO IN
@@ -1946,12 +1946,12 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
     // declaration the author actually wrote.
     int32:sym = raw scope_lookup(e.tab, e.scope, name);
     if (sym == 0i32) {
-        string:t = relay intern_get(e.interns, name);
-        string:m1 = relay string_concat("there is no type named `", t);
-        pass (relay te_error(e, raw TYPE_UNKNOWN(),
-                             relay string_concat(m1, "`"), n.span));
+        string:t = raw intern_get(e.interns, name);
+        string:m1 = raw string_concat("there is no type named `", t);
+        pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                             raw string_concat(m1, "`"), n.span));
     }
-    Symbol:sy = relay symtab_get(e.tab, sym);
+    Symbol:sy = raw symtab_get(e.tab, sym);
 
     // THE EXPECTED TYPE CONTRIBUTES ONLY GENERIC ARGUMENTS, and only when it is
     // an instance of THIS declaration: `Container<int32>{ … }` has no way to
@@ -1966,14 +1966,14 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
             if ((raw type_decl_of(e.types, want)) == sy.origin) { pass want; }
         }
     }
-    DeclNode:dnode = relay ast_decl(e.ast, DeclId{ index: sy.origin });
+    DeclNode:dnode = raw ast_decl(e.ast, DeclId{ index: sy.origin });
     if (dnode.kind != DeclKind.DeclStructDecl) {
-        string:t2 = relay intern_get(e.interns, name);
-        string:k1 = relay string_concat("`", t2);
-        string:k2 = relay string_concat(k1, "` is ");
-        string:k3 = relay string_concat(k2, raw decl_kind_article(dnode));
-        pass (relay te_error(e, raw TYPE_NOT_A_TYPE(),
-                             relay string_concat(k3, ", and a `{ … }` literal builds a struct"),
+        string:t2 = raw intern_get(e.interns, name);
+        string:k1 = raw string_concat("`", t2);
+        string:k2 = raw string_concat(k1, "` is ");
+        string:k3 = raw string_concat(k2, raw decl_kind_article(dnode));
+        pass (raw te_error(e, raw TYPE_NOT_A_TYPE(),
+                             raw string_concat(k3, ", and a `{ … }` literal builds a struct"),
                              n.span));
     }
 
@@ -1982,16 +1982,16 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
     // and `Container<string>` one type before 0.4.5.
     IdSpan:gp = raw decl_generic_window(e.ast, dnode);
     if (gp.count != 0i32) {
-        string:g1 = relay string_concat("`", relay intern_get(e.interns, name));
-        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
-            relay string_concat(g1, "` is generic, and a struct literal carries no type arguments; the type has to come from what the literal is assigned to or passed as"),
+        string:g1 = raw string_concat("`", raw intern_get(e.interns, name));
+        pass (raw te_error(e, raw TYPE_CANNOT_INFER(),
+            raw string_concat(g1, "` is generic, and a struct literal carries no type arguments; the type has to come from what the literal is assigned to or passed as"),
             n.span));
     }
     pass (raw tt_struct(e.types, sy.origin, name, 0i64, 1i32));
 };
 
-func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) {
-    int32:st = relay struct_literal_type(e, n);
+func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:st = raw struct_literal_type(e, n);
     if (raw type_is_invalid(e.types, st)) { pass 0i32; }
 
     TypeResolver:r = raw etyper_resolver(e);
@@ -2015,27 +2015,27 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) {
             j = j + 2i32;
         }
         if (again) {
-            string:d1 = relay string_concat("`", relay intern_get(e.interns, fname));
+            string:d1 = raw string_concat("`", raw intern_get(e.interns, fname));
             drop te_error(e, raw TYPE_FIELD_TWICE(),
-                relay string_concat(d1, "` is given twice in this literal, and taking the last would discard the first"),
+                raw string_concat(d1, "` is given twice in this literal, and taking the last would discard the first"),
                 n.span);
         }
 
-        FieldInfo:f = relay struct_field(@r, st, fname, e.scope);
+        FieldInfo:f = raw struct_field(@r, st, fname, e.scope);
         if (!(f.found)) {
-            string:u1 = relay string_concat("`", relay intern_get(e.interns, fname));
-            string:u2 = relay string_concat(u1, "` is not a field of `");
-            string:u3 = relay string_concat(u2,
-                            relay type_display(e.types, e.interns, st));
+            string:u1 = raw string_concat("`", raw intern_get(e.interns, fname));
+            string:u2 = raw string_concat(u1, "` is not a field of `");
+            string:u3 = raw string_concat(u2,
+                            raw type_display(e.types, e.interns, st));
             drop te_error(e, raw TYPE_NO_SUCH_FIELD(),
-                          relay string_concat(u3, "`"), n.span);
+                          raw string_concat(u3, "`"), n.span);
             // The value is still typed, so a mistake inside it is reported too
             // rather than waiting for the name to be fixed first.
             drop type_of_expr(e, val);
         } else {
             int32:saved = e.expected;
             e.expected = f.type_id;
-            int32:got = relay type_of_expr(e, val);
+            int32:got = raw type_of_expr(e, val);
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {
                 if (got != 0i32) {
@@ -2056,15 +2056,15 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) {
 // a field the literal omits holds nothing, and D-010 refuses an unassigned binding
 // everywhere else in the language.
 func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
-                                  int32:start, int32:cnt) {
+                                  int32:start, int32:cnt) never fails {
     int32:decl = raw type_decl(e.types, st);
     if (decl == 0i32) { pass NIL; }
-    DeclNode:d = relay ast_decl(e.ast, DeclId{ index: decl });
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: decl });
 
     int32:nm = raw item_member_count(e.ast, d);
     int32:k = 0i32;
     while (k < nm) {
-        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, k));
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, k));
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:fname = raw decl_name(m);
             bool:given = false;
@@ -2074,13 +2074,13 @@ func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
                 i = i + 2i32;
             }
             if (!given) {
-                string:m1 = relay string_concat("`",
-                                relay type_display(e.types, e.interns, st));
-                string:m2 = relay string_concat(m1, "` has a field `");
-                string:m3 = relay string_concat(m2,
-                                relay intern_get(e.interns, fname));
+                string:m1 = raw string_concat("`",
+                                raw type_display(e.types, e.interns, st));
+                string:m2 = raw string_concat(m1, "` has a field `");
+                string:m3 = raw string_concat(m2,
+                                raw intern_get(e.interns, fname));
                 drop te_error(e, raw TYPE_MISSING_FIELD(),
-                    relay string_concat(m3, "` and this literal does not give it a value; there is no default, so it would hold nothing"),
+                    raw string_concat(m3, "` and this literal does not give it a value; there is no default, so it would hold nothing"),
                     n.span);
             }
         }
@@ -2089,35 +2089,35 @@ func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
     pass NIL;
 };
 
-pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
+pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
     if (raw expr_is_none(id)) {
         pass 0i32;
     }
-    int32:t = relay type_of_expr_inner(e, id);
+    int32:t = raw type_of_expr_inner(e, id);
     drop exprtypes_set(e.expr_types, id, t);
     pass t;
 };
 
-func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
-    ExprNode:n = relay ast_expr(e.ast, id);
+func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
+    ExprNode:n = raw ast_expr(e.ast, id);
 
-    if (n.kind == ExprKind.ExprIntLiteral)   { pass (relay type_numeric_literal(e, n, "42i32")); }
-    if (n.kind == ExprKind.ExprFloatLiteral) { pass (relay type_numeric_literal(e, n, "1.5f64")); }
+    if (n.kind == ExprKind.ExprIntLiteral)   { pass (raw type_numeric_literal(e, n, "42i32")); }
+    if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw type_numeric_literal(e, n, "1.5f64")); }
     if (n.kind == ExprKind.ExprBoolLiteral)  { pass (e.types.t_bool); }
     if (n.kind == ExprKind.ExprCharLiteral)  { pass (raw tt_char(e.types, 8i32)); }
     if (n.kind == ExprKind.ExprStringLiteral)      { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (e.types.t_string); }
     if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (e.types.t_string); }
-    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (relay type_template(e, n)); }
+    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (raw type_template(e, n)); }
 
     if (n.kind == ExprKind.ExprSentinelLiteral) {
-        pass (relay type_sentinel(e, n));
+        pass (raw type_sentinel(e, n));
     }
 
     // `$` inside `loop`/`till` — a counter with a type and no declaration.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
         if (e.counted_depth == 0i32) {
-            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
                 "`$` is the innermost counted loop's counter, and no `loop` or `till` encloses this",
                 n.span));
         }
@@ -2129,25 +2129,25 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     // BOTH USED TO TYPE AS INVALID, which is the encoding that suppresses cascades
     // and is therefore silent (D-126, D-129). `#totally_not_a_macro(3i32)` compiled
     // clean, and so did `comptime(anything)`.
-    if (n.kind == ExprKind.ExprStructLiteralExpr) { pass (relay type_struct_literal(e, n)); }
-    if (n.kind == ExprKind.ExprArrayLiteralExpr)  { pass (relay type_array_literal(e, n)); }
-    if (n.kind == ExprKind.ExprPipeExpr)          { pass (relay type_pipe(e, n)); }
-    if (n.kind == ExprKind.ExprDynCastExpr)       { pass (relay type_dyn_cast(e, n)); }
-    if (n.kind == ExprKind.ExprPickExpr)          { pass (relay type_pick_expr(e, n)); }
-    if (n.kind == ExprKind.ExprVectorCtorExpr)    { pass (relay type_vector_ctor(e, n)); }
-    if (n.kind == ExprKind.ExprBuiltinExpr)  { pass (relay type_builtin(e, id, n)); }
-    if (n.kind == ExprKind.ExprComptimeExpr) { pass (relay type_comptime(e, id, n)); }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) { pass (raw type_struct_literal(e, n)); }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr)  { pass (raw type_array_literal(e, n)); }
+    if (n.kind == ExprKind.ExprPipeExpr)          { pass (raw type_pipe(e, n)); }
+    if (n.kind == ExprKind.ExprDynCastExpr)       { pass (raw type_dyn_cast(e, n)); }
+    if (n.kind == ExprKind.ExprPickExpr)          { pass (raw type_pick_expr(e, n)); }
+    if (n.kind == ExprKind.ExprVectorCtorExpr)    { pass (raw type_vector_ctor(e, n)); }
+    if (n.kind == ExprKind.ExprBuiltinExpr)  { pass (raw type_builtin(e, id, n)); }
+    if (n.kind == ExprKind.ExprComptimeExpr) { pass (raw type_comptime(e, id, n)); }
 
     if (n.kind == ExprKind.ExprBinaryExpr) {
-        pass (relay type_binary(e, id, n));
+        pass (raw type_binary(e, id, n));
     }
 
     if (n.kind == ExprKind.ExprUnaryExpr) {
-        pass (relay type_unary(e, id, n));
+        pass (raw type_unary(e, id, n));
     }
 
     if (n.kind == ExprKind.ExprPostfixExpr) {
-        pass (relay type_postfix(e, n));
+        pass (raw type_postfix(e, n));
     }
 
     // --- the `Result` family (OP_REFERENCE §0 level 2, D-081) ------------------
@@ -2158,7 +2158,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     // `?!` traps and runs nothing (D-014, amended) — and a shared node would make
     // that distinction something the backend had to reconstruct.
     if (n.kind == ExprKind.ExprRawUnwrapExpr) {
-        pass (relay type_unwrap(e, n, "raw"));
+        pass (raw type_unwrap(e, n, "raw"));
     }
     if (n.kind == ExprKind.ExprRelayExpr) {
         if (e.in_defer) {
@@ -2179,7 +2179,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
                 "a `never fails` function may not `relay` (D-163): it propagates an error the contract says cannot occur; handle it with `?`, `?!` or a `pick`",
                 n.span);
         }
-        pass (relay type_unwrap(e, n, "relay"));
+        pass (raw type_unwrap(e, n, "relay"));
     }
     // `drop` DISCARDS THE OUTCOME and yields nothing. That it yields `NIL` rather
     // than `T` is the point: `drop f()` in a value position is then a type error
@@ -2189,98 +2189,98 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
         pass (e.types.t_nil);
     }
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        pass (relay type_unwrap(e, n, "await"));
+        pass (raw type_unwrap(e, n, "await"));
     }
 
     // `e ?| d` — a fallback. `e ?! c` — trap with a code. Both yield `T`.
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
-        pass (relay type_safe_unwrap(e, n));
+        pass (raw type_safe_unwrap(e, n));
     }
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
-        pass (relay type_emphatic_unwrap(e, n));
+        pass (raw type_emphatic_unwrap(e, n));
     }
     // `??` IS THE OPTIONAL ONE, not the Result one (OP_REFERENCE §14). Two
     // operators one character apart doing different things is worth being exact
     // about: `?` unwraps a `Result`, `??` unwraps an `Optional`.
     if (n.kind == ExprKind.ExprNullCoalesceExpr) {
-        pass (relay type_null_coalesce(e, n));
+        pass (raw type_null_coalesce(e, n));
     }
 
     // --- casts (D-021) --------------------------------------------------------------
     // Slot `b` is a TypeId, not an expression, which is why `expr_shape` files
     // both of these as one-operand nodes.
     if (n.kind == ExprKind.ExprCastExpr) {
-        pass (relay type_cast_expr(e, n, false));
+        pass (raw type_cast_expr(e, n, false));
     }
     if (n.kind == ExprKind.ExprUncheckedCastExpr) {
-        pass (relay type_cast_expr(e, n, true));
+        pass (raw type_cast_expr(e, n, true));
     }
 
     // --- the pointer family (OP_REFERENCE §0 level 5) -----------------------------
     if (n.kind == ExprKind.ExprAddressOfExpr) {
         drop require_place_operand(e, raw expr_operand(n), "@");
-        int32:t = relay type_of_expr(e, raw expr_operand(n));
+        int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
     }
     if (n.kind == ExprKind.ExprDerefExpr) {
-        pass (relay type_deref(e, n));
+        pass (raw type_deref(e, n));
     }
     // `$$i` / `$$m` — a SECOND-CLASS borrow (D-004). It is a pointer at the type
     // level and the borrow checker (0.5) is what makes it second-class; the
     // distinction is about where the value may travel, not about what it is.
     if (n.kind == ExprKind.ExprBorrowExpr) {
         drop require_place_operand(e, raw expr_operand(n), "a borrow");
-        int32:t = relay type_of_expr(e, raw expr_operand(n));
+        int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
     }
 
     if (n.kind == ExprKind.ExprRangeExpr) {
-        pass (relay type_range_expr(e, n));
+        pass (raw type_range_expr(e, n));
     }
     if (n.kind == ExprKind.ExprTernaryExpr) {
-        pass (relay type_ternary(e, n));
+        pass (raw type_ternary(e, n));
     }
     if (n.kind == ExprKind.ExprDefaultsExpr) {
-        pass (relay type_defaults(e, n));
+        pass (raw type_defaults(e, n));
     }
 
     // `move(place)` (D-065) transfers ownership and yields the same type; what it
     // does to the SOURCE is the borrow checker's business in 0.5.
     if (n.kind == ExprKind.ExprMoveExpr) {
         drop require_place_operand(e, raw expr_operand(n), "move");
-        pass (relay type_of_expr(e, raw expr_operand(n)));
+        pass (raw type_of_expr(e, raw expr_operand(n)));
     }
 
     // `..^coll` (D-026) expands a collection AT A CALL SITE and nowhere else.
     // Its type here is the collection's; 0.4.5 is where the position is checked,
     // because that is where an argument list exists to check it against.
     if (n.kind == ExprKind.ExprSpreadExpr) {
-        pass (relay type_of_expr(e, raw expr_operand(n)));
+        pass (raw type_of_expr(e, raw expr_operand(n)));
     }
 
     // `is_err(x)` tests a `tbb` without trapping, and `Result{…}` is the only way
     // to construct a `Result` (D-097). An `Optional` has no counterpart to the
     // second of these: `NIL` is its empty value and a bare `T` is its full one
     // (D-099), so there is nothing here for it.
-    if (n.kind == ExprKind.ExprIsErrExpr)        { pass (relay type_is_err(e, n)); }
-    if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (relay type_result_literal(e, n)); }
+    if (n.kind == ExprKind.ExprIsErrExpr)        { pass (raw type_is_err(e, n)); }
+    if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (raw type_result_literal(e, n)); }
 
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        pass (relay type_ident(e, n));
+        pass (raw type_ident(e, n));
     }
 
     // Member access, indexing and calls live in `type_access.npk` — they are one
     // subject ("reaching into a value") and they all need the layout rules. The
     // hook keeps this module from depending on that one, since the traffic runs
     // the other way.
-    pass (relay type_access(e, id, n));
+    pass (raw type_access(e, id, n));
 
 };
 
-func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     TokenKind:op = raw expr_op(n);
 
     // An unsuffixed literal on one side takes the OTHER side's type (D-092), so
@@ -2296,14 +2296,14 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     int32:rt = 0i32;
 
     if (raw takes_type_from_context(e, raw expr_lhs(n))) {
-        rt = relay type_of_expr(e, raw expr_rhs(n));
+        rt = raw type_of_expr(e, raw expr_rhs(n));
         if (rt != 0i32) { e.expected = rt; }
-        lt = relay type_of_expr(e, raw expr_lhs(n));
+        lt = raw type_of_expr(e, raw expr_lhs(n));
         e.expected = saved;
     } else {
-        lt = relay type_of_expr(e, raw expr_lhs(n));
+        lt = raw type_of_expr(e, raw expr_lhs(n));
         if (lt != 0i32) { e.expected = lt; }
-        rt = relay type_of_expr(e, raw expr_rhs(n));
+        rt = raw type_of_expr(e, raw expr_rhs(n));
         e.expected = saved;
     }
 
@@ -2318,39 +2318,39 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                 pass (e.types.t_string);
             }
         }
-        pass (relay type_arithmetic(e, n.span, lt, rt));
+        pass (raw type_arithmetic(e, n.span, lt, rt));
     }
-    if (op == TokenKind.OpMinus)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpStar)    { pass (relay type_arithmetic(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpSlash)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpPercent) { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpMinus)   { pass (raw type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpStar)    { pass (raw type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpSlash)   { pass (raw type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpPercent) { pass (raw type_arithmetic(e, n.span, lt, rt)); }
 
-    if (op == TokenKind.OpEqEq)  { pass (relay type_comparison(e, n, lt, rt, false)); }
-    if (op == TokenKind.OpNotEq) { pass (relay type_comparison(e, n, lt, rt, false)); }
-    if (op == TokenKind.OpLt)    { pass (relay type_comparison(e, n, lt, rt, true)); }
-    if (op == TokenKind.OpLtEq)  { pass (relay type_comparison(e, n, lt, rt, true)); }
-    if (op == TokenKind.OpGt)    { pass (relay type_comparison(e, n, lt, rt, true)); }
-    if (op == TokenKind.OpGtEq)  { pass (relay type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpEqEq)  { pass (raw type_comparison(e, n, lt, rt, false)); }
+    if (op == TokenKind.OpNotEq) { pass (raw type_comparison(e, n, lt, rt, false)); }
+    if (op == TokenKind.OpLt)    { pass (raw type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpLtEq)  { pass (raw type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpGt)    { pass (raw type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpGtEq)  { pass (raw type_comparison(e, n, lt, rt, true)); }
     if (op == TokenKind.OpSpaceship) {
         drop type_comparison(e, n, lt, rt, true);
         pass (raw tt_int(e.types, 32i32, true));
     }
 
-    if (op == TokenKind.OpAndAnd) { pass (relay type_logical(e, n, lt, rt)); }
-    if (op == TokenKind.OpOrOr)   { pass (relay type_logical(e, n, lt, rt)); }
+    if (op == TokenKind.OpAndAnd) { pass (raw type_logical(e, n, lt, rt)); }
+    if (op == TokenKind.OpOrOr)   { pass (raw type_logical(e, n, lt, rt)); }
 
-    if (op == TokenKind.OpAmp)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpPipe)  { pass (relay type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpCaret) { pass (relay type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpShl)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpShr)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpAmp)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpPipe)  { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpCaret) { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpShl)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpShr)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
 
     pass 0i32;
 };
 
-func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     TokenKind:op = raw expr_op(n);
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
+    int32:t = raw type_of_expr(e, raw expr_operand(n));
 
     if (op == TokenKind.OpBang) {
         drop require_bool(e, t, n.span);
@@ -2363,16 +2363,16 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         // not a value. `-x` is the same `tbb`, and ERR stays ERR (sticky).
         if ((raw type_kind(e.types, t)) == (raw TY_TBB())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
-            pass (relay te_operand_error(e, n.span, t));
+            pass (raw te_operand_error(e, n.span, t));
         }
         // Negating an UNSIGNED value is a question with no good answer, so it is
         // not asked: the result is either wrong or a different type.
         if (raw type_is_integer(e.types, t)) {
             if (!(raw type_is_signed(e.types, t))) {
-                string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, t));
-                string:m2 = relay string_concat(m1,
+                string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, t));
+                string:m2 = raw string_concat(m1,
                     "` is unsigned, so it has no negation");
-                pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+                pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
             }
         }
         pass t;
@@ -2380,7 +2380,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (op == TokenKind.OpTilde) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
         if (!(raw type_is_integer(e.types, t))) {
-            pass (relay te_bitwise_error(e, n.span, t));
+            pass (raw te_bitwise_error(e, n.span, t));
         }
         pass t;
     }

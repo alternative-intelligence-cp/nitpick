@@ -35,30 +35,30 @@ use "./parse_expr.npk".*;
 // `.a` directly is a call site that will break silently when a slot's meaning
 // moves.
 
-pub func:type_name_index = int64(TypeNode:t)    { pass t.payload; };
+pub func:type_name_index = int64(TypeNode:t) never fails    { pass t.payload; };
 // IS THE NAME A BUILTIN TYPE KEYWORD, or an interned identifier? The payload
 // means a different thing in each case and there is no way to tell from the
 // payload itself -- see the note where this is set.
-pub func:type_name_is_builtin = bool(TypeNode:t) { pass (t.c != 0i32); };
-pub func:type_args_start = int32(TypeNode:t)    { pass t.a; };
-pub func:type_args_count = int32(TypeNode:t)    { pass t.b; };
-pub func:type_pointee = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
-pub func:type_inner = TypeId(TypeNode:t)        { TypeId:i = TypeId{ index: t.a }; pass i; };
-pub func:type_element = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
-pub func:type_array_size = ExprId(TypeNode:t)   { ExprId:i = ExprId{ index: t.b }; pass i; };
+pub func:type_name_is_builtin = bool(TypeNode:t) never fails { pass (t.c != 0i32); };
+pub func:type_args_start = int32(TypeNode:t) never fails    { pass t.a; };
+pub func:type_args_count = int32(TypeNode:t) never fails    { pass t.b; };
+pub func:type_pointee = TypeId(TypeNode:t) never fails      { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_inner = TypeId(TypeNode:t) never fails        { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_element = TypeId(TypeNode:t) never fails      { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_array_size = ExprId(TypeNode:t) never fails   { ExprId:i = ExprId{ index: t.b }; pass i; };
 // FuncType: a,b = the parameter-type window, c = the return type.
-pub func:type_return = TypeId(TypeNode:t)       { TypeId:i = TypeId{ index: t.c }; pass i; };
+pub func:type_return = TypeId(TypeNode:t) never fails       { TypeId:i = TypeId{ index: t.c }; pass i; };
 // `never fails` on a function TYPE (D-163) rides the node's payload slot.
-pub func:type_func_never_fails = bool(TypeNode:t) { pass (t.payload != 0i64); };
-pub func:type_param_start = int32(TypeNode:t)   { pass t.a; };
-pub func:type_param_count = int32(TypeNode:t)   { pass t.b; };
-pub func:type_param_at = TypeId(Ast->:ast, TypeNode:t, int32:i) {
+pub func:type_func_never_fails = bool(TypeNode:t) never fails { pass (t.payload != 0i64); };
+pub func:type_param_start = int32(TypeNode:t) never fails   { pass t.a; };
+pub func:type_param_count = int32(TypeNode:t) never fails   { pass t.b; };
+pub func:type_param_at = TypeId(Ast->:ast, TypeNode:t, int32:i) never fails {
     TypeId:p = TypeId{ index: raw ast_id_at(ast, t.a, i) };
     pass p;
 };
 
 // `T[]` versus `T[N]`: an absent size is the slice.
-pub func:type_is_slice = bool(TypeNode:t) {
+pub func:type_is_slice = bool(TypeNode:t) never fails {
     if (t.kind != TypeKind.TypeArrayType) { pass false; }
     pass (t.b == 0i32);
 };
@@ -68,14 +68,14 @@ pub func:type_is_slice = bool(TypeNode:t) {
 // `type_pointee` would hand a type-node index to something expecting an
 // expression, which is the misreading the named accessors exist to prevent.
 // `T.Item` — the base is `a`, the name is the payload (D-164).
-pub func:type_projection_base = TypeId(TypeNode:t) {
+pub func:type_projection_base = TypeId(TypeNode:t) never fails {
     TypeId:i = TypeId{ index: t.a };
     pass i;
 };
 
-pub func:type_projection_name = int64(TypeNode:t) { pass t.payload; };
+pub func:type_projection_name = int64(TypeNode:t) never fails { pass t.payload; };
 
-pub func:type_comptime_value = ExprId(TypeNode:t) {
+pub func:type_comptime_value = ExprId(TypeNode:t) never fails {
     ExprId:e = ExprId{ index: t.a };
     pass e;
 };
@@ -98,20 +98,20 @@ pub func:type_comptime_value = ExprId(TypeNode:t) {
 // which is exactly the context-dependence the blueprint philosophy forbids; a
 // builtin that takes no values says so in the checker, where the message can name
 // the builtin.
-pub func:p_parse_type_arg = TypeId(Parser->:p) {
-    Span:sp = relay p_span(p);
-    if (raw type_arg_starts_type(relay p_kind(p))) {
-        pass (relay p_parse_type(p));
+pub func:p_parse_type_arg = TypeId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
+    if (raw type_arg_starts_type(raw p_kind(p))) {
+        pass (raw p_parse_type(p));
     }
-    ExprId:v = relay p_parse_const_arg(p);
-    pass (relay ast_add_type(p.ast, TypeKind.TypeComptimeArg, sp,
+    ExprId:v = raw p_parse_const_arg(p);
+    pass (raw ast_add_type(p.ast, TypeKind.TypeComptimeArg, sp,
                              v.index, 0i32, 0i32, 0i64));
 };
 
 // The tokens `p_parse_type` itself accepts as a first token. Written from that
 // function rather than guessed at, so the two cannot drift into disagreeing about
 // what a type looks like.
-func:type_arg_starts_type = bool(TokenKind:k) {
+func:type_arg_starts_type = bool(TokenKind:k) never fails {
     if (k == TokenKind.Ident)    { pass true; }
     if (k == TokenKind.KwDyn)    { pass true; }
     if (k == TokenKind.KwFunc)   { pass true; }
@@ -131,11 +131,11 @@ func:type_arg_starts_type = bool(TokenKind:k) {
 // This is what D-064 bought by confining type-argument context to a type
 // position or `::<` and nowhere else: no feedback channel into the lexer, no
 // lookahead heuristic, no speculative parse.
-pub func:p_expect_gt = bool(Parser->:p) {
-    if (relay p_accept(p, TokenKind.OpGt)) {
+pub func:p_expect_gt = bool(Parser->:p) never fails {
+    if (raw p_accept(p, TokenKind.OpGt)) {
         pass true;
     }
-    if (relay p_at(p, TokenKind.OpShr)) {
+    if (raw p_at(p, TokenKind.OpShr)) {
         if (raw tokenlist_split_shr(p.tokens, p.pos)) {
             // The first `>` closes this list; the second stays for the level
             // above, which is the whole reason nested generics work.
@@ -143,27 +143,27 @@ pub func:p_expect_gt = bool(Parser->:p) {
             pass true;
         }
     }
-    pass (relay p_expect(p, TokenKind.OpGt));
+    pass (raw p_expect(p, TokenKind.OpGt));
 };
 
 // --- types --------------------------------------------------------------------
 
-pub func:p_parse_type = TypeId(Parser->:p) {
-    Span:sp = relay p_span(p);
-    TokenKind:k = relay p_kind(p);
+pub func:p_parse_type = TypeId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
+    TokenKind:k = raw p_kind(p);
 
     // `dyn A & B` -- a set of traits, combined with `&` (D-029).
     if (k == TokenKind.KwDyn) {
         drop p_advance(p);
         int32:mark = raw ast_scratch_mark(p.ast);
-        TypeId:first = relay p_parse_type(p);
+        TypeId:first = raw p_parse_type(p);
         drop ast_scratch_push(p.ast, first.index);
-        while (relay p_accept(p, TokenKind.OpAmp)) {
-            TypeId:more = relay p_parse_type(p);
+        while (raw p_accept(p, TokenKind.OpAmp)) {
+            TypeId:more = raw p_parse_type(p);
             drop ast_scratch_push(p.ast, more.index);
         }
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-        pass (relay ast_add_type(p.ast, TypeKind.TypeDynType, sp,
+        pass (raw ast_add_type(p.ast, TypeKind.TypeDynType, sp,
                                  w.start, w.count, 0i32, 0i64));
     }
 
@@ -175,9 +175,9 @@ pub func:p_parse_type = TypeId(Parser->:p) {
     // written INSIDE the parens; `p_suffixes` here takes the ones after.
     if (k == TokenKind.PLParen) {
         drop p_advance(p);
-        TypeId:inner = relay p_parse_type(p);
+        TypeId:inner = raw p_parse_type(p);
         drop p_expect(p, TokenKind.PRParen);
-        pass (relay p_suffixes(p, inner));
+        pass (raw p_suffixes(p, inner));
     }
 
     // `cstring` and `any` are BUILTIN TYPE KEYWORDS with nodes of their own, so
@@ -185,7 +185,7 @@ pub func:p_parse_type = TypeId(Parser->:p) {
     // NamedType. Both were unreachable until 0.2.8 for exactly that reason.
     if (k == TokenKind.KwCstring) {
         drop p_advance(p);
-        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeCStringType,
+        pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeCStringType,
                                                      sp, 0i32, 0i32, 0i32, 0i64)));
     }
     if (k == TokenKind.KwAny) {
@@ -195,7 +195,7 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         // refused there, with the message the spec already writes. Enforcing it
         // in the parser would report "expected `->`" and name neither the type
         // nor the rule (D-085).
-        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeAnyType,
+        pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeAnyType,
                                                      sp, 0i32, 0i32, 0i32, 0i64)));
     }
 
@@ -204,33 +204,33 @@ pub func:p_parse_type = TypeId(Parser->:p) {
     // there is nothing for a name to bind to in a type.
     if (k == TokenKind.KwFunc) {
         drop p_advance(p);
-        TypeId:ret = relay p_parse_type(p);
+        TypeId:ret = raw p_parse_type(p);
         drop p_expect(p, TokenKind.PLParen);
         int32:mark = raw ast_scratch_mark(p.ast);
         while (true) {
-            if (relay p_at(p, TokenKind.PRParen)) { break; }
-            if (relay p_at_end(p)) { break; }
-            TypeId:pt = relay p_parse_type(p);
+            if (raw p_at(p, TokenKind.PRParen)) { break; }
+            if (raw p_at_end(p)) { break; }
+            TypeId:pt = raw p_parse_type(p);
             drop ast_scratch_push(p.ast, pt.index);
-            if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+            if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
         drop p_expect(p, TokenKind.PRParen);
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         // `never fails` after the parameter list (D-163) — the func type's
         // contract, stored in the node's payload slot and read at resolve.
         int64:nf = 0i64;
-        if (relay p_accept(p, TokenKind.KwNever)) {
+        if (raw p_accept(p, TokenKind.KwNever)) {
             drop p_expect(p, TokenKind.KwFails);
             nf = 1i64;
         }
-        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeFuncType,
+        pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeFuncType,
                                                      sp, w.start, w.count,
                                                      ret.index, nf)));
     }
 
     if (k == TokenKind.KwSelf) {
         drop p_advance(p);
-        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeSelfType,
+        pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeSelfType,
                                                      sp, 0i32, 0i32, 0i32, 0i64)));
     }
 
@@ -245,7 +245,7 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         pass (raw type_none());
     }
 
-    Token:nt = relay p_advance(p);
+    Token:nt = raw p_advance(p);
     int64:name = nt.payload;
     // WHICH KIND OF NAME THIS IS, RECORDED RATHER THAN INFERRED.
     //
@@ -269,14 +269,14 @@ pub func:p_parse_type = TypeId(Parser->:p) {
 
     int32:astart = 0i32;
     int32:acount = 0i32;
-    if (relay p_at(p, TokenKind.OpLt)) {
+    if (raw p_at(p, TokenKind.OpLt)) {
         drop p_advance(p);
         int32:mark = raw ast_scratch_mark(p.ast);
-        if (!(relay p_at(p, TokenKind.OpGt))) {
-            TypeId:a1 = relay p_parse_type_arg(p);
+        if (!(raw p_at(p, TokenKind.OpGt))) {
+            TypeId:a1 = raw p_parse_type_arg(p);
             drop ast_scratch_push(p.ast, a1.index);
-            while (relay p_accept(p, TokenKind.PComma)) {
-                TypeId:argN = relay p_parse_type_arg(p);
+            while (raw p_accept(p, TokenKind.PComma)) {
+                TypeId:argN = raw p_parse_type_arg(p);
                 drop ast_scratch_push(p.ast, argN.index);
             }
         }
@@ -286,17 +286,17 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         acount = w.count;
     }
 
-    TypeId:base = relay ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
+    TypeId:base = raw ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
                                      astart, acount, is_builtin, name);
-    pass (relay p_suffixes(p, base));
+    pass (raw p_suffixes(p, base));
 };
 
 // `->`, `[]`, `[N]`, `?` -- applied left to right, so `int8->[]` is a slice of
 // pointers rather than a pointer to a slice.
-pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
+pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
     TypeId:cur = base;
     while (true) {
-        Span:sp = relay p_span(p);
+        Span:sp = raw p_span(p);
 
         // `T.Item` — AN ASSOCIATED TYPE, PROJECTED (D-164). It is a suffix
         // because that is what it is: a base type with one more thing applied,
@@ -309,30 +309,30 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
         // expressions are separate grammars with separate entry points, and an
         // array size is the only expression inside a type, parsed by
         // `p_parse_expr` between its own brackets.
-        if (relay p_accept(p, TokenKind.PDot)) {
+        if (raw p_accept(p, TokenKind.PDot)) {
             // THE NAME IS TAKEN WHATEVER IT IS, and `p_expect` reports it if it
             // is not an identifier. Consuming it either way keeps the suffix
             // loop moving, which is how the parser stays able to describe a
             // whole program rather than stopping at the first mistake.
             int64:pnm = 0i64;
-            if (relay p_at(p, TokenKind.Ident)) {
-                pnm = (relay p_advance(p)).payload;
+            if (raw p_at(p, TokenKind.Ident)) {
+                pnm = (raw p_advance(p)).payload;
             } else {
                 drop p_expect(p, TokenKind.Ident);
             }
-            cur = relay ast_add_type(p.ast, TypeKind.TypeProjection, sp,
+            cur = raw ast_add_type(p.ast, TypeKind.TypeProjection, sp,
                                      cur.index, 0i32, 0i32, pnm);
         } else {
 
-        if (relay p_accept(p, TokenKind.OpArrowTo)) {
-            cur = relay ast_add_type(p.ast, TypeKind.TypePointerType, sp,
+        if (raw p_accept(p, TokenKind.OpArrowTo)) {
+            cur = raw ast_add_type(p.ast, TypeKind.TypePointerType, sp,
                                      cur.index, 0i32, 0i32, 0i64);
         } else {
-            if (relay p_accept(p, TokenKind.OpQuestion)) {
-                cur = relay ast_add_type(p.ast, TypeKind.TypeOptionalType, sp,
+            if (raw p_accept(p, TokenKind.OpQuestion)) {
+                cur = raw ast_add_type(p.ast, TypeKind.TypeOptionalType, sp,
                                          cur.index, 0i32, 0i32, 0i64);
             } else {
-                if (relay p_at(p, TokenKind.PLBracket)) {
+                if (raw p_at(p, TokenKind.PLBracket)) {
                     drop p_advance(p);
                     // An absent size is a SLICE; a present one is a fixed array.
                     //
@@ -344,11 +344,11 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
                     // Neither failed. Both meant something other than what was
                     // written, which is the worse of the two ways to be wrong.
                     int32:size = 0i32;
-                    if (!(relay p_at(p, TokenKind.PRBracket))) {
-                        size = (relay p_parse_expr(p)).index;
+                    if (!(raw p_at(p, TokenKind.PRBracket))) {
+                        size = (raw p_parse_expr(p)).index;
                     }
                     drop p_expect(p, TokenKind.PRBracket);
-                    cur = relay ast_add_type(p.ast, TypeKind.TypeArrayType, sp,
+                    cur = raw ast_add_type(p.ast, TypeKind.TypeArrayType, sp,
                                              cur.index, size, 0i32, 0i64);
                 } else {
                     break;

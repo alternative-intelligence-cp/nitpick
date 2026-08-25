@@ -64,11 +64,11 @@ use "./analysis_codes.npk".*;
 // that acquires nothing has no minimum and no maximum, and the two sentinels are
 // the identities of the operations that combine them — so `min` and `max` fold
 // over a call graph without a special case at every step.
-pub func:LOCK_NONE_MIN = int32() { pass 2147483647i32; };
-pub func:LOCK_NONE_MAX = int32() { pass (0i32 - 2147483647i32); };
+pub func:LOCK_NONE_MIN = int32() never fails { pass 2147483647i32; };
+pub func:LOCK_NONE_MAX = int32() never fails { pass (0i32 - 2147483647i32); };
 
-pub func:LOCK_ROUNDS = int32() { pass 64i32; };
-pub func:LOCK_DEPTH = int32()  { pass 256i32; };
+pub func:LOCK_ROUNDS = int32() never fails { pass 64i32; };
+pub func:LOCK_DEPTH = int32() never fails  { pass 256i32; };
 
 // WHAT EACH FUNCTION MAY ACQUIRE, transitively. Indexed by `DeclId`, dense, for
 // the same reason every other side table in this compiler is: declarations are
@@ -114,7 +114,7 @@ pub struct:Locks = {
 pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                             ExprTypes->:etypes, InternTable->:interns,
                             ImplTable->:impls, BoundTable->:bounds,
-                            DiagList->:diags, TypeResolver->:tyres) {
+                            DiagList->:diags, TypeResolver->:tyres) never fails {
     int64:size = (raw ast_decl_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:m1 = alloc(size * #size_of<int32>());
@@ -143,18 +143,18 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     pass x;
 };
 
-func:locks_err = NIL(Locks->:x, string:code, string:msg, Span:sp) {
+func:locks_err = NIL(Locks->:x, string:code, string:msg, Span:sp) never fails {
     drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
     pass NIL;
 };
 
-func:table_min = int32(Locks->:x, int32:decl) {
+func:table_min = int32(Locks->:x, int32:decl) never fails {
     if (decl < 0i32)              { pass (raw LOCK_NONE_MIN()); }
     if (decl >= x.table.count)    { pass (raw LOCK_NONE_MIN()); }
     pass (x.table.acq_min[decl => int64]);
 };
 
-func:table_max = int32(Locks->:x, int32:decl) {
+func:table_max = int32(Locks->:x, int32:decl) never fails {
     if (decl < 0i32)           { pass (raw LOCK_NONE_MAX()); }
     if (decl >= x.table.count) { pass (raw LOCK_NONE_MAX()); }
     pass (x.table.acq_max[decl => int64]);
@@ -163,7 +163,7 @@ func:table_max = int32(Locks->:x, int32:decl) {
 // `changed` IS SET ONLY ON A FLIP, so the fixpoint below can converge. Setting it
 // on every write would make every round report a change and the loop would run to
 // its bound on any program that acquires anything.
-func:table_widen = NIL(Locks->:x, int32:decl, int32:lo, int32:hi) {
+func:table_widen = NIL(Locks->:x, int32:decl, int32:lo, int32:hi) never fails {
     if (decl < 0i32)           { pass NIL; }
     if (decl >= x.table.count) { pass NIL; }
     int64:i = decl => int64;
@@ -192,21 +192,23 @@ pub struct:LevelRead = {
     bool:bounded;    // `acquires <= N` rather than `acquires N`
 };
 
-func:no_level = LevelRead() {
+func:no_level = LevelRead() never fails {
     LevelRead:r = LevelRead{ found: false, level: 0i32, bounded: false };
     pass r;
 };
 
-func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
+func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
     int32:n = raw fn_contract_count(x.ast, d);
     int32:i = 0i32;
     while (i < n) {
-        VerifyNode:v = relay ast_verify(x.ast, relay fn_contract(x.ast, d, i));
+        VerifyNode:v = raw ast_verify(x.ast, raw fn_contract(x.ast, d, i));
         if ((raw contract_kind(v)) == (raw CONTRACT_ACQUIRES())) {
             ExprId:c = raw contract_cond(v);
             if (raw expr_is_none(c)) { pass (raw no_level()); }
-            ExprNode:cnode = relay ast_expr(x.ast, c);
-            ConstVal:cv = relay fold_const(x.tyres, c, x.cur_scope);
+            ExprNode:cnode = raw ast_expr(x.ast, c);
+            // The checker already folded this `acquires` level; failing to
+            // RE-fold it is an internal inconsistency, not a program error.
+            ConstVal:cv = fold_const(x.tyres, c, x.cur_scope) ?! 25tbb32;
             if (!(raw cv_is_int(cv))) {
                 if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
@@ -239,16 +241,16 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
 // whose `acquires <= N` bound is what makes the analysis terminate there instead
 // of giving up. An analysis that handled only direct calls would under-approximate
 // SILENTLY, which is the failure D-056 exists to prevent.
-func:call_target = int32(Locks->:x, ExprNode:n) {
+func:call_target = int32(Locks->:x, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprCallExpr) {
         ExprId:c = raw expr_callee(n);
         if (raw expr_is_none(c)) { pass 0i32; }
-        ExprNode:cnode = relay ast_expr(x.ast, c);
+        ExprNode:cnode = raw ast_expr(x.ast, c);
         if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
         if (cnode.a == 0i32) { pass 0i32; }
         Symbol:s = raw symtab_get(x.tab, cnode.a);
         if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
-        DeclNode:d = relay ast_decl(x.ast, DeclId{ index: s.origin });
+        DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
         if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
         pass s.origin;
     }
@@ -260,9 +262,11 @@ func:call_target = int32(Locks->:x, ExprNode:n) {
         // 0 for the enclosing trait: this walk visits function BODIES, and a
         // `Self` receiver in one is a trait default's — whose lock levels are
         // judged where the trait is checked, not here (1.0.4).
-        MethodFind:m = relay find_method(x.impls, x.bounds, x.types, x.ast,
+        // The checker already resolved this method at the call site; a failed
+        // RE-resolution here is an internal inconsistency, not a program error.
+        MethodFind:m = find_method(x.impls, x.bounds, x.types, x.ast,
                                          x.interns, rty,
-                                         (raw expr_name(n)) =>! int32, 0i32);
+                                         (raw expr_name(n)) =>! int32, 0i32) ?! 25tbb32;
         if (!m.found) { pass 0i32; }
         pass m.decl;
     }
@@ -286,9 +290,9 @@ func:call_target = int32(Locks->:x, ExprNode:n) {
 // reports partial results is the under-reporting D-056 exists to prevent, reached
 // by a different road.
 
-pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) never fails {
     x.cur_scope = scope;
-    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -298,11 +302,11 @@ pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
     pass NIL;
 };
 
-func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
-    DeclNode:d = relay ast_decl(x.ast, id);
+func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
-        LevelRead:r = relay read_acquires(x, d);
+        LevelRead:r = raw read_acquires(x, d);
         if (!r.found) { pass NIL; }
         if (r.bounded) {
             // A BOUND IS NOT AN ACQUISITION. `acquires <= N` promises that nothing
@@ -325,10 +329,10 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
         pass NIL;
     }
     if (d.kind == DeclKind.DeclImplDecl) {
-        int32:mn = relay impl_member_count(x.ast, d);
+        int32:mn = raw impl_member_count(x.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            drop locks_seed_decl(x, relay impl_member(x.ast, d, j), scope);
+            drop locks_seed_decl(x, raw impl_member(x.ast, d, j), scope);
             j = j + 1i32;
         }
         pass NIL;
@@ -346,9 +350,9 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
 };
 
 // One widening round: every function absorbs what its callees reach.
-pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) never fails {
     x.cur_scope = scope;
-    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -358,15 +362,15 @@ pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
     pass NIL;
 };
 
-func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
-    DeclNode:d = relay ast_decl(x.ast, id);
+func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         // A FUNCTION'S OWN DECLARED LEVEL IS ALREADY HELD INSIDE ITS BODY. If it
         // says `acquires 2i32`, everything it goes on to do happens with 2 held —
         // so a helper it calls that acquires 1 is a downward acquisition, which is
         // the transitive case the whole analysis is for.
-        LevelRead:own = relay read_acquires(x, d);
+        LevelRead:own = raw read_acquires(x, d);
         int32:held = raw LOCK_NONE_MAX();
         if (own.found) {
             if (!own.bounded) { held = own.level; }
@@ -387,10 +391,10 @@ func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
         // opt-in at the one place it has to be kept, and D-056's "an undeclared
         // method may not acquire at all" would become "unless the implementation
         // forgot to say so".
-        int32:mn = relay impl_member_count(x.ast, d);
+        int32:mn = raw impl_member_count(x.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            DeclId:mid = relay impl_member(x.ast, d, j);
+            DeclId:mid = raw impl_member(x.ast, d, j);
             drop inherit_trait_bound(x, id.index, mid);
             drop locks_widen_decl(x, mid, scope);
             j = j + 1i32;
@@ -409,8 +413,8 @@ func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
     pass NIL;
 };
 
-pub func:locks_changed = bool(Locks->:x) { pass x.table.changed; };
-pub func:locks_new_round = NIL(Locks->:x) { x.table.changed = false; pass NIL; };
+pub func:locks_changed = bool(Locks->:x) never fails { pass x.table.changed; };
+pub func:locks_new_round = NIL(Locks->:x) never fails { x.table.changed = false; pass NIL; };
 
 // --- one walk, two jobs --------------------------------------------------------
 //
@@ -425,9 +429,9 @@ pub func:locks_new_round = NIL(Locks->:x) { x.table.changed = false; pass NIL; }
 // scoped by the block that raised it — which is exactly a guard's lifetime under
 // D-056, where release is automatic at scope exit and there is no unlock to forget.
 
-func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:depth) {
+func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:depth) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
-    StmtNode:s = relay ast_stmt(x.ast, id);
+    StmtNode:s = raw ast_stmt(x.ast, id);
     if (depth <= 0i32) {
         if (x.reporting) {
             drop locks_err(x, raw LOCK_INTERNAL(),
@@ -447,14 +451,14 @@ func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:dept
         while (i < (raw stmt_list_count(s))) {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
             drop locks_stmt(x, caller, sub, h, d);
-            h = relay raise_held(x, caller, sub, h);
+            h = raw raise_held(x, caller, sub, h);
             i = i + 1i32;
         }
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtVarDeclStmt) {
-        drop locks_expr(x, caller, relay stmt_decl_init(x.ast, s), held, d);
+        drop locks_expr(x, caller, raw stmt_decl_init(x.ast, s), held, d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
@@ -470,28 +474,28 @@ func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:dept
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop locks_expr(x, caller, raw stmt_cond(s), held, d);
-        drop locks_stmt(x, caller, relay stmt_body(x.ast, s), held, d);
+        drop locks_stmt(x, caller, raw stmt_body(x.ast, s), held, d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop locks_expr(x, caller, raw stmt_cond(s), held, d);
-        drop locks_stmt(x, caller, relay stmt_when_body(x.ast, s), held, d);
-        drop locks_stmt(x, caller, relay stmt_when_then(x.ast, s), held, d);
-        drop locks_stmt(x, caller, relay stmt_when_end(x.ast, s), held, d);
+        drop locks_stmt(x, caller, raw stmt_when_body(x.ast, s), held, d);
+        drop locks_stmt(x, caller, raw stmt_when_then(x.ast, s), held, d);
+        drop locks_stmt(x, caller, raw stmt_when_end(x.ast, s), held, d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtLoopStmt) { drop locks_counted(x, caller, s, held, d); pass NIL; }
     if (s.kind == StmtKind.StmtTillStmt) { drop locks_counted(x, caller, s, held, d); pass NIL; }
     if (s.kind == StmtKind.StmtForStmt) {
-        drop locks_expr(x, caller, relay stmt_for_iter(x.ast, s), held, d);
-        drop locks_stmt(x, caller, relay stmt_for_body(x.ast, s), held, d);
+        drop locks_expr(x, caller, raw stmt_for_iter(x.ast, s), held, d);
+        drop locks_stmt(x, caller, raw stmt_for_body(x.ast, s), held, d);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
         drop locks_expr(x, caller, raw pick_selector(s), held, d);
         int32:i2 = 0i32;
         while (i2 < (raw pick_arm_count(s))) {
-            drop locks_stmt(x, caller, relay pick_arm_at(x.ast, raw pick_arm_start(s), i2), held, d);
+            drop locks_stmt(x, caller, raw pick_arm_at(x.ast, raw pick_arm_start(s), i2), held, d);
             i2 = i2 + 1i32;
         }
         pass NIL;
@@ -533,14 +537,14 @@ func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:dept
 // drops at the end of THIS scope. A bare call to a function that acquires and
 // releases internally leaves nothing held — its guard was scoped inside it — and
 // treating the two alike would refuse every second call to an ordinary helper.
-func:raise_held = int32(Locks->:x, int32:caller, StmtId:id, int32:held) {
+func:raise_held = int32(Locks->:x, int32:caller, StmtId:id, int32:held) never fails {
     if (raw stmt_is_none(id)) { pass held; }
-    StmtNode:s = relay ast_stmt(x.ast, id);
+    StmtNode:s = raw ast_stmt(x.ast, id);
     if (s.kind != StmtKind.StmtVarDeclStmt) { pass held; }
 
-    ExprId:init = relay stmt_decl_init(x.ast, s);
+    ExprId:init = raw stmt_decl_init(x.ast, s);
     if (raw expr_is_none(init)) { pass held; }
-    int32:lo = relay init_acquires(x, init, raw LOCK_DEPTH());
+    int32:lo = raw init_acquires(x, init, raw LOCK_DEPTH());
     if (lo == (raw LOCK_NONE_MIN())) { pass held; }
     if (lo <= held) { pass held; }
     pass lo;
@@ -549,31 +553,31 @@ func:raise_held = int32(Locks->:x, int32:caller, StmtId:id, int32:held) {
 // The lowest level an initialiser's calls reach, unwrapping the operators that sit
 // between a binding and its acquisition — `relay await cfg_lock.acquire(…)` is
 // three of them before the call is reached.
-func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) {
+func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
     if (raw expr_is_none(id))  { pass (raw LOCK_NONE_MIN()); }
     if (depth <= 0i32)         { pass (raw LOCK_NONE_MIN()); }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
 
-    int32:target = relay call_target(x, n);
+    int32:target = raw call_target(x, n);
     if (target != 0i32) {
         if (x.table.has_bound[target => int64]) {
             pass (x.table.bound[target => int64]);
         }
-        pass (relay table_min(x, target));
+        pass (raw table_min(x, target));
     }
 
     int32:shape = raw expr_shape(n.kind);
     if (shape == (raw EXPR_SHAPE_ONE())) {
-        pass (relay init_acquires(x, raw expr_operand(n), depth - 1i32));
+        pass (raw init_acquires(x, raw expr_operand(n), depth - 1i32));
     }
     pass (raw LOCK_NONE_MIN());
 };
 
-func:locks_counted = NIL(Locks->:x, int32:caller, StmtNode:s, int32:held, int32:depth) {
+func:locks_counted = NIL(Locks->:x, int32:caller, StmtNode:s, int32:held, int32:depth) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop locks_expr(x, caller, relay stmt_counted_arg(x.ast, s, i), held, depth);
+        drop locks_expr(x, caller, raw stmt_counted_arg(x.ast, s, i), held, depth);
         i = i + 1i32;
     }
     drop locks_stmt(x, caller, raw stmt_counted_body(s), held, depth);
@@ -582,9 +586,9 @@ func:locks_counted = NIL(Locks->:x, int32:caller, StmtNode:s, int32:held, int32:
 
 // --- expressions, where the calls are ------------------------------------------
 
-func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:depth) {
+func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:depth) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
     if (depth <= 0i32) {
         if (x.reporting) {
             drop locks_err(x, raw LOCK_INTERNAL(),
@@ -595,7 +599,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
     }
     int32:d = depth - 1i32;
 
-    int32:target = relay call_target(x, n);
+    int32:target = raw call_target(x, n);
     if (target != 0i32) {
         drop locks_call(x, caller, target, held, n.span);
     }
@@ -633,7 +637,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
         drop locks_expr(x, caller, raw pickx_selector(n), held, d);
         int32:j = 0i32;
         while (j < (raw pickx_arm_count(n))) {
-            drop locks_stmt(x, caller, relay pick_arm_at(x.ast, raw pickx_arm_start(n), j), held, d);
+            drop locks_stmt(x, caller, raw pick_arm_at(x.ast, raw pickx_arm_start(n), j), held, d);
             j = j + 1i32;
         }
         pass NIL;
@@ -675,7 +679,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
 };
 
 func:locks_window = NIL(Locks->:x, int32:caller, int32:start, int32:count,
-                        int32:held, int32:depth) {
+                        int32:held, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -690,9 +694,9 @@ func:locks_window = NIL(Locks->:x, int32:caller, int32:start, int32:count,
 // THE RULE IS ONE COMPARISON. A thread holding N may acquire only levels above N,
 // so a call that can reach level `L <= held` is a downward acquisition and the
 // path it sits on could close a cycle.
-func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at) {
-    int32:lo = relay table_min(x, target);
-    int32:hi = relay table_max(x, target);
+func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at) never fails {
+    int32:lo = raw table_min(x, target);
+    int32:hi = raw table_max(x, target);
 
     if (x.table.has_bound[target => int64]) {
         // A BOUND STANDS IN FOR THE BODY (D-113). `acquires <= N` says nothing
@@ -712,11 +716,11 @@ func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at
     if (held == (raw LOCK_NONE_MAX())) { pass NIL; }
     if (lo > held) { pass NIL; }
 
-    string:m1 = relay string_concat("this holds lock level ",
+    string:m1 = raw string_concat("this holds lock level ",
                                     raw int_to_string(held => int64));
-    string:m2 = relay string_concat(m1, " and can acquire level ");
-    string:m3 = relay string_concat(m2, raw int_to_string(lo => int64));
-    string:m4 = relay string_concat(m3,
+    string:m2 = raw string_concat(m1, " and can acquire level ");
+    string:m3 = raw string_concat(m2, raw int_to_string(lo => int64));
+    string:m4 = raw string_concat(m3,
         "; acquisition must strictly increase, or a cycle of threads each waiting on the next becomes possible (D-056)");
     drop locks_err(x, raw LOCK_ORDER(), m4, at);
     pass NIL;
@@ -732,12 +736,12 @@ func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at
 // matters is the HIGHEST level the implementation can reach — the lowest is what
 // the ordering rule cares about, and confusing the two would accept an
 // implementation that acquires 9 because it also acquires 1.
-func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) {
+func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) never fails {
     if (!(x.table.has_bound[decl => int64])) { pass NIL; }
     if (!x.reporting) { pass NIL; }
 
     int32:bound = x.table.bound[decl => int64];
-    int32:hi = relay table_max(x, decl);
+    int32:hi = raw table_max(x, decl);
     if (hi == (raw LOCK_NONE_MAX())) { pass NIL; }
     if (hi <= bound) { pass NIL; }
 
@@ -748,31 +752,31 @@ func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) {
     LevelRead:own = raw read_acquires(x, d);
     string:m1 = "";
     if (own.found) {
-        m1 = relay string_concat("this declares `acquires <= ",
+        m1 = raw string_concat("this declares `acquires <= ",
                                  raw int_to_string(bound => int64));
     } else {
-        m1 = relay string_concat("this implementation is bound by `acquires <= ",
+        m1 = raw string_concat("this implementation is bound by `acquires <= ",
                                  raw int_to_string(bound => int64));
-        m1 = relay string_concat(m1, "`, declared by the trait method it implements, and can reach level ");
+        m1 = raw string_concat(m1, "`, declared by the trait method it implements, and can reach level ");
     }
     string:m2 = m1;
     if (own.found) {
-        m2 = relay string_concat(m1, "` and can reach level ");
+        m2 = raw string_concat(m1, "` and can reach level ");
     }
-    string:m3 = relay string_concat(m2, raw int_to_string(hi => int64));
-    string:m4 = relay string_concat(m3,
+    string:m3 = raw string_concat(m2, raw int_to_string(hi => int64));
+    string:m4 = raw string_concat(m3,
         "; a call through a trait object must have a finite acquisition set, and the bound is what makes it one (D-056)");
     drop locks_err(x, raw LOCK_EXCEEDS_BOUND(), m4, d.span);
     pass NIL;
 };
 
-pub func:locks_report_mode = NIL(Locks->:x) { x.reporting = true; pass NIL; };
+pub func:locks_report_mode = NIL(Locks->:x) never fails { x.reporting = true; pass NIL; };
 
 // THE ROUNDS DID NOT SETTLE, so the analysis does not know what any function can
 // reach and says so rather than reporting what it had. An analysis that quietly
 // reports partial results is the under-reporting D-056 exists to prevent, arrived
 // at by a different road.
-pub func:locks_unsettled = NIL(Locks->:x, Span:sp) {
+pub func:locks_unsettled = NIL(Locks->:x, Span:sp) never fails {
     drop diaglist_push(x.diags, raw diag_error(raw LOCK_INTERNAL(),
         "the lock-level analysis did not settle within its round bound, so acquisition order cannot be shown to increase",
         sp));
@@ -787,8 +791,8 @@ pub func:locks_unsettled = NIL(Locks->:x, Span:sp) {
 // undeclared method may not acquire at all". It is not a special case to remember:
 // no clause means no permission, the same shape that makes a trait method with no
 // body a real absence rather than a flag (D-103).
-func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) {
-    DeclNode:m = relay ast_decl(x.ast, method);
+func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never fails {
+    DeclNode:m = raw ast_decl(x.ast, method);
     if (m.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
 
     // WHICH TRAIT, FROM THE IMPL TABLE RATHER THAN FROM THE TYPE NODE. The table
@@ -798,22 +802,22 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) {
     //
     // An INHERENT impl implements no trait, so there is no bound to inherit and
     // nothing is promised about calls through a trait object: there are none.
-    int32:trait_ty = relay impl_trait_of(x, impl_decl);
+    int32:trait_ty = raw impl_trait_of(x, impl_decl);
     if (trait_ty == 0i32) { pass NIL; }
     int32:tdecl = raw type_decl_of(x.types, trait_ty);
     if (tdecl == 0i32) { pass NIL; }
 
-    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+    DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
     if (td.kind != DeclKind.DeclTraitDecl) { pass NIL; }
 
     int32:name = raw decl_name(m);
     int32:n = raw item_member_count(x.ast, td);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, i));
+        DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, i));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(tm)) == name) {
-                LevelRead:b = relay read_acquires(x, tm);
+                LevelRead:b = raw read_acquires(x, tm);
                 if (b.found) {
                     if (b.bounded) {
                         x.table.bound[method.index => int64] = b.level;
@@ -834,11 +838,11 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) {
 // earlier version compared SPANS, which is a second way of asking "are these the
 // same declaration" and would answer wrongly the moment two impls shared a line —
 // the identity is already in hand and does not need reconstructing.
-func:impl_trait_of = int32(Locks->:x, int32:impl_decl) {
+func:impl_trait_of = int32(Locks->:x, int32:impl_decl) never fails {
     int32:n = raw impl_count(x.impls);
     int32:i = 0i32;
     while (i < n) {
-        ImplEntry:e = relay impl_at(x.impls, i);
+        ImplEntry:e = raw impl_at(x.impls, i);
         if (e.decl == impl_decl) { pass e.trait_id; }
         i = i + 1i32;
     }

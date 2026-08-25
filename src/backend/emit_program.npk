@@ -40,27 +40,27 @@ use "./ir/ir_stmt.npk".*;
 
 // One refusal, as the diagnostic SUBSET_1 §3 specifies: the construct, and the
 // rung that enables it.
-func:refuse = NIL(DiagList->:diags, IrVal:v) {
+func:refuse = NIL(DiagList->:diags, IrVal:v) never fails {
     if (v.state == (raw LL_RUNG())) {
         // A RUNG NAMES A CYCLE ("1.1") OR A ROW ("a later cycle (G-2)"); the
         // sentence reads differently for each (1.0.8 — the row form rendered
         // "enabled by cycle a later cycle (G-2)").
-        string:m1 = relay string_concat(v.what,
+        string:m1 = raw string_concat(v.what,
             " is not supported at this backend rung; enabled by cycle ");
         if (v.rung.len > 0i64) {
             if (v.rung.ptr[0i64] < 48u8) {
-                m1 = relay string_concat(v.what,
+                m1 = raw string_concat(v.what,
                     " is not supported at this backend rung; owned by ");
             } else {
                 if (v.rung.ptr[0i64] > 57u8) {
-                    m1 = relay string_concat(v.what,
+                    m1 = raw string_concat(v.what,
                         " is not supported at this backend rung; owned by ");
                 }
             }
         }
         drop diaglist_push(diags,
             raw diag_error(raw RUNG_UNSUPPORTED(),
-                           relay string_concat(m1, v.rung), v.at));
+                           raw string_concat(m1, v.rung), v.at));
         pass NIL;
     }
     // EVERY `iv_broken` ARRIVES HERE, not only an unclassified kind — a
@@ -86,15 +86,15 @@ func:refuse = NIL(DiagList->:diags, IrVal:v) {
 // definition it reads first. Module-qualified type names are 0.8's mangling
 // decision; until then the collision is an error rather than a coin toss.
 func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
-                             DiagList->:diags, ModuleGraph->:g) {
+                             DiagList->:diags, ModuleGraph->:g) never fails {
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
-        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         int32:i = 0i32;
         while (i < (raw item_member_count(@g.ast, mn))) {
             DeclId:item = raw item_member(@g.ast, mn, i);
-            DeclNode:d = relay ast_decl(@g.ast, item);
+            DeclNode:d = raw ast_decl(@g.ast, item);
             if (d.kind == DeclKind.DeclStructDecl) {
                 drop emit_one_header(w, tr, c, diags, me.scope, item, true);
             }
@@ -144,7 +144,7 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // a generic function follows (1.0.2b), and the same reason: `T` is not a type
 // until something binds it.
 func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
-                           DeclNode:d) {
+                           DeclNode:d) never fails {
     TypeId:tgt = raw impl_target(x.ast, d);
     if (raw type_is_none(tgt)) { pass NIL; }
 
@@ -156,7 +156,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // BEFORE the block — and a call through a bound records its instance while
     // a specialization is emitted, after every block has been walked.
     if ((raw impl_generic_count(x.ast, d)) > 0i32) { pass NIL; }
-    int32:self_ty = relay resolve_type(x.tr, tgt,
+    int32:self_ty = raw resolve_type(x.tr, tgt,
                         raw symtab_home_scope(x.tab, item.index, x.scope));
 
     int32:saved = x.tr.self_type;
@@ -168,7 +168,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     int32:impl_trait_ty = 0i32;
     TypeId:trt0 = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(trt0))) {
-        impl_trait_ty = relay resolve_trait_type(x.tr, trt0,
+        impl_trait_ty = raw resolve_trait_type(x.tr, trt0,
                             raw symtab_home_scope(x.tab, item.index, x.scope));
     }
 
@@ -178,11 +178,11 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     int32:i = 0i32;
     while (i < (raw impl_member_count(x.ast, d))) {
         DeclId:mid = raw impl_member(x.ast, d, i);
-        DeclNode:m = relay ast_decl(x.ast, mid);
+        DeclNode:m = raw ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if (!(raw decl_has(m, raw DECL_COMPTIME()))) {
-                IrVal:r = relay emit_function_named(x, mid,
-                    relay impl_method_sym(x, self_ty, impl_trait_ty, m));
+                IrVal:r = raw emit_function_named(x, mid,
+                    raw impl_method_sym(x, self_ty, impl_trait_ty, m));
                 if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
             }
         }
@@ -200,15 +200,15 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         int32:trait_ty = impl_trait_ty;
         int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
         if (tdecl != 0i32) {
-            DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+            DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
             int32:k = 0i32;
             while (k < (raw item_member_count(x.ast, td))) {
                 DeclId:tmid = raw item_member(x.ast, td, k);
-                DeclNode:tm = relay ast_decl(x.ast, tmid);
+                DeclNode:tm = raw ast_decl(x.ast, tmid);
                 if (tm.kind == DeclKind.DeclFunctionDecl) {
                     if (!(raw stmt_is_none(raw fn_body(x.ast, tm)))) {
                         // only when THIS impl did not write its own
-                        if ((relay impl_own_member(x.ast, d,
+                        if ((raw impl_own_member(x.ast, d,
                                  raw decl_name(tm))) == 0i32) {
                             // THE DEFAULT'S SYMBOL IS THIS IMPL'S, not the
                             // trait's. One declaration, one body per
@@ -216,8 +216,8 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                             // where the emission stands, or every implementor
                             // renders the same symbol and `llc` refuses the
                             // module.
-                            IrVal:r2 = relay emit_function_named(x, tmid,
-                                relay impl_method_sym(x, self_ty, trait_ty, tm));
+                            IrVal:r2 = raw emit_function_named(x, tmid,
+                                raw impl_method_sym(x, self_ty, trait_ty, tm));
                             if (!(raw iv_is_ok(r2))) { drop refuse(diags, r2); }
                         }
                     }
@@ -254,42 +254,42 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
 // returning `Self` has no erased signature — and would turn a legal program
 // (a non-object-safe trait nobody uses as `dyn`) into a rung.
 func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
-                       int32:self_ty, int32:trait_ty) {
-    if (!(relay trait_is_object_safe(x.tr, trait_ty))) { pass NIL; }
+                       int32:self_ty, int32:trait_ty) never fails {
+    if (!(raw trait_is_object_safe(x.tr, trait_ty))) { pass NIL; }
 
     int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
     if (tdecl == 0i32) { pass NIL; }
-    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+    DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
 
-    LlType:sll = relay ll_type(x.fe.ctx, self_ty);
+    LlType:sll = raw ll_type(x.fe.ctx, self_ty);
     if (!(raw ll_is_ok(sll))) { pass NIL; }
 
-    string:vtn = relay vtable_stem_of(x.fe.ctx, x.interns, self_ty, trait_ty);
+    string:vtn = raw vtable_stem_of(x.fe.ctx, x.interns, self_ty, trait_ty);
     string:entries = "";
     int32:slots = 0i32;
 
     int32:k = 0i32;
     while (k < (raw item_member_count(x.ast, td))) {
-        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, k));
+        DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
-            string:thunk = relay emit_thunk(x, item, td, tm, self_ty, trait_ty,
+            string:thunk = raw emit_thunk(x, item, td, tm, self_ty, trait_ty,
                                             sll, vtn);
             if (thunk.len == 0i64) { pass NIL; }
-            if (slots > 0i32) { entries = relay string_concat(entries, ", "); }
-            entries = relay string_concat(entries,
-                          relay string_concat("ptr ", thunk));
+            if (slots > 0i32) { entries = raw string_concat(entries, ", "); }
+            entries = raw string_concat(entries,
+                          raw string_concat("ptr ", thunk));
             slots = slots + 1i32;
         }
         k = k + 1i32;
     }
 
-    string:g1 = relay string_concat(
-                    relay mangled_fn_sym(x.fe.ctx, item.index, vtn),
+    string:g1 = raw string_concat(
+                    raw mangled_fn_sym(x.fe.ctx, item.index, vtn),
                     " = internal constant [");
-    string:g2 = relay string_concat(g1, raw int_to_string(slots => int64));
-    string:g3 = relay string_concat(g2, " x ptr] [");
-    drop irw_raw(x.fe.w, relay string_concat(g3,
-                     relay string_concat(entries, "]")));
+    string:g2 = raw string_concat(g1, raw int_to_string(slots => int64));
+    string:g3 = raw string_concat(g2, " x ptr] [");
+    drop irw_raw(x.fe.w, raw string_concat(g3,
+                     raw string_concat(entries, "]")));
     drop irw_blank(x.fe.w);
     pass NIL;
 };
@@ -300,9 +300,9 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
 // is not a table minus a hole.
 func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
                          DeclNode:tm, int32:self_ty, int32:trait_ty,
-                         LlType:sll, string:vtn) {
+                         LlType:sll, string:vtn) never fails {
     int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
-    string:mname = relay intern_get(x.interns, raw decl_name(tm));
+    string:mname = raw intern_get(x.interns, raw decl_name(tm));
 
     // A GENERIC TRAIT'S PARAMETERS ARE BOUND FROM THE IMPL'S INSTANCE OF IT
     // (1.0.6b). `impl:IntBox:Producer<int32>` means `T = int32` in everything
@@ -315,50 +315,50 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     // signature read and no test had a generic trait with an impl, so the suite
     // was green over a program `npkc` could not compile.
     GenericScope:saved_tb = x.tr.enclosing;
-    x.tr.enclosing = relay trait_binding(x.tr, trait_ty);
+    x.tr.enclosing = raw trait_binding(x.tr, trait_ty);
 
     // THE TRAIT'S SIGNATURE IS THE ERASED ONE. Object safety guarantees every
     // part of it but the receiver is concrete already (D-157), which is exactly
     // what makes a single thunk shape possible.
-    int32:ret = relay resolve_type(x.tr, raw fn_return(x.ast, tm), home);
-    LlType:rll = relay ll_wrap_result(x.fe.ctx, ret);
+    int32:ret = raw resolve_type(x.tr, raw fn_return(x.ast, tm), home);
+    LlType:rll = raw ll_wrap_result(x.fe.ctx, ret);
     if (!(raw ll_is_ok(rll))) { x.tr.enclosing = saved_tb; pass ""; }
 
     string:params = "ptr %d";
-    string:args = relay string_concat(sll.text, " %r0");
-    int32:pc = relay fn_param_count(x.ast, tm);
+    string:args = raw string_concat(sll.text, " %r0");
+    int32:pc = raw fn_param_count(x.ast, tm);
     int32:i = 1i32;
     while (i < pc) {
-        DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, tm, i));
-        int32:pt = relay resolve_type(x.tr, raw param_type(pd), home);
-        LlType:pll = relay ll_type(x.fe.ctx, pt);
+        DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, tm, i));
+        int32:pt = raw resolve_type(x.tr, raw param_type(pd), home);
+        LlType:pll = raw ll_type(x.fe.ctx, pt);
         if (!(raw ll_is_ok(pll))) { x.tr.enclosing = saved_tb; pass ""; }
-        string:an = relay string_concat("%a", raw int_to_string(i => int64));
-        params = relay string_concat(params,
-                     relay cat4(", ", pll.text, " ", an));
-        args = relay string_concat(args,
-                   relay cat4(", ", pll.text, " ", an));
+        string:an = raw string_concat("%a", raw int_to_string(i => int64));
+        params = raw string_concat(params,
+                     raw cat4(", ", pll.text, " ", an));
+        args = raw string_concat(args,
+                   raw cat4(", ", pll.text, " ", an));
         i = i + 1i32;
     }
 
     x.tr.enclosing = saved_tb;
 
-    string:sym = relay mangled_fn_sym(x.fe.ctx, item.index,
-                     relay string_concat(vtn, relay string_concat(".", mname)));
-    string:real = relay mangled_fn_sym(x.fe.ctx, item.index,
-                      relay method_symbol_name(x.fe.ctx.types, x.interns,
+    string:sym = raw mangled_fn_sym(x.fe.ctx, item.index,
+                     raw string_concat(vtn, raw string_concat(".", mname)));
+    string:real = raw mangled_fn_sym(x.fe.ctx, item.index,
+                      raw method_symbol_name(x.fe.ctx.types, x.interns,
                           self_ty, trait_ty, mname));
 
     drop irw_begin_function(x.fe.w);
-    drop irw_raw(x.fe.w, relay cat5("define internal ", rll.text, " ", sym,
-                             relay cat3("(", params, ") {")));
+    drop irw_raw(x.fe.w, raw cat5("define internal ", rll.text, " ", sym,
+                             raw cat3("(", params, ") {")));
     drop irw_label(x.fe.w, "entry");
-    drop irw_line(x.fe.w, relay cat3("%r0 = load ", sll.text, ", ptr %d"));
-    string:rv = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(rv, " = call ", rll.text, " ",
-                             relay cat4(real, "(", args, ")")));
-    drop irw_line(x.fe.w, relay cat3("ret ", rll.text,
-                             relay string_concat(" ", rv)));
+    drop irw_line(x.fe.w, raw cat3("%r0 = load ", sll.text, ", ptr %d"));
+    string:rv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rv, " = call ", rll.text, " ",
+                             raw cat4(real, "(", args, ")")));
+    drop irw_line(x.fe.w, raw cat3("ret ", rll.text,
+                             raw string_concat(" ", rv)));
     drop irw_raw(x.fe.w, "}");
     drop irw_blank(x.fe.w);
     pass sym;
@@ -374,11 +374,11 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
 // half-built table. The thunks may forward-reference method bodies the fninst
 // loop emits later, which is legal within a module.
 func:emit_family_vtable = NIL(ExprEmitter->:x, DiagList->:diags,
-                              FnInstance:fvi) {
-    DeclNode:fvd = relay ast_decl(x.ast, DeclId{ index: fvi.owner_impl });
+                              FnInstance:fvi) never fails {
+    DeclNode:fvd = raw ast_decl(x.ast, DeclId{ index: fvi.owner_impl });
     TypeId:fvtr = raw impl_trait(x.ast, fvd);
     if (raw type_is_none(fvtr)) { pass NIL; }
-    int32:fvtrait = relay resolve_trait_type(x.tr, fvtr, x.scope);
+    int32:fvtrait = raw resolve_trait_type(x.tr, fvtr, x.scope);
     if (fvtrait == 0i32) { pass NIL; }
 
     TypeId:fvtgt = raw impl_target(x.ast, fvd);
@@ -388,20 +388,20 @@ func:emit_family_vtable = NIL(ExprEmitter->:x, DiagList->:diags,
         args_start: fvi.args_start, args_count: fvi.args_count };
     x.tr.generics = fvg;
     x.tr.enclosing = fvg;
-    int32:fvself = relay type_subst(x.tr,
-                       relay resolve_type(x.tr, fvtgt, x.scope),
+    int32:fvself = raw type_subst(x.tr,
+                       raw resolve_type(x.tr, fvtgt, x.scope),
                        fvg, fvd.span, 64i32, x.fe.ctx.impls);
 
     if ((raw vtmap_find(x.fe.ctx, fvself, fvtrait)) != 0i32) { pass NIL; }
-    if (!(relay family_vtable_ready(x, fvtrait, fvi.owner_impl,
+    if (!(raw family_vtable_ready(x, fvtrait, fvi.owner_impl,
                                     fvi.args_start, fvi.args_count))) {
         pass NIL;
     }
     x.tr.self_type = fvself;
     drop vtmap_add(x.fe.ctx, fvself, fvtrait,
         raw intern_add(x.interns,
-            relay mangled_fn_sym(x.fe.ctx, fvi.owner_impl,
-                relay vtable_stem_of(x.fe.ctx, x.interns, fvself, fvtrait))));
+            raw mangled_fn_sym(x.fe.ctx, fvi.owner_impl,
+                raw vtable_stem_of(x.fe.ctx, x.interns, fvself, fvtrait))));
     drop emit_vtable(x, diags, DeclId{ index: fvi.owner_impl }, fvself, fvtrait);
     pass NIL;
 };
@@ -414,9 +414,9 @@ func:emit_family_vtable = NIL(ExprEmitter->:x, DiagList->:diags,
 // instance's arguments and `Self` to the instantiated target — the two
 // bindings a family's method body needs and the global walk did not have.
 func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
-                                FnInstance:inst) {
+                                FnInstance:inst) never fails {
     DeclId:item = DeclId{ index: inst.owner_impl };
-    DeclNode:d = relay ast_decl(x.ast, item);
+    DeclNode:d = raw ast_decl(x.ast, item);
     TypeId:tgt = raw impl_target(x.ast, d);
     if (raw type_is_none(tgt)) { pass NIL; }
     IdSpan:pw = raw decl_generic_window(x.ast, d);
@@ -426,7 +426,7 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     int32:fam_trait_ty = 0i32;
     TypeId:ftr = raw impl_trait(x.ast, d);
     if (!(raw type_is_none(ftr))) {
-        fam_trait_ty = relay resolve_trait_type(x.tr, ftr, home);
+        fam_trait_ty = raw resolve_trait_type(x.tr, ftr, home);
     }
 
     GenericScope:g = GenericScope{
@@ -441,8 +441,8 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     int32:fam_saved_trait = x.cur_trait;
     x.cur_trait = fam_trait_ty;
     // `Self` is THIS instantiation's target.
-    x.tr.self_type = relay type_subst(x.tr,
-                         relay resolve_type(x.tr, tgt, home),
+    x.tr.self_type = raw type_subst(x.tr,
+                         raw resolve_type(x.tr, tgt, home),
                          g, d.span, 64i32, x.fe.ctx.impls);
 
     // THE SPECIALIZATION'S SYMBOL NAMES ITS INSTANTIATED TARGET (D-156
@@ -450,11 +450,11 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     // emitted `w` for EVERY instantiation, and two of them collided exactly as
     // two per-instance impls did. `Self` is already bound to this
     // instantiation's target above, which is the spelling that separates them.
-    DeclNode:im = relay ast_decl(x.ast, DeclId{ index: inst.decl });
-    IrVal:r = relay emit_fn_instance(x, DeclId{ index: inst.decl },
+    DeclNode:im = raw ast_decl(x.ast, DeclId{ index: inst.decl });
+    IrVal:r = raw emit_fn_instance(x, DeclId{ index: inst.decl },
                   inst.args_start, inst.args_count,
                   inst.params_start, inst.params_count,
-                  relay impl_method_sym(x, x.tr.self_type, fam_trait_ty, im));
+                  raw impl_method_sym(x, x.tr.self_type, fam_trait_ty, im));
 
     x.cur_trait = fam_saved_trait;
     x.tr.generics = gs;
@@ -473,15 +473,15 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
 // with holes.
 func:family_vtable_ready = bool(ExprEmitter->:x, int32:trait_ty,
                                 int32:impl_decl, int32:args_start,
-                                int32:args_count) {
+                                int32:args_count) never fails {
     int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
     if (tdecl == 0i32) { pass false; }
-    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+    DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
     int32:k = 0i32;
     while (k < (raw item_member_count(x.ast, td))) {
-        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, k));
+        DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
-            if (!(relay family_method_recorded(x, raw decl_name(tm), impl_decl,
+            if (!(raw family_method_recorded(x, raw decl_name(tm), impl_decl,
                                                args_start, args_count))) {
                 pass false;
             }
@@ -497,17 +497,17 @@ func:family_vtable_ready = bool(ExprEmitter->:x, int32:trait_ty,
 // thunk and the emitted body agree on.
 func:family_method_recorded = bool(ExprEmitter->:x, int32:name,
                                    int32:impl_decl, int32:args_start,
-                                   int32:args_count) {
+                                   int32:args_count) never fails {
     int32:i = 0i32;
     while (i < (raw fninst_count(x.fninsts))) {
-        FnInstance:e = relay fninst_at(x.fninsts, i);
+        FnInstance:e = raw fninst_at(x.fninsts, i);
         if (e.owner_impl == impl_decl) {
             if (e.args_count == args_count) {
                 bool:same = true;
                 int32:j = 0i32;
                 while (j < args_count) {
-                    if ((relay ast_id_at(x.ast, e.args_start, j))
-                            != (relay ast_id_at(x.ast, args_start, j))) {
+                    if ((raw ast_id_at(x.ast, e.args_start, j))
+                            != (raw ast_id_at(x.ast, args_start, j))) {
                         same = false;
                         j = args_count;
                     } else {
@@ -515,7 +515,7 @@ func:family_method_recorded = bool(ExprEmitter->:x, int32:name,
                     }
                 }
                 if (same) {
-                    DeclNode:md = relay ast_decl(x.ast,
+                    DeclNode:md = raw ast_decl(x.ast,
                                       DeclId{ index: e.decl });
                     if ((raw decl_name(md)) == name) { pass true; }
                 }
@@ -528,18 +528,18 @@ func:family_method_recorded = bool(ExprEmitter->:x, int32:name,
 
 // The interned symbol name for one of this impl's methods (D-156 amended).
 func:impl_method_sym = int32(ExprEmitter->:x, int32:self_ty, int32:trait_ty,
-                             DeclNode:m) {
+                             DeclNode:m) never fails {
     pass (raw intern_add(x.interns,
-              relay method_symbol_name(x.fe.ctx.types, x.interns, self_ty,
-                  trait_ty, relay intern_get(x.interns, raw decl_name(m)))));
+              raw method_symbol_name(x.fe.ctx.types, x.interns, self_ty,
+                  trait_ty, raw intern_get(x.interns, raw decl_name(m)))));
 };
 
 // Did this impl write its own method called `name`? 0 when it inherits.
-func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) {
+func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) never fails {
     int32:i = 0i32;
     while (i < (raw impl_member_count(ast, d))) {
         DeclId:mid = raw impl_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
@@ -550,7 +550,7 @@ func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) {
 
 // One instantiation's `%"npk.mod.Container<int32>" = type { … }`.
 func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
-                                DiagList->:diags, ModuleGraph->:g, int32:t) {
+                                DiagList->:diags, ModuleGraph->:g, int32:t) never fails {
     int32:k = raw type_kind(c.types, t);
     if (k != (raw TY_STRUCT())) {
         if (k != (raw TY_ENUM())) { pass NIL; }
@@ -558,26 +558,26 @@ func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     // A TEMPLATE-SHAPED INSTANCE — `List<T>`, recorded for a literal inside a
     // generic body — has no representation; its specializations do (1.0.7).
     if (raw type_mentions_param(c.types, c.ast, t, 64i32)) { pass NIL; }
-    LlType:name = relay ll_type(c, t);
+    LlType:name = raw ll_type(c, t);
     if (!(raw ll_is_ok(name))) { pass NIL; }
     if (raw string_eq(name.text, "i32")) { pass NIL; }   // payload-less enum
 
     // Any scope will do as the starting point: `ll_struct_body` re-homes it to
     // the declaring module's (the same rule field access follows, 0.8.1).
     int32:scope = (raw graph_at(g, 0i32)).scope;
-    LlType:body = relay ll_enum_body(c, t);
+    LlType:body = raw ll_enum_body(c, t);
     if (k == (raw TY_STRUCT())) {
-        body = relay ll_struct_body(tr, c, t, scope);
+        body = raw ll_struct_body(tr, c, t, scope);
     }
     if (!(raw ll_is_ok(body))) { pass NIL; }
-    drop irw_raw(w, relay cat4(name.text, " = type ", body.text, ""));
+    drop irw_raw(w, raw cat4(name.text, " = type ", body.text, ""));
     pass NIL;
 };
 
 // The interned type this declaration produced, found by ITS DECL — the same
 // identity `tt_struct` interns under (D-090), so two same-named structs cannot
 // answer for each other here.
-func:type_of_decl = int32(LlCtx->:c, int32:decl_index, int32:kind) {
+func:type_of_decl = int32(LlCtx->:c, int32:decl_index, int32:kind) never fails {
     int32:i = 0i32;
     while (i < (raw tt_count(c.types))) {
         if ((raw type_kind(c.types, i)) == kind) {
@@ -592,7 +592,7 @@ func:type_of_decl = int32(LlCtx->:c, int32:decl_index, int32:kind) {
 
 func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                            DiagList->:diags, int32:scope, DeclId:item,
-                           bool:is_struct) {
+                           bool:is_struct) never fails {
     int32:want_kind = raw TY_ENUM();
     if (is_struct) { want_kind = raw TY_STRUCT(); }
 
@@ -601,20 +601,20 @@ func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     // walk. Resolving this declaration's fields here would resolve `T` with
     // nothing bound to it — which is what the removed `args_count > 0` rung used
     // to prevent by refusing instances outright.
-    DeclNode:gd = relay ast_decl(c.ast, item);
+    DeclNode:gd = raw ast_decl(c.ast, item);
     if ((raw decl_generic_window(c.ast, gd)).count > 0i32) { pass NIL; }
 
     int32:t = raw type_of_decl(c, item.index, want_kind);
     if (t == 0i32) { pass NIL; }    // declared and never used: nothing interned it
-    LlType:name = relay ll_type(c, t);
+    LlType:name = raw ll_type(c, t);
     if (!(raw ll_is_ok(name))) { pass NIL; }
     if (raw string_eq(name.text, "i32")) { pass NIL; }   // a payload-less enum
-    LlType:body = relay ll_enum_body(c, t);
+    LlType:body = raw ll_enum_body(c, t);
     if (is_struct) {
-        body = relay ll_struct_body(tr, c, t, scope);
+        body = raw ll_struct_body(tr, c, t, scope);
     }
     if (!(raw ll_is_ok(body))) { pass NIL; }
-    drop irw_raw(w, relay cat4(name.text, " = type ", body.text, ""));
+    drop irw_raw(w, raw cat4(name.text, " = type ", body.text, ""));
     pass NIL;
 };
 
@@ -632,7 +632,7 @@ func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // D-078; = the `mod:` name, D-088), extended by `.` for a nested inline
 // module. Deterministic in graph order, so stage 1 and stage 2 emit identical
 // symbols -- the fixpoint the scheme must not disturb.
-func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
+func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) never fails {
     int32:n = raw ast_decl_count(@g.ast);
     int64:sz = n => int64;
     if (sz < 1i64) { sz = 1i64; }
@@ -643,8 +643,8 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
-        string:base = relay path_basename(relay srcmgr_path(@g.sm, me.file));
-        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        string:base = raw path_basename(raw srcmgr_path_proven(@g.sm, me.file));
+        DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         drop modmap_members(g, map, mn, base);
         m = m + 1i32;
     }
@@ -658,11 +658,11 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
 // impls first would not fix it either — impls and functions interleave in module
 // order, so a function that builds a `dyn` can be emitted before the impl whose
 // table it needs. Same answer as `build_modmap`: walk once, record, look up.
-func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) {
+func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) never fails {
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
-        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         drop vtmap_members(g, tr, c, mn, me.scope);
         m = m + 1i32;
     }
@@ -670,12 +670,12 @@ func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) {
 };
 
 func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
-                         DeclNode:mn, int32:scope) {
+                         DeclNode:mn, int32:scope) never fails {
     int32:k = raw item_member_count(@g.ast, mn);
     int32:i = 0i32;
     while (i < k) {
         DeclId:item = raw item_member(@g.ast, mn, i);
-        DeclNode:d = relay ast_decl(@g.ast, item);
+        DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop vtmap_members(g, tr, c, d, scope);
         }
@@ -690,14 +690,14 @@ func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
                     if (!(raw type_is_none(tr0))) {
                         int32:home = raw symtab_home_scope(@g.tab, item.index,
                                                            scope);
-                        int32:sty = relay resolve_type(tr, tg, home);
-                        int32:tty = relay resolve_trait_type(tr, tr0, home);
+                        int32:sty = raw resolve_type(tr, tg, home);
+                        int32:tty = raw resolve_trait_type(tr, tr0, home);
                         if (sty != 0i32) {
                             if (tty != 0i32) {
                                 drop vtmap_add(c, sty, tty,
                                     raw intern_add(g.interns,
-                                        relay mangled_fn_sym(c, item.index,
-                                            relay vtable_stem_of(c, g.interns,
+                                        raw mangled_fn_sym(c, item.index,
+                                            raw vtable_stem_of(c, g.interns,
                                                                  sty, tty))));
                             }
                         }
@@ -712,24 +712,24 @@ func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
 
 // `vt.<Type>.<Trait>` — D-156 names the table; the thunks append their method.
 func:vtable_stem_of = string(LlCtx->:c, InternTable->:interns, int32:self_ty,
-                             int32:trait_ty) {
-    string:v1 = relay string_concat("vt.",
-                    relay type_display(c.types, interns, self_ty));
-    pass (relay string_concat(v1,
-              relay string_concat(".",
-                  relay type_display(c.types, interns, trait_ty))));
+                             int32:trait_ty) never fails {
+    string:v1 = raw string_concat("vt.",
+                    raw type_display(c.types, interns, self_ty));
+    pass (raw string_concat(v1,
+              raw string_concat(".",
+                  raw type_display(c.types, interns, trait_ty))));
 };
 
 func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
-                          string:canon) {
+                          string:canon) never fails {
     int32:k = raw item_member_count(@g.ast, mn);
     int32:i = 0i32;
     while (i < k) {
         DeclId:item = raw item_member(@g.ast, mn, i);
-        DeclNode:d = relay ast_decl(@g.ast, item);
+        DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
-            string:nm = relay intern_get(g.interns, raw decl_name(d));
-            string:nc = relay string_concat(canon, relay string_concat(".", nm));
+            string:nm = raw intern_get(g.interns, raw decl_name(d));
+            string:nc = raw string_concat(canon, raw string_concat(".", nm));
             drop modmap_members(g, map, d, nc);
         } else {
             map[item.index => int64] = raw intern_add(g.interns, canon);
@@ -768,19 +768,19 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
 
 // The runtime floor's declarations, in `rt_name_at` order — which makes the
 // declare block a fixed constant of every module this compiler ever emits.
-func:emit_runtime_declares = NIL(IrWriter->:w) {
+func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     int32:i = 0i32;
     while (i < (raw rt_count())) {
         RtSig:sig = raw rt_sig(raw rt_name_at(i));
         string:args = "";
         int32:a = 0i32;
         while (a < sig.argc) {
-            if (a > 0i32) { args = relay string_concat(args, ", "); }
-            args = relay string_concat(args, raw rt_arg(sig, a));
+            if (a > 0i32) { args = raw string_concat(args, ", "); }
+            args = raw string_concat(args, raw rt_arg(sig, a));
             a = a + 1i32;
         }
-        drop irw_raw(w, relay cat5("declare ", sig.ret, " ", sig.sym,
-                          relay cat3("(", args, ")")));
+        drop irw_raw(w, raw cat5("declare ", sig.ret, " ", sig.sym,
+                          raw cat3("(", args, ")")));
         i = i + 1i32;
     }
     // `@npk_trap` is DELIBERATELY not in the table above: it is not a builtin a
@@ -816,15 +816,15 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
 // symbol follows D-156. No initialiser runs before `main`: the value is the
 // constant, emitted once, in no order anyone has to have chosen.
 func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
-                           DeclNode:d) {
+                           DeclNode:d) never fails {
     int32:saved_scope = x.scope;
     int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
     x.scope = home;
-    int32:gt = relay resolve_type(x.tr, raw global_type(d), home);
-    LlType:gll = relay ll_type(x.fe.ctx, gt);
+    int32:gt = raw resolve_type(x.tr, raw global_type(d), home);
+    LlType:gll = raw ll_type(x.fe.ctx, gt);
     if (!(raw ll_is_ok(gll))) {
         x.scope = saved_scope;
-        drop refuse(diags, relay iv_from_ll_at(x, gll, gt, d.span));
+        drop refuse(diags, raw iv_from_ll_at(x, gll, gt, d.span));
         pass NIL;
     }
     string:cval = "";
@@ -832,7 +832,7 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     if (raw expr_is_none(init)) {
         cval = "zeroinitializer";
     } else {
-        cval = relay emit_global_const(x, init);
+        cval = raw emit_global_const(x, init);
     }
     x.scope = saved_scope;
     if (cval.len == 0i64) {
@@ -843,21 +843,21 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     }
     string:kw = "global";
     if ((raw global_quals(d) & (raw QUAL_CONST())) != 0i32) { kw = "constant"; }
-    string:sym = relay mangled_fn_sym(x.fe.ctx, item.index,
-                     relay intern_get(x.interns, raw decl_name(d)));
-    drop irw_raw(x.fe.w, relay cat5(sym, " = ", kw, " ",
-                     relay cat3(gll.text, " ", cval)));
+    string:sym = raw mangled_fn_sym(x.fe.ctx, item.index,
+                     raw intern_get(x.interns, raw decl_name(d)));
+    drop irw_raw(x.fe.w, raw cat5(sym, " = ", kw, " ",
+                     raw cat3(gll.text, " ", cval)));
     pass NIL;
 };
 
-func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
+func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) never fails {
     int32:i = 0i32;
     while (i < (raw item_member_count(x.ast, m))) {
         DeclId:item = raw item_member(x.ast, m, i);
-        DeclNode:d = relay ast_decl(x.ast, item);
+        DeclNode:d = raw ast_decl(x.ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             if (!(raw decl_has(d, raw DECL_COMPTIME()))) {
-                IrVal:r = relay emit_function(x, item);
+                IrVal:r = raw emit_function(x, item);
                 if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
             }
         }
@@ -888,7 +888,7 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
 pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              InternTable->:interns, ExprTypes->:ets,
                              TypeResolver->:tr, FnInstTable->:fninsts,
-                             wild ImplTable->:impls, DiagList->:diags) {
+                             wild ImplTable->:impls, DiagList->:diags) never fails {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
     drop llctx_set_impls(@c, impls, tr);
@@ -916,7 +916,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // while one reached through a parameter is.
     int32:fv = 0i32;
     while (fv < (raw fninst_count(fninsts))) {
-        FnInstance:fvi = relay fninst_at(fninsts, fv);
+        FnInstance:fvi = raw fninst_at(fninsts, fv);
         if (fvi.owner_impl != 0i32) {
             int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
             ExprEmitter:fvx = raw exprem_init(@fe, @g.ast, ets, @g.tab,
@@ -931,16 +931,16 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         ModuleEntry:me = raw graph_at(g, m);
         ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
                                         tr, fninsts, me.scope);
-        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         int32:i = 0i32;
         while (i < (raw item_member_count(@g.ast, mn))) {
             DeclId:item = raw item_member(@g.ast, mn, i);
-            DeclNode:d = relay ast_decl(@g.ast, item);
+            DeclNode:d = raw ast_decl(@g.ast, item);
             if (d.kind == DeclKind.DeclFunctionDecl) {
                 // A `comptime func:` was CONSUMED at fold time (0.6.4); nothing
                 // remains to lower, and emitting it would be emitting a phase.
                 if (!(raw decl_has(d, raw DECL_COMPTIME()))) {
-                    IrVal:r = relay emit_function(@x, item);
+                    IrVal:r = raw emit_function(@x, item);
                     if (!(raw iv_is_ok(r))) {
                         drop refuse(diags, r);
                     }
@@ -977,7 +977,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // the body's annotations resolve.
     int32:fi = 0i32;
     while (fi < (raw fninst_count(fninsts))) {
-        FnInstance:inst = relay fninst_at(fninsts, fi);
+        FnInstance:inst = raw fninst_at(fninsts, fi);
         // An impl-owned instantiation is emitted by its own impl block, where
         // `Self` and the impl's parameters are bound (1.0.4b).
         //
@@ -1009,10 +1009,10 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
         ExprEmitter:xi = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
                                          tr, fninsts, hs);
-        IrVal:ir = relay emit_fn_instance(@xi, DeclId{ index: inst.decl },
+        IrVal:ir = raw emit_fn_instance(@xi, DeclId{ index: inst.decl },
                                           inst.args_start, inst.args_count,
                                           inst.params_start, inst.params_count,
-                                          relay fninst_symbol(@g.ast, @c, inst));
+                                          raw fninst_symbol(@g.ast, @c, inst));
         if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
         fi = fi + 1i32;
         }
@@ -1028,7 +1028,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
 };
 
 func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
-                             DiagList->:diags, ModuleGraph->:g, int32:from) {
+                             DiagList->:diags, ModuleGraph->:g, int32:from) never fails {
     int32:t = from;
     bool:some = false;
     while (t < (raw tt_count(c.types))) {
@@ -1042,10 +1042,10 @@ func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 };
 
 // The scope an impl was collected in (its module's), or 0.
-func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) {
+func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (e.decl == impl_decl) { pass e.scope; }
         i = i + 1i32;
     }
@@ -1053,11 +1053,11 @@ func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) {
 };
 
 // Does any of this instantiation's arguments still name a parameter? (1.0.7)
-func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) {
+func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
     int32:i = 0i32;
     while (i < inst.args_count) {
         if (raw type_mentions_param(c.types, ast,
-                                    relay ast_id_at(ast, inst.args_start, i),
+                                    raw ast_id_at(ast, inst.args_start, i),
                                     64i32)) {
             pass true;
         }
@@ -1069,17 +1069,17 @@ func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) {
 // `extract<int32>` — the D-108 spelling for a function instantiation: the
 // declaration's name with its arguments, which `mangled_fn_sym` then qualifies
 // and quotes (D-156). Interned, because a symbol is a name.
-func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) {
-    DeclNode:d = relay ast_decl(ast, DeclId{ index: inst.decl });
-    string:m = relay string_concat(
-                   relay intern_get(c.interns, raw decl_name(d)), "<");
+func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
+    DeclNode:d = raw ast_decl(ast, DeclId{ index: inst.decl });
+    string:m = raw string_concat(
+                   raw intern_get(c.interns, raw decl_name(d)), "<");
     int32:i = 0i32;
     while (i < inst.args_count) {
-        if (i > 0i32) { m = relay string_concat(m, ", "); }
-        m = relay string_concat(m,
-                relay type_display(c.types, c.interns,
-                    relay ast_id_at(ast, inst.args_start, i)));
+        if (i > 0i32) { m = raw string_concat(m, ", "); }
+        m = raw string_concat(m,
+                raw type_display(c.types, c.interns,
+                    raw ast_id_at(ast, inst.args_start, i)));
         i = i + 1i32;
     }
-    pass (raw intern_add(c.interns, relay string_concat(m, ">")));
+    pass (raw intern_add(c.interns, raw string_concat(m, ">")));
 };

@@ -38,7 +38,7 @@ use "./ir_types.npk".*;
 // and the only two: they are where `exit` lives, so they have no caller to hand a
 // `Result` to. Everything else declares `T` and returns `Result<T>` (D-069), and
 // the wrap is implicit — which is why this module is where it becomes explicit.
-pub func:fn_is_bare = bool(string:name) {
+pub func:fn_is_bare = bool(string:name) never fails {
     if (raw string_eq(name, "main"))     { pass true; }
     if (raw string_eq(name, "failsafe")) { pass true; }
     pass false;
@@ -133,7 +133,7 @@ pub struct:FnEmitter = {
     int32:pick_seq;                // per-function label sequence
 };
 
-pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
+pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
     wild int8->:pn = alloc(8i64 * 4i64);
     wild int8->:pt = alloc(8i64 * 4i64);
     wild int8->:pl = alloc(8i64 * #size_of<string>());
@@ -174,7 +174,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
     pass fe;
 };
 
-func:fnem_grow_params = NIL(FnEmitter->:fe) {
+func:fnem_grow_params = NIL(FnEmitter->:fe) never fails {
     int32:nc = fe.pcap * 2i32;
     wild int8->:a = ralloc(fe.pnames =>! wild int8->, (nc =>! int64) * 4i64);
     wild int8->:b = ralloc(fe.ptypes =>! wild int8->, (nc =>! int64) * 4i64);
@@ -186,7 +186,7 @@ func:fnem_grow_params = NIL(FnEmitter->:fe) {
     pass NIL;
 };
 
-func:fnem_grow_locals = NIL(FnEmitter->:fe) {
+func:fnem_grow_locals = NIL(FnEmitter->:fe) never fails {
     int32:nc = fe.lcap * 2i32;
     wild int8->:a = ralloc(fe.lnames =>! wild int8->, (nc =>! int64) * 4i64);
     wild int8->:b = ralloc(fe.lslots =>! wild int8->, (nc =>! int64) * #size_of<string>());
@@ -206,8 +206,8 @@ func:fnem_grow_locals = NIL(FnEmitter->:fe) {
 //
 // Mirrors the seed's `fn_sig`: bare for `main`/`failsafe`, `Result<T>` otherwise.
 pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
-                             int32:ret_type) {
-    fe.sym = relay mangled_fn_sym(fe.ctx, decl_index, name);
+                             int32:ret_type) never fails {
+    fe.sym = raw mangled_fn_sym(fe.ctx, decl_index, name);
     fe.bare = raw fn_is_bare(name);
     fe.ret_type = ret_type;
     fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));
@@ -222,7 +222,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     drop irw_begin_function(fe.w);
 
     if (fe.bare) {
-        LlType:vt = relay ll_type(fe.ctx, ret_type);
+        LlType:vt = raw ll_type(fe.ctx, ret_type);
         if (vt.state != (raw LL_OK())) { pass vt; }
         fe.ret_ll = vt.text;
         fe.val_ll = vt.text;
@@ -230,13 +230,13 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
         pass vt;
     }
 
-    LlType:rt = relay ll_wrap_result(fe.ctx, ret_type);
+    LlType:rt = raw ll_wrap_result(fe.ctx, ret_type);
     if (rt.state != (raw LL_OK())) { pass rt; }
     fe.ret_ll = rt.text;
     fe.val_ll = "";
     fe.val_zero = "";
     if (!fe.ret_nil) {
-        LlType:vt = relay ll_type(fe.ctx, ret_type);
+        LlType:vt = raw ll_type(fe.ctx, ret_type);
         fe.val_ll = vt.text;
         fe.val_zero = raw ll_zero(vt);
     }
@@ -245,8 +245,8 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
 
 // Declare one parameter, in order. A refused type propagates and the function is
 // not emitted — a signature with a hole in it is not a signature minus a hole.
-pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) {
-    LlType:t = relay ll_type(fe.ctx, type_id);
+pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) never fails {
+    LlType:t = raw ll_type(fe.ctx, type_id);
     if (t.state != (raw LL_OK())) { pass t; }
     if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
     fe.pnames[fe.pcount => int64] = name;
@@ -266,17 +266,17 @@ pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) {
 // EACH PARAMETER IS STORED TO A SLOT AND THE SLOT IS THE BINDING. An LLVM
 // argument register cannot be assigned to, so `a = a + 1i32;` needs the parameter
 // to live in memory like any other local — naive lowering, `mem2reg` undoes it.
-pub func:fnem_open = NIL(FnEmitter->:fe) {
+pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     string:params = "";
     int32:i = 0i32;
     while (i < fe.pcount) {
-        if (i > 0i32) { params = relay string_concat(params, ", "); }
-        params = relay cat3(params, fe.plls[i => int64], " %a");
-        params = relay string_concat(params, raw int_to_string(i => int64));
+        if (i > 0i32) { params = raw string_concat(params, ", "); }
+        params = raw cat3(params, fe.plls[i => int64], " %a");
+        params = raw string_concat(params, raw int_to_string(i => int64));
         i = i + 1i32;
     }
-    drop irw_raw(fe.w, relay cat5("define ", fe.ret_ll, " ", fe.sym,
-                                  relay cat3("(", params, ") {")));
+    drop irw_raw(fe.w, raw cat5("define ", fe.ret_ll, " ", fe.sym,
+                                  raw cat3("(", params, ") {")));
     drop irw_label(fe.w, "entry");
     // The define line and `entry:` are in the module stream; from here allocas
     // and body buffer separately and splice back at close (1.0.9a).
@@ -285,11 +285,11 @@ pub func:fnem_open = NIL(FnEmitter->:fe) {
     i = 0i32;
     while (i < fe.pcount) {
         string:ll = fe.plls[i => int64];
-        string:arg = relay string_concat("%a", raw int_to_string(i => int64));
-        string:slot = relay irw_temp(fe.w);
+        string:arg = raw string_concat("%a", raw int_to_string(i => int64));
+        string:slot = raw irw_temp(fe.w);
         drop irw_alloca(fe.w, slot, ll);
-        drop irw_line(fe.w, relay cat5("store ", ll, " ", arg,
-                                       relay string_concat(", ptr ", slot)));
+        drop irw_line(fe.w, raw cat5("store ", ll, " ", arg,
+                                       raw string_concat(", ptr ", slot)));
         drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
         i = i + 1i32;
     }
@@ -298,7 +298,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) {
 
 // --- locals -----------------------------------------------------------------------
 
-pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) {
+pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) never fails {
     if (fe.lcount >= fe.lcap) { drop fnem_grow_locals(fe); }
     fe.lnames[fe.lcount => int64] = name;
     fe.lslots[fe.lcount => int64] = slot;
@@ -313,8 +313,8 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id)
 // inside a branch or loop, so emitting the alloca inline is the loop-body
 // overflow D-173 fixes. The caller supplies the lowered text it already has —
 // lowering again here would be a second chance for the two to differ.
-pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) {
-    string:slot = relay irw_temp(fe.w);
+pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) never fails {
+    string:slot = raw irw_temp(fe.w);
     drop irw_alloca(fe.w, slot, ll);
     drop fnem_bind(fe, name, slot, type_id);
     pass slot;
@@ -324,7 +324,7 @@ pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:l
 // means. Forward search would resolve every shadowed name to its OUTERMOST
 // declaration, silently, in exactly the programs the frontend went out of its way
 // to permit.
-pub func:fnem_lookup = LocalSlot(FnEmitter->:fe, int32:name) {
+pub func:fnem_lookup = LocalSlot(FnEmitter->:fe, int32:name) never fails {
     int32:i = fe.lcount;
     while (i > 0i32) {
         i = i - 1i32;
@@ -340,16 +340,16 @@ pub func:fnem_lookup = LocalSlot(FnEmitter->:fe, int32:name) {
 
 // Block entry and exit. The mark is the local count; release truncates back to
 // it, so everything a block declared stops resolving the moment it ends.
-pub func:fnem_mark = int32(FnEmitter->:fe) { pass fe.lcount; };
+pub func:fnem_mark = int32(FnEmitter->:fe) never fails { pass fe.lcount; };
 
-pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) {
+pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) never fails {
     fe.lcount = mark;
     pass NIL;
 };
 
 // --- control-flow state (dumb state; the walking lives in ir_stmt) ------------------
 
-pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) {
+pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) never fails {
     if (fe.dfcount >= fe.dfcap) {
         int32:nc = fe.dfcap * 2i32;
         wild int8->:m = ralloc(fe.dframes =>! wild int8->, (nc =>! int64) * 4i64);
@@ -363,13 +363,13 @@ pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) {
 
 // Dropping the frame drops its entries with it — the same truncation the locals
 // use, for the same reason: what a block registered stops existing when it does.
-pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) {
+pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) never fails {
     fe.dfcount = fe.dfcount - 1i32;
     fe.dcount = fe.dframes[fe.dfcount => int64];
     pass NIL;
 };
 
-pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) {
+pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) never fails {
     if (fe.dcount >= fe.dcap) {
         int32:nc = fe.dcap * 2i32;
         wild int8->:m = ralloc(fe.dstmts =>! wild int8->, (nc =>! int64) * 4i64);
@@ -381,20 +381,20 @@ pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) {
     pass NIL;
 };
 
-pub func:fnem_defer_frames = int32(FnEmitter->:fe) { pass fe.dfcount; };
-pub func:fnem_defer_frame_lo = int32(FnEmitter->:fe, int32:f) {
+pub func:fnem_defer_frames = int32(FnEmitter->:fe) never fails { pass fe.dfcount; };
+pub func:fnem_defer_frame_lo = int32(FnEmitter->:fe, int32:f) never fails {
     pass fe.dframes[f => int64];
 };
-pub func:fnem_defer_frame_hi = int32(FnEmitter->:fe, int32:f) {
+pub func:fnem_defer_frame_hi = int32(FnEmitter->:fe, int32:f) never fails {
     if (f == (fe.dfcount - 1i32)) { pass fe.dcount; }
     pass fe.dframes[(f + 1i32) => int64];
 };
-pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) {
+pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.dstmts[i => int64];
 };
 
 pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done,
-                              int32:label, string:iter) {
+                              int32:label, string:iter) never fails {
     if (fe.loop_count >= fe.loop_cap) {
         int32:nc = fe.loop_cap * 2i32;
         wild int8->:a = ralloc(fe.loop_heads =>! wild int8->,
@@ -423,7 +423,7 @@ pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done,
 
 // The stack index a labelled `break`/`continue` targets: the nearest frame
 // carrying the label, or -1. Unlabelled (0) means the top.
-pub func:fnem_loop_find = int32(FnEmitter->:fe, int32:label) {
+pub func:fnem_loop_find = int32(FnEmitter->:fe, int32:label) never fails {
     if (label == 0i32) { pass (fe.loop_count - 1i32); }
     int32:i = fe.loop_count;
     while (i > 0i32) {
@@ -434,7 +434,7 @@ pub func:fnem_loop_find = int32(FnEmitter->:fe, int32:label) {
 };
 
 // The innermost `$` slot — the nearest counted frame; "" when none is open.
-pub func:fnem_iter_slot = string(FnEmitter->:fe) {
+pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
     int32:i = fe.loop_count;
     while (i > 0i32) {
         i = i - 1i32;
@@ -446,7 +446,7 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) {
 
 pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
                               string:ll, int32:slot_ty, int32:start,
-                              int32:count, int32:seq) {
+                              int32:count, int32:seq) never fails {
     if (fe.pick_count >= fe.pick_cap) {
         int32:nc = fe.pick_cap * 2i32;
         wild int8->:a = ralloc(fe.pick_dones =>! wild int8->,
@@ -482,62 +482,62 @@ pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
     pass NIL;
 };
 
-pub func:fnem_pick_pop = NIL(FnEmitter->:fe) {
+pub func:fnem_pick_pop = NIL(FnEmitter->:fe) never fails {
     fe.pick_count = fe.pick_count - 1i32;
     pass NIL;
 };
 
-pub func:fnem_pick_done = string(FnEmitter->:fe) {
+pub func:fnem_pick_done = string(FnEmitter->:fe) never fails {
     pass fe.pick_dones[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_slot = string(FnEmitter->:fe) {
+pub func:fnem_pick_slot = string(FnEmitter->:fe) never fails {
     pass fe.pick_slots[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_ll = string(FnEmitter->:fe) {
+pub func:fnem_pick_ll = string(FnEmitter->:fe) never fails {
     pass fe.pick_lls[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_tid = int32(FnEmitter->:fe) {
+pub func:fnem_pick_tid = int32(FnEmitter->:fe) never fails {
     pass fe.pick_tids[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_start = int32(FnEmitter->:fe) {
+pub func:fnem_pick_start = int32(FnEmitter->:fe) never fails {
     pass fe.pick_starts[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_count_of = int32(FnEmitter->:fe) {
+pub func:fnem_pick_count_of = int32(FnEmitter->:fe) never fails {
     pass fe.pick_counts[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_seq_of = int32(FnEmitter->:fe) {
+pub func:fnem_pick_seq_of = int32(FnEmitter->:fe) never fails {
     pass fe.pick_seqs[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_pick_depth = int32(FnEmitter->:fe) {
+pub func:fnem_pick_depth = int32(FnEmitter->:fe) never fails {
     pass fe.pick_depths[(fe.pick_count - 1i32) => int64];
 };
-pub func:fnem_next_pick_seq = int32(FnEmitter->:fe) {
+pub func:fnem_next_pick_seq = int32(FnEmitter->:fe) never fails {
     fe.pick_seq = fe.pick_seq + 1i32;
     pass fe.pick_seq;
 };
 
-pub func:fnem_loop_head_at = string(FnEmitter->:fe, int32:i) {
+pub func:fnem_loop_head_at = string(FnEmitter->:fe, int32:i) never fails {
     pass fe.loop_heads[i => int64];
 };
-pub func:fnem_loop_done_at = string(FnEmitter->:fe, int32:i) {
+pub func:fnem_loop_done_at = string(FnEmitter->:fe, int32:i) never fails {
     pass fe.loop_dones[i => int64];
 };
-pub func:fnem_loop_depth_at = int32(FnEmitter->:fe, int32:i) {
+pub func:fnem_loop_depth_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.loop_depths[i => int64];
 };
 
-pub func:fnem_loop_pop = NIL(FnEmitter->:fe) {
+pub func:fnem_loop_pop = NIL(FnEmitter->:fe) never fails {
     fe.loop_count = fe.loop_count - 1i32;
     pass NIL;
 };
 
-pub func:fnem_loop_head = string(FnEmitter->:fe) {
+pub func:fnem_loop_head = string(FnEmitter->:fe) never fails {
     pass fe.loop_heads[(fe.loop_count - 1i32) => int64];
 };
-pub func:fnem_loop_done = string(FnEmitter->:fe) {
+pub func:fnem_loop_done = string(FnEmitter->:fe) never fails {
     pass fe.loop_dones[(fe.loop_count - 1i32) => int64];
 };
-pub func:fnem_loop_depth = int32(FnEmitter->:fe) {
+pub func:fnem_loop_depth = int32(FnEmitter->:fe) never fails {
     pass fe.loop_depths[(fe.loop_count - 1i32) => int64];
 };
 
@@ -547,65 +547,65 @@ pub func:fnem_loop_depth = int32(FnEmitter->:fe) {
 
 // `pass v` — the Result is BUILT, not assembled over time: value in slot 0, and
 // error EXPLICITLY ZERO in slot 1. `Result<NIL>` is the constant `{ i32 0 }`.
-pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) {
+pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) never fails {
     if (fe.bare) {
-        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", value));
+        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", value));
         pass NIL;
     }
     if (fe.ret_nil) {
         drop irw_line(fe.w, "ret { i32 } { i32 0 }");
         pass NIL;
     }
-    string:a = relay irw_temp(fe.w);
-    drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+    string:a = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
                                    " undef, ",
-                                   relay cat4(fe.val_ll, " ", value, ", 0")));
-    string:b = relay irw_temp(fe.w);
-    drop irw_line(fe.w, relay cat5(b, " = insertvalue ", fe.ret_ll,
-                                   " ", relay string_concat(a, ", i32 0, 1")));
-    drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", b));
+                                   raw cat4(fe.val_ll, " ", value, ", 0")));
+    string:b = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
+                                   " ", raw string_concat(a, ", i32 0, 1")));
+    drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", b));
     pass NIL;
 };
 
 // `fail c` — a zeroed value slot and the code in the error slot, so a caller that
 // unwraps without checking reads an empty value rather than memory that means
 // something else.
-pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) {
+pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
     if (fe.bare) {
         // The frontend refuses `fail` in `main` and `failsafe` (there is no
         // Result to fail into); emitting the bare form anyway means a frontend
         // regression produces IR that is wrong, not IR that is malformed.
-        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", code));
+        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", code));
         pass NIL;
     }
     if (fe.ret_nil) {
-        string:a = relay irw_temp(fe.w);
-        drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+        string:a = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
                                        " undef, i32 ",
-                                       relay string_concat(code, ", 0")));
-        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", a));
+                                       raw string_concat(code, ", 0")));
+        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", a));
         pass NIL;
     }
-    string:a = relay irw_temp(fe.w);
-    drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+    string:a = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
                                    " undef, ",
-                                   relay cat4(fe.val_ll, " ", fe.val_zero, ", 0")));
-    string:b = relay irw_temp(fe.w);
-    drop irw_line(fe.w, relay cat5(b, " = insertvalue ", fe.ret_ll,
-                                   " ", relay cat4(a, ", i32 ", code, ", 1")));
-    drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", b));
+                                   raw cat4(fe.val_ll, " ", fe.val_zero, ", 0")));
+    string:b = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
+                                   " ", raw cat4(a, ", i32 ", code, ", 1")));
+    drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", b));
     pass NIL;
 };
 
 // Close the body. A function that falls off its end still terminates — subset-1
 // sources always return explicitly, and this keeps the IR well-formed regardless,
 // which is the seed's rule too.
-pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) {
+pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
     if (!terminated) {
         if (fe.bare) {
-            drop irw_line(fe.w, relay cat3("ret ", fe.ret_ll, " 0"));
+            drop irw_line(fe.w, raw cat3("ret ", fe.ret_ll, " 0"));
         } else {
-            drop irw_line(fe.w, relay cat3("ret ", fe.ret_ll, " zeroinitializer"));
+            drop irw_line(fe.w, raw cat3("ret ", fe.ret_ll, " zeroinitializer"));
         }
     }
     // The hoisted allocas, then the body, into the module stream (1.0.9a).

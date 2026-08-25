@@ -34,13 +34,13 @@ pub struct:ValueRange = {
     int32:mag_bits;    // bits of magnitude, excluding any sign
 };
 
-func:vr = ValueRange(bool:negatives, int32:mag_bits) {
+func:vr = ValueRange(bool:negatives, int32:mag_bits) never fails {
     ValueRange:r = ValueRange{ valid: true, negatives: negatives,
                                mag_bits: mag_bits };
     pass r;
 };
 
-func:vr_none = ValueRange() {
+func:vr_none = ValueRange() never fails {
     ValueRange:r = ValueRange{ valid: false, negatives: false, mag_bits: 0i32 };
     pass r;
 };
@@ -63,7 +63,7 @@ func:vr_none = ValueRange() {
 //
 // A guess here would not be visible as a guess: it would silently accept or
 // refuse conversions at the two widest types and nothing would contradict it.
-pub func:float_significand_bits = int32(int32:bits) {
+pub func:float_significand_bits = int32(int32:bits) never fails {
     if (bits == 32i32)  { pass 24i32; }
     if (bits == 64i32)  { pass 53i32; }
     if (bits == 128i32) { pass 113i32; }
@@ -76,9 +76,9 @@ pub func:float_significand_bits = int32(int32:bits) {
 // every 21-bit value is one, because the surrogate range D800..DFFF is excluded.
 // So `char32` is the one type whose validity is not a question about width, and
 // `uint32 => char32` is refused for that reason rather than for a range reason.
-pub func:CHAR32_MAG_BITS = int32() { pass 21i32; };
+pub func:CHAR32_MAG_BITS = int32() never fails { pass 21i32; };
 
-pub func:type_range = ValueRange(TypeTable->:tyt, int32:t) {
+pub func:type_range = ValueRange(TypeTable->:tyt, int32:t) never fails {
     int32:k = raw type_kind(tyt, t);
     int32:bits = raw type_int_bits(tyt, t);
 
@@ -113,7 +113,7 @@ pub func:type_range = ValueRange(TypeTable->:tyt, int32:t) {
 // That matters because **`=>!` is an audit tool**. Every provably-safe conversion
 // pushed into it is a false positive in the one search an auditor runs to find
 // the dangerous ones, and a signal diluted is a signal lost.
-pub func:range_fits = bool(ValueRange:from, ValueRange:to) {
+pub func:range_fits = bool(ValueRange:from, ValueRange:to) never fails {
     if (!from.valid) { pass false; }
     if (!to.valid)   { pass false; }
     if (from.negatives) {
@@ -127,11 +127,11 @@ pub func:range_fits = bool(ValueRange:from, ValueRange:to) {
 // Three answers, not two. A conversion can be checked-legal, unchecked-only, or
 // not a conversion at all — and collapsing the last two would let `=>!` invent
 // semantics that do not exist rather than opt out of a check that does.
-pub func:CAST_OK = int32()        { pass 0i32; };  // `=>` accepts it
-pub func:CAST_LOSSY = int32()     { pass 1i32; };  // `=>!` only
-pub func:CAST_IMPOSSIBLE = int32(){ pass 2i32; };  // neither; there is no such conversion
+pub func:CAST_OK = int32() never fails        { pass 0i32; };  // `=>` accepts it
+pub func:CAST_LOSSY = int32() never fails     { pass 1i32; };  // `=>!` only
+pub func:CAST_IMPOSSIBLE = int32() never fails{ pass 2i32; };  // neither; there is no such conversion
 
-pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
+pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // A type failing to resolve already produced a diagnostic (0.4.1).
     if (raw type_is_invalid(tyt, from)) { pass (raw CAST_OK()); }
     if (raw type_is_invalid(tyt, to))   { pass (raw CAST_OK()); }
@@ -161,8 +161,8 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
     // `tbb32` that is an ordinary valid number. Every cast touching a `tbb` is a
     // conversion with a sentinel test in it, which the backend must emit and
     // which 0.7 lowers.
-    if (fk == (raw TY_TBB())) { pass (relay cast_from_tbb(tyt, to, tk)); }
-    if (tk == (raw TY_TBB())) { pass (relay cast_to_tbb(tyt, from, fk)); }
+    if (fk == (raw TY_TBB())) { pass (raw cast_from_tbb(tyt, to, tk)); }
+    if (tk == (raw TY_TBB())) { pass (raw cast_to_tbb(tyt, from, fk)); }
 
     // --- a handle's number is readable; a handle is not forgeable ----------------
     //
@@ -252,7 +252,7 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
 // sign-extends everything else; narrowing maps ERR and anything out of range to
 // the target's ERR — which is not silent loss but the type's own discipline
 // (D-008 §3), the same saturation its arithmetic performs.
-func:cast_from_tbb = int32(TypeTable->:tyt, int32:to, int32:tk) {
+func:cast_from_tbb = int32(TypeTable->:tyt, int32:to, int32:tk) never fails {
     if (tk == (raw TY_TBB())) { pass (raw CAST_OK()); }
     // `tbb => intN` and `tbb => flt`: ERR HAS NO REPRESENTATION THERE. The spec
     // makes this trap to `failsafe` unless guarded, so it is a legal cast that
@@ -267,7 +267,7 @@ func:cast_from_tbb = int32(TypeTable->:tyt, int32:to, int32:tk) {
 // `X => tbbN`. A source value equal to the target's ERR sentinel would FORGE A
 // TAINT — a number arriving from outside claiming to be an error state — so it
 // traps, and everything else is range-checked.
-func:cast_to_tbb = int32(TypeTable->:tyt, int32:from, int32:fk) {
+func:cast_to_tbb = int32(TypeTable->:tyt, int32:from, int32:fk) never fails {
     if (fk == (raw TY_INT()))   { pass (raw CAST_OK()); }
     if (fk == (raw TY_FLOAT())) { pass (raw CAST_OK()); }
     pass (raw CAST_IMPOSSIBLE());
@@ -276,7 +276,7 @@ func:cast_to_tbb = int32(TypeTable->:tyt, int32:from, int32:fk) {
 // --- the diagnostic ------------------------------------------------------------------------
 
 pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:diags,
-                            int32:from, int32:to, bool:unchecked, Span:at) {
+                            int32:from, int32:to, bool:unchecked, Span:at) never fails {
     int32:c = raw cast_class(tyt, from, to);
 
     if (c == (raw CAST_OK())) {
@@ -288,7 +288,7 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
 
     if (c == (raw CAST_LOSSY())) {
         if (unchecked) { pass to; }
-        string:m1 = relay string_concat("`", relay type_display(tyt, interns, from));
+        string:m1 = raw string_concat("`", raw type_display(tyt, interns, from));
         // "DOES NOT FIT … CAN LOSE INFORMATION" IS A RANGE FACT (1.0.8), true
         // of the numeric narrowings and false of the four classes `cast_class`
         // marks unchecked for another reason — a handle, a pointer, an enum's
@@ -296,16 +296,16 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
         // because the conversion ASSERTS something. The lead-in says which.
         string:m4 = "";
         if (raw cast_is_assertion(tyt, from, to)) {
-            string:a2 = relay string_concat(m1, "` => `");
-            string:a3 = relay string_concat(a2, relay type_display(tyt, interns, to));
-            m4 = relay string_concat(a3, "` is not a checked conversion: ");
+            string:a2 = raw string_concat(m1, "` => `");
+            string:a3 = raw string_concat(a2, raw type_display(tyt, interns, to));
+            m4 = raw string_concat(a3, "` is not a checked conversion: ");
         } else {
-            string:m2 = relay string_concat(m1, "` does not fit in `");
-            string:m3 = relay string_concat(m2, relay type_display(tyt, interns, to));
-            m4 = relay string_concat(m3, "`, so this conversion can lose information: ");
+            string:m2 = raw string_concat(m1, "` does not fit in `");
+            string:m3 = raw string_concat(m2, raw type_display(tyt, interns, to));
+            m4 = raw string_concat(m3, "`, so this conversion can lose information: ");
         }
-        m4 = relay string_concat(m4, relay why_lossy(tyt, from, to));
-        m4 = relay string_concat(m4, ". Write `=>!` to accept that.");
+        m4 = raw string_concat(m4, raw why_lossy(tyt, from, to));
+        m4 = raw string_concat(m4, ". Write `=>!` to accept that.");
         drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), m4, at));
         pass to;
     }
@@ -313,13 +313,13 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
     // CAST_IMPOSSIBLE — and `=>!` does NOT rescue it, because there is nothing
     // here to opt out of. The message says so, since a programmer who reaches for
     // `=>!` after a lossy-cast error will reach for it again here.
-    string:n1 = relay string_concat("there is no conversion from `",
-                                    relay type_display(tyt, interns, from));
-    string:n2 = relay string_concat(n1, "` to `");
-    string:n3 = relay string_concat(n2, relay type_display(tyt, interns, to));
-    string:n4 = relay string_concat(n3, "`: ");
-    n4 = relay string_concat(n4, relay why_impossible(tyt, from, to));
-    n4 = relay string_concat(n4, ". `=>!` does not help — it opts out of a check, not of a meaning.");
+    string:n1 = raw string_concat("there is no conversion from `",
+                                    raw type_display(tyt, interns, from));
+    string:n2 = raw string_concat(n1, "` to `");
+    string:n3 = raw string_concat(n2, raw type_display(tyt, interns, to));
+    string:n4 = raw string_concat(n3, "`: ");
+    n4 = raw string_concat(n4, raw why_impossible(tyt, from, to));
+    n4 = raw string_concat(n4, ". `=>!` does not help — it opts out of a check, not of a meaning.");
     drop diaglist_push(diags, raw diag_error(raw TYPE_NO_CAST(), n4, at));
     pass to;
 };
@@ -329,7 +329,7 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
 // Is this `=>!`-only conversion one that loses nothing and ASSERTS something
 // instead — a handle manufactured, a pointer retyped, a tag read or forged?
 // The lead-in of the refusal reads differently for those (1.0.8).
-pub func:cast_is_assertion = bool(TypeTable->:tyt, int32:from, int32:to) {
+pub func:cast_is_assertion = bool(TypeTable->:tyt, int32:from, int32:to) never fails {
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
     if (tk == (raw TY_KERNEL()))  { pass true; }
@@ -339,7 +339,7 @@ pub func:cast_is_assertion = bool(TypeTable->:tyt, int32:from, int32:to) {
     pass false;
 };
 
-pub func:why_lossy = string(TypeTable->:tyt, int32:from, int32:to) {
+pub func:why_lossy = string(TypeTable->:tyt, int32:from, int32:to) never fails {
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
     if (fk == (raw TY_FLOAT())) {
@@ -385,7 +385,7 @@ pub func:why_lossy = string(TypeTable->:tyt, int32:from, int32:to) {
     pass "the target is narrower than the source";
 };
 
-pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) {
+pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) never fails {
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
     if (tk == (raw TY_BOOL())) {

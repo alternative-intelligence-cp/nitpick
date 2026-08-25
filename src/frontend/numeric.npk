@@ -44,7 +44,7 @@ pub struct:NumScan = {
     NumWidth:width;
 };
 
-func:num_fail = NumScan() {
+func:num_fail = NumScan() never fails {
     NumScan:r = NumScan{ is_numeric: false, is_float: false, overflow: false,
                          bad_digit: false, value: 0i64,
                          base: NumBase.BaseDecimal, width: NumWidth.WNone };
@@ -56,7 +56,7 @@ func:num_fail = NumScan() {
 // Returns the digit's value, or a sentinel far outside any base's range. The
 // caller compares against the base's radix rather than against a magic number.
 
-func:digit_value = int64(uint8:c, NumBase:base) {
+func:digit_value = int64(uint8:c, NumBase:base) never fails {
     if (base == NumBase.BaseTernary) {
         // Balanced ternary: T and t denote -1.
         if (c == 48u8) { pass 0i64; }
@@ -78,7 +78,7 @@ func:digit_value = int64(uint8:c, NumBase:base) {
     pass 99i64;
 };
 
-func:base_radix = int64(NumBase:base) {
+func:base_radix = int64(NumBase:base) never fails {
     if (base == NumBase.BaseHex)     { pass 16i64; }
     if (base == NumBase.BaseBinary)  { pass 2i64; }
     if (base == NumBase.BaseOctal)   { pass 8i64; }
@@ -89,7 +89,7 @@ func:base_radix = int64(NumBase:base) {
 
 // Balanced bases admit negative digits, so their bound is |digit| < radix rather
 // than 0 <= digit < radix.
-func:digit_in_base = bool(int64:d, NumBase:base) {
+func:digit_in_base = bool(int64:d, NumBase:base) never fails {
     int64:r = raw base_radix(base);
     if (d == 99i64) { pass false; }
     if (d < 0i64) {
@@ -102,14 +102,14 @@ func:digit_in_base = bool(int64:d, NumBase:base) {
 
 // --- suffix stripping -------------------------------------------------------
 
-func:ends_with = bool(string:s, string:tail) {
+func:ends_with = bool(string:s, string:tail) never fails {
     if (tail.len > s.len) { pass false; }
-    string:back = relay string_slice(s, s.len - tail.len, s.len);
+    string:back = raw slice_proven(s, s.len - tail.len, s.len);
     pass (raw string_eq(back, tail));
 };
 
 // Longest first, so "tri" beats "t" and "non" beats "n".
-func:strip_base_suffix = int64(string:run) {
+func:strip_base_suffix = int64(string:run) never fails {
     if (raw ends_with(run, "hex")) { pass 3i64; }
     if (raw ends_with(run, "bin")) { pass 3i64; }
     if (raw ends_with(run, "oct")) { pass 3i64; }
@@ -121,7 +121,7 @@ func:strip_base_suffix = int64(string:run) {
     pass 0i64;
 };
 
-func:base_from_suffix = NumBase(string:sfx) {
+func:base_from_suffix = NumBase(string:sfx) never fails {
     if (raw string_eq(sfx, "hex")) { pass NumBase.BaseHex; }
     if (raw string_eq(sfx, "bin")) { pass NumBase.BaseBinary; }
     if (raw string_eq(sfx, "oct")) { pass NumBase.BaseOctal; }
@@ -134,11 +134,11 @@ func:base_from_suffix = NumBase(string:sfx) {
 };
 
 // The longest type suffix the run ends with, leaving a non-empty remainder.
-func:strip_type_suffix = int64(string:run) {
+func:strip_type_suffix = int64(string:run) never fails {
     int64:n = 6i64;
     while (n >= 2i64) {
         if (run.len > n) {
-            string:tail = relay string_slice(run, run.len - n, run.len);
+            string:tail = raw slice_proven(run, run.len - n, run.len);
             NumWidth:w = raw num_width_of(tail);
             if (w != NumWidth.WNone) {
                 pass n;
@@ -150,19 +150,19 @@ func:strip_type_suffix = int64(string:run) {
 };
 
 // The width suffix on a float literal's text, or WNone.
-pub func:num_float_width = NumWidth(string:text) {
-    int64:tlen = relay strip_type_suffix(text);
+pub func:num_float_width = NumWidth(string:text) never fails {
+    int64:tlen = raw strip_type_suffix(text);
     if (tlen == 0i64) {
         pass NumWidth.WNone;
     }
-    pass (raw num_width_of(relay string_slice(text, text.len - tlen, text.len)));
+    pass (raw num_width_of(raw slice_proven(text, text.len - tlen, text.len)));
 };
 
 // --- the scan ---------------------------------------------------------------
 
 // `run` is a maximal [0-9a-zA-Z_] sequence. Returns is_numeric = false when it
 // was an identifier after all.
-pub func:num_scan = NumScan(string:run) {
+pub func:num_scan = NumScan(string:run) never fails {
     if (run.len == 0i64) {
         pass (raw num_fail());
     }
@@ -176,20 +176,20 @@ pub func:num_scan = NumScan(string:run) {
 
     NumScan:out = raw num_fail();
 
-    int64:tlen = relay strip_type_suffix(run);
-    string:body = relay string_slice(run, 0i64, run.len - tlen);
+    int64:tlen = raw strip_type_suffix(run);
+    string:body = raw slice_proven(run, 0i64, run.len - tlen);
     NumWidth:width = NumWidth.WNone;
     if (tlen > 0i64) {
-        width = raw num_width_of(relay string_slice(run, run.len - tlen, run.len));
+        width = raw num_width_of(raw slice_proven(run, run.len - tlen, run.len));
     }
 
-    int64:blen = relay strip_base_suffix(body);
+    int64:blen = raw strip_base_suffix(body);
     NumBase:base = NumBase.BaseDecimal;
     if (blen > 0i64) {
         base = raw base_from_suffix(
-            relay string_slice(body, body.len - blen, body.len));
+            raw slice_proven(body, body.len - blen, body.len));
     }
-    string:digits = relay string_slice(body, 0i64, body.len - blen);
+    string:digits = raw slice_proven(body, 0i64, body.len - blen);
 
     // A base suffix with no digits in front of it is just an identifier --
     // `hex`, `bin` and `non` are perfectly good names.

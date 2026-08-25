@@ -434,7 +434,13 @@ class Checker:
         if isinstance(e, S.Comptime):
             raise RungError("comptime(...)", "0.6", e)
         if isinstance(e, (S.SafeUnwrap, S.Emphatic)):
-            raise RungError("the ?-family operators (? ?? ?! ?. ?|)", "0.9", e)
+            # `e ?| d` / `e ?! c` (1.1.1): src needs both -- D-163's rewrite
+            # rules prescribe `?!` for a provably-dead failure branch, and the
+            # seed compiles src. The operand and the default/code are walked;
+            # the real frontend is what enforces the fine rules.
+            self._expr(e.operand if hasattr(e, "operand") else e.expr)
+            self._expr(e.default if isinstance(e, S.SafeUnwrap) else e.code)
+            return
         if isinstance(e, S.Ternary):
             raise RungError("the ternary `is (c) : a : b`", "0.9", e)
         if isinstance(e, S.Pipeline):
@@ -644,6 +650,11 @@ class Checker:
             return self.type_of(e.operand)
         if isinstance(e, S.ResultUnary):
             inner = self.type_of(e.operand)
+            if isinstance(inner, T.ResultT):
+                return inner.inner
+            return inner
+        if isinstance(e, (S.SafeUnwrap, S.Emphatic)):
+            inner = self.type_of(e.expr)
             if isinstance(inner, T.ResultT):
                 return inner.inner
             return inner

@@ -6,14 +6,14 @@
 // call site silently invents a NEW code, and the test asserting the old one then
 // fails for a reason unrelated to the bug it guards.
 
-pub func:RESOLVE_DUPLICATE = string()   { pass "NITPICK-RESOLVE-001"; };
-pub func:RESOLVE_UNKNOWN = string()     { pass "NITPICK-RESOLVE-002"; };
-pub func:RESOLVE_PRIVATE = string()     { pass "NITPICK-RESOLVE-003"; };
-pub func:RESOLVE_AMBIGUOUS = string()   { pass "NITPICK-RESOLVE-004"; };
-pub func:RESOLVE_NO_SUCH_FILE = string(){ pass "NITPICK-RESOLVE-005"; };
-pub func:RESOLVE_CYCLE = string()       { pass "NITPICK-RESOLVE-006"; };
-pub func:RESOLVE_NO_SUCH_NAME = string(){ pass "NITPICK-RESOLVE-007"; };
-pub func:RESOLVE_SHADOWED = string()    { pass "NITPICK-RESOLVE-008"; };
+pub func:RESOLVE_DUPLICATE = string() never fails   { pass "NITPICK-RESOLVE-001"; };
+pub func:RESOLVE_UNKNOWN = string() never fails     { pass "NITPICK-RESOLVE-002"; };
+pub func:RESOLVE_PRIVATE = string() never fails     { pass "NITPICK-RESOLVE-003"; };
+pub func:RESOLVE_AMBIGUOUS = string() never fails   { pass "NITPICK-RESOLVE-004"; };
+pub func:RESOLVE_NO_SUCH_FILE = string() never fails{ pass "NITPICK-RESOLVE-005"; };
+pub func:RESOLVE_CYCLE = string() never fails       { pass "NITPICK-RESOLVE-006"; };
+pub func:RESOLVE_NO_SUCH_NAME = string() never fails{ pass "NITPICK-RESOLVE-007"; };
+pub func:RESOLVE_SHADOWED = string() never fails    { pass "NITPICK-RESOLVE-008"; };
 
 // NOT A DIAGNOSTIC ABOUT THE PROGRAM — a diagnostic about the compiler. It
 // reports that a walker met a node kind whose slot layout nothing has described,
@@ -22,4 +22,4 @@ pub func:RESOLVE_SHADOWED = string()    { pass "NITPICK-RESOLVE-008"; };
 // It exists because the alternative was what 0.4.2 found: a walk that assumed a
 // layout, guessed wrong, and produced a wrong answer in silence. A code here
 // means the failure has a name and a test can assert it never fires.
-pub func:RESOLVE_INTERNAL = string()    { pass "NITPICK-RESOLVE-009"; };
+pub func:RESOLVE_INTERNAL = string() never fails    { pass "NITPICK-RESOLVE-009"; };

@@ -22,11 +22,11 @@ pub struct:OpMatch = {
     int64:length;
 };
 
-pub func:op_match = OpMatch(string:text, int64:at) {
+pub func:op_match = OpMatch(string:text, int64:at) never fails {
     OpMatch:none = OpMatch{ found: false, kind: TokenKind.Error, length: 0i64 };
 
     if ((at + 3i64) <= text.len) {
-        string:s3 = relay string_slice(text, at, at + 3i64);
+        string:s3 = raw slice_proven(text, at, at + 3i64);
         if (raw string_eq(s3, "!!!")) {
             OpMatch:mOpBangBangBang = OpMatch{ found: true, kind: TokenKind.OpBangBangBang, length: 3i64 };
             pass mOpBangBangBang;
@@ -70,7 +70,7 @@ pub func:op_match = OpMatch(string:text, int64:at) {
     }
 
     if ((at + 2i64) <= text.len) {
-        string:s2 = relay string_slice(text, at, at + 2i64);
+        string:s2 = raw slice_proven(text, at, at + 2i64);
         if (raw string_eq(s2, "!=")) {
             OpMatch:mOpNotEq = OpMatch{ found: true, kind: TokenKind.OpNotEq, length: 2i64 };
             pass mOpNotEq;
@@ -202,7 +202,7 @@ pub func:op_match = OpMatch(string:text, int64:at) {
     }
 
     if ((at + 1i64) <= text.len) {
-        string:s1 = relay string_slice(text, at, at + 1i64);
+        string:s1 = raw slice_proven(text, at, at + 1i64);
         if (raw string_eq(s1, "!")) {
             OpMatch:mOpBang = OpMatch{ found: true, kind: TokenKind.OpBang, length: 1i64 };
             pass mOpBang;

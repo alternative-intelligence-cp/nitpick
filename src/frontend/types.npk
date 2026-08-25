@@ -35,30 +35,30 @@ use "./ast.npk".*;
 // A kind plus its operands. The operands mean different things per kind, and —
 // as in the AST — the accessors are the only place that is interpreted.
 
-pub func:TY_INVALID = int32()  { pass 0i32; };   // a type that failed to resolve
-pub func:TY_NIL = int32()      { pass 1i32; };
-pub func:TY_BOOL = int32()     { pass 2i32; };
-pub func:TY_INT = int32()      { pass 3i32; };   // a = bits, b = signed
-pub func:TY_CHAR = int32()     { pass 4i32; };   // a = bits
-pub func:TY_FLOAT = int32()    { pass 5i32; };   // a = bits
-pub func:TY_TBB = int32()      { pass 6i32; };   // a = bits
-pub func:TY_KERNEL = int32()   { pass 7i32; };   // fd/pid/tid/uid/gid; a = which
-pub func:TY_STRING = int32()   { pass 8i32; };
-pub func:TY_CSTRING = int32()  { pass 9i32; };
-pub func:TY_ANY = int32()      { pass 10i32; };
-pub func:TY_POINTER = int32()  { pass 11i32; };  // a = pointee
-pub func:TY_SLICE = int32()    { pass 12i32; };  // a = element
-pub func:TY_ARRAY = int32()    { pass 13i32; };  // a = element, b = count
-pub func:TY_OPTIONAL = int32() { pass 14i32; };  // a = inner
-pub func:TY_RESULT = int32()   { pass 15i32; };  // a = success type
-pub func:TY_STRUCT = int32()   { pass 16i32; };  // a = DeclId
-pub func:TY_ENUM = int32()     { pass 17i32; };  // a = DeclId
-pub func:TY_TRAIT = int32()    { pass 18i32; };  // a = DeclId
-pub func:TY_DYN = int32()      { pass 19i32; };  // a,b = trait window
-pub func:TY_FUNC = int32()     { pass 20i32; };  // a = return, b,c = param window
-pub func:TY_SELF = int32()     { pass 21i32; };
-pub func:TY_PARAM = int32()    { pass 22i32; };  // a generic parameter; a = DeclId
-pub func:TY_RANGE = int32()    { pass 23i32; };  // a = element (D-093)
+pub func:TY_INVALID = int32() never fails  { pass 0i32; };   // a type that failed to resolve
+pub func:TY_NIL = int32() never fails      { pass 1i32; };
+pub func:TY_BOOL = int32() never fails     { pass 2i32; };
+pub func:TY_INT = int32() never fails      { pass 3i32; };   // a = bits, b = signed
+pub func:TY_CHAR = int32() never fails     { pass 4i32; };   // a = bits
+pub func:TY_FLOAT = int32() never fails    { pass 5i32; };   // a = bits
+pub func:TY_TBB = int32() never fails      { pass 6i32; };   // a = bits
+pub func:TY_KERNEL = int32() never fails   { pass 7i32; };   // fd/pid/tid/uid/gid; a = which
+pub func:TY_STRING = int32() never fails   { pass 8i32; };
+pub func:TY_CSTRING = int32() never fails  { pass 9i32; };
+pub func:TY_ANY = int32() never fails      { pass 10i32; };
+pub func:TY_POINTER = int32() never fails  { pass 11i32; };  // a = pointee
+pub func:TY_SLICE = int32() never fails    { pass 12i32; };  // a = element
+pub func:TY_ARRAY = int32() never fails    { pass 13i32; };  // a = element, b = count
+pub func:TY_OPTIONAL = int32() never fails { pass 14i32; };  // a = inner
+pub func:TY_RESULT = int32() never fails   { pass 15i32; };  // a = success type
+pub func:TY_STRUCT = int32() never fails   { pass 16i32; };  // a = DeclId
+pub func:TY_ENUM = int32() never fails     { pass 17i32; };  // a = DeclId
+pub func:TY_TRAIT = int32() never fails    { pass 18i32; };  // a = DeclId
+pub func:TY_DYN = int32() never fails      { pass 19i32; };  // a,b = trait window
+pub func:TY_FUNC = int32() never fails     { pass 20i32; };  // a = return, b,c = param window
+pub func:TY_SELF = int32() never fails     { pass 21i32; };
+pub func:TY_PARAM = int32() never fails    { pass 22i32; };  // a generic parameter; a = DeclId
+pub func:TY_RANGE = int32() never fails    { pass 23i32; };  // a = element (D-093)
 
 // A VARIADIC FUNCTION IS A DIFFERENT KIND, not `TY_FUNC` with a flag beside it.
 //
@@ -73,7 +73,7 @@ pub func:TY_RANGE = int32()    { pass 23i32; };  // a = element (D-093)
 // encoding that can be misread by ignoring a field" is exactly what happened here
 // — `fn_type` carried no variadic information at all, so every variadic call
 // checked as fixed arity and said nothing.
-pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
+pub func:TY_FUNC_VARIADIC = int32() never fails { pass 24i32; };
 
 // A COMPILE-TIME VALUE STANDING IN A TYPE-ARGUMENT WINDOW — `Mutex<Config, 2>`
 // (D-064 §2). `a` is the value's TYPE and `name` is its rendering.
@@ -88,10 +88,10 @@ pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
 // and `2` and `3` different ones. `2i32` and `2i64` differ in slot `a` and are
 // also different, which is right: a value parameter has a declared type and the
 // argument's has to be it.
-pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = the value's type
-pub func:TY_ARENA = int32()    { pass 26i32; };  // a = element (D-017, D-152)
-pub func:TY_HANDLE = int32()   { pass 27i32; };  // a = element (MEMORY_REFERENCE 4.1)
-pub func:TY_SHARED_ARENA = int32() { pass 28i32; };  // a = element (D-017, D-154)
+pub func:TY_COMPTIME = int32() never fails { pass 25i32; };  // a = the value's type
+pub func:TY_ARENA = int32() never fails    { pass 26i32; };  // a = element (D-017, D-152)
+pub func:TY_HANDLE = int32() never fails   { pass 27i32; };  // a = element (MEMORY_REFERENCE 4.1)
+pub func:TY_SHARED_ARENA = int32() never fails { pass 28i32; };  // a = element (D-017, D-154)
 
 // AN ASSOCIATED TYPE, UNRESOLVED (D-160). `a` is the declaring TRAIT's decl and
 // `b` is the assoc's name — the pair, because the name alone is not an identity:
@@ -102,7 +102,7 @@ pub func:TY_SHARED_ARENA = int32() { pass 28i32; };  // a = element (D-017, D-15
 // becomes that binding. It has no representation of its own, which is why it is
 // zero-sized here and a rung at lowering — anything that reaches emission
 // carrying one has escaped its substitution.
-pub func:TY_ASSOC = int32() { pass 29i32; };  // a = trait decl, b = name
+pub func:TY_ASSOC = int32() never fails { pass 29i32; };  // a = trait decl, b = name
 
 pub struct:Type = {
     int32:kind;
@@ -135,7 +135,7 @@ pub struct:TypeTable = {
 
 // --- construction ----------------------------------------------------------------------
 
-func:tt_grow = NIL(TypeTable->:t) {
+func:tt_grow = NIL(TypeTable->:t) never fails {
     int32:nc = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<Type>());
@@ -153,7 +153,7 @@ func:tt_grow = NIL(TypeTable->:t) {
 // THE INTERNING. A type already present returns its existing index, which is what
 // makes equality an integer compare everywhere else.
 pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
-                           int64:size, int32:align, int32:name) {
+                           int64:size, int32:align, int32:name) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         Type:e = t.items[i => int64];
@@ -206,23 +206,23 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
 // program-wide. 0 = not computed, 1 = no pointers anywhere, 2 = holds or may.
 // The escape analysis reads it: a struct of plain scalars (`ModuleEntry`,
 // `Token`, `Span`) can no more carry a borrow than an `int32` can.
-pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) {
-    if (id < 0i32) { fail 14tbb32; }
-    if (id >= t.count) { fail 14tbb32; }
+pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! 14tbb32; }
+    if (id >= t.count) { !!! 14tbb32; }
     t.haspt[id => int64] = 1i32;
     if (has) { t.haspt[id => int64] = 2i32; }
     pass NIL;
 };
 
-pub func:tt_haspt = int32(TypeTable->:t, int32:id) {
+pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if (id >= t.count) { pass 0i32; }
     pass (t.haspt[id => int64]);
 };
 
-pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) {
-    if (id < 0i32) { fail 14tbb32; }
-    if (id >= t.count) { fail 14tbb32; }
+pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) never fails {
+    if (id < 0i32) { !!! 14tbb32; }
+    if (id >= t.count) { !!! 14tbb32; }
     Type:e = t.items[id => int64];
     e.size = size;
     e.align = align;
@@ -230,13 +230,13 @@ pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) {
     pass NIL;
 };
 
-pub func:tt_get = Type(TypeTable->:t, int32:id) {
-    if (id < 0i32) { fail 14tbb32; }
-    if (id >= t.count) { fail 14tbb32; }
+pub func:tt_get = Type(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { !!! 14tbb32; }
+    if (id >= t.count) { !!! 14tbb32; }
     pass t.items[id => int64];
 };
 
-pub func:tt_count = int32(TypeTable->:t) { pass t.count; };
+pub func:tt_count = int32(TypeTable->:t) never fails { pass t.count; };
 
 // --- how an aggregate is laid out ------------------------------------------------------
 //
@@ -272,7 +272,7 @@ pub struct:Lay = { int64:size; int32:align; };
 // `type_layout.npk` where it was written: `tt_result` and `tt_optional` compute a
 // total at the moment they intern, and a module they cannot import is a module
 // whose rule they end up restating.
-pub func:align_up = int64(int64:n, int32:align) {
+pub func:align_up = int64(int64:n, int32:align) never fails {
     if (align <= 1i32) { pass n; }
     int64:a = align => int64;
     int64:rem = n % a;
@@ -280,7 +280,7 @@ pub func:align_up = int64(int64:n, int32:align) {
     pass (n + (a - rem));
 };
 
-pub func:lay_start = Lay() {
+pub func:lay_start = Lay() never fails {
     Lay:l = Lay{ size: 0i64, align: 1i32 };
     pass l;
 };
@@ -291,7 +291,7 @@ pub func:lay_start = Lay() {
 // than two that have to agree about padding. `struct_field` used to keep a
 // running sum of its own beside this one; now it reads the answer out of the
 // same call that produced it, so there is no second sum to drift.
-pub func:lay_field = int64(Lay->:l, int64:fsize, int32:falign) {
+pub func:lay_field = int64(Lay->:l, int64:fsize, int32:falign) never fails {
     if (falign > l.align) { l.align = falign; }
     l.size = raw align_up(l.size, falign);
     int64:at = l.size;
@@ -303,7 +303,7 @@ pub func:lay_field = int64(Lay->:l, int64:fsize, int32:falign) {
 // multiple of its alignment, so that `T[2]` puts the second element where the
 // first one's alignment says it goes — and that rounding is the difference
 // between `Result<int64>` being sixteen bytes and being twelve.
-pub func:lay_end = NIL(Lay->:l) {
+pub func:lay_end = NIL(Lay->:l) never fails {
     l.size = raw align_up(l.size, l.align);
     pass NIL;
 };
@@ -320,13 +320,13 @@ pub func:lay_end = NIL(Lay->:l) {
 // {i8,i128} is 32 bytes and {i8,i256} is 48, so bits/8 (which said 32 for
 // i256) was the memory-corruption-class disagreement the audit flagged: the
 // frontend's struct offsets would not have been LLVM's.
-func:int_align = int32(int32:bits) {
+func:int_align = int32(int32:bits) never fails {
     int32:al = bits / 8i32;
     if (al > 16i32) { al = 16i32; }
     pass al;
 };
 
-pub func:tt_int = int32(TypeTable->:t, int32:bits, bool:signed) {
+pub func:tt_int = int32(TypeTable->:t, int32:bits, bool:signed) never fails {
     int32:sg = 0i32;
     if (signed) { sg = 1i32; }
     int64:bytes = (bits => int64) / 8i64;
@@ -334,17 +334,17 @@ pub func:tt_int = int32(TypeTable->:t, int32:bits, bool:signed) {
                         raw int_align(bits), 0i32));
 };
 
-pub func:tt_char = int32(TypeTable->:t, int32:bits) {
+pub func:tt_char = int32(TypeTable->:t, int32:bits) never fails {
     int64:bytes = (bits => int64) / 8i64;
     pass (raw tt_intern(t, raw TY_CHAR(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
 };
 
-pub func:tt_float = int32(TypeTable->:t, int32:bits) {
+pub func:tt_float = int32(TypeTable->:t, int32:bits) never fails {
     int64:bytes = (bits => int64) / 8i64;
     pass (raw tt_intern(t, raw TY_FLOAT(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
 };
 
-pub func:tt_tbb = int32(TypeTable->:t, int32:bits) {
+pub func:tt_tbb = int32(TypeTable->:t, int32:bits) never fails {
     int64:bytes = (bits => int64) / 8i64;
     // b = 1: SIGNED. Balanced ternary is symmetric about zero — negative codes
     // are half the space, and INT32_MIN is tbb32's ERR sentinel — so the binary
@@ -357,13 +357,13 @@ pub func:tt_tbb = int32(TypeTable->:t, int32:bits) {
 // `fd`, `pid`, `tid`, `uid`, `gid` — five DISTINCT types that all lower to `i32`
 // (D-042). They compare and they do not add, and this is the layer that has to
 // hold that line because nothing downstream will: to LLVM they are identical.
-pub func:KERNEL_FD = int32()  { pass 0i32; };
-pub func:KERNEL_PID = int32() { pass 1i32; };
-pub func:KERNEL_TID = int32() { pass 2i32; };
-pub func:KERNEL_UID = int32() { pass 3i32; };
-pub func:KERNEL_GID = int32() { pass 4i32; };
+pub func:KERNEL_FD = int32() never fails  { pass 0i32; };
+pub func:KERNEL_PID = int32() never fails { pass 1i32; };
+pub func:KERNEL_TID = int32() never fails { pass 2i32; };
+pub func:KERNEL_UID = int32() never fails { pass 3i32; };
+pub func:KERNEL_GID = int32() never fails { pass 4i32; };
 
-pub func:tt_kernel = int32(TypeTable->:t, int32:which) {
+pub func:tt_kernel = int32(TypeTable->:t, int32:which) never fails {
     pass (raw tt_intern(t, raw TY_KERNEL(), which, 0i32, 0i32, 4i64, 4i32, 0i32));
 };
 
@@ -375,7 +375,7 @@ pub func:tt_kernel = int32(TypeTable->:t, int32:which) {
 // { slab ptr, gens ptr, cap i64, top i64, free_head i64 }. It moves, it is
 // never copied implicitly (a copy would fork the freelist), and its slab is
 // WILD-role heap: an un-destroyed arena is a countable leak (D-151).
-pub func:tt_arena = int32(TypeTable->:t, int32:elem) {
+pub func:tt_arena = int32(TypeTable->:t, int32:elem) never fails {
     int32:id = raw tt_intern(t, raw TY_ARENA(), elem, 0i32, 0i32, 40i64, 8i32, 0i32);
     drop tt_set_haspt(t, id, true);
     pass id;
@@ -386,7 +386,7 @@ pub func:tt_arena = int32(TypeTable->:t, int32:elem) {
 // contract, so the value is the reference. Chunked storage never moves;
 // slots are written once at `alloc(v)` and immutable after, which is what
 // makes concurrent `get` race-free with no per-slot synchronization.
-pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) {
+pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) never fails {
     int32:id = raw tt_intern(t, raw TY_SHARED_ARENA(), elem, 0i32, 0i32, 8i64, 8i32, 0i32);
     drop tt_set_haspt(t, id, true);
     pass id;
@@ -396,16 +396,16 @@ pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) {
 // with tail padding. An INDEX, not a pointer — which is exactly why it does
 // not set haspt: handles cross scopes, live in struct fields, and express
 // cycles freely, and that is the design.
-pub func:tt_handle = int32(TypeTable->:t, int32:elem) {
+pub func:tt_handle = int32(TypeTable->:t, int32:elem) never fails {
     pass (raw tt_intern(t, raw TY_HANDLE(), elem, 0i32, 0i32, 16i64, 8i32, 0i32));
 };
 
-pub func:tt_pointer = int32(TypeTable->:t, int32:pointee) {
+pub func:tt_pointer = int32(TypeTable->:t, int32:pointee) never fails {
     pass (raw tt_intern(t, raw TY_POINTER(), pointee, 0i32, 0i32, 8i64, 8i32, 0i32));
 };
 
 // `{ptr, i64 len}` (D-070). Non-owning, and a second-class view.
-pub func:tt_slice = int32(TypeTable->:t, int32:elem) {
+pub func:tt_slice = int32(TypeTable->:t, int32:elem) never fails {
     pass (raw tt_intern(t, raw TY_SLICE(), elem, 0i32, 0i32, 16i64, 8i32, 0i32));
 };
 
@@ -414,7 +414,7 @@ pub func:tt_slice = int32(TypeTable->:t, int32:elem) {
 // itself cannot be sized, and why 0.3.3 treats a fixed array as containment and a
 // slice as not.
 pub func:tt_array = int32(TypeTable->:t, int32:elem, int32:count,
-                          int64:elem_size, int32:elem_align) {
+                          int64:elem_size, int32:elem_align) never fails {
     int64:total = elem_size * (count => int64);
     pass (raw tt_intern(t, raw TY_ARRAY(), elem, count, 0i32, total, elem_align, 0i32));
 };
@@ -427,7 +427,7 @@ pub func:tt_array = int32(TypeTable->:t, int32:elem, int32:count,
 // silently, as `int32`. Giving the range a type of its own means the mismatch is
 // reported where it happens and names what it found.
 pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
-                          int32:elem_align) {
+                          int32:elem_align) never fails {
     // `{T lo, T hi}` — two fields, through the same accumulator as every other
     // aggregate. The answer is `2 * size` for any `T`, which is exactly why it
     // was written that way and exactly why it is not written that way now: a
@@ -443,7 +443,7 @@ pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
 // rather than an `i1` because a bit is not addressable, and the three bytes of
 // padding after it are the machine's, not a rule this restates.
 pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
-                             int32:inner_align) {
+                             int32:inner_align) never fails {
     Lay:l = raw lay_start();
     drop lay_field(@l, 1i64, 1i32);
     drop lay_field(@l, inner_size, inner_align);
@@ -457,7 +457,7 @@ pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
 //
 // `Result<NIL>` is `{i32}`: NIL is zero-sized (D-084).
 pub func:tt_result = int32(TypeTable->:t, int32:inner, int64:inner_size,
-                           int32:inner_align) {
+                           int32:inner_align) never fails {
     // THE ERROR FIELD IS SECOND, so the padding falls on both sides of it: before,
     // when `T` is not already a multiple of four, and after, when `T` is wider
     // than four. `size(T) + 4` had neither, and was right only for a `T` that
@@ -474,12 +474,12 @@ pub func:tt_result = int32(TypeTable->:t, int32:inner, int64:inner_size,
 // DeclId is what makes that true by construction rather than by a comparison
 // somebody has to remember to write.
 pub func:tt_struct = int32(TypeTable->:t, int32:decl, int32:name,
-                           int64:size, int32:align) {
+                           int64:size, int32:align) never fails {
     pass (raw tt_intern(t, raw TY_STRUCT(), decl, 0i32, 0i32, size, align, name));
 };
 
 pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
-                         int64:size, int32:align) {
+                         int64:size, int32:align) never fails {
     pass (raw tt_intern(t, raw TY_ENUM(), decl, 0i32, 0i32, size, align, name));
 };
 
@@ -510,7 +510,7 @@ pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
 // one can share its name with another, and those are never emitted.
 pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
                              int32:name, int32:arg_start, int32:arg_count,
-                             int64:size, int32:align) {
+                             int64:size, int32:align) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         Type:e = t.items[i => int64];
@@ -520,8 +520,8 @@ pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
                     bool:same = true;
                     int32:k = 0i32;
                     while (k < arg_count) {
-                        if ((relay ast_id_at(ast, e.b, k))
-                                != (relay ast_id_at(ast, arg_start, k))) {
+                        if ((raw ast_id_at(ast, e.b, k))
+                                != (raw ast_id_at(ast, arg_start, k))) {
                             same = false;
                             k = arg_count;
                         } else {
@@ -537,7 +537,7 @@ pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
     pass (raw tt_intern(t, kind, decl, arg_start, arg_count, size, align, name));
 };
 
-pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
+pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) never fails {
     // A trait is not a value type; it has no size of its own.
     pass (raw tt_intern(t, raw TY_TRAIT(), decl, 0i32, 0i32, 0i64, 0i32, name));
 };
@@ -567,7 +567,7 @@ pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
 // program-unique (the loader refuses two modules exporting one name,
 // NITPICK-RESOLVE-008), so the spelling identifies the set.
 pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
-                        int32:start, int32:count) {
+                        int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         Type:e = t.items[i => int64];
@@ -576,8 +576,8 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
                 bool:same = true;
                 int32:k = 0i32;
                 while (k < count) {
-                    if ((relay ast_id_at(ast, e.a, k))
-                            != (relay ast_id_at(ast, start, k))) {
+                    if ((raw ast_id_at(ast, e.a, k))
+                            != (raw ast_id_at(ast, start, k))) {
                         same = false;
                         k = count;
                     } else {
@@ -595,12 +595,12 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
     string:spelled = "dyn ";
     int32:j = 0i32;
     while (j < count) {
-        if (j > 0i32) { spelled = relay string_concat(spelled, " & "); }
-        int32:tn = raw type_name(t, relay ast_id_at(ast, start, j));
+        if (j > 0i32) { spelled = raw string_concat(spelled, " & "); }
+        int32:tn = raw type_name(t, raw ast_id_at(ast, start, j));
         if (raw intern_is_none(tn)) {
-            spelled = relay string_concat(spelled, "<trait>");
+            spelled = raw string_concat(spelled, "<trait>");
         } else {
-            spelled = relay string_concat(spelled, relay intern_get(interns, tn));
+            spelled = raw string_concat(spelled, raw intern_get(interns, tn));
         }
         j = j + 1i32;
     }
@@ -615,7 +615,7 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
 // function type and an otherwise-identical may-fail one intern as DISTINCT types,
 // which is exactly what `fits` and the D-156 mangle need, with no new `Type` slot.
 pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count,
-                         bool:never_fails) {
+                         bool:never_fails) never fails {
     int32:nf = 0i32;
     if (never_fails) { nf = 1i32; }
     pass (raw tt_intern(t, raw TY_FUNC(), ret, start, count, 8i64, 8i32, nf));
@@ -624,7 +624,7 @@ pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count,
 // `func RetType(ParamTypes, ..*T[])`. Same shape, different kind, and the last
 // entry of the window is the `T[]` the variadic parameter is bound to.
 pub func:tt_func_variadic = int32(TypeTable->:t, int32:ret, int32:start,
-                                  int32:count, bool:never_fails) {
+                                  int32:count, bool:never_fails) never fails {
     int32:nf = 0i32;
     if (never_fails) { nf = 1i32; }
     pass (raw tt_intern(t, raw TY_FUNC_VARIADIC(), ret, start, count, 8i64, 8i32, nf));
@@ -633,7 +633,7 @@ pub func:tt_func_variadic = int32(TypeTable->:t, int32:ret, int32:start,
 // The never-fails bit of a function type (D-163), read from the `name` slot.
 // `false` for anything that is not a function type — the slot is a name there,
 // and the callers guard on `type_is_func` first.
-pub func:func_never_fails = bool(TypeTable->:t, int32:id) {
+pub func:func_never_fails = bool(TypeTable->:t, int32:id) never fails {
     Type:e = raw tt_get(t, id);
     pass (e.name != 0i32);
 };
@@ -641,13 +641,13 @@ pub func:func_never_fails = bool(TypeTable->:t, int32:id) {
 // IS THIS CALLABLE AT ALL? Two kinds now, and every place that asked
 // `k == TY_FUNC()` has to ask this instead or it will report a perfectly good
 // variadic function as not being a function.
-pub func:type_is_func = bool(TypeTable->:t, int32:id) {
+pub func:type_is_func = bool(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_FUNC()))          { pass true; }
     pass (k == (raw TY_FUNC_VARIADIC()));
 };
 
-pub func:type_is_variadic = bool(TypeTable->:t, int32:id) {
+pub func:type_is_variadic = bool(TypeTable->:t, int32:id) never fails {
     pass ((raw type_kind(t, id)) == (raw TY_FUNC_VARIADIC()));
 };
 
@@ -659,7 +659,7 @@ pub func:type_is_variadic = bool(TypeTable->:t, int32:id) {
 // against (D-103). Inside an `impl` body `Self` is the target type itself and this
 // never appears; the two are told apart by what the resolver was given, not by a
 // rule the reader has to remember.
-pub func:tt_self = int32(TypeTable->:t) {
+pub func:tt_self = int32(TypeTable->:t) never fails {
     pass (raw tt_intern(t, raw TY_SELF(), 0i32, 0i32, 0i32, 0i64, 1i32, 0i32));
 };
 
@@ -667,38 +667,38 @@ pub func:tt_self = int32(TypeTable->:t) {
 // Not the name alone: two traits each declaring `Item` declare two types, and
 // merging them would let an impl of one satisfy the other.
 pub func:tt_assoc = int32(TypeTable->:t, int32:base, int32:trait_decl,
-                          int32:name) {
+                          int32:name) never fails {
     pass (raw tt_intern(t, raw TY_ASSOC(), base, trait_decl, name, 0i64, 1i32,
                         0i32));
 };
 
-pub func:type_assoc_base = int32(TypeTable->:t, int32:id) {
+pub func:type_assoc_base = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
 
 // Is this a generic parameter? Asked by the emitter, which must substitute one
 // before it can name the impl a call through a bound reaches.
-pub func:type_is_param_kind = bool(TypeTable->:t, int32:id) {
+pub func:type_is_param_kind = bool(TypeTable->:t, int32:id) never fails {
     pass ((raw type_kind(t, id)) == (raw TY_PARAM()));
 };
 
-pub func:type_assoc_trait = int32(TypeTable->:t, int32:id) {
+pub func:type_assoc_trait = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
 
-pub func:type_assoc_name = int32(TypeTable->:t, int32:id) {
+pub func:type_assoc_name = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).c);
 };
 
 // A comptime value argument. Zero-sized like `NIL`, because it is not a value the
 // program stores anywhere — it is a compile-time argument, and it is gone by the
 // time anything has a layout.
-pub func:tt_comptime = int32(TypeTable->:t, int32:value_type, int32:rendering) {
+pub func:tt_comptime = int32(TypeTable->:t, int32:value_type, int32:rendering) never fails {
     pass (raw tt_intern(t, raw TY_COMPTIME(), value_type, 0i32, 0i32,
                         0i64, 1i32, rendering));
 };
 
-pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
+pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) never fails {
     // A generic parameter has no layout: its size is not known at the definition,
     // which is the point of checking the body there (D-064).
     pass (raw tt_intern(t, raw TY_PARAM(), decl, 0i32, 0i32, 0i64, 0i32, name));
@@ -706,7 +706,7 @@ pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
 
 // --- startup ------------------------------------------------------------------------------
 
-pub func:typetable_init = TypeTable() {
+pub func:typetable_init = TypeTable() never fails {
     int64:n = 64i64;
     wild int8->:mem = alloc(n * #size_of<Type>());
     wild int8->:hmem = calloc(n, 4i64);
@@ -775,7 +775,7 @@ pub struct:InstanceTable = {
     int32:cap;
 };
 
-pub func:insttable_init = InstanceTable() {
+pub func:insttable_init = InstanceTable() never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<Instance>());
     InstanceTable:t = InstanceTable{ items: mem =>! wild Instance->,
@@ -783,7 +783,7 @@ pub func:insttable_init = InstanceTable() {
     pass t;
 };
 
-func:inst_grow = NIL(InstanceTable->:t) {
+func:inst_grow = NIL(InstanceTable->:t) never fails {
     int32:nc = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<Instance>());
@@ -792,11 +792,11 @@ func:inst_grow = NIL(InstanceTable->:t) {
     pass NIL;
 };
 
-pub func:inst_count = int32(InstanceTable->:t) { pass t.count; };
+pub func:inst_count = int32(InstanceTable->:t) never fails { pass t.count; };
 
-pub func:inst_at = Instance(InstanceTable->:t, int32:i) {
-    if (i < 0i32) { fail 23tbb32; }
-    if (i >= t.count) { fail 23tbb32; }
+pub func:inst_at = Instance(InstanceTable->:t, int32:i) never fails {
+    if (i < 0i32) { !!! 23tbb32; }
+    if (i >= t.count) { !!! 23tbb32; }
     pass (t.items[i => int64]);
 };
 
@@ -846,7 +846,7 @@ pub struct:FnInstTable = {
     int32:cap;
 };
 
-pub func:fninst_init = FnInstTable() {
+pub func:fninst_init = FnInstTable() never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<FnInstance>());
     FnInstTable:t = FnInstTable{ items: mem =>! wild FnInstance->,
@@ -854,7 +854,7 @@ pub func:fninst_init = FnInstTable() {
     pass t;
 };
 
-func:fninst_grow = NIL(FnInstTable->:t) {
+func:fninst_grow = NIL(FnInstTable->:t) never fails {
     int32:nc = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<FnInstance>());
@@ -863,11 +863,11 @@ func:fninst_grow = NIL(FnInstTable->:t) {
     pass NIL;
 };
 
-pub func:fninst_count = int32(FnInstTable->:t) { pass t.count; };
+pub func:fninst_count = int32(FnInstTable->:t) never fails { pass t.count; };
 
-pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) {
-    if (i < 0i32) { fail 23tbb32; }
-    if (i >= t.count) { fail 23tbb32; }
+pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) never fails {
+    if (i < 0i32) { !!! 23tbb32; }
+    if (i >= t.count) { !!! 23tbb32; }
     pass (t.items[i => int64]);
 };
 
@@ -878,7 +878,7 @@ pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) {
 pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
                              int32:args_start, int32:args_count,
                              int32:params_start, int32:params_count,
-                             int32:owner_impl, int32:type_id, Span:at) {
+                             int32:owner_impl, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         FnInstance:e = t.items[i => int64];
@@ -887,8 +887,8 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
                 bool:same = true;
                 int32:k = 0i32;
                 while (k < args_count) {
-                    if ((relay ast_id_at(ast, e.args_start, k))
-                            != (relay ast_id_at(ast, args_start, k))) {
+                    if ((raw ast_id_at(ast, e.args_start, k))
+                            != (raw ast_id_at(ast, args_start, k))) {
                         same = false;
                         k = args_count;
                     } else {
@@ -912,7 +912,7 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
     pass NIL;
 };
 
-pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) {
+pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         if ((t.items[i => int64]).type_id == type_id) { pass NIL; }
@@ -927,25 +927,25 @@ pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) {
 
 // --- questions the checker asks constantly ----------------------------------------------------
 
-pub func:type_kind = int32(TypeTable->:t, int32:id) {
+pub func:type_kind = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).kind);
 };
 
-pub func:type_size = int64(TypeTable->:t, int32:id) {
+pub func:type_size = int64(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).size);
 };
 
-pub func:type_align = int32(TypeTable->:t, int32:id) {
+pub func:type_align = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).align);
 };
 
 // Equality IS an integer compare. Written as a function anyway, so that the one
 // place it could ever stop being true has a name.
-pub func:type_eq = bool(int32:a, int32:b) {
+pub func:type_eq = bool(int32:a, int32:b) never fails {
     pass (a == b);
 };
 
-pub func:type_is_invalid = bool(TypeTable->:t, int32:id) {
+pub func:type_is_invalid = bool(TypeTable->:t, int32:id) never fails {
     pass ((raw type_kind(t, id)) == (raw TY_INVALID()));
 };
 
@@ -959,29 +959,29 @@ pub func:type_is_invalid = bool(TypeTable->:t, int32:id) {
 //
 // Every one of those is representationally identical to an integer. This function
 // is where the language wins over the machine.
-pub func:type_is_numeric = bool(TypeTable->:t, int32:id) {
+pub func:type_is_numeric = bool(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_INT()))   { pass true; }
     if (k == (raw TY_FLOAT())) { pass true; }
     pass false;
 };
 
-pub func:type_is_integer = bool(TypeTable->:t, int32:id) {
+pub func:type_is_integer = bool(TypeTable->:t, int32:id) never fails {
     pass ((raw type_kind(t, id)) == (raw TY_INT()));
 };
 
-pub func:type_int_bits = int32(TypeTable->:t, int32:id) {
+pub func:type_int_bits = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
 
-pub func:type_is_signed = bool(TypeTable->:t, int32:id) {
+pub func:type_is_signed = bool(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b != 0i32);
 };
 
 // Types that COMPARE but do not compute: `tbb` error codes and the kernel
 // identifiers. Grouped because the rule is the same and stating it twice would
 // be two places to change it.
-pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) {
+pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_TBB()))    { pass true; }
     if (k == (raw TY_KERNEL())) { pass true; }
@@ -1000,7 +1000,7 @@ pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) {
 //
 // A `char8` DOES order: code-point order is a real ordering, and `'a' <= c` is a
 // question about letters rather than about numbers. Ordering is not arithmetic.
-pub func:type_is_ordered = bool(TypeTable->:t, int32:id) {
+pub func:type_is_ordered = bool(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_INT()))   { pass true; }
     if (k == (raw TY_FLOAT())) { pass true; }
@@ -1008,7 +1008,7 @@ pub func:type_is_ordered = bool(TypeTable->:t, int32:id) {
     pass false;
 };
 
-pub func:type_elem = int32(TypeTable->:t, int32:id) {
+pub func:type_elem = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
 
@@ -1016,7 +1016,7 @@ pub func:type_elem = int32(TypeTable->:t, int32:id) {
 // window lives in the AST's id pool because that is where `resolve_func_type`
 // built it. Named accessors so no call site reads `b` and `c` raw and has to
 // remember which of the several window-shaped kinds it is looking at.
-pub func:type_param_count_of = int32(TypeTable->:t, int32:id) {
+pub func:type_param_count_of = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).c);
 };
 
@@ -1024,14 +1024,14 @@ pub func:type_param_count_of = int32(TypeTable->:t, int32:id) {
 // `c`, which is exactly why these are named accessors — reading a `dyn` through
 // `type_param_start_of` would return its count and slice the window by whatever
 // followed it.
-pub func:type_dyn_start = int32(TypeTable->:t, int32:id) {
+pub func:type_dyn_start = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
-pub func:type_dyn_count = int32(TypeTable->:t, int32:id) {
+pub func:type_dyn_count = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
 
-pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
+pub func:type_param_start_of = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
 
@@ -1048,22 +1048,22 @@ pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
 // over that slot -- a function's parameter start, an instance's argument start,
 // and now a count. Each answers a different question, which is why each has a
 // name rather than a comment saying which kind to read it as.
-pub func:type_array_count = int32(TypeTable->:t, int32:id) {
+pub func:type_array_count = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
 
-pub func:type_args_start_of = int32(TypeTable->:t, int32:id) {
+pub func:type_args_start_of = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
-pub func:type_args_count_of = int32(TypeTable->:t, int32:id) {
+pub func:type_args_count_of = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).c);
 };
 
-pub func:type_decl = int32(TypeTable->:t, int32:id) {
+pub func:type_decl = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
 
-pub func:type_name = int32(TypeTable->:t, int32:id) {
+pub func:type_name = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).name);
 };
 
@@ -1076,7 +1076,7 @@ pub func:type_name = int32(TypeTable->:t, int32:id) {
 //
 // ZERO FOR ANYTHING ELSE, so a caller that reaches here with an `int32` gets an
 // answer it can test rather than an index into the declaration array.
-pub func:type_decl_of = int32(TypeTable->:t, int32:id) {
+pub func:type_decl_of = int32(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_STRUCT())) { pass ((raw tt_get(t, id)).a); }
     if (k == (raw TY_ENUM()))   { pass ((raw tt_get(t, id)).a); }

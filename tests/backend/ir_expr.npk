@@ -110,8 +110,16 @@ func:main = int32(cstring[]:_~argv) {
 
     // A user function `f` the call case resolves through: a symbol whose origin
     // is a declaration, the way resolution leaves a callee.
+    // The decl carries a REAL (all-zero) header window: the emitters read
+    // `fn_generic_count`/`fn_param_count`/`fn_contract_count` through it, and
+    // under D-163 a bad window TRAPS instead of failing into a swallowed 0 —
+    // the fabrication has to be honest now.
+    int32:fh_mark = raw ast_scratch_mark(@ast);
+    int32:fh_i = 0i32;
+    while (fh_i < 7i32) { drop ast_scratch_push(@ast, 0i32); fh_i = fh_i + 1i32; }
+    IdSpan:fh_w = raw ast_scratch_commit(@ast, fh_mark);
     DeclId:fdecl = relay ast_add_decl(@ast, DeclKind.DeclFunctionDecl,
-                                      raw span_none(), 0i32, 0i32, 0i32,
+                                      raw span_none(), 0i32, fh_w.start, 7i32,
                                       n_f => int64);
     int32:mscope = raw scope_open(@tab, 0i32, raw SCOPE_MODULE());
     int32:fsym = relay symtab_declare(@tab, @ast, @diags, mscope, n_f,
@@ -338,4 +346,4 @@ func:main = int32(cstring[]:_~argv) {
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the
 // program's `failsafe`, so every executable must define one — D-013 was always
 // the rule; the linker now enforces it mechanically.
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(tbb32:err) { exit (100i32 + (err =>! int32)); };

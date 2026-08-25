@@ -31,8 +31,8 @@ use "./resolve_type.npk".*;
 
 // The two names whose signature is fixed by the runtime rather than by the
 // programmer. Checked by NAME, which is what the spec fixes them by.
-pub func:fn_is_terminal = bool(InternTable->:interns, int32:name) {
-    string:t = relay intern_get(interns, name);
+pub func:fn_is_terminal = bool(InternTable->:interns, int32:name) never fails {
+    string:t = raw intern_get(interns, name);
     if (raw string_eq(t, "main"))     { pass true; }
     if (raw string_eq(t, "failsafe")) { pass true; }
     pass false;
@@ -53,7 +53,7 @@ pub struct:FnSig = {
 // The window is taken from the DECLARATION, which is the only thing that knows
 // it. `fn_type` calls this, so setting it in both would be one save/restore
 // nested inside another saying the same thing.
-func:bind_own_generics = GenericScope(TypeResolver->:r, DeclNode:d) {
+func:bind_own_generics = GenericScope(TypeResolver->:r, DeclNode:d) never fails {
     GenericScope:saved = r.generics;
     IdSpan:w = raw decl_generic_window(r.ast, d);
     GenericScope:g = GenericScope{ params_start: w.start, params_count: w.count,
@@ -71,17 +71,17 @@ func:bind_own_generics = GenericScope(TypeResolver->:r, DeclNode:d) {
 // type. The caller's scope survives only as the fallback for a declaration
 // nothing collected.
 pub func:fn_signature = FnSig(TypeResolver->:r, DeclId:did, int32:name,
-                              int32:scope) {
-    DeclNode:d = relay ast_decl(r.ast, did);
+                              int32:scope) never fails {
+    DeclNode:d = raw ast_decl(r.ast, did);
     int32:home = raw symtab_home_scope(r.tab, did.index, scope);
     GenericScope:saved = raw bind_own_generics(r, d);
-    FnSig:s = relay fn_signature_bound(r, d, name, home);
+    FnSig:s = raw fn_signature_bound(r, d, name, home);
     r.generics = saved;
     pass s;
 };
 
 func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
-                                int32:scope) {
+                                int32:scope) never fails {
     TypeId:ret_id = raw fn_return(r.ast, d);
 
     // A REFUSED RETURN SPELLING YIELDS THE INVALID TYPE, so the body is not
@@ -90,13 +90,13 @@ func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
     // every `pass` inside it is reported as returning the wrong type. One bad
     // annotation, one diagnostic: the same rule index 0 of the type table exists
     // for (0.4.0), applied one layer up.
-    if (relay check_not_result_return(r, ret_id, scope)) {
+    if (raw check_not_result_return(r, ret_id, scope)) {
         FnSig:bad = FnSig{ success: 0i32, result: 0i32,
                            terminal: raw fn_is_terminal(r.interns, name) };
         pass bad;
     }
 
-    int32:success = relay resolve_type(r, ret_id, scope);
+    int32:success = raw resolve_type(r, ret_id, scope);
     bool:terminal = raw fn_is_terminal(r.interns, name);
 
     if (terminal) {
@@ -115,27 +115,27 @@ func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
 //
 // The RESULT is the return type here, not the success type. A caller receives
 // what the function returns, and D-013 says that is always a `Result`.
-pub func:fn_type = int32(TypeResolver->:r, DeclId:did, int32:name, int32:scope) {
-    DeclNode:d = relay ast_decl(r.ast, did);
+pub func:fn_type = int32(TypeResolver->:r, DeclId:did, int32:name, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(r.ast, did);
     int32:home = raw symtab_home_scope(r.tab, did.index, scope);
     GenericScope:saved = raw bind_own_generics(r, d);
-    int32:ft = relay fn_type_bound(r, d, name, home);
+    int32:ft = raw fn_type_bound(r, d, name, home);
     r.generics = saved;
     pass ft;
 };
 
-func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) {
-    FnSig:s = relay fn_signature_bound(r, d, name, scope);
+func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) never fails {
+    FnSig:s = raw fn_signature_bound(r, d, name, scope);
     // D-163: a `never fails` declaration builds a never-fails function type,
     // distinct in identity from the may-fail one (types.npk `name` slot).
-    bool:nf = relay fn_declares_never_fails(r.ast, d);
+    bool:nf = raw fn_declares_never_fails(r.ast, d);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     while (i < (raw fn_param_count(r.ast, d))) {
         // NOT `pid` — that is one of the five kernel identifier types (D-042).
         DeclId:param_id = raw fn_param(r.ast, d, i);
-        DeclNode:pn = relay ast_decl(r.ast, param_id);
-        int32:pt = relay resolve_type(r, raw param_type(pn), scope);
+        DeclNode:pn = raw ast_decl(r.ast, param_id);
+        int32:pt = raw resolve_type(r, raw param_type(pn), scope);
         drop ast_scratch_push(r.ast, pt);
         i = i + 1i32;
     }
@@ -160,9 +160,9 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
         pass (raw tt_func(r.types, s.success, w.start, w.count, nf));
     }
 
-    DeclNode:vn = relay ast_decl(r.ast, vd);
-    int32:vt = relay resolve_type(r, raw variadic_type(vn), scope);
-    drop ast_scratch_push(r.ast, relay require_variadic_slice(r, vt, vn.span));
+    DeclNode:vn = raw ast_decl(r.ast, vd);
+    int32:vt = raw resolve_type(r, raw variadic_type(vn), scope);
+    drop ast_scratch_push(r.ast, raw require_variadic_slice(r, vt, vn.span));
     IdSpan:wv = raw ast_scratch_commit(r.ast, mark);
     pass (raw tt_func_variadic(r.types, s.success, wv.start, wv.count, nf));
 };
@@ -186,12 +186,12 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
 // The failure contract itself is not consumed here. It is a declaration the
 // EMITTER reads to synthesise the wrapping at the call boundary (cycle 0.7); what
 // this owes the checker is the type a caller sees.
-pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
+pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) never fails {
     // NOTE: extern signatures still resolve in the ASKER's scope — externs are
     // refused by the backend until the FFI rung, and threading the DeclId here
     // lands with that work rather than as a dead parameter now.
     TypeId:ret_id = raw extern_fn_return(r.ast, d);
-    if (relay check_not_result_return(r, ret_id, scope)) { pass 0i32; }
+    if (raw check_not_result_return(r, ret_id, scope)) { pass 0i32; }
 
     // A C VARIADIC TAIL HAS NO TYPE TO CHECK AGAINST. `check_args` reads the last
     // window entry as the collector and checks every trailing argument against its
@@ -207,7 +207,7 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
         pass 0i32;
     }
 
-    int32:success = relay resolve_type(r, ret_id, scope);
+    int32:success = raw resolve_type(r, ret_id, scope);
     int32:wrapped = raw tt_result(r.types, success,
                                   raw type_size(r.types, success),
                                   raw type_align(r.types, success));
@@ -216,8 +216,8 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
     int32:i = 0i32;
     while (i < (raw extern_fn_param_count(r.ast, d))) {
         DeclId:param_id = raw extern_fn_param(r.ast, d, i);
-        DeclNode:pn = relay ast_decl(r.ast, param_id);
-        int32:pt = relay resolve_type(r, raw param_type(pn), scope);
+        DeclNode:pn = raw ast_decl(r.ast, param_id);
+        int32:pt = raw resolve_type(r, raw param_type(pn), scope);
         drop ast_scratch_push(r.ast, pt);
         i = i + 1i32;
     }
@@ -233,14 +233,14 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
 //
 // The invalid type is handed back rather than a guess, so the call checker refuses
 // to check arguments against something that was never a slice.
-func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) {
+func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) never fails {
     if (vt == 0i32) { pass 0i32; }
     if (raw type_is_invalid(r.types, vt)) { pass 0i32; }
     if ((raw type_kind(r.types, vt)) == (raw TY_SLICE())) { pass vt; }
-    string:m1 = relay string_concat("a variadic parameter collects into a slice, so it is written `..*T[]`, and this is `",
-                                    relay type_display(r.types, r.interns, vt));
+    string:m1 = raw string_concat("a variadic parameter collects into a slice, so it is written `..*T[]`, and this is `",
+                                    raw type_display(r.types, r.interns, vt));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_UNKNOWN(),
-        relay string_concat(m1, "`"), at));
+        raw string_concat(m1, "`"), at));
     pass 0i32;
 };
 
@@ -256,9 +256,9 @@ func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) {
 // `Result<T>` stays writable everywhere else. `Result<string>:r = read_file(p);`
 // is the ordinary way to hold an outcome before unwrapping, and is how this
 // compiler's own sources are written.
-func:check_not_result_return = bool(TypeResolver->:r, TypeId:id, int32:_~scope) {
+func:check_not_result_return = bool(TypeResolver->:r, TypeId:id, int32:_~scope) never fails {
     if (raw type_is_none(id)) { pass false; }
-    TypeNode:n = relay ast_type(r.ast, id);
+    TypeNode:n = raw ast_type(r.ast, id);
     if (n.kind != TypeKind.TypeNamedType) { pass false; }
 
     // THE PAYLOAD IS A TOKEN KIND ONLY WHEN THE NODE SAYS IT IS (D-104). Without

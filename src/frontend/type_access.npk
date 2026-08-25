@@ -38,16 +38,16 @@ use "./type_generic.npk".*;
 // which D-086 makes legal — the loader collects all declarations before resolving
 // any body, so a cycle among modules resolves rather than being an ordering
 // puzzle for whoever writes the next one.
-pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (relay type_member_access(e, n, false));
+        pass (raw type_member_access(e, n, false));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
-        pass (relay type_member_access(e, n, true));
+        pass (raw type_member_access(e, n, true));
     }
-    if (n.kind == ExprKind.ExprIndexExpr)      { pass (relay type_index(e, n)); }
-    if (n.kind == ExprKind.ExprCallExpr)       { pass (relay type_call(e, id, n)); }
-    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (relay type_method_call(e, id, n)); }
+    if (n.kind == ExprKind.ExprIndexExpr)      { pass (raw type_index(e, n)); }
+    if (n.kind == ExprKind.ExprCallExpr)       { pass (raw type_call(e, id, n)); }
+    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (raw type_method_call(e, id, n)); }
     pass 0i32;
 };
 
@@ -58,13 +58,13 @@ pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // Returning the peeled type and reporting the second level separately keeps the
 // two questions apart: "what does this access reach" and "did the writer say how
 // far". A single function answering both would have to guess which error to give.
-pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) {
+pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) never fails {
     if ((raw type_kind(e.types, t)) != (raw TY_POINTER())) { pass t; }
     int32:inner = raw type_elem(e.types, t);
     if ((raw type_kind(e.types, inner)) == (raw TY_POINTER())) {
-        string:m1 = relay string_concat("`.` dereferences one level, and this is `",
-                                        relay type_display(e.types, e.interns, t));
-        string:m2 = relay string_concat(m1,
+        string:m1 = raw string_concat("`.` dereferences one level, and this is `",
+                                        raw type_display(e.types, e.interns, t));
+        string:m2 = raw string_concat(m1,
             "`; write `<-` for the outer one so the indirection is visible");
         drop te_error(e, raw TYPE_MISMATCH(), m2, at);
         pass 0i32;
@@ -81,7 +81,7 @@ pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) {
 
 // --- member access ---------------------------------------------------------------------
 
-pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
+pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) never fails {
     // A BASE THAT NAMES A NAMESPACE RATHER THAN A VALUE — `Net.Disconnect` and
     // `math.sqrt`. These are the SAME NODE as `p.x` in the AST, and 0.3.5 left
     // them alone precisely because telling them apart needs the base's meaning,
@@ -92,11 +92,11 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
     // value" — correct in general and wrong here, where a type name is exactly
     // what belongs.
     if (!safe_nav) {
-        NsAccess:ns = relay namespace_member(e, n);
+        NsAccess:ns = raw namespace_member(e, n);
         if (ns.handled) { pass (ns.type_id); }
     }
 
-    int32:raw_base = relay type_of_expr(e, raw expr_operand(n));
+    int32:raw_base = raw type_of_expr(e, raw expr_operand(n));
     if (raw_base == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, raw_base)) { pass 0i32; }
 
@@ -107,20 +107,20 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
     bool:optional = false;
     if (safe_nav) {
         if ((raw type_kind(e.types, base)) != (raw TY_OPTIONAL())) {
-            string:m1 = relay string_concat("`?.` needs an `Optional`, and this is `",
-                                            relay type_display(e.types, e.interns, base));
-            string:m2 = relay string_concat(m1, "`; `.` is the plain access");
-            pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+            string:m1 = raw string_concat("`?.` needs an `Optional`, and this is `",
+                                            raw type_display(e.types, e.interns, base));
+            string:m2 = raw string_concat(m1, "`; `.` is the plain access");
+            pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
         }
         base = raw type_elem(e.types, base);
         optional = true;
     }
 
-    base = relay access_base(e, base, n.span);
+    base = raw access_base(e, base, n.span);
     if (base == 0i32) { pass 0i32; }
 
     int32:name = n.payload =>! int32;
-    int32:found = relay member_type(e, base, name, n.span);
+    int32:found = raw member_type(e, base, name, n.span);
     if (found == 0i32) { pass 0i32; }
     if (optional) {
         // A MEMBER THAT IS ITSELF AN `Optional` IS NOT WRAPPED TWICE. `op?.f`
@@ -151,27 +151,27 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
 // were built to avoid.
 pub struct:NsAccess = { bool:handled; int32:type_id; };
 
-func:ns_no = NsAccess() { NsAccess:r = NsAccess{ handled: false, type_id: 0i32 }; pass r; };
-func:ns_yes = NsAccess(int32:t) { NsAccess:r = NsAccess{ handled: true, type_id: t }; pass r; };
+func:ns_no = NsAccess() never fails { NsAccess:r = NsAccess{ handled: false, type_id: 0i32 }; pass r; };
+func:ns_yes = NsAccess(int32:t) never fails { NsAccess:r = NsAccess{ handled: true, type_id: t }; pass r; };
 
 // `Net.Disconnect` or `math.sqrt`.
-func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
+func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
     ExprId:b = raw expr_operand(n);
     if (raw expr_is_none(b)) { pass (raw ns_no()); }
-    ExprNode:bnode = relay ast_expr(e.ast, b);
+    ExprNode:bnode = raw ast_expr(e.ast, b);
     if (bnode.kind != ExprKind.ExprIdentifierExpr) { pass (raw ns_no()); }
     if (bnode.a == 0i32) { pass (raw ns_no()); }
 
     Symbol:s = raw symtab_get(e.tab, bnode.a);
     if (s.origin_kind != (raw SYM_DECL())) { pass (raw ns_no()); }
     DeclId:did = DeclId{ index: s.origin };
-    DeclNode:d = relay ast_decl(e.ast, did);
+    DeclNode:d = raw ast_decl(e.ast, did);
     int32:name = n.payload =>! int32;
     TypeResolver:r = raw etyper_resolver(e);
 
     if (d.kind == DeclKind.DeclEnumDecl) {
         int32:et = raw tt_enum(e.types, did.index, s.name, 0i64, 1i32);
-        FieldInfo:v = relay enum_variant(@r, et, name);
+        FieldInfo:v = raw enum_variant(@r, et, name);
         if (v.found) { pass (raw ns_yes(v.type_id)); }
         // A variant that does not exist names the ENUM, not "unknown name".
         drop te_no_member(e, et, name, n.span);
@@ -185,23 +185,23 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
         if (s.inner == 0i32) { pass (raw ns_no()); }
         int32:m = raw scope_lookup_local(e.tab, s.inner, name);
         if (m == 0i32) {
-            string:m1 = relay string_concat("module `",
-                                            relay intern_get(e.interns, s.name));
-            string:m2 = relay string_concat(m1, "` has no member `");
-            string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
+            string:m1 = raw string_concat("module `",
+                                            raw intern_get(e.interns, s.name));
+            string:m2 = raw string_concat(m1, "` has no member `");
+            string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
             drop te_error(e, raw TYPE_NO_METHOD(),
-                          relay string_concat(m3, "`"), n.span);
+                          raw string_concat(m3, "`"), n.span);
             pass (raw ns_yes(0i32));
         }
         Symbol:ms = raw symtab_get(e.tab, m);
         DeclId:mdid = DeclId{ index: ms.origin };
-        DeclNode:md = relay ast_decl(e.ast, mdid);
+        DeclNode:md = raw ast_decl(e.ast, mdid);
         if (md.kind == DeclKind.DeclFunctionDecl) {
-            pass (raw ns_yes(relay fn_type(@r, mdid, ms.name, e.scope)));
+            pass (raw ns_yes(raw fn_type(@r, mdid, ms.name, e.scope)));
         }
         if (md.kind == DeclKind.DeclGlobalDecl) {
             TypeId:ty = TypeId{ index: md.a };
-            pass (raw ns_yes(relay resolve_type(@r, ty, e.scope)));
+            pass (raw ns_yes(raw resolve_type(@r, ty, e.scope)));
         }
         pass (raw ns_yes(0i32));
     }
@@ -209,18 +209,18 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
 };
 
 // What `.name` reaches on a base that is already a value type.
-func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
+func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     int32:k = raw type_kind(e.types, base);
 
     // A `Result`'s three members (0.4.4). `.is_error` is DERIVED (D-069) — there
     // is no stored field for it to disagree with.
     if (k == (raw TY_RESULT())) {
-        string:f = relay intern_get(e.interns, name);
+        string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "value"))    { pass (raw type_elem(e.types, base)); }
         if (raw string_eq(f, "error"))    { pass (e.types.t_tbb32); }
         if (raw string_eq(f, "is_error")) { pass (e.types.t_bool); }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
 
     // AN `Optional` HAS NO READABLE MEMBERS, and that is the point (D-099).
@@ -233,28 +233,28 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
     // one-word shortcut past `??` and `?.`, which are the accessors that cannot
     // be wrong. Neither is in the prototype's source surface either.
     if (k == (raw TY_OPTIONAL())) {
-        string:f = relay intern_get(e.interns, name);
-        string:g1 = relay string_concat("an `Optional` has no member `", f);
-        string:g2 = relay string_concat(g1,
+        string:f = raw intern_get(e.interns, name);
+        string:g1 = raw string_concat("an `Optional` has no member `", f);
+        string:g2 = raw string_concat(g1,
             "`; `?? d` takes the value or a default, `?.` reaches through it, and `== NIL` asks whether it holds anything");
-        pass (relay te_error(e, raw TYPE_MISMATCH(), g2, at));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), g2, at));
     }
 
     // A SLICE CARRIES ITS LENGTH; a pointer does not (D-038/D-070), which is the
     // whole reason the two are different types. `.ptr` is the data pointer,
     // typed as a pointer to the ELEMENT.
     if (k == (raw TY_SLICE())) {
-        string:f = relay intern_get(e.interns, name);
+        string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         if (raw string_eq(f, "ptr")) {
             pass (raw tt_pointer(e.types, raw type_elem(e.types, base)));
         }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
     if (k == (raw TY_ARRAY())) {
-        string:f = relay intern_get(e.interns, name);
+        string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
     // A STRING'S THREE FIELDS (`{ptr, len, cap}`), and a `cstring`'s two — the
     // members the compiler's own sources read on every line that walks bytes
@@ -262,39 +262,39 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
     // are `uint8`: a code unit is 0..255, and a signed byte would make half of
     // every encoding negative.
     if (k == (raw TY_STRING())) {
-        string:f = relay intern_get(e.interns, name);
+        string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         if (raw string_eq(f, "cap")) { pass (raw tt_int(e.types, 64i32, true)); }
         if (raw string_eq(f, "ptr")) {
             pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, false)));
         }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
     if (k == (raw TY_CSTRING())) {
-        string:f = relay intern_get(e.interns, name);
+        string:f = raw intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         if (raw string_eq(f, "ptr")) {
             pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, false)));
         }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
 
     if (k == (raw TY_STRUCT())) {
-        FieldInfo:fi = relay struct_field(@r, base, name, e.scope);
+        FieldInfo:fi = raw struct_field(@r, base, name, e.scope);
         if (fi.found) { pass (fi.type_id); }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
 
     // `Net.Disconnect` — AN ENUM VARIANT, and identical in the AST to
     // `math.sqrt`. They are told apart HERE, by what the base resolved to, which
     // is exactly what 0.3.5 deferred to this subcycle.
     if (k == (raw TY_ENUM())) {
-        FieldInfo:v = relay enum_variant(@r, base, name);
+        FieldInfo:v = raw enum_variant(@r, base, name);
         if (v.found) { pass (v.type_id); }
-        pass (relay te_no_member(e, base, name, at));
+        pass (raw te_no_member(e, base, name, at));
     }
 
-    pass (relay te_no_member(e, base, name, at));
+    pass (raw te_no_member(e, base, name, at));
 };
 
 // The message NAMES THE TYPE the member was sought on. "no member `x`" leaves the
@@ -303,15 +303,15 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
 // no member by that name" is `TYPE_NO_METHOD`'s own sentence, and this carried
 // the mismatch code, so a filter on "no such member" found the method cases
 // and not the field ones. An enum's missing variant says "variant".
-func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
-    string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, base));
-    string:m2 = relay string_concat(m1, "` has no member `");
+func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never fails {
+    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, base));
+    string:m2 = raw string_concat(m1, "` has no member `");
     if ((raw type_kind(e.types, base)) == (raw TY_ENUM())) {
-        m2 = relay string_concat(m1, "` has no variant `");
+        m2 = raw string_concat(m1, "` has no variant `");
     }
-    string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
-    pass (relay te_error(e, raw TYPE_NO_METHOD(),
-                         relay string_concat(m3, "`"), at));
+    string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
+    pass (raw te_error(e, raw TYPE_NO_METHOD(),
+                         raw string_concat(m3, "`"), at));
 };
 
 // --- indexing --------------------------------------------------------------------------
@@ -323,12 +323,12 @@ func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
 // A POINTER IS INDEXABLE AND CARRIES NO LENGTH (D-038), so `p[i]` cannot be
 // bounds-checked and is the one indexing form that is unchecked. That is why
 // slices exist and why a slice is the type a function should take.
-pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
-    int32:base = relay type_of_expr(e, raw expr_lhs(n));
+pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:base = raw type_of_expr(e, raw expr_lhs(n));
 
     int32:saved = e.expected;
     e.expected = raw tt_int(e.types, 64i32, true);
-    int32:idx = relay type_of_expr(e, raw expr_rhs(n));
+    int32:idx = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     // `arr[lo...hi]` — RANGING an array or a slice yields a SLICE over the same
@@ -343,20 +343,20 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
                 pass (raw tt_slice(e.types, raw type_elem(e.types, base)));
             }
             if (bk == (raw TY_SLICE())) { pass base; }
-            string:r1 = relay string_concat("`",
-                            relay type_display(e.types, e.interns, base));
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
-                      relay string_concat(r1, "` cannot be ranged"), n.span));
+            string:r1 = raw string_concat("`",
+                            raw type_display(e.types, e.interns, base));
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                      raw string_concat(r1, "` cannot be ranged"), n.span));
         }
     }
 
     if (idx != 0i32) {
         if (!(raw type_is_invalid(e.types, idx))) {
             if (!(raw type_is_integer(e.types, idx))) {
-                string:m1 = relay string_concat("an index must be an integer, and this is `",
-                                                relay type_display(e.types, e.interns, idx));
+                string:m1 = raw string_concat("an index must be an integer, and this is `",
+                                                raw type_display(e.types, e.interns, idx));
                 drop te_error(e, raw TYPE_MISMATCH(),
-                              relay string_concat(m1, "`"), n.span);
+                              raw string_concat(m1, "`"), n.span);
             }
         }
     }
@@ -368,9 +368,9 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
     if (k == (raw TY_SLICE()))   { pass (raw type_elem(e.types, base)); }
     if (k == (raw TY_POINTER())) { pass (raw type_elem(e.types, base)); }
 
-    string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, base));
-    string:m2 = relay string_concat(m1, "` cannot be indexed");
-    pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, base));
+    string:m2 = raw string_concat(m1, "` cannot be indexed");
+    pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
 };
 
 // --- calls -----------------------------------------------------------------------------
@@ -379,15 +379,15 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
 // (D-172, 1.0.9b)? Returns the trait TYPE, or 0. A trait name in expression
 // position is otherwise refused as "not a value" (D-171), so this is the one
 // place it means something: the namespace of the trait's methods.
-func:trait_qualified_trait = int32(ExprTyper->:e, ExprNode:n) {
+func:trait_qualified_trait = int32(ExprTyper->:e, ExprNode:n) never fails {
     ExprId:bid = raw expr_operand(n);
     if (raw expr_is_none(bid)) { pass 0i32; }
-    ExprNode:bn = relay ast_expr(e.ast, bid);
+    ExprNode:bn = raw ast_expr(e.ast, bid);
     if (bn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
     if (bn.a == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(e.tab, bn.a);
     if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
-    DeclNode:d = relay ast_decl(e.ast, DeclId{ index: s.origin });
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: s.origin });
     if (d.kind != DeclKind.DeclTraitDecl) { pass 0i32; }
     pass (raw tt_trait(e.types, s.origin, s.name));
 };
@@ -397,16 +397,16 @@ func:trait_qualified_trait = int32(ExprTyper->:e, ExprNode:n) {
 // the one for the receiver's type under the named trait, and the ambiguity
 // D-102 refuses cannot arise because the trait is written.
 func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
-                                       int32:trait_ty) {
+                                       int32:trait_ty) never fails {
     int32:mname = n.payload =>! int32;
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
     if (count == 0i32) {
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
             "a `Trait.method(…)` call takes the receiver as its first argument, and none was given",
             n.span));
     }
-    int32:recv = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    int32:recv = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
     if (recv == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, recv)) { pass 0i32; }
 
@@ -419,12 +419,12 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     int32:owner_impl = 0i32;
     int32:i = 0i32;
     while (i < (raw impl_count(e.impls))) {
-        ImplEntry:en = relay impl_at(e.impls, i);
+        ImplEntry:en = raw impl_at(e.impls, i);
         if (en.trait_id != 0i32) {
             if ((raw type_decl_of(e.types, en.trait_id)) == trait_decl) {
                 bool:hit = (en.target == recv);
                 if (!hit) {
-                    if ((raw impl_generic_count(e.ast, relay ast_decl(e.ast,
+                    if ((raw impl_generic_count(e.ast, raw ast_decl(e.ast,
                              DeclId{ index: en.decl }))) > 0i32) {
                         if (en.target != 0i32) {
                             if ((raw type_decl_of(e.types, en.target))
@@ -435,9 +435,9 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                     }
                 }
                 if (hit) {
-                    int32:md = relay impl_method_named(e.ast, e.interns, en.decl, mname);
+                    int32:md = raw impl_method_named(e.ast, e.interns, en.decl, mname);
                     if (md == 0i32) {
-                        md = relay trait_default_named(e.ast, e.interns, e.types,
+                        md = raw trait_default_named(e.ast, e.interns, e.types,
                                  trait_ty, mname);
                     }
                     if (md != 0i32) { mdecl = md; owner_impl = en.decl; i = raw impl_count(e.impls); }
@@ -447,42 +447,42 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         i = i + 1i32;
     }
     if (mdecl == 0i32) {
-        string:q1 = relay string_concat("`",
-                        relay type_display(e.types, e.interns, recv));
-        string:q2 = relay string_concat(q1, "` does not implement `");
-        string:q3 = relay string_concat(q2, relay type_display(e.types, e.interns, trait_ty));
-        string:q4 = relay string_concat(q3, "`, or that trait has no method `");
-        string:q5 = relay string_concat(q4, relay intern_get(e.interns, mname));
-        pass (relay te_error(e, raw TYPE_NO_METHOD(),
-                  relay string_concat(q5, "`"), n.span));
+        string:q1 = raw string_concat("`",
+                        raw type_display(e.types, e.interns, recv));
+        string:q2 = raw string_concat(q1, "` does not implement `");
+        string:q3 = raw string_concat(q2, raw type_display(e.types, e.interns, trait_ty));
+        string:q4 = raw string_concat(q3, "`, or that trait has no method `");
+        string:q5 = raw string_concat(q4, raw intern_get(e.interns, mname));
+        pass (raw te_error(e, raw TYPE_NO_METHOD(),
+                  raw string_concat(q5, "`"), n.span));
     }
 
     TypeResolver:r = raw etyper_resolver(e);
     // A FAMILY IMPL'S METHOD IS A TEMPLATE, bound by the receiver's arguments,
     // exactly as a `recv.method()` call binds it (1.0.4b/1.0.6b).
-    if ((raw impl_generic_count(e.ast, relay ast_decl(e.ast,
+    if ((raw impl_generic_count(e.ast, raw ast_decl(e.ast,
              DeclId{ index: owner_impl }))) > 0i32) {
-        r.enclosing = relay bind_blanket(e, owner_impl, recv);
+        r.enclosing = raw bind_blanket(e, owner_impl, recv);
     }
     r.self_trait = trait_decl;
-    int32:ft = relay fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
+    int32:ft = raw fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
 
     // Record what a `recv.method()` call records, so the emitter dispatches to
     // the same symbol: the impl method, its trait, its symbol, its signature.
     drop exprtypes_set_callee(e.expr_types, id, mdecl);
     drop exprtypes_set_callee_trait(e.expr_types, id, trait_ty);
     drop exprtypes_set_callee_sym(e.expr_types, id,
-            relay intern_add(e.interns,
-                relay method_symbol_name(e.types, e.interns, recv, trait_ty,
-                    relay intern_get(e.interns, mname))));
+            raw intern_add(e.interns,
+                raw method_symbol_name(e.types, e.interns, recv, trait_ty,
+                    raw intern_get(e.interns, mname))));
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     // The receiver is argument 0, matched against the method's receiver
     // parameter like any other — no `skip`.
-    pass (relay check_args(e, ft, start, count, 0i32, n.span));
+    pass (raw check_args(e, ft, start, count, 0i32, n.span));
 };
 
-pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
-    int32:callee = relay type_of_expr(e, raw expr_callee(n));
+pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    int32:callee = raw type_of_expr(e, raw expr_callee(n));
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;
@@ -491,11 +491,11 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // were parsed, stored, and SKIPPED -- `start` steps over them -- so
     // `extract::<int32>(c)` checked as though the turbofish were not there and
     // `extract(c)` returned `T` rather than the type it was called with.
-    DeclNode:d = relay callee_decl(e, n);
+    DeclNode:d = raw callee_decl(e, n);
     if (d.kind == DeclKind.DeclFunctionDecl) {
         IdSpan:gp = raw decl_generic_window(e.ast, d);
         if (gp.count > 0i32) {
-            pass (relay type_generic_call(e, id, n, d, gp, callee, gcount, start, count));
+            pass (raw type_generic_call(e, id, n, d, gp, callee, gcount, start, count));
         }
         // NOT GENERIC AND GIVEN ARGUMENTS ANYWAY. The turbofish names type
         // arguments, so a function with no type parameters has nowhere to put
@@ -523,7 +523,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         // an unsuffixed literal reads its width (D-092): the annotation names
         // `arena<T>`, and the element's layout is what the lowering needs.
         // With no arena context it is an error here, not a silent nothing.
-        if (relay callee_is_builtin_named(e, n, "shared_arena_make")) {
+        if (raw callee_is_builtin_named(e, n, "shared_arena_make")) {
             drop type_args_only(e, start, count);
             int32:swant = raw expected_value(e);
             if (swant != 0i32) {
@@ -531,11 +531,11 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                     pass swant;
                 }
             }
-            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
                 "`shared_arena_make` needs a `shared_arena<T>` annotation to read its element type from",
                 n.span));
         }
-        if (relay callee_is_builtin_named(e, n, "arena_make")) {
+        if (raw callee_is_builtin_named(e, n, "arena_make")) {
             drop type_args_only(e, start, count);
             int32:want = raw expected_value(e);
             if (want != 0i32) {
@@ -543,7 +543,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
                     pass want;
                 }
             }
-            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
                 "`arena_make` needs an `arena<T>` annotation to read its element type from; write `arena<T>:a = arena_make(cap);`",
                 n.span));
         }
@@ -563,19 +563,19 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // real programs (0.7.7), not by a frontend test — every enum fixture in the
     // suite either had no payloads or only ever destructured them.
     if ((raw type_kind(e.types, callee)) == (raw TY_ENUM())) {
-        pass (relay type_variant_ctor(e, n, callee, start, count));
+        pass (raw type_variant_ctor(e, n, callee, start, count));
     }
     if (!(raw type_is_func(e.types, callee))) {
         drop type_args_only(e, start, count);
-        string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, callee));
-        string:m2 = relay string_concat(m1, "` is not a function");
-        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, callee));
+        string:m2 = raw string_concat(m1, "` is not a function");
+        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     // THE SIGNATURE TRAVELS ON THE CALL (1.0.6e): whatever `check_args` measures
     // the arguments against, the emitter fits them to. A function value's own
     // type serves an indirect call the same way.
     drop exprtypes_set_callee_ft(e.expr_types, id, callee);
-    pass (relay check_args(e, callee, start, count, 0i32, n.span));
+    pass (raw check_args(e, callee, start, count, 0i32, n.span));
 };
 
 // A variant constructor: the callee is `Enum.Variant`, the variant carries a
@@ -583,29 +583,29 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // expression is the ENUM — a variant is never a type of its own (D-090's
 // companion rule in `type_layout.npk`).
 func:type_variant_ctor = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
-                               int32:start, int32:count) {
-    ExprNode:cnode = relay ast_expr(e.ast, raw expr_callee(n));
+                               int32:start, int32:count) never fails {
+    ExprNode:cnode = raw ast_expr(e.ast, raw expr_callee(n));
     if (cnode.kind != ExprKind.ExprMemberAccessExpr) {
         drop type_args_only(e, start, count);
-        string:m1 = relay string_concat("`",
-                        relay type_display(e.types, e.interns, enum_ty));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
-                  relay string_concat(m1, "` is not a function"), n.span));
+        string:m1 = raw string_concat("`",
+                        raw type_display(e.types, e.interns, enum_ty));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                  raw string_concat(m1, "` is not a function"), n.span));
     }
-    pass (relay type_ctor_named(e, n, enum_ty, cnode.payload =>! int32,
+    pass (raw type_ctor_named(e, n, enum_ty, cnode.payload =>! int32,
                                 start, count));
 };
 
 func:type_ctor_named = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
-                             int32:vname, int32:start, int32:count) {
+                             int32:vname, int32:start, int32:count) never fails {
     DeclId:did = DeclId{ index: raw type_decl(e.types, enum_ty) };
-    DeclNode:d = relay ast_decl(e.ast, did);
+    DeclNode:d = raw ast_decl(e.ast, did);
     int32:i = 0i32;
     while (i < (raw item_member_count(e.ast, d))) {
-        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, i));
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
-                pass (relay check_ctor_args(e, n, enum_ty, m, start, count));
+                pass (raw check_ctor_args(e, n, enum_ty, m, start, count));
             }
         }
         i = i + 1i32;
@@ -614,18 +614,18 @@ func:type_ctor_named = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
     // ONE MISTAKE, ONE SENTENCE, ONE CODE (1.0.8): `Net.Nope` through the
     // member path and `Net.Nope(1i32)` through this one said different things
     // under different codes for the same missing variant.
-    pass (relay te_no_member(e, enum_ty, vname, n.span));
+    pass (raw te_no_member(e, enum_ty, vname, n.span));
 };
 
 func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
-                             DeclNode:v, int32:start, int32:count) {
+                             DeclNode:v, int32:start, int32:count) never fails {
     int32:want = raw variant_payload_count(v);
     if (count != want) {
-        string:m1 = relay string_concat("this variant carries ",
+        string:m1 = raw string_concat("this variant carries ",
                         raw int_to_string(want => int64));
-        string:m2 = relay string_concat(m1, " payload value(s) and this passes ");
+        string:m2 = raw string_concat(m1, " payload value(s) and this passes ");
         drop te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(m2, raw int_to_string(count => int64)), n.span);
+            raw string_concat(m2, raw int_to_string(count => int64)), n.span);
         drop type_args_only(e, start, count);
         pass enum_ty;
     }
@@ -636,13 +636,13 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
                                        e.scope);
     int32:i = 0i32;
     while (i < count) {
-        int32:pt = relay resolve_type(@r,
-                       TypeId{ index: relay ast_id_at(e.ast,
+        int32:pt = raw resolve_type(@r,
+                       TypeId{ index: raw ast_id_at(e.ast,
                                    raw variant_payload_start(v), i) },
                        home);
         int32:saved = e.expected;
         e.expected = pt;
-        int32:at = relay type_of_expr(e, ExprId{ index: relay ast_id_at(e.ast,
+        int32:at = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast,
                                           start, i) });
         e.expected = saved;
         if (at != 0i32) {
@@ -671,10 +671,10 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
 // The callee's DECLARATION INDEX — what `callee_decl` looks up on the way to the
 // node, returned as itself because an instantiation is keyed by the declaration
 // (D-108/D-156), not by a node copy. 0 when there is none.
-func:callee_decl_index = int32(ExprTyper->:e, ExprNode:n) {
+func:callee_decl_index = int32(ExprTyper->:e, ExprNode:n) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass 0i32; }
-    ExprNode:cnode = relay ast_expr(e.ast, c);
+    ExprNode:cnode = raw ast_expr(e.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
     if (cnode.a == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(e.tab, cnode.a);
@@ -682,20 +682,20 @@ func:callee_decl_index = int32(ExprTyper->:e, ExprNode:n) {
     pass (s.origin);
 };
 
-func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
+func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) never fails {
     ExprId:c = raw expr_callee(n);
-    if (raw expr_is_none(c)) { pass (relay ast_decl(e.ast, raw decl_none())); }
-    ExprNode:cnode = relay ast_expr(e.ast, c);
+    if (raw expr_is_none(c)) { pass (raw ast_decl(e.ast, raw decl_none())); }
+    ExprNode:cnode = raw ast_expr(e.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) {
-        pass (relay ast_decl(e.ast, raw decl_none()));
+        pass (raw ast_decl(e.ast, raw decl_none()));
     }
-    if (cnode.a == 0i32) { pass (relay ast_decl(e.ast, raw decl_none())); }
+    if (cnode.a == 0i32) { pass (raw ast_decl(e.ast, raw decl_none())); }
     Symbol:s = raw symtab_get(e.tab, cnode.a);
     if (s.origin_kind != (raw SYM_DECL())) {
-        pass (relay ast_decl(e.ast, raw decl_none()));
+        pass (raw ast_decl(e.ast, raw decl_none()));
     }
     DeclId:did = DeclId{ index: s.origin };
-    pass (relay ast_decl(e.ast, did));
+    pass (raw ast_decl(e.ast, did));
 };
 
 // --- a generic call (TRAITS_REFERENCE 3.3, D-064 section 3) -------------------------------
@@ -712,13 +712,13 @@ func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
 //      here is only that the arguments satisfy the bounds and fill the parameters.
 func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                                DeclNode:d, IdSpan:gp, int32:generic_ft,
-                               int32:gcount, int32:start, int32:count) {
+                               int32:gcount, int32:start, int32:count) never fails {
     if (gcount > gp.count) {
-        string:m1 = relay string_concat("this call supplies ",
+        string:m1 = raw string_concat("this call supplies ",
                                         raw int_to_string(gcount => int64));
-        string:m2 = relay string_concat(m1, " type argument(s) and the function takes ");
+        string:m2 = raw string_concat(m1, " type argument(s) and the function takes ");
         drop te_error(e, raw TYPE_GENERIC_ARITY(),
-            relay string_concat(m2, raw int_to_string(gp.count => int64)), n.span);
+            raw string_concat(m2, raw int_to_string(gp.count => int64)), n.span);
     }
 
     // THE SOLUTION SET IS A WINDOW, one slot per parameter, zero for unsolved.
@@ -736,10 +736,10 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     int32:j = 0i32;
     while (j < gcount) {
         if (j < gp.count) {
-            TypeId:a = TypeId{ index: relay ast_id_at(e.ast, gstart, j) };
-            DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, j) };
+            TypeId:a = TypeId{ index: raw ast_id_at(e.ast, gstart, j) };
+            DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, j) };
             drop ast_scratch_set(e.ast, mark, j,
-                relay resolve_one_arg(@r, a, gpid, e.scope));
+                raw resolve_one_arg(@r, a, gpid, e.scope));
         }
         j = j + 1i32;
     }
@@ -763,21 +763,21 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // that has a type of its own; the ones it skipped are the context-dependent
     // ones, which have nothing to be checked against precisely because `T` is
     // unknown.
-    if (!(relay all_solved(e, d, gp, args, n.span))) { pass 0i32; }
+    if (!(raw all_solved(e, d, gp, args, n.span))) { pass 0i32; }
 
     // AND EVERY SOLVED ARGUMENT MUST SATISFY ITS BOUNDS -- the same check, from
     // the same function, that an annotation gets. A call and a type annotation
     // refusing the same thing for different reasons would be two rules.
     int32:k = 0i32;
     while (k < args.count) {
-        DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, k) };
+        DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, k) };
         drop check_arg_bounds(e.impls, e.bounds, @r,
-                              relay ast_id_at(e.ast, args.start, k), gpid, d,
+                              raw ast_id_at(e.ast, args.start, k), gpid, d,
                               n.span);
         k = k + 1i32;
     }
 
-    int32:ft = relay type_subst(@r, generic_ft, g, n.span, 64i32, e.impls);
+    int32:ft = raw type_subst(@r, generic_ft, g, n.span, 64i32, e.impls);
     if (ft == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, ft)) { pass 0i32; }
     if (!(raw type_is_func(e.types, ft))) { pass 0i32; }
@@ -786,14 +786,14 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // checked by here, and the window is committed into the AST's id pool, so it
     // outlives this call — which is what lets the emitter walk the set. Deduped
     // by (declaration, arguments), D-108's rule applied to functions.
-    drop fninst_record(e.fninsts, e.ast, relay callee_decl_index(e, n),
+    drop fninst_record(e.fninsts, e.ast, raw callee_decl_index(e, n),
                        args.start, args.count, gp.start, gp.count, 0i32, ft,
                        n.span);
 
     // The SUBSTITUTED signature is the one the emitter must fit arguments to —
     // and the one `fninst_for_call` matches the specialization by (1.0.6e).
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
-    pass (relay check_args(e, ft, start, count, 0i32, n.span));
+    pass (raw check_args(e, ft, start, count, 0i32, n.span));
 };
 
 // SOLVE WHAT THE ARGUMENTS SAY, and nothing else.
@@ -809,17 +809,17 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
 // `identity(5)` needs `identity::<int32>(5)`. `identity(x)` does not.
 func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
                            IdSpan:gp, int32:generic_ft, int32:mark,
-                           int32:start, int32:count) {
+                           int32:start, int32:count) never fails {
     if (!(raw type_is_func(e.types, generic_ft))) { pass NIL; }
     int32:np = raw type_param_count_of(e.types, generic_ft);
     int32:i = 0i32;
     while (i < count) {
         if (i < np) {
-            ExprId:a = ExprId{ index: relay ast_id_at(e.ast, start, i) };
+            ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
             if (!(raw takes_type_from_context(e, a))) {
                 int32:saved = e.expected;
                 e.expected = 0i32;
-                int32:got = relay type_of_expr(e, a);
+                int32:got = raw type_of_expr(e, a);
                 e.expected = saved;
                 if (got != 0i32) {
                     drop unify_into(e, raw type_param_at_of(e.ast, e.types, generic_ft, i),
@@ -845,7 +845,7 @@ func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
 // reported as not fitting -- which is the mismatch, at the argument that caused
 // it, rather than an inference failure the reader cannot locate.
 func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
-                      int32:mark, int32:fuel) {
+                      int32:mark, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
     if (declared == 0i32) { pass NIL; }
     if (actual == 0i32) { pass NIL; }
@@ -855,8 +855,8 @@ func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
         int32:decl = raw type_decl_of(e.types, declared);
         int32:i = 0i32;
         while (i < gp.count) {
-            if ((relay ast_id_at(e.ast, gp.start, i)) == decl) {
-                if ((relay ast_scratch_at(e.ast, mark, i)) == 0i32) {
+            if ((raw ast_id_at(e.ast, gp.start, i)) == decl) {
+                if ((raw ast_scratch_at(e.ast, mark, i)) == 0i32) {
                     drop ast_scratch_set(e.ast, mark, i, actual);
                 }
                 pass NIL;
@@ -888,8 +888,8 @@ func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
         int32:actual_start = raw type_args_start_of(e.types, actual);
         int32:i = 0i32;
         while (i < n) {
-            drop unify_into(e, relay ast_id_at(e.ast, ds, i),
-                            relay ast_id_at(e.ast, actual_start, i),
+            drop unify_into(e, raw ast_id_at(e.ast, ds, i),
+                            raw ast_id_at(e.ast, actual_start, i),
                             gp, mark, fuel - 1i32);
             i = i + 1i32;
         }
@@ -898,13 +898,13 @@ func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
 };
 
 func:unify_elem = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
-                      int32:mark, int32:fuel) {
+                      int32:mark, int32:fuel) never fails {
     drop unify_into(e, raw type_elem(e.types, declared),
                     raw type_elem(e.types, actual), gp, mark, fuel - 1i32);
     pass NIL;
 };
 
-func:same_instance_decl = bool(ExprTyper->:e, int32:a, int32:b) {
+func:same_instance_decl = bool(ExprTyper->:e, int32:a, int32:b) never fails {
     int32:k = raw type_kind(e.types, a);
     if (k != (raw TY_STRUCT())) {
         if (k != (raw TY_ENUM())) {
@@ -916,23 +916,23 @@ func:same_instance_decl = bool(ExprTyper->:e, int32:a, int32:b) {
 };
 
 func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
-                       Span:at) {
+                       Span:at) never fails {
     bool:ok = true;
     int32:i = 0i32;
     while (i < gp.count) {
         int32:solved = 0i32;
-        if (i < args.count) { solved = relay ast_id_at(e.ast, args.start, i); }
+        if (i < args.count) { solved = raw ast_id_at(e.ast, args.start, i); }
         if (solved == 0i32) {
             ok = false;
-            DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, i) };
-            DeclNode:gpn = relay ast_decl(e.ast, gpid);
-            string:m1 = relay string_concat("`",
-                            relay intern_get(e.interns, raw decl_name(gpn)));
-            string:m2 = relay string_concat(m1, "` cannot be inferred from this call to `");
-            string:m3 = relay string_concat(m2,
-                            relay intern_get(e.interns, raw decl_name(d)));
+            DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, i) };
+            DeclNode:gpn = raw ast_decl(e.ast, gpid);
+            string:m1 = raw string_concat("`",
+                            raw intern_get(e.interns, raw decl_name(gpn)));
+            string:m2 = raw string_concat(m1, "` cannot be inferred from this call to `");
+            string:m3 = raw string_concat(m2,
+                            raw intern_get(e.interns, raw decl_name(d)));
             drop te_error(e, raw TYPE_CANNOT_INFER(),
-                relay string_concat(m3,
+                raw string_concat(m3,
                     "`; write it with the turbofish, which is the only expression-position form for an explicit type argument (D-064)"),
                 at);
         }
@@ -945,36 +945,36 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
 // in the AST (0.2.8), which is what makes this a LOOKUP rather than a rewrite:
 // the method name is resolved as an ordinary function and the receiver becomes
 // its first argument.
-pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // `Trait.method(recv, …)` PARSES AS A METHOD CALL whose operand is the
     // trait name (D-172): the method resolved for the receiver's type through
     // the named trait, which chooses the one of two same-named traits D-102
     // will not choose on its own. Caught before the operand is typed as a
     // value, because a bare trait name is not one (D-171).
-    int32:tqt = relay trait_qualified_trait(e, n);
+    int32:tqt = raw trait_qualified_trait(e, n);
     if (tqt != 0i32) {
-        pass (relay type_trait_qualified_call(e, id, n, tqt));
+        pass (raw type_trait_qualified_call(e, id, n, tqt));
     }
     // `Ev.Move(5i32)` PARSES AS A METHOD CALL — the parser folds `.name(` into
     // one node deliberately — so a VARIANT CONSTRUCTOR arrives here, not at
     // `type_call`. The receiver is an identifier naming an enum DECLARATION,
     // which no value receiver can be, so the two cannot be confused.
-    ExprNode:rn = relay ast_expr(e.ast, raw expr_operand(n));
+    ExprNode:rn = raw ast_expr(e.ast, raw expr_operand(n));
     if (rn.kind == ExprKind.ExprIdentifierExpr) {
         if (rn.a != 0i32) {
             Symbol:rs = raw symtab_get(e.tab, rn.a);
             if (rs.origin_kind == (raw SYM_DECL())) {
-                DeclNode:rd = relay ast_decl(e.ast, DeclId{ index: rs.origin });
+                DeclNode:rd = raw ast_decl(e.ast, DeclId{ index: rs.origin });
                 if (rd.kind == DeclKind.DeclEnumDecl) {
                     int32:ety = raw tt_enum(e.types, rs.origin, rs.name, 0i64, 1i32);
-                    pass (relay type_ctor_named(e, n, ety, n.payload =>! int32,
+                    pass (raw type_ctor_named(e, n, ety, n.payload =>! int32,
                               raw expr_list_start(n), raw expr_list_count(n)));
                 }
             }
         }
     }
 
-    int32:recv = relay type_of_expr(e, raw expr_operand(n));
+    int32:recv = raw type_of_expr(e, raw expr_operand(n));
     // NO `expr_generic_count` HERE. That accessor reads the payload, and on a
     // method call the payload is the METHOD NAME — so asking for a generic count
     // returns an intern index and slices the argument window by it. A method
@@ -989,7 +989,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // where `q` is `Point->` is the same operation as `q.x`, and a method call
     // that did not peel would make `.` mean two different things one character
     // apart — exactly the context-dependence the blueprint philosophy forbids.
-    recv = relay access_base(e, recv, n.span);
+    recv = raw access_base(e, recv, n.span);
     if (recv == 0i32) { pass 0i32; }
 
     int32:name = n.payload =>! int32;
@@ -1000,10 +1000,10 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // `arena<T>`, and a user method shadowing `free` on the allocator type is
     // exactly the confusion this ordering forecloses.
     if ((raw type_kind(e.types, recv)) == (raw TY_ARENA())) {
-        pass (relay type_arena_method(e, n, recv, name, start, count));
+        pass (raw type_arena_method(e, n, recv, name, start, count));
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_SHARED_ARENA())) {
-        pass (relay type_sarena_method(e, n, recv, name, start, count));
+        pass (raw type_sarena_method(e, n, recv, name, start, count));
     }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
@@ -1012,35 +1012,35 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // module-level free function. UFCS worked, and worked only for the one form
     // the spec does not put methods in.
     int32:did_index = 0i32;
-    MethodFind:found = relay find_method(e.impls, e.bounds, e.types, e.ast,
+    MethodFind:found = raw find_method(e.impls, e.bounds, e.types, e.ast,
                                          e.interns, recv, name, e.self_trait);
     if (found.ambiguous) {
-        string:a1 = relay string_concat("`", relay intern_get(e.interns, name));
-        string:a2 = relay string_concat(a1, "` comes from both `");
-        string:a3 = relay string_concat(a2,
-                        relay type_display(e.types, e.interns, found.owner));
-        string:a4 = relay string_concat(a3, "` and `");
-        string:a5 = relay string_concat(a4,
-                        relay type_display(e.types, e.interns, found.other));
+        string:a1 = raw string_concat("`", raw intern_get(e.interns, name));
+        string:a2 = raw string_concat(a1, "` comes from both `");
+        string:a3 = raw string_concat(a2,
+                        raw type_display(e.types, e.interns, found.owner));
+        string:a4 = raw string_concat(a3, "` and `");
+        string:a5 = raw string_concat(a4,
+                        raw type_display(e.types, e.interns, found.other));
         // NAME THE ONE YOU MEAN (D-172, 1.0.9b). D-102 promised "the
         // free-function form, which UFCS guarantees is available" — and no such
         // form existed: an impl's method declares nothing at module scope. The
         // qualified call `Trait.method(recv, …)` is that spelling now, so the
         // advice names it — one form per trait, built from the two names already
         // in this message — rather than telling the author to give a method up.
-        string:mname = relay intern_get(e.interns, name);
-        string:q1 = relay string_concat(a5, "`; name the one you mean — `");
-        string:q2 = relay string_concat(q1,
-                        relay type_display(e.types, e.interns, found.owner));
-        string:q3 = relay string_concat(q2,
-                        relay string_concat(".", mname));
-        string:q4 = relay string_concat(q3, "(recv, …)` or `");
-        string:q5 = relay string_concat(q4,
-                        relay type_display(e.types, e.interns, found.other));
-        string:q6 = relay string_concat(q5,
-                        relay string_concat(".", mname));
-        pass (relay te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
-            relay string_concat(q6, "(recv, …)` (D-172), or implement only one of the traits on this type"),
+        string:mname = raw intern_get(e.interns, name);
+        string:q1 = raw string_concat(a5, "`; name the one you mean — `");
+        string:q2 = raw string_concat(q1,
+                        raw type_display(e.types, e.interns, found.owner));
+        string:q3 = raw string_concat(q2,
+                        raw string_concat(".", mname));
+        string:q4 = raw string_concat(q3, "(recv, …)` or `");
+        string:q5 = raw string_concat(q4,
+                        raw type_display(e.types, e.interns, found.other));
+        string:q6 = raw string_concat(q5,
+                        raw string_concat(".", mname));
+        pass (raw te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
+            raw string_concat(q6, "(recv, …)` (D-172), or implement only one of the traits on this type"),
             n.span));
     }
     if (found.found) { did_index = found.decl; }
@@ -1065,11 +1065,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         // signature travels on the call, the same slot an indirect call uses.
         if ((raw type_kind(e.types, recv)) == (raw TY_STRUCT())) {
             TypeResolver:fr = raw etyper_resolver(e);
-            FieldInfo:fld = relay struct_field(@fr, recv, name, e.scope);
+            FieldInfo:fld = raw struct_field(@fr, recv, name, e.scope);
             if (fld.found) {
                 if (raw type_is_func(e.types, fld.type_id)) {
                     drop exprtypes_set_callee_ft(e.expr_types, id, fld.type_id);
-                    pass (relay check_args(e, fld.type_id, start, count, 0i32,
+                    pass (raw check_args(e, fld.type_id, start, count, 0i32,
                                            n.span));
                 }
             }
@@ -1084,14 +1084,14 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
             // AND FOR A PARAMETER IT NAMES THE BOUNDS, because the fix is one of
             // two things and the reader has to be told which: either the call is
             // wrong, or the bound list is missing the trait that declares it.
-            string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, recv));
-            string:m2 = relay string_concat(m1, "` has no method `");
-            string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
-            string:m4 = relay string_concat(m3, "`");
+            string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, recv));
+            string:m2 = raw string_concat(m1, "` has no method `");
+            string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
+            string:m4 = raw string_concat(m3, "`");
             if (opaque_recv) {
-                m4 = relay string_concat(m4, relay bounds_note(e, recv));
+                m4 = raw string_concat(m4, raw bounds_note(e, recv));
             }
-            pass (relay te_error(e, raw TYPE_NO_METHOD(), m4, n.span));
+            pass (raw te_error(e, raw TYPE_NO_METHOD(), m4, n.span));
         }
         Symbol:s = raw symtab_get(e.tab, sym);
         did_index = s.origin;
@@ -1121,16 +1121,16 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (found.owner_impl != 0i32) {
         drop exprtypes_set_callee_sym(e.expr_types, id,
             raw intern_add(e.interns,
-                relay method_symbol_name(e.types, e.interns, recv, found.owner,
-                    relay intern_get(e.interns, name))));
+                raw method_symbol_name(e.types, e.interns, recv, found.owner,
+                    raw intern_get(e.interns, name))));
     }
 
     DeclId:did = DeclId{ index: did_index };
-    DeclNode:d = relay ast_decl(e.ast, did);
+    DeclNode:d = raw ast_decl(e.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) {
-        string:m1 = relay string_concat("`", relay intern_get(e.interns, name));
-        string:m2 = relay string_concat(m1, "` is not a function");
-        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        string:m1 = raw string_concat("`", raw intern_get(e.interns, name));
+        string:m2 = raw string_concat(m1, "` is not a function");
+        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     TypeResolver:r = raw etyper_resolver(e);
 
@@ -1171,7 +1171,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // the same question — what does this trait's parameter stand for here.
     if (found.found) {
         if ((raw type_args_count_of(e.types, found.owner)) > 0i32) {
-            r.enclosing = relay trait_binding(@r, found.owner);
+            r.enclosing = raw trait_binding(@r, found.owner);
         }
         // AND THE TRAIT ITSELF, so an ASSOCIATED TYPE in the signature resolves
         // (D-160, 1.0.6c). `func:next = Item(Self:self)` names a member of the
@@ -1183,9 +1183,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     }
 
     if (found.blanket_impl != 0i32) {
-        r.enclosing = relay bind_blanket(e, found.blanket_impl, recv);
+        r.enclosing = raw bind_blanket(e, found.blanket_impl, recv);
     }
-    int32:ft = relay fn_type(@r, did, name, e.scope);
+    int32:ft = raw fn_type(@r, did, name, e.scope);
 
     // A FAMILY IMPL'S METHOD IS A TEMPLATE, SO THE CALL IS AN INSTANTIATION
     // REQUEST (1.0.4b). `impl:<T>:Box<T>:Sized2`'s `width` is one body per `T`,
@@ -1195,7 +1195,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // `bind_blanket` just committed into the id pool.
     if (found.blanket_impl != 0i32) {
         if (!(raw type_is_none(raw impl_target(e.ast,
-                 relay ast_decl(e.ast, DeclId{ index: found.blanket_impl }))))) {
+                 raw ast_decl(e.ast, DeclId{ index: found.blanket_impl }))))) {
             drop fninst_record(e.fninsts, e.ast, did_index,
                                r.enclosing.args_start, r.enclosing.args_count,
                                r.enclosing.params_start,
@@ -1208,10 +1208,10 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // whose first parameter is a different type is a method of that type instead,
     // which the arity/type check below says plainly.
     if ((raw type_param_count_of(e.types, ft)) == 0i32) {
-        string:m1 = relay string_concat("`", relay intern_get(e.interns, name));
-        string:m2 = relay string_concat(m1,
+        string:m1 = raw string_concat("`", raw intern_get(e.interns, name));
+        string:m2 = raw string_concat(m1,
             "` takes no parameters, so it cannot be called as a method");
-        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     int32:p0 = raw type_param_at_of(e.ast, e.types, ft, 0i32);
     // A POINTER RECEIVER IS TAKEN BY ADDRESS (1.0.9b), the dual of the one-level
@@ -1233,7 +1233,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         }
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
-    pass (relay check_args(e, ft, start, count, 1i32, n.span));
+    pass (raw check_args(e, ft, start, count, 1i32, n.span));
 };
 
 // Arity and argument types. `skip` is 1 for a UFCS call, whose first parameter
@@ -1244,7 +1244,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
 // exactly its parameter count; a variadic one takes at least its fixed count and
 // checks everything after that against the collected element type.
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
-                        int32:skip, Span:at) {
+                        int32:skip, Span:at) never fails {
     bool:variadic = raw type_is_variadic(e.types, ft);
     int32:total = (raw type_param_count_of(e.types, ft)) - skip;
 
@@ -1269,20 +1269,20 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
     bool:arity_ok = (count == total);
     if (variadic) { arity_ok = (count >= fixed_count); }
     if (!arity_ok) {
-        string:m1 = relay string_concat("this call passes ",
+        string:m1 = raw string_concat("this call passes ",
                                         raw int_to_string(count => int64));
-        string:m2 = relay string_concat(m1, " argument(s) and the function takes ");
+        string:m2 = raw string_concat(m1, " argument(s) and the function takes ");
         if (variadic) {
-            m2 = relay string_concat(m2, "at least ");
-            m2 = relay string_concat(m2, raw int_to_string(fixed_count => int64));
+            m2 = raw string_concat(m2, "at least ");
+            m2 = raw string_concat(m2, raw int_to_string(fixed_count => int64));
         } else {
-            m2 = relay string_concat(m2, raw int_to_string(total => int64));
+            m2 = raw string_concat(m2, raw int_to_string(total => int64));
         }
         // ON A METHOD CALL THE RECEIVER FILLED ONE PARAMETER (1.0.8): `p.f(1)`
         // against `f(Point:a, int32:b, int32:c)` said "takes 2" to a reader
         // who counts three, so the count says what it excludes.
         if (skip > 0i32) {
-            m2 = relay string_concat(m2, " after the receiver");
+            m2 = raw string_concat(m2, " after the receiver");
         }
         drop te_error(e, raw TYPE_MISMATCH(), m2, at);
     }
@@ -1309,7 +1309,7 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
 
         int32:saved = e.expected;
         e.expected = pt;
-        int32:got = relay type_of_expr(e, a);
+        int32:got = raw type_of_expr(e, a);
         e.expected = saved;
 
         if (spread) {
@@ -1332,7 +1332,7 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     // deduplication folded the second away and the reader was told
                     // about one of two mistakes.
                     if (!(raw fits(e, pt, got))) {
-                        drop te_mismatch_at(e, pt, got, relay arg_span(e, a, at));
+                        drop te_mismatch_at(e, pt, got, raw arg_span(e, a, at));
                     }
                 }
             }
@@ -1364,9 +1364,9 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
 // target like `Box<Pair<T, U>>` would need real unification, and that is a
 // decision to raise rather than to guess at here; the positional read is exact
 // for what can be written today and refuses nothing that used to work.
-func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
+func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) never fails {
     DeclId:bid = DeclId{ index: impl_decl };
-    DeclNode:bd = relay ast_decl(e.ast, bid);
+    DeclNode:bd = raw ast_decl(e.ast, bid);
     IdSpan:pw = raw decl_generic_window(e.ast, bd);
     int32:mark = raw ast_scratch_mark(e.ast);
 
@@ -1375,14 +1375,14 @@ func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
     // the receiver's own type ARGUMENTS: `Box<int32>` binds `T` = `int32`,
     // positionally. The two are told apart by the target's shape, not by
     // whether a target was written (both write one now).
-    if (relay impl_is_blanket(e.ast, bd)) {
+    if (raw impl_is_blanket(e.ast, bd)) {
         drop ast_scratch_push(e.ast, recv);
     } else {
         int32:rargs = raw type_args_start_of(e.types, recv);
         int32:rn = raw type_args_count_of(e.types, recv);
         int32:i = 0i32;
         while (i < rn) {
-            drop ast_scratch_push(e.ast, relay ast_id_at(e.ast, rargs, i));
+            drop ast_scratch_push(e.ast, raw ast_id_at(e.ast, rargs, i));
             i = i + 1i32;
         }
     }
@@ -1405,17 +1405,17 @@ func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
 // emitter has a body per thunk. It only records (the checker has just proved
 // `got` implements the trait through `dyn_accepts`, so each instantiation is
 // well-formed); nothing here can turn an accepted program into a refused one.
-func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) {
+func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) never fails {
     int32:gd = raw type_decl_of(e.types, got);
     if (gd == 0i32) { pass 0i32; }
     int32:i = 0i32;
     while (i < (raw impl_count(e.impls))) {
-        ImplEntry:en = relay impl_at(e.impls, i);
+        ImplEntry:en = raw impl_at(e.impls, i);
         if (!en.blanket) {
             if (en.trait_id == tr_id) {
                 if (en.target != 0i32) {
                     if ((raw impl_generic_count(e.ast,
-                             relay ast_decl(e.ast, DeclId{ index: en.decl })))
+                             raw ast_decl(e.ast, DeclId{ index: en.decl })))
                                 > 0i32) {
                         if ((raw type_decl_of(e.types, en.target)) == gd) {
                             pass (en.decl);
@@ -1430,11 +1430,11 @@ func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) {
 };
 
 // This impl's own method called `name`, or 0 when it inherits the trait default.
-func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) {
+func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) never fails {
     int32:i = 0i32;
     while (i < (raw impl_member_count(ast, d))) {
         DeclId:mid = raw impl_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
@@ -1444,12 +1444,12 @@ func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) {
 };
 
 func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
-                                      int32:got, int32:tr_id) {
+                                      int32:got, int32:tr_id) never fails {
     int32:tdecl = raw type_decl_of(e.types, tr_id);
     if (tdecl == 0i32) { pass NIL; }
-    DeclNode:bd = relay ast_decl(e.ast, DeclId{ index: impl_decl });
-    DeclNode:td = relay ast_decl(e.ast, DeclId{ index: tdecl });
-    GenericScope:g = relay bind_blanket(e, impl_decl, got);
+    DeclNode:bd = raw ast_decl(e.ast, DeclId{ index: impl_decl });
+    DeclNode:td = raw ast_decl(e.ast, DeclId{ index: tdecl });
+    GenericScope:g = raw bind_blanket(e, impl_decl, got);
 
     TypeResolver:r = raw etyper_resolver(e);
     r.self_type = got;
@@ -1460,12 +1460,12 @@ func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
     int32:k = 0i32;
     while (k < (raw item_member_count(e.ast, td))) {
         DeclId:tmid = raw item_member(e.ast, td, k);
-        DeclNode:tm = relay ast_decl(e.ast, tmid);
+        DeclNode:tm = raw ast_decl(e.ast, tmid);
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             int32:name = raw decl_name(tm);
             int32:mdecl = raw impl_own_member_idx(e.ast, bd, name);
             if (mdecl == 0i32) { mdecl = tmid.index; }
-            int32:ft = relay fn_type(@r, DeclId{ index: mdecl }, name, e.scope);
+            int32:ft = raw fn_type(@r, DeclId{ index: mdecl }, name, e.scope);
             drop fninst_record(e.fninsts, e.ast, mdecl,
                                g.args_start, g.args_count,
                                g.params_start, g.params_count,
@@ -1477,7 +1477,7 @@ func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
 };
 
 pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
-                                         int32:got) {
+                                         int32:got) never fails {
     if ((raw type_kind(e.types, got)) == (raw TY_DYN()))   { pass NIL; }
     if ((raw type_kind(e.types, got)) == (raw TY_PARAM())) { pass NIL; }
     int32:tn = raw type_dyn_count(e.types, want_dyn);
@@ -1497,14 +1497,14 @@ pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
 // An argument's own span, falling back to the call's when the argument is the
 // NONE node — a missing argument has no place of its own, and the call is where
 // the reader would look for it.
-func:arg_span = Span(ExprTyper->:e, ExprId:id, Span:at) {
+func:arg_span = Span(ExprTyper->:e, ExprId:id, Span:at) never fails {
     if (raw expr_is_none(id)) { pass at; }
-    pass ((relay ast_expr(e.ast, id)).span);
+    pass ((raw ast_expr(e.ast, id)).span);
 };
 
-pub func:is_spread = bool(ExprTyper->:e, ExprId:id) {
+pub func:is_spread = bool(ExprTyper->:e, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass false; }
-    ExprNode:n = relay ast_expr(e.ast, id);
+    ExprNode:n = raw ast_expr(e.ast, id);
     pass (n.kind == ExprKind.ExprSpreadExpr);
 };
 
@@ -1513,12 +1513,12 @@ pub func:is_spread = bool(ExprTyper->:e, ExprId:id) {
 // it, and it has to be the last thing there — arguments written after an
 // expansion have no position anyone can name.
 func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
-                                 int32:i, int32:fixed_count, int32:count, Span:at) {
+                                 int32:i, int32:fixed_count, int32:count, Span:at) never fails {
     if (!variadic) {
-        string:m1 = relay string_concat("`..^` expands a collection into a variadic parameter, and `",
-                                        relay type_display(e.types, e.interns, ft));
+        string:m1 = raw string_concat("`..^` expands a collection into a variadic parameter, and `",
+                                        raw type_display(e.types, e.interns, ft));
         drop te_error(e, raw TYPE_MISMATCH(),
-            relay string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
+            raw string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
             at);
         pass NIL;
     }
@@ -1538,7 +1538,7 @@ func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
 
 // Type the arguments and nothing else, for a callee with no signature to check
 // against. A mistake inside an argument is still worth reporting.
-func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) {
+func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
@@ -1549,7 +1549,7 @@ func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) {
 };
 
 // One parameter type out of a function type's window.
-pub func:type_param_at_of = int32(Ast->:ast, TypeTable->:t, int32:ft, int32:i) {
+pub func:type_param_at_of = int32(Ast->:ast, TypeTable->:t, int32:ft, int32:i) never fails {
     pass (raw ast_id_at(ast, raw type_param_start_of(t, ft), i));
 };
 
@@ -1558,25 +1558,25 @@ pub func:type_param_at_of = int32(Ast->:ast, TypeTable->:t, int32:ft, int32:i) {
 // (D-064 §1), so "`T` has no method `render`" leaves the reader one question: what
 // DOES it have. Answering it in the same sentence is the difference between a
 // diagnostic that ends the search and one that starts it.
-func:bounds_note = string(ExprTyper->:e, int32:param) {
-    BoundEntry:b = relay bound_entry_of(e.bounds, raw type_decl_of(e.types, param));
+func:bounds_note = string(ExprTyper->:e, int32:param) never fails {
+    BoundEntry:b = raw bound_entry_of(e.bounds, raw type_decl_of(e.types, param));
     if (b.count == 0i32) {
         pass "; it declares no bounds, and a generic body may use only what its bounds declare — there is no duck typing (D-064)";
     }
     string:m = "; its bounds are `";
     int32:i = 0i32;
     while (i < b.count) {
-        if (i > 0i32) { m = relay string_concat(m, " & "); }
-        m = relay string_concat(m,
-                relay type_display(e.types, e.interns,
-                                   relay ast_id_at(e.ast, b.start, i)));
+        if (i > 0i32) { m = raw string_concat(m, " & "); }
+        m = raw string_concat(m,
+                raw type_display(e.types, e.interns,
+                                   raw ast_id_at(e.ast, b.start, i)));
         i = i + 1i32;
     }
-    pass (relay string_concat(m,
+    pass (raw string_concat(m,
         "`, and a generic body may use only what its bounds declare (D-064)"));
 };
 
-pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
     // D-163: a may-fail function where a `never fails` one is expected gets its
     // own code — the shapes agree and only the contract differs, and the
     // generic message would show two near-identical types without saying so.
@@ -1594,24 +1594,24 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
             }
         }
     }
-    string:m1 = relay string_concat("expected `",
-                                    relay type_display(e.types, e.interns, want));
-    string:m2 = relay string_concat(m1, "`, found `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
+    string:m1 = raw string_concat("expected `",
+                                    raw type_display(e.types, e.interns, want));
+    string:m2 = raw string_concat(m1, "`, found `");
+    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, got));
     drop te_error(e, raw TYPE_MISMATCH(),
-                  relay string_concat(m3, "`"), at);
+                  raw string_concat(m3, "`"), at);
     pass NIL;
 };
 
 // Is this call's callee the bare builtin `name`? (A builtin resolves to no
 // symbol, which is what tells it apart from a user function wearing the name.)
-func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) {
+func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cnode = relay ast_expr(e.ast, c);
+    ExprNode:cnode = raw ast_expr(e.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
     if (cnode.a != 0i32) { pass false; }
-    pass (raw string_eq(relay intern_get(e.interns, raw expr_name(cnode) =>! int32),
+    pass (raw string_eq(raw intern_get(e.interns, raw expr_name(cnode) =>! int32),
                         name));
 };
 
@@ -1630,8 +1630,8 @@ func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) {
 // destroy()                -> NIL            consumes the arena (a move,
 //                                            enforced by the binding analysis)
 func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
-                               int32:name, int32:start, int32:count) {
-    string:m = relay intern_get(e.interns, name);
+                               int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
     int32:elem = (raw tt_get(e.types, recv)).a;
     // Every operation takes the arena's ADDRESS, so the receiver must be a
     // place — an arena returned by a call has no home to allocate into.
@@ -1639,14 +1639,14 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
 
     if (raw string_eq(m, "alloc")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`alloc` takes no arguments; the arena knows its element type", n.span));
         }
         pass (raw tt_handle(e.types, elem));
     }
     if (raw string_eq(m, "get")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`get` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1655,13 +1655,13 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "put")) {
         if (count != 2i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`put` takes exactly two arguments, the handle and the value", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
         int32:saved = e.expected;
         e.expected = elem;
-        int32:got = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        int32:got = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
         e.expected = saved;
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
@@ -1674,7 +1674,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "free")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`free` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1682,37 +1682,37 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "reset")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`reset` takes no arguments", n.span));
         }
         pass (e.types.t_nil);
     }
     if (raw string_eq(m, "destroy")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
         }
         pass (e.types.t_nil);
     }
-    string:m1 = relay string_concat("`", m);
-    pass (relay te_error(e, raw TYPE_MISMATCH(),
-        relay string_concat(m1,
+    string:m1 = raw string_concat("`", m);
+    pass (raw te_error(e, raw TYPE_MISMATCH(),
+        raw string_concat(m1,
             "` is not an arena operation; the set is alloc, get, put, free, reset, destroy (D-017, D-152)"),
         n.span));
 };
 
 // The argument must be a Handle whose element is THIS arena's element — a
 // handle from an `arena<int32>` names nothing in an `arena<int64>`.
-func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) {
+func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) never fails {
     int32:want = raw tt_handle(e.types, elem);
     int32:saved = e.expected;
     e.expected = want;
-    int32:got = relay type_of_expr(e, arg);
+    int32:got = raw type_of_expr(e, arg);
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (!(raw fits(e, want, got))) {
-        ExprNode:an = relay ast_expr(e.ast, arg);
+        ExprNode:an = raw ast_expr(e.ast, arg);
         drop te_mismatch_at(e, want, got, an.span);
     }
     pass NIL;
@@ -1726,19 +1726,19 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) {
 // receiver is a VALUE (one pointer, shareable by reference), so no place is
 // required.
 func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
-                                int32:name, int32:start, int32:count) {
-    string:m = relay intern_get(e.interns, name);
+                                int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
     int32:elem = (raw tt_get(e.types, recv)).a;
 
     if (raw string_eq(m, "alloc")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "a shared arena's `alloc` takes exactly one argument, the value — there is no `put`, so the slot is written once, here (D-154)",
                 n.span));
         }
         int32:saved = e.expected;
         e.expected = elem;
-        int32:got = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        int32:got = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
         e.expected = saved;
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
@@ -1751,7 +1751,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "get")) {
         if (count != 1i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`get` takes exactly one argument, the handle", n.span));
         }
         drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
@@ -1760,14 +1760,14 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     if (raw string_eq(m, "destroy")) {
         if (count != 0i32) {
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
                 "`destroy` takes no arguments", n.span));
         }
         pass (e.types.t_nil);
     }
-    string:m1 = relay string_concat("`", m);
-    pass (relay te_error(e, raw TYPE_MISMATCH(),
-        relay string_concat(m1,
+    string:m1 = raw string_concat("`", m);
+    pass (raw te_error(e, raw TYPE_MISMATCH(),
+        raw string_concat(m1,
             "` is not a shared-arena operation; the set is alloc, get, destroy — no `free`, no `reset`, no `put`: slots are never reused or rewritten while the arena is live, which is the whole concurrency contract (D-017, D-154)"),
         n.span));
 };

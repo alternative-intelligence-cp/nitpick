@@ -53,15 +53,15 @@ use "./ir_expr.npk".*;
 // A `br` or a block start, through the terminated flag — mirrors the seed's
 // `br()`/`start_block()`: a branch after a terminator is IR llc rejects, and a
 // label resets the flag because a new block is live by construction.
-pub func:s_br = NIL(ExprEmitter->:x, string:label) {
+pub func:s_br = NIL(ExprEmitter->:x, string:label) never fails {
     if (!x.fe.terminated) {
-        drop irw_line(x.fe.w, relay string_concat("br label %", label));
+        drop irw_line(x.fe.w, raw string_concat("br label %", label));
         x.fe.terminated = true;
     }
     pass NIL;
 };
 
-pub func:s_start = NIL(ExprEmitter->:x, string:label) {
+pub func:s_start = NIL(ExprEmitter->:x, string:label) never fails {
     drop irw_label(x.fe.w, label);
     x.fe.terminated = false;
     pass NIL;
@@ -73,7 +73,7 @@ pub func:s_start = NIL(ExprEmitter->:x, string:label) {
 // popping anything: the frames belong to scopes that are still open on other
 // paths. A deferred body is emitted AT EACH EXIT that runs it; cleanup code is
 // duplicated per path, which is the seed's model and what naive lowering means.
-pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) {
+pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
     int32:f = raw fnem_defer_frames(x.fe);
     while (f > depth) {
         f = f - 1i32;
@@ -83,21 +83,21 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) {
         while (i > lo) {
             i = i - 1i32;
             StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
-            IrVal:r = relay emit_stmt(x, body);
+            IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
     }
     pass (raw iv_nil());
 };
 
-pub func:run_all_defers = IrVal(ExprEmitter->:x) {
-    pass (relay run_defers_down_to(x, 0i32));
+pub func:run_all_defers = IrVal(ExprEmitter->:x) never fails {
+    pass (raw run_defers_down_to(x, 0i32));
 };
 
 // --- blocks -------------------------------------------------------------------------
 
-pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) {
-    StmtNode:s = relay ast_stmt(x.ast, sid);
+pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
+    StmtNode:s = raw ast_stmt(x.ast, sid);
     int32:mark = raw fnem_mark(x.fe);
     drop fnem_defer_frame_push(x.fe);
 
@@ -105,8 +105,8 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) {
     int32:n = raw stmt_list_count(s);
     while (i < n) {
         if (x.fe.terminated) { break; }
-        StmtId:st = StmtId{ index: relay ast_id_at(x.ast, raw stmt_list_start(s), i) };
-        IrVal:r = relay emit_stmt(x, st);
+        StmtId:st = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+        IrVal:r = raw emit_stmt(x, st);
         if (!(raw iv_is_ok(r))) { pass r; }
         i = i + 1i32;
     }
@@ -114,7 +114,7 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) {
     // The block's own defers, on its NORMAL end. A terminated block already ran
     // them at whatever exit terminated it.
     if (!x.fe.terminated) {
-        IrVal:r = relay run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i32);
+        IrVal:r = raw run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i32);
         if (!(raw iv_is_ok(r))) { pass r; }
     }
     drop fnem_defer_frame_pop(x.fe);
@@ -124,53 +124,53 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) {
 
 // --- statements ---------------------------------------------------------------------
 
-pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
-    StmtNode:s = relay ast_stmt(x.ast, sid);
+pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
+    StmtNode:s = raw ast_stmt(x.ast, sid);
 
-    if (s.kind == StmtKind.StmtBlockStmt)   { pass (relay emit_block(x, sid)); }
-    if (s.kind == StmtKind.StmtVarDeclStmt) { pass (relay emit_vardecl(x, s)); }
-    if (s.kind == StmtKind.StmtAssignStmt)  { pass (relay emit_assign(x, s)); }
+    if (s.kind == StmtKind.StmtBlockStmt)   { pass (raw emit_block(x, sid)); }
+    if (s.kind == StmtKind.StmtVarDeclStmt) { pass (raw emit_vardecl(x, s)); }
+    if (s.kind == StmtKind.StmtAssignStmt)  { pass (raw emit_assign(x, s)); }
 
     if (s.kind == StmtKind.StmtExprStmt) {
-        IrVal:v = relay emit_expr(x, raw stmt_expr(s));
+        IrVal:v = raw emit_expr(x, raw stmt_expr(s));
         if (!(raw iv_is_ok(v))) { pass v; }
         pass (raw iv_nil());
     }
     if (s.kind == StmtKind.StmtDiscardStmt) {
-        IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+        IrVal:v = raw emit_expr(x, raw stmt_operand(s));
         if (!(raw iv_is_ok(v))) { pass v; }
         pass (raw iv_nil());
     }
 
-    if (s.kind == StmtKind.StmtIfStmt)      { pass (relay emit_if(x, s)); }
-    if (s.kind == StmtKind.StmtWhileStmt)   { pass (relay emit_while(x, s)); }
+    if (s.kind == StmtKind.StmtIfStmt)      { pass (raw emit_if(x, s)); }
+    if (s.kind == StmtKind.StmtWhileStmt)   { pass (raw emit_while(x, s)); }
 
-    if (s.kind == StmtKind.StmtBreakStmt)   { pass (relay emit_break(x, s, true)); }
-    if (s.kind == StmtKind.StmtContinueStmt){ pass (relay emit_break(x, s, false)); }
+    if (s.kind == StmtKind.StmtBreakStmt)   { pass (raw emit_break(x, s, true)); }
+    if (s.kind == StmtKind.StmtContinueStmt){ pass (raw emit_break(x, s, false)); }
 
-    if (s.kind == StmtKind.StmtPassStmt)    { pass (relay emit_pass(x, s)); }
-    if (s.kind == StmtKind.StmtFailStmt)    { pass (relay emit_fail(x, s)); }
-    if (s.kind == StmtKind.StmtExitStmt)    { pass (relay emit_exit(x, s)); }
-    if (s.kind == StmtKind.StmtTrapStmt)    { pass (relay emit_trap(x, s)); }
+    if (s.kind == StmtKind.StmtPassStmt)    { pass (raw emit_pass(x, s)); }
+    if (s.kind == StmtKind.StmtFailStmt)    { pass (raw emit_fail(x, s)); }
+    if (s.kind == StmtKind.StmtExitStmt)    { pass (raw emit_exit(x, s)); }
+    if (s.kind == StmtKind.StmtTrapStmt)    { pass (raw emit_trap(x, s)); }
 
     if (s.kind == StmtKind.StmtDeferStmt) {
         drop fnem_defer_add(x.fe, (raw stmt_target(s)).index);
         pass (raw iv_nil());
     }
 
-    if (s.kind == StmtKind.StmtReturnStmt)  { pass (relay emit_return(x, s)); }
-    if (s.kind == StmtKind.StmtPickStmt)    { pass (relay emit_pick(x, s)); }
+    if (s.kind == StmtKind.StmtReturnStmt)  { pass (raw emit_return(x, s)); }
+    if (s.kind == StmtKind.StmtPickStmt)    { pass (raw emit_pick(x, s)); }
 
     // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
     // fallthrough — both live or die with `PickExpr`, which is 0.9's.
 
-    if (s.kind == StmtKind.StmtForStmt)  { pass (relay emit_for(x, s)); }
-    if (s.kind == StmtKind.StmtLoopStmt) { pass (relay emit_counted(x, s, false)); }
-    if (s.kind == StmtKind.StmtTillStmt) { pass (relay emit_counted(x, s, true)); }
-    if (s.kind == StmtKind.StmtWhenStmt) { pass (relay emit_when(x, s)); }
+    if (s.kind == StmtKind.StmtForStmt)  { pass (raw emit_for(x, s)); }
+    if (s.kind == StmtKind.StmtLoopStmt) { pass (raw emit_counted(x, s, false)); }
+    if (s.kind == StmtKind.StmtTillStmt) { pass (raw emit_counted(x, s, true)); }
+    if (s.kind == StmtKind.StmtWhenStmt) { pass (raw emit_when(x, s)); }
 
-    if (s.kind == StmtKind.StmtGiveStmt) { pass (relay emit_give(x, s)); }
-    if (s.kind == StmtKind.StmtFallStmt) { pass (relay emit_fall(x, s)); }
+    if (s.kind == StmtKind.StmtGiveStmt) { pass (raw emit_give(x, s)); }
+    if (s.kind == StmtKind.StmtFallStmt) { pass (raw emit_fall(x, s)); }
     if (s.kind == StmtKind.StmtProveStmt) {
         pass (raw iv_rung("`prove`", "1.3", s.span));
     }
@@ -184,7 +184,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
 
 // --- declarations and assignment ----------------------------------------------------
 
-func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // LIVE-1's repair (0.9.0): a `limit<Rules>` that lowered to a bare alloca
     // told the program its rule held while nothing checked it — the worst
     // outcome D-068 names. Refused until 1.3 emits the real check; the same
@@ -193,19 +193,19 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
     if (!(raw verify_is_none(lim))) {
         pass (raw iv_rung("a `limit<Rules>` constraint", "1.3", s.span));
     }
-    int32:dty = relay resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
-    LlType:ll = relay ll_type(x.fe.ctx, dty);
-    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll_at(x, ll, dty, s.span)); }
+    int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
+    LlType:ll = raw ll_type(x.fe.ctx, dty);
+    if (!(raw ll_is_ok(ll))) { pass (raw iv_from_ll_at(x, ll, dty, s.span)); }
 
     // SLOT FIRST, THEN THE INITIALISER — the seed's order, and the right one:
     // the name is not bound until after the initialiser runs (`fnem_local` binds
     // on the way out), so `int32:x = x;` reads the OUTER `x`, not the slot being
     // created.
-    string:slot = relay irw_temp(x.fe.w);
+    string:slot = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, slot, ll.text);
     ExprId:init = raw stmt_decl_init(x.ast, s);
     if (!(raw expr_is_none(init))) {
-        IrVal:v = relay emit_expr(x, init);
+        IrVal:v = raw emit_expr(x, init);
         if (!(raw iv_is_ok(v))) { pass v; }
         // THE VALUE IS FIT TO THE SLOT, NOT STORED (1.0.5c, generalised at
         // 1.0.6e). A concrete value bound to a `dyn` is widened into a fat
@@ -213,16 +213,16 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
         // vtable word uninitialised — which read back as a plausible answer
         // rather than a crash. 1.0.5c did this here and nowhere else; `emit_fit`
         // is the one place now, and this is one of its sites.
-        v = relay emit_fit(x, dty, v, s.span);
+        v = raw emit_fit(x, dty, v, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
-        drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
-                          relay string_concat(", ptr ", slot)));
+        drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
+                          raw string_concat(", ptr ", slot)));
     }
     drop fnem_bind(x.fe, raw stmt_name(s), slot, dty);
     pass (raw iv_nil());
 };
 
-func:compound_op = TokenKind(TokenKind:k) {
+func:compound_op = TokenKind(TokenKind:k) never fails {
     if (k == TokenKind.OpPlusAssign)    { pass TokenKind.OpPlus; }
     if (k == TokenKind.OpMinusAssign)   { pass TokenKind.OpMinus; }
     if (k == TokenKind.OpStarAssign)    { pass TokenKind.OpStar; }
@@ -236,27 +236,27 @@ func:compound_op = TokenKind(TokenKind:k) {
     pass TokenKind.OpAssign;
 };
 
-func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // A PLACE, whatever shape it takes: a name's slot, a field through layout,
     // an element through a bound, a pointee through `<-` (0.7.7).
-    PlaceVal:place = relay addr_of(x, raw stmt_target(s));
-    if (place.state != (raw LL_OK())) { pass (relay iv_from_place(place)); }
-    LlType:ll = relay ll_type(x.fe.ctx, place.type_id);
+    PlaceVal:place = raw addr_of(x, raw stmt_target(s));
+    if (place.state != (raw LL_OK())) { pass (raw iv_from_place(place)); }
+    LlType:ll = raw ll_type(x.fe.ctx, place.type_id);
     if (!(raw ll_is_ok(ll))) {
-        pass (relay iv_from_ll_at(x, ll, place.type_id, s.span));
+        pass (raw iv_from_ll_at(x, ll, place.type_id, s.span));
     }
 
     TokenKind:op = raw stmt_op(s);
     if (op == TokenKind.OpAssign) {
-        IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
+        IrVal:v = raw emit_expr(x, raw stmt_assigned(s));
         if (!(raw iv_is_ok(v))) { pass v; }
         // FIT TO THE PLACE'S TYPE (1.0.6e). This is the site that segfaulted:
         // `q = c;` with `q` a `dyn` stored the 4-byte `Cat` over the fat
         // pointer and dispatched through the remains.
-        v = relay emit_fit(x, place.type_id, v, s.span);
+        v = raw emit_fit(x, place.type_id, v, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
-        drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
-                          relay string_concat(", ptr ", place.addr)));
+        drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
+                          raw string_concat(", ptr ", place.addr)));
         pass (raw iv_nil());
     }
 
@@ -267,44 +267,44 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
     if ((raw type_kind(x.fe.ctx.types, place.type_id)) == (raw TY_INT())) {
         signed = raw type_is_signed(x.fe.ctx.types, place.type_id);
     }
-    string:cur = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cur, " = load ", ll.text, ", ptr ",
+    string:cur = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cur, " = load ", ll.text, ", ptr ",
                                      place.addr));
-    IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
+    IrVal:v = raw emit_expr(x, raw stmt_assigned(s));
     if (!(raw iv_is_ok(v))) { pass v; }
     string:ins = raw arith_name(raw compound_op(op), signed);
     if (ins.len == 0i64) { pass (raw iv_broken(s.span)); }
-    string:r = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(r, " = ", ins, " ",
-                      relay cat5(ll.text, " ", cur, ", ", v.ref)));
-    drop irw_line(x.fe.w, relay cat5("store ", ll.text, " ", r,
-                      relay string_concat(", ptr ", place.addr)));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
+                      raw cat5(ll.text, " ", cur, ", ", v.ref)));
+    drop irw_line(x.fe.w, raw cat5("store ", ll.text, " ", r,
+                      raw string_concat(", ptr ", place.addr)));
     pass (raw iv_nil());
 };
 
 // --- control flow -------------------------------------------------------------------
 
-func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) {
-    string:then_l = relay irw_new_label(x.fe.w, "if.then");
-    string:done_l = relay irw_new_label(x.fe.w, "if.done");
+func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    string:then_l = raw irw_new_label(x.fe.w, "if.then");
+    string:done_l = raw irw_new_label(x.fe.w, "if.done");
     string:else_l = done_l;
     bool:has_else = !(raw stmt_is_none(raw stmt_else(s)));
-    if (has_else) { else_l = relay irw_new_label(x.fe.w, "if.else"); }
+    if (has_else) { else_l = raw irw_new_label(x.fe.w, "if.else"); }
 
-    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
-    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", then_l,
-                      relay string_concat(", label %", else_l)));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", then_l,
+                      raw string_concat(", label %", else_l)));
     x.fe.terminated = true;
 
     drop s_start(x, then_l);
-    IrVal:t = relay emit_stmt(x, raw stmt_then(s));
+    IrVal:t = raw emit_stmt(x, raw stmt_then(s));
     if (!(raw iv_is_ok(t))) { pass t; }
     drop s_br(x, done_l);
 
     if (has_else) {
         drop s_start(x, else_l);
-        IrVal:e = relay emit_stmt(x, raw stmt_else(s));
+        IrVal:e = raw emit_stmt(x, raw stmt_else(s));
         if (!(raw iv_is_ok(e))) { pass e; }
         drop s_br(x, done_l);
     }
@@ -314,11 +314,11 @@ func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) {
 
 // An operand as an i64 — the loop machinery's working width; narrower counters
 // sign-extend.
-func:loop_i64 = string(ExprEmitter->:x, IrVal:v) {
+func:loop_i64 = string(ExprEmitter->:x, IrVal:v) never fails {
     if (raw string_eq(v.ll, "i64")) { pass v.ref; }
-    string:w = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(w, " = sext ", v.ll, " ",
-                      relay string_concat(v.ref, " to i64")));
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w, " = sext ", v.ll, " ",
+                      raw string_concat(v.ref, " to i64")));
     pass w;
 };
 
@@ -328,7 +328,7 @@ func:loop_i64 = string(ExprEmitter->:x, IrVal:v) {
 // at compile time where it is a literal; otherwise it TRAPS (BAD_STEP, -4101),
 // the runtime fallback D-022 specifies, because a zero step cannot terminate
 // and a negative one contradicts bounds it cannot see.
-func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) {
+func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails {
     VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
     if (!(raw verify_is_none(cinv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
@@ -336,73 +336,73 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) {
     string:sv = "0";
     int32:base = 0i32;
     if (!is_till) {
-        IrVal:s0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, 0i32));
+        IrVal:s0 = raw emit_expr(x, raw stmt_counted_arg(x.ast, s, 0i32));
         if (!(raw iv_is_ok(s0))) { pass s0; }
         sv = raw loop_i64(x, s0);
         base = 1i32;
     }
-    IrVal:l0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, base));
+    IrVal:l0 = raw emit_expr(x, raw stmt_counted_arg(x.ast, s, base));
     if (!(raw iv_is_ok(l0))) { pass l0; }
     string:lv = raw loop_i64(x, l0);
-    IrVal:p0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, base + 1i32));
+    IrVal:p0 = raw emit_expr(x, raw stmt_counted_arg(x.ast, s, base + 1i32));
     if (!(raw iv_is_ok(p0))) { pass p0; }
     string:pv = raw loop_i64(x, p0);
 
-    string:bad = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(bad, " = icmp sle i64 ",
-                      relay string_concat(pv, ", 0")));
-    string:trap_l = relay irw_new_label(x.fe.w, "ct.step");
-    string:go_l = relay irw_new_label(x.fe.w, "ct.go");
-    drop irw_line(x.fe.w, relay cat5("br i1 ", bad, ", label %", trap_l,
-                      relay string_concat(", label %", go_l)));
+    string:bad = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(bad, " = icmp sle i64 ",
+                      raw string_concat(pv, ", 0")));
+    string:trap_l = raw irw_new_label(x.fe.w, "ct.step");
+    string:go_l = raw irw_new_label(x.fe.w, "ct.go");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", bad, ", label %", trap_l,
+                      raw string_concat(", label %", go_l)));
     drop irw_label(x.fe.w, trap_l);
     drop irw_line(x.fe.w, "call void @npk_trap(i32 -4101)");
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, go_l);
 
-    string:slot = relay irw_temp(x.fe.w);
+    string:slot = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, slot, "i64");
-    drop irw_line(x.fe.w, relay cat5("store i64 ", sv, ", ptr ", slot, ""));
-    string:asc = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(asc, " = icmp slt i64 ", sv, ", ", lv));
+    drop irw_line(x.fe.w, raw cat5("store i64 ", sv, ", ptr ", slot, ""));
+    string:asc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(asc, " = icmp slt i64 ", sv, ", ", lv));
 
-    string:head_l = relay irw_new_label(x.fe.w, "ct.head");
-    string:body_l = relay irw_new_label(x.fe.w, "ct.body");
-    string:incr_l = relay irw_new_label(x.fe.w, "ct.incr");
-    string:done_l = relay irw_new_label(x.fe.w, "ct.done");
+    string:head_l = raw irw_new_label(x.fe.w, "ct.head");
+    string:body_l = raw irw_new_label(x.fe.w, "ct.body");
+    string:incr_l = raw irw_new_label(x.fe.w, "ct.incr");
+    string:done_l = raw irw_new_label(x.fe.w, "ct.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
-    string:cur = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cur, " = load i64, ptr ", slot, "", ""));
-    string:up = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(up, " = icmp slt i64 ", cur, ", ", lv));
-    string:down = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(down, " = icmp sgt i64 ", cur, ", ", lv));
-    string:cond = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cond, " = select i1 ", asc, ", ",
-                      relay cat5("i1 ", up, ", i1 ", down, "")));
-    drop irw_line(x.fe.w, relay cat5("br i1 ", cond, ", label %", body_l,
-                      relay string_concat(", label %", done_l)));
+    string:cur = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", slot, "", ""));
+    string:up = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(up, " = icmp slt i64 ", cur, ", ", lv));
+    string:down = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(down, " = icmp sgt i64 ", cur, ", ", lv));
+    string:cond = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cond, " = select i1 ", asc, ", ",
+                      raw cat5("i1 ", up, ", i1 ", down, "")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", cond, ", label %", body_l,
+                      raw string_concat(", label %", done_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
     // `continue` re-enters at the INCREMENT, or the counter would never move.
     drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), slot);
-    IrVal:b = relay emit_block(x, raw stmt_counted_body(s));
+    IrVal:b = raw emit_block(x, raw stmt_counted_body(s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
     drop s_br(x, incr_l);
     drop s_start(x, incr_l);
-    string:c2 = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(c2, " = load i64, ptr ", slot, "", ""));
-    string:nup = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(nup, " = add i64 ", c2, ", ", pv));
-    string:ndown = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(ndown, " = sub i64 ", c2, ", ", pv));
-    string:nxt = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(nxt, " = select i1 ", asc, ", ",
-                      relay cat5("i64 ", nup, ", i64 ", ndown, "")));
-    drop irw_line(x.fe.w, relay cat5("store i64 ", nxt, ", ptr ", slot, ""));
+    string:c2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c2, " = load i64, ptr ", slot, "", ""));
+    string:nup = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(nup, " = add i64 ", c2, ", ", pv));
+    string:ndown = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ndown, " = sub i64 ", c2, ", ", pv));
+    string:nxt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(nxt, " = select i1 ", asc, ", ",
+                      raw cat5("i64 ", nup, ", i64 ", ndown, "")));
+    drop irw_line(x.fe.w, raw cat5("store i64 ", nxt, ", ptr ", slot, ""));
     drop s_br(x, head_l);
     drop s_start(x, done_l);
     pass (raw iv_nil());
@@ -412,59 +412,59 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) {
 // whether its body ever ran. `then` runs when it did — including a `break`
 // exit, which lands at the same junction — and `end` only when the condition
 // was false from the start. One flag, one junction, never both clauses.
-func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     VerifyId:winv = raw stmt_when_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
     }
-    string:flag = relay irw_temp(x.fe.w);
+    string:flag = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, flag, "i8");
-    drop irw_line(x.fe.w, relay cat3("store i8 0, ptr ", flag, ""));
+    drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", flag, ""));
 
-    string:head_l = relay irw_new_label(x.fe.w, "wn.head");
-    string:body_l = relay irw_new_label(x.fe.w, "wn.body");
-    string:junc_l = relay irw_new_label(x.fe.w, "wn.junc");
-    string:then_l = relay irw_new_label(x.fe.w, "wn.then");
-    string:end_l = relay irw_new_label(x.fe.w, "wn.end");
-    string:done_l = relay irw_new_label(x.fe.w, "wn.done");
+    string:head_l = raw irw_new_label(x.fe.w, "wn.head");
+    string:body_l = raw irw_new_label(x.fe.w, "wn.body");
+    string:junc_l = raw irw_new_label(x.fe.w, "wn.junc");
+    string:then_l = raw irw_new_label(x.fe.w, "wn.then");
+    string:end_l = raw irw_new_label(x.fe.w, "wn.end");
+    string:done_l = raw irw_new_label(x.fe.w, "wn.done");
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
-    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
-    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", body_l,
-                      relay string_concat(", label %", junc_l)));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
+                      raw string_concat(", label %", junc_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
-    drop irw_line(x.fe.w, relay cat3("store i8 1, ptr ", flag, ""));
+    drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag, ""));
     drop fnem_loop_push(x.fe, head_l, junc_l, raw stmt_label(s), "");
-    IrVal:b = relay emit_block(x, raw stmt_when_body(x.ast, s));
+    IrVal:b = raw emit_block(x, raw stmt_when_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
     drop s_br(x, head_l);
 
     drop s_start(x, junc_l);
-    string:ran = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(ran, " = load i8, ptr ", flag, "", ""));
-    string:rb = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(rb, " = icmp ne i8 ",
-                      relay string_concat(ran, ", 0")));
-    drop irw_line(x.fe.w, relay cat5("br i1 ", rb, ", label %", then_l,
-                      relay string_concat(", label %", end_l)));
+    string:ran = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ran, " = load i8, ptr ", flag, "", ""));
+    string:rb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(rb, " = icmp ne i8 ",
+                      raw string_concat(ran, ", 0")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", rb, ", label %", then_l,
+                      raw string_concat(", label %", end_l)));
     x.fe.terminated = true;
 
     drop s_start(x, then_l);
     StmtId:tb = raw stmt_when_then(x.ast, s);
     if (tb.index != 0i32) {
-        IrVal:tv = relay emit_stmt(x, tb);
+        IrVal:tv = raw emit_stmt(x, tb);
         if (!(raw iv_is_ok(tv))) { pass tv; }
     }
     drop s_br(x, done_l);
     drop s_start(x, end_l);
     StmtId:eb = raw stmt_when_end(x.ast, s);
     if (eb.index != 0i32) {
-        IrVal:ev = relay emit_stmt(x, eb);
+        IrVal:ev = raw emit_stmt(x, eb);
         if (!(raw iv_is_ok(ev))) { pass ev; }
     }
     drop s_br(x, done_l);
@@ -475,7 +475,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) {
 // `for (T:x in iterable)` (0.9.7): a range walks its half-open span with the
 // BINDING as the value; a slice or array walks its elements by index, copying
 // each into the binding — a value per iteration, exactly what a binding is.
-func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     VerifyId:finv = raw stmt_for_invariant(x.ast, s);
     if (!(raw verify_is_none(finv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
@@ -483,69 +483,69 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
     ExprId:iter = raw stmt_for_iter(x.ast, s);
     int32:itid = raw exprtypes_get(x.et, iter);
     int32:ikind = raw type_kind(x.fe.ctx.types, itid);
-    DeclNode:bind = relay ast_decl(x.ast, raw stmt_for_binding(s));
-    int32:btid = relay resolve_type(x.tr, raw param_type(bind), x.scope);
-    LlType:bll = relay ll_type(x.fe.ctx, btid);
-    if (!(raw ll_is_ok(bll))) { pass (relay iv_from_ll_at(x, bll, btid, s.span)); }
+    DeclNode:bind = raw ast_decl(x.ast, raw stmt_for_binding(s));
+    int32:btid = raw resolve_type(x.tr, raw param_type(bind), x.scope);
+    LlType:bll = raw ll_type(x.fe.ctx, btid);
+    if (!(raw ll_is_ok(bll))) { pass (raw iv_from_ll_at(x, bll, btid, s.span)); }
 
     if (ikind == (raw TY_RANGE())) {
-        IrVal:rv = relay emit_expr(x, iter);
+        IrVal:rv = raw emit_expr(x, iter);
         if (!(raw iv_is_ok(rv))) { pass rv; }
-        string:lo = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(lo, " = extractvalue ", rv.ll, " ",
-                          relay string_concat(rv.ref, ", 0")));
-        string:hi = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(hi, " = extractvalue ", rv.ll, " ",
-                          relay string_concat(rv.ref, ", 1")));
-        string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
-        drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", lo,
-                          relay string_concat(", ptr ", slot)));
-        string:head_l = relay irw_new_label(x.fe.w, "fr.head");
-        string:body_l = relay irw_new_label(x.fe.w, "fr.body");
-        string:incr_l = relay irw_new_label(x.fe.w, "fr.incr");
-        string:done_l = relay irw_new_label(x.fe.w, "fr.done");
+        string:lo = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(lo, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 0")));
+        string:hi = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(hi, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 1")));
+        string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+        drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", lo,
+                          raw string_concat(", ptr ", slot)));
+        string:head_l = raw irw_new_label(x.fe.w, "fr.head");
+        string:body_l = raw irw_new_label(x.fe.w, "fr.body");
+        string:incr_l = raw irw_new_label(x.fe.w, "fr.incr");
+        string:done_l = raw irw_new_label(x.fe.w, "fr.done");
         drop s_br(x, head_l);
         drop s_start(x, head_l);
-        string:cur = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(cur, " = load ", bll.text, ", ptr ",
-                          relay string_concat(slot, "")));
-        string:cnd = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(cnd, " = icmp slt ", bll.text, " ",
-                          relay cat3(cur, ", ", hi)));
-        drop irw_line(x.fe.w, relay cat5("br i1 ", cnd, ", label %", body_l,
-                          relay string_concat(", label %", done_l)));
+        string:cur = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cur, " = load ", bll.text, ", ptr ",
+                          raw string_concat(slot, "")));
+        string:cnd = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cnd, " = icmp slt ", bll.text, " ",
+                          raw cat3(cur, ", ", hi)));
+        drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
+                          raw string_concat(", label %", done_l)));
         x.fe.terminated = true;
         drop s_start(x, body_l);
         drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
-        IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+        IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
         drop fnem_loop_pop(x.fe);
         if (!(raw iv_is_ok(b))) { pass b; }
         drop s_br(x, incr_l);
         drop s_start(x, incr_l);
-        string:c2 = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(c2, " = load ", bll.text, ", ptr ",
-                          relay string_concat(slot, "")));
-        string:nx = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(nx, " = add ", bll.text, " ",
-                          relay string_concat(c2, ", 1")));
-        drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", nx,
-                          relay string_concat(", ptr ", slot)));
+        string:c2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(c2, " = load ", bll.text, ", ptr ",
+                          raw string_concat(slot, "")));
+        string:nx = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(nx, " = add ", bll.text, " ",
+                          raw string_concat(c2, ", 1")));
+        drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", nx,
+                          raw string_concat(", ptr ", slot)));
         drop s_br(x, head_l);
         drop s_start(x, done_l);
         pass (raw iv_nil());
     }
 
     if (ikind == (raw TY_SLICE())) {
-        pass (relay emit_for_indexed(x, s, iter, bind, btid, bll, false));
+        pass (raw emit_for_indexed(x, s, iter, bind, btid, bll, false));
     }
     if (ikind == (raw TY_ARRAY())) {
-        pass (relay emit_for_indexed(x, s, iter, bind, btid, bll, true));
+        pass (raw emit_for_indexed(x, s, iter, bind, btid, bll, true));
     }
     if (ikind == (raw TY_POINTER())) {
-        pass (relay emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+        pass (raw emit_for_iterator(x, s, iter, itid, bind, btid, bll));
     }
     if (raw iterator_impl_of(x, itid) != 0i32) {
-        pass (relay emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+        pass (raw emit_for_iterator(x, s, iter, itid, bind, btid, bll));
     }
     // UNREACHABLE. The five arms above -- range, slice, array, pointer, and an
     // `Iterator` implementor -- are exactly the set `check_for` (D-166) admits;
@@ -556,7 +556,7 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
 // The impl of the prelude `Iterator` for `it1` (0 for none): a non-blanket impl
 // whose target is `it1` and whose trait is `Iterator`. Its `.decl` is the impl,
 // `.trait_id` the interned `Iterator` type the method symbol is named under.
-func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) {
+func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) never fails {
     int32:it1 = itid;
     if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_POINTER())) {
         it1 = raw type_elem(x.fe.ctx.types, itid);
@@ -568,7 +568,7 @@ func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) {
     if (isym.origin_kind != (raw SYM_DECL())) { pass 0i32; }
     int32:i = 0i32;
     while (i < (raw impl_count(x.fe.ctx.impls))) {
-        ImplEntry:e = relay impl_at(x.fe.ctx.impls, i);
+        ImplEntry:e = raw impl_at(x.fe.ctx.impls, i);
         if (!e.blanket) {
             if (e.target == it1) {
                 if ((raw type_decl_of(x.fe.ctx.types, e.trait_id))
@@ -590,40 +590,40 @@ func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) {
 // `continue` re-calls `next` (head), `break` leaves (done).
 func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
                                int32:itid, DeclNode:bind, int32:btid,
-                               LlType:bll) {
+                               LlType:bll) never fails {
     int32:idx = raw iterator_impl_of(x, itid);
     if (idx == 0i32) { pass (raw iv_broken(s.span)); }
-    ImplEntry:e = relay impl_at(x.fe.ctx.impls, idx - 1i32);
+    ImplEntry:e = raw impl_at(x.fe.ctx.impls, idx - 1i32);
 
     int32:it1 = itid;
     string:recv = "";
     if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_POINTER())) {
         it1 = raw type_elem(x.fe.ctx.types, itid);
-        IrVal:pv = relay emit_expr(x, iter);
+        IrVal:pv = raw emit_expr(x, iter);
         if (!(raw iv_is_ok(pv))) { pass pv; }
         recv = pv.ref;
     } else {
-        PlaceVal:apv = relay addr_of(x, iter);
-        if (apv.state != (raw LL_OK())) { pass (relay iv_from_place(apv)); }
+        PlaceVal:apv = raw addr_of(x, iter);
+        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(apv)); }
         recv = apv.addr;
     }
 
     // The impl's `next` method and its D-156 symbol.
-    DeclNode:idecl = relay ast_decl(x.ast, DeclId{ index: e.decl });
+    DeclNode:idecl = raw ast_decl(x.ast, DeclId{ index: e.decl });
     int32:next_name = raw intern_add(x.interns, "next");
     int32:next_decl = 0i32;
     int32:mi = 0i32;
     while (mi < (raw impl_member_count(x.ast, idecl))) {
         DeclId:mid = raw impl_member(x.ast, idecl, mi);
-        DeclNode:m = relay ast_decl(x.ast, mid);
+        DeclNode:m = raw ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == next_name) { next_decl = mid.index; }
         }
         mi = mi + 1i32;
     }
     if (next_decl == 0i32) { pass (raw iv_broken(s.span)); }
-    string:sym = relay mangled_fn_sym(x.fe.ctx, next_decl,
-                     relay method_symbol_name(x.fe.ctx.types, x.interns, it1,
+    string:sym = raw mangled_fn_sym(x.fe.ctx, next_decl,
+                     raw method_symbol_name(x.fe.ctx.types, x.interns, it1,
                          e.trait_id, "next"));
 
     // `next`'s return: `Result<Optional<Item>>`, and `Item` is the binding type
@@ -634,40 +634,40 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
     int32:ret_tid = raw tt_result(x.fe.ctx.types, opt_tid,
                         raw type_size(x.fe.ctx.types, opt_tid),
                         raw type_align(x.fe.ctx.types, opt_tid));
-    LlType:ret_ll = relay ll_type(x.fe.ctx, ret_tid);
-    if (!(raw ll_is_ok(ret_ll))) { pass (relay iv_from_ll_at(x, ret_ll, ret_tid, s.span)); }
-    LlType:opt_ll = relay ll_type(x.fe.ctx, opt_tid);
-    if (!(raw ll_is_ok(opt_ll))) { pass (relay iv_from_ll_at(x, opt_ll, opt_tid, s.span)); }
+    LlType:ret_ll = raw ll_type(x.fe.ctx, ret_tid);
+    if (!(raw ll_is_ok(ret_ll))) { pass (raw iv_from_ll_at(x, ret_ll, ret_tid, s.span)); }
+    LlType:opt_ll = raw ll_type(x.fe.ctx, opt_tid);
+    if (!(raw ll_is_ok(opt_ll))) { pass (raw iv_from_ll_at(x, opt_ll, opt_tid, s.span)); }
 
-    string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
-    string:head_l = relay irw_new_label(x.fe.w, "fi.head");
-    string:body_l = relay irw_new_label(x.fe.w, "fi.body");
-    string:done_l = relay irw_new_label(x.fe.w, "fi.done");
+    string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    string:head_l = raw irw_new_label(x.fe.w, "fi.head");
+    string:body_l = raw irw_new_label(x.fe.w, "fi.body");
+    string:done_l = raw irw_new_label(x.fe.w, "fi.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
-    string:r = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret_ll.text, " ",
-                      relay cat5(sym, "(ptr ", recv, ")", "")));
-    string:opt = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(opt, " = extractvalue ", ret_ll.text, " ",
-                      relay string_concat(r, ", 0")));
-    string:tag = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(tag, " = extractvalue ", opt_ll.text, " ",
-                      relay string_concat(opt, ", 0")));
-    string:empty = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(empty, " = icmp eq i8 ",
-                      relay string_concat(tag, ", 0")));
-    drop irw_line(x.fe.w, relay cat5("br i1 ", empty, ", label %", done_l,
-                      relay string_concat(", label %", body_l)));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = call ", ret_ll.text, " ",
+                      raw cat5(sym, "(ptr ", recv, ")", "")));
+    string:opt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(opt, " = extractvalue ", ret_ll.text, " ",
+                      raw string_concat(r, ", 0")));
+    string:tag = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", opt_ll.text, " ",
+                      raw string_concat(opt, ", 0")));
+    string:empty = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(empty, " = icmp eq i8 ",
+                      raw string_concat(tag, ", 0")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", empty, ", label %", done_l,
+                      raw string_concat(", label %", body_l)));
     x.fe.terminated = true;
     drop s_start(x, body_l);
-    string:val = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(val, " = extractvalue ", opt_ll.text, " ",
-                      relay string_concat(opt, ", 1")));
-    drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", val,
-                      relay string_concat(", ptr ", slot)));
+    string:val = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(val, " = extractvalue ", opt_ll.text, " ",
+                      raw string_concat(opt, ", 1")));
+    drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", val,
+                      raw string_concat(", ptr ", slot)));
     drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
-    IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+    IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
     drop s_br(x, head_l);
@@ -678,100 +678,100 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
 // The slice/array half: index 0..len, element copied into the binding.
 func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
                               DeclNode:bind, int32:btid, LlType:bll,
-                              bool:is_array) {
+                              bool:is_array) never fails {
     string:base = "";
     string:len = "";
     int32:itid = raw exprtypes_get(x.et, iter);
     if (is_array) {
-        PlaceVal:pv2 = relay addr_of(x, iter);
-        if (pv2.state != (raw LL_OK())) { pass (relay iv_from_place(pv2)); }
+        PlaceVal:pv2 = raw addr_of(x, iter);
+        if (pv2.state != (raw LL_OK())) { pass (raw iv_from_place(pv2)); }
         base = pv2.addr;
         len = raw int_to_string(
             (raw type_array_count(x.fe.ctx.types, itid)) => int64);
     } else {
-        IrVal:sv = relay emit_expr(x, iter);
+        IrVal:sv = raw emit_expr(x, iter);
         if (!(raw iv_is_ok(sv))) { pass sv; }
-        string:d = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(d, " = extractvalue ", sv.ll, " ",
-                          relay string_concat(sv.ref, ", 0")));
+        string:d = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(d, " = extractvalue ", sv.ll, " ",
+                          raw string_concat(sv.ref, ", 0")));
         base = d;
-        string:l2 = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(l2, " = extractvalue ", sv.ll, " ",
-                          relay string_concat(sv.ref, ", 1")));
+        string:l2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(l2, " = extractvalue ", sv.ll, " ",
+                          raw string_concat(sv.ref, ", 1")));
         len = l2;
     }
-    string:idx = relay irw_temp(x.fe.w);
+    string:idx = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, idx, "i64");
-    drop irw_line(x.fe.w, relay cat3("store i64 0, ptr ", idx, ""));
-    string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
-    string:head_l = relay irw_new_label(x.fe.w, "fe.head");
-    string:body_l = relay irw_new_label(x.fe.w, "fe.body");
-    string:incr_l = relay irw_new_label(x.fe.w, "fe.incr");
-    string:done_l = relay irw_new_label(x.fe.w, "fe.done");
+    drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", idx, ""));
+    string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    string:head_l = raw irw_new_label(x.fe.w, "fe.head");
+    string:body_l = raw irw_new_label(x.fe.w, "fe.body");
+    string:incr_l = raw irw_new_label(x.fe.w, "fe.incr");
+    string:done_l = raw irw_new_label(x.fe.w, "fe.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
-    string:cur = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cur, " = load i64, ptr ", idx, "", ""));
-    string:cnd = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cnd, " = icmp ult i64 ", cur, ", ", len));
-    drop irw_line(x.fe.w, relay cat5("br i1 ", cnd, ", label %", body_l,
-                      relay string_concat(", label %", done_l)));
+    string:cur = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", idx, "", ""));
+    string:cnd = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(cnd, " = icmp ult i64 ", cur, ", ", len));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
+                      raw string_concat(", label %", done_l)));
     x.fe.terminated = true;
     drop s_start(x, body_l);
-    string:ep = relay irw_temp(x.fe.w);
+    string:ep = raw irw_temp(x.fe.w);
     if (is_array) {
-        LlType:all = relay ll_type(x.fe.ctx, itid);
+        LlType:all = raw ll_type(x.fe.ctx, itid);
         if (!(raw ll_is_ok(all))) { pass (raw iv_broken(s.span)); }
-        drop irw_line(x.fe.w, relay cat5(ep, " = getelementptr ", all.text,
-                          ", ptr ", relay cat4(base, ", i64 0, i64 ", cur, "")));
+        drop irw_line(x.fe.w, raw cat5(ep, " = getelementptr ", all.text,
+                          ", ptr ", raw cat4(base, ", i64 0, i64 ", cur, "")));
     } else {
-        drop irw_line(x.fe.w, relay cat5(ep, " = getelementptr ", bll.text,
-                          ", ptr ", relay cat4(base, ", i64 ", cur, "")));
+        drop irw_line(x.fe.w, raw cat5(ep, " = getelementptr ", bll.text,
+                          ", ptr ", raw cat4(base, ", i64 ", cur, "")));
     }
-    string:ev = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(ev, " = load ", bll.text, ", ptr ",
-                      relay string_concat(ep, "")));
-    drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", ev,
-                      relay string_concat(", ptr ", slot)));
+    string:ev = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ev, " = load ", bll.text, ", ptr ",
+                      raw string_concat(ep, "")));
+    drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", ev,
+                      raw string_concat(", ptr ", slot)));
     drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
-    IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+    IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
     drop s_br(x, incr_l);
     drop s_start(x, incr_l);
-    string:c3 = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(c3, " = load i64, ptr ", idx, "", ""));
-    string:n3 = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(n3, " = add i64 ",
-                      relay string_concat(c3, ", 1")));
-    drop irw_line(x.fe.w, relay cat5("store i64 ", n3, ", ptr ", idx, ""));
+    string:c3 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c3, " = load i64, ptr ", idx, "", ""));
+    string:n3 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(n3, " = add i64 ",
+                      raw string_concat(c3, ", 1")));
+    drop irw_line(x.fe.w, raw cat5("store i64 ", n3, ", ptr ", idx, ""));
     drop s_br(x, head_l);
     drop s_start(x, done_l);
     pass (raw iv_nil());
 };
 
-func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // LIVE-1 (0.9.0): an invariant the backend never read was an obligation
     // that silently vanished. Refused until 1.3 checks it.
     VerifyId:winv = raw stmt_while_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
     }
-    string:head_l = relay irw_new_label(x.fe.w, "wh.head");
-    string:body_l = relay irw_new_label(x.fe.w, "wh.body");
-    string:done_l = relay irw_new_label(x.fe.w, "wh.done");
+    string:head_l = raw irw_new_label(x.fe.w, "wh.head");
+    string:body_l = raw irw_new_label(x.fe.w, "wh.body");
+    string:done_l = raw irw_new_label(x.fe.w, "wh.done");
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
-    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
-    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", body_l,
-                      relay string_concat(", label %", done_l)));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
+                      raw string_concat(", label %", done_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
     drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
-    IrVal:b = relay emit_block(x, raw stmt_body(x.ast, s));
+    IrVal:b = raw emit_block(x, raw stmt_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
     drop s_br(x, head_l);
@@ -782,13 +782,13 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
 // `break` and `continue` — ONE function, because the only difference is which
 // label. Both run the defers of every scope between here and the loop first,
 // which is the gap the seed recorded and this closes.
-func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) {
+func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) never fails {
     // LABELLED OR NOT, one mechanism (0.9.7): the label picks the loop frame,
     // and the defers of every scope between here and THAT frame run first —
     // exactly the unlabelled rule, aimed further out.
     int32:frame = raw fnem_loop_find(x.fe, raw stmt_label(s));
     if (frame < 0i32) { pass (raw iv_broken(s.span)); }
-    IrVal:d = relay run_defers_down_to(x, raw fnem_loop_depth_at(x.fe, frame));
+    IrVal:d = raw run_defers_down_to(x, raw fnem_loop_depth_at(x.fe, frame));
     if (!(raw iv_is_ok(d))) { pass d; }
     if (is_break) { drop s_br(x, raw fnem_loop_done_at(x.fe, frame)); }
     else          { drop s_br(x, raw fnem_loop_head_at(x.fe, frame)); }
@@ -800,43 +800,43 @@ func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) {
 // VALUE FIRST, THEN DEFERS, THEN THE RETURN (D-136) — for all three. The value a
 // function passes is the value read AT the `pass`, whatever cleanup does after.
 
-func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     string:vref = "";
     ExprId:val = raw stmt_operand(s);
     if (!(raw expr_is_none(val))) {
-        IrVal:v = relay emit_expr(x, val);
+        IrVal:v = raw emit_expr(x, val);
         if (!(raw iv_is_ok(v))) { pass v; }
         // THE DECLARED `T` IS A SLOT (1.0.6e): `pass d;` from a function
         // returning `dyn Speaks` builds the fat pointer here.
-        v = relay emit_fit(x, x.fe.ret_type, v, s.span);
+        v = raw emit_fit(x, x.fe.ret_type, v, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         vref = v.ref;
     }
-    IrVal:d = relay run_all_defers(x);
+    IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_pass(x.fe, vref);
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
 
-func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) {
-    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:d = relay run_all_defers(x);
+    IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_fail(x.fe, v.ref);
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
 
-func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) {
-    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:d = relay run_all_defers(x);
+    IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     // `exit` is legal only in `main` and `failsafe` (D-013), and returning from
     // either IS process exit — so it lowers to a plain `ret`.
-    drop irw_line(x.fe.w, relay cat5("ret ", x.fe.ret_ll, " ", v.ref, ""));
+    drop irw_line(x.fe.w, raw cat5("ret ", x.fe.ret_ll, " ", v.ref, ""));
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
@@ -845,13 +845,13 @@ func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) {
 // state of the system is unknown, so no cleanup runs before the handler that
 // understands the situation gets control. `failsafe`'s return value IS the
 // process exit code.
-func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) {
-    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    string:r = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat3(r, " = call i32 @npk_failsafe(i32 ",
-                      relay string_concat(v.ref, ")")));
-    drop irw_line(x.fe.w, relay cat3("call void @npk_exit(i32 ", r, ")"));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(r, " = call i32 @npk_failsafe(i32 ",
+                      raw string_concat(v.ref, ")")));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", r, ")"));
     drop irw_line(x.fe.w, "unreachable");
     x.fe.terminated = true;
     pass (raw iv_nil());
@@ -860,12 +860,12 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) {
 // `return Result{…}` — the one spelling of `return` (type_stmt refused every
 // other), so the operand IS the whole Result and the `ret` takes it verbatim.
 // Value first, then defers, then the return: D-136's rule, the third time.
-func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) {
-    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:d = relay run_all_defers(x);
+    IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
-    drop irw_line(x.fe.w, relay cat4("ret ", x.fe.ret_ll, " ", v.ref));
+    drop irw_line(x.fe.w, raw cat4("ret ", x.fe.ret_ll, " ", v.ref));
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
@@ -879,21 +879,21 @@ func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) {
 
 // "pk<seq>.arm<i>" — DERIVED arm-body labels, so `fall label;` computes its
 // target from the pick frame's seq and the arm list instead of a stored table.
-pub func:pk_label = string(int32:seq, int32:i) {
-    string:a = relay string_concat("pk", raw int_to_string(seq => int64));
-    string:b = relay string_concat(a, ".arm");
-    pass (relay string_concat(b, raw int_to_string(i => int64)));
+pub func:pk_label = string(int32:seq, int32:i) never fails {
+    string:a = raw string_concat("pk", raw int_to_string(seq => int64));
+    string:b = raw string_concat(a, ".arm");
+    pass (raw string_concat(b, raw int_to_string(i => int64)));
 };
 
-func:pk_named = string(int32:seq, string:stem) {
-    string:a = relay string_concat("pk", raw int_to_string(seq => int64));
-    pass (relay string_concat(a, stem));
+func:pk_named = string(int32:seq, string:stem) never fails {
+    string:a = raw string_concat("pk", raw int_to_string(seq => int64));
+    pass (raw string_concat(a, stem));
 };
 
 // The integer constant an arm matches, as text — or a refusal.
-func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) {
+func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) never fails {
     if (pn.kind == PatKind.PatValue) {
-        ExprNode:vn = relay ast_expr(x.ast, raw pat_value(pn));
+        ExprNode:vn = raw ast_expr(x.ast, raw pat_value(pn));
         if (vn.kind == ExprKind.ExprIntLiteral) {
             pass (raw iv("", raw int_to_string(vn.payload), 0i32));
         }
@@ -950,7 +950,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
 // arm's body. The widths match by construction: the constructor widened the
 // same declared type in.
 func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
-                          IrVal:sel, Span:at) {
+                          IrVal:sel, Span:at) never fails {
     // A STRUCT DESTRUCTURE BINDS EACH NAMED FIELD (1.0.9c): `(Point{ x, y })`
     // reads `x` and `y` out of the selector by field. The pattern is
     // irrefutable, so the arm always runs; this is the binding half of that.
@@ -960,19 +960,19 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         int32:si = 0i32;
         while (si < sbc) {
             int32:fname = raw ast_id_at(x.ast, sbs, si);
-            FieldInfo:fi = relay struct_field(x.tr, sel_tid, fname, x.scope);
+            FieldInfo:fi = raw struct_field(x.tr, sel_tid, fname, x.scope);
             if (!fi.found) { pass (raw iv_broken(at)); }
-            LlType:fll = relay ll_type(x.fe.ctx, fi.type_id);
+            LlType:fll = raw ll_type(x.fe.ctx, fi.type_id);
             if (!(raw ll_is_ok(fll))) {
-                pass (relay iv_from_ll_at(x, fll, fi.type_id, at));
+                pass (raw iv_from_ll_at(x, fll, fi.type_id, at));
             }
-            string:fv = relay irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, relay cat5(fv, " = extractvalue ", sel.ll, " ",
-                              relay cat3(sel.ref, ", ",
+            string:fv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fv, " = extractvalue ", sel.ll, " ",
+                              raw cat3(sel.ref, ", ",
                                   raw int_to_string(fi.index => int64))));
-            string:fslot = relay fnem_local(x.fe, fname, fi.type_id, fll.text);
-            drop irw_line(x.fe.w, relay cat5("store ", fll.text, " ", fv,
-                              relay string_concat(", ptr ", fslot)));
+            string:fslot = raw fnem_local(x.fe, fname, fi.type_id, fll.text);
+            drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
+                              raw string_concat(", ptr ", fslot)));
             si = si + 1i32;
         }
         pass (raw iv_nil());
@@ -986,11 +986,11 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     if (!vi.found) { pass (raw iv_broken(at)); }
     if (vi.payload_count == 0i32) { pass (raw iv_nil()); }
 
-    int32:pty = relay resolve_type(x.tr, vi.payload_ty,
+    int32:pty = raw resolve_type(x.tr, vi.payload_ty,
                      raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
                                                sel_tid), x.scope));
-    LlType:pll = relay ll_type(x.fe.ctx, pty);
-    if (!(raw ll_is_ok(pll))) { pass (relay iv_from_ll_at(x, pll, pty, at)); }
+    LlType:pll = raw ll_type(x.fe.ctx, pty);
+    if (!(raw ll_is_ok(pll))) { pass (raw iv_from_ll_at(x, pll, pty, at)); }
 
     // THE GENERAL SINGLE BINDING (0.9.2): spill the selector, address its
     // payload slot, and load the VARIANT'S OWN TYPE through the pointer — the
@@ -999,20 +999,20 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // pointer under the old shape). Kept byte-identical (1.0.9c wraps it in the
     // count guard and adds the multi case below).
     if ((raw pat_enum_bind_count(x.ast, pn)) == 1i32) {
-        string:tmp = relay irw_temp(x.fe.w);
+        string:tmp = raw irw_temp(x.fe.w);
         drop irw_alloca(x.fe.w, tmp, sel.ll);
-        drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
-                          relay string_concat(", ptr ", tmp)));
-        string:pp = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", sel.ll,
-                          ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
-        string:val = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(val, " = load ", pll.text, ", ptr ",
-                          relay string_concat(pp, "")));
-        string:slot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
+        drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
+                          raw string_concat(", ptr ", tmp)));
+        string:pp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", sel.ll,
+                          ", ptr ", raw string_concat(tmp, ", i32 0, i32 1")));
+        string:val = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(val, " = load ", pll.text, ", ptr ",
+                          raw string_concat(pp, "")));
+        string:slot = raw fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
                                        pty, pll.text);
-        drop irw_line(x.fe.w, relay cat5("store ", pll.text, " ", val,
-                          relay string_concat(", ptr ", slot)));
+        drop irw_line(x.fe.w, raw cat5("store ", pll.text, " ", val,
+                          raw string_concat(", ptr ", slot)));
         pass (raw iv_nil());
     }
 
@@ -1021,37 +1021,37 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // checker holds the counts equal — and `variant_payload_slot` gives each
     // one's type and offset, the same source of truth the constructor used, so
     // the two cannot drift.
-    string:mtmp = relay irw_temp(x.fe.w);
+    string:mtmp = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, mtmp, sel.ll);
-    drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
-                      relay string_concat(", ptr ", mtmp)));
+    drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
+                      raw string_concat(", ptr ", mtmp)));
     int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
     int32:bc = raw pat_enum_bind_count(x.ast, pn);
     int32:bi = 0i32;
     while (bi < bc) {
         PayloadSlot:bs = raw variant_payload_slot(x, sel_tid, vn2, bi);
         if (!bs.ok) { pass (raw iv_broken(at)); }
-        LlType:bpll = relay ll_type(x.fe.ctx, bs.type_id);
+        LlType:bpll = raw ll_type(x.fe.ctx, bs.type_id);
         if (!(raw ll_is_ok(bpll))) {
-            pass (relay iv_from_ll_at(x, bpll, bs.type_id, at));
+            pass (raw iv_from_ll_at(x, bpll, bs.type_id, at));
         }
-        string:bbase = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(bbase, " = getelementptr ", sel.ll,
-                          ", ptr ", relay string_concat(mtmp, ", i32 0, i32 1")));
+        string:bbase = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(bbase, " = getelementptr ", sel.ll,
+                          ", ptr ", raw string_concat(mtmp, ", i32 0, i32 1")));
         string:bpp = bbase;
         if (bs.offset != 0i64) {
-            string:bpp2 = relay irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, relay cat5(bpp2, " = getelementptr i8, ptr ",
+            string:bpp2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bpp2, " = getelementptr i8, ptr ",
                               bbase, ", i64 ", raw int_to_string(bs.offset)));
             bpp = bpp2;
         }
-        string:bval = relay irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, relay cat5(bval, " = load ", bpll.text, ", ptr ",
-                          relay string_concat(bpp, "")));
-        string:bslot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, bi),
+        string:bval = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
+                          raw string_concat(bpp, "")));
+        string:bslot = raw fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, bi),
                                         bs.type_id, bpll.text);
-        drop irw_line(x.fe.w, relay cat5("store ", bpll.text, " ", bval,
-                          relay string_concat(", ptr ", bslot)));
+        drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
+                          raw string_concat(", ptr ", bslot)));
         bi = bi + 1i32;
     }
     pass (raw iv_nil());
@@ -1059,18 +1059,18 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
 
 // `give expr;` (0.9.7, D-059): the pick-expression's yield — value into the
 // frame's slot, defers between here and the pick unwound, exit to its done.
-func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     string:slot = raw fnem_pick_slot(x.fe);
     if (slot.len == 0i64) { pass (raw iv_broken(s.span)); }
-    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
     // THE PICK'S SLOT IS A SLOT (1.0.6e): each arm's `give` is fit to it.
-    v = relay emit_fit(x, raw fnem_pick_tid(x.fe), v, s.span);
+    v = raw emit_fit(x, raw fnem_pick_tid(x.fe), v, s.span);
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:d = relay run_defers_down_to(x, raw fnem_pick_depth(x.fe));
+    IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
-    drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
-                      relay string_concat(", ptr ", slot)));
+    drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
+                      raw string_concat(", ptr ", slot)));
     drop s_br(x, raw fnem_pick_done(x.fe));
     pass (raw iv_nil());
 };
@@ -1078,16 +1078,16 @@ func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) {
 // `fall label;` — jump to the labelled arm's BODY, which is derivable from the
 // frame's seq and the arm list; there is no implicit fallthrough (D-047-era
 // rule), so the target is always named.
-func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     int32:want = raw stmt_label(s);
     int32:start = raw fnem_pick_start(x.fe);
     int32:count = raw fnem_pick_count_of(x.fe);
     int32:seq = raw fnem_pick_seq_of(x.fe);
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         if ((raw arm_label(arm)) == want) {
-            IrVal:d = relay run_defers_down_to(x, raw fnem_pick_depth(x.fe));
+            IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
             if (!(raw iv_is_ok(d))) { pass d; }
             drop s_br(x, raw pk_label(seq, i));
             pass (raw iv_nil());
@@ -1097,10 +1097,10 @@ func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) {
     pass (raw iv_broken(s.span));
 };
 
-func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
+func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     ExprId:sel_id = raw pick_selector(s);
     int32:sel_tid = raw exprtypes_get(x.et, sel_id);
-    IrVal:sel = relay emit_expr(x, sel_id);
+    IrVal:sel = raw emit_expr(x, sel_id);
     if (!(raw iv_is_ok(sel))) { pass sel; }
 
     // The discriminant: a payload-carrying enum's tag lives in slot 0; a plain
@@ -1108,10 +1108,10 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     string:disc = sel.ref;
     string:disc_ll = sel.ll;
     if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_ENUM())) {
-        if (relay enum_has_payload(x.ast, x.fe.ctx.types, sel_tid)) {
-            string:tag = relay irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, relay cat5(tag, " = extractvalue ", sel.ll,
-                              " ", relay string_concat(sel.ref, ", 0")));
+        if (raw enum_has_payload(x.ast, x.fe.ctx.types, sel_tid)) {
+            string:tag = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", sel.ll,
+                              " ", raw string_concat(sel.ref, ", 0")));
             disc = tag;
             disc_ll = "i32";
         }
@@ -1130,15 +1130,15 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     }
     int32:ci2 = 0i32;
     while (ci2 < count) {
-        StmtNode:carm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+        StmtNode:carm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                            raw pick_arm_start(s), ci2));
         if (!(raw expr_is_none(raw arm_guard(carm)))) { chain = true; }
-        PatNode:cpn = relay ast_pat(x.ast, raw arm_pattern(carm));
+        PatNode:cpn = raw ast_pat(x.ast, raw arm_pattern(carm));
         if (cpn.kind == PatKind.PatRange) { chain = true; }
         ci2 = ci2 + 1i32;
     }
     if (chain) {
-        pass (relay emit_pick_chain(x, sel, sel_tid, disc, disc_ll,
+        pass (raw emit_pick_chain(x, sel, sel_tid, disc, disc_ll,
                   raw pick_arm_start(s), count, "", "", 0i32));
     }
 
@@ -1155,24 +1155,24 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     string:default_l = done_l;
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                           raw pick_arm_start(s), i));
         string:arm_l = raw pk_label(seq, i);
         labels[i => int64] = arm_l;
-        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
+        PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         if (pn.kind == PatKind.PatWildcard) {
             default_l = arm_l;
         } else {
-            IrVal:c = relay pattern_const(x, pn, sel_tid, arm.span);
+            IrVal:c = raw pattern_const(x, pn, sel_tid, arm.span);
             if (!(raw iv_is_ok(c))) { pass c; }
-            if (cases.len > 0i64) { cases = relay string_concat(cases, " "); }
-            cases = relay cat5(cases, disc_ll, " ", c.ref,
-                               relay string_concat(", label %", arm_l));
+            if (cases.len > 0i64) { cases = raw string_concat(cases, " "); }
+            cases = raw cat5(cases, disc_ll, " ", c.ref,
+                               raw string_concat(", label %", arm_l));
         }
         i = i + 1i32;
     }
-    drop irw_line(x.fe.w, relay cat5("switch ", disc_ll, " ", disc,
-                      relay cat5(", label %", default_l, " [ ", cases, " ]")));
+    drop irw_line(x.fe.w, raw cat5("switch ", disc_ll, " ", disc,
+                      raw cat5(", label %", default_l, " [ ", cases, " ]")));
     x.fe.terminated = true;
 
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
@@ -1182,14 +1182,14 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
                         seq);
     i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                           raw pick_arm_start(s), i));
         drop s_start(x, labels[i => int64]);
         int32:mark = raw fnem_mark(x.fe);
-        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
-        IrVal:bp = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+        PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
+        IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, arm.span);
         if (!(raw iv_is_ok(bp))) { pass bp; }
-        IrVal:b = relay emit_stmt(x, raw arm_body(arm));
+        IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
         drop fnem_release(x.fe, mark);
         drop s_br(x, done_l);
@@ -1208,7 +1208,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
 pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                                  string:disc, string:disc_ll, int32:start,
                                  int32:count, string:give_slot,
-                                 string:give_ll, int32:give_tid) {
+                                 string:give_ll, int32:give_tid) never fails {
     int32:seq = raw fnem_next_pick_seq(x.fe);
     string:done_l = raw pk_named(seq, ".done");
     drop fnem_pick_push(x.fe, done_l, give_slot, give_ll, give_tid, start, count,
@@ -1226,15 +1226,15 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
     drop s_br(x, first_t);
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         string:test_l = raw pk_named(seq,
-                            relay string_concat(".t", raw int_to_string(i => int64)));
+                            raw string_concat(".t", raw int_to_string(i => int64)));
         string:body_l = raw pk_label(seq, i);
         string:next_l = raw pk_named(seq, ".none");
         if ((i + 1i32) < count) {
             next_l = raw pk_named(seq,
-                         relay string_concat(".t", raw int_to_string((i + 1i32) => int64)));
+                         raw string_concat(".t", raw int_to_string((i + 1i32) => int64)));
         }
         drop s_start(x, test_l);
         int32:mark = raw fnem_mark(x.fe);
@@ -1254,16 +1254,16 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         if (hit.len == 0i64) {
             if (raw string_eq(disc_ll, "{ ptr, i64, i64 }")) {
                 // A string arm: the literal, then the floor's byte equality.
-                IrVal:lit = relay emit_expr(x, raw pat_value(pn));
+                IrVal:lit = raw emit_expr(x, raw pat_value(pn));
                 if (!(raw iv_is_ok(lit))) { pass lit; }
-                string:eqv = relay irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, relay cat5(eqv,
+                string:eqv = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(eqv,
                                   " = call i8 @npk_string_equals(",
-                                  relay cat4(disc_ll, " ", disc, ", "),
-                                  relay cat3(disc_ll, " ", lit.ref), ")"));
-                string:eb = relay irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, relay cat3(eb, " = icmp ne i8 ",
-                                  relay string_concat(eqv, ", 0")));
+                                  raw cat4(disc_ll, " ", disc, ", "),
+                                  raw cat3(disc_ll, " ", lit.ref), ")"));
+                string:eb = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(eb, " = icmp ne i8 ",
+                                  raw string_concat(eqv, ", 0")));
                 hit = eb;
             }
         }
@@ -1273,8 +1273,8 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 // reasons over them, so nothing dynamic ever got here) — read
                 // their payloads directly; pattern sub-expressions carry no
                 // checker-recorded type to emit through.
-                ExprNode:lon = relay ast_expr(x.ast, raw pat_range_lo(pn));
-                ExprNode:hin = relay ast_expr(x.ast, raw pat_range_hi(pn));
+                ExprNode:lon = raw ast_expr(x.ast, raw pat_range_lo(pn));
+                ExprNode:hin = raw ast_expr(x.ast, raw pat_range_hi(pn));
                 if (lon.kind != ExprKind.ExprIntLiteral) {
                     if (lon.kind != ExprKind.ExprCharLiteral) {
                         pass (raw iv_broken(arm.span));
@@ -1286,25 +1286,25 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 string:lep = "ult";
                 string:lip = "ule";
                 if (sel_signed) { gep2 = "sge"; lep = "slt"; lip = "sle"; }
-                string:c1 = relay irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, relay cat5(c1, " = icmp ", gep2, " ",
-                                  relay cat5(disc_ll, " ", disc, ", ", plo.ref)));
+                string:c1 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(c1, " = icmp ", gep2, " ",
+                                  raw cat5(disc_ll, " ", disc, ", ", plo.ref)));
                 string:hp = lep;
                 if (raw pat_range_inclusive(pn)) { hp = lip; }
-                string:c2 = relay irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, relay cat5(c2, " = icmp ", hp, " ",
-                                  relay cat5(disc_ll, " ", disc, ", ", phi.ref)));
-                string:c3 = relay irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, relay cat5(c3, " = and i1 ", c1, ", ", c2));
+                string:c2 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(c2, " = icmp ", hp, " ",
+                                  raw cat5(disc_ll, " ", disc, ", ", phi.ref)));
+                string:c3 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(c3, " = and i1 ", c1, ", ", c2));
                 hit = c3;
             }
         }
         if (hit.len == 0i64) {
-            IrVal:pc = relay pattern_const(x, pn, sel_tid, arm.span);
+            IrVal:pc = raw pattern_const(x, pn, sel_tid, arm.span);
             if (!(raw iv_is_ok(pc))) { pass pc; }
-            string:cc = relay irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, relay cat5(cc, " = icmp eq ", disc_ll, " ",
-                              relay cat3(disc, ", ", pc.ref)));
+            string:cc = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cc, " = icmp eq ", disc_ll, " ",
+                              raw cat3(disc, ", ", pc.ref)));
             hit = cc;
         }
 
@@ -1314,37 +1314,37 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
             if (raw string_eq(hit, "true")) {
                 drop s_br(x, body_l);
             } else {
-                drop irw_line(x.fe.w, relay cat5("br i1 ", hit, ", label %",
-                                  body_l, relay string_concat(", label %", next_l)));
+                drop irw_line(x.fe.w, raw cat5("br i1 ", hit, ", label %",
+                                  body_l, raw string_concat(", label %", next_l)));
                 x.fe.terminated = true;
             }
         } else {
             string:prep_l = raw pk_named(seq,
-                                relay string_concat(".g", raw int_to_string(i => int64)));
+                                raw string_concat(".g", raw int_to_string(i => int64)));
             if (raw string_eq(hit, "true")) {
                 drop s_br(x, prep_l);
             } else {
-                drop irw_line(x.fe.w, relay cat5("br i1 ", hit, ", label %",
-                                  prep_l, relay string_concat(", label %", next_l)));
+                drop irw_line(x.fe.w, raw cat5("br i1 ", hit, ", label %",
+                                  prep_l, raw string_concat(", label %", next_l)));
                 x.fe.terminated = true;
             }
             drop s_start(x, prep_l);
-            IrVal:gb = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+            IrVal:gb = raw bind_payload(x, pn, sel_tid, sel, arm.span);
             if (!(raw iv_is_ok(gb))) { pass gb; }
-            IrVal:gc = relay emit_cond(x, g);
+            IrVal:gc = raw emit_cond(x, g);
             if (!(raw iv_is_ok(gc))) { pass gc; }
-            drop irw_line(x.fe.w, relay cat5("br i1 ", gc.ref, ", label %",
-                              body_l, relay string_concat(", label %", next_l)));
+            drop irw_line(x.fe.w, raw cat5("br i1 ", gc.ref, ", label %",
+                              body_l, raw string_concat(", label %", next_l)));
             x.fe.terminated = true;
         }
 
         // --- the body ------------------------------------------------------
         drop s_start(x, body_l);
         if (raw expr_is_none(g)) {
-            IrVal:bp = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+            IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, arm.span);
             if (!(raw iv_is_ok(bp))) { pass bp; }
         }
-        IrVal:b = relay emit_stmt(x, raw arm_body(arm));
+        IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
         drop fnem_release(x.fe, mark);
         drop s_br(x, done_l);
@@ -1372,8 +1372,8 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
                                   int32:args_start, int32:args_count,
                                   int32:params_start, int32:params_count,
-                                  int32:mangled_name) {
-    DeclNode:d = relay ast_decl(x.ast, did);
+                                  int32:mangled_name) never fails {
+    DeclNode:d = raw ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
     // The parameters these arguments bind, as the checker recorded them: a
     // generic function's own, or — for a family impl's method — its IMPL's,
@@ -1396,13 +1396,13 @@ pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
     // `ll_type` needs the binding to lower them. The annotation half is the
     // resolver scope pushed inside `emit_function_body_subst`.
     drop llctx_set_subst(x.fe.ctx, gp.start, gp.count, args_start);
-    IrVal:r = relay emit_function_body_subst(x, did, d, mangled_name, g, true);
+    IrVal:r = raw emit_function_body_subst(x, did, d, mangled_name, g, true);
     drop llctx_set_subst(x.fe.ctx, 0i32, 0i32, 0i32);
     pass r;
 };
 
-pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
-    pass (relay emit_function_named(x, did, 0i32));
+pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) never fails {
+    pass (raw emit_function_named(x, did, 0i32));
 };
 
 // The same emission under a GIVEN name. An impl's method carries its impl in its
@@ -1411,21 +1411,21 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
 // declaration emitted once per implementing impl and the declaration cannot say
 // which of those a body is.
 pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
-                                     int32:name_intern) {
-    DeclNode:d = relay ast_decl(x.ast, did);
+                                     int32:name_intern) never fails {
+    DeclNode:d = raw ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
 
     // A GENERIC DECLARATION EMITS NOTHING OF ITS OWN — it is a template, and its
     // specializations are emitted from the recorded instantiations (1.0.2b), the
     // same rule a generic struct follows.
     if ((raw decl_generic_window(x.ast, d)).count > 0i32) { pass (raw iv_nil()); }
-    pass (relay emit_function_body_subst(x, did, d, name_intern,
+    pass (raw emit_function_body_subst(x, did, d, name_intern,
               raw generic_scope_none(), false));
 };
 
 func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                                       int32:mangled_name, GenericScope:g,
-                                      bool:specialize) {
+                                      bool:specialize) never fails {
     if (raw decl_has(d, raw DECL_VARIADIC())) {
         pass (raw iv_rung("a variadic function", "1.1", d.span));
     }
@@ -1440,7 +1440,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     int32:ci = 0i32;
     int32:ccount = raw fn_contract_count(x.ast, d);
     while (ci < ccount) {
-        VerifyNode:cv = relay ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
+        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
         // `never fails` (D-163) is NOT a 1.3 contract: it is checked entirely
         // by the frontend and changes no emitted byte — the backend owes it
         // nothing, so it passes through where `requires`/`ensures` still rung.
@@ -1453,26 +1453,26 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     }
 
     int32:name = raw decl_name(d);
-    string:fname = relay intern_get(x.interns, name);
+    string:fname = raw intern_get(x.interns, name);
     // A SPECIALIZATION CARRIES ITS INSTANTIATED NAME (1.0.2b) —
     // `extract<int32>`, the D-108 spelling — so two instantiations of one
     // declaration are two symbols. 0 means "not a specialization".
     if (mangled_name != 0i32) {
-        fname = relay intern_get(x.interns, mangled_name);
+        fname = raw intern_get(x.interns, mangled_name);
     }
-    FnSig:sg = relay fn_signature(x.tr, did, name, x.scope);
+    FnSig:sg = raw fn_signature(x.tr, did, name, x.scope);
     int32:succ = sg.success;
     if (specialize) {
-        succ = relay type_subst(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
+        succ = raw type_subst(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
     }
 
-    LlType:rt = relay fnem_begin(x.fe, fname, did.index, succ);
-    if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll_at(x, rt, sg.success, d.span)); }
+    LlType:rt = raw fnem_begin(x.fe, fname, did.index, succ);
+    if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
 
     int32:i = 0i32;
     int32:n = raw fn_param_count(x.ast, d);
     while (i < n) {
-        DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, d, i));
+        DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, i));
         // A parameter's `limit` is the same dropped guarantee (LIVE-1).
         VerifyId:plim = raw param_limit(pd);
         if (!(raw verify_is_none(plim))) {
@@ -1493,15 +1493,15 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
             x.tr.generics = g;
             x.tr.enclosing = g;
         }
-        int32:pt = relay resolve_type(x.tr, raw param_type(pd),
+        int32:pt = raw resolve_type(x.tr, raw param_type(pd),
                        raw symtab_home_scope(x.tab, did.index, x.scope));
         x.tr.generics = psaved;
         x.tr.enclosing = pesaved;
         if (specialize) {
-            pt = relay type_subst(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
+            pt = raw type_subst(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
         }
-        LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
-        if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll_at(x, pl, pt, pd.span)); }
+        LlType:pl = raw fnem_param(x.fe, raw decl_name(pd), pt);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;
     }
 
@@ -1517,7 +1517,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = g;
         x.tr.enclosing = g;
     }
-    IrVal:b = relay emit_block(x, raw fn_body(x.ast, d));
+    IrVal:b = raw emit_block(x, raw fn_body(x.ast, d));
     x.tr.generics = bsaved;
     x.tr.enclosing = besaved;
     if (!(raw iv_is_ok(b))) { pass b; }

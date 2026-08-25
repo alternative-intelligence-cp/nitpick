@@ -95,7 +95,7 @@ pub struct:ExprTypes = {
     int32:count;
 };
 
-pub func:exprtypes_init = ExprTypes(int32:n) {
+pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     int64:size = n => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:mem = alloc(size * #size_of<int32>());
@@ -128,7 +128,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) {
 // SIZED FROM THE AST, so the table cannot be short. An expression index past the
 // end would otherwise read whatever followed the allocation, which is the failure
 // mode a bounds check turns into a diagnostic.
-pub func:exprtypes_for = ExprTypes(Ast->:ast) {
+pub func:exprtypes_for = ExprTypes(Ast->:ast) never fails {
     pass (raw exprtypes_init(raw ast_expr_count(ast)));
 };
 
@@ -136,15 +136,15 @@ pub func:exprtypes_for = ExprTypes(Ast->:ast) {
 // return the invalid type. An expression the checker reached and refused is a
 // different thing from one it never reached, and only recording the successes
 // would collapse them.
-pub func:exprtypes_set = NIL(ExprTypes->:t, ExprId:id, int32:type_id) {
-    if (id.index < 0i32) { fail 24tbb32; }
-    if (id.index >= t.count) { fail 24tbb32; }
+pub func:exprtypes_set = NIL(ExprTypes->:t, ExprId:id, int32:type_id) never fails {
+    if (id.index < 0i32) { !!! 24tbb32; }
+    if (id.index >= t.count) { !!! 24tbb32; }
     t.items[id.index => int64] = type_id;
     t.known[id.index => int64] = true;
     pass NIL;
 };
 
-pub func:exprtypes_known = bool(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_known = bool(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass false; }
     if (id.index >= t.count) { pass false; }
     pass (t.known[id.index => int64]);
@@ -153,7 +153,7 @@ pub func:exprtypes_known = bool(ExprTypes->:t, ExprId:id) {
 // THE TYPE, OR THE INVALID TYPE WHEN NOTHING WAS RECORDED. A caller that wants to
 // tell those apart asks `exprtypes_known` first; one that does not gets the
 // answer that makes it stop, which is what index 0 is for.
-pub func:exprtypes_get = int32(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_get = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.items[id.index => int64]);
@@ -161,14 +161,14 @@ pub func:exprtypes_get = int32(ExprTypes->:t, ExprId:id) {
 
 // The resolved callee of a call expression — the declaration index the checker
 // settled on (1.0.3). 0 when there is none.
-pub func:exprtypes_set_callee = NIL(ExprTypes->:t, ExprId:id, int32:decl) {
-    if (id.index < 0i32) { fail 24tbb32; }
-    if (id.index >= t.count) { fail 24tbb32; }
+pub func:exprtypes_set_callee = NIL(ExprTypes->:t, ExprId:id, int32:decl) never fails {
+    if (id.index < 0i32) { !!! 24tbb32; }
+    if (id.index >= t.count) { !!! 24tbb32; }
     t.callee[id.index => int64] = decl;
     pass NIL;
 };
 
-pub func:exprtypes_callee = int32(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_callee = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee[id.index => int64]);
@@ -176,47 +176,47 @@ pub func:exprtypes_callee = int32(ExprTypes->:t, ExprId:id) {
 
 // The interned symbol name a method call's callee is emitted under (1.0.5b).
 // 0 means "its own name" — a free function, or anything no impl supplied.
-pub func:exprtypes_set_callee_sym = NIL(ExprTypes->:t, ExprId:id, int32:nm) {
-    if (id.index < 0i32) { fail 24tbb32; }
-    if (id.index >= t.count) { fail 24tbb32; }
+pub func:exprtypes_set_callee_sym = NIL(ExprTypes->:t, ExprId:id, int32:nm) never fails {
+    if (id.index < 0i32) { !!! 24tbb32; }
+    if (id.index >= t.count) { !!! 24tbb32; }
     t.callee_sym[id.index => int64] = nm;
     pass NIL;
 };
 
-pub func:exprtypes_callee_sym = int32(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_callee_sym = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee_sym[id.index => int64]);
 };
 
-pub func:exprtypes_set_callee_trait = NIL(ExprTypes->:t, ExprId:id, int32:tr) {
-    if (id.index < 0i32) { fail 24tbb32; }
-    if (id.index >= t.count) { fail 24tbb32; }
+pub func:exprtypes_set_callee_trait = NIL(ExprTypes->:t, ExprId:id, int32:tr) never fails {
+    if (id.index < 0i32) { !!! 24tbb32; }
+    if (id.index >= t.count) { !!! 24tbb32; }
     t.callee_trait[id.index => int64] = tr;
     pass NIL;
 };
 
-pub func:exprtypes_callee_trait = int32(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_callee_trait = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee_trait[id.index => int64]);
 };
 
 // The function type a call's arguments were checked against (1.0.6e), or 0.
-pub func:exprtypes_set_callee_ft = NIL(ExprTypes->:t, ExprId:id, int32:ft) {
-    if (id.index < 0i32) { fail 24tbb32; }
-    if (id.index >= t.count) { fail 24tbb32; }
+pub func:exprtypes_set_callee_ft = NIL(ExprTypes->:t, ExprId:id, int32:ft) never fails {
+    if (id.index < 0i32) { !!! 24tbb32; }
+    if (id.index >= t.count) { !!! 24tbb32; }
     t.callee_ft[id.index => int64] = ft;
     pass NIL;
 };
 
-pub func:exprtypes_callee_ft = int32(ExprTypes->:t, ExprId:id) {
+pub func:exprtypes_callee_ft = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee_ft[id.index => int64]);
 };
 
-pub func:exprtypes_count = int32(ExprTypes->:t) { pass t.count; };
+pub func:exprtypes_count = int32(ExprTypes->:t) never fails { pass t.count; };
 
 // --- is this expression a borrow? -----------------------------------------------------------
 //
@@ -261,7 +261,7 @@ pub func:exprtypes_count = int32(ExprTypes->:t) { pass t.count; };
 // the only way to write a borrow today. That is a spec-versus-parser gap of the
 // kind cycle 0.4 kept finding, recorded in 0.5.1's plan rather than worked around
 // here.
-pub func:BORROW_FUEL = int32() { pass 64i32; };
+pub func:BORROW_FUEL = int32() never fails { pass 64i32; };
 
 // WHERE A PLACE EXPRESSION COMES FROM, and whether the walk got there.
 //
@@ -279,12 +279,12 @@ pub struct:PlaceRoot = {
     bool:exhausted;
 };
 
-pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) {
+pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) never fails {
     ExprId:cur = id;
     int32:left = fuel;
     while (left > 0i32) {
         if (raw expr_is_none(cur)) { pass PlaceRoot{ id: cur, exhausted: false }; }
-        ExprNode:n = relay ast_expr(ast, cur);
+        ExprNode:n = raw ast_expr(ast, cur);
 
         // The two forms that PRESERVE a borrow. Reaching into one yields a place
         // in the same frame; the indirection did not make it live longer.
@@ -313,11 +313,11 @@ pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) {
 // checker, because the property was claimed. The escape pass reports exhaustion as
 // its own diagnostic rather than as a borrow error, so a reader is told what
 // actually happened; any other caller gets the conservative answer.
-pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) {
-    PlaceRoot:r = relay place_root(ast, id, fuel);
+pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
+    PlaceRoot:r = raw place_root(ast, id, fuel);
     if (r.exhausted) { pass true; }
     if (raw expr_is_none(r.id)) { pass false; }
-    ExprNode:n = relay ast_expr(ast, r.id);
+    ExprNode:n = raw ast_expr(ast, r.id);
 
     // The two that PRODUCE a borrow. `@` yields one (D-004 rule 1), and `$$i` /
     // `$$m` are the declaration-site spellings of the same thing — immutable
@@ -350,11 +350,11 @@ pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) {
 // EXHAUSTION ANSWERS `false`, which refuses rather than accepts. That is the safe
 // direction here and the opposite of `expr_is_borrow`'s: there, "might be a borrow"
 // is the cautious answer, and here it is "might not be addressable".
-pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) {
-    PlaceRoot:r = relay place_root(ast, id, fuel);
+pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
+    PlaceRoot:r = raw place_root(ast, id, fuel);
     if (r.exhausted)             { pass false; }
     if (raw expr_is_none(r.id))  { pass false; }
-    ExprNode:n = relay ast_expr(ast, r.id);
+    ExprNode:n = raw ast_expr(ast, r.id);
     if (n.kind == ExprKind.ExprIdentifierExpr) { pass true; }
     pass (n.kind == ExprKind.ExprDerefExpr);
 };

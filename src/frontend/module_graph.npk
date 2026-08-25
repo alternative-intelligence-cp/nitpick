@@ -66,7 +66,7 @@ pub struct:ModuleGraph = {
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
-                                  RootList->:roots, string:stdlib) {
+                                  RootList->:roots, string:stdlib) never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<ModuleEntry>());
     ModuleGraph:g = ModuleGraph{
@@ -85,7 +85,7 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
     pass g;
 };
 
-func:graph_grow = NIL(ModuleGraph->:g) {
+func:graph_grow = NIL(ModuleGraph->:g) never fails {
     int32:nc = g.cap * 2i32;
     wild int8->:bigger = ralloc(g.mods =>! wild int8->,
                                 (nc => int64) * #size_of<ModuleEntry>());
@@ -94,15 +94,15 @@ func:graph_grow = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
-pub func:graph_count = int32(ModuleGraph->:g) { pass g.count; };
-pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) {
-    if (i < 0i32) { fail 13tbb32; }
-    if (i >= g.count) { fail 13tbb32; }
+pub func:graph_count = int32(ModuleGraph->:g) never fails { pass g.count; };
+pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) never fails {
+    if (i < 0i32) { !!! 13tbb32; }
+    if (i >= g.count) { !!! 13tbb32; }
     pass g.mods[i => int64];
 };
 
 // Already in the graph? Returns its index, or -1.
-pub func:graph_find = int32(ModuleGraph->:g, int32:file) {
+pub func:graph_find = int32(ModuleGraph->:g, int32:file) never fails {
     int32:i = 0i32;
     while (i < g.count) {
         if (g.mods[i => int64].file == file) {
@@ -128,12 +128,12 @@ pub func:graph_find = int32(ModuleGraph->:g, int32:file) {
 // is worth far more than that, and this function was written the other way first:
 // the comment said the path "has been through path_normalise by the time it
 // arrives", and the first caller that had not was a test.
-pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
-    string:path = relay path_normalise(raw_path);
+pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never fails {
+    string:path = raw path_normalise(raw_path);
     Result<int32>:loaded = srcmgr_load(@g.sm, path);
     if (loaded.is_error) {
-        string:m1 = relay string_concat("cannot read `", path);
-        string:m2 = relay string_concat(m1, "`");
+        string:m1 = raw string_concat("cannot read `", path);
+        string:m2 = raw string_concat(m1, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_NO_SUCH_FILE(), m2, from));
         pass (0i32 - 1i32);
@@ -145,10 +145,10 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
         pass existing;
     }
 
-    string:text = relay srcmgr_text(@g.sm, file);
+    string:text = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
-    DeclId:root = relay p_parse_module(@p);
+    DeclId:root = raw p_parse_module(@p);
 
     // COLLECTION USED TO RUN HERE, per module as it was loaded. It moved out to
     // `graph_collect_all`, and the reason is macro expansion:
@@ -184,12 +184,12 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
 //
 // IT IS LOADED FIRST, before the root module, because everything that follows may
 // name what it declares.
-pub func:graph_load_prelude = int32(ModuleGraph->:g) {
-    int32:file = relay srcmgr_add(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
-    string:text = relay srcmgr_text(@g.sm, file);
+pub func:graph_load_prelude = int32(ModuleGraph->:g) never fails {
+    int32:file = raw srcmgr_add(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
+    string:text = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
-    DeclId:root = relay p_parse_module(@p);
+    DeclId:root = raw p_parse_module(@p);
 
     if (g.count >= g.cap) { drop graph_grow(g); }
     // SCOPE 0 IS RECORDED, NOT OPENED. Every other module gets a scope of its own
@@ -210,12 +210,12 @@ pub func:graph_load_prelude = int32(ModuleGraph->:g) {
 // been recorded" is a state the caller can be in rather than a thing it has to
 // track — and so that expansion, which rewrites what the declarations ARE, has a
 // place to run before any of them is written down.
-pub func:graph_collect_all = NIL(ModuleGraph->:g) {
+pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
     int32:i = 0i32;
     while (i < g.count) {
         ModuleEntry:e = g.mods[i => int64];
         DeclId:root = DeclId{ index: e.root };
-        e.scope = relay collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
+        e.scope = raw collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
         g.mods[i => int64] = e;
         i = i + 1i32;
     }
@@ -237,7 +237,7 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) {
 // EVERY MODULE SCOPE, INCLUDING NESTED ONES, and by walking the scope table rather
 // than the module list — a `mod:inner = { … }` opens a scope of its own that the
 // module list has no entry for, and it cannot see its parent's names either.
-pub func:graph_apply_prelude = NIL(ModuleGraph->:g) {
+pub func:graph_apply_prelude = NIL(ModuleGraph->:g) never fails {
     if (g.prelude < 0i32) { pass NIL; }
     ModuleEntry:pe = raw graph_at(g, g.prelude);
     if (pe.scope == 0i32) { pass NIL; }
@@ -262,7 +262,7 @@ pub func:graph_apply_prelude = NIL(ModuleGraph->:g) {
 // take over — and then `#[derive(Eq)]` would generate an implementation of a trait
 // the compiler knows nothing about, against methods it guessed. One name, one
 // meaning, which is the same reason a variable cannot be called `if`.
-func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) {
+func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) never fails {
     int32:n = raw scope_symbol_count(@g.tab, src_scope);
     int32:i = 0i32;
     while (i < n) {
@@ -276,11 +276,11 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) {
                     int32:clash = raw scope_lookup_local(@g.tab, scope, s.name);
                     Span:at = raw span_none();
                     if (clash != 0i32) {
-                        at = relay symbol_span(@g.ast, @g.tab, clash);
+                        at = raw symbol_span(@g.ast, @g.tab, clash);
                     }
-                    string:nm = relay intern_get(g.interns, s.name);
-                    string:m1 = relay string_concat("`", nm);
-                    string:m2 = relay string_concat(m1,
+                    string:nm = raw intern_get(g.interns, s.name);
+                    string:m1 = raw string_concat("`", nm);
+                    string:m2 = raw string_concat(m1,
                         "` is declared by the prelude, so a program cannot declare it: a local one would silently take over, and `#[derive]` would then generate an implementation of a trait the compiler knows nothing about");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
@@ -298,8 +298,8 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) {
 // queue is the graph's own module list, walked with an index that never moves
 // backward. Nothing here is decided by "whichever came first" in a sense the
 // source does not define.
-pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) {
-    int32:first = relay graph_load(g, root_path, raw span_none());
+pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) never fails {
+    int32:first = raw graph_load(g, root_path, raw span_none());
     if (first < 0i32) {
         pass first;
     }
@@ -321,17 +321,17 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) {
     pass first;
 };
 
-func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) {
+func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
     ModuleEntry:e = raw graph_at(g, index);
-    string:from = relay srcmgr_path(@g.sm, e.file);
+    string:from = raw srcmgr_path_proven(@g.sm, e.file);
     DeclId:rootId = DeclId{ index: e.root };
-    DeclNode:m = relay ast_decl(@g.ast, rootId);
+    DeclNode:m = raw ast_decl(@g.ast, rootId);
 
     int32:n = raw item_member_count(@g.ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:item = raw item_member(@g.ast, m, i);
-        DeclNode:d = relay ast_decl(@g.ast, item);
+        DeclNode:d = raw ast_decl(@g.ast, item);
 
         if (d.kind == DeclKind.DeclImportDecl) {
             drop graph_load_import(g, from, d);
@@ -358,7 +358,7 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) {
     pass NIL;
 };
 
-func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
+func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fails {
     int32:path_idx = raw import_path(d);
     if (raw intern_is_none(path_idx)) {
         // A LOGICAL path (`use std.math.*`). Its segments are held separately;
@@ -366,8 +366,8 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
         // with the driver, which is what knows where the standard library is.
         pass NIL;
     }
-    string:target = relay intern_get(g.interns, path_idx);
-    Resolution:r = relay resolve_use(from, target, g.roots, g.stdlib);
+    string:target = raw intern_get(g.interns, path_idx);
+    Resolution:r = raw resolve_use(from, target, g.roots, g.stdlib);
     if (r.status != (raw RESOLVED_OK())) {
         drop report_resolution(g.diags, r, target, d.span);
         pass NIL;
@@ -381,25 +381,33 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
 // can supply one module, and picking one silently makes the answer depend on
 // something the reader cannot see.
 func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
-                                  bool:first_item) {
-    string:name = relay intern_get(g.interns, raw decl_name(d));
-    string:dir = relay path_dirname(from);
+                                  bool:first_item) never fails {
+    string:name = raw intern_get(g.interns, raw decl_name(d));
+    string:dir = raw path_dirname(from);
 
-    string:flat = relay path_normalise(
-        relay path_join(dir, relay string_concat(name, ".npk")));
-    string:nested = relay path_normalise(
-        relay path_join(dir, relay string_concat(name, "/mod.npk")));
+    string:flat = raw path_normalise(
+        raw path_join(dir, raw string_concat(name, ".npk")));
+    string:nested = raw path_normalise(
+        raw path_join(dir, raw string_concat(name, "/mod.npk")));
 
-    bool:has_flat = path_exists(relay to_cstring(flat));
-    bool:has_nested = path_exists(relay to_cstring(nested));
+    // A path with an interior NUL names no file (D-049), so the probe's
+    // answer for one is FALSE — not an error to propagate. The only way a NUL
+    // gets here is a user-written import string, so this is reachable input,
+    // never a defect.
+    Result<cstring>:fc = to_cstring(flat);
+    Result<cstring>:nc = to_cstring(nested);
+    bool:has_flat = false;
+    if (!fc.is_error) { has_flat = path_exists(fc.value); }
+    bool:has_nested = false;
+    if (!nc.is_error) { has_nested = path_exists(nc.value); }
 
     if (has_flat) {
         if (has_nested) {
-            string:m1 = relay string_concat("module `", name);
-            string:m2 = relay string_concat(m1, "` is supplied by both ");
-            string:m3 = relay string_concat(m2, flat);
-            string:m4 = relay string_concat(m3, " and ");
-            string:m5 = relay string_concat(m4, nested);
+            string:m1 = raw string_concat("module `", name);
+            string:m2 = raw string_concat(m1, "` is supplied by both ");
+            string:m3 = raw string_concat(m2, flat);
+            string:m4 = raw string_concat(m3, " and ");
+            string:m5 = raw string_concat(m4, nested);
             drop diaglist_push(g.diags,
                 raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, d.span));
             pass NIL;
@@ -412,21 +420,21 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
         pass NIL;
     }
 
-    string:n1 = relay string_concat("cannot find module `", name);
-    string:n2 = relay string_concat(n1, "`: neither ");
-    string:n3 = relay string_concat(n2, flat);
-    string:n4 = relay string_concat(n3, " nor ");
-    string:n5 = relay string_concat(n4, nested);
+    string:n1 = raw string_concat("cannot find module `", name);
+    string:n2 = raw string_concat(n1, "`: neither ");
+    string:n3 = raw string_concat(n2, flat);
+    string:n4 = raw string_concat(n3, " nor ");
+    string:n5 = raw string_concat(n4, nested);
     // THE COMMONEST WAY HERE IS A FILE WHOSE HEADER DOES NOT MATCH ITS NAME
     // (1.0.8; CLAUDE.md lists it as a trap that cost a cycle) — and a header is
     // the file's first item. The message names that reading rather than
     // sending the reader to create a file.
     if (first_item) {
-        string:base = relay path_basename(from);
+        string:base = raw path_basename(from);
         if (!(raw string_eq(name, base))) {
-            string:h1 = relay string_concat(n5, "; if this line is the file's own header, note that this file is `");
-            string:h2 = relay string_concat(h1, base);
-            n5 = relay string_concat(h2, ".npk` and a file's module name must match its basename");
+            string:h1 = raw string_concat(n5, "; if this line is the file's own header, note that this file is `");
+            string:h2 = raw string_concat(h1, base);
+            n5 = raw string_concat(h2, ".npk` and a file's module name must match its basename");
         }
     }
     drop diaglist_push(g.diags,
@@ -452,11 +460,11 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
 // name resolution and lands in 0.3.5.
 
 // Does this type node refer DIRECTLY to a named type, with no pointer between?
-func:direct_named_type = int32(Ast->:ast, TypeId:t) {
+func:direct_named_type = int32(Ast->:ast, TypeId:t) never fails {
     if (raw type_is_none(t)) {
         pass 0i32;
     }
-    TypeNode:n = relay ast_type(ast, t);
+    TypeNode:n = raw ast_type(ast, t);
     if (n.kind == TypeKind.TypeNamedType) {
         // A BUILTIN TYPE KEYWORD CARRIES A TOKEN KIND, NOT AN INTERN INDEX
         // (0.2.2) — the same two-meanings slot `resolve_named` had to learn.
@@ -476,7 +484,7 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
         if (raw type_is_slice(n)) {
             pass 0i32;
         }
-        pass (relay direct_named_type(ast, raw type_element(n)));
+        pass (raw direct_named_type(ast, raw type_element(n)));
     }
     // AN OPTIONAL LAYS ITS VALUE OUT INLINE — `{ i8, T }` (TYPE_REFERENCE
     // §11.1), so `struct:A = { A?:a; }` is as infinite as `A:a;` would be.
@@ -485,7 +493,7 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
     // struct escaped the RESOLVE-006 check (found by the 1.0.8 audit, fixed
     // before any program relied on it). A pointer IS one word.
     if (n.kind == TypeKind.TypeOptionalType) {
-        pass (relay direct_named_type(ast, raw type_element(n)));
+        pass (raw direct_named_type(ast, raw type_element(n)));
     }
     pass 0i32;
 };
@@ -503,17 +511,17 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
 // and a name that failed to reach it once cannot reach it later in the same
 // query.
 func:struct_reaches_self = bool(ModuleGraph->:g, int32:scope, int32:start,
-                                int32:current, int32:fuel) {
+                                int32:current, int32:fuel) never fails {
     // The seen-set is intern-indexed. Interns only grow, so the capacity is
     // read once per query.
     int32:cap = raw intern_count(g.interns);
     wild int8->:seen = calloc(cap => int64, 1i64);
-    pass (relay reaches_memo(g, scope, start, current, fuel, seen, cap));
+    pass (raw reaches_memo(g, scope, start, current, fuel, seen, cap));
 };
 
 func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
                          int32:current, int32:fuel, wild int8->:seen,
-                         int32:cap) {
+                         int32:cap) never fails {
     if (fuel <= 0i32) {
         pass false;
     }
@@ -530,7 +538,7 @@ func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
         pass false;
     }
     DeclId:did = DeclId{ index: s.origin };
-    DeclNode:d = relay ast_decl(@g.ast, did);
+    DeclNode:d = raw ast_decl(@g.ast, did);
     if (d.kind != DeclKind.DeclStructDecl) {
         pass false;
     }
@@ -539,13 +547,13 @@ func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
     int32:i = 0i32;
     while (i < n) {
         DeclId:fid = raw item_member(@g.ast, d, i);
-        DeclNode:f = relay ast_decl(@g.ast, fid);
-        int32:named = relay direct_named_type(@g.ast, raw field_type(f));
+        DeclNode:f = raw ast_decl(@g.ast, fid);
+        int32:named = raw direct_named_type(@g.ast, raw field_type(f));
         if (named != 0i32) {
             if (named == start) {
                 pass true;
             }
-            if (relay reaches_memo(g, scope, start, named, fuel - 1i32,
+            if (raw reaches_memo(g, scope, start, named, fuel - 1i32,
                                    seen, cap)) {
                 pass true;
             }
@@ -561,24 +569,24 @@ func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
 // order, so the diagnostics come out in the same sequence on every run — which is
 // the order-independence D-086 requires, applied to the output as well as to the
 // result.
-pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) {
+pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) never fails {
     int32:mi = 0i32;
     while (mi < g.count) {
         ModuleEntry:e = raw graph_at(g, mi);
         DeclId:rootId = DeclId{ index: e.root };
-        DeclNode:m = relay ast_decl(@g.ast, rootId);
+        DeclNode:m = raw ast_decl(@g.ast, rootId);
 
         int32:n = raw item_member_count(@g.ast, m);
         int32:i = 0i32;
         while (i < n) {
             DeclId:item = raw item_member(@g.ast, m, i);
-            DeclNode:d = relay ast_decl(@g.ast, item);
+            DeclNode:d = raw ast_decl(@g.ast, item);
             if (d.kind == DeclKind.DeclStructDecl) {
                 int32:name = raw decl_name(d);
-                if (relay struct_reaches_self(g, e.scope, name, name, 64i32)) {
-                    string:nm = relay intern_get(g.interns, name);
-                    string:m1 = relay string_concat("`", nm);
-                    string:m2 = relay string_concat(m1,
+                if (raw struct_reaches_self(g, e.scope, name, name, 64i32)) {
+                    string:nm = raw intern_get(g.interns, name);
+                    string:m1 = raw string_concat("`", nm);
+                    string:m2 = raw string_concat(m1,
                         "` contains itself, so its size cannot be computed; a `->` breaks the cycle because a pointer is one word whatever it points at");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_CYCLE(), m2, d.span));
@@ -609,7 +617,7 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) {
 // not renamed — a renamed field could not be named by the caller, and a renamed
 // emitted function could not be called — so a collision is an error like any other
 // name declared twice, and this is what makes it one.
-pub func:graph_check_dup_members = NIL(ModuleGraph->:g) {
+pub func:graph_check_dup_members = NIL(ModuleGraph->:g) never fails {
     int32:mi = 0i32;
     while (mi < g.count) {
         ModuleEntry:e = raw graph_at(g, mi);
@@ -619,13 +627,13 @@ pub func:graph_check_dup_members = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
-func:check_dup_in_module = NIL(ModuleGraph->:g, DeclId:mod_id) {
-    DeclNode:m = relay ast_decl(@g.ast, mod_id);
+func:check_dup_in_module = NIL(ModuleGraph->:g, DeclId:mod_id) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
     int32:n = raw item_member_count(@g.ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:item = raw item_member(@g.ast, m, i);
-        DeclNode:d = relay ast_decl(@g.ast, item);
+        DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclStructDecl) {
             drop check_dup_members(g, d, "field");
         }
@@ -647,22 +655,22 @@ func:check_dup_in_module = NIL(ModuleGraph->:g, DeclId:mod_id) {
 // thousands, and the alternative is a set keyed by intern index — a second
 // structure to allocate and keep in step for a loop that is already the cheapest
 // thing in the pass.
-func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) {
+func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) never fails {
     int32:n = raw item_member_count(@g.ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclNode:a = relay ast_decl(@g.ast, raw item_member(@g.ast, d, i));
+        DeclNode:a = raw ast_decl(@g.ast, raw item_member(@g.ast, d, i));
         int32:anode = raw decl_name(a);
         if (!(raw intern_is_none(anode))) {
             int32:j = i + 1i32;
             while (j < n) {
-                DeclNode:b = relay ast_decl(@g.ast, raw item_member(@g.ast, d, j));
+                DeclNode:b = raw ast_decl(@g.ast, raw item_member(@g.ast, d, j));
                 if ((raw decl_name(b)) == anode) {
-                    string:nm = relay intern_get(g.interns, anode);
-                    string:m1 = relay string_concat("`", nm);
-                    string:m2 = relay string_concat(m1, "` is declared twice as a ");
-                    string:m3 = relay string_concat(m2, what);
-                    string:m4 = relay string_concat(m3,
+                    string:nm = raw intern_get(g.interns, anode);
+                    string:m1 = raw string_concat("`", nm);
+                    string:m2 = raw string_concat(m1, "` is declared twice as a ");
+                    string:m3 = raw string_concat(m2, what);
+                    string:m4 = raw string_concat(m3,
                         " of this type; the second is unreachable, because a lookup by name finds the first and gets no say in which was meant");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_DUPLICATE(), m4, b.span));
@@ -687,8 +695,8 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) {
 // Modules are visited in graph order and imports in declaration order, so the
 // bindings and any diagnostics come out identically on every run.
 
-pub func:graph_find_by_path = int32(ModuleGraph->:g, string:path) {
-    int32:file = raw srcmgr_find(@g.sm, relay path_normalise(path));
+pub func:graph_find_by_path = int32(ModuleGraph->:g, string:path) never fails {
+    int32:file = raw srcmgr_find(@g.sm, raw path_normalise(path));
     if (file < 0i32) {
         pass (0i32 - 1i32);
     }
@@ -711,7 +719,7 @@ pub func:graph_find_by_path = int32(ModuleGraph->:g, string:path) {
 // Binding is IDEMPOTENT, so the repeats cost nothing and a re-export chain
 // reaching one declaration by two routes is not a conflict. Diagnostics are held
 // back to a final pass, or every round would report the same collision again.
-pub func:graph_apply_imports = NIL(ModuleGraph->:g) {
+pub func:graph_apply_imports = NIL(ModuleGraph->:g) never fails {
     while (true) {
         int32:before = raw symtab_count(@g.tab);
         int32:i = 0i32;
@@ -732,17 +740,17 @@ pub func:graph_apply_imports = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
-func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) {
+func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) never fails {
     ModuleEntry:e = raw graph_at(g, index);
-    string:from = relay srcmgr_path(@g.sm, e.file);
+    string:from = raw srcmgr_path_proven(@g.sm, e.file);
     DeclId:rootId = DeclId{ index: e.root };
-    DeclNode:m = relay ast_decl(@g.ast, rootId);
+    DeclNode:m = raw ast_decl(@g.ast, rootId);
 
     int32:n = raw item_member_count(@g.ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:item = raw item_member(@g.ast, m, i);
-        DeclNode:d = relay ast_decl(@g.ast, item);
+        DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclImportDecl) {
             drop apply_one_import(g, from, e.scope, d, report);
         }
@@ -752,13 +760,13 @@ func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) {
 };
 
 func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
-                            DeclNode:d, bool:report) {
+                            DeclNode:d, bool:report) never fails {
     int32:path_idx = raw import_path(d);
     if (raw intern_is_none(path_idx)) {
         pass NIL;          // a logical path; the driver resolves those
     }
-    string:target = relay intern_get(g.interns, path_idx);
-    Resolution:r = relay resolve_use(from, target, g.roots, g.stdlib);
+    string:target = raw intern_get(g.interns, path_idx);
+    Resolution:r = raw resolve_use(from, target, g.roots, g.stdlib);
     if (r.status != (raw RESOLVED_OK())) {
         pass NIL;          // already reported while loading
     }
@@ -812,16 +820,16 @@ func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
 // message makes the reader test both.
 func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                       int32:name, int32:extra, Span:at, string:target,
-                      bool:report) {
+                      bool:report) never fails {
     int32:sym = raw scope_lookup_local(@g.tab, src_scope, name);
-    string:nm = relay intern_get(g.interns, name);
+    string:nm = raw intern_get(g.interns, name);
 
     if (sym == 0i32) {
         if (!report) { pass NIL; }
-        string:m1 = relay string_concat("`", target);
-        string:m2 = relay string_concat(m1, "` has no `");
-        string:m3 = relay string_concat(m2, nm);
-        string:m4 = relay string_concat(m3, "`");
+        string:m1 = raw string_concat("`", target);
+        string:m2 = raw string_concat(m1, "` has no `");
+        string:m3 = raw string_concat(m2, nm);
+        string:m4 = raw string_concat(m3, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_NO_SUCH_NAME(), m4, at));
         pass NIL;
@@ -830,15 +838,15 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
     Symbol:s = raw symtab_get(@g.tab, sym);
     if (!(raw symbol_is_exported(s))) {
         if (!report) { pass NIL; }
-        string:p1 = relay string_concat("`", nm);
-        string:p2 = relay string_concat(p1, "` is private to `");
-        string:p3 = relay string_concat(p2, target);
-        string:p4 = relay string_concat(p3, "`");
+        string:p1 = raw string_concat("`", nm);
+        string:p2 = raw string_concat(p1, "` is private to `");
+        string:p3 = raw string_concat(p2, target);
+        string:p4 = raw string_concat(p3, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_PRIVATE(), p4, at));
         drop diaglist_push(g.diags,
             raw diag_note(raw RESOLVE_PRIVATE(), "declared here",
-                          relay symbol_span(@g.ast, @g.tab, sym)));
+                          raw symbol_span(@g.ast, @g.tab, sym)));
         pass NIL;
     }
 
@@ -855,7 +863,7 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
 // what a dependency happens to export this week -- but a bare name that two
 // things could plausibly mean is worth a word to the reader.
 func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
-                         int32:extra, Span:at, string:target, bool:report) {
+                         int32:extra, Span:at, string:target, bool:report) never fails {
     int32:n = raw scope_symbol_count(@g.tab, src_scope);
     int32:i = 0i32;
     while (i < n) {
@@ -867,8 +875,8 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                                                      s.origin_kind, s.origin, extra);
                 if (bound == 0i32) {
                     if (report) {
-                    string:nm = relay intern_get(g.interns, s.name);
-                    string:m1 = relay string_concat("`", nm);
+                    string:nm = raw intern_get(g.interns, s.name);
+                    string:m1 = raw string_concat("`", nm);
                     // WHICH CLASH (1.0.8). `symtab_bind_import` declines for any
                     // earlier binding, and an earlier IMPORT is one: with two
                     // wildcard imports exporting one name, this said "declared
@@ -883,25 +891,25 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                         prior_import = raw symbol_is_imported(raw symtab_get(@g.tab, clash));
                     }
                     if (prior_import) {
-                        string:i2 = relay string_concat(m1,
+                        string:i2 = raw string_concat(m1,
                             "` is exported by an earlier import and also by `");
-                        string:i3 = relay string_concat(i2, target);
+                        string:i3 = raw string_concat(i2, target);
                         drop diaglist_push(g.diags,
                             raw diag_warning(raw RESOLVE_SHADOWED(),
-                                relay string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
+                                raw string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
                                 at));
                     } else {
-                    string:m2 = relay string_concat(m1,
+                    string:m2 = raw string_concat(m1,
                         "` is declared in this file and also exported by `");
-                    string:m3 = relay string_concat(m2, target);
-                    string:m4 = relay string_concat(m3,
+                    string:m3 = raw string_concat(m2, target);
+                    string:m4 = raw string_concat(m3,
                         "`; the local declaration wins");
                     drop diaglist_push(g.diags,
                         raw diag_warning(raw RESOLVE_SHADOWED(), m4, at));
                     if (clash != 0i32) {
                         drop diaglist_push(g.diags,
                             raw diag_note(raw RESOLVE_SHADOWED(),
-                                relay string_concat(m1, "` is declared here"),
+                                raw string_concat(m1, "` is declared here"),
                                 raw symbol_span(@g.ast, @g.tab, clash)));
                     }
                     }
@@ -921,19 +929,19 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
 // something they asked for explicitly.
 func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
                           int32:origin_kind, int32:origin, int32:extra,
-                          Span:at, string:target, bool:report) {
+                          Span:at, string:target, bool:report) never fails {
     int32:bound = raw symtab_bind_import(@g.tab, scope, name,
                                          origin_kind, origin, extra);
     if (bound == 0i32) {
         if (!report) { pass NIL; }
-        string:nm = relay intern_get(g.interns, name);
-        string:m1 = relay string_concat("`", nm);
+        string:nm = raw intern_get(g.interns, name);
+        string:m1 = raw string_concat("`", nm);
         // DECLARED, OR IMPORTED EARLIER — two different fixes (1.0.8).
         int32:clash = raw scope_lookup_local(@g.tab, scope, name);
-        string:m2 = relay string_concat(m1, "` is already declared in this module");
+        string:m2 = raw string_concat(m1, "` is already declared in this module");
         if (clash != 0i32) {
             if (raw symbol_is_imported(raw symtab_get(@g.tab, clash))) {
-                m2 = relay string_concat(m1, "` is already imported into this module by an earlier `use`");
+                m2 = raw string_concat(m1, "` is already imported into this module by an earlier `use`");
             }
         }
         drop diaglist_push(g.diags,

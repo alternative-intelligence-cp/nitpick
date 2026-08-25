@@ -20,17 +20,17 @@ pub struct:EscapeResult = {
     int64:consumed;    // bytes consumed INCLUDING the backslash
 };
 
-func:esc_fail = EscapeResult() {
+func:esc_fail = EscapeResult() never fails {
     EscapeResult:r = EscapeResult{ valid: false, codepoint: 0i64, consumed: 1i64 };
     pass r;
 };
 
-func:esc_ok = EscapeResult(int64:cp, int64:used) {
+func:esc_ok = EscapeResult(int64:cp, int64:used) never fails {
     EscapeResult:r = EscapeResult{ valid: true, codepoint: cp, consumed: used };
     pass r;
 };
 
-func:hex_value = int64(uint8:c) {
+func:hex_value = int64(uint8:c) never fails {
     if ((c >= 48u8) && (c <= 57u8))  { pass (c - 48u8) => int64; }
     if ((c >= 97u8) && (c <= 102u8)) { pass ((c - 97u8) => int64) + 10i64; }
     if ((c >= 65u8) && (c <= 70u8))  { pass ((c - 65u8) => int64) + 10i64; }
@@ -39,7 +39,7 @@ func:hex_value = int64(uint8:c) {
 
 // `text` starts at the backslash. Returns how much was consumed so the caller
 // can advance without re-deciding the shape of the escape.
-pub func:escape_decode = EscapeResult(string:text, int64:at) {
+pub func:escape_decode = EscapeResult(string:text, int64:at) never fails {
     if ((at + 1i64) >= text.len) {
         pass (raw esc_fail());
     }
@@ -102,7 +102,7 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) {
 // lexer took one BYTE — so `'é'` was reported as an unterminated literal. The
 // inverse of `utf8_encode`, by the lead byte; an invalid lead or a truncated
 // sequence answers `valid: false`, which the caller reports as its own mistake.
-pub func:utf8_decode = EscapeResult(string:text, int64:pos) {
+pub func:utf8_decode = EscapeResult(string:text, int64:pos) never fails {
     if (pos >= text.len) { pass (raw esc_fail()); }
     int64:b0 = (text.ptr[pos]) => int64;
     if (b0 < 128i64) {
@@ -142,7 +142,7 @@ pub func:utf8_decode = EscapeResult(string:text, int64:pos) {
 // A decoded code point goes back into the buffer as UTF-8, because the source is
 // UTF-8 and a string's bytes are what the program will actually hold.
 
-pub func:utf8_encode = int64(wild int8->:buf, int64:at, int64:cp) {
+pub func:utf8_encode = int64(wild int8->:buf, int64:at, int64:cp) never fails {
     if (cp < 128i64) {
         buf[at] = cp =>! int8;
         pass 1i64;
@@ -173,7 +173,7 @@ pub struct:DecodedString = {
 // Decode a string literal's CONTENT (between the quotes) into its value.
 // The output is never longer than the input: every escape is at least two bytes
 // and produces at most four, and \u{10FFFF} is eight bytes producing four.
-pub func:decode_string = DecodedString(string:content) {
+pub func:decode_string = DecodedString(string:content) never fails {
     wild int8->:buf = alloc(content.len + 4i64);
     int64:out = 0i64;
     int64:i = 0i64;

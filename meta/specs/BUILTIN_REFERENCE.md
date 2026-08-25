@@ -130,8 +130,8 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 
 | Built-in | Signature | Notes | Fails |
 |---|---|---|---|
-| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. | `Result` — may fail |
-| `int_to_string` | `int64 → Result<string>` | Decimal rendering. | `Result` — may fail |
+| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) |
+| `int_to_string` | `int64 → Result<string>` | Decimal rendering. | **never fails** (audited at 1.1.1: one return, error always 0; OOM traps) |
 | `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. | `Result` — may fail |
 | `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. | **never fails** (traps on misuse) |
 | `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). | `Result` — may fail |

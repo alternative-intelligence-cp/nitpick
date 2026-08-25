@@ -46,7 +46,7 @@ use "./analysis_codes.npk".*;
 // How deep an expression tree this walk will follow. Every walk in this compiler
 // that follows program structure is bounded, and this one fails CLOSED when the
 // bound is reached — see `escape_expr`.
-pub func:ESCAPE_DEPTH = int32() { pass 256i32; };
+pub func:ESCAPE_DEPTH = int32() never fails { pass 256i32; };
 
 pub struct:Escape = {
     Ast->:ast;
@@ -100,7 +100,7 @@ pub struct:Escape = {
 
 pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                               ExprTypes->:etypes, DiagList->:diags,
-                              TypeResolver->:tr) {
+                              TypeResolver->:tr) never fails {
     int64:size = (raw ast_stmt_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:mem = alloc(size * #size_of<bool>());
@@ -121,7 +121,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
 // would otherwise report the same finding once per round — and the diagnostic
 // list's duplicate suppression would hide that rather than fix it, which is
 // exactly the mistake 0.4.7 made when two argument errors shared a span.
-func:escape_err = NIL(Escape->:x, string:code, string:msg, Span:sp) {
+func:escape_err = NIL(Escape->:x, string:code, string:msg, Span:sp) never fails {
     if (!x.reporting) { pass NIL; }
     drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
     pass NIL;
@@ -130,7 +130,7 @@ func:escape_err = NIL(Escape->:x, string:code, string:msg, Span:sp) {
 // `changed` IS SET ONLY ON A FLIP, not on every write. Setting it unconditionally
 // would make every round report a change and the fixpoint would never converge —
 // it would run to its bound and refuse every program that borrows anything.
-func:escape_mark = NIL(Escape->:x, int32:stmt_index) {
+func:escape_mark = NIL(Escape->:x, int32:stmt_index) never fails {
     if (stmt_index < 0i32)             { pass NIL; }
     if (stmt_index >= x.holds_count)   { pass NIL; }
     if (x.holds[stmt_index => int64])  { pass NIL; }
@@ -146,26 +146,26 @@ func:escape_mark = NIL(Escape->:x, int32:stmt_index) {
 // (`p = q; q = r; r = @x;`). Sixty-four links is far past anything a person writes
 // and still finite, which is what matters — an unbounded loop in a checker is not
 // a checker.
-pub func:ESCAPE_ROUNDS = int32() { pass 64i32; };
+pub func:ESCAPE_ROUNDS = int32() never fails { pass 64i32; };
 
-pub func:escape_changed = bool(Escape->:x) { pass x.changed; };
+pub func:escape_changed = bool(Escape->:x) never fails { pass x.changed; };
 
-pub func:escape_new_round = NIL(Escape->:x) { x.changed = false; pass NIL; };
+pub func:escape_new_round = NIL(Escape->:x) never fails { x.changed = false; pass NIL; };
 
 // The switch from marking to reporting. One way only: nothing turns it back off.
-pub func:escape_report_mode = NIL(Escape->:x) { x.reporting = true; pass NIL; };
+pub func:escape_report_mode = NIL(Escape->:x) never fails { x.reporting = true; pass NIL; };
 
 // THE MARKS NEVER SETTLED, so the analysis does not know what it is looking at and
 // says so. Pushed straight to the list because it is reported from the driver,
 // outside either mode.
-pub func:escape_unsettled = NIL(Escape->:x, Span:sp) {
+pub func:escape_unsettled = NIL(Escape->:x, Span:sp) never fails {
     drop diaglist_push(x.diags, raw diag_error(raw BORROW_UNSETTLED(),
         "the borrow analysis did not settle within its round bound, so this program cannot be shown free of escapes",
         sp));
     pass NIL;
 };
 
-func:escape_holds = bool(Escape->:x, int32:stmt_index) {
+func:escape_holds = bool(Escape->:x, int32:stmt_index) never fails {
     if (stmt_index < 0i32)           { pass false; }
     if (stmt_index >= x.holds_count) { pass false; }
     pass (x.holds[stmt_index => int64]);
@@ -179,8 +179,8 @@ func:escape_holds = bool(Escape->:x, int32:stmt_index) {
 // silent about three quarters of a real program. Silence is the failure mode this
 // whole cycle is written against.
 
-pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) {
-    DeclNode:m = relay ast_decl(x.ast, mod_id);
+pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) never fails {
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -190,8 +190,8 @@ pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) {
     pass NIL;
 };
 
-func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
-    DeclNode:d = relay ast_decl(x.ast, id);
+func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         StmtId:body = raw fn_body(x.ast, d);
@@ -209,10 +209,10 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
     }
 
     if (d.kind == DeclKind.DeclImplDecl) {
-        int32:mn = relay impl_member_count(x.ast, d);
+        int32:mn = raw impl_member_count(x.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            drop escape_decl(x, relay impl_member(x.ast, d, j), scope);
+            drop escape_decl(x, raw impl_member(x.ast, d, j), scope);
             j = j + 1i32;
         }
         pass NIL;
@@ -237,7 +237,7 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
         ExprId:init = raw global_init(d);
         if (!(raw expr_is_none(init))) {
             if (raw verdict_borrowy(x, init,
-                    relay escape_expr(x, init, raw ESCAPE_DEPTH()))) {
+                    raw escape_expr(x, init, raw ESCAPE_DEPTH()))) {
                 drop escape_err(x, raw BORROW_STORED(),
                     "a borrow cannot initialise a global: a global outlives every frame, so there is no frame that bounds it (D-004 rule 3)",
                     d.span);
@@ -251,9 +251,9 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
 
 // --- statements --------------------------------------------------------------
 
-func:escape_stmt = NIL(Escape->:x, StmtId:id) {
+func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
-    StmtNode:s = relay ast_stmt(x.ast, id);
+    StmtNode:s = raw ast_stmt(x.ast, id);
 
     // RULE 2 — A BORROW MAY NOT APPEAR IN THE VALUE OF `pass`, `fail`, `return`.
     //
@@ -279,14 +279,14 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) {
     // mentioned, so `int32->:p = @x; pass p;` is refused by rule 2 above even
     // though the expression `p` is just a name.
     if (s.kind == StmtKind.StmtVarDeclStmt) {
-        ExprId:init = relay stmt_decl_init(x.ast, s);
+        ExprId:init = raw stmt_decl_init(x.ast, s);
         if (!(raw expr_is_none(init))) {
             if (raw verdict_borrowy(x, init,
-                    relay escape_expr(x, init, raw ESCAPE_DEPTH()))) {
+                    raw escape_expr(x, init, raw ESCAPE_DEPTH()))) {
                 // Param-rooted borrows do not taint (0.8.1): the same rule the
                 // assignment and return checks apply. `ConstVal:local =
                 // foldenv_get(@r.env, …)` holds nothing that outlives `r`.
-                if (!(relay borrows_only_param_rooted(x, init,
+                if (!(raw borrows_only_param_rooted(x, init,
                                                       raw ESCAPE_DEPTH()))) {
                     drop escape_mark(x, id.index);
                 }
@@ -319,14 +319,14 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
-        drop escape_stmt(x, relay stmt_body(x.ast, s));
+        drop escape_stmt(x, raw stmt_body(x.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
-        drop escape_stmt(x, relay stmt_when_body(x.ast, s));
-        drop escape_stmt(x, relay stmt_when_then(x.ast, s));
-        drop escape_stmt(x, relay stmt_when_end(x.ast, s));
+        drop escape_stmt(x, raw stmt_when_body(x.ast, s));
+        drop escape_stmt(x, raw stmt_when_then(x.ast, s));
+        drop escape_stmt(x, raw stmt_when_end(x.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
@@ -338,9 +338,9 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
-        drop escape_untracked(x, relay stmt_for_iter(x.ast, s),
+        drop escape_untracked(x, raw stmt_for_iter(x.ast, s),
             "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
-        drop escape_stmt(x, relay stmt_for_body(x.ast, s));
+        drop escape_stmt(x, raw stmt_for_body(x.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
@@ -385,7 +385,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) {
     pass NIL;
 };
 
-func:escape_stmt_window = NIL(Escape->:x, int32:start, int32:count) {
+func:escape_stmt_window = NIL(Escape->:x, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
@@ -395,11 +395,11 @@ func:escape_stmt_window = NIL(Escape->:x, int32:start, int32:count) {
     pass NIL;
 };
 
-func:escape_counted = NIL(Escape->:x, StmtNode:s) {
+func:escape_counted = NIL(Escape->:x, StmtNode:s) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop escape_expr(x, relay stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH());
+        drop escape_expr(x, raw stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH());
         i = i + 1i32;
     }
     drop escape_stmt(x, raw stmt_counted_body(s));
@@ -409,10 +409,10 @@ func:escape_counted = NIL(Escape->:x, StmtNode:s) {
 // RULE 2, at the one place all three spellings meet. `pass`, `fail` and `return`
 // differ in what they mean and not in where the value goes, so one check and one
 // code rather than three that could drift apart.
-func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
+func:escape_return_value = NIL(Escape->:x, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     if (raw expr_is_none(v)) { pass NIL; }
-    if (raw verdict_borrowy(x, v, relay escape_expr(x, v, raw ESCAPE_DEPTH()))) {
+    if (raw verdict_borrowy(x, v, raw escape_expr(x, v, raw ESCAPE_DEPTH()))) {
         // A SECOND LOOK BEFORE REFUSING (0.8.1): a value whose borrows are all
         // rooted at PARAMETERS may travel up one frame — a parameter's target
         // lives in the caller or older, so a pointer into it cannot dangle by
@@ -420,10 +420,10 @@ func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
         // again, the caller's own return-check runs this same rule on values it
         // can see. Compositional, and exactly the constructor pattern the
         // compiler is built out of (`foldenv_get(@r.env, …)` returned upward).
-        if (relay borrows_only_param_rooted(x, v, raw ESCAPE_DEPTH())) {
+        if (raw borrows_only_param_rooted(x, v, raw ESCAPE_DEPTH())) {
             pass NIL;
         }
-        ExprNode:vn = relay ast_expr(x.ast, v);
+        ExprNode:vn = raw ast_expr(x.ast, v);
         drop escape_err(x, raw BORROW_RETURNED(),
             "a borrow cannot travel up: it is valid only for the frame it was taken in, and this returns it out of that frame (D-004 rule 2)",
             vn.span);
@@ -447,28 +447,28 @@ func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
 // operators; anything else that could carry a borrow answers no, which keeps
 // this on the conservative side of the fence it relaxes.
 func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
-                                  int32:depth) {
+                                  int32:depth) never fails {
     if (depth <= 0i32) { pass false; }
     if (raw expr_is_none(id)) { pass true; }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
     int32:d = depth - 1i32;
 
     // The unwrap operators carry whatever their call carries, no more.
     if (n.kind == ExprKind.ExprRawUnwrapExpr) {
-        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+        pass (raw borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
     }
     if (n.kind == ExprKind.ExprRelayExpr) {
-        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+        pass (raw borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
     }
     if (n.kind == ExprKind.ExprDropExpr) {
-        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+        pass (raw borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
     }
     // A cast carries its operand's borrows and nothing else.
     if (n.kind == ExprKind.ExprCastExpr) {
-        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+        pass (raw borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
     }
     if (n.kind == ExprKind.ExprUncheckedCastExpr) {
-        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+        pass (raw borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
     }
 
     if (n.kind == ExprKind.ExprAddressOfExpr) {
@@ -483,8 +483,8 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
         int32:count = (raw expr_list_count(n)) - gcount;
         int32:i = 0i32;
         while (i < count) {
-            ExprId:a = ExprId{ index: relay ast_id_at(x.ast, start, i) };
-            if (!(relay borrows_all_rooted_at(x, a, sym, d))) { pass false; }
+            ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+            if (!(raw borrows_all_rooted_at(x, a, sym, d))) { pass false; }
             i = i + 1i32;
         }
         pass true;
@@ -504,27 +504,27 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
 };
 
 // Is every borrow inside `id` rooted at a PARAMETER of the current function?
-func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) {
+func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (depth <= 0i32) { pass false; }
     if (raw expr_is_none(id)) { pass true; }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
     int32:d = depth - 1i32;
 
     if (n.kind == ExprKind.ExprRawUnwrapExpr) {
-        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+        pass (raw borrows_only_param_rooted(x, raw expr_operand(n), d));
     }
     if (n.kind == ExprKind.ExprRelayExpr) {
-        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+        pass (raw borrows_only_param_rooted(x, raw expr_operand(n), d));
     }
     if (n.kind == ExprKind.ExprDropExpr) {
-        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+        pass (raw borrows_only_param_rooted(x, raw expr_operand(n), d));
     }
     // A cast carries its operand's borrows and nothing else.
     if (n.kind == ExprKind.ExprCastExpr) {
-        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+        pass (raw borrows_only_param_rooted(x, raw expr_operand(n), d));
     }
     if (n.kind == ExprKind.ExprUncheckedCastExpr) {
-        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+        pass (raw borrows_only_param_rooted(x, raw expr_operand(n), d));
     }
 
     if (n.kind == ExprKind.ExprAddressOfExpr) {
@@ -539,8 +539,8 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) {
         int32:count = (raw expr_list_count(n)) - gcount;
         int32:i = 0i32;
         while (i < count) {
-            ExprId:a = ExprId{ index: relay ast_id_at(x.ast, start, i) };
-            if (!(relay borrows_only_param_rooted(x, a, d))) { pass false; }
+            ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+            if (!(raw borrows_only_param_rooted(x, a, d))) { pass false; }
             i = i + 1i32;
         }
         pass true;
@@ -559,39 +559,39 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) {
 
 // Does this place root at a parameter — a name whose symbol's origin is a
 // ParamDecl? A parameter's target outlives the frame by construction.
-func:root_is_param = bool(Escape->:x, ExprId:id) {
+func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
     int32:sym = raw root_symbol(x, id);
     if (sym == 0i32) { pass false; }
     Symbol:sy = raw symtab_get(x.tab, sym);
     if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
-    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: sy.origin });
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
     pass (d.kind == DeclKind.DeclParamDecl);
 };
 
 // The SYMBOL at a place's root, or 0 — `f.g.ast` roots at `f`.
-func:root_symbol = int32(Escape->:x, ExprId:id) {
+func:root_symbol = int32(Escape->:x, ExprId:id) never fails {
     PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass 0i32; }
     if (raw expr_is_none(r.id)) { pass 0i32; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
     pass rn.a;
 };
 
-func:root_is = bool(Escape->:x, ExprId:id, int32:sym) {
+func:root_is = bool(Escape->:x, ExprId:id, int32:sym) never fails {
     int32:got = raw root_symbol(x, id);
     if (got == 0i32) { pass false; }
     pass (got == sym);
 };
 
-func:ident_holds = bool(Escape->:x, int32:sym_index) {
+func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
     if (sym_index == 0i32) { pass true; }   // unresolved: cannot vouch
     Symbol:sy = raw symtab_get(x.tab, sym_index);
     if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
     pass (x.holds[sy.origin => int64]);
 };
 
-func:escape_assign = NIL(Escape->:x, StmtNode:s) {
+func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
 
@@ -601,7 +601,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
 
     if (raw expr_is_none(val)) { pass NIL; }
     if (!(raw verdict_borrowy(x, val,
-              relay escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
+              raw escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
 
     // SELF-WIRING IS PERMITTED (0.8.1): storing into a field of `X` a value
     // built from borrows that are themselves rooted at `X` — the pipeline's
@@ -611,11 +611,11 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
     // needs borrow-into-inner-aggregate, relax it then, WITH EVIDENCE" — and
     // the evidence is the compiler's own driver, refused by this rule until the
     // rule learned the shape. Anything rooted elsewhere still refuses.
-    ExprNode:tgt_n = relay ast_expr(x.ast, tgt);
+    ExprNode:tgt_n = raw ast_expr(x.ast, tgt);
     if (tgt_n.kind == ExprKind.ExprMemberAccessExpr) {
         int32:tsym = raw root_symbol(x, tgt);
         if (tsym != 0i32) {
-            if (relay borrows_all_rooted_at(x, val, tsym,
+            if (raw borrows_all_rooted_at(x, val, tsym,
                                             raw ESCAPE_DEPTH())) {
                 pass NIL;
             }
@@ -625,7 +625,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
     // A BARE LOCAL NAME, and nothing else. `p = @x` records that `p` now holds a
     // borrow; `p.f = @x`, `arr[i] = @x` and `g = @x` are all stores into
     // something this frame does not own outright.
-    ExprNode:tn = relay ast_expr(x.ast, tgt);
+    ExprNode:tn = raw ast_expr(x.ast, tgt);
     if (tn.kind == ExprKind.ExprIdentifierExpr) {
         if (tn.a != 0i32) {
             Symbol:sym = raw symtab_get(x.tab, tn.a);
@@ -633,7 +633,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
                 // Borrows rooted at PARAMETERS do not taint the binding: their
                 // targets outlive this whole frame (0.8.1 — the return rule's
                 // logic, applied at the write instead of the read).
-                if (!(relay borrows_only_param_rooted(x, val,
+                if (!(raw borrows_only_param_rooted(x, val,
                                                       raw ESCAPE_DEPTH()))) {
                     drop escape_mark(x, sym.origin);
                 }
@@ -665,14 +665,14 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
 // sound ground that a type which cannot hold an address cannot carry a borrow
 // (the one door from pointer to integer is `=>!` through the wild family,
 // D-019, the explicit surrender of tracking).
-func:verdict_borrowy = bool(Escape->:x, ExprId:id, bool:walked) {
+func:verdict_borrowy = bool(Escape->:x, ExprId:id, bool:walked) never fails {
     if (!walked) { pass false; }
     int32:nt = raw exprtypes_get(x.etypes, id);
     if (nt == 0i32) { pass true; }
-    pass (relay type_holds_pointer(x.types, nt, 8i32));
+    pass (raw type_holds_pointer(x.types, nt, 8i32));
 };
 
-func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
+func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     int32:k = raw type_kind(table, t);
     if (k == (raw TY_POINTER())) { pass true; }
@@ -688,7 +688,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
     if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
     if (k == (raw TY_NIL()))     { pass false; }
     if (k == (raw TY_ARRAY())) {
-        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+        pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
     }
     if (k == (raw TY_ARENA())) {
         // the arena's own slab pointers, plus whatever its element carries
@@ -697,10 +697,10 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
     if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE())) { pass false; }   // an index, not an address
     if (k == (raw TY_OPTIONAL())) {
-        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+        pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
     }
     if (k == (raw TY_RESULT())) {
-        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+        pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
     }
     if (k == (raw TY_STRUCT())) {
         // Layout recorded the answer while it walked the fields (0.8.1):
@@ -715,9 +715,9 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
     pass true;
 };
 
-func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
+func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (raw expr_is_none(id)) { pass false; }
-    ExprNode:n = relay ast_expr(x.ast, id);
+    ExprNode:n = raw ast_expr(x.ast, id);
 
     // FAIL CLOSED. An expression nested deeper than the bound is REFUSED rather
     // than assumed harmless: an analysis that answers "no borrow here" when it
@@ -752,13 +752,13 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     // `arr[i]` did not make anything live longer, so a `.` cannot launder
     // second-class into first-class.
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (relay escape_expr(x, raw expr_operand(n), d));
+        pass (raw escape_expr(x, raw expr_operand(n), d));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
-        pass (relay escape_expr(x, raw expr_operand(n), d));
+        pass (raw escape_expr(x, raw expr_operand(n), d));
     }
     if (n.kind == ExprKind.ExprIndexExpr) {
-        bool:base = relay escape_expr(x, raw expr_lhs(n), d);
+        bool:base = raw escape_expr(x, raw expr_lhs(n), d);
         // THE INDEX IS NOT PART OF THE VALUE. `arr[i]` is an element, and `i`
         // being a borrow says nothing about the element — but a rule broken
         // inside `i` is still broken, so it is walked and its answer discarded.
@@ -775,7 +775,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     // Recomputing the type here instead would be a second answer to a question
     // the checker already answered.
     if (n.kind == ExprKind.ExprDerefExpr) {
-        if (!(relay escape_expr(x, raw expr_operand(n), d))) { pass false; }
+        if (!(raw escape_expr(x, raw expr_operand(n), d))) { pass false; }
         int32:ty = raw exprtypes_get(x.etypes, id);
         pass ((raw type_kind(x.types, ty)) == (raw TY_POINTER()));
     }
@@ -784,21 +784,21 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     // "passing down needs no annotation" actually hold — see `escape_call_like`.
     if (n.kind == ExprKind.ExprCallExpr) {
         int32:gc = raw expr_generic_count(n);
-        pass (relay escape_call_like(x, id, raw expr_none(),
+        pass (raw escape_call_like(x, id, raw expr_none(),
                                      (raw expr_list_start(n)) + gc,
                                      (raw expr_list_count(n)) - gc,
                                      raw callee_is_extern(x, n),
                                      raw expr_callee(n), d));
     }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
-        pass (relay escape_call_like(x, id, raw expr_operand(n),
+        pass (raw escape_call_like(x, id, raw expr_operand(n),
                                      raw expr_list_start(n),
                                      raw expr_list_count(n),
                                      false, raw expr_none(), d));
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         int32:bgc = raw builtin_generic_count(n);
-        pass (relay escape_call_like(x, id, raw expr_none(),
+        pass (raw escape_call_like(x, id, raw expr_none(),
                                      (raw expr_list_start(n)) + bgc,
                                      (raw expr_list_count(n)) - bgc,
                                      false, raw expr_none(), d));
@@ -812,7 +812,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     // analysis is verified is a re-verification, and this project gets one
     // Astrée run.
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        if (relay escape_expr(x, raw expr_operand(n), d)) {
+        if (raw escape_expr(x, raw expr_operand(n), d)) {
             drop escape_err(x, raw BORROW_SUSPENDED(),
                 "a borrow cannot be held across an `await`: the frame it borrows from does not survive the suspension (D-004 rule 4)",
                 n.span);
@@ -830,7 +830,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
         int32:i = 1i32;
         while (i < cnt) {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
-            if (relay escape_expr(x, v, d)) { found = true; }
+            if (raw escape_expr(x, v, d)) { found = true; }
             i = i + 2i32;
         }
         pass found;
@@ -844,14 +844,14 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
         drop escape_untracked(x, raw pickx_selector(n),
             "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
         drop escape_stmt_window(x, raw pickx_arm_start(n), raw pickx_arm_count(n));
-        pass (relay gives_borrowy(x, raw pickx_arm_start(n),
+        pass (raw gives_borrowy(x, raw pickx_arm_start(n),
                                   raw pickx_arm_count(n), depth));
     }
 
     // EVERYTHING ELSE IS DRIVEN BY `expr_shape`, for the reason `resolve_expr`
     // gives: walking slot `a` on the strength of a comment is how a literal's
     // width suffix came to be resolved as an expression.
-    pass (relay escape_children(x, n, d));
+    pass (raw escape_children(x, n, d));
 };
 
 // A BORROW REACHING A BINDING THE ANALYSIS DOES NOT TRACK.
@@ -871,10 +871,10 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
 // was BUILT with one in this frame, which is the narrow case this catches. Modelling
 // the pattern properly belongs with 0.5.4, where the pattern-to-type machinery is
 // built; refusing until then is a decision, not a gap left open.
-func:escape_untracked = NIL(Escape->:x, ExprId:id, string:msg) {
+func:escape_untracked = NIL(Escape->:x, ExprId:id, string:msg) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    if (relay escape_expr(x, id, raw ESCAPE_DEPTH())) {
-        ExprNode:n = relay ast_expr(x.ast, id);
+    if (raw escape_expr(x, id, raw ESCAPE_DEPTH())) {
+        ExprNode:n = raw ast_expr(x.ast, id);
         drop escape_err(x, raw BORROW_UNTRACKED(), msg, n.span);
     }
     pass NIL;
@@ -883,7 +883,7 @@ func:escape_untracked = NIL(Escape->:x, ExprId:id, string:msg) {
 // A NAME'S BORROW STATE. Only a LOCAL can hold one: a global outlives every frame
 // and a parameter belongs to the caller — see `escape_call` for why a parameter is
 // not treated as a borrow here.
-func:escape_binding = bool(Escape->:x, ExprNode:n) {
+func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
     if (n.a == 0i32) { pass false; }
     Symbol:s = raw symtab_get(x.tab, n.a);
     if (s.origin_kind != (raw SYM_STMT())) { pass false; }
@@ -939,7 +939,7 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) {
 // and `tt_intern(@t, …)` — take the address of a local, call a helper, return the
 // local — is the compiler's other universal idiom.
 func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
-                             int32:count, bool:ext, ExprId:callee, int32:depth) {
+                             int32:count, bool:ext, ExprId:callee, int32:depth) never fails {
     drop escape_expr(x, callee, depth);
 
     int32:borrowed = 0i32;
@@ -947,9 +947,9 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     // The pointee types of the LOCAL-rooted borrows in this call — a handful
     // at most; a destination matters only if it can hold one of exactly these.
     wild int32->:lb_tys = (alloc(8i64 * 4i64)) =>! wild int32->;
-    if (relay escape_arg(x, recv, ext, depth)) {
+    if (raw escape_arg(x, recv, ext, depth)) {
         borrowed = borrowed + 1i32;
-        if (relay arg_root_is_local(x, recv)) {
+        if (raw arg_root_is_local(x, recv)) {
             if (local_borrows < 8i32) {
                 lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, recv);
             }
@@ -959,9 +959,9 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        if (relay escape_arg(x, a, ext, depth)) {
+        if (raw escape_arg(x, a, ext, depth)) {
             borrowed = borrowed + 1i32;
-            if (relay arg_root_is_local(x, a)) {
+            if (raw arg_root_is_local(x, a)) {
                 if (local_borrows < 8i32) {
                     lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, a);
                 }
@@ -972,11 +972,11 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     }
     int32:dests = 0i32;
     if (local_borrows > 0i32) {
-        if (relay arg_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
+        if (raw arg_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
         i = 0i32;
         while (i < count) {
             ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-            if (relay arg_can_hold_one(x, a2, lb_tys, local_borrows)) { dests = dests + 1i32; }
+            if (raw arg_can_hold_one(x, a2, lb_tys, local_borrows)) { dests = dests + 1i32; }
             i = i + 1i32;
         }
     }
@@ -1022,7 +1022,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
 
     // RULE A.
     if (borrowed == 0i32) { pass false; }
-    pass (relay carries_pointer(x, raw exprtypes_get(x.etypes, id),
+    pass (raw carries_pointer(x, raw exprtypes_get(x.etypes, id),
                                 raw CARRY_FUEL()));
 };
 
@@ -1030,7 +1030,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
 // passed beside it can be stored somewhere that outlives the frame, and no
 // mark on a local can witness that.
 func:refuse_param_dests = NIL(Escape->:x, ExprId:recv, int32:start,
-                              int32:count, wild int32->:lb_tys, int32:lbn) {
+                              int32:count, wild int32->:lb_tys, int32:lbn) never fails {
     drop refuse_one_param_dest(x, recv, lb_tys, lbn);
     int32:i = 0i32;
     while (i < count) {
@@ -1042,20 +1042,20 @@ func:refuse_param_dests = NIL(Escape->:x, ExprId:recv, int32:start,
 };
 
 func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
-                                 int32:lbn) {
+                                 int32:lbn) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
-    if (!(relay arg_can_hold_one(x, a, lb_tys, lbn))) { pass NIL; }
-    PlaceRoot:r = relay place_root(x.ast, a, raw BORROW_FUEL());
+    if (!(raw arg_can_hold_one(x, a, lb_tys, lbn))) { pass NIL; }
+    PlaceRoot:r = raw place_root(x.ast, a, raw BORROW_FUEL());
     if (r.exhausted)            { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     Symbol:sym = raw symtab_get(x.tab, rn.a);
     if (sym.origin_kind != (raw SYM_DECL())) { pass NIL; }
-    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: sym.origin });
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sym.origin });
     if (d.kind != DeclKind.DeclParamDecl) { pass NIL; }
-    ExprNode:anode2 = relay ast_expr(x.ast, a);
+    ExprNode:anode2 = raw ast_expr(x.ast, a);
     drop escape_err(x, raw BORROW_STORED(),
         "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-117 rule B, as repaired by D-146 F-1)",
         anode2.span);
@@ -1066,16 +1066,16 @@ func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
 // pick binding — rather than a parameter? Frame-owned targets die with the
 // frame; parameter-rooted ones outlive it, which is the whole distinction
 // F-1's refusal turns on.
-func:arg_root_is_local = bool(Escape->:x, ExprId:a) {
+func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
     if (raw expr_is_none(a)) { pass false; }
     ExprId:pl = a;
-    ExprNode:top = relay ast_expr(x.ast, a);
+    ExprNode:top = raw ast_expr(x.ast, a);
     if (top.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(top); }
     if (top.kind == ExprKind.ExprBorrowExpr)    { pl = raw expr_operand(top); }
-    PlaceRoot:r = relay place_root(x.ast, pl, raw BORROW_FUEL());
+    PlaceRoot:r = raw place_root(x.ast, pl, raw BORROW_FUEL());
     if (r.exhausted)            { pass false; }
     if (raw expr_is_none(r.id)) { pass false; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
     if (rn.a == 0i32) { pass false; }
     Symbol:sym = raw symtab_get(x.tab, rn.a);
@@ -1091,22 +1091,22 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) {
 // Does any `give` in these arms yield a borrowy value? A statement scan that
 // descends every nested statement window — a `give` can sit under an `if`
 // inside an arm — asking `escape_expr` about each operand.
-func:gives_borrowy = bool(Escape->:x, int32:start, int32:count, int32:depth) {
+func:gives_borrowy = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
-        if (relay stmt_gives_borrowy(x, raw arm_body(arm), depth)) { pass true; }
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        if (raw stmt_gives_borrowy(x, raw arm_body(arm), depth)) { pass true; }
         i = i + 1i32;
     }
     pass false;
 };
 
-func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) {
+func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) never fails {
     if (depth <= 0i32) { pass false; }
     if (sid.index == 0i32) { pass false; }
-    StmtNode:s = relay ast_stmt(x.ast, sid);
+    StmtNode:s = raw ast_stmt(x.ast, sid);
     if (s.kind == StmtKind.StmtGiveStmt) {
-        pass (relay escape_expr(x, raw stmt_operand(s), depth - 1i32));
+        pass (raw escape_expr(x, raw stmt_operand(s), depth - 1i32));
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:n = raw stmt_list_count(s);
@@ -1114,22 +1114,22 @@ func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) {
         while (i < n) {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast,
                                      raw stmt_list_start(s), i) };
-            if (relay stmt_gives_borrowy(x, sub, depth - 1i32)) { pass true; }
+            if (raw stmt_gives_borrowy(x, sub, depth - 1i32)) { pass true; }
             i = i + 1i32;
         }
         pass false;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
-        if (relay stmt_gives_borrowy(x, raw stmt_body(x.ast, s), depth - 1i32)) { pass true; }
-        pass (relay stmt_gives_borrowy(x, raw stmt_else(s), depth - 1i32));
+        if (raw stmt_gives_borrowy(x, raw stmt_body(x.ast, s), depth - 1i32)) { pass true; }
+        pass (raw stmt_gives_borrowy(x, raw stmt_else(s), depth - 1i32));
     }
     if (s.kind == StmtKind.StmtPickStmt) {
         int32:pc = raw pick_arm_count(s);
         int32:ps = raw pick_arm_start(s);
         int32:i = 0i32;
         while (i < pc) {
-            StmtNode:parm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, ps, i));
-            if (relay stmt_gives_borrowy(x, raw arm_body(parm), depth - 1i32)) { pass true; }
+            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, ps, i));
+            if (raw stmt_gives_borrowy(x, raw arm_body(parm), depth - 1i32)) { pass true; }
             i = i + 1i32;
         }
         pass false;
@@ -1138,7 +1138,7 @@ func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) {
 };
 
 // The pointee type behind an argument, for the type-aware destination match.
-func:arg_pointee_ty = int32(Escape->:x, ExprId:a) {
+func:arg_pointee_ty = int32(Escape->:x, ExprId:a) never fails {
     int32:t = raw exprtypes_get(x.etypes, a);
     if (t == 0i32) { pass 0i32; }
     if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) {
@@ -1154,9 +1154,9 @@ func:arg_pointee_ty = int32(Escape->:x, ExprId:a) {
 // ever store an LlCtx — so the walker idiom `f(@local_ctx, diags)` stays
 // ordinary code. An `any->` slot matches every borrow (it erases the type).
 func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
-                             int32:lbn) {
+                             int32:lbn) never fails {
     if (raw expr_is_none(a)) { pass false; }
-    if (relay escape_yields(x, a)) { pass false; }
+    if (raw escape_yields(x, a)) { pass false; }
     int32:t = raw exprtypes_get(x.etypes, a);
     if (t == 0i32) { pass false; }
     if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
@@ -1164,7 +1164,7 @@ func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
     int32:i = 0i32;
     while (i < lbn) {
         if (i >= 8i32) { pass true; }
-        if (relay dest_can_hold(x, pointee, lb_tys[i => int64],
+        if (raw dest_can_hold(x, pointee, lb_tys[i => int64],
                                 raw CARRY_FUEL())) { pass true; }
         i = i + 1i32;
     }
@@ -1174,7 +1174,7 @@ func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
 // Can a value of type `holder` transitively contain a `target->` slot? Struct
 // fields resolve through the checker's own resolver, in the struct's home
 // scope (D-137).
-func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) {
+func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     if (holder == 0i32) { pass false; }
     // Target 0 is a VALUE-held borrow (rule A's conservative marking — a
@@ -1187,43 +1187,45 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) {
         int32:el = raw type_elem(x.types, holder);
         if (el == target) { pass true; }
         if ((raw type_kind(x.types, el)) == (raw TY_ANY())) { pass true; }
-        pass (relay dest_can_hold(x, el, target, fuel - 1i32));
+        pass (raw dest_can_hold(x, el, target, fuel - 1i32));
     }
     if (k == (raw TY_SLICE())) {
-        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
     if (k == (raw TY_ARRAY())) {
-        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
     if (k == (raw TY_ARENA())) {
         // `put` stores an element; the slab can hold whatever T can
-        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
     if (k == (raw TY_SHARED_ARENA())) {
         // `alloc(v)` stores an element likewise
-        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
     if (k == (raw TY_HANDLE())) { pass false; }
     if (k == (raw TY_RESULT())) {
-        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
     if (k == (raw TY_STRUCT())) {
         // The layout's pointer-presence bit prunes the walk outright.
         if (!(raw type_holds_pointer(x.types, holder, fuel))) { pass false; }
         DeclId:did = DeclId{ index: raw type_decl(x.types, holder) };
-        DeclNode:d = relay ast_decl(x.ast, did);
+        DeclNode:d = raw ast_decl(x.ast, did);
         int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
         int32:i = 0i32;
         while (i < (raw item_member_count(x.ast, d))) {
-            DeclNode:m = relay ast_decl(x.ast, raw item_member(x.ast, d, i));
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
-                int32:ft = relay resolve_type(x.tr, raw field_type(m), home);
-                if (relay dest_can_hold(x, ft, target, fuel - 1i32)) { pass true; }
+                // The checker already resolved every field annotation; a
+                // failed RE-resolution here is an internal inconsistency.
+                int32:ft = resolve_type(x.tr, raw field_type(m), home) ?! 25tbb32;
+                if (raw dest_can_hold(x, ft, target, fuel - 1i32)) { pass true; }
             }
             i = i + 1i32;
         }
@@ -1234,9 +1236,9 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) {
 
 // One argument, walked and reported on. RULE 4's `extern` crossing is here because
 // this is where an argument's own span is in hand.
-func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) {
+func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) never fails {
     if (raw expr_is_none(a)) { pass false; }
-    if (!(relay escape_expr(x, a, depth))) { pass false; }
+    if (!(raw escape_expr(x, a, depth))) { pass false; }
     if (ext) {
         // THE ARGUMENT'S SPAN, NOT THE CALL'S. Two arguments that each break the
         // rule are two findings, and reporting both at the call's span makes them
@@ -1248,7 +1250,7 @@ func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) {
         // likes and nothing downstream can be checked, which is the argument the
         // zero-dependency rule rests on: past the FFI barrier there is no control
         // over what happens.
-        ExprNode:anode = relay ast_expr(x.ast, a);
+        ExprNode:anode = raw ast_expr(x.ast, a);
         drop escape_err(x, raw BORROW_EXTERN(),
             "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
             anode.span);
@@ -1257,24 +1259,24 @@ func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) {
 };
 
 // RULE B, for one argument: what may this call have written a borrow INTO?
-func:escape_connect = NIL(Escape->:x, ExprId:a) {
+func:escape_connect = NIL(Escape->:x, ExprId:a) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
-    if (!(relay escape_yields(x, a))) { pass NIL; }
+    if (!(raw escape_yields(x, a))) { pass NIL; }
 
     // WHAT IT POINTS AT DECIDES. A callee can only store a pointer through this
     // argument if the pointee has somewhere to put one — `int32->` has not, which
     // is what keeps `sum_through(@x, @y)` ordinary code.
     int32:aty = raw exprtypes_get(x.etypes, a);
     if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { pass NIL; }
-    if (!(relay carries_pointer(x, raw type_elem(x.types, aty),
+    if (!(raw carries_pointer(x, raw type_elem(x.types, aty),
                                 raw CARRY_FUEL()))) { pass NIL; }
 
     // `@place` — the binding under the place is what may now hold a borrow, and it
     // can be named.
-    PlaceRoot:r = relay place_root(x.ast, a, raw BORROW_FUEL());
+    PlaceRoot:r = raw place_root(x.ast, a, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind == ExprKind.ExprAddressOfExpr) {
         drop escape_mark_place(x, raw expr_operand(rn));
         pass NIL;
@@ -1298,11 +1300,11 @@ func:escape_connect = NIL(Escape->:x, ExprId:a) {
 };
 
 // The binding under a place expression, marked as holding a borrow.
-func:escape_mark_place = NIL(Escape->:x, ExprId:place) {
-    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+func:escape_mark_place = NIL(Escape->:x, ExprId:place) never fails {
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, rn.a);
@@ -1319,11 +1321,11 @@ func:escape_mark_place = NIL(Escape->:x, ExprId:place) {
 // same `place_root` walk. What it does NOT ask is whether the expression CONTAINS
 // a borrow somewhere inside it: rule B needs a place it can name, and
 // `Holder{ inner: @x }` carries a borrow without being one.
-func:escape_yields = bool(Escape->:x, ExprId:id) {
-    PlaceRoot:r = relay place_root(x.ast, id, raw BORROW_FUEL());
+func:escape_yields = bool(Escape->:x, ExprId:id) never fails {
+    PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass true; }
     if (raw expr_is_none(r.id)) { pass false; }
-    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind == ExprKind.ExprAddressOfExpr)  { pass true; }
     if (rn.kind == ExprKind.ExprBorrowExpr)     { pass true; }
     if (rn.kind == ExprKind.ExprIdentifierExpr) { pass (raw escape_binding(x, rn)); }
@@ -1342,9 +1344,9 @@ func:escape_yields = bool(Escape->:x, ExprId:id) {
 // pass has. The cost is a false refusal on a struct of scalars; the alternative is
 // carrying a resolver into every analysis in this cycle to answer a question whose
 // wrong answer is safe.
-pub func:CARRY_FUEL = int32() { pass 32i32; };
+pub func:CARRY_FUEL = int32() never fails { pass 32i32; };
 
-func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
+func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     int32:k = raw type_kind(x.types, ty);
 
@@ -1359,16 +1361,16 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
 
     // The wrappers carry exactly what they wrap. An `int32[4]` is four integers
     // stored inline and carries nothing, which is why an array is not a slice here.
-    if (k == (raw TY_ARRAY()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_ARRAY()))    { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
     if (k == (raw TY_ARENA()))    { pass true; }
     if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE()))   { pass false; }
-    if (k == (raw TY_OPTIONAL())) { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
-    if (k == (raw TY_RANGE()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
 
     // A `Result<T>` carries what its success type carries. The error field is a
     // `tbb32` (D-005) and can hold nothing.
-    if (k == (raw TY_RESULT()))   { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
 
     // THE SCALARS, which are the whole point of asking. Each is a value with no
     // room for an address in it, and `bool`, `char` and the kernel handles are not
@@ -1394,36 +1396,36 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
     pass true;
 };
 
-func:callee_is_extern = bool(Escape->:x, ExprNode:n) {
+func:callee_is_extern = bool(Escape->:x, ExprNode:n) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cnode = relay ast_expr(x.ast, c);
+    ExprNode:cnode = raw ast_expr(x.ast, c);
     if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
     if (cnode.a == 0i32) { pass false; }
     Symbol:s = raw symtab_get(x.tab, cnode.a);
     if (s.origin_kind != (raw SYM_DECL())) { pass false; }
     DeclId:did = DeclId{ index: s.origin };
-    DeclNode:d = relay ast_decl(x.ast, did);
+    DeclNode:d = raw ast_decl(x.ast, did);
     pass (d.kind == DeclKind.DeclExternFn);
 };
 
-func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) {
+func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     bool:found = false;
     int32:i = 0i32;
     while (i < count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        if (relay escape_expr(x, e, depth)) { found = true; }
+        if (raw escape_expr(x, e, depth)) { found = true; }
         i = i + 1i32;
     }
     pass found;
 };
 
-func:escape_children = bool(Escape->:x, ExprNode:n, int32:depth) {
+func:escape_children = bool(Escape->:x, ExprNode:n, int32:depth) never fails {
     int32:shape = raw expr_shape(n.kind);
 
     if (shape == (raw EXPR_SHAPE_LEAF())) { pass false; }
     if (shape == (raw EXPR_SHAPE_LIST())) {
-        pass (relay escape_window(x, raw expr_list_start(n),
+        pass (raw escape_window(x, raw expr_list_start(n),
                                   raw expr_list_count(n), depth));
     }
 
@@ -1444,19 +1446,19 @@ func:escape_children = bool(Escape->:x, ExprNode:n, int32:depth) {
         pass true;
     }
 
-    bool:found = relay escape_expr(x, raw expr_lhs(n), depth);
+    bool:found = raw escape_expr(x, raw expr_lhs(n), depth);
     if (shape == (raw EXPR_SHAPE_ONE())) { pass found; }
 
     if (shape == (raw EXPR_SHAPE_ONELIST())) {
-        if (relay escape_window(x, raw expr_list_start(n),
+        if (raw escape_window(x, raw expr_list_start(n),
                                 raw expr_list_count(n), depth)) { found = true; }
         pass found;
     }
 
-    if (relay escape_expr(x, raw expr_rhs(n), depth)) { found = true; }
+    if (raw escape_expr(x, raw expr_rhs(n), depth)) { found = true; }
     if (shape == (raw EXPR_SHAPE_TWO())) { pass found; }
 
-    if (relay escape_expr(x, raw expr_third(n), depth)) { found = true; }
+    if (raw escape_expr(x, raw expr_third(n), depth)) { found = true; }
     pass found;
 };
 
@@ -1476,9 +1478,9 @@ func:escape_children = bool(Escape->:x, ExprNode:n, int32:depth) {
 // build until this is called from somewhere, because a capture window has to be
 // walked by something — and finding this here is a great deal better than
 // rediscovering rule 5 from the decision text.
-pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) {
-    if (relay escape_expr(x, id, depth)) {
-        ExprNode:n = relay ast_expr(x.ast, id);
+pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) never fails {
+    if (raw escape_expr(x, id, depth)) {
+        ExprNode:n = raw ast_expr(x.ast, id);
         drop escape_err(x, raw BORROW_CAPTURED(),
             "a closure cannot capture a borrow: its environment can outlive the frame the borrow points into (D-004 rule 5)",
             n.span);
@@ -1494,12 +1496,12 @@ pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) {
 //
 // THERE IS NO SPAWN IN THE LANGUAGE YET. Concurrency lowers in cycle 1.1, and when
 // a spawn arrives it is this function that its argument list goes through.
-pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) {
+pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        if (relay escape_expr(x, a, depth)) {
-            ExprNode:anode = relay ast_expr(x.ast, a);
+        if (raw escape_expr(x, a, depth)) {
+            ExprNode:anode = raw ast_expr(x.ast, a);
             drop escape_err(x, raw BORROW_SPAWNED(),
                 "a borrow cannot cross a thread spawn: the spawned frame is not inner to this one, so nothing bounds the borrow's validity (D-004 rule 4)",
                 anode.span);

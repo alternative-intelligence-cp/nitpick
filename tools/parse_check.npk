@@ -41,7 +41,7 @@ use "../src/frontend/source.npk".*;
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         NioW:uw = raw nio_stderr();
-        drop nio_line(@uw, "usage: parse_check <file.npk>");
+        nio_line(@uw, "usage: parse_check <file.npk>") ?| NIL;
         exit 2i32;
     }
 
@@ -58,12 +58,12 @@ func:main = int32(cstring[]:argv) {
         // The code is D-141's space (negative = the kernel's own), not errno.
         string:e = raw int_to_string(loaded.error => int64);
         NioW:ew = raw nio_stderr();
-        drop nio_put(@ew, "cannot read: error ");
-        drop nio_line(@ew, e);
+        nio_put(@ew, "cannot read: error ") ?| NIL;
+        nio_line(@ew, e) ?| NIL;
         exit 2i32;
     }
     int32:file = loaded.value;
-    string:text = raw srcmgr_text(@sm, file);
+    string:text = raw srcmgr_text_proven(@sm, file);
 
     InternTable:it = raw intern_init();
 
@@ -83,13 +83,13 @@ func:main = int32(cstring[]:argv) {
     int64:i = 0i64;
     NioW:ew = raw nio_stderr();
     while (i < (raw diaglist_count(@lexed))) {
-        drop nio_line(@ew, relay diag_line(raw diaglist_at(@lexed, i), @sm));
+        nio_line(@ew, raw diag_line(raw diaglist_at(@lexed, i), @sm)) ?| NIL;
         n = n + 1i64;
         i = i + 1i64;
     }
     i = 0i64;
     while (i < (raw diaglist_count(@parsed))) {
-        drop nio_line(@ew, relay diag_line(raw diaglist_at(@parsed, i), @sm));
+        nio_line(@ew, raw diag_line(raw diaglist_at(@parsed, i), @sm)) ?| NIL;
         n = n + 1i64;
         i = i + 1i64;
     }

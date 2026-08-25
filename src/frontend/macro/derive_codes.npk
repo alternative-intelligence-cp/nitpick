@@ -13,21 +13,21 @@
 
 // A NAME THAT IS NOT ONE OF THE SEVEN. A typo, or a trait the program declared and
 // expected the compiler to know how to generate.
-pub func:DERIVE_UNKNOWN = string()      { pass "NITPICK-DERIVE-001"; };
+pub func:DERIVE_UNKNOWN = string() never fails      { pass "NITPICK-DERIVE-001"; };
 
 // A NAME THAT WAS DERIVABLE ONCE AND IS NOT. `Default` and `Display` were on
 // `TRAITS_REFERENCE.md`'s list of nine and D-123 removed both, for reasons the
 // message carries — a reader who wrote one of them is not making a typo and does
 // not need to be told they might be.
-pub func:DERIVE_REMOVED = string()      { pass "NITPICK-DERIVE-002"; };
+pub func:DERIVE_REMOVED = string() never fails      { pass "NITPICK-DERIVE-002"; };
 
 // THE SAME TRAIT DERIVED TWICE ON ONE DECLARATION. Two impls of one trait for one
 // type, which is what `check_coherence` refuses when they are hand-written — caught
 // here instead, because a derive that generated both would report at code the
 // reader never wrote.
-pub func:DERIVE_DUPLICATE = string()    { pass "NITPICK-DERIVE-003"; };
+pub func:DERIVE_DUPLICATE = string() never fails    { pass "NITPICK-DERIVE-003"; };
 
 // `#[derive]` ON SOMETHING THAT IS NOT A TYPE. Every one of the seven is generated
 // FROM a type's shape — fields, or variants — so there is nothing to generate from
 // on a function or a module.
-pub func:DERIVE_TARGET = string()       { pass "NITPICK-DERIVE-004"; };
+pub func:DERIVE_TARGET = string() never fails       { pass "NITPICK-DERIVE-004"; };

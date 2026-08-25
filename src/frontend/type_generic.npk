@@ -46,7 +46,7 @@ use "./type_trait.npk".*;
 // FUEL, because a substituted instance has its own arguments substituted in turn,
 // so the walk follows a type's structure — and a type's structure is something a
 // program writes.
-func:SUBST_FUEL = int32() { pass 64i32; };
+func:SUBST_FUEL = int32() never fails { pass 64i32; };
 
 // SUBSTITUTION IS WHERE AN ASSOCIATED TYPE BECOMES CONCRETE (D-164, 1.0.6d), so
 // it takes the impl table. That is not a concern leaking downward: `T.Item` is a
@@ -61,7 +61,7 @@ func:SUBST_FUEL = int32() { pass 64i32; };
 // `impls` MAY BE NULL, and the backend passes NULL deliberately: see
 // `assoc_binding_of`.
 pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) {
+                            int32:fuel, wild ImplTable->:impls) never fails {
     if (fuel <= 0i32) { pass t; }
     if (t == 0i32) { pass t; }
     if (g.params_count == 0i32) { pass t; }
@@ -71,7 +71,7 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // of any other is left alone, which is what keeps one generic's `T` out of
     // another's — two declarations may both call theirs `T` and they are two
     // types, told apart by the declaration each was declared in.
-    if (k == (raw TY_PARAM())) { pass (relay subst_param(r, t, g)); }
+    if (k == (raw TY_PARAM())) { pass (raw subst_param(r, t, g)); }
 
     // `T.Item` BECOMES WHAT THE IMPL BOUND once `T` is known. The base is
     // substituted first, and if that made it concrete the impl of the declaring
@@ -82,8 +82,8 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
         int32:ab = raw type_assoc_base(r.types, t);
         int32:atr = raw type_assoc_trait(r.types, t);
         int32:anm = raw type_assoc_name(r.types, t);
-        int32:nb = relay type_subst(r, ab, g, at, fuel - 1i32, impls);
-        int32:bound = relay assoc_binding_of(r, impls, nb, atr, anm);
+        int32:nb = raw type_subst(r, ab, g, at, fuel - 1i32, impls);
+        int32:bound = raw assoc_binding_of(r, impls, nb, atr, anm);
         if (bound != 0i32) { pass bound; }
         if (nb == ab) { pass t; }
         pass (raw tt_assoc(r.types, nb, atr, anm));
@@ -91,26 +91,26 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 
     if (k == (raw TY_POINTER())) {
         pass (raw tt_pointer(r.types,
-                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
     if (k == (raw TY_SLICE())) {
         pass (raw tt_slice(r.types,
-                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
     if (k == (raw TY_ARRAY())) {
-        int32:el = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        int32:el = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_array(r.types, el, raw type_array_count(r.types, t),
                            raw type_size(r.types, el),
                            raw type_align(r.types, el)));
     }
     if (k == (raw TY_OPTIONAL())) {
-        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        int32:inner = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_optional(r.types, inner,
                               raw type_size(r.types, inner),
                               raw type_align(r.types, inner)));
     }
     if (k == (raw TY_RESULT())) {
-        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        int32:inner = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_result(r.types, inner,
                             raw type_size(r.types, inner),
                             raw type_align(r.types, inner)));
@@ -120,12 +120,12 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // becomes `Container<int32>`, a different interned type with its own mangled
     // name. A trait instance is the same case: `Printable<T>` as a BOUND is a
     // different bound once `T` is known.
-    if (k == (raw TY_STRUCT())) { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
-    if (k == (raw TY_ENUM()))   { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
-    if (k == (raw TY_TRAIT()))  { pass (relay subst_instance(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_STRUCT())) { pass (raw subst_instance(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_ENUM()))   { pass (raw subst_instance(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_TRAIT()))  { pass (raw subst_instance(r, t, g, at, fuel, impls)); }
 
-    if (raw type_is_func(r.types, t)) { pass (relay subst_func(r, t, g, at, fuel, impls)); }
-    if (k == (raw TY_DYN()))          { pass (relay subst_dyn(r, t, g, at, fuel, impls)); }
+    if (raw type_is_func(r.types, t)) { pass (raw subst_func(r, t, g, at, fuel, impls)); }
+    if (k == (raw TY_DYN()))          { pass (raw subst_dyn(r, t, g, at, fuel, impls)); }
 
     // EVERY SCALAR, `Self`, and the comptime values. Nothing to substitute, and
     // returning `t` is the answer rather than a fallthrough — a type with no
@@ -133,17 +133,17 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     pass t;
 };
 
-func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) {
+func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) never fails {
     int32:decl = raw type_decl_of(r.types, t);
     int32:i = 0i32;
     while (i < g.params_count) {
-        if ((relay ast_id_at(r.ast, g.params_start, i)) == decl) {
+        if ((raw ast_id_at(r.ast, g.params_start, i)) == decl) {
             // AN UNSOLVED PARAMETER STAYS ITSELF. Inference reports what it could
             // not solve; substituting a zero here would turn every later mention
             // of it into "the invalid type", which reads as a cascade of unrelated
             // failures rather than the one thing that went wrong.
             if (i < g.args_count) {
-                int32:a = relay ast_id_at(r.ast, g.args_start, i);
+                int32:a = raw ast_id_at(r.ast, g.args_start, i);
                 if (a != 0i32) { pass a; }
             }
             pass t;
@@ -154,7 +154,7 @@ func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) {
 };
 
 func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) {
+                            int32:fuel, wild ImplTable->:impls) never fails {
     int32:n = raw type_args_count_of(r.types, t);
     if (n == 0i32) { pass t; }
     int32:start = raw type_args_start_of(r.types, t);
@@ -164,8 +164,8 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:i = 0i32;
     bool:changed = false;
     while (i < n) {
-        int32:was = relay ast_id_at(r.ast, start, i);
-        int32:now = relay type_subst(r, was, g, at, fuel - 1i32, impls);
+        int32:was = raw ast_id_at(r.ast, start, i);
+        int32:now = raw type_subst(r, was, g, at, fuel - 1i32, impls);
         if (now != was) { changed = true; }
         drop ast_scratch_push(r.ast, now);
         i = i + 1i32;
@@ -179,8 +179,8 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
 
-    int32:mangled = relay intern_add(r.interns,
-                        relay mangle_instance(r, raw type_name_of_decl(r, decl), w));
+    int32:mangled = raw intern_add(r.interns,
+                        raw mangle_instance(r, raw type_name_of_decl(r, decl), w));
     int32:out = raw tt_instance(r.types, r.ast, raw type_kind(r.types, t), decl,
                                 mangled, w.start, w.count, 0i64, 1i32);
     // RECORDED LIKE ANY OTHER INSTANTIATION, so its bounds are judged. A
@@ -192,15 +192,15 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 
 // The declaration's own name, which is what the mangled name is built from -- NOT
 // the instance's name, which is already mangled and would nest.
-func:type_name_of_decl = int32(TypeResolver->:r, int32:decl) {
+func:type_name_of_decl = int32(TypeResolver->:r, int32:decl) never fails {
     DeclId:did = DeclId{ index: decl };
-    DeclNode:d = relay ast_decl(r.ast, did);
+    DeclNode:d = raw ast_decl(r.ast, did);
     pass (raw decl_name(d));
 };
 
 func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) {
-    int32:ret = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+                            int32:fuel, wild ImplTable->:impls) never fails {
+    int32:ret = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
     int32:n = raw type_param_count_of(r.types, t);
     int32:start = raw type_param_start_of(r.types, t);
 
@@ -208,7 +208,7 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:i = 0i32;
     while (i < n) {
         drop ast_scratch_push(r.ast,
-            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
+            raw type_subst(r, raw ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
         i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
@@ -223,14 +223,14 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 };
 
 func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) {
+                            int32:fuel, wild ImplTable->:impls) never fails {
     int32:n = raw type_dyn_count(r.types, t);
     int32:start = raw type_dyn_start(r.types, t);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     while (i < n) {
         drop ast_scratch_push(r.ast,
-            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
+            raw type_subst(r, raw ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
         i = i + 1i32;
     }
     // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
@@ -241,10 +241,10 @@ func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 };
 
 pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,
-                                    BoundTable->:bounds, TypeResolver->:r) {
+                                    BoundTable->:bounds, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while (i < (raw inst_count(inst))) {
-        Instance:e = relay inst_at(inst, i);
+        Instance:e = raw inst_at(inst, i);
         drop check_one_instance(impls, bounds, r, e);
         i = i + 1i32;
     }
@@ -252,11 +252,11 @@ pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,
 };
 
 func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
-                              TypeResolver->:r, Instance:e) {
+                              TypeResolver->:r, Instance:e) never fails {
     int32:decl = raw type_decl_of(r.types, e.type_id);
     if (decl == 0i32) { pass NIL; }
     DeclId:did = DeclId{ index: decl };
-    DeclNode:dnode = relay ast_decl(r.ast, did);
+    DeclNode:dnode = raw ast_decl(r.ast, did);
     IdSpan:gp = raw decl_generic_window(r.ast, dnode);
 
     int32:astart = raw type_args_start_of(r.types, e.type_id);
@@ -268,9 +268,9 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
         // short window here means that error was already reported and this stops
         // rather than reading past the parameter list to say it again.
         if (i < gp.count) {
-            DeclId:gpid = DeclId{ index: relay ast_id_at(r.ast, gp.start, i) };
+            DeclId:gpid = DeclId{ index: raw ast_id_at(r.ast, gp.start, i) };
             drop check_arg_bounds(impls, bounds, r,
-                                  relay ast_id_at(r.ast, astart, i),
+                                  raw ast_id_at(r.ast, astart, i),
                                   gpid, dnode, e.at);
         }
         i = i + 1i32;
@@ -280,7 +280,7 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
 
 pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
                             TypeResolver->:r, int32:arg, DeclId:gpid,
-                            DeclNode:owner, Span:at) {
+                            DeclNode:owner, Span:at) never fails {
     // AN ARGUMENT THAT NEVER RESOLVED IS NOT CHECKED. Its own diagnostic was
     // already written where the annotation is, and "the invalid type does not
     // implement `Printable`" would be a second sentence about the same mistake
@@ -293,14 +293,14 @@ pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
     // resolved -- the literal's suffix is right there and the parameter's declared
     // type is one lookup away -- so this only has to know not to ask a value about
     // traits it could never implement.
-    BoundEntry:b = relay bound_entry_of(bounds, gpid.index);
+    BoundEntry:b = raw bound_entry_of(bounds, gpid.index);
     if (b.value_type != 0i32) { pass NIL; }
     if ((raw type_kind(r.types, arg)) == (raw TY_COMPTIME())) { pass NIL; }
 
     int32:i = 0i32;
     while (i < b.count) {
-        int32:need = relay ast_id_at(r.ast, b.start, i);
-        if (!(relay arg_satisfies(impls, bounds, r, arg, need))) {
+        int32:need = raw ast_id_at(r.ast, b.start, i);
+        if (!(raw arg_satisfies(impls, bounds, r, arg, need))) {
             drop bound_unmet(r, arg, need, gpid, owner, at);
         }
         i = i + 1i32;
@@ -323,11 +323,11 @@ pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
 // value, not a type implementing `Printable`, and letting it satisfy the bound
 // would put a fat pointer where a monomorphized body expects a value.
 func:arg_satisfies = bool(ImplTable->:impls, BoundTable->:bounds,
-                          TypeResolver->:r, int32:arg, int32:need) {
+                          TypeResolver->:r, int32:arg, int32:need) never fails {
     // THE PARAMETER CASE MOVED INTO `type_implements` (D-111), where it belongs:
     // "does this type implement this trait" is one question, and it had two
     // answers living in two places with the blanket case missing from both.
-    pass (relay type_implements(impls, bounds, r.ast, r.types, arg, need,
+    pass (raw type_implements(impls, bounds, r.ast, r.types, arg, need,
                                 raw IMPL_FUEL()));
 };
 
@@ -336,16 +336,16 @@ func:arg_satisfies = bool(ImplTable->:impls, BoundTable->:bounds,
 // third — "`int32` does not implement `Printable`" is true of a great many
 // programs and says nothing about which declaration objected.
 func:bound_unmet = NIL(TypeResolver->:r, int32:arg, int32:need, DeclId:gpid,
-                       DeclNode:owner, Span:at) {
-    DeclNode:gp = relay ast_decl(r.ast, gpid);
-    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, arg));
-    string:m2 = relay string_concat(m1, "` does not implement `");
-    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, need));
-    string:m4 = relay string_concat(m3, "`, which `");
-    string:m5 = relay string_concat(m4, relay intern_get(r.interns, raw decl_name(owner)));
-    string:m6 = relay string_concat(m5, "`'s parameter `");
-    string:m7 = relay string_concat(m6, relay intern_get(r.interns, raw decl_name(gp)));
+                       DeclNode:owner, Span:at) never fails {
+    DeclNode:gp = raw ast_decl(r.ast, gpid);
+    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, arg));
+    string:m2 = raw string_concat(m1, "` does not implement `");
+    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, need));
+    string:m4 = raw string_concat(m3, "`, which `");
+    string:m5 = raw string_concat(m4, raw intern_get(r.interns, raw decl_name(owner)));
+    string:m6 = raw string_concat(m5, "`'s parameter `");
+    string:m7 = raw string_concat(m6, raw intern_get(r.interns, raw decl_name(gp)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_BOUND_UNMET(),
-        relay string_concat(m7, "` requires"), at));
+        raw string_concat(m7, "` requires"), at));
     pass NIL;
 };

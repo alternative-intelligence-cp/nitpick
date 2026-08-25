@@ -61,7 +61,7 @@ pub struct:ImplTable = {
     int32:cap;
 };
 
-pub func:impltable_init = ImplTable() {
+pub func:impltable_init = ImplTable() never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<ImplEntry>());
     ImplTable:t = ImplTable{ items: mem =>! wild ImplEntry->,
@@ -69,7 +69,7 @@ pub func:impltable_init = ImplTable() {
     pass t;
 };
 
-func:impl_grow = NIL(ImplTable->:t) {
+func:impl_grow = NIL(ImplTable->:t) never fails {
     int32:nc = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<ImplEntry>());
@@ -78,16 +78,16 @@ func:impl_grow = NIL(ImplTable->:t) {
     pass NIL;
 };
 
-pub func:impl_count = int32(ImplTable->:t) { pass t.count; };
+pub func:impl_count = int32(ImplTable->:t) never fails { pass t.count; };
 
-pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) {
-    if (i < 0i32) { fail 21tbb32; }
-    if (i >= t.count) { fail 21tbb32; }
+pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) never fails {
+    if (i < 0i32) { !!! 21tbb32; }
+    if (i >= t.count) { !!! 21tbb32; }
     pass (t.items[i => int64]);
 };
 
 func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
-                     bool:blanket, int32:scope) {
+                     bool:blanket, int32:scope) never fails {
     if (t.count >= t.cap) { drop impl_grow(t); }
     ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl,
                              blanket: blanket, scope: scope };
@@ -103,13 +103,13 @@ func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
 // compare as one integer and coherence does not depend on how the annotation was
 // spelled -- `Point` and an alias for it are the same interned type (D-090).
 pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
-                             int32:scope) {
-    DeclNode:m = relay ast_decl(r.ast, mod_id);
+                             int32:scope) never fails {
+    DeclNode:m = raw ast_decl(r.ast, mod_id);
     int32:n = raw item_member_count(r.ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclId:id = raw item_member(r.ast, m, i);
-        DeclNode:d = relay ast_decl(r.ast, id);
+        DeclNode:d = raw ast_decl(r.ast, id);
         if (d.kind == DeclKind.DeclImplDecl) {
             drop collect_one_impl(t, r, id, d, scope);
         }
@@ -132,7 +132,7 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
 };
 
 func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
-                            DeclNode:d, int32:scope) {
+                            DeclNode:d, int32:scope) never fails {
     // A BLANKET IMPL'S TARGET IS THE PARAMETER IT DECLARED (D-105, D-111).
     //
     // 0.4.6 recorded a zero here and skipped every check that reads a target,
@@ -144,12 +144,12 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // skipped. A zero could do none of that, because a zero is not a type.
     // A BLANKET IMPL — its target is a bare parameter (D-171): `impl:<T: P>:T:Loggable`.
     // The target `T` and the trait both resolve under the impl's own parameters.
-    if (relay impl_is_blanket(r.ast, d)) {
+    if (raw impl_is_blanket(r.ast, d)) {
         IdSpan:bgw = raw decl_generic_window(r.ast, d);
         GenericScope:bsaved = r.generics;
         r.generics = GenericScope{ params_start: bgw.start, params_count: bgw.count,
                                    args_start: 0i32, args_count: 0i32 };
-        int32:btarget = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+        int32:btarget = raw resolve_type(r, raw impl_target(r.ast, d), scope);
 
         // A BLANKET IMPL IMPLEMENTS A TRAIT. `impl:<T: Bound>:T = { … };` means
         // adding methods to every type satisfying a bound, which is adding
@@ -157,7 +157,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         // trait and only with one (an inherent impl on a CONCRETE type is fine,
         // and an inherent FAMILY impl is the family branch below — this refusal
         // is only for the every-type case).
-        TypeId:btt = relay impl_trait(r.ast, d);
+        TypeId:btt = raw impl_trait(r.ast, d);
         if (raw type_is_none(btt)) {
             r.generics = bsaved;
             drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
@@ -165,15 +165,15 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
                 d.span));
             pass NIL;
         }
-        int32:bt = relay resolve_trait_type(r, btt, scope);
+        int32:bt = raw resolve_trait_type(r, btt, scope);
         r.generics = bsaved;
         if (btarget == 0i32) { pass NIL; }
         if (bt == 0i32) { pass NIL; }
         if (raw type_is_invalid(r.types, bt)) { pass NIL; }
         if ((raw type_kind(r.types, bt)) != (raw TY_TRAIT())) {
-            string:n1 = relay string_concat("`", relay type_display(r.types, r.interns, bt));
+            string:n1 = raw string_concat("`", raw type_display(r.types, r.interns, bt));
             drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                relay string_concat(n1, "` is not a trait, so it cannot be the trait a blanket impl provides"),
+                raw string_concat(n1, "` is not a trait, so it cannot be the trait a blanket impl provides"),
                 d.span));
             pass NIL;
         }
@@ -203,37 +203,37 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // modern blanket's is the bare parameter, already handled above. So this
     // names the new spelling instead of the generic refusal.
     if (igw.count > 0i32) {
-        int32:as_trait = relay resolve_trait_type(r,
-                             relay impl_target(r.ast, d), scope);
+        int32:as_trait = raw resolve_trait_type(r,
+                             raw impl_target(r.ast, d), scope);
         if (as_trait != 0i32) {
             if (!(raw type_is_invalid(r.types, as_trait))) {
                 if ((raw type_kind(r.types, as_trait)) == (raw TY_TRAIT())) {
                     r.generics = isaved;
-                    string:o1 = relay string_concat("`",
-                        relay type_display(r.types, r.interns, as_trait));
-                    string:o2 = relay string_concat(o1,
+                    string:o1 = raw string_concat("`",
+                        raw type_display(r.types, r.interns, as_trait));
+                    string:o2 = raw string_concat(o1,
                         "` is a trait where an impl's target belongs; a blanket impl names its parameter as the target now (D-171) — write `impl:<T: Bound>:T:");
-                    string:o3 = relay string_concat(o2,
-                        relay type_display(r.types, r.interns, as_trait));
+                    string:o3 = raw string_concat(o2,
+                        raw type_display(r.types, r.interns, as_trait));
                     drop diaglist_push(r.diags,
                         raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                            relay string_concat(o3, "`"), d.span));
+                            raw string_concat(o3, "`"), d.span));
                     pass NIL;
                 }
             }
         }
     }
 
-    int32:target = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+    int32:target = raw resolve_type(r, raw impl_target(r.ast, d), scope);
     // THE TRAIT SEGMENT RESOLVES UNDER THE IMPL'S PARAMETERS TOO (1.0.9b): a
     // parameterised trait may take one — `impl:<T>:Box<T>:Iterable<T>` — so the
     // generics stay in scope while it is read, as the target was. Restored
     // after both, not between them.
-    TypeId:tyt = relay impl_trait(r.ast, d);
+    TypeId:tyt = raw impl_trait(r.ast, d);
     int32:trait_id = 0i32;
     bool:has_trait = !(raw type_is_none(tyt));
     if (has_trait) {
-        trait_id = relay resolve_trait_type(r, tyt, scope);
+        trait_id = raw resolve_trait_type(r, tyt, scope);
     }
     r.generics = isaved;
     if (target == 0i32) { pass NIL; }
@@ -252,8 +252,8 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // well-formed and means nothing; saying which segment is wrong is the whole
     // value of the diagnostic, since the two are one character apart.
     if ((raw type_kind(r.types, trait_id)) != (raw TY_TRAIT())) {
-        string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, trait_id));
-        string:m2 = relay string_concat(m1,
+        string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, trait_id));
+        string:m2 = raw string_concat(m1,
             "` is not a trait, so it cannot be implemented; in `impl:Type:Trait` the type comes first (D-031)");
         drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), m2, d.span));
         pass NIL;
@@ -283,14 +283,14 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
 //
 // A BLANKET IMPL AND A CONCRETE ONE ARE NOT A CONFLICT (D-105) — overlapping is
 // the point, and §2.6 already says the concrete one wins.
-pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
+pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:a = relay impl_at(t, i);
+        ImplEntry:a = raw impl_at(t, i);
         if (a.trait_id != 0i32) {
             int32:j = i + 1i32;
             while (j < t.count) {
-                ImplEntry:b = relay impl_at(t, j);
+                ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == a.trait_id) {
                     if (a.blanket) {
                         if (b.blanket) { drop blanket_overlap(r, a, b); }
@@ -311,7 +311,7 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
                                 // D-064 §7 has no specialization, so "family
                                 // plus per-instance" is an overlap rather than
                                 // "the specific one wins".
-                                if (relay family_covers(r, a, b)) {
+                                if (raw family_covers(r, a, b)) {
                                     drop family_overlap(r, a, b);
                                 }
                             }
@@ -331,9 +331,9 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
 // target of its own) and both targets share a declaration — which is what
 // identity is (D-090), and what makes `Box<int32>` a member of `Box<T>`'s
 // family.
-func:family_covers = bool(TypeResolver->:r, ImplEntry:a, ImplEntry:b) {
-    bool:af = relay impl_is_family(r, a);
-    bool:bf = relay impl_is_family(r, b);
+func:family_covers = bool(TypeResolver->:r, ImplEntry:a, ImplEntry:b) never fails {
+    bool:af = raw impl_is_family(r, a);
+    bool:bf = raw impl_is_family(r, b);
     if (!af) {
         if (!bf) { pass false; }
     }
@@ -342,9 +342,9 @@ func:family_covers = bool(TypeResolver->:r, ImplEntry:a, ImplEntry:b) {
     pass (ad == (raw type_decl_of(r.types, b.target)));
 };
 
-func:impl_is_family = bool(TypeResolver->:r, ImplEntry:e) {
+func:impl_is_family = bool(TypeResolver->:r, ImplEntry:e) never fails {
     if (e.blanket) { pass false; }
-    DeclNode:d = relay ast_decl(r.ast, DeclId{ index: e.decl });
+    DeclNode:d = raw ast_decl(r.ast, DeclId{ index: e.decl });
     pass ((raw impl_generic_count(r.ast, d)) > 0i32);
 };
 
@@ -357,34 +357,34 @@ func:impl_is_family = bool(TypeResolver->:r, ImplEntry:e) {
 // here). Telling a reader that a per-instance impl "covers every instance"
 // because it happened to be written first is a refusal that misdescribes what
 // it refused, which is worse than a terser one that is true.
-func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
-    DeclNode:first_d = relay ast_decl(r.ast, DeclId{ index: first.decl });
-    DeclNode:second_d = relay ast_decl(r.ast, DeclId{ index: second.decl });
+func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never fails {
+    DeclNode:first_d = raw ast_decl(r.ast, DeclId{ index: first.decl });
+    DeclNode:second_d = raw ast_decl(r.ast, DeclId{ index: second.decl });
 
     string:fr = "covers one member of that family";
     string:sr = "covers every instance of it";
-    if (relay impl_is_family(r, first)) {
+    if (raw impl_is_family(r, first)) {
         fr = "covers every instance of that family";
         sr = "covers one member of it";
-        if (relay impl_is_family(r, second)) {
+        if (raw impl_is_family(r, second)) {
             sr = "covers every instance of it as well";
         }
     }
 
-    string:m1 = relay string_concat("`",
-                    relay type_display(r.types, r.interns, second.trait_id));
-    string:m2 = relay string_concat(m1, "` is already implemented for `");
-    string:m3 = relay string_concat(m2,
-                    relay type_display(r.types, r.interns, first.target));
-    string:m4 = relay string_concat(m3, "` at line ");
-    string:m5 = relay string_concat(m4,
+    string:m1 = raw string_concat("`",
+                    raw type_display(r.types, r.interns, second.trait_id));
+    string:m2 = raw string_concat(m1, "` is already implemented for `");
+    string:m3 = raw string_concat(m2,
+                    raw type_display(r.types, r.interns, first.target));
+    string:m4 = raw string_concat(m3, "` at line ");
+    string:m5 = raw string_concat(m4,
                     raw int_to_string(first_d.span.line => int64));
-    string:m6 = relay string_concat(m5, ", which ");
-    string:m7 = relay string_concat(m6, fr);
-    string:m8 = relay string_concat(m7, "; this impl ");
-    string:m9 = relay string_concat(m8, sr);
+    string:m6 = raw string_concat(m5, ", which ");
+    string:m7 = raw string_concat(m6, fr);
+    string:m8 = raw string_concat(m7, "; this impl ");
+    string:m9 = raw string_concat(m8, sr);
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
-        relay string_concat(m9,
+        raw string_concat(m9,
             " — with no specialization there is no rule to choose by (D-064 §7), so the two overlap rather than one winning"),
         second_d.span));
     pass NIL;
@@ -393,18 +393,18 @@ func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
 // BOTH ARE NAMED, the same shape the concrete conflict uses — a reader told only
 // that two blanket impls overlap has to go and find the other one, which is the
 // one thing the compiler already knows.
-func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never fails {
     DeclId:fid = DeclId{ index: first.decl };
-    DeclNode:first_d = relay ast_decl(r.ast, fid);
+    DeclNode:first_d = raw ast_decl(r.ast, fid);
     DeclId:sid = DeclId{ index: second.decl };
-    DeclNode:second_d = relay ast_decl(r.ast, sid);
+    DeclNode:second_d = raw ast_decl(r.ast, sid);
 
-    string:m1 = relay string_concat("`",
-                    relay type_display(r.types, r.interns, second.trait_id));
-    string:m2 = relay string_concat(m1, "` already has a blanket impl at line ");
-    string:m3 = relay string_concat(m2, raw int_to_string(first_d.span.line => int64));
+    string:m1 = raw string_concat("`",
+                    raw type_display(r.types, r.interns, second.trait_id));
+    string:m2 = raw string_concat(m1, "` already has a blanket impl at line ");
+    string:m3 = raw string_concat(m2, raw int_to_string(first_d.span.line => int64));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
-        relay string_concat(m3,
+        raw string_concat(m3,
             "; a blanket impl applies to every type satisfying its bound, and nothing stops a type satisfying both bounds — with no specialization there is no rule to choose by (D-064)"),
         second_d.span));
     pass NIL;
@@ -413,19 +413,19 @@ func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
 // BOTH IMPLS ARE NAMED, and the second one carries the span. "conflicting
 // implementations" with one location makes the reader search for the other, which
 // is the one thing the compiler already knows.
-func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never fails {
     DeclId:fid = DeclId{ index: first.decl };
-    DeclNode:first_d = relay ast_decl(r.ast, fid);
+    DeclNode:first_d = raw ast_decl(r.ast, fid);
     DeclId:sid = DeclId{ index: second.decl };
-    DeclNode:second_d = relay ast_decl(r.ast, sid);
+    DeclNode:second_d = raw ast_decl(r.ast, sid);
 
-    string:m1 = relay string_concat("`",
-                    relay type_display(r.types, r.interns, second.trait_id));
-    string:m2 = relay string_concat(m1, "` is already implemented for `");
-    string:m3 = relay string_concat(m2,
-                    relay type_display(r.types, r.interns, second.target));
-    string:m4 = relay string_concat(m3, "` at line ");
-    string:m5 = relay string_concat(m4, raw int_to_string(first_d.span.line => int64));
+    string:m1 = raw string_concat("`",
+                    raw type_display(r.types, r.interns, second.trait_id));
+    string:m2 = raw string_concat(m1, "` is already implemented for `");
+    string:m3 = raw string_concat(m2,
+                    raw type_display(r.types, r.interns, second.target));
+    string:m4 = raw string_concat(m3, "` at line ");
+    string:m5 = raw string_concat(m4, raw int_to_string(first_d.span.line => int64));
 
     // ONE OF THE TWO MAY HAVE BEEN GENERATED, and saying so is the difference
     // between a useful sentence and one that sends the reader looking for an `impl`
@@ -439,7 +439,7 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
         tail = "; `#[derive]` generated one of them, and a trait has at most one implementation per type — remove the derive, or the impl";
     }
     drop diaglist_push(r.diags,
-        raw diag_error(raw TYPE_COHERENCE(), relay string_concat(m5, tail),
+        raw diag_error(raw TYPE_COHERENCE(), raw string_concat(m5, tail),
                        second_d.span));
     pass NIL;
 };
@@ -478,7 +478,7 @@ pub struct:BoundTable = {
     int32:cap;
 };
 
-pub func:boundtable_init = BoundTable() {
+pub func:boundtable_init = BoundTable() never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<BoundEntry>());
     BoundTable:t = BoundTable{ items: mem =>! wild BoundEntry->,
@@ -486,7 +486,7 @@ pub func:boundtable_init = BoundTable() {
     pass t;
 };
 
-func:bound_grow = NIL(BoundTable->:t) {
+func:bound_grow = NIL(BoundTable->:t) never fails {
     int32:nc = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<BoundEntry>());
@@ -495,16 +495,16 @@ func:bound_grow = NIL(BoundTable->:t) {
     pass NIL;
 };
 
-pub func:bound_count = int32(BoundTable->:t) { pass t.count; };
+pub func:bound_count = int32(BoundTable->:t) never fails { pass t.count; };
 
-pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) {
-    if (i < 0i32) { fail 22tbb32; }
-    if (i >= t.count) { fail 22tbb32; }
+pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) never fails {
+    if (i < 0i32) { !!! 22tbb32; }
+    if (i >= t.count) { !!! 22tbb32; }
     pass (t.items[i => int64]);
 };
 
 func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
-                      int32:value_type) {
+                      int32:value_type) never fails {
     if (t.count >= t.cap) { drop bound_grow(t); }
     BoundEntry:e = BoundEntry{ param: param, start: start, count: count,
                                value_type: value_type };
@@ -517,10 +517,10 @@ func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
 // an error state: a bare `<T>` declares no bounds, and "no bounds" and "not
 // collected" have the same consequence — `T` can do nothing — so they do not need
 // telling apart.
-pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) {
+pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        BoundEntry:e = relay bound_at(t, i);
+        BoundEntry:e = raw bound_at(t, i);
         if (e.param == param) { pass e; }
         i = i + 1i32;
     }
@@ -532,11 +532,11 @@ pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) {
 // DOES THIS PARAMETER DECLARE THIS TRAIT? The closure is already stored, so a
 // supertrait answers `true` here without a second walk.
 pub func:param_declares = bool(BoundTable->:t, int32:param, int32:trait_id,
-                               Ast->:ast) {
-    BoundEntry:e = relay bound_entry_of(t, param);
+                               Ast->:ast) never fails {
+    BoundEntry:e = raw bound_entry_of(t, param);
     int32:i = 0i32;
     while (i < e.count) {
-        if ((relay ast_id_at(ast, e.start, i)) == trait_id) { pass true; }
+        if ((raw ast_id_at(ast, e.start, i)) == trait_id) { pass true; }
         i = i + 1i32;
     }
     pass false;
@@ -546,19 +546,19 @@ pub func:param_declares = bool(BoundTable->:t, int32:param, int32:trait_id,
 // the impl-table lookup, and for the same reason: two bounds declaring one name
 // is a real ambiguity that only the programmer can settle.
 func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
-                                 int32:param, int32:name) {
+                                 int32:param, int32:name) never fails {
     // A BOUND'S METHOD IS THE TRAIT'S DECLARATION, written in terms of `Self`, so
     // there is no blanket parameter to bind -- the receiver IS the parameter.
     MethodFind:best = raw method_none();
-    BoundEntry:e = relay bound_entry_of(bt, param);
+    BoundEntry:e = raw bound_entry_of(bt, param);
     int32:i = 0i32;
     while (i < e.count) {
-        int32:trait_id = relay ast_id_at(ast, e.start, i);
+        int32:trait_id = raw ast_id_at(ast, e.start, i);
         int32:decl = raw type_decl_of(types, trait_id);
         if (decl != 0i32) {
             DeclId:did = DeclId{ index: decl };
-            DeclNode:td = relay ast_decl(ast, did);
-            int32:m = relay trait_member_named(ast, td, name,
+            DeclNode:td = raw ast_decl(ast, did);
+            int32:m = raw trait_member_named(ast, td, name,
                                                DeclKind.DeclFunctionDecl);
             if (m != 0i32) {
                 if (best.found) {
@@ -579,7 +579,7 @@ func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
 // FUEL, for the same reason `SUPER_FUEL` exists: a supertrait graph is written by
 // a program, so `trait:A = B & {…}; trait:B = A & {…};` is a cycle somebody can
 // type. The closure walk must terminate before reporting rather than after.
-func:BOUND_FUEL = int32() { pass 64i32; };
+func:BOUND_FUEL = int32() never fails { pass 64i32; };
 
 // Add one trait and everything it requires, skipping what is already present.
 //
@@ -588,13 +588,13 @@ func:BOUND_FUEL = int32() { pass 64i32; };
 // second copy as a second bound declaring the same name. Every method of `A`
 // would then be reported as ambiguous, on a program that is perfectly correct.
 func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
-                        int32:scope, int32:fuel) {
+                        int32:scope, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
 
     int32:have = (raw ast_scratch_mark(r.ast)) - mark;
     int32:i = 0i32;
     while (i < have) {
-        if ((relay ast_scratch_at(r.ast, mark, i)) == trait_id) { pass NIL; }
+        if ((raw ast_scratch_at(r.ast, mark, i)) == trait_id) { pass NIL; }
         i = i + 1i32;
     }
     drop ast_scratch_push(r.ast, trait_id);
@@ -602,12 +602,12 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass NIL; }
     DeclId:did = DeclId{ index: decl };
-    DeclNode:td = relay ast_decl(r.ast, did);
+    DeclNode:td = raw ast_decl(r.ast, did);
 
     int32:n = raw item_extra_count(r.ast, td);
     int32:j = 0i32;
     while (j < n) {
-        int32:sup = relay resolve_trait_type(r, relay item_extra(r.ast, td, j), scope);
+        int32:sup = raw resolve_trait_type(r, raw item_extra(r.ast, td, j), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
                 // A supertrait that is not a trait is reported by
@@ -626,14 +626,14 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
 
 // One parameter's bounds, resolved and closed.
 func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
-                                int32:scope) {
-    DeclNode:g = relay ast_decl(r.ast, gp);
+                                int32:scope) never fails {
+    DeclNode:g = raw ast_decl(r.ast, gp);
 
     // A VALUE PARAMETER HAS A TYPE AND NO BOUNDS, and the two are told apart by
     // the type slot rather than by a flag -- `parse_decl.npk` says why that is an
     // exact discriminator rather than a coincidence.
     if (raw generic_is_value(g)) {
-        int32:vt = relay resolve_type(r, raw generic_value_type(g), scope);
+        int32:vt = raw resolve_type(r, raw generic_value_type(g), scope);
         drop bound_push(t, gp.index, 0i32, 0i32, vt);
         pass NIL;
     }
@@ -644,9 +644,9 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
     while (i < n) {
         // NOT `tid` — that is one of the five kernel identifier types (D-042),
         // and a type name is not an identifier.
-        TypeId:bid = TypeId{ index: relay ast_id_at(r.ast,
+        TypeId:bid = TypeId{ index: raw ast_id_at(r.ast,
                                                     raw generic_bound_start(g), i) };
-        int32:bound_id = relay resolve_trait_type(r, bid, scope);
+        int32:bound_id = raw resolve_trait_type(r, bid, scope);
         if (bound_id != 0i32) {
             if (!(raw type_is_invalid(r.types, bound_id))) {
                 if ((raw type_kind(r.types, bound_id)) != (raw TY_TRAIT())) {
@@ -663,12 +663,12 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
     pass NIL;
 };
 
-func:bound_not_trait = NIL(TypeResolver->:r, DeclNode:g, int32:bound_id) {
-    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, bound_id));
-    string:m2 = relay string_concat(m1, "` is not a trait, so it cannot bound `");
-    string:m3 = relay string_concat(m2, relay intern_get(r.interns, raw decl_name(g)));
+func:bound_not_trait = NIL(TypeResolver->:r, DeclNode:g, int32:bound_id) never fails {
+    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, bound_id));
+    string:m2 = raw string_concat(m1, "` is not a trait, so it cannot bound `");
+    string:m3 = raw string_concat(m2, raw intern_get(r.interns, raw decl_name(g)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-        relay string_concat(m3,
+        raw string_concat(m3,
             "`; a bound names the traits the parameter must implement, and a parameter binds to exactly one type rather than to types resembling one"),
         g.span));
     pass NIL;
@@ -680,8 +680,8 @@ func:bound_not_trait = NIL(TypeResolver->:r, DeclNode:g, int32:bound_id) {
 // -- so this walks each by its own accessor rather than by a shared one that
 // would read the wrong slot for two of the three.
 pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
-                              int32:scope) {
-    DeclNode:m = relay ast_decl(r.ast, mod_id);
+                              int32:scope) never fails {
+    DeclNode:m = raw ast_decl(r.ast, mod_id);
     int32:n = raw item_member_count(r.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -692,7 +692,7 @@ pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
         // was never collected is a type parameter with NO constraints as far as
         // every later question is concerned — which accepts calls that should be
         // refused rather than refusing ones that should be accepted.
-        DeclNode:d = relay ast_decl(r.ast, id);
+        DeclNode:d = raw ast_decl(r.ast, id);
         if (d.kind == DeclKind.DeclModuleDecl) {
             int32:inner = raw nested_module_scope(r.tab, d, scope);
             if (inner != 0i32) {
@@ -705,34 +705,34 @@ pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
 };
 
 func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
-                               int32:scope) {
-    DeclNode:d = relay ast_decl(r.ast, id);
+                               int32:scope) never fails {
+    DeclNode:d = raw ast_decl(r.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
-        int32:n = relay fn_generic_count(r.ast, d);
+        int32:n = raw fn_generic_count(r.ast, d);
         int32:i = 0i32;
         while (i < n) {
-            drop collect_param_bounds(t, r, relay fn_generic(r.ast, d, i), scope);
+            drop collect_param_bounds(t, r, raw fn_generic(r.ast, d, i), scope);
             i = i + 1i32;
         }
         pass NIL;
     }
 
     if (d.kind == DeclKind.DeclImplDecl) {
-        int32:n = relay impl_generic_count(r.ast, d);
+        int32:n = raw impl_generic_count(r.ast, d);
         int32:i = 0i32;
         while (i < n) {
-            drop collect_param_bounds(t, r, relay impl_generic(r.ast, d, i), scope);
+            drop collect_param_bounds(t, r, raw impl_generic(r.ast, d, i), scope);
             i = i + 1i32;
         }
         // A METHOD MAY BE GENERIC ON ITS OWN ACCOUNT. `impl:Point = { func:map<U:
         // Printable> = … };` declares `U` inside a block whose own generic list is
         // empty, so a walk that stopped at the block would leave `U` unbounded and
         // silently duck-typed.
-        int32:mn = relay impl_member_count(r.ast, d);
+        int32:mn = raw impl_member_count(r.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            drop collect_decl_bounds(t, r, relay impl_member(r.ast, d, j), scope);
+            drop collect_decl_bounds(t, r, raw impl_member(r.ast, d, j), scope);
             j = j + 1i32;
         }
         pass NIL;
@@ -762,11 +762,11 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
 };
 
 func:collect_item_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclNode:d,
-                               int32:scope) {
+                               int32:scope) never fails {
     int32:n = raw item_generic_count(r.ast, d);
     int32:i = 0i32;
     while (i < n) {
-        drop collect_param_bounds(t, r, relay item_generic(r.ast, d, i), scope);
+        drop collect_param_bounds(t, r, raw item_generic(r.ast, d, i), scope);
         i = i + 1i32;
     }
     pass NIL;
@@ -814,7 +814,7 @@ pub struct:MethodFind = {
     int32:owner_impl;
 };
 
-func:method_none = MethodFind() {
+func:method_none = MethodFind() never fails {
     MethodFind:m = MethodFind{ found: false, ambiguous: false,
                                decl: 0i32, owner: 0i32, other: 0i32,
                                blanket_impl: 0i32, owner_impl: 0i32 };
@@ -842,9 +842,9 @@ func:method_none = MethodFind() {
 pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                                   TypeTable->:types, Ast->:ast,
                                   InternTable->:interns, int32:target,
-                                  int32:name, int32:self_trait) {
+                                  int32:name, int32:self_trait) never fails {
     if ((raw type_kind(types, target)) == (raw TY_PARAM())) {
-        pass (relay find_in_bounds(bt, ast, types,
+        pass (raw find_in_bounds(bt, ast, types,
                                    raw type_decl_of(types, target), name));
     }
 
@@ -856,8 +856,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     // from here would be reaching past the guarantee into one implementor.
     if ((raw type_kind(types, target)) == (raw TY_SELF())) {
         if (self_trait != 0i32) {
-            DeclNode:std = relay ast_decl(ast, DeclId{ index: self_trait });
-            int32:sm = relay trait_member_named(ast, std, name,
+            DeclNode:std = raw ast_decl(ast, DeclId{ index: self_trait });
+            int32:sm = raw trait_member_named(ast, std, name,
                            DeclKind.DeclFunctionDecl);
             if (sm != 0i32) {
                 MethodFind:sf = MethodFind{ found: true, ambiguous: false,
@@ -873,8 +873,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     if ((raw type_kind(types, target)) == (raw TY_TRAIT())) {
         int32:tdecl = raw type_decl_of(types, target);
         if (tdecl != 0i32) {
-            DeclNode:td = relay ast_decl(ast, DeclId{ index: tdecl });
-            int32:m = relay trait_member_named(ast, td, name,
+            DeclNode:td = raw ast_decl(ast, DeclId{ index: tdecl });
+            int32:m = raw trait_member_named(ast, td, name,
                           DeclKind.DeclFunctionDecl);
             if (m != 0i32) {
                 MethodFind:sm = MethodFind{ found: true, ambiguous: false,
@@ -900,13 +900,13 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     // there is no one impl to name — which is also what makes 1.1's `never
     // fails` licence read the TRAIT's contract for a `dyn` call (D-163 rule 5).
     if ((raw type_kind(types, target)) == (raw TY_DYN())) {
-        pass (relay find_in_dyn(types, ast, target, name));
+        pass (raw find_in_dyn(types, ast, target, name));
     }
 
     MethodFind:best = raw method_none();
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         // A FAMILY IMPL MATCHES ANY INSTANCE OF ITS TARGET (1.0.4b).
         // `impl:<T>:Box<T>:Sized2` has target `Box<T>`; a call on `Box<int32>`
         // must reach it, and the two are different interned types. They share a
@@ -915,7 +915,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
         // less general.
         bool:hit = (e.target == target);
         if (!hit) {
-            if ((raw impl_generic_count(ast, relay ast_decl(ast,
+            if ((raw impl_generic_count(ast, raw ast_decl(ast,
                      DeclId{ index: e.decl }))) > 0i32) {
                 if (e.target != 0i32) {
                     int32:ed = raw type_decl_of(types, e.target);
@@ -929,8 +929,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
         }
         if (hit) {
             bool:parameterised = ((raw impl_generic_count(ast,
-                relay ast_decl(ast, DeclId{ index: e.decl }))) > 0i32);
-            int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
+                raw ast_decl(ast, DeclId{ index: e.decl }))) > 0i32);
+            int32:mdecl = raw impl_method_named(ast, interns, e.decl, name);
 
             // AN OMITTED METHOD FALLS BACK TO THE TRAIT'S DEFAULT (1.0.4). A
             // trait method with a BODY is inherited by every impl that does not
@@ -941,7 +941,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             // concrete-outranks-general ordering the blanket search below uses.
             if (mdecl == 0i32) {
                 if (e.trait_id != 0i32) {
-                    mdecl = relay trait_default_named(ast, interns, types,
+                    mdecl = raw trait_default_named(ast, interns, types,
                                 e.trait_id, name);
                 }
             }
@@ -959,7 +959,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     // parameters, rather than the 0 that left `T` unbound and
                     // rendered the receiver `Box<<unresolved>>`.
                     int32:inh_bl = 0i32;
-                    if ((raw impl_generic_count(ast, relay ast_decl(ast,
+                    if ((raw impl_generic_count(ast, raw ast_decl(ast,
                              DeclId{ index: e.decl }))) > 0i32) {
                         inh_bl = e.decl;
                     }
@@ -994,11 +994,11 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     if (!best.found) {
         int32:j = 0i32;
         while (j < t.count) {
-            ImplEntry:e = relay impl_at(t, j);
+            ImplEntry:e = raw impl_at(t, j);
             if (e.blanket) {
-                if (relay blanket_applies(t, bt, ast, types, e, target,
+                if (raw blanket_applies(t, bt, ast, types, e, target,
                                           raw IMPL_FUEL())) {
-                    int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
+                    int32:mdecl = raw impl_method_named(ast, interns, e.decl, name);
                     if (mdecl != 0i32) {
                         if (best.found) {
                             best.ambiguous = true;
@@ -1022,17 +1022,17 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
 // The named traits' own methods, in bound order, with a name supplied by two of
 // them refused rather than resolved.
 func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
-                              int32:name) {
+                              int32:name) never fails {
     int32:n = raw type_dyn_count(types, target);
     int32:start = raw type_dyn_start(types, target);
     MethodFind:best = raw method_none();
     int32:i = 0i32;
     while (i < n) {
-        int32:tr = relay ast_id_at(ast, start, i);
+        int32:tr = raw ast_id_at(ast, start, i);
         int32:td = raw type_decl_of(types, tr);
         if (td != 0i32) {
-            DeclNode:tn = relay ast_decl(ast, DeclId{ index: td });
-            int32:m = relay trait_member_named(ast, tn, name,
+            DeclNode:tn = raw ast_decl(ast, DeclId{ index: td });
+            int32:m = raw trait_member_named(ast, tn, name,
                           DeclKind.DeclFunctionDecl);
             if (m != 0i32) {
                 if (best.found) {
@@ -1061,15 +1061,15 @@ func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
 // check) from a method it simply inherited.
 pub func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
                                      TypeTable->:types, int32:trait_id,
-                                     int32:name) {
+                                     int32:name) never fails {
     int32:tdecl = raw type_decl_of(types, trait_id);
     if (tdecl == 0i32) { pass 0i32; }
-    DeclNode:td = relay ast_decl(ast, DeclId{ index: tdecl });
-    int32:n = relay item_member_count(ast, td);
+    DeclNode:td = raw ast_decl(ast, DeclId{ index: tdecl });
+    int32:n = raw item_member_count(ast, td);
     int32:i = 0i32;
     while (i < n) {
-        DeclId:mid = relay item_member(ast, td, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclId:mid = raw item_member(ast, td, i);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == name) {
                 if (!(raw stmt_is_none(raw fn_body(ast, m)))) {
@@ -1084,14 +1084,14 @@ pub func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
 
 // A function member of one `impl` block, by name.
 pub func:impl_method_named = int32(Ast->:ast, InternTable->:interns,
-                                   int32:decl, int32:name) {
+                                   int32:decl, int32:name) never fails {
     DeclId:id = DeclId{ index: decl };
-    DeclNode:d = relay ast_decl(ast, id);
-    int32:n = relay impl_member_count(ast, d);
+    DeclNode:d = raw ast_decl(ast, id);
+    int32:n = raw impl_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclId:mid = relay impl_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclId:mid = raw impl_member(ast, d, i);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
@@ -1106,11 +1106,11 @@ pub func:impl_method_named = int32(Ast->:ast, InternTable->:interns,
 // a method with no body, and an `assoc` with no bound type. Both absences are
 // real rather than a flag somebody has to set (`parse_decls.npk` says so of the
 // method case: "A trait method has no body, and that is a real absence").
-func:trait_method_required = bool(Ast->:ast, DeclNode:m) {
-    pass (raw stmt_is_none(relay fn_body(ast, m)));
+func:trait_method_required = bool(Ast->:ast, DeclNode:m) never fails {
+    pass (raw stmt_is_none(raw fn_body(ast, m)));
 };
 
-func:assoc_required = bool(DeclNode:m) {
+func:assoc_required = bool(DeclNode:m) never fails {
     pass (raw type_is_none(raw assoc_default(m)));
 };
 
@@ -1130,10 +1130,10 @@ func:assoc_required = bool(DeclNode:m) {
 // target was a zero, and a zero cannot be compared against anything; now it is the
 // parameter type, so `Self` substitutes to the parameter and every question below
 // has an answer.
-pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) {
+pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop check_one_impl_complete(r, e, e.scope);
         }
@@ -1142,21 +1142,21 @@ pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) {
     pass NIL;
 };
 
-func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) {
+func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) never fails {
     DeclId:trait_did = DeclId{ index: raw type_decl_of(r.types, e.trait_id) };
-    DeclNode:td = relay ast_decl(r.ast, trait_did);
+    DeclNode:td = raw ast_decl(r.ast, trait_did);
     DeclId:iid = DeclId{ index: e.decl };
-    DeclNode:idl = relay ast_decl(r.ast, iid);
+    DeclNode:idl = raw ast_decl(r.ast, iid);
 
     // --- everything the trait requires is supplied --------------------------------
     int32:tn = raw item_member_count(r.ast, td);
     int32:i = 0i32;
     while (i < tn) {
         DeclId:mid = raw item_member(r.ast, td, i);
-        DeclNode:m = relay ast_decl(r.ast, mid);
+        DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
-            if (relay trait_method_required(r.ast, m)) {
-                if ((relay impl_member_named(r.ast, idl, raw decl_name(m),
+            if (raw trait_method_required(r.ast, m)) {
+                if ((raw impl_member_named(r.ast, idl, raw decl_name(m),
                                              DeclKind.DeclFunctionDecl)) == 0i32) {
                     drop missing_error(r, e, idl, m, "method");
                 }
@@ -1164,7 +1164,7 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) {
         }
         if (m.kind == DeclKind.DeclAssocTypeDecl) {
             if (raw assoc_required(m)) {
-                if ((relay impl_member_named(r.ast, idl, raw decl_name(m),
+                if ((raw impl_member_named(r.ast, idl, raw decl_name(m),
                                              DeclKind.DeclAssocTypeDecl)) == 0i32) {
                     drop missing_error(r, e, idl, m, "associated type");
                 }
@@ -1178,13 +1178,13 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) {
     // AN EXTRA METHOD IS NOT A HELPER. `impl:Point = { … };` is where a method
     // with no trait behind it belongs (2.4), and it is one line away -- so the
     // diagnostic points there rather than merely refusing.
-    int32:inn = relay impl_member_count(r.ast, idl);
+    int32:inn = raw impl_member_count(r.ast, idl);
     int32:j = 0i32;
     while (j < inn) {
-        DeclId:mid = relay impl_member(r.ast, idl, j);
-        DeclNode:m = relay ast_decl(r.ast, mid);
+        DeclId:mid = raw impl_member(r.ast, idl, j);
+        DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
-            int32:decl_in_trait = relay trait_member_named(r.ast, td, raw decl_name(m),
+            int32:decl_in_trait = raw trait_member_named(r.ast, td, raw decl_name(m),
                                                            DeclKind.DeclFunctionDecl);
             if (decl_in_trait == 0i32) {
                 drop extra_error(r, e, m, "method");
@@ -1193,7 +1193,7 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) {
             }
         }
         if (m.kind == DeclKind.DeclAssocTypeDecl) {
-            if ((relay trait_member_named(r.ast, td, raw decl_name(m),
+            if ((raw trait_member_named(r.ast, td, raw decl_name(m),
                                           DeclKind.DeclAssocTypeDecl)) == 0i32) {
                 drop extra_error(r, e, m, "associated type");
             }
@@ -1206,12 +1206,12 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) {
 // A member of an `impl` block by name AND KIND. The kind matters: a trait may
 // declare `assoc:Item` and a method could be named `Item` too, and matching on
 // the name alone would let one stand in for the other.
-func:impl_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) {
-    int32:n = relay impl_member_count(ast, d);
+func:impl_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) never fails {
+    int32:n = raw impl_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclId:mid = relay impl_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclId:mid = raw impl_member(ast, d, i);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == kind) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
@@ -1220,12 +1220,12 @@ func:impl_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind)
     pass 0i32;
 };
 
-func:trait_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) {
+func:trait_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) never fails {
     int32:n = raw item_member_count(ast, d);
     int32:i = 0i32;
     while (i < n) {
         DeclId:mid = raw item_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == kind) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
@@ -1235,26 +1235,26 @@ func:trait_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind
 };
 
 func:missing_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:idl, DeclNode:m,
-                         string:what) {
-    string:m1 = relay string_concat("`",
-                    relay type_display(r.types, r.interns, e.trait_id));
-    string:m2 = relay string_concat(m1, "` requires ");
-    string:m3 = relay string_concat(m2, what);
-    string:m4 = relay string_concat(m3, " `");
-    string:m5 = relay string_concat(m4, relay intern_get(r.interns, raw decl_name(m)));
+                         string:what) never fails {
+    string:m1 = raw string_concat("`",
+                    raw type_display(r.types, r.interns, e.trait_id));
+    string:m2 = raw string_concat(m1, "` requires ");
+    string:m3 = raw string_concat(m2, what);
+    string:m4 = raw string_concat(m3, " `");
+    string:m5 = raw string_concat(m4, raw intern_get(r.interns, raw decl_name(m)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5, "`, and this impl does not supply it"), idl.span));
+        raw string_concat(m5, "`, and this impl does not supply it"), idl.span));
     pass NIL;
 };
 
-func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) {
-    string:m1 = relay string_concat("`",
-                    relay intern_get(r.interns, raw decl_name(m)));
-    string:m2 = relay string_concat(m1, "` is not ");
-    string:m3 = relay string_concat(m2, relay a_or_an(what));
-    string:m4 = relay string_concat(m3, " of `");
-    string:m5 = relay string_concat(m4,
-                    relay type_display(r.types, r.interns, e.trait_id));
+func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) never fails {
+    string:m1 = raw string_concat("`",
+                    raw intern_get(r.interns, raw decl_name(m)));
+    string:m2 = raw string_concat(m1, "` is not ");
+    string:m3 = raw string_concat(m2, raw a_or_an(what));
+    string:m4 = raw string_concat(m3, " of `");
+    string:m5 = raw string_concat(m4,
+                    raw type_display(r.types, r.interns, e.trait_id));
     // A METHOD WITH NO TRAIT BEHIND IT belongs in an inherent block; an
     // ASSOCIATED TYPE with none belongs nowhere — it is declared in the trait
     // and bound in its impls, and an inherent block's `assoc` is read by
@@ -1265,11 +1265,11 @@ func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) {
         tail = "`; an associated type is declared in the trait (`assoc:Item;`) and bound in its impls, and this trait declares no such name";
     }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5, tail), m.span));
+        raw string_concat(m5, tail), m.span));
     pass NIL;
 };
 
-func:a_or_an = string(string:what) {
+func:a_or_an = string(string:what) never fails {
     if (raw string_eq(what, "associated type")) { pass "an associated type"; }
     pass "a method";
 };
@@ -1286,7 +1286,7 @@ func:a_or_an = string(string:what) {
 // constant across one signature and a nested construct restores it. Leaking it
 // would make the next impl's `Self` mean this impl's target.
 func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
-                           int32:impl_fn, DeclNode:im, int32:scope) {
+                           int32:impl_fn, DeclNode:im, int32:scope) never fails {
     int32:saved = r.self_type;
     GenericScope:saved_enc = r.enclosing;
 
@@ -1295,10 +1295,10 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     // the trait's `func:into = T(Self:self)` is `int32(Point:self)` here. Without
     // this the comparison is between `Result<T>` and `Result<int32>` and every
     // impl of a generic trait is reported as having the wrong signature.
-    r.enclosing = relay trait_binding(r, e.trait_id);
+    r.enclosing = raw trait_binding(r, e.trait_id);
 
     DeclId:tfid = DeclId{ index: trait_fn };
-    DeclNode:tf = relay ast_decl(r.ast, tfid);
+    DeclNode:tf = raw ast_decl(r.ast, tfid);
     r.self_type = raw tt_self(r.types);
     // THE TRAIT'S SIGNATURE MENTIONS THE TRAIT'S ASSOCS (D-160). `func:next =
     // Item(Self:self)` resolves `Item` the way it resolves `Self` — through the
@@ -1306,23 +1306,23 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     // and cleared before the IMPL's is.
     int32:saved_st = r.self_trait;
     r.self_trait = raw type_decl_of(r.types, e.trait_id);
-    int32:want = relay fn_type(r, tfid, raw decl_name(tf), scope);
+    int32:want = raw fn_type(r, tfid, raw decl_name(tf), scope);
     r.self_trait = saved_st;
 
     // THE IMPL'S SIGNATURE IS RESOLVED WITH THE IMPL'S OWN PARAMETERS, which for
     // a blanket impl is where its `T` comes from — `func:log_str = string(T:self)`
     // has no other binding to reach.
     DeclId:iid = DeclId{ index: e.decl };
-    DeclNode:iblock = relay ast_decl(r.ast, iid);
+    DeclNode:iblock = raw ast_decl(r.ast, iid);
     IdSpan:ig = raw decl_generic_window(r.ast, iblock);
     GenericScope:ige = GenericScope{ params_start: ig.start, params_count: ig.count,
                                      args_start: 0i32, args_count: 0i32 };
     r.enclosing = ige;
 
     DeclId:ifid = DeclId{ index: impl_fn };
-    DeclNode:f = relay ast_decl(r.ast, ifid);
+    DeclNode:f = raw ast_decl(r.ast, ifid);
     r.self_type = e.target;
-    int32:got = relay fn_type(r, ifid, raw decl_name(f), scope);
+    int32:got = raw fn_type(r, ifid, raw decl_name(f), scope);
 
     r.self_type = saved;
     r.enclosing = saved_enc;
@@ -1338,25 +1338,25 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     // contract is compared here, by name.
     if (raw func_never_fails(r.types, want)) {
         if (!(raw func_never_fails(r.types, got))) {
-            string:nf1 = relay string_concat("`",
-                relay intern_get(r.interns, raw decl_name(f)));
+            string:nf1 = raw string_concat("`",
+                raw intern_get(r.interns, raw decl_name(f)));
             drop diaglist_push(r.diags,
                 raw diag_error(raw TYPE_NEVER_FAILS_IMPL(),
-                    relay string_concat(nf1,
+                    raw string_concat(nf1,
                         "` drops the `never fails` its trait declares (D-163); the impl must keep the contract"),
                     im.span));
             pass NIL;
         }
     }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
-    if (relay same_signature(r, want, got, sc)) { pass NIL; }
+    if (raw same_signature(r, want, got, sc)) { pass NIL; }
 
-    string:m1 = relay string_concat("`",
-                    relay intern_get(r.interns, raw decl_name(f)));
-    string:m2 = relay string_concat(m1, "` does not have the signature `");
-    string:m3 = relay string_concat(m2,
-                    relay type_display(r.types, r.interns, e.trait_id));
-    string:m4 = relay string_concat(m3, "` declares for it");
+    string:m1 = raw string_concat("`",
+                    raw intern_get(r.interns, raw decl_name(f)));
+    string:m2 = raw string_concat(m1, "` does not have the signature `");
+    string:m3 = raw string_concat(m2,
+                    raw type_display(r.types, r.interns, e.trait_id));
+    string:m4 = raw string_concat(m3, "` declares for it");
     drop diaglist_push(r.diags,
         raw diag_error(raw TYPE_IMPL_INCOMPLETE(), m4, im.span));
     pass NIL;
@@ -1373,11 +1373,11 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
 // means `T = int32` in everything `Producer` declares. Public since 1.0.6b: the
 // impl check has always needed it, and so does a CALL through a bound, which
 // reads the same trait declaration.
-pub func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) {
+pub func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) never fails {
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass (raw generic_scope_none()); }
     DeclId:did = DeclId{ index: decl };
-    DeclNode:td = relay ast_decl(r.ast, did);
+    DeclNode:td = raw ast_decl(r.ast, did);
     IdSpan:w = raw decl_generic_window(r.ast, td);
     GenericScope:g = GenericScope{
         params_start: w.start, params_count: w.count,
@@ -1401,7 +1401,7 @@ pub struct:SigCtx = {
     int32:scope;
 };
 
-func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
+func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) never fails {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) != (raw type_kind(r.types, got))) { pass false; }
     if (!(raw type_is_func(r.types, want))) { pass false; }
@@ -1418,7 +1418,7 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
     // signature the trait declares, about two signatures that were identical.
     // `Self->` and `Self[]` are still refused, and that is a different case — those
     // wrappers are ones somebody wrote.
-    if (!(relay same_return(r, raw type_elem(r.types, want),
+    if (!(raw same_return(r, raw type_elem(r.types, want),
                             raw type_elem(r.types, got), sc))) {
         pass false;
     }
@@ -1428,7 +1428,7 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
     while (i < n) {
         int32:a = raw type_param_at_of(r.ast, r.types, want, i);
         int32:b = raw type_param_at_of(r.ast, r.types, got, i);
-        if (!(relay same_after_self(r, a, b, sc))) { pass false; }
+        if (!(raw same_after_self(r, a, b, sc))) { pass false; }
         i = i + 1i32;
     }
     pass true;
@@ -1440,19 +1440,19 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
 // silently mismatched, because a trait method taking `Self->` is a shape somebody
 // meant and a diagnostic saying the signature disagrees would send them looking at
 // the wrong thing.
-func:same_return = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) {
+func:same_return = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) never fails {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) == (raw TY_RESULT())) {
         if ((raw type_kind(r.types, got)) == (raw TY_RESULT())) {
-            pass (relay same_after_self(r, raw type_elem(r.types, want),
+            pass (raw same_after_self(r, raw type_elem(r.types, want),
                                         raw type_elem(r.types, got), sc));
         }
     }
-    pass (relay same_after_self(r, want, got, sc));
+    pass (raw same_after_self(r, want, got, sc));
 };
 
 func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
-                            SigCtx:sc) {
+                            SigCtx:sc) never fails {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) == (raw TY_SELF())) {
         pass (got == sc.target);
@@ -1466,14 +1466,14 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
     // did not match still fails, so nothing is hidden.
     if ((raw type_kind(r.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_kind(r.types, got)) == (raw TY_OPTIONAL())) {
-            pass (relay same_after_self(r, raw type_elem(r.types, want),
+            pass (raw same_after_self(r, raw type_elem(r.types, want),
                       raw type_elem(r.types, got), sc));
         }
         pass false;
     }
     if ((raw type_kind(r.types, want)) == (raw TY_POINTER())) {
         if ((raw type_kind(r.types, got)) == (raw TY_POINTER())) {
-            pass (relay same_after_self(r, raw type_elem(r.types, want),
+            pass (raw same_after_self(r, raw type_elem(r.types, want),
                       raw type_elem(r.types, got), sc));
         }
         pass false;
@@ -1484,7 +1484,7 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
     // substitution to rebuild the wrapper. Those stay refused rather than
     // silently mismatched.
     if ((raw type_kind(r.types, want)) == (raw TY_ASSOC())) {
-        int32:bound = relay assoc_binding(r, sc,
+        int32:bound = raw assoc_binding(r, sc,
                           raw type_assoc_trait(r.types, want),
                           raw type_assoc_name(r.types, want));
         // NO BINDING IS ALREADY REPORTED, and reporting it again here would be
@@ -1519,19 +1519,19 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
 // on it — which is the answer wanted there, not a substitution that papers over
 // it.
 pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
-                                  int32:base, int32:trait_decl, int32:name) {
+                                  int32:base, int32:trait_decl, int32:name) never fails {
     if (t == NULL)        { pass 0i32; }
     if (base == 0i32)     { pass 0i32; }
     if (trait_decl == 0i32) { pass 0i32; }
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.target == base) {
                 if ((raw type_decl_of(r.types, e.trait_id)) == trait_decl) {
                     SigCtx:sc = SigCtx{ target: base, impl_decl: e.decl,
                                         scope: e.scope };
-                    pass (relay assoc_binding(r, sc, trait_decl, name));
+                    pass (raw assoc_binding(r, sc, trait_decl, name));
                 }
             }
         }
@@ -1541,17 +1541,17 @@ pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
 };
 
 pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
-                               int32:trait_decl, int32:name) {
+                               int32:trait_decl, int32:name) never fails {
     if (sc.impl_decl != 0i32) {
-        DeclNode:id = relay ast_decl(r.ast, DeclId{ index: sc.impl_decl });
+        DeclNode:id = raw ast_decl(r.ast, DeclId{ index: sc.impl_decl });
         int32:i = 0i32;
         while (i < (raw impl_member_count(r.ast, id))) {
-            DeclNode:m = relay ast_decl(r.ast, raw impl_member(r.ast, id, i));
+            DeclNode:m = raw ast_decl(r.ast, raw impl_member(r.ast, id, i));
             if (m.kind == DeclKind.DeclAssocTypeDecl) {
                 if ((raw decl_name(m)) == name) {
                     TypeId:b = raw assoc_default(m);
                     if (!(raw type_is_none(b))) {
-                        pass (relay resolve_type(r, b, sc.scope));
+                        pass (raw resolve_type(r, b, sc.scope));
                     }
                 }
             }
@@ -1560,15 +1560,15 @@ pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
     }
     // THE TRAIT'S DEFAULT, inherited by any impl that omits the binding.
     if (trait_decl != 0i32) {
-        DeclNode:td = relay ast_decl(r.ast, DeclId{ index: trait_decl });
+        DeclNode:td = raw ast_decl(r.ast, DeclId{ index: trait_decl });
         int32:k = 0i32;
         while (k < (raw item_member_count(r.ast, td))) {
-            DeclNode:m2 = relay ast_decl(r.ast, raw item_member(r.ast, td, k));
+            DeclNode:m2 = raw ast_decl(r.ast, raw item_member(r.ast, td, k));
             if (m2.kind == DeclKind.DeclAssocTypeDecl) {
                 if ((raw decl_name(m2)) == name) {
                     TypeId:d2 = raw assoc_default(m2);
                     if (!(raw type_is_none(d2))) {
-                        pass (relay resolve_type(r, d2, sc.scope));
+                        pass (raw resolve_type(r, d2, sc.scope));
                     }
                 }
             }
@@ -1598,16 +1598,16 @@ pub func:assoc_binding = int32(TypeResolver->:r, SigCtx:sc,
 // FUEL, because the third case asks the same question again: a blanket impl's
 // bound may itself be satisfied by another blanket impl, and a program can write
 // that chain.
-pub func:IMPL_FUEL = int32() { pass 64i32; };
+pub func:IMPL_FUEL = int32() never fails { pass 64i32; };
 
 pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
                                 TypeTable->:types, int32:target, int32:trait_id,
-                                int32:fuel) {
+                                int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
 
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.trait_id == trait_id) {
                 if (e.target == target) { pass true; }
@@ -1619,7 +1619,7 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
                 // a family impl satisfied a method call and no BOUND, so
                 // `total<S: Sized>(li)` was refused for a type whose `size()`
                 // the same table had just resolved.
-                if ((raw impl_generic_count(ast, relay ast_decl(ast,
+                if ((raw impl_generic_count(ast, raw ast_decl(ast,
                          DeclId{ index: e.decl }))) > 0i32) {
                     if (e.target != 0i32) {
                         int32:ed = raw type_decl_of(types, e.target);
@@ -1636,16 +1636,16 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     }
 
     if ((raw type_kind(types, target)) == (raw TY_PARAM())) {
-        pass (relay param_declares(bt, raw type_decl_of(types, target),
+        pass (raw param_declares(bt, raw type_decl_of(types, target),
                                    trait_id, ast));
     }
 
     int32:j = 0i32;
     while (j < t.count) {
-        ImplEntry:e = relay impl_at(t, j);
+        ImplEntry:e = raw impl_at(t, j);
         if (e.blanket) {
             if (e.trait_id == trait_id) {
-                if (relay blanket_applies(t, bt, ast, types, e, target, fuel)) {
+                if (raw blanket_applies(t, bt, ast, types, e, target, fuel)) {
                     pass true;
                 }
             }
@@ -1664,13 +1664,13 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
 // `impl:<T: Loggable>:Loggable` true of everything by circular reasoning.
 pub func:blanket_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
                                 TypeTable->:types, ImplEntry:e, int32:target,
-                                int32:fuel) {
+                                int32:fuel) never fails {
     if (target == e.target) { pass false; }
-    BoundEntry:b = relay bound_entry_of(bt, raw type_decl_of(types, e.target));
+    BoundEntry:b = raw bound_entry_of(bt, raw type_decl_of(types, e.target));
     int32:i = 0i32;
     while (i < b.count) {
-        int32:need = relay ast_id_at(ast, b.start, i);
-        if (!(relay type_implements(t, bt, ast, types, target, need, fuel - 1i32))) {
+        int32:need = raw ast_id_at(ast, b.start, i);
+        if (!(raw type_implements(t, bt, ast, types, target, need, fuel - 1i32))) {
             pass false;
         }
         i = i + 1i32;
@@ -1688,7 +1688,7 @@ pub func:blanket_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
 //     `dyn A`. Every trait the destination names must be one the source already
 //     carries; the reverse would be inventing a vtable that was never built.
 pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
-                            TypeTable->:types, int32:want, int32:got) {
+                            TypeTable->:types, int32:want, int32:got) never fails {
     int32:n = raw type_dyn_count(types, want);
     int32:start = raw type_dyn_start(types, want);
     bool:from_dyn = ((raw type_kind(types, got)) == (raw TY_DYN()));
@@ -1697,9 +1697,9 @@ pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     while (i < n) {
         int32:need = raw ast_id_at(ast, start, i);
         if (from_dyn) {
-            if (!(relay dyn_carries(ast, types, got, need))) { pass false; }
+            if (!(raw dyn_carries(ast, types, got, need))) { pass false; }
         } else {
-            if (!(relay type_implements(t, bt, ast, types, got, need,
+            if (!(raw type_implements(t, bt, ast, types, got, need,
                                         raw IMPL_FUEL()))) { pass false; }
         }
         i = i + 1i32;
@@ -1707,7 +1707,7 @@ pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     pass true;
 };
 
-func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) {
+func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) never fails {
     int32:n = raw type_dyn_count(types, d);
     int32:start = raw type_dyn_start(types, d);
     int32:i = 0i32;
@@ -1735,17 +1735,17 @@ func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) {
 // to whoever owns trait declaration checking; what matters here is that the
 // checker does not hang before reporting anything, so the depth is capped and the
 // cap is stated rather than assumed unreachable.
-func:SUPER_FUEL = int32() { pass 64i32; };
+func:SUPER_FUEL = int32() never fails { pass 64i32; };
 
 // A BLANKET IMPL CARRIES ITS SUPERTRAIT REQUIREMENT TOO, and it lands on the
 // PARAMETER: `impl:<T: Printable>:Ordered` where `Ordered` requires `Equatable`
 // needs `T` to declare `Equatable`, which `type_implements` answers from the
 // bound list. Skipping blanket impls made that requirement unenforced.
 pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
-                                 TypeResolver->:r) {
+                                 TypeResolver->:r) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:e = relay impl_at(t, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop require_supers(t, bt, r, e, e.trait_id, e.scope,
                                 raw SUPER_FUEL());
@@ -1756,23 +1756,23 @@ pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
 };
 
 func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
-                          ImplEntry:e, int32:trait_id, int32:scope, int32:fuel) {
+                          ImplEntry:e, int32:trait_id, int32:scope, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass NIL; }
     DeclId:did = DeclId{ index: decl };
-    DeclNode:td = relay ast_decl(r.ast, did);
+    DeclNode:td = raw ast_decl(r.ast, did);
 
     int32:n = raw item_extra_count(r.ast, td);
     int32:i = 0i32;
     while (i < n) {
-        int32:sup = relay resolve_trait_type(r, relay item_extra(r.ast, td, i), scope);
+        int32:sup = raw resolve_trait_type(r, raw item_extra(r.ast, td, i), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
                 if ((raw type_kind(r.types, sup)) != (raw TY_TRAIT())) {
                     drop super_not_trait(r, trait_id, sup, td.span);
                 } else {
-                    if (!(relay type_implements(t, bt, r.ast, r.types, e.target,
+                    if (!(raw type_implements(t, bt, r.ast, r.types, e.target,
                                                 sup, raw IMPL_FUEL()))) {
                         drop super_missing(r, e, trait_id, sup);
                     }
@@ -1789,26 +1789,26 @@ func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
     pass NIL;
 };
 
-func:super_not_trait = NIL(TypeResolver->:r, int32:trait_id, int32:sup, Span:at) {
-    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, sup));
-    string:m2 = relay string_concat(m1, "` is not a trait, so `");
-    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, trait_id));
+func:super_not_trait = NIL(TypeResolver->:r, int32:trait_id, int32:sup, Span:at) never fails {
+    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, sup));
+    string:m2 = raw string_concat(m1, "` is not a trait, so `");
+    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, trait_id));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-        relay string_concat(m3, "` cannot require it; a supertrait clause names traits"),
+        raw string_concat(m3, "` cannot require it; a supertrait clause names traits"),
         at));
     pass NIL;
 };
 
-func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:sup) {
+func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:sup) never fails {
     DeclId:iid = DeclId{ index: e.decl };
-    DeclNode:idl = relay ast_decl(r.ast, iid);
-    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, trait_id));
-    string:m2 = relay string_concat(m1, "` requires `");
-    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, sup));
-    string:m4 = relay string_concat(m3, "`, and `");
-    string:m5 = relay string_concat(m4, relay type_display(r.types, r.interns, e.target));
+    DeclNode:idl = raw ast_decl(r.ast, iid);
+    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, trait_id));
+    string:m2 = raw string_concat(m1, "` requires `");
+    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, sup));
+    string:m4 = raw string_concat(m3, "`, and `");
+    string:m5 = raw string_concat(m4, raw type_display(r.types, r.interns, e.target));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5, "` does not implement it"), idl.span));
+        raw string_concat(m5, "` does not implement it"), idl.span));
     pass NIL;
 };
 
@@ -1830,10 +1830,10 @@ func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:su
 //     reports the ambiguity at the CALL, where the reader can act on it.
 //
 // Inside ONE block a repeat is always wrong, whichever kind of block it is.
-pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) {
+pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
     while (i < t.count) {
-        ImplEntry:a = relay impl_at(t, i);
+        ImplEntry:a = raw impl_at(t, i);
         // INSIDE ONE BLOCK A REPEAT IS ALWAYS WRONG, and a blanket impl's block is
         // a block. It was skipped along with everything else that read a target.
         drop dup_within(r, a);
@@ -1843,7 +1843,7 @@ pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) {
         if (a.trait_id == 0i32) {
             int32:j = i + 1i32;
             while (j < t.count) {
-                ImplEntry:b = relay impl_at(t, j);
+                ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == 0i32) {
                     if (b.target == a.target) {
                         drop dup_across(r, a, b);
@@ -1857,19 +1857,19 @@ pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) {
     pass NIL;
 };
 
-func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) {
+func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) never fails {
     DeclId:iid = DeclId{ index: e.decl };
-    DeclNode:d = relay ast_decl(r.ast, iid);
-    int32:n = relay impl_member_count(r.ast, d);
+    DeclNode:d = raw ast_decl(r.ast, iid);
+    int32:n = raw impl_member_count(r.ast, d);
     int32:i = 0i32;
     while (i < n) {
-        DeclId:aid = relay impl_member(r.ast, d, i);
-        DeclNode:am = relay ast_decl(r.ast, aid);
+        DeclId:aid = raw impl_member(r.ast, d, i);
+        DeclNode:am = raw ast_decl(r.ast, aid);
         if (am.kind == DeclKind.DeclFunctionDecl) {
             int32:j = i + 1i32;
             while (j < n) {
-                DeclId:bid = relay impl_member(r.ast, d, j);
-                DeclNode:bm = relay ast_decl(r.ast, bid);
+                DeclId:bid = raw impl_member(r.ast, d, j);
+                DeclNode:bm = raw ast_decl(r.ast, bid);
                 if (bm.kind == DeclKind.DeclFunctionDecl) {
                     if ((raw decl_name(bm)) == (raw decl_name(am))) {
                         drop dup_error(r, e, am, bm, false);
@@ -1883,23 +1883,23 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) {
     pass NIL;
 };
 
-func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never fails {
     DeclId:fid = DeclId{ index: first.decl };
-    DeclNode:first_block = relay ast_decl(r.ast, fid);
+    DeclNode:first_block = raw ast_decl(r.ast, fid);
     DeclId:sid = DeclId{ index: second.decl };
-    DeclNode:second_block = relay ast_decl(r.ast, sid);
+    DeclNode:second_block = raw ast_decl(r.ast, sid);
 
-    int32:n = relay impl_member_count(r.ast, first_block);
+    int32:n = raw impl_member_count(r.ast, first_block);
     int32:i = 0i32;
     while (i < n) {
-        DeclId:aid = relay impl_member(r.ast, first_block, i);
-        DeclNode:am = relay ast_decl(r.ast, aid);
+        DeclId:aid = raw impl_member(r.ast, first_block, i);
+        DeclNode:am = raw ast_decl(r.ast, aid);
         if (am.kind == DeclKind.DeclFunctionDecl) {
-            int32:other = relay impl_member_named(r.ast, second_block, raw decl_name(am),
+            int32:other = raw impl_member_named(r.ast, second_block, raw decl_name(am),
                                                   DeclKind.DeclFunctionDecl);
             if (other != 0i32) {
                 DeclId:oid = DeclId{ index: other };
-                DeclNode:om = relay ast_decl(r.ast, oid);
+                DeclNode:om = raw ast_decl(r.ast, oid);
                 drop dup_error(r, first, am, om, true);
             }
         }
@@ -1915,19 +1915,19 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
 // are one namespace" — was written for `dup_across` and printed for
 // `dup_within` too, which runs on EVERY impl, trait impls included.
 func:dup_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:first,
-                     DeclNode:second, bool:across) {
-    string:m1 = relay string_concat("`",
-                    relay intern_get(r.interns, raw decl_name(second)));
-    string:m2 = relay string_concat(m1, "` is already a method of `");
-    string:m3 = relay string_concat(m2,
-                    relay type_display(r.types, r.interns, e.target));
-    string:m4 = relay string_concat(m3, "`, declared at line ");
-    string:m5 = relay string_concat(m4, raw int_to_string(first.span.line => int64));
+                     DeclNode:second, bool:across) never fails {
+    string:m1 = raw string_concat("`",
+                    raw intern_get(r.interns, raw decl_name(second)));
+    string:m2 = raw string_concat(m1, "` is already a method of `");
+    string:m3 = raw string_concat(m2,
+                    raw type_display(r.types, r.interns, e.target));
+    string:m4 = raw string_concat(m3, "`, declared at line ");
+    string:m5 = raw string_concat(m4, raw int_to_string(first.span.line => int64));
     string:tail = "; a name may be declared once in an impl block";
     if (across) {
         tail = "; two inherent blocks are one namespace, so a name may be declared in only one of them";
     }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        relay string_concat(m5, tail), second.span));
+        raw string_concat(m5, tail), second.span));
     pass NIL;
 };

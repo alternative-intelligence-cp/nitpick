@@ -6,44 +6,44 @@
 // literal at a call site silently invents a NEW code, and the test asserting the
 // old one then fails for a reason unrelated to the bug it guards.
 
-pub func:TYPE_UNKNOWN = string()        { pass "NITPICK-TYPE-001"; };
-pub func:TYPE_NOT_A_TYPE = string()     { pass "NITPICK-TYPE-002"; };
-pub func:TYPE_BARE_ANY = string()       { pass "NITPICK-TYPE-003"; };
+pub func:TYPE_UNKNOWN = string() never fails        { pass "NITPICK-TYPE-001"; };
+pub func:TYPE_NOT_A_TYPE = string() never fails     { pass "NITPICK-TYPE-002"; };
+pub func:TYPE_BARE_ANY = string() never fails       { pass "NITPICK-TYPE-003"; };
 // NOT A COMPILE-TIME CONSTANT. One code for one rule, and the rule reaches two
 // spellings: an array size `int32[N]` and a `comptime` generic argument
 // `Mutex<Config, 2>`. Both are refused for the same reason and with the same
 // sentence, so a reader filtering on this is asking one question -- splitting it
 // in two would make the shared rule look like a coincidence.
-pub func:TYPE_NOT_CONSTANT = string()   { pass "NITPICK-TYPE-004"; };
-pub func:TYPE_SELF_OUTSIDE = string()   { pass "NITPICK-TYPE-005"; };
-pub func:TYPE_DYN_NOT_TRAIT = string()  { pass "NITPICK-TYPE-006"; };
-pub func:TYPE_MISMATCH = string()       { pass "NITPICK-TYPE-007"; };
-pub func:TYPE_NOT_NUMERIC = string()    { pass "NITPICK-TYPE-008"; };
-pub func:TYPE_LOSSY_CAST = string()     { pass "NITPICK-TYPE-009"; };
-pub func:TYPE_RESULT_RETURN = string()  { pass "NITPICK-TYPE-010"; };
+pub func:TYPE_NOT_CONSTANT = string() never fails   { pass "NITPICK-TYPE-004"; };
+pub func:TYPE_SELF_OUTSIDE = string() never fails   { pass "NITPICK-TYPE-005"; };
+pub func:TYPE_DYN_NOT_TRAIT = string() never fails  { pass "NITPICK-TYPE-006"; };
+pub func:TYPE_MISMATCH = string() never fails       { pass "NITPICK-TYPE-007"; };
+pub func:TYPE_NOT_NUMERIC = string() never fails    { pass "NITPICK-TYPE-008"; };
+pub func:TYPE_LOSSY_CAST = string() never fails     { pass "NITPICK-TYPE-009"; };
+pub func:TYPE_RESULT_RETURN = string() never fails  { pass "NITPICK-TYPE-010"; };
 
 // A DEFECT IN THE COMPILER, not in the program: a statement kind the checker's
 // walk has no entry for. Its own code, and not `TYPE_UNKNOWN`, because a reader
 // who sees it has found a hole in the checker and there is nothing they can
 // change in their source to fix it. `resolve.npk` has `RESOLVE_INTERNAL` for the
 // same situation and for the same reason.
-pub func:TYPE_INTERNAL = string()       { pass "NITPICK-TYPE-011"; };
+pub func:TYPE_INTERNAL = string() never fails       { pass "NITPICK-TYPE-011"; };
 
 // Traits and impls (cycle 0.4.6). Each is its own code rather than a shared
 // "bad impl", because the four are found at different points and a reader
 // filtering a log by code is asking a different question with each.
-pub func:TYPE_NOT_A_TRAIT = string()    { pass "NITPICK-TYPE-012"; };
-pub func:TYPE_COHERENCE = string()      { pass "NITPICK-TYPE-013"; };
-pub func:TYPE_IMPL_INCOMPLETE = string(){ pass "NITPICK-TYPE-014"; };
-pub func:TYPE_NOT_OBJECT_SAFE = string(){ pass "NITPICK-TYPE-015"; };
+pub func:TYPE_NOT_A_TRAIT = string() never fails    { pass "NITPICK-TYPE-012"; };
+pub func:TYPE_COHERENCE = string() never fails      { pass "NITPICK-TYPE-013"; };
+pub func:TYPE_IMPL_INCOMPLETE = string() never fails{ pass "NITPICK-TYPE-014"; };
+pub func:TYPE_NOT_OBJECT_SAFE = string() never fails{ pass "NITPICK-TYPE-015"; };
 
 // Generics (cycle 0.4.7). Three codes rather than one, because the three are
 // found at different points and a reader filtering by code is asking a different
 // question with each: an arity mistake is in the annotation, an unsatisfied bound
 // is in the argument, and a depth overflow is in the shape of the program.
-pub func:TYPE_GENERIC_ARITY = string()  { pass "NITPICK-TYPE-016"; };
-pub func:TYPE_BOUND_UNMET = string()    { pass "NITPICK-TYPE-017"; };
-pub func:TYPE_GENERIC_DEPTH = string()  { pass "NITPICK-TYPE-018"; };
+pub func:TYPE_GENERIC_ARITY = string() never fails  { pass "NITPICK-TYPE-016"; };
+pub func:TYPE_BOUND_UNMET = string() never fails    { pass "NITPICK-TYPE-017"; };
+pub func:TYPE_GENERIC_DEPTH = string() never fails  { pass "NITPICK-TYPE-018"; };
 
 // THREE FINDINGS THAT WERE ALL `TYPE_MISMATCH` OR `TYPE_GENERIC_ARITY`, and are
 // not mismatches at all. Codes are the stable identifiers a test may assert on
@@ -59,14 +59,14 @@ pub func:TYPE_GENERIC_DEPTH = string()  { pass "NITPICK-TYPE-018"; };
 //     well-formed and the compiler will not choose (D-102).
 //   * WRONG KIND OF GENERIC ARGUMENT -- a type where a `comptime` value was
 //     wanted, or the reverse. Not arity: the count is right.
-pub func:TYPE_NO_METHOD = string()      { pass "NITPICK-TYPE-019"; };
-pub func:TYPE_AMBIGUOUS_METHOD = string(){ pass "NITPICK-TYPE-020"; };
-pub func:TYPE_GENERIC_KIND = string()   { pass "NITPICK-TYPE-021"; };
+pub func:TYPE_NO_METHOD = string() never fails      { pass "NITPICK-TYPE-019"; };
+pub func:TYPE_AMBIGUOUS_METHOD = string() never fails{ pass "NITPICK-TYPE-020"; };
+pub func:TYPE_GENERIC_KIND = string() never fails   { pass "NITPICK-TYPE-021"; };
 
 // INFERENCE COULD NOT DECIDE. Its own code because the fix is unlike any
 // other: nothing in the call is wrong, and what is missing is a type argument
 // the turbofish would have supplied.
-pub func:TYPE_CANNOT_INFER = string()   { pass "NITPICK-TYPE-022"; };
+pub func:TYPE_CANNOT_INFER = string() never fails   { pass "NITPICK-TYPE-022"; };
 
 // A C VARIADIC `extern` FUNCTION, whose tail has no type the checker can name.
 //
@@ -80,7 +80,7 @@ pub func:TYPE_CANNOT_INFER = string()   { pass "NITPICK-TYPE-022"; };
 // "`printf` is a type, not a value", because an extern function had no type at
 // all — so this replaces a misleading refusal with an accurate one, and makes the
 // open question visible instead of silently wrong.
-pub func:TYPE_EXTERN_VARIADIC = string(){ pass "NITPICK-TYPE-023"; };
+pub func:TYPE_EXTERN_VARIADIC = string() never fails{ pass "NITPICK-TYPE-023"; };
 
 // AN OPERAND THAT NEEDED AN ADDRESS AND HAS NONE. `@`, `$$i`, `$$m` and
 // `move(place)` all take a place, and the language has no way to spell the address
@@ -89,27 +89,27 @@ pub func:TYPE_EXTERN_VARIADIC = string(){ pass "NITPICK-TYPE-023"; };
 // Its own code and not `TYPE_MISMATCH`, because nothing is wrong with the operand's
 // TYPE — `@(raw f())` fails on `f()` having no home, and telling somebody their
 // `int32` is not an `int32` would send them looking in the wrong direction.
-pub func:TYPE_NOT_A_PLACE = string()    { pass "NITPICK-TYPE-024"; };
+pub func:TYPE_NOT_A_PLACE = string() never fails    { pass "NITPICK-TYPE-024"; };
 
 // COMPILE-TIME EVALUATION DID NOT FINISH. Its own code rather than
 // `TYPE_NOT_CONSTANT`, because they send the reader to opposite places: one means
 // "this is not a constant expression", the other means "it is, and it never ends".
-pub func:TYPE_COMPTIME_BUDGET = string() { pass "NITPICK-TYPE-025"; };
+pub func:TYPE_COMPTIME_BUDGET = string() never fails { pass "NITPICK-TYPE-025"; };
 
 // A STRUCT LITERAL NAMING A FIELD THE TYPE DOES NOT HAVE (0.6.7). Its own code
 // rather than `TYPE_MISMATCH`, because the two are answered differently: a
 // mismatched value is fixed by changing the value, and a field that does not exist
 // is fixed by changing the name or the struct.
-pub func:TYPE_NO_SUCH_FIELD = string()  { pass "NITPICK-TYPE-026"; };
+pub func:TYPE_NO_SUCH_FIELD = string() never fails  { pass "NITPICK-TYPE-026"; };
 
 // A STRUCT LITERAL THAT DOES NOT NAME EVERY FIELD. There is no field-default
 // syntax, so an omitted field has no value — and an unassigned binding is what
 // D-010 refuses everywhere else. A safety property rather than an ergonomic one.
-pub func:TYPE_MISSING_FIELD = string() { pass "NITPICK-TYPE-027"; };
+pub func:TYPE_MISSING_FIELD = string() never fails { pass "NITPICK-TYPE-027"; };
 
 // THE SAME FIELD GIVEN TWICE. Taking the last silently discards the first, which is
 // the lost-value defect `Result{value: a, value: b}` gets its own code for.
-pub func:TYPE_FIELD_TWICE = string()   { pass "NITPICK-TYPE-028"; };
+pub func:TYPE_FIELD_TWICE = string() never fails   { pass "NITPICK-TYPE-028"; };
 
 // A CONSTRUCT THE FRONTEND ACCEPTS AND NO TIER SUPPLIES A TYPE FOR (0.6.7).
 //
@@ -118,61 +118,61 @@ pub func:TYPE_FIELD_TWICE = string()   { pass "NITPICK-TYPE-028"; };
 // **Tier 1**, which nothing implements. Saying so is the point: typing it as INVALID
 // accepts it silently, and inventing a type would make a program mean something the
 // language has not decided yet.
-pub func:TYPE_TIER = string()          { pass "NITPICK-TYPE-029"; };
+pub func:TYPE_TIER = string() never fails          { pass "NITPICK-TYPE-029"; };
 
 // D-143's float rules: a flt32 literal past 15 significant digits, or any
 // literal/arithmetic/comparison on the storage-only flt128.
-pub func:TYPE_FLOAT_RULES = string()   { pass "NITPICK-TYPE-030"; };
+pub func:TYPE_FLOAT_RULES = string() never fails   { pass "NITPICK-TYPE-030"; };
 
 // D-148: a literal whose value does not fit its type -- suffixed or contextual.
 // Until 0.9.9 nothing checked this anywhere: `int8:a = 300i8;` survived to the
 // backend and emitted `i8 300`, which is not even valid IR.
-pub func:TYPE_LIT_RANGE = string()     { pass "NITPICK-TYPE-031"; };
+pub func:TYPE_LIT_RANGE = string() never fails     { pass "NITPICK-TYPE-031"; };
 
 // THERE IS NO SUCH CONVERSION (1.0.8). Split from `TYPE_LOSSY_CAST`, which
 // covered both "`=>` refuses this; write `=>!`" and "no spelling does this"
 // under one code — so a log filtered on TYPE-009 could not separate the
 // opt-out case from the impossible one, and the messages said opposite things
 // about `=>!` under the same number. `cast_class`'s third answer gets its own.
-pub func:TYPE_NO_CAST = string()       { pass "NITPICK-TYPE-032"; };
+pub func:TYPE_NO_CAST = string() never fails       { pass "NITPICK-TYPE-032"; };
 
 // `for` OVER SOMETHING THAT DOES NOT ITERATE (D-166, 1.0.9). A range, a slice,
 // an array, or — from 1.0.9d — a type implementing `Iterator`; anything else
 // is refused HERE by name. It reached the backend, which refused it as a
 // rung, and a rung names valid Nitpick.
-pub func:TYPE_NOT_ITERABLE = string()  { pass "NITPICK-TYPE-033"; };
+pub func:TYPE_NOT_ITERABLE = string() never fails  { pass "NITPICK-TYPE-033"; };
 
 // `==`/`!=` ON AN AGGREGATE (D-169, 1.0.9c). A struct, array, `Result`, `string`,
 // `dyn`, two non-`NIL` `Optional`s or a payload-carrying enum has no built-in
 // equality the language will pick a meaning for — derive or implement `Eq`. It
 // reached the backend, which refused an `icmp` on an aggregate as a rung; the
 // refusal is the checker's now, with the spelling that works. `== NIL` stays.
-pub func:TYPE_NOT_COMPARABLE = string() { pass "NITPICK-TYPE-034"; };
+pub func:TYPE_NOT_COMPARABLE = string() never fails { pass "NITPICK-TYPE-034"; };
 
 // A MODULE-LEVEL BINDING'S INITIALISER THAT IS NOT A COMPILE-TIME CONSTANT
 // (D-165, 1.0.9c/1.0.9d). A call, or any expression the folder cannot fold, is
 // refused: no module initialiser runs before `main`, so a value that had to run
 // would appear in an order nobody wrote. It reached the backend as "a
 // module-level binding" (a rung); the refusal is the checker's now, by name.
-pub func:TYPE_GLOBAL_NOT_CONSTANT = string() { pass "NITPICK-TYPE-035"; };
+pub func:TYPE_GLOBAL_NOT_CONSTANT = string() never fails { pass "NITPICK-TYPE-035"; };
 
 // AN INTERPOLATION `&{ x }` WHOSE TYPE HAS NO `ToString` (D-168, 1.0.9d). Inside
 // a template a `string` renders as itself; anything else renders through the
 // prelude trait `ToString`, and a type with no impl is refused by name — the
 // backend cannot lower `&{ x }` for a value it has no `to_string` to call.
-pub func:TYPE_NOT_STRINGABLE = string() { pass "NITPICK-TYPE-036"; };
+pub func:TYPE_NOT_STRINGABLE = string() never fails { pass "NITPICK-TYPE-036"; };
 
 // D-163, `never fails`. A marked function's body may not `fail`, `relay`, or
 // `return Result{…}`, and may not carry a `requires`/`ensures`/`limit`, the
 // `async` modifier, or be `main`/`failsafe` — each is a way it could fail or a
 // contract it cannot hold. One code, the message naming the offender.
-pub func:TYPE_NEVER_FAILS_CAN_FAIL = string() { pass "NITPICK-TYPE-037"; };
+pub func:TYPE_NEVER_FAILS_CAN_FAIL = string() never fails { pass "NITPICK-TYPE-037"; };
 // A may-fail function value assigned where a `never fails` one is expected.
-pub func:TYPE_NEVER_FAILS_ASSIGN = string() { pass "NITPICK-TYPE-038"; };
+pub func:TYPE_NEVER_FAILS_ASSIGN = string() never fails { pass "NITPICK-TYPE-038"; };
 // A `Result` (or any non-`NIL` value) discarded by a bare expression statement,
 // with no keyword — rule 6's closed list.
-pub func:TYPE_RESULT_DISCARDED = string() { pass "NITPICK-TYPE-039"; };
+pub func:TYPE_RESULT_DISCARDED = string() never fails { pass "NITPICK-TYPE-039"; };
 // `fail` or `relay` inside a `defer` body (rule 7): a cleanup must not exit.
-pub func:TYPE_DEFER_EXIT = string() { pass "NITPICK-TYPE-040"; };
+pub func:TYPE_DEFER_EXIT = string() never fails { pass "NITPICK-TYPE-040"; };
 // An impl method dropping the `never fails` its trait declares.
-pub func:TYPE_NEVER_FAILS_IMPL = string() { pass "NITPICK-TYPE-041"; };
+pub func:TYPE_NEVER_FAILS_IMPL = string() never fails { pass "NITPICK-TYPE-041"; };

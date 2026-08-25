@@ -16,7 +16,7 @@ pub struct:InternTable = {
 // Written here rather than added to the runtime floor: it is ordinary Nitpick
 // over .ptr and .len, and every symbol in the runtime is one more thing that
 // must be hand-written in LLVM IR and audited.
-pub func:string_eq = bool(string:a, string:b) {
+pub func:string_eq = bool(string:a, string:b) never fails {
     if (a.len != b.len) {
         pass false;
     }
@@ -40,7 +40,7 @@ pub func:string_eq = bool(string:a, string:b) {
 //
 // D-159 needs it: `dyn A & B` and `dyn B & A` must be ONE type with one layout,
 // so the bound list is canonically ordered by name at interning.
-pub func:name_lt = bool(string:a, string:b) {
+pub func:name_lt = bool(string:a, string:b) never fails {
     int64:n = a.len;
     if (b.len < n) { n = b.len; }
     int64:i = 0i64;
@@ -53,7 +53,7 @@ pub func:name_lt = bool(string:a, string:b) {
     pass (a.len < b.len);
 };
 
-pub func:intern_init = InternTable() {
+pub func:intern_init = InternTable() never fails {
     int64:n = 64i64;
     wild int8->:raw_mem = alloc(n * #size_of<string>());
     InternTable:t = InternTable{
@@ -73,10 +73,10 @@ pub func:intern_init = InternTable() {
     pass t;
 };
 
-pub func:intern_none = int32() { pass 0i32; };
-pub func:intern_is_none = bool(int32:i) { pass (i == 0i32); };
+pub func:intern_none = int32() never fails { pass 0i32; };
+pub func:intern_is_none = bool(int32:i) never fails { pass (i == 0i32); };
 
-func:intern_grow = NIL(InternTable->:t) {
+func:intern_grow = NIL(InternTable->:t) never fails {
     int32:newcap = t.cap * 2i32;
     wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (newcap => int64) * #size_of<string>());
@@ -88,7 +88,7 @@ func:intern_grow = NIL(InternTable->:t) {
 // Interning the same text twice yields the same index. That is the whole point:
 // downstream, two identifiers are the same name exactly when their indices are
 // equal.
-pub func:intern_add = int32(InternTable->:t, string:text) {
+pub func:intern_add = int32(InternTable->:t, string:text) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         if (raw string_eq(t.items[i => int64], text)) {
@@ -105,16 +105,28 @@ pub func:intern_add = int32(InternTable->:t, string:text) {
     pass index;
 };
 
-pub func:intern_get = string(InternTable->:t, int32:index) {
+pub func:intern_get = string(InternTable->:t, int32:index) never fails {
     if (index < 0i32) {
-        fail 3tbb32;
+        !!! 3tbb32;
     }
     if (index >= t.count) {
-        fail 3tbb32;
+        !!! 3tbb32;
     }
     pass t.items[index => int64];
 };
 
-pub func:intern_count = int32(InternTable->:t) {
+pub func:intern_count = int32(InternTable->:t) never fails {
     pass t.count;
+};
+
+// A BOUNDS-PROVEN SLICE (D-163, 1.1.1). The caller has already established
+// `0 <= lo <= hi <= s.len`, so the builtin cannot fail — and a failure anyway
+// is an internal defect, trapped with the one greppable proven-slice code.
+// A wrapper rather than `?!` at each site because a bare-builtin call carries
+// no checker type, which the `?!` lowering needs; the Result binding below is
+// the shape the emitter has always lowered.
+pub func:slice_proven = string(string:s, int64:lo, int64:hi) never fails {
+    Result<string>:r = string_slice(s, lo, hi);
+    if (r.is_error) { !!! 5tbb32; }
+    pass r.value;
 };

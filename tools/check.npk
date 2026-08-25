@@ -30,15 +30,15 @@ use "../src/frontend/expr_types.npk".*;
 // own `emit_line` until then — `CODE path:line:col`, the message dropped — and
 // so did three others, no two alike; `diag_line` is the only formatter now and
 // the overflow note reaches the reader too, which it never did from a driver.
-func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) {
+func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) never fails {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
     while (d < n) {
-        drop nio_line(out, relay diag_line(raw diaglist_at(diags, d), sm));
+        nio_line(out, raw diag_line(raw diaglist_at(diags, d), sm)) ?| NIL;
         d = d + 1i64;
     }
     if (diags.overflowed) {
-        drop nio_line(out, raw diag_overflow_line());
+        nio_line(out, raw diag_overflow_line()) ?| NIL;
     }
     pass NIL;
 };
@@ -60,18 +60,22 @@ func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) {
 //
 // It REPORTS; refusal is 1.1.2's closing act, after the sweeps drive `mayfail`
 // to zero. Output: one line per file with unlicensed sites, then the totals.
-func:classify_site = int32(Front->:f, ExprNode:opn, ExprId:opid) {
+func:classify_site = int32(Front->:f, ExprNode:opn, ExprId:opid) never fails {
     // 0 = other, 1 = licensed, 2 = mayfail, 3 = builtin
     int32:decl = 0i32;
     if (opn.kind == ExprKind.ExprCallExpr) {
-        ExprNode:cal = relay ast_expr(@f.g.ast, raw expr_callee(opn));
+        ExprNode:cal = raw ast_expr(@f.g.ast, raw expr_callee(opn));
         if (cal.kind == ExprKind.ExprIdentifierExpr) {
             if (cal.a != 0i32) {
                 Symbol:sym = raw symtab_get(@f.g.tab, cal.a);
                 if (sym.origin_kind == (raw SYM_DECL())) { decl = sym.origin; }
             } else {
-                if (raw is_builtin_name(relay intern_get(@f.it,
-                                            cal.payload =>! int32))) {
+                string:bn = raw intern_get(@f.it, cal.payload =>! int32);
+                if (raw is_builtin_name(bn)) {
+                    // A never-fails builtin licenses the site the way a marked
+                    // declaration does (D-163 rule 9); the rest are the
+                    // genuinely may-fail builtins, counted for the sweep.
+                    if (raw builtin_never_fails(bn)) { pass 1i32; }
                     pass 3i32;
                 }
             }
@@ -81,13 +85,34 @@ func:classify_site = int32(Front->:f, ExprNode:opn, ExprId:opid) {
         decl = raw exprtypes_callee(@f.ets, opid);
     }
     if (decl == 0i32) { pass 0i32; }
-    DeclNode:d = relay ast_decl(@f.g.ast, DeclId{ index: decl });
+    DeclNode:d = raw ast_decl(@f.g.ast, DeclId{ index: decl });
     if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
-    if (relay fn_declares_never_fails(@f.g.ast, d)) { pass 1i32; }
+    if (raw fn_declares_never_fails(@f.g.ast, d)) { pass 1i32; }
     pass 2i32;
 };
 
-func:raw_report = NIL(Front->:f, NioW->:out) {
+// The callee's NAME INDEX for a site line (0 = unresolvable) — an index, not
+// the string: an interned string is a borrow of the table, and returning one
+// out of this frame is exactly what D-004 refuses (it did, on the first draft).
+func:site_callee_name = int32(Front->:f, ExprNode:opn, ExprId:opid) never fails {
+    if (opn.kind == ExprKind.ExprCallExpr) {
+        ExprNode:cal = raw ast_expr(@f.g.ast, raw expr_callee(opn));
+        if (cal.kind == ExprKind.ExprIdentifierExpr) {
+            pass (cal.payload =>! int32);
+        }
+    }
+    if (opn.kind == ExprKind.ExprMethodCallExpr) {
+        int32:mdecl = raw exprtypes_callee(@f.ets, opid);
+        if (mdecl != 0i32) {
+            DeclNode:md = raw ast_decl(@f.g.ast, DeclId{ index: mdecl });
+            pass (raw decl_name(md));
+        }
+        pass 0i32;
+    }
+    pass 0i32;
+};
+
+func:raw_report = NIL(Front->:f, NioW->:out) never fails {
     int32:nfiles = f.g.sm.count;
     wild int8->:m1 = alloc((nfiles => int64) * 4i64);
     wild int32->:per_may = m1 =>! wild int32->;
@@ -105,17 +130,37 @@ func:raw_report = NIL(Front->:f, NioW->:out) {
     int32:ei = 0i32;
     int32:en = raw ast_expr_count(@f.g.ast);
     while (ei < en) {
-        ExprNode:n = relay ast_expr(@f.g.ast, ExprId{ index: ei });
+        ExprNode:n = raw ast_expr(@f.g.ast, ExprId{ index: ei });
         bool:site = n.kind == ExprKind.ExprRawUnwrapExpr;
         if (n.kind == ExprKind.ExprDropExpr) { site = true; }
         if (site) {
             ExprId:opid = raw expr_operand(n);
-            ExprNode:opn = relay ast_expr(@f.g.ast, opid);
-            int32:cls = relay classify_site(f, opn, opid);
+            ExprNode:opn = raw ast_expr(@f.g.ast, opid);
+            int32:cls = raw classify_site(f, opn, opid);
             if (cls == 1i32) { t_lic = t_lic + 1i32; }
             if (cls == 2i32) { t_may = t_may + 1i32; }
             if (cls == 3i32) { t_bi = t_bi + 1i32; }
             if (cls == 0i32) { t_ot = t_ot + 1i32; }
+            if (cls != 1i32) {
+                // One line per unlicensed site: the sweep's raw material.
+                string:op = "raw";
+                if (n.kind == ExprKind.ExprDropExpr) { op = "drop"; }
+                string:cn = "mayfail";
+                if (cls == 3i32) { cn = "builtin"; }
+                if (cls == 0i32) { cn = "other"; }
+                string:s1 = raw string_concat("site ",
+                                raw srcmgr_path_proven(@f.g.sm, n.span.file));
+                string:s2 = raw string_concat(s1, ":");
+                string:s3 = raw string_concat(s2,
+                                raw int_to_string(n.span.line => int64));
+                string:s4 = raw string_concat(raw string_concat(s3, " "), op);
+                string:s5 = raw string_concat(raw string_concat(s4, " "), cn);
+                int32:cnm = raw site_callee_name(f, opn, opid);
+                string:cname = "?";
+                if (cnm != 0i32) { cname = raw intern_get(@f.it, cnm); }
+                nio_line(out, raw string_concat(
+                    raw string_concat(s5, " "), cname)) ?| NIL;
+            }
             if (cls != 1i32) {
                 int32:fid = n.span.file;
                 if (fid >= 0i32) {
@@ -136,29 +181,29 @@ func:raw_report = NIL(Front->:f, NioW->:out) {
         int32:pb = per_bi[fi => int64];
         int32:po = per_ot[fi => int64];
         if ((pm + pb + po) != 0i32) {
-            string:l1 = relay string_concat(relay srcmgr_path(@f.g.sm, fi), "  mayfail=");
-            string:l2 = relay string_concat(l1, relay int_to_string(pm => int64));
-            string:l3 = relay string_concat(l2, " builtin=");
-            string:l4 = relay string_concat(l3, relay int_to_string(pb => int64));
-            string:l5 = relay string_concat(l4, " other=");
-            drop nio_line(out, relay string_concat(l5, relay int_to_string(po => int64)));
+            string:l1 = raw string_concat(raw srcmgr_path_proven(@f.g.sm, fi), "  mayfail=");
+            string:l2 = raw string_concat(l1, raw int_to_string(pm => int64));
+            string:l3 = raw string_concat(l2, " builtin=");
+            string:l4 = raw string_concat(l3, raw int_to_string(pb => int64));
+            string:l5 = raw string_concat(l4, " other=");
+            nio_line(out, raw string_concat(l5, raw int_to_string(po => int64))) ?| NIL;
         }
         fi = fi + 1i32;
     }
-    string:s1 = relay string_concat("TOTAL licensed=", relay int_to_string(t_lic => int64));
-    string:s2 = relay string_concat(s1, " mayfail=");
-    string:s3 = relay string_concat(s2, relay int_to_string(t_may => int64));
-    string:s4 = relay string_concat(s3, " builtin=");
-    string:s5 = relay string_concat(s4, relay int_to_string(t_bi => int64));
-    string:s6 = relay string_concat(s5, " other=");
-    drop nio_line(out, relay string_concat(s6, relay int_to_string(t_ot => int64)));
+    string:s1 = raw string_concat("TOTAL licensed=", raw int_to_string(t_lic => int64));
+    string:s2 = raw string_concat(s1, " mayfail=");
+    string:s3 = raw string_concat(s2, raw int_to_string(t_may => int64));
+    string:s4 = raw string_concat(s3, " builtin=");
+    string:s5 = raw string_concat(s4, raw int_to_string(t_bi => int64));
+    string:s6 = raw string_concat(s5, " other=");
+    nio_line(out, raw string_concat(s6, raw int_to_string(t_ot => int64))) ?| NIL;
     pass NIL;
 };
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         NioW:uw = raw nio_stderr();
-        drop nio_line(@uw, "usage: check <root.npk>");
+        nio_line(@uw, "usage: check <root.npk>") ?| NIL;
         exit 2i32;
     }
     cstring:arg = argv[1i64];

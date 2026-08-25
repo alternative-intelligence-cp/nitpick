@@ -77,12 +77,12 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw ast_type(@ast, ty)).payload != 5i64)                   { exit 42i32; }
     if ((raw ast_pat(@ast, pt)).kind != PatKind.PatWildcard)        { exit 43i32; }
 
-    // --- an out-of-range handle is an ERROR, never a sentinel ---------------
-    // Returning the NONE node would let a corrupt handle read as a legitimate
-    // absence, which is the failure D-042's "an fd is always valid" prevents.
-    ExprId:bad = ExprId{ index: 99999i32 };
-    Result<ExprNode>:r = ast_expr(@ast, bad);
-    if (!(r.is_error))                                   { exit 50i32; }
+    // --- an out-of-range handle is a DEFECT now (D-163, 1.1.1) --------------
+    // `ast_expr` is `never fails` and TRAPS on a corrupt handle — the compiler
+    // no longer continues on node 0, and there is no error value to probe.
+    // (Returning the NONE node would have let a corrupt handle read as a
+    // legitimate absence; failing returned an error `raw` swallowed. The trap
+    // is the only answer that cannot be ignored.)
 
     // --- EVERY EXPRESSION KIND HAS A SHAPE ------------------------------------
     //

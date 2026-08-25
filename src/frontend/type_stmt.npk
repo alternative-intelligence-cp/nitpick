@@ -51,9 +51,9 @@ use "./builtins.npk".*;     // is_builtin_name (D-163 rule 6)
 // `stmt_is_classified` is the total table over that, and
 // `tests/frontend/type_stmt.npk` walks `1..STMT_KIND_MAX` against it so the next
 // statement kind cannot arrive unvisited the way sixteen of them did.
-pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
+pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
-    StmtNode:s = relay ast_stmt(e.ast, id);
+    StmtNode:s = raw ast_stmt(e.ast, id);
 
     if (s.kind == StmtKind.StmtVarDeclStmt) { drop check_var_decl(e, s); pass NIL; }
     if (s.kind == StmtKind.StmtAssignStmt)  { drop check_assign(e, s);   pass NIL; }
@@ -79,14 +79,14 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop check_cond(e, s);
-        drop check_stmt(e, relay stmt_body(e.ast, s));
+        drop check_stmt(e, raw stmt_body(e.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop check_cond(e, s);
-        drop check_stmt(e, relay stmt_when_body(e.ast, s));
-        drop check_stmt(e, relay stmt_when_then(e.ast, s));
-        drop check_stmt(e, relay stmt_when_end(e.ast, s));
+        drop check_stmt(e, raw stmt_when_body(e.ast, s));
+        drop check_stmt(e, raw stmt_when_then(e.ast, s));
+        drop check_stmt(e, raw stmt_when_end(e.ast, s));
         pass NIL;
     }
     // `loop`/`till` — HEAD ARGUMENTS AND A BODY, AND NO CONDITION.
@@ -103,7 +103,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
 
     if (s.kind == StmtKind.StmtForStmt) {
         drop check_for(e, s);
-        drop check_stmt(e, relay stmt_for_body(e.ast, s));
+        drop check_stmt(e, raw stmt_for_body(e.ast, s));
         pass NIL;
     }
 
@@ -115,7 +115,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     // The type is written onto the PATTERN's spare slot, the way resolution
     // writes a symbol onto an identifier, and `type_ident` reads it back.
     if (s.kind == StmtKind.StmtPickStmt) {
-        int32:selt = relay type_of_expr(e, raw pick_selector(s));
+        int32:selt = raw type_of_expr(e, raw pick_selector(s));
         drop type_pick_bindings(e, s, selt);
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
@@ -152,17 +152,17 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     // position (its unwrapped value discarded).
     if (s.kind == StmtKind.StmtExprStmt) {
         ExprId:xid = raw stmt_expr(s);
-        ExprNode:xn = relay ast_expr(e.ast, xid);
+        ExprNode:xn = raw ast_expr(e.ast, xid);
         if (xn.kind == ExprKind.ExprDropExpr)          { drop type_of_expr(e, xid); pass NIL; }
         bool:kw = xn.kind == ExprKind.ExprRelayExpr;
         if (xn.kind == ExprKind.ExprEmphaticUnwrapExpr) { kw = true; }
         if (xn.kind == ExprKind.ExprSafeUnwrapExpr)     { kw = true; }
         if (kw) {
-            // `relay f();` / `f() ?! c;` / `f() ?| NIL;` — the keyword deals
+            // `raw f();` / `f() ?! c;` / `f() ?| NIL;` — the keyword deals
             // with the ERROR; the statement's own type must still be `NIL`, or
             // a VALUE is being discarded (rule 6: `discard(…)` is the spelling
             // for that, and it must be deliberate).
-            int32:kt = relay type_of_expr(e, xid);
+            int32:kt = raw type_of_expr(e, xid);
             if (kt == 0i32) { pass NIL; }
             if (raw type_is_invalid(e.types, kt)) { pass NIL; }
             if (kt != e.types.t_nil) {
@@ -183,10 +183,10 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
         // so the Result test below cannot see it — but the closed list is by
         // SHAPE: every call takes a keyword. `drop dalloc(p);` is the spelling.
         if (xn.kind == ExprKind.ExprCallExpr) {
-            ExprNode:xcal = relay ast_expr(e.ast, raw expr_callee(xn));
+            ExprNode:xcal = raw ast_expr(e.ast, raw expr_callee(xn));
             if (xcal.kind == ExprKind.ExprIdentifierExpr) {
                 if (xcal.a == 0i32) {
-                    if (raw is_builtin_name(relay intern_get(e.interns,
+                    if (raw is_builtin_name(raw intern_get(e.interns,
                                                 xcal.payload =>! int32))) {
                         drop type_of_expr(e, xid);
                         drop te_error(e, raw TYPE_RESULT_DISCARDED(),
@@ -197,7 +197,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
                 }
             }
         }
-        int32:xt = relay type_of_expr(e, xid);
+        int32:xt = raw type_of_expr(e, xid);
         if (xt == 0i32) { pass NIL; }
         if (raw type_is_invalid(e.types, xt)) { pass NIL; }
         if ((raw type_kind(e.types, xt)) == (raw TY_RESULT())) {
@@ -218,7 +218,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     // not a plain value, and must be handled, not discarded (D-163 rule 6).
     if (s.kind == StmtKind.StmtDiscardStmt) {
         ExprId:did = raw stmt_expr(s);
-        int32:dt = relay type_of_expr(e, did);
+        int32:dt = raw type_of_expr(e, did);
         if (dt == 0i32) { pass NIL; }
         if (raw type_is_invalid(e.types, dt)) { pass NIL; }
         if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
@@ -248,7 +248,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
 // the half a test can prove. Whether each rule is RIGHT is not answerable this
 // way, which is what 0.4.8's negative coverage is for; whether each kind is
 // VISITED is, and that is the failure that just happened.
-pub func:stmt_is_classified = bool(StmtKind:k) {
+pub func:stmt_is_classified = bool(StmtKind:k) never fails {
     if (k == StmtKind.StmtNone) { pass false; }
     if (raw stmt_carries_expr(k)) { pass true; }
     if (k == StmtKind.StmtBlockStmt)     { pass true; }
@@ -272,7 +272,7 @@ pub func:stmt_is_classified = bool(StmtKind:k) {
     pass (k == StmtKind.StmtDeferStmt);
 };
 
-pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) {
+pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
@@ -285,7 +285,7 @@ pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) {
 // One binding, one payload, one recorded type. A variant carrying MORE than one
 // payload is 0.9's — the backend rungs it, and its multi-binding typing lands
 // with that lift; until then those bindings stay unknown exactly as before.
-func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
+func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) never fails {
     if (selt == 0i32) { pass NIL; }
     int32:sk = raw type_kind(e.types, selt);
     if (sk != (raw TY_ENUM())) {
@@ -293,11 +293,11 @@ func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
     }
     int32:i = 0i32;
     while (i < (raw pick_arm_count(s))) {
-        StmtNode:arm = relay ast_stmt(e.ast, raw pick_arm_at(e.ast,
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast,
                                           raw pick_arm_start(s), i));
         PatId:pid2 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid2))) {
-            PatNode:pn = relay ast_pat(e.ast, pid2);
+            PatNode:pn = raw ast_pat(e.ast, pid2);
             if (pn.kind == PatKind.PatEnumDestructure) {
                 drop type_enum_bindings(e, pid2, pn, selt);
             }
@@ -318,19 +318,19 @@ func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
 // its index among the pattern's names, so the checker holds the body to the
 // destructured types the way construction and binding do at the backend.
 func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
-                              int32:selt) {
-    int32:bc = relay pat_enum_bind_count(e.ast, pn);
+                              int32:selt) never fails {
+    int32:bc = raw pat_enum_bind_count(e.ast, pn);
     if (bc == 0i32) { pass NIL; }
-    int32:segs = relay pat_enum_segment_count(e.ast, pn);
+    int32:segs = raw pat_enum_segment_count(e.ast, pn);
     if (segs <= 0i32) { pass NIL; }
-    int32:vname = relay pat_enum_segment(e.ast, pn, segs - 1i32);
+    int32:vname = raw pat_enum_segment(e.ast, pn, segs - 1i32);
     DeclId:did = DeclId{ index: raw type_decl(e.types, selt) };
-    DeclNode:d = relay ast_decl(e.ast, did);
+    DeclNode:d = raw ast_decl(e.ast, did);
     int32:home = raw symtab_home_scope(e.tab, did.index, e.scope);
     TypeResolver:r = raw etyper_resolver(e);
     int32:vi = 0i32;
     while (vi < (raw item_member_count(e.ast, d))) {
-        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, vi));
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
                 int32:mark = raw ast_scratch_mark(e.ast);
@@ -338,8 +338,8 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
                 while (j < bc) {
                     int32:pt = 0i32;
                     if (j < (raw variant_payload_count(m))) {
-                        pt = relay resolve_type(@r,
-                            TypeId{ index: relay ast_id_at(e.ast,
+                        pt = raw resolve_type(@r,
+                            TypeId{ index: raw ast_id_at(e.ast,
                                         raw variant_payload_start(m), j) },
                             home);
                     }
@@ -361,7 +361,7 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
 // field type in binding order; a name that is no field is left `0` (unknown),
 // the struct-literal checker's own "no such field" is the diagnostic for it.
 func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
-                                int32:selt) {
+                                int32:selt) never fails {
     int32:bc = raw pat_bind_count(pn);
     if (bc == 0i32) { pass NIL; }
     int32:bstart = raw pat_bind_start(pn);
@@ -370,7 +370,7 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     int32:j = 0i32;
     while (j < bc) {
         int32:fname = raw ast_id_at(e.ast, bstart, j);
-        FieldInfo:fi = relay struct_field(@r, selt, fname, e.scope);
+        FieldInfo:fi = raw struct_field(@r, selt, fname, e.scope);
         int32:ft = 0i32;
         if (fi.found) { ft = fi.type_id; }
         drop ast_scratch_push(e.ast, ft);
@@ -381,7 +381,7 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     pass NIL;
 };
 
-func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) {
+func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         drop check_stmt(e, raw pick_arm_at(e.ast, start, i));
@@ -397,8 +397,8 @@ func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) {
 // it as a rung — calling it valid. A range, a slice and an array iterate
 // their element; an `Iterator` implementor joins them at 1.0.9d with its
 // lowering; anything else is refused here by name.
-func:check_for = NIL(ExprTyper->:e, StmtNode:s) {
-    int32:it = relay type_of_expr(e, relay stmt_for_iter(e.ast, s));
+func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    int32:it = raw type_of_expr(e, raw stmt_for_iter(e.ast, s));
     if (it == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, it)) { pass NIL; }
     // ONE LEVEL OF AUTO-DEREFERENCE (D-098), as `.` and UFCS do: `for` over a
@@ -432,35 +432,35 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) {
         }
     }
     if (elem == 0i32) {
-        string:n1 = relay string_concat("`",
-                        relay type_display(e.types, e.interns, it));
+        string:n1 = raw string_concat("`",
+                        raw type_display(e.types, e.interns, it));
         drop te_error(e, raw TYPE_NOT_ITERABLE(),
-            relay string_concat(n1,
+            raw string_concat(n1,
                 "` is not iterable: `for` takes a range, a slice, an array, or a type implementing `Iterator` (D-023, D-166); `loop`/`till` count"),
             s.span);
         pass NIL;
     }
-    DeclNode:bd = relay ast_decl(e.ast, raw stmt_for_binding(s));
-    int32:bt = relay resolve_type(@r, raw param_type(bd), e.scope);
+    DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
+    int32:bt = raw resolve_type(@r, raw param_type(bd), e.scope);
     if (bt == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, bt)) { pass NIL; }
     // EQUAL, NOT `fits`: a typed binding is the element, with no wrap and no
     // widening — the same rule every other typed binding has (D-092).
     if (bt != elem) {
-        string:b1 = relay string_concat("a `for` binding's type is the element type: this iterable yields `",
-                        relay type_display(e.types, e.interns, elem));
-        string:b2 = relay string_concat(b1, "` and the binding declares `");
-        string:b3 = relay string_concat(b2, relay type_display(e.types, e.interns, bt));
-        drop te_error(e, raw TYPE_MISMATCH(), relay string_concat(b3, "`"), bd.span);
+        string:b1 = raw string_concat("a `for` binding's type is the element type: this iterable yields `",
+                        raw type_display(e.types, e.interns, elem));
+        string:b2 = raw string_concat(b1, "` and the binding declares `");
+        string:b3 = raw string_concat(b2, raw type_display(e.types, e.interns, bt));
+        drop te_error(e, raw TYPE_MISMATCH(), raw string_concat(b3, "`"), bd.span);
     }
     pass NIL;
 };
 
-func:check_counted = NIL(ExprTyper->:e, StmtNode:s) {
-    int32:n = relay stmt_counted_argc(e.ast, s);
+func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    int32:n = raw stmt_counted_argc(e.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop type_of_expr(e, relay stmt_counted_arg(e.ast, s, i));
+        drop type_of_expr(e, raw stmt_counted_arg(e.ast, s, i));
         i = i + 1i32;
     }
     e.counted_depth = e.counted_depth + 1i32;
@@ -469,10 +469,10 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) {
     pass NIL;
 };
 
-func:check_cond = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_cond = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:c = raw stmt_cond(s);
     if (raw expr_is_none(c)) { pass NIL; }
-    int32:t = relay type_of_expr(e, c);
+    int32:t = raw type_of_expr(e, c);
     if (t == 0i32) { pass NIL; }
     drop require_bool(e, t, s.span);
     pass NIL;
@@ -482,17 +482,17 @@ func:check_cond = NIL(ExprTyper->:e, StmtNode:s) {
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
 // inferred, the type was written down and the literal reads it.
-func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:ann = raw stmt_decl_type(s);
-    int32:want = relay resolve_type(@r, ann, e.scope);
+    int32:want = raw resolve_type(@r, ann, e.scope);
 
     ExprId:init = raw stmt_decl_init(e.ast, s);
     if (raw expr_is_none(init)) { pass NIL; }
 
     int32:saved = e.expected;
     e.expected = want;
-    int32:got = relay type_of_expr(e, init);
+    int32:got = raw type_of_expr(e, init);
     e.expected = saved;
 
     if (got == 0i32) { pass NIL; }
@@ -520,16 +520,16 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
 //      thing to remember.
 //   3. FOR `op=`, DO THE OPERANDS SUPPORT THE OPERATION? `x += 1i32` on a `bool`
 //      is the arithmetic rule asked of a type that has none.
-func:check_assign = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:target = raw stmt_target(s);
     ExprId:value = raw stmt_assigned(s);
 
-    int32:want = relay type_of_expr(e, target);
+    int32:want = raw type_of_expr(e, target);
     drop require_place(e, target, s.span);
 
     int32:saved = e.expected;
     e.expected = want;
-    int32:got = relay type_of_expr(e, value);
+    int32:got = raw type_of_expr(e, value);
     e.expected = saved;
 
     if (want == 0i32) { pass NIL; }
@@ -557,7 +557,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) {
     pass NIL;
 };
 
-func:is_bitwise_assign = bool(TokenKind:op) {
+func:is_bitwise_assign = bool(TokenKind:op) never fails {
     if (op == TokenKind.OpAmpAssign)   { pass true; }
     if (op == TokenKind.OpPipeAssign)  { pass true; }
     if (op == TokenKind.OpCaretAssign) { pass true; }
@@ -577,9 +577,9 @@ func:is_bitwise_assign = bool(TokenKind:op) {
 // The message names the form rather than saying "not assignable", because the
 // mistake is usually a comparison written with one `=` and the reader needs to be
 // pointed at that rather than at a definition.
-func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) {
+func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    if (relay expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+    if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
     drop te_error(e, raw TYPE_NOT_A_PLACE(),
         "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",
         at);
@@ -588,7 +588,7 @@ func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) {
 
 // `pass v;` desugars to `return Result{error: 0tbb32, value: v};` — so `v` is
 // checked against the function's SUCCESS type, not its `Result` type.
-func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     int32:want = e.fn_success;
 
@@ -616,7 +616,7 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
 
     int32:saved = e.expected;
     e.expected = want;
-    int32:got = relay type_of_expr(e, v);
+    int32:got = raw type_of_expr(e, v);
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
@@ -633,7 +633,7 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
 // `fail` IN `main` OR `failsafe` IS REFUSED for the reason `relay` is: there is
 // no `Result` to fail into, and an error leaving the program's last frame has
 // nowhere to go. That is the uncontrolled stop the discipline exists to prevent.
-func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_fail = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (e.in_defer) {
         drop te_error(e, raw TYPE_DEFER_EXIT(),
             "a `defer` body may not `fail` (D-163): a cleanup runs while the scope unwinds and must not itself exit; handle the error inside the `defer`",
@@ -654,7 +654,7 @@ func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
 
     int32:saved = e.expected;
     e.expected = e.types.t_tbb32;
-    int32:got = relay type_of_expr(e, c);
+    int32:got = raw type_of_expr(e, c);
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
@@ -670,7 +670,7 @@ func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
 // this form, so the form has to exist and has to be the only other way in. A
 // `return v;` accepting a bare value would give the language two spellings for
 // the success path, one of which silently supplies an error field nobody wrote.
-func:check_return = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     if (e.fn_never_fails) {
         drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
@@ -683,7 +683,7 @@ func:check_return = NIL(ExprTyper->:e, StmtNode:s) {
             s.span);
         pass NIL;
     }
-    ExprNode:n = relay ast_expr(e.ast, v);
+    ExprNode:n = raw ast_expr(e.ast, v);
     if (n.kind != ExprKind.ExprResultLiteralExpr) {
         drop te_error(e, raw TYPE_RESULT_RETURN(),
             "`return` takes a `Result{…}` literal and nothing else; write `pass v;` for a value or `fail c;` for an error",
@@ -698,7 +698,7 @@ func:check_return = NIL(ExprTyper->:e, StmtNode:s) {
 // shaped differently. Anywhere else, stopping the program bypasses every caller's
 // error handling and every `defer` between here and the top, which is exactly the
 // uncontrolled shutdown the language exists to make impossible.
-func:check_exit = NIL(ExprTyper->:e, StmtNode:s) {
+func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (!e.fn_terminal) {
         drop te_error(e, raw TYPE_RESULT_RETURN(),
             "`exit` is legal only in `main` and `failsafe`; elsewhere it would stop the program past every caller's error handling and every pending `defer` — `fail` is how a function reports failure",
@@ -750,8 +750,8 @@ func:check_exit = NIL(ExprTyper->:e, StmtNode:s) {
 // resolution needs belongs to the constructor rather than to whoever remembers to
 // pass it. So the walk sets the context on `e` and builds a resolver from `e`
 // wherever it needs one.
-pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) {
-    DeclNode:m = relay ast_decl(e.ast, mod_id);
+pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) never fails {
+    DeclNode:m = raw ast_decl(e.ast, mod_id);
     int32:n = raw item_member_count(e.ast, m);
     int32:i = 0i32;
     while (i < n) {
@@ -761,8 +761,8 @@ pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) {
     pass NIL;
 };
 
-func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
-    DeclNode:d = relay ast_decl(e.ast, id);
+func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(e.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         drop check_function(e, id, scope);
@@ -810,13 +810,13 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
         GenericScope:g = GenericScope{ params_start: gw.start, params_count: gw.count,
                                        args_start: 0i32, args_count: 0i32 };
         e.enclosing = g;
-        e.self_type = relay impl_self_type(e, d, scope);
+        e.self_type = raw impl_self_type(e, d, scope);
 
-        int32:mn = relay impl_member_count(e.ast, d);
+        int32:mn = raw impl_member_count(e.ast, d);
         int32:j = 0i32;
         while (j < mn) {
-            DeclId:mid = relay impl_member(e.ast, d, j);
-            DeclNode:mm = relay ast_decl(e.ast, mid);
+            DeclId:mid = raw impl_member(e.ast, d, j);
+            DeclNode:mm = raw ast_decl(e.ast, mid);
             if (mm.kind == DeclKind.DeclFunctionDecl) {
                 drop check_function(e, mid, scope);
             }
@@ -854,7 +854,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
         int32:k = 0i32;
         while (k < tn) {
             DeclId:tmid = raw item_member(e.ast, d, k);
-            DeclNode:tm = relay ast_decl(e.ast, tmid);
+            DeclNode:tm = raw ast_decl(e.ast, tmid);
             if (tm.kind == DeclKind.DeclFunctionDecl) {
                 drop check_function(e, tmid, scope);
             }
@@ -879,12 +879,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
     // else resolves; the initialiser is an expression nothing else walks.
     if (d.kind == DeclKind.DeclGlobalDecl) {
         TypeResolver:gr = raw etyper_resolver(e);
-        int32:want = relay resolve_type(@gr, raw global_type(d), scope);
+        int32:want = raw resolve_type(@gr, raw global_type(d), scope);
         ExprId:init = raw global_init(d);
         if (!(raw expr_is_none(init))) {
             int32:saved = e.expected;
             e.expected = want;
-            int32:got = relay type_of_expr(e, init);
+            int32:got = raw type_of_expr(e, init);
             e.expected = saved;
             if (want != 0i32) {
                 if (got != 0i32) {
@@ -910,7 +910,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
             // refused by name. A `const` binding's constness is the analysis
             // pass's (`TYPE_NOT_CONSTANT`), so this covers `fixed` and plain.
             if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) {
-                if (!(relay is_const_initialiser(e, init))) {
+                if (!(raw is_const_initialiser(e, init))) {
                     drop te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
                         "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
                         d.span);
@@ -927,15 +927,15 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
 // is constant exactly when the folder folds it (a literal, a sentinel, an
 // arithmetic expression, another module binding, a `comptime(…)`). A call folds
 // to nothing, which is the refusal D-165 wants.
-func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) {
-    ExprNode:n = relay ast_expr(e.ast, eid);
+func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
+    ExprNode:n = raw ast_expr(e.ast, eid);
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         int32:pairs = (raw expr_list_count(n)) / 2i32;
         int32:i = 0i32;
         while (i < pairs) {
             ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
                              raw expr_list_start(n), (i * 2i32) + 1i32) };
-            if (!(relay is_const_initialiser(e, vid))) { pass false; }
+            if (!(raw is_const_initialiser(e, vid))) { pass false; }
             i = i + 1i32;
         }
         pass true;
@@ -946,14 +946,14 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) {
         while (i < c) {
             ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
                              raw expr_list_start(n), i) };
-            if (!(relay is_const_initialiser(e, vid))) { pass false; }
+            if (!(raw is_const_initialiser(e, vid))) { pass false; }
             i = i + 1i32;
         }
         pass true;
     }
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
     TypeResolver:cr = raw etyper_resolver(e);
-    ConstVal:cv = relay fold_const(@cr, eid, e.scope);
+    ConstVal:cv = raw fold_const(@cr, eid, e.scope);
     pass (raw cv_folded(cv));
 };
 
@@ -965,7 +965,7 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) {
 // D-064 applied to a declaration: `T:value` is checked once, at the definition,
 // against a `T` that satisfies its bounds and nothing else.
 func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
-                                 int32:scope) {
+                                 int32:scope) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     int32:t = raw tt_struct(e.types, id.index, raw decl_name(d), 0i64, 1i32);
     drop struct_layout(@r, t, scope);
@@ -978,11 +978,11 @@ func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
 // the RETURN type — and a bad parameter type is a mistake in a declaration
 // exactly as much as a bad return is. That asymmetry is what let `..*int64`
 // without the brackets sit unreported in an uncalled function.
-func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
-    DeclNode:d = relay ast_decl(e.ast, fid);
+func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
+    DeclNode:d = raw ast_decl(e.ast, fid);
     int32:name = raw decl_name(d);
     TypeResolver:r = raw etyper_resolver(e);
-    FnSig:sg = relay fn_signature(@r, fid, name, scope);
+    FnSig:sg = raw fn_signature(@r, fid, name, scope);
     drop fn_type(@r, fid, name, scope);
 
     GenericScope:saved = e.generics;
@@ -992,7 +992,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
     e.generics = g;
     e.fn_success = sg.success;
     e.fn_terminal = sg.terminal;
-    e.fn_never_fails = relay fn_declares_never_fails(e.ast, d);
+    e.fn_never_fails = raw fn_declares_never_fails(e.ast, d);
     if (e.fn_never_fails) {
         // A terminal function returns no `Result`, so `never fails` says nothing
         // there; and `never fails` may not combine with the verification
@@ -1004,7 +1004,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
         }
         int32:nci = 0i32;
         while (nci < (raw fn_contract_count(e.ast, d))) {
-            VerifyNode:ncv = relay ast_verify(e.ast, raw fn_contract(e.ast, d, nci));
+            VerifyNode:ncv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, nci));
             if (ncv.kind == VerifyKind.VerifyContractNode) {
                 drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                     "a `never fails` function may not also state `requires`/`ensures` (D-163)",
@@ -1024,7 +1024,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
         }
         int32:npi = 0i32;
         while (npi < (raw fn_param_count(e.ast, d))) {
-            DeclNode:npd = relay ast_decl(e.ast, raw fn_param(e.ast, d, npi));
+            DeclNode:npd = raw ast_decl(e.ast, raw fn_param(e.ast, d, npi));
             if (!(raw verify_is_none(raw param_limit(npd)))) {
                 drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                     "a `never fails` function may not carry `limit<Rules>` on a parameter (D-163): the limit is a verifier obligation this contract cannot hold",
@@ -1050,7 +1050,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
 // every form now — `T` for a blanket, `Box<T>` for a family, `Point` for a
 // concrete one — so it resolves the same way for all three, under the impl's
 // own parameters (a blanket's `T` and a family's `Box<T>` both need them).
-func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) {
+func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) never fails {
     TypeId:tgt = raw impl_target(e.ast, d);
     if (raw type_is_none(tgt)) { pass 0i32; }
     TypeResolver:r = raw etyper_resolver(e);
@@ -1058,7 +1058,7 @@ func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) {
     GenericScope:saved = r.generics;
     r.generics = GenericScope{ params_start: gw.start, params_count: gw.count,
                                args_start: 0i32, args_count: 0i32 };
-    int32:st = relay resolve_type(@r, tgt, scope);
+    int32:st = raw resolve_type(@r, tgt, scope);
     r.generics = saved;
     pass st;
 };

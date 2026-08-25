@@ -29,21 +29,21 @@ pub struct:Diagnostic = {
 };
 
 pub func:diag_make = Diagnostic(int32:severity, string:code, string:message,
-                                Span:span) {
+                                Span:span) never fails {
     Diagnostic:d = Diagnostic{ severity: severity, code: code,
                                message: message, span: span };
     pass d;
 };
 
-pub func:diag_error = Diagnostic(string:code, string:message, Span:span) {
+pub func:diag_error = Diagnostic(string:code, string:message, Span:span) never fails {
     pass (raw diag_make(2i32, code, message, span));
 };
 
-pub func:diag_warning = Diagnostic(string:code, string:message, Span:span) {
+pub func:diag_warning = Diagnostic(string:code, string:message, Span:span) never fails {
     pass (raw diag_make(1i32, code, message, span));
 };
 
-pub func:diag_note = Diagnostic(string:code, string:message, Span:span) {
+pub func:diag_note = Diagnostic(string:code, string:message, Span:span) never fails {
     pass (raw diag_make(0i32, code, message, span));
 };
 
@@ -63,7 +63,7 @@ pub struct:DiagList = {
     bool:overflowed;
 };
 
-pub func:diaglist_init = DiagList() {
+pub func:diaglist_init = DiagList() never fails {
     DiagList:l = DiagList{ items: [], count: 0i64, overflowed: false };
     pass l;
 };
@@ -86,8 +86,8 @@ pub func:diaglist_init = DiagList() {
 // A LINEAR SCAN over a list bounded at 256 entries. A compiler emitting hundreds
 // of diagnostics has already failed usefully at the first few, which is what
 // bounds the list in the first place.
-pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) {
-    if (relay diaglist_has(list, d)) { pass NIL; }
+pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) never fails {
+    if (raw diaglist_has(list, d)) { pass NIL; }
     if (list.count >= 256i64) {
         list.overflowed = true;
         pass NIL;
@@ -97,7 +97,7 @@ pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) {
     pass NIL;
 };
 
-func:diaglist_has = bool(DiagList->:list, Diagnostic:d) {
+func:diaglist_has = bool(DiagList->:list, Diagnostic:d) never fails {
     int64:i = 0i64;
     while (i < list.count) {
         Diagnostic:e = list.items[i];
@@ -117,21 +117,21 @@ func:diaglist_has = bool(DiagList->:list, Diagnostic:d) {
     pass false;
 };
 
-pub func:diaglist_count = int64(DiagList->:list) {
+pub func:diaglist_count = int64(DiagList->:list) never fails {
     pass list.count;
 };
 
-pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) {
+pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) never fails {
     if (i < 0i64) {
-        fail 6tbb32;
+        !!! 6tbb32;
     }
     if (i >= list.count) {
-        fail 6tbb32;
+        !!! 6tbb32;
     }
     pass list.items[i];
 };
 
-pub func:diaglist_has_errors = bool(DiagList->:list) {
+pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
     int64:i = 0i64;
     while (i < list.count) {
         if (list.items[i].severity == 2i32) {
@@ -145,7 +145,7 @@ pub func:diaglist_has_errors = bool(DiagList->:list) {
 // Insertion sort by span. Diagnostics are sorted before rendering so that two
 // runs over the same input produce byte-identical output (D-078) -- discovery
 // order is not a property of the program being compiled.
-pub func:diaglist_sort = NIL(DiagList->:list) {
+pub func:diaglist_sort = NIL(DiagList->:list) never fails {
     int64:i = 1i64;
     while (i < list.count) {
         Diagnostic:cur = list.items[i];
@@ -214,7 +214,7 @@ pub struct:Sink = {
 // The bound stays where it belongs: on the DIAGNOSTIC LIST, which is what the fixed
 // cap was protecting. One buffer mechanism, and the thing that needs a limit keeps
 // its own.
-pub func:sink_to_buffer = Sink(int64:cap) {
+pub func:sink_to_buffer = Sink(int64:cap) never fails {
     int64:n = cap;
     if (n < 64i64) { n = 64i64; }
     wild int8->:b = alloc(n);
@@ -222,7 +222,7 @@ pub func:sink_to_buffer = Sink(int64:cap) {
     pass s;
 };
 
-func:sink_grow = NIL(Sink->:out, int64:need) {
+func:sink_grow = NIL(Sink->:out, int64:need) never fails {
     int64:n = out.cap;
     while (n < need) { n = n * 2i64; }
     out.buf = ralloc(out.buf, n);
@@ -230,7 +230,7 @@ func:sink_grow = NIL(Sink->:out, int64:need) {
     pass NIL;
 };
 
-pub func:sink_write = NIL(Sink->:out, string:text) {
+pub func:sink_write = NIL(Sink->:out, string:text) never fails {
     if ((out.len + text.len) > out.cap) {
         drop sink_grow(out, out.len + text.len);
     }
@@ -243,17 +243,17 @@ pub func:sink_write = NIL(Sink->:out, string:text) {
     pass NIL;
 };
 
-pub func:sink_length = int64(Sink->:out) {
+pub func:sink_length = int64(Sink->:out) never fails {
     pass out.len;
 };
 
-pub func:sink_byte_at = uint8(Sink->:out, int64:i) {
+pub func:sink_byte_at = uint8(Sink->:out, int64:i) never fails {
     pass (out.buf[i] =>! uint8);
 };
 
 // Empty a sink for reuse; the buffer is kept (1.0.8 gave the IR writer a
 // second sink per function, and it is reset at each function's start).
-pub func:sink_reset = NIL(Sink->:out) {
+pub func:sink_reset = NIL(Sink->:out) never fails {
     out.len = 0i64;
     pass NIL;
 };
@@ -261,7 +261,7 @@ pub func:sink_reset = NIL(Sink->:out) {
 // Append one sink's bytes to another — how the IR writer splices a function's
 // hoisted allocas and its body into the module stream at the function's close
 // (1.0.9a).
-pub func:sink_append = NIL(Sink->:dst, Sink->:src) {
+pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
     if ((dst.len + src.len) > dst.cap) {
         drop sink_grow(dst, dst.len + src.len);
     }
@@ -301,47 +301,47 @@ pub func:sink_append = NIL(Sink->:dst, Sink->:src) {
 // why none had been reviewed. The string is built here and WRITTEN by the
 // caller, because the drivers write to a `NioW` and the tests to a `Sink`,
 // and a renderer per sink is how the drift began.
-pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) {
+pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) never fails {
     string:m = "";
     if (d.severity == 0i32) { m = "note "; }
     if (d.severity == 1i32) { m = "warning "; }
-    m = relay string_concat(m, d.code);
-    m = relay string_concat(m, " ");
+    m = raw string_concat(m, d.code);
+    m = raw string_concat(m, " ");
     if (d.span.file < 0i32) {
-        m = relay string_concat(m, "<no span>");
+        m = raw string_concat(m, "<no span>");
     } else {
         // A FILE THE MANAGER DOES NOT HOLD is rendered, not lost: the same rule
         // as `<no span>`, for the same reason. (Spelled out rather than with
         // `?`, which the seed that still builds this file cannot lower.)
         Result<string>:pr = srcmgr_path(sm, d.span.file);
         if (pr.is_error) {
-            m = relay string_concat(m, "<unknown file>");
+            m = raw string_concat(m, "<unknown file>");
         } else {
-            m = relay string_concat(m, pr.value);
+            m = raw string_concat(m, pr.value);
         }
-        m = relay string_concat(m, ":");
-        m = relay string_concat(m, raw int_to_string(d.span.line => int64));
-        m = relay string_concat(m, ":");
-        m = relay string_concat(m, raw int_to_string(d.span.col => int64));
+        m = raw string_concat(m, ":");
+        m = raw string_concat(m, raw int_to_string(d.span.line => int64));
+        m = raw string_concat(m, ":");
+        m = raw string_concat(m, raw int_to_string(d.span.col => int64));
     }
-    m = relay string_concat(m, ": ");
-    m = relay string_concat(m, d.message);
+    m = raw string_concat(m, ": ");
+    m = raw string_concat(m, d.message);
     pass m;
 };
 
 // The line that says the list was capped — the drivers print it too (1.0.8);
 // before, only the test sink ever mentioned that anything had been dropped.
-pub func:diag_overflow_line = string() {
+pub func:diag_overflow_line = string() never fails {
     pass "note NITPICK-DIAG-001 <no span>: further diagnostics suppressed";
 };
 
-pub func:diag_render = NIL(Diagnostic:d, SourceManager->:sm, Sink->:out) {
-    drop sink_write(out, relay diag_line(d, sm));
+pub func:diag_render = NIL(Diagnostic:d, SourceManager->:sm, Sink->:out) never fails {
+    drop sink_write(out, raw diag_line(d, sm));
     drop sink_write(out, "\n");
     pass NIL;
 };
 
-pub func:diaglist_render = NIL(DiagList->:list, SourceManager->:sm, Sink->:out) {
+pub func:diaglist_render = NIL(DiagList->:list, SourceManager->:sm, Sink->:out) never fails {
     drop diaglist_sort(list);
     int64:i = 0i64;
     while (i < list.count) {

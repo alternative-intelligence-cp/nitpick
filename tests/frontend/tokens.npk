@@ -51,9 +51,10 @@ func:main = int32(cstring[]:_~argv) {
     Token:last = raw tokenlist_last(@list);
     if (last.payload != 999i64)                { exit 24i32; }
 
-    // Out of range is an error, not a sentinel.
-    Result<Token>:oob = tokenlist_at(@list, 5000i64);
-    if (!(oob.is_error))                       { exit 25i32; }
+    // Out of range is a DEFECT now, not an observable error (D-163, 1.1.1):
+    // `tokenlist_at` is `never fails` and TRAPS on a bad index — the compiler
+    // no longer continues on a wrong token, and there is no error to probe.
+    // The in-range read above is the accessor's whole observable contract.
 
     // `never fails` in a SEED-COMPILED program (D-163, 1.1.0): this file is
     // built by the throwaway seed, so the clause parsing here proves the seed

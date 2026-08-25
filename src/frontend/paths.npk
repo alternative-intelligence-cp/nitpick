@@ -9,10 +9,10 @@
 
 use "./intern.npk".*;
 
-func:SLASH = uint8() { pass 47u8; };   // '/'
-func:DOT = uint8()   { pass 46u8; };   // '.'
+func:SLASH = uint8() never fails { pass 47u8; };   // '/'
+func:DOT = uint8() never fails   { pass 46u8; };   // '.'
 
-pub func:path_is_absolute = bool(string:p) {
+pub func:path_is_absolute = bool(string:p) never fails {
     if (p.len == 0i64) { pass false; }
     pass (p.ptr[0i64] == ((raw SLASH()) =>! uint8));
 };
@@ -21,7 +21,7 @@ pub func:path_is_absolute = bool(string:p) {
 // directory rather than against a dependency root (BUILD_REFERENCE section 3).
 // The classification is by FIRST CHARACTER and there is no fallback between
 // classes: a `./` path that does not exist is an error, never a retry.
-pub func:path_is_relative = bool(string:p) {
+pub func:path_is_relative = bool(string:p) never fails {
     if (p.len < 2i64) { pass false; }
     if (p.ptr[0i64] != ((raw DOT()) =>! uint8)) { pass false; }
     if (p.ptr[1i64] == ((raw SLASH()) =>! uint8)) { pass true; }
@@ -31,7 +31,7 @@ pub func:path_is_relative = bool(string:p) {
 };
 
 // Everything before the last `/`. A path with no `/` has directory ".".
-pub func:path_dirname = string(string:p) {
+pub func:path_dirname = string(string:p) never fails {
     int64:i = p.len;
     while (i > 0i64) {
         i = i - 1i64;
@@ -39,7 +39,7 @@ pub func:path_dirname = string(string:p) {
             if (i == 0i64) {
                 pass "/";
             }
-            pass (relay string_slice(p, 0i64, i));
+            pass (raw slice_proven(p, 0i64, i));
         }
     }
     pass ".";
@@ -50,7 +50,7 @@ pub func:path_dirname = string(string:p) {
 // `/c/intern.npk` both yield `intern`, which is the point: a symbol name must
 // not vary with the build tree. It is the same stem D-088 requires the `mod:`
 // name to match, so it doubles as the module's canonical name.
-pub func:path_basename = string(string:p) {
+pub func:path_basename = string(string:p) never fails {
     int64:start = 0i64;
     int64:i = p.len;
     while (i > 0i64) {
@@ -64,19 +64,19 @@ pub func:path_basename = string(string:p) {
     // strip a trailing `.npk`
     if ((p.len - start) > 4i64) {
         int64:dot = p.len - 4i64;
-        if (raw string_eq(relay string_slice(p, dot, p.len), ".npk")) {
+        if (raw string_eq(raw slice_proven(p, dot, p.len), ".npk")) {
             endp = dot;
         }
     }
-    pass (relay string_slice(p, start, endp));
+    pass (raw slice_proven(p, start, endp));
 };
 
-pub func:path_join = string(string:dir, string:rest) {
+pub func:path_join = string(string:dir, string:rest) never fails {
     if (dir.len == 0i64) { pass rest; }
     if (rest.len == 0i64) { pass dir; }
     if (raw path_is_absolute(rest)) { pass rest; }
-    string:withslash = relay string_concat(dir, "/");
-    pass (relay string_concat(withslash, rest));
+    string:withslash = raw string_concat(dir, "/");
+    pass (raw string_concat(withslash, rest));
 };
 
 // Collapse `.` and `..` segments and duplicate slashes.
@@ -88,7 +88,7 @@ pub func:path_join = string(string:dir, string:rest) {
 //
 // A leading `..` that cannot be cancelled is KEPT: `../x` has no directory above
 // it to fold into, and dropping it would silently change which file is meant.
-pub func:path_normalise = string(string:p) {
+pub func:path_normalise = string(string:p) never fails {
     if (p.len == 0i64) { pass p; }
 
     bool:absolute = raw path_is_absolute(p);
@@ -180,9 +180,9 @@ pub func:path_normalise = string(string:p) {
     // Drop the trailing separator the loop always appends.
     if (out > 0i64) { out = out - 1i64; }
 
-    string:body = relay string_from_bytes(buf, out);
+    string:body = raw string_from_bytes(buf, out);
     if (absolute) {
-        pass (relay string_concat("/", body));
+        pass (raw string_concat("/", body));
     }
     if (out == 0i64) {
         // Everything cancelled: `a/..` is the current directory.
@@ -192,7 +192,7 @@ pub func:path_normalise = string(string:p) {
 };
 
 // Resolve `rest` against the directory holding `from`, normalised.
-pub func:path_relative_to = string(string:from, string:rest) {
-    string:dir = relay path_dirname(from);
-    pass (relay path_normalise(relay path_join(dir, rest)));
+pub func:path_relative_to = string(string:from, string:rest) never fails {
+    string:dir = raw path_dirname(from);
+    pass (raw path_normalise(raw path_join(dir, rest)));
 };

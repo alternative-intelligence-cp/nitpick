@@ -89,7 +89,7 @@ pub trait:Iterator = {
 // remaining scalars — the characters (UTF-8), the `tbb` widths (ERR), the kernel
 // identifiers, `uint64` (its high bit) and the floats (a correct float->decimal
 // in the floor) — arrive with their own careful conversions.
-impl:int8:ToString   = { func:to_string = string(int8:self)   { pass (raw int_to_string(self => int64)); }; };
+impl:int8:ToString   = { func:to_string = string(int8:self) never fails   { pass (raw int_to_string(self => int64)); }; };
 impl:int16:ToString  = { func:to_string = string(int16:self)  { pass (raw int_to_string(self => int64)); }; };
 impl:int32:ToString  = { func:to_string = string(int32:self)  { pass (raw int_to_string(self => int64)); }; };
 impl:int64:ToString  = { func:to_string = string(int64:self)  { pass (raw int_to_string(self)); }; };
@@ -121,7 +121,7 @@ impl:gid:ToString = { func:to_string = string(gid:self) { pass (raw int_to_strin
 // own — `uint64 / 10` and `% 10` are unsigned because the type is — so the digits
 // come out right whatever the high bit. The lower unsigned widths fit in `int64`
 // and go through `int_to_string` losslessly; only `uint64` needs this.
-pub func:digit_char = string(uint64:d) {
+pub func:digit_char = string(uint64:d) never fails {
     if (d == 0u64) { pass "0"; }
     if (d == 1u64) { pass "1"; }
     if (d == 2u64) { pass "2"; }
@@ -134,7 +134,7 @@ pub func:digit_char = string(uint64:d) {
     pass "9";
 };
 
-pub func:uint_to_decimal = string(uint64:v) {
+pub func:uint_to_decimal = string(uint64:v) never fails {
     if (v == 0u64) { pass "0"; }
     string:acc = "";
     uint64:n = v;
@@ -150,8 +150,8 @@ pub func:uint_to_decimal = string(uint64:v) {
 // is the same across builds -- a verified compiler cannot have one that drifts.
 // The offset basis (0xcbf29ce484222325) is past the 64-bit literal envelope, so it
 // is built from its two words; the prime fits.
-pub func:fnv_offset = uint64() { pass ((3421887204u64 << 32u64) | 2216829733u64); };
-pub func:fnv_mix = uint64(uint64:h, uint64:v) { pass ((h ^ v) * 1099511628211u64); };
+pub func:fnv_offset = uint64() never fails { pass ((3421887204u64 << 32u64) | 2216829733u64); };
+pub func:fnv_mix = uint64(uint64:h, uint64:v) never fails { pass ((h ^ v) * 1099511628211u64); };
 
 // A SCALAR HASHES ITS VALUE (D-123); a derived struct hash combines its fields
 // the same way, so the whole is FNV-1a over the parts.

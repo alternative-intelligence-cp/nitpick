@@ -23,7 +23,7 @@ pub struct:SourceManager = {
     int32:cap;
 };
 
-pub func:srcmgr_init = SourceManager() {
+pub func:srcmgr_init = SourceManager() never fails {
     int64:n = 8i64;
     wild int8->:raw_mem = alloc(n * #size_of<SourceFile>());
     SourceManager:m = SourceManager{
@@ -34,7 +34,7 @@ pub func:srcmgr_init = SourceManager() {
     pass m;
 };
 
-func:srcmgr_grow = NIL(SourceManager->:m) {
+func:srcmgr_grow = NIL(SourceManager->:m) never fails {
     int32:newcap = m.cap * 2i32;
     wild int8->:bigger = ralloc(m.files =>! wild int8->,
                                 (newcap => int64) * #size_of<SourceFile>());
@@ -44,7 +44,7 @@ func:srcmgr_grow = NIL(SourceManager->:m) {
 };
 
 // Returns the file index, which is what a Span carries.
-pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) {
+pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) never fails {
     if (m.count >= m.cap) {
         drop srcmgr_grow(m);
     }
@@ -55,7 +55,7 @@ pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) {
     pass index;
 };
 
-pub func:srcmgr_count = int32(SourceManager->:m) {
+pub func:srcmgr_count = int32(SourceManager->:m) never fails {
     pass m.count;
 };
 
@@ -72,7 +72,7 @@ pub func:srcmgr_count = int32(SourceManager->:m) {
 // then fires on a file the reader never edited (0.3.1). This is the check that
 // prevents it, and 0.3.2 adds the normalisation that makes it reliable --
 // `./a/../b.npk` and `b.npk` must arrive here as the same text.
-pub func:srcmgr_find = int32(SourceManager->:m, string:path) {
+pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
     int32:i = 0i32;
     while (i < m.count) {
         if (raw string_eq(m.files[i => int64].path, path)) {
@@ -121,18 +121,35 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
 
 // Byte access, because the lexer works in bytes: the source is UTF-8 and a
 // character count would be a second, differently-wrong number to keep in step.
-pub func:srcmgr_byte_at = uint8(SourceManager->:m, int32:file, int64:offset) {
-    string:t = relay srcmgr_text(m, file);
+pub func:srcmgr_byte_at = uint8(SourceManager->:m, int32:file, int64:offset) never fails {
+    string:t = raw srcmgr_text_proven(m, file);
     if (offset < 0i64) {
-        fail 2tbb32;
+        !!! 2tbb32;
     }
     if (offset >= t.len) {
-        fail 2tbb32;
+        !!! 2tbb32;
     }
     pass t.ptr[offset] => uint8;
 };
 
-pub func:srcmgr_length = int64(SourceManager->:m, int32:file) {
-    string:t = relay srcmgr_text(m, file);
+pub func:srcmgr_length = int64(SourceManager->:m, int32:file) never fails {
+    string:t = raw srcmgr_text_proven(m, file);
     pass t.len;
+};
+
+// THE PROVEN LOOKUP (D-163, 1.1.1): for a file id the compiler itself minted —
+// a module entry's, a span the lexer stamped — a miss is an internal defect,
+// trapped. `srcmgr_path` stays may-fail for the one consumer whose misses are
+// DATA: `diag_line`, which renders `<unknown file>` for a span synthesised
+// outside the manager rather than failing a diagnostic over it.
+pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails {
+    Result<string>:r = srcmgr_path(m, file);
+    if (r.is_error) { !!! 1tbb32; }
+    pass r.value;
+};
+
+pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
+    Result<string>:r = srcmgr_text(m, file);
+    if (r.is_error) { !!! 1tbb32; }
+    pass r.value;
 };

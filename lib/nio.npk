@@ -28,7 +28,7 @@ mod:nio;
 // `\r\n` and lone `\r` become `\n`; everything else passes through. The fast
 // path returns the INPUT when it contains no `\r` at all — one scan, no copy —
 // which is every file this project's own tools will ever read back.
-pub func:nio_normalize = string(string:s) {
+pub func:nio_normalize = string(string:s) never fails {
     bool:seen_cr = false;
     int64:i = 0i64;
     while (i < s.len) {
@@ -89,21 +89,21 @@ pub struct:NioW = {
 
 // The three well-known descriptors, manufactured HERE and nowhere else —
 // `int32 =>! fd` is confined to the nlibc tier (D-140), and this is that tier.
-pub func:nio_stdout_fd = fd() { pass (1i32 =>! fd); };
-pub func:nio_stderr_fd = fd() { pass (2i32 =>! fd); };
+pub func:nio_stdout_fd = fd() never fails { pass (1i32 =>! fd); };
+pub func:nio_stderr_fd = fd() never fails { pass (2i32 =>! fd); };
 
-func:nio_writer = NioW(fd:sink, NioEnding:e, NioMode:m, bool:owned) {
+func:nio_writer = NioW(fd:sink, NioEnding:e, NioMode:m, bool:owned) never fails {
     wild int8->:b = alloc(4096i64);
     NioW:w = NioW{ sink: sink, ending: e, mode: m, owned: owned,
                    buf: b, len: 0i64, cap: 4096i64 };
     pass w;
 };
 
-pub func:nio_stdout = NioW() {
+pub func:nio_stdout = NioW() never fails {
     pass (raw nio_writer(raw nio_stdout_fd(), NioEnding.Lf, NioMode.Line, false));
 };
 
-pub func:nio_stderr = NioW() {
+pub func:nio_stderr = NioW() never fails {
     pass (raw nio_writer(raw nio_stderr_fd(), NioEnding.Lf, NioMode.Unbuffered, false));
 };
 
@@ -118,7 +118,7 @@ pub func:nio_create = NioW(cstring:path, NioEnding:e) {
 // Append one byte. INFALLIBLE BY DESIGN: the buffer grows rather than flushing
 // here, so the only fallible step in a put is the flush decision at its end —
 // one error path instead of one per byte.
-func:nio_byte = NIL(NioW->:w, int8:b) {
+func:nio_byte = NIL(NioW->:w, int8:b) never fails {
     if (w.len == w.cap) {
         int64:nc = w.cap * 2i64;
         w.buf = ralloc(w.buf, nc);

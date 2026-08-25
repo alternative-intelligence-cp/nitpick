@@ -37,34 +37,34 @@ pub struct:Lexer = {
     int32[8]:interp_brace;   // brace depth at each open interpolation
 };
 
-pub func:lexer_init = Lexer(int32:file, string:text) {
+pub func:lexer_init = Lexer(int32:file, string:text) never fails {
     Lexer:lx = Lexer{ text: text, file: file, pos: 0i64, line: 1i32, col: 1i32,
                       in_template: false, interp_depth: 0i32, brace_depth: 0i32,
                       interp_brace: [] };
     pass lx;
 };
 
-pub func:lexer_at_end = bool(Lexer->:lx) {
+pub func:lexer_at_end = bool(Lexer->:lx) never fails {
     pass (lx.pos >= lx.text.len);
 };
 
 // Reading past the end yields 0, which is not a legal source byte, so callers
 // need no separate bounds test before every peek.
-func:lexer_peek = uint8(Lexer->:lx) {
+func:lexer_peek = uint8(Lexer->:lx) never fails {
     if (lx.pos >= lx.text.len) {
         pass 0u8;
     }
     pass lx.text.ptr[lx.pos] => uint8;
 };
 
-func:lexer_peek2 = uint8(Lexer->:lx) {
+func:lexer_peek2 = uint8(Lexer->:lx) never fails {
     if ((lx.pos + 1i64) >= lx.text.len) {
         pass 0u8;
     }
     pass lx.text.ptr[lx.pos + 1i64] => uint8;
 };
 
-func:lexer_advance = uint8(Lexer->:lx) {
+func:lexer_advance = uint8(Lexer->:lx) never fails {
     uint8:c = raw lexer_peek(lx);
     lx.pos = lx.pos + 1i64;
     if (c == 10u8) {
@@ -82,7 +82,7 @@ func:lexer_advance = uint8(Lexer->:lx) {
 // semantic type that permits no arithmetic. The distinction is the point --
 // a byte in a buffer is not a character.
 
-pub func:is_space = bool(uint8:c) {
+pub func:is_space = bool(uint8:c) never fails {
     if (c == 32u8) { pass true; }      // space
     if (c == 9u8)  { pass true; }      // tab
     if (c == 13u8) { pass true; }      // carriage return
@@ -90,22 +90,22 @@ pub func:is_space = bool(uint8:c) {
     pass false;
 };
 
-pub func:is_digit = bool(uint8:c) {
+pub func:is_digit = bool(uint8:c) never fails {
     pass ((c >= 48u8) && (c <= 57u8));
 };
 
-pub func:is_alpha = bool(uint8:c) {
+pub func:is_alpha = bool(uint8:c) never fails {
     if ((c >= 97u8) && (c <= 122u8)) { pass true; }   // a-z
     if ((c >= 65u8) && (c <= 90u8))  { pass true; }   // A-Z
     pass false;
 };
 
-pub func:is_ident_start = bool(uint8:c) {
+pub func:is_ident_start = bool(uint8:c) never fails {
     if (raw is_alpha(c)) { pass true; }
     pass (c == 95u8);                                  // _
 };
 
-pub func:is_ident_part = bool(uint8:c) {
+pub func:is_ident_part = bool(uint8:c) never fails {
     if (raw is_alpha(c))  { pass true; }
     if (raw is_digit(c))  { pass true; }
     pass (c == 95u8);
@@ -113,13 +113,13 @@ pub func:is_ident_part = bool(uint8:c) {
 
 // --- trivia -----------------------------------------------------------------
 
-func:lexer_span_from = Span(Lexer->:lx, int64:start, int32:line, int32:col) {
+func:lexer_span_from = Span(Lexer->:lx, int64:start, int32:line, int32:col) never fails {
     pass (raw span_make(lx.file, start =>! int32, line, col,
                         (lx.pos - start) =>! int32));
 };
 
 // Whitespace and both comment forms. Returns NIL; trivia produces no tokens.
-func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) {
+func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
     while (true) {
         uint8:c = raw lexer_peek(lx);
 
@@ -180,7 +180,7 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) {
 // --- tokens -----------------------------------------------------------------
 
 pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
-                            DiagList->:diags) {
+                            DiagList->:diags) never fails {
     // INSIDE A TEMPLATE, WHITESPACE IS CONTENT (D-168, 1.0.9d). Skipping trivia
     // first ate the leading space of a part that followed an interpolation
     // (`&{a} b` rendered "…b", not "… b") — and would eat a `//` in the text as a
@@ -243,7 +243,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         }
 
         if (lx.pos > tstart) {
-            string:part = raw string_slice(lx.text, tstart, lx.pos);
+            string:part = raw slice_proven(lx.text, tstart, lx.pos);
             pass (raw token_make(TokenKind.TemplatePart,
                       raw lexer_span_from(lx, tstart, line, col),
                       (raw intern_add(interns, part)) => int64));
@@ -317,7 +317,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 if (q == 34u8) { break; }
                 drop lexer_advance(lx);
             }
-            string:body = raw string_slice(lx.text, rstart, lx.pos);
+            string:body = raw slice_proven(lx.text, rstart, lx.pos);
             drop lexer_advance(lx);
             // No escape processing at all -- that is what "raw" means.
             pass (raw token_make(TokenKind.RawStringLit,
@@ -377,7 +377,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             drop lexer_advance(lx);
         }
 
-        string:content = raw string_slice(lx.text, sstart, lx.pos);
+        string:content = raw slice_proven(lx.text, sstart, lx.pos);
         drop lexer_advance(lx);
         if (block) {
             drop lexer_advance(lx);
@@ -493,7 +493,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                             drop lexer_advance(lx);
                         }
                     }
-                    string:ftext = raw string_slice(lx.text, start, lx.pos);
+                    string:ftext = raw slice_proven(lx.text, start, lx.pos);
                     Span:fsp = raw lexer_span_from(lx, start, line, col);
                     // A float keeps its TEXT, interned, rather than a converted
                     // value: converting at scan time would round once here and
@@ -506,7 +506,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             }
         }
 
-        string:text = raw string_slice(lx.text, start, lx.pos);
+        string:text = raw slice_proven(lx.text, start, lx.pos);
 
         NumScan:ns = raw num_scan(text);
         if (ns.is_numeric) {
@@ -585,7 +585,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
 // Lex a whole file. Always ends with exactly one Eof token, so consumers need
 // no separate end test.
 pub func:lex_all = TokenList(int32:file, string:text, InternTable->:interns,
-                             DiagList->:diags) {
+                             DiagList->:diags) never fails {
     Lexer:lx = raw lexer_init(file, text);
     TokenList:out = raw tokenlist_init();
     while (true) {

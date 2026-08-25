@@ -37,7 +37,7 @@ use "./types.npk".*;
 // arises. IF A DOTTED TYPE SPELLING IS EVER ADDED, this needs a
 // module-qualified key in the same change — D-159 records that dependency.
 pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
-                               InternTable->:interns, int32:mark) {
+                               InternTable->:interns, int32:mark) never fails {
     // `ast_scratch_mark` READ NOW is the current top, so the difference is the
     // size of the region this caller pushed. It is the same function the caller
     // took `mark` from — a second one under a name meaning "top" would be two
@@ -45,11 +45,11 @@ pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
     int32:n = (raw ast_scratch_mark(ast)) - mark;
     int32:i = 1i32;
     while (i < n) {
-        int32:v = relay ast_scratch_at(ast, mark, i);
+        int32:v = raw ast_scratch_at(ast, mark, i);
         int32:j = i - 1i32;
         while (j >= 0i32) {
-            int32:w = relay ast_scratch_at(ast, mark, j);
-            if (!(relay bound_before(ast, tyt, interns, v, w))) { break; }
+            int32:w = raw ast_scratch_at(ast, mark, j);
+            if (!(raw bound_before(ast, tyt, interns, v, w))) { break; }
             drop ast_scratch_set(ast, mark, j + 1i32, w);
             j = j - 1i32;
         }
@@ -61,9 +61,9 @@ pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
 
 // Does trait type `a` sort before trait type `b`?
 func:bound_before = bool(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
-                         int32:a, int32:b) {
-    string:an = relay bound_name(ast, tyt, interns, a);
-    string:bn = relay bound_name(ast, tyt, interns, b);
+                         int32:a, int32:b) never fails {
+    string:an = raw bound_name(ast, tyt, interns, a);
+    string:bn = raw bound_name(ast, tyt, interns, b);
     if (raw name_lt(an, bn)) { pass true; }
     if (raw name_lt(bn, an)) { pass false; }
     // The tie: two traits of one name. Any deterministic answer canonicalises
@@ -72,11 +72,11 @@ func:bound_before = bool(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
 };
 
 func:bound_name = string(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
-                         int32:t) {
+                         int32:t) never fails {
     int32:d = raw type_decl_of(tyt, t);
     if (d == 0i32) { pass ""; }
-    DeclNode:dn = relay ast_decl(ast, DeclId{ index: d });
-    pass (relay intern_get(interns, raw decl_name(dn)));
+    DeclNode:dn = raw ast_decl(ast, DeclId{ index: d });
+    pass (raw intern_get(interns, raw decl_name(dn)));
 };
 
 // A METHOD'S NAME CARRIES ITS IMPL (D-156 as amended at 1.0.5b). Before this a
@@ -101,17 +101,17 @@ func:bound_name = string(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
 // `exprtypes_callee` — one computation, recorded, rather than two that can drift.
 pub func:method_symbol_name = string(TypeTable->:tyt, InternTable->:interns,
                                      int32:self_ty, int32:trait_ty,
-                                     string:name) {
+                                     string:name) never fails {
     if (self_ty == 0i32) { pass name; }
-    string:q = relay type_display(tyt, interns, self_ty);
+    string:q = raw type_display(tyt, interns, self_ty);
     if (trait_ty != 0i32) {
-        q = relay string_concat(q,
-                relay string_concat(":", relay type_display(tyt, interns, trait_ty)));
+        q = raw string_concat(q,
+                raw string_concat(":", raw type_display(tyt, interns, trait_ty)));
     }
-    pass (relay string_concat(q, relay string_concat(".", name)));
+    pass (raw string_concat(q, raw string_concat(".", name)));
 };
 
-pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) {
+pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) never fails {
     int32:k = raw type_kind(tyt, t);
     if (k == (raw TY_INVALID())) { pass "<unresolved>"; }
     if (k == (raw TY_BOOL()))    { pass "bool"; }
@@ -120,11 +120,11 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_NIL()))     { pass "NIL"; }
     if (k == (raw TY_ANY()))     { pass "any"; }
     if (k == (raw TY_CHAR())) {
-        pass (relay string_concat("char",
+        pass (raw string_concat("char",
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_TBB())) {
-        pass (relay string_concat("tbb",
+        pass (raw string_concat("tbb",
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_KERNEL())) {
@@ -138,83 +138,83 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_INT())) {
         string:base = "int";
         if (!(raw type_is_signed(tyt, t))) { base = "uint"; }
-        pass (relay string_concat(base,
+        pass (raw string_concat(base,
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_FLOAT())) {
-        pass (relay string_concat("flt",
+        pass (raw string_concat("flt",
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_POINTER())) {
-        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
+        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
     }
     if (k == (raw TY_SLICE())) {
-        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
+        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "?"));
+        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "?"));
     }
     if (k == (raw TY_RESULT())) {
-        string:r1 = relay string_concat("Result<",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(r1, ">"));
+        string:r1 = raw string_concat("Result<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(r1, ">"));
     }
     // THE REST OF THE ONE-OPERAND KINDS (1.0.8). Each printed `<type>` — so
     // "`<type>` and `<type>` are different types" was the whole of a refusal
     // between two `Handle`s, and `arr.nope` on an array reported "`<type>` has
     // no member `nope`". Every kind that carries an operand spells it.
     if (k == (raw TY_ARRAY())) {
-        string:a1 = relay string_concat(
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)), "[");
-        string:a2 = relay string_concat(a1,
+        string:a1 = raw string_concat(
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)), "[");
+        string:a2 = raw string_concat(a1,
                         raw int_to_string((raw type_array_count(tyt, t)) => int64));
-        pass (relay string_concat(a2, "]"));
+        pass (raw string_concat(a2, "]"));
     }
     if (k == (raw TY_HANDLE())) {
-        string:h1 = relay string_concat("Handle<",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(h1, ">"));
+        string:h1 = raw string_concat("Handle<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(h1, ">"));
     }
     if (k == (raw TY_ARENA())) {
-        string:n1 = relay string_concat("arena<",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(n1, ">"));
+        string:n1 = raw string_concat("arena<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(n1, ">"));
     }
     if (k == (raw TY_SHARED_ARENA())) {
-        string:s1 = relay string_concat("shared_arena<",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (relay string_concat(s1, ">"));
+        string:s1 = raw string_concat("shared_arena<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(s1, ">"));
     }
     // A RANGE IS `{ T, T }` (D-093), spelled as the value that makes one.
     if (k == (raw TY_RANGE())) {
-        string:g1 = relay string_concat(
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)), "..");
-        pass (relay string_concat(g1,
-                  relay type_display(tyt, interns, raw type_elem(tyt, t))));
+        string:g1 = raw string_concat(
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)), "..");
+        pass (raw string_concat(g1,
+                  raw type_display(tyt, interns, raw type_elem(tyt, t))));
     }
     // A PROJECTION IS SPELLED AS ONE (D-164): `T.Item`.
     if (k == (raw TY_ASSOC())) {
-        string:p1 = relay string_concat(
-                        relay type_display(tyt, interns, raw type_assoc_base(tyt, t)), ".");
-        pass (relay string_concat(p1,
-                  relay intern_get(interns, raw type_assoc_name(tyt, t))));
+        string:p1 = raw string_concat(
+                        raw type_display(tyt, interns, raw type_assoc_base(tyt, t)), ".");
+        pass (raw string_concat(p1,
+                  raw intern_get(interns, raw type_assoc_name(tyt, t))));
     }
     // A FUNCTION PRINTS ITS RETURN AND ITS SHAPE, not `<type>`. `type_elem` on a
     // function is its return type, and the two kinds are told apart in the one
     // place a reader looks — a diagnostic saying "`func Result<int64>(…)` is not
     // a function" would have been the only clue that the variadic kind existed.
     if (k == (raw TY_FUNC())) {
-        string:f1 = relay string_concat("func ",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        string:f2 = relay string_concat(f1, "(…)");
-        if (raw func_never_fails(tyt, t)) { pass (relay string_concat(f2, " never fails")); }
+        string:f1 = raw string_concat("func ",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        string:f2 = raw string_concat(f1, "(…)");
+        if (raw func_never_fails(tyt, t)) { pass (raw string_concat(f2, " never fails")); }
         pass f2;
     }
     if (k == (raw TY_FUNC_VARIADIC())) {
-        string:f1 = relay string_concat("func ",
-                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
-        string:f2 = relay string_concat(f1, "(…, ..*T[])");
-        if (raw func_never_fails(tyt, t)) { pass (relay string_concat(f2, " never fails")); }
+        string:f1 = raw string_concat("func ",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        string:f2 = raw string_concat(f1, "(…, ..*T[])");
+        if (raw func_never_fails(tyt, t)) { pass (raw string_concat(f2, " never fails")); }
         pass f2;
     }
     // `Self` HAS NO NAME TO CARRY, so without this it printed `<type>` — and it
@@ -231,7 +231,7 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     // Named types carry their own name.
     int32:nm = raw type_name(tyt, t);
     if (!(raw intern_is_none(nm))) {
-        pass (relay intern_get(interns, nm));
+        pass (raw intern_get(interns, nm));
     }
     pass "<type>";
 };

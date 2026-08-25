@@ -41,53 +41,53 @@ use "./parse_stmt.npk".*;
 // the two terminate differently: a statement-`pick` ends at its brace, while an
 // expression-`pick` ends wherever its enclosing statement does.
 
-pub func:pick_selector = ExprId(StmtNode:s) { ExprId:e = ExprId{ index: s.a }; pass e; };
-pub func:pick_arm_start = int32(StmtNode:s) { pass s.b; };
-pub func:pick_arm_count = int32(StmtNode:s) { pass s.c; };
+pub func:pick_selector = ExprId(StmtNode:s) never fails { ExprId:e = ExprId{ index: s.a }; pass e; };
+pub func:pick_arm_start = int32(StmtNode:s) never fails { pass s.b; };
+pub func:pick_arm_count = int32(StmtNode:s) never fails { pass s.c; };
 
-pub func:pickx_selector = ExprId(ExprNode:e) { ExprId:i = ExprId{ index: e.a }; pass i; };
-pub func:pickx_arm_start = int32(ExprNode:e) { pass e.b; };
-pub func:pickx_arm_count = int32(ExprNode:e) { pass e.c; };
+pub func:pickx_selector = ExprId(ExprNode:e) never fails { ExprId:i = ExprId{ index: e.a }; pass i; };
+pub func:pickx_arm_start = int32(ExprNode:e) never fails { pass e.b; };
+pub func:pickx_arm_count = int32(ExprNode:e) never fails { pass e.c; };
 
-pub func:pick_arm_at = StmtId(Ast->:ast, int32:start, int32:i) {
+pub func:pick_arm_at = StmtId(Ast->:ast, int32:start, int32:i) never fails {
     StmtId:s = StmtId{ index: raw ast_id_at(ast, start, i) };
     pass s;
 };
 
-pub func:arm_pattern = PatId(StmtNode:s) { PatId:p = PatId{ index: s.a }; pass p; };
-pub func:arm_guard = ExprId(StmtNode:s)  { ExprId:e = ExprId{ index: s.b }; pass e; };
-pub func:arm_body = StmtId(StmtNode:s)   { StmtId:b = StmtId{ index: s.c }; pass b; };
-pub func:arm_label = int32(StmtNode:s)   { pass (s.payload =>! int32); };
+pub func:arm_pattern = PatId(StmtNode:s) never fails { PatId:p = PatId{ index: s.a }; pass p; };
+pub func:arm_guard = ExprId(StmtNode:s) never fails  { ExprId:e = ExprId{ index: s.b }; pass e; };
+pub func:arm_body = StmtId(StmtNode:s) never fails   { StmtId:b = StmtId{ index: s.c }; pass b; };
+pub func:arm_label = int32(StmtNode:s) never fails   { pass (s.payload =>! int32); };
 
-pub func:pat_value = ExprId(PatNode:p)   { ExprId:e = ExprId{ index: p.a }; pass e; };
-pub func:pat_range_lo = ExprId(PatNode:p){ ExprId:e = ExprId{ index: p.a }; pass e; };
-pub func:pat_range_hi = ExprId(PatNode:p){ ExprId:e = ExprId{ index: p.b }; pass e; };
+pub func:pat_value = ExprId(PatNode:p) never fails   { ExprId:e = ExprId{ index: p.a }; pass e; };
+pub func:pat_range_lo = ExprId(PatNode:p) never fails{ ExprId:e = ExprId{ index: p.a }; pass e; };
+pub func:pat_range_hi = ExprId(PatNode:p) never fails{ ExprId:e = ExprId{ index: p.b }; pass e; };
 // `..` is INCLUSIVE and `...` is EXCLUSIVE (OP_REFERENCE section 6) -- the
 // reverse of the languages that spell them the other way round, which is exactly
 // why this is recorded on the node instead of being re-derived by whoever reads
 // it next.
-pub func:pat_range_inclusive = bool(PatNode:p) { pass (p.c != 0i32); };
-pub func:pat_struct_type = TypeId(PatNode:p) { TypeId:t = TypeId{ index: p.a }; pass t; };
+pub func:pat_range_inclusive = bool(PatNode:p) never fails { pass (p.c != 0i32); };
+pub func:pat_struct_type = TypeId(PatNode:p) never fails { TypeId:t = TypeId{ index: p.a }; pass t; };
 
 // A struct pattern's bindings are a plain window of intern indices.
-pub func:pat_bind_start = int32(PatNode:p) { pass p.b; };
-pub func:pat_bind_count = int32(PatNode:p) { pass p.c; };
+pub func:pat_bind_start = int32(PatNode:p) never fails { pass p.b; };
+pub func:pat_bind_count = int32(PatNode:p) never fails { pass p.c; };
 
 // An enum pattern's path may have several segments (`Net.Disconnect`), so it
 // carries a header: [0] segment count, [1] binding count, then the segments, then
 // the bindings.
-func:ENUM_PAT_HDR = int32() { pass 2i32; };
+func:ENUM_PAT_HDR = int32() never fails { pass 2i32; };
 
-pub func:pat_enum_segment_count = int32(Ast->:ast, PatNode:p) {
+pub func:pat_enum_segment_count = int32(Ast->:ast, PatNode:p) never fails {
     pass (raw ast_id_at(ast, p.b, 0i32));
 };
-pub func:pat_enum_bind_count = int32(Ast->:ast, PatNode:p) {
+pub func:pat_enum_bind_count = int32(Ast->:ast, PatNode:p) never fails {
     pass (raw ast_id_at(ast, p.b, 1i32));
 };
-pub func:pat_enum_segment = int32(Ast->:ast, PatNode:p, int32:i) {
+pub func:pat_enum_segment = int32(Ast->:ast, PatNode:p, int32:i) never fails {
     pass (raw ast_id_at(ast, p.b, (raw ENUM_PAT_HDR()) + i));
 };
-pub func:pat_enum_bind = int32(Ast->:ast, PatNode:p, int32:i) {
+pub func:pat_enum_bind = int32(Ast->:ast, PatNode:p, int32:i) never fails {
     int32:base = (raw ENUM_PAT_HDR()) + (raw pat_enum_segment_count(ast, p));
     pass (raw ast_id_at(ast, p.b, base + i));
 };
@@ -96,7 +96,7 @@ pub func:pat_enum_bind = int32(Ast->:ast, PatNode:p, int32:i) {
 // in order — an enum destructure's after its segments, a struct destructure's in
 // its brace list — and the checker keys a binding's recorded type by this index
 // (1.0.9c). Kept beside the accessors it reads so the two orders cannot drift.
-pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) {
+pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) never fails {
     if (p.kind == PatKind.PatEnumDestructure) {
         int32:bc = raw pat_enum_bind_count(ast, p);
         int32:i = 0i32;
@@ -122,16 +122,16 @@ pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) {
 // --- patterns ---------------------------------------------------------------------
 
 // The contents of one `( … )`.
-func:p_parse_pattern = PatId(Parser->:p) {
-    Span:sp = relay p_span(p);
+func:p_parse_pattern = PatId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
 
     // `(*)` -- the catch-all. It may NOT absorb an `ERR` selector; that is a
     // semantic rule (D-008 section 5.1), enforced where exhaustiveness is, and
     // deliberately not here -- the parser has no idea what the selector's type
     // is, and a rule enforced in the wrong phase is a rule that reports the
     // wrong thing.
-    if (relay p_accept(p, TokenKind.OpStar)) {
-        pass (relay ast_add_pat(p.ast, PatKind.PatWildcard, sp,
+    if (raw p_accept(p, TokenKind.OpStar)) {
+        pass (raw ast_add_pat(p.ast, PatKind.PatWildcard, sp,
                                 0i32, 0i32, 0i32, 0i64));
     }
 
@@ -141,8 +141,8 @@ func:p_parse_pattern = PatId(Parser->:p) {
     // exhaustiveness, and the arm most likely to be elided is the `ERR:` one that
     // D-008 requires -- asserting a `tbb` cannot be tainted, which is the least
     // safe assumption the type admits.
-    if (relay p_at(p, TokenKind.OpBang)) {
-        if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PRParen) {
+    if (raw p_at(p, TokenKind.OpBang)) {
+        if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PRParen) {
             drop p_advance(p);
             // `#unreachable()` IS THE SPEC'S ANSWER (D-061), AND IT IS PROVIDED
             // (1.0.9c): a `#`-builtin that traps through D-142's route
@@ -155,26 +155,26 @@ func:p_parse_pattern = PatId(Parser->:p) {
     }
 
     // A name, possibly dotted, possibly followed by a destructuring form.
-    if (relay p_at(p, TokenKind.Ident)) {
-        TokenKind:after = (relay p_peek_at(p, 1i64)).kind;
+    if (raw p_at(p, TokenKind.Ident)) {
+        TokenKind:after = (raw p_peek_at(p, 1i64)).kind;
         bool:destructures = false;
         if (after == TokenKind.PLParen) { destructures = true; }
         if (after == TokenKind.PLBrace) { destructures = true; }
         if (after == TokenKind.PDot)    { destructures = true; }
         if (destructures) {
-            pass (relay p_parse_destructure(p, sp));
+            pass (raw p_parse_destructure(p, sp));
         }
     }
 
     // Two mistakes get named rather than left to the expression parser, which
     // could only say "expected an expression" -- true, unhelpful, and pointing
     // at a construct the reader thought was a pattern.
-    if (relay p_at(p, TokenKind.PRParen)) {
+    if (raw p_at(p, TokenKind.PRParen)) {
         drop p_error(p, raw PARSE_BAD_PATTERN(),
             "a pattern may not be empty; the catch-all is `(*)`");
         pass (raw pat_none());
     }
-    if (raw token_kind_is_builtin_type(relay p_kind(p))) {
+    if (raw token_kind_is_builtin_type(raw p_kind(p))) {
         // A BUILTIN TYPE KEYWORD IN A PATTERN. There is no "match on a type",
         // and a scalar cannot be destructured, so the old advice ("use a
         // destructuring pattern") could not be followed (1.0.8).
@@ -190,94 +190,94 @@ func:p_parse_pattern = PatId(Parser->:p) {
     // `inclusive` on the pattern where AST_REFERENCE section 2.1 puts them, so an
     // exhaustiveness check reads bounds from the pattern and never has to know
     // which expression node shape hides them.
-    ExprId:e = relay p_parse_expr(p);
-    ExprNode:en = relay ast_expr(p.ast, e);
+    ExprId:e = raw p_parse_expr(p);
+    ExprNode:en = raw ast_expr(p.ast, e);
     if (en.kind == ExprKind.ExprRangeExpr) {
         int32:inc = 0i32;
         if (en.payload != 0i64) { inc = 1i32; }
-        pass (relay ast_add_pat(p.ast, PatKind.PatRange, sp,
+        pass (raw ast_add_pat(p.ast, PatKind.PatRange, sp,
                                 en.a, en.b, inc, 0i64));
     }
-    pass (relay ast_add_pat(p.ast, PatKind.PatValue, sp,
+    pass (raw ast_add_pat(p.ast, PatKind.PatValue, sp,
                             e.index, 0i32, 0i32, 0i64));
 };
 
 // `Struct { a, b }` or `Enum.Variant(binding)`.
-func:p_parse_destructure = PatId(Parser->:p, Span:sp) {
+func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, 0i32);   // [0] segment count
     drop ast_scratch_push(p.ast, 0i32);   // [1] binding count
 
-    Token:first = relay p_advance(p);
+    Token:first = raw p_advance(p);
     drop ast_scratch_push(p.ast, first.payload =>! int32);
     int32:segments = 1i32;
-    while (relay p_at(p, TokenKind.PDot)) {
-        if ((relay p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
+    while (raw p_at(p, TokenKind.PDot)) {
+        if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
         drop p_advance(p);
-        Token:sn = relay p_advance(p);
+        Token:sn = raw p_advance(p);
         drop ast_scratch_push(p.ast, sn.payload =>! int32);
         segments = segments + 1i32;
     }
 
-    if (relay p_at(p, TokenKind.PLBrace)) {
+    if (raw p_at(p, TokenKind.PLBrace)) {
         // `MouseClick { x, y }` -- a struct. Its NAME is a type, so it is stored
         // as one: a struct pattern has to be matched against a type either way,
         // and a segment list would make the checker rebuild what the type parser
         // already knows how to read.
         drop ast_scratch_commit(p.ast, mark);
-        TypeId:ty = relay ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
+        TypeId:ty = raw ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
                                        0i32, 0i32, 0i32, first.payload);
         drop p_advance(p);
         int32:bmark = raw ast_scratch_mark(p.ast);
         while (true) {
-            if (relay p_at(p, TokenKind.PRBrace)) { break; }
-            if (relay p_at_end(p)) { break; }
-            Token:b = relay p_advance(p);
+            if (raw p_at(p, TokenKind.PRBrace)) { break; }
+            if (raw p_at_end(p)) { break; }
+            Token:b = raw p_advance(p);
             drop ast_scratch_push(p.ast, b.payload =>! int32);
-            if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+            if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
         drop p_expect(p, TokenKind.PRBrace);
         IdSpan:bw = raw ast_scratch_commit(p.ast, bmark);
-        pass (relay ast_add_pat(p.ast, PatKind.PatStructDestructure, sp,
+        pass (raw ast_add_pat(p.ast, PatKind.PatStructDestructure, sp,
                                 ty.index, bw.start, bw.count, 0i64));
     }
 
     int32:binds = 0i32;
-    if (relay p_accept(p, TokenKind.PLParen)) {
+    if (raw p_accept(p, TokenKind.PLParen)) {
         while (true) {
-            if (relay p_at(p, TokenKind.PRParen)) { break; }
-            if (relay p_at_end(p)) { break; }
-            Token:b = relay p_advance(p);
+            if (raw p_at(p, TokenKind.PRParen)) { break; }
+            if (raw p_at_end(p)) { break; }
+            Token:b = raw p_advance(p);
             drop ast_scratch_push(p.ast, b.payload =>! int32);
             binds = binds + 1i32;
-            if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+            if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
         drop p_expect(p, TokenKind.PRParen);
     }
     drop ast_scratch_set(p.ast, mark, 0i32, segments);
     drop ast_scratch_set(p.ast, mark, 1i32, binds);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
-    pass (relay ast_add_pat(p.ast, PatKind.PatEnumDestructure, sp,
+    pass (raw ast_add_pat(p.ast, PatKind.PatEnumDestructure, sp,
                             0i32, w.start, w.count, 0i64));
 };
 
 // --- arms ---------------------------------------------------------------------------
 
-func:p_parse_arm = StmtId(Parser->:p) {
-    Span:sp = relay p_span(p);
+func:p_parse_arm = StmtId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
     int64:label = 0i64;
 
     // `ERR:` -- the tainted-selector arm (D-008 section 5.1). It takes no
     // parentheses, and `ERR` is a KEYWORD rather than an identifier, so it can
     // never be confused with the `label:` that precedes an ordinary arm.
-    if (relay p_at(p, TokenKind.KwERR)) {
-        if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
+    if (raw p_at(p, TokenKind.KwERR)) {
+        if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
             drop p_advance(p);
             drop p_advance(p);
-            PatId:ep = relay ast_add_pat(p.ast, PatKind.PatErrPattern, sp,
+            PatId:ep = raw ast_add_pat(p.ast, PatKind.PatErrPattern, sp,
                                          0i32, 0i32, 0i32, 0i64);
-            StmtId:eb = relay p_parse_block(p);
-            pass (relay ast_add_stmt(p.ast, StmtKind.StmtPickArm, sp,
+            StmtId:eb = raw p_parse_block(p);
+            pass (raw ast_add_stmt(p.ast, StmtKind.StmtPickArm, sp,
                                      ep.index, 0i32, eb.index, 0i64));
         }
     }
@@ -285,15 +285,15 @@ func:p_parse_arm = StmtId(Parser->:p) {
     // `one: (1i32) { … }` -- a labelled arm, which is what `fall one;` targets.
     // There is NO implicit fallthrough, so a label is only ever written because
     // something falls to it.
-    if (relay p_at(p, TokenKind.Ident)) {
-        if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
-            label = (relay p_advance(p)).payload;
+    if (raw p_at(p, TokenKind.Ident)) {
+        if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
+            label = (raw p_advance(p)).payload;
             drop p_advance(p);
         }
     }
 
     drop p_expect(p, TokenKind.PLParen);
-    PatId:pat = relay p_parse_pattern(p);
+    PatId:pat = raw p_parse_pattern(p);
     drop p_expect(p, TokenKind.PRParen);
 
     // `where (a > b)` -- PARENTHESISED, unlike `requires` / `ensures`. A guard is
@@ -301,41 +301,41 @@ func:p_parse_arm = StmtId(Parser->:p) {
     // declaration-site ones; the line is drawn by position, and it is drawn the
     // same way here (D-002).
     int32:guard = 0i32;
-    if (relay p_accept(p, TokenKind.KwWhere)) {
+    if (raw p_accept(p, TokenKind.KwWhere)) {
         drop p_expect(p, TokenKind.PLParen);
-        guard = (relay p_parse_expr(p)).index;
+        guard = (raw p_parse_expr(p)).index;
         drop p_expect(p, TokenKind.PRParen);
     }
 
-    StmtId:body = relay p_parse_block(p);
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtPickArm, sp,
+    StmtId:body = raw p_parse_block(p);
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtPickArm, sp,
                              pat.index, guard, body.index, label));
 };
 
 // `pick (selector)` -- shared by both positions, so the two entry points differ
 // only in the node they build.
-func:p_parse_pick_selector = ExprId(Parser->:p) {
+func:p_parse_pick_selector = ExprId(Parser->:p) never fails {
     drop p_expect(p, TokenKind.KwPick);
     drop p_expect(p, TokenKind.PLParen);
-    ExprId:sel = relay p_parse_expr(p);
+    ExprId:sel = raw p_parse_expr(p);
     drop p_expect(p, TokenKind.PRParen);
     pass sel;
 };
 
 // Arms are separated by COMMAS, and a trailing one is accepted -- adding an arm
 // should not require editing the line above it.
-func:p_parse_arms = IdSpan(Parser->:p) {
+func:p_parse_arms = IdSpan(Parser->:p) never fails {
     drop p_expect(p, TokenKind.PLBrace);
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
-        if (relay p_at(p, TokenKind.PRBrace)) { break; }
-        if (relay p_at_end(p)) { break; }
+        if (raw p_at(p, TokenKind.PRBrace)) { break; }
+        if (raw p_at_end(p)) { break; }
         int64:before = raw p_position(p);
-        StmtId:arm = relay p_parse_arm(p);
+        StmtId:arm = raw p_parse_arm(p);
         drop ast_scratch_push(p.ast, arm.index);
         drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
-        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+        if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }
     drop p_expect(p, TokenKind.PRBrace);
     pass (raw ast_scratch_commit(p.ast, mark));
@@ -343,34 +343,34 @@ func:p_parse_arms = IdSpan(Parser->:p) {
 
 // --- the two entry points -----------------------------------------------------------
 
-pub func:p_parse_pick_stmt = StmtId(Parser->:p) {
-    Span:sp = relay p_span(p);
-    ExprId:sel = relay p_parse_pick_selector(p);
-    IdSpan:arms = relay p_parse_arms(p);
+pub func:p_parse_pick_stmt = StmtId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
+    ExprId:sel = raw p_parse_pick_selector(p);
+    IdSpan:arms = raw p_parse_arms(p);
     // No trailing `;`: a control-flow block ends at its brace
     // (CONTROL_REFERENCE, the rule at the top).
-    pass (relay ast_add_stmt(p.ast, StmtKind.StmtPickStmt, sp,
+    pass (raw ast_add_stmt(p.ast, StmtKind.StmtPickStmt, sp,
                              sel.index, arms.start, arms.count, 0i64));
 };
 
-pub func:p_parse_pick_expr = ExprId(Parser->:p) {
-    Span:sp = relay p_span(p);
-    ExprId:sel = relay p_parse_pick_selector(p);
-    IdSpan:arms = relay p_parse_arms(p);
+pub func:p_parse_pick_expr = ExprId(Parser->:p) never fails {
+    Span:sp = raw p_span(p);
+    ExprId:sel = raw p_parse_pick_selector(p);
+    IdSpan:arms = raw p_parse_arms(p);
     // The enclosing statement supplies the `;`, which is the entire reason this
     // is a second node kind and not the same one used in two places.
-    pass (relay ast_add_expr(p.ast, ExprKind.ExprPickExpr, sp,
+    pass (raw ast_add_expr(p.ast, ExprKind.ExprPickExpr, sp,
                              sel.index, arms.start, arms.count, 0i64));
 };
 
 // Does an arm list `give`? That is what decides whether a `pick` is an expression
 // (D-059), and the checker asks it -- one scan, one answer, rather than every
 // consumer re-deriving it.
-pub func:pick_arms_give = bool(Ast->:ast, int32:start, int32:count) {
+pub func:pick_arms_give = bool(Ast->:ast, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = relay ast_stmt(ast, raw pick_arm_at(ast, start, i));
-        StmtNode:body = relay ast_stmt(ast, raw arm_body(arm));
+        StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
+        StmtNode:body = raw ast_stmt(ast, raw arm_body(arm));
         if (raw block_gives(ast, body)) { pass true; }
         i = i + 1i32;
     }
@@ -380,13 +380,13 @@ pub func:pick_arms_give = bool(Ast->:ast, int32:start, int32:count) {
 // A `give` anywhere directly in the block, not nested inside another `pick`. A
 // nested one belongs to its own `pick`, which is why this does not recurse into
 // arm bodies.
-func:block_gives = bool(Ast->:ast, StmtNode:b) {
+func:block_gives = bool(Ast->:ast, StmtNode:b) never fails {
     if (b.kind != StmtKind.StmtBlockStmt) { pass false; }
     int32:i = 0i32;
     int32:n = raw stmt_list_count(b);
     while (i < n) {
         StmtId:sid = StmtId{ index: raw ast_id_at(ast, raw stmt_list_start(b), i) };
-        StmtNode:s = relay ast_stmt(ast, sid);
+        StmtNode:s = raw ast_stmt(ast, sid);
         if (s.kind == StmtKind.StmtGiveStmt) { pass true; }
         if (s.kind == StmtKind.StmtBlockStmt) {
             if (raw block_gives(ast, s)) { pass true; }

@@ -88,12 +88,12 @@ pub struct:Front = {
 // the BUILD, not the language. The scan is flat over the AST's arrays — every
 // vardecl and every decl is there regardless of nesting — so a `wildx` local
 // or a `wildx`-returning function anywhere is found. Returns the count found.
-pub func:reject_wildx = int32(Front->:f) {
+pub func:reject_wildx = int32(Front->:f) never fails {
     int32:found = 0i32;
     int32:si = 0i32;
     int32:sn = raw ast_stmt_count(@f.g.ast);
     while (si < sn) {
-        StmtNode:s = relay ast_stmt(@f.g.ast, StmtId{ index: si });
+        StmtNode:s = raw ast_stmt(@f.g.ast, StmtId{ index: si });
         if (s.kind == StmtKind.StmtVarDeclStmt) {
             if (((raw stmt_quals(@f.g.ast, s)) & (raw QUAL_WILDX())) != 0i32) {
                 drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
@@ -107,7 +107,7 @@ pub func:reject_wildx = int32(Front->:f) {
     int32:di = 0i32;
     int32:dn = raw ast_decl_count(@f.g.ast);
     while (di < dn) {
-        DeclNode:d = relay ast_decl(@f.g.ast, DeclId{ index: di });
+        DeclNode:d = raw ast_decl(@f.g.ast, DeclId{ index: di });
         if (((raw decl_flags(d)) & (raw DECL_RET_WILDX())) != 0i32) {
             drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
                 "`wildx` is excluded by `--extra-picky=no-wildx` (D-035)",
@@ -119,7 +119,7 @@ pub func:reject_wildx = int32(Front->:f) {
     pass found;
 };
 
-pub func:front_run = int32(Front->:f, string:root) {
+pub func:front_run = int32(Front->:f, string:root) never fails {
     f.it = raw intern_init();
     f.diags = raw diaglist_init();
     f.roots = raw rootlist_init();
@@ -164,7 +164,7 @@ pub func:front_run = int32(Front->:f, string:root) {
         more = false;
         int32:xm = 0i32;
         while (xm < (raw graph_count(@f.g))) {
-            if (relay expand_module(@f.xp, DeclId{ index: (raw graph_at(@f.g, xm)).root })) {
+            if (raw expand_module(@f.xp, DeclId{ index: (raw graph_at(@f.g, xm)).root })) {
                 more = true;
             }
             xm = xm + 1i32;
@@ -174,7 +174,7 @@ pub func:front_run = int32(Front->:f, string:root) {
     }
     if (more) {
         if (!(raw expander_blown(@f.xp))) {
-            drop expand_no_fixpoint(@f.xp, (relay ast_decl(@f.g.ast,
+            drop expand_no_fixpoint(@f.xp, (raw ast_decl(@f.g.ast,
                 DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
         }
     }
@@ -356,7 +356,7 @@ pub func:front_run = int32(Front->:f, string:root) {
         round = round + 1i32;
     }
     if (settling) {
-        drop escape_unsettled(@esc, (relay ast_decl(@f.g.ast,
+        drop escape_unsettled(@esc, (raw ast_decl(@f.g.ast,
             DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
     }
     drop escape_report_mode(@esc);
@@ -416,7 +416,7 @@ pub func:front_run = int32(Front->:f, string:root) {
         lock_round = lock_round + 1i32;
     }
     if (lock_settling) {
-        drop locks_unsettled(@lk, (relay ast_decl(@f.g.ast,
+        drop locks_unsettled(@lk, (raw ast_decl(@f.g.ast,
             DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
     }
 
@@ -445,7 +445,7 @@ pub func:front_run = int32(Front->:f, string:root) {
 
 // One walk over every module, so the marking rounds and the reporting round
 // cannot drift apart by being written twice.
-func:escape_walk = NIL(Escape->:esc, ModuleGraph->:g) {
+func:escape_walk = NIL(Escape->:esc, ModuleGraph->:g) never fails {
     int32:i = 0i32;
     while (i < (raw graph_count(g))) {
         ModuleEntry:m = raw graph_at(g, i);

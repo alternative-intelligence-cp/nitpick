@@ -56,7 +56,7 @@ pub enum:NumWidth = {
 use "./intern.npk".*;
 use "./types.npk".*;
 
-pub func:num_width_of = NumWidth(string:text) {
+pub func:num_width_of = NumWidth(string:text) never fails {
     int64:n = text.len;
     if (n == 2i64) {
         if (raw string_eq(text, "i1")) { pass NumWidth.WI1; }
@@ -114,7 +114,7 @@ pub func:num_width_of = NumWidth(string:text) {
     pass NumWidth.WNone;
 };
 
-pub func:num_width_is_float = bool(NumWidth:w) {
+pub func:num_width_is_float = bool(NumWidth:w) never fails {
     if (w == NumWidth.WF32) { pass true; }
     if (w == NumWidth.WF64) { pass true; }
     if (w == NumWidth.WF128) { pass true; }
@@ -127,7 +127,7 @@ pub func:num_width_is_float = bool(NumWidth:w) {
 };
 
 // The bits a suffix names, or 0 for none. `42i32` is 32.
-pub func:num_width_bits = int32(NumWidth:w) {
+pub func:num_width_bits = int32(NumWidth:w) never fails {
     if (w == NumWidth.WU1) { pass 1i32; }
     if (w == NumWidth.WU2) { pass 2i32; }
     if (w == NumWidth.WU4) { pass 4i32; }
@@ -175,7 +175,7 @@ pub func:num_width_bits = int32(NumWidth:w) {
 
 // `i` is signed, `u` is not. A suffix that names neither is not an
 // integer suffix and the caller has already checked that.
-pub func:num_width_signed = bool(NumWidth:w) {
+pub func:num_width_signed = bool(NumWidth:w) never fails {
     if (w == NumWidth.WI1) { pass true; }
     if (w == NumWidth.WI2) { pass true; }
     if (w == NumWidth.WI4) { pass true; }
@@ -193,7 +193,7 @@ pub func:num_width_signed = bool(NumWidth:w) {
 };
 
 // An INTEGER suffix specifically -- `i32`/`u32`, not `f64` or `tbb32`.
-pub func:num_width_is_integer = bool(NumWidth:w) {
+pub func:num_width_is_integer = bool(NumWidth:w) never fails {
     if (w == NumWidth.WU1) { pass true; }
     if (w == NumWidth.WU2) { pass true; }
     if (w == NumWidth.WU4) { pass true; }
@@ -228,7 +228,7 @@ pub func:num_width_is_integer = bool(NumWidth:w) {
 // TY_INVALID for a suffix whose type has no kind yet -- `frac`, `tfp`
 // and `dim256` are REAL types arriving at a later rung, and the caller
 // names the rung rather than pretending the suffix is absent (D-085).
-pub func:num_width_kind = int32(NumWidth:w) {
+pub func:num_width_kind = int32(NumWidth:w) never fails {
     if (w == NumWidth.WU1) { pass (raw TY_INT()); }
     if (w == NumWidth.WU2) { pass (raw TY_INT()); }
     if (w == NumWidth.WU4) { pass (raw TY_INT()); }

@@ -24,23 +24,23 @@ pub struct:Token = {
     NumWidth:width;   // WNone when the token is not numeric
 };
 
-pub func:token_make = Token(TokenKind:kind, Span:span, int64:payload) {
+pub func:token_make = Token(TokenKind:kind, Span:span, int64:payload) never fails {
     Token:t = Token{ kind: kind, span: span, payload: payload,
                      width: NumWidth.WNone };
     pass t;
 };
 
 pub func:token_numeric = Token(TokenKind:kind, Span:span, int64:value,
-                               NumWidth:width) {
+                               NumWidth:width) never fails {
     Token:t = Token{ kind: kind, span: span, payload: value, width: width };
     pass t;
 };
 
-pub func:token_is = bool(Token:t, TokenKind:kind) {
+pub func:token_is = bool(Token:t, TokenKind:kind) never fails {
     pass (t.kind == kind);
 };
 
-pub func:token_is_eof = bool(Token:t) {
+pub func:token_is_eof = bool(Token:t) never fails {
     pass (t.kind == TokenKind.Eof);
 };
 
@@ -59,14 +59,14 @@ pub struct:TokenList = {
     int64:cap;
 };
 
-pub func:tokenlist_init = TokenList() {
+pub func:tokenlist_init = TokenList() never fails {
     int64:n = 256i64;
     wild int8->:raw_mem = alloc(n * #size_of<Token>());
     TokenList:l = TokenList{ items: raw_mem =>! wild Token->, count: 0i64, cap: n };
     pass l;
 };
 
-pub func:tokenlist_grow = NIL(TokenList->:l) {
+pub func:tokenlist_grow = NIL(TokenList->:l) never fails {
     int64:newcap = l.cap * 2i64;
     wild int8->:bigger = ralloc(l.items =>! wild int8->,
                                 newcap * #size_of<Token>());
@@ -75,7 +75,7 @@ pub func:tokenlist_grow = NIL(TokenList->:l) {
     pass NIL;
 };
 
-pub func:tokenlist_push = NIL(TokenList->:l, Token:t) {
+pub func:tokenlist_push = NIL(TokenList->:l, Token:t) never fails {
     if (l.count >= l.cap) {
         drop tokenlist_grow(l);
     }
@@ -84,23 +84,23 @@ pub func:tokenlist_push = NIL(TokenList->:l, Token:t) {
     pass NIL;
 };
 
-pub func:tokenlist_count = int64(TokenList->:l) {
+pub func:tokenlist_count = int64(TokenList->:l) never fails {
     pass l.count;
 };
 
-pub func:tokenlist_at = Token(TokenList->:l, int64:i) {
+pub func:tokenlist_at = Token(TokenList->:l, int64:i) never fails {
     if (i < 0i64) {
-        fail 4tbb32;
+        !!! 4tbb32;
     }
     if (i >= l.count) {
-        fail 4tbb32;
+        !!! 4tbb32;
     }
     pass l.items[i];
 };
 
-pub func:tokenlist_last = Token(TokenList->:l) {
+pub func:tokenlist_last = Token(TokenList->:l) never fails {
     if (l.count == 0i64) {
-        fail 4tbb32;
+        !!! 4tbb32;
     }
     pass l.items[l.count - 1i64];
 };
@@ -118,7 +118,7 @@ pub func:tokenlist_last = Token(TokenList->:l) {
 // a `>`. That keeps the lexer context-free -- no feedback channel, no lookahead
 // heuristic, no speculative parse -- which is what D-064 bought by confining
 // type-argument context to two precisely delimited places.
-pub func:tokenlist_split_shr = bool(TokenList->:l, int64:i) {
+pub func:tokenlist_split_shr = bool(TokenList->:l, int64:i) never fails {
     if (i < 0i64) { pass false; }
     if (i >= l.count) { pass false; }
     if (l.items[i].kind != TokenKind.OpShr) { pass false; }

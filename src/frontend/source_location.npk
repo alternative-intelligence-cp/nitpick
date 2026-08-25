@@ -18,32 +18,32 @@ pub struct:Span = {
 };
 
 pub func:span_make = Span(int32:file, int32:offset, int32:line,
-                          int32:col, int32:len) {
+                          int32:col, int32:len) never fails {
     Span:s = Span{ file: file, offset: offset, line: line, col: col, len: len };
     pass s;
 };
 
-pub func:span_point = Span(int32:file, int32:offset, int32:line, int32:col) {
+pub func:span_point = Span(int32:file, int32:offset, int32:line, int32:col) never fails {
     Span:s = Span{ file: file, offset: offset, line: line, col: col, len: 0i32 };
     pass s;
 };
 
 // A span with no file. Used for diagnostics that are not about a place in the
 // source -- a missing entry point, say.
-pub func:span_none = Span() {
+pub func:span_none = Span() never fails {
     Span:s = Span{ file: 0i32 - 1i32, offset: 0i32, line: 0i32,
                    col: 0i32, len: 0i32 };
     pass s;
 };
 
-pub func:span_has_location = bool(Span:s) {
+pub func:span_has_location = bool(Span:s) never fails {
     pass (s.file >= 0i32);
 };
 
 // Ordering, so diagnostics can be sorted before rendering. Two runs over the
 // same input must produce byte-identical output (D-078), which means the order
 // cannot depend on the order things happened to be discovered in.
-pub func:span_before = bool(Span:a, Span:b) {
+pub func:span_before = bool(Span:a, Span:b) never fails {
     if (a.file != b.file) {
         pass (a.file < b.file);
     }

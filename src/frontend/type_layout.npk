@@ -32,7 +32,7 @@ pub struct:FieldInfo = {
     int32:index;
 };
 
-func:fi_none = FieldInfo() {
+func:fi_none = FieldInfo() never fails {
     FieldInfo:f = FieldInfo{ found: false, type_id: 0i32, offset: 0i64,
                              index: 0i32 };
     pass f;
@@ -48,12 +48,12 @@ func:fi_none = FieldInfo() {
 // The walk and the layout are the same walk. Splitting them would mean two
 // traversals that have to agree about padding, which is two chances to disagree.
 pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
-                                  int32:name, int32:scope) {
+                                  int32:name, int32:scope) never fails {
     if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
         pass (raw fi_none());
     }
     GenericScope:saved = raw bind_instance(r, struct_type);
-    FieldInfo:f = relay struct_field_bound(r, struct_type, name, scope);
+    FieldInfo:f = raw struct_field_bound(r, struct_type, name, scope);
     r.generics = saved;
     pass f;
 };
@@ -70,10 +70,10 @@ pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
 // matters: leaving the caller's binding in place would let a `T` from the
 // surrounding generic function leak into an unrelated struct's field types and
 // resolve to something plausible.
-func:bind_instance = GenericScope(TypeResolver->:r, int32:struct_type) {
+func:bind_instance = GenericScope(TypeResolver->:r, int32:struct_type) never fails {
     GenericScope:saved = r.generics;
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
-    DeclNode:d = relay ast_decl(r.ast, did);
+    DeclNode:d = raw ast_decl(r.ast, did);
     IdSpan:gp = raw decl_generic_window(r.ast, d);
     GenericScope:g = GenericScope{
         params_start: gp.start, params_count: gp.count,
@@ -84,9 +84,9 @@ func:bind_instance = GenericScope(TypeResolver->:r, int32:struct_type) {
 };
 
 func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
-                                    int32:name, int32:scope) {
+                                    int32:name, int32:scope) never fails {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
-    DeclNode:d = relay ast_decl(r.ast, did);
+    DeclNode:d = raw ast_decl(r.ast, did);
     // FIELD TYPES RESOLVE AT HOME (0.8.1): a struct's annotations mean what they
     // meant where the struct was written, not whatever the module doing the
     // accessing happens to import.
@@ -96,9 +96,9 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
-        DeclNode:m = relay ast_decl(r.ast, mid);
+        DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            int32:ft = raw resolve_type(r, raw field_type(m), scope);
             // A FIELD WHOSE LAYOUT IS NOT YET COMPUTED PUTS EVERY LATER FIELD AT
             // THE WRONG OFFSET — silently, since zero is a perfectly good number
             // to add to a running sum.
@@ -123,19 +123,19 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
 // distinct addresses, and a zero-sized one would place them on top of each other
 // — the same reason C++ gives, and the reason `NIL` being genuinely zero-sized
 // (D-084) is a property of `NIL` rather than of empty aggregates.
-pub func:struct_layout = int32(TypeResolver->:r, int32:struct_type, int32:scope) {
+pub func:struct_layout = int32(TypeResolver->:r, int32:struct_type, int32:scope) never fails {
     if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
         pass struct_type;
     }
     GenericScope:saved = raw bind_instance(r, struct_type);
-    int32:t = relay struct_layout_bound(r, struct_type, scope);
+    int32:t = raw struct_layout_bound(r, struct_type, scope);
     r.generics = saved;
     pass t;
 };
 
-func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scope) {
+func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scope) never fails {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
-    DeclNode:d = relay ast_decl(r.ast, did);
+    DeclNode:d = raw ast_decl(r.ast, did);
     scope = raw symtab_home_scope(r.tab, did.index, scope);
 
     // THE SIZE IS WRITTEN BEFORE THE FIELDS ARE WALKED, so a struct reached again
@@ -150,9 +150,9 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
-        DeclNode:m = relay ast_decl(r.ast, mid);
+        DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            int32:ft = raw resolve_type(r, raw field_type(m), scope);
             // A FIELD'S OWN LAYOUT FIRST. A struct containing a struct needs the
             // inner one's real size, and a demand-driven walk gets that without an
             // ordering pass — the containment graph is acyclic because the loader
@@ -163,7 +163,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // The pointer-bearing bit rides the same walk (0.8.1): this is the
             // one place every field's RESOLVED type passes through, which is
             // exactly what the escape analysis cannot reconstruct for itself.
-            if (relay field_holds_ptr(r, ft)) { haspt = true; }
+            if (raw field_holds_ptr(r, ft)) { haspt = true; }
         }
         i = i + 1i32;
     }
@@ -180,7 +180,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
 // Can a field of this resolved type hold an address? Mirrors the escape
 // analysis's scalar table; a nested struct answers by ITS recorded bit, which
 // exists because containment is acyclic and inner structs lay out first.
-func:field_holds_ptr = bool(TypeResolver->:r, int32:t) {
+func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     int32:k = raw type_kind(r.types, t);
     if (k == (raw TY_INT()))     { pass false; }
     if (k == (raw TY_BOOL()))    { pass false; }
@@ -189,9 +189,9 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) {
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_ENUM()))    { pass false; }
     if (k == (raw TY_NIL()))     { pass false; }
-    if (k == (raw TY_ARRAY()))   { pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
-    if (k == (raw TY_OPTIONAL())){ pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
-    if (k == (raw TY_RESULT()))  { pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_ARRAY()))   { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_OPTIONAL())){ pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_RESULT()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_STRUCT())) {
         int32:bit = raw tt_haspt(r.types, t);
         if (bit == 1i32) { pass false; }
@@ -205,7 +205,7 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) {
 // before this runs, so the walk is acyclic — but "acyclic because something else
 // checked" is exactly the assumption worth bounding, since the cost of being
 // wrong is a compiler that does not terminate.
-func:LAYOUT_FUEL = int32() { pass 64i32; };
+func:LAYOUT_FUEL = int32() never fails { pass 64i32; };
 
 // THE LAYOUT OF WHATEVER THIS TYPE NEEDS BEFORE ITS SIZE MEANS ANYTHING.
 //
@@ -218,7 +218,7 @@ func:LAYOUT_FUEL = int32() { pass 64i32; };
 // terminates: a pointer is one word whatever it points at (D-038) and a slice is
 // `{ptr, len}` whatever it holds (D-070), so neither needs the pointee's layout —
 // which is exactly why `Node->` breaks a containment cycle and `Node` does not.
-pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel) {
+pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
     if (t == 0i32) { pass NIL; }
     int32:k = raw type_kind(r.types, t);
@@ -290,15 +290,15 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         // uniform `{i32, i64}` word this replaces was the SEED's rung shape;
         // the seed keeps it for what it builds, each compiler self-consistent,
         // and no program is ever compiled by both.)
-        if (relay enum_has_payload(r.ast, r.types, t)) {
+        if (raw enum_has_payload(r.ast, r.types, t)) {
             DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
-            DeclNode:d = relay ast_decl(r.ast, did);
+            DeclNode:d = raw ast_decl(r.ast, did);
             int32:home = raw symtab_home_scope(r.tab, did.index, scope);
             int64:wsize = 0i64;
             int32:walign = 1i32;
             int32:i = 0i32;
             while (i < (raw item_member_count(r.ast, d))) {
-                DeclNode:m = relay ast_decl(r.ast, raw item_member(r.ast, d, i));
+                DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
                 if (m.kind == DeclKind.DeclEnumVariant) {
                     // A VARIANT'S PAYLOADS ARE LAID OUT AS A STRUCT (1.0.9c):
                     // field `j` sits at its aligned offset after field `j-1`, so
@@ -313,8 +313,8 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                     int64:vsize = 0i64;
                     int32:j = 0i32;
                     while (j < pc) {
-                        int32:pt = relay resolve_type(r,
-                                       TypeId{ index: relay ast_id_at(r.ast,
+                        int32:pt = raw resolve_type(r,
+                                       TypeId{ index: raw ast_id_at(r.ast,
                                                    raw variant_payload_start(m), j) },
                                        home);
                         drop ensure_layout(r, pt, home, fuel - 1i32);
@@ -345,14 +345,14 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
 // It takes the AST and the table rather than a `TypeResolver`, because the BACKEND
 // asks this question too and a backend that had to construct a resolver to ask it
 // would be a backend that depends on name resolution.
-pub func:enum_has_payload = bool(Ast->:ast, TypeTable->:types, int32:enum_type) {
+pub func:enum_has_payload = bool(Ast->:ast, TypeTable->:types, int32:enum_type) never fails {
     if ((raw type_kind(types, enum_type)) != (raw TY_ENUM())) { pass false; }
     DeclId:did = DeclId{ index: raw type_decl(types, enum_type) };
-    DeclNode:d = relay ast_decl(ast, did);
+    DeclNode:d = raw ast_decl(ast, did);
     int32:i = 0i32;
     while (i < (raw item_member_count(ast, d))) {
         DeclId:mid = raw item_member(ast, d, i);
-        DeclNode:m = relay ast_decl(ast, mid);
+        DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw variant_payload_count(m)) > 0i32) { pass true; }
         }
@@ -366,17 +366,17 @@ pub func:enum_has_payload = bool(Ast->:ast, TypeTable->:types, int32:enum_type) 
 // `Net.Disconnect` and `Net.Connect(reason)` are both `Net` — the payload is
 // reached by destructuring in a `pick`, never by member access, which is what
 // keeps a variant from being a type of its own that a signature could name.
-pub func:enum_variant = FieldInfo(TypeResolver->:r, int32:enum_type, int32:name) {
+pub func:enum_variant = FieldInfo(TypeResolver->:r, int32:enum_type, int32:name) never fails {
     if ((raw type_kind(r.types, enum_type)) != (raw TY_ENUM())) {
         pass (raw fi_none());
     }
     DeclId:did = DeclId{ index: raw type_decl(r.types, enum_type) };
-    DeclNode:d = relay ast_decl(r.ast, did);
+    DeclNode:d = raw ast_decl(r.ast, did);
 
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
-        DeclNode:m = relay ast_decl(r.ast, mid);
+        DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == name) {
                 FieldInfo:f = FieldInfo{ found: true, type_id: enum_type,
@@ -408,7 +408,7 @@ pub func:enum_variant = FieldInfo(TypeResolver->:r, int32:enum_type, int32:name)
 // THE COUNT IS RE-READ EVERY ITERATION, because laying a struct out resolves its
 // field types and resolving a type can intern new ones. A count read once would
 // stop short of exactly the entries this pass created.
-pub func:finish_layouts = NIL(TypeResolver->:r, int32:scope) {
+pub func:finish_layouts = NIL(TypeResolver->:r, int32:scope) never fails {
     int32:i = 0i32;
     while (i < (raw tt_count(r.types))) {
         drop ensure_layout(r, i, scope, raw LAYOUT_FUEL());

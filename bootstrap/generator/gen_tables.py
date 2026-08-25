@@ -335,7 +335,10 @@ pub func:is_keyword = bool(string:text) {
     for n in sorted(ob, reverse=True):
         ol.append('')
         ol.append('    if ((at + %di64) <= text.len) {' % n)
-        ol.append('        string:s%d = relay string_slice(text, at, at + %di64);' % (n, n))
+        # `at + n <= len` is checked on the line above, so the slice cannot
+        # fail; `?!` states that (D-163 rule 2's spelling for a provably-dead
+        # branch), which is what lets `op_match` be `never fails`.
+        ol.append('        string:s%d = raw slice_proven(text, at, at + %di64);' % (n, n))
         for text, kind in sorted(ob[n]):
             esc = text.replace('\\', '\\\\').replace('"', '\\"')
             ol.append('        if (raw string_eq(s%d, "%s")) {' % (n, esc))
@@ -770,7 +773,15 @@ pub func:is_keyword = bool(string:text) {
     return 0
 
 
+NF_SIG = re.compile(r'^((?:pub )?func:\w+ = [\w\[\]<>-]+\([^)]*\))(\s*)\{', re.M)
+
 def write(name, text):
+    # EVERY GENERATED FUNCTION IS `never fails` (D-163, 1.1.1): each is a pure
+    # table lookup or a constant -- no `fail`, no `relay`, no I/O -- and the
+    # checker re-verifies the claim on every build. Emitted here, in one place,
+    # so a regeneration can never silently strip the licence the tree relies on.
+    text = NF_SIG.sub(lambda m: m.group(1) + " never fails" + m.group(2) + "{"
+                      if "never fails" not in m.group(1) else m.group(0), text)
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as fh:
         fh.write(text)
 
