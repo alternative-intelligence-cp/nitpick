@@ -37,6 +37,8 @@ RUNTIME_ARGS = {
     "wildx_free":    ["ptr"],
     "wild_live_count":  [],
     "mono_now":         [],
+    "chain_depth":      [],
+    "chain_site":       ["i32"],
     "wild_release_all": [],
     "calloc":        ["i64", "i64"],
     "ralloc":        ["ptr", "i64"],

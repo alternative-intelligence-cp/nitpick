@@ -1,0 +1,47 @@
+// expect-exit: 42
+//
+// THE ORIGIN CHAIN (D-179, 1.1.6). `fail` restarts the chain at its site;
+// every `relay` hop appends; `?!` appends one hop and hands over an error
+// whose history survives the trap — `failsafe` reads it all through
+// `chain_depth`/`chain_site` and renders ids with `site_line`/`site_path`
+// against the per-program tables. A `?|` catch consumes the error and the
+// NEXT failure's reset starts a fresh chain — history never leaks across
+// handled errors. The success path never touches the ring.
+mod:origin_chain;
+
+error:Boom;
+error:Again;
+
+func:leaf = int32(int32:v) {
+    if (v > 0i32) { fail Boom; }
+    pass v;
+};
+
+func:mid = int32(int32:v) {
+    pass (relay leaf(v)) + 1i32;
+};
+
+func:top = int32(int32:v) {
+    pass (relay mid(v)) + 1i32;
+};
+
+func:caught_then_fresh = int32(int32:v) {
+    int32:a = top(v) ?| 7i32;       // consume Boom's three-hop chain
+    if (a == 7i32) { fail Again; }  // a FRESH origin: depth restarts at 1
+    pass a;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = caught_then_fresh(1i32) ?! Again;   // hop 2 on the fresh chain
+    exit r;
+};
+
+func:failsafe = int32(Error:e) {
+    if (e != Again)                    { exit 50i32; }
+    if (raw chain_depth() != 2i32)     { exit (60i32 + (raw chain_depth())); }
+    // the fresh origin is `fail Again;` and the hop is main's `?!` —
+    // their LINES, read from the site table, in order:
+    if (raw site_line(raw chain_site(0i32)) != 30i32) { exit (raw site_line(raw chain_site(0i32))); }
+    if (raw site_line(raw chain_site(1i32)) != 35i32) { exit (raw site_line(raw chain_site(1i32))); }
+    exit 42i32;
+};

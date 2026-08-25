@@ -31,6 +31,7 @@
 mod:ir_expr;
 
 use "../../frontend/source_location.npk".*;
+use "../../frontend/source.npk".*;
 use "../../frontend/intern.npk".*;
 use "../../frontend/num_width.npk".*;
 use "../../frontend/token_kind.npk".*;
@@ -153,7 +154,7 @@ pub func:strtab_add = string(StrTable->:t, string:data) never fails {
 
 // One byte of a `c"…"` constant. Printable ASCII stays itself; `"` and `\` and
 // everything else become `\XX` — two hex digits, uppercase, the seed's encoding.
-func:esc_byte = string(uint8:b) never fails {
+pub func:esc_byte = string(uint8:b) never fails {
     if (b >= 32u8) {
         if (b < 127u8) {
             if (b != 34u8) {
@@ -212,6 +213,7 @@ pub struct:ExprEmitter = {
     SymbolTable->:tab;
     InternTable->:interns;
     StrTable->:strs;
+    SourceManager->:sm;   // for the origin chain's site paths (D-179, 1.1.6)
 
     // FOR ANNOTATIONS, NOT FOR EXPRESSIONS (0.7.6). A declaration's type is an
     // AST type node the checker resolved and did not store, so the emitter
@@ -238,10 +240,11 @@ pub struct:ExprEmitter = {
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
                                    SymbolTable->:tab, InternTable->:interns,
-                                   StrTable->:strs, TypeResolver->:tr,
+                                   StrTable->:strs, SourceManager->:sm,
+                                   TypeResolver->:tr,
                                    FnInstTable->:fninsts, int32:scope) never fails {
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
-                                 interns: interns, strs: strs, tr: tr,
+                                 interns: interns, strs: strs, sm: sm, tr: tr,
                                  fninsts: fninsts, scope: scope,
                                  cur_trait: 0i32 };
     pass x;
@@ -541,6 +544,11 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         drop irw_line(x.fe.w, raw cat5("br i1 ", ebad, ", label %", et_l,
                           raw string_concat(", label %", eo_l)));
         drop irw_label(x.fe.w, et_l);
+        // `?!` EXTENDS the chain (D-179): the error carries its stamps from
+        // the callee; this site is one more hop, not a new origin.
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                          raw int_to_string((raw x_site(x, n.span)) => int64),
+                          ")"));
         drop irw_line(x.fe.w, raw cat3("call void @npk_trap(i32 ",
                           ec2.ref, ")"));
         drop irw_line(x.fe.w, "unreachable");
@@ -1077,7 +1085,8 @@ func:index_as_i64 = string(ExprEmitter->:x, IrVal:ix) never fails {
 // (-4099) through the D-142 route. Emitted at EVERY dynamic index — a slice's
 // length is a runtime fact and an array's is a constant, but the refusal is
 // the same controlled shutdown either way.
-func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref) never fails {
+func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref,
+                             Span:at) never fails {
     string:ok_c = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(ok_c, " = icmp ult i64 ", idx64, ", ",
                       raw string_concat(len_ref, "")));
@@ -1086,6 +1095,8 @@ func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref) neve
     drop irw_line(x.fe.w, raw cat5("br i1 ", ok_c, ", label %", ok_l,
                       raw string_concat(", label %", trap_l)));
     drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, at)) => int64), ")"));
     drop irw_line(x.fe.w, "call void @npk_trap(i32 -4099)");
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, ok_l);
@@ -1304,6 +1315,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5("br i1 ", ea, ", label %", tl,
                               raw string_concat(", label %", ol)));
             drop irw_label(x.fe.w, tl);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
             drop irw_line(x.fe.w, "call void @npk_trap(i32 -4100)");
             drop irw_line(x.fe.w, "unreachable");
             drop irw_label(x.fe.w, ol);
@@ -1495,6 +1508,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         drop irw_line(x.fe.w, raw cat5("br i1 ", z, ", label %", trap_l,
                           raw string_concat(", label %", next_l)));
         drop irw_label(x.fe.w, trap_l);
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
         drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
         drop irw_line(x.fe.w, "unreachable");
         if (signed) {
@@ -1524,6 +1539,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", min_l,
                               raw string_concat(", label %", ok_l)));
             drop irw_label(x.fe.w, min_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
             drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
             drop irw_line(x.fe.w, "unreachable");
         }
@@ -1596,12 +1613,14 @@ func:tbb_pow_hex = string(int32:bits, bool:neg) never fails {
 
 // A -4100 trap block on a condition — the shared shape of every checked-cast
 // guard in the tbb matrix.
-func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond) never fails {
+func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond, Span:at) never fails {
     string:tl = raw irw_new_label(x.fe.w, "tbbc.err");
     string:ol = raw irw_new_label(x.fe.w, "tbbc.ok");
     drop irw_line(x.fe.w, raw cat5("br i1 ", cond, ", label %", tl,
                       raw string_concat(", label %", ol)));
     drop irw_label(x.fe.w, tl);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, at)) => int64), ")"));
     drop irw_line(x.fe.w, "call void @npk_trap(i32 -4100)");
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, ol);
@@ -1676,7 +1695,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                                       raw string_concat(err, ", true")));
                     string:tv = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(tv, " = and i1 ", oor, ", ", ne));
-                    drop tbb_trap_if(x, tv);
+                    drop tbb_trap_if(x, tv, n.span);
                     string:rz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
                     string:res = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", err, ", ",
@@ -1702,7 +1721,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
         }
 
         // Leaving tbb: `=>` traps on ERR (no image); `=>!` reads the carrier.
-        if (!unchecked) { drop tbb_trap_if(x, err); }
+        if (!unchecked) { drop tbb_trap_if(x, err, n.span); }
         if (dk == (raw TY_FLOAT())) {
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
@@ -1744,7 +1763,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             string:bad2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(bad2, " = xor i1 ",
                               raw string_concat(inr, ", true")));
-            drop tbb_trap_if(x, bad2);
+            drop tbb_trap_if(x, bad2, n.span);
             string:q = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(q, " = fptosi ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
@@ -1785,7 +1804,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             oor2 = o4;
         }
         if (!unchecked) {
-            drop tbb_trap_if(x, oor2);
+            drop tbb_trap_if(x, oor2, n.span);
             string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
             pass (raw iv(want.text, rz4, wid));
         }
@@ -2395,6 +2414,26 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           ExprNode:cnode, int32:start, int32:count) never fails {
     string:name = raw intern_get(x.interns, cnode.payload =>! int32);
 
+    // THE SITE LOOKUPS (D-179, 1.1.6) call the per-program tables the origin
+    // chain's ids index — emitted by `emit_site_tables`, bounds-checked there.
+    if (raw string_eq(name, "site_line")) {
+        IrVal:sa = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(sa))) { pass sa; }
+        string:sr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sr, " = call i32 @npk_site_line(i32 ",
+                          sa.ref, ")", ""));
+        pass (raw iv("i32", sr, 0i32));
+    }
+    if (raw string_eq(name, "site_path")) {
+        IrVal:sb = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(sb))) { pass sb; }
+        string:sr2 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sr2,
+                          " = call { ptr, i64, i64 } @npk_site_path(i32 ",
+                          sb.ref, ")", ""));
+        pass (raw iv("{ ptr, i64, i64 }", sr2, 0i32));
+    }
+
     // TWO LOWER INLINE, because their whole body is a field read: a string's
     // byte length IS its second slot, and emptiness is that slot against zero.
     // A call would be a symbol, a frame, and a return for an extractvalue.
@@ -2599,6 +2638,17 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 // `relay` — unwrap, or return the caller's error VERBATIM (D-080). A normal
 // exit path: the defer stack runs on the error branch, exactly as a `fail`
 // there would run it, and that is why this module and `ir_stmt` are a cycle.
+// A stamp site's id, from a span (D-179, 1.1.6). The MAY-FAIL path lookup,
+// deliberately: a harness-built emitter has an empty source manager, and a
+// missing path is data for the table ("?"), not a defect — the same posture
+// diag rendering takes for `<unknown file>`.
+pub func:x_site = int32(ExprEmitter->:x, Span:sp) never fails {
+    Result<string>:pr = srcmgr_path(x.sm, sp.file);
+    string:sp_path = "?";
+    if (!pr.is_error) { sp_path = pr.value; }
+    pass (raw irw_site(x.fe.w, sp_path, sp.line));
+};
+
 func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
@@ -2644,6 +2694,11 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     x.fe.terminated = true;
 
     drop s_start(x, err_l);
+    // THE HOP IS STAMPED (D-179): one `npk_chain_push` per relay site, before
+    // the defers — the chain records where the error PASSED, and it passed
+    // here first.
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                      raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
     // EVERY frame runs — relay exits the whole function, so its error path owes
     // the same cleanup a `fail` here would owe.
     IrVal:d = raw run_all_defers(x);
@@ -3758,7 +3813,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             drop irw_line(x.fe.w, raw cat5(slen, " = extractvalue ", ov.ll,
                               " ", raw string_concat(ov.ref, ", 1")));
             string:idx64 = raw index_as_i64(x, ix);
-            drop emit_bounds_guard(x, idx64, slen);
+            drop emit_bounds_guard(x, idx64, slen, n.span);
             string:data = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(data, " = extractvalue ", ov.ll,
                               " ", raw string_concat(ov.ref, ", 0")));
@@ -3792,7 +3847,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             string:idx64 = raw index_as_i64(x, ix);
             string:bound = raw int_to_string(
                 (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
-            drop emit_bounds_guard(x, idx64, bound);
+            drop emit_bounds_guard(x, idx64, bound, n.span);
             string:r = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", all.text,
                               ", ptr ", raw cat4(base.addr, ", i64 0, ",
@@ -4357,6 +4412,8 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", ok_l,
                       raw string_concat(", label %", trap_l)));
     drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
     drop irw_line(x.fe.w, "call void @npk_trap(i32 -4099)");
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, ok_l);

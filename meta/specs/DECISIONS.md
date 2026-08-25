@@ -5424,6 +5424,11 @@ discovered during a trial.
 
 ## D-080 — `relay` propagates an error to the caller — **SETTLED**
 
+> **Amended by D-179 (1.1.6):** relay propagates the error's IDENTITY
+> verbatim; the ORIGIN CHAIN grows one site per hop. What the caller
+> receives is the same `Error`; what `failsafe` can additionally read is
+> where it has been.
+
 Nitpick had **no way to propagate an error.** The complete `Result` surface was
 `?` (unwrap with a *mandatory* default), `??`, `?!` (trap to `failsafe`), `?.`,
 `?|`, `_?` / `drop`, `_!` / `raw`, and `!!!`; the return forms were `pass`,

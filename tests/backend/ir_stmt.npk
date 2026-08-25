@@ -11,6 +11,7 @@
 // pre-defer load. The seed returns 9 from that function; this compiler returns
 // 0, and the divergence is a settled decision, not an accident.
 
+use "../../src/frontend/source.npk".*;
 use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/token_kind.npk".*;
 use "../../src/frontend/token.npk".*;
@@ -126,7 +127,8 @@ func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st) neve
     LlCtx:c = raw llctx_init(@f.ast, @f.types, @it);
     FnEmitter:fe = raw fnem_init(@w, @c);
     FnInstTable:fninsts = raw fninst_init();
-    ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @tr, @fninsts,
+    SourceManager:sm = raw srcmgr_init();
+    ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @sm, @tr, @fninsts,
                                     f.scope);
     DeclNode:mn = raw ast_decl(@f.ast, f.mod_id);
     DeclId:item = raw item_member(@f.ast, mn, index);
@@ -162,7 +164,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- relay: extract, branch, run defers, fail with the SAME code ----------
     string:t3 = raw emitted(@f, @it, 3i32, @st);
     if (!(raw string_eq(t3,
-        "define { i32, i32 } @npk_pipe(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  %t2 = load i32, ptr %t0\n  %t3 = call { i32, i32 } @npk_step(i32 %t2)\n  %t4 = extractvalue { i32, i32 } %t3, 0\n  %t5 = extractvalue { i32, i32 } %t3, 1\n  %t6 = icmp ne i32 %t5, 0\n  br i1 %t6, label %relay.err0, label %relay.ok1\nrelay.err0:\n  %t7 = insertvalue { i32, i32 } undef, i32 0, 0\n  %t8 = insertvalue { i32, i32 } %t7, i32 %t5, 1\n  ret { i32, i32 } %t8\nrelay.ok1:\n  store i32 %t4, ptr %t1\n  %t9 = load i32, ptr %t1\n  %t10 = insertvalue { i32, i32 } undef, i32 %t9, 0\n  %t11 = insertvalue { i32, i32 } %t10, i32 0, 1\n  ret { i32, i32 } %t11\n}\n\n"))) { exit 13i32; }
+        "define { i32, i32 } @npk_pipe(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  %t2 = load i32, ptr %t0\n  %t3 = call { i32, i32 } @npk_step(i32 %t2)\n  %t4 = extractvalue { i32, i32 } %t3, 0\n  %t5 = extractvalue { i32, i32 } %t3, 1\n  %t6 = icmp ne i32 %t5, 0\n  br i1 %t6, label %relay.err0, label %relay.ok1\nrelay.err0:\n  call void @npk_chain_push(i32 1)\n  %t7 = insertvalue { i32, i32 } undef, i32 0, 0\n  %t8 = insertvalue { i32, i32 } %t7, i32 %t5, 1\n  ret { i32, i32 } %t8\nrelay.ok1:\n  store i32 %t4, ptr %t1\n  %t9 = load i32, ptr %t1\n  %t10 = insertvalue { i32, i32 } undef, i32 %t9, 0\n  %t11 = insertvalue { i32, i32 } %t10, i32 0, 1\n  ret { i32, i32 } %t11\n}\n\n"))) { exit 13i32; }
 
     // --- main is bare, takes the argv slice, and `exit` is a plain ret --------
     string:t4 = raw emitted(@f, @it, 4i32, @st);

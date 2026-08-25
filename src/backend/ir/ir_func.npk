@@ -153,6 +153,7 @@ pub struct:FnEmitter = {
     int32:seg_count;
     int32:seg_cap;
     int32:guard_depth;             // inside a `pick` arm's `where` guard (D3 rung)
+    int32:fn_site;                 // the join's chain-stamp site (D-179, 1.1.6)
 
     // CROSSING LOCALS (stage D): the pre-scan registers each var-decl the
     // suspend walk marked, by stmt index, before `fnem_open` fixes the frame
@@ -209,7 +210,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         state_gep: "", windup_gep: "", result_gep: "", join_gep: "",
         awaitee_gep: "",
         seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        seg_count: 0i32, seg_cap: 8i32, guard_depth: 0i32,
+        seg_count: 0i32, seg_cap: 8i32, guard_depth: 0i32, fn_site: 0i32,
         cross_stmts: (alloc(8i64 * 4i64)) =>! wild int32->,
         cross_roles: (alloc(8i64 * 4i64)) =>! wild int32->,
         cross_types: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -268,6 +269,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.resume_sym = "";
     fe.seg_count = 0i32;
     fe.guard_depth = 0i32;
+    fe.fn_site = 0i32;
     fe.cross_count = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
@@ -599,6 +601,8 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop irw_line(fe.w, raw cat3("br i1 ", dn,
                       ", label %fin, label %hang"));
     drop irw_label(fe.w, "hang");
+    drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string(fe.fn_site => int64), ")"));
     string:h = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat3(h, " = call i32 @npk_failsafe(i32 ",
                       "-4102)"));
@@ -962,6 +966,8 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat3("br i1 ", jok,
                           ", label %npk.jgot, label %npk.jhang"));
         drop irw_label(fe.w, "npk.jhang");
+        drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string(fe.fn_site => int64), ")"));
         string:jhf = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jhf, " = call i32 @npk_failsafe(i32 ",
                           "-4102)"));
@@ -988,6 +994,8 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
                           ", label %npk.jerr, label %npk.join"));
         drop irw_label(fe.w, "npk.jerr");
         if (fe.bare) {
+            drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                              raw int_to_string(fe.fn_site => int64), ")"));
             string:jmf = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
                               raw string_concat(jerr2, ")")));
@@ -1008,6 +1016,8 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
             drop irw_line(fe.w, raw cat3("br i1 ", jown,
                               ", label %npk.join, label %npk.jset"));
             drop irw_label(fe.w, "npk.jset");
+            drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
+                              raw int_to_string(fe.fn_site => int64), ")"));
             string:jna = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat5(jna, " = insertvalue ", fe.ret_ll,
                               " zeroinitializer, i32 ",
@@ -1024,6 +1034,8 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         // switch's default makes a controlled stop (D-061), the same shape
         // `#unreachable()` lowers to.
         drop irw_label(fe.w, "coro.bad");
+        drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string(fe.fn_site => int64), ")"));
         string:bt = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(bt, " = call i32 @npk_failsafe(i32 ",
                           "-4102)"));

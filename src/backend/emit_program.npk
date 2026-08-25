@@ -788,6 +788,11 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
     // unconditionally because the declare block is a fixed constant.
     drop irw_raw(w, "declare void @npk_trap(i32)");
+    // The origin chain's stamps (D-179, 1.1.6): not builtins a program may
+    // call — `fail` resets, `relay` and `?!` push. Declared unconditionally,
+    // like the trap they feed.
+    drop irw_raw(w, "declare void @npk_chain_reset(i32)");
+    drop irw_raw(w, "declare void @npk_chain_push(i32)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
@@ -928,7 +933,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         if (fvi.owner_impl != 0i32) {
             int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
             ExprEmitter:fvx = raw exprem_init(@fe, @g.ast, ets, @g.tab,
-                                  interns, @st, tr, fninsts, fvhs);
+                                  interns, @st, @g.sm, tr, fninsts, fvhs);
             drop emit_family_vtable(@fvx, diags, fvi);
         }
         fv = fv + 1i32;
@@ -937,7 +942,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
-        ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
+        ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st, @g.sm,
                                         tr, fninsts, me.scope);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         int32:i = 0i32;
@@ -1010,13 +1015,13 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             // exactly this kind of question.
             int32:ihs = raw impl_scope_of(impls, inst.owner_impl);
             ExprEmitter:xf = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns,
-                                             @st, tr, fninsts, ihs);
+                                             @st, @g.sm, tr, fninsts, ihs);
             drop emit_family_instance(@xf, diags, inst);
             fi = fi + 1i32;
         } else {
         int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
         ExprEmitter:xi = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
-                                         tr, fninsts, hs);
+                                         @g.sm, tr, fninsts, hs);
         IrVal:ir = raw emit_fn_instance(@xi, DeclId{ index: inst.decl },
                                           inst.args_start, inst.args_count,
                                           inst.params_start, inst.params_count,
@@ -1028,6 +1033,10 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     }
 
     drop strtab_write_all(@st, w);
+    // The site tables LAST (D-179, 1.1.6): every stamp site has registered by
+    // now — emitting them beside the declares wrote a one-row sentinel table
+    // before any function had spoken.
+    drop emit_site_tables(w);
     // INSTANCES THE BODIES CREATED (1.0.7): a `List<int64>` that exists only
     // because `list_make<int64>`'s body built one. Textual IR resolves a named
     // type wherever its definition appears, so the late ones go at the end.
@@ -1090,4 +1099,87 @@ func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
         i = i + 1i32;
     }
     pass (raw intern_add(c.interns, raw string_concat(m, ">")));
+};
+
+// THE SITE TABLES (D-179, 1.1.6): what the origin chain's ids mean. One line
+// table, one path table (a byte constant per distinct site, headers in the
+// table), and two internal lookup functions the `site_line`/`site_path`
+// builtins call — bounds-checked, answering 0/"" for the runtime's reserved
+// site 0 and anything out of range. Emitted per program, deterministic in
+// registration order (D-078).
+func:emit_site_tables = NIL(IrWriter->:w) never fails {
+    int32:n = w.site_count;
+    // the byte constants first
+    int32:i = 0i32;
+    while (i < n) {
+        string:sp2 = w.site_paths[i => int64];
+        string:enc = "";
+        int64:bj = 0i64;
+        while (bj < sp2.len) {
+            enc = raw string_concat(enc, raw esc_byte(sp2.ptr[bj] => uint8));
+            bj = bj + 1i64;
+        }
+        drop irw_raw(w, raw cat5("@npk.sitep.", raw int_to_string((i + 1i32) => int64),
+                          " = internal constant [", raw int_to_string(sp2.len),
+                          raw cat3(" x i8] c\"", enc, "\"")));
+        i = i + 1i32;
+    }
+    // the line table, index 0 = the runtime's reserved site
+    string:ls = "i32 0";
+    i = 0i32;
+    while (i < n) {
+        ls = raw cat3(ls, ", i32 ",
+                 raw int_to_string(w.site_lines[i => int64] => int64));
+        i = i + 1i32;
+    }
+    drop irw_raw(w, raw cat5("@npk.site.lines = internal constant [",
+                      raw int_to_string((n + 1i32) => int64), " x i32] [", ls, "]"));
+    // the path header table: { ptr, i64 } pairs (pointer, byte length)
+    string:ps = "{ ptr, i64 } { ptr null, i64 0 }";
+    i = 0i32;
+    while (i < n) {
+        string:sp3 = w.site_paths[i => int64];
+        ps = raw cat5(ps, ", { ptr, i64 } { ptr @npk.sitep.",
+                 raw int_to_string((i + 1i32) => int64),
+                 ", i64 ", raw string_concat(raw int_to_string(sp3.len), " }"));
+        i = i + 1i32;
+    }
+    drop irw_raw(w, raw cat5("@npk.site.paths = internal constant [",
+                      raw int_to_string((n + 1i32) => int64), " x { ptr, i64 }] [",
+                      ps, "]"));
+    // the lookups
+    string:cnt = raw int_to_string((n + 1i32) => int64);
+    drop irw_raw(w, "define internal i32 @npk_site_line(i32 %i) {");
+    drop irw_raw(w, "entry:");
+    drop irw_raw(w, raw cat3("  %ok = icmp ult i32 %i, ", cnt, ""));
+    drop irw_raw(w, "  br i1 %ok, label %in, label %out");
+    drop irw_raw(w, "in:");
+    drop irw_raw(w, raw cat5("  %p = getelementptr [", cnt,
+                      " x i32], ptr @npk.site.lines, i32 0, i32 %i", "", ""));
+    drop irw_raw(w, "  %v = load i32, ptr %p");
+    drop irw_raw(w, "  ret i32 %v");
+    drop irw_raw(w, "out:");
+    drop irw_raw(w, "  ret i32 0");
+    drop irw_raw(w, "}");
+    drop irw_blank(w);
+    drop irw_raw(w, "define internal { ptr, i64, i64 } @npk_site_path(i32 %i) {");
+    drop irw_raw(w, "entry:");
+    drop irw_raw(w, raw cat3("  %ok = icmp ult i32 %i, ", cnt, ""));
+    drop irw_raw(w, "  br i1 %ok, label %in, label %out");
+    drop irw_raw(w, "in:");
+    drop irw_raw(w, raw cat5("  %p = getelementptr [", cnt,
+                      " x { ptr, i64 }], ptr @npk.site.paths, i32 0, i32 %i", "", ""));
+    drop irw_raw(w, "  %hp = getelementptr { ptr, i64 }, ptr %p, i32 0, i32 0");
+    drop irw_raw(w, "  %hv = load ptr, ptr %hp");
+    drop irw_raw(w, "  %lp = getelementptr { ptr, i64 }, ptr %p, i32 0, i32 1");
+    drop irw_raw(w, "  %lv = load i64, ptr %lp");
+    drop irw_raw(w, "  %r0 = insertvalue { ptr, i64, i64 } undef, ptr %hv, 0");
+    drop irw_raw(w, "  %r1 = insertvalue { ptr, i64, i64 } %r0, i64 %lv, 1");
+    drop irw_raw(w, "  %r2 = insertvalue { ptr, i64, i64 } %r1, i64 %lv, 2");
+    drop irw_raw(w, "  ret { ptr, i64, i64 } %r2");
+    drop irw_raw(w, "out:");
+    drop irw_raw(w, "  ret { ptr, i64, i64 } zeroinitializer");
+    drop irw_raw(w, "}");
+    drop irw_blank(w);
+    pass NIL;
 };

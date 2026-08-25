@@ -907,6 +907,9 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(v))) { pass v; }
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
+    // THE ORIGIN (D-179): a fresh failure restarts the chain here.
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, s.span)) => int64), ")"));
     drop fnem_ret_fail(x.fe, v.ref);
     x.fe.terminated = true;
     pass (raw iv_nil());
@@ -933,6 +936,9 @@ func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    // `!!!` is an ORIGIN: the chain restarts at this site (D-179).
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, s.span)) => int64), ")"));
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(r, " = call i32 @npk_failsafe(i32 ",
                       raw string_concat(v.ref, ")")));
@@ -1946,6 +1952,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.fe.is_async = true;
         x.fe.frame_ty = raw frame_ty_sym(x.fe.ctx, did.index, fname);
         x.fe.resume_sym = raw resume_fn_sym(x.fe.ctx, did.index, fname);
+        // The join's stamp site (D-179): the function itself.
+        x.fe.fn_site = raw x_site(x, d.span);
         // The crossing pre-scan (stage D), under the same instantiation
         // binding the body will use — the frame type is fixed at open, so
         // the slots must be known now.

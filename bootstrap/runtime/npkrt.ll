@@ -115,6 +115,55 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; D-056's containment. clock_gettime(1, valid-ptr) cannot fail on Linux;
 ; the impossible branch still traps (D-061's posture: "cannot fail" is a
 ; claim, and claims are checked).
+; A fresh failure: the chain restarts at its origin site.
+define void @npk_chain_reset(i32 %site) {
+entry:
+  store i32 1, ptr @npk_chain_n
+  store i32 %site, ptr @npk_chain
+  ret void
+}
+
+; One propagation hop. The first eight sites stay; the depth keeps counting.
+define void @npk_chain_push(i32 %site) {
+entry:
+  %d = load i32, ptr @npk_chain_n
+  %in = icmp ult i32 %d, 8
+  br i1 %in, label %keep, label %count
+keep:
+  %slot = getelementptr [8 x i32], ptr @npk_chain, i32 0, i32 %d
+  store i32 %site, ptr %slot
+  br label %count
+count:
+  %d2 = add i32 %d, 1
+  store i32 %d2, ptr @npk_chain_n
+  ret void
+}
+
+define i32 @npk_chain_depth() {
+entry:
+  %d = load i32, ptr @npk_chain_n
+  ret i32 %d
+}
+
+; The i-th kept site, oldest first; 0 outside the kept range.
+define i32 @npk_chain_site(i32 %i) {
+entry:
+  %neg = icmp slt i32 %i, 0
+  br i1 %neg, label %oob, label %lo
+lo:
+  %d = load i32, ptr @npk_chain_n
+  %cap = icmp ult i32 %d, 8
+  %kept = select i1 %cap, i32 %d, i32 8
+  %in = icmp ult i32 %i, %kept
+  br i1 %in, label %ok, label %oob
+ok:
+  %slot = getelementptr [8 x i32], ptr @npk_chain, i32 0, i32 %i
+  %v = load i32, ptr %slot
+  ret i32 %v
+oob:
+  ret i32 0
+}
+
 define i64 @npk_mono_now() {
 entry:
   %ts = alloca [2 x i64], align 16
@@ -123,6 +172,7 @@ entry:
   %bad = icmp ne i64 %r, 0
   br i1 %bad, label %impossible, label %ok
 impossible:
+  call void @npk_chain_reset(i32 0)
   call void @npk_trap(i32 -4102)
   unreachable
 ok:
@@ -187,7 +237,19 @@ declare i32 @npk_failsafe(i32)
 
 @npk_in_failsafe = internal global i32 0
 
+; THE ORIGIN CHAIN (D-179, 1.1.6): the sites an in-flight error has passed,
+; oldest first. One per thread when the executor arrives (1.1.8); one per
+; process until then — at most one error propagates at a time either way.
+; The ring keeps the FIRST eight stamps (the origin end is the diagnostic
+; end) and the depth counts every hop. Site 0 is reserved for the runtime
+; itself. Allocator-free, failure-path-only: the success path never touches
+; these words.
+@npk_chain = internal global [8 x i32] zeroinitializer
+@npk_chain_n = internal global i32 0
+
 define void @npk_trap(i32 %code) noreturn {
+  ; CHAIN-NEUTRAL (D-179): `?!` pushes its site and hands over an error whose
+  ; chain must survive; guards and the runtime's own callers reset first.
   %in = load i32, ptr @npk_in_failsafe
   %re = icmp ne i32 %in, 0
   br i1 %re, label %hard, label %run
@@ -225,6 +287,7 @@ check:
   %leaks = icmp ne i64 %live, 0
   br i1 %leaks, label %trap, label %leave
 trap:
+  call void @npk_chain_reset(i32 0)
   call void @npk_trap(i32 -4105)
   unreachable
 leave:
@@ -964,16 +1027,19 @@ err:
 ; --- the three traps (D-141 region: -4102 integrity, -4103 oom, -4104 request)
 
 define internal void @npk_heap_bad() noreturn {
+  call void @npk_chain_reset(i32 0)
   call void @npk_trap(i32 -4102)
   unreachable
 }
 
 define internal void @npk_heap_oom() noreturn {
+  call void @npk_chain_reset(i32 0)
   call void @npk_trap(i32 -4103)
   unreachable
 }
 
 define internal void @npk_heap_badreq() noreturn {
+  call void @npk_chain_reset(i32 0)
   call void @npk_trap(i32 -4104)
   unreachable
 }
