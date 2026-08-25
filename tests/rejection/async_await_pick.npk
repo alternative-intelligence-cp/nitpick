@@ -1,0 +1,21 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// A value-`pick` holds its result in a hidden slot across the arms, and an
+// arm's pattern bindings are not yet in the suspend walk's eager registry —
+// so an `await` under a `pick` refuses by name until stage D.
+
+async func:step = int32(int32:v) {
+    pass v + 1i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:sel = 1i32;
+    pick (sel) {
+        (1i32) { discard(await step(1i32) ?| 0i32); },
+        (*)    { exit 9i32; }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

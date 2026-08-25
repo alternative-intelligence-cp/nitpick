@@ -54,6 +54,16 @@ pub struct:IrWriter = {
 
     // Basic-block labels, numbered in the same way and for the same reason.
     int32:next_label;
+
+    // THE STATEMENT MARK (D-177, 1.1.4): where the temp counter stood when the
+    // current statement began, and how many of the temps minted since were
+    // allocas. An `await` is stage-C-legal only when every temp its statement
+    // has minted so far is an alloca: an SSA value minted before the
+    // suspension and used after it would not dominate its use once the resume
+    // switch re-enters mid-body. Allocas are exempt — they are hoisted to the
+    // entry block, which dominates every segment.
+    int32:stmt_mark;
+    int32:alloca_since;
 };
 
 pub func:irw_to_buffer = IrWriter() never fails {
@@ -61,7 +71,8 @@ pub func:irw_to_buffer = IrWriter() never fails {
                            allocas: raw sink_to_buffer(1024i64),
                            body: raw sink_to_buffer(4096i64),
                            in_fn: false,
-                           next_temp: 0i32, next_label: 0i32 };
+                           next_temp: 0i32, next_label: 0i32,
+                           stmt_mark: 0i32, alloca_since: 0i32 };
     pass w;
 };
 
@@ -92,6 +103,7 @@ pub func:irw_close_fn = NIL(IrWriter->:w) never fails {
 // AN ALLOCA, HOISTED (1.0.9a). Always inside a function; the line goes to the
 // alloca buffer and is placed right after `entry:` at close.
 pub func:irw_alloca = NIL(IrWriter->:w, string:slot, string:ty_text) never fails {
+    w.alloca_since = w.alloca_since + 1i32;
     drop sink_write(@w.allocas, "  ");
     drop sink_write(@w.allocas, slot);
     drop sink_write(@w.allocas, " = alloca ");
@@ -100,6 +112,17 @@ pub func:irw_alloca = NIL(IrWriter->:w, string:slot, string:ty_text) never fails
     pass NIL;
 };
 
+
+// A NON-ALLOCA LINE IN THE ENTRY BLOCK (D-177, 1.1.4): the coroutine's frame
+// GEPs, and at close its state load and `switch`. Same stream as the hoisted
+// allocas, so everything lands after `entry:` and before the body — the GEPs
+// are pure address arithmetic, so order within the entry block cannot matter.
+pub func:irw_entry = NIL(IrWriter->:w, string:text) never fails {
+    drop sink_write(@w.allocas, "  ");
+    drop sink_write(@w.allocas, text);
+    drop sink_write(@w.allocas, "\n");
+    pass NIL;
+};
 
 // --- writing --------------------------------------------------------------------
 
@@ -166,7 +189,21 @@ pub func:irw_new_label = string(IrWriter->:w, string:stem) never fails {
 pub func:irw_begin_function = NIL(IrWriter->:w) never fails {
     w.next_temp = 0i32;
     w.next_label = 0i32;
+    w.stmt_mark = 0i32;
+    w.alloca_since = 0i32;
     pass NIL;
+};
+
+// A statement begins: remember where the temps stood. Read by `emit_await`.
+pub func:irw_stmt_mark = NIL(IrWriter->:w) never fails {
+    w.stmt_mark = w.next_temp;
+    w.alloca_since = 0i32;
+    pass NIL;
+};
+
+// Has this statement minted only allocas so far?
+pub func:irw_clean_since_mark = bool(IrWriter->:w) never fails {
+    pass ((w.next_temp - w.stmt_mark) == w.alloca_since);
 };
 
 // `main` KEEPS ITS NAME FOR THE LINKER; everything else is prefixed, so a Nitpick

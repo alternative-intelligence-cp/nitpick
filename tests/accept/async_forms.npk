@@ -1,0 +1,54 @@
+// The legal async shapes (D-177, 1.1.4), checker-silent. `await` under each
+// unwrap keyword; the spawn form inside an `async` function (the backend
+// rungs it until stage E, but the CHECKER accepts it — the rung is a
+// capability, not a rule); `async main` beside a synchronous `failsafe`;
+// a defer that stays synchronous inside an async function; and a `while`
+// whose awaits ride frame-resident parameters.
+mod:async_forms;
+
+async func:leaf = int32(int32:v) {
+    if (v < 0i32) { fail 3tbb32; }
+    pass v + 1i32;
+};
+
+async func:relayer = int32(int32:v) {
+    int32:a = relay await leaf(v);
+    pass a;
+};
+
+async func:defaulted = int32(int32:v) {
+    int32:a = await leaf(v) ?| 0i32;
+    pass a;
+};
+
+async func:trapper = int32(int32:v) {
+    int32:a = await leaf(v) ?! 9tbb32;
+    pass a;
+};
+
+async func:spawner = int32(int32:v) {
+    drop leaf(v);
+    pass v;
+};
+
+async func:sync_defer = int32(int32:v) {
+    wild int8->:p = alloc(16i64);
+    defer { drop dalloc(p); }
+    int32:a = relay await leaf(v);
+    pass a;
+};
+
+async func:param_loop = int32(int32:n) {
+    while (n > 0i32) {
+        n = n - 1i32;
+        discard(await leaf(n) ?| 0i32);
+    }
+    pass n;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await relayer(1i32) ?| 0i32;
+    exit a;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

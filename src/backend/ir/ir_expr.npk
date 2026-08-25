@@ -400,6 +400,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprCallExpr)      { pass (raw emit_call(x, id, n)); }
     if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw emit_raw(x, id, n)); }
     if (n.kind == ExprKind.ExprDropExpr) {
+        // The SPAWN form (D-058/D-177): `drop` of an `async` call. Stage E of
+        // 1.1.4 links the child onto the join list; until then it refuses by
+        // name — emitting the operand would call a direct symbol no `async`
+        // function defines.
+        if (raw await_callee_decl(x, raw expr_operand(n)) != 0i32) {
+            pass (raw iv_rung("a spawned task (`drop` of an `async` call)",
+                              "1.1", n.span));
+        }
         IrVal:v = raw emit_expr(x, raw expr_operand(n));
         if (v.state != (raw LL_OK())) { pass v; }
         pass (raw iv("i32", "0", 0i32));
@@ -764,7 +772,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv(pll2.text, pout, ptid));
     }
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        pass (raw iv_rung("`await`", "1.1", n.span));
+        pass (raw emit_await(x, id, n));
     }
     if (n.kind == ExprKind.ExprDynCastExpr) {
         // A `dyn` CAST IS THE FIT TO THE `dyn` TARGET (D-158/D-159): the same
@@ -2046,6 +2054,180 @@ func:emit_pipe = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                       raw cat5(callee, "(",
                           raw cat3(av.ll, " ", av.ref), ")", "")));
     pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+};
+
+// Is this expression a DIRECT call to an `async` function? Returns the callee
+// declaration's index, or 0. The narrow shape — identifier callee, declared
+// symbol — is exactly the shape stage C lowers; everything wider rungs at the
+// await site.
+func:await_callee_decl = int32(ExprEmitter->:x, ExprId:cid) never fails {
+    if (raw expr_is_none(cid)) { pass 0i32; }
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    if (cn.kind != ExprKind.ExprCallExpr) { pass 0i32; }
+    ExprId:callee = raw expr_callee(cn);
+    if (raw expr_is_none(callee)) { pass 0i32; }
+    ExprNode:cnode = raw ast_expr(x.ast, callee);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (cnode.a == 0i32) { pass 0i32; }
+    Symbol:cs = raw symtab_get(x.tab, cnode.a);
+    if (cs.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cs.origin });
+    if (cdecl.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+    if (!(raw decl_has(cdecl, raw DECL_ASYNC()))) { pass 0i32; }
+    pass cs.origin;
+};
+
+// `await g(x)` — the machines compose (D-177). Allocate g's frame, store the
+// arguments, advance our own state, and DRIVE: g DONE hands back its result
+// slot and the frame is freed; g SUSPENDED propagates — we save nothing but
+// the state word, because everything live is already frame-resident (params)
+// or refused (crossing locals, until stage D).
+func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // Stage-C shape guards, each retired by stage D/E: the hidden `for`
+    // iterator slot and the hidden `pick` result slot cross the suspension,
+    // and neither is frame-resident yet.
+    if (x.fe.for_depth > 0i32) {
+        pass (raw iv_rung("`await` inside a `for` body", "1.1", n.span));
+    }
+    if (x.fe.pick_count > 0i32) {
+        pass (raw iv_rung("`await` inside a `pick`", "1.1", n.span));
+    }
+    // THE FIRST-EVALUATION RULE (stage C): every temp this statement minted so
+    // far must be an alloca. An SSA value from before the suspension would
+    // not dominate a use after the resume switch re-enters — the spill that
+    // fixes it is stage D's frame work, so until then the await must be the
+    // first thing its statement evaluates (`x = relay await f(…)`, not
+    // `x = y + await f(…)`).
+    if (!(raw irw_clean_since_mark(x.fe.w))) {
+        pass (raw iv_rung("an `await` after other evaluation in its statement",
+                          "1.1", n.span));
+    }
+    ExprId:cid = raw expr_operand(n);
+    int32:cdi = raw await_callee_decl(x, cid);
+    if (cdi == 0i32) {
+        pass (raw iv_rung("an `await` of a method, indirect or builtin call",
+                          "1.1", n.span));
+    }
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
+    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
+        pass (raw iv_rung("an `await` of a generic call", "1.1", n.span));
+    }
+    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
+    Symbol:cs = raw symtab_get(x.tab, cnode.a);
+    string:fname = raw intern_get(x.interns, cs.name);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
+    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+
+    // The callee's frame, then its arguments — evaluated in source order,
+    // stored as they come. Nothing here can suspend: `await` nests inside no
+    // expression that could re-enter this sequence.
+    string:fr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
+                      raw fnem_frame_size_arg(cfr_ty), ")"));
+    drop fnem_frame_init(x.fe, cfr_ty, fr, crs);
+
+    int32:gcount = raw expr_generic_count(cn);
+    int32:start = (raw expr_list_start(cn)) + gcount;
+    int32:count = (raw expr_list_count(cn)) - gcount;
+    int32:cft = raw exprtypes_callee_ft(x.et, cid);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        IrVal:av = raw emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        av = raw emit_fit(x, raw call_param_want(x, cft, i), av, n.span);
+        if (av.state != (raw LL_OK())) { pass av; }
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 7i32 + i);
+        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
+                          raw string_concat(", ptr ", ag)));
+        i = i + 1i32;
+    }
+
+    // Advance our state to the resume segment, then fall into it. From here
+    // to the segment's end is exactly what a re-entry replays.
+    drop irw_line(x.fe.w, raw cat4("store ptr ", fr, ", ptr ",
+                      x.fe.awaitee_gep));
+    string:sg = raw fnem_new_seg(x.fe);
+    int32:kk = raw fnem_seg_index(x.fe);
+    drop irw_line(x.fe.w, raw cat5("store i32 ",
+                      raw int_to_string(kk => int64), ", ptr ",
+                      x.fe.state_gep, ""));
+    drop irw_line(x.fe.w, raw cat3("br label %", sg, ""));
+    x.fe.terminated = true;
+    drop s_start(x, sg);
+
+    // THE WIND-UP POLL (D-177): a segment that begins at a suspension reads
+    // its own windup word first and propagates it into the awaitee, which
+    // then unwinds through its own defers and answers through its result
+    // slot — no skip path, one completion shape.
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(w, " = load i32, ptr ",
+                      x.fe.windup_gep, ""));
+    string:wb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(wb, " = icmp ne i32 ",
+                      raw string_concat(w, ", 0")));
+    string:wu_l = raw irw_new_label(x.fe.w, "wu");
+    string:drv_l = raw irw_new_label(x.fe.w, "drv");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", wb, ", label %", wu_l,
+                      raw string_concat(", label %", drv_l)));
+    x.fe.terminated = true;
+    drop s_start(x, wu_l);
+    string:af0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(af0, " = load ptr, ptr ",
+                      x.fe.awaitee_gep, ""));
+    string:cwg = raw fnem_slot_gep(x.fe, cfr_ty, af0, 2i32);
+    drop irw_line(x.fe.w, raw cat4("store i32 ", w, ", ptr ", cwg));
+    drop irw_line(x.fe.w, raw cat3("br label %", drv_l, ""));
+    x.fe.terminated = true;
+    drop s_start(x, drv_l);
+
+    string:af = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(af, " = load ptr, ptr ",
+                      x.fe.awaitee_gep, ""));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = call i8 ", crs, "(ptr ",
+                      raw string_concat(af, ")")));
+    string:dn = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(dn, " = icmp eq i8 ",
+                      raw string_concat(rc, ", 0")));
+    string:sus_l = raw irw_new_label(x.fe.w, "sus");
+    string:dn_l = raw irw_new_label(x.fe.w, "dn");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", dn, ", label %", dn_l,
+                      raw string_concat(", label %", sus_l)));
+    x.fe.terminated = true;
+    drop s_start(x, sus_l);
+    // Suspension propagates. No defers run — the scope is not exiting, it is
+    // pausing; every value it still needs is in a frame.
+    drop irw_line(x.fe.w, "ret i8 1");
+    x.fe.terminated = true;
+    drop s_start(x, dn_l);
+
+    LlType:rll = raw node_ll(x, cid);
+    if (rll.state != (raw LL_OK())) {
+        pass (raw iv_from_ll_at(x, rll, raw exprtypes_get(x.et, cid), n.span));
+    }
+    string:rg = raw fnem_slot_gep(x.fe, cfr_ty, af, 3i32);
+    string:res = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(res, " = load ", rll.text, ", ptr ",
+                      raw string_concat(rg, "")));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_dalloc(ptr ", af, ")"));
+    drop irw_line(x.fe.w, raw cat4("store ptr null, ptr ",
+                      x.fe.awaitee_gep, "", ""));
+
+    int32:rt_id = raw exprtypes_get(x.et, cid);
+    IrVal:out = raw iv(rll.text, res, rt_id);
+    out.wrapped = true;
+    out.inner = "";
+    int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
+    if ((raw type_kind(x.fe.ctx.types, inner_id)) != (raw TY_NIL())) {
+        LlType:it = raw ll_type(x.fe.ctx, inner_id);
+        if (it.state != (raw LL_OK())) {
+            pass (raw iv_from_ll_at(x, it, inner_id, n.span));
+        }
+        out.inner = it.text;
+    }
+    pass out;
 };
 
 func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {

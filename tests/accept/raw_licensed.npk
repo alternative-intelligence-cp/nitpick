@@ -4,7 +4,9 @@
 // declares the clause, a function pointer of marked type, a never-fails
 // builtin, a generic instantiation, and `drop` of a `NIL` never-fails callee.
 // The spawn form (`drop work()` on an `async` callee) is accepted by the
-// checker here; the BACKEND rungs async until the executor lands (1.1).
+// checker INSIDE an `async` function (D-177 put the join in the enclosing
+// frame, so a synchronous spawner is refused); the BACKEND rungs the spawn
+// until stage E of 1.1.4 lands the join.
 mod:raw_licensed;
 
 func:nf = int32(int32:v) never fails { pass v; };
@@ -36,7 +38,7 @@ func:all_forms = int32(func int32(int32) never fails:fp, dyn Loud:l, Dog:d) neve
     pass a + b + b2 + c + e + (g =>! int32) + h;
 };
 
-func:spawns = int32(int32:v) {
+async func:spawns = int32(int32:v) {
     drop work(v);                           // THE SPAWN FORM — exempt (D-058)
     pass v;
 };

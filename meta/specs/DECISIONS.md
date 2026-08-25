@@ -11869,3 +11869,108 @@ is BOTH channels' code, one value: as a `Result` error it is catchable — a
 outlives its mandatory deadline (D-062/D-083), where expiry is a defect, not
 an event. One number, so a log reader never learns two spellings for "time
 ran out".
+
+---
+
+## D-177 — Coroutines are hand-lowered switched-resume state machines — **SETTLED**
+
+C-7, the cycle's densest blocker. The prototype used `@llvm.coro`; 0.10.3's
+outcome note assumed the same; this decision reverses that assumption, on
+grounds that did not exist when the note was written.
+
+### Why not `@llvm.coro`
+
+1. **The emitted IR would stop being the program.** Coro intrinsics are a
+   CONTRACT with LLVM's CoroSplit/CoroFrame passes: the artifact npkc emits
+   is not what executes — the load-bearing transform (frame layout, spill
+   selection, resume splitting) happens inside the C++ black box, after
+   emission. Everything this project stakes on verifiability — Astrée reads
+   the artifact; D-078's byte-determinism; the fixpoint — weakens to
+   "modulo whatever CoroSplit did this version".
+2. **The pipeline has no opt step.** BUILD_REFERENCE is `npkc | llc | ld.lld`;
+   coro lowering REQUIRES opt passes before llc. Adding a mandatory pass
+   pipeline adds toolchain surface exactly where the project has none.
+3. **The burned-hand rule.** LLVM's optimiser has already removed a
+   load-bearing guarantee once in the prototype's history. Handing it the
+   SUSPENSION SEMANTICS of a safety-critical executor is that risk, enlarged.
+4. **D-153 was built for the other answer.** The frame allocator's whole
+   design — exact-size buckets because "the coroutine workload IS exact-size
+   recurrence: one frame size per async function" — assumes the COMPILER
+   knows each frame's size. Under `@llvm.coro` the size is LLVM's, surfaced
+   through `@llvm.coro.size` at a stage our allocator calls cannot reach
+   cleanly.
+
+### The lowering
+
+An `async func:f = T(args)` compiles to a **resume function** and a **frame**:
+
+- **Frame layout** (compiler-owned, per async function, one exact size —
+  D-153's bucket): a fixed header, then every local whose live range CROSSES
+  a suspension point, laid out by the same layout machinery structs use.
+
+  ```
+  [ resume_fn: ptr | state: i32 | windup: i32 | result: Result<T>
+  | join_head: ptr | sibling: ptr | awaitee: ptr | args..., crossing locals... ]
+  ```
+
+- **The resume function** `i8 npk.resume.f(ptr frame)`: a `switch` on
+  `state` over the segments between suspension points. Locals that cross a
+  suspension live in the frame; locals that do not stay ordinary allocas.
+  Returns `0` = DONE (result slot written), `1` = SUSPENDED.
+- **`await g(x)`** composes machines: allocate g's frame (D-153 `alloc`),
+  store args, then drive — call g's resume; on DONE copy the result slot
+  out and free the frame; on SUSPENDED record g as `awaitee`, save own
+  state, return SUSPENDED (suspension propagates to the executor, never
+  blocks a thread — D-071). **The `result_slot` is owned by the frame that
+  computes it**; the awaiter copies out only at DONE, so no slot outlives
+  its frame.
+- **`drop work()` (the spawn, D-058)**: allocate the frame, store args, link
+  it onto the enclosing async frame's `join_head` child list (the frame IS
+  the task object; `sibling` chains the scope's spawns), and enqueue it —
+  1.1.5's run queue; until then the join drives children directly.
+- **The join (D-062/D-083/D-163 rule 4)**: at every exit of the enclosing
+  async function — normal or error, after `defer`s — drive each child to
+  completion under the executor's join deadline (`within`, D-176). All
+  children finish → relay the FIRST child error, verbatim (D-080), as the
+  function's own error. Deadline expires → set every unfinished child's
+  `windup` word and grant the grace drive; a child still unfinished then is
+  a defect: **trap −4107**.
+- **The wind-up token** is the frame's `windup` word. Every resume segment
+  that begins at a suspension point polls it first: set → the await
+  completes with the wind-up error instead of its value, so the task unwinds
+  through its own `defer`s (D-062's cooperative-only model; preemptive
+  destruction stays removed).
+- **`async main`** runs through an entry shim that allocates main's frame
+  and loops its resume to completion — the degenerate executor, replaced by
+  1.1.5's real one.
+
+### The analysis this buys (C-8's hook)
+
+Which locals cross a suspension is computed by the CHECKER (a
+liveness-across-await walk beside the existing analyses) and recorded for
+the backend — and it is exactly the surface C-8's borrow-across-await
+narrowing reads: a borrow crossing a suspension is visible as a
+frame-resident pointer, the thing the rule exists to refuse across spawns.
+
+### The checker rules (settled with stage C, 1.1.4)
+
+All `NITPICK-TYPE-043`, beside the two the decision already named (`await`
+only inside `async`; the spawn form only inside `async`):
+
+- **A bare call to an `async` function is refused.** The callee has no
+  direct symbol — only a machine — and admitting the call would be an
+  IMPLICIT await: a suspension nothing in the source says. `await f(…)` and
+  `drop f(…)` are the two homes; there is no third.
+- **`await` and the spawn form are refused inside `defer`.** A defer body
+  is synchronous cleanup; the JOIN, not a defer, is where a scope waits on
+  concurrent work. D-163 already bars `fail`/`relay` there — suspension
+  joins that family.
+- **`failsafe` cannot be `async`.** It is the controlled-stop path and must
+  run without an executor, which may itself be the casualty. `async main`
+  stands (the entry shim is its executor until 1.1.5).
+
+### What stays out
+
+No user-visible `Future`/`Task` type (D-058 stands); no `coro.destroy`-style
+preemption (D-062 stands); no thread migration (D-032 stands — a frame never
+changes executors, which is what lets D-153 stay atomics-free).

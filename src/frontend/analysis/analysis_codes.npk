@@ -199,3 +199,11 @@ pub func:WILDX_EXEC_UNSEALED = string() never fails { pass "NITPICK-WILDX-002"; 
 // runtime code generation entirely (D-035's certification note). Separate
 // from `no-wild`: manual memory and executable memory are different risks.
 pub func:WILDX_EXCLUDED = string() never fails      { pass "NITPICK-WILDX-003"; };
+
+// --- the suspend walk (D-177, 1.1.4) ---------------------------------------------
+//
+// The liveness-across-await walk records which locals cross a suspension; it
+// refuses nothing, so its one code is the fail-closed internal defect every
+// walk in this compiler carries: a construct the walk has no entry for means
+// "nobody measured", and silence and "nothing to measure" must stay apart.
+pub func:SUSPEND_INTERNAL = string() never fails { pass "NITPICK-SUSPEND-001"; };

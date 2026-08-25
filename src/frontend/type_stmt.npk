@@ -993,6 +993,17 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     e.fn_success = sg.success;
     e.fn_terminal = sg.terminal;
     e.fn_never_fails = raw fn_declares_never_fails(e.ast, d);
+    e.fn_is_async = raw decl_has(d, raw DECL_ASYNC());
+    // `async main` is D-058's entry shim; `async failsafe` is refused: the
+    // crash path may not depend on an executor that may itself be the
+    // casualty of whatever is being escaped from (D-177).
+    if (e.fn_is_async) {
+        if (raw string_eq(raw intern_get(e.interns, raw decl_name(d)), "failsafe")) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                "`failsafe` cannot be `async` (D-177): it is the controlled-stop path, and it must run without an executor",
+                d.span));
+        }
+    }
     if (e.fn_never_fails) {
         // A terminal function returns no `Result`, so `never fails` says nothing
         // there; and `never fails` may not combine with the verification

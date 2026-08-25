@@ -227,6 +227,33 @@ pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never
               raw string_concat(body, "\"")));
 };
 
+// THE COROUTINE'S TWO DERIVED NAMES (D-177, 1.1.4), built from the same
+// ingredients as `mangled_fn_sym` rather than parsed back out of its output —
+// parsing a name to build a name is two spellings of one derivation. Both are
+// always quoted: the body can embed `<`, spaces and commas for instantiations.
+func:coro_body_name = string(LlCtx->:c, int32:decl_index, string:stem,
+                             string:name) never fails {
+    string:canon = raw mod_canonical(c, decl_index);
+    if (canon.len == 0i64) {
+        pass (raw string_concat(stem, name));
+    }
+    pass (raw string_concat(stem,
+              raw string_concat(canon,
+                  raw string_concat(".", name))));
+};
+
+pub func:resume_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
+    string:body = raw coro_body_name(c, decl_index, "npk.resume.", name);
+    pass (raw string_concat("@\"",
+              raw string_concat(body, "\"")));
+};
+
+pub func:frame_ty_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
+    string:body = raw coro_body_name(c, decl_index, "npk.frame.", name);
+    pass (raw string_concat("%\"",
+              raw string_concat(body, "\"")));
+};
+
 // `%"npk.<module>.<Name>"` for a named aggregate. No name exceptions -- no
 // type is named main or failsafe. The `%Name` fallback keeps a mapless
 // context (the header tests) rendering as before.

@@ -61,6 +61,7 @@ use "../frontend/analysis/escape.npk".*;
 use "../frontend/analysis/bindings.npk".*;
 use "../frontend/analysis/exhaust.npk".*;
 use "../frontend/analysis/locks.npk".*;
+use "../frontend/analysis/suspend.npk".*;
 
 // Every table the pipeline fills, owned by the caller for the caller's lifetime.
 pub struct:Front = {
@@ -383,6 +384,19 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
         DeclId:mid7 = DeclId{ index: e7.root };
         drop exhaust_module(@exh, mid7, e7.scope);
         z2 = z2 + 1i32;
+    }
+
+    // LIVENESS ACROSS AWAIT (D-177, 1.1.4). Which locals cross a suspension
+    // point, marked on `ExprTypes` for the emitter: a crossing local lives in
+    // the coroutine frame, not an alloca. Runs after typing like its peers —
+    // not because it reads types, but because a program the checker refused
+    // has no emitter to record for.
+    Suspend:ssp = raw suspend_init(@f.g.ast, @f.g.tab, @f.ets, @f.diags);
+    int32:s0 = 0i32;
+    while (s0 < (raw graph_count(@f.g))) {
+        ModuleEntry:e9 = raw graph_at(@f.g, s0);
+        drop suspend_module(@ssp, DeclId{ index: e9.root });
+        s0 = s0 + 1i32;
     }
 
     // LOCK LEVELS (D-056, D-113, 0.5.6) — the cycle's only whole-program analysis,

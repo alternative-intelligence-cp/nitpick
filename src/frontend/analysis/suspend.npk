@@ -1,0 +1,609 @@
+// The liveness-across-await walk (D-177, 1.1.4). For each `async` function,
+// which locals' live ranges CROSS a suspension point — recorded for the
+// backend, which lays a crossing local into the coroutine frame (stage D)
+// where a plain alloca would die between `resume` calls. This is also the
+// surface C-8's borrow-across-await narrowing reads.
+//
+// THE POSITION MODEL IS SOURCE ORDER, NOT DATAFLOW. A local crosses if a
+// suspension point sits between its declaration and its last use — with three
+// widenings that make source order sound where control flow bends:
+//
+//   LOOPS RE-ENTER. A suspension inside a loop is crossed by any local
+//   declared OUTSIDE that loop and used at-or-after the loop's start: the back
+//   edge can carry the suspension before a textually earlier use. Each
+//   suspension therefore records the start of every enclosing loop, and the
+//   crossing test measures against those as well as the point itself.
+//
+//   `defer` RUNS AT SCOPE EXIT. A use inside a `defer` body happens at the
+//   function's end, wherever the text sits — so it is recorded there. (When
+//   scope-exit drop glue lands for managed locals, droppable locals gain the
+//   same end-of-scope use HERE, for the same reason.)
+//
+//   AN ADDRESS OUTLIVES ITS MENTION. `@x` hands out a pointer this walk does
+//   not follow, so the local is treated as used to the function's end. C-8
+//   narrows what a borrow may cross; this walk only keeps the SLOT alive.
+//
+// A `drop work()` spawn is NOT a suspension: the spawn allocates and links,
+// and control continues without yielding. The join that later drives the
+// child sits at the function's exits, where every local's scope has already
+// ended (D-177: defers run before the join) — so it contributes nothing to
+// liveness either.
+//
+// BINDERS ARE KEYED BY STATEMENT INDEX — the var-decl statement a local's
+// symbol names as its origin — which is the same key the emitter holds at the
+// declaration site, so the mark travels on `ExprTypes` like every other
+// checker-to-emitter fact. A var-decl registers when walked, positioned at
+// the STATEMENT'S END: the name binds after the initialiser runs, so a
+// suspension inside the initialiser is before the local exists, not across
+// it. A binder this walk does not visit (a `for` element, a pick arm's
+// pattern binding) registers lazily at its first use, positioned at its
+// origin statement's start — sound today because the backend refuses a
+// suspension inside a `for` body or a `pick` until stage D lifts those
+// rungs, and stage D's obligation includes registering those binders
+// eagerly (a never-used droppable arm binding is invisible to lazy
+// registration).
+
+mod:suspend;
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../parse_decorate.npk".*;
+use "../expr_types.npk".*;
+use "./analysis_codes.npk".*;
+
+pub func:SUSPEND_DEPTH = int32() never fails { pass 256i32; };
+func:LOOP_STACK_CAP = int32() never fails { pass 64i32; };
+
+pub struct:Suspend = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    ExprTypes->:ets;
+    DiagList->:diags;
+
+    // The locals registry, reset per function: binder stmt index, binder
+    // position, last-use position.
+    wild int32->:lstmt;
+    wild int64->:ldecl;
+    wild int64->:luse;
+    int32:lcount;
+    int32:lcap;
+
+    // Suspension points: position, and a window into `lsflat` holding the
+    // start position of every loop enclosing the point.
+    wild int64->:spos;
+    wild int32->:sls;
+    wild int32->:slc;
+    int32:scount;
+    int32:scap;
+    wild int64->:lsflat;
+    int32:fcount;
+    int32:fcap;
+
+    // The current enclosing-loop stack (start positions), and the walk state.
+    wild int64->:lstack;
+    int32:ldepth;
+    int64:fn_end;
+    bool:in_defer;
+
+    // THE WALK'S CURSOR — the largest position touched so far. Statement and
+    // expression spans in this compiler are FIRST-TOKEN spans, so "the end of
+    // the statement" cannot be read off a span; the cursor supplies it: a
+    // binder or suspension that must sit AFTER everything just walked takes
+    // `max(its own span end, cursor + 1)`. Positions grow with the text, so
+    // the cursor never overtakes anything later.
+    int64:cursor;
+};
+
+pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
+                                DiagList->:diags) never fails {
+    wild int8->:a = alloc(64i64 * #size_of<int32>());
+    wild int8->:b = alloc(64i64 * #size_of<int64>());
+    wild int8->:c = alloc(64i64 * #size_of<int64>());
+    wild int8->:d = alloc(32i64 * #size_of<int64>());
+    wild int8->:e = alloc(32i64 * #size_of<int32>());
+    wild int8->:f = alloc(32i64 * #size_of<int32>());
+    wild int8->:g = alloc(64i64 * #size_of<int64>());
+    wild int8->:h = alloc(((raw LOOP_STACK_CAP()) => int64) * #size_of<int64>());
+    Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, diags: diags,
+                         lstmt: a =>! wild int32->,
+                         ldecl: b =>! wild int64->,
+                         luse: c =>! wild int64->,
+                         lcount: 0i32, lcap: 64i32,
+                         spos: d =>! wild int64->,
+                         sls: e =>! wild int32->,
+                         slc: f =>! wild int32->,
+                         scount: 0i32, scap: 32i32,
+                         lsflat: g =>! wild int64->,
+                         fcount: 0i32, fcap: 64i32,
+                         lstack: h =>! wild int64->,
+                         ldepth: 0i32, fn_end: 0i64, in_defer: false,
+                         cursor: 0i64 };
+    pass x;
+};
+
+func:suspend_err = NIL(Suspend->:x, string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_INTERNAL(), msg, sp));
+    pass NIL;
+};
+
+// A span's place in the one order this walk measures with: file first, offset
+// within it. Positions from different files (a macro splice) still get a total
+// order — an artificial one, which can only err toward MORE crossing, never
+// less, because every comparison stays consistent within the walk.
+func:pos_of = int64(Span:sp) never fails {
+    pass ((sp.file => int64) * 4294967296i64) + (sp.offset => int64);
+};
+
+func:pos_end = int64(Span:sp) never fails {
+    pass ((sp.file => int64) * 4294967296i64)
+         + ((sp.offset + sp.len) => int64);
+};
+
+// --- the locals registry ------------------------------------------------------------
+
+func:cur_touch = NIL(Suspend->:x, int64:at) never fails {
+    if (at > x.cursor) { x.cursor = at; }
+    pass NIL;
+};
+
+func:reg_find = int32(Suspend->:x, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < x.lcount) {
+        if (x.lstmt[i => int64] == stmt_index) { pass i; }
+        i = i + 1i32;
+    }
+    pass 0i32 - 1i32;
+};
+
+func:reg_add = int32(Suspend->:x, int32:stmt_index, int64:at) never fails {
+    if (x.lcount >= x.lcap) {
+        int64:ncap = (x.lcap => int64) * 2i64;
+        wild int8->:na = ralloc(x.lstmt =>! wild int8->, ncap * #size_of<int32>());
+        wild int8->:nb = ralloc(x.ldecl =>! wild int8->, ncap * #size_of<int64>());
+        wild int8->:nc = ralloc(x.luse =>! wild int8->, ncap * #size_of<int64>());
+        x.lstmt = na =>! wild int32->;
+        x.ldecl = nb =>! wild int64->;
+        x.luse = nc =>! wild int64->;
+        x.lcap = ncap =>! int32;
+    }
+    drop cur_touch(x, at);
+    x.lstmt[x.lcount => int64] = stmt_index;
+    x.ldecl[x.lcount => int64] = at;
+    x.luse[x.lcount => int64] = at;
+    x.lcount = x.lcount + 1i32;
+    pass (x.lcount - 1i32);
+};
+
+// One mention of a name. Only a LOCAL registers — a symbol whose origin is a
+// statement. Parameters are frame-resident by construction (the caller stored
+// them into the frame), so they are exactly the bindings this walk exempts.
+func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
+    if (sym_id == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, sym_id);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:idx = raw reg_find(x, s.origin);
+    if (idx < 0i32) {
+        StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
+        idx = raw reg_add(x, s.origin, raw pos_of(o.span));
+    }
+    // The cursor takes the TEXTUAL position; the recorded use takes the
+    // semantic one (a defer body runs at scope exit).
+    drop cur_touch(x, at);
+    int64:pt = at;
+    if (x.in_defer) { pt = x.fn_end; }
+    if (pt > x.luse[idx => int64]) { x.luse[idx => int64] = pt; }
+    pass NIL;
+};
+
+// --- suspension points --------------------------------------------------------------
+
+func:susp_add = NIL(Suspend->:x, int64:at) never fails {
+    if ((x.fcount + x.ldepth) > x.fcap) {
+        int64:ncap = (x.fcap => int64) * 2i64;
+        while (ncap < ((x.fcount + x.ldepth) => int64)) { ncap = ncap * 2i64; }
+        wild int8->:ng = ralloc(x.lsflat =>! wild int8->, ncap * #size_of<int64>());
+        x.lsflat = ng =>! wild int64->;
+        x.fcap = ncap =>! int32;
+    }
+    if (x.scount >= x.scap) {
+        int64:ncap = (x.scap => int64) * 2i64;
+        wild int8->:nd = ralloc(x.spos =>! wild int8->, ncap * #size_of<int64>());
+        wild int8->:ne = ralloc(x.sls =>! wild int8->, ncap * #size_of<int32>());
+        wild int8->:nf = ralloc(x.slc =>! wild int8->, ncap * #size_of<int32>());
+        x.spos = nd =>! wild int64->;
+        x.sls = ne =>! wild int32->;
+        x.slc = nf =>! wild int32->;
+        x.scap = ncap =>! int32;
+    }
+    drop cur_touch(x, at);
+    x.spos[x.scount => int64] = at;
+    x.sls[x.scount => int64] = x.fcount;
+    x.slc[x.scount => int64] = x.ldepth;
+    int32:i = 0i32;
+    while (i < x.ldepth) {
+        x.lsflat[x.fcount => int64] = x.lstack[i => int64];
+        x.fcount = x.fcount + 1i32;
+        i = i + 1i32;
+    }
+    x.scount = x.scount + 1i32;
+    pass NIL;
+};
+
+// --- the walk -----------------------------------------------------------------------
+
+pub func:suspend_module = NIL(Suspend->:x, DeclId:mod_id) never fails {
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop suspend_decl(x, raw item_member(x.ast, m, i));
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        if (!(raw decl_has(d, raw DECL_ASYNC()))) { pass NIL; }
+        StmtId:body = raw fn_body(x.ast, d);
+        if (raw stmt_is_none(body)) { pass NIL; }
+        StmtNode:bn = raw ast_stmt(x.ast, body);
+
+        x.lcount = 0i32;
+        x.scount = 0i32;
+        x.fcount = 0i32;
+        x.ldepth = 0i32;
+        x.fn_end = raw pos_end(bn.span);
+        x.in_defer = false;
+        x.cursor = 0i64;
+
+        drop suspend_stmt(x, body, raw SUSPEND_DEPTH());
+        drop suspend_settle(x);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        drop suspend_module(x, id);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = raw impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop suspend_decl(x, raw impl_member(x.ast, d, j));
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop suspend_decl(x, raw item_member(x.ast, d, k));
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// The crossing test, run once per function after its walk. A local (D, U)
+// crosses suspension P when D < P < U — or, for each loop start L enclosing
+// P, when D < L and U > L: the local was alive when the loop began, so the
+// back edge can put the suspension between two of its moments.
+func:suspend_settle = NIL(Suspend->:x) never fails {
+    int32:i = 0i32;
+    while (i < x.lcount) {
+        int64:dpos = x.ldecl[i => int64];
+        int64:upos = x.luse[i => int64];
+        bool:crossed = false;
+        int32:j = 0i32;
+        while (j < x.scount) {
+            int64:p = x.spos[j => int64];
+            if (dpos < p) { if (p < upos) { crossed = true; } }
+            int32:w = 0i32;
+            while (w < x.slc[j => int64]) {
+                int64:ls = x.lsflat[(x.sls[j => int64] + w) => int64];
+                if (dpos < ls) { if (upos > ls) { crossed = true; } }
+                w = w + 1i32;
+            }
+            j = j + 1i32;
+        }
+        if (crossed) {
+            drop exprtypes_mark_crossing(x.ets, x.lstmt[i => int64]);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:loop_push = NIL(Suspend->:x, Span:sp) never fails {
+    if (x.ldepth >= (raw LOOP_STACK_CAP())) {
+        drop suspend_err(x,
+            "loops nest deeper than the suspend walk's stack, so suspension points inside cannot be measured",
+            sp);
+        pass NIL;
+    }
+    x.lstack[x.ldepth => int64] = raw pos_of(sp);
+    x.ldepth = x.ldepth + 1i32;
+    pass NIL;
+};
+
+func:loop_pop = NIL(Suspend->:x) never fails {
+    if (x.ldepth > 0i32) { x.ldepth = x.ldepth - 1i32; }
+    pass NIL;
+};
+
+func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    if (fuel <= 0i32) {
+        drop suspend_err(x,
+            "statements nest deeper than the suspend walk follows, so suspension points inside cannot be measured",
+            s.span);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = raw stmt_decl_init(x.ast, s);
+        if (!(raw expr_is_none(init))) {
+            drop suspend_expr(x, init, fuel - 1i32);
+        }
+        // AFTER the initialiser: the name binds once the initialiser has run,
+        // so a suspension inside it is before this local, not across it — the
+        // cursor places the binder past everything the initialiser touched.
+        int32:idx = raw reg_find(x, id.index);
+        if (idx < 0i32) {
+            int64:dat = raw pos_end(s.span);
+            if (x.cursor >= dat) { dat = x.cursor + 1i64; }
+            discard(raw reg_add(x, id.index, dat));
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop suspend_expr(x, raw stmt_target(s), fuel - 1i32);
+        drop suspend_expr(x, raw stmt_assigned(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPassStmt) {
+        drop suspend_operand(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtFailStmt) {
+        drop suspend_operand(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        drop suspend_operand(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtExitStmt) {
+        drop suspend_expr(x, raw stmt_expr(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        drop suspend_window(x, raw stmt_list_start(s), raw stmt_list_count(s), fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_then(s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_else(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop loop_push(x, s.span);
+        drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
+        drop loop_pop(x);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_when_end(x.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        drop suspend_counted(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        drop suspend_counted(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop loop_push(x, s.span);
+        drop suspend_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
+        drop suspend_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
+        drop loop_pop(x);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop suspend_expr(x, raw pick_selector(s), fuel - 1i32);
+        drop suspend_window(x, raw pick_arm_start(s), raw pick_arm_count(s), fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop suspend_expr(x, raw arm_guard(s), fuel - 1i32);
+        drop suspend_stmt(x, raw arm_body(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        bool:saved = x.in_defer;
+        x.in_defer = true;
+        drop suspend_stmt(x, StmtId{ index: s.a }, fuel - 1i32);
+        x.in_defer = saved;
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+
+    if (raw stmt_carries_expr(s.kind)) {
+        drop suspend_expr(x, raw stmt_expr(s), fuel - 1i32);
+        pass NIL;
+    }
+
+    drop suspend_err(x,
+        "this statement kind has no entry in the suspend walk, so suspension points inside it cannot be measured",
+        s.span);
+    pass NIL;
+};
+
+func:suspend_operand = NIL(Suspend->:x, StmtNode:s, int32:fuel) never fails {
+    ExprId:v = raw stmt_operand(s);
+    if (raw expr_is_none(v)) { pass NIL; }
+    drop suspend_expr(x, v, fuel - 1i32);
+    pass NIL;
+};
+
+func:suspend_window = NIL(Suspend->:x, int32:start, int32:count, int32:fuel) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        drop suspend_stmt(x, StmtId{ index: raw ast_id_at(x.ast, start, i) },
+                          fuel - 1i32);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:suspend_counted = NIL(Suspend->:x, StmtNode:s, int32:fuel) never fails {
+    drop loop_push(x, s.span);
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop suspend_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
+        i = i + 1i32;
+    }
+    drop suspend_stmt(x, raw stmt_counted_body(s), fuel - 1i32);
+    drop loop_pop(x);
+    pass NIL;
+};
+
+func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (fuel <= 0i32) {
+        drop suspend_err(x,
+            "expressions nest deeper than the suspend walk follows, so suspension points inside cannot be measured",
+            n.span);
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        drop reg_use(x, n.a, raw pos_of(n.span));
+        pass NIL;
+    }
+
+    // THE SUSPENSION POINT, positioned past the operand: the arguments
+    // evaluate before the machine can yield, so the point lands after their
+    // uses (walked first) and they do not cross it.
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        drop suspend_expr(x, raw expr_operand(n), fuel - 1i32);
+        int64:sat = raw pos_end(n.span);
+        if (x.cursor >= sat) { sat = x.cursor + 1i64; }
+        drop susp_add(x, sat);
+        pass NIL;
+    }
+
+    // `@x` hands out an address the walk does not follow: the local stays
+    // live to the function's end, whatever C-8 later says about the borrow.
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop suspend_expr(x, raw expr_operand(n), fuel - 1i32);
+        PlaceRoot:r = raw place_root(x.ast, raw expr_operand(n),
+                                     raw SUSPEND_DEPTH());
+        if (!(raw expr_is_none(r.id))) {
+            ExprNode:rn = raw ast_expr(x.ast, r.id);
+            if (rn.kind == ExprKind.ExprIdentifierExpr) {
+                drop reg_use(x, rn.a, x.fn_end);
+            }
+        }
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            drop suspend_expr(x, ExprId{ index: raw ast_id_at(x.ast,
+                                  raw expr_list_start(n), i) }, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:gc = raw expr_generic_count(n);
+        drop suspend_expr(x, raw expr_callee(n), fuel - 1i32);
+        drop suspend_expr_window(x, (raw expr_list_start(n)) + gc,
+                                 (raw expr_list_count(n)) - gc, fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bg = raw builtin_generic_count(n);
+        drop suspend_expr_window(x, (raw expr_list_start(n)) + bg,
+                                 (raw expr_list_count(n)) - bg, fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                     a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        drop suspend_expr(x, raw pick_selector(as_stmt), fuel - 1i32);
+        drop suspend_window(x, raw pick_arm_start(as_stmt),
+                            raw pick_arm_count(as_stmt), fuel);
+        pass NIL;
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop suspend_expr_window(x, raw expr_list_start(n),
+                                 raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop suspend_err(x,
+            "this expression kind has no entry in `expr_shape`, so the suspend walk cannot follow its slots",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop suspend_err(x,
+            "this expression kind has a custom shape the suspend walk has no case for, so its contents cannot be measured",
+            n.span);
+        pass NIL;
+    }
+
+    drop suspend_expr(x, raw expr_lhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop suspend_expr_window(x, raw expr_list_start(n),
+                                 raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    drop suspend_expr(x, raw expr_rhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop suspend_expr(x, raw expr_third(n), fuel - 1i32);
+    pass NIL;
+};
+
+func:suspend_expr_window = NIL(Suspend->:x, int32:start, int32:count,
+                               int32:fuel) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        drop suspend_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                          fuel - 1i32);
+        i = i + 1i32;
+    }
+    pass NIL;
+};

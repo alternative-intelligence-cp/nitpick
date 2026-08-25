@@ -93,6 +93,18 @@ pub struct:ExprTypes = {
     // type; a variant constructor records 0 and reads the payload instead.
     wild int32->:callee_ft;
     int32:count;
+
+    // LOCALS LIVE ACROSS A SUSPENSION (D-177, 1.1.4). The suspend walk marks
+    // the STMT INDEX of each var-decl whose live range crosses an `await` or a
+    // spawn, and the emitter reads the mark to decide alloca vs frame slot —
+    // the same one-computation rule as `callee`: the walk holds the liveness,
+    // the emitter holds neither the loops' extents nor the uses, and a second
+    // derivation is a second answer waiting to drift. Keyed by statement index
+    // (a different keyspace from the expression arrays above), sparse because
+    // crossing locals are few.
+    wild int32->:cross;
+    int32:ccount;
+    int32:ccap;
 };
 
 pub func:exprtypes_init = ExprTypes(int32:n) never fails {
@@ -105,13 +117,16 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     wild int8->:ctr = alloc(size * #size_of<int32>());
     wild int8->:cft = alloc(size * #size_of<int32>());
 
+    wild int8->:crs = alloc(16i64 * #size_of<int32>());
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
                              callee: cal =>! wild int32->,
                              callee_sym: cim =>! wild int32->,
                              callee_trait: ctr =>! wild int32->,
                              callee_ft: cft =>! wild int32->,
-                             count: size =>! int32 };
+                             count: size =>! int32,
+                             cross: crs =>! wild int32->,
+                             ccount: 0i32, ccap: 16i32 };
     int64:i = 0i64;
     while (i < size) {
         t.items[i] = 0i32;
@@ -357,4 +372,36 @@ pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
     ExprNode:n = raw ast_expr(ast, r.id);
     if (n.kind == ExprKind.ExprIdentifierExpr) { pass true; }
     pass (n.kind == ExprKind.ExprDerefExpr);
+};
+
+// --- crossing locals (D-177, 1.1.4) -------------------------------------------------
+
+// Mark one var-decl statement's local as live across a suspension point. Idempotent:
+// a local crossing three awaits is one fact, not three.
+pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < t.ccount) {
+        if (t.cross[i => int64] == stmt_index) { pass NIL; }
+        i = i + 1i32;
+    }
+    if (t.ccount >= t.ccap) {
+        int64:ncap = (t.ccap => int64) * 2i64;
+        wild int8->:nm = ralloc(t.cross =>! wild int8->, ncap * #size_of<int32>());
+        t.cross = nm =>! wild int32->;
+        t.ccap = ncap =>! int32;
+    }
+    t.cross[t.ccount => int64] = stmt_index;
+    t.ccount = t.ccount + 1i32;
+    pass NIL;
+};
+
+// Does this var-decl statement's local cross a suspension? Read by the emitter
+// at the declaration site.
+pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < t.ccount) {
+        if (t.cross[i => int64] == stmt_index) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
 };

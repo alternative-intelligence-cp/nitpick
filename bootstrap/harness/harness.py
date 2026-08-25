@@ -408,6 +408,7 @@ UNTESTED_CODES = {
     # INTERNAL -- a defect in this compiler. No source triggers one.
     "NITPICK-ASSIGN-004":  "internal -- an unclassified node kind in the binding walk",
     "NITPICK-BORROW-008":  "internal -- an unclassified node kind in the escape walk",
+    "NITPICK-SUSPEND-001": "internal -- an unclassified node kind in the suspend walk",
     "NITPICK-MACRO-006":   "internal -- a node kind the macro clone has no case for",
     "NITPICK-RESOLVE-009": "internal -- a node kind the resolver has no case for",
     "NITPICK-TYPE-011":    "internal -- a node kind the type checker has no case for",
@@ -512,7 +513,8 @@ SLOT_SITE_PAIRS = {
     "check_pass":          {"emit_pass"},
     "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call",
                             "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)
-                            "emit_field_call"},       # `s.f(x)` through a fn-valued field (1.0.9c)
+                            "emit_field_call",        # `s.f(x)` through a fn-valued field (1.0.9c)
+                            "emit_await"},            # the awaited call's args, stored into the frame (1.1.4)
     "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
     "type_pipe":           {"emit_pipe"},             # `x |> g` fits x to g's parameter (1.0.9c)
     "check_ctor_args":     {"emit_ctor"},
@@ -950,7 +952,8 @@ KIND_STATUS = {
     "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
     "ExprNullCoalesceExpr": "rung",
     "ExprDefaultsExpr": "inert: a bare `?` and the word `defaults` struck at parse (D-175, PARSE-011); the backend guard is a defensive confession",
-    "ExprVectorCtorExpr": "rung", "ExprAwaitExpr": "rung",
+    "ExprVectorCtorExpr": "rung",
+    "ExprAwaitExpr": "lowered",  # 1.1.4 — the machines compose; positional rungs remain until D/E
     "ExprIterationVarExpr": "lowered",  # 0.9.7
     "ExprDynCastExpr": "lowered",  # 1.0.9b — the fit to the dyn target
     "ExprPickExpr": "lowered",  # 0.9.7

@@ -126,9 +126,22 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 
 pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     StmtNode:s = raw ast_stmt(x.ast, sid);
+    // Each statement opens a fresh temp mark (D-177): `emit_await` refuses to
+    // suspend past an SSA value this statement already minted.
+    drop irw_stmt_mark(x.fe.w);
 
     if (s.kind == StmtKind.StmtBlockStmt)   { pass (raw emit_block(x, sid)); }
-    if (s.kind == StmtKind.StmtVarDeclStmt) { pass (raw emit_vardecl(x, s)); }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        // STAGE C's CROSSING RUNG (D-177): the suspend walk marked this local
+        // as live across a suspension, and until stage D lays it into the
+        // frame, an alloca that dies between resumes cannot carry it.
+        if (x.fe.is_async) {
+            if (raw exprtypes_crossing(x.et, sid.index)) {
+                pass (raw iv_rung("a local live across `await`", "1.1", s.span));
+            }
+        }
+        pass (raw emit_vardecl(x, s));
+    }
     if (s.kind == StmtKind.StmtAssignStmt)  { pass (raw emit_assign(x, s)); }
 
     if (s.kind == StmtKind.StmtExprStmt) {
@@ -164,7 +177,14 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
     // fallthrough — both live or die with `PickExpr`, which is 0.9's.
 
-    if (s.kind == StmtKind.StmtForStmt)  { pass (raw emit_for(x, s)); }
+    if (s.kind == StmtKind.StmtForStmt) {
+        // Depth, not a flag: `for` nests. An `await` under any `for` rungs in
+        // stage C — the hidden iterator slot crosses the suspension.
+        x.fe.for_depth = x.fe.for_depth + 1i32;
+        IrVal:fv = raw emit_for(x, s);
+        x.fe.for_depth = x.fe.for_depth - 1i32;
+        pass fv;
+    }
     if (s.kind == StmtKind.StmtLoopStmt) { pass (raw emit_counted(x, s, false)); }
     if (s.kind == StmtKind.StmtTillStmt) { pass (raw emit_counted(x, s, true)); }
     if (s.kind == StmtKind.StmtWhenStmt) { pass (raw emit_when(x, s)); }
@@ -835,8 +855,10 @@ func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     // `exit` is legal only in `main` and `failsafe` (D-013), and returning from
-    // either IS process exit — so it lowers to a plain `ret`.
-    drop irw_line(x.fe.w, raw cat5("ret ", x.fe.ret_ll, " ", v.ref, ""));
+    // either IS process exit — so it lowers to a plain `ret`. In `async main`
+    // the seam stores the code into the frame's result slot and the entry
+    // shim returns it (D-177).
+    drop fnem_ret_agg(x.fe, v.ref);
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
@@ -865,7 +887,7 @@ func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(v))) { pass v; }
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
-    drop irw_line(x.fe.w, raw cat4("ret ", x.fe.ret_ll, " ", v.ref));
+    drop fnem_ret_agg(x.fe, v.ref);
     x.fe.terminated = true;
     pass (raw iv_nil());
 };
@@ -1429,9 +1451,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     if (raw decl_has(d, raw DECL_VARIADIC())) {
         pass (raw iv_rung("a variadic function", "1.1", d.span));
     }
-    if (raw decl_has(d, raw DECL_ASYNC())) {
-        pass (raw iv_rung("an async function", "1.1", d.span));
-    }
+    bool:fn_async = raw decl_has(d, raw DECL_ASYNC());
     // LIVE-1's repair (0.9.0): a `requires`/`ensures` the backend never read
     // compiled to a function that claims a contract nothing enforces — the
     // observed defect was a `requires b != 0i32` body emitting a bare `sdiv`.
@@ -1468,6 +1488,14 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
 
     LlType:rt = raw fnem_begin(x.fe, fname, did.index, succ);
     if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
+    if (fn_async) {
+        // THE COROUTINE (D-177): same walk, different skeleton. The seam
+        // (`fnem_ret_agg`), the frame-resident parameters and the entry
+        // switch are all inside fnem; the body emission below is unchanged.
+        x.fe.is_async = true;
+        x.fe.frame_ty = raw frame_ty_sym(x.fe.ctx, did.index, fname);
+        x.fe.resume_sym = raw resume_fn_sym(x.fe.ctx, did.index, fname);
+    }
 
     int32:i = 0i32;
     int32:n = raw fn_param_count(x.ast, d);
@@ -1522,5 +1550,12 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     x.tr.enclosing = besaved;
     if (!(raw iv_is_ok(b))) { pass b; }
     drop fnem_close(x.fe, x.fe.terminated);
+    if (fn_async) {
+        if (x.fe.bare) {
+            // `async main`: the resume function above answered to
+            // `npk.resume.main`; the linkable `@main` is the entry shim.
+            drop fnem_emit_main_shim(x.fe);
+        }
+    }
     pass (raw iv_nil());
 };

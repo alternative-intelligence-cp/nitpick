@@ -45,13 +45,22 @@ async func:fetch_data = string(string:url) {
 };
 
 async func:main = int32() {
-    string:payload = raw await fetch_data("https://example.com");
+    string:payload = relay await fetch_data("https://example.com");
     exit 0i32;
 };
 ```
 
 `async` functions return `Result<T>` like every other function, so the result
-must be unwrapped — `raw` precedes `await`.
+must be unwrapped — and since D-163, `raw` is NOT the unwrapper here: an
+`async` callee can never be `never fails` (rule 2 — the executor can fail a
+task independently of its body), so `raw await f(…)` is unlicensed by
+construction. The honest spellings are the handling ones:
+
+```nitpick
+string:payload = relay await fetch_data(url);      // propagate
+string:p2 = await fetch_data(url) ?| fallback;     // default
+string:p3 = await fetch_data(url) ?! 9tbb32;       // trap
+```
 
 > **`await` is valid only inside an `async func`.** Using it in a synchronous
 > function is a hard compile error, `NITPICK-040`.

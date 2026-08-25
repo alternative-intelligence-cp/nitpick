@@ -1,0 +1,46 @@
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
+//
+// D-177's checker rules, one refusal per shape. `await` and the spawn form
+// live only inside `async` functions (a synchronous scope has no frame to
+// suspend or to join from); a defer body is synchronous cleanup, so neither
+// suspends there; `failsafe` is the controlled-stop path and must run
+// without an executor; and an `async` callee has no direct symbol — a bare
+// call would be an implicit await, a suspension nothing in the source says.
+mod:async_rules;
+
+async func:leaf = int32(int32:v) {
+    pass v + 1i32;
+};
+
+func:sync_await = int32(int32:v) {
+    int32:a = relay await leaf(v);              // TYPE-043: await in a sync fn
+    pass a;
+};
+
+func:sync_spawn = int32(int32:v) {
+    drop leaf(v);                               // TYPE-043: spawn in a sync fn
+    pass v;
+};
+
+async func:defer_await = int32(int32:v) {
+    defer { discard(await leaf(v) ?| 0i32); }   // TYPE-043: await inside defer
+    pass v;
+};
+
+async func:defer_spawn = int32(int32:v) {
+    defer { drop leaf(v); }                     // TYPE-043: spawn inside defer
+    pass v;
+};
+
+async func:bare_call = int32(int32:v) {
+    int32:a = relay leaf(v);                    // TYPE-043: bare async call
+    pass a;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+async func:failsafe = int32(tbb32:_~e) { exit 1i32; };  // TYPE-043: async failsafe

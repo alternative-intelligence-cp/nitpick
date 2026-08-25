@@ -86,6 +86,14 @@ pub struct:ExprTyper = {
     bool:fn_never_fails;
     // D-163 rule 7: inside a `defer` body, where `fail`/`relay` are refused.
     bool:in_defer;
+    // D-177: the enclosing function is `async` — where `await` and the spawn
+    // form are legal, and whose locals the across-await liveness walk watches.
+    bool:fn_is_async;
+    // The one call expression currently blessed to have an `async` callee —
+    // the operand of the `await` or spawn-`drop` being typed. Everything else
+    // with an `async` callee is a bare call, which has no frame to run the
+    // machine in (D-058/D-177) and is refused by `type_call`.
+    int32:await_operand;
 
     // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
     // names the innermost one's counter; outside any, it names nothing — and
@@ -164,7 +172,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
-                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false,
+                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, await_operand: 0i32,
                              counted_depth: 0i32,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
@@ -993,6 +1001,13 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fai
 //
 // Returns 0 licensed / 1 unlicensed-callee / 2 not-a-call / 3 value-drop.
 func:unwrap_licence_of = int32(ExprTyper->:e, ExprNode:opn, ExprId:opid) never fails {
+    // `raw`/`drop` over an AWAIT judge the awaited CALL (D-177): the await is
+    // when, the call is what. An `async` callee is never `never fails`
+    // (D-163 rule 2), so `raw await f()` is refused with the standard answer.
+    if (opn.kind == ExprKind.ExprAwaitExpr) {
+        ExprId:ai = raw expr_operand(opn);
+        pass (raw unwrap_licence_of(e, raw ast_expr(e.ast, ai), ai));
+    }
     if (opn.kind == ExprKind.ExprCallExpr) {
         ExprNode:cal = raw ast_expr(e.ast, raw expr_callee(opn));
         if (cal.kind == ExprKind.ExprIdentifierExpr) {
@@ -2293,7 +2308,27 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // `discard(raw f())` spells both claims.
         ExprId:dopid = raw expr_operand(n);
         ExprNode:dopn = raw ast_expr(e.ast, dopid);
+        // The spawn's operand is the other blessed home for an `async` callee
+        // (D-058) — bare calls are refused by `type_call`.
+        int32:sp_saved = e.await_operand;
+        e.await_operand = dopid.index;
         discard(raw type_unwrap(e, n, "drop"));
+        e.await_operand = sp_saved;
+        if (raw unwrap_callee_is_async(e, dopn, dopid)) {
+            // THE SPAWN FORM (D-058/D-177). Legal only inside an `async`
+            // function: the D-062 join lives in the enclosing frame, and a
+            // synchronous scope has none for a child to be joined by.
+            if (!e.fn_is_async) {
+                discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                    "`drop` of an `async` call is the SPAWN form (D-058), legal only inside an `async` function: the spawned task's error is joined by the enclosing frame's scope exit (D-062), and a synchronous scope has no frame",
+                    n.span));
+            }
+            if (e.in_defer) {
+                discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                    "a task cannot be spawned inside `defer` (D-177): the join that would collect its error sits at the scope exit the defer is already part of",
+                    n.span));
+            }
+        }
         if (!(raw unwrap_callee_is_async(e, dopn, dopid))) {
             int32:dlic = raw unwrap_licence_of(e, dopn, dopid);
             if (dlic == 2i32) {
@@ -2340,7 +2375,39 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         pass (e.types.t_nil);
     }
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        pass (raw type_unwrap(e, n, "await"));
+        // D-177: `await` only inside an `async` function, and only on a call
+        // whose callee is itself `async` — a sync call has nothing to suspend
+        // on, and an `await` outside a coroutine has no frame to suspend.
+        if (!e.fn_is_async) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                "`await` is legal only inside an `async` function (D-177): a synchronous function has no frame to suspend",
+                n.span));
+        }
+        // Inside `defer` it is refused outright: a defer body is cleanup, and
+        // cleanup is synchronous — the JOIN, not a defer, is where a scope
+        // waits on concurrent work (D-062). D-163 already bars `fail` and
+        // `relay` there; suspension joins that family.
+        if (e.in_defer) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                "`await` cannot appear inside `defer` (D-177): a defer body is synchronous cleanup, and a suspension inside it would hold the scope's exit open",
+                n.span));
+        }
+        ExprId:awop = raw expr_operand(n);
+        ExprNode:awn = raw ast_expr(e.ast, awop);
+        if (!(raw unwrap_callee_is_async(e, awn, awop))) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                "`await` takes a call to an `async` function (D-177): a synchronous call completes without suspending and is not awaited",
+                n.span));
+        }
+        // `await` yields what the call yields — the suspension is WHEN, not
+        // WHAT. The unwrap keywords sit outside (`relay await f(x)`), exactly
+        // as they sit outside a synchronous call. (`raw await` is refused by
+        // D-163's licence: an `async` callee can never be `never fails`.)
+        int32:aw_saved = e.await_operand;
+        e.await_operand = awop.index;
+        int32:aw_ty = raw type_of_expr(e, awop);
+        e.await_operand = aw_saved;
+        pass aw_ty;
     }
 
     // `e ?| d` — a fallback. `e ?! c` — trap with a code. Both yield `T`.

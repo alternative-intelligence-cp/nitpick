@@ -1,15 +1,17 @@
 // expect-error: NITPICK-RUNG-001
 // expect-no-parse-error
 //
-// The compiler is synchronous; nothing in it needs suspension. Coroutine
-// lowering arrives in cycle 1.1.
+// Stage C of 1.1.4 (D-177) lowers the awaited chain — an `async` function is
+// a switched-resume machine and `await` composes them — so awaiting is no
+// longer this file's rung. What still refuses by name is the SPAWN form:
+// `drop work()` links a child onto the join list, and the join is stage E.
 
 async func:fetch = int32() {
     pass 1i32;
 };
 
 async func:main = int32(cstring[]:_~argv) {
-    int32:v = await fetch();
+    drop fetch();
     exit 0i32;
 };
 

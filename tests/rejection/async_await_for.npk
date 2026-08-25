@@ -1,0 +1,20 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// A `for` keeps a hidden iterator slot alive across the whole loop, so an
+// `await` inside the body suspends across it — frame-residence for the
+// hidden slots is stage D.
+
+async func:step = int32(int32:v) {
+    pass v + 1i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32[4]:xs = [1i32, 2i32, 3i32, 4i32];
+    for (int32:v in xs) {
+        discard(await step(v) ?| 0i32);
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

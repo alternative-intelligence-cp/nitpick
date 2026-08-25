@@ -493,6 +493,18 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // `extract(c)` returned `T` rather than the type it was called with.
     DeclNode:d = raw callee_decl(e, n);
     if (d.kind == DeclKind.DeclFunctionDecl) {
+        // AN `async` CALLEE HAS NO DIRECT SYMBOL (D-177): the machine runs
+        // only under `await`, or as the spawn form `drop f(…)` (D-058). A
+        // bare call would be an implicit await — a suspension the reader
+        // cannot see — and the blueprint rule is that nothing suspends
+        // silently.
+        if (raw decl_has(d, raw DECL_ASYNC())) {
+            if (id.index != e.await_operand) {
+                discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                    "an `async` function is called under `await` or spawned with `drop` (D-058/D-177): a bare call would suspend where nothing says so",
+                    n.span));
+            }
+        }
         IdSpan:gp = raw decl_generic_window(e.ast, d);
         if (gp.count > 0i32) {
             pass (raw type_generic_call(e, id, n, d, gp, callee, gcount, start, count));

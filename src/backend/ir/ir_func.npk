@@ -131,6 +131,27 @@ pub struct:FnEmitter = {
     int32:pick_count;
     int32:pick_cap;
     int32:pick_seq;                // per-function label sequence
+
+    // --- the coroutine machine (D-177, 1.1.4) --------------------------------
+    //
+    // An `async` function emits as `i8 <resume_sym>(ptr %fr)` over a frame
+    // whose header is fixed (slot 0 resume_fn, 1 state, 2 windup, 3 result,
+    // 4 join_head, 5 sibling, 6 awaitee, 7+i parameter i). The caller sets
+    // `is_async`, `frame_ty` and `resume_sym` between `fnem_begin` and
+    // `fnem_open`; the GEP registers below are cut in the entry block, so
+    // they dominate every resume segment.
+    bool:is_async;
+    string:frame_ty;
+    string:resume_sym;
+    string:state_gep;
+    string:windup_gep;
+    string:result_gep;
+    string:awaitee_gep;
+    // Resume segments: seg_labels[K] is the switch target for state K.
+    wild string->:seg_labels;
+    int32:seg_count;
+    int32:seg_cap;
+    int32:for_depth;               // inside a `for` body (stage-C rung guard)
 };
 
 pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
@@ -169,7 +190,11 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         pick_counts: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_seqs: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_depths: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_count: 0i32, pick_cap: 8i32, pick_seq: 0i32
+        pick_count: 0i32, pick_cap: 8i32, pick_seq: 0i32,
+        is_async: false, frame_ty: "", resume_sym: "",
+        state_gep: "", windup_gep: "", result_gep: "", awaitee_gep: "",
+        seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        seg_count: 0i32, seg_cap: 8i32, for_depth: 0i32
     };
     pass fe;
 };
@@ -217,6 +242,11 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.dcount = 0i32;
     fe.dfcount = 0i32;
     fe.loop_count = 0i32;
+    fe.is_async = false;
+    fe.frame_ty = "";
+    fe.resume_sym = "";
+    fe.seg_count = 0i32;
+    fe.for_depth = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
     drop irw_begin_function(fe.w);
@@ -267,6 +297,10 @@ pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) never fa
 // argument register cannot be assigned to, so `a = a + 1i32;` needs the parameter
 // to live in memory like any other local — naive lowering, `mem2reg` undoes it.
 pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
+    if (fe.is_async) {
+        drop fnem_open_async(fe);
+        pass NIL;
+    }
     string:params = "";
     int32:i = 0i32;
     while (i < fe.pcount) {
@@ -293,6 +327,196 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
         drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
         i = i + 1i32;
     }
+    pass NIL;
+};
+
+// --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
+//
+// The frame type, the resume function's header, and the entry block that makes
+// every parameter FRAME-RESIDENT: each parameter name binds to a GEP into the
+// frame rather than an alloca copy, so a parameter used after a suspension
+// reads the slot the spawner filled — no copy exists to die with the stack.
+// Locals keep their allocas; the suspend walk marked any whose range crosses,
+// and stage C refuses those at the declaration site.
+func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
+    // The frame type: fixed header, then one slot per parameter.
+    //   [ 0 resume_fn | 1 state | 2 windup | 3 result
+    //   | 4 join_head | 5 sibling | 6 awaitee | 7+i param i ]
+    string:slots = raw string_concat("ptr, i32, i32, ", fe.ret_ll);
+    slots = raw string_concat(slots, ", ptr, ptr, ptr");
+    int32:i = 0i32;
+    while (i < fe.pcount) {
+        slots = raw cat3(slots, ", ", fe.plls[i => int64]);
+        i = i + 1i32;
+    }
+    drop irw_raw(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
+    drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr) {", ""));
+    drop irw_label(fe.w, "entry");
+    drop irw_open_fn(fe.w);
+
+    fe.state_gep   = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 1i32);
+    fe.windup_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 2i32);
+    fe.result_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 3i32);
+    fe.awaitee_gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 6i32);
+
+    i = 0i32;
+    while (i < fe.pcount) {
+        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 7i32 + i);
+        drop fnem_bind(fe, fe.pnames[i => int64], pg, fe.ptypes[i => int64]);
+        i = i + 1i32;
+    }
+
+    // State 0 is the body's start; the switch is appended to the entry stream
+    // at close, once every state is known.
+    string:s0 = raw fnem_new_seg(fe);
+    drop irw_label(fe.w, s0);
+    pass NIL;
+};
+
+// One GEP into a frame, cut in the ENTRY stream so it dominates every segment.
+pub func:fnem_frame_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
+                                 int32:slot) never fails {
+    string:r = raw irw_temp(fe.w);
+    drop irw_entry(fe.w, raw cat5(r, " = getelementptr ", frame_ty,
+                      raw cat3(", ptr ", fr, ", i32 0, i32 "),
+                      raw int_to_string(slot => int64)));
+    pass r;
+};
+
+// A fresh resume state: its number is the label's index. State K's label is
+// the switch target the suspension before it stores.
+pub func:fnem_new_seg = string(FnEmitter->:fe) never fails {
+    if (fe.seg_count >= fe.seg_cap) {
+        int64:ncap = (fe.seg_cap => int64) * 2i64;
+        wild int8->:ns = ralloc(fe.seg_labels =>! wild int8->,
+                                ncap * #size_of<string>());
+        fe.seg_labels = ns =>! wild string->;
+        fe.seg_cap = ncap =>! int32;
+    }
+    string:lb = raw irw_new_label(fe.w, "seg");
+    fe.seg_labels[fe.seg_count => int64] = lb;
+    fe.seg_count = fe.seg_count + 1i32;
+    pass lb;
+};
+
+pub func:fnem_seg_index = int32(FnEmitter->:fe) never fails {
+    pass (fe.seg_count - 1i32);
+};
+
+// THE ONE RETURN SEAM (D-177). Every function exit hands its fully-built
+// return value here: a synchronous function `ret`s it; a coroutine stores it
+// into the frame's result slot — owned by the frame that computes it — and
+// returns DONE. The suspend return (`ret i8 1`) never comes through here:
+// suspension is not scope exit, runs no defers, and returns no value.
+pub func:fnem_ret_agg = NIL(FnEmitter->:fe, string:value) never fails {
+    if (!fe.is_async) {
+        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", value));
+        pass NIL;
+    }
+    drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", value,
+                      raw string_concat(", ptr ", fe.result_gep)));
+    drop irw_line(fe.w, "ret i8 0");
+    pass NIL;
+};
+
+// A GEP into a frame at the CURRENT point (for a callee frame at an await
+// site, or inside the entry shim) — `fnem_frame_gep` is the entry-stream twin
+// for the function's OWN frame.
+pub func:fnem_slot_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
+                                int32:slot) never fails {
+    string:r = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(r, " = getelementptr ", frame_ty,
+                      raw cat3(", ptr ", fr, ", i32 0, i32 "),
+                      raw int_to_string(slot => int64)));
+    pass r;
+};
+
+// The frame's size as a link-time constant — the GEP-null idiom, so the
+// compiler's idea of the size and LLVM's cannot drift (D-153 wants exact
+// sizes; this IS the exact size).
+pub func:fnem_frame_size_arg = string(string:frame_ty) never fails {
+    pass (raw cat3("i64 ptrtoint (ptr getelementptr (", frame_ty,
+                   ", ptr null, i32 1) to i64)"));
+};
+
+// Initialise a fresh frame's header: resume_fn, state 0, windup 0, and the
+// three link words null. The result slot belongs to the callee; the argument
+// slots to the caller's next few stores.
+pub func:fnem_frame_init = NIL(FnEmitter->:fe, string:frame_ty, string:fr,
+                               string:resume_sym) never fails {
+    string:g0 = raw fnem_slot_gep(fe, frame_ty, fr, 0i32);
+    drop irw_line(fe.w, raw cat4("store ptr ", resume_sym, ", ptr ", g0));
+    string:g1 = raw fnem_slot_gep(fe, frame_ty, fr, 1i32);
+    drop irw_line(fe.w, raw cat3("store i32 0, ptr ", g1, ""));
+    string:g2 = raw fnem_slot_gep(fe, frame_ty, fr, 2i32);
+    drop irw_line(fe.w, raw cat3("store i32 0, ptr ", g2, ""));
+    string:g4 = raw fnem_slot_gep(fe, frame_ty, fr, 4i32);
+    drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g4, ""));
+    string:g5 = raw fnem_slot_gep(fe, frame_ty, fr, 5i32);
+    drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g5, ""));
+    string:g6 = raw fnem_slot_gep(fe, frame_ty, fr, 6i32);
+    drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g6, ""));
+    pass NIL;
+};
+
+// THE ENTRY SHIM (D-177): `@main` allocates `async main`'s frame, stores the
+// arguments, and drives the resume once. DONE returns the stored exit code;
+// SUSPENDED is a defect until 1.1.5's executor exists — nothing in the
+// language can legally suspend before there is something to wake it — so it
+// makes the same controlled stop a bad resume state does. 1.1.5 replaces this
+// shim's middle with the real run loop.
+//
+// Emitted right after the resume function, from the same FnEmitter state:
+// `plls`/`pcount` still hold main's parameters, `frame_ty`/`resume_sym` its
+// names. Written at module level like the `dyn` thunks — no buffering, no
+// allocas, one block chain.
+pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
+    string:params = "";
+    int32:i = 0i32;
+    while (i < fe.pcount) {
+        if (i > 0i32) { params = raw string_concat(params, ", "); }
+        params = raw cat3(params, fe.plls[i => int64], " %a");
+        params = raw string_concat(params, raw int_to_string(i => int64));
+        i = i + 1i32;
+    }
+    drop irw_begin_function(fe.w);
+    drop irw_raw(fe.w, raw cat3("define i32 @main(", params, ") {"));
+    drop irw_label(fe.w, "entry");
+    string:fr = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
+                      raw fnem_frame_size_arg(fe.frame_ty), ")"));
+    drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
+    i = 0i32;
+    while (i < fe.pcount) {
+        string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 7i32 + i);
+        drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
+                          raw int_to_string(i => int64),
+                          raw string_concat(", ptr ", ag)));
+        i = i + 1i32;
+    }
+    string:rc = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(rc, " = call i8 ", fe.resume_sym,
+                      "(ptr ", raw string_concat(fr, ")")));
+    string:dn = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(dn, " = icmp eq i8 ", 
+                      raw string_concat(rc, ", 0")));
+    drop irw_line(fe.w, raw cat3("br i1 ", dn,
+                      ", label %fin, label %hang"));
+    drop irw_label(fe.w, "hang");
+    string:h = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(h, " = call i32 @npk_failsafe(i32 ",
+                      "-4102)"));
+    drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", h, ")"));
+    drop irw_line(fe.w, "unreachable");
+    drop irw_label(fe.w, "fin");
+    string:rg = raw fnem_slot_gep(fe, fe.frame_ty, fr, 3i32);
+    string:code = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat5(code, " = load ", fe.ret_ll, ", ptr ",
+                      raw string_concat(rg, "")));
+    drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", fr, ")"));
+    drop irw_line(fe.w, raw cat4("ret i32 ", code, "", ""));
+    drop irw_raw(fe.w, "}");
+    drop irw_blank(fe.w);
     pass NIL;
 };
 
@@ -549,11 +773,11 @@ pub func:fnem_loop_depth = int32(FnEmitter->:fe) never fails {
 // error EXPLICITLY ZERO in slot 1. `Result<NIL>` is the constant `{ i32 0 }`.
 pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) never fails {
     if (fe.bare) {
-        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", value));
+        drop fnem_ret_agg(fe, value);
         pass NIL;
     }
     if (fe.ret_nil) {
-        drop irw_line(fe.w, "ret { i32 } { i32 0 }");
+        drop fnem_ret_agg(fe, "{ i32 0 }");
         pass NIL;
     }
     string:a = raw irw_temp(fe.w);
@@ -563,7 +787,7 @@ pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) never fails {
     string:b = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
                                    " ", raw string_concat(a, ", i32 0, 1")));
-    drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", b));
+    drop fnem_ret_agg(fe, b);
     pass NIL;
 };
 
@@ -575,7 +799,7 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
         // The frontend refuses `fail` in `main` and `failsafe` (there is no
         // Result to fail into); emitting the bare form anyway means a frontend
         // regression produces IR that is wrong, not IR that is malformed.
-        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", code));
+        drop fnem_ret_agg(fe, code);
         pass NIL;
     }
     if (fe.ret_nil) {
@@ -583,7 +807,7 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
         drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
                                        " undef, i32 ",
                                        raw string_concat(code, ", 0")));
-        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", a));
+        drop fnem_ret_agg(fe, a);
         pass NIL;
     }
     string:a = raw irw_temp(fe.w);
@@ -593,7 +817,7 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
     string:b = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
                                    " ", raw cat4(a, ", i32 ", code, ", 1")));
-    drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", b));
+    drop fnem_ret_agg(fe, b);
     pass NIL;
 };
 
@@ -603,10 +827,36 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
 pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
     if (!terminated) {
         if (fe.bare) {
-            drop irw_line(fe.w, raw cat3("ret ", fe.ret_ll, " 0"));
+            drop fnem_ret_agg(fe, "0");
         } else {
-            drop irw_line(fe.w, raw cat3("ret ", fe.ret_ll, " zeroinitializer"));
+            drop fnem_ret_agg(fe, "zeroinitializer");
         }
+    }
+    if (fe.is_async) {
+        // A RESUME STATE NOBODY ASSIGNED IS A DEFECT, not a branch: the state
+        // word is written only by this function's own suspensions, so the
+        // switch's default makes a controlled stop (D-061), the same shape
+        // `#unreachable()` lowers to.
+        drop irw_label(fe.w, "coro.bad");
+        string:bt = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(bt, " = call i32 @npk_failsafe(i32 ",
+                          "-4102)"));
+        drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", bt, ")"));
+        drop irw_line(fe.w, "unreachable");
+
+        // The entry block's tail, appended after every hoisted alloca and
+        // frame GEP: load the state, dispatch to its segment.
+        string:st = raw irw_temp(fe.w);
+        drop irw_entry(fe.w, raw cat3(st, " = load i32, ptr ", fe.state_gep));
+        string:cases = "";
+        int32:k = 0i32;
+        while (k < fe.seg_count) {
+            cases = raw cat5(cases, " i32 ", raw int_to_string(k => int64),
+                             ", label %", fe.seg_labels[k => int64]);
+            k = k + 1i32;
+        }
+        drop irw_entry(fe.w, raw cat5("switch i32 ", st,
+                          ", label %coro.bad [", cases, " ]"));
     }
     // The hoisted allocas, then the body, into the module stream (1.0.9a).
     drop irw_close_fn(fe.w);
