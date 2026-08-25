@@ -793,6 +793,14 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // like the trap they feed.
     drop irw_raw(w, "declare void @npk_chain_reset(i32)");
     drop irw_raw(w, "declare void @npk_chain_push(i32)");
+    // The executor's own symbols (D-071, 1.1.8): the suspension primitive's
+    // park request, the wind-up note every resume segment makes, and the
+    // freeze flag D-063 has the run loop read before every resume.
+    drop irw_raw(w, "declare void @npk_park_until(i64)");
+    drop irw_raw(w, "declare void @npk_windup_note(i32)");
+    drop irw_raw(w, "declare i64 @npk_park_take()");
+    drop irw_raw(w, "declare void @npk_park_sleep(i64)");
+    drop irw_raw(w, "declare i32 @npk_frozen_get()");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join

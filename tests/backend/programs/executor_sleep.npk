@@ -1,0 +1,55 @@
+// expect-exit: 42
+//
+// SUSPENSION IS REACHABLE (D-071, 1.1.8). `await sleep(within)` parks the
+// TASK: `suspend_until` writes the executor's park request, the machine
+// stores its state and returns SUSPENDED, and the run loop takes the
+// request and sleeps the THREAD on FUTEX_WAIT_BITSET with the absolute
+// monotonic deadline (D-176 rule 4 — the kernel owns the arithmetic, so a
+// wake-and-repark loop cannot drift). Waking re-enters through the resume
+// switch at the segment after the call, which is the 1.1.4 machinery's
+// first live exercise: composed machines suspend THROUGH each other, a
+// loop suspends with its counter frame-resident across every wake, and the
+// elapsed time proves each park was real rather than a fall-through.
+mod:executor_sleep;
+
+async func:tick = int32(int32:v) {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    pass v + 1i32;
+};
+
+async func:chain = int32(int32:v) {
+    int32:a = relay await tick(v);
+    int32:b = relay await tick(a);
+    pass b;
+};
+
+async func:looper = int32(int32:n) {
+    int32:acc = 0i32;
+    while (n > 0i32) {
+        await sleep(raw duration_ms(5i64)) ?| NIL;
+        acc = acc + n;
+        n = n - 1i32;
+    }
+    pass acc;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int64:t0 = raw mono_now();
+    int32:a = await chain(0i32) ?| 0i32;      // 2, two 10ms parks
+    int32:b = await looper(3i32) ?| 0i32;     // 6, three 5ms parks
+    int64:dt = (raw mono_now()) - t0;
+    if (dt < 30000000i64) { exit 11i32; }     // every park really parked
+    exit (a * 10i32) + b + 16i32;             // 20 + 6 + 16 = 42
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

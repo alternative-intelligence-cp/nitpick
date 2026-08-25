@@ -139,6 +139,11 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `read_stdin` | `() → Result<string>` | Whole stream. | `Result` — may fail |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. | **never fails** (traps on misuse) |
 | `mono_now` | `() → int64` | `CLOCK_MONOTONIC` nanoseconds since an arbitrary epoch (D-176) — the deadline substrate's one clock. The impossible-failure branch traps (D-061). | **never fails** (traps on misuse) |
+| `suspend_until` | `(int64) → NIL` | **The suspension primitive** (D-071, 1.1.8): parks the TASK until an absolute monotonic timepoint and lets the executor run something else. Lowers INLINE — the park request goes to the executor, the state word advances, and the machine returns SUSPENDED — so it is legal only inside an `async` function. Everything that blocks in the language is built from it, which is what makes "blocking is always task suspension" true rather than aspirational. | **never fails** |
+| `chain_depth` | `() → int32` | How many sites the in-flight error's origin chain has passed (D-179, 1.1.6) — the depth keeps counting past the eight the ring keeps. | **never fails** |
+| `chain_site` | `(int32) → int32` | The i-th kept site id, oldest first; 0 outside the kept range (D-179). | **never fails** |
+| `site_line` | `(int32) → int32` | The source line a site id names, from the per-program table; 0 for the runtime's reserved site 0 (D-179). | **never fails** |
+| `site_path` | `(int32) → string` | The source path a site id names; empty for site 0 (D-179). | **never fails** |
 | `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. | `Result` — may fail |
 | `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. | `Result` — may fail |
 | `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. | `Result` — may fail |

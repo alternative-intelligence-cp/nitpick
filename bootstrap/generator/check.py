@@ -76,6 +76,7 @@ BUILTINS = {
     "wild_live_count":  (T.I64, False),
     "mono_now": (T.I64, False),
     "chain_depth": (T.I32, False),
+    "suspend_until": (T.NIL, False),
     "chain_site": (T.I32, False),
     "site_line": (T.I32, False),
     "site_path": (T.Prim("string"), False),

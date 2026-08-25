@@ -231,3 +231,16 @@ pub error:WildLeak = 4105i32;          // a `wild` allocation outlived exit 0 (D
 pub error:StaleHandle = 4106i32;       // an arena handle outlived its slot's generation (D-152)
 pub error:DeadlineExceeded = 4107i32;  // time ran out (D-176): the Result error AND the join's trap
 pub error:IoEof = 4096i32;             // end of input (the io floor's marker, distinct from every errno)
+
+// --- waiting (D-071, 1.1.8) --------------------------------------------------
+//
+// THE ONE WAITING PRIMITIVE, and everything that blocks is built from it.
+// `await sleep(within)` suspends the TASK: the executor takes the park
+// request and sleeps the thread only when it has nothing else runnable, so
+// a waiting task can never stall a sibling (D-071's whole point). The
+// deadline is ABSOLUTE and monotonic by the time the kernel sees it — the
+// span is converted once, here, at suspension entry (D-176 rule 2).
+pub async func:sleep = NIL(Duration:within) {
+    drop suspend_until((raw mono_now()) + within.ns);
+    pass NIL;
+};

@@ -2290,7 +2290,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // has nowhere to go — the uncontrolled stop the discipline prevents.
         if (e.fn_terminal) {
             discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
-                "`relay` returns the error from the enclosing function, and `main` and `failsafe` return no `Result` to relay into; handle it here with `?`, `?!` or a `pick`",
+                "`relay` returns the error from the enclosing function, and `main` and `failsafe` return no `Result` to relay into; handle it here with `?|`, `?!` or a `pick`",
                 n.span));
         }
         if (e.fn_never_fails) {
@@ -2386,6 +2386,10 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                                 if (raw string_eq(dbn, "wild_release_all")) { d_ok_nil = true; }
                                 if (raw string_eq(dbn, "wildx_seal"))       { d_ok_nil = true; }
                                 if (raw string_eq(dbn, "wildx_free"))       { d_ok_nil = true; }
+                                // The suspension primitive is a void call
+                                // too (D-071, 1.1.8): it parks the task and
+                                // yields nothing when it resumes.
+                                if (raw string_eq(dbn, "suspend_until"))    { d_ok_nil = true; }
                             }
                         }
                     }

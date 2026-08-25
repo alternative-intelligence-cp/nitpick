@@ -108,6 +108,90 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
   ret i64 %r
 }
 
+; --- the executor (D-071/D-083, 1.1.8) --------------------------------------
+;
+; ONE EXECUTOR PER THREAD, and blocking is always task suspension (D-071):
+; a task that waits suspends, and the thread parks only when it has nothing
+; runnable left. The state is a few words of thread-local — until threads
+; exist (1.1.9+) that is process-global, which is the same thing on one
+; thread and keeps the shape honest for the move.
+;
+; THE PARK REQUEST is how a suspension says WHY. The deepest suspending
+; primitive writes it as it returns SUSPENDED (`npk_park_until`), the run
+; loop reads it the instant the resume returns: one word, no frame-layout
+; change, and no way for a suspension to be silent about its wake condition.
+; A suspension with no request is a defect — nothing may park forever.
+@npk_park_at = internal global i64 0        ; absolute monotonic ns, 0 = none
+@npk_park_pending = internal global i32 0   ; a request is outstanding
+@npk_frozen = internal global i32 0         ; D-063: a trap happened; resume nothing
+
+; The FUTEX word the thread sleeps on. Nothing ever wakes it in a
+; single-threaded program — the timeout is the wake — but the wait is a real
+; FUTEX_WAIT_BITSET so a cross-thread wake (1.1.9) needs no new mechanism.
+@npk_park_word = internal global i32 0
+
+define void @npk_park_until(i64 %at) {
+entry:
+  store i64 %at, ptr @npk_park_at
+  store i32 1, ptr @npk_park_pending
+  ret void
+}
+
+define i64 @npk_park_take() {
+entry:
+  %p = load i32, ptr @npk_park_pending
+  %none = icmp eq i32 %p, 0
+  br i1 %none, label %no, label %yes
+yes:
+  store i32 0, ptr @npk_park_pending
+  %at = load i64, ptr @npk_park_at
+  ret i64 %at
+no:
+  ret i64 0
+}
+
+; A woken task's wind-up word, noted at the wake (D-177). The setter and the
+; unwinding it triggers land with the join deadline (1.1.8 stage C); today
+; this records that the poll HAPPENED, which is what keeps the emitted poll
+; from being dead code the optimiser may delete.
+@npk_windup_seen = internal global i32 0
+define void @npk_windup_note(i32 %w) {
+entry:
+  store i32 %w, ptr @npk_windup_seen
+  ret void
+}
+
+define i32 @npk_frozen_get() {
+entry:
+  %f = load i32, ptr @npk_frozen
+  ret i32 %f
+}
+
+; SLEEP UNTIL AN ABSOLUTE MONOTONIC TIMEPOINT (D-176 rule 4): the kernel owns
+; the arithmetic, so a wake-and-repark loop cannot accumulate drift.
+;
+; THE OP WORD IS 9|128 = 137: FUTEX_WAIT_BITSET (9) | FUTEX_PRIVATE_FLAG
+; (128). CLOCK_MONOTONIC is the DEFAULT for WAIT_BITSET and
+; FUTEX_CLOCK_REALTIME (256) is the opt-in — the first cut used 265, which
+; read a monotonic timepoint as a realtime one, put every deadline in 1970,
+; and returned instantly. The first sleeping program caught it.
+define void @npk_park_sleep(i64 %at) {
+entry:
+  %ts = alloca [2 x i64], align 16
+  %sec = sdiv i64 %at, 1000000000
+  %rem = srem i64 %at, 1000000000
+  %sp = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 %sec, ptr %sp
+  %np = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 %rem, ptr %np
+  %tp = ptrtoint ptr %ts to i64
+  %wp = ptrtoint ptr @npk_park_word to i64
+  ; futex(word, FUTEX_WAIT_BITSET|PRIVATE, expected 0, &abs_timeout, NULL, ~0)
+  %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 137, i64 0, i64 %tp,
+                          i64 0, i64 -1)
+  ret void
+}
+
 ; --- the monotonic clock (D-176, 1.1.3) ------------------------------------
 ; CLOCK_MONOTONIC nanoseconds since an arbitrary epoch -- the deadline
 ; substrate's one clock. Wall clocks are excluded from the deadline path:
@@ -248,6 +332,11 @@ declare i32 @npk_failsafe(i32)
 @npk_chain_n = internal global i32 0
 
 define void @npk_trap(i32 %code) noreturn {
+  ; D-063: A TRAP IS A WHOLE-PROGRAM EVENT. From here no coroutine is resumed
+  ; on any thread — the run loop checks this before every resume, so a trap
+  ; inside a task cannot be followed by a sibling running against unknown
+  ; state. Frames freeze exactly as they are; nothing is destroyed.
+  store i32 1, ptr @npk_frozen
   ; CHAIN-NEUTRAL (D-179): `?!` pushes its site and hands over an error whose
   ; chain must survive; guards and the runtime's own callers reset first.
   %in = load i32, ptr @npk_in_failsafe

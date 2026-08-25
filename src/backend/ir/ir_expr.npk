@@ -2414,8 +2414,40 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           ExprNode:cnode, int32:start, int32:count) never fails {
     string:name = raw intern_get(x.interns, cnode.payload =>! int32);
 
+    // THE SUSPENSION PRIMITIVE (D-071, 1.1.8). `suspend_until(at)` is the
+    // bottom of the waiting stack — every blocking operation in the language
+    // is built from it, which is what makes "blocking is always task
+    // suspension" true rather than aspirational. It lowers INLINE, because
+    // suspending is not something a called function can do for you: the park
+    // request goes to the executor, the state word advances to a fresh
+    // segment, and the machine returns SUSPENDED. On resume the switch lands
+    // at that segment and execution continues past the call.
+    if (raw string_eq(name, "suspend_until")) {
+        if (!x.fe.is_async) { pass (raw iv_broken(n.span)); }
+        IrVal:pa = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(pa))) { pass pa; }
+        drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ",
+                          pa.ref, ")"));
+        string:psg = raw fnem_new_seg(x.fe);
+        int32:pk = raw fnem_seg_index(x.fe);
+        drop irw_line(x.fe.w, raw cat5("store i32 ",
+                          raw int_to_string(pk => int64), ", ptr ",
+                          x.fe.state_gep, ""));
+        drop irw_line(x.fe.w, "ret i8 1");
+        x.fe.terminated = true;
+        drop s_start(x, psg);
+        // The wind-up poll every resume segment owes (D-177): a task woken to
+        // be wound up learns it here, at the first instruction after waking.
+        string:pw = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(pw, " = load i32, ptr ",
+                          x.fe.windup_gep, ""));
+        drop irw_line(x.fe.w, raw cat3("call void @npk_windup_note(i32 ",
+                          pw, ")"));
+        pass (raw iv("i32", "0", 0i32));
+    }
+
     // THE SITE LOOKUPS (D-179, 1.1.6) call the per-program tables the origin
-    // chain's ids index — emitted by `emit_site_tables`, bounds-checked there.
+    // chain's ids index — emitted by `emit_site_tables`, bounded-checked there.
     if (raw string_eq(name, "site_line")) {
         IrVal:sa = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (!(raw iv_is_ok(sa))) { pass sa; }

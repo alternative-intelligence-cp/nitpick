@@ -592,14 +592,42 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
     }
+    // THE RUN LOOP (D-071, 1.1.8): drive the task; when it suspends, take the
+    // park request it left and sleep the THREAD until that timepoint — with
+    // one task there is nothing else runnable, and parking is exactly what a
+    // blocking implementation would have done, minus the ability to stall a
+    // sibling. A suspension with NO request is a task nothing can ever wake:
+    // a defect, and a controlled stop (D-061). D-063's freeze is read before
+    // every resume — after a trap, no coroutine runs again anywhere.
+    drop irw_line(fe.w, "br label %loop");
+    drop irw_label(fe.w, "loop");
+    string:fz = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(fz, " = call i32 @npk_frozen_get()", ""));
+    string:fzb = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(fzb, " = icmp ne i32 ",
+                      raw string_concat(fz, ", 0")));
+    drop irw_line(fe.w, raw cat3("br i1 ", fzb,
+                      ", label %hang, label %step"));
+    drop irw_label(fe.w, "step");
     string:rc = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(rc, " = call i8 ", fe.resume_sym,
                       "(ptr ", raw string_concat(fr, ")")));
     string:dn = raw irw_temp(fe.w);
-    drop irw_line(fe.w, raw cat3(dn, " = icmp eq i8 ", 
+    drop irw_line(fe.w, raw cat3(dn, " = icmp eq i8 ",
                       raw string_concat(rc, ", 0")));
     drop irw_line(fe.w, raw cat3("br i1 ", dn,
-                      ", label %fin, label %hang"));
+                      ", label %fin, label %parked"));
+    drop irw_label(fe.w, "parked");
+    string:pat = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(pat, " = call i64 @npk_park_take()", ""));
+    string:pnone = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(pnone, " = icmp eq i64 ",
+                      raw string_concat(pat, ", 0")));
+    drop irw_line(fe.w, raw cat3("br i1 ", pnone,
+                      ", label %hang, label %sleep"));
+    drop irw_label(fe.w, "sleep");
+    drop irw_line(fe.w, raw cat3("call void @npk_park_sleep(i64 ", pat, ")"));
+    drop irw_line(fe.w, "br label %loop");
     drop irw_label(fe.w, "hang");
     drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       raw int_to_string(fe.fn_site => int64), ")"));
