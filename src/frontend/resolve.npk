@@ -57,13 +57,31 @@ pub struct:Resolver = {
     // and this is the scope it reaches. Zero outside an expansion, which is
     // exactly when `#caller` is not a legal thing to have written.
     int32:caller_scope;
+
+    // D-179: whether the module being resolved IS the prelude (the pipeline
+    // sets it per module), the module's own name (for code derivation), and
+    // the registry of assigned codes for collision refusal. A user
+    // constant's code is the FNV hash of `module.Name`, truncated positive —
+    // derived from the declaration itself, so the seed and this compiler
+    // number identically without sharing a walk order, which is what keeps
+    // the stage-1/stage-2 fixpoint honest (D-078).
+    bool:in_prelude;
+    int32:module_name;
+    wild int32->:ecodes;
+    wild int32->:edecls;
+    int32:ecount;
+    int32:ecap;
 };
 
 pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                                   InternTable->:interns, DiagList->:diags) never fails {
     Resolver:r = Resolver{ ast: ast, tab: tab, interns: interns, diags: diags,
                            module_scope: 0i32, in_ensures: false,
-                           caller_scope: 0i32 };
+                           caller_scope: 0i32,
+                           in_prelude: false, module_name: 0i32,
+                           ecodes: (alloc(16i64 * 4i64)) =>! wild int32->,
+                           edecls: (alloc(16i64 * 4i64)) =>! wild int32->,
+                           ecount: 0i32, ecap: 16i32 };
     pass r;
 };
 
@@ -538,6 +556,40 @@ func:resolve_contract = NIL(Resolver->:r, VerifyId:id, int32:scope) never fails 
 
 // --- declarations ------------------------------------------------------------------------------
 
+// D-179: a user error constant's code, derived from the DECLARATION — the
+// FNV-1a of `module.Name`, truncated to a positive int32 (never 0, never
+// negative: the system domain owns the negatives). Derived, not counted, so
+// any compiler that can hash bytes numbers identically.
+// FNV-1a, restated here rather than imported: the prelude's `fnv_offset`/
+// `fnv_mix` serve USER derived hashes and reach programs through prelude
+// injection — which the seed does not perform on the compiler's own source.
+// D-123 specifies the combiner precisely so two spellings cannot drift.
+func:err_fnv_seed = uint64() never fails {
+    pass ((3421887204u64 << 32u64) | 2216829733u64);
+};
+
+func:err_fnv_step = uint64(uint64:h, uint64:v) never fails {
+    pass ((h ^ v) * 1099511628211u64);
+};
+
+func:err_fnv_str = uint64(string:sv, uint64:h0) never fails {
+    uint64:h = h0;
+    int64:i = 0i64;
+    while (i < sv.len) {
+        h = raw err_fnv_step(h, (sv.ptr[i] =>! uint64) & 255u64);
+        i = i + 1i64;
+    }
+    pass h;
+};
+
+func:error_code_of = int32(Resolver->:r, int32:mod_name, int32:decl_nm) never fails {
+    uint64:h = raw err_fnv_str(raw intern_get(r.interns, mod_name),
+                               raw err_fnv_seed());
+    h = raw err_fnv_step(h, 46u64);
+    h = raw err_fnv_str(raw intern_get(r.interns, decl_nm), h);
+    pass (((h & 1073741822u64) =>! int32) + 1i32);
+};
+
 pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
     DeclNode:d = raw ast_decl(r.ast, id);
 
@@ -581,6 +633,57 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
 
     if (d.kind == DeclKind.DeclGlobalDecl) {
         drop resolve_expr(r, raw global_init(d), scope);
+        pass NIL;
+    }
+
+    // `error:Name;` (D-179): assign the constant's code. The prelude's
+    // system family carries explicit D-142 magnitudes and the SYSTEM domain
+    // owns the sign (stored negated — an encoding detail, not a user-facing
+    // convention); user constants take the next positive number, in
+    // module-graph order, so the same program always numbers the same way.
+    if (d.kind == DeclKind.DeclErrorDecl) {
+        if (d.b != 0i32) {
+            if (!r.in_prelude) {
+                drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
+                    "an explicit error code is the prelude's alone (D-179): a user error constant's code is the compiler's to assign — write `error:Name;`",
+                    d.span));
+                pass NIL;
+            }
+            ExprNode:cn = raw ast_expr(r.ast, ExprId{ index: d.b });
+            if (cn.kind != ExprKind.ExprIntLiteral) {
+                drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
+                    "an error code is a bare integer literal (D-179): a computed code would be an identity decided at runtime",
+                    cn.span));
+                pass NIL;
+            }
+            drop ast_set_error_code(r.ast, id, 0i32 - (cn.payload =>! int32));
+            pass NIL;
+        }
+        int32:code = raw error_code_of(r, r.module_name, raw decl_name(d));
+        int32:ei = 0i32;
+        while (ei < r.ecount) {
+            if (r.ecodes[ei => int64] == code) {
+                if (r.edecls[ei => int64] != id.index) {
+                    drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
+                        "two error constants derive the same code (D-179, an FNV collision): rename one — identity must be unambiguous",
+                        d.span));
+                    pass NIL;
+                }
+            }
+            ei = ei + 1i32;
+        }
+        if (r.ecount >= r.ecap) {
+            int64:ncap = (r.ecap => int64) * 2i64;
+            wild int8->:na = ralloc(r.ecodes =>! wild int8->, ncap * 4i64);
+            wild int8->:nb = ralloc(r.edecls =>! wild int8->, ncap * 4i64);
+            r.ecodes = na =>! wild int32->;
+            r.edecls = nb =>! wild int32->;
+            r.ecap = ncap =>! int32;
+        }
+        r.ecodes[r.ecount => int64] = code;
+        r.edecls[r.ecount => int64] = id.index;
+        r.ecount = r.ecount + 1i32;
+        drop ast_set_error_code(r.ast, id, code);
         pass NIL;
     }
 
@@ -701,6 +804,7 @@ func:resolve_members = NIL(Resolver->:r, DeclNode:d, int32:scope) never fails {
 pub func:resolve_module = NIL(Resolver->:r, DeclId:mod_id, int32:scope) never fails {
     r.module_scope = scope;
     DeclNode:m = raw ast_decl(r.ast, mod_id);
+    r.module_name = raw decl_name(m);
     drop resolve_members(r, m, scope);
     pass NIL;
 };

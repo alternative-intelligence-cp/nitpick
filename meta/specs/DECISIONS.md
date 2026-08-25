@@ -12071,8 +12071,12 @@ runtime's hardcoded values are the stability constraint); user code cannot
 declare into it, which turns the old "negative = system, positive = user"
 convention into a compiler-enforced fact — the sign is now an encoding
 detail, not a user-facing rule. User constants get compiler-assigned
-positive codes, deterministically (module-graph order), per program —
-codes are identity within one build, not an ABI across programs.
+positive codes DERIVED FROM THE DECLARATION — the FNV-1a of `module.Name`,
+truncated positive; a collision refuses loudly at resolve. (Amended during
+1.1.5-A from "module-graph order": the seed and stage 1 must number
+identically for the fixpoint to hold, and a derived code needs no shared
+walk order to agree on.) Codes are identity within one build, not an ABI
+across programs.
 
 ### The origin chain
 

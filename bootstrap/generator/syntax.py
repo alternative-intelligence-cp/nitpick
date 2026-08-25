@@ -69,6 +69,7 @@ EnumVariant = _mk("EnumVariant", "name", "payload", "value")
 TraitDecl   = _mk("TraitDecl", "name", "visibility", "items")     # outside subset 1
 ImplDecl    = _mk("ImplDecl", "trait_name", "type_name", "items")  # outside subset 1
 GlobalDecl  = _mk("GlobalDecl", "name", "visibility", "quals", "type", "init")
+ErrorDecl   = _mk("ErrorDecl", "name", "code")   # D-179: code expr or None
 
 # --- statements --------------------------------------------------------------
 

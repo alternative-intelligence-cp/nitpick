@@ -103,6 +103,7 @@ pub func:TY_SHARED_ARENA = int32() never fails { pass 28i32; };  // a = element 
 // zero-sized here and a rung at lowering — anything that reaches emission
 // carrying one has escaped its substitution.
 pub func:TY_ASSOC = int32() never fails { pass 29i32; };  // a = trait decl, b = name
+pub func:TY_ERROR = int32() never fails { pass 30i32; };  // D-179: a nominal non-number over 4 bytes
 
 pub struct:Type = {
     int32:kind;
@@ -127,6 +128,7 @@ pub struct:TypeTable = {
     int32:t_cstring;
     int32:t_any;
     int32:t_tbb32;
+    int32:t_error;   // D-179: the one Error type — every Result's error half
 
     // The layout-recorded pointer-bearing bits, parallel to `items` — see
     // `tt_set_haspt` for why this is not a `Type` slot.
@@ -713,7 +715,7 @@ pub func:typetable_init = TypeTable() never fails {
     TypeTable:t = TypeTable{
         items: mem =>! wild Type->, count: 0i32, cap: 64i32,
         t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
-        t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32,
+        t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32, t_error: 0i32,
         haspt: hmem =>! wild int32->
     };
 
@@ -741,6 +743,11 @@ pub func:typetable_init = TypeTable() never fails {
     t.t_any = raw tt_intern(@t, raw TY_ANY(), 0i32, 0i32, 0i32, 8i64, 8i32, 0i32);
 
     t.t_tbb32 = raw tt_tbb(@t, 32i32);
+
+    // `Error` (D-179): four bytes that are NOT a number — the `bool`/`char`
+    // doctrine applied to failure identity. No arithmetic, no ordering, no
+    // casts; equality and `pick`; values only by naming a declared constant.
+    t.t_error = raw tt_intern(@t, raw TY_ERROR(), 0i32, 0i32, 0i32, 4i64, 4i32, 0i32);
     pass t;
 };
 

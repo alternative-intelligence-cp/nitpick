@@ -23,3 +23,11 @@ pub func:RESOLVE_SHADOWED = string() never fails    { pass "NITPICK-RESOLVE-008"
 // layout, guessed wrong, and produced a wrong answer in silence. A code here
 // means the failure has a name and a test can assert it never fires.
 pub func:RESOLVE_INTERNAL = string() never fails    { pass "NITPICK-RESOLVE-009"; };
+
+// D-179: the `error:` declaration's two form rules. An explicit code
+// (`error:Name = 4102i32;`) is the PRELUDE's alone — the system domain and
+// its fixed D-142 values live there, and a user program's constants are
+// numbered by the compiler, deterministically, so identity can never be
+// forged or collide. And the code, where it may appear, is a bare integer
+// literal — a computed code would be an identity decided at runtime.
+pub func:RESOLVE_ERROR_DECL = string() never fails  { pass "NITPICK-RESOLVE-010"; };

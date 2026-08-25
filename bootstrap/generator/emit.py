@@ -673,6 +673,9 @@ class Emitter:
             return self.string_lit(e.value)
 
         if isinstance(e, S.Ident):
+            # D-179: a declared error constant lowers inline as its code.
+            if e.name in self.ck.p.errconsts:
+                return Val("i32", str(self.ck.p.errconsts[e.name]), T.TBB32)
             slot, ty = self.lookup(e.name, e)
             r = self.tmp()
             self.w("%s = load %s, ptr %s" % (r, T.llvm(ty), slot))

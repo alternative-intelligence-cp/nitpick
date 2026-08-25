@@ -1362,6 +1362,11 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
             TypeId:ty = TypeId{ index: dnode.a };
             pass (raw resolve_type(@r, ty, e.scope));
         }
+        // A DECLARED ERROR CONSTANT IS A VALUE OF TYPE `Error` (D-179) — the
+        // only way such a value comes to exist.
+        if (dnode.kind == DeclKind.DeclErrorDecl) {
+            pass e.types.t_error;
+        }
         // `<comptime int32:LEVEL>` IS A VALUE, and `pass LEVEL;` reads it as one.
         // Its type is the one the parameter declares — that is the whole content
         // of `comptime int32:LEVEL`, and the reason a value parameter carries a

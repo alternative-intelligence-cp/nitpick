@@ -163,6 +163,8 @@ class Parser:
             return self.parse_trait(start, vis)
         if self.at("impl"):
             return self.parse_impl(start)
+        if self.at("error"):
+            return self.parse_errdecl(start)
         if self.peek().text in MEMORY_QUALS or self.at_kind(IDENT) or self.at_kind(KEYWORD):
             return self.parse_global(start, vis)
 
@@ -388,6 +390,18 @@ class Parser:
         self.expect("}")
         self.expect(";")
         return S.ImplDecl(trait_name, type_name, items)._at(start)
+
+    def parse_errdecl(self, start):
+        # `error:Name;` / `error:Name = 4102i32;` (D-179). The seed carries
+        # the optional code literal through; the checker derives the rest.
+        self.expect("error")
+        self.expect(":")
+        name = self.expect_ident().text
+        code = None
+        if self.accept("="):
+            code = self.parse_expr()
+        self.expect(";")
+        return S.ErrorDecl(name, code)._at(start)
 
     def parse_global(self, start, vis):
         quals = []

@@ -439,6 +439,12 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fail
     // different type from the one written. Found while a two-trait `dyn` in a
     // long test file reported both of its perfectly good traits as "not a trait".
     if (!(raw type_name_is_builtin(n))) {
+        // `Error` (D-179) is compiler-known and declares no decl — resolved by
+        // name here, ahead of the user lookup, the way a builtin is: the type
+        // exists in every scope and cannot be shadowed into meaning less.
+        if (raw string_eq(raw intern_get(r.interns, payload =>! int32), "Error")) {
+            pass r.types.t_error;
+        }
         pass (raw resolve_user_named(r, n, payload =>! int32, scope));
     }
 

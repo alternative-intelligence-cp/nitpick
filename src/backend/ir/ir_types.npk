@@ -397,6 +397,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // struct that was `i1` would be one bit of a byte LLVM still allocates, and
     // two compilers could disagree about which bit.
     if (k == (raw TY_BOOL()))     { pass (raw ll_ok("i8")); }
+    if (k == (raw TY_ERROR()))    { pass (raw ll_ok("i32")); }   // D-179: 4 bytes, not a number
 
     if (k == (raw TY_STRING()))   { pass (raw ll_ok("{ ptr, i64, i64 }")); }
 

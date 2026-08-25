@@ -300,6 +300,7 @@ pub func:tok_starts_decl = bool(TokenKind:k) never fails {
     if (k == TokenKind.KwAssoc)  { pass true; }
     if (k == TokenKind.KwExtern) { pass true; }
     if (k == TokenKind.KwOpaque) { pass true; }
+    if (k == TokenKind.KwError)  { pass true; }
     pass (k == TokenKind.KwUse);
 };
 
@@ -729,6 +730,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
     // extern block" from the semantic phase rather than "expected a declaration"
     // from the parser. The parser never restricts (D-085).
     if (k == TokenKind.KwOpaque) { pass (raw p_parse_opaque(p, sp, flags)); }
+    if (k == TokenKind.KwError)  { pass (raw p_parse_errdecl(p, sp, flags)); }
 
     pass (raw p_parse_global(p, sp, flags));
 };
@@ -1071,6 +1073,25 @@ func:p_parse_opaque = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclOpaqueDecl, sp,
                              flags, 0i32, 0i32, name.payload));
+};
+
+// `error:Name;` — one declared error constant (D-179). The Error type's
+// values exist only by naming one of these. The prelude form carries an
+// explicit code literal (`error:HeapIntegrity = 4102i32;` — the D-142
+// magnitude; the SYSTEM domain owns the sign as an encoding detail);
+// everywhere else the code is the compiler's to assign, and resolve refuses
+// the explicit form outside the prelude.
+func:p_parse_errdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
+    discard(raw p_expect(p, TokenKind.KwError));
+    discard(raw p_expect(p, TokenKind.PColon));
+    Token:name = raw p_advance(p);
+    int32:code = 0i32;
+    if (raw p_accept(p, TokenKind.OpAssign)) {
+        code = (raw p_parse_expr(p)).index;
+    }
+    discard(raw p_expect(p, TokenKind.PSemi));
+    pass (raw ast_add_decl(p.ast, DeclKind.DeclErrorDecl, sp,
+                             flags, code, 0i32, name.payload));
 };
 
 // `Rules<int32>:r = { $ > 0i32 };`

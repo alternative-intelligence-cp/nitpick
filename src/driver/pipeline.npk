@@ -241,6 +241,9 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
     while (i < (raw graph_count(@f.g))) {
         ModuleEntry:e = raw graph_at(@f.g, i);
         DeclId:mod_id = DeclId{ index: e.root };
+        // D-179: the prelude is where the system error family's explicit
+        // codes are legal — and nowhere else.
+        r.in_prelude = (i == f.g.prelude);
         drop resolve_module(@r, mod_id, e.scope);
         i = i + 1i32;
     }

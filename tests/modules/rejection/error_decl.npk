@@ -1,0 +1,17 @@
+// expect-error: NITPICK-RESOLVE-010
+// expect-error: NITPICK-RESOLVE-010
+//
+// D-179's two form rules for `error:` declarations. An explicit code is the
+// PRELUDE's alone — the system domain and its fixed D-142 values live
+// there, and a user constant's code is the compiler's to derive, so
+// identity can never be forged to collide with (or impersonate) the system
+// family. And where a code may appear at all, it is a bare integer
+// literal — a computed code would be an identity decided at runtime.
+mod:error_decl;
+
+error:Forged = 4102i32;
+
+error:Computed = 1i32 + 2i32;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

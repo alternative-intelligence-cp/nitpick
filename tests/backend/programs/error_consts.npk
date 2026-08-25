@@ -1,0 +1,32 @@
+// expect-exit: 42
+//
+// THE `Error` TYPE EXISTS (D-179, 1.1.5-A). `error:Name;` declares a
+// constant; its code is the FNV of `module.Name`, truncated positive —
+// derived from the declaration, so the seed and stage 1 number identically
+// and the fixpoint holds. `Error` is four bytes that are NOT a number: no
+// arithmetic, no ordering, no casts (all refused by the checker); equality
+// and `pick` are its whole operator surface, and a value exists only by
+// naming a constant. The system family (D-142's codes, named at last) is
+// declared by the prelude and visible everywhere, `DeadlineExceeded`
+// among them.
+mod:error_consts;
+
+error:Timeout;
+error:BadInput;
+
+func:codes = int32() {
+    Error:t = Timeout;
+    Error:b = BadInput;
+    if (t == b) { pass 1i32; }
+    Error:sys = DeadlineExceeded;
+    if (sys == Timeout) { pass 3i32; }
+    if (t == Timeout) { pass 2i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = codes() ?| 9i32;
+    exit r * 21i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 99i32; };

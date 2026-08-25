@@ -947,6 +947,14 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                                  raw mangled_fn_sym(x.fe.ctx, fsym.origin, fnm),
                                  raw exprtypes_get(x.et, id)));
                 }
+                // A DECLARED ERROR CONSTANT IS ITS ASSIGNED CODE (D-179):
+                // resolve wrote it into slot `c`, and the constant lowers
+                // inline — no symbol, no load, four bytes that are not a
+                // number.
+                if (fdecl.kind == DeclKind.DeclErrorDecl) {
+                    pass (raw iv("i32", raw int_to_string(fdecl.c => int64),
+                                 raw exprtypes_get(x.et, id)));
+                }
                 // A MODULE-LEVEL BINDING IS LOADED FROM ITS GLOBAL (D-165,
                 // 1.0.9d): the value the constant/global holds, under D-156's
                 // symbol — the same one `emit_one_global` wrote.

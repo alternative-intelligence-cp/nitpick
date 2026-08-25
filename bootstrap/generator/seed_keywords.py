@@ -50,6 +50,7 @@ KEYWORDS = {
     "end",
     "ensures",
     "enum",
+    "error",
     "exit",
     "extern",
     "fail",

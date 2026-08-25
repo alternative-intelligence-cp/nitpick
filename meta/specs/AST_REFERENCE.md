@@ -154,6 +154,7 @@ misread by ignoring a field undoes it.
 | Node | Fields |
 |---|---|
 | `AssocTypeDecl` | `name`, `default: TypeNode?` — **`assoc:Item;`** (D-028) |
+| `ErrorDecl` | `name`, `code: Expr?` — **`error:Name;`** (D-179): one declared error constant. The explicit-code form (`error:Name = 4102i32;`) is the prelude's alone; slot `c` carries the ASSIGNED code once resolve derives it |
 
 > **`TraitMethod` is removed. A method in a trait body is an ordinary
 > `FunctionDecl`.** It was specified as `{ signature: FunctionDecl, default_body:

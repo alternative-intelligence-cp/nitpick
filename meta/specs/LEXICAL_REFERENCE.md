@@ -73,7 +73,7 @@ AsyncKeyword        ::= "async" | "await"
 ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
                       | "comptime" | "inline" | "noinline" | "macro" | "derive"
 
-TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque"
+TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque" | "error"
                       | "trait" | "impl" | "Self"
                       | "Rules" | "limit" | "const" | "fixed" | BuiltinType
 

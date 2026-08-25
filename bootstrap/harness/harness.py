@@ -992,6 +992,7 @@ KIND_STATUS = {
     "DeclFailsOn": "inert: an FFI contract; consumed with extern (FFI rung)",
     "DeclNeverFails": "inert: an FFI contract; consumed with extern (FFI rung)",
     "DeclAttribute": "inert: read by the passes it decorates, never emitted",
+    "DeclErrorDecl": "lowered",  # D-179: ident references emit the assigned code inline
 }
 
 # THE ATTRIBUTE CARRIERS THE BACKEND MUST KEEP READING. LIVE-1 happened because

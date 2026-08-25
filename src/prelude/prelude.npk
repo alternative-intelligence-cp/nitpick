@@ -210,3 +210,20 @@ pub func:duration_ms = Duration(int64:ms) never fails {
 pub func:duration_secs = Duration(int64:s) never fails {
     pass Duration{ ns: s * 1000000000i64 };
 };
+
+// --- the system error family (D-179) -----------------------------------------------
+//
+// D-142's table as DECLARATIONS — the same fixed codes npkrt.ll hardcodes
+// (its values are the stability constraint), now named. The explicit-code
+// form is legal here and nowhere else: the SYSTEM domain is exactly what the
+// prelude declares, its sign an encoding detail the compiler owns (stored
+// negated). User programs name these in `failsafe` picks; they cannot
+// declare into the family, so identity can never be forged.
+pub error:TbbErr = 4100i32;            // ERR at a bare comparison / checked cast out of tbb (D-008 s5, D-144)
+pub error:BadStep = 4101i32;           // a counted loop's step was not positive at runtime (D-142)
+pub error:Unreachable = 4102i32;       // #unreachable() reached, and the runtime's integrity defects (D-061, D-153)
+pub error:HeapOom = 4103i32;           // mmap failure — the allocation-free trap path (D-153)
+pub error:HeapBadRequest = 4104i32;    // negative size; count*size overflow (D-153)
+pub error:WildLeak = 4105i32;          // a `wild` allocation outlived exit 0 (D-151)
+pub error:StaleHandle = 4106i32;       // an arena handle outlived its slot's generation (D-152)
+pub error:DeadlineExceeded = 4107i32;  // time ran out (D-176): the Result error AND the join's trap

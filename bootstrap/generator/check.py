@@ -22,6 +22,8 @@ first line -- parsing a safety annotation and ignoring it is the worse option.
 
 import syntax as S
 import ntypes as T
+import os
+
 import diag
 
 
@@ -104,6 +106,7 @@ class Program:
         self.enums = {}          # name -> {variant: (index, payload Type or None)}
         self.funcs = {}          # name -> FuncDecl
         self.globals = {}        # name -> Type
+        self.errconsts = {}      # name -> assigned code (D-179)
         self.modules = []
         self.result_types = []   # every Result<T> instantiated, in first-seen order
 
@@ -120,6 +123,10 @@ class Checker:
         T.reset_enums()
         self.p.modules = modules
         for m in modules:
+            # The module name is the basename — the language requires the
+            # `mod:` line to match it (NITPICK-RESOLVE-005), so this is the
+            # same name the real resolver hashes for D-179 error codes.
+            self.cur_module = os.path.splitext(os.path.basename(m.path))[0]
             for item in m.items:
                 self._collect(item)
         for m in modules:
@@ -203,6 +210,21 @@ class Checker:
 
         if isinstance(item, S.GlobalDecl):
             self.p.globals[item.name] = self.resolve_type(item.type)
+            return
+
+        if isinstance(item, S.ErrorDecl):
+            # D-179: the same derivation the real resolver makes — explicit
+            # prelude codes negate their literal; user codes are the FNV-1a
+            # of `module.Name` truncated positive. DERIVED, not counted, so
+            # the seed and stage 1 number identically (the fixpoint's
+            # requirement).
+            if item.code is not None:
+                self.p.errconsts[item.name] = -int(item.code.value)
+            else:
+                h = 0xCBF29CE484222325
+                for b in ("%s.%s" % (self.cur_module, item.name)).encode():
+                    h = ((h ^ b) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+                self.p.errconsts[item.name] = (h & 1073741822) + 1
             return
 
         raise CheckError("unsupported top-level item %s" % type(item).__name__, item)
@@ -633,6 +655,8 @@ class Checker:
                 return found[0]
             if e.name in self.p.globals:
                 return self.p.globals[e.name]
+            if e.name in self.p.errconsts:
+                return T.TBB32   # lax by design; the real checker types Error
             return None
         if isinstance(e, S.Builtin):
             return T.I64
