@@ -21,7 +21,17 @@ func:main = int32(cstring[]:argv) {
     int32:d = half(0i32 - 1i32) ?! E77;
     exit (d - d);
 };
-func:failsafe = int32(Error:err) {
-    if (err == E77) { exit 26i32; }
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E77) { exit 26i32; },
+        (DivByZero) { exit 9i32; },
+        (DivOverflow) { exit 9i32; },
+        (E5) { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
     exit 9i32;
 };

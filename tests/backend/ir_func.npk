@@ -189,4 +189,26 @@ func:main = int32(cstring[]:_~argv) {
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the
 // program's `failsafe`, so every executable must define one — D-013 was always
 // the rule; the linker now enforces it mechanically.
-func:failsafe = int32(Error:_~err) { exit 1i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (BoundsBound) { exit 1i32; },
+        (BoundsId) { exit 1i32; },
+        (BoundsImpl) { exit 1i32; },
+        (BoundsIndex) { exit 1i32; },
+        (BoundsOffset) { exit 1i32; },
+        (BoundsScratch) { exit 1i32; },
+        (BoundsWindow) { exit 1i32; },
+        (DeadlineExceeded) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (FileUnknown) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (ProvenSlice) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

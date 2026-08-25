@@ -30,6 +30,15 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 7i32; },
+        (E19) { exit 7i32; },
+        (HeapBadRequest) { exit 7i32; },
+        (HeapOom) { exit 7i32; },
+        (Unreachable) { exit 7i32; },
+        (WildLeak) { exit 7i32; },
+        (*) { exit 7i32; }
+    }
     exit 7i32;
 };

@@ -94,6 +94,23 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
-    exit 1i32;
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
+    exit 3i32;
 };

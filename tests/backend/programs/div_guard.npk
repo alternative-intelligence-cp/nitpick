@@ -13,7 +13,15 @@ func:main = int32(cstring[]:argv) {
     exit q;
 };
 
-func:failsafe = int32(Error:err) {
-    if (err == DivByZero) { exit 21i32; }
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
     exit 9i32;
 };

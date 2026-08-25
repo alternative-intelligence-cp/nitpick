@@ -12111,6 +12111,22 @@ permitted and counts for nothing** — the compile-time force (a new failure
 mode anywhere breaks the build until every failsafe names it) and the
 defensive runtime floor beneath the proof, both.
 
+### Amendments from 1.1.7's build
+
+**Error declarations are implicitly `pub`.** An error's identity crosses
+every boundary a `Result` can, and `failsafe` must be able to NAME whatever
+can reach it — a private identity that still arrives would be unhandleable
+by construction. **Cross-module references use the qualified spelling**
+(`ast.BoundsId`) — in `failsafe` arms and anywhere else — and the
+reachability refusals print it, so the fix is always a paste. Two error
+constants sharing a bare name across modules is NOT warned as a wildcard
+clash (identity is module-qualified by construction; a module's own sites
+bind locally), which keeps the per-module defect vocabulary — the pattern
+the design encourages — quiet. And the conditional system detectors walk
+USER modules only: a program reaches the prelude's guard-bearing internals
+only through machinery its own text must contain, and those trip the
+detectors where they appear.
+
 ### What stays out (decided, not deferred)
 
 Error PAYLOADS (context data beyond identity + chain) — they are where

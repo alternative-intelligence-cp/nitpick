@@ -28,4 +28,13 @@ func:main = int32(cstring[]:_~argv) {
     exit (w =>! int32) + b.v;   // 8 + 5 = 13
 };
 
-func:failsafe = int32(Error:_~err) { exit 1i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

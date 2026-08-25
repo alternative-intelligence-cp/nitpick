@@ -442,8 +442,16 @@ class Emitter:
                 return "1" if e.value else "0"
             if isinstance(e, S.CharLit):
                 return str(ord(e.value))
+            # D-179: a declared error constant in pattern position is its code.
+            if isinstance(e, S.Ident) and e.name in self.ck.p.errconsts:
+                return str(self.ck.p.errconsts[e.name])
             raise EmitError("unsupported pick literal", pat)
         if isinstance(pat, S.VariantPat):
+            # D-179: `(module.Name)` naming an error constant is its code.
+            joined = ".".join(pat.path) if isinstance(pat.path, (list, tuple)) else str(pat.path)
+            if joined in self.ck.p.errconsts:
+                return str(self.ck.p.errconsts[joined])
+
             ename, vname = pat.path
             return str(self.p.enums[ename][vname][0])
         raise EmitError("unsupported pattern", pat)

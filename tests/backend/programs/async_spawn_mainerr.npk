@@ -17,4 +17,15 @@ async func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~e) { exit 33i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ChildBoom) { exit 33i32; },
+        (DeadlineExceeded) { exit 33i32; },
+        (HeapBadRequest) { exit 33i32; },
+        (HeapOom) { exit 33i32; },
+        (Unreachable) { exit 33i32; },
+        (WildLeak) { exit 33i32; },
+        (*) { exit 33i32; }
+    }
+    exit 33i32;
+};

@@ -11,7 +11,13 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:err) {
-    if (err == HeapBadRequest) { exit 26i32; }
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 26i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
     exit 9i32;
 };

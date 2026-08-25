@@ -110,7 +110,15 @@ class Program:
         self.enums = {}          # name -> {variant: (index, payload Type or None)}
         self.funcs = {}          # name -> FuncDecl
         self.globals = {}        # name -> Type
-        self.errconsts = {}      # name -> assigned code (D-179)
+        # name -> assigned code (D-179); bare last-wins AND "module.Name"
+        # qualified keys both stored. Seeded with the prelude's SYSTEM family
+        # (the D-142 codes) because the seed never compiles the prelude file.
+        self.errconsts = {
+            "IoEof": -4096, "DivByZero": -4097, "DivOverflow": -4098,
+            "OutOfBounds": -4099, "TbbErr": -4100, "BadStep": -4101,
+            "Unreachable": -4102, "HeapOom": -4103, "HeapBadRequest": -4104,
+            "WildLeak": -4105, "StaleHandle": -4106, "DeadlineExceeded": -4107,
+        }
         self.modules = []
         self.result_types = []   # every Result<T> instantiated, in first-seen order
 
@@ -223,12 +231,14 @@ class Checker:
             # the seed and stage 1 number identically (the fixpoint's
             # requirement).
             if item.code is not None:
-                self.p.errconsts[item.name] = -int(item.code.value)
+                code = -int(item.code.value)
             else:
                 h = 0xCBF29CE484222325
                 for b in ("%s.%s" % (self.cur_module, item.name)).encode():
                     h = ((h ^ b) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
-                self.p.errconsts[item.name] = (h & 1073741822) + 1
+                code = (h & 1073741822) + 1
+            self.p.errconsts[item.name] = code
+            self.p.errconsts["%s.%s" % (self.cur_module, item.name)] = code
             return
 
         raise CheckError("unsupported top-level item %s" % type(item).__name__, item)
@@ -442,6 +452,10 @@ class Checker:
             if len(pat.path) != 2:
                 raise CheckError("expected Enum.Variant in a pick pattern", pat)
             ename, vname = pat.path
+            # D-179: `(module.Name)` naming an error constant is a value
+            # pattern, not an enum path.
+            if "%s.%s" % (ename, vname) in self.p.errconsts:
+                return
             variants = self.p.enums.get(ename)
             if variants is None:
                 raise CheckError("unknown enum %r" % ename, pat)

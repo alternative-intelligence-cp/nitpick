@@ -897,7 +897,26 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                     if (clash != 0i32) {
                         prior_import = raw symbol_is_imported(raw symtab_get(@g.tab, clash));
                     }
-                    if (prior_import) {
+                    // TWO ERROR CONSTANTS SHARING A NAME ARE NOT A CLASH WORTH
+                    // A WARNING (D-179): identity is module-qualified by
+                    // construction (the code is the hash of `module.Name`), a
+                    // module's own sites bind its local constant, and a
+                    // `failsafe` arm reaching across modules writes the
+                    // qualified spelling. Warning here would fire on every
+                    // multi-module error vocabulary — the exact naming pattern
+                    // the design encourages.
+                    bool:err_pair = false;
+                    if (clash != 0i32) {
+                        Symbol:cs2 = raw symtab_get(@g.tab, clash);
+                        if ((raw ast_decl(@g.ast, DeclId{ index: cs2.origin })).kind
+                                == DeclKind.DeclErrorDecl) {
+                            if ((raw ast_decl(@g.ast, DeclId{ index: s.origin })).kind
+                                    == DeclKind.DeclErrorDecl) {
+                                err_pair = true;
+                            }
+                        }
+                    }
+                    if (prior_import) { if (!err_pair) {
                         string:i2 = raw string_concat(m1,
                             "` is exported by an earlier import and also by `");
                         string:i3 = raw string_concat(i2, target);
@@ -905,7 +924,7 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                             raw diag_warning(raw RESOLVE_SHADOWED(),
                                 raw string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
                                 at));
-                    } else {
+                    } } else { if (!err_pair) {
                     string:m2 = raw string_concat(m1,
                         "` is declared in this file and also exported by `");
                     string:m3 = raw string_concat(m2, target);
@@ -919,7 +938,7 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                                 raw string_concat(m1, "` is declared here"),
                                 raw symbol_span(@g.ast, @g.tab, clash)));
                     }
-                    }
+                    } }
                     }
                 }
             }

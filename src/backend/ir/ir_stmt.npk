@@ -982,7 +982,43 @@ func:pk_named = string(int32:seq, string:stem) never fails {
 };
 
 // The integer constant an arm matches, as text — or a refusal.
+func:pat_err_fnv = uint64(string:sv, uint64:h0) never fails {
+    uint64:h = h0;
+    int64:i = 0i64;
+    while (i < sv.len) {
+        h = ((h ^ ((sv.ptr[i] =>! uint64) & 255u64)) * 1099511628211u64);
+        i = i + 1i64;
+    }
+    pass h;
+};
+
 func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) never fails {
+    // `(module.Name)` OVER AN `Error` SELECTOR (D-179): a two-segment,
+    // bind-free "destructure" is the qualified spelling of an error
+    // constant — segment 0 names the module, segment 1 the constant, and
+    // the match value is its assigned code.
+    if (pn.kind == PatKind.PatEnumDestructure) {
+        if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_ERROR())) {
+            if ((raw pat_enum_segment_count(x.ast, pn)) == 2i32) {
+                if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) {
+                    // THE CODE IS THE HASH (D-179): a user constant's value
+                    // is derived from `module.Name`, so the qualified
+                    // pattern needs no lookup and no import — the same
+                    // FNV-1a the resolver and the seed compute, restated a
+                    // third time under D-123's no-drift discipline.
+                    uint64:h = raw pat_err_fnv(raw intern_get(x.interns,
+                                   raw pat_enum_segment(x.ast, pn, 0i32)),
+                                   ((3421887204u64 << 32u64) | 2216829733u64));
+                    h = ((h ^ 46u64) * 1099511628211u64);
+                    h = raw pat_err_fnv(raw intern_get(x.interns,
+                            raw pat_enum_segment(x.ast, pn, 1i32)), h);
+                    int32:pcode = ((h & 1073741822u64) =>! int32) + 1i32;
+                    pass (raw iv("", raw int_to_string(pcode => int64), 0i32));
+                }
+            }
+            pass (raw iv_broken(at));
+        }
+    }
     if (pn.kind == PatKind.PatValue) {
         ExprNode:vn = raw ast_expr(x.ast, raw pat_value(pn));
         if (vn.kind == ExprKind.ExprIntLiteral) {
@@ -994,6 +1030,19 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         }
         if (vn.kind == ExprKind.ExprCharLiteral) {
             pass (raw iv("", raw int_to_string(vn.payload), 0i32));
+        }
+        // A DECLARED ERROR CONSTANT is a compile-time integer too (D-179):
+        // its assigned code, from the slot resolve wrote.
+        if (vn.kind == ExprKind.ExprIdentifierExpr) {
+            if (vn.a != 0i32) {
+                Symbol:pes = raw symtab_get(x.tab, vn.a);
+                if (pes.origin_kind == (raw SYM_DECL())) {
+                    DeclNode:ped = raw ast_decl(x.ast, DeclId{ index: pes.origin });
+                    if (ped.kind == DeclKind.DeclErrorDecl) {
+                        pass (raw iv("", raw int_to_string(ped.c => int64), 0i32));
+                    }
+                }
+            }
         }
         // `(Enum.Variant)` in pattern position — a tag, not a value to build.
         if (vn.kind == ExprKind.ExprMemberAccessExpr) {

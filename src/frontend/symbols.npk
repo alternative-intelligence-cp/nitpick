@@ -519,8 +519,16 @@ pub func:collect_decl = NIL(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     if (raw intern_is_none(name)) {
         pass NIL;
     }
+    int32:fbits = raw decl_flag_bits(d);
+    // AN ERROR CONSTANT IS IMPLICITLY PUBLIC (D-179): its identity crosses
+    // every boundary a `Result` can, and `failsafe` must be able to NAME
+    // whatever can reach it — a private identity that still arrives would be
+    // unhandleable by construction.
+    if (d.kind == DeclKind.DeclErrorDecl) {
+        fbits = fbits | (raw SYM_PUB());
+    }
     discard(raw symtab_declare(t, ast, diags, scope, name,
-                        raw SYM_DECL(), id.index, raw decl_flag_bits(d)));
+                        raw SYM_DECL(), id.index, fbits));
     pass NIL;
 };
 

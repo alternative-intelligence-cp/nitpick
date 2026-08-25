@@ -62,6 +62,7 @@ use "../frontend/analysis/bindings.npk".*;
 use "../frontend/analysis/exhaust.npk".*;
 use "../frontend/analysis/locks.npk".*;
 use "../frontend/analysis/suspend.npk".*;
+use "../frontend/analysis/reach.npk".*;
 
 // Every table the pipeline fills, owned by the caller for the caller's lifetime.
 pub struct:Front = {
@@ -406,6 +407,31 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
         drop suspend_module(@ssp, DeclId{ index: e9.root });
         s0 = s0 + 1i32;
     }
+
+    // REACHABLE ERRORS (D-179, 1.1.7): the program-wide set that can reach
+    // `failsafe`, and the named coverage its `pick` owes. Whole-program like
+    // the locks — one set, one failsafe, one verdict.
+    Reach:rch = raw reach_init(@f.g.ast, @f.g.tab, @f.it, @f.types, @f.ets, @f.diags);
+    if (f.g.prelude >= 0i32) {
+        ModuleEntry:rpe = raw graph_at(@f.g, f.g.prelude);
+        rch.prelude_scope = rpe.scope;
+    }
+    int32:rc0 = 0i32;
+    while (rc0 < (raw graph_count(@f.g))) {
+        // The PRELUDE is excluded from the detector walk: a program reaches
+        // its guard-bearing internals only through machinery the program's
+        // OWN text must contain (a tbb value, an index, a division), and
+        // those trip the detectors where they appear. Walking the prelude
+        // would make every conditional unconditional and the precision
+        // pointless.
+        if (rc0 != f.g.prelude) {
+            ModuleEntry:e10 = raw graph_at(@f.g, rc0);
+            drop reach_module(@rch, DeclId{ index: e10.root },
+                raw module_basename_intern(@f.g, e10.file, @f.it));
+        }
+        rc0 = rc0 + 1i32;
+    }
+    drop reach_settle(@rch);
 
     // LOCK LEVELS (D-056, D-113, 0.5.6) — the cycle's only whole-program analysis,
     // affordable because verification is whole-program anyway. Seed every declared

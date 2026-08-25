@@ -35,6 +35,16 @@ use "./backend/ir/ir_writer.npk".*;
 use "./backend/emit_program.npk".*;
 use "./frontend/resolve_type.npk".*;
 use "./frontend/types.npk".*;
+use "./frontend/ast.npk".*;
+use "./frontend/analysis/bindings.npk".*;
+use "./frontend/analysis/escape.npk".*;
+use "./frontend/expr_types.npk".*;
+use "./frontend/analysis/locks.npk".*;
+use "./frontend/module_graph.npk".*;
+use "./frontend/resolve_path.npk".*;
+use "./frontend/symbols.npk".*;
+use "./frontend/token.npk".*;
+use "./frontend/type_trait.npk".*;
 
 // EVERY DIAGNOSTIC THROUGH THE ONE RENDERER (1.0.8). This driver defined its
 // own `emit_line` until then — `CODE path:line:col`, the message dropped — and
@@ -168,8 +178,41 @@ func:main = int32(cstring[]:argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
-    // Reaching here is a defect in the COMPILER, not in the file being read. A
-    // distinct code so no harness ever reports it as the input's error.
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero) { exit 3i32; },
+        (DivOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (ast.BoundsId) { exit 3i32; },
+        (ast.BoundsScratch) { exit 3i32; },
+        (ast.BoundsWindow) { exit 3i32; },
+        (bindings.Rederived) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (escape.Rederived) { exit 3i32; },
+        (expr_types.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (locks.Rederived) { exit 3i32; },
+        (module_graph.BoundsIndex) { exit 3i32; },
+        (module_graph.ProvenSlice) { exit 3i32; },
+        (resolve_path.BoundsIndex) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (symbols.BoundsId) { exit 3i32; },
+        (token.BoundsId) { exit 3i32; },
+        (type_trait.BoundsBound) { exit 3i32; },
+        (type_trait.BoundsImpl) { exit 3i32; },
+        (types.BoundsId) { exit 3i32; },
+        (types.BoundsIndex) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
     exit 3i32;
 };

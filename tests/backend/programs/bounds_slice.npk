@@ -18,7 +18,14 @@ func:main = int32(cstring[]:argv) {
     exit v;
 };
 
-func:failsafe = int32(Error:err) {
-    if (err == OutOfBounds) { exit 23i32; }
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds) { exit 23i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
     exit 9i32;
 };

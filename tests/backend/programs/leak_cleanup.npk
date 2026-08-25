@@ -12,9 +12,17 @@ func:main = int32(cstring[]:_~argv) {
 };
 
 func:failsafe = int32(Error:err) {
-    if (err != WildLeak) { exit 9i32; }
-    drop wild_release_all();
-    int64:n = wild_live_count();
-    if (n != 0i64) { exit 8i32; }
-    exit 28i32;
+    pick (err) {
+        (WildLeak) {
+            drop wild_release_all();
+            int64:n = wild_live_count();
+            if (n != 0i64) { exit 8i32; }
+            exit 28i32;
+        },
+        (Unreachable)    { exit 9i32; },
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    exit 9i32;
 };

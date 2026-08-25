@@ -216,3 +216,11 @@ pub func:SUSPEND_INTERNAL = string() never fails { pass "NITPICK-SUSPEND-001"; }
 // second suspension in one statement is a second re-entry the first's
 // values cannot survive.
 pub func:SUSPEND_FIRST_EVAL = string() never fails { pass "NITPICK-SUSPEND-002"; };
+
+// --- the reachable-error analysis (D-179, 1.1.7) ---------------------------------
+//
+// The program-wide set of errors that can reach `failsafe`, and the rule
+// that its `pick` NAMES every member. `(*)` is permitted and counts for
+// nothing — the compile-time force and the defensive floor, both.
+pub func:REACH_NO_PICK = string() never fails  { pass "NITPICK-REACH-001"; };
+pub func:REACH_UNNAMED = string() never fails  { pass "NITPICK-REACH-002"; };

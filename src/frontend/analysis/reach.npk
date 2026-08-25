@@ -1,0 +1,525 @@
+// The reachable-error analysis (D-179, 1.1.7): which declared errors can
+// reach `failsafe`, and the exhaustiveness its `pick` owes them.
+//
+// THE SET IS CONSERVATIVE AND COMPUTED, never guessed: every constant named
+// at a `fail`, `?!` or `!!!` site anywhere in the program, plus the SYSTEM
+// constants whose raising machinery the program actually contains — the
+// heap/exit family unconditionally (allocation and the exit-time checks are
+// in every program's floor), division's two only where division or
+// remainder appears, `OutOfBounds` only where indexing or slicing does,
+// `TbbErr` only where a `tbb` type is touched, `BadStep` only where a
+// counted loop runs, `StaleHandle` only where arena verbs appear, and
+// `DeadlineExceeded` only where the deadline machinery can be reached.
+// Over-approximation is the safe direction: the walk may require an arm the
+// backend's emitted guards never fire, never the reverse.
+//
+// THE RULE: `failsafe`'s body contains a `pick` over its `Error` parameter,
+// and the pick's NAMED arms cover the set. `(*)` is permitted and counts
+// for nothing — exhaust's own rule still wants it as the floor beneath the
+// proof, so a conforming failsafe carries both the names and the wildcard.
+
+mod:reach;
+
+use "../source_location.npk".*;
+use "../token_kind.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../types.npk".*;
+use "../expr_types.npk".*;
+use "./analysis_codes.npk".*;
+
+pub func:REACH_DEPTH = int32() never fails { pass 256i32; };
+
+pub struct:Reach = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    InternTable->:interns;
+    TypeTable->:types;
+    ExprTypes->:ets;
+    DiagList->:diags;
+
+    // The set: declaration indices of reachable error constants, each with
+    // the intern of its owning module's name (for the QUALIFIED spelling the
+    // refusal prints and an arm may use).
+    wild int32->:rdecls;
+    wild int32->:rquals;
+    int32:rcount;
+    int32:rcap;
+
+    // The module currently being walked (its basename intern; the pipeline
+    // hands it in beside the root).
+    int32:cur_module;
+
+    // The conditional system machinery, observed during the walk.
+    bool:saw_div;
+    bool:saw_index;
+    bool:saw_tbb;
+    bool:saw_counted;
+    bool:saw_arena;
+    bool:saw_deadline;
+
+    // Where failsafe is, once found; and the prelude's own scope, where the
+    // system family's symbols live (the pipeline hands it in).
+    int32:failsafe_decl;
+    int32:prelude_scope;
+};
+
+pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
+                            TypeTable->:types, ExprTypes->:ets,
+                            DiagList->:diags) never fails {
+    wild int8->:a = alloc(32i64 * 4i64);
+    wild int8->:aq = alloc(32i64 * 4i64);
+    Reach:x = Reach{ ast: ast, tab: tab, interns: interns, types: types,
+                     ets: ets, diags: diags,
+                     rdecls: a =>! wild int32->,
+                     rquals: aq =>! wild int32->,
+                     cur_module: 0i32, rcount: 0i32, rcap: 32i32,
+                     saw_div: false, saw_index: false, saw_tbb: false,
+                     saw_counted: false, saw_arena: false, saw_deadline: false,
+                     failsafe_decl: 0i32, prelude_scope: 0i32 };
+    pass x;
+};
+
+func:reach_add_decl = NIL(Reach->:x, int32:decl_index, int32:qual) never fails {
+    int32:i = 0i32;
+    while (i < x.rcount) {
+        if (x.rdecls[i => int64] == decl_index) { pass NIL; }
+        i = i + 1i32;
+    }
+    if (x.rcount >= x.rcap) {
+        int64:ncap = (x.rcap => int64) * 2i64;
+        wild int8->:na = ralloc(x.rdecls =>! wild int8->, ncap * 4i64);
+        wild int8->:nq = ralloc(x.rquals =>! wild int8->, ncap * 4i64);
+        x.rdecls = na =>! wild int32->;
+        x.rquals = nq =>! wild int32->;
+        x.rcap = ncap =>! int32;
+    }
+    x.rdecls[x.rcount => int64] = decl_index;
+    x.rquals[x.rcount => int64] = qual;
+    x.rcount = x.rcount + 1i32;
+    pass NIL;
+};
+
+// An error-constant OPERAND at a failure site: resolve the ident to its decl.
+func:reach_operand = NIL(Reach->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (n.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclErrorDecl) { pass NIL; }
+    drop reach_add_decl(x, s.origin, x.cur_module);
+    pass NIL;
+};
+
+// A prelude system constant BY NAME, into the set — the resolve pass bound
+// them into the root scope, so the lookup is one symbol away.
+func:reach_add_system = NIL(Reach->:x, string:sname) never fails {
+    if (x.prelude_scope == 0i32) { pass NIL; }
+    int32:sym = raw scope_lookup_local(x.tab, x.prelude_scope,
+                    raw intern_add(x.interns, sname));
+    if (sym == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    drop reach_add_decl(x, s.origin, 0i32);
+    pass NIL;
+};
+
+// --- the walk (statements and expressions, everything observed) --------------------
+
+pub func:reach_module = NIL(Reach->:x, DeclId:mod_id, int32:mod_name) never fails {
+    x.cur_module = mod_name;
+    DeclNode:m = raw ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop reach_decl(x, raw item_member(x.ast, m, i));
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
+    DeclNode:d = raw ast_decl(x.ast, id);
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        if (raw string_eq(raw intern_get(x.interns, raw decl_name(d)), "failsafe")) {
+            x.failsafe_decl = id.index;
+        }
+        drop reach_stmt(x, raw fn_body(x.ast, d), raw REACH_DEPTH());
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        drop reach_module(x, id, x.cur_module);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = raw impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop reach_decl(x, raw impl_member(x.ast, d, j));
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop reach_decl(x, raw item_member(x.ast, d, k));
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+
+    if (s.kind == StmtKind.StmtFailStmt) {
+        drop reach_operand(x, raw stmt_operand(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTrapStmt) {
+        drop reach_operand(x, raw stmt_expr(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop reach_expr(x, raw stmt_decl_init(x.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop reach_expr(x, raw stmt_target(s), fuel - 1i32);
+        drop reach_expr(x, raw stmt_assigned(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(s))) {
+            drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
+                                raw stmt_list_start(s), i) }, fuel - 1i32);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_then(s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_else(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_when_end(x.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        x.saw_counted = true;
+        drop reach_counted(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        x.saw_counted = true;
+        drop reach_counted(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop reach_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
+        drop reach_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop reach_expr(x, raw pick_selector(s), fuel - 1i32);
+        int32:j = 0i32;
+        while (j < (raw pick_arm_count(s))) {
+            drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
+                                raw pick_arm_start(s), j) }, fuel - 1i32);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop reach_expr(x, raw arm_guard(s), fuel - 1i32);
+        drop reach_stmt(x, raw arm_body(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        drop reach_stmt(x, StmtId{ index: s.a }, fuel - 1i32);
+        pass NIL;
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        drop reach_expr(x, raw stmt_expr(s), fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPassStmt) {
+        drop reach_operand_expr(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        drop reach_operand_expr(x, s, fuel);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtExitStmt) {
+        drop reach_expr(x, raw stmt_expr(s), fuel - 1i32);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:reach_operand_expr = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
+    ExprId:v = raw stmt_operand(s);
+    if (raw expr_is_none(v)) { pass NIL; }
+    drop reach_expr(x, v, fuel - 1i32);
+    pass NIL;
+};
+
+func:reach_counted = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop reach_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
+        i = i + 1i32;
+    }
+    drop reach_stmt(x, raw stmt_counted_body(s), fuel - 1i32);
+    pass NIL;
+};
+
+func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+
+    // `?!` names an escalation; its right side joins the set. The left side
+    // is walked like anything else.
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+        drop reach_expr(x, raw expr_lhs(n), fuel - 1i32);
+        drop reach_operand(x, raw expr_rhs(n));
+        pass NIL;
+    }
+
+    // The conditional system machinery.
+    if (n.kind == ExprKind.ExprBinaryExpr) {
+        TokenKind:op = raw expr_op(n);
+        if (op == TokenKind.OpSlash)   { x.saw_div = true; }
+        if (op == TokenKind.OpPercent) { x.saw_div = true; }
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) { x.saw_index = true; }
+    int32:ntid = raw exprtypes_get(x.ets, id);
+    if (ntid != 0i32) {
+        int32:nk = raw type_kind(x.types, ntid);
+        if (nk == (raw TY_TBB()))          { x.saw_tbb = true; }
+        if (nk == (raw TY_ARENA()))        { x.saw_arena = true; }
+        if (nk == (raw TY_SHARED_ARENA())) { x.saw_arena = true; }
+    }
+    if (n.kind == ExprKind.ExprAwaitExpr) { x.saw_deadline = true; }
+    if (n.kind == ExprKind.ExprDropExpr) {
+        // Only the SPAWN form reaches the deadline machinery — `drop` of a
+        // synchronous `never fails` call is the void call and joins nothing.
+        ExprNode:dn = raw ast_expr(x.ast, raw expr_operand(n));
+        if (dn.kind == ExprKind.ExprCallExpr) {
+            ExprNode:dc = raw ast_expr(x.ast, raw expr_callee(dn));
+            if (dc.kind == ExprKind.ExprIdentifierExpr) {
+                if (dc.a != 0i32) {
+                    Symbol:ds = raw symtab_get(x.tab, dc.a);
+                    if (ds.origin_kind == (raw SYM_DECL())) {
+                        DeclNode:dd = raw ast_decl(x.ast, DeclId{ index: ds.origin });
+                        if (dd.kind == DeclKind.DeclFunctionDecl) {
+                            if (raw decl_has(dd, raw DECL_ASYNC())) {
+                                x.saw_deadline = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast,
+                                raw expr_list_start(n), i) }, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop reach_expr(x, raw expr_callee(n), fuel - 1i32);
+        drop reach_expr_window(x, (raw expr_list_start(n))
+                  + (raw expr_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw expr_generic_count(n)), fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop reach_expr_window(x, (raw expr_list_start(n))
+                  + (raw builtin_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw builtin_generic_count(n)), fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:ps = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        drop reach_expr(x, raw pick_selector(ps), fuel - 1i32);
+        int32:j = 0i32;
+        while (j < (raw pick_arm_count(ps))) {
+            drop reach_stmt(x, StmtId{ index: raw ast_id_at(x.ast,
+                                raw pick_arm_start(ps), j) }, fuel - 1i32);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop reach_expr_window(x, raw expr_list_start(n),
+                               raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    drop reach_expr(x, raw expr_lhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop reach_expr_window(x, raw expr_list_start(n),
+                               raw expr_list_count(n), fuel);
+        pass NIL;
+    }
+    drop reach_expr(x, raw expr_rhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop reach_expr(x, raw expr_third(n), fuel - 1i32);
+    pass NIL;
+};
+
+func:reach_expr_window = NIL(Reach->:x, int32:start, int32:count,
+                             int32:fuel) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                        fuel - 1i32);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- the verdict --------------------------------------------------------------------
+
+// After the walk: fold in the system family, find failsafe's pick, compare.
+pub func:reach_settle = NIL(Reach->:x) never fails {
+    // The floor is unconditional: allocation and the exit-time checks are in
+    // every program.
+    drop reach_add_system(x, "Unreachable");
+    drop reach_add_system(x, "HeapOom");
+    drop reach_add_system(x, "HeapBadRequest");
+    drop reach_add_system(x, "WildLeak");
+    if (x.saw_div)      { drop reach_add_system(x, "DivByZero");
+                          drop reach_add_system(x, "DivOverflow"); }
+    if (x.saw_index)    { drop reach_add_system(x, "OutOfBounds"); }
+    if (x.saw_tbb)      { drop reach_add_system(x, "TbbErr"); }
+    if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }
+    if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
+    if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
+
+    if (x.failsafe_decl == 0i32) { pass NIL; }
+    DeclNode:fsd = raw ast_decl(x.ast, DeclId{ index: x.failsafe_decl });
+
+    // Find the ONE top-level pick over the parameter in failsafe's body.
+    StmtId:body = raw fn_body(x.ast, fsd);
+    StmtNode:bn = raw ast_stmt(x.ast, body);
+    int32:pick_at = 0i32;
+    if (bn.kind == StmtKind.StmtBlockStmt) {
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(bn))) {
+            StmtId:sid = StmtId{ index: raw ast_id_at(x.ast,
+                                     raw stmt_list_start(bn), i) };
+            StmtNode:sn = raw ast_stmt(x.ast, sid);
+            if (sn.kind == StmtKind.StmtPickStmt) { pick_at = sid.index; }
+            i = i + 1i32;
+        }
+    }
+    if (pick_at == 0i32) {
+        drop diaglist_push(x.diags, raw diag_error(raw REACH_NO_PICK(),
+            "`failsafe` names what can reach it (D-179): its body carries a `pick` over its `Error` parameter whose arms NAME every reachable error — the compiler computed the set, and `(*)` may stand beneath the names but not in for them",
+            fsd.span));
+        pass NIL;
+    }
+
+    // The named coverage: every set member appears as a PatValue naming it.
+    StmtNode:pn = raw ast_stmt(x.ast, StmtId{ index: pick_at });
+    int32:i2 = 0i32;
+    while (i2 < x.rcount) {
+        int32:want = x.rdecls[i2 => int64];
+        bool:named = false;
+        int32:a2 = 0i32;
+        while (a2 < (raw pick_arm_count(pn))) {
+            StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
+                                            raw pick_arm_start(pn), a2));
+            PatNode:pat = raw ast_pat(x.ast, raw arm_pattern(arm));
+            if (pat.kind == PatKind.PatValue) {
+                ExprNode:pv = raw ast_expr(x.ast, raw pat_value(pat));
+                if (pv.kind == ExprKind.ExprIdentifierExpr) {
+                    if (pv.a != 0i32) {
+                        Symbol:ps = raw symtab_get(x.tab, pv.a);
+                        if (ps.origin_kind == (raw SYM_DECL())) {
+                            if (ps.origin == want) { named = true; }
+                        }
+                    }
+                }
+            }
+            // `(module.Name)` — the QUALIFIED spelling. The parser reads a
+            // two-segment parenthesised path as an ENUM-DESTRUCTURE pattern,
+            // so the match is by NAME PAIR against the set's recorded
+            // qualifier — no resolution needed, and no import either.
+            if (pat.kind == PatKind.PatEnumDestructure) {
+                if ((raw pat_enum_segment_count(x.ast, pat)) == 2i32) {
+                    if ((raw pat_enum_bind_count(x.ast, pat)) == 0i32) {
+                        DeclNode:wd2 = raw ast_decl(x.ast, DeclId{ index: want });
+                        if ((raw pat_enum_segment(x.ast, pat, 0i32))
+                                == x.rquals[i2 => int64]) {
+                            if ((raw pat_enum_segment(x.ast, pat, 1i32))
+                                    == (raw decl_name(wd2))) {
+                                named = true;
+                            }
+                        }
+                    }
+                }
+            }
+            a2 = a2 + 1i32;
+        }
+        if (!named) {
+            DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: want });
+            string:wq = "";
+            if (x.rquals[i2 => int64] != 0i32) {
+                wq = raw string_concat(
+                         raw intern_get(x.interns, x.rquals[i2 => int64]), ".");
+            }
+            string:m1 = raw string_concat(
+                raw string_concat("`failsafe` does not name `", wq),
+                raw intern_get(x.interns, raw decl_name(wd)));
+            drop diaglist_push(x.diags, raw diag_error(raw REACH_UNNAMED(),
+                raw string_concat(m1,
+                    "`, which can reach it (D-179): add the arm — `(*)` counts for nothing here, so a new failure mode is always acknowledged before the program compiles again"),
+                pn.span));
+        }
+        i2 = i2 + 1i32;
+    }
+    pass NIL;
+};

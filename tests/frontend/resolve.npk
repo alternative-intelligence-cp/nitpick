@@ -25,6 +25,7 @@ use "../../src/frontend/paths.npk".*;
 use "../../src/frontend/resolve_path.npk".*;
 use "../../src/frontend/module_graph.npk".*;
 use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
 
 struct:Run = {
     Ast:ast;
@@ -231,6 +232,35 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
-    exit 1i32;
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero) { exit 3i32; },
+        (DivOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (ast.BoundsId) { exit 3i32; },
+        (ast.BoundsScratch) { exit 3i32; },
+        (ast.BoundsWindow) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (module_graph.BoundsIndex) { exit 3i32; },
+        (module_graph.ProvenSlice) { exit 3i32; },
+        (resolve_path.BoundsIndex) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (symbols.BoundsId) { exit 3i32; },
+        (token.BoundsId) { exit 3i32; },
+        (types.BoundsId) { exit 3i32; },
+        (types.BoundsIndex) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
+    exit 3i32;
 };

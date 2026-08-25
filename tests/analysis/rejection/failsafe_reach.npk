@@ -1,0 +1,36 @@
+// expect-error: NITPICK-REACH-002
+// expect-error: NITPICK-REACH-002
+//
+// D-179's payoff: the compiler computes every error that can reach
+// `failsafe` — the constants at `fail`/`?!`/`!!!` sites, plus the system
+// constants whose raising machinery the program actually contains — and
+// the `pick` must NAME each one. `(*)` stands beneath the names as the
+// defensive floor, never in for them: this failsafe carries the wildcard
+// and still refuses, once for the `Boom` it never names and once for the
+// `DivByZero` its division makes reachable. Add a failure mode anywhere
+// and every failsafe acknowledges it before the program compiles again.
+mod:failsafe_reach;
+
+error:Boom;
+
+func:f = int32(int32:v) {
+    if (v > 0i32) { fail Boom; }
+    pass (10i32 / (v + 1i32));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = f(1i32) ?| 0i32;
+    exit r;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)    { exit 11i32; },
+        (HeapOom)        { exit 12i32; },
+        (HeapBadRequest) { exit 13i32; },
+        (WildLeak)       { exit 14i32; },
+        (DivOverflow)    { exit 15i32; },
+        (*)              { exit 19i32; }
+    }
+    exit 9i32;
+};

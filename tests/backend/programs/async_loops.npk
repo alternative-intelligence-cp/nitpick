@@ -63,4 +63,15 @@ async func:main = int32(cstring[]:_~argv) {
     exit a + b + c + d + 2i32;              // 42
 };
 
-func:failsafe = int32(Error:_~e) { exit 99i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (BadStep) { exit 99i32; },
+        (DeadlineExceeded) { exit 99i32; },
+        (HeapBadRequest) { exit 99i32; },
+        (HeapOom) { exit 99i32; },
+        (Unreachable) { exit 99i32; },
+        (WildLeak) { exit 99i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

@@ -37,11 +37,21 @@ func:main = int32(cstring[]:_~argv) {
 };
 
 func:failsafe = int32(Error:e) {
-    if (e != Again)                    { exit 50i32; }
-    if (raw chain_depth() != 2i32)     { exit (60i32 + (raw chain_depth())); }
-    // the fresh origin is `fail Again;` and the hop is main's `?!` —
-    // their LINES, read from the site table, in order:
-    if (raw site_line(raw chain_site(0i32)) != 30i32) { exit (raw site_line(raw chain_site(0i32))); }
-    if (raw site_line(raw chain_site(1i32)) != 35i32) { exit (raw site_line(raw chain_site(1i32))); }
-    exit 42i32;
+    pick (e) {
+        (Again) {
+            if (raw chain_depth() != 2i32)     { exit (60i32 + (raw chain_depth())); }
+            // the fresh origin is `fail Again;` and the hop is main's `?!` —
+            // their LINES, read from the site table, in order:
+            if (raw site_line(raw chain_site(0i32)) != 30i32) { exit (raw site_line(raw chain_site(0i32))); }
+            if (raw site_line(raw chain_site(1i32)) != 35i32) { exit (raw site_line(raw chain_site(1i32))); }
+            exit 42i32;
+        },
+        (Boom)           { exit 50i32; },
+        (Unreachable)    { exit 51i32; },
+        (HeapOom)        { exit 52i32; },
+        (HeapBadRequest) { exit 53i32; },
+        (WildLeak)       { exit 54i32; },
+        (*)              { exit 55i32; }
+    }
+    exit 9i32;
 };

@@ -37,6 +37,7 @@ use "../src/frontend/parse_stmt.npk".*;
 use "../src/frontend/parse_pick.npk".*;
 use "../src/frontend/parse_decl.npk".*;
 use "../src/frontend/source.npk".*;
+use "../src/frontend/types.npk".*;
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
@@ -55,10 +56,13 @@ func:main = int32(cstring[]:argv) {
     // so there is no Result to relay into.
     Result<int32>:loaded = srcmgr_load(@sm, path);
     if (loaded.is_error) {
-        // The code is D-141's space (negative = the kernel's own), not errno.
-        string:e = raw int_to_string(loaded.err => int64);
+        // An `Error` is an identity, not a number (D-179) — say WHICH of the
+        // two identities the loader can hand back, and no more.
+        string:e = "unknown";
+        if (loaded.err == FileUnknown) { e = "no such file"; }
+        if (loaded.err == IoEof)       { e = "end of input"; }
         NioW:ew = raw nio_stderr();
-        nio_put(@ew, "cannot read: error ") ?| NIL;
+        nio_put(@ew, "cannot read: ") ?| NIL;
         nio_line(@ew, e) ?| NIL;
         exit 2i32;
     }
@@ -101,9 +105,31 @@ func:main = int32(cstring[]:argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
-    // Reaching here means the parser itself failed, which is a defect in the
-    // compiler and not in the file being parsed. A distinct code so the harness
-    // never reports it as "this test file has a parse error".
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED
+    // (D-179) — the doctrine applied to ourselves. Exit 3 for
+    // each: a defect in the COMPILER, never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero) { exit 3i32; },
+        (DivOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (ast.BoundsId) { exit 3i32; },
+        (ast.BoundsScratch) { exit 3i32; },
+        (ast.BoundsWindow) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (token.BoundsId) { exit 3i32; },
+        (types.BoundsId) { exit 3i32; },
+        (types.BoundsIndex) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
     exit 3i32;
 };

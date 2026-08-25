@@ -322,9 +322,13 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
         } else {
             int32:v = raw arm_variant(x.ast, arm);
             if (v != 0i32) {
-                if (raw variant_matched_before(x, v, start, i)) {
+                // TWO QUALIFIED ERROR CONSTANTS MAY SHARE A LAST NAME
+                // (D-179): `ast.BoundsId` and `types.BoundsId` are distinct
+                // identities, so error-pattern arms compare by RESOLVED
+                // ORIGIN, and only same-origin repeats are dead.
+                if (raw path_matched_before(x, arm, start, i)) {
                     drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
-                        "an earlier arm already matches this variant, so this one can never run",
+                        "an earlier arm already matches this pattern, so this one can never run",
                         arm.span);
                 }
             }
@@ -334,6 +338,54 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
         i = i + 1i32;
     }
     pass NIL;
+};
+
+// TWO ARMS MATCH THE SAME THING only when their FULL PATHS agree (D-179):
+// `ast.BoundsId` and `types.BoundsId` share a last segment and are distinct
+// identities, so the dead-arm question compares every segment. For true
+// enum patterns the selector already fixes the first segment, so this is
+// the old comparison with the false positive removed.
+func:path_matched_before = bool(Exhaust->:x, StmtNode:arm, int32:start,
+                                int32:upto) never fails {
+    // A GUARD makes an arm conditional — a same-pattern arm behind or after
+    // one is not provably dead, so guarded arms never participate.
+    if (!(raw expr_is_none(raw arm_guard(arm)))) { pass false; }
+    PatNode:p = raw ast_pat(x.ast, raw arm_pattern(arm));
+    int32:i = 0i32;
+    while (i < upto) {
+        StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        PatNode:q = raw ast_pat(x.ast, raw arm_pattern(prev));
+        bool:prev_guarded = (!(raw expr_is_none(raw arm_guard(prev))));
+        if (q.kind == p.kind) { if (!prev_guarded) {
+            if (p.kind == PatKind.PatEnumDestructure) {
+                int32:pc = raw pat_enum_segment_count(x.ast, p);
+                if (pc == (raw pat_enum_segment_count(x.ast, q))) {
+                    bool:all = true;
+                    int32:k = 0i32;
+                    while (k < pc) {
+                        if ((raw pat_enum_segment(x.ast, p, k))
+                                != (raw pat_enum_segment(x.ast, q, k))) {
+                            all = false;
+                        }
+                        k = k + 1i32;
+                    }
+                    if (all) { pass true; }
+                }
+            }
+            if (p.kind == PatKind.PatValue) {
+                // bare names: same resolved symbol, or same spelling
+                ExprNode:pe = raw ast_expr(x.ast, raw pat_value(p));
+                ExprNode:qe = raw ast_expr(x.ast, raw pat_value(q));
+                if (pe.kind == ExprKind.ExprIdentifierExpr) {
+                    if (qe.kind == ExprKind.ExprIdentifierExpr) {
+                        if (pe.payload == qe.payload) { pass true; }
+                    }
+                }
+            }
+        } }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 func:variant_matched_before = bool(Exhaust->:x, int32:vname, int32:start,
