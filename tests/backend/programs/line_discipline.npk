@@ -6,6 +6,8 @@
 // (write_file / read_file) translates nothing, ever — which is what lets this
 // test plant exact bytes and then check exact bytes.
 
+error:E9;
+
 use "../../../lib/nio.npk".*;
 
 func:bytes_equal = bool(string:a, string:b) never fails {
@@ -20,7 +22,7 @@ func:bytes_equal = bool(string:a, string:b) never fails {
 
 func:main = int32(cstring[]:_~argv) {
     // --- reading normalizes, the byte path does not -------------------------
-    cstring:p1 = to_cstring(".internal/line_discipline_in.tmp") ?! 9tbb32;
+    cstring:p1 = to_cstring(".internal/line_discipline_in.tmp") ?! E9;
     // All three ending shapes in one buffer, planted byte-exactly.
     Result<NIL>:w = write_file(p1, "alpha\r\nbeta\rgamma\ndelta");
     if (w.is_error)                                          { exit 10i32; }
@@ -30,7 +32,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw bytes_equal(back.value, "alpha\r\nbeta\rgamma\ndelta")))
                                                              { exit 12i32; }
 
-    string:text = nio_read_text(p1) ?! 9tbb32;
+    string:text = nio_read_text(p1) ?! E9;
     if (!(string_equals(text, "alpha\nbeta\ngamma\ndelta"))) { exit 13i32; }
 
     // The pure normalizer, on the shapes a buffer can end with.
@@ -40,22 +42,22 @@ func:main = int32(cstring[]:_~argv) {
                                                              { exit 15i32; }
 
     // --- writing emits \n; \r\n is a creation choice ------------------------
-    cstring:p2 = to_cstring(".internal/line_discipline_lf.tmp") ?! 9tbb32;
-    NioW:lf = nio_create(p2, NioEnding.Lf) ?! 9tbb32;
-    nio_line(@lf, "one") ?! 9tbb32;
-    nio_line(@lf, "two") ?! 9tbb32;
+    cstring:p2 = to_cstring(".internal/line_discipline_lf.tmp") ?! E9;
+    NioW:lf = nio_create(p2, NioEnding.Lf) ?! E9;
+    nio_line(@lf, "one") ?! E9;
+    nio_line(@lf, "two") ?! E9;
     Result<NIL>:e1 = nio_end(@lf);
     if (e1.is_error)                                         { exit 16i32; }
     Result<string>:lfb = read_file(p2);
     if (lfb.is_error)                                        { exit 17i32; }
     if (!(raw bytes_equal(lfb.value, "one\ntwo\n")))         { exit 18i32; }
 
-    cstring:p3 = to_cstring(".internal/line_discipline_crlf.tmp") ?! 9tbb32;
-    NioW:cw = nio_create(p3, NioEnding.CrLf) ?! 9tbb32;
-    nio_line(@cw, "one") ?! 9tbb32;
+    cstring:p3 = to_cstring(".internal/line_discipline_crlf.tmp") ?! E9;
+    NioW:cw = nio_create(p3, NioEnding.CrLf) ?! E9;
+    nio_line(@cw, "one") ?! E9;
     // An interior `\n` in the TEXT is a logical newline like any other, so the
     // CrLf writer translates it too — the program never writes `\r` itself.
-    nio_put(@cw, "mid\ntail") ?! 9tbb32;
+    nio_put(@cw, "mid\ntail") ?! E9;
     Result<NIL>:e2 = nio_end(@cw);
     if (e2.is_error)                                         { exit 19i32; }
     Result<string>:crb = read_file(p3);
@@ -68,4 +70,4 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

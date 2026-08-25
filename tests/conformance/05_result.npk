@@ -2,9 +2,12 @@
 // consume it. Result<T> is builtin with shape {T, tbb32} (D-069); the seed
 // hard-codes it rather than implementing generics.
 
+error:E9;
+error:E19;
+
 func:might_fail = int32(int32:x) {
     if (x < 0i32) {
-        fail 19tbb32;
+        fail E19;
     }
     pass (x * 2i32);
 };
@@ -36,11 +39,11 @@ func:nothing_useful = NIL() never fails {
 };
 
 func:main = int32(cstring[]:_~argv) {
-    int32:a = doubled_plus_one(5i32) ?! 9tbb32;
-    int32:b = with_explicit_check(5i32) ?! 9tbb32;
+    int32:a = doubled_plus_one(5i32) ?! E9;
+    int32:b = with_explicit_check(5i32) ?! E9;
     drop nothing_useful();             // discard the Result entirely
     drop wild_release_all();
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

@@ -285,6 +285,10 @@ class Checker:
                 raise RungError("generic type instantiation", "1.0", node)
             if name in T.INT_TYPES or name in ("bool", "char8", "string", "cstring", "NIL"):
                 return T.Prim(name)
+            if name == "Error":
+                # D-179: the seed lowers `Error` as its 4-byte word; the real
+                # checker owns the non-number discipline.
+                return T.TBB32
             if name in self.p.structs or name in self.p.enums:
                 return T.Named(name)
             # Forward reference: structs and enums are collected before any

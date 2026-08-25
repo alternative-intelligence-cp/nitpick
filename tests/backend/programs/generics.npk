@@ -13,6 +13,8 @@
 // the emitter walks that table. `Box<int32>` below is written three times and
 // defined once.
 
+error:E9;
+
 struct:Container<T> = {
     T:item;
     int32:tag;
@@ -39,12 +41,12 @@ func:main = int32(cstring[]:_~argv) {
     Box<Container<int32>>:n = Box{ v: a };
 
     // the same function at two argument types
-    int32:i1 = identity(4i32) ?! 9tbb32;
-    int64:i2 = identity(6i64) ?! 9tbb32;
+    int32:i1 = identity(4i32) ?! E9;
+    int64:i2 = identity(6i64) ?! E9;
 
     // 7 + 30 + 1 + 2 + 2 - 7 + 4 + 6 = 45
     exit a.item + (b.item =>! int32) + p.v + q.v + s.v - n.v.item
          + i1 + (i2 =>! int32);
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

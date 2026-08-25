@@ -7,6 +7,13 @@
 // the AST needs no pointers. Interning also makes identifier comparison an
 // integer compare rather than a byte loop, which matters in a symbol table.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+error:ProvenSlice;
+
 pub struct:InternTable = {
     wild string->:items;
     int32:count;
@@ -107,10 +114,10 @@ pub func:intern_add = int32(InternTable->:t, string:text) never fails {
 
 pub func:intern_get = string(InternTable->:t, int32:index) never fails {
     if (index < 0i32) {
-        !!! 3tbb32;
+        !!! BoundsId;
     }
     if (index >= t.count) {
-        !!! 3tbb32;
+        !!! BoundsId;
     }
     pass t.items[index => int64];
 };
@@ -127,6 +134,6 @@ pub func:intern_count = int32(InternTable->:t) never fails {
 // the shape the emitter has always lowered.
 pub func:slice_proven = string(string:s, int64:lo, int64:hi) never fails {
     Result<string>:r = string_slice(s, lo, hi);
-    if (r.is_error) { !!! 5tbb32; }
+    if (r.is_error) { !!! ProvenSlice; }
     pass r.value;
 };

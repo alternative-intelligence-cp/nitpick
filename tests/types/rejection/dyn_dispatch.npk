@@ -7,6 +7,8 @@
 // declare — own lists only. The answer is the TRAIT's declaration, never an
 // impl's, because behind the vtable there is no one impl to name.
 
+error:E9;
+
 trait:Speaks   = { func:say  = int32(Self:self); };
 trait:Walks    = { func:step = int32(Self:self); };
 trait:Alsosays = { func:say  = int32(Self:self); };
@@ -25,23 +27,23 @@ impl:Dog:Loud   = { func:shout = int32(Dog:self) { pass 3i32; }; };
 
 // REACHABLE, and reported here so the rule is not merely "refuse everything":
 // each named trait's own method resolves, with one bound and with two.
-func:ok_one = NIL(dyn Speaks:d) never fails         { int32:v = d.say() ?! 9tbb32;   pass NIL; };
-func:ok_two = NIL(dyn Speaks & Walks:d) never fails { int32:v = d.step() ?! 9tbb32;  pass NIL; };
-func:ok_own = NIL(dyn Loud:d) never fails           { int32:v = d.shout() ?! 9tbb32; pass NIL; };
+func:ok_one = NIL(dyn Speaks:d) never fails         { int32:v = d.say() ?! E9;   pass NIL; };
+func:ok_two = NIL(dyn Speaks & Walks:d) never fails { int32:v = d.step() ?! E9;  pass NIL; };
+func:ok_own = NIL(dyn Loud:d) never fails           { int32:v = d.shout() ?! E9; pass NIL; };
 
 // TWO BOUNDS SUPPLYING ONE NAME IS AMBIGUOUS. No ordering tie-break: picking
 // the first would be meaning-by-position, and after D-159's canonical ordering
 // "first" is decided by how the traits are SPELT.
 // expect-error: NITPICK-TYPE-020
-func:ambiguous = NIL(dyn Speaks & Alsosays:d) never fails { int32:v = d.say() ?! 9tbb32; pass NIL; };
+func:ambiguous = NIL(dyn Speaks & Alsosays:d) never fails { int32:v = d.say() ?! E9; pass NIL; };
 
 // A NAME NO NAMED TRAIT DECLARES.
 // expect-error: NITPICK-TYPE-019
-func:absent = NIL(dyn Speaks:d) never fails { int32:v = d.step() ?! 9tbb32; pass NIL; };
+func:absent = NIL(dyn Speaks:d) never fails { int32:v = d.step() ?! E9; pass NIL; };
 
 // THE SUPERTRAIT'S METHOD, THROUGH THE SUBTRAIT'S `dyn` — refused, per above.
 // expect-error: NITPICK-TYPE-019
-func:supertrait_method = NIL(dyn Loud:d) never fails { int32:v = d.say() ?! 9tbb32; pass NIL; };
+func:supertrait_method = NIL(dyn Loud:d) never fails { int32:v = d.say() ?! E9; pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

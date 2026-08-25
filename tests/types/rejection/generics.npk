@@ -1,6 +1,8 @@
 // Generics: a body checked ONCE at its definition, and instantiation checked
 // against the bounds (D-064, D-107 … D-111).
 
+error:E9;
+
 trait:Printable = { func:show = string(Self:self); };
 struct:Point = { int32:x; };
 struct:Container<T> = { T:value; };
@@ -10,11 +12,11 @@ struct:Box<T: Printable> = { T:held; };
 // bounds declare, refused AT THE DEFINITION with no instantiation anywhere in the
 // program. `render` is a perfectly good method name and `T` does not have it.
 // expect-error: NITPICK-TYPE-019
-func:duck<T: Printable> = NIL(T:x) { discard(x.render() ?! 9tbb32); pass NIL; };
+func:duck<T: Printable> = NIL(T:x) { discard(x.render() ?! E9); pass NIL; };
 
 // An UNBOUNDED parameter can do nothing at all.
 // expect-error: NITPICK-TYPE-019
-func:unbounded<U> = NIL(U:x) { discard(x.show() ?! 9tbb32); pass NIL; };
+func:unbounded<U> = NIL(U:x) { discard(x.show() ?! E9); pass NIL; };
 
 // A GENERIC TYPE IS WRITTEN WITH ITS ARGUMENTS. Both counts are named, because
 // making the reader go and count the parameters is the one thing the compiler
@@ -42,7 +44,7 @@ func:not_constant = NIL(int32:n) never fails { Lock<Point, (n)>:m; pass NIL; };
 // expression-position form for an explicit type argument.
 func:identity<V> = V(V:x) { pass x; };
 // expect-error: NITPICK-TYPE-022
-func:cannot_infer = NIL() never fails { int32:v = identity(5) ?! 9tbb32; pass NIL; };
+func:cannot_infer = NIL() never fails { int32:v = identity(5) ?! E9; pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

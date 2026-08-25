@@ -17,6 +17,8 @@
 // whose recorded type is the bare parameter (the checker walked the body with
 // `T` opaque, D-107), so lowering it needs the specialization's binding.
 
+error:E9;
+
 #[derive(Eq)]
 struct:Box<T> = { T:v; };
 
@@ -24,9 +26,9 @@ func:main = int32(cstring[]:_~argv) {
     Box<int32>:a = Box{ v: 5i32 };
     Box<int32>:b = Box{ v: 5i32 };
     Box<int32>:c = Box{ v: 9i32 };
-    if (!(a.eq(b) ?! 9tbb32)) { exit 10i32; }
-    if (a.eq(c) ?! 9tbb32)    { exit 11i32; }
+    if (!(a.eq(b) ?! E9)) { exit 10i32; }
+    if (a.eq(c) ?! E9)    { exit 11i32; }
     exit 42i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

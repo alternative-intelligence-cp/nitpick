@@ -18,6 +18,8 @@
 // checkable. Recognising an acquisition by its SPELLING is what the prototype did
 // for deallocators and what D-119 refused.
 
+error:E9;
+
 struct:Guard = { int32:v; };
 
 func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
@@ -29,8 +31,8 @@ func:take_9 = Guard() acquires 9i32 { pass Guard{ v: 9i32 }; };
 
 // expect-error: NITPICK-LOCK-001
 func:downward = NIL() never fails {
-    Guard:a = take_2() ?! 9tbb32;
-    Guard:b = take_1() ?! 9tbb32;
+    Guard:a = take_2() ?! E9;
+    Guard:b = take_1() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -41,8 +43,8 @@ func:downward = NIL() never fails {
 // equal" would permit exactly that.
 // expect-error: NITPICK-LOCK-001
 func:same_level_twice = NIL() never fails {
-    Guard:a = take_2() ?! 9tbb32;
-    Guard:b = take_2() ?! 9tbb32;
+    Guard:a = take_2() ?! E9;
+    Guard:b = take_2() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -55,14 +57,14 @@ func:same_level_twice = NIL() never fails {
 // not.
 
 func:reaches_1 = NIL() never fails {
-    Guard:g = take_1() ?! 9tbb32;
+    Guard:g = take_1() ?! E9;
     discard(g.v);
     pass NIL;
 };
 
 // expect-error: NITPICK-LOCK-001
 func:transitively_downward = NIL() never fails {
-    Guard:a = take_3() ?! 9tbb32;
+    Guard:a = take_3() ?! E9;
     discard(a.v);
     drop reaches_1();
     pass NIL;
@@ -95,7 +97,7 @@ struct:Loose = { int32:v; };
 // expect-error: NITPICK-LOCK-002
 impl:Loose:Storage = {
     pub func:commit = NIL(Self:self) never fails {
-        Guard:g = take_9() ?! 9tbb32;
+        Guard:g = take_9() ?! E9;
         discard(g.v);
         pass NIL;
     };

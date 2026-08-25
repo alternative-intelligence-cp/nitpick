@@ -835,7 +835,7 @@ wrapper exists to prevent; `??` and `?.` are the accessors that cannot be wrong.
 ```nitpick
 struct<T>:Result = {
     T:value;        // Success value (zero-initialized if error — see fail desugar)
-    tbb32:error;    // 0 = no error. Convention: < 0 system, > 0 user. ERR unconstructible.
+    Error:err;      // 0 = no error. The DOMAIN is typed now (D-179): the prelude declares system, users declare their own, the sign is an encoding detail.
 };
 ```
 
@@ -845,7 +845,7 @@ struct<T>:Result = {
 ; Example: Result<int32>
 %Result_i32 = type { i32, i32 }
 ; .value at offset 0
-; .err at offset 4 (tbb32, 4 bytes)
+; .err at offset 4 (Error, 4 bytes)
 ; Total: 8 bytes, align 4
 ```
 
@@ -853,7 +853,7 @@ struct<T>:Result = {
 
 | Syntax | Desugars to | Notes |
 |---|---|---|
-| `pass(retVal);` | `return Result{err: 0tbb32, value: retVal};` | Success path |
+| `pass(retVal);` | `return Result{value: retVal};` | Success path (`err` omitted = the zero) |
 | `fail(errCode);` | `return Result{err: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
 | `return Result{err: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
 

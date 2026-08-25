@@ -43,6 +43,12 @@
 // rather than deadlock freedom. An honest narrow guarantee plus a stated
 // containment mechanism is worth more than a broad claim nothing backs.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:Rederived;
+
 use "../source_location.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
@@ -208,7 +214,7 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
             ExprNode:cnode = raw ast_expr(x.ast, c);
             // The checker already folded this `acquires` level; failing to
             // RE-fold it is an internal inconsistency, not a program error.
-            ConstVal:cv = fold_const(x.tyres, c, x.cur_scope) ?! 25tbb32;
+            ConstVal:cv = fold_const(x.tyres, c, x.cur_scope) ?! Rederived;
             if (!(raw cv_is_int(cv))) {
                 if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
@@ -266,7 +272,7 @@ func:call_target = int32(Locks->:x, ExprNode:n) never fails {
         // RE-resolution here is an internal inconsistency, not a program error.
         MethodFind:m = find_method(x.impls, x.bounds, x.types, x.ast,
                                          x.interns, rty,
-                                         (raw expr_name(n)) =>! int32, 0i32) ?! 25tbb32;
+                                         (raw expr_name(n)) =>! int32, 0i32) ?! Rederived;
         if (!m.found) { pass 0i32; }
         pass m.decl;
     }

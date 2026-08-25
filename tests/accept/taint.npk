@@ -10,8 +10,11 @@
 // spelling" — because an analysis that recognises only one idiom pushes people
 // toward it, and the idiom it would push away from here is the more readable one.
 
+error:E5;
+error:E9;
+
 func:might_fail = int32(bool:c) {
-    if (c) { fail 5tbb32; }
+    if (c) { fail E5; }
     pass 7i32;
 };
 
@@ -63,7 +66,7 @@ func:pick_form = int32(bool:c) never fails {
 // only property this language asks of one.
 
 func:raw_unwrap = int32(bool:c) {
-    pass (might_fail(c)) ?! 9tbb32;
+    pass (might_fail(c)) ?! E9;
 };
 
 func:relay_propagates = int32(bool:c) {
@@ -88,7 +91,7 @@ func:two_reads_one_check = int32(bool:c) never fails {
 // The error field is what you read to FIND OUT whether the value is safe. Refusing
 // it would leave no way to ask the question.
 
-func:reads_the_error = tbb32(bool:c) never fails {
+func:reads_the_error = Error(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     pass (r.err);
 };

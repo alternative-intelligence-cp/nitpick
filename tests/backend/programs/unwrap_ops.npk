@@ -5,8 +5,10 @@
 // error path carried 77.
 
 mod:unwrap_ops;
+error:E5;
+error:E77;
 func:half = int32(int32:v) {
-    if (v < 0i32) { fail 5tbb32; }
+    if (v < 0i32) { fail E5; }
     pass (v / 2i32);
 };
 func:main = int32(cstring[]:argv) {
@@ -14,12 +16,12 @@ func:main = int32(cstring[]:argv) {
     if (a != 5i32)  { exit 10i32; }
     int32:b = half(0i32 - 4i32) ?| 99i32;
     if (b != 99i32) { exit 11i32; }
-    int32:c = half(8i32) ?! 77tbb32;
+    int32:c = half(8i32) ?! E77;
     if (c != 4i32)  { exit 12i32; }
-    int32:d = half(0i32 - 1i32) ?! 77tbb32;
+    int32:d = half(0i32 - 1i32) ?! E77;
     exit (d - d);
 };
-func:failsafe = int32(tbb32:err) {
-    if ((err =>! int64) == 77i64) { exit 26i32; }
+func:failsafe = int32(Error:err) {
+    if (err == E77) { exit 26i32; }
     exit 9i32;
 };

@@ -11,14 +11,16 @@
 // the `async` modifier (cancellation is an error), or sit on `main`/`failsafe`
 // (terminal functions return no `Result`, so the claim says nothing).
 mod:never_fails;
+error:E3;
+error:E4;
 
 func:with_fail = int32(int32:v) never fails {
-    if (v < 0i32) { fail 3tbb32; }
+    if (v < 0i32) { fail E3; }
     pass v;
 };
 
 func:helper = int32(int32:v) {
-    if (v < 0i32) { fail 4tbb32; }
+    if (v < 0i32) { fail E4; }
     pass v;
 };
 
@@ -28,7 +30,7 @@ func:with_relay = int32(int32:v) never fails {
 };
 
 func:with_return = int32(int32:v) never fails {
-    return Result{ value: v, err: 0tbb32 };
+    return Result{ value: v };
 };
 
 func:with_requires = int32(int32:v) never fails requires v >= 0i32 {
@@ -43,6 +45,6 @@ func:main = int32(cstring[]:_~argv) never fails {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~e) {
+func:failsafe = int32(Error:_~e) {
     exit 1i32;
 };

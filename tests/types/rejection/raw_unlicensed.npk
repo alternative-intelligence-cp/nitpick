@@ -15,13 +15,14 @@
 // call through an unmarked function type; and `drop` of a never-failing callee
 // WITH a value (a value is not dropped, it is discarded).
 mod:raw_unlicensed;
+error:E3;
 
 func:mayfail = int32(int32:v) {
-    if (v < 0i32) { fail 3tbb32; }
+    if (v < 0i32) { fail E3; }
     pass v;
 };
 func:effect_mayfail = NIL(int32:v) {
-    if (v < 0i32) { fail 3tbb32; }
+    if (v < 0i32) { fail E3; }
     pass NIL;
 };
 func:nf_value = int32(int32:v) never fails { pass v; };
@@ -68,4 +69,4 @@ func:drop_of_value = int32(int32:v) {
 };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

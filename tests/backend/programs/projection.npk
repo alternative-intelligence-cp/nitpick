@@ -25,6 +25,8 @@
 // (D-107), so `it.next()` arrives carrying `T.Item` exactly as `self.v` arrived
 // at 1.0.4c carrying `T`.
 
+error:E9;
+
 trait:Seq = {
     assoc:Item;
     func:next = Item(Self:self);
@@ -37,12 +39,12 @@ impl:Counter:Seq = {
     func:next = int32(Counter:self) { pass self.n; };
 };
 
-func:first<T: Seq> = T.Item(T:it) { pass (it.next()) ?! 9tbb32; };
+func:first<T: Seq> = T.Item(T:it) { pass (it.next()) ?! E9; };
 
 func:main = int32(cstring[]:_~argv) {
     Counter:c = Counter{ n: 7i32 };
-    int32:v = first(c) ?! 9tbb32;
+    int32:v = first(c) ?! E9;
     exit v;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

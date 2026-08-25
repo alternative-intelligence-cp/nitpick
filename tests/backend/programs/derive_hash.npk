@@ -6,6 +6,7 @@
 // equal; a string field hashes its bytes; an enum hashes its tag. The prelude
 // supplies `Hash` for every scalar so a struct of them derives without a bound.
 mod:derive_hash;
+error:E9;
 
 #[derive(Hash)]
 struct:Key = { int32:a; string:b; };
@@ -17,10 +18,10 @@ func:main = int32(cstring[]:_~argv) {
     Key:k1 = Key{ a: 7i32, b: "hi" };
     Key:k2 = Key{ a: 7i32, b: "hi" };
     Key:k3 = Key{ a: 7i32, b: "ho" };
-    if ((k1.hash() ?! 9tbb32) != (k2.hash() ?! 9tbb32)) { exit 90i32; }   // equal -> equal hash
-    if ((k1.hash() ?! 9tbb32) == (k3.hash() ?! 9tbb32)) { exit 91i32; }   // differ -> (a.s.) differ
-    if ((Tag.Green.hash() ?! 9tbb32) == (Tag.Blue.hash() ?! 9tbb32)) { exit 92i32; }
+    if ((k1.hash() ?! E9) != (k2.hash() ?! E9)) { exit 90i32; }   // equal -> equal hash
+    if ((k1.hash() ?! E9) == (k3.hash() ?! E9)) { exit 91i32; }   // differ -> (a.s.) differ
+    if ((Tag.Green.hash() ?! E9) == (Tag.Blue.hash() ?! E9)) { exit 92i32; }
     exit 42i32;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

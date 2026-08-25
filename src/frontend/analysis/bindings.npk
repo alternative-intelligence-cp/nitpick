@@ -49,6 +49,12 @@
 // inside the body is checked against the state at the top of the body, which is
 // exactly the state the first iteration sees.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:Rederived;
+
 use "../source_location.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
@@ -484,7 +490,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         // evaluator answers it. A reader filtering on this code is asking one thing.
         // The checker already folded every global initialiser (D-165's
         // constancy rule); failing to RE-fold here is an internal inconsistency.
-        ConstVal:cv = fold_const(x.tyres, init, scope) ?! 25tbb32;
+        ConstVal:cv = fold_const(x.tyres, init, scope) ?! Rederived;
         if (!(raw cv_folded(cv))) {
             if (raw fold_gave_up(x.tyres)) { pass NIL; }
             drop assign_err(x, raw TYPE_NOT_CONSTANT(),

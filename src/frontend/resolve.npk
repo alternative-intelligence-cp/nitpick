@@ -804,7 +804,9 @@ func:resolve_members = NIL(Resolver->:r, DeclNode:d, int32:scope) never fails {
 pub func:resolve_module = NIL(Resolver->:r, DeclId:mod_id, int32:scope) never fails {
     r.module_scope = scope;
     DeclNode:m = raw ast_decl(r.ast, mod_id);
-    r.module_name = raw decl_name(m);
+    // `module_name` is set by the caller from the file's basename (D-179):
+    // the `mod:` line must match it where present, and files without one
+    // still have a name to hash error codes under.
     drop resolve_members(r, m, scope);
     pass NIL;
 };

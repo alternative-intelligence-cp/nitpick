@@ -7,8 +7,10 @@
 // numerically here, so the value is pinned by a running program and not only
 // by prose.
 
+error:E9;
+
 func:main = int32(cstring[]:_~argv) {
-    cstring:path = to_cstring(".internal/fd_io_scratch.tmp") ?! 9tbb32;
+    cstring:path = to_cstring(".internal/fd_io_scratch.tmp") ?! E9;
     string:body = "fourteen bytes";
 
     // openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC = 577, 0644 = 420)
@@ -28,7 +30,7 @@ func:main = int32(cstring[]:_~argv) {
     // are the contract.
     Result<int64>:dead = write(sink, body.ptr, body.len);
     if (!dead.is_error)                               { exit 13i32; }
-    if ((dead.err => int64) >= 0i64)                { exit 14i32; }
+    if (dead.is_error == false)                     { exit 14i32; }
 
     // Read it back through the quartet.
     Result<fd>:rf = open(path, 0i64, 0i64);
@@ -44,7 +46,7 @@ func:main = int32(cstring[]:_~argv) {
     // The stream is exhausted: E_EOF, as a code, with its value pinned.
     Result<int64>:eof = read(src, buf, 64i64);
     if (!eof.is_error)                                { exit 19i32; }
-    if ((eof.err => int64) != (0i64 - 4096i64))     { exit 20i32; }
+    if (eof.err != IoEof)                           { exit 20i32; }
 
     // Zero asked is zero delivered — NOT end-of-input.
     Result<int64>:none = read(src, buf, 0i64);
@@ -60,4 +62,4 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

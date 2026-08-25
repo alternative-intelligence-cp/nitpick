@@ -27,6 +27,8 @@
 // one field sits at offset 0. That is why this test reads the mechanism and not
 // only the number.
 
+error:E9;
+
 trait:Speaks = { func:say  = int32(Self:self); };
 trait:Walks  = { func:step = int32(Self:self); };
 
@@ -34,7 +36,7 @@ trait:Greets = {
     func:tag = int32(Self:self);
     // A DEFAULT FILLS ITS IMPL'S SLOT (D-158), and calls back into the impl —
     // which the thunk reaches through the symbol 1.0.5b gave it.
-    func:hello = int32(Self:self) { pass ((self.tag() ?! 9tbb32) + 100i32); };
+    func:hello = int32(Self:self) { pass ((self.tag() ?! E9) + 100i32); };
 };
 
 struct:Dog = { int32:v; };
@@ -56,25 +58,25 @@ func:main = int32(cstring[]:_~argv) {
     // The single-bound case, and two implementors reached through one type.
     dyn Speaks:s1 = d;
     dyn Speaks:s2 = c;
-    if ((s1.say() ?! 9tbb32) != 1i32)  { exit 10i32; }
-    if ((s2.say() ?! 9tbb32) != 5i32)  { exit 11i32; }
+    if ((s1.say() ?! E9) != 1i32)  { exit 10i32; }
+    if ((s2.say() ?! E9) != 5i32)  { exit 11i32; }
 
     // MULTI-BOUND: `{ data, vtSpeaks, vtWalks }`, a method from each word.
     dyn Speaks & Walks:m = d;
-    if ((m.say() ?! 9tbb32) != 1i32)   { exit 12i32; }
-    if ((m.step() ?! 9tbb32) != 2i32)  { exit 13i32; }
+    if ((m.say() ?! E9) != 1i32)   { exit 12i32; }
+    if ((m.step() ?! E9) != 2i32)  { exit 13i32; }
 
     // WIDENING IS A VALUE REBUILD (D-159): copy the data word and the retained
     // trait's word into the narrower shape, then dispatch through it.
     dyn Speaks:w = m;
-    if ((w.say() ?! 9tbb32) != 1i32)   { exit 14i32; }
+    if ((w.say() ?! E9) != 1i32)   { exit 14i32; }
 
     // A slot filled by an INHERITED DEFAULT, which calls back into the impl.
     dyn Greets:g = d;
-    if ((g.hello() ?! 9tbb32) != 107i32) { exit 15i32; }
-    if ((g.tag() ?! 9tbb32) != 7i32)     { exit 16i32; }
+    if ((g.hello() ?! E9) != 107i32) { exit 15i32; }
+    if ((g.tag() ?! E9) != 7i32)     { exit 16i32; }
 
     exit 42i32;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

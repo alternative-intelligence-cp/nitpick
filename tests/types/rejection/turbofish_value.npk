@@ -5,13 +5,14 @@
 // parameter names nothing. This reached the backend, which refused it as a
 // rung — and a rung names valid Nitpick.
 mod:turbofish_value;
+error:E9;
 
 func:g = int32(int32:x) never fails { pass x; };
 
 func:main = int32(cstring[]:_~argv) {
     func int32(int32):f = g;
-    int32:v = f::<int32>(1i32) ?! 9tbb32;
+    int32:v = f::<int32>(1i32) ?! E9;
     exit v;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

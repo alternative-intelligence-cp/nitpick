@@ -4,10 +4,13 @@
 // failed, relayed, and unwrapped — and a PADDED struct (i8, i64, i8) round-
 // trips with LLVM's own layout, which #size_of asks directly.
 
+error:E6;
+error:E9;
+
 struct:Padded = { int8:a; int64:b; int8:c; };
 
 func:build = Padded(bool:ok) {
-    if (!ok) { fail 6tbb32; }
+    if (!ok) { fail E6; }
     Padded:p = Padded{ a: 1i8, b: 777i64, c: 3i8 };
     pass p;
 };
@@ -21,14 +24,14 @@ func:main = int32(cstring[]:_~argv) {
     // 1 + pad(7) + 8 + 1 + pad(7) = 24 under the x86-64 datalayout.
     if (#size_of<Padded>() != 24i64)      { exit 10i32; }
 
-    Padded:p = via(true) ?! 9tbb32;
+    Padded:p = via(true) ?! E9;
     if (p.a != 1i8)                       { exit 11i32; }
     if (p.b != 777i64)                    { exit 12i32; }
     if (p.c != 3i8)                       { exit 13i32; }
 
     Result<Padded>:r = via(false);
     if (!r.is_error)                      { exit 14i32; }
-    if (r.err != 6tbb32)                { exit 15i32; }
+    if (r.err != E6)                { exit 15i32; }
 
     drop wild_release_all();
 
@@ -36,4 +39,4 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

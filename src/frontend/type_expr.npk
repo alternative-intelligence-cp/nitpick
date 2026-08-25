@@ -1164,27 +1164,25 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
     pass inner;
 };
 
-// `e ?! code` — trap on failure. EXACTLY ONE ARGUMENT, TYPED `tbb32` (D-009),
-// and the derivation is what fixes it: `?!` calls `failsafe`, whose signature is
-// `func:failsafe = int32(tbb32:err)`, so the arity and the type both follow from
-// there rather than being chosen.
-//
-// A `tbb32` that is itself ERR is LEGAL here and deliberately so — `failsafe`
-// receiving a tainted code means "the failure code could not itself be computed",
-// which is information, not a mistake.
+// `e ?! code` — trap on failure. EXACTLY ONE ARGUMENT, TYPED `Error` (D-179;
+// the derivation D-009 made still fixes it): `?!` calls `failsafe`, whose
+// signature is `func:failsafe = int32(Error:err)`, so the arity and the type
+// both follow from there rather than being chosen. A value of `Error` exists
+// only by naming a declared constant, so the argument IS an identity —
+// the old tbb-code convention (and its tainted-code special case) is gone.
 func:type_emphatic_unwrap = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:t = raw type_of_expr(e, raw expr_lhs(n));
 
     int32:saved = e.expected;
-    e.expected = e.types.t_tbb32;
+    e.expected = e.types.t_error;
     int32:c = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     if (c != 0i32) {
         if (!(raw type_is_invalid(e.types, c))) {
-            if (c != e.types.t_tbb32) {
+            if (c != e.types.t_error) {
                 string:m1 = raw string_concat(
-                    "`?!` hands its argument to `failsafe`, which takes one `tbb32`, and this is `",
+                    "`?!` hands its argument to `failsafe`, which takes one `Error` (D-179) — name a declared error constant; this is `",
                     raw type_display(e.types, e.interns, c));
                 discard(raw te_error(e, raw TYPE_MISMATCH(),
                               raw string_concat(m1, "`"), n.span));
@@ -1256,18 +1254,18 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:saved = e.expected;
     e.expected = want;
     int32:vt = raw type_of_expr(e, raw expr_lhs(n));
-    e.expected = e.types.t_tbb32;
+    e.expected = e.types.t_error;
     int32:et = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
 
     // An omitted field is the zero for its side, which is what the desugar of
     // `pass` and `fail` produces — each writes one field and leaves the other.
     if (vt == 0i32) { vt = want; }
-    if (et == 0i32) { et = e.types.t_tbb32; }
+    if (et == 0i32) { et = e.types.t_error; }
 
-    if (et != e.types.t_tbb32) {
+    if (et != e.types.t_error) {
         if (!(raw type_is_invalid(e.types, et))) {
-            string:m1 = raw string_concat("a `Result`'s `error` is a `tbb32`, and this is `",
+            string:m1 = raw string_concat("a `Result`'s `err` is an `Error` (D-179), and this is `",
                                             raw type_display(e.types, e.interns, et));
             discard(raw te_error(e, raw TYPE_MISMATCH(),
                           raw string_concat(m1, "`"), n.span));

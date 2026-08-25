@@ -9,6 +9,8 @@
 // the wrong reason — the same rule that puts loader rejections in
 // `tests/modules/rejection/` instead of here.
 
+error:E9;
+
 struct:Holder = { int32->:inner; };
 struct:Pair = { int32:first; int32:second; };
 
@@ -159,7 +161,7 @@ func:leaks_through_a_callee = Cell() never fails {
 // expect-error: NITPICK-BORROW-003
 func:cross_extern = NIL() never fails {
     int32:x = 5i32;
-    discard(keepit(@x) ?! 9tbb32);
+    discard(keepit(@x) ?! E9);
     pass NIL;
 };
 
@@ -168,6 +170,6 @@ func:cross_extern = NIL() never fails {
 func:cross_extern_binding = NIL() never fails {
     int32:x = 5i32;
     int32->:p = @x;
-    discard(keepit(p) ?! 9tbb32);
+    discard(keepit(p) ?! E9);
     pass NIL;
 };

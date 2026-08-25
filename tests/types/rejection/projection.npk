@@ -7,6 +7,8 @@
 // kind gives a silent wrong answer rather than an error, and this file is fed
 // through the real parser on every harness run.
 
+error:E9;
+
 trait:Seq = {
     assoc:Item;
     func:next = Item(Self:self);
@@ -26,19 +28,19 @@ impl:Counter:Seq = {
 // ACCEPTED: the projection resolves through the bound, and the signature that
 // mentions it is legal. Reported here so the rule is not merely "refuse
 // everything".
-func:element<T: Seq> = T.Item(T:it) { pass (it.next() ?! 9tbb32); };
+func:element<T: Seq> = T.Item(T:it) { pass (it.next() ?! E9); };
 
 // A NAME NO BOUND DECLARES is refused BY NAME. Falling through to the invalid
 // type would be the silent wrong answer a new type kind most easily becomes.
 // expect-error: NITPICK-TYPE-001
-func:missing<T: Seq> = T.Nope(T:it) { pass (it.next() ?! 9tbb32); };
+func:missing<T: Seq> = T.Nope(T:it) { pass (it.next() ?! E9); };
 
 // TWO BOUNDS DECLARING ONE ASSOC is an ambiguity naming both — the answer D-158
 // gives a method supplied by two bounds, and for the same reason: an ordering
 // tiebreak would be meaning-by-position, and after D-159's canonical ordering
 // "first" would be decided by how the traits are SPELT.
 // expect-error: NITPICK-TYPE-020
-func:ambiguous<T: Seq & Producer> = T.Item(T:it) { pass (it.next() ?! 9tbb32); };
+func:ambiguous<T: Seq & Producer> = T.Item(T:it) { pass (it.next() ?! E9); };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

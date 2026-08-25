@@ -11,8 +11,8 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
-    if ((err =>! int64) != (0i64 - 4105i64)) { exit 9i32; }
+func:failsafe = int32(Error:err) {
+    if (err != WildLeak) { exit 9i32; }
     drop wild_release_all();
     int64:n = wild_live_count();
     if (n != 0i64) { exit 8i32; }

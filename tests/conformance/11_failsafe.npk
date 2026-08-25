@@ -11,12 +11,14 @@
 // POSITIVE: reaching failsafe means something failed, so returning 0 would be a
 // contradiction (D-014).
 
+error:E19;
+
 func:risky = int32(int32:x) never fails {
     wild int8->:buf = alloc(16i64);
     defer { drop dalloc(buf); }        // must NOT run on the trap path below
 
     if (x < 0i32) {
-        !!! 19i32;
+        !!! E19;
     }
 
     pass x;
@@ -28,6 +30,6 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) {
+func:failsafe = int32(Error:_~err) {
     exit 7i32;
 };

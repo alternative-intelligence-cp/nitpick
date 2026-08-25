@@ -5,6 +5,12 @@
 // by what it rejects as by what it accepts, and a negative test is only
 // checkable if its diagnostic can be captured and compared.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+
 use "./source_location.npk".*;
 // For `string_eq`. `intern.npk` imports nothing, so this adds a leaf edge rather
 // than a cycle — which matters here, because the seed emits in dependency order
@@ -123,10 +129,10 @@ pub func:diaglist_count = int64(DiagList->:list) never fails {
 
 pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) never fails {
     if (i < 0i64) {
-        !!! 6tbb32;
+        !!! BoundsId;
     }
     if (i >= list.count) {
-        !!! 6tbb32;
+        !!! BoundsId;
     }
     pass list.items[i];
 };

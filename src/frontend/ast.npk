@@ -19,6 +19,14 @@
 // rather than an integer (D-042). It costs nothing at runtime and removes a
 // whole class of mixup from a structure built almost entirely of indices.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+error:BoundsScratch;
+error:BoundsWindow;
+
 use "./source_location.npk".*;
 use "./num_width.npk".*;
 use "./ast_kind.npk".*;
@@ -285,8 +293,8 @@ pub func:ast_add_expr_w = ExprId(Ast->:ast, ExprKind:kind, Span:span,
 // let a corrupt handle read as a legitimate absence, which is the failure
 // D-042's "an fd is always valid" reasoning exists to prevent.
 pub func:ast_expr = ExprNode(Ast->:ast, ExprId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     pass ast.exprs[id.index => int64];
 };
 
@@ -308,8 +316,8 @@ pub func:ast_expr_count = int32(Ast->:ast) never fails { pass ast.expr_count; };
 // Nothing else may: a window repointed at a range somebody else owns is every
 // child of that node silently becoming another node's.
 pub func:ast_set_decl_window = NIL(Ast->:ast, DeclId:id, int32:start, int32:count) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.decl_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.decl_count) { !!! BoundsId; }
     DeclNode:n = ast.decls[id.index => int64];
     n.b = start;
     n.c = count;
@@ -322,8 +330,8 @@ pub func:ast_set_decl_window = NIL(Ast->:ast, DeclId:id, int32:start, int32:coun
 // mutators above — the tree is written once after expansion, and derive runs inside
 // it.
 pub func:ast_or_decl_flags = NIL(Ast->:ast, DeclId:id, int32:bits) never fails {
-    if (id.index < 1i32) { !!! 7tbb32; }
-    if (id.index >= ast.decl_count) { !!! 7tbb32; }
+    if (id.index < 1i32) { !!! BoundsId; }
+    if (id.index >= ast.decl_count) { !!! BoundsId; }
     DeclNode:n = ast.decls[id.index => int64];
     n.a = n.a | bits;
     ast.decls[id.index => int64] = n;
@@ -331,8 +339,8 @@ pub func:ast_or_decl_flags = NIL(Ast->:ast, DeclId:id, int32:bits) never fails {
 };
 
 pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     ExprNode:n = ast.exprs[id.index => int64];
     n.a = value;
     ast.exprs[id.index => int64] = n;
@@ -344,8 +352,8 @@ pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) never fails {
 // resolution records a symbol on an identifier. Unused by every other pattern
 // kind, and zero until the pick that owns the arm is checked.
 pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.pat_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.pat_count) { !!! BoundsId; }
     PatNode:n = ast.pats[id.index => int64];
     n.a = value;
     ast.pats[id.index => int64] = n;
@@ -358,8 +366,8 @@ pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) never fails {
 // checker finds a binding's index by name and reads the type back. Free (zero)
 // until the pick that owns the arm is checked, on both pattern kinds.
 pub func:ast_set_pat_payload = NIL(Ast->:ast, PatId:id, int64:value) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.pat_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.pat_count) { !!! BoundsId; }
     PatNode:n = ast.pats[id.index => int64];
     n.payload = value;
     ast.pats[id.index => int64] = n;
@@ -404,27 +412,27 @@ pub func:HYG_IN_MACRO = int32() never fails { pass 4i32; };
 pub func:HYG_SEEN = int32() never fails { pass 8i32; };
 
 pub func:ast_expr_flag = bool(Ast->:ast, ExprId:id, int32:bit) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     pass ((ast.expr_flags[id.index => int64] & bit) != 0i32);
 };
 
 pub func:ast_set_expr_flag = NIL(Ast->:ast, ExprId:id, int32:bit) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     ast.expr_flags[id.index => int64] = ast.expr_flags[id.index => int64] | bit;
     pass NIL;
 };
 
 pub func:ast_stmt_flag = bool(Ast->:ast, StmtId:id, int32:bit) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.stmt_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.stmt_count) { !!! BoundsId; }
     pass ((ast.stmt_flags[id.index => int64] & bit) != 0i32);
 };
 
 pub func:ast_set_stmt_flag = NIL(Ast->:ast, StmtId:id, int32:bit) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.stmt_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.stmt_count) { !!! BoundsId; }
     ast.stmt_flags[id.index => int64] = ast.stmt_flags[id.index => int64] | bit;
     pass NIL;
 };
@@ -443,25 +451,25 @@ pub func:ast_set_stmt_flag = NIL(Ast->:ast, StmtId:id, int32:bit) never fails {
 // to leave. Visible only for a body that is EXACTLY `#caller(name)`, because
 // anything wrapped around it makes the escape a child rather than the root.
 pub func:ast_adopt_expr_flags = NIL(Ast->:ast, ExprId:dst, ExprId:src) never fails {
-    if (dst.index < 1i32) { !!! 7tbb32; }
-    if (dst.index >= ast.expr_count) { !!! 7tbb32; }
-    if (src.index < 1i32) { !!! 7tbb32; }
-    if (src.index >= ast.expr_count) { !!! 7tbb32; }
+    if (dst.index < 1i32) { !!! BoundsId; }
+    if (dst.index >= ast.expr_count) { !!! BoundsId; }
+    if (src.index < 1i32) { !!! BoundsId; }
+    if (src.index >= ast.expr_count) { !!! BoundsId; }
     ast.expr_flags[dst.index => int64] = ast.expr_flags[dst.index => int64]
                                        | ast.expr_flags[src.index => int64];
     pass NIL;
 };
 
 pub func:ast_replace_expr = NIL(Ast->:ast, ExprId:id, ExprNode:n) never fails {
-    if (id.index < 1i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 1i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     ast.exprs[id.index => int64] = n;
     pass NIL;
 };
 
 pub func:ast_replace_stmt = NIL(Ast->:ast, StmtId:id, StmtNode:n) never fails {
-    if (id.index < 1i32) { !!! 7tbb32; }
-    if (id.index >= ast.stmt_count) { !!! 7tbb32; }
+    if (id.index < 1i32) { !!! BoundsId; }
+    if (id.index >= ast.stmt_count) { !!! BoundsId; }
     ast.stmts[id.index => int64] = n;
     pass NIL;
 };
@@ -477,8 +485,8 @@ pub func:ast_replace_stmt = NIL(Ast->:ast, StmtId:id, StmtNode:n) never fails {
 // is an untyped one. Blanking is how the expander tells them the truth: this node
 // is not in the program.
 pub func:ast_blank_expr = NIL(Ast->:ast, ExprId:id) never fails {
-    if (id.index < 1i32) { !!! 7tbb32; }
-    if (id.index >= ast.expr_count) { !!! 7tbb32; }
+    if (id.index < 1i32) { !!! BoundsId; }
+    if (id.index >= ast.expr_count) { !!! BoundsId; }
     ExprNode:n = ast.exprs[id.index => int64];
     ExprNode:blank = ExprNode{ kind: ExprKind.ExprNone, span: n.span,
                                a: 0i32, b: 0i32, c: 0i32, payload: 0i64,
@@ -516,8 +524,8 @@ pub func:ast_add_stmt = StmtId(Ast->:ast, StmtKind:kind, Span:span,
 };
 
 pub func:ast_stmt = StmtNode(Ast->:ast, StmtId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.stmt_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.stmt_count) { !!! BoundsId; }
     pass ast.stmts[id.index => int64];
 };
 
@@ -539,8 +547,8 @@ func:ast_grow_decls = NIL(Ast->:ast) never fails {
 // module-graph order and fixes the prelude's system family from its
 // declared literals. Written once, before anything reads it.
 pub func:ast_set_error_code = NIL(Ast->:ast, DeclId:id, int32:code) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.decl_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.decl_count) { !!! BoundsId; }
     DeclNode:n = ast.decls[id.index => int64];
     n.c = code;
     ast.decls[id.index => int64] = n;
@@ -561,8 +569,8 @@ pub func:ast_add_decl = DeclId(Ast->:ast, DeclKind:kind, Span:span,
 };
 
 pub func:ast_decl = DeclNode(Ast->:ast, DeclId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.decl_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.decl_count) { !!! BoundsId; }
     pass ast.decls[id.index => int64];
 };
 
@@ -593,8 +601,8 @@ pub func:ast_add_type = TypeId(Ast->:ast, TypeKind:kind, Span:span,
 };
 
 pub func:ast_type = TypeNode(Ast->:ast, TypeId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.type_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.type_count) { !!! BoundsId; }
     pass ast.types[id.index => int64];
 };
 
@@ -625,8 +633,8 @@ pub func:ast_add_pat = PatId(Ast->:ast, PatKind:kind, Span:span,
 };
 
 pub func:ast_pat = PatNode(Ast->:ast, PatId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.pat_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.pat_count) { !!! BoundsId; }
     pass ast.pats[id.index => int64];
 };
 
@@ -657,8 +665,8 @@ pub func:ast_add_verify = VerifyId(Ast->:ast, VerifyKind:kind, Span:span,
 };
 
 pub func:ast_verify = VerifyNode(Ast->:ast, VerifyId:id) never fails {
-    if (id.index < 0i32) { !!! 7tbb32; }
-    if (id.index >= ast.verify_count) { !!! 7tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= ast.verify_count) { !!! BoundsId; }
     pass ast.verifies[id.index => int64];
 };
 
@@ -764,9 +772,9 @@ pub func:idspan_empty = IdSpan() never fails {
 // name supplied by two bounds as ambiguous, so the same trait counted twice makes
 // every one of its methods uncallable.
 pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) never fails {
-    if (i < 0i32) { !!! 9tbb32; }
+    if (i < 0i32) { !!! BoundsScratch; }
     int32:at = mark + i;
-    if (at >= ast.scratch_count) { !!! 9tbb32; }
+    if (at >= ast.scratch_count) { !!! BoundsScratch; }
     pass (ast.scratch[at => int64]);
 };
 
@@ -778,8 +786,8 @@ pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) never fails {
 // an identical window to the pool for every type a substitution walked past, and
 // the pool only grows.
 pub func:ast_scratch_drop = NIL(Ast->:ast, int32:mark) never fails {
-    if (mark < 0i32) { !!! 9tbb32; }
-    if (mark > ast.scratch_count) { !!! 9tbb32; }
+    if (mark < 0i32) { !!! BoundsScratch; }
+    if (mark > ast.scratch_count) { !!! BoundsScratch; }
     ast.scratch_count = mark;
     pass NIL;
 };
@@ -789,9 +797,9 @@ pub func:ast_scratch_drop = NIL(Ast->:ast, int32:mark) never fails {
 // is that fill-in, and it is bounds-checked so a wrong index is an error rather
 // than a silent write into somebody else's window.
 pub func:ast_scratch_set = NIL(Ast->:ast, int32:mark, int32:i, int32:value) never fails {
-    if (i < 0i32) { !!! 9tbb32; }
+    if (i < 0i32) { !!! BoundsScratch; }
     int32:at = mark + i;
-    if (at >= ast.scratch_count) { !!! 9tbb32; }
+    if (at >= ast.scratch_count) { !!! BoundsScratch; }
     ast.scratch[at => int64] = value;
     pass NIL;
 };
@@ -811,10 +819,10 @@ pub func:ast_copy_window = NIL(Ast->:ast, IdSpan:w) never fails {
 };
 
 pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) never fails {
-    if (i < 0i32) { !!! 8tbb32; }
+    if (i < 0i32) { !!! BoundsWindow; }
     int32:at = start + i;
-    if (at < 0i32) { !!! 8tbb32; }
-    if (at >= ast.id_count) { !!! 8tbb32; }
+    if (at < 0i32) { !!! BoundsWindow; }
+    if (at >= ast.id_count) { !!! BoundsWindow; }
     pass ast.ids[at => int64];
 };
 

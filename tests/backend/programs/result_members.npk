@@ -3,24 +3,26 @@
 // `Result<T>`'s three members (D-069): `value`, `error`, and `is_error` DERIVED
 // as `error != 0` — plus the one explicit spelling of `return`.
 
+error:E3;
+
 func:direct = int32() {
     return Result{ value: 41i32 };
 };
 
 func:refused = int32(int32:code) {
-    if (code > 0i32) { fail 3tbb32; }
+    if (code > 0i32) { fail E3; }
     pass 5i32;
 };
 
 func:main = int32(cstring[]:_~argv) {
     Result<int32>:a = direct();
     if (a.is_error)                          { exit 10i32; }
-    if (a.err != 0tbb32)                     { exit 11i32; }
+    if (a.is_error)                          { exit 11i32; }
     if (a.value != 41i32)                    { exit 12i32; }
 
     Result<int32>:b = refused(3i32);
     if (!b.is_error)                         { exit 13i32; }
-    if (b.err != 3tbb32)                     { exit 14i32; }
+    if (b.err != E3)                     { exit 14i32; }
     // `b.value` here would be NITPICK-TAINT-001: after a failure the value slot
     // is TAINTED, and reading it is refused — the analysis caught this very
     // file trying, which is the rule working. The zeroed slot is asserted from
@@ -36,4 +38,4 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

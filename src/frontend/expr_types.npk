@@ -26,6 +26,12 @@
 // one function. Expressions are already indices into one flat array (0.2.0), so
 // the table is the same shape as the thing it annotates and needs no lookup.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+
 use "./source_location.npk".*;
 use "./ast_kind.npk".*;
 use "./ast.npk".*;
@@ -152,8 +158,8 @@ pub func:exprtypes_for = ExprTypes(Ast->:ast) never fails {
 // different thing from one it never reached, and only recording the successes
 // would collapse them.
 pub func:exprtypes_set = NIL(ExprTypes->:t, ExprId:id, int32:type_id) never fails {
-    if (id.index < 0i32) { !!! 24tbb32; }
-    if (id.index >= t.count) { !!! 24tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
     t.items[id.index => int64] = type_id;
     t.known[id.index => int64] = true;
     pass NIL;
@@ -177,8 +183,8 @@ pub func:exprtypes_get = int32(ExprTypes->:t, ExprId:id) never fails {
 // The resolved callee of a call expression — the declaration index the checker
 // settled on (1.0.3). 0 when there is none.
 pub func:exprtypes_set_callee = NIL(ExprTypes->:t, ExprId:id, int32:decl) never fails {
-    if (id.index < 0i32) { !!! 24tbb32; }
-    if (id.index >= t.count) { !!! 24tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
     t.callee[id.index => int64] = decl;
     pass NIL;
 };
@@ -192,8 +198,8 @@ pub func:exprtypes_callee = int32(ExprTypes->:t, ExprId:id) never fails {
 // The interned symbol name a method call's callee is emitted under (1.0.5b).
 // 0 means "its own name" — a free function, or anything no impl supplied.
 pub func:exprtypes_set_callee_sym = NIL(ExprTypes->:t, ExprId:id, int32:nm) never fails {
-    if (id.index < 0i32) { !!! 24tbb32; }
-    if (id.index >= t.count) { !!! 24tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
     t.callee_sym[id.index => int64] = nm;
     pass NIL;
 };
@@ -205,8 +211,8 @@ pub func:exprtypes_callee_sym = int32(ExprTypes->:t, ExprId:id) never fails {
 };
 
 pub func:exprtypes_set_callee_trait = NIL(ExprTypes->:t, ExprId:id, int32:tr) never fails {
-    if (id.index < 0i32) { !!! 24tbb32; }
-    if (id.index >= t.count) { !!! 24tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
     t.callee_trait[id.index => int64] = tr;
     pass NIL;
 };
@@ -219,8 +225,8 @@ pub func:exprtypes_callee_trait = int32(ExprTypes->:t, ExprId:id) never fails {
 
 // The function type a call's arguments were checked against (1.0.6e), or 0.
 pub func:exprtypes_set_callee_ft = NIL(ExprTypes->:t, ExprId:id, int32:ft) never fails {
-    if (id.index < 0i32) { !!! 24tbb32; }
-    if (id.index >= t.count) { !!! 24tbb32; }
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
     t.callee_ft[id.index => int64] = ft;
     pass NIL;
 };

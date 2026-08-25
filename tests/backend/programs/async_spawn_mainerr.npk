@@ -6,8 +6,10 @@
 // process exit code.
 mod:async_spawn_mainerr;
 
-async func:noisy = NIL(int32:v) {
-    fail (v =>! tbb32);
+error:ChildBoom;
+
+async func:noisy = NIL(int32:_~v) {
+    fail ChildBoom;
 };
 
 async func:main = int32(cstring[]:_~argv) {
@@ -15,4 +17,4 @@ async func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 33i32; };
+func:failsafe = int32(Error:_~e) { exit 33i32; };

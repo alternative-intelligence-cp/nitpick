@@ -1,12 +1,14 @@
 // D-152 — the arena surface refuses what it cannot mean (0.10.2).
 
 // expect-error: NITPICK-TYPE-007
+error:E77;
+
 func:wrong_element = NIL() never fails {
     // a Handle<int32> names nothing in an arena<int64>
     arena<int64>:a = arena_make(4i64);
     arena<int32>:b = arena_make(4i64);
     Handle<int32>:h = b.alloc();
-    int64:v = a.get(h) ?! 77tbb32;
+    int64:v = a.get(h) ?! E77;
     discard(v);
     b.destroy();
     a.destroy();
@@ -44,4 +46,4 @@ func:no_context = NIL() never fails {
 };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

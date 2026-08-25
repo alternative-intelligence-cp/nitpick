@@ -15,6 +15,7 @@
 // a module name is an identifier. The loader's report for that is
 // NITPICK-RESOLVE-005 at the `mod:` line, which reads as a missing file.)
 mod:folding;
+error:E9;
 
 const int32:BASE = 5i32;
 const int32:DERIVED = BASE * 2i32 + 1i32;      // a const reading another const
@@ -109,8 +110,8 @@ func:take_low = Guard() acquires LOW { pass Guard{ v: 1i32 }; };
 func:take_high = Guard() acquires HIGH { pass Guard{ v: 3i32 }; };
 
 func:upward_still_passes = NIL() {
-    Guard:a = take_low() ?! 9tbb32;
-    Guard:b = take_high() ?! 9tbb32;
+    Guard:a = take_low() ?! E9;
+    Guard:b = take_high() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;

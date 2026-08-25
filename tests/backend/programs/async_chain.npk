@@ -13,13 +13,14 @@
 // allows); pipelining a value through the NEXT await's argument, which is
 // how results chain without a crossing local; and zero-argument machines.
 mod:async_chain;
+error:E7;
 
 async func:one = int32() {
     pass 1i32;
 };
 
 async func:leaf = int32(int32:v) {
-    if (v > 100i32) { fail 7tbb32; }
+    if (v > 100i32) { fail E7; }
     pass v * 2i32;
 };
 
@@ -49,9 +50,9 @@ async func:with_spin = int32(int32:c) {
 async func:main = int32(cstring[]:_~argv) {
     int32:a = await mid(20i32) ?| 0i32;      // 41
     int32:b = await leaf(a) ?| 0i32;         // 82
-    int32:c = await failing(b) ?| 1i32;      // fail 7tbb32 -> 1
+    int32:c = await failing(b) ?| 1i32;      // fail E7 -> 1
     int32:r = await with_spin(c) ?| 0i32;    // 1 + 3 + 38
     exit r;                                  // 42
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 111i32; };
+func:failsafe = int32(Error:_~e) { exit 111i32; };

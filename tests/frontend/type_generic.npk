@@ -11,6 +11,8 @@
 // be wrong in general — and the single verification run is the worst possible
 // place to discover it.
 
+error:E9;
+
 use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/token_kind.npk".*;
 use "../../src/frontend/token.npk".*;
@@ -145,7 +147,7 @@ func:main = int32(cstring[]:_~argv) {
     // it: a checker that refused every method call on a parameter would pass
     // every test below and be useless.
     Gx:v1 = raw gx(
-        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };",
+        "error:E9; trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! E9); pass NIL; };",
         @it);
     if (raw errs(@v1) != 0i64)                                  { exit 10i32; }
 
@@ -154,7 +156,7 @@ func:main = int32(cstring[]:_~argv) {
     // is decided WITHOUT AN INSTANTIATION. There is no call to `f` in this
     // program and there never needs to be.
     Gx:v2 = raw gx(
-        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.render() ?! 9tbb32); pass NIL; };",
+        "error:E9; trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.render() ?! E9); pass NIL; };",
         @it);
     if (raw errs(@v2) != 1i64)                                  { exit 11i32; }
     // ITS OWN CODE, not a mismatch. The message also names the bounds `T` does
@@ -166,7 +168,7 @@ func:main = int32(cstring[]:_~argv) {
     // AN UNBOUNDED PARAMETER CAN DO NOTHING AT ALL. `<T>` with no bounds is a
     // type that satisfies nothing, so every method call on it is refused; the
     // message says so rather than listing an empty bound set.
-    Gx:v3 = raw gx("func:f<T> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };", @it);
+    Gx:v3 = raw gx("error:E9; func:f<T> = NIL(T:x) never fails { discard(x.show() ?! E9); pass NIL; };", @it);
     if (raw errs(@v3) != 1i64)                                  { exit 14i32; }
     if (!(raw string_eq(raw code0(@v3), raw TYPE_NO_METHOD())))  { exit 15i32; }
 
@@ -181,7 +183,7 @@ func:main = int32(cstring[]:_~argv) {
     // break at an instantiation with a type that has no `show`, reported against
     // a caller who supplied a perfectly reasonable type.
     Gx:v4 = raw gx(
-        "struct:Point = { flt64:x; }; func:show = string(Point:p) never fails { pass \"p\"; }; func:f<T> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };",
+        "error:E9; struct:Point = { flt64:x; }; func:show = string(Point:p) never fails { pass \"p\"; }; func:f<T> = NIL(T:x) never fails { discard(x.show() ?! E9); pass NIL; };",
         @it);
     if (raw errs(@v4) != 1i64)                                  { exit 16i32; }
     // AND IT IS THE RIGHT ERROR. Without the guard the free function IS found
@@ -540,13 +542,13 @@ func:main = int32(cstring[]:_~argv) {
     // same function, that an annotation gets. A call and an annotation refusing
     // the same thing for different reasons would be two rules.
     Gx:g6 = raw gx(
-        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
+        "error:E9; trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! E9); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
         @it);
     if (raw errs(@g6) != 1i64)                                  { exit 87i32; }
     if (!(raw string_eq(raw code0(@g6), raw TYPE_BOUND_UNMET()))) { exit 88i32; }
 
     Gx:g7 = raw gx(
-        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) never fails { pass \"p\"; }; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
+        "error:E9; trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) never fails { pass \"p\"; }; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! E9); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
         @it);
     if (raw errs(@g7) != 0i64)                                  { exit 89i32; }
 
@@ -716,4 +718,4 @@ func:nested_generic = string(int32:depth) never fails {
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the
 // program's `failsafe`, so every executable must define one — D-013 was always
 // the rule; the linker now enforces it mechanically.
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

@@ -5,6 +5,7 @@
 // code once vanished (Theme-A hole 4).
 
 mod:forms_tail;
+error:E9;
 
 // An inline mod's members EMIT now (Theme-A hole 4: emit_all used to shed
 // them silently). Nothing outside can reference an inner name yet — that
@@ -21,7 +22,7 @@ func:add2 = int32(int32:v) never fails { pass (v + 2i32); };
 func:add7 = int32(int32:v) never fails { pass (v + 7i32); };
 
 func:apply = int32(func int32(int32):f, int32:v) {
-    int32:r = f(v) ?! 9tbb32;
+    int32:r = f(v) ?! E9;
     pass r;
 };
 
@@ -47,10 +48,10 @@ func:main = int32(cstring[]:argv) {
     // A function as a VALUE (D-087): one word, no environment — and the call
     // through it carries the same Result contract as a named call.
     func int32(int32):f = add2;
-    if ((apply(f, 5i32) ?! 9tbb32) != 7i32)           { exit 15i32; }
+    if ((apply(f, 5i32) ?! E9) != 7i32)           { exit 15i32; }
     f = add7;
-    if ((apply(f, 5i32) ?! 9tbb32) != 12i32)          { exit 16i32; }
-    if ((f(1i32) ?! 9tbb32) != 8i32)                  { exit 17i32; }
+    if ((apply(f, 5i32) ?! E9) != 12i32)          { exit 16i32; }
+    if ((f(1i32) ?! E9) != 8i32)                  { exit 17i32; }
 
     // The ternary is LAZY (D-145): the untaken arm does not run, so the
     // guarded division is genuinely guarded — this line traps under a
@@ -67,4 +68,4 @@ func:main = int32(cstring[]:argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

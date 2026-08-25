@@ -26,6 +26,13 @@
 // agree until the bootstrap fixpoint closes, because their output interoperates
 // (bootstrap/generator/ntypes.py says the same thing from the other side).
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+error:BoundsIndex;
+
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./ast.npk".*;
@@ -209,8 +216,8 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
 // The escape analysis reads it: a struct of plain scalars (`ModuleEntry`,
 // `Token`, `Span`) can no more carry a borrow than an `int32` can.
 pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
-    if (id < 0i32) { !!! 14tbb32; }
-    if (id >= t.count) { !!! 14tbb32; }
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
     t.haspt[id => int64] = 1i32;
     if (has) { t.haspt[id => int64] = 2i32; }
     pass NIL;
@@ -223,8 +230,8 @@ pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
 };
 
 pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) never fails {
-    if (id < 0i32) { !!! 14tbb32; }
-    if (id >= t.count) { !!! 14tbb32; }
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
     Type:e = t.items[id => int64];
     e.size = size;
     e.align = align;
@@ -233,8 +240,8 @@ pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) n
 };
 
 pub func:tt_get = Type(TypeTable->:t, int32:id) never fails {
-    if (id < 0i32) { !!! 14tbb32; }
-    if (id >= t.count) { !!! 14tbb32; }
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
     pass t.items[id => int64];
 };
 
@@ -802,8 +809,8 @@ func:inst_grow = NIL(InstanceTable->:t) never fails {
 pub func:inst_count = int32(InstanceTable->:t) never fails { pass t.count; };
 
 pub func:inst_at = Instance(InstanceTable->:t, int32:i) never fails {
-    if (i < 0i32) { !!! 23tbb32; }
-    if (i >= t.count) { !!! 23tbb32; }
+    if (i < 0i32) { !!! BoundsIndex; }
+    if (i >= t.count) { !!! BoundsIndex; }
     pass (t.items[i => int64]);
 };
 
@@ -873,8 +880,8 @@ func:fninst_grow = NIL(FnInstTable->:t) never fails {
 pub func:fninst_count = int32(FnInstTable->:t) never fails { pass t.count; };
 
 pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) never fails {
-    if (i < 0i32) { !!! 23tbb32; }
-    if (i >= t.count) { !!! 23tbb32; }
+    if (i < 0i32) { !!! BoundsIndex; }
+    if (i >= t.count) { !!! BoundsIndex; }
     pass (t.items[i => int64]);
 };
 

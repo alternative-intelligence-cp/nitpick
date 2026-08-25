@@ -59,6 +59,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     if (s.kind == StmtKind.StmtAssignStmt)  { drop check_assign(e, s);   pass NIL; }
     if (s.kind == StmtKind.StmtPassStmt)    { drop check_pass(e, s);     pass NIL; }
     if (s.kind == StmtKind.StmtFailStmt)    { drop check_fail(e, s);     pass NIL; }
+    if (s.kind == StmtKind.StmtTrapStmt)    { drop check_trap(e, s);     pass NIL; }
     if (s.kind == StmtKind.StmtReturnStmt)  { drop check_return(e, s);   pass NIL; }
     if (s.kind == StmtKind.StmtExitStmt)    { drop check_exit(e, s);     pass NIL; }
 
@@ -653,13 +654,31 @@ func:check_fail = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (raw expr_is_none(c)) { pass NIL; }
 
     int32:saved = e.expected;
-    e.expected = e.types.t_tbb32;
+    e.expected = e.types.t_error;
     int32:got = raw type_of_expr(e, c);
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
-    if (got != e.types.t_tbb32) {
-        drop te_assign_mismatch(e, e.types.t_tbb32, got, s.span);
+    if (got != e.types.t_error) {
+        drop te_assign_mismatch(e, e.types.t_error, got, s.span);
+    }
+    pass NIL;
+};
+
+// `!!! e;` HANDS `failsafe` AN `Error` TOO (D-179): the trap and the `?!`
+// escalation land in the same place, so they carry the same type — one rule,
+// no context.
+func:check_trap = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    ExprId:c = raw stmt_expr(s);
+    if (raw expr_is_none(c)) { pass NIL; }
+    int32:saved = e.expected;
+    e.expected = e.types.t_error;
+    int32:got = raw type_of_expr(e, c);
+    e.expected = saved;
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (got != e.types.t_error) {
+        drop te_assign_mismatch(e, e.types.t_error, got, s.span);
     }
     pass NIL;
 };
@@ -1001,6 +1020,25 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
         if (raw string_eq(raw intern_get(e.interns, raw decl_name(d)), "failsafe")) {
             discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
                 "`failsafe` cannot be `async` (D-177): it is the controlled-stop path, and it must run without an executor",
+                d.span));
+        }
+    }
+    // `failsafe` TAKES EXACTLY ONE `Error` (D-179): the runtime routes every
+    // uncaught failure through it, and the route has one shape. Checked here
+    // because this is where the function's identity is already in hand.
+    if (raw string_eq(raw intern_get(e.interns, raw decl_name(d)), "failsafe")) {
+        bool:fs_ok = ((raw fn_param_count(e.ast, d)) == 1i32);
+        if (fs_ok) {
+            DeclNode:fsp = raw ast_decl(e.ast, raw fn_param(e.ast, d, 0i32));
+            TypeResolver:fsr = raw etyper_resolver(e);
+            int32:fspt = raw resolve_type(@fsr, raw param_type(fsp), e.scope);
+            if (fspt != e.types.t_error) {
+                if (!(raw type_is_invalid(e.types, fspt))) { fs_ok = false; }
+            }
+        }
+        if (!fs_ok) {
+            discard(raw te_error(e, raw TYPE_FAILSAFE_SIG(),
+                "`failsafe` takes exactly one `Error` (D-179): `func:failsafe = int32(Error:e) { … }` — the runtime routes every uncaught failure through it",
                 d.span));
         }
     }

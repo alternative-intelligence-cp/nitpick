@@ -11,11 +11,12 @@
 // heap address); and a crossing local beside a `wild` allocation whose
 // `defer` runs on the post-resume exit path.
 mod:async_locals;
+error:E6;
 
 struct:Pair = { int32:x; int32:y; };
 
 async func:step = int32(int32:v) {
-    if (v > 100i32) { fail 6tbb32; }
+    if (v > 100i32) { fail E6; }
     pass v + 1i32;
 };
 
@@ -27,7 +28,7 @@ func:bump = NIL(int32->:p) never fails {
 async func:held = int32(int32:v) {
     int32:a = relay await step(v);       // crosses the next two awaits
     int32:b = relay await step(a);       // crosses the next await
-    int32:c = await step(200i32) ?| 3i32; // fail 6tbb32 -> 3
+    int32:c = await step(200i32) ?| 3i32; // fail E6 -> 3
     pass a + b + c;
 };
 
@@ -68,4 +69,4 @@ async func:main = int32(cstring[]:_~argv) {
     exit r + 10i32;                           // 42
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 99i32; };
+func:failsafe = int32(Error:_~e) { exit 99i32; };

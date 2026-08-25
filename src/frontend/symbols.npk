@@ -17,6 +17,12 @@
 // declarations and never looks inside a `BlockStmt`; phase 2 (cycle 0.3.5)
 // resolves bodies against the finished table.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsId;
+
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./ast_kind.npk".*;
@@ -244,8 +250,8 @@ pub func:symtab_home_scope = int32(SymbolTable->:t, int32:decl, int32:fallback) 
 };
 
 pub func:symtab_get = Symbol(SymbolTable->:t, int32:id) never fails {
-    if (id < 0i32) { !!! 11tbb32; }
-    if (id >= t.sym_count) { !!! 11tbb32; }
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.sym_count) { !!! BoundsId; }
     pass t.syms[id => int64];
 };
 

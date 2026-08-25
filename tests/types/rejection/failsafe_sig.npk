@@ -1,0 +1,9 @@
+// expect-error: NITPICK-TYPE-044
+//
+// D-179: `failsafe` takes exactly one `Error` — the runtime routes every
+// uncaught failure through it, and the route has one shape. The old
+// convention (`tbb32:e`) is now a refusal, not a habit.
+mod:failsafe_sig;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

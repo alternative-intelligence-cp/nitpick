@@ -9,6 +9,7 @@
 // identifier — the same trap `comptime` sprang in 0.6.4. The loader's report is
 // NITPICK-RESOLVE-005 at the `mod:` line, which reads as a missing file.)
 mod:deriving;
+error:E9;
 
 // --- a struct: the six that generate ---------------------------------------------
 //
@@ -25,12 +26,12 @@ struct:Point = {
 };
 
 func:a_point_has_all_six = NIL(Point:a, Point:b) {
-    bool:same = a.eq(b) ?! 9tbb32;
-    Ordering:o = a.cmp(b) ?! 9tbb32;
-    Ordering?:p = a.partial_cmp(b) ?! 9tbb32;
-    Point:c = a.clone() ?! 9tbb32;
-    string:s = a.to_string() ?! 9tbb32;
-    string:d = a.debug() ?! 9tbb32;
+    bool:same = a.eq(b) ?! E9;
+    Ordering:o = a.cmp(b) ?! E9;
+    Ordering?:p = a.partial_cmp(b) ?! E9;
+    Point:c = a.clone() ?! E9;
+    string:s = a.to_string() ?! E9;
+    string:d = a.debug() ?! E9;
     discard(same);
     discard(o);
     discard(p);
@@ -54,10 +55,10 @@ enum:Season = {
 };
 
 func:a_season_has_four = NIL(Season:a, Season:b) {
-    bool:same = a.eq(b) ?! 9tbb32;
-    Season:c = a.clone() ?! 9tbb32;
-    string:s = a.to_string() ?! 9tbb32;
-    string:d = a.debug() ?! 9tbb32;
+    bool:same = a.eq(b) ?! E9;
+    Season:c = a.clone() ?! E9;
+    string:s = a.to_string() ?! E9;
+    string:d = a.debug() ?! E9;
     discard(same);
     discard(c);
     discard(s);

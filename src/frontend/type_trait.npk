@@ -19,6 +19,13 @@
 // the same walk: which impls exist (coherence), what methods a type has (UFCS),
 // and what a trait requires of them (completeness).
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsBound;
+error:BoundsImpl;
+
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -81,8 +88,8 @@ func:impl_grow = NIL(ImplTable->:t) never fails {
 pub func:impl_count = int32(ImplTable->:t) never fails { pass t.count; };
 
 pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) never fails {
-    if (i < 0i32) { !!! 21tbb32; }
-    if (i >= t.count) { !!! 21tbb32; }
+    if (i < 0i32) { !!! BoundsImpl; }
+    if (i >= t.count) { !!! BoundsImpl; }
     pass (t.items[i => int64]);
 };
 
@@ -498,8 +505,8 @@ func:bound_grow = NIL(BoundTable->:t) never fails {
 pub func:bound_count = int32(BoundTable->:t) never fails { pass t.count; };
 
 pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) never fails {
-    if (i < 0i32) { !!! 22tbb32; }
-    if (i >= t.count) { !!! 22tbb32; }
+    if (i < 0i32) { !!! BoundsBound; }
+    if (i >= t.count) { !!! BoundsBound; }
     pass (t.items[i => int64]);
 };
 

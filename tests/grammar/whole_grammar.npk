@@ -347,8 +347,8 @@ func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) never fails
     // `Result{...}` is the language's ONLY constructor and the only legal operand
     // of `return`, and it did not parse: the struct-literal path is gated on an
     // identifier and `Result` is a keyword (D-097).
-    Result<int32>:okr = Result{value: 1i32, err: 0tbb32};
-    Result<int32>:okr2 = Result{err: 0tbb32, value: 1i32};
+    Result<int32>:okr = Result{value: 1i32 };
+    Result<int32>:okr2 = Result{value: 1i32};
     bool:bad = okr.is_error;
     // `is_err` tests a `tbb` for ERR without trapping — the one test that is safe
     // on every value, since branching on ERR otherwise traps.
@@ -391,4 +391,4 @@ func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) never fails
 };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

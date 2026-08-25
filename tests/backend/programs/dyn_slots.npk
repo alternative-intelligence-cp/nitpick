@@ -17,6 +17,8 @@
 // `dyn` × slot had one of sixteen.
 
 mod:dyn_slots;
+error:E3;
+error:E9;
 
 trait:Speaks = { func:say = int32(Self:self); };
 
@@ -41,12 +43,12 @@ enum:Slot = {
 };
 
 // A CALL ARGUMENT.
-func:speak = int32(dyn Speaks:s) { pass (s.say()) ?! 9tbb32; };
+func:speak = int32(dyn Speaks:s) { pass (s.say()) ?! E9; };
 
 // A METHOD-CALL ARGUMENT (parameter 1, behind the receiver).
 impl:Holder = {
     func:compare = int32(Holder:self, dyn Speaks:other) {
-        pass ((self.s.say() ?! 9tbb32) + (other.say() ?! 9tbb32));
+        pass ((self.s.say() ?! E9) + (other.say() ?! E9));
     };
 };
 
@@ -54,60 +56,60 @@ impl:Holder = {
 func:choose = dyn Speaks(bool:b, Dog:d, Cat:c) never fails { if (b) { pass d; } pass c; };
 
 // A `Result{…}` VALUE through the explicit `return`.
-func:boxed = dyn Speaks(Cat:c) { return Result{ value: c, err: 0tbb32 }; };
+func:boxed = dyn Speaks(Cat:c) { return Result{ value: c }; };
 
 // A FAILING CALL, so `?`'s default is reached.
-func:broken = dyn Speaks() { fail 3tbb32; };
+func:broken = dyn Speaks() { fail E3; };
 
 // A GENERIC FUNCTION with a `dyn` parameter: the specialization is matched by
 // the signature the checker recorded, not by the arguments' own types — a
 // `Cat` arriving where `dyn Speaks` is declared must still find `twice<int32>`.
-func:twice<T> = int32(T:_~tag, dyn Speaks:s) { pass ((s.say() ?! 9tbb32) * 2i32); };
+func:twice<T> = int32(T:_~tag, dyn Speaks:s) { pass ((s.say() ?! E9) * 2i32); };
 
 func:main = int32(cstring[]:_~argv) {
     Dog:d = Dog{ v: 0i32 };
     Cat:c = Cat{ v: 0i32 };
 
     // call argument
-    if ((speak(d) ?! 9tbb32) != 1i32) { exit 10i32; }
-    if ((speak(c) ?! 9tbb32) != 5i32) { exit 11i32; }
+    if ((speak(d) ?! E9) != 1i32) { exit 10i32; }
+    if ((speak(c) ?! E9) != 5i32) { exit 11i32; }
 
     // pass
     dyn Speaks:p = raw choose(false, d, c);
-    if ((p.say() ?! 9tbb32) != 5i32) { exit 12i32; }
+    if ((p.say() ?! E9) != 5i32) { exit 12i32; }
 
     // ASSIGNMENT into an existing dyn — the regression. `q` was built from
     // `d`; storing `c` raw left Dog's vtable word over Cat's bytes.
     dyn Speaks:q = d;
     q = c;
-    if ((q.say() ?! 9tbb32) != 5i32) { exit 13i32; }
+    if ((q.say() ?! E9) != 5i32) { exit 13i32; }
     q = d;
-    if ((q.say() ?! 9tbb32) != 1i32) { exit 14i32; }
+    if ((q.say() ?! E9) != 1i32) { exit 14i32; }
 
     // struct literal field, then field assignment
     Holder:h = Holder{ s: d, n: 0i32 };
-    if ((h.s.say() ?! 9tbb32) != 1i32) { exit 15i32; }
+    if ((h.s.say() ?! E9) != 1i32) { exit 15i32; }
     h.s = c;
-    if ((h.s.say() ?! 9tbb32) != 5i32) { exit 16i32; }
+    if ((h.s.say() ?! E9) != 5i32) { exit 16i32; }
 
     // method-call argument
-    if ((h.compare(d) ?! 9tbb32) != 6i32) { exit 17i32; }
+    if ((h.compare(d) ?! E9) != 6i32) { exit 17i32; }
 
     // array literal elements (through a substituted field type), then an
     // index assignment
     Pair<dyn Speaks>:pr = Pair{ items: [d, c] };
-    if ((pr.items[0].say() ?! 9tbb32) != 1i32) { exit 18i32; }
-    if ((pr.items[1].say() ?! 9tbb32) != 5i32) { exit 19i32; }
+    if ((pr.items[0].say() ?! E9) != 1i32) { exit 18i32; }
+    if ((pr.items[1].say() ?! E9) != 5i32) { exit 19i32; }
     pr.items[0] = c;
-    if ((pr.items[0].say() ?! 9tbb32) != 5i32) { exit 20i32; }
+    if ((pr.items[0].say() ?! E9) != 5i32) { exit 20i32; }
 
     // Result{…} value
-    dyn Speaks:b = boxed(c) ?! 9tbb32;
-    if ((b.say() ?! 9tbb32) != 5i32) { exit 21i32; }
+    dyn Speaks:b = boxed(c) ?! E9;
+    if ((b.say() ?! E9) != 5i32) { exit 21i32; }
 
     // `?` default
     dyn Speaks:f = broken() ?| c;
-    if ((f.say() ?! 9tbb32) != 5i32) { exit 22i32; }
+    if ((f.say() ?! E9) != 5i32) { exit 22i32; }
 
     // a pick arm's give
     int32:sel = 2i32;
@@ -115,19 +117,19 @@ func:main = int32(cstring[]:_~argv) {
         (1i32) { give d; },
         (*)    { give c; }
     };
-    if ((g.say() ?! 9tbb32) != 5i32) { exit 23i32; }
+    if ((g.say() ?! E9) != 5i32) { exit 23i32; }
 
     // a variant's payload
     Slot:sl = Slot.Held(c);
     pick (sl) {
-        (Slot.Held(inner)) { if ((inner.say() ?! 9tbb32) != 5i32) { exit 24i32; } },
+        (Slot.Held(inner)) { if ((inner.say() ?! E9) != 5i32) { exit 24i32; } },
         (Slot.Empty) { exit 25i32; }
     }
 
     // a generic function's dyn parameter
-    if ((twice::<int32>(0i32, c) ?! 9tbb32) != 10i32) { exit 26i32; }
+    if ((twice::<int32>(0i32, c) ?! E9) != 10i32) { exit 26i32; }
 
     exit 42i32;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

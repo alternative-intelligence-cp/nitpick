@@ -26,6 +26,8 @@
 // Each of 1, 2 and 3 alone produces a program that does not compile, so the
 // exit code below is only reached if all three hold.
 
+error:E9;
+
 trait:Plain = { func:one = int32(Self:self); };
 trait:Producer<T> = { func:make = T(Self:self); };
 
@@ -35,21 +37,21 @@ impl:IntBox:Plain = { func:one = int32(IntBox:self) { pass 1i32; }; };
 impl:IntBox:Producer<int32> = { func:make = int32(IntBox:self) { pass self.v; }; };
 
 // A NON-GENERIC trait as a bound.
-func:once<P: Plain> = int32(P:p) { pass (p.one()) ?! 9tbb32; };
+func:once<P: Plain> = int32(P:p) { pass (p.one()) ?! E9; };
 
 // A GENERIC trait as a bound — the trait's `T` must resolve here.
 func:twice<P: Producer<int32>> = int32(P:p) {
-    int32:a = p.make() ?! 9tbb32;
+    int32:a = p.make() ?! E9;
     pass (a + a);
 };
 
 func:main = int32(cstring[]:_~argv) {
     IntBox:b = IntBox{ v: 20i32 };
 
-    if ((once(b) ?! 9tbb32) != 1i32)   { exit 10i32; }
-    if ((twice(b) ?! 9tbb32) != 40i32) { exit 11i32; }
+    if ((once(b) ?! E9) != 1i32)   { exit 10i32; }
+    if ((twice(b) ?! E9) != 40i32) { exit 11i32; }
 
     exit 42i32;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

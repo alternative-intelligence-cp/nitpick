@@ -6,6 +6,8 @@
 // write REPLACES (O_TRUNC), and a stale tail surviving a shorter rewrite is the
 // classic way "replaced" quietly means "prefixed".
 
+error:E9;
+
 func:roundtrip = bool(cstring:path, string:data) never fails {
     Result<NIL>:w = write_file(path, data);
     if (w.is_error) { pass false; }
@@ -24,7 +26,7 @@ func:roundtrip = bool(cstring:path, string:data) never fails {
 func:main = int32(cstring[]:_~argv) {
     // Inside .internal/, which is gitignored — a test's droppings must never be
     // able to show up in `git status`.
-    cstring:path = to_cstring(".internal/file_io_roundtrip.tmp") ?! 9tbb32;
+    cstring:path = to_cstring(".internal/file_io_roundtrip.tmp") ?! E9;
 
     if (!(raw roundtrip(path, "the first body, which is the longer of the two")))
                                                         { exit 10i32; }
@@ -32,7 +34,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw roundtrip(path, "short")))                { exit 11i32; }
 
     // A path that cannot be created answers through the Result, never a crash.
-    cstring:bad = to_cstring(".internal/no_such_dir/x.tmp") ?! 9tbb32;
+    cstring:bad = to_cstring(".internal/no_such_dir/x.tmp") ?! E9;
     Result<NIL>:w = write_file(bad, "data");
     if (!w.is_error)                                    { exit 12i32; }
 
@@ -42,4 +44,4 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

@@ -10,6 +10,8 @@
 // The two halves are asserted separately, because they fail separately: the
 // EFFECT must run, and the ERROR must propagate carrying the same code.
 
+error:E5;
+
 struct:Box = { int32:v; };
 
 func:bump = NIL(Box->:b) never fails {
@@ -19,7 +21,7 @@ func:bump = NIL(Box->:b) never fails {
 
 func:erring = NIL(Box->:b) {
     b.v = b.v + 10i32;
-    fail 5tbb32;
+    fail E5;
 };
 
 func:via = NIL(Box->:b) never fails {
@@ -39,7 +41,7 @@ func:main = int32(cstring[]:_~argv) {
     Result<NIL>:r = via_err(@x);
     if (x.v != 12i32)       { exit 11i32; }   // the effect preceded the fail
     if (!r.is_error)        { exit 12i32; }   // the error propagated
-    if (r.err != 5tbb32)  { exit 13i32; }   // ... carrying the same code
+    if (r.err != E5)  { exit 13i32; }   // ... carrying the same code
 
     drop wild_release_all();
 
@@ -47,6 +49,6 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) {
+func:failsafe = int32(Error:_~err) {
     exit 1i32;
 };

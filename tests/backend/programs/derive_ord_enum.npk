@@ -5,6 +5,7 @@
 // The same body serves `PartialOrd`, whose `Ordering?` wraps the total order as
 // an always-present one.
 mod:derive_ord_enum;
+error:E9;
 
 #[derive(Ord)]
 enum:Level = { Low; Mid; High; };
@@ -15,10 +16,10 @@ func:main = int32(cstring[]:_~argv) {
     Level:m1 = Level.Mid;
     Level:m2 = Level.Mid;
     int32:acc = 0i32;
-    pick (lo.cmp(hi) ?! 9tbb32)  { (Ordering.Less)    { acc = acc + 20i32; }, (*) { } }
-    pick (hi.cmp(lo) ?! 9tbb32)  { (Ordering.Greater) { acc = acc + 20i32; }, (*) { } }
-    pick (m1.cmp(m2) ?! 9tbb32)  { (Ordering.Equal)   { acc = acc + 2i32; },  (*) { } }
+    pick (lo.cmp(hi) ?! E9)  { (Ordering.Less)    { acc = acc + 20i32; }, (*) { } }
+    pick (hi.cmp(lo) ?! E9)  { (Ordering.Greater) { acc = acc + 20i32; }, (*) { } }
+    pick (m1.cmp(m2) ?! E9)  { (Ordering.Equal)   { acc = acc + 2i32; },  (*) { } }
     exit acc;                                    // 20 + 20 + 2 = 42
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

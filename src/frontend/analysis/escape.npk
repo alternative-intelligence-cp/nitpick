@@ -28,6 +28,12 @@
 // blueprint philosophy forbids. So the type system is left alone and the question
 // is answered here.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:Rederived;
+
 use "../source_location.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
@@ -684,6 +690,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_BOOL()))    { pass false; }
     if (k == (raw TY_CHAR()))    { pass false; }
     if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_ERROR()))   { pass false; }   // a code word, not an address (D-179)
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
     if (k == (raw TY_NIL()))     { pass false; }
@@ -1224,7 +1231,7 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) ne
             if (m.kind == DeclKind.DeclFieldDecl) {
                 // The checker already resolved every field annotation; a
                 // failed RE-resolution here is an internal inconsistency.
-                int32:ft = resolve_type(x.tr, raw field_type(m), home) ?! 25tbb32;
+                int32:ft = resolve_type(x.tr, raw field_type(m), home) ?! Rederived;
                 if (raw dest_can_hold(x, ft, target, fuel - 1i32)) { pass true; }
             }
             i = i + 1i32;

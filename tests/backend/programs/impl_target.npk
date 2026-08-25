@@ -17,13 +17,14 @@
 //     question). The mutation is the point: `set` writes the field the free
 //     function `tokenlist_push` writes by hand in `src/`.
 mod:impl_target;
+error:E9;
 
 trait:Base    = { func:base    = int32(Self:self); };
 trait:Doubled = { func:doubled = int32(Self:self); };
 
 // BLANKET: everything that is `Base` is `Doubled`, at twice its base value.
 impl:<T: Base>:T:Doubled = {
-    func:doubled = int32(T:self) { pass ((self.base() ?! 9tbb32) * 2i32); };
+    func:doubled = int32(T:self) { pass ((self.base() ?! E9) * 2i32); };
 };
 
 struct:N = { int32:v; };
@@ -38,7 +39,7 @@ impl:<T>:Box<T> = {
 
 func:main = int32(cstring[]:_~argv) {
     N:n = N{ v: 10i32 };
-    int32:d = n.doubled() ?! 9tbb32;          // 20, through the blanket
+    int32:d = n.doubled() ?! E9;          // 20, through the blanket
 
     Box<int32>:b = Box{ v: 5i32 };
     drop b.set(17i32);                  // the mutating inherent family method
@@ -47,4 +48,4 @@ func:main = int32(cstring[]:_~argv) {
     exit d + g + 5i32;                 // 20 + 17 + 5 = 42
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

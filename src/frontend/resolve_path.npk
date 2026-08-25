@@ -21,6 +21,12 @@
 // This module owns the rule; where the roots came from is the driver's business,
 // and a manifest parser inside the resolver would be two jobs in one file.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsIndex;
+
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./diagnostics.npk".*;
@@ -69,8 +75,8 @@ pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) never fails {
 
 pub func:rootlist_count = int32(RootList->:l) never fails { pass l.count; };
 pub func:rootlist_at = Root(RootList->:l, int32:i) never fails {
-    if (i < 0i32) { !!! 12tbb32; }
-    if (i >= l.count) { !!! 12tbb32; }
+    if (i < 0i32) { !!! BoundsIndex; }
+    if (i >= l.count) { !!! BoundsIndex; }
     pass l.items[i => int64];
 };
 

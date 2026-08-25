@@ -26,6 +26,8 @@
 // the one a collection can honestly take until those decisions land.
 
 mod:generic_list;
+error:E4;
+error:E9;
 
 struct:List<T> = { wild T->:items; int64:count; int64:cap; };
 
@@ -48,8 +50,8 @@ func:list_push<T> = NIL(List<T>->:l, T:v) {
 };
 
 func:list_at<T> = T(List<T>->:l, int64:i) {
-    if (i < 0i64)     { fail 4tbb32; }
-    if (i >= l.count) { fail 4tbb32; }
+    if (i < 0i64)     { fail E4; }
+    if (i >= l.count) { fail E4; }
     pass l.items[i];
 };
 
@@ -64,9 +66,9 @@ func:list_get<T> = T?(List<T>->:l, int64:i) {
 // A generic struct built inside a generic body and RETURNED, at a type no
 // annotation in this program names (`List<int64>` appears only here).
 func:pair_of<T> = List<T>(T:a, T:b) {
-    List<T>:l = list_make::<T>(1i64) ?! 9tbb32;
-    list_push(@l, a) ?! 9tbb32;
-    list_push(@l, b) ?! 9tbb32;
+    List<T>:l = list_make::<T>(1i64) ?! E9;
+    list_push(@l, a) ?! E9;
+    list_push(@l, b) ?! E9;
     pass l;
 };
 
@@ -76,34 +78,34 @@ impl:<T>:List<T>:Sized = {
 };
 
 // A bound, so the family impl is reached through a parameter.
-func:total<S: Sized> = int64(S:s) { pass (s.size()) ?! 9tbb32; };
+func:total<S: Sized> = int64(S:s) { pass (s.size()) ?! E9; };
 
 func:main = int32(cstring[]:_~argv) {
-    List<int32>:li = list_make::<int32>(2i64) ?! 9tbb32;
-    list_push(@li, 10i32) ?! 9tbb32;
-    list_push(@li, 20i32) ?! 9tbb32;
-    list_push(@li, 12i32) ?! 9tbb32;               // grows past a capacity of 2
+    List<int32>:li = list_make::<int32>(2i64) ?! E9;
+    list_push(@li, 10i32) ?! E9;
+    list_push(@li, 20i32) ?! E9;
+    list_push(@li, 12i32) ?! E9;               // grows past a capacity of 2
     if (li.count != 3i64)                     { exit 10i32; }
     if (li.cap != 4i64)                       { exit 11i32; }
-    if ((list_at(@li, 2i64) ?! 9tbb32) != 12i32)    { exit 12i32; }
+    if ((list_at(@li, 2i64) ?! E9) != 12i32)    { exit 12i32; }
 
     // the Optional accessor, present and absent
-    if ((list_get(@li, 1i64) ?! 9tbb32 ?? 0i32) != 20i32) { exit 13i32; }
-    int32?:none = list_get(@li, 7i64) ?! 9tbb32;
+    if ((list_get(@li, 1i64) ?! E9 ?? 0i32) != 20i32) { exit 13i32; }
+    int32?:none = list_get(@li, 7i64) ?! E9;
     if (none != NIL)                          { exit 14i32; }
 
     // a second element type in the same program, its instance named nowhere
     // but inside `pair_of<int64>`'s body
-    List<int64>:ll = pair_of(40i64, 2i64) ?! 9tbb32;
-    if ((list_at(@ll, 0i64) ?! 9tbb32) + (list_at(@ll, 1i64) ?! 9tbb32) != 42i64) { exit 15i32; }
+    List<int64>:ll = pair_of(40i64, 2i64) ?! E9;
+    if ((list_at(@ll, 0i64) ?! E9) + (list_at(@ll, 1i64) ?! E9) != 42i64) { exit 15i32; }
 
     // the family impl through a bound, at both instantiations
-    if ((total(li) ?! 9tbb32) != 3i64)              { exit 16i32; }
-    if ((total(ll) ?! 9tbb32) != 2i64)              { exit 17i32; }
+    if ((total(li) ?! E9) != 3i64)              { exit 16i32; }
+    if ((total(ll) ?! E9) != 2i64)              { exit 17i32; }
 
     // `list_at` out of range is an error the caller handles
     int32:guarded = list_at(@li, 9i64) ?| 42i32;
     exit guarded;
 };
 
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

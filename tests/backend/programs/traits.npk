@@ -16,11 +16,13 @@
 //     per implementing impl with `Self` bound — the same rule a generic
 //     function follows (1.0.2b), for the same reason.
 
+error:E9;
+
 struct:Point = { int32:x; int32:y; };
 
 trait:Measured = {
     func:size = int32(Self:self);
-    func:doubled_size = int32(Self:self) { pass (self.size() ?! 9tbb32) * 2i32; };
+    func:doubled_size = int32(Self:self) { pass (self.size() ?! E9) * 2i32; };
 };
 
 impl:Point:Measured = {
@@ -30,8 +32,8 @@ impl:Point:Measured = {
 func:main = int32(cstring[]:_~argv) {
     Point:p = Point{ x: 3i32, y: 4i32 };
     int32:a = raw p.size();          // the impl's method:        7
-    int32:b = p.doubled_size() ?! 9tbb32;  // the inherited default:   14
+    int32:b = p.doubled_size() ?! E9;  // the inherited default:   14
     exit a + b;                      // 21
 };
 
-func:failsafe = int32(tbb32:_~err) { exit 1i32; };
+func:failsafe = int32(Error:_~err) { exit 1i32; };

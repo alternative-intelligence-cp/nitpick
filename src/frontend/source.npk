@@ -6,6 +6,13 @@
 // int32s rather than carrying a path string. Every AST node carries a Span, so
 // that difference is multiplied by the size of the tree.
 
+// THE MODULE'S OWN DEFECTS (D-179): a module names what it traps with, and
+// declares it privately — the code is the FNV of `module.Name`, so identity
+// is unforgeable and no import rides along. `Bounds*` are the D-061-family
+// index guards; the rest are named for the invariant they hold.
+error:BoundsOffset;
+error:FileUnknown;
+
 use "./source_location.npk".*;
 use "./intern.npk".*;
 
@@ -101,20 +108,20 @@ pub func:srcmgr_load = int32(SourceManager->:m, string:path) {
 
 pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
-        fail 1tbb32;
+        fail FileUnknown;
     }
     if (file >= m.count) {
-        fail 1tbb32;
+        fail FileUnknown;
     }
     pass m.files[file => int64].path;
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
-        fail 1tbb32;
+        fail FileUnknown;
     }
     if (file >= m.count) {
-        fail 1tbb32;
+        fail FileUnknown;
     }
     pass m.files[file => int64].text;
 };
@@ -124,10 +131,10 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
 pub func:srcmgr_byte_at = uint8(SourceManager->:m, int32:file, int64:offset) never fails {
     string:t = raw srcmgr_text_proven(m, file);
     if (offset < 0i64) {
-        !!! 2tbb32;
+        !!! BoundsOffset;
     }
     if (offset >= t.len) {
-        !!! 2tbb32;
+        !!! BoundsOffset;
     }
     pass t.ptr[offset] => uint8;
 };
@@ -144,12 +151,12 @@ pub func:srcmgr_length = int64(SourceManager->:m, int32:file) never fails {
 // outside the manager rather than failing a diagnostic over it.
 pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails {
     Result<string>:r = srcmgr_path(m, file);
-    if (r.is_error) { !!! 1tbb32; }
+    if (r.is_error) { !!! FileUnknown; }
     pass r.value;
 };
 
 pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
     Result<string>:r = srcmgr_text(m, file);
-    if (r.is_error) { !!! 1tbb32; }
+    if (r.is_error) { !!! FileUnknown; }
     pass r.value;
 };

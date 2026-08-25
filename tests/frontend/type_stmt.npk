@@ -1,6 +1,8 @@
 // Statement checking — declarations, `pass`/`fail`/`return`, conditions, `exit`
 // (cycle 0.4.4, completing the `Result` discipline).
 
+error:E5;
+
 use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/token_kind.npk".*;
 use "../../src/frontend/token.npk".*;
@@ -185,7 +187,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- `fail` TAKES A `tbb32` ----------------------------------------------
     // The same type `Result.err` holds and the same one `failsafe` receives.
-    Fx:f1 = raw fx("func:f = int32() { fail 5tbb32; };", @it);
+    Fx:f1 = raw fx("error:E5; func:f = int32() { fail E5; };", @it);
     if (raw errs(@f1) != 0i64)                                 { exit 30i32; }
 
     Fx:f2 = raw fx("func:f = int32() { fail 5i32; };", @it);
@@ -194,14 +196,14 @@ func:main = int32(cstring[]:_~argv) {
     // `fail` IN A TERMINAL FUNCTION IS REFUSED, for the reason `relay` is: there
     // is no `Result` to fail into, and an error leaving the program's last frame
     // has nowhere to go.
-    Fx:f3 = raw fx("func:main = int32(cstring[]:a) { fail 5tbb32; };", @it);
+    Fx:f3 = raw fx("error:E5; func:main = int32(cstring[]:a) { fail E5; };", @it);
     if (raw errs(@f3) != 1i64)                                 { exit 32i32; }
     if (!(raw string_eq(raw code0(@f3), raw TYPE_RESULT_RETURN()))) { exit 33i32; }
 
     // --- `return` TAKES A `Result{…}` LITERAL AND NOTHING ELSE ---------------
     // The restriction is what keeps `pass` and `fail` honest: they are sugar over
     // this form, so it has to be the only other way in.
-    Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32, err: 0tbb32}; };", @it);
+    Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32 }; };", @it);
     if (raw errs(@r1) != 0i64)                                 { exit 40i32; }
 
     Fx:r2 = raw fx("func:f = int32() { return 1i32; };", @it);
@@ -209,7 +211,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(raw code0(@r2), raw TYPE_RESULT_RETURN()))) { exit 42i32; }
 
     // …and the literal is still checked: the value is the success type.
-    Fx:r3 = raw fx("func:f = int32() { return Result{value: true, err: 0tbb32}; };", @it);
+    Fx:r3 = raw fx("func:f = int32() { return Result{value: true }; };", @it);
     if (raw errs(@r3) != 1i64)                                 { exit 43i32; }
 
     // --- EVERY CONDITION IS A STRICT `bool` ----------------------------------
@@ -235,7 +237,7 @@ func:main = int32(cstring[]:_~argv) {
     Fx:e1 = raw fx("func:main = int32(cstring[]:a) { exit 0i32; };", @it);
     if (raw errs(@e1) != 0i64)                                 { exit 60i32; }
 
-    Fx:e2 = raw fx("func:failsafe = int32(tbb32:e) { exit 1i32; };", @it);
+    Fx:e2 = raw fx("func:failsafe = int32(Error:e) { exit 1i32; };", @it);
     if (raw errs(@e2) != 0i64)                                 { exit 61i32; }
 
     Fx:e3 = raw fx("func:f = int32() { exit 0i32; };", @it);
@@ -321,6 +323,6 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:_~err) {
+func:failsafe = int32(Error:_~err) {
     exit 1i32;
 };

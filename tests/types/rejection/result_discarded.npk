@@ -15,9 +15,11 @@
 // `defer` body may not `fail` or
 // `relay` — a cleanup runs while the scope unwinds and must not itself exit.
 mod:result_discarded;
+error:E3;
+error:E5;
 
 func:work = int32(int32:v) {
-    if (v < 0i32) { fail 3tbb32; }
+    if (v < 0i32) { fail E3; }
     pass v;
 };
 
@@ -43,7 +45,7 @@ func:raw_stmt = int32(int32:v) never fails {
 
 func:defer_fail = int32(int32:v) {
     defer {
-        fail 5tbb32;
+        fail E5;
     }
     pass v;
 };
@@ -57,4 +59,4 @@ func:defer_relay = int32(int32:v) {
 };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
-func:failsafe = int32(tbb32:_~e) { exit 1i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

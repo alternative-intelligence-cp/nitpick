@@ -242,8 +242,13 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
         ModuleEntry:e = raw graph_at(@f.g, i);
         DeclId:mod_id = DeclId{ index: e.root };
         // D-179: the prelude is where the system error family's explicit
-        // codes are legal — and nowhere else.
+        // codes are legal — and nowhere else. The module name that error
+        // codes hash under is the FILE'S BASENAME — the `mod:` line must
+        // match it where present, files without one still have it, and the
+        // seed derives the same string, which is what keeps the two
+        // compilers numbering identically.
         r.in_prelude = (i == f.g.prelude);
+        r.module_name = raw module_basename_intern(@f.g, e.file, @f.it);
         drop resolve_module(@r, mod_id, e.scope);
         i = i + 1i32;
     }
