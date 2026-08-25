@@ -1,18 +1,19 @@
 // expect-error: NITPICK-RUNG-001
 // expect-no-parse-error
 //
-// Stage C of 1.1.4 (D-177) lowers the awaited chain — an `async` function is
-// a switched-resume machine and `await` composes them — so awaiting is no
-// longer this file's rung. What still refuses by name is the SPAWN form:
-// `drop work()` links a child onto the join list, and the join is stage E.
+// Stage C lowered the awaited chain, stage E the spawn and its join — so
+// this file's rung has moved twice. What still refuses by name is an
+// `await` of a GENERIC call: the await site derives the callee's frame
+// type and resume symbol, and the specialization lookup for that pairing
+// is not yet wired.
 
-async func:fetch = int32() {
-    pass 1i32;
+async func:fetch<T> = T(T:v) {
+    pass v;
 };
 
 async func:main = int32(cstring[]:_~argv) {
-    drop fetch();
-    exit 0i32;
+    int32:r = await fetch(1i32) ?| 0i32;
+    exit r;
 };
 
 func:failsafe = int32(tbb32:_~err) { exit 1i32; };

@@ -788,6 +788,14 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
     // unconditionally because the declare block is a fixed constant.
     drop irw_raw(w, "declare void @npk_trap(i32)");
+    // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
+    // with this prefix, and a spawnable child's success is `NIL` by checker
+    // rule, so its result slot is `{ i32 }` — which is what lets ONE join
+    // walk a heterogeneous child list: resume through slot 0, windup slot 2,
+    // error slot 3, sibling slot 5, all at fixed offsets. Declared
+    // unconditionally, like the runtime block it rides with.
+    drop irw_raw(w, raw string_concat("%\"npk.frame.hdr\" = type ",
+                      "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr }"));
     // `sys` calls the six-register trampoline directly (0.9.7).
     drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
     // The overflow intrinsics tbb multiplication rides (0.9.5). Declared for

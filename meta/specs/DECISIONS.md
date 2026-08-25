@@ -11968,6 +11968,16 @@ only inside `async`; the spawn form only inside `async`):
 - **`failsafe` cannot be `async`.** It is the controlled-stop path and must
   run without an executor, which may itself be the casualty. `async main`
   stands (the entry shim is its executor until 1.1.5).
+- **A spawned callee declares `NIL`** (stage E). `drop` is the void call,
+  sync or async — one meaning, no context. A spawned value would have
+  nowhere to go (only errors reach the join), and the uniform `{ i32 }`
+  result slot is what lets ONE join walk a heterogeneous child list through
+  the generic frame header, dispatching through the resume slot. A child
+  error reaching `async main`'s join has no `Result` to relay into: it
+  routes through `failsafe`, the uncaught-error path (D-013). When the
+  function's own exit already carries an error, its own error wins and the
+  children's are discarded after their drives complete — first error
+  standing, own before children's.
 
 ### What stays out
 

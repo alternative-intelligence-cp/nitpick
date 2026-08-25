@@ -1,7 +1,7 @@
 // The legal async shapes (D-177, 1.1.4), checker-silent. `await` under each
-// unwrap keyword; the spawn form inside an `async` function (the backend
-// rungs it until stage E, but the CHECKER accepts it — the rung is a
-// capability, not a rule); `async main` beside a synchronous `failsafe`;
+// unwrap keyword; the spawn form inside an `async` function (its callee
+// declares `NIL` — a spawned value has nowhere to go, D-177 stage E);
+// `async main` beside a synchronous `failsafe`;
 // a defer that stays synchronous inside an async function; and a `while`
 // whose awaits ride frame-resident parameters.
 mod:async_forms;
@@ -26,8 +26,12 @@ async func:trapper = int32(int32:v) {
     pass a;
 };
 
+async func:tick = NIL(int32:_~v) {
+    pass NIL;
+};
+
 async func:spawner = int32(int32:v) {
-    drop leaf(v);
+    drop tick(v);
     pass v;
 };
 

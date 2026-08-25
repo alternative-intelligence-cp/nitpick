@@ -1,0 +1,18 @@
+// expect-exit: 33
+//
+// A spawned child's error reaching `async main`'s join (D-177 stage E):
+// main has no `Result` to relay into, so the error routes through
+// `failsafe` — the uncaught-error path (D-013) — whose return value IS the
+// process exit code.
+mod:async_spawn_mainerr;
+
+async func:noisy = NIL(int32:v) {
+    fail (v =>! tbb32);
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    drop noisy(7i32);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 33i32; };

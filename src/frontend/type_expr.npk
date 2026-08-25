@@ -2328,6 +2328,28 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                     "a task cannot be spawned inside `defer` (D-177): the join that would collect its error sits at the scope exit the defer is already part of",
                     n.span));
             }
+            // THE SPAWN'S CALLEE DECLARES `NIL` (D-177 stage E): `drop` is the
+            // void call, sync or async — one meaning, no context. A spawned
+            // value would have nowhere to go (only errors reach the join), and
+            // the uniform `{ i32 }` result slot is what lets one join walk a
+            // heterogeneous child list. Checked only when the position was
+            // legal, so a site reports its one real problem.
+            if (e.fn_is_async) { if (!e.in_defer) {
+                int32:sp_t = raw exprtypes_get(e.expr_types, dopid);
+                bool:sp_nil = false;
+                if (sp_t != 0i32) {
+                    if ((raw type_kind(e.types, sp_t)) == (raw TY_RESULT())) {
+                        if ((raw type_elem(e.types, sp_t)) == e.types.t_nil) {
+                            sp_nil = true;
+                        }
+                    }
+                }
+                if (!sp_nil) {
+                    discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                        "a spawned task's value has nowhere to go — only its error reaches the join (D-177): declare the function's success type `NIL`, or `await` the call for its value",
+                        n.span));
+                }
+            } }
         }
         if (!(raw unwrap_callee_is_async(e, dopn, dopid))) {
             int32:dlic = raw unwrap_licence_of(e, dopn, dopid);

@@ -146,6 +146,7 @@ pub struct:FnEmitter = {
     string:state_gep;
     string:windup_gep;
     string:result_gep;
+    string:join_gep;
     string:awaitee_gep;
     // Resume segments: seg_labels[K] is the switch target for state K.
     wild string->:seg_labels;
@@ -205,7 +206,8 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         pick_depths: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_count: 0i32, pick_cap: 8i32, pick_seq: 0i32,
         is_async: false, frame_ty: "", resume_sym: "",
-        state_gep: "", windup_gep: "", result_gep: "", awaitee_gep: "",
+        state_gep: "", windup_gep: "", result_gep: "", join_gep: "",
+        awaitee_gep: "",
         seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         seg_count: 0i32, seg_cap: 8i32, guard_depth: 0i32,
         cross_stmts: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -432,6 +434,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     fe.state_gep   = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 1i32);
     fe.windup_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 2i32);
     fe.result_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 3i32);
+    fe.join_gep    = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 4i32);
     fe.awaitee_gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 6i32);
 
     i = 0i32;
@@ -494,10 +497,22 @@ pub func:fnem_ret_agg = NIL(FnEmitter->:fe, string:value) never fails {
         drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", value));
         pass NIL;
     }
+    // Store the result, then THE JOIN (D-177 stage E): every exit — normal
+    // or error, after its defers — drives the spawned children before the
+    // frame answers DONE. The join block is emitted once at close; a
+    // function that never spawned walks an empty list.
     drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", value,
                       raw string_concat(", ptr ", fe.result_gep)));
-    drop irw_line(fe.w, "ret i8 0");
+    drop irw_line(fe.w, "br label %npk.join");
     pass NIL;
+};
+
+// The generic frame-header type, as the join and the spawn link see every
+// child: resume slot 0, windup 2, `{ i32 }` error 3 (a spawnable child's
+// success is `NIL` by checker rule), sibling 5. MUST match the definition
+// `emit_runtime_declares` writes — one line there, one here.
+pub func:fnem_hdr_ty = string() never fails {
+    pass "%\"npk.frame.hdr\"";
 };
 
 // A GEP into a frame at the CURRENT point (for a callee frame at an await
@@ -914,6 +929,96 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         }
     }
     if (fe.is_async) {
+        // THE JOIN (D-177 stage E, executorless): pop each child off the
+        // join list, drive it to DONE (nothing can legally suspend before
+        // 1.1.5's executor exists — a SUSPENDED child is the same defect a
+        // bad resume state is), read its `{ i32 }` error slot through the
+        // generic header, free it, and let the FIRST child error stand as
+        // the function's own — unless the function already failed, in which
+        // case its error wins and later ones are kept out the same way. In
+        // `async main` there is no Result to relay into: a child error
+        // routes through `failsafe`, the uncaught-error path (D-013).
+        string:hdr = raw fnem_hdr_ty();
+        drop irw_label(fe.w, "npk.join");
+        string:jh = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat4(jh, " = load ptr, ptr ", fe.join_gep, ""));
+        string:jn = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(jn, " = icmp eq ptr ",
+                          raw string_concat(jh, ", null")));
+        drop irw_line(fe.w, raw cat3("br i1 ", jn,
+                          ", label %npk.jend, label %npk.jbody"));
+        drop irw_label(fe.w, "npk.jbody");
+        string:rfg = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(rfg, " = getelementptr ", hdr, ", ptr ",
+                          raw string_concat(jh, ", i32 0, i32 0")));
+        string:rf = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat4(rf, " = load ptr, ptr ", rfg, ""));
+        string:jrc = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc, " = call i8 ", rf, "(ptr ",
+                          raw string_concat(jh, ")")));
+        string:jok = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(jok, " = icmp eq i8 ",
+                          raw string_concat(jrc, ", 0")));
+        drop irw_line(fe.w, raw cat3("br i1 ", jok,
+                          ", label %npk.jgot, label %npk.jhang"));
+        drop irw_label(fe.w, "npk.jhang");
+        string:jhf = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(jhf, " = call i32 @npk_failsafe(i32 ",
+                          "-4102)"));
+        drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", jhf, ")"));
+        drop irw_line(fe.w, "unreachable");
+        drop irw_label(fe.w, "npk.jgot");
+        string:jeg = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jeg, " = getelementptr ", hdr, ", ptr ",
+                          raw string_concat(jh, ", i32 0, i32 3, i32 0")));
+        string:jerr2 = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat4(jerr2, " = load i32, ptr ", jeg, ""));
+        string:jsg = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jsg, " = getelementptr ", hdr, ", ptr ",
+                          raw string_concat(jh, ", i32 0, i32 5")));
+        string:jsib = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat4(jsib, " = load ptr, ptr ", jsg, ""));
+        drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", jh, ")"));
+        drop irw_line(fe.w, raw cat4("store ptr ", jsib, ", ptr ",
+                          fe.join_gep));
+        string:jbad = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(jbad, " = icmp ne i32 ",
+                          raw string_concat(jerr2, ", 0")));
+        drop irw_line(fe.w, raw cat3("br i1 ", jbad,
+                          ", label %npk.jerr, label %npk.join"));
+        drop irw_label(fe.w, "npk.jerr");
+        if (fe.bare) {
+            string:jmf = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
+                              raw string_concat(jerr2, ")")));
+            drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", jmf, ")"));
+            drop irw_line(fe.w, "unreachable");
+        } else {
+            string:jcur = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat5(jcur, " = load ", fe.ret_ll,
+                              ", ptr ", fe.result_gep));
+            string:jslot = ", 1";
+            if (fe.ret_nil) { jslot = ", 0"; }
+            string:jce = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat5(jce, " = extractvalue ", fe.ret_ll,
+                              " ", raw string_concat(jcur, jslot)));
+            string:jown = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat3(jown, " = icmp ne i32 ",
+                              raw string_concat(jce, ", 0")));
+            drop irw_line(fe.w, raw cat3("br i1 ", jown,
+                              ", label %npk.join, label %npk.jset"));
+            drop irw_label(fe.w, "npk.jset");
+            string:jna = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat5(jna, " = insertvalue ", fe.ret_ll,
+                              " zeroinitializer, i32 ",
+                              raw string_concat(jerr2, jslot)));
+            drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", jna,
+                              raw string_concat(", ptr ", fe.result_gep)));
+            drop irw_line(fe.w, "br label %npk.join");
+        }
+        drop irw_label(fe.w, "npk.jend");
+        drop irw_line(fe.w, "ret i8 0");
+
         // A RESUME STATE NOBODY ASSIGNED IS A DEFECT, not a branch: the state
         // word is written only by this function's own suspensions, so the
         // switch's default makes a controlled stop (D-061), the same shape

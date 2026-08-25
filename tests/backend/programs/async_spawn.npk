@@ -1,0 +1,59 @@
+// expect-exit: 42
+//
+// THE SPAWN AND ITS JOIN (D-058/D-177, 1.1.4 stage E). `drop f(…)` on an
+// `async` callee builds the child's frame and links it onto the enclosing
+// frame's join list — the frame IS the task object — and control continues
+// without yielding. At EVERY exit, after defers, the join drives each child
+// to DONE through the generic header (resume fn in slot 0, `{ i32 }` error
+// in slot 3 — a spawned callee declares `NIL`, so one join walks a
+// heterogeneous list), frees it, and relays the FIRST child error as the
+// function's own unless the function already failed — its own error wins.
+// A child error reaching `async main`'s join has no Result to relay into:
+// it routes through `failsafe`, the uncaught-error path (D-013) — pinned by
+// its own program below rather than here (one exit code per file).
+mod:async_spawn;
+
+async func:quiet = NIL(int32:v) {
+    if (v > 100i32) { fail 7tbb32; }
+    pass NIL;
+};
+
+async func:noisy = NIL(int32:v) {
+    fail (v =>! tbb32);
+};
+
+async func:swarm = int32(int32:n) {
+    while (n > 0i32) {
+        drop quiet(n);
+        n = n - 1i32;
+    }
+    pass 40i32;
+};
+
+async func:err_parent = int32(int32:v) {
+    drop quiet(v);
+    drop noisy(9i32);
+    pass v;
+};
+
+async func:own_err_wins = int32(int32:v) {
+    drop noisy(9i32);
+    fail 5tbb32;
+};
+
+async func:early_exit = int32(int32:v) {
+    drop noisy(6i32);
+    int32:a = relay await swarm(3i32);   // the relay exit joins `noisy` too
+    pass a;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await swarm(5i32) ?| 0i32;          // 40
+    int32:b = await err_parent(1i32) ?| 20i32;    // child err 9 -> 20
+    int32:c = await own_err_wins(1i32) ?| 12i32;  // own err 5 -> 12
+    int32:d = await early_exit(1i32) ?| 2i32;     // child err 6 -> 2, via relay path
+    drop quiet(1i32);                              // main's own join drains this
+    exit a + b + c + d - 32i32;                    // 40+20+12+2-32 = 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 99i32; };

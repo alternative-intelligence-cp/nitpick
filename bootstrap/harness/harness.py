@@ -514,7 +514,7 @@ SLOT_SITE_PAIRS = {
     "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call",
                             "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)
                             "emit_field_call",        # `s.f(x)` through a fn-valued field (1.0.9c)
-                            "emit_await"},            # the awaited call's args, stored into the frame (1.1.4)
+                            "emit_child_frame"},      # await/spawn args, stored into the frame (1.1.4)
     "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
     "type_pipe":           {"emit_pipe"},             # `x |> g` fits x to g's parameter (1.0.9c)
     "check_ctor_args":     {"emit_ctor"},

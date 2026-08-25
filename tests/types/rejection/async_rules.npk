@@ -4,6 +4,7 @@
 // expect-error: NITPICK-TYPE-043
 // expect-error: NITPICK-TYPE-043
 // expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-043
 //
 // D-177's checker rules, one refusal per shape. `await` and the spawn form
 // live only inside `async` functions (a synchronous scope has no frame to
@@ -34,6 +35,11 @@ async func:defer_await = int32(int32:v) {
 
 async func:defer_spawn = int32(int32:v) {
     defer { drop leaf(v); }                     // TYPE-043: spawn inside defer
+    pass v;
+};
+
+async func:valued_spawn = int32(int32:v) {
+    drop leaf(v);                               // TYPE-043: a spawned VALUE
     pass v;
 };
 

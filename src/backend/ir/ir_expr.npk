@@ -400,13 +400,11 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprCallExpr)      { pass (raw emit_call(x, id, n)); }
     if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw emit_raw(x, id, n)); }
     if (n.kind == ExprKind.ExprDropExpr) {
-        // The SPAWN form (D-058/D-177): `drop` of an `async` call. Stage E of
-        // 1.1.4 links the child onto the join list; until then it refuses by
-        // name — emitting the operand would call a direct symbol no `async`
-        // function defines.
-        if (raw await_callee_decl(x, raw expr_operand(n)) != 0i32) {
-            pass (raw iv_rung("a spawned task (`drop` of an `async` call)",
-                              "1.1", n.span));
+        // The SPAWN form (D-058/D-177 stage E): `drop` of an `async` call
+        // links a child onto the join list instead of calling anything.
+        int32:spd = raw await_callee_decl(x, raw expr_operand(n));
+        if (spd != 0i32) {
+            pass (raw emit_spawn(x, raw expr_operand(n), n, spd));
         }
         IrVal:v = raw emit_expr(x, raw expr_operand(n));
         if (v.state != (raw LL_OK())) { pass v; }
@@ -2077,6 +2075,64 @@ func:await_callee_decl = int32(ExprEmitter->:x, ExprId:cid) never fails {
     pass cs.origin;
 };
 
+// A child frame, built for `await` and for the spawn alike (D-177):
+// allocate by the GEP-null size, initialise the header, store the arguments
+// in source order, each fit to its parameter. The ref is the frame pointer.
+func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
+                              string:cfr_ty, string:crs, Span:at) never fails {
+    string:fr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
+                      raw fnem_frame_size_arg(cfr_ty), ")"));
+    drop fnem_frame_init(x.fe, cfr_ty, fr, crs);
+    int32:gcount = raw expr_generic_count(cn);
+    int32:start = (raw expr_list_start(cn)) + gcount;
+    int32:count = (raw expr_list_count(cn)) - gcount;
+    int32:cft = raw exprtypes_callee_ft(x.et, cid);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        IrVal:av = raw emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        av = raw emit_fit(x, raw call_param_want(x, cft, i), av, at);
+        if (av.state != (raw LL_OK())) { pass av; }
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 7i32 + i);
+        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
+                          raw string_concat(", ptr ", ag)));
+        i = i + 1i32;
+    }
+    pass (raw iv("ptr", fr, 0i32));
+};
+
+// THE SPAWN (D-058/D-177 stage E): `drop f(…)` on an `async` callee builds
+// the child's frame and LINKS it onto the enclosing frame's join list —
+// `child.sibling = join_head; join_head = child` — and control continues
+// without yielding. The frame IS the task object; the join at this
+// function's exits drives it. Until 1.1.5 nothing enqueues.
+func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
+                        int32:cdi) never fails {
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
+    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
+        pass (raw iv_rung("a spawned generic call", "1.1", n.span));
+    }
+    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
+    Symbol:cs = raw symtab_get(x.tab, cnode.a);
+    string:fname = raw intern_get(x.interns, cs.name);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
+    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    if (cfv.state != (raw LL_OK())) { pass cfv; }
+    string:hdr = raw fnem_hdr_ty();
+    string:sg = raw fnem_slot_gep(x.fe, hdr, cfv.ref, 5i32);
+    string:old_h = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(old_h, " = load ptr, ptr ",
+                      x.fe.join_gep, ""));
+    drop irw_line(x.fe.w, raw cat4("store ptr ", old_h, ", ptr ", sg));
+    drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
+                      x.fe.join_gep, ""));
+    pass (raw iv("i32", "0", 0i32));
+};
+
 // `await g(x)` — the machines compose (D-177). Allocate g's frame, store the
 // arguments, advance our own state, and DRIVE: g DONE hands back its result
 // slot and the frame is freed; g SUSPENDED propagates — we save nothing but
@@ -2118,30 +2174,12 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
 
-    // The callee's frame, then its arguments — evaluated in source order,
-    // stored as they come. Nothing here can suspend: `await` nests inside no
+    // The callee's frame, then its arguments — via the same helper the
+    // spawn uses. Nothing here can suspend: `await` nests inside no
     // expression that could re-enter this sequence.
-    string:fr = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
-                      raw fnem_frame_size_arg(cfr_ty), ")"));
-    drop fnem_frame_init(x.fe, cfr_ty, fr, crs);
-
-    int32:gcount = raw expr_generic_count(cn);
-    int32:start = (raw expr_list_start(cn)) + gcount;
-    int32:count = (raw expr_list_count(cn)) - gcount;
-    int32:cft = raw exprtypes_callee_ft(x.et, cid);
-    int32:i = 0i32;
-    while (i < count) {
-        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        IrVal:av = raw emit_expr(x, aid);
-        if (av.state != (raw LL_OK())) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, cft, i), av, n.span);
-        if (av.state != (raw LL_OK())) { pass av; }
-        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 7i32 + i);
-        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
-                          raw string_concat(", ptr ", ag)));
-        i = i + 1i32;
-    }
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    if (cfv.state != (raw LL_OK())) { pass cfv; }
+    string:fr = cfv.ref;
 
     // Advance our state to the resume segment, then fall into it. From here
     // to the segment's end is exactly what a re-entry replays.
