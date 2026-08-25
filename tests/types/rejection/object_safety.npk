@@ -8,24 +8,24 @@
 // method with none has nothing to dispatch on.
 trait:Makeable = { func:make = int32(); };
 // expect-error: NITPICK-TYPE-015
-func:no_receiver = NIL(dyn Makeable:d) { pass NIL; };
+func:no_receiver = NIL(dyn Makeable:d) never fails { pass NIL; };
 
 // Rule 2 — no method returns `Self`. Behind `dyn` the concrete type is erased, so
 // its size is unknown and there is nowhere to put the result.
 trait:Cloneable = { func:copy = Self(Self:self); };
 // expect-error: NITPICK-TYPE-015
-func:returns_self = NIL(dyn Cloneable:d) { pass NIL; };
+func:returns_self = NIL(dyn Cloneable:d) never fails { pass NIL; };
 
 // Rule 3 — nothing that monomorphizes. Those become one body per argument, and a
 // vtable slot is one address.
 trait:Mapper = { func:map<T> = int32(Self:self, T:x); };
 // expect-error: NITPICK-TYPE-015
-func:generic_method = NIL(dyn Mapper:d) { pass NIL; };
+func:generic_method = NIL(dyn Mapper:d) never fails { pass NIL; };
 
 // EVERY OPERAND OF `dyn` MUST BE A TRAIT. `dyn int32` is not a dynamic anything.
 struct:Plain = { int32:v; };
 // expect-error: NITPICK-TYPE-006
-func:not_a_trait = NIL(dyn Plain:d) { pass NIL; };
+func:not_a_trait = NIL(dyn Plain:d) never fails { pass NIL; };
 
 // D-157, 1.0.5 — `Self` NOWHERE BUT THE RECEIVER. Every case below PASSED
 // object safety until 1.0.5, because rule 2 read the return's top node and
@@ -36,23 +36,23 @@ func:not_a_trait = NIL(dyn Plain:d) { pass NIL; };
 // as whatever the vtable's caller believed it was.
 trait:Eq2 = { func:same = bool(Self:self, Self:other); };
 // expect-error: NITPICK-TYPE-015
-func:self_in_param = NIL(dyn Eq2:d) { pass NIL; };
+func:self_in_param = NIL(dyn Eq2:d) never fails { pass NIL; };
 
 // NESTED IN THE RETURN — an optional `Self` erases exactly as badly as a bare
 // one, and the old top-node test could not see it.
 trait:Maybe2 = { func:maybe = Self?(Self:self); };
 // expect-error: NITPICK-TYPE-015
-func:self_in_optional = NIL(dyn Maybe2:d) { pass NIL; };
+func:self_in_optional = NIL(dyn Maybe2:d) never fails { pass NIL; };
 
 // UNDER A SLICE.
 trait:Lister = { func:all = Self[](Self:self); };
 // expect-error: NITPICK-TYPE-015
-func:self_in_slice = NIL(dyn Lister:d) { pass NIL; };
+func:self_in_slice = NIL(dyn Lister:d) never fails { pass NIL; };
 
 // UNDER A POINTER.
 trait:Selfptr = { func:me = Self->(Self:self); };
 // expect-error: NITPICK-TYPE-015
-func:self_in_pointer = NIL(dyn Selfptr:d) { pass NIL; };
+func:self_in_pointer = NIL(dyn Selfptr:d) never fails { pass NIL; };
 
 // INSIDE A GENERIC ARGUMENT — the `Handle<Self>` shape D-157 refuses BY NAME
 // even though such a type's size does survive erasure. One uniform rule beats a
@@ -60,18 +60,18 @@ func:self_in_pointer = NIL(dyn Selfptr:d) { pass NIL; };
 struct:Boxed<T> = { T:v; };
 trait:Boxer = { func:boxed = Boxed<Self>(Self:self); };
 // expect-error: NITPICK-TYPE-015
-func:self_in_generic_arg = NIL(dyn Boxer:d) { pass NIL; };
+func:self_in_generic_arg = NIL(dyn Boxer:d) never fails { pass NIL; };
 
 // THE RECEIVER MAY *BE* `Self`; IT MAY NOT *CONTAIN* ONE.
 trait:Oddrecv = { func:f = int32(Self?:self); };
 // expect-error: NITPICK-TYPE-015
-func:self_nested_in_receiver = NIL(dyn Oddrecv:d) { pass NIL; };
+func:self_nested_in_receiver = NIL(dyn Oddrecv:d) never fails { pass NIL; };
 
 // AND THE POSITIVE CASE, so the rule is not merely "refuse everything": a
 // receiver-only `Self` with ordinary parameters and return is object-safe, and
 // this file must report no error for it.
 trait:Drawable = { func:draw = int32(Self:self, int32:scale); };
-func:ok_object_safe = NIL(dyn Drawable:d) { pass NIL; };
+func:ok_object_safe = NIL(dyn Drawable:d) never fails { pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

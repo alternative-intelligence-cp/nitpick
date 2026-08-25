@@ -158,8 +158,8 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // ordering pass — the containment graph is acyclic because the loader
             // already refused the cycles (D-086).
             drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
-            drop lay_field(@l, raw type_size(r.types, ft),
-                           raw type_align(r.types, ft));
+            discard(raw lay_field(@l, raw type_size(r.types, ft),
+                           raw type_align(r.types, ft)));
             // The pointer-bearing bit rides the same walk (0.8.1): this is the
             // one place every field's RESOLVED type passes through, which is
             // exactly what the escape analysis cannot reconstruct for itself.
@@ -227,7 +227,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         // Already laid out: a real struct is at least one byte, so zero is the
         // "not computed" state and nothing else.
         if ((raw type_size(r.types, t)) != 0i64) { pass NIL; }
-        drop struct_layout(r, t, scope);
+        discard(raw struct_layout(r, t, scope));
         pass NIL;
     }
 
@@ -250,9 +250,9 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         int32:inner = raw type_elem(r.types, t);
         drop ensure_layout(r, inner, scope, fuel - 1i32);
         Lay:l = raw lay_start();
-        drop lay_field(@l, 1i64, 1i32);
-        drop lay_field(@l, raw type_size(r.types, inner),
-                       raw type_align(r.types, inner));
+        discard(raw lay_field(@l, 1i64, 1i32));
+        discard(raw lay_field(@l, raw type_size(r.types, inner),
+                       raw type_align(r.types, inner)));
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;
@@ -262,9 +262,9 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         int32:inner = raw type_elem(r.types, t);
         drop ensure_layout(r, inner, scope, fuel - 1i32);
         Lay:l = raw lay_start();
-        drop lay_field(@l, raw type_size(r.types, inner),
-                       raw type_align(r.types, inner));
-        drop lay_field(@l, 4i64, 4i32);
+        discard(raw lay_field(@l, raw type_size(r.types, inner),
+                       raw type_align(r.types, inner)));
+        discard(raw lay_field(@l, 4i64, 4i32));
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;
@@ -281,7 +281,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
     if (k == (raw TY_ENUM())) {
         if ((raw type_size(r.types, t)) != 0i64) { pass NIL; }
         Lay:l = raw lay_start();
-        drop lay_field(@l, 4i64, 4i32);
+        discard(raw lay_field(@l, 4i64, 4i32));
         // THE WIDEST VARIANT DECIDES (0.9.2, TYPE_REFERENCE §9.3): the payload
         // slot is sized by the largest payload and aligned by the strictest,
         // recursing so a struct payload is laid before it is measured. The
@@ -329,7 +329,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                 i = i + 1i32;
             }
             if (wsize > 0i64) {
-                drop lay_field(@l, raw align_up(wsize, walign), walign);
+                discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
         }
         drop lay_end(@l);

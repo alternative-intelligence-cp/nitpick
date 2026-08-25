@@ -9,12 +9,12 @@
 // THE MERGE IS WHERE THE CASES ARE. Straight-line definite assignment is a loop
 // over statements and is not where analyses go wrong.
 
-func:sink = NIL(int32->:slot) { pass NIL; };
+func:sink = NIL(int32->:slot) never fails { pass NIL; };
 
 // --- nothing assigned it at all ------------------------------------------------
 
 // expect-error: NITPICK-ASSIGN-001
-func:reads_unassigned = int32() {
+func:reads_unassigned = int32() never fails {
     int32:x;
     pass x;
 };
@@ -24,7 +24,7 @@ func:reads_unassigned = int32() {
 // A ONE-ARMED `if` HAS TWO PATHS, and the missing `else` is the one that assigns
 // nothing. This is the case a reader is likeliest to think is covered.
 // expect-error: NITPICK-ASSIGN-001
-func:one_armed_if = int32(bool:c) {
+func:one_armed_if = int32(bool:c) never fails {
     int32:x;
     if (c) { x = 1i32; }
     pass x;
@@ -33,7 +33,7 @@ func:one_armed_if = int32(bool:c) {
 // ONE ARM THAT ASSIGNS AND ONE THAT DOES NOT is the same shape with the `else`
 // written out.
 // expect-error: NITPICK-ASSIGN-001
-func:one_arm_assigns = int32(bool:c) {
+func:one_arm_assigns = int32(bool:c) never fails {
     int32:x;
     int32:witness = 0i32;
     if (c) { x = 1i32; } else { drop sink($$i witness); }
@@ -42,7 +42,7 @@ func:one_arm_assigns = int32(bool:c) {
 
 // A `while` BODY MAY RUN ZERO TIMES, so nothing it assigns survives it.
 // expect-error: NITPICK-ASSIGN-001
-func:loop_may_not_run = int32(bool:c) {
+func:loop_may_not_run = int32(bool:c) never fails {
     int32:x;
     while (c) { x = 1i32; }
     pass x;
@@ -51,7 +51,7 @@ func:loop_may_not_run = int32(bool:c) {
 // A `for` OVER A RANGE MAY ALSO ITERATE ZERO TIMES — the bounds are values, not
 // a promise.
 // expect-error: NITPICK-ASSIGN-001
-func:for_may_not_run = int32(int64:n) {
+func:for_may_not_run = int32(int64:n) never fails {
     int32:x;
     for (int64:i in 0i64..n) { x = 1i32; }
     pass x;
@@ -68,7 +68,7 @@ func:for_may_not_run = int32(int64:n) {
 // definite assignment recognises that as of 0.5.4. It could not before, and
 // `accept/exhaustiveness.npk` is where that case now passes.
 // expect-error: NITPICK-ASSIGN-001
-func:pick_not_total = int32(int32:n) {
+func:pick_not_total = int32(int32:n) never fails {
     int32:x;
     pick (n) {
         (0i32) { x = 1i32; },
@@ -79,7 +79,7 @@ func:pick_not_total = int32(int32:n) {
 
 // EXHAUSTIVE, AND ONE ARM ASSIGNS NOTHING.
 // expect-error: NITPICK-ASSIGN-001
-func:pick_arm_gap = int32(int32:n) {
+func:pick_arm_gap = int32(int32:n) never fails {
     int32:x;
     pick (n) {
         (0i32) { x = 1i32; },
@@ -94,7 +94,7 @@ func:pick_arm_gap = int32(int32:n) {
 // callee will write, which is why that one is the endorsed way to fill a
 // caller-owned destination (D-004) and this one is not.
 // expect-error: NITPICK-ASSIGN-001
-func:shared_borrow_is_a_read = int32() {
+func:shared_borrow_is_a_read = int32() never fails {
     int32:x;
     drop sink($$i x);
     pass x;
@@ -107,7 +107,7 @@ func:shared_borrow_is_a_read = int32() {
 // nothing wrote — which is the same use-before-write as everything above, reached
 // by a construct that reorders execution.
 // expect-error: NITPICK-ASSIGN-001
-func:defer_registered_too_early = int32() {
+func:defer_registered_too_early = int32() never fails {
     int32:x;
     defer { drop sink($$i x); }
     x = 1i32;
@@ -123,7 +123,7 @@ func:defer_registered_too_early = int32() {
 pub const int32:MAX = 100i32;
 
 // expect-error: NITPICK-ASSIGN-002
-func:writes_a_const_global = NIL() {
+func:writes_a_const_global = NIL() never fails {
     MAX = 5i32;
     pass NIL;
 };
@@ -149,7 +149,7 @@ pub const int32:FROM_FIXED = DECIDED_AT_RUNTIME;
 // --- `fixed` is assigned once -----------------------------------------------------
 
 // expect-error: NITPICK-ASSIGN-002
-func:fixed_assigned_again = int32() {
+func:fixed_assigned_again = int32() never fails {
     fixed int32:k = 1i32;
     k = 2i32;
     pass k;
@@ -159,7 +159,7 @@ func:fixed_assigned_again = int32() {
 // twice on the path that took it, and a `must` set says nothing about that — which
 // is why the analysis carries a `may` set as well.
 // expect-error: NITPICK-ASSIGN-002
-func:fixed_assigned_on_a_branch = int32(bool:c) {
+func:fixed_assigned_on_a_branch = int32(bool:c) never fails {
     fixed int32:k;
     if (c) { k = 1i32; }
     k = 2i32;
@@ -170,7 +170,7 @@ func:fixed_assigned_on_a_branch = int32(bool:c) {
 // many. Nothing the body assigns is definitely assigned afterwards, and everything
 // it assigns is possibly assigned — this is the half that catches it.
 // expect-error: NITPICK-ASSIGN-002
-func:fixed_assigned_in_a_loop = int32(bool:c) {
+func:fixed_assigned_in_a_loop = int32(bool:c) never fails {
     fixed int32:k;
     while (c) { k = 1i32; }
     pass k;

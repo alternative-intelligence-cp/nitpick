@@ -11,7 +11,7 @@ struct:Square = { int32:side; };
 // nothing supplies it.
 // expect-error: NITPICK-TYPE-014
 impl:Square:Shape = {
-    func:area = int32(Square:self) { pass 1i32; };
+    func:area = int32(Square:self) never fails { pass 1i32; };
 };
 
 struct:Circle = { int32:r; };
@@ -21,8 +21,8 @@ struct:Circle = { int32:r; };
 // through a vtable slot typed one way into a body typed another.
 // expect-error: NITPICK-TYPE-014
 impl:Circle:Shape = {
-    func:area = string(Circle:self) { pass "big"; };
-    func:name = string(Circle:self) { pass "circle"; };
+    func:area = string(Circle:self) never fails { pass "big"; };
+    func:name = string(Circle:self) never fails { pass "circle"; };
 };
 
 // `impl:Type:Trait` — THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE (D-031). A
@@ -31,7 +31,7 @@ impl:Circle:Shape = {
 struct:Triangle = { int32:b; };
 // expect-error: NITPICK-TYPE-012
 impl:Triangle:Square = {
-    func:area = int32(Triangle:self) { pass 1i32; };
+    func:area = int32(Triangle:self) never fails { pass 1i32; };
 };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };

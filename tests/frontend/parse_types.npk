@@ -96,7 +96,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a6 = raw ast_init();
     DiagList:g6 = raw diaglist_init();
     Parser:p6 = raw parser_init(@k6, @a6, @g6, @it);
-    drop p_parse_type(@p6);
+    discard(raw p_parse_type(@p6));
     if (raw diaglist_count(@g6) != 0i64)              { exit 46i32; }
     if (!(raw p_at_end(@p6)))                         { exit 47i32; }
 
@@ -126,7 +126,7 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:g9 = raw diaglist_init();
     Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
     if (!(raw p_at(@p9, TokenKind.KwWild)))           { exit 70i32; }
-    drop p_parse_type(@p9);
+    discard(raw p_parse_type(@p9));
     // It refused to start on `wild`, leaving the cursor untouched.
     if (!(raw p_at(@p9, TokenKind.KwWild)))           { exit 71i32; }
     if (raw diaglist_count(@g9) != 1i64)              { exit 72i32; }

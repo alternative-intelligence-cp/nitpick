@@ -1763,8 +1763,8 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) never fails 
         // anything, and catching it here means 0.4.6 can assume it has traits.
         if (!(raw type_is_invalid(r.types, t))) {
             if ((raw type_kind(r.types, t)) != (raw TY_TRAIT())) {
-                drop ty_error(r, raw TYPE_DYN_NOT_TRAIT(),
-                    "every operand of `dyn` must be a trait", n.span);
+                discard(raw ty_error(r, raw TYPE_DYN_NOT_TRAIT(),
+                    "every operand of `dyn` must be a trait", n.span));
             } else {
                 // EACH TRAIT MUST BE OBJECT-SAFE (4.2), and `dyn A & B` checks
                 // BOTH — §5.3 requires it of each, and a widening from `dyn A & B`
@@ -1977,7 +1977,7 @@ func:window_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
 };
 
 pub func:check_object_safe = NIL(TypeResolver->:r, int32:trait_id, Span:at) never fails {
-    drop object_safety(r, trait_id, at, true);
+    discard(raw object_safety(r, trait_id, at, true));
     pass NIL;
 };
 

@@ -51,17 +51,17 @@ struct:Padded = { int8:small; int64:wide; };
 
 struct:Lx = { TypeTable:types; DiagList:diags; Ast:ast; SymbolTable:tab; int32:scope; };
 
-func:lx = Lx(string:src, InternTable->:it) {
+func:lx = Lx(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
     Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@rs, mod_id, scope);
 
@@ -71,10 +71,10 @@ func:lx = Lx(string:src, InternTable->:it) {
 };
 
 // The interned type of a named struct in the fixture's source.
-func:named = int32(Lx->:x, InternTable->:it, string:name) {
+func:named = int32(Lx->:x, InternTable->:it, string:name) never fails {
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
-    int32:sym = raw scope_lookup(@x.tab, x.scope, relay intern_add(it, name));
+    int32:sym = raw scope_lookup(@x.tab, x.scope, raw intern_add(it, name));
     if (sym == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(@x.tab, sym);
     DeclId:d = DeclId{ index: s.origin };
@@ -83,16 +83,16 @@ func:named = int32(Lx->:x, InternTable->:it, string:name) {
     // `dn` is the literal -4 and cannot be a name. The seed's lexer accepted it
     // and the real one did not, which is exactly what the real-parser sweep over
     // every source exists to catch.
-    DeclNode:sdecl = relay ast_decl(@x.ast, d);
+    DeclNode:sdecl = raw ast_decl(@x.ast, d);
     int32:t = raw tt_struct(@x.types, d.index, raw decl_name(sdecl), 0i64, 1i32);
-    drop struct_layout(@r, t, x.scope);
+    discard(raw struct_layout(@r, t, x.scope));
     pass t;
 };
 
-func:field_of = FieldInfo(Lx->:x, InternTable->:it, int32:t, string:name) {
+func:field_of = FieldInfo(Lx->:x, InternTable->:it, int32:t, string:name) never fails {
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
-    pass (relay struct_field(@r, t, relay intern_add(it, name), x.scope));
+    pass (raw struct_field(@r, t, raw intern_add(it, name), x.scope));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -113,7 +113,7 @@ func:main = int32(cstring[]:_~argv) {
     // the same shape rather than against the number 8, so the day the ABI changes
     // this test changes with it instead of becoming quietly wrong.
     Lx:v1 = raw lx("struct:Pair = { int32:x; int32:y; };", @it);
-    int32:pair = relay named(@v1, @it, "Pair");
+    int32:pair = raw named(@v1, @it, "Pair");
     if (pair == 0i32)                                      { exit 20i32; }
     if ((raw type_size(@v1.types, pair)) != #size_of<Pair>())  { exit 21i32; }
     if ((raw type_align(@v1.types, pair)) != 4i32)         { exit 22i32; }
@@ -122,7 +122,7 @@ func:main = int32(cstring[]:_~argv) {
     // the case a demand-driven layout has to get right without an ordering pass.
     // With the inner struct at size zero this came out eight instead of sixteen.
     Lx:v2 = raw lx("struct:Pair = { int32:x; int32:y; }; struct:Wrap = { Pair:inner; int64:tag; };", @it);
-    int32:wrap = relay named(@v2, @it, "Wrap");
+    int32:wrap = raw named(@v2, @it, "Wrap");
     if (wrap == 0i32)                                      { exit 23i32; }
     if ((raw type_size(@v2.types, wrap)) != #size_of<Wrap>())  { exit 24i32; }
     if ((raw type_align(@v2.types, wrap)) != 8i32)         { exit 25i32; }
@@ -132,14 +132,14 @@ func:main = int32(cstring[]:_~argv) {
     // looked at — which is exactly the ordering an ordering pass would have had
     // to get right and a recursive walk gets right by construction.
     Lx:v3 = raw lx("struct:Wrap = { Pair:inner; int64:tag; }; struct:Pair = { int32:x; int32:y; };", @it);
-    int32:wrap2 = relay named(@v3, @it, "Wrap");
+    int32:wrap2 = raw named(@v3, @it, "Wrap");
     if ((raw type_size(@v3.types, wrap2)) != #size_of<Wrap>()) { exit 26i32; }
 
     // PADDING IS THE MACHINE'S, not a rule this file restates. An `int8` followed
     // by an `int64` is sixteen bytes, and asserting that against `#size_of` is the
     // difference between checking the layout and checking my arithmetic.
     Lx:v4 = raw lx("struct:Padded = { int8:small; int64:wide; };", @it);
-    int32:padded = relay named(@v4, @it, "Padded");
+    int32:padded = raw named(@v4, @it, "Padded");
     if ((raw type_size(@v4.types, padded)) != #size_of<Padded>()) { exit 27i32; }
     if ((raw type_align(@v4.types, padded)) != 8i32)       { exit 28i32; }
 
@@ -147,7 +147,7 @@ func:main = int32(cstring[]:_~argv) {
     // have distinct addresses, and a zero-sized one would put them on top of each
     // other. `NIL` being genuinely zero-sized (D-084) is a property of `NIL`.
     Lx:v5 = raw lx("struct:Empty = { };", @it);
-    int32:empty = relay named(@v5, @it, "Empty");
+    int32:empty = raw named(@v5, @it, "Empty");
     if ((raw type_size(@v5.types, empty)) != 1i64)         { exit 29i32; }
 
     // --- FIELD OFFSETS -------------------------------------------------------
@@ -156,9 +156,9 @@ func:main = int32(cstring[]:_~argv) {
     // disagrees with the size is two traversals that stopped agreeing about
     // padding — which is the reason they were written as one.
     Lx:v6 = raw lx("struct:Padded = { int8:small; int64:wide; };", @it);
-    int32:pd = relay named(@v6, @it, "Padded");
-    FieldInfo:f0 = relay field_of(@v6, @it, pd, "small");
-    FieldInfo:f1 = relay field_of(@v6, @it, pd, "wide");
+    int32:pd = raw named(@v6, @it, "Padded");
+    FieldInfo:f0 = raw field_of(@v6, @it, pd, "small");
+    FieldInfo:f1 = raw field_of(@v6, @it, pd, "wide");
     if (!f0.found)                                         { exit 30i32; }
     if (!f1.found)                                         { exit 31i32; }
     if (f0.offset != 0i64)                                 { exit 32i32; }
@@ -169,8 +169,8 @@ func:main = int32(cstring[]:_~argv) {
     // is the half that fails silently: zero is a perfectly good number to add to
     // a running sum, so an unlaid-out field moves everything after it.
     Lx:v7 = raw lx("struct:Pair = { int32:x; int32:y; }; struct:Wrap = { Pair:inner; int64:tag; };", @it);
-    int32:w2 = relay named(@v7, @it, "Wrap");
-    FieldInfo:g1 = relay field_of(@v7, @it, w2, "tag");
+    int32:w2 = raw named(@v7, @it, "Wrap");
+    FieldInfo:g1 = raw field_of(@v7, @it, w2, "tag");
     if (!g1.found)                                         { exit 34i32; }
     if (g1.offset != 8i64)                                 { exit 35i32; }
 
@@ -182,7 +182,7 @@ func:main = int32(cstring[]:_~argv) {
     // `Point[4]` was nothing at all. `ensure_layout` recomputes them from the
     // element once the element is known.
     Lx:v8 = raw lx("struct:Pair = { int32:x; int32:y; };", @it);
-    int32:pr = relay named(@v8, @it, "Pair");
+    int32:pr = raw named(@v8, @it, "Pair");
     int32:arr = raw tt_array(@v8.types, pr, 4i32, 0i64, 1i32);
     int32:res = raw tt_result(@v8.types, pr, 0i64, 1i32);
     InstanceTable:inst8 = raw insttable_init();

@@ -28,9 +28,9 @@ func:take_9 = Guard() acquires 9i32 { pass Guard{ v: 9i32 }; };
 // --- acquiring downward -----------------------------------------------------------
 
 // expect-error: NITPICK-LOCK-001
-func:downward = NIL() {
-    Guard:a = raw take_2();
-    Guard:b = raw take_1();
+func:downward = NIL() never fails {
+    Guard:a = take_2() ?! 9tbb32;
+    Guard:b = take_1() ?! 9tbb32;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -40,9 +40,9 @@ func:downward = NIL() {
 // the same lock in the other order is the classic cycle, and "greater than or
 // equal" would permit exactly that.
 // expect-error: NITPICK-LOCK-001
-func:same_level_twice = NIL() {
-    Guard:a = raw take_2();
-    Guard:b = raw take_2();
+func:same_level_twice = NIL() never fails {
+    Guard:a = take_2() ?! 9tbb32;
+    Guard:b = take_2() ?! 9tbb32;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -54,15 +54,15 @@ func:same_level_twice = NIL() {
 // analysis is whole-program. `reaches_1` looks fine; holding 3 and calling it is
 // not.
 
-func:reaches_1 = NIL() {
-    Guard:g = raw take_1();
+func:reaches_1 = NIL() never fails {
+    Guard:g = take_1() ?! 9tbb32;
     discard(g.v);
     pass NIL;
 };
 
 // expect-error: NITPICK-LOCK-001
-func:transitively_downward = NIL() {
-    Guard:a = raw take_3();
+func:transitively_downward = NIL() never fails {
+    Guard:a = take_3() ?! 9tbb32;
     discard(a.v);
     drop reaches_1();
     pass NIL;
@@ -94,8 +94,8 @@ struct:Loose = { int32:v; };
 // be kept.
 // expect-error: NITPICK-LOCK-002
 impl:Loose:Storage = {
-    pub func:commit = NIL(Self:self) {
-        Guard:g = raw take_9();
+    pub func:commit = NIL(Self:self) never fails {
+        Guard:g = take_9() ?! 9tbb32;
         discard(g.v);
         pass NIL;
     };

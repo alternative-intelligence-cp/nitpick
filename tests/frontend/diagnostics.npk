@@ -19,7 +19,7 @@ use "../../src/frontend/diagnostics.npk".*;
 
 // Does the sink hold `needle` anywhere? A byte scan, because the sink exposes
 // bytes and the test should not depend on a string library to read them.
-func:sink_has = bool(Sink->:out, string:needle) {
+func:sink_has = bool(Sink->:out, string:needle) never fails {
     int64:n = raw sink_length(out);
     int64:i = 0i64;
     while (i + needle.len <= n) {
@@ -75,13 +75,13 @@ func:main = int32(cstring[]:_~argv) {
 
     // `diag_line` is the same formatter, one line, which is what the drivers
     // call.
-    string:one = relay diag_line(raw diag_error("NITPICK-019", "use after move", late), @sm);
+    string:one = raw diag_line(raw diag_error("NITPICK-019", "use after move", late), @sm);
     if (!(raw string_eq(one, "NITPICK-019 a.npk:9:1: use after move")))             { exit 18i32; }
 
     // A file the manager does not hold renders rather than failing (the same
     // rule as `<no span>`).
     Span:elsewhere = raw span_point(7i32, 0i32, 1i32, 1i32);
-    string:lost = relay diag_line(raw diag_error("NITPICK-019", "x", elsewhere), @sm);
+    string:lost = raw diag_line(raw diag_error("NITPICK-019", "x", elsewhere), @sm);
     if (!(raw string_eq(lost, "NITPICK-019 <unknown file>:1:1: x")))                 { exit 19i32; }
 
     // The overflow note is one fixed line, shared with the drivers.

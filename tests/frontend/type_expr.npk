@@ -36,13 +36,13 @@ struct:Ex = {
 };
 
 // Type a bare expression.
-func:ex = Ex(string:src, InternTable->:it) {
+func:ex = Ex(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    ExprId:node = relay p_parse_expr(@p);
+    ExprId:node = raw p_parse_expr(@p);
 
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
@@ -65,14 +65,14 @@ func:ex = Ex(string:src, InternTable->:it) {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd,
                                   @inst, @fninsts, @ets);
-    int32:t = relay type_of_expr(@e, node);
+    int32:t = raw type_of_expr(@e, node);
 
     Ex:out = Ex{ types: types, diags: diags, result: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
 
-func:code0 = string(Ex->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0 = string(Ex->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 // EVERY EXPRESSION HERE MUST PARSE, and this is where that is enforced.
 //
@@ -81,7 +81,7 @@ func:code0 = string(Ex->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 // immediately, and "no type errors" is trivially true. So the parse count is
 // folded into the same question, and a test asserting a form typechecks is also
 // asserting the parser produced it.
-func:errs = int64(Ex->:x) {
+func:errs = int64(Ex->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };

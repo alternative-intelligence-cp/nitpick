@@ -25,16 +25,16 @@ func:main = int32(cstring[]:_~argv) {
 
     if (!(raw p_at(@p1, TokenKind.KwPub)))              { exit 10i32; }
     if ((raw p_peek_at(@p1, 1i64)).kind != TokenKind.KwFunc) { exit 11i32; }
-    drop p_advance(@p1);
+    discard(raw p_advance(@p1));
     if (!(raw p_at(@p1, TokenKind.KwFunc)))             { exit 12i32; }
     if (!(raw p_accept(@p1, TokenKind.KwFunc)))         { exit 13i32; }
     if (raw p_accept(@p1, TokenKind.KwStruct))          { exit 14i32; }
-    drop p_advance(@p1);
+    discard(raw p_advance(@p1));
     if (!(raw p_at_end(@p1)))                           { exit 15i32; }
 
     // Advancing past Eof must not run off the end.
-    drop p_advance(@p1);
-    drop p_advance(@p1);
+    discard(raw p_advance(@p1));
+    discard(raw p_advance(@p1));
     if (!(raw p_at_end(@p1)))                           { exit 16i32; }
     if (raw diaglist_count(@d1) != 0i64)                { exit 17i32; }
 
@@ -100,7 +100,7 @@ func:main = int32(cstring[]:_~argv) {
     Parser:p6 = raw parser_init(@t6, @ast, @d6, @it);
     int64:k = 0i64;
     while (k < 6i64) {
-        drop p_advance(@p6);
+        discard(raw p_advance(@p6));
         k = k + 1i64;
     }
     if (p6.brace_depth != 0i32)                         { exit 50i32; }

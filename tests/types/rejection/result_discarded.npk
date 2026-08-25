@@ -1,6 +1,7 @@
 // expect-error: NITPICK-TYPE-039
 // expect-error: NITPICK-TYPE-039
 // expect-error: NITPICK-TYPE-039
+// expect-error: NITPICK-TYPE-042
 // expect-error: NITPICK-TYPE-039
 // expect-error: NITPICK-TYPE-040
 // expect-error: NITPICK-TYPE-040
@@ -9,7 +10,9 @@
 // `relay`, `?!` and `?|` each deal with the call's outcome; a bare `f();`
 // discards a `Result` with no keyword, `discard(f())` throws away what must be
 // handled, a bare value statement throws away a computation, and `raw f();`
-// discards the unwrapped value. Rule 7: a `defer` body may not `fail` or
+// discards the unwrapped value (and, since the flip, is also unlicensed —
+// `work` may fail — so the raw statement earns TYPE-042 too). Rule 7: a
+// `defer` body may not `fail` or
 // `relay` — a cleanup runs while the scope unwinds and must not itself exit.
 mod:result_discarded;
 
@@ -18,22 +21,22 @@ func:work = int32(int32:v) {
     pass v;
 };
 
-func:bare_call = int32(int32:v) {
+func:bare_call = int32(int32:v) never fails {
     work(v);
     pass v;
 };
 
-func:discarded = int32(int32:v) {
+func:discarded = int32(int32:v) never fails {
     discard(work(v));
     pass v;
 };
 
-func:bare_value = int32(int32:v) {
+func:bare_value = int32(int32:v) never fails {
     v + 1i32;
     pass v;
 };
 
-func:raw_stmt = int32(int32:v) {
+func:raw_stmt = int32(int32:v) never fails {
     raw work(v);
     pass v;
 };

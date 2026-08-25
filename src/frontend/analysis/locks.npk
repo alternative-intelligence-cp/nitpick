@@ -566,6 +566,18 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
         pass (raw table_min(x, target));
     }
 
+    // `?!` and `?|` sit between a binding and its acquisition exactly as
+    // `raw`/`relay` do, but they are TWO-operand shapes — and this walk
+    // unwrapped only the one-operand family, so an acquisition under them was
+    // silently invisible (found at 1.1.2, when the licence's rewrites first
+    // spelled a lock constructor `take_1() ?! c`; latent since 0.9.7 shipped
+    // the operators). The LHS is the call; the code/default acquires nothing.
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+        pass (raw init_acquires(x, raw expr_lhs(n), depth - 1i32));
+    }
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
+        pass (raw init_acquires(x, raw expr_lhs(n), depth - 1i32));
+    }
     int32:shape = raw expr_shape(n.kind);
     if (shape == (raw EXPR_SHAPE_ONE())) {
         pass (raw init_acquires(x, raw expr_operand(n), depth - 1i32));

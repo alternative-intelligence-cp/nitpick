@@ -1435,7 +1435,7 @@ func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) never fails 
     int32:n2 = raw item_member_count(x.ast, d2);
     int32:j = 0i32;
     while (j < n2) {
-        drop expand_in_decl(x, raw item_member(x.ast, d2, j));
+        discard(raw expand_in_decl(x, raw item_member(x.ast, d2, j)));
         j = j + 1i32;
     }
     pass true;
@@ -1505,7 +1505,7 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
     int32:n2 = raw impl_member_count(x.ast, d2);
     int32:j = 0i32;
     while (j < n2) {
-        drop expand_in_decl(x, raw impl_member(x.ast, d2, j));
+        discard(raw expand_in_decl(x, raw impl_member(x.ast, d2, j)));
         j = j + 1i32;
     }
     pass true;
@@ -1788,9 +1788,9 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
         DeclId:id2 = raw item_member(x.ast, m2, j);
         DeclNode:d2 = raw ast_decl(x.ast, id2);
         if (d2.kind == DeclKind.DeclModuleDecl) {
-            drop expand_module(x, id2);
+            discard(raw expand_module(x, id2));
         } else {
-            drop expand_in_decl(x, id2);
+            discard(raw expand_in_decl(x, id2));
         }
         j = j + 1i32;
     }

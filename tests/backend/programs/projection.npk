@@ -37,11 +37,11 @@ impl:Counter:Seq = {
     func:next = int32(Counter:self) { pass self.n; };
 };
 
-func:first<T: Seq> = T.Item(T:it) { pass (raw it.next()); };
+func:first<T: Seq> = T.Item(T:it) { pass (it.next()) ?! 9tbb32; };
 
 func:main = int32(cstring[]:_~argv) {
     Counter:c = Counter{ n: 7i32 };
-    int32:v = raw first(c);
+    int32:v = first(c) ?! 9tbb32;
     exit v;
 };
 

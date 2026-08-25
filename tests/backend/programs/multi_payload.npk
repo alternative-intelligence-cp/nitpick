@@ -9,7 +9,7 @@ mod:multi_payload;
 
 enum:Ev = { Move(int32, int64); Tri(int8, int32, int8); Stop; };
 
-func:score = int64(Ev:e) {
+func:score = int64(Ev:e) never fails {
     pick (e) {
         (Ev.Move(a, b))    { pass (a =>! int64) + b; },
         (Ev.Tri(p, q, r))  { pass (p =>! int64) + (q =>! int64) + (r =>! int64); },

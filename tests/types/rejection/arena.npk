@@ -1,7 +1,7 @@
 // D-152 — the arena surface refuses what it cannot mean (0.10.2).
 
 // expect-error: NITPICK-TYPE-007
-func:wrong_element = NIL() {
+func:wrong_element = NIL() never fails {
     // a Handle<int32> names nothing in an arena<int64>
     arena<int64>:a = arena_make(4i64);
     arena<int32>:b = arena_make(4i64);
@@ -14,7 +14,7 @@ func:wrong_element = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-007
-func:not_an_operation = NIL() {
+func:not_an_operation = NIL() never fails {
     // the set is alloc, get, put, free, reset, destroy — nothing else
     arena<int64>:a = arena_make(4i64);
     a.compact();
@@ -23,7 +23,7 @@ func:not_an_operation = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-007
-func:shared_no_free = NIL() {
+func:shared_no_free = NIL() never fails {
     // the shared set is alloc/get/destroy — no free: slots are never reused
     // while the arena is live, which is the concurrency contract (D-154)
     shared_arena<int64>:s = shared_arena_make(4i64);
@@ -35,7 +35,7 @@ func:shared_no_free = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-001
-func:no_context = NIL() {
+func:no_context = NIL() never fails {
     // arena_make reads its element from the annotation; without one there is
     // nothing to read
     int64:x = arena_make(4i64);

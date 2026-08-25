@@ -10,19 +10,19 @@
 
 struct:Two = { Result<int32>:a; Result<int32>:b; };
 
-func:mk = int32() { pass 1i32; };
+func:mk = int32() never fails { pass 1i32; };
 
-func:param_rooted = int32(Two->:t) {
+func:param_rooted = int32(Two->:t) never fails {
     pass (t.b.value);
 };
 
-func:field_conflated = int32() {
+func:field_conflated = int32() never fails {
     Two:t = Two{ a: mk(), b: mk() };
     if (t.a.is_error) { pass 0i32; }
     pass (t.b.value);
 };
 
-func:bare_unchecked = int32() {
+func:bare_unchecked = int32() never fails {
     Result<int32>:r = mk();
     pass (r.value);
 };

@@ -5,7 +5,7 @@
 // freed page — is `seal_after_free` below.
 
 // expect-error: NITPICK-MOVE-002
-func:seal_after_free = NIL() {
+func:seal_after_free = NIL() never fails {
     // the jit.npk bug: free, then seal the freed page (use-after-free)
     wildx int8->:page = wildx_alloc(64i64);
     drop wildx_free(page);
@@ -14,7 +14,7 @@ func:seal_after_free = NIL() {
 };
 
 // expect-error: NITPICK-WILDX-001
-func:write_after_seal = NIL() {
+func:write_after_seal = NIL() never fails {
     // a sealed page is executable; writing it would make a region W and X at
     // once — the invariant wildx exists to prevent
     wildx uint8->:page = wildx_alloc(64i64);
@@ -26,7 +26,7 @@ func:write_after_seal = NIL() {
 };
 
 // expect-error: NITPICK-WILDX-002
-func:exec_before_seal = NIL() {
+func:exec_before_seal = NIL() never fails {
     // calling code on a writable page — the state the seal exists to close
     wildx uint8->:page = wildx_alloc(64i64);
     page[0i64] = 195u8;
@@ -37,7 +37,7 @@ func:exec_before_seal = NIL() {
 };
 
 // expect-error: NITPICK-MOVE-002
-func:double_free = NIL() {
+func:double_free = NIL() never fails {
     wildx int8->:page = wildx_alloc(64i64);
     drop wildx_seal(page);
     drop wildx_free(page);

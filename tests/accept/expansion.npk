@@ -16,8 +16,8 @@
 
 // bug591 — one invocation, two declarations, both callable.
 macro:make_pair = () {
-    func:greet1 = int32() { pass 7i32; };
-    func:greet2 = int32() { pass 3i32; };
+    func:greet1 = int32() never fails { pass 7i32; };
+    func:greet2 = int32() never fails { pass 3i32; };
 };
 
 #make_pair();
@@ -25,7 +25,7 @@ macro:make_pair = () {
 // bug593 — a parameter substituted into the body of an emitted function.
 // Substitution is not textual: the argument is an AST node and lands as one.
 macro:make_const = (N) {
-    func:my_const = int32() { pass N; };
+    func:my_const = int32() never fails { pass N; };
 };
 
 #make_const(42i32);
@@ -33,9 +33,9 @@ macro:make_const = (N) {
 // bug592 — emitted declarations that reference EACH OTHER, which is why expansion
 // completes before name resolution begins rather than resolving as it emits.
 macro:emit_helpers = () {
-    func:helper_a = int32() { pass 11i32; };
-    func:helper_b = int32() { pass 31i32; };
-    func:helper_sum = int32() { pass ((raw helper_a()) + (raw helper_b())); };
+    func:helper_a = int32() never fails { pass 11i32; };
+    func:helper_b = int32() never fails { pass 31i32; };
+    func:helper_sum = int32() never fails { pass ((raw helper_a()) + (raw helper_b())); };
 };
 
 #emit_helpers();
@@ -44,13 +44,13 @@ macro:emit_helpers = () {
 // after. One pass would leave it behind, which is what makes this a fixed point
 // rather than a loop that runs once.
 macro:inner = () {
-    func:f1 = int32() { pass 10i32; };
-    func:f2 = int32() { pass 20i32; };
+    func:f1 = int32() never fails { pass 10i32; };
+    func:f2 = int32() never fails { pass 20i32; };
 };
 
 macro:outer = () {
     #inner();
-    func:f3 = int32() { pass 30i32; };
+    func:f3 = int32() never fails { pass 30i32; };
 };
 
 #outer();

@@ -11,7 +11,7 @@ use "../../src/frontend/resolve_codes.npk".*;
 use "../../src/frontend/paths.npk".*;
 use "../../src/frontend/resolve_path.npk".*;
 
-func:eq = bool(string:a, string:b) {
+func:eq = bool(string:a, string:b) never fails {
     pass (raw string_eq(a, b));
 };
 
@@ -26,42 +26,42 @@ func:main = int32(cstring[]:_~argv) {
     if (raw path_is_absolute("etc/x"))            { exit 15i32; }
 
     // --- dirname -------------------------------------------------------------
-    if (!(raw eq(relay path_dirname("a/b/c.npk"), "a/b")))  { exit 20i32; }
-    if (!(raw eq(relay path_dirname("c.npk"), ".")))        { exit 21i32; }
-    if (!(raw eq(relay path_dirname("/c.npk"), "/")))       { exit 22i32; }
+    if (!(raw eq(raw path_dirname("a/b/c.npk"), "a/b")))  { exit 20i32; }
+    if (!(raw eq(raw path_dirname("c.npk"), ".")))        { exit 21i32; }
+    if (!(raw eq(raw path_dirname("/c.npk"), "/")))       { exit 22i32; }
 
     // --- normalisation is what makes ONE FILE ONE FILE ID ---------------------
     // `./a/../b.npk` and `b.npk` name the same file. A source manager holding
     // both would load the module twice and declare every symbol in it twice, so
     // 0.3.1's duplicate diagnostic would fire on a file nobody edited.
-    if (!(raw eq(relay path_normalise("./a/../b.npk"), "b.npk")))   { exit 30i32; }
-    if (!(raw eq(relay path_normalise("a/./b.npk"), "a/b.npk")))    { exit 31i32; }
-    if (!(raw eq(relay path_normalise("a//b.npk"), "a/b.npk")))     { exit 32i32; }
-    if (!(raw eq(relay path_normalise("a/b/../c.npk"), "a/c.npk"))) { exit 33i32; }
-    if (!(raw eq(relay path_normalise("a/b/"), "a/b")))             { exit 34i32; }
-    if (!(raw eq(relay path_normalise("a/.."), ".")))               { exit 35i32; }
+    if (!(raw eq(raw path_normalise("./a/../b.npk"), "b.npk")))   { exit 30i32; }
+    if (!(raw eq(raw path_normalise("a/./b.npk"), "a/b.npk")))    { exit 31i32; }
+    if (!(raw eq(raw path_normalise("a//b.npk"), "a/b.npk")))     { exit 32i32; }
+    if (!(raw eq(raw path_normalise("a/b/../c.npk"), "a/c.npk"))) { exit 33i32; }
+    if (!(raw eq(raw path_normalise("a/b/"), "a/b")))             { exit 34i32; }
+    if (!(raw eq(raw path_normalise("a/.."), ".")))               { exit 35i32; }
 
     // A leading `..` that cannot be cancelled is KEPT -- there is no directory
     // above it to fold into, and dropping it would name a different file.
-    if (!(raw eq(relay path_normalise("../a.npk"), "../a.npk")))    { exit 36i32; }
+    if (!(raw eq(raw path_normalise("../a.npk"), "../a.npk")))    { exit 36i32; }
     // And `../../x` must not collapse to `../x`: popping a `..` with a `..` is
     // the mistake that silently climbs one directory too few.
-    if (!(raw eq(relay path_normalise("../../x"), "../../x")))      { exit 37i32; }
+    if (!(raw eq(raw path_normalise("../../x"), "../../x")))      { exit 37i32; }
     // An absolute path cannot escape the root.
-    if (!(raw eq(relay path_normalise("/../a"), "/a")))             { exit 38i32; }
-    if (!(raw eq(relay path_normalise("/a/b/../c"), "/a/c")))       { exit 39i32; }
+    if (!(raw eq(raw path_normalise("/../a"), "/a")))             { exit 38i32; }
+    if (!(raw eq(raw path_normalise("/a/b/../c"), "/a/c")))       { exit 39i32; }
 
     // --- resolving against the importing file's directory ----------------------
     string:from = "src/frontend/parser.npk";
     RootList:none = raw rootlist_init();
 
-    Resolution:r1 = relay resolve_use(from, "./ast.npk", @none, "");
+    Resolution:r1 = raw resolve_use(from, "./ast.npk", @none, "");
     if (r1.status != (raw RESOLVED_OK()))                        { exit 40i32; }
     if (!(raw eq(r1.path, "src/frontend/ast.npk")))              { exit 41i32; }
 
     // The same file reached the long way round normalises to the same path, so
     // it will take the same file id.
-    Resolution:r2 = relay resolve_use(from, "./../frontend/ast.npk", @none, "");
+    Resolution:r2 = raw resolve_use(from, "./../frontend/ast.npk", @none, "");
     if (r2.status != (raw RESOLVED_OK()))                        { exit 42i32; }
     if (!(raw eq(r2.path, r1.path)))                             { exit 43i32; }
 
@@ -69,17 +69,17 @@ func:main = int32(cstring[]:_~argv) {
     // roots. There is no fallback between classes.
     RootList:one = raw rootlist_init();
     drop rootlist_add(@one, "x", ".");           // roots at ./src
-    Resolution:r3 = relay resolve_use(from, "./frontend/ast.npk", @one, "");
+    Resolution:r3 = raw resolve_use(from, "./frontend/ast.npk", @one, "");
     if (r3.status != (raw RESOLVED_NOT_FOUND()))                 { exit 44i32; }
 
     // --- resolving against a dependency root -------------------------------------
     // A dependency declared at `.` roots at `./src`, so `frontend/ast.npk`
     // resolves to `src/frontend/ast.npk`.
-    Resolution:r4 = relay resolve_use(from, "frontend/ast.npk", @one, "");
+    Resolution:r4 = raw resolve_use(from, "frontend/ast.npk", @one, "");
     if (r4.status != (raw RESOLVED_OK()))                        { exit 50i32; }
     if (!(raw eq(r4.path, "src/frontend/ast.npk")))              { exit 51i32; }
 
-    Resolution:r5 = relay resolve_use(from, "frontend/nothere.npk", @one, "");
+    Resolution:r5 = raw resolve_use(from, "frontend/nothere.npk", @one, "");
     if (r5.status != (raw RESOLVED_NOT_FOUND()))                 { exit 52i32; }
 
     // --- ambiguity is an ERROR, and it names BOTH ---------------------------------
@@ -89,7 +89,7 @@ func:main = int32(cstring[]:_~argv) {
     RootList:two = raw rootlist_init();
     drop rootlist_add(@two, "a", ".");
     drop rootlist_add(@two, "b", ".");
-    Resolution:r6 = relay resolve_use(from, "frontend/ast.npk", @two, "");
+    Resolution:r6 = raw resolve_use(from, "frontend/ast.npk", @two, "");
     if (r6.status != (raw RESOLVED_AMBIGUOUS()))                 { exit 60i32; }
     if (r6.first.len == 0i64)                                    { exit 61i32; }
     if (r6.second.len == 0i64)                                   { exit 62i32; }
@@ -97,11 +97,11 @@ func:main = int32(cstring[]:_~argv) {
     // The standard library is a root like any other and gets NO precedence: a
     // name it supplies and a dependency also supplies is still ambiguous,
     // because silently preferring one is what this rule exists to prevent.
-    Resolution:r7 = relay resolve_use(from, "frontend/ast.npk", @one, "./src");
+    Resolution:r7 = raw resolve_use(from, "frontend/ast.npk", @one, "./src");
     if (r7.status != (raw RESOLVED_AMBIGUOUS()))                 { exit 63i32; }
 
     // …and on its own it resolves.
-    Resolution:r8 = relay resolve_use(from, "frontend/ast.npk", @none, "./src");
+    Resolution:r8 = raw resolve_use(from, "frontend/ast.npk", @none, "./src");
     if (r8.status != (raw RESOLVED_OK()))                        { exit 64i32; }
 
     // --- the diagnostics name what a reader needs -----------------------------------

@@ -42,7 +42,7 @@ func:statements = int32(int32:v) {
     relay effect(v);
     effect(v) ?! 9tbb32;
     effect(v) ?| NIL;
-    drop effect(v);
+    effect(v) ?! 9tbb32;
     pass v;
 };
 
@@ -58,7 +58,7 @@ impl:Box:Steady = {
 // A marked function fills a marked slot — and an unmarked one (widening).
 func:nf_id = int32(int32:v) never fails { pass v; };
 func:wants_marked = int32(func int32(int32) never fails:f, int32:v) never fails {
-    int32:r = raw f(v);
+    int32:r = f(v) ?! 9tbb32;
     pass r;
 };
 func:wants_plain = int32(func int32(int32):f, int32:v) never fails {
@@ -67,7 +67,7 @@ func:wants_plain = int32(func int32(int32):f, int32:v) never fails {
 };
 
 // A `defer` that handles a may-fail cleanup with `?!` — legal under rule 7.
-func:cleanup = int32(int32:v) {
+func:cleanup = int32(int32:v) never fails {
     defer {
         effect(v) ?! 8tbb32;
     }

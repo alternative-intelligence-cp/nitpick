@@ -335,8 +335,8 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
         // `int32:x = x;` does not silently bind to itself. A local is in scope
         // from its declaration onward, not from the start of the block.
         drop resolve_expr(r, raw stmt_decl_init(r.ast, s), scope);
-        drop symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
-                            raw SYM_STMT(), id.index, 0i32);
+        discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
+                            raw SYM_STMT(), id.index, 0i32));
         pass NIL;
     }
 
@@ -367,8 +367,8 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
         int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
         DeclId:bind = raw stmt_for_binding(s);
         DeclNode:bd = raw ast_decl(r.ast, bind);
-        drop symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(bd),
-                            raw SYM_DECL(), bind.index, 0i32);
+        discard(raw symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(bd),
+                            raw SYM_DECL(), bind.index, 0i32));
         drop resolve_invariant(r, raw stmt_for_invariant(r.ast, s), inner);
         drop resolve_stmt(r, raw stmt_for_body(r.ast, s), inner);
         pass NIL;
@@ -486,8 +486,8 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
         int32:i = 0i32;
         while (i < n) {
             int32:nm = raw pat_enum_bind(r.ast, p, i);
-            drop symtab_declare(r.tab, r.ast, r.diags, scope, nm,
-                                raw SYM_PAT(), id.index, 0i32);
+            discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                                raw SYM_PAT(), id.index, 0i32));
             i = i + 1i32;
         }
         pass NIL;
@@ -501,8 +501,8 @@ func:bind_pattern_names = NIL(Resolver->:r, PatId:id, int32:start,
     int32:i = 0i32;
     while (i < count) {
         int32:nm = raw ast_id_at(r.ast, start, i);
-        drop symtab_declare(r.tab, r.ast, r.diags, scope, nm,
-                            raw SYM_PAT(), id.index, 0i32);
+        discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                            raw SYM_PAT(), id.index, 0i32));
         i = i + 1i32;
     }
     pass NIL;
@@ -548,8 +548,8 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         while (g < (raw fn_generic_count(r.ast, d))) {
             DeclId:gp = raw fn_generic(r.ast, d, g);
             DeclNode:gn = raw ast_decl(r.ast, gp);
-            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(gn),
-                                raw SYM_DECL(), gp.index, 0i32);
+            discard(raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(gn),
+                                raw SYM_DECL(), gp.index, 0i32));
             g = g + 1i32;
         }
 
@@ -557,16 +557,16 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         while (pi < (raw fn_param_count(r.ast, d))) {
             DeclId:pd = raw fn_param(r.ast, d, pi);
             DeclNode:pn = raw ast_decl(r.ast, pd);
-            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
-                                raw SYM_DECL(), pd.index, 0i32);
+            discard(raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
+                                raw SYM_DECL(), pd.index, 0i32));
             pi = pi + 1i32;
         }
 
         DeclId:vd = raw fn_variadic(r.ast, d);
         if (!(raw decl_is_none(vd))) {
             DeclNode:vn = raw ast_decl(r.ast, vd);
-            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(vn),
-                                raw SYM_DECL(), vd.index, 0i32);
+            discard(raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(vn),
+                                raw SYM_DECL(), vd.index, 0i32));
         }
 
         int32:c = 0i32;
@@ -665,8 +665,8 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             while (g < gn) {
                 DeclId:gp = raw impl_generic(r.ast, d, g);
                 DeclNode:gd = raw ast_decl(r.ast, gp);
-                drop symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(gd),
-                                    raw SYM_DECL(), gp.index, 0i32);
+                discard(raw symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(gd),
+                                    raw SYM_DECL(), gp.index, 0i32));
                 g = g + 1i32;
             }
         }

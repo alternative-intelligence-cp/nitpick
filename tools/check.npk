@@ -42,164 +42,6 @@ func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) never fails 
     }
     pass NIL;
 };
-
-// --- `--raw-report` (D-163, 1.1.0) -------------------------------------------
-//
-// THE INSTRUMENT. For every `raw` and `drop` site in the program, classify its
-// operand's resolved callee — RESOLUTION, not regex: the symbol the resolver
-// wrote and the callee declaration the checker recorded are what is read, so
-// UFCS and imports are answered correctly. Four buckets:
-//
-//   licensed   the callee declares `never fails` — the site is already legal
-//   mayfail    the callee is a declared function with no clause — 1.1.1's work:
-//              mark the callee, or rewrite the site (`relay` / `?!` / handled)
-//   builtin    the callee is a bare-name builtin — licensed by the BUILTIN
-//              table's `fails` column, not by a declaration
-//   other      anything else (an indirect call, a non-call operand) — resolved
-//              by hand in the sweep
-//
-// It REPORTS; refusal is 1.1.2's closing act, after the sweeps drive `mayfail`
-// to zero. Output: one line per file with unlicensed sites, then the totals.
-func:classify_site = int32(Front->:f, ExprNode:opn, ExprId:opid) never fails {
-    // 0 = other, 1 = licensed, 2 = mayfail, 3 = builtin
-    int32:decl = 0i32;
-    if (opn.kind == ExprKind.ExprCallExpr) {
-        ExprNode:cal = raw ast_expr(@f.g.ast, raw expr_callee(opn));
-        if (cal.kind == ExprKind.ExprIdentifierExpr) {
-            if (cal.a != 0i32) {
-                Symbol:sym = raw symtab_get(@f.g.tab, cal.a);
-                if (sym.origin_kind == (raw SYM_DECL())) { decl = sym.origin; }
-            } else {
-                string:bn = raw intern_get(@f.it, cal.payload =>! int32);
-                if (raw is_builtin_name(bn)) {
-                    // A never-fails builtin licenses the site the way a marked
-                    // declaration does (D-163 rule 9); the rest are the
-                    // genuinely may-fail builtins, counted for the sweep.
-                    if (raw builtin_never_fails(bn)) { pass 1i32; }
-                    pass 3i32;
-                }
-            }
-        }
-    }
-    if (opn.kind == ExprKind.ExprMethodCallExpr) {
-        decl = raw exprtypes_callee(@f.ets, opid);
-    }
-    if (decl == 0i32) { pass 0i32; }
-    DeclNode:d = raw ast_decl(@f.g.ast, DeclId{ index: decl });
-    if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
-    if (raw fn_declares_never_fails(@f.g.ast, d)) { pass 1i32; }
-    pass 2i32;
-};
-
-// The callee's NAME INDEX for a site line (0 = unresolvable) — an index, not
-// the string: an interned string is a borrow of the table, and returning one
-// out of this frame is exactly what D-004 refuses (it did, on the first draft).
-func:site_callee_name = int32(Front->:f, ExprNode:opn, ExprId:opid) never fails {
-    if (opn.kind == ExprKind.ExprCallExpr) {
-        ExprNode:cal = raw ast_expr(@f.g.ast, raw expr_callee(opn));
-        if (cal.kind == ExprKind.ExprIdentifierExpr) {
-            pass (cal.payload =>! int32);
-        }
-    }
-    if (opn.kind == ExprKind.ExprMethodCallExpr) {
-        int32:mdecl = raw exprtypes_callee(@f.ets, opid);
-        if (mdecl != 0i32) {
-            DeclNode:md = raw ast_decl(@f.g.ast, DeclId{ index: mdecl });
-            pass (raw decl_name(md));
-        }
-        pass 0i32;
-    }
-    pass 0i32;
-};
-
-func:raw_report = NIL(Front->:f, NioW->:out) never fails {
-    int32:nfiles = f.g.sm.count;
-    wild int8->:m1 = alloc((nfiles => int64) * 4i64);
-    wild int32->:per_may = m1 =>! wild int32->;
-    wild int8->:m2 = alloc((nfiles => int64) * 4i64);
-    wild int32->:per_bi = m2 =>! wild int32->;
-    wild int8->:m3 = alloc((nfiles => int64) * 4i64);
-    wild int32->:per_ot = m3 =>! wild int32->;
-    int32:z = 0i32;
-    while (z < nfiles) {
-        per_may[z => int64] = 0i32; per_bi[z => int64] = 0i32;
-        per_ot[z => int64] = 0i32; z = z + 1i32;
-    }
-    int32:t_lic = 0i32; int32:t_may = 0i32; int32:t_bi = 0i32; int32:t_ot = 0i32;
-
-    int32:ei = 0i32;
-    int32:en = raw ast_expr_count(@f.g.ast);
-    while (ei < en) {
-        ExprNode:n = raw ast_expr(@f.g.ast, ExprId{ index: ei });
-        bool:site = n.kind == ExprKind.ExprRawUnwrapExpr;
-        if (n.kind == ExprKind.ExprDropExpr) { site = true; }
-        if (site) {
-            ExprId:opid = raw expr_operand(n);
-            ExprNode:opn = raw ast_expr(@f.g.ast, opid);
-            int32:cls = raw classify_site(f, opn, opid);
-            if (cls == 1i32) { t_lic = t_lic + 1i32; }
-            if (cls == 2i32) { t_may = t_may + 1i32; }
-            if (cls == 3i32) { t_bi = t_bi + 1i32; }
-            if (cls == 0i32) { t_ot = t_ot + 1i32; }
-            if (cls != 1i32) {
-                // One line per unlicensed site: the sweep's raw material.
-                string:op = "raw";
-                if (n.kind == ExprKind.ExprDropExpr) { op = "drop"; }
-                string:cn = "mayfail";
-                if (cls == 3i32) { cn = "builtin"; }
-                if (cls == 0i32) { cn = "other"; }
-                string:s1 = raw string_concat("site ",
-                                raw srcmgr_path_proven(@f.g.sm, n.span.file));
-                string:s2 = raw string_concat(s1, ":");
-                string:s3 = raw string_concat(s2,
-                                raw int_to_string(n.span.line => int64));
-                string:s4 = raw string_concat(raw string_concat(s3, " "), op);
-                string:s5 = raw string_concat(raw string_concat(s4, " "), cn);
-                int32:cnm = raw site_callee_name(f, opn, opid);
-                string:cname = "?";
-                if (cnm != 0i32) { cname = raw intern_get(@f.it, cnm); }
-                nio_line(out, raw string_concat(
-                    raw string_concat(s5, " "), cname)) ?| NIL;
-            }
-            if (cls != 1i32) {
-                int32:fid = n.span.file;
-                if (fid >= 0i32) {
-                    if (fid < nfiles) {
-                        if (cls == 2i32) { per_may[fid => int64] = per_may[fid => int64] + 1i32; }
-                        if (cls == 3i32) { per_bi[fid => int64] = per_bi[fid => int64] + 1i32; }
-                        if (cls == 0i32) { per_ot[fid => int64] = per_ot[fid => int64] + 1i32; }
-                    }
-                }
-            }
-        }
-        ei = ei + 1i32;
-    }
-
-    int32:fi = 0i32;
-    while (fi < nfiles) {
-        int32:pm = per_may[fi => int64];
-        int32:pb = per_bi[fi => int64];
-        int32:po = per_ot[fi => int64];
-        if ((pm + pb + po) != 0i32) {
-            string:l1 = raw string_concat(raw srcmgr_path_proven(@f.g.sm, fi), "  mayfail=");
-            string:l2 = raw string_concat(l1, raw int_to_string(pm => int64));
-            string:l3 = raw string_concat(l2, " builtin=");
-            string:l4 = raw string_concat(l3, raw int_to_string(pb => int64));
-            string:l5 = raw string_concat(l4, " other=");
-            nio_line(out, raw string_concat(l5, raw int_to_string(po => int64))) ?| NIL;
-        }
-        fi = fi + 1i32;
-    }
-    string:s1 = raw string_concat("TOTAL licensed=", raw int_to_string(t_lic => int64));
-    string:s2 = raw string_concat(s1, " mayfail=");
-    string:s3 = raw string_concat(s2, raw int_to_string(t_may => int64));
-    string:s4 = raw string_concat(s3, " builtin=");
-    string:s5 = raw string_concat(s4, raw int_to_string(t_bi => int64));
-    string:s6 = raw string_concat(s5, " other=");
-    nio_line(out, raw string_concat(s6, raw int_to_string(t_ot => int64))) ?| NIL;
-    pass NIL;
-};
-
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         NioW:uw = raw nio_stderr();
@@ -209,13 +51,6 @@ func:main = int32(cstring[]:argv) {
     cstring:arg = argv[1i64];
     string:root = raw string_from_bytes(arg.ptr, arg.len);
 
-    bool:want_report = false;
-    if (argv.len >= 3i64) {
-        cstring:a2 = argv[2i64];
-        string:opt = raw string_from_bytes(a2.ptr, a2.len);
-        if (raw string_eq(opt, "--raw-report")) { want_report = true; }
-    }
-
     Front:f;
     int32:fr = raw front_run($$m f, root);
     if (fr == 2i32) { exit 2i32; }
@@ -223,10 +58,6 @@ func:main = int32(cstring[]:argv) {
         NioW:ew = raw nio_stderr();
         drop report(@ew, @f.g.sm, @f.diags);
         exit 1i32;
-    }
-    if (want_report) {
-        NioW:rw = raw nio_stdout();
-        drop raw_report(@f, @rw);
     }
     drop wild_release_all();
     exit 0i32;

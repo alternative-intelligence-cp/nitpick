@@ -36,7 +36,7 @@ struct:Ex = {
 };
 
 // Parse a module and expand it to a fixed point, exactly as the driver does.
-func:expanded = Ex(string:src, InternTable->:it) {
+func:expanded = Ex(string:src, InternTable->:it) never fails {
     Ast:ast = raw ast_init();
     DiagList:diags = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @diags);
@@ -66,21 +66,21 @@ func:expanded = Ex(string:src, InternTable->:it) {
 //
 // Worth stating because the first version of this file counted without it and one
 // of the four cases passed anyway, on a number that was right for the wrong reason.
-func:member_count = int32(Ex->:e) {
+func:member_count = int32(Ex->:e) never fails {
     DeclNode:m = raw ast_decl(@e.ast, e.root);
     pass (raw item_member_count(@e.ast, m));
 };
 
 // Is there a member of this kind with this name? The question a wrong expansion
 // answers differently from a right one.
-func:has_member = bool(Ex->:e, InternTable->:it, DeclKind:kind, string:name) {
+func:has_member = bool(Ex->:e, InternTable->:it, DeclKind:kind, string:name) never fails {
     DeclNode:m = raw ast_decl(@e.ast, e.root);
     int32:n = raw item_member_count(@e.ast, m);
     int32:i = 0i32;
     while (i < n) {
         DeclNode:d = raw ast_decl(@e.ast, raw item_member(@e.ast, m, i));
         if (d.kind == kind) {
-            if (raw string_eq(relay intern_get(it, raw decl_name(d)), name)) {
+            if (raw string_eq(raw intern_get(it, raw decl_name(d)), name)) {
                 pass true;
             }
         }

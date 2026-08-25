@@ -96,8 +96,8 @@ func:p_attr_name = int32(Parser->:p, Token:name) never fails {
 
 pub func:p_parse_attribute = DeclId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
-    drop p_expect(p, TokenKind.Hash);
-    drop p_expect(p, TokenKind.PLBracket);
+    discard(raw p_expect(p, TokenKind.Hash));
+    discard(raw p_expect(p, TokenKind.PLBracket));
     Token:name = raw p_advance(p);
     int32:mark = raw ast_scratch_mark(p.ast);
     if (raw p_accept(p, TokenKind.PLParen)) {
@@ -109,9 +109,9 @@ pub func:p_parse_attribute = DeclId(Parser->:p) never fails {
                 drop ast_scratch_push(p.ast, argN.index);
             }
         }
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
     }
-    drop p_expect(p, TokenKind.PRBracket);
+    discard(raw p_expect(p, TokenKind.PRBracket));
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_decl(p.ast, DeclKind.DeclAttribute, sp,
                              0i32, w.start, w.count,
@@ -137,10 +137,10 @@ pub func:p_parse_attributes = IdSpan(Parser->:p) never fails {
 // check.
 pub func:p_parse_limit = VerifyId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
-    drop p_expect(p, TokenKind.KwLimit);
-    drop p_expect(p, TokenKind.OpLt);
+    discard(raw p_expect(p, TokenKind.KwLimit));
+    discard(raw p_expect(p, TokenKind.OpLt));
     Token:rule = raw p_advance(p);
-    drop p_expect_gt(p);
+    discard(raw p_expect_gt(p));
     pass (raw ast_add_verify(p.ast, VerifyKind.VerifyLimitNode, sp,
                                0i32, 0i32, 0i32, rule.payload));
 };
@@ -161,8 +161,8 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
         // A following `requires`/`ensures` still parses (the grammar is never
         // partial, D-085); the body check is what refuses the combination.
         if (raw p_at(p, TokenKind.KwNever)) {
-            drop p_advance(p);
-            drop p_expect(p, TokenKind.KwFails);
+            discard(raw p_advance(p));
+            discard(raw p_expect(p, TokenKind.KwFails));
             VerifyId:nf = raw ast_add_verify(p.ast, VerifyKind.VerifyNeverFails, sp,
                                                0i32, 0i32, 0i32, 0i64);
             drop ast_scratch_push(p.ast, nf.index);
@@ -172,7 +172,7 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
             if (raw p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }
             if (raw p_at(p, TokenKind.KwAcquires)) { kind = raw CONTRACT_ACQUIRES(); }
             if (kind == 0i32) { break; }
-            drop p_advance(p);
+            discard(raw p_advance(p));
 
             // `acquires <= N` — the BOUND form. The `<=` is consumed here rather
             // than parsed as a comparison, because `acquires x <= 3i32` is not a
@@ -210,7 +210,7 @@ pub func:p_parse_invariant = VerifyId(Parser->:p) never fails {
         pass (raw verify_none());
     }
     Span:sp = raw p_span(p);
-    drop p_advance(p);
+    discard(raw p_advance(p));
     int32:mark = raw ast_scratch_mark(p.ast);
     ExprId:c1 = raw p_parse_expr(p);
     drop ast_scratch_push(p.ast, c1.index);

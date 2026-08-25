@@ -17,18 +17,18 @@ struct:Loaded = {
     int32:scope;      // the ROOT module's scope
 };
 
-func:load = Loaded(string:root, InternTable->:it, DiagList->:diags) {
+func:load = Loaded(string:root, InternTable->:it, DiagList->:diags) never fails {
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(it, diags, @roots, "");
-    drop graph_load_all(@g, root);
+    discard(raw graph_load_all(@g, root));
     drop graph_collect_all(@g);
     drop graph_apply_imports(@g);
-    ModuleEntry:e = relay graph_at(@g, 0i32);
+    ModuleEntry:e = raw graph_at(@g, 0i32);
     Loaded:l = Loaded{ g: g, scope: e.scope };
     pass l;
 };
 
-func:has = bool(Loaded->:l, string:name, InternTable->:it) {
+func:has = bool(Loaded->:l, string:name, InternTable->:it) never fails {
     int32:n = raw intern_add(it, name);
     pass ((raw scope_lookup(@l.g.tab, l.scope, n)) != 0i32);
 };
@@ -122,7 +122,7 @@ func:main = int32(cstring[]:_~argv) {
     int32:lib_n = raw intern_add(@it, "lib");
     Symbol:libs = raw symtab_get(@l6.g.tab, raw scope_lookup(@l6.g.tab, l6.scope, lib_n));
     DeclId:libd = DeclId{ index: libs.origin };
-    if ((relay ast_decl(@l6.g.ast, libd)).kind != DeclKind.DeclModuleDecl) {
+    if ((raw ast_decl(@l6.g.ast, libd)).kind != DeclKind.DeclModuleDecl) {
         exit 63i32;
     }
 
@@ -131,7 +131,7 @@ func:main = int32(cstring[]:_~argv) {
     // check anywhere -- it falls out of how the flags are assigned.
     int32:mid = raw graph_find_by_path(@l2.g, "tests/modules/vis/middle.npk");
     if (mid < 0i32)                                   { exit 70i32; }
-    ModuleEntry:me = relay graph_at(@l2.g, mid);
+    ModuleEntry:me = raw graph_at(@l2.g, mid);
     int32:sh = raw scope_lookup_local(@l2.g.tab, me.scope, shared_n);
     if (sh == 0i32)                                   { exit 71i32; }
     Symbol:shs = raw symtab_get(@l2.g.tab, sh);

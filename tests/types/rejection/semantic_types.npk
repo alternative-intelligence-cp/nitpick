@@ -6,7 +6,7 @@
 
 // `bool` is one byte and two values. `true + 1i32` means nothing.
 // expect-error: NITPICK-TYPE-008
-func:bool_arithmetic = int32() {
+func:bool_arithmetic = int32() never fails {
     bool:b = true;
     int32:n = b + 1i32;
     pass n;
@@ -14,7 +14,7 @@ func:bool_arithmetic = int32() {
 
 // A character is not its code point (D-005).
 // expect-error: NITPICK-TYPE-008
-func:char_arithmetic = char8() {
+func:char_arithmetic = char8() never fails {
     char8:c = 'a';
     char8:d = c + 1i32;
     pass d;
@@ -24,7 +24,7 @@ func:char_arithmetic = char8() {
 // arithmetic on it invites code that reads meaning into what the kernel handed
 // out (D-042).
 // expect-error: NITPICK-TYPE-008
-func:fd_arithmetic = fd(fd:handle) {
+func:fd_arithmetic = fd(fd:handle) never fails {
     fd:next = handle + 1i32;
     pass next;
 };
@@ -35,7 +35,7 @@ func:fd_arithmetic = fd(fd:handle) {
 // refused HERE is mixing a `tbb` with a plain integer: the widths of the two
 // operands carry different meanings, and no `unify` exists between them.
 // expect-error: NITPICK-TYPE-008
-func:tbb_mixed = tbb32(tbb32:err) {
+func:tbb_mixed = tbb32(tbb32:err) never fails {
     tbb32:worse = err + 1i32;
     pass worse;
 };

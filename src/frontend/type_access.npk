@@ -66,14 +66,14 @@ pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) never fails {
                                         raw type_display(e.types, e.interns, t));
         string:m2 = raw string_concat(m1,
             "`; write `<-` for the outer one so the indirection is visible");
-        drop te_error(e, raw TYPE_MISMATCH(), m2, at);
+        discard(raw te_error(e, raw TYPE_MISMATCH(), m2, at));
         pass 0i32;
     }
     // An `any->` is type-erased, so there is nothing to reach into.
     if ((raw type_kind(e.types, inner)) == (raw TY_ANY())) {
-        drop te_error(e, raw TYPE_MISMATCH(),
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
             "`any->` is type-erased and has no members; cast it to a concrete pointer first",
-            at);
+            at));
         pass 0i32;
     }
     pass inner;
@@ -174,7 +174,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
         FieldInfo:v = raw enum_variant(@r, et, name);
         if (v.found) { pass (raw ns_yes(v.type_id)); }
         // A variant that does not exist names the ENUM, not "unknown name".
-        drop te_no_member(e, et, name, n.span);
+        discard(raw te_no_member(e, et, name, n.span));
         pass (raw ns_yes(0i32));
     }
 
@@ -189,8 +189,8 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
                                             raw intern_get(e.interns, s.name));
             string:m2 = raw string_concat(m1, "` has no member `");
             string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
-            drop te_error(e, raw TYPE_NO_METHOD(),
-                          raw string_concat(m3, "`"), n.span);
+            discard(raw te_error(e, raw TYPE_NO_METHOD(),
+                          raw string_concat(m3, "`"), n.span));
             pass (raw ns_yes(0i32));
         }
         Symbol:ms = raw symtab_get(e.tab, m);
@@ -355,8 +355,8 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
             if (!(raw type_is_integer(e.types, idx))) {
                 string:m1 = raw string_concat("an index must be an integer, and this is `",
                                                 raw type_display(e.types, e.interns, idx));
-                drop te_error(e, raw TYPE_MISMATCH(),
-                              raw string_concat(m1, "`"), n.span);
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                              raw string_concat(m1, "`"), n.span));
             }
         }
     }
@@ -501,9 +501,9 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // arguments, so a function with no type parameters has nowhere to put
         // them -- and silently ignoring them is how this behaved until now.
         if (gcount > 0i32) {
-            drop te_error(e, raw TYPE_GENERIC_ARITY(),
+            discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "this function is not generic, so it takes no type arguments",
-                n.span);
+                n.span));
         }
     } else {
         // A FUNCTION VALUE HAS NO TYPE PARAMETERS (1.0.9): an instantiation
@@ -512,9 +512,9 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // reached the backend, which refused it as a rung — a rung names
         // valid Nitpick, and this is not.
         if (gcount > 0i32) {
-            drop te_error(e, raw TYPE_GENERIC_ARITY(),
+            discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "this callee takes no type arguments: it is not a generic function, and a function value is one body, already instantiated",
-                n.span);
+                n.span));
         }
     }
 
@@ -624,8 +624,8 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         string:m1 = raw string_concat("this variant carries ",
                         raw int_to_string(want => int64));
         string:m2 = raw string_concat(m1, " payload value(s) and this passes ");
-        drop te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(m2, raw int_to_string(count => int64)), n.span);
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(m2, raw int_to_string(count => int64)), n.span));
         drop type_args_only(e, start, count);
         pass enum_ty;
     }
@@ -717,8 +717,8 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         string:m1 = raw string_concat("this call supplies ",
                                         raw int_to_string(gcount => int64));
         string:m2 = raw string_concat(m1, " type argument(s) and the function takes ");
-        drop te_error(e, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(m2, raw int_to_string(gp.count => int64)), n.span);
+        discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
+            raw string_concat(m2, raw int_to_string(gp.count => int64)), n.span));
     }
 
     // THE SOLUTION SET IS A WINDOW, one slot per parameter, zero for unsolved.
@@ -931,10 +931,10 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
             string:m2 = raw string_concat(m1, "` cannot be inferred from this call to `");
             string:m3 = raw string_concat(m2,
                             raw intern_get(e.interns, raw decl_name(d)));
-            drop te_error(e, raw TYPE_CANNOT_INFER(),
+            discard(raw te_error(e, raw TYPE_CANNOT_INFER(),
                 raw string_concat(m3,
                     "`; write it with the turbofish, which is the only expression-position form for an explicit type argument (D-064)"),
-                at);
+                at));
         }
         i = i + 1i32;
     }
@@ -1284,7 +1284,7 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         if (skip > 0i32) {
             m2 = raw string_concat(m2, " after the receiver");
         }
-        drop te_error(e, raw TYPE_MISMATCH(), m2, at);
+        discard(raw te_error(e, raw TYPE_MISMATCH(), m2, at));
     }
 
     int32:i = 0i32;
@@ -1517,21 +1517,21 @@ func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
     if (!variadic) {
         string:m1 = raw string_concat("`..^` expands a collection into a variadic parameter, and `",
                                         raw type_display(e.types, e.interns, ft));
-        drop te_error(e, raw TYPE_MISMATCH(),
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
             raw string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
-            at);
+            at));
         pass NIL;
     }
     if (i < fixed_count) {
-        drop te_error(e, raw TYPE_MISMATCH(),
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
             "`..^` expands into the variadic parameter, and this argument fills a fixed one",
-            at);
+            at));
         pass NIL;
     }
     if (i != (count - 1i32)) {
-        drop te_error(e, raw TYPE_MISMATCH(),
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
             "`..^` expands to however many elements the collection holds, so nothing can follow it — an argument after an expansion has no position to be in",
-            at);
+            at));
     }
     pass NIL;
 };
@@ -1542,7 +1542,7 @@ func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
-        drop type_of_expr(e, a);
+        discard(raw type_of_expr(e, a));
         i = i + 1i32;
     }
     pass NIL;
@@ -1586,9 +1586,9 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
         if (raw type_is_func(e.types, got)) {
             if (raw func_never_fails(e.types, want)) {
                 if (!(raw func_never_fails(e.types, got))) {
-                    drop te_error(e, raw TYPE_NEVER_FAILS_ASSIGN(),
+                    discard(raw te_error(e, raw TYPE_NEVER_FAILS_ASSIGN(),
                         "a may-fail function cannot fill a `never fails` slot (D-163): the contract is part of the type, and this function does not make the guarantee",
-                        at);
+                        at));
                     pass NIL;
                 }
             }
@@ -1598,8 +1598,8 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
                                     raw type_display(e.types, e.interns, want));
     string:m2 = raw string_concat(m1, "`, found `");
     string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, got));
-    drop te_error(e, raw TYPE_MISMATCH(),
-                  raw string_concat(m3, "`"), at);
+    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                  raw string_concat(m3, "`"), at));
     pass NIL;
 };
 

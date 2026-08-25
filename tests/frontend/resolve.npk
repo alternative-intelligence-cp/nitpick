@@ -34,17 +34,17 @@ struct:Run = {
 };
 
 // Parse a module, collect it, then resolve every body.
-func:run = Run(string:src, InternTable->:it) {
+func:run = Run(string:src, InternTable->:it) never fails {
     DiagList:lexed = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @lexed);
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     Parser:p = raw parser_init(@toks, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
     Resolver:r = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@r, mod_id, scope);
@@ -53,7 +53,7 @@ func:run = Run(string:src, InternTable->:it) {
     pass out;
 };
 
-func:errors = int64(Run->:r) {
+func:errors = int64(Run->:r) never fails {
     pass (raw diaglist_count(@r.diags));
 };
 
@@ -214,7 +214,7 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:ad = raw diaglist_init();
     RootList:noroots = raw rootlist_init();
     ModuleGraph:ag = raw graph_init(@it, @ad, @noroots, "");
-    drop graph_load_all(@ag, "tests/modules/resolvable.npk");
+    discard(raw graph_load_all(@ag, "tests/modules/resolvable.npk"));
     drop graph_collect_all(@ag);
     drop graph_apply_imports(@ag);
     ModuleEntry:ae = raw graph_at(@ag, 0i32);

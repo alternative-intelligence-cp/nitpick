@@ -17,7 +17,7 @@ pub enum:Expr = {
     Binary(int32);       // index into the BinaryExpr node array
 };
 
-func:describe = int32(Severity:s) {
+func:describe = int32(Severity:s) never fails {
     pick (s) {
         (Severity.Note)    { pass 0i32; },
         (Severity.Warning) { pass 1i32; },
@@ -25,7 +25,7 @@ func:describe = int32(Severity:s) {
     }
 };
 
-func:payload_of = int64(Expr:e) {
+func:payload_of = int64(Expr:e) never fails {
     pick (e) {
         (Expr.IntLit(v))  { pass v; },
         (Expr.Ident(n))   { pass (n => int64); },

@@ -75,15 +75,15 @@ struct:Holder = {
     int32[comptime(greet_len())]:concatenated;         // 5, "hello"
 };
 
-func:want55 = NIL(int32[55]->:p) { pass NIL; };
-func:want11 = NIL(int32[11]->:p) { pass NIL; };
-func:want21 = NIL(int32[21]->:p) { pass NIL; };
-func:want7  = NIL(int32[7]->:p)  { pass NIL; };
-func:want16 = NIL(int32[16]->:p) { pass NIL; };
-func:want10 = NIL(int32[10]->:p) { pass NIL; };
-func:want5  = NIL(int32[5]->:p)  { pass NIL; };
+func:want55 = NIL(int32[55]->:p) never fails { pass NIL; };
+func:want11 = NIL(int32[11]->:p) never fails { pass NIL; };
+func:want21 = NIL(int32[21]->:p) never fails { pass NIL; };
+func:want7  = NIL(int32[7]->:p) never fails  { pass NIL; };
+func:want16 = NIL(int32[16]->:p) never fails { pass NIL; };
+func:want10 = NIL(int32[10]->:p) never fails { pass NIL; };
+func:want5  = NIL(int32[5]->:p) never fails  { pass NIL; };
 
-func:each_length_is_what_it_folded_to = NIL(Holder->:h) {
+func:each_length_is_what_it_folded_to = NIL(Holder->:h) never fails {
     drop want55(@h.summed);
     drop want11(@h.derived);
     drop want21(@h.nested);
@@ -109,8 +109,8 @@ func:take_low = Guard() acquires LOW { pass Guard{ v: 1i32 }; };
 func:take_high = Guard() acquires HIGH { pass Guard{ v: 3i32 }; };
 
 func:upward_still_passes = NIL() {
-    Guard:a = raw take_low();
-    Guard:b = raw take_high();
+    Guard:a = take_low() ?! 9tbb32;
+    Guard:b = take_high() ?! 9tbb32;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -122,7 +122,7 @@ func:upward_still_passes = NIL() {
 // fell through to type `0` — the encoding that suppresses cascades, and therefore
 // silent (D-126, D-129). An unsuffixed folded value takes the context type, exactly
 // as an unsuffixed literal does (D-092).
-func:the_two_kinds_have_types = NIL() {
+func:the_two_kinds_have_types = NIL() never fails {
     int64:sz = #size_of<Big>();
     int32:a = comptime(double(21i32));
     int64:b = comptime(3 + 4);

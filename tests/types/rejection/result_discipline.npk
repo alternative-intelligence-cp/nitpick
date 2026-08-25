@@ -11,13 +11,13 @@
 // invalid type instead.
 // expect-error: NITPICK-TYPE-010
 // expect-error-at: 14:23
-func:double_wrapped = Result<int32>() {
+func:double_wrapped = Result<int32>() never fails {
     pass 1i32;
 };
 
 // A well-formed function, so the case below is about the CALL rather than about
 // this declaration.
-func:width = int32() {
+func:width = int32() never fails {
     pass 4i32;
 };
 
@@ -25,7 +25,7 @@ func:width = int32() {
 // makes the discipline visible at every call site rather than at a boundary
 // somebody has to remember.
 // expect-error: NITPICK-TYPE-007
-func:unwrapped_call = int32() {
+func:unwrapped_call = int32() never fails {
     int32:v = width();
     pass v;
 };

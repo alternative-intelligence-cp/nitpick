@@ -1,0 +1,71 @@
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+// expect-error: NITPICK-TYPE-042
+//
+// D-163 rules 3–4, the licence itself. `raw` is a CHECKED, zero-cost unwrap —
+// licensed only by a `never fails` callee — and `drop` is the `void` call: a
+// `never fails`, `NIL`-returning callee. Everything here holds the licence's
+// seven refusals: a may-fail callee under `raw` and under `drop`; `raw` on a
+// binding; `raw` on a may-fail builtin; a `dyn` call whose TRAIT does not
+// declare the clause (rule 5: the vtable hides which impl runs); an indirect
+// call through an unmarked function type; and `drop` of a never-failing callee
+// WITH a value (a value is not dropped, it is discarded).
+mod:raw_unlicensed;
+
+func:mayfail = int32(int32:v) {
+    if (v < 0i32) { fail 3tbb32; }
+    pass v;
+};
+func:effect_mayfail = NIL(int32:v) {
+    if (v < 0i32) { fail 3tbb32; }
+    pass NIL;
+};
+func:nf_value = int32(int32:v) never fails { pass v; };
+
+trait:Quiet = {
+    func:speak = int32(Self:self);
+};
+struct:Dog = { int32:x; };
+impl:Dog:Quiet = {
+    func:speak = int32(Self:self) never fails { pass self.x; };
+};
+
+func:raw_on_mayfail = int32(int32:v) {
+    int32:a = raw mayfail(v);
+    pass a;
+};
+func:drop_on_mayfail = int32(int32:v) {
+    drop effect_mayfail(v);
+    pass v;
+};
+func:raw_on_binding = int32(int32:v) {
+    Result<int32>:r = mayfail(v);
+    if (r.is_error) { fail r.error; }
+    int32:a = raw r;
+    pass a;
+};
+func:raw_on_mayfail_builtin = string(string:s) {
+    string:t = raw string_slice(s, 0i64, 1i64);
+    pass t;
+};
+func:dyn_trait_undeclared = int32(dyn Quiet:q) {
+    // the impl is marked, but the TRAIT is not — and the vtable hides which
+    // impl runs, so the licence reads the trait (rule 5)
+    int32:a = raw q.speak();
+    pass a;
+};
+func:indirect_unmarked = int32(func int32(int32):f, int32:v) {
+    int32:a = raw f(v);
+    pass a;
+};
+func:drop_of_value = int32(int32:v) {
+    drop nf_value(v);
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

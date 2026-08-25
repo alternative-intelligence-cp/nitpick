@@ -35,19 +35,19 @@ impl:IntBox:Plain = { func:one = int32(IntBox:self) { pass 1i32; }; };
 impl:IntBox:Producer<int32> = { func:make = int32(IntBox:self) { pass self.v; }; };
 
 // A NON-GENERIC trait as a bound.
-func:once<P: Plain> = int32(P:p) { pass (raw p.one()); };
+func:once<P: Plain> = int32(P:p) { pass (p.one()) ?! 9tbb32; };
 
 // A GENERIC trait as a bound — the trait's `T` must resolve here.
 func:twice<P: Producer<int32>> = int32(P:p) {
-    int32:a = raw p.make();
+    int32:a = p.make() ?! 9tbb32;
     pass (a + a);
 };
 
 func:main = int32(cstring[]:_~argv) {
     IntBox:b = IntBox{ v: 20i32 };
 
-    if ((raw once(b)) != 1i32)   { exit 10i32; }
-    if ((raw twice(b)) != 40i32) { exit 11i32; }
+    if ((once(b) ?! 9tbb32) != 1i32)   { exit 10i32; }
+    if ((twice(b) ?! 9tbb32) != 40i32) { exit 11i32; }
 
     exit 42i32;
 };

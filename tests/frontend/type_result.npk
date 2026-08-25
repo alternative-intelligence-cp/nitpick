@@ -41,13 +41,13 @@ struct:Rx = {
 
 // Type an expression whose operands come from `decls`, inside a function that is
 // terminal (`main`/`failsafe`) or not.
-func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
+func:rx = Rx(string:src, bool:terminal, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    ExprId:node = relay p_parse_expr(@p);
+    ExprId:node = raw p_parse_expr(@p);
 
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
@@ -74,29 +74,29 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
     // The enclosing function returns `int32`, which is where a `Result{...}`
     // literal gets its `<T>` — nothing writes it.
     e.fn_success = raw tt_int(@types, 32i32, true);
-    int32:t = relay type_of_expr(@e, node);
+    int32:t = raw type_of_expr(@e, node);
 
     Rx:out = Rx{ types: types, diags: diags, result: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
 
-func:errs = int64(Rx->:x) {
+func:errs = int64(Rx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Rx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0 = string(Rx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 // --- resolving a `Result<T>` ANNOTATION -------------------------------------------
 struct:Ty = { TypeTable:types; DiagList:diags; int32:result; };
 
-func:ty = Ty(string:text, InternTable->:it) {
+func:ty = Ty(string:text, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, text, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    TypeId:node = relay p_parse_type(@p);
+    TypeId:node = raw p_parse_type(@p);
 
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
@@ -105,7 +105,7 @@ func:ty = Ty(string:text, InternTable->:it) {
     // than a skipped argument, so that a context without instantiations says so.
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
-    int32:t = relay resolve_type(@r, node, 0i32);
+    int32:t = raw resolve_type(@r, node, 0i32);
     Ty:out = Ty{ types: types, diags: diags, result: t };
     pass out;
 };
@@ -113,17 +113,17 @@ func:ty = Ty(string:text, InternTable->:it) {
 // --- a function SIGNATURE ---------------------------------------------------------
 struct:FnSig2 = { TypeTable:types; DiagList:diags; FnSig:sig; };
 
-func:sig = FnSig2(string:src, string:want, InternTable->:it) {
+func:sig = FnSig2(string:src, string:want, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
     TypeTable:types = raw typetable_init();
     // NOTHING GENERIC HERE, so nothing to instantiate -- an EMPTY table rather
@@ -137,8 +137,8 @@ func:sig = FnSig2(string:src, string:want, InternTable->:it) {
     DeclId:origin = DeclId{ index: sy.origin };
     // NOT `dn` — `an`, `bn`, `cn` and `dn` are balanced-NONARY literals, not
     // identifiers, and the real parser is what caught it.
-    DeclNode:fnode = relay ast_decl(@ast, origin);
-    FnSig:fs = relay fn_signature(@r, origin, name, scope);
+    DeclNode:fnode = raw ast_decl(@ast, origin);
+    FnSig:fs = raw fn_signature(@r, origin, name, scope);
 
     FnSig2:out = FnSig2{ types: types, diags: diags, sig: fs };
     pass out;
@@ -185,29 +185,35 @@ func:main = int32(cstring[]:_~argv) {
     // --- THE UNARY FAMILY -------------------------------------------------------
     // Each takes a `Result<T>` and yields `T`; they differ in what happens to the
     // error, which is why they are separate nodes rather than one with a mode.
+    // `raw` on a NON-CALL is refused since the flip (D-163 rule 3): the
+    // checked read of a binding is `.value` after `is_err`, and a literal has
+    // no callee to license. The family's typing is asserted through `relay`.
     Rx:u1 = raw rx("raw (Result{value: 1i32, error: 0tbb32})", false, @it);
-    if (raw errs(@u1) != 0i64)                                 { exit 20i32; }
+    if (raw errs(@u1) != 1i64)                                 { exit 20i32; }
 
     // APPLYING ONE TO A PLAIN VALUE IS AN ERROR, not a no-op. A permissive `raw`
     // would survive a refactor after the operand stopped being a call, and the
     // next reader would believe there is error handling there.
+    // TWO diagnostics since the flip: the licence (`raw` takes a CALL,
+    // TYPE-042) and the operand rule (`raw` needs a `Result`, TYPE-007).
     Rx:u2 = raw rx("raw 1i32", false, @it);
-    if (raw errs(@u2) != 1i64)                                 { exit 21i32; }
+    if (raw errs(@u2) != 2i64)                                 { exit 21i32; }
     if (!(raw string_eq(raw code0(@u2), raw TYPE_MISMATCH())))  { exit 22i32; }
 
     Rx:u3 = raw rx("_! 1i32", false, @it);
-    if (raw errs(@u3) != 1i64)                                 { exit 23i32; }
+    if (raw errs(@u3) != 2i64)                                 { exit 23i32; }
 
     // `drop` YIELDS NOTHING. That it is `NIL` rather than `T` is the point:
     // `drop f()` in a value position is then a type error instead of silently
     // being the value with its error thrown away.
+    // one since the flip: `drop` takes a CALL (TYPE-042); the yield stays NIL.
     Rx:u4 = raw rx("drop (Result{value: 1i32, error: 0tbb32})", false, @it);
-    if (raw errs(@u4) != 0i64)                                 { exit 24i32; }
+    if (raw errs(@u4) != 1i64)                                 { exit 24i32; }
     if (u4.result != u4.types.t_nil)                           { exit 25i32; }
 
     // …so using one as a number is caught.
     Rx:u5 = raw rx("(drop (Result{value: 1i32, error: 0tbb32})) + 1i32", false, @it);
-    if (raw errs(@u5) != 1i64)                                 { exit 26i32; }
+    if (raw errs(@u5) != 2i64)                                 { exit 26i32; }
 
     // --- `relay` IN A TERMINAL FUNCTION IS REFUSED ------------------------------
     // `main` and `failsafe` return no `Result`, so an error propagating out of

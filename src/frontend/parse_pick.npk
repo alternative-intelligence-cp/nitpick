@@ -143,7 +143,7 @@ func:p_parse_pattern = PatId(Parser->:p) never fails {
     // safe assumption the type admits.
     if (raw p_at(p, TokenKind.OpBang)) {
         if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PRParen) {
-            drop p_advance(p);
+            discard(raw p_advance(p));
             // `#unreachable()` IS THE SPEC'S ANSWER (D-061), AND IT IS PROVIDED
             // (1.0.9c): a `#`-builtin that traps through D-142's route
             // (`UNREACHABLE`, −4102) if control ever reaches it. So the message
@@ -180,7 +180,7 @@ func:p_parse_pattern = PatId(Parser->:p) never fails {
         // destructuring pattern") could not be followed (1.0.8).
         drop p_error(p, raw PARSE_BAD_PATTERN(),
             "a pattern matches a value, and this is a type name; write the value to compare against — `(0i32)` — or `(*)` for any");
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw pat_none());
     }
 
@@ -213,7 +213,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
     int32:segments = 1i32;
     while (raw p_at(p, TokenKind.PDot)) {
         if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
         Token:sn = raw p_advance(p);
         drop ast_scratch_push(p.ast, sn.payload =>! int32);
         segments = segments + 1i32;
@@ -224,10 +224,10 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
         // as one: a struct pattern has to be matched against a type either way,
         // and a segment list would make the checker rebuild what the type parser
         // already knows how to read.
-        drop ast_scratch_commit(p.ast, mark);
+        discard(raw ast_scratch_commit(p.ast, mark));
         TypeId:ty = raw ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
                                        0i32, 0i32, 0i32, first.payload);
-        drop p_advance(p);
+        discard(raw p_advance(p));
         int32:bmark = raw ast_scratch_mark(p.ast);
         while (true) {
             if (raw p_at(p, TokenKind.PRBrace)) { break; }
@@ -236,7 +236,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
             drop ast_scratch_push(p.ast, b.payload =>! int32);
             if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
-        drop p_expect(p, TokenKind.PRBrace);
+        discard(raw p_expect(p, TokenKind.PRBrace));
         IdSpan:bw = raw ast_scratch_commit(p.ast, bmark);
         pass (raw ast_add_pat(p.ast, PatKind.PatStructDestructure, sp,
                                 ty.index, bw.start, bw.count, 0i64));
@@ -252,7 +252,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) never fails {
             binds = binds + 1i32;
             if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
     }
     drop ast_scratch_set(p.ast, mark, 0i32, segments);
     drop ast_scratch_set(p.ast, mark, 1i32, binds);
@@ -272,8 +272,8 @@ func:p_parse_arm = StmtId(Parser->:p) never fails {
     // never be confused with the `label:` that precedes an ordinary arm.
     if (raw p_at(p, TokenKind.KwERR)) {
         if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
-            drop p_advance(p);
-            drop p_advance(p);
+            discard(raw p_advance(p));
+            discard(raw p_advance(p));
             PatId:ep = raw ast_add_pat(p.ast, PatKind.PatErrPattern, sp,
                                          0i32, 0i32, 0i32, 0i64);
             StmtId:eb = raw p_parse_block(p);
@@ -288,13 +288,13 @@ func:p_parse_arm = StmtId(Parser->:p) never fails {
     if (raw p_at(p, TokenKind.Ident)) {
         if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PColon) {
             label = (raw p_advance(p)).payload;
-            drop p_advance(p);
+            discard(raw p_advance(p));
         }
     }
 
-    drop p_expect(p, TokenKind.PLParen);
+    discard(raw p_expect(p, TokenKind.PLParen));
     PatId:pat = raw p_parse_pattern(p);
-    drop p_expect(p, TokenKind.PRParen);
+    discard(raw p_expect(p, TokenKind.PRParen));
 
     // `where (a > b)` -- PARENTHESISED, unlike `requires` / `ensures`. A guard is
     // an expression-site condition like `if` and `while`, and the contracts are
@@ -302,9 +302,9 @@ func:p_parse_arm = StmtId(Parser->:p) never fails {
     // same way here (D-002).
     int32:guard = 0i32;
     if (raw p_accept(p, TokenKind.KwWhere)) {
-        drop p_expect(p, TokenKind.PLParen);
+        discard(raw p_expect(p, TokenKind.PLParen));
         guard = (raw p_parse_expr(p)).index;
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
     }
 
     StmtId:body = raw p_parse_block(p);
@@ -315,17 +315,17 @@ func:p_parse_arm = StmtId(Parser->:p) never fails {
 // `pick (selector)` -- shared by both positions, so the two entry points differ
 // only in the node they build.
 func:p_parse_pick_selector = ExprId(Parser->:p) never fails {
-    drop p_expect(p, TokenKind.KwPick);
-    drop p_expect(p, TokenKind.PLParen);
+    discard(raw p_expect(p, TokenKind.KwPick));
+    discard(raw p_expect(p, TokenKind.PLParen));
     ExprId:sel = raw p_parse_expr(p);
-    drop p_expect(p, TokenKind.PRParen);
+    discard(raw p_expect(p, TokenKind.PRParen));
     pass sel;
 };
 
 // Arms are separated by COMMAS, and a trailing one is accepted -- adding an arm
 // should not require editing the line above it.
 func:p_parse_arms = IdSpan(Parser->:p) never fails {
-    drop p_expect(p, TokenKind.PLBrace);
+    discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
@@ -337,7 +337,7 @@ func:p_parse_arms = IdSpan(Parser->:p) never fails {
         if ((raw p_position(p)) == before) { drop p_sync(p); }
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }
-    drop p_expect(p, TokenKind.PRBrace);
+    discard(raw p_expect(p, TokenKind.PRBrace));
     pass (raw ast_scratch_commit(p.ast, mark));
 };
 

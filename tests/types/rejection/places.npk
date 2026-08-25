@@ -17,17 +17,17 @@
 
 struct:Box = { int32:v; };
 
-func:make = Box() { pass Box{ v: 1i32 }; };
+func:make = Box() never fails { pass Box{ v: 1i32 }; };
 
 // expect-error: NITPICK-TYPE-024
-func:address_of_a_temporary = NIL() {
+func:address_of_a_temporary = NIL() never fails {
     int32->:p = @(raw make()).v;
     discard(p);
     pass NIL;
 };
 
 // expect-error: NITPICK-TYPE-024
-func:borrow_of_a_temporary = NIL() {
+func:borrow_of_a_temporary = NIL() never fails {
     int32->:q = $$m (raw make()).v;
     discard(q);
     pass NIL;
@@ -35,7 +35,7 @@ func:borrow_of_a_temporary = NIL() {
 
 // A CALL'S RESULT HAS NO ADDRESS, so there is nothing to move out of.
 // expect-error: NITPICK-TYPE-024
-func:move_a_temporary = NIL() {
+func:move_a_temporary = NIL() never fails {
     Box:b = move(raw make());
     discard(b.v);
     pass NIL;
@@ -45,7 +45,7 @@ func:move_a_temporary = NIL() {
 // built on, so this stored into a field of a value with no home — the outermost
 // operator was the right shape and the root was not.
 // expect-error: NITPICK-TYPE-024
-func:store_into_a_temporary = NIL() {
+func:store_into_a_temporary = NIL() never fails {
     (raw make()).v = 5i32;
     pass NIL;
 };

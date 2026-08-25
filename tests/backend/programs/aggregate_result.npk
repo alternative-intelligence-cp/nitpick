@@ -21,7 +21,7 @@ func:main = int32(cstring[]:_~argv) {
     // 1 + pad(7) + 8 + 1 + pad(7) = 24 under the x86-64 datalayout.
     if (#size_of<Padded>() != 24i64)      { exit 10i32; }
 
-    Padded:p = raw via(true);
+    Padded:p = via(true) ?! 9tbb32;
     if (p.a != 1i8)                       { exit 11i32; }
     if (p.b != 777i64)                    { exit 12i32; }
     if (p.c != 3i8)                       { exit 13i32; }

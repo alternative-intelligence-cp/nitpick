@@ -10,39 +10,39 @@ struct:Box<T: Printable> = { T:held; };
 // bounds declare, refused AT THE DEFINITION with no instantiation anywhere in the
 // program. `render` is a perfectly good method name and `T` does not have it.
 // expect-error: NITPICK-TYPE-019
-func:duck<T: Printable> = NIL(T:x) { drop x.render(); pass NIL; };
+func:duck<T: Printable> = NIL(T:x) { discard(x.render() ?! 9tbb32); pass NIL; };
 
 // An UNBOUNDED parameter can do nothing at all.
 // expect-error: NITPICK-TYPE-019
-func:unbounded<U> = NIL(U:x) { drop x.show(); pass NIL; };
+func:unbounded<U> = NIL(U:x) { discard(x.show() ?! 9tbb32); pass NIL; };
 
 // A GENERIC TYPE IS WRITTEN WITH ITS ARGUMENTS. Both counts are named, because
 // making the reader go and count the parameters is the one thing the compiler
 // already did.
 // expect-error: NITPICK-TYPE-016
-func:bare = NIL(Container:c) { int32:v = c.value; pass NIL; };
+func:bare = NIL(Container:c) never fails { int32:v = c.value; pass NIL; };
 
 // AN ARGUMENT MUST SATISFY THE BOUND, and `Point` implements nothing.
 // expect-error: NITPICK-TYPE-017
-func:unmet = NIL() { Box<Point>:b; pass NIL; };
+func:unmet = NIL() never fails { Box<Point>:b; pass NIL; };
 
 // A TYPE WHERE A `comptime` VALUE WAS WANTED, or the reverse — not arity, since
 // the count is right.
 struct:Lock<T, comptime int32:LEVEL> = { T:held; };
 // expect-error: NITPICK-TYPE-021
-func:wrong_kind = NIL() { Lock<Point, int32>:m; pass NIL; };
+func:wrong_kind = NIL() never fails { Lock<Point, int32>:m; pass NIL; };
 
 // A NON-LITERAL `comptime` ARGUMENT is refused by name rather than silently
 // taking a wrong value — the same rule and the same sentence `int32[N]` uses.
 // expect-error: NITPICK-TYPE-004
-func:not_constant = NIL(int32:n) { Lock<Point, (n)>:m; pass NIL; };
+func:not_constant = NIL(int32:n) never fails { Lock<Point, (n)>:m; pass NIL; };
 
 // AN UNSUFFIXED LITERAL CANNOT SOLVE A PARAMETER, because it takes its type FROM
 // the parameter it fills. The fix is the turbofish, which is the only
 // expression-position form for an explicit type argument.
 func:identity<V> = V(V:x) { pass x; };
 // expect-error: NITPICK-TYPE-022
-func:cannot_infer = NIL() { int32:v = raw identity(5); pass NIL; };
+func:cannot_infer = NIL() never fails { int32:v = identity(5) ?! 9tbb32; pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

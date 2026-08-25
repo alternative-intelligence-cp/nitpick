@@ -139,7 +139,7 @@ pub func:p_expect_gt = bool(Parser->:p) never fails {
         if (raw tokenlist_split_shr(p.tokens, p.pos)) {
             // The first `>` closes this list; the second stays for the level
             // above, which is the whole reason nested generics work.
-            drop p_advance(p);
+            discard(raw p_advance(p));
             pass true;
         }
     }
@@ -154,7 +154,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
 
     // `dyn A & B` -- a set of traits, combined with `&` (D-029).
     if (k == TokenKind.KwDyn) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         int32:mark = raw ast_scratch_mark(p.ast);
         TypeId:first = raw p_parse_type(p);
         drop ast_scratch_push(p.ast, first.index);
@@ -174,9 +174,9 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
     // that is not a trait. The inner `p_parse_type` consumes any suffixes
     // written INSIDE the parens; `p_suffixes` here takes the ones after.
     if (k == TokenKind.PLParen) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         TypeId:inner = raw p_parse_type(p);
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
         pass (raw p_suffixes(p, inner));
     }
 
@@ -184,12 +184,12 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
     // they must be taken before the named-type path folds every keyword into a
     // NamedType. Both were unreachable until 0.2.8 for exactly that reason.
     if (k == TokenKind.KwCstring) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeCStringType,
                                                      sp, 0i32, 0i32, 0i32, 0i64)));
     }
     if (k == TokenKind.KwAny) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         // `any` is legal ONLY under `->` (TYPE_REFERENCE section 27). That is a
         // type-checker rule, not a grammar one: bare `any` parses here and is
         // refused there, with the message the spec already writes. Enforcing it
@@ -203,9 +203,9 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
     // in the same order as the declaration it is the type of, minus the name:
     // there is nothing for a name to bind to in a type.
     if (k == TokenKind.KwFunc) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         TypeId:ret = raw p_parse_type(p);
-        drop p_expect(p, TokenKind.PLParen);
+        discard(raw p_expect(p, TokenKind.PLParen));
         int32:mark = raw ast_scratch_mark(p.ast);
         while (true) {
             if (raw p_at(p, TokenKind.PRParen)) { break; }
@@ -214,13 +214,13 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
             drop ast_scratch_push(p.ast, pt.index);
             if (!(raw p_accept(p, TokenKind.PComma))) { break; }
         }
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         // `never fails` after the parameter list (D-163) — the func type's
         // contract, stored in the node's payload slot and read at resolve.
         int64:nf = 0i64;
         if (raw p_accept(p, TokenKind.KwNever)) {
-            drop p_expect(p, TokenKind.KwFails);
+            discard(raw p_expect(p, TokenKind.KwFails));
             nf = 1i64;
         }
         pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeFuncType,
@@ -229,7 +229,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
     }
 
     if (k == TokenKind.KwSelf) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw p_suffixes(p, raw ast_add_type(p.ast, TypeKind.TypeSelfType,
                                                      sp, 0i32, 0i32, 0i32, 0i64)));
     }
@@ -270,7 +270,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
     int32:astart = 0i32;
     int32:acount = 0i32;
     if (raw p_at(p, TokenKind.OpLt)) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         int32:mark = raw ast_scratch_mark(p.ast);
         if (!(raw p_at(p, TokenKind.OpGt))) {
             TypeId:a1 = raw p_parse_type_arg(p);
@@ -280,7 +280,7 @@ pub func:p_parse_type = TypeId(Parser->:p) never fails {
                 drop ast_scratch_push(p.ast, argN.index);
             }
         }
-        drop p_expect_gt(p);
+        discard(raw p_expect_gt(p));
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         astart = w.start;
         acount = w.count;
@@ -318,7 +318,7 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
             if (raw p_at(p, TokenKind.Ident)) {
                 pnm = (raw p_advance(p)).payload;
             } else {
-                drop p_expect(p, TokenKind.Ident);
+                discard(raw p_expect(p, TokenKind.Ident));
             }
             cur = raw ast_add_type(p.ast, TypeKind.TypeProjection, sp,
                                      cur.index, 0i32, 0i32, pnm);
@@ -333,7 +333,7 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
                                          cur.index, 0i32, 0i32, 0i64);
             } else {
                 if (raw p_at(p, TokenKind.PLBracket)) {
-                    drop p_advance(p);
+                    discard(raw p_advance(p));
                     // An absent size is a SLICE; a present one is a fixed array.
                     //
                     // The size is an EXPRESSION (AST_REFERENCE section 4:
@@ -347,7 +347,7 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) never fails {
                     if (!(raw p_at(p, TokenKind.PRBracket))) {
                         size = (raw p_parse_expr(p)).index;
                     }
-                    drop p_expect(p, TokenKind.PRBracket);
+                    discard(raw p_expect(p, TokenKind.PRBracket));
                     cur = raw ast_add_type(p.ast, TypeKind.TypeArrayType, sp,
                                              cur.index, size, 0i32, 0i64);
                 } else {

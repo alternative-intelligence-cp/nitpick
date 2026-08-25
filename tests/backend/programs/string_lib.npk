@@ -31,7 +31,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw nstr_index_of(s, "")) != 0i64)                  { exit 22i32; }
     if (!(raw nstr_contains(s, "brown")))                    { exit 23i32; }
 
-    string:mid = raw nstr_substring(s, 4i64, 9i64);
+    string:mid = nstr_substring(s, 4i64, 9i64) ?! 9tbb32;
     if (!(raw nstr_eq(mid, "quick")))                        { exit 24i32; }
 
     // The comptime-foldable pair, evaluated at RUN time through their
@@ -42,10 +42,10 @@ func:main = int32(cstring[]:_~argv) {
 
     // The §1 memory trio through the floor's own definitions.
     wild int8->:a = alloc(8i64);
-    drop memset(a, 7i64, 8i64);
+    discard(raw memset(a, 7i64, 8i64));
     if (a[3i64] != 7i8)                                      { exit 28i32; }
     wild int8->:b = alloc(8i64);
-    drop mcpy(b, a, 8i64);
+    discard(raw mcpy(b, a, 8i64));
     if (b[7i64] != 7i8)                                      { exit 29i32; }
 
     drop wild_release_all();

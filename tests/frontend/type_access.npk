@@ -40,8 +40,8 @@ struct:Ax = { TypeTable:types; DiagList:diags; int64:parse_errs; };
 
 // A fixed preamble of declarations, plus whatever the case adds. Every case is a
 // whole module so that names, types and bodies all go through the real pipeline.
-func:ax = Ax(string:body, InternTable->:it) {
-    pass (relay axd("", body, it));
+func:ax = Ax(string:body, InternTable->:it) never fails {
+    pass (raw axd("", body, it));
 };
 
 // The same, with EXTRA TOP-LEVEL DECLARATIONS in front. A signature can be wrong
@@ -51,35 +51,35 @@ func:ax = Ax(string:body, InternTable->:it) {
 // A declaration is only type-resolved when something reaches it, so a case
 // testing a bad signature has to CALL the function; `fn_type` is what runs the
 // check, and nothing runs it for a function nobody names.
-func:axd = Ax(string:decls, string:body, InternTable->:it) {
+func:axd = Ax(string:decls, string:body, InternTable->:it) never fails {
     // ONE STRING, not adjacent literals — Nitpick has no implicit string
     // concatenation, which the real parser said plainly.
     // THE VALUES COME IN AS PARAMETERS rather than as locals initialised to
     // `NULL`. `NULL` is valid only where a pointer is expected (TYPE_REFERENCE
     // §27), so a `NULL`-initialised slice is itself an error and every case built
     // on one would have been measuring that instead of what it meant to.
-    string:pre = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) { pass 1i32; }; ", decls);
-    string:head = relay string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
-    string:with_body = relay string_concat(head, body);
-    string:src = relay string_concat(with_body, " pass NIL; };");
-    pass (relay run_module(src, "f", it));
+    string:pre = raw string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) never fails { pass 1i32; }; func:add2 = int32(int32:a, int32:b) never fails { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) never fails { pass 1i32; }; ", decls);
+    string:head = raw string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
+    string:with_body = raw string_concat(head, body);
+    string:src = raw string_concat(with_body, " pass NIL; };");
+    pass (raw run_module(src, "f", it));
 };
 
 // The whole frontend over one module, checking the body of the function named
 // `want`. Split out of `axd` so a case can supply its OWN source rather than the
 // fixed preamble -- which the intern-collision case has to, since what it is
 // about is WHICH INDEX a name lands on.
-func:run_module = Ax(string:src, string:want, InternTable->:it) {
+func:run_module = Ax(string:src, string:want, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
     Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@rs, mod_id, scope);
 
@@ -107,15 +107,15 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @fninsts, @ets);
 
-    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
     while (i < (raw item_member_count(@ast, mn))) {
         DeclId:item = raw item_member(@ast, mn, i);
-        DeclNode:d = relay ast_decl(@ast, item);
+        DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             int32:name = d.payload => int32;
-            if (raw string_eq(relay intern_get(it, name), want)) {
-                FnSig:sg = relay fn_signature(@tr, item, name, scope);
+            if (raw string_eq(raw intern_get(it, name), want)) {
+                FnSig:sg = raw fn_signature(@tr, item, name, scope);
                 e.fn_success = sg.success;
                 e.fn_terminal = sg.terminal;
                 // ITS GENERIC PARAMETERS TRAVEL WITH IT (0.4.7). The walk holds
@@ -145,12 +145,12 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) {
 // The body IS a block and `check_stmt` walks one (D-101). This unrolled the top
 // level by hand, which stopped being necessary when the checker's walk was
 // completed and would now quietly skip anything a case nested.
-func:check_block = NIL(ExprTyper->:e, StmtId:body) {
+func:check_block = NIL(ExprTyper->:e, StmtId:body) never fails {
     drop check_stmt(e, body);
     pass NIL;
 };
 
-func:errs = int64(Ax->:x) {
+func:errs = int64(Ax->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
@@ -158,7 +158,7 @@ func:errs = int64(Ax->:x) {
 // The first diagnostic's CODE. Asserted on where a case is about which rule was
 // broken rather than about how many were -- object safety is three rules and the
 // whole point is that they are told apart.
-func:code0a = string(Ax->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0a = string(Ax->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
@@ -268,8 +268,9 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@c4) != 1i64)                                 { exit 73i32; }
 
     // Calling something that is not a function.
+    // two since the flip: not-a-function, and the licence (TYPE-042).
     Ax:c5 = raw ax("int32:v = raw pt(1i32);", @it);
-    if (raw errs(@c5) != 1i64)                                 { exit 74i32; }
+    if (raw errs(@c5) != 2i64)                                 { exit 74i32; }
 
     // A call's result is a `Result`, so using it unwrapped is caught.
     Ax:c6 = raw ax("int32:v = add2(1i32, 2i32);", @it);
@@ -285,8 +286,9 @@ func:main = int32(cstring[]:_~argv) {
     // A METHOD THAT DOES NOT EXIST NAMES THE TYPE it was sought on. "unknown
     // function `nope`" would send the reader looking for a free function when
     // what they wrote was a method call.
+    // two since the flip: no-method, and the unresolved callee is unlicensed.
     Ax:u2 = raw ax("int32:v = raw pt.nope();", @it);
-    if (raw errs(@u2) != 1i64)                                 { exit 81i32; }
+    if (raw errs(@u2) != 2i64)                                 { exit 81i32; }
 
     // The receiver is checked as the first parameter, so a method of another type
     // is refused rather than silently accepted.
@@ -440,7 +442,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- `..*T[]` AND NOT `..*T` ---------------------------------------------
     // Without the brackets there is no slice to bind and no element to recover.
-    Ax:s7 = raw axd("func:bad = int32(..*int64:rest) { pass 1i32; };",
+    Ax:s7 = raw axd("func:bad = int32(..*int64:rest) never fails { pass 1i32; };",
                     "int32:v = raw bad(1i64);", @it);
     if (raw errs(@s7) != 1i64)                                 { exit 136i32; }
 
@@ -450,25 +452,26 @@ func:main = int32(cstring[]:_~argv) {
     // module-level free functions, and a method written where the spec puts it
     // was invisible. The 0.4.5 UFCS tests passed because their fixture declared
     // `magnitude` at module scope, which is the one form the spec does not use.
-    Ax:i1 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+    Ax:i1 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
                     "int32:v = raw pt.scaled(2i32);", @it);
     if (raw errs(@i1) != 0i64)                                 { exit 140i32; }
     // Its ARGUMENTS are checked, so the lookup produced a real signature rather
     // than something that merely stopped the "no method" diagnostic.
-    Ax:i2 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+    Ax:i2 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
                     "int32:v = raw pt.scaled(true);", @it);
     if (raw errs(@i2) != 1i64)                                 { exit 141i32; }
-    Ax:i3 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+    Ax:i3 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
                     "int32:v = raw pt.scaled();", @it);
     if (raw errs(@i3) != 1i64)                                 { exit 142i32; }
     // A method on ANOTHER type is not found on this one.
-    Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) { pass 1i32; }; };",
+    Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) never fails { pass 1i32; }; };",
                     "int32:v = raw pt.only_wrap();", @it);
-    if (raw errs(@i4) != 1i64)                                 { exit 143i32; }
+    // two since the flip: no-method, and the unresolved callee is unlicensed.
+    if (raw errs(@i4) != 2i64)                                 { exit 143i32; }
 
     // A TRAIT IMPL'S METHOD IS REACHED THE SAME WAY. Nothing about the call site
     // says which impl a method came from, and nothing should.
-    Ax:i5 = raw axd("trait:Sized2 = { func:area = int32(Self:self); }; impl:Point:Sized2 = { func:area = int32(Point:self) { pass 1i32; }; };",
+    Ax:i5 = raw axd("trait:Sized2 = { func:area = int32(Self:self) never fails; }; impl:Point:Sized2 = { func:area = int32(Point:self) never fails { pass 1i32; }; };",
                     "int32:v = raw pt.area();", @it);
     if (raw errs(@i5) != 0i64)                                 { exit 144i32; }
 
@@ -479,13 +482,14 @@ func:main = int32(cstring[]:_~argv) {
 
     // TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS, and picking either would be a
     // silent choice between two things somebody wrote on purpose.
-    Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self); }; trait:Tb = { func:tag = int32(Self:self); }; impl:Point:Ta = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) { pass 2i32; }; };",
+    Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; impl:Point:Ta = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                     "int32:v = raw pt.tag();", @it);
-    if (raw errs(@i7) != 1i64)                                 { exit 146i32; }
+    // two since the flip: ambiguous, and an unresolvable callee is unlicensed.
+    if (raw errs(@i7) != 2i64)                                 { exit 146i32; }
 
     // …and an INHERENT METHOD OUTRANKS a trait one, which is the same rule
     // TRAITS_REFERENCE 2.6 states for blanket impls: concrete wins.
-    Ax:i8 = raw axd("trait:Tc = { func:tag = int32(Self:self); }; impl:Point:Tc = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) { pass 2i32; }; };",
+    Ax:i8 = raw axd("trait:Tc = { func:tag = int32(Self:self) never fails; }; impl:Point:Tc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                     "int32:v = raw pt.tag();", @it);
     if (raw errs(@i8) != 0i64)                                 { exit 147i32; }
 
@@ -493,19 +497,19 @@ func:main = int32(cstring[]:_~argv) {
     // AT MOST ONE implementation of a trait for a type. There is no rule the
     // compiler could pick by that would not be a silent choice between two things
     // somebody wrote on purpose.
-    Ax:h1 = raw axd("trait:Td = { func:tag = int32(Self:self); }; impl:Point:Td = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Td = { func:tag = int32(Point:self) { pass 2i32; }; };",
+    Ax:h1 = raw axd("trait:Td = { func:tag = int32(Self:self) never fails; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@h1) != 1i64)                                 { exit 150i32; }
 
     // The SAME TRAIT on a DIFFERENT TYPE is the ordinary case and is fine.
-    Ax:h2 = raw axd("trait:Te = { func:tag = int32(Self:self); }; impl:Point:Te = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Wrap:Te = { func:tag = int32(Wrap:self) { pass 2i32; }; };",
+    Ax:h2 = raw axd("trait:Te = { func:tag = int32(Self:self) never fails; }; impl:Point:Te = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap:Te = { func:tag = int32(Wrap:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@h2) != 0i64)                                 { exit 151i32; }
 
     // TWO INHERENT IMPLS ARE NOT A COHERENCE ERROR. Splitting a type's methods
     // across two blocks is a formatting choice; what would be wrong is the same
     // METHOD twice, which is a duplicate-name question and not this one.
-    Ax:h3 = raw axd("impl:Point = { func:one = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:two = int32(Point:self) { pass 2i32; }; };",
+    Ax:h3 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:two = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@h3) != 0i64)                                 { exit 152i32; }
 
@@ -518,25 +522,25 @@ func:main = int32(cstring[]:_~argv) {
     // --- AN IMPL SUPPLIES WHAT THE TRAIT REQUIRES (D-103) --------------------
     // A trait method with no body is REQUIRED; the absence is real rather than a
     // flag, which is what lets the two be told apart without one.
-    Ax:c1 = raw axd("trait:Tf = { func:one = int32(Self:self); }; impl:Point:Tf = { func:one = int32(Point:self) { pass 1i32; }; };",
+    Ax:c1 = raw axd("trait:Tf = { func:one = int32(Self:self) never fails; }; impl:Point:Tf = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@c1) != 0i64)                                 { exit 160i32; }
-    Ax:c2 = raw axd("trait:Tg = { func:one = int32(Self:self); }; impl:Point:Tg = { };",
+    Ax:c2 = raw axd("trait:Tg = { func:one = int32(Self:self) never fails; }; impl:Point:Tg = { };",
                     "", @it);
     if (raw errs(@c2) != 1i64)                                 { exit 161i32; }
 
     // A DEFAULT BODY MAKES IT OPTIONAL (2.1), and an impl may still override.
-    Ax:c3 = raw axd("trait:Th = { func:one = int32(Self:self) { pass 0i32; }; }; impl:Point:Th = { };",
+    Ax:c3 = raw axd("trait:Th = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Th = { };",
                     "", @it);
     if (raw errs(@c3) != 0i64)                                 { exit 162i32; }
-    Ax:c4 = raw axd("trait:Ti = { func:one = int32(Self:self) { pass 0i32; }; }; impl:Point:Ti = { func:one = int32(Point:self) { pass 1i32; }; };",
+    Ax:c4 = raw axd("trait:Ti = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Ti = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@c4) != 0i64)                                 { exit 163i32; }
 
     // …AND MAY NOT ADD ONE THE TRAIT NEVER DECLARED. An inherent impl is where a
     // method with no trait behind it belongs, and it is one line away, so the
     // diagnostic points there rather than merely refusing.
-    Ax:c5 = raw axd("trait:Tj = { func:one = int32(Self:self); }; impl:Point:Tj = { func:one = int32(Point:self) { pass 1i32; }; func:extra = int32(Point:self) { pass 2i32; }; };",
+    Ax:c5 = raw axd("trait:Tj = { func:one = int32(Self:self) never fails; }; impl:Point:Tj = { func:one = int32(Point:self) never fails { pass 1i32; }; func:extra = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@c5) != 1i64)                                 { exit 164i32; }
 
@@ -544,19 +548,19 @@ func:main = int32(cstring[]:_~argv) {
     // The case that would otherwise pass: every method the trait asked for, and
     // none of them interchangeable. A `dyn` caller would dispatch through a slot
     // typed one way into a body typed another.
-    Ax:c6 = raw axd("trait:Tk = { func:one = flt64(Self:self); }; impl:Point:Tk = { func:one = int32(Point:self) { pass 1i32; }; };",
+    Ax:c6 = raw axd("trait:Tk = { func:one = flt64(Self:self) never fails; }; impl:Point:Tk = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@c6) != 1i64)                                 { exit 165i32; }
-    Ax:c7 = raw axd("trait:Tl = { func:one = int32(Self:self, int32:k); }; impl:Point:Tl = { func:one = int32(Point:self) { pass 1i32; }; };",
+    Ax:c7 = raw axd("trait:Tl = { func:one = int32(Self:self, int32:k) never fails; }; impl:Point:Tl = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@c7) != 1i64)                                 { exit 166i32; }
     // `Self` IN A PARAMETER RESOLVES TO THE TARGET, so this matches rather than
     // reporting `Self` against `Point` as two different types.
-    Ax:c8 = raw axd("trait:Tm = { func:eq = bool(Self:self, Self:other); }; impl:Point:Tm = { func:eq = bool(Point:self, Point:other) { pass true; }; };",
+    Ax:c8 = raw axd("trait:Tm = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tm = { func:eq = bool(Point:self, Point:other) never fails { pass true; }; };",
                     "", @it);
     if (raw errs(@c8) != 0i64)                                 { exit 167i32; }
     // …and a parameter that is NOT the target is still refused.
-    Ax:c9 = raw axd("trait:Tn = { func:eq = bool(Self:self, Self:other); }; impl:Point:Tn = { func:eq = bool(Point:self, Wrap:other) { pass true; }; };",
+    Ax:c9 = raw axd("trait:Tn = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tn = { func:eq = bool(Point:self, Wrap:other) never fails { pass true; }; };",
                     "", @it);
     if (raw errs(@c9) != 1i64)                                 { exit 168i32; }
 
@@ -576,14 +580,14 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@a4) != 1i64)                                 { exit 173i32; }
 
     // --- `Self` IS VALID ONLY INSIDE A TRAIT OR IMPL BODY --------------------
-    Ax:z1 = raw axd("func:loose = int32(Self:self) { pass 1i32; };",
+    Ax:z1 = raw axd("func:loose = int32(Self:self) never fails { pass 1i32; };",
                     "int32:v = raw loose(1i32);", @it);
     if (raw errs(@z1) != 1i64)                                 { exit 174i32; }
 
     // --- OBJECT SAFETY, AND WHICH RULE BROKE (4.2) ---------------------------
     // Three rules, three messages. "Trait is not object safe" sends the reader to
     // re-derive the list; naming the method and the reason does not.
-    Ax:o1 = raw axd("trait:Ok1 = { func:draw = int32(Self:self); }; impl:Point:Ok1 = { func:draw = int32(Point:self) { pass 1i32; }; };",
+    Ax:o1 = raw axd("trait:Ok1 = { func:draw = int32(Self:self) never fails; }; impl:Point:Ok1 = { func:draw = int32(Point:self) never fails { pass 1i32; }; };",
                     "dyn Ok1:d = pt;", @it);
     if (raw errs(@o1) != 0i64)                                 { exit 180i32; }
 
@@ -610,7 +614,7 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@o3) != 1i64)                                 { exit 183i32; }
 
     // 2. RETURNING `Self` — its size is unknown once the concrete type is erased.
-    Ax:o4 = raw axd("trait:Bad3 = { func:clone = Self(Self:self); };",
+    Ax:o4 = raw axd("trait:Bad3 = { func:clone = Self(Self:self) never fails; };",
                     "dyn Bad3:d;", @it);
     if (raw errs(@o4) != 1i64)                                 { exit 184i32; }
 
@@ -622,13 +626,13 @@ func:main = int32(cstring[]:_~argv) {
 
     // `dyn A & B` CHECKS BOTH (5.3). A widening to `dyn A` would otherwise pass
     // through a vtable that could not have been built.
-    Ax:o6 = raw axd("trait:Ok2 = { func:a = int32(Self:self); }; trait:Bad5 = { func:make = int32(); };",
+    Ax:o6 = raw axd("trait:Ok2 = { func:a = int32(Self:self) never fails; }; trait:Bad5 = { func:make = int32(); };",
                     "dyn Ok2 & Bad5:d;", @it);
     if (raw errs(@o6) != 1i64)                                 { exit 186i32; }
 
     // A NON-OBJECT-SAFE TRAIT IS STILL A PERFECTLY GOOD TRAIT. Only `dyn` is
     // refused — static dispatch has the concrete type and needs no vtable.
-    Ax:o7 = raw axd("trait:Bad6 = { func:make = int32(); }; impl:Point:Bad6 = { func:make = int32() { pass 1i32; }; };",
+    Ax:o7 = raw axd("trait:Bad6 = { func:make = int32(); }; impl:Point:Bad6 = { func:make = int32() never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@o7) != 0i64)                                 { exit 187i32; }
 
@@ -646,7 +650,7 @@ func:main = int32(cstring[]:_~argv) {
     InternTable:ct = raw intern_init();
     int32:pad = raw intern_count(@ct);
     while (pad < 87i32) {
-        drop intern_add(@ct, relay string_concat("pad", raw int_to_string(pad => int64)));
+        drop intern_add(@ct, raw string_concat("pad", raw int_to_string(pad => int64)));
         pad = raw intern_count(@ct);
     }
     // `Zzz` is the first identifier in the source, so it interns at 87. Before the
@@ -667,23 +671,23 @@ func:main = int32(cstring[]:_~argv) {
     // They parsed and were stored from cycle 0.2 and nothing read them, so a type
     // could implement a trait while satisfying none of what it was declared to
     // build on — which is the whole content of the feature.
-    Ax:t1 = raw axd("trait:S1 = { func:a = int32(Self:self); }; trait:S2 = S1 & { func:b = int32(Self:self); }; impl:Point:S1 = { func:a = int32(Point:self) { pass 1i32; }; }; impl:Point:S2 = { func:b = int32(Point:self) { pass 1i32; }; };",
+    Ax:t1 = raw axd("trait:S1 = { func:a = int32(Self:self) never fails; }; trait:S2 = S1 & { func:b = int32(Self:self) never fails; }; impl:Point:S1 = { func:a = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S2 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@t1) != 0i64)                                 { exit 200i32; }
     // …and without the supertrait's impl it is refused, naming both.
-    Ax:t2 = raw axd("trait:S3 = { func:a = int32(Self:self); }; trait:S4 = S3 & { func:b = int32(Self:self); }; impl:Point:S4 = { func:b = int32(Point:self) { pass 1i32; }; };",
+    Ax:t2 = raw axd("trait:S3 = { func:a = int32(Self:self) never fails; }; trait:S4 = S3 & { func:b = int32(Self:self) never fails; }; impl:Point:S4 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@t2) != 1i64)                                 { exit 201i32; }
 
     // TRANSITIVE: `S7` requires `S6` requires `S5`, so implementing `S7` needs
     // all three and the missing one is named wherever it sits in the chain.
-    Ax:t3 = raw axd("trait:S5 = { func:a = int32(Self:self); }; trait:S6 = S5 & { func:b = int32(Self:self); }; trait:S7 = S6 & { func:c = int32(Self:self); }; impl:Point:S6 = { func:b = int32(Point:self) { pass 1i32; }; }; impl:Point:S7 = { func:c = int32(Point:self) { pass 1i32; }; };",
+    Ax:t3 = raw axd("trait:S5 = { func:a = int32(Self:self) never fails; }; trait:S6 = S5 & { func:b = int32(Self:self) never fails; }; trait:S7 = S6 & { func:c = int32(Self:self) never fails; }; impl:Point:S6 = { func:b = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S7 = { func:c = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@t3) != 2i64)                                 { exit 202i32; }
 
     // A SUPERTRAIT CLAUSE NAMES TRAITS. A struct resolves there perfectly well
     // and means nothing.
-    Ax:t4 = raw axd("trait:S8 = Wrap & { func:b = int32(Self:self); }; impl:Point:S8 = { func:b = int32(Point:self) { pass 1i32; }; };",
+    Ax:t4 = raw axd("trait:S8 = Wrap & { func:b = int32(Self:self) never fails; }; impl:Point:S8 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@t4) != 1i64)                                 { exit 203i32; }
 
@@ -694,7 +698,7 @@ func:main = int32(cstring[]:_~argv) {
     // construct no rung can lower yet gets a BACKEND diagnostic, never a parse
     // error. Bound satisfaction and monomorphization are 0.4.7's; this asserts it
     // parses and is recorded, which is what lets 0.4.7 find them.
-    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
 
@@ -702,37 +706,37 @@ func:main = int32(cstring[]:_~argv) {
     // Two inherent blocks are legal and are ONE namespace, so the same name in
     // both is a method nothing could ever call — `find_method` returned the first
     // and the second was unreachable, with nothing saying so.
-    Ax:d1 = raw axd("impl:Point = { func:one = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:one = int32(Point:self) { pass 2i32; }; };",
+    Ax:d1 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:one = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d1) != 1i64)                                 { exit 220i32; }
 
     // …and inside ONE block a repeat is wrong whichever kind of block it is.
-    Ax:d2 = raw axd("impl:Point = { func:two = int32(Point:self) { pass 1i32; }; func:two = int32(Point:self) { pass 2i32; }; };",
+    Ax:d2 = raw axd("impl:Point = { func:two = int32(Point:self) never fails { pass 1i32; }; func:two = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d2) != 1i64)                                 { exit 221i32; }
 
     // DIFFERENT NAMES ACROSS TWO BLOCKS is the case that has to stay legal —
     // splitting a type's methods is a formatting choice, not a coherence
     // question.
-    Ax:d3 = raw axd("impl:Point = { func:three = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:four = int32(Point:self) { pass 2i32; }; };",
+    Ax:d3 = raw axd("impl:Point = { func:three = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:four = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d3) != 0i64)                                 { exit 222i32; }
 
     // TWO TRAITS MAY EACH SUPPLY ONE NAME. The trait qualifies it, and D-102
     // already reports the ambiguity at the CALL, where the reader can act on it —
     // refusing the declarations would refuse two traits that never meet.
-    Ax:d4 = raw axd("trait:Ua = { func:tag = int32(Self:self); }; trait:Ub = { func:tag = int32(Self:self); }; impl:Point:Ua = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Ub = { func:tag = int32(Point:self) { pass 2i32; }; };",
+    Ax:d4 = raw axd("trait:Ua = { func:tag = int32(Self:self) never fails; }; trait:Ub = { func:tag = int32(Self:self) never fails; }; impl:Point:Ua = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Ub = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d4) != 0i64)                                 { exit 223i32; }
 
     // …and an inherent method alongside a trait one is still fine: inherent wins
     // at the call (D-102) rather than colliding at the declaration.
-    Ax:d5 = raw axd("trait:Uc = { func:tag = int32(Self:self); }; impl:Point:Uc = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) { pass 2i32; }; };",
+    Ax:d5 = raw axd("trait:Uc = { func:tag = int32(Self:self) never fails; }; impl:Point:Uc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d5) != 0i64)                                 { exit 224i32; }
 
     // The same name on DIFFERENT TYPES is not a duplicate at all.
-    Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) { pass 2i32; }; };",
+    Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) never fails { pass 2i32; }; };",
                     "", @it);
     if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
 

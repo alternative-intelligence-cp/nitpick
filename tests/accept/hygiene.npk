@@ -63,8 +63,8 @@ macro:setup_twice = () {
 // declaration body emits lands in the same scope the macro was written in. There
 // is nothing to switch, which is why nothing here marks it.
 macro:make_pair = () {
-    func:paired_a = int32() { pass 11i32; };
-    func:paired_b = int32() { pass 31i32; };
+    func:paired_a = int32() never fails { pass 11i32; };
+    func:paired_b = int32() never fails { pass 31i32; };
 };
 
 #make_pair();
@@ -81,7 +81,7 @@ mod:nested_scope = {
 
     macro:read_inside = () { only_inside + 1i32; };
 
-    pub func:reads_it = int32() {
+    pub func:reads_it = int32() never fails {
         bool:only_inside = false;    // must NOT be what the macro sees
         int32:got = #read_inside();
         pass got;

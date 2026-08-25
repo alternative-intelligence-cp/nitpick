@@ -20,25 +20,25 @@ trait:Producer = {
 struct:Counter = { int32:n; };
 impl:Counter:Seq = {
     assoc:Item = int32;
-    func:next = int32(Counter:self) { pass self.n; };
+    func:next = int32(Counter:self) never fails { pass self.n; };
 };
 
 // ACCEPTED: the projection resolves through the bound, and the signature that
 // mentions it is legal. Reported here so the rule is not merely "refuse
 // everything".
-func:element<T: Seq> = T.Item(T:it) { pass (raw it.next()); };
+func:element<T: Seq> = T.Item(T:it) { pass (it.next() ?! 9tbb32); };
 
 // A NAME NO BOUND DECLARES is refused BY NAME. Falling through to the invalid
 // type would be the silent wrong answer a new type kind most easily becomes.
 // expect-error: NITPICK-TYPE-001
-func:missing<T: Seq> = T.Nope(T:it) { pass (raw it.next()); };
+func:missing<T: Seq> = T.Nope(T:it) { pass (it.next() ?! 9tbb32); };
 
 // TWO BOUNDS DECLARING ONE ASSOC is an ambiguity naming both — the answer D-158
 // gives a method supplied by two bounds, and for the same reason: an ordering
 // tiebreak would be meaning-by-position, and after D-159's canonical ordering
 // "first" would be decided by how the traits are SPELT.
 // expect-error: NITPICK-TYPE-020
-func:ambiguous<T: Seq & Producer> = T.Item(T:it) { pass (raw it.next()); };
+func:ambiguous<T: Seq & Producer> = T.Item(T:it) { pass (it.next() ?! 9tbb32); };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

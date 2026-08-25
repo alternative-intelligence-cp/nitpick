@@ -29,14 +29,14 @@ enum:Tag = { ONE; TWO; };
 
 struct:Holder = { Tag:t; };
 
-func:iterate_a_borrow = NIL(Bag->:b) {
+func:iterate_a_borrow = NIL(Bag->:b) never fails {
     for (int32:v in @b.items) {
         discard(v);
     }
     pass NIL;
 };
 
-func:pick_on_a_borrow = NIL(Holder->:h) {
+func:pick_on_a_borrow = NIL(Holder->:h) never fails {
     pick (@h.t) {
         (Tag.ONE) { pass NIL; },
         (Tag.TWO) { pass NIL; }

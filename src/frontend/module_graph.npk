@@ -372,7 +372,7 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fai
         drop report_resolution(g.diags, r, target, d.span);
         pass NIL;
     }
-    drop graph_load(g, r.path, d.span);
+    discard(raw graph_load(g, r.path, d.span));
     pass NIL;
 };
 
@@ -412,11 +412,11 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
                 raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, d.span));
             pass NIL;
         }
-        drop graph_load(g, flat, d.span);
+        discard(raw graph_load(g, flat, d.span));
         pass NIL;
     }
     if (has_nested) {
-        drop graph_load(g, nested, d.span);
+        discard(raw graph_load(g, nested, d.span));
         pass NIL;
     }
 

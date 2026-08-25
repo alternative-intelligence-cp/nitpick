@@ -18,10 +18,10 @@ impl:P:Ta = { func:name = int32(P:self) { pass 1i32; }; };
 impl:P:Tb = { func:name = int32(P:self) { pass 2i32; }; };
 
 // expect-error: NITPICK-TYPE-019
-func:on_a_non_implementor = int32(Q:q) { pass (raw Ta.name(q)); };
+func:on_a_non_implementor = int32(Q:q) never fails { pass (Ta.name(q) ?! 9tbb32); };
 
 // expect-error: NITPICK-TYPE-020
-func:still_ambiguous_unqualified = int32(P:p) { pass (raw p.name()); };
+func:still_ambiguous_unqualified = int32(P:p) never fails { pass (p.name() ?! 9tbb32); };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -12,7 +12,7 @@
 
 struct:Counter = { int32:n; };
 
-func:bump = bool(Counter->:c) {
+func:bump = bool(Counter->:c) never fails {
     c.n = c.n + 1i32;
     pass true;
 };
@@ -24,7 +24,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // The same guarantee under the other unary operators.
     Counter:b = Counter{ n: 0i32 };
-    drop bump(@b);
+    discard(raw bump(@b));
     if (b.n != 1i32) { exit 92i32; }
 
     // And through a cast, which also wraps its operand.

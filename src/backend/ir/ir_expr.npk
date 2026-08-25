@@ -337,6 +337,18 @@ pub func:emit_opt_wrap = IrVal(ExprEmitter->:x, int32:opt_ty, IrVal:v,
     pass (raw iv(oll.text, full, opt_ty));
 };
 
+// The VALUE half of a Result-shaped LLVM type text — for an operand the
+// checker typed as UNKNOWN (a bare-name builtin), whose layout is still fully
+// present in the IrVal's own ll: `{ i64, i32 }` carries an i64, and the
+// one-slot `{ i32 }` is `Result<NIL>` with no value at all (D-163, 1.1.2 —
+// the `?!`-on-a-builtin sites the flip's sweeps write).
+func:result_ll_value_half = string(string:ll) never fails {
+    if (raw string_eq(ll, "{ i32 }")) { pass ""; }
+    // strip leading "{ " and trailing ", i32 }"
+    if (ll.len <= 9i64) { pass ""; }
+    pass (raw slice_proven(ll, 2i64, ll.len - 7i64));
+};
+
 func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(x.ast, id);
 
@@ -509,6 +521,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         int32:etid0 = raw exprtypes_get(x.et, id);
         string:eslot = ", 1";
         if (etid0 == x.fe.ctx.types.t_nil) { eslot = ", 0"; }
+        if (etid0 == 0i32) {
+            if (raw string_eq(ev2.ll, "{ i32 }")) { eslot = ", 0"; }
+        }
         string:eerr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(eerr, " = extractvalue ", ev2.ll, " ",
                           raw string_concat(ev2.ref, eslot)));
@@ -525,6 +540,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         drop irw_line(x.fe.w, "unreachable");
         drop irw_label(x.fe.w, eo_l);
         if (etid0 == x.fe.ctx.types.t_nil) { pass (raw iv_nil()); }
+        if (etid0 == 0i32) {
+            string:evh = raw result_ll_value_half(ev2.ll);
+            if (evh.len == 0i64) { pass (raw iv_nil()); }
+            string:eun = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(eun, " = extractvalue ", ev2.ll, " ",
+                              raw string_concat(ev2.ref, ", 0")));
+            pass (raw iv(evh, eun, 0i32));
+        }
         string:ein = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(ein, " = extractvalue ", ev2.ll, " ",
                           raw string_concat(ev2.ref, ", 0")));

@@ -34,7 +34,7 @@ struct:Fix = {
 };
 
 // Parse a bare TYPE and resolve it, in a scope holding whatever `decls` declares.
-func:ty = Fix(string:decls, string:type_text, InternTable->:it) {
+func:ty = Fix(string:decls, string:type_text, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
@@ -42,31 +42,31 @@ func:ty = Fix(string:decls, string:type_text, InternTable->:it) {
     // The declarations first, so a named type has something to find.
     TokenList:dk = raw lex_all(0i32, decls, it, @ld);
     Parser:dp = raw parser_init(@dk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@dp);
+    DeclId:mod_id = raw p_parse_module(@dp);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
     // …then the type itself.
     TokenList:tk = raw lex_all(0i32, type_text, it, @ld);
     Parser:tp = raw parser_init(@tk, @ast, @pd, it);
-    TypeId:node = relay p_parse_type(@tp);
+    TypeId:node = raw p_parse_type(@tp);
 
     TypeTable:types = raw typetable_init();
     // NOTHING GENERIC HERE, so nothing to instantiate -- an EMPTY table rather
     // than a skipped argument, so that a context without instantiations says so.
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
-    int32:resolved = relay resolve_type(@r, node, scope);
+    int32:resolved = raw resolve_type(@r, node, scope);
 
     Fix:f = Fix{ ast: ast, types: types, tab: tab, diags: diags,
                  scope: scope, result: resolved };
     pass f;
 };
 
-func:errs = int64(Fix->:f) { pass (raw diaglist_count(@f.diags)); };
-func:code0 = string(Fix->:f) { pass ((raw diaglist_at(@f.diags, 0i64)).code); };
+func:errs = int64(Fix->:f) never fails { pass (raw diaglist_count(@f.diags)); };
+func:code0 = string(Fix->:f) never fails { pass ((raw diaglist_at(@f.diags, 0i64)).code); };
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
@@ -152,8 +152,8 @@ func:main = int32(cstring[]:_~argv) {
     TokenList:sk = raw lex_all(0i32, "Seconds", @it, @ld2);
     DiagList:pd2 = raw diaglist_init();
     Parser:sp = raw parser_init(@sk, @two.ast, @pd2, @it);
-    TypeId:snode = relay p_parse_type(@sp);
-    int32:seconds = relay resolve_type(@r2, snode, two.scope);
+    TypeId:snode = raw p_parse_type(@sp);
+    int32:seconds = raw resolve_type(@r2, snode, two.scope);
     if (two.result == seconds)                                 { exit 52i32; }
 
     // --- a name that is NOT a type says what it IS ------------------------------------

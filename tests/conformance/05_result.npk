@@ -25,16 +25,19 @@ func:with_explicit_check = int32(int32:x) {
         fail r.error;                  // forward the code, never a constant
     }
 
-    pass (raw r);
+    // The CHECKED read (D-007): `is_error` was tested above, so `.value`
+    // reads clean — `raw` on a binding is a second spelling of exactly this,
+    // which is why the D-163 licence refuses it (rule 3).
+    pass r.value;
 };
 
-func:nothing_useful = NIL() {
+func:nothing_useful = NIL() never fails {
     pass NIL;                          // Result<NIL> is {i32} -- NIL is zero-sized
 };
 
 func:main = int32(cstring[]:_~argv) {
-    int32:a = raw doubled_plus_one(5i32);
-    int32:b = raw with_explicit_check(5i32);
+    int32:a = doubled_plus_one(5i32) ?! 9tbb32;
+    int32:b = with_explicit_check(5i32) ?! 9tbb32;
     drop nothing_useful();             // discard the Result entirely
     drop wild_release_all();
     exit 0i32;

@@ -22,7 +22,7 @@ func:might_fail = int32(bool:c) {
 // written for this form; it falls out of the branch refinement and the exit rule
 // 0.5.2 already had.
 
-func:early_exit = int32(bool:c) {
+func:early_exit = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (r.is_error) { pass 0i32; }
     pass (r.value);
@@ -30,12 +30,12 @@ func:early_exit = int32(bool:c) {
 
 // --- both arms written out ------------------------------------------------------------
 
-func:else_arm = int32(bool:c) {
+func:else_arm = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (r.is_error) { pass 0i32; } else { pass (r.value); }
 };
 
-func:negated_test = int32(bool:c) {
+func:negated_test = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (!r.is_error) { pass (r.value); }
     pass 0i32;
@@ -46,7 +46,7 @@ func:negated_test = int32(bool:c) {
 // `.is_error` is a `bool`, so this is a two-armed `pick` that 0.5.4 made
 // exhaustive-checkable — and the arm matching `false` is where the value is safe.
 
-func:pick_form = int32(bool:c) {
+func:pick_form = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     int32:v = 0i32;
     pick (r.is_error) {
@@ -63,7 +63,7 @@ func:pick_form = int32(bool:c) {
 // only property this language asks of one.
 
 func:raw_unwrap = int32(bool:c) {
-    pass (raw might_fail(c));
+    pass (might_fail(c)) ?! 9tbb32;
 };
 
 func:relay_propagates = int32(bool:c) {
@@ -75,7 +75,7 @@ func:relay_propagates = int32(bool:c) {
 //
 // The check dominates everything after it, so a second read needs no second test.
 
-func:two_reads_one_check = int32(bool:c) {
+func:two_reads_one_check = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (r.is_error) { pass 0i32; }
     int32:a = r.value;
@@ -88,7 +88,7 @@ func:two_reads_one_check = int32(bool:c) {
 // The error field is what you read to FIND OUT whether the value is safe. Refusing
 // it would leave no way to ask the question.
 
-func:reads_the_error = tbb32(bool:c) {
+func:reads_the_error = tbb32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     pass (r.error);
 };

@@ -16,8 +16,8 @@ struct:Counter = { int32:n; };
 // signature after substitution.
 impl:Counter:Seq = {
     assoc:Item = int32;
-    func:next = int32(Counter:self) { pass self.n; };
-    func:last_error = int32(Counter:self) { pass 0i32; };
+    func:next = int32(Counter:self) never fails { pass self.n; };
+    func:last_error = int32(Counter:self) never fails { pass 0i32; };
 };
 
 // AN ASSOC-MENTIONING SIGNATURE IS NOT OBJECT-SAFE (D-160, and D-157's argument
@@ -26,12 +26,12 @@ impl:Counter:Seq = {
 // one, so the trait is refused twice — once per method, as the other rules do.
 // expect-error: NITPICK-TYPE-015
 // expect-error: NITPICK-TYPE-015
-func:erased = NIL(dyn Seq:d) { pass NIL; };
+func:erased = NIL(dyn Seq:d) never fails { pass NIL; };
 
 // A TRAIT WITH NO ASSOC IS STILL OBJECT-SAFE, so this file must not refuse it.
 trait:Plain = { func:go = int32(Self:self); };
 impl:Counter:Plain = { func:go = int32(Counter:self) { pass 1i32; }; };
-func:fine = NIL(dyn Plain:d) { pass NIL; };
+func:fine = NIL(dyn Plain:d) never fails { pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

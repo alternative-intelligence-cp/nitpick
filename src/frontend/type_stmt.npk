@@ -121,7 +121,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickArm) {
-        drop type_of_expr(e, raw arm_guard(s));
+        discard(raw type_of_expr(e, raw arm_guard(s)));
         drop check_stmt(e, raw arm_body(s));
         pass NIL;
     }
@@ -153,7 +153,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     if (s.kind == StmtKind.StmtExprStmt) {
         ExprId:xid = raw stmt_expr(s);
         ExprNode:xn = raw ast_expr(e.ast, xid);
-        if (xn.kind == ExprKind.ExprDropExpr)          { drop type_of_expr(e, xid); pass NIL; }
+        if (xn.kind == ExprKind.ExprDropExpr)          { discard(raw type_of_expr(e, xid)); pass NIL; }
         bool:kw = xn.kind == ExprKind.ExprRelayExpr;
         if (xn.kind == ExprKind.ExprEmphaticUnwrapExpr) { kw = true; }
         if (xn.kind == ExprKind.ExprSafeUnwrapExpr)     { kw = true; }
@@ -166,17 +166,17 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
             if (kt == 0i32) { pass NIL; }
             if (raw type_is_invalid(e.types, kt)) { pass NIL; }
             if (kt != e.types.t_nil) {
-                drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                     "the error is handled but the VALUE is discarded (D-163): a statement is an effect — `discard(…)` it deliberately, or use the value",
-                    s.span);
+                    s.span));
             }
             pass NIL;
         }
         if (xn.kind == ExprKind.ExprRawUnwrapExpr) {
-            drop type_of_expr(e, xid);
-            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+            discard(raw type_of_expr(e, xid));
+            discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                 "`raw f()` in statement position discards the unwrapped value; run it for effect with `drop f();` (D-163)",
-                s.span);
+                s.span));
             pass NIL;
         }
         // A BARE BUILTIN CALL types as unknown (no signature in the checker),
@@ -188,10 +188,10 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                 if (xcal.a == 0i32) {
                     if (raw is_builtin_name(raw intern_get(e.interns,
                                                 xcal.payload =>! int32))) {
-                        drop type_of_expr(e, xid);
-                        drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+                        discard(raw type_of_expr(e, xid));
+                        discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                             "a bare call discards its outcome (D-163): run a builtin for effect with `drop`",
-                            s.span);
+                            s.span));
                         pass NIL;
                     }
                 }
@@ -201,15 +201,15 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         if (xt == 0i32) { pass NIL; }
         if (raw type_is_invalid(e.types, xt)) { pass NIL; }
         if ((raw type_kind(e.types, xt)) == (raw TY_RESULT())) {
-            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+            discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                 "a `Result` is discarded here with no keyword (D-163): `drop` it (a `never fails` call), `relay` it, or handle it with `?|`, `?!`, `is_err`, or a `pick`",
-                s.span);
+                s.span));
             pass NIL;
         }
         if (xt != e.types.t_nil) {
-            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+            discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                 "this expression's value is discarded (D-163): a statement is an effect, not a computed value thrown away",
-                s.span);
+                s.span));
             pass NIL;
         }
         pass NIL;
@@ -222,9 +222,9 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         if (dt == 0i32) { pass NIL; }
         if (raw type_is_invalid(e.types, dt)) { pass NIL; }
         if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
-            drop te_error(e, raw TYPE_RESULT_DISCARDED(),
+            discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
                 "`discard` throws away a plain value; a `Result` must be handled — `drop`, `relay`, `?|`, `?!`, or `is_err`/`pick` (D-163)",
-                s.span);
+                s.span));
         }
         pass NIL;
     }
@@ -233,13 +233,13 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     // `prove`, `assert_static`. A mistake inside one is worth reporting even
     // where the value goes nowhere.
     if (raw stmt_carries_expr(s.kind)) {
-        drop type_of_expr(e, raw stmt_expr(s));
+        discard(raw type_of_expr(e, raw stmt_expr(s)));
         pass NIL;
     }
 
-    drop te_error(e, raw TYPE_INTERNAL(),
+    discard(raw te_error(e, raw TYPE_INTERNAL(),
         "this statement kind has no entry in the checker's walk, so its contents cannot be checked",
-        s.span);
+        s.span));
     pass NIL;
 };
 
@@ -434,10 +434,10 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (elem == 0i32) {
         string:n1 = raw string_concat("`",
                         raw type_display(e.types, e.interns, it));
-        drop te_error(e, raw TYPE_NOT_ITERABLE(),
+        discard(raw te_error(e, raw TYPE_NOT_ITERABLE(),
             raw string_concat(n1,
                 "` is not iterable: `for` takes a range, a slice, an array, or a type implementing `Iterator` (D-023, D-166); `loop`/`till` count"),
-            s.span);
+            s.span));
         pass NIL;
     }
     DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
@@ -451,7 +451,7 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
                         raw type_display(e.types, e.interns, elem));
         string:b2 = raw string_concat(b1, "` and the binding declares `");
         string:b3 = raw string_concat(b2, raw type_display(e.types, e.interns, bt));
-        drop te_error(e, raw TYPE_MISMATCH(), raw string_concat(b3, "`"), bd.span);
+        discard(raw te_error(e, raw TYPE_MISMATCH(), raw string_concat(b3, "`"), bd.span));
     }
     pass NIL;
 };
@@ -460,7 +460,7 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
     int32:n = raw stmt_counted_argc(e.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop type_of_expr(e, raw stmt_counted_arg(e.ast, s, i));
+        discard(raw type_of_expr(e, raw stmt_counted_arg(e.ast, s, i)));
         i = i + 1i32;
     }
     e.counted_depth = e.counted_depth + 1i32;
@@ -544,9 +544,9 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     TokenKind:op = raw stmt_op(s);
     if (op != TokenKind.OpAssign) {
         if (raw is_bitwise_assign(op)) {
-            drop type_bitwise(e, s.span, want, got);
+            discard(raw type_bitwise(e, s.span, want, got));
         } else {
-            drop type_arithmetic(e, s.span, want, got);
+            discard(raw type_arithmetic(e, s.span, want, got));
         }
         pass NIL;
     }
@@ -580,9 +580,9 @@ func:is_bitwise_assign = bool(TokenKind:op) never fails {
 func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
-    drop te_error(e, raw TYPE_NOT_A_PLACE(),
+    discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
         "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",
-        at);
+        at));
     pass NIL;
 };
 
@@ -635,19 +635,19 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
 // nowhere to go. That is the uncontrolled stop the discipline exists to prevent.
 func:check_fail = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (e.in_defer) {
-        drop te_error(e, raw TYPE_DEFER_EXIT(),
+        discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
             "a `defer` body may not `fail` (D-163): a cleanup runs while the scope unwinds and must not itself exit; handle the error inside the `defer`",
-            s.span);
+            s.span));
     }
     if (e.fn_terminal) {
-        drop te_error(e, raw TYPE_RESULT_RETURN(),
+        discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
             "`fail` returns an error from the enclosing function, and `main` and `failsafe` return no `Result` to fail into; `exit` is how a program stops",
-            s.span);
+            s.span));
     }
     if (e.fn_never_fails) {
-        drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+        discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
             "a `never fails` function may not `fail` (D-163): drop the clause, or handle the error and `pass`",
-            s.span);
+            s.span));
     }
     ExprId:c = raw stmt_operand(s);
     if (raw expr_is_none(c)) { pass NIL; }
@@ -673,24 +673,24 @@ func:check_fail = NIL(ExprTyper->:e, StmtNode:s) never fails {
 func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     if (e.fn_never_fails) {
-        drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+        discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
             "a `never fails` function returns with `pass`; an explicit `return Result{…}` can carry an error (D-163)",
-            s.span);
+            s.span));
     }
     if (raw expr_is_none(v)) {
-        drop te_error(e, raw TYPE_RESULT_RETURN(),
+        discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
             "`return` takes a `Result{…}` literal; `pass` and `fail` are the shorthands for one field at a time",
-            s.span);
+            s.span));
         pass NIL;
     }
     ExprNode:n = raw ast_expr(e.ast, v);
     if (n.kind != ExprKind.ExprResultLiteralExpr) {
-        drop te_error(e, raw TYPE_RESULT_RETURN(),
+        discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
             "`return` takes a `Result{…}` literal and nothing else; write `pass v;` for a value or `fail c;` for an error",
-            s.span);
+            s.span));
         pass NIL;
     }
-    drop type_of_expr(e, v);
+    discard(raw type_of_expr(e, v));
     pass NIL;
 };
 
@@ -700,15 +700,15 @@ func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
 // uncontrolled shutdown the language exists to make impossible.
 func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (!e.fn_terminal) {
-        drop te_error(e, raw TYPE_RESULT_RETURN(),
+        discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
             "`exit` is legal only in `main` and `failsafe`; elsewhere it would stop the program past every caller's error handling and every pending `defer` — `fail` is how a function reports failure",
-            s.span);
+            s.span));
     }
     ExprId:c = raw stmt_operand(s);
     if (raw expr_is_none(c)) { pass NIL; }
     int32:saved = e.expected;
     e.expected = raw tt_int(e.types, 32i32, true);
-    drop type_of_expr(e, c);
+    discard(raw type_of_expr(e, c));
     e.expected = saved;
     pass NIL;
 };
@@ -911,9 +911,9 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // pass's (`TYPE_NOT_CONSTANT`), so this covers `fixed` and plain.
             if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) {
                 if (!(raw is_const_initialiser(e, init))) {
-                    drop te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
                         "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
-                        d.span);
+                        d.span));
                 }
             }
         }
@@ -968,7 +968,7 @@ func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
                                  int32:scope) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     int32:t = raw tt_struct(e.types, id.index, raw decl_name(d), 0i64, 1i32);
-    drop struct_layout(@r, t, scope);
+    discard(raw struct_layout(@r, t, scope));
     pass NIL;
 };
 
@@ -983,7 +983,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     int32:name = raw decl_name(d);
     TypeResolver:r = raw etyper_resolver(e);
     FnSig:sg = raw fn_signature(@r, fid, name, scope);
-    drop fn_type(@r, fid, name, scope);
+    discard(raw fn_type(@r, fid, name, scope));
 
     GenericScope:saved = e.generics;
     IdSpan:gw = raw decl_generic_window(e.ast, d);
@@ -998,37 +998,37 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
         // there; and `never fails` may not combine with the verification
         // contracts, which are the verifier's obligations, not this one (D-163).
         if (e.fn_terminal) {
-            drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+            discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                 "`main`/`failsafe` return no `Result`, so `never fails` says nothing there (D-163)",
-                d.span);
+                d.span));
         }
         int32:nci = 0i32;
         while (nci < (raw fn_contract_count(e.ast, d))) {
             VerifyNode:ncv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, nci));
             if (ncv.kind == VerifyKind.VerifyContractNode) {
-                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                     "a `never fails` function may not also state `requires`/`ensures` (D-163)",
-                    ncv.span);
+                    ncv.span));
             }
             if (ncv.kind == VerifyKind.VerifyLimitNode) {
-                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                     "a `never fails` function may not carry `limit<Rules>` (D-163): the limit is a verifier obligation this contract cannot hold",
-                    ncv.span);
+                    ncv.span));
             }
             nci = nci + 1i32;
         }
         if (raw decl_has(d, raw DECL_ASYNC())) {
-            drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+            discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                 "an `async` function may not be `never fails` (D-163): a suspended task can be cancelled, and cancellation is an error the contract would deny",
-                d.span);
+                d.span));
         }
         int32:npi = 0i32;
         while (npi < (raw fn_param_count(e.ast, d))) {
             DeclNode:npd = raw ast_decl(e.ast, raw fn_param(e.ast, d, npi));
             if (!(raw verify_is_none(raw param_limit(npd)))) {
-                drop te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
+                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                     "a `never fails` function may not carry `limit<Rules>` on a parameter (D-163): the limit is a verifier obligation this contract cannot hold",
-                    npd.span);
+                    npd.span));
             }
             npi = npi + 1i32;
         }

@@ -23,14 +23,14 @@ use std.collections.{HashMap, HashSet};
 use std.math.*;
 
 mod:inline_module = {
-    pub func:helper = int32() { pass 0i32; };
+    pub func:helper = int32() never fails { pass 0i32; };
 };
 
 mod:external_module;
 
 pub mod:nested = {
     mod:deeper = {
-        func:leaf = int32() { pass 0i32; };
+        func:leaf = int32() never fails { pass 0i32; };
     };
 };
 
@@ -72,7 +72,7 @@ pub trait:Serializable = {
     assoc:Item;
     assoc:Output = int32;
     func:to_bytes = buffer(Self:self);
-    func:described = string(Self:self) { pass "default body"; };
+    func:described = string(Self:self) never fails { pass "default body"; };
 };
 
 trait:Ordered = Equatable & Comparable & {
@@ -80,11 +80,11 @@ trait:Ordered = Equatable & Comparable & {
 };
 
 impl:Point = {
-    func:magnitude = flt64(Point:self) { pass 0.0f64; };
+    func:magnitude = flt64(Point:self) never fails { pass 0.0f64; };
 };
 
 impl:Message:Serializable = {
-    func:to_bytes = buffer(Message:self) { pass 0i32; };
+    func:to_bytes = buffer(Message:self) never fails { pass 0i32; };
 };
 
 // A BLANKET IMPL (TRAITS_REFERENCE 2.6). It was absent from this file and did not
@@ -146,8 +146,8 @@ macro:assert_positive = (x) { prove(x > 0i32); };
 
 // A body of DECLARATIONS — invoked at module level, emitting them.
 macro:emit_helpers = () {
-    func:helper_a = int32() { pass 11i32; };
-    func:helper_b = int32() { pass 31i32; };
+    func:helper_a = int32() never fails { pass 11i32; };
+    func:helper_b = int32() never fails { pass 31i32; };
 };
 
 #emit_helpers();
@@ -162,7 +162,7 @@ struct:Spliced = {
 
 // Spliced into an `impl` body as methods.
 macro:emit_method = () {
-    func:spliced_method = int32(Spliced:self) { pass self.literal_field; };
+    func:spliced_method = int32(Spliced:self) never fails { pass self.literal_field; };
 };
 
 impl:Spliced = {
@@ -188,7 +188,7 @@ macro:stmt_body = () {
 // resolves on a later round.
 macro:outer_emit = () {
     #emit_helpers();
-    func:helper_c = int32() { pass 7i32; };
+    func:helper_c = int32() never fails { pass 7i32; };
 };
 
 extern:"libc" = {
@@ -291,7 +291,7 @@ func:every_statement = NIL(int32:n) {
     pass NIL;
 };
 
-func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) {
+func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) never fails {
     int32:v = 0i32;
 
     v = 1i32 + 2i32 - 3i32 * 4i32 / 5i32 % 6i32;

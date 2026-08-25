@@ -24,11 +24,11 @@ struct:Pair = { int32:first; int32:second; };
 // variables: the callee's frame is strictly inner, so a borrow handed downward is
 // valid for the whole call by construction. Nothing is written anywhere to say so.
 
-func:sum_through = int32(int32->:a, int32->:b) {
+func:sum_through = int32(int32->:a, int32->:b) never fails {
     pass ((<-a) + (<-b));
 };
 
-func:passes_down = int32() {
+func:passes_down = int32() never fails {
     int32:x = 3i32;
     int32:y = 4i32;
     pass (raw sum_through(@x, @y));
@@ -36,7 +36,7 @@ func:passes_down = int32() {
 
 // A BORROW HELD IN A BINDING PASSES DOWN TOO. The binding records that `p` holds a
 // borrow, and that record must not turn an argument into a violation.
-func:passes_binding_down = int32() {
+func:passes_binding_down = int32() never fails {
     int32:x = 9i32;
     int32->:p = @x;
     int32->:q = $$i x;
@@ -46,7 +46,7 @@ func:passes_binding_down = int32() {
 // DERIVED BORROWS PASS DOWN. `@rec.field` and `@arr[i]` are borrows of the same
 // frame; being borrows is what makes them second-class, not what makes them
 // unusable.
-func:passes_derived_down = int32() {
+func:passes_derived_down = int32() never fails {
     Pair:pr = Pair{ first: 1i32, second: 2i32 };
     int32[4]:cells = [0i32, 1i32, 2i32, 3i32];
     pass (raw sum_through(@pr.second, @cells[1i64]));
@@ -58,13 +58,13 @@ func:passes_derived_down = int32() {
 // that was second-class, not what it pointed at — so returning the value is
 // ordinary code and refusing it would be badly wrong.
 
-func:returns_the_value = int32() {
+func:returns_the_value = int32() never fails {
     int32:x = 5i32;
     int32->:p = @x;
     pass (<-p);
 };
 
-func:returns_a_derived_value = int32() {
+func:returns_a_derived_value = int32() never fails {
     Pair:pr = Pair{ first: 7i32, second: 8i32 };
     int32->:p = @pr.first;
     pass (<-p);
@@ -75,7 +75,7 @@ func:returns_a_derived_value = int32() {
 // Rule 3 forbids storing a borrow into an AGGREGATE. A plain local in the
 // borrowing frame is not one, and rebinding is how a borrow is used at all.
 
-func:rebinds = int32() {
+func:rebinds = int32() never fails {
     int32:x = 1i32;
     int32:y = 2i32;
     int32->:p = @x;
@@ -89,7 +89,7 @@ func:rebinds = int32() {
 // field, and a field read back out, are ordinary pointer traffic — this is the
 // half of the rule that says the checker leaves the type system alone.
 
-func:stores_a_non_borrow = Holder() {
+func:stores_a_non_borrow = Holder() never fails {
     Holder:h = Holder{ inner: NULL };
     h.inner = NULL;
     pass h;
@@ -101,7 +101,7 @@ func:stores_a_non_borrow = Holder() {
 // on straight-line code and wrong after a branch or a loop is the failure this
 // cycle has to keep catching.
 
-func:through_control_flow = int32(bool:flag) {
+func:through_control_flow = int32(bool:flag) never fails {
     int32:x = 0i32;
     int32:acc = 0i32;
     int32->:p = @x;
@@ -118,7 +118,7 @@ func:through_control_flow = int32(bool:flag) {
         i = i + 1i32;
     }
 
-    defer { drop sum_through(p, @x); }
+    defer { discard(raw sum_through(p, @x)); }
     pass acc;
 };
 
@@ -130,7 +130,7 @@ func:through_control_flow = int32(bool:flag) {
 // the construct: `pick` and `for` on values that have nothing to do with borrows
 // are ordinary code and must stay silent.
 
-func:picks_a_plain_value = int32(int32:n) {
+func:picks_a_plain_value = int32(int32:n) never fails {
     int32:acc = 0i32;
     pick (n) {
         (0i32) { acc = 1i32; },
@@ -139,7 +139,7 @@ func:picks_a_plain_value = int32(int32:n) {
     pass acc;
 };
 
-func:iterates_a_plain_range = int32() {
+func:iterates_a_plain_range = int32() never fails {
     int32:acc = 0i32;
     for (int64:i in 0i64..3i64) { acc = acc + 1i32; }
     pass acc;
@@ -159,11 +159,11 @@ func:iterates_a_plain_range = int32() {
 
 struct:Ctx = { int32->:a; int32->:b; };
 
-func:ctx_init = Ctx(int32->:a, int32->:b) {
+func:ctx_init = Ctx(int32->:a, int32->:b) never fails {
     pass Ctx{ a: a, b: b };
 };
 
-func:builds_a_context = int32() {
+func:builds_a_context = int32() never fails {
     int32:x = 1i32;
     int32:y = 2i32;
     Ctx:c = raw ctx_init(@x, @y);
@@ -175,12 +175,12 @@ func:builds_a_context = int32() {
 // local, hand it to a helper, return the local — and the exemption is what keeps
 // it compiling.
 
-func:touches = NIL(Ctx->:h) {
+func:touches = NIL(Ctx->:h) never fails {
     h.a = NULL;
     pass NIL;
 };
 
-func:seeds_itself = Ctx() {
+func:seeds_itself = Ctx() never fails {
     Ctx:c = Ctx{ a: NULL, b: NULL };
     drop touches(@c);
     pass c;
@@ -195,7 +195,7 @@ func:main = int32(cstring[]:_~argv) {
 // Initialise-`fixed`-per-case is the idiom `pick` exists for, and the arms are
 // exclusive — before the repair each arm absorbed its siblings' effects and the
 // second init read as "may be the second time".
-func:per_case_fixed = int32(int32:n) {
+func:per_case_fixed = int32(int32:n) never fails {
     fixed int32:k;
     pick (n) {
         (0i32) { k = 1i32; },

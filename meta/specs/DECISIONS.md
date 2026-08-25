@@ -11017,7 +11017,7 @@ retired guard had been exiting 1 while printing NOTHING. `emit_line` now
 renders `<no span>` — a refusal a reader cannot act on is worse than no
 check.
 
-## D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never discarded without a keyword; `never fails` is checked — **SETTLED; the contract, its checks, and the statement rules landed at 1.1.0 (rules 1–2, 5–9); the `raw`/`drop` licence (rules 3–4) flips at 1.1.2, after the sweeps drive `check_raw_licensed` to zero**
+## D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never discarded without a keyword; `never fails` is checked — **SETTLED and FULLY IMPLEMENTED (1.1.0–1.1.2): the licence refuses with `NITPICK-TYPE-042`; the `Result` discipline has no silent sink**
 
 Raised by the user post-1.0.0, in two parts. *"The purpose of `raw` was to skip
 checks for a function that cannot return an error"* — and the compiler has

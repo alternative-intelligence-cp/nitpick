@@ -17,9 +17,9 @@ func:main = int32(cstring[]:_~argv) {
     Key:k1 = Key{ a: 7i32, b: "hi" };
     Key:k2 = Key{ a: 7i32, b: "hi" };
     Key:k3 = Key{ a: 7i32, b: "ho" };
-    if ((raw k1.hash()) != (raw k2.hash())) { exit 90i32; }   // equal -> equal hash
-    if ((raw k1.hash()) == (raw k3.hash())) { exit 91i32; }   // differ -> (a.s.) differ
-    if ((raw Tag.Green.hash()) == (raw Tag.Blue.hash())) { exit 92i32; }
+    if ((k1.hash() ?! 9tbb32) != (k2.hash() ?! 9tbb32)) { exit 90i32; }   // equal -> equal hash
+    if ((k1.hash() ?! 9tbb32) == (k3.hash() ?! 9tbb32)) { exit 91i32; }   // differ -> (a.s.) differ
+    if ((Tag.Green.hash() ?! 9tbb32) == (Tag.Blue.hash() ?! 9tbb32)) { exit 92i32; }
     exit 42i32;
 };
 

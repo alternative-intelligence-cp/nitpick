@@ -20,7 +20,7 @@ func:might_fail = int32(bool:c) {
 // --- nothing checked it ----------------------------------------------------------
 
 // expect-error: NITPICK-TAINT-001
-func:reads_it_unchecked = int32(bool:c) {
+func:reads_it_unchecked = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     pass (r.value);
 };
@@ -31,7 +31,7 @@ func:reads_it_unchecked = int32(bool:c) {
 // analysis worth having over a syntactic "was `is_error` mentioned" check: the test
 // is right there, and the read is on the arm where it proved the opposite.
 // expect-error: NITPICK-TAINT-001
-func:reads_it_on_the_error_arm = int32(bool:c) {
+func:reads_it_on_the_error_arm = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (r.is_error) { pass (r.value); }
     pass 0i32;
@@ -39,7 +39,7 @@ func:reads_it_on_the_error_arm = int32(bool:c) {
 
 // AND THE NEGATED FORM, on the arm the negation says is unsafe.
 // expect-error: NITPICK-TAINT-001
-func:reads_it_on_the_negated_arm = int32(bool:c) {
+func:reads_it_on_the_negated_arm = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (!r.is_error) { pass 0i32; } else { pass (r.value); }
 };
@@ -50,7 +50,7 @@ func:reads_it_on_the_negated_arm = int32(bool:c) {
 // checked that one. Without clearing the state on assignment, one check at the top
 // of a function would license every read below it.
 // expect-error: NITPICK-TAINT-001
-func:checked_then_reassigned = int32(bool:c) {
+func:checked_then_reassigned = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     if (r.is_error) { pass 0i32; }
     r = might_fail(c);
@@ -62,7 +62,7 @@ func:checked_then_reassigned = int32(bool:c) {
 // `checked` INTERSECTS at a merge, like `must` and unlike `moved` — the read after
 // the merge happens on both paths, so a check on one of them proves nothing.
 // expect-error: NITPICK-TAINT-001
-func:checked_on_one_branch = int32(bool:c, bool:other) {
+func:checked_on_one_branch = int32(bool:c, bool:other) never fails {
     Result<int32>:r = might_fail(c);
     if (other) {
         if (r.is_error) { pass 0i32; }
@@ -73,7 +73,7 @@ func:checked_on_one_branch = int32(bool:c, bool:other) {
 // --- the wrong arm of a `pick` ------------------------------------------------------------
 
 // expect-error: NITPICK-TAINT-001
-func:pick_on_the_error_arm = int32(bool:c) {
+func:pick_on_the_error_arm = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     int32:v = 0i32;
     pick (r.is_error) {

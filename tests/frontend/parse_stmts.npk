@@ -282,7 +282,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:argN = raw ast_init();
     DiagList:gn = raw diaglist_init();
     Parser:pn = raw parser_init(@kn, @argN, @gn, @it);
-    drop p_parse_stmt(@pn);
+    discard(raw p_parse_stmt(@pn));
     if (raw diaglist_count(@gn) != 1i64)                 { exit 100i32; }
     Diagnostic:d = raw diaglist_at(@gn, 0i64);
     if (!(raw string_eq(d.code, raw PARSE_ASSIGN_EXPR()))) { exit 101i32; }
@@ -293,7 +293,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:ao = raw ast_init();
     DiagList:go = raw diaglist_init();
     Parser:po = raw parser_init(@ko, @ao, @go, @it);
-    drop p_parse_stmt(@po);
+    discard(raw p_parse_stmt(@po));
     if (raw diaglist_count(@go) == 0i64)                 { exit 102i32; }
 
     drop wild_release_all();
@@ -304,7 +304,7 @@ func:main = int32(cstring[]:_~argv) {
 
 // Reading the kind of the i-th statement in a window, which the block tests do
 // often enough that spelling it out each time buries what is being asserted.
-func:stmt_kind_at = StmtKind(Ast->:ast, int32:start, int32:i) {
+func:stmt_kind_at = StmtKind(Ast->:ast, int32:start, int32:i) never fails {
     StmtId:id = StmtId{ index: raw ast_id_at(ast, start, i) };
     StmtNode:n = raw ast_stmt(ast, id);
     pass n.kind;

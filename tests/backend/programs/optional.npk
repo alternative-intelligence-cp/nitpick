@@ -15,17 +15,17 @@ struct:Point = { int32:x; int32:y; };
 struct:Node  = { int32:v; int32?:tag; Point?:at; };
 
 // `pass NIL;` in a function returning `T?` is the empty one; `pass v;` wraps.
-func:first_even = int32?(int32:a, int32:b) {
+func:first_even = int32?(int32:a, int32:b) never fails {
     if (a % 2i32 == 0i32) { pass a; }
     if (b % 2i32 == 0i32) { pass b; }
     pass NIL;
 };
 
 // An `Optional` parameter: a bare `T` and `NIL` both arrive through the slot.
-func:or_ten = int32(int32?:v) { pass (v ?? 10i32); };
+func:or_ten = int32(int32?:v) never fails { pass (v ?? 10i32); };
 
 // A side effect, to prove `??` evaluates its default lazily.
-func:bump = int32(int32->:counter) {
+func:bump = int32(int32->:counter) never fails {
     <-counter = (<-counter) + 1i32;
     pass 100i32;
 };

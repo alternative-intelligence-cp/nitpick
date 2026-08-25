@@ -9,7 +9,7 @@ enum:Net = { Connected; Disconnect; Retrying; Failed; };
 
 // --- every variant, with no wildcard ------------------------------------------------
 
-func:all_variants = int32(Net:s) {
+func:all_variants = int32(Net:s) never fails {
     int32:r = 0i32;
     pick (s) {
         (Net.Connected) { r = 1i32; },
@@ -23,7 +23,7 @@ func:all_variants = int32(Net:s) {
 // A VARIANT WITH A PAYLOAD IS STILL THAT VARIANT. The binding list does not change
 // which case the arm covers, and a checker reading the whole pattern rather than
 // its path would miss it.
-func:variant_with_a_binding = int32(Net:s) {
+func:variant_with_a_binding = int32(Net:s) never fails {
     int32:r = 0i32;
     pick (s) {
         (Net.Connected) { r = 1i32; },
@@ -36,7 +36,7 @@ func:variant_with_a_binding = int32(Net:s) {
 
 // A GUARDED ARM COVERS NOTHING — and the unguarded arm for the same variant still
 // covers it. The rule is that a guard proves nothing, not that it poisons the case.
-func:guard_beside_an_unguarded_arm = int32(Net:s, bool:c) {
+func:guard_beside_an_unguarded_arm = int32(Net:s, bool:c) never fails {
     int32:r = 0i32;
     pick (s) {
         (Net.Connected) where (c) { r = 9i32; },
@@ -50,7 +50,7 @@ func:guard_beside_an_unguarded_arm = int32(Net:s, bool:c) {
 
 // --- `bool`, both values --------------------------------------------------------------
 
-func:both_bools = int32(bool:b) {
+func:both_bools = int32(bool:b) never fails {
     int32:r = 0i32;
     pick (b) {
         (true) { r = 1i32; },
@@ -61,7 +61,7 @@ func:both_bools = int32(bool:b) {
 
 // --- a wildcard covers what the arms did not ---------------------------------------------
 
-func:integer_with_a_wildcard = int32(int32:n) {
+func:integer_with_a_wildcard = int32(int32:n) never fails {
     int32:r = 0i32;
     pick (n) {
         (0i32) { r = 1i32; },
@@ -71,7 +71,7 @@ func:integer_with_a_wildcard = int32(int32:n) {
     pass r;
 };
 
-func:enum_with_a_wildcard = int32(Net:s) {
+func:enum_with_a_wildcard = int32(Net:s) never fails {
     int32:r = 0i32;
     pick (s) {
         (Net.Connected) { r = 1i32; },
@@ -85,7 +85,7 @@ func:enum_with_a_wildcard = int32(Net:s) {
 // Both halves present: the explicit ERR arm D-008 requires, and the wildcard for
 // the values a `pick` cannot list. Neither substitutes for the other.
 
-func:tbb_with_err_and_wildcard = int32(tbb32:t) {
+func:tbb_with_err_and_wildcard = int32(tbb32:t) never fails {
     int32:r = 0i32;
     pick (t) {
         ERR: { r = 9i32; },
@@ -102,7 +102,7 @@ func:tbb_with_err_and_wildcard = int32(tbb32:t) {
 // two were refused for a coverage fact nothing could establish yet. This is the
 // debt 0.5.2 recorded, paid.
 
-func:enum_pick_assigns = int32(Net:s) {
+func:enum_pick_assigns = int32(Net:s) never fails {
     int32:x;
     pick (s) {
         (Net.Connected) { x = 1i32; },
@@ -113,7 +113,7 @@ func:enum_pick_assigns = int32(Net:s) {
     pass x;
 };
 
-func:bool_pick_assigns = int32(bool:b) {
+func:bool_pick_assigns = int32(bool:b) never fails {
     int32:x;
     pick (b) {
         (true) { x = 1i32; },

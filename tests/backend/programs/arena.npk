@@ -25,8 +25,8 @@ func:main = int32(cstring[]:_~argv) {
     // the cycle: allocate both, then tie the knot with `put`
     Handle<Node>:h1 = a.alloc();
     Handle<Node>:h2 = a.alloc();
-    drop a.put(h1, Node{ v: 10i64, next: h2 });
-    drop a.put(h2, Node{ v: 20i64, next: h1 });
+    a.put(h1, Node{ v: 10i64, next: h2 }) ?! 9tbb32;
+    a.put(h2, Node{ v: 20i64, next: h1 }) ?! 9tbb32;
 
     // traverse it: h1 -> h2 -> h1
     Node:n1 = a.get(h1) ?! 77tbb32;
@@ -39,12 +39,12 @@ func:main = int32(cstring[]:_~argv) {
     // growth: the arena started at capacity 2; a third node forces the slab
     // to move, and the handles keep working because they are indices
     Handle<Node>:h3 = a.alloc();
-    drop a.put(h3, Node{ v: 30i64, next: h1 });
+    a.put(h3, Node{ v: 30i64, next: h1 }) ?! 9tbb32;
     Node:n1b = a.get(h1) ?! 77tbb32;
     if (n1b.v != 10i64) { exit 13i32; }
 
     // free retires the handle: get fails through Result with -4106
-    drop a.free(h3);
+    a.free(h3) ?! 9tbb32;
     Result<Node>:st = a.get(h3);
     if (!st.is_error) { exit 14i32; }
     if ((st.error =>! int64) != (0i64 - 4106i64)) { exit 15i32; }
@@ -56,7 +56,7 @@ func:main = int32(cstring[]:_~argv) {
     // the freed slot is REUSED under a new generation: the old handle stays
     // dead even though the slot lives again
     Handle<Node>:h4 = a.alloc();
-    drop a.put(h4, Node{ v: 40i64, next: h1 });
+    a.put(h4, Node{ v: 40i64, next: h1 }) ?! 9tbb32;
     Result<Node>:st2 = a.get(h3);
     if (!st2.is_error) { exit 17i32; }
     Node:n4 = a.get(h4) ?! 77tbb32;
@@ -75,7 +75,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // and the arena is immediately reusable
     Handle<Node>:h5 = a.alloc();
-    drop a.put(h5, Node{ v: 50i64, next: h5 });
+    a.put(h5, Node{ v: 50i64, next: h5 }) ?! 9tbb32;
     Node:n5 = a.get(h5) ?! 77tbb32;
     if (n5.v != 50i64) { exit 22i32; }
 
@@ -84,7 +84,7 @@ func:main = int32(cstring[]:_~argv) {
     // operations address it exactly as they address a local
     App:app = App{ store: arena_make(2i64) };
     Handle<int64>:k = app.store.alloc();
-    drop app.store.put(k, 700i64);
+    app.store.put(k, 700i64) ?! 9tbb32;
     int64:kv = app.store.get(k) ?! 77tbb32;
     if (kv != 700i64) { exit 23i32; }
     app.store.destroy();

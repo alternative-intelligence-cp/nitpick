@@ -16,7 +16,7 @@ use "../../src/frontend/diagnostics.npk".*;
 use "../../src/backend/ir/ir_writer.npk".*;
 
 // The bytes a writer produced, as a comparable string.
-func:same_text = bool(IrWriter->:a, IrWriter->:b) {
+func:same_text = bool(IrWriter->:a, IrWriter->:b) never fails {
     if ((raw irw_length(a)) != (raw irw_length(b))) { pass false; }
     int64:i = 0i64;
     while (i < (raw irw_length(a))) {
@@ -27,14 +27,14 @@ func:same_text = bool(IrWriter->:a, IrWriter->:b) {
 };
 
 // Everything one writer does, so the two runs below are the same program twice.
-func:build = NIL(IrWriter->:w) {
+func:build = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "define i32 @main() {");
     drop irw_begin_function(w);
-    string:a = relay irw_temp(w);
-    string:b = relay irw_temp(w);
-    drop irw_line(w, relay string_concat(a, " = alloca i32"));
-    drop irw_line(w, relay string_concat(b, " = load i32, ptr %0"));
-    drop irw_label(w, relay irw_new_label(w, "bb"));
+    string:a = raw irw_temp(w);
+    string:b = raw irw_temp(w);
+    drop irw_line(w, raw string_concat(a, " = alloca i32"));
+    drop irw_line(w, raw string_concat(b, " = load i32, ptr %0"));
+    drop irw_label(w, raw irw_new_label(w, "bb"));
     drop irw_line(w, "ret i32 0");
     drop irw_raw(w, "}");
     pass NIL;
@@ -45,9 +45,9 @@ func:main = int32(cstring[]:_~argv) {
     //
     // `main` keeps its name so the linker finds it; everything else is prefixed so
     // a Nitpick name cannot collide with a runtime symbol.
-    if (!(raw string_eq(relay ir_symbol("main"), "@main")))        { exit 10i32; }
-    if (!(raw string_eq(relay ir_symbol("alloc"), "@npk_alloc")))  { exit 11i32; }
-    if (!(raw string_eq(relay ir_symbol("f"), "@npk_f")))          { exit 12i32; }
+    if (!(raw string_eq(raw ir_symbol("main"), "@main")))        { exit 10i32; }
+    if (!(raw string_eq(raw ir_symbol("alloc"), "@npk_alloc")))  { exit 11i32; }
+    if (!(raw string_eq(raw ir_symbol("f"), "@npk_f")))          { exit 12i32; }
 
     // --- TEMPORARIES ARE SEQUENTIAL, AND PER FUNCTION -------------------------
     //
@@ -55,10 +55,10 @@ func:main = int32(cstring[]:_~argv) {
     // because a one-function change should produce a one-function diff.
     IrWriter:w1 = raw irw_to_buffer();
     drop irw_begin_function(@w1);
-    if (!(raw string_eq(relay irw_temp(@w1), "%t0")))               { exit 20i32; }
-    if (!(raw string_eq(relay irw_temp(@w1), "%t1")))               { exit 21i32; }
+    if (!(raw string_eq(raw irw_temp(@w1), "%t0")))               { exit 20i32; }
+    if (!(raw string_eq(raw irw_temp(@w1), "%t1")))               { exit 21i32; }
     drop irw_begin_function(@w1);
-    if (!(raw string_eq(relay irw_temp(@w1), "%t0")))               { exit 22i32; }
+    if (!(raw string_eq(raw irw_temp(@w1), "%t0")))               { exit 22i32; }
 
     // --- THE SAME PROGRAM TWICE IS THE SAME BYTES -----------------------------
     IrWriter:a = raw irw_to_buffer();

@@ -303,7 +303,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     if (s.kind == StmtKind.StmtExitStmt) {
         // `exit` takes a code, not a value, and leaves the program rather than
         // the frame. Nothing can escape through it.
-        drop escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH()));
         pass NIL;
     }
 
@@ -312,18 +312,18 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH()));
         drop escape_stmt(x, raw stmt_then(s));
         drop escape_stmt(x, raw stmt_else(s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
-        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH()));
         drop escape_stmt(x, raw stmt_body(x.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
-        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH()));
         drop escape_stmt(x, raw stmt_when_body(x.ast, s));
         drop escape_stmt(x, raw stmt_when_then(x.ast, s));
         drop escape_stmt(x, raw stmt_when_end(x.ast, s));
@@ -350,7 +350,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickArm) {
-        drop escape_expr(x, raw arm_guard(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw arm_guard(s), raw ESCAPE_DEPTH()));
         drop escape_stmt(x, raw arm_body(s));
         pass NIL;
     }
@@ -375,7 +375,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     // `extern` call with a borrow argument is a rule-4 break wherever it appears,
     // including where its result goes nowhere.
     if (raw stmt_carries_expr(s.kind)) {
-        drop escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH()));
         pass NIL;
     }
 
@@ -399,7 +399,7 @@ func:escape_counted = NIL(Escape->:x, StmtNode:s) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
     int32:i = 0i32;
     while (i < n) {
-        drop escape_expr(x, raw stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH());
+        discard(raw escape_expr(x, raw stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH()));
         i = i + 1i32;
     }
     drop escape_stmt(x, raw stmt_counted_body(s));
@@ -597,7 +597,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
 
     // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
     // an index expression that no rule about the assignment itself would catch.
-    drop escape_expr(x, tgt, raw ESCAPE_DEPTH());
+    discard(raw escape_expr(x, tgt, raw ESCAPE_DEPTH()));
 
     if (raw expr_is_none(val)) { pass NIL; }
     if (!(raw verdict_borrowy(x, val,
@@ -735,11 +735,11 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // `@(arr[raw ext(@i)])` breaks rule 4 inside something that is already known
     // to be a borrow.
     if (n.kind == ExprKind.ExprAddressOfExpr) {
-        drop escape_expr(x, raw expr_operand(n), d);
+        discard(raw escape_expr(x, raw expr_operand(n), d));
         pass true;
     }
     if (n.kind == ExprKind.ExprBorrowExpr) {
-        drop escape_expr(x, raw expr_operand(n), d);
+        discard(raw escape_expr(x, raw expr_operand(n), d));
         pass true;
     }
 
@@ -762,7 +762,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // THE INDEX IS NOT PART OF THE VALUE. `arr[i]` is an element, and `i`
         // being a borrow says nothing about the element — but a rule broken
         // inside `i` is still broken, so it is walked and its answer discarded.
-        drop escape_expr(x, raw expr_rhs(n), d);
+        discard(raw escape_expr(x, raw expr_rhs(n), d));
         pass base;
     }
 
@@ -940,7 +940,7 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
 // local — is the compiler's other universal idiom.
 func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
                              int32:count, bool:ext, ExprId:callee, int32:depth) never fails {
-    drop escape_expr(x, callee, depth);
+    discard(raw escape_expr(x, callee, depth));
 
     int32:borrowed = 0i32;
     int32:local_borrows = 0i32;

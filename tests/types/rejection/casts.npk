@@ -7,7 +7,7 @@
 // A narrowing cast can lose the value, so `=>` refuses it and names the operator
 // that says "I know".
 // expect-error: NITPICK-TYPE-009
-func:narrowing = int32(int64:wide) {
+func:narrowing = int32(int64:wide) never fails {
     int32:small = wide => int32;
     pass small;
 };
@@ -17,7 +17,7 @@ func:narrowing = int32(int64:wide) {
 // `bool`, so this is not the lossy code but its own (1.0.8): `=>!` opts out of
 // a check, and there is no check here to opt out of.
 // expect-error: NITPICK-TYPE-032
-func:char_to_bool = bool(char8:c) {
+func:char_to_bool = bool(char8:c) never fails {
     bool:b = c => bool;
     pass b;
 };
@@ -28,7 +28,7 @@ func:char_to_bool = bool(char8:c) {
 // into one. Only an integer may be (D-042, D-095), and only with `=>!`.
 // expect-error: NITPICK-TYPE-032
 struct:Point = { int32:x; int32:y; };
-func:forged = fd(Point:p) {
+func:forged = fd(Point:p) never fails {
     fd:h = p =>! fd;
     pass h;
 };

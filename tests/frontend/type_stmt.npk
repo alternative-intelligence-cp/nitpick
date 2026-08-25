@@ -39,17 +39,17 @@ struct:Fx = { TypeTable:types; DiagList:diags; int64:parse_errs; };
 
 // Check a whole module: collect declarations, resolve names, then walk each
 // function's body with its own signature in hand.
-func:fx = Fx(string:src, InternTable->:it) {
+func:fx = Fx(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
     Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@rs, mod_id, scope);
 
@@ -77,7 +77,7 @@ func:fx = Fx(string:src, InternTable->:it) {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @fninsts, @ets);
 
-    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
     // `item_member`, NOT the raw window — a declaration's window begins with a
     // FOUR-SLOT HEADER of counts, so walking it directly reads those counts as
@@ -85,10 +85,10 @@ func:fx = Fx(string:src, InternTable->:it) {
     // twice with it.
     while (i < (raw item_member_count(@ast, mn))) {
         DeclId:item = raw item_member(@ast, mn, i);
-        DeclNode:d = relay ast_decl(@ast, item);
+        DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             int32:name = d.payload => int32;
-            FnSig:sg = relay fn_signature(@tr, item, name, scope);
+            FnSig:sg = raw fn_signature(@tr, item, name, scope);
             e.fn_success = sg.success;
             e.fn_terminal = sg.terminal;
             // ITS GENERIC PARAMETERS TRAVEL WITH IT (0.4.7). `T` inside
@@ -121,16 +121,16 @@ func:fx = Fx(string:src, InternTable->:it) {
 // of the test harness is how sixteen unvisited statement kinds stayed invisible.
 // A test that works around a hole in the thing it tests reports the hole as a
 // convention.
-func:check_body = NIL(ExprTyper->:e, StmtId:body) {
+func:check_body = NIL(ExprTyper->:e, StmtId:body) never fails {
     drop check_stmt(e, body);
     pass NIL;
 };
 
-func:errs = int64(Fx->:x) {
+func:errs = int64(Fx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Fx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0 = string(Fx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();

@@ -30,13 +30,13 @@ use "../../src/frontend/parse_decl.npk".*;
 
 // Parse a whole module and return only how many diagnostics came out. The count
 // IS the assertion for most of what follows, so it gets a name.
-func:parse_module_text = int64(string:src, InternTable->:it) {
+func:parse_module_text = int64(string:src, InternTable->:it) never fails {
     DiagList:lexed = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @lexed);
     Ast:ast = raw ast_init();
     DiagList:diags = raw diaglist_init();
     Parser:p = raw parser_init(@toks, @ast, @diags, it);
-    drop p_parse_module(@p);
+    discard(raw p_parse_module(@p));
     pass (raw diaglist_count(@diags));
 };
 
@@ -75,9 +75,9 @@ func:main = int32(cstring[]:_~argv) {
     // A rule that consumes nothing would loop forever. Recovery guarantees
     // progress, and reaching this line at all is the assertion.
     string:hostile = "{{{{{ ((((( ,,,,, ))))) }}}}}";
-    drop parse_module_text(hostile, @it);
+    discard(raw parse_module_text(hostile, @it));
     string:hostile2 = "func:a = int32() { pick ( { , ( ) } };";
-    drop parse_module_text(hostile2, @it);
+    discard(raw parse_module_text(hostile2, @it));
 
     // --- codes, and the spans that go with them ----------------------------------------
     // Every code in parse_codes.npk is reachable. A code nothing can emit is dead
@@ -87,7 +87,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a1 = raw ast_init();
     DiagList:g1 = raw diaglist_init();
     Parser:p1 = raw parser_init(@t1, @a1, @g1, @it);
-    drop p_parse_stmt(@p1);
+    discard(raw p_parse_stmt(@p1));
     if (!(raw string_eq((raw diaglist_at(@g1, 0i64)).code, raw PARSE_ASSIGN_EXPR()))) {
         exit 20i32;
     }
@@ -99,7 +99,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a2 = raw ast_init();
     DiagList:g2 = raw diaglist_init();
     Parser:p2 = raw parser_init(@t2, @a2, @g2, @it);
-    drop p_parse_module(@p2);
+    discard(raw p_parse_module(@p2));
     if (raw diaglist_count(@g2) == 0i64)                      { exit 21i32; }
     Diagnostic:unclosed = raw diaglist_at(@g2, 0i64);
     if (!(raw string_eq(unclosed.code, raw PARSE_UNCLOSED())))  { exit 22i32; }
@@ -110,7 +110,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a3 = raw ast_init();
     DiagList:g3 = raw diaglist_init();
     Parser:p3 = raw parser_init(@t3, @a3, @g3, @it);
-    drop p_parse_stmt(@p3);
+    discard(raw p_parse_stmt(@p3));
     if (raw diaglist_count(@g3) == 0i64)                      { exit 24i32; }
     if (!(raw string_eq((raw diaglist_at(@g3, 0i64)).code, raw PARSE_BAD_PATTERN()))) {
         exit 25i32;
@@ -123,7 +123,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a4 = raw ast_init();
     DiagList:g4 = raw diaglist_init();
     Parser:p4 = raw parser_init(@t4, @a4, @g4, @it);
-    drop p_parse_stmt(@p4);
+    discard(raw p_parse_stmt(@p4));
     if (!(raw string_eq((raw diaglist_at(@g4, 0i64)).code, raw PARSE_BAD_PATTERN()))) {
         exit 26i32;
     }
@@ -134,7 +134,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a5 = raw ast_init();
     DiagList:g5 = raw diaglist_init();
     Parser:p5 = raw parser_init(@t5, @a5, @g5, @it);
-    drop p_parse_decl(@p5);
+    discard(raw p_parse_decl(@p5));
     if (!(raw string_eq((raw diaglist_at(@g5, 0i64)).code,
                         raw PARSE_EXTERN_NO_CONTRACT()))) {
         exit 27i32;
@@ -145,7 +145,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a6 = raw ast_init();
     DiagList:g6 = raw diaglist_init();
     Parser:p6 = raw parser_init(@t6, @a6, @g6, @it);
-    drop p_parse_stmt(@p6);
+    discard(raw p_parse_stmt(@p6));
     if (!(raw string_eq((raw diaglist_at(@g6, 0i64)).code,
                         raw PARSE_UNREACHABLE_MARKER()))) {
         exit 28i32;
@@ -156,7 +156,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a7 = raw ast_init();
     DiagList:g7 = raw diaglist_init();
     Parser:p7 = raw parser_init(@t7, @a7, @g7, @it);
-    drop p_parse_stmt(@p7);
+    discard(raw p_parse_stmt(@p7));
     if (!(raw string_eq((raw diaglist_at(@g7, 0i64)).code, raw PARSE_UNEXPECTED()))) {
         exit 29i32;
     }
@@ -166,7 +166,7 @@ func:main = int32(cstring[]:_~argv) {
     Ast:a8 = raw ast_init();
     DiagList:g8 = raw diaglist_init();
     Parser:p8 = raw parser_init(@t8, @a8, @g8, @it);
-    drop p_parse_stmt(@p8);
+    discard(raw p_parse_stmt(@p8));
     if (!(raw string_eq((raw diaglist_at(@g8, 0i64)).code, raw PARSE_EXPECTED()))) {
         exit 30i32;
     }

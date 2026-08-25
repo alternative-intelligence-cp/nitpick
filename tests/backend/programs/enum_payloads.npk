@@ -16,7 +16,7 @@ enum:Msg = {
     Tiny(int8);
 };
 
-func:read_text = string(Msg:m) {
+func:read_text = string(Msg:m) never fails {
     string:out = "";
     pick (m) {
         (Msg.Text(s)) { out = s; },
@@ -25,7 +25,7 @@ func:read_text = string(Msg:m) {
     pass out;
 };
 
-func:read_point = int32(Msg:m) {
+func:read_point = int32(Msg:m) never fails {
     int32:out = 0i32;
     pick (m) {
         (Msg.Point(p)) { out = p.x + p.y; },

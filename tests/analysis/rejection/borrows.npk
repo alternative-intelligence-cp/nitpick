@@ -20,7 +20,7 @@ extern:"libc" = {
 
 // The operator, directly.
 // expect-error: NITPICK-BORROW-001
-func:return_borrow = int32->() {
+func:return_borrow = int32->() never fails {
     int32:x = 5i32;
     pass @x;
 };
@@ -29,7 +29,7 @@ func:return_borrow = int32->() {
 // the expression `p` says it holds a borrow; the analysis records that at the
 // declaration and reads it here.
 // expect-error: NITPICK-BORROW-001
-func:return_binding = int32->() {
+func:return_binding = int32->() never fails {
     int32:x = 5i32;
     int32->:p = @x;
     pass p;
@@ -39,7 +39,7 @@ func:return_binding = int32->() {
 // BE the value" — a struct whose field points into the frame is no less escaped
 // for having a field name in front of it.
 // expect-error: NITPICK-BORROW-001
-func:return_wrapped = Holder() {
+func:return_wrapped = Holder() never fails {
     int32:x = 5i32;
     pass Holder{ inner: @x };
 };
@@ -56,14 +56,14 @@ func:return_wrapped = Holder() {
 // make the frame live longer, and a classifier that recognised only the operator
 // would let this through.
 // expect-error: NITPICK-BORROW-001
-func:return_derived = int32->() {
+func:return_derived = int32->() never fails {
     Pair:p = Pair{ first: 1i32, second: 2i32 };
     pass @p.second;
 };
 
 // AN INDEX IS THE OTHER DERIVING FORM, and it behaves the same way.
 // expect-error: NITPICK-BORROW-001
-func:return_indexed = int32->() {
+func:return_indexed = int32->() never fails {
     int32[4]:cells = [0i32, 1i32, 2i32, 3i32];
     pass @cells[2i64];
 };
@@ -76,7 +76,7 @@ func:return_indexed = int32->() {
 // loop is the shape cycle 0.5 has to keep catching, and here it was the shape of
 // the analysis itself.
 // expect-error: NITPICK-BORROW-001
-func:return_from_loop = int32->(int32:n) {
+func:return_from_loop = int32->(int32:n) never fails {
     int32:x = 5i32;
     int32->:p = NULL;
     int32:i = 0i32;
@@ -92,7 +92,7 @@ func:return_from_loop = int32->(int32:n) {
 
 // Into a field of an aggregate the caller owns.
 // expect-error: NITPICK-BORROW-002
-func:store_field = NIL(Holder->:h) {
+func:store_field = NIL(Holder->:h) never fails {
     int32:x = 5i32;
     h.inner = @x;
     pass NIL;
@@ -104,7 +104,7 @@ func:store_field = NIL(Holder->:h) {
 // decision says to relax it later WITH EVIDENCE, and a test being awkward to write
 // is not evidence.
 // expect-error: NITPICK-BORROW-002
-func:store_local_aggregate = NIL() {
+func:store_local_aggregate = NIL() never fails {
     int32:x = 5i32;
     Holder:h = Holder{ inner: NULL };
     h.inner = @x;
@@ -119,12 +119,12 @@ func:store_local_aggregate = NIL() {
 // `launder` returning the CALLER's pointer to the caller, which is correct code and
 // is NOT refused. The escape is one level up, and that is where it is caught.
 
-func:launder = int32->(int32->:q) {
+func:launder = int32->(int32->:q) never fails {
     pass q;
 };
 
 // expect-error: NITPICK-BORROW-001
-func:returns_laundered = int32->() {
+func:returns_laundered = int32->() never fails {
     int32:x = 5i32;
     pass (raw launder(@x));
 };
@@ -138,13 +138,13 @@ func:returns_laundered = int32->() {
 
 struct:Cell = { int32->:slot; };
 
-func:store_through = NIL(Cell->:h, int32->:q) {
+func:store_through = NIL(Cell->:h, int32->:q) never fails {
     h.slot = q;
     pass NIL;
 };
 
 // expect-error: NITPICK-BORROW-001
-func:leaks_through_a_callee = Cell() {
+func:leaks_through_a_callee = Cell() never fails {
     int32:x = 5i32;
     Cell:c = Cell{ slot: NULL };
     drop store_through(@c, @x);
@@ -157,17 +157,17 @@ func:leaks_through_a_callee = Cell() {
 // nothing downstream can be checked — the same argument the zero-dependency rule
 // rests on.
 // expect-error: NITPICK-BORROW-003
-func:cross_extern = NIL() {
+func:cross_extern = NIL() never fails {
     int32:x = 5i32;
-    drop keepit(@x);
+    discard(keepit(@x) ?! 9tbb32);
     pass NIL;
 };
 
 // A BORROW HELD IN A BINDING CROSSES JUST THE SAME.
 // expect-error: NITPICK-BORROW-003
-func:cross_extern_binding = NIL() {
+func:cross_extern_binding = NIL() never fails {
     int32:x = 5i32;
     int32->:p = @x;
-    drop keepit(p);
+    discard(keepit(p) ?! 9tbb32);
     pass NIL;
 };

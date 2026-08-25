@@ -125,13 +125,13 @@ pub func:p_parse_expr = ExprId(Parser->:p) never fails {
 func:p_ternary = ExprId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     if (raw p_at(p, TokenKind.KwIs)) {
-        drop p_advance(p);
-        drop p_expect(p, TokenKind.PLParen);
+        discard(raw p_advance(p));
+        discard(raw p_expect(p, TokenKind.PLParen));
         ExprId:c = raw p_parse_expr(p);
-        drop p_expect(p, TokenKind.PRParen);
-        drop p_expect(p, TokenKind.PColon);
+        discard(raw p_expect(p, TokenKind.PRParen));
+        discard(raw p_expect(p, TokenKind.PColon));
         ExprId:a = raw p_parse_expr(p);
-        drop p_expect(p, TokenKind.PColon);
+        discard(raw p_expect(p, TokenKind.PColon));
         ExprId:b = raw p_parse_expr(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprTernaryExpr, sp,
                                  c.index, a.index, b.index, 0i64));
@@ -149,13 +149,13 @@ func:p_ternary = ExprId(Parser->:p) never fails {
             // the SafeUnwrap node — the same one the seed produces for `?|`
             // — so the AST agrees; a bare `?` and the word `defaults` are
             // refused (the `?` in p_coalesce, `defaults` just below).
-            drop p_advance(p);
+            discard(raw p_advance(p));
             ExprId:rhs = raw p_coalesce(p);
             lhs = raw ast_add_expr(p.ast, ExprKind.ExprSafeUnwrapExpr, qsp,
                                      lhs.index, rhs.index, 0i32, 0i64);
         } else {
             if (raw p_at(p, TokenKind.KwDefaults)) {
-                drop p_advance(p);
+                discard(raw p_advance(p));
                 // The word `defaults` is not a spelling of the fallback (D-175):
                 // `?|` is the one form. Parsed (grammar never partial, D-085),
                 // refused by name, filed under the otherwise-unused ExprDefaultsExpr.
@@ -187,7 +187,7 @@ func:p_coalesce = ExprId(Parser->:p) never fails {
         if (k == TokenKind.OpQuestion)         { node = ExprKind.ExprDefaultsExpr; }
         if (k == TokenKind.OpQuestionBang)     { node = ExprKind.ExprEmphaticUnwrapExpr; }
         if (node == ExprKind.ExprNone) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
         if (k == TokenKind.OpQuestion) {
             drop p_error(p, raw PARSE_BARE_QUESTION_REMOVED(),
                 "a bare `?` is not the `Result` fallback (D-175): write `expr ?| fallback` — `?` reads as Rust's error-propagation, but Nitpick's fallback yields a value");
@@ -247,7 +247,7 @@ func:p_binary = ExprId(Parser->:p, int32:level) never fails {
         Span:sp = raw p_span(p);
         TokenKind:k = raw p_kind(p);
         if (!(raw p_level_has(level, k))) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:rhs = raw p_binary(p, level - 1i32);
         // Range is its own node: `lo..hi` is not arithmetic, and `...` is the
         // exclusive form (LEXICAL_REFERENCE §5.1).
@@ -288,49 +288,49 @@ func:p_unary = ExprId(Parser->:p) never fails {
     TokenKind:k = raw p_kind(p);
 
     if (k == TokenKind.OpAt) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprAddressOfExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.OpArrowBack) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprDerefExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.OpBorrowImm) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprBorrowExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.OpBorrowMut) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprBorrowExpr, sp,
                                  o.index, 0i32, 0i32, 1i64));
     }
     if (k == TokenKind.OpDotDotCaret) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprSpreadExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.OpBang) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprUnaryExpr, sp,
                                  o.index, 0i32, 0i32, (k =>! int32) =>! int64));
     }
     if (k == TokenKind.OpTilde) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprUnaryExpr, sp,
                                  o.index, 0i32, 0i32, (k =>! int32) =>! int64));
     }
     if (k == TokenKind.OpMinus) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_unary(p);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprUnaryExpr, sp,
                                  o.index, 0i32, 0i32, (k =>! int32) =>! int64));
@@ -349,7 +349,7 @@ func:p_cast = ExprId(Parser->:p) never fails {
         if (k == TokenKind.OpFatArrow)          { node = ExprKind.ExprCastExpr; }
         if (k == TokenKind.OpFatArrowUnchecked) { node = ExprKind.ExprUncheckedCastExpr; }
         if (node == ExprKind.ExprNone) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
 
         // `p => wild int8->` — A MEMORY QUALIFIER ON THE TARGET, read here since
         // 0.7.3. It is load-bearing rather than decoration: to LLVM a `wild`
@@ -394,7 +394,7 @@ func:p_pipeline = ExprId(Parser->:p) never fails {
         if (!fwd) {
             if (!back) { break; }
         }
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:rhs = raw p_result_unary(p);
         int64:dir = 0i64;
         if (back) { dir = 1i64; }
@@ -420,7 +420,7 @@ func:p_result_unary = ExprId(Parser->:p) never fails {
     if (k == TokenKind.KwAwait)        { node = ExprKind.ExprAwaitExpr; }
 
     if (node != ExprKind.ExprNone) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:o = raw p_result_unary(p);
         pass (raw ast_add_expr(p.ast, node, sp, o.index, 0i32, 0i32, 0i64));
     }
@@ -439,14 +439,14 @@ func:p_postfix = ExprId(Parser->:p) never fails {
         // it from nothing else: there is no prefix `++` in Nitpick, so a single
         // node discriminated by `op` would leave the position unrecorded.
         if (k == TokenKind.OpPlusPlus) {
-            drop p_advance(p);
+            discard(raw p_advance(p));
             drop p_error(p, raw PARSE_INCDEC_REMOVED(),
                 "`++` / `--` are removed (D-174): write `x += 1` or `x -= 1` — an increment that also yields a value hides a write inside an expression, and `+=` already does the job");
             e = raw ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
                                    e.index, 0i32, 0i32, (k =>! int32) =>! int64);
         } else {
         if (k == TokenKind.OpMinusMinus) {
-            drop p_advance(p);
+            discard(raw p_advance(p));
             drop p_error(p, raw PARSE_INCDEC_REMOVED(),
                 "`++` / `--` are removed (D-174): write `x += 1` or `x -= 1` — an increment that also yields a value hides a write inside an expression, and `+=` already does the job");
             e = raw ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
@@ -454,7 +454,7 @@ func:p_postfix = ExprId(Parser->:p) never fails {
         } else {
 
         if (k == TokenKind.PDot) {
-            drop p_advance(p);
+            discard(raw p_advance(p));
             Token:n = raw p_advance(p);
             // `p.magnitude()` is a METHOD CALL, not a call over a member access
             // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
@@ -469,15 +469,15 @@ func:p_postfix = ExprId(Parser->:p) never fails {
             }
         } else {
             if (k == TokenKind.OpQuestionDot) {
-                drop p_advance(p);
+                discard(raw p_advance(p));
                 Token:n = raw p_advance(p);
                 e = raw ast_add_expr(p.ast, ExprKind.ExprSafeNavExpr, sp,
                                        e.index, 0i32, 0i32, n.payload);
             } else {
                 if (k == TokenKind.PLBracket) {
-                    drop p_advance(p);
+                    discard(raw p_advance(p));
                     ExprId:ix = raw p_parse_expr(p);
-                    drop p_expect(p, TokenKind.PRBracket);
+                    discard(raw p_expect(p, TokenKind.PRBracket));
                     e = raw ast_add_expr(p.ast, ExprKind.ExprIndexExpr, sp,
                                            e.index, ix.index, 0i32, 0i64);
                 } else {
@@ -496,9 +496,9 @@ func:p_postfix = ExprId(Parser->:p) never fails {
                             }
                         }
                         if (!turbo) { break; }
-                        drop p_advance(p);
-                        drop p_advance(p);
-                        drop p_advance(p);
+                        discard(raw p_advance(p));
+                        discard(raw p_advance(p));
+                        discard(raw p_advance(p));
                         int32:mark = raw ast_scratch_mark(p.ast);
                         if (!(raw p_at(p, TokenKind.OpGt))) {
                             TypeId:g1 = raw p_parse_type_arg(p);
@@ -508,7 +508,7 @@ func:p_postfix = ExprId(Parser->:p) never fails {
                                 drop ast_scratch_push(p.ast, gn.index);
                             }
                         }
-                        drop p_expect_gt(p);
+                        discard(raw p_expect_gt(p));
                         e = raw p_call(p, e, sp, mark, 1i32);
                     }
                 }
@@ -522,7 +522,7 @@ func:p_postfix = ExprId(Parser->:p) never fails {
 // `receiver.method(args)`. The receiver stays in slot `a` and the method name in
 // `payload`, so UFCS resolution reads both without unwrapping anything.
 func:p_method_call = ExprId(Parser->:p, ExprId:receiver, Span:sp, int64:method) never fails {
-    drop p_expect(p, TokenKind.PLParen);
+    discard(raw p_expect(p, TokenKind.PLParen));
     int32:mark = raw ast_scratch_mark(p.ast);
     if (!(raw p_at(p, TokenKind.PRParen))) {
         ExprId:a1 = raw p_parse_expr(p);
@@ -532,7 +532,7 @@ func:p_method_call = ExprId(Parser->:p, ExprId:receiver, Span:sp, int64:method) 
             drop ast_scratch_push(p.ast, argN.index);
         }
     }
-    drop p_expect(p, TokenKind.PRParen);
+    discard(raw p_expect(p, TokenKind.PRParen));
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_expr(p.ast, ExprKind.ExprMethodCallExpr, sp,
                              receiver.index, w.start, w.count, method));
@@ -549,7 +549,7 @@ func:p_call = ExprId(Parser->:p, ExprId:callee, Span:sp,
     }
     int32:gcount = raw ast_scratch_mark(p.ast) - mark;
 
-    drop p_expect(p, TokenKind.PLParen);
+    discard(raw p_expect(p, TokenKind.PLParen));
     if (!(raw p_at(p, TokenKind.PRParen))) {
         ExprId:a1 = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
@@ -558,7 +558,7 @@ func:p_call = ExprId(Parser->:p, ExprId:callee, Span:sp,
             drop ast_scratch_push(p.ast, argN.index);
         }
     }
-    drop p_expect(p, TokenKind.PRParen);
+    discard(raw p_expect(p, TokenKind.PRParen));
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_expr(p.ast, ExprKind.ExprCallExpr, sp,
                              callee.index, w.start, w.count,
@@ -606,17 +606,17 @@ func:p_primary = ExprId(Parser->:p) never fails {
                                  0i32, 0i32, 0i32, t.payload));
     }
     if (k == TokenKind.KwTrue) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprBoolLiteral, sp,
                                  0i32, 0i32, 0i32, 1i64));
     }
     if (k == TokenKind.KwFalse) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprBoolLiteral, sp,
                                  0i32, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.OpDollar) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprIterationVarExpr, sp,
                                  0i32, 0i32, 0i32, 0i64));
     }
@@ -625,18 +625,18 @@ func:p_primary = ExprId(Parser->:p) never fails {
     // parenthesised operand, not calls (D-065). `move`'s operand is a place,
     // which is why it has its own node rather than being a UnaryExpr.
     if (k == TokenKind.KwMove) {
-        drop p_advance(p);
-        drop p_expect(p, TokenKind.PLParen);
+        discard(raw p_advance(p));
+        discard(raw p_expect(p, TokenKind.PLParen));
         ExprId:o = raw p_parse_expr(p);
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprMoveExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.KwComptime) {
-        drop p_advance(p);
-        drop p_expect(p, TokenKind.PLParen);
+        discard(raw p_advance(p));
+        discard(raw p_expect(p, TokenKind.PLParen));
         ExprId:o = raw p_parse_expr(p);
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprComptimeExpr, sp,
                                  o.index, 0i32, 0i32, 0i64));
     }
@@ -645,7 +645,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
     // bare brackets are unambiguous here where they would not be on a plain
     // identifier (D-020, D-064).
     if (k == TokenKind.Hash) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         Token:name = raw p_advance(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         if (raw p_accept(p, TokenKind.OpLt)) {
@@ -657,7 +657,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
                     drop ast_scratch_push(p.ast, gn.index);
                 }
             }
-            drop p_expect_gt(p);
+            discard(raw p_expect_gt(p));
         }
         int32:gcount = raw ast_scratch_mark(p.ast) - mark;
         if (raw p_accept(p, TokenKind.PLParen)) {
@@ -669,7 +669,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
                     drop ast_scratch_push(p.ast, argN.index);
                 }
             }
-            drop p_expect(p, TokenKind.PRParen);
+            discard(raw p_expect(p, TokenKind.PRParen));
         }
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprBuiltinExpr, sp,
@@ -678,7 +678,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
 
     // `[a, b, c]`
     if (k == TokenKind.PLBracket) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         int32:mark = raw ast_scratch_mark(p.ast);
         if (!(raw p_at(p, TokenKind.PRBracket))) {
             ExprId:e1 = raw p_parse_expr(p);
@@ -689,16 +689,16 @@ func:p_primary = ExprId(Parser->:p) never fails {
                 drop ast_scratch_push(p.ast, en.index);
             }
         }
-        drop p_expect(p, TokenKind.PRBracket);
+        discard(raw p_expect(p, TokenKind.PRBracket));
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (raw ast_add_expr(p.ast, ExprKind.ExprArrayLiteralExpr, sp,
                                  0i32, w.start, w.count, 0i64));
     }
 
     if (k == TokenKind.PLParen) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         ExprId:inner = raw p_parse_expr(p);
-        drop p_expect(p, TokenKind.PRParen);
+        discard(raw p_expect(p, TokenKind.PRParen));
         pass inner;
     }
 
@@ -706,11 +706,11 @@ func:p_primary = ExprId(Parser->:p) never fails {
     // TemplateEnd. `&{ }` is the WHOLE formatting mechanism (D-053) -- there is
     // no specifier language -- so this is where formatting enters the AST.
     if (k == TokenKind.TemplateStart) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         int32:mark = raw ast_scratch_mark(p.ast);
         while (true) {
             TokenKind:tk = raw p_kind(p);
-            if (tk == TokenKind.TemplateEnd) { drop p_advance(p); break; }
+            if (tk == TokenKind.TemplateEnd) { discard(raw p_advance(p)); break; }
             if (tk == TokenKind.Eof) { break; }
             if (tk == TokenKind.TemplatePart) {
                 Token:part = raw p_advance(p);
@@ -720,9 +720,9 @@ func:p_primary = ExprId(Parser->:p) never fails {
                 drop ast_scratch_push(p.ast, pe.index);
             } else {
                 if (tk == TokenKind.InterpStart) {
-                    drop p_advance(p);
+                    discard(raw p_advance(p));
                     ExprId:ie = raw p_parse_expr(p);
-                    drop p_expect(p, TokenKind.InterpEnd);
+                    discard(raw p_expect(p, TokenKind.InterpEnd));
                     drop ast_scratch_push(p.ast, ie.index);
                 } else {
                     drop p_error(p, raw PARSE_UNEXPECTED(),
@@ -737,12 +737,12 @@ func:p_primary = ExprId(Parser->:p) never fails {
     }
 
     if (k == TokenKind.KwNIL) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
                                  0i32, 0i32, 0i32, 0i64));
     }
     if (k == TokenKind.KwNULL) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
                                  0i32, 0i32, 0i32, 1i64));
     }
@@ -750,7 +750,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
     // the `tbb` taint value (D-008), so a missing case meant no program could
     // name the state the whole type exists to carry.
     if (k == TokenKind.KwERR) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass (raw ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
                                  0i32, 0i32, 0i32, 2i64));
     }
@@ -770,7 +770,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
     if (k == TokenKind.KwSimd) {
         if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PLParen) {
             Token:vt = raw p_advance(p);
-            drop p_advance(p);
+            discard(raw p_advance(p));
             int32:vmark = raw ast_scratch_mark(p.ast);
             if (!(raw p_at(p, TokenKind.PRParen))) {
                 ExprId:c1 = raw p_parse_expr(p);
@@ -780,7 +780,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
                     drop ast_scratch_push(p.ast, cN.index);
                 }
             }
-            drop p_expect(p, TokenKind.PRParen);
+            discard(raw p_expect(p, TokenKind.PRParen));
             IdSpan:vw = raw ast_scratch_commit(p.ast, vmark);
             pass (raw ast_add_expr(p.ast, ExprKind.ExprVectorCtorExpr, sp,
                                      0i32, vw.start, vw.count,
@@ -844,10 +844,10 @@ func:p_primary = ExprId(Parser->:p) never fails {
 // `kw ( expr )` -- the shape shared by `move` and `is_err`. The parens are part
 // of the operator rather than a grouping, so they are required.
 func:p_keyword_operand = ExprId(Parser->:p, Span:sp, ExprKind:kind) never fails {
-    drop p_advance(p);
-    drop p_expect(p, TokenKind.PLParen);
+    discard(raw p_advance(p));
+    discard(raw p_expect(p, TokenKind.PLParen));
     ExprId:o = raw p_parse_expr(p);
-    drop p_expect(p, TokenKind.PRParen);
+    discard(raw p_expect(p, TokenKind.PRParen));
     pass (raw ast_add_expr(p.ast, kind, sp, o.index, 0i32, 0i32, 0i64));
 };
 
@@ -875,8 +875,8 @@ func:p_keyword_operand = ExprId(Parser->:p, Span:sp, ExprKind:kind) never fails 
 // than an idle typo. A silently discarded field is the failure mode this whole
 // literal exists to avoid.
 func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
-    drop p_advance(p);
-    drop p_expect(p, TokenKind.PLBrace);
+    discard(raw p_advance(p));
+    discard(raw p_expect(p, TokenKind.PLBrace));
     int32:value = 0i32;
     int32:error = 0i32;
     bool:saw_value = false;
@@ -897,7 +897,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
                 "a `Result{…}` field is named `value` or `error`, and this is not a name",
                 field.span);
         }
-        drop p_expect(p, TokenKind.PColon);
+        discard(raw p_expect(p, TokenKind.PColon));
         ExprId:v = raw p_parse_expr(p);
 
         // The names are matched HERE rather than kept, so the node's slots mean
@@ -942,7 +942,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
         }
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }
-    drop p_expect(p, TokenKind.PRBrace);
+    discard(raw p_expect(p, TokenKind.PRBrace));
     pass (raw ast_add_expr(p.ast, ExprKind.ExprResultLiteralExpr, sp,
                              value, error, 0i32, 0i64));
 };
@@ -951,18 +951,18 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
 // then the value's handle. One window, documented once, rather than a second
 // parallel one to keep in step.
 func:p_struct_literal = ExprId(Parser->:p, Span:sp, int64:name) never fails {
-    drop p_expect(p, TokenKind.PLBrace);
+    discard(raw p_expect(p, TokenKind.PLBrace));
     int32:mark = raw ast_scratch_mark(p.ast);
     while (!(raw p_at(p, TokenKind.PRBrace))) {
         if (raw p_at_end(p)) { break; }
         Token:f = raw p_advance(p);
-        drop p_expect(p, TokenKind.PColon);
+        discard(raw p_expect(p, TokenKind.PColon));
         ExprId:v = raw p_parse_expr(p);
         drop ast_scratch_push(p.ast, f.payload =>! int32);
         drop ast_scratch_push(p.ast, v.index);
         if (!(raw p_accept(p, TokenKind.PComma))) { break; }
     }
-    drop p_expect(p, TokenKind.PRBrace);
+    discard(raw p_expect(p, TokenKind.PRBrace));
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (raw ast_add_expr(p.ast, ExprKind.ExprStructLiteralExpr, sp,
                              0i32, w.start, w.count, name));

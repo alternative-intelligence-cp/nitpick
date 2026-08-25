@@ -8,8 +8,8 @@ use "../../src/frontend/keywords.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/lexer.npk".*;
 
-func:kind_at = TokenKind(TokenList->:toks, int64:i) {
-    Token:t = relay tokenlist_at(toks, i);
+func:kind_at = TokenKind(TokenList->:toks, int64:i) never fails {
+    Token:t = raw tokenlist_at(toks, i);
     pass t.kind;
 };
 
@@ -67,7 +67,7 @@ func:main = int32(cstring[]:_~argv) {
     // Block comments do NOT nest (LEXICAL_REFERENCE 2), so this one is
     // unterminated and must be diagnosed rather than swallowing the file.
     DiagList:dg2 = raw diaglist_init();
-    drop lex_all(0i32, "pub /* /* never closed", @it, @dg2);
+    discard(raw lex_all(0i32, "pub /* /* never closed", @it, @dg2));
     if (raw diaglist_count(@dg2) == 0i64)                    { exit 40i32; }
     if (!(raw diaglist_has_errors(@dg2)))                    { exit 41i32; }
 

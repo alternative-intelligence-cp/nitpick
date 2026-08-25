@@ -13,8 +13,8 @@ pub const int32:LIMIT = 10i32;
 struct:Point = { int32:x; int32:y; };
 enum:Net = { Connected; Disconnect(int32); };
 
-func:helper = int32(int32:v) { pass v; };
-func:pair_of = int32(int32:a, int32:b) { pass a; };
+func:helper = int32(int32:v) never fails { pass v; };
+func:pair_of = int32(int32:a, int32:b) never fails { pass a; };
 
 func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i32 {
     int32:total = 0i32;
@@ -83,7 +83,7 @@ func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i3
     pass total;
 };
 
-func:with_pick = int32(Net:e, int32:bound) {
+func:with_pick = int32(Net:e, int32:bound) never fails {
     int32:out = 0i32;
 
     pick (e) {

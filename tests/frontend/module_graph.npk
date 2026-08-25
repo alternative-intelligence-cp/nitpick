@@ -17,10 +17,10 @@ use "../../src/frontend/module_graph.npk".*;
 
 // Every module in the graph, keyed by name, so a lookup can assert that a symbol
 // lives in the module it was declared in and not somewhere else.
-func:find_symbol_anywhere = int32(ModuleGraph->:g, int32:name) {
+func:find_symbol_anywhere = int32(ModuleGraph->:g, int32:name) never fails {
     int32:i = 0i32;
     while (i < (raw graph_count(g))) {
-        ModuleEntry:e = relay graph_at(g, i);
+        ModuleEntry:e = raw graph_at(g, i);
         int32:hit = raw scope_lookup(@g.tab, e.scope, name);
         if (hit != 0i32) {
             pass hit;
@@ -30,10 +30,10 @@ func:find_symbol_anywhere = int32(ModuleGraph->:g, int32:name) {
     pass 0i32;
 };
 
-func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags) {
+func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags) never fails {
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(it, diags, @roots, "");
-    drop graph_load_all(@g, root);
+    discard(raw graph_load_all(@g, root));
     drop graph_collect_all(@g);
     pass g;
 };
@@ -98,10 +98,10 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:d4 = raw diaglist_init();
     RootList:noroots = raw rootlist_init();
     ModuleGraph:g4 = raw graph_init(@it, @d4, @noroots, "");
-    drop graph_load_all(@g4, "tests/modules/graph/alpha.npk");
+    discard(raw graph_load_all(@g4, "tests/modules/graph/alpha.npk"));
     drop graph_collect_all(@g4);
     int32:before = raw graph_count(@g4);
-    drop graph_load(@g4, "tests/modules/graph/nested/../alpha.npk", raw span_none());
+    discard(raw graph_load(@g4, "tests/modules/graph/nested/../alpha.npk", raw span_none()));
     if ((raw graph_count(@g4)) != before)                { exit 30i32; }
     if (raw diaglist_count(@d4) != 0i64)                 { exit 31i32; }
 

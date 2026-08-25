@@ -21,7 +21,7 @@
 struct:Cell = { int32->:slot; };
 struct:Guard = { int32:v; };
 
-func:sink = NIL(int32->:p) { pass NIL; };
+func:sink = NIL(int32->:p) never fails { pass NIL; };
 func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
 func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
 func:might_fail = int32(bool:c) {
@@ -33,7 +33,7 @@ func:might_fail = int32(bool:c) {
 
 // ACROSS A BRANCH. The borrow is taken on one arm and returned after the merge.
 // expect-error: NITPICK-BORROW-001
-func:escape_across_a_branch = int32->(bool:c) {
+func:escape_across_a_branch = int32->(bool:c) never fails {
     int32:x = 1i32;
     int32->:p = NULL;
     if (c) { p = @x; }
@@ -42,7 +42,7 @@ func:escape_across_a_branch = int32->(bool:c) {
 
 // IN A `pick` ARM.
 // expect-error: NITPICK-BORROW-001
-func:escape_from_a_pick_arm = int32->(int32:n) {
+func:escape_from_a_pick_arm = int32->(int32:n) never fails {
     int32:x = 1i32;
     int32->:p = NULL;
     pick (n) {
@@ -57,9 +57,9 @@ func:escape_from_a_pick_arm = int32->(int32:n) {
 extern:"libc" = {
     func:keepit = int32(int32->:p) never fails;
 };
-func:escape_from_a_defer = NIL() {
+func:escape_from_a_defer = NIL() never fails {
     int32:x = 1i32;
-    defer { drop keepit(@x); }
+    defer { discard(keepit(@x) ?! 9tbb32); }
     pass NIL;
 };
 
@@ -68,7 +68,7 @@ func:escape_from_a_defer = NIL() {
 // IN A `pick` ARM: moved on one arm, used after the merge. `moved` UNIONS, so
 // moved-on-some-path is moved.
 // expect-error: NITPICK-MOVE-001
-func:moved_in_a_pick_arm = NIL(int32:n) {
+func:moved_in_a_pick_arm = NIL(int32:n) never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:q = NULL;
     pick (n) {
@@ -83,7 +83,7 @@ func:moved_in_a_pick_arm = NIL(int32:n) {
 // IN A `defer`: the deferred body runs at scope exit, after the `dalloc` below it,
 // so it frees what was already freed.
 // expect-error: NITPICK-MOVE-002
-func:freed_in_a_defer = NIL() {
+func:freed_in_a_defer = NIL() never fails {
     wild int8->:p = alloc(8i64);
     drop dalloc(p);
     defer { drop dalloc(p); }
@@ -95,7 +95,7 @@ func:freed_in_a_defer = NIL() {
 // A CHECK INSIDE A LOOP proves nothing after it, because the body may run zero
 // times — the same reason an assignment inside one does not survive it.
 // expect-error: NITPICK-TAINT-001
-func:checked_only_inside_a_loop = int32(bool:c) {
+func:checked_only_inside_a_loop = int32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
     while (c) {
         if (r.is_error) { pass 0i32; }
@@ -107,11 +107,11 @@ func:checked_only_inside_a_loop = int32(bool:c) {
 
 // ACROSS A BRANCH: level 2 is taken before the branch and level 1 inside it.
 // expect-error: NITPICK-LOCK-001
-func:downward_inside_a_branch = NIL(bool:c) {
-    Guard:a = raw take_2();
+func:downward_inside_a_branch = NIL(bool:c) never fails {
+    Guard:a = take_2() ?! 9tbb32;
     discard(a.v);
     if (c) {
-        Guard:b = raw take_1();
+        Guard:b = take_1() ?! 9tbb32;
         discard(b.v);
     }
     pass NIL;
@@ -119,11 +119,11 @@ func:downward_inside_a_branch = NIL(bool:c) {
 
 // IN A LOOP BODY.
 // expect-error: NITPICK-LOCK-001
-func:downward_inside_a_loop = NIL(bool:c) {
-    Guard:a = raw take_2();
+func:downward_inside_a_loop = NIL(bool:c) never fails {
+    Guard:a = take_2() ?! 9tbb32;
     discard(a.v);
     while (c) {
-        Guard:b = raw take_1();
+        Guard:b = take_1() ?! 9tbb32;
         discard(b.v);
     }
     pass NIL;
@@ -131,12 +131,12 @@ func:downward_inside_a_loop = NIL(bool:c) {
 
 // IN A `pick` ARM.
 // expect-error: NITPICK-LOCK-001
-func:downward_inside_a_pick_arm = NIL(int32:n) {
-    Guard:a = raw take_2();
+func:downward_inside_a_pick_arm = NIL(int32:n) never fails {
+    Guard:a = take_2() ?! 9tbb32;
     discard(a.v);
     pick (n) {
         (0i32) {
-            Guard:b = raw take_1();
+            Guard:b = take_1() ?! 9tbb32;
             discard(b.v);
         },
         (*) { }
@@ -147,13 +147,13 @@ func:downward_inside_a_pick_arm = NIL(int32:n) {
 // AFTER AN EARLY `pass`, which leaves before the acquisition below it — so the two
 // are never held together and this is NOT a violation. The case is here because an
 // analysis that treated an exit as ordinary flow would refuse it.
-func:early_exit_is_not_a_violation = NIL(bool:c) {
+func:early_exit_is_not_a_violation = NIL(bool:c) never fails {
     if (c) {
-        Guard:a = raw take_2();
+        Guard:a = take_2() ?! 9tbb32;
         discard(a.v);
         pass NIL;
     }
-    Guard:b = raw take_1();
+    Guard:b = take_1() ?! 9tbb32;
     discard(b.v);
     pass NIL;
 };

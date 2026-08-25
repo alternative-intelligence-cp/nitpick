@@ -25,12 +25,12 @@ struct:Point = {
 };
 
 func:a_point_has_all_six = NIL(Point:a, Point:b) {
-    bool:same = raw a.eq(b);
-    Ordering:o = raw a.cmp(b);
-    Ordering?:p = raw a.partial_cmp(b);
-    Point:c = raw a.clone();
-    string:s = raw a.to_string();
-    string:d = raw a.debug();
+    bool:same = a.eq(b) ?! 9tbb32;
+    Ordering:o = a.cmp(b) ?! 9tbb32;
+    Ordering?:p = a.partial_cmp(b) ?! 9tbb32;
+    Point:c = a.clone() ?! 9tbb32;
+    string:s = a.to_string() ?! 9tbb32;
+    string:d = a.debug() ?! 9tbb32;
     discard(same);
     discard(o);
     discard(p);
@@ -54,10 +54,10 @@ enum:Season = {
 };
 
 func:a_season_has_four = NIL(Season:a, Season:b) {
-    bool:same = raw a.eq(b);
-    Season:c = raw a.clone();
-    string:s = raw a.to_string();
-    string:d = raw a.debug();
+    bool:same = a.eq(b) ?! 9tbb32;
+    Season:c = a.clone() ?! 9tbb32;
+    string:s = a.to_string() ?! 9tbb32;
+    string:d = a.debug() ?! 9tbb32;
     discard(same);
     discard(c);
     discard(s);
@@ -70,7 +70,7 @@ func:a_season_has_four = NIL(Season:a, Season:b) {
 // `Ordering`, and the seven traits, are declared in `src/prelude/prelude.npk` and
 // bound into every module the way `use "prelude.npk".*` would bind them. Nothing
 // here imports anything.
-func:orders_by_hand = Ordering(int32:a, int32:b) {
+func:orders_by_hand = Ordering(int32:a, int32:b) never fails {
     if (a < b) { pass Ordering.Less; }
     if (a > b) { pass Ordering.Greater; }
     pass Ordering.Equal;
@@ -81,7 +81,7 @@ func:orders_by_hand = Ordering(int32:a, int32:b) {
 struct:Manual = { int32:v; };
 
 impl:Manual:Eq = {
-    pub func:eq = bool(Manual:self, Manual:other) { pass (self.v == other.v); };
+    pub func:eq = bool(Manual:self, Manual:other) never fails { pass (self.v == other.v); };
 };
 
 // `Self` IN RETURN POSITION, which did not work until 0.6.5. Every function returns
@@ -90,7 +90,7 @@ impl:Manual:Eq = {
 // one-level substitution could see it, and making every trait method returning
 // `Self` unmatchable.
 impl:Manual:Clone = {
-    pub func:clone = Manual(Manual:self) { pass self; };
+    pub func:clone = Manual(Manual:self) never fails { pass self; };
 };
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };

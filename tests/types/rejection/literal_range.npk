@@ -11,19 +11,19 @@
 // suffixed and contextual alike.
 
 // expect-error: NITPICK-TYPE-031
-func:suffixed_signed = NIL() {
+func:suffixed_signed = NIL() never fails {
     int8:a = 300i8;
     pass NIL;
 };
 
 // expect-error: NITPICK-TYPE-031
-func:suffixed_unsigned = NIL() {
+func:suffixed_unsigned = NIL() never fails {
     uint8:b = 999u8;
     pass NIL;
 };
 
 // expect-error: NITPICK-TYPE-031
-func:contextual = NIL() {
+func:contextual = NIL() never fails {
     // No suffix: the literal reads its type from the annotation (D-092) and
     // must fit the type it read.
     int8:c = 300;
@@ -31,7 +31,7 @@ func:contextual = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-031
-func:decimal_min_unspellable = NIL() {
+func:decimal_min_unspellable = NIL() never fails {
     // 128 is one past int8's positive bound. `-128i8` is `-(128i8)` — the
     // minus is an operator, not part of the literal — so int8's most negative
     // value has no decimal spelling: it is written in a balanced base or
@@ -42,7 +42,7 @@ func:decimal_min_unspellable = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-031
-func:tbb_err_slot = NIL() {
+func:tbb_err_slot = NIL() never fails {
     // tbb8 is symmetric: 127 is the top, -127 the bottom, and -128 is the ERR
     // sentinel (D-008 §1) — so magnitude 128 fits nowhere in the VALUE range.
     tbb8:t = 128tbb8;
@@ -50,14 +50,14 @@ func:tbb_err_slot = NIL() {
 };
 
 // expect-error: NITPICK-TYPE-031
-func:balanced_into_unsigned = NIL() {
+func:balanced_into_unsigned = NIL() never fails {
     // A balanced literal can be negative; an unsigned type cannot.
     uint8:u = 0anu8;
     pass NIL;
 };
 
 // expect-error: NITPICK-TYPE-031
-func:char32_surrogate = NIL() {
+func:char32_surrogate = NIL() never fails {
     // char32 is a Unicode scalar value: the surrogate block D800..DFFF is not
     // one at any width — validity, not just range.
     char32:s = 55296char32;

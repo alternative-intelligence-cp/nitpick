@@ -37,17 +37,17 @@ func:main = int32(cstring[]:_~argv) {
     // window is read.
     int32:i32t_r = raw tt_int(@types, 32i32, true);
     int32:f32t = raw tt_func_variadic(@types, i32t_r, 0i32, 0i32, false);
-    int32:nx = relay intern_add(@it, "x");
-    int32:ny = relay intern_add(@it, "y");
+    int32:nx = raw intern_add(@it, "x");
+    int32:ny = raw intern_add(@it, "y");
 
     // --- `main` IS BARE (D-089): no Result, and a fall-off still returns -------
     IrWriter:w1 = raw irw_to_buffer();
     FnEmitter:f1 = raw fnem_init(@w1, @c);
-    LlType:r1 = relay fnem_begin(@f1, "main", 0i32, i32t);
+    LlType:r1 = raw fnem_begin(@f1, "main", 0i32, i32t);
     if (!(raw ll_is_ok(r1)))                               { exit 10i32; }
     drop fnem_open(@f1);
     drop fnem_close(@f1, false);
-    if (!(raw string_eq(relay irw_text(@w1),
+    if (!(raw string_eq(raw irw_text(@w1),
         "define i32 @main() {\nentry:\n  ret i32 0\n}\n\n"))) { exit 11i32; }
 
     // --- AN ORDINARY FUNCTION IS WRAPPED: declares int32, returns {i32, i32} --
@@ -59,15 +59,15 @@ func:main = int32(cstring[]:_~argv) {
     // gets to decide.
     IrWriter:w2 = raw irw_to_buffer();
     FnEmitter:f2 = raw fnem_init(@w2, @c);
-    LlType:r2 = relay fnem_begin(@f2, "add", 0i32, i32t);
+    LlType:r2 = raw fnem_begin(@f2, "add", 0i32, i32t);
     if (!(raw ll_is_ok(r2)))                               { exit 20i32; }
     if (!(raw string_eq(r2.text, "{ i32, i32 }")))         { exit 21i32; }
-    drop fnem_param(@f2, nx, i32t);
-    drop fnem_param(@f2, ny, i32t);
+    discard(raw fnem_param(@f2, nx, i32t));
+    discard(raw fnem_param(@f2, ny, i32t));
     drop fnem_open(@f2);
     drop fnem_ret_pass(@f2, "7");
     drop fnem_close(@f2, true);
-    if (!(raw string_eq(relay irw_text(@w2),
+    if (!(raw string_eq(raw irw_text(@w2),
         "define { i32, i32 } @npk_add(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = insertvalue { i32, i32 } undef, i32 7, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 22i32; }
 
     // …and the parameter slots are real bindings: both resolve, to the right
@@ -82,21 +82,21 @@ func:main = int32(cstring[]:_~argv) {
     // --- `Result<NIL>` IS `{i32}`, AND ITS `pass` IS A CONSTANT (D-084) -------
     IrWriter:w3 = raw irw_to_buffer();
     FnEmitter:f3 = raw fnem_init(@w3, @c);
-    drop fnem_begin(@f3, "tick", 0i32, types.t_nil);
+    discard(raw fnem_begin(@f3, "tick", 0i32, types.t_nil));
     drop fnem_open(@f3);
     drop fnem_ret_pass(@f3, "");
     drop fnem_close(@f3, true);
-    if (!(raw string_eq(relay irw_text(@w3),
+    if (!(raw string_eq(raw irw_text(@w3),
         "define { i32 } @npk_tick() {\nentry:\n  ret { i32 } { i32 0 }\n}\n\n"))) { exit 30i32; }
 
     // `fail 9` into a Result<NIL>: one insertvalue, code in slot 0.
     IrWriter:w4 = raw irw_to_buffer();
     FnEmitter:f4 = raw fnem_init(@w4, @c);
-    drop fnem_begin(@f4, "halt", 0i32, types.t_nil);
+    discard(raw fnem_begin(@f4, "halt", 0i32, types.t_nil));
     drop fnem_open(@f4);
     drop fnem_ret_fail(@f4, "9");
     drop fnem_close(@f4, true);
-    if (!(raw string_eq(relay irw_text(@w4),
+    if (!(raw string_eq(raw irw_text(@w4),
         "define { i32 } @npk_halt() {\nentry:\n  %t0 = insertvalue { i32 } undef, i32 9, 0\n  ret { i32 } %t0\n}\n\n"))) { exit 31i32; }
 
     // --- A FAILED Result CARRIES A ZEROED VALUE, not leftover memory ----------
@@ -106,30 +106,30 @@ func:main = int32(cstring[]:_~argv) {
     // checking reads an empty string rather than whatever the stack held.
     IrWriter:w5 = raw irw_to_buffer();
     FnEmitter:f5 = raw fnem_init(@w5, @c);
-    drop fnem_begin(@f5, "read", 0i32, types.t_string);
+    discard(raw fnem_begin(@f5, "read", 0i32, types.t_string));
     drop fnem_open(@f5);
     drop fnem_ret_fail(@f5, "3");
     drop fnem_close(@f5, true);
-    if (!(raw string_eq(relay irw_text(@w5),
+    if (!(raw string_eq(raw irw_text(@w5),
         "define { { ptr, i64, i64 }, i32 } @npk_read() {\nentry:\n  %t0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } zeroinitializer, 0\n  %t1 = insertvalue { { ptr, i64, i64 }, i32 } %t0, i32 3, 1\n  ret { { ptr, i64, i64 }, i32 } %t1\n}\n\n"))) { exit 32i32; }
 
     // --- FALLING OFF THE END STILL TERMINATES, wrapped form -------------------
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
-    drop fnem_begin(@f6, "noop", 0i32, i32t);
+    discard(raw fnem_begin(@f6, "noop", 0i32, i32t));
     drop fnem_open(@f6);
     drop fnem_close(@f6, false);
-    if (!(raw string_eq(relay irw_text(@w6),
+    if (!(raw string_eq(raw irw_text(@w6),
         "define { i32, i32 } @npk_noop() {\nentry:\n  ret { i32, i32 } zeroinitializer\n}\n\n"))) { exit 33i32; }
 
     // --- SHADOWING: innermost wins, and the outer binding COMES BACK ----------
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
-    drop fnem_begin(@f7, "shade", 0i32, i32t);
+    discard(raw fnem_begin(@f7, "shade", 0i32, i32t));
     drop fnem_open(@f7);
-    string:outer = relay fnem_local(@f7, nx, i32t, "i32");
+    string:outer = raw fnem_local(@f7, nx, i32t, "i32");
     int32:mark = raw fnem_mark(@f7);
-    string:inner = relay fnem_local(@f7, nx, i64t, "i64");
+    string:inner = raw fnem_local(@f7, nx, i64t, "i64");
     LocalSlot:sh = raw fnem_lookup(@f7, nx);
     if (!(raw string_eq(sh.slot, inner)))                  { exit 40i32; }
     if (sh.type_id != i64t)                                { exit 41i32; }
@@ -144,11 +144,11 @@ func:main = int32(cstring[]:_~argv) {
     // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
     IrWriter:w8 = raw irw_to_buffer();
     FnEmitter:f8 = raw fnem_init(@w8, @c);
-    LlType:bad = relay fnem_begin(@f8, "f", 0i32, f32t);
+    LlType:bad = raw fnem_begin(@f8, "f", 0i32, f32t);
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
     if (!(raw string_eq(bad.rung, "1.1")))                 { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
-    LlType:badp = relay fnem_param(@f8, nx, f32t);
+    LlType:badp = raw fnem_param(@f8, nx, f32t);
     if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }
 
     // --- THE COUNTERS RESET PER FUNCTION: two functions, one writer -----------
@@ -157,28 +157,28 @@ func:main = int32(cstring[]:_~argv) {
     // one-function change a one-function diff in the fixpoint's output.
     IrWriter:w9 = raw irw_to_buffer();
     FnEmitter:f9 = raw fnem_init(@w9, @c);
-    drop fnem_begin(@f9, "main", 0i32, i32t);
+    discard(raw fnem_begin(@f9, "main", 0i32, i32t));
     drop fnem_open(@f9);
     drop fnem_close(@f9, false);
-    drop fnem_begin(@f9, "add", 0i32, i32t);
-    drop fnem_param(@f9, nx, i32t);
-    drop fnem_param(@f9, ny, i32t);
+    discard(raw fnem_begin(@f9, "add", 0i32, i32t));
+    discard(raw fnem_param(@f9, nx, i32t));
+    discard(raw fnem_param(@f9, ny, i32t));
     drop fnem_open(@f9);
     drop fnem_ret_pass(@f9, "7");
     drop fnem_close(@f9, true);
-    string:both = relay string_concat(relay irw_text(@w1), relay irw_text(@w2));
-    if (!(raw string_eq(relay irw_text(@w9), both)))       { exit 60i32; }
+    string:both = raw string_concat(raw irw_text(@w1), raw irw_text(@w2));
+    if (!(raw string_eq(raw irw_text(@w9), both)))       { exit 60i32; }
 
     // --- BYTE-IDENTICAL ON REPEAT (D-078) -------------------------------------
     IrWriter:wa = raw irw_to_buffer();
     FnEmitter:fa = raw fnem_init(@wa, @c);
-    drop fnem_begin(@fa, "add", 0i32, i32t);
-    drop fnem_param(@fa, nx, i32t);
-    drop fnem_param(@fa, ny, i32t);
+    discard(raw fnem_begin(@fa, "add", 0i32, i32t));
+    discard(raw fnem_param(@fa, nx, i32t));
+    discard(raw fnem_param(@fa, ny, i32t));
     drop fnem_open(@fa);
     drop fnem_ret_pass(@fa, "7");
     drop fnem_close(@fa, true);
-    if (!(raw string_eq(relay irw_text(@wa), relay irw_text(@w2)))) { exit 61i32; }
+    if (!(raw string_eq(raw irw_text(@wa), raw irw_text(@w2)))) { exit 61i32; }
 
     drop wild_release_all();
 

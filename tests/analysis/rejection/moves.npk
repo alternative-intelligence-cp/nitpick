@@ -17,7 +17,7 @@
 // and `buffer` is a keyword — so the example as printed does not compile. Worth
 // knowing before someone tries to paste it.
 // expect-error: NITPICK-MOVE-001
-func:d065_example = NIL() {
+func:d065_example = NIL() never fails {
     wild int8->:raw_mem = alloc(100i64);
     wild int8->:taken = move(raw_mem);
     drop dalloc(raw_mem);
@@ -31,7 +31,7 @@ func:d065_example = NIL() {
 // is NOT assigned; moved-on-some-path IS moved. Both are the conservative answer
 // and they point in different directions.
 // expect-error: NITPICK-MOVE-001
-func:moved_on_one_branch = NIL(bool:c) {
+func:moved_on_one_branch = NIL(bool:c) never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:q = NULL;
     if (c) { q = move(p); }
@@ -43,7 +43,7 @@ func:moved_on_one_branch = NIL(bool:c) {
 // A LOOP BODY THAT MOVES SOMETHING MOVES IT AGAIN ON THE SECOND ITERATION. What a
 // body ASSIGNS does not survive the loop; what it MOVES does.
 // expect-error: NITPICK-MOVE-001
-func:moved_in_a_loop = NIL(bool:c) {
+func:moved_in_a_loop = NIL(bool:c) never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:q = NULL;
     while (c) { q = move(p); }
@@ -54,7 +54,7 @@ func:moved_in_a_loop = NIL(bool:c) {
 // --- freeing is moving into the allocator -------------------------------------------
 
 // expect-error: NITPICK-MOVE-002
-func:double_free = NIL() {
+func:double_free = NIL() never fails {
     wild int8->:p = alloc(8i64);
     drop dalloc(p);
     drop dalloc(p);
@@ -62,7 +62,7 @@ func:double_free = NIL() {
 };
 
 // expect-error: NITPICK-MOVE-002
-func:use_after_free = NIL() {
+func:use_after_free = NIL() never fails {
     wild int8->:p = alloc(8i64);
     drop dalloc(p);
     p[0i64] = 1i8;
@@ -73,7 +73,7 @@ func:use_after_free = NIL() {
 // given and hands back a different one, so holding on to the old one is the same
 // dangling pointer by another route.
 // expect-error: NITPICK-MOVE-002
-func:use_after_ralloc = NIL() {
+func:use_after_ralloc = NIL() never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:bigger = ralloc(p, 16i64);
     drop dalloc(p);
@@ -91,7 +91,7 @@ func:use_after_ralloc = NIL() {
 // --- `nodrop` has to have a drop to suppress -----------------------------------------
 
 // expect-error: NITPICK-MOVE-003
-func:nodrop_on_managed = NIL() {
+func:nodrop_on_managed = NIL() never fails {
     nodrop int32:n = 1i32;
     discard(n);
     pass NIL;

@@ -433,8 +433,8 @@ pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
     // was written that way and exactly why it is not written that way now: a
     // formula that happens to agree is still a second place the rule lives.
     Lay:l = raw lay_start();
-    drop lay_field(@l, elem_size, elem_align);
-    drop lay_field(@l, elem_size, elem_align);
+    discard(raw lay_field(@l, elem_size, elem_align));
+    discard(raw lay_field(@l, elem_size, elem_align));
     drop lay_end(@l);
     pass (raw tt_intern(t, raw TY_RANGE(), elem, 0i32, 0i32, l.size, l.align, 0i32));
 };
@@ -445,8 +445,8 @@ pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
 pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
                              int32:inner_align) never fails {
     Lay:l = raw lay_start();
-    drop lay_field(@l, 1i64, 1i32);
-    drop lay_field(@l, inner_size, inner_align);
+    discard(raw lay_field(@l, 1i64, 1i32));
+    discard(raw lay_field(@l, inner_size, inner_align));
     drop lay_end(@l);
     pass (raw tt_intern(t, raw TY_OPTIONAL(), inner, 0i32, 0i32, l.size, l.align, 0i32));
 };
@@ -463,8 +463,8 @@ pub func:tt_result = int32(TypeTable->:t, int32:inner, int64:inner_size,
     // than four. `size(T) + 4` had neither, and was right only for a `T` that
     // needed neither.
     Lay:l = raw lay_start();
-    drop lay_field(@l, inner_size, inner_align);
-    drop lay_field(@l, 4i64, 4i32);
+    discard(raw lay_field(@l, inner_size, inner_align));
+    discard(raw lay_field(@l, 4i64, 4i32));
     drop lay_end(@l);
     pass (raw tt_intern(t, raw TY_RESULT(), inner, 0i32, 0i32, l.size, l.align, 0i32));
 };
@@ -721,7 +721,7 @@ pub func:typetable_init = TypeTable() never fails {
     // compiler: a type that failed to resolve is a value rather than an absence,
     // so one bad annotation produces one diagnostic instead of a cascade of
     // "cannot compare" from everything that touched it.
-    drop tt_intern(@t, raw TY_INVALID(), 0i32, 0i32, 0i32, 0i64, 0i32, 0i32);
+    discard(raw tt_intern(@t, raw TY_INVALID(), 0i32, 0i32, 0i32, 0i64, 0i32, 0i32));
 
     // NIL is ZERO-SIZED (D-084). It is the absence of a value, not a value that
     // happens to be empty, and giving it a byte would put it in structs.

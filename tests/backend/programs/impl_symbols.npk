@@ -25,7 +25,7 @@ trait:Speaks = { func:say = int32(Self:self); };
 trait:Greets = {
     func:tag = int32(Self:self);
     // Calls back into the impl. One typed body, one emission per implementor.
-    func:hello = int32(Self:self) { pass ((raw self.tag()) + 100i32); };
+    func:hello = int32(Self:self) { pass ((self.tag() ?! 9tbb32) + 100i32); };
 };
 
 struct:Dog = { int32:v; };
@@ -45,17 +45,17 @@ func:main = int32(cstring[]:_~argv) {
     Cat:c = Cat{ v: 0i32 };
 
     // 3 — the INHERENT one, which outranks the trait's.
-    if ((raw d.say()) != 3i32)     { exit 10i32; }
+    if ((d.say() ?! 9tbb32) != 3i32)     { exit 10i32; }
     // 2 — `Cat` has no inherent `say`, so the trait impl answers.
-    if ((raw c.say()) != 2i32)     { exit 11i32; }
+    if ((c.say() ?! 9tbb32) != 2i32)     { exit 11i32; }
 
     // The defaults, each reaching ITS OWN impl's `tag`.
-    if ((raw d.hello()) != 110i32) { exit 12i32; }
-    if ((raw c.hello()) != 120i32) { exit 13i32; }
+    if ((d.hello() ?! 9tbb32) != 110i32) { exit 12i32; }
+    if ((c.hello() ?! 9tbb32) != 120i32) { exit 13i32; }
 
     // And the overridden methods directly.
-    if ((raw d.tag()) != 10i32)    { exit 14i32; }
-    if ((raw c.tag()) != 20i32)    { exit 15i32; }
+    if ((d.tag() ?! 9tbb32) != 10i32)    { exit 14i32; }
+    if ((c.tag() ?! 9tbb32) != 20i32)    { exit 15i32; }
 
     exit 42i32;
 };

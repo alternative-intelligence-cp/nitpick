@@ -8,14 +8,14 @@ use "../../src/frontend/escapes.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/lexer.npk".*;
 
-func:kind_at = TokenKind(TokenList->:ts, int64:i) {
-    Token:t = relay tokenlist_at(ts, i);
+func:kind_at = TokenKind(TokenList->:ts, int64:i) never fails {
+    Token:t = raw tokenlist_at(ts, i);
     pass t.kind;
 };
 
-func:text_at = string(TokenList->:ts, InternTable->:it, int64:i) {
-    Token:t = relay tokenlist_at(ts, i);
-    pass (relay intern_get(it, t.payload => int32));
+func:text_at = string(TokenList->:ts, InternTable->:it, int64:i) never fails {
+    Token:t = raw tokenlist_at(ts, i);
+    pass (raw intern_get(it, t.payload => int32));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -99,19 +99,19 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- errors are reported -------------------------------------------------
     DiagList:de = raw diaglist_init();
-    drop lex_all(0i32, "\"never closed", @it, @de);
+    discard(raw lex_all(0i32, "\"never closed", @it, @de));
     if (raw diaglist_count(@de) == 0i64)                      { exit 70i32; }
 
     DiagList:de2 = raw diaglist_init();
-    drop lex_all(0i32, "\"line\nbreak\"", @it, @de2);
+    discard(raw lex_all(0i32, "\"line\nbreak\"", @it, @de2));
     if (raw diaglist_count(@de2) == 0i64)                     { exit 71i32; }
 
     DiagList:de3 = raw diaglist_init();
-    drop lex_all(0i32, "`unterminated", @it, @de3);
+    discard(raw lex_all(0i32, "`unterminated", @it, @de3));
     if (raw diaglist_count(@de3) == 0i64)                     { exit 72i32; }
 
     DiagList:de4 = raw diaglist_init();
-    drop lex_all(0i32, "\"\\q\"", @it, @de4);
+    discard(raw lex_all(0i32, "\"\\q\"", @it, @de4));
     if (raw diaglist_count(@de4) == 0i64)                     { exit 73i32; }
 
     drop wild_release_all();

@@ -41,17 +41,17 @@ enum:Slot = {
 };
 
 // A CALL ARGUMENT.
-func:speak = int32(dyn Speaks:s) { pass (raw s.say()); };
+func:speak = int32(dyn Speaks:s) { pass (s.say()) ?! 9tbb32; };
 
 // A METHOD-CALL ARGUMENT (parameter 1, behind the receiver).
 impl:Holder = {
     func:compare = int32(Holder:self, dyn Speaks:other) {
-        pass ((raw self.s.say()) + (raw other.say()));
+        pass ((self.s.say() ?! 9tbb32) + (other.say() ?! 9tbb32));
     };
 };
 
 // A `pass`.
-func:choose = dyn Speaks(bool:b, Dog:d, Cat:c) { if (b) { pass d; } pass c; };
+func:choose = dyn Speaks(bool:b, Dog:d, Cat:c) never fails { if (b) { pass d; } pass c; };
 
 // A `Result{…}` VALUE through the explicit `return`.
 func:boxed = dyn Speaks(Cat:c) { return Result{ value: c, error: 0tbb32 }; };
@@ -62,52 +62,52 @@ func:broken = dyn Speaks() { fail 3tbb32; };
 // A GENERIC FUNCTION with a `dyn` parameter: the specialization is matched by
 // the signature the checker recorded, not by the arguments' own types — a
 // `Cat` arriving where `dyn Speaks` is declared must still find `twice<int32>`.
-func:twice<T> = int32(T:_~tag, dyn Speaks:s) { pass ((raw s.say()) * 2i32); };
+func:twice<T> = int32(T:_~tag, dyn Speaks:s) { pass ((s.say() ?! 9tbb32) * 2i32); };
 
 func:main = int32(cstring[]:_~argv) {
     Dog:d = Dog{ v: 0i32 };
     Cat:c = Cat{ v: 0i32 };
 
     // call argument
-    if ((raw speak(d)) != 1i32) { exit 10i32; }
-    if ((raw speak(c)) != 5i32) { exit 11i32; }
+    if ((speak(d) ?! 9tbb32) != 1i32) { exit 10i32; }
+    if ((speak(c) ?! 9tbb32) != 5i32) { exit 11i32; }
 
     // pass
     dyn Speaks:p = raw choose(false, d, c);
-    if ((raw p.say()) != 5i32) { exit 12i32; }
+    if ((p.say() ?! 9tbb32) != 5i32) { exit 12i32; }
 
     // ASSIGNMENT into an existing dyn — the regression. `q` was built from
     // `d`; storing `c` raw left Dog's vtable word over Cat's bytes.
     dyn Speaks:q = d;
     q = c;
-    if ((raw q.say()) != 5i32) { exit 13i32; }
+    if ((q.say() ?! 9tbb32) != 5i32) { exit 13i32; }
     q = d;
-    if ((raw q.say()) != 1i32) { exit 14i32; }
+    if ((q.say() ?! 9tbb32) != 1i32) { exit 14i32; }
 
     // struct literal field, then field assignment
     Holder:h = Holder{ s: d, n: 0i32 };
-    if ((raw h.s.say()) != 1i32) { exit 15i32; }
+    if ((h.s.say() ?! 9tbb32) != 1i32) { exit 15i32; }
     h.s = c;
-    if ((raw h.s.say()) != 5i32) { exit 16i32; }
+    if ((h.s.say() ?! 9tbb32) != 5i32) { exit 16i32; }
 
     // method-call argument
-    if ((raw h.compare(d)) != 6i32) { exit 17i32; }
+    if ((h.compare(d) ?! 9tbb32) != 6i32) { exit 17i32; }
 
     // array literal elements (through a substituted field type), then an
     // index assignment
     Pair<dyn Speaks>:pr = Pair{ items: [d, c] };
-    if ((raw pr.items[0].say()) != 1i32) { exit 18i32; }
-    if ((raw pr.items[1].say()) != 5i32) { exit 19i32; }
+    if ((pr.items[0].say() ?! 9tbb32) != 1i32) { exit 18i32; }
+    if ((pr.items[1].say() ?! 9tbb32) != 5i32) { exit 19i32; }
     pr.items[0] = c;
-    if ((raw pr.items[0].say()) != 5i32) { exit 20i32; }
+    if ((pr.items[0].say() ?! 9tbb32) != 5i32) { exit 20i32; }
 
     // Result{…} value
-    dyn Speaks:b = raw boxed(c);
-    if ((raw b.say()) != 5i32) { exit 21i32; }
+    dyn Speaks:b = boxed(c) ?! 9tbb32;
+    if ((b.say() ?! 9tbb32) != 5i32) { exit 21i32; }
 
     // `?` default
     dyn Speaks:f = broken() ?| c;
-    if ((raw f.say()) != 5i32) { exit 22i32; }
+    if ((f.say() ?! 9tbb32) != 5i32) { exit 22i32; }
 
     // a pick arm's give
     int32:sel = 2i32;
@@ -115,17 +115,17 @@ func:main = int32(cstring[]:_~argv) {
         (1i32) { give d; },
         (*)    { give c; }
     };
-    if ((raw g.say()) != 5i32) { exit 23i32; }
+    if ((g.say() ?! 9tbb32) != 5i32) { exit 23i32; }
 
     // a variant's payload
     Slot:sl = Slot.Held(c);
     pick (sl) {
-        (Slot.Held(inner)) { if ((raw inner.say()) != 5i32) { exit 24i32; } },
+        (Slot.Held(inner)) { if ((inner.say() ?! 9tbb32) != 5i32) { exit 24i32; } },
         (Slot.Empty) { exit 25i32; }
     }
 
     // a generic function's dyn parameter
-    if ((raw twice::<int32>(0i32, c)) != 10i32) { exit 26i32; }
+    if ((twice::<int32>(0i32, c) ?! 9tbb32) != 10i32) { exit 26i32; }
 
     exit 42i32;
 };

@@ -176,3 +176,10 @@ pub func:TYPE_RESULT_DISCARDED = string() never fails { pass "NITPICK-TYPE-039";
 pub func:TYPE_DEFER_EXIT = string() never fails { pass "NITPICK-TYPE-040"; };
 // An impl method dropping the `never fails` its trait declares.
 pub func:TYPE_NEVER_FAILS_IMPL = string() never fails { pass "NITPICK-TYPE-041"; };
+// D-163 rules 3-4, the licence itself (flipped on at 1.1.2): `raw` demands a
+// call whose resolved callee declares `never fails`; `drop` additionally
+// demands the success type `NIL` (a value is not "dropped", it is DISCARDED —
+// `discard(raw f())` spells both claims). The spawn form is exempt: `drop` of
+// an un-awaited `async` call is D-058's spawn, whose error the D-062 join
+// delivers. One code; the message names the callee and the honest spellings.
+pub func:TYPE_RAW_UNLICENSED = string() never fails { pass "NITPICK-TYPE-042"; };

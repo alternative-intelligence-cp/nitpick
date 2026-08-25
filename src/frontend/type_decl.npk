@@ -207,10 +207,13 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) never
         pass 0i32;
     }
 
+    // THE SUCCESS TYPE, not the wrapped Result — the same 0.9.6 rule
+    // `fn_type` follows: a function type's return slot encodes what the
+    // annotation encodes, with `Result` implicit (D-069, D-114). Storing the
+    // wrapped type here made every extern call type as `Result<Result<T>>`
+    // to its unwrappers — found by 1.1.2's flip, whose `?!` handed back a
+    // still-wrapped `Result<int32>`.
     int32:success = raw resolve_type(r, ret_id, scope);
-    int32:wrapped = raw tt_result(r.types, success,
-                                  raw type_size(r.types, success),
-                                  raw type_align(r.types, success));
 
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
@@ -222,7 +225,7 @@ pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) never
         i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_func(r.types, wrapped, w.start, w.count, false));
+    pass (raw tt_func(r.types, success, w.start, w.count, false));
 };
 
 // `..*T[]` AND NOT `..*T`. The brackets are the type — `rest` is bound to a slice

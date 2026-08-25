@@ -11,7 +11,7 @@
 // POSITIVE: reaching failsafe means something failed, so returning 0 would be a
 // contradiction (D-014).
 
-func:risky = int32(int32:x) {
+func:risky = int32(int32:x) never fails {
     wild int8->:buf = alloc(16i64);
     defer { drop dalloc(buf); }        // must NOT run on the trap path below
 

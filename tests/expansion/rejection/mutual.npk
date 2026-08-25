@@ -8,12 +8,12 @@ mod:mutual;
 
 // expect-error: NITPICK-MACRO-004
 macro:ping = () {
-    func:from_ping = int32() { pass 1i32; };
+    func:from_ping = int32() never fails { pass 1i32; };
     #pong();
 };
 
 macro:pong = () {
-    func:from_pong = int32() { pass 2i32; };
+    func:from_pong = int32() never fails { pass 2i32; };
     #ping();
 };
 

@@ -45,17 +45,17 @@ struct:Ex = { Ast:ast; TypeTable:types; ExprTypes:ets; DiagList:diags; int64:par
 
 // A whole module, checked the way `tools/check.npk` checks one, with the
 // expression-type table carried through.
-func:ex = Ex(string:src, InternTable->:it) {
+func:ex = Ex(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
     Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@rs, mod_id, scope);
 
@@ -80,14 +80,14 @@ func:ex = Ex(string:src, InternTable->:it) {
     pass out;
 };
 
-func:errs = int64(Ex->:x) {
+func:errs = int64(Ex->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
 
 // HOW MANY EXPRESSIONS THE CHECKER LEFT UNRECORDED, skipping index 0 — which is
 // the reserved NONE node and is an absence rather than an expression.
-func:unrecorded = int32(Ex->:x) {
+func:unrecorded = int32(Ex->:x) never fails {
     int32:missing = 0i32;
     int32:i = 1i32;
     while (i < (raw ast_expr_count(@x.ast))) {
@@ -103,19 +103,19 @@ func:unrecorded = int32(Ex->:x) {
 // the classifier takes an `Ast` and not a checker.
 struct:Px = { Ast:ast; ExprId:id; };
 
-func:px = Px(string:src, InternTable->:it) {
+func:px = Px(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    ExprId:id = relay p_parse_expr(@p);
+    ExprId:id = raw p_parse_expr(@p);
     Px:out = Px{ ast: ast, id: id };
     pass out;
 };
 
-func:is_borrow = bool(Px->:x) {
-    pass (relay expr_is_borrow(@x.ast, x.id, raw BORROW_FUEL()));
+func:is_borrow = bool(Px->:x) never fails {
+    pass (raw expr_is_borrow(@x.ast, x.id, raw BORROW_FUEL()));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -165,7 +165,7 @@ func:main = int32(cstring[]:_~argv) {
     // arguments, an index, a member access, a cast. 0.4.4 found sixteen statement
     // kinds unvisited precisely because the tests put every case at the top level
     // of one body.
-    Ex:v2 = raw ex("struct:P = { int32:x; }; func:g = int32(int32:k) { pass k; }; func:f = NIL(P:p, int32:n, int32[]:a) { if (n > 0i32) { int32:b = raw g(p.x); } while (n < 3i32) { int32:c = a[1i64]; } int64:w = n => int64; pass NIL; };",
+    Ex:v2 = raw ex("struct:P = { int32:x; }; func:g = int32(int32:k) never fails { pass k; }; func:f = NIL(P:p, int32:n, int32[]:a) { if (n > 0i32) { int32:b = raw g(p.x); } while (n < 3i32) { int32:c = a[1i64]; } int64:w = n => int64; pass NIL; };",
                    @it);
     if (raw errs(@v2) != 0i64)                                  { exit 22i32; }
     if ((raw unrecorded(@v2)) != 0i32)                          { exit 23i32; }
@@ -209,7 +209,7 @@ func:main = int32(cstring[]:_~argv) {
     int32:i = 1i32;
     while (i < (raw ast_expr_count(@v4.ast))) {
         ExprId:id = ExprId{ index: i };
-        ExprNode:n = relay ast_expr(@v4.ast, id);
+        ExprNode:n = raw ast_expr(@v4.ast, id);
         if (n.kind == ExprKind.ExprBinaryExpr) {
             if ((raw exprtypes_get(@v4.ets, id)) == want) { found = true; }
         }
@@ -278,7 +278,7 @@ func:main = int32(cstring[]:_~argv) {
     // conservative answer is the wrong-looking one, which is exactly why it is
     // asserted: it reads like a bug until you know why.
     Px:d1 = raw px("a.b.c", @it);
-    if (!(relay expr_is_borrow(@d1.ast, d1.id, 1i32)))          { exit 43i32; }
+    if (!(raw expr_is_borrow(@d1.ast, d1.id, 1i32)))          { exit 43i32; }
 
     drop wild_release_all();
     pass 0i32;

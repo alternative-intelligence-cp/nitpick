@@ -64,9 +64,9 @@ func:list_get<T> = T?(List<T>->:l, int64:i) {
 // A generic struct built inside a generic body and RETURNED, at a type no
 // annotation in this program names (`List<int64>` appears only here).
 func:pair_of<T> = List<T>(T:a, T:b) {
-    List<T>:l = raw list_make::<T>(1i64);
-    drop list_push(@l, a);
-    drop list_push(@l, b);
+    List<T>:l = list_make::<T>(1i64) ?! 9tbb32;
+    list_push(@l, a) ?! 9tbb32;
+    list_push(@l, b) ?! 9tbb32;
     pass l;
 };
 
@@ -76,30 +76,30 @@ impl:<T>:List<T>:Sized = {
 };
 
 // A bound, so the family impl is reached through a parameter.
-func:total<S: Sized> = int64(S:s) { pass (raw s.size()); };
+func:total<S: Sized> = int64(S:s) { pass (s.size()) ?! 9tbb32; };
 
 func:main = int32(cstring[]:_~argv) {
-    List<int32>:li = raw list_make::<int32>(2i64);
-    drop list_push(@li, 10i32);
-    drop list_push(@li, 20i32);
-    drop list_push(@li, 12i32);               // grows past a capacity of 2
+    List<int32>:li = list_make::<int32>(2i64) ?! 9tbb32;
+    list_push(@li, 10i32) ?! 9tbb32;
+    list_push(@li, 20i32) ?! 9tbb32;
+    list_push(@li, 12i32) ?! 9tbb32;               // grows past a capacity of 2
     if (li.count != 3i64)                     { exit 10i32; }
     if (li.cap != 4i64)                       { exit 11i32; }
-    if ((raw list_at(@li, 2i64)) != 12i32)    { exit 12i32; }
+    if ((list_at(@li, 2i64) ?! 9tbb32) != 12i32)    { exit 12i32; }
 
     // the Optional accessor, present and absent
-    if ((raw list_get(@li, 1i64) ?? 0i32) != 20i32) { exit 13i32; }
-    int32?:none = raw list_get(@li, 7i64);
+    if ((list_get(@li, 1i64) ?! 9tbb32 ?? 0i32) != 20i32) { exit 13i32; }
+    int32?:none = list_get(@li, 7i64) ?! 9tbb32;
     if (none != NIL)                          { exit 14i32; }
 
     // a second element type in the same program, its instance named nowhere
     // but inside `pair_of<int64>`'s body
-    List<int64>:ll = raw pair_of(40i64, 2i64);
-    if ((raw list_at(@ll, 0i64)) + (raw list_at(@ll, 1i64)) != 42i64) { exit 15i32; }
+    List<int64>:ll = pair_of(40i64, 2i64) ?! 9tbb32;
+    if ((list_at(@ll, 0i64) ?! 9tbb32) + (list_at(@ll, 1i64) ?! 9tbb32) != 42i64) { exit 15i32; }
 
     // the family impl through a bound, at both instantiations
-    if ((raw total(li)) != 3i64)              { exit 16i32; }
-    if ((raw total(ll)) != 2i64)              { exit 17i32; }
+    if ((total(li) ?! 9tbb32) != 3i64)              { exit 16i32; }
+    if ((total(ll) ?! 9tbb32) != 2i64)              { exit 17i32; }
 
     // `list_at` out of range is an error the caller handles
     int32:guarded = list_at(@li, 9i64) ?| 42i32;

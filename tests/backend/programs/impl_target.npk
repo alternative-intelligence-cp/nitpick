@@ -23,7 +23,7 @@ trait:Doubled = { func:doubled = int32(Self:self); };
 
 // BLANKET: everything that is `Base` is `Doubled`, at twice its base value.
 impl:<T: Base>:T:Doubled = {
-    func:doubled = int32(T:self) { pass ((raw self.base()) * 2i32); };
+    func:doubled = int32(T:self) { pass ((self.base() ?! 9tbb32) * 2i32); };
 };
 
 struct:N = { int32:v; };
@@ -32,13 +32,13 @@ impl:N:Base = { func:base = int32(N:self) { pass self.v; }; };
 // INHERENT FAMILY, with a mutating method through a pointer receiver.
 struct:Box<T> = { T:v; };
 impl:<T>:Box<T> = {
-    func:set = NIL(Box<T>->:self, T:v) { self.v = v; pass NIL; };
-    func:get = T(Box<T>:self)          { pass self.v; };
+    func:set = NIL(Box<T>->:self, T:v) never fails { self.v = v; pass NIL; };
+    func:get = T(Box<T>:self) never fails          { pass self.v; };
 };
 
 func:main = int32(cstring[]:_~argv) {
     N:n = N{ v: 10i32 };
-    int32:d = raw n.doubled();          // 20, through the blanket
+    int32:d = n.doubled() ?! 9tbb32;          // 20, through the blanket
 
     Box<int32>:b = Box{ v: 5i32 };
     drop b.set(17i32);                  // the mutating inherent family method

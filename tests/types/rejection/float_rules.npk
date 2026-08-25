@@ -8,19 +8,19 @@
 // and double rounding is only provably innocuous to 15), and the storage-only
 // flt128 — no literals, no arithmetic, no comparison.
 
-func:long_literal = flt32() {
+func:long_literal = flt32() never fails {
     pass 1.0000000000000001f32;
 };
 
-func:wide_literal = flt128() {
+func:wide_literal = flt128() never fails {
     pass 1.0f128;
 };
 
-func:wide_arith = flt128(flt128:a, flt128:b) {
+func:wide_arith = flt128(flt128:a, flt128:b) never fails {
     pass (a + b);
 };
 
-func:wide_compare = bool(flt128:a, flt128:b) {
+func:wide_compare = bool(flt128:a, flt128:b) never fails {
     pass (a == b);
 };
 

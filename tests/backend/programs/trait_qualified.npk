@@ -17,8 +17,8 @@ impl:P:Tb = { func:name = int32(P:self) { pass 2i32; }; };
 
 func:main = int32(cstring[]:_~argv) {
     P:p = P{ v: 0i32 };
-    int32:a = raw Ta.name(p);          // 1, through Ta's impl
-    int32:b = raw Tb.name(p);          // 2, through Tb's impl
+    int32:a = Ta.name(p) ?! 9tbb32;          // 1, through Ta's impl
+    int32:b = Tb.name(p) ?! 9tbb32;          // 2, through Tb's impl
     exit a + b + 39i32;                // 42
 };
 

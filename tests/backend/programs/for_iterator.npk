@@ -13,7 +13,7 @@ struct:Counter = { int32:cur; int32:hi; };
 
 impl:Counter:Iterator = {
     assoc:Item = int32;
-    func:next = int32?(Counter->:self) {
+    func:next = int32?(Counter->:self) never fails {
         if (self.cur >= self.hi) { pass NIL; }
         int32:v = self.cur;
         self.cur = self.cur + 1i32;

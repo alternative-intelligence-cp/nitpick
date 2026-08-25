@@ -10,9 +10,9 @@ use "../../src/frontend/keywords.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/lexer.npk".*;
 
-func:one = Token(string:src, InternTable->:it, DiagList->:dg) {
+func:one = Token(string:src, InternTable->:it, DiagList->:dg) never fails {
     TokenList:ts = raw lex_all(0i32, src, it, dg);
-    pass (relay tokenlist_at(@ts, 0i64));
+    pass (raw tokenlist_at(@ts, 0i64));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -106,13 +106,13 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- errors are reported, not silently wrong ----------------------------
     DiagList:dg3 = raw diaglist_init();
-    drop lex_all(0i32, "9999bin", @it, @dg3);           // 9 is not a bit
+    discard(raw lex_all(0i32, "9999bin", @it, @dg3));           // 9 is not a bit
     if (raw diaglist_count(@dg3) == 0i64) { exit 60i32; }
 
     // Overflow is DETECTED rather than wrapped: wrapping would put a different
     // number in the program than the one written.
     DiagList:dg4 = raw diaglist_init();
-    drop lex_all(0i32, "99999999999999999999999i64", @it, @dg4);
+    discard(raw lex_all(0i32, "99999999999999999999999i64", @it, @dg4));
     if (raw diaglist_count(@dg4) == 0i64) { exit 61i32; }
 
     // The case the OLD guard let through: the FNV-1a basis 0CBF29CE484222325
@@ -120,14 +120,14 @@ func:main = int32(cstring[]:_~argv) {
     // silently. D-148's guard is exact per radix, so it is refused loudly --
     // whatever the suffix, because the ENVELOPE is what it does not fit.
     DiagList:dg6 = raw diaglist_init();
-    drop lex_all(0i32, "0CBF29CE484222325hexu64", @it, @dg6);
+    discard(raw lex_all(0i32, "0CBF29CE484222325hexu64", @it, @dg6));
     if (raw diaglist_count(@dg6) == 0i64) { exit 63i32; }
 
     // D-147 removed the legacy 0x prefix outright: `x` is not a decimal
     // digit, and a run that begins 0-9 was meant as a number, so this is an
     // ERROR (NITPICK-LEX-003), never an identifier rescue.
     DiagList:dg5 = raw diaglist_init();
-    drop lex_all(0i32, "0xFF", @it, @dg5);
+    discard(raw lex_all(0i32, "0xFF", @it, @dg5));
     if (raw diaglist_count(@dg5) == 0i64) { exit 62i32; }
 
     drop wild_release_all();

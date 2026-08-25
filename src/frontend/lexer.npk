@@ -124,7 +124,7 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
         uint8:c = raw lexer_peek(lx);
 
         if (raw is_space(c)) {
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
         } else {
             if (c == 47u8) {                            // '/'
                 uint8:d = raw lexer_peek2(lx);
@@ -134,15 +134,15 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
                         uint8:e = raw lexer_peek(lx);
                         if (e == 0u8)  { pass NIL; }
                         if (e == 10u8) { break; }
-                        drop lexer_advance(lx);
+                        discard(raw lexer_advance(lx));
                     }
                 } else {
                     if (d == 42u8) {                    // block comment
                         int64:start = lx.pos;
                         int32:sl = lx.line;
                         int32:sc = lx.col;
-                        drop lexer_advance(lx);
-                        drop lexer_advance(lx);
+                        discard(raw lexer_advance(lx));
+                        discard(raw lexer_advance(lx));
                         // Block comments do NOT nest (LEXICAL_REFERENCE §2).
                         // That is a decision to preserve, not a limitation to
                         // fix: nesting makes an unterminated comment swallow
@@ -158,12 +158,12 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) never fails {
                             }
                             if (e == 42u8) {
                                 if ((raw lexer_peek2(lx)) == 47u8) {
-                                    drop lexer_advance(lx);
-                                    drop lexer_advance(lx);
+                                    discard(raw lexer_advance(lx));
+                                    discard(raw lexer_advance(lx));
                                     break;
                                 }
                             }
-                            drop lexer_advance(lx);
+                            discard(raw lexer_advance(lx));
                         }
                     } else {
                         pass NIL;                       // a real '/' operator
@@ -213,8 +213,8 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         if (d == 126u8) { op = TokenKind.OpUnderTilde;   matched = true; }  // _~
         if (d == 94u8) { op = TokenKind.OpUnderCaret;    matched = true; }  // _^
         if (matched) {
-            drop lexer_advance(lx);
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
+            discard(raw lexer_advance(lx));
             pass (raw token_make(op,
                                  raw lexer_span_from(lx, start, line, col), 0i64));
         }
@@ -239,7 +239,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             if (t == 38u8) {                                // &
                 if ((raw lexer_peek2(lx)) == 123u8) { break; }   // &{
             }
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
         }
 
         if (lx.pos > tstart) {
@@ -251,14 +251,14 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
 
         uint8:t2 = raw lexer_peek(lx);
         if (t2 == 96u8) {
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
             lx.in_template = false;
             pass (raw token_make(TokenKind.TemplateEnd,
                                  raw lexer_span_from(lx, start, line, col), 0i64));
         }
         // &{ -- leave template mode; the expression is lexed normally.
-        drop lexer_advance(lx);
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
+        discard(raw lexer_advance(lx));
         lx.in_template = false;
         if (lx.interp_depth < 8i32) {
             lx.interp_brace[lx.interp_depth => int64] = lx.brace_depth;
@@ -272,26 +272,26 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     if (c == 125u8) {
         if (lx.interp_depth > 0i32) {
             if (lx.brace_depth == lx.interp_brace[(lx.interp_depth - 1i32) => int64]) {
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
                 lx.interp_depth = lx.interp_depth - 1i32;
                 lx.in_template = true;
                 pass (raw token_make(TokenKind.InterpEnd,
                                      raw lexer_span_from(lx, start, line, col), 0i64));
             }
         }
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         lx.brace_depth = lx.brace_depth - 1i32;
         pass (raw token_make(TokenKind.PRBrace,
                              raw lexer_span_from(lx, start, line, col), 0i64));
     }
     if (c == 123u8) {
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         lx.brace_depth = lx.brace_depth + 1i32;
         pass (raw token_make(TokenKind.PLBrace,
                              raw lexer_span_from(lx, start, line, col), 0i64));
     }
     if (c == 96u8) {
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         lx.in_template = true;
         pass (raw token_make(TokenKind.TemplateStart,
                              raw lexer_span_from(lx, start, line, col), 0i64));
@@ -302,8 +302,8 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     // followed by a string (D-024).
     if (c == 114u8) {
         if ((raw lexer_peek2(lx)) == 34u8) {
-            drop lexer_advance(lx);
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
+            discard(raw lexer_advance(lx));
             int64:rstart = lx.pos;
             while (true) {
                 uint8:q = raw lexer_peek(lx);
@@ -315,10 +315,10 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                     pass (raw token_make(TokenKind.Error, sp, 0i64));
                 }
                 if (q == 34u8) { break; }
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
             }
             string:body = raw slice_proven(lx.text, rstart, lx.pos);
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
             // No escape processing at all -- that is what "raw" means.
             pass (raw token_make(TokenKind.RawStringLit,
                       raw lexer_span_from(lx, start, line, col),
@@ -329,10 +329,10 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     if (c == 34u8) {
         bool:block = false;
         if ((raw lexer_peek2(lx)) == 34u8) {
-            drop lexer_advance(lx);
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
+            discard(raw lexer_advance(lx));
             if ((raw lexer_peek(lx)) == 34u8) {
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
                 block = true;
             } else {
                 // An empty plain string: the two quotes were the whole literal.
@@ -341,7 +341,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                           (raw intern_add(interns, "")) => int64));
             }
         } else {
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
         }
 
         int64:sstart = lx.pos;
@@ -372,16 +372,16 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 if (q == 34u8) { break; }
             }
             if (q == 92u8) {
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
             }
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
         }
 
         string:content = raw slice_proven(lx.text, sstart, lx.pos);
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         if (block) {
-            drop lexer_advance(lx);
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
+            discard(raw lexer_advance(lx));
         }
         Span:ssp = raw lexer_span_from(lx, start, line, col);
         DecodedString:dec = raw decode_string(content);
@@ -397,7 +397,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
 
     // --- characters ----------------------------------------------------------
     if (c == 39u8) {
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         int64:cp = 0i64;
         uint8:q = raw lexer_peek(lx);
         if (q == 92u8) {
@@ -412,7 +412,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             cp = e.codepoint;
             int64:k = 0i64;
             while (k < e.consumed) {
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
                 k = k + 1i64;
             }
         } else {
@@ -431,7 +431,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             cp = u.codepoint;
             int64:uk = 0i64;
             while (uk < u.consumed) {
-                drop lexer_advance(lx);
+                discard(raw lexer_advance(lx));
                 uk = uk + 1i64;
             }
         }
@@ -451,7 +451,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                     uint8:sk = raw lexer_peek(lx);
                     while (sk != 0u8) {
                         if (sk == 10u8) { sk = 0u8; } else {
-                            drop lexer_advance(lx);
+                            discard(raw lexer_advance(lx));
                             if (sk == 39u8) { sk = 0u8; } else { sk = raw lexer_peek(lx); }
                         }
                     }
@@ -461,7 +461,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 raw diag_error(raw LEX_UNTERMINATED_CHAR(), cmsg, sp));
             pass (raw token_make(TokenKind.Error, sp, 0i64));
         }
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
         pass (raw token_numeric(TokenKind.CharLit,
                   raw lexer_span_from(lx, start, line, col), cp,
                   NumWidth.WNone));
@@ -473,7 +473,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         // character decides; the run is still read whole, and numeric.npk
         // classifies it from the RIGHT (the base suffix).
         while (raw is_ident_part(raw lexer_peek(lx))) {
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
         }
 
         // A float needs a DIGIT after the dot. `0...4` is a range, not a
@@ -481,16 +481,16 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         if (raw is_digit(c)) {
             if ((raw lexer_peek(lx)) == 46u8) {
                 if (raw is_digit(raw lexer_peek2(lx))) {
-                    drop lexer_advance(lx);                    // the dot
+                    discard(raw lexer_advance(lx));                    // the dot
                     while (raw is_ident_part(raw lexer_peek(lx))) {
-                        drop lexer_advance(lx);
+                        discard(raw lexer_advance(lx));
                     }
                     // An exponent may carry a sign, which is not an ident part.
                     uint8:e = raw lexer_peek(lx);
                     if ((e == 43u8) || (e == 45u8)) {
-                        drop lexer_advance(lx);
+                        discard(raw lexer_advance(lx));
                         while (raw is_ident_part(raw lexer_peek(lx))) {
-                            drop lexer_advance(lx);
+                            discard(raw lexer_advance(lx));
                         }
                     }
                     string:ftext = raw slice_proven(lx.text, start, lx.pos);
@@ -549,7 +549,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     if (om.found) {
         int64:k = 0i64;
         while (k < om.length) {
-            drop lexer_advance(lx);
+            discard(raw lexer_advance(lx));
             k = k + 1i64;
         }
         pass (raw token_make(om.kind,
@@ -563,7 +563,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
     // time. A multi-byte UTF-8 character outside a literal is a single mistake
     // and should read as one, not as three; and a lexer that reports per byte
     // buries the real first error under its own noise.
-    drop lexer_advance(lx);
+    discard(raw lexer_advance(lx));
     while (true) {
         uint8:r = raw lexer_peek(lx);
         if (r == 0u8) { break; }
@@ -574,7 +574,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         if (rec.found) { break; }
         if (r == 34u8) { break; }
         if (r == 39u8) { break; }
-        drop lexer_advance(lx);
+        discard(raw lexer_advance(lx));
     }
     Span:sp = raw lexer_span_from(lx, start, line, col);
     drop diaglist_push(diags,

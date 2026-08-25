@@ -8,8 +8,8 @@ use "../../src/frontend/diag_codes.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/lexer.npk".*;
 
-func:code_at = string(DiagList->:dg, int64:i) {
-    Diagnostic:d = relay diaglist_at(dg, i);
+func:code_at = string(DiagList->:dg, int64:i) never fails {
+    Diagnostic:d = raw diaglist_at(dg, i);
     pass d.code;
 };
 
@@ -21,7 +21,7 @@ func:main = int32(cstring[]:_~argv) {
     // fixing a file becomes one compile per mistake. Recovery is what makes the
     // second and third errors visible at all.
     DiagList:d1 = raw diaglist_init();
-    drop lex_all(0i32, "9999bin 8888bin 7777bin", @it, @d1);
+    discard(raw lex_all(0i32, "9999bin 8888bin 7777bin", @it, @d1));
     if (raw diaglist_count(@d1) != 3i64)                      { exit 10i32; }
 
     // Recovery must also make PROGRESS past the error: the good token after the
@@ -39,37 +39,37 @@ func:main = int32(cstring[]:_~argv) {
     // diag_codes.npk, and a mistyped literal at a call site would silently
     // invent a new one.
     DiagList:d3 = raw diaglist_init();
-    drop lex_all(0i32, "9999bin", @it, @d3);
+    discard(raw lex_all(0i32, "9999bin", @it, @d3));
     if (!(raw string_eq(raw code_at(@d3, 0i64), raw LEX_BAD_DIGIT())))
                                                               { exit 20i32; }
 
     DiagList:d4 = raw diaglist_init();
-    drop lex_all(0i32, "\"unclosed", @it, @d4);
+    discard(raw lex_all(0i32, "\"unclosed", @it, @d4));
     if (!(raw string_eq(raw code_at(@d4, 0i64), raw LEX_UNTERMINATED_STRING())))
                                                               { exit 21i32; }
 
     DiagList:d5 = raw diaglist_init();
-    drop lex_all(0i32, "/* unclosed", @it, @d5);
+    discard(raw lex_all(0i32, "/* unclosed", @it, @d5));
     if (!(raw string_eq(raw code_at(@d5, 0i64), raw LEX_UNTERMINATED_COMMENT())))
                                                               { exit 22i32; }
 
     DiagList:d6 = raw diaglist_init();
-    drop lex_all(0i32, "\"\\q\"", @it, @d6);
+    discard(raw lex_all(0i32, "\"\\q\"", @it, @d6));
     if (!(raw string_eq(raw code_at(@d6, 0i64), raw LEX_BAD_ESCAPE())))
                                                               { exit 23i32; }
 
     DiagList:d7 = raw diaglist_init();
-    drop lex_all(0i32, "99999999999999999999999i64", @it, @d7);
+    discard(raw lex_all(0i32, "99999999999999999999999i64", @it, @d7));
     if (!(raw string_eq(raw code_at(@d7, 0i64), raw LEX_INT_TOO_LARGE())))
                                                               { exit 24i32; }
 
     DiagList:d8 = raw diaglist_init();
-    drop lex_all(0i32, "'ab", @it, @d8);
+    discard(raw lex_all(0i32, "'ab", @it, @d8));
     if (!(raw string_eq(raw code_at(@d8, 0i64), raw LEX_UNTERMINATED_CHAR())))
                                                               { exit 25i32; }
 
     DiagList:d9 = raw diaglist_init();
-    drop lex_all(0i32, "`unclosed", @it, @d9);
+    discard(raw lex_all(0i32, "`unclosed", @it, @d9));
     if (!(raw string_eq(raw code_at(@d9, 0i64), raw LEX_UNTERMINATED_TEMPLATE())))
                                                               { exit 26i32; }
 
@@ -88,7 +88,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- diagnostics carry an accurate location -----------------------------
     DiagList:db = raw diaglist_init();
-    drop lex_all(0i32, "pub\nmod\n9999bin", @it, @db);
+    discard(raw lex_all(0i32, "pub\nmod\n9999bin", @it, @db));
     Diagnostic:loc = raw diaglist_at(@db, 0i64);
     if (loc.span.line != 3i32)                                { exit 40i32; }
     if (loc.span.col != 1i32)                                 { exit 41i32; }

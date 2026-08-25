@@ -11,7 +11,7 @@ trait:Speaks = { func:say = int32(Self:self); };
 struct:Mute  = { int32:v; };
 
 // expect-error: NITPICK-TYPE-017
-func:cast_a_mute = NIL(cstring[]:_~argv) {
+func:cast_a_mute = NIL(cstring[]:_~argv) never fails {
     Mute:m = Mute{ v: 0i32 };
     dyn Speaks:s = m => dyn Speaks;
     pass NIL;

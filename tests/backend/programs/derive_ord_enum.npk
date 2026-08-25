@@ -15,9 +15,9 @@ func:main = int32(cstring[]:_~argv) {
     Level:m1 = Level.Mid;
     Level:m2 = Level.Mid;
     int32:acc = 0i32;
-    pick (raw lo.cmp(hi))  { (Ordering.Less)    { acc = acc + 20i32; }, (*) { } }
-    pick (raw hi.cmp(lo))  { (Ordering.Greater) { acc = acc + 20i32; }, (*) { } }
-    pick (raw m1.cmp(m2))  { (Ordering.Equal)   { acc = acc + 2i32; },  (*) { } }
+    pick (lo.cmp(hi) ?! 9tbb32)  { (Ordering.Less)    { acc = acc + 20i32; }, (*) { } }
+    pick (hi.cmp(lo) ?! 9tbb32)  { (Ordering.Greater) { acc = acc + 20i32; }, (*) { } }
+    pick (m1.cmp(m2) ?! 9tbb32)  { (Ordering.Equal)   { acc = acc + 2i32; },  (*) { } }
     exit acc;                                    // 20 + 20 + 2 = 42
 };
 

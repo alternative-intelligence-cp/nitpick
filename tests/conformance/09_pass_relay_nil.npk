@@ -1,4 +1,4 @@
-// Subset 1 — `pass (relay f(...))` where `f` returns Result<NIL>.
+// Subset 1 — `pass (raw f(...))` where `f` returns Result<NIL>.
 //
 // THE SHAPE THE SEED MISCOMPILED (0.8.5): a NIL-returning function whose whole
 // body is "call this and pass its verdict along". The seed's `pass` lowering
@@ -12,7 +12,7 @@
 
 struct:Box = { int32:v; };
 
-func:bump = NIL(Box->:b) {
+func:bump = NIL(Box->:b) never fails {
     b.v = b.v + 1i32;
     pass NIL;
 };
@@ -22,8 +22,8 @@ func:erring = NIL(Box->:b) {
     fail 5tbb32;
 };
 
-func:via = NIL(Box->:b) {
-    pass (relay bump(b));
+func:via = NIL(Box->:b) never fails {
+    pass (raw bump(b));
 };
 
 func:via_err = NIL(Box->:b) {

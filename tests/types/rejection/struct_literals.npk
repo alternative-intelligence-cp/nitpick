@@ -23,7 +23,7 @@ struct:Point = {
 // `zzz` is not a field. (`y` is missing too, and both are reported: fixing the name
 // does not make the literal complete, so telling the reader one at a time would
 // take two rounds.)
-func:names_a_field_that_is_not_there = NIL() {
+func:names_a_field_that_is_not_there = NIL() never fails {
     Point:p = Point{ x: 1i32, zzz: 3i32 };
     discard(p.x);
     pass NIL;
@@ -33,7 +33,7 @@ func:names_a_field_that_is_not_there = NIL() {
 // hold nothing — and an unassigned binding is what D-010's definite assignment
 // refuses everywhere else in the language. A struct literal was the one place a
 // value could come into existence without anybody choosing it.
-func:leaves_a_field_with_no_value = NIL() {
+func:leaves_a_field_with_no_value = NIL() never fails {
     Point:p = Point{ x: 1i32 };
     discard(p.x);
     pass NIL;
@@ -41,7 +41,7 @@ func:leaves_a_field_with_no_value = NIL() {
 
 // The same field twice. Taking the last silently discards the first, which is the
 // lost-value defect `Result{value: a, value: b}` already has its own code for.
-func:gives_one_field_twice = NIL() {
+func:gives_one_field_twice = NIL() never fails {
     Point:p = Point{ x: 1i32, x: 2i32, y: 3i32 };
     discard(p.x);
     pass NIL;
@@ -49,7 +49,7 @@ func:gives_one_field_twice = NIL() {
 
 // And the value is checked against the FIELD's type, which is the ordinary mismatch
 // and keeps the ordinary code.
-func:gives_a_field_the_wrong_type = NIL() {
+func:gives_a_field_the_wrong_type = NIL() never fails {
     Point:p = Point{ x: 1i32, y: true };
     discard(p.x);
     pass NIL;

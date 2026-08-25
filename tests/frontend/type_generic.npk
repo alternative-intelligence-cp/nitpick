@@ -50,17 +50,17 @@ struct:Gx = { TypeTable:types; DiagList:diags; int64:parse_errs; };
 // A whole module, checked the way a module is: declarations collected, names
 // resolved, impls and BOUNDS collected, then every function's body walked with
 // its own signature and its own generic parameters in hand.
-func:gx = Gx(string:src, InternTable->:it) {
+func:gx = Gx(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
     Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@rs, mod_id, scope);
 
@@ -87,14 +87,14 @@ func:gx = Gx(string:src, InternTable->:it) {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @fninsts, @ets);
 
-    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    DeclNode:mn = raw ast_decl(@ast, mod_id);
     int32:i = 0i32;
     while (i < (raw item_member_count(@ast, mn))) {
         DeclId:item = raw item_member(@ast, mn, i);
-        DeclNode:d = relay ast_decl(@ast, item);
+        DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             int32:name = d.payload => int32;
-            FnSig:sg = relay fn_signature(@tr, item, name, scope);
+            FnSig:sg = raw fn_signature(@tr, item, name, scope);
             e.fn_success = sg.success;
             e.fn_terminal = sg.terminal;
             IdSpan:gw = raw decl_generic_window(@ast, d);
@@ -119,11 +119,11 @@ func:gx = Gx(string:src, InternTable->:it) {
 
 // A NEGATIVE PARSE COUNT rather than a folded-in one: a fixture that reported a
 // parse error as a type error would make every count below mean two things.
-func:errs = int64(Gx->:x) {
+func:errs = int64(Gx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Gx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0 = string(Gx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 // EVERY ASSERTION BELOW IS ON A CODE, never on message text. Codes are stable
 // identifiers and messages are not (BUILD_REFERENCE 7.1), so wording stays free
@@ -145,7 +145,7 @@ func:main = int32(cstring[]:_~argv) {
     // it: a checker that refused every method call on a parameter would pass
     // every test below and be useless.
     Gx:v1 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };",
         @it);
     if (raw errs(@v1) != 0i64)                                  { exit 10i32; }
 
@@ -154,7 +154,7 @@ func:main = int32(cstring[]:_~argv) {
     // is decided WITHOUT AN INSTANTIATION. There is no call to `f` in this
     // program and there never needs to be.
     Gx:v2 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { drop x.render(); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(x.render() ?! 9tbb32); pass NIL; };",
         @it);
     if (raw errs(@v2) != 1i64)                                  { exit 11i32; }
     // ITS OWN CODE, not a mismatch. The message also names the bounds `T` does
@@ -166,7 +166,7 @@ func:main = int32(cstring[]:_~argv) {
     // AN UNBOUNDED PARAMETER CAN DO NOTHING AT ALL. `<T>` with no bounds is a
     // type that satisfies nothing, so every method call on it is refused; the
     // message says so rather than listing an empty bound set.
-    Gx:v3 = raw gx("func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };", @it);
+    Gx:v3 = raw gx("func:f<T> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };", @it);
     if (raw errs(@v3) != 1i64)                                  { exit 14i32; }
     if (!(raw string_eq(raw code0(@v3), raw TYPE_NO_METHOD())))  { exit 15i32; }
 
@@ -181,7 +181,7 @@ func:main = int32(cstring[]:_~argv) {
     // break at an instantiation with a type that has no `show`, reported against
     // a caller who supplied a perfectly reasonable type.
     Gx:v4 = raw gx(
-        "struct:Point = { flt64:x; }; func:show = string(Point:p) { pass \"p\"; }; func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };",
+        "struct:Point = { flt64:x; }; func:show = string(Point:p) never fails { pass \"p\"; }; func:f<T> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; };",
         @it);
     if (raw errs(@v4) != 1i64)                                  { exit 16i32; }
     // AND IT IS THE RIGHT ERROR. Without the guard the free function IS found
@@ -195,7 +195,7 @@ func:main = int32(cstring[]:_~argv) {
     // makes the case above a rule about parameters rather than a regression in
     // UFCS.
     Gx:v5 = raw gx(
-        "struct:Point = { flt64:x; }; func:show = string(Point:p) { pass \"p\"; }; func:g = NIL(Point:p) { drop p.show(); pass NIL; };",
+        "struct:Point = { flt64:x; }; func:show = string(Point:p) never fails { pass \"p\"; }; func:g = NIL(Point:p) never fails { discard(raw p.show()); pass NIL; };",
         @it);
     if (raw errs(@v5) != 0i64)                                  { exit 17i32; }
 
@@ -206,7 +206,7 @@ func:main = int32(cstring[]:_~argv) {
     // stored bound window is the TRANSITIVE CLOSURE, which is what makes this a
     // window scan rather than a second graph walk at every call.
     Gx:v6 = raw gx(
-        "trait:Eq = { func:same = bool(Self:self, Self:other); }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other); }; func:f<T: Ord> = NIL(T:a, T:b) { drop a.same(b); drop a.cmp(b); pass NIL; };",
+        "trait:Eq = { func:same = bool(Self:self, Self:other) never fails; }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other) never fails; }; func:f<T: Ord> = NIL(T:a, T:b) never fails { discard(raw a.same(b)); discard(raw a.cmp(b)); pass NIL; };",
         @it);
     if (raw errs(@v6) != 0i64)                                  { exit 18i32; }
 
@@ -216,7 +216,7 @@ func:main = int32(cstring[]:_~argv) {
     // "from both `Eq` and `Eq`" — a perfectly correct program, refused, with a
     // message naming one trait twice.
     Gx:v7 = raw gx(
-        "trait:Eq = { func:same = bool(Self:self, Self:other); }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other); }; func:f<T: Eq & Ord> = NIL(T:a, T:b) { drop a.same(b); pass NIL; };",
+        "trait:Eq = { func:same = bool(Self:self, Self:other) never fails; }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other) never fails; }; func:f<T: Eq & Ord> = NIL(T:a, T:b) never fails { discard(raw a.same(b)); pass NIL; };",
         @it);
     if (raw errs(@v7) != 0i64)                                  { exit 19i32; }
 
@@ -225,9 +225,10 @@ func:main = int32(cstring[]:_~argv) {
     // answer D-102 gives for two traits on a concrete type, reached through a
     // different table.
     Gx:v8 = raw gx(
-        "trait:Ta = { func:tag = int32(Self:self); }; trait:Tb = { func:tag = int32(Self:self); }; func:f<T: Ta & Tb> = NIL(T:x) { drop x.tag(); pass NIL; };",
+        "trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; func:f<T: Ta & Tb> = NIL(T:x) never fails { discard(raw x.tag()); pass NIL; };",
         @it);
-    if (raw errs(@v8) != 1i64)                                  { exit 20i32; }
+    // two since the flip: ambiguous, and the unresolvable callee is unlicensed.
+    if (raw errs(@v8) != 2i64)                                  { exit 20i32; }
     // AMBIGUITY IS NOT A MISMATCH. The program is well-formed and the compiler
     // declines to choose, which is a different finding with a different fix —
     // call the one you mean by its function form.
@@ -240,7 +241,7 @@ func:main = int32(cstring[]:_~argv) {
     // `Point`, which is what writing `Point` does, or subtyping, which the
     // language does not have.
     Gx:v9 = raw gx(
-        "struct:Point = { flt64:x; }; func:f<T: Point> = NIL(T:x) { pass NIL; };",
+        "struct:Point = { flt64:x; }; func:f<T: Point> = NIL(T:x) never fails { pass NIL; };",
         @it);
     if (raw errs(@v9) != 1i64)                                  { exit 23i32; }
     if (!(raw string_eq(raw code0(@v9), raw TYPE_NOT_A_TRAIT()))) { exit 24i32; }
@@ -252,7 +253,7 @@ func:main = int32(cstring[]:_~argv) {
     // which is what lets it work here at all: the walk holds the module scope,
     // and `T` was never declared into it.
     Gx:v10 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { T:y = x; drop y.show(); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { T:y = x; discard(raw y.show()); pass NIL; };",
         @it);
     if (raw errs(@v10) != 0i64)                                 { exit 25i32; }
 
@@ -260,7 +261,7 @@ func:main = int32(cstring[]:_~argv) {
     // distinct opaque types even when both are bounded identically, so assigning
     // one to the other is the mismatch it looks like.
     Gx:v11 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable, U: Printable> = NIL(T:x, U:y) { T:z = y; pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable, U: Printable> = NIL(T:x, U:y) never fails { T:z = y; pass NIL; };",
         @it);
     if (raw errs(@v11) != 1i64)                                 { exit 26i32; }
     if (!(raw string_eq(raw code0(@v11), raw TYPE_MISMATCH())))  { exit 27i32; }
@@ -272,7 +273,7 @@ func:main = int32(cstring[]:_~argv) {
     // where a type belongs it is refused by name — becoming an opaque type would
     // push the mistake somewhere further along with a worse message.
     Gx:v12 = raw gx(
-        "func:f<comptime int32:LEVEL> = LEVEL() { pass 1i32; };", @it);
+        "func:f<comptime int32:LEVEL> = LEVEL() never fails { pass 1i32; };", @it);
     if (raw errs(@v12) != 1i64)                                 { exit 28i32; }
     if (!(raw string_eq(raw code0(@v12), raw TYPE_NOT_A_TYPE()))) { exit 29i32; }
 
@@ -282,7 +283,7 @@ func:main = int32(cstring[]:_~argv) {
     // parameter is asked FIRST rather than after a scope lookup that would find
     // the struct and silently type the body against it.
     Gx:v13 = raw gx(
-        "struct:T = { int32:v; }; func:f<T> = NIL(T:x) { int32:q = x.v; pass NIL; };",
+        "struct:T = { int32:v; }; func:f<T> = NIL(T:x) never fails { int32:q = x.v; pass NIL; };",
         @it);
     if (raw errs(@v13) != 1i64)                                 { exit 30i32; }
 
@@ -293,7 +294,7 @@ func:main = int32(cstring[]:_~argv) {
     // declaration: `Container<int32>` and `Container<string>` were one type, and
     // a field of type `T` had nothing to substitute.
     Gx:i1 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) { int32:v = c.value; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) never fails { int32:v = c.value; pass NIL; };",
         @it);
     if (raw errs(@i1) != 0i64)                                  { exit 40i32; }
 
@@ -301,13 +302,13 @@ func:main = int32(cstring[]:_~argv) {
     // `c.value` is an `int32` HERE and a `string` in the next case, from one
     // `T:value` written once.
     Gx:i2 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) { string:v = c.value; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) never fails { string:v = c.value; pass NIL; };",
         @it);
     if (raw errs(@i2) != 1i64)                                  { exit 41i32; }
     if (!(raw string_eq(raw code0(@i2), raw TYPE_MISMATCH())))   { exit 42i32; }
 
     Gx:i3 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) { string:v = c.value; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) never fails { string:v = c.value; pass NIL; };",
         @it);
     if (raw errs(@i3) != 0i64)                                  { exit 43i32; }
 
@@ -317,14 +318,14 @@ func:main = int32(cstring[]:_~argv) {
     // compiler, so the two would silently differ in every comparison downstream.
     // The mangled name is the identity, and this is what says so.
     Gx:i4 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) { Container<int32>:b = a; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) never fails { Container<int32>:b = a; pass NIL; };",
         @it);
     if (raw errs(@i4) != 0i64)                                  { exit 44i32; }
 
     // …and two DIFFERENT instantiations are two types, which is the other half of
     // the same statement.
     Gx:i5 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) { Container<string>:b = a; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) never fails { Container<string>:b = a; pass NIL; };",
         @it);
     if (raw errs(@i5) != 1i64)                                  { exit 45i32; }
 
@@ -335,13 +336,13 @@ func:main = int32(cstring[]:_~argv) {
     // because making the reader go and count the parameters is the one thing the
     // compiler already did.
     Gx:a1 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container:c) { int32:v = c.value; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container:c) never fails { int32:v = c.value; pass NIL; };",
         @it);
     if (raw errs(@a1) != 1i64)                                  { exit 46i32; }
     if (!(raw string_eq(raw code0(@a1), raw TYPE_GENERIC_ARITY()))) { exit 47i32; }
 
     Gx:a2 = raw gx(
-        "struct:Point = { int32:x; }; func:f = NIL(Point<int32>:p) { int32:v = p.x; pass NIL; };",
+        "struct:Point = { int32:x; }; func:f = NIL(Point<int32>:p) never fails { int32:v = p.x; pass NIL; };",
         @it);
     if (raw errs(@a2) != 1i64)                                  { exit 48i32; }
     if (!(raw string_eq(raw code0(@a2), raw TYPE_GENERIC_ARITY()))) { exit 49i32; }
@@ -352,7 +353,7 @@ func:main = int32(cstring[]:_~argv) {
     // and instantiation checks only that the arguments satisfy them. `Point` with
     // no `Printable` impl is exactly what the bound exists to refuse.
     Gx:b1 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; func:f = NIL() never fails { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@b1) != 1i64)                                  { exit 50i32; }
     // The message names three things — the argument, the bound it fails, and the
@@ -363,7 +364,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and with the impl present it is accepted. Without this the case above
     // would pass against a checker that refused every instantiation.
     Gx:b2 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) { pass \"p\"; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) never fails { pass \"p\"; }; }; func:f = NIL() never fails { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@b2) != 0i64)                                  { exit 55i32; }
 
@@ -372,7 +373,7 @@ func:main = int32(cstring[]:_~argv) {
     // that does not exist yet, so the impl table holds nothing about it, and
     // everything known about it is its bound list.
     Gx:b3 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; func:f<U: Printable> = NIL() { Box<U>:b; pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Box<T: Printable> = { T:value; }; func:f<U: Printable> = NIL() never fails { Box<U>:b; pass NIL; };",
         @it);
     if (raw errs(@b3) != 0i64)                                  { exit 56i32; }
 
@@ -380,7 +381,7 @@ func:main = int32(cstring[]:_~argv) {
     // read the other way. Nothing is known about `U`, so nothing entitles it to
     // stand where `Printable` was required.
     Gx:b4 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; func:f<U> = NIL() { Box<U>:b; pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Box<T: Printable> = { T:value; }; func:f<U> = NIL() never fails { Box<U>:b; pass NIL; };",
         @it);
     if (raw errs(@b4) != 1i64)                                  { exit 57i32; }
 
@@ -393,13 +394,13 @@ func:main = int32(cstring[]:_~argv) {
     // Exceeding the cap is an ERROR, never a silent truncation — a type resolved
     // to a different depth than the one written is a different type, and nothing
     // downstream would know.
-    Gx:d1 = raw gx(relay nested_generic(65i32), @it);
+    Gx:d1 = raw gx(raw nested_generic(65i32), @it);
     if (raw errs(@d1) != 1i64)                                  { exit 58i32; }
     if (!(raw string_eq(raw code0(@d1), raw TYPE_GENERIC_DEPTH()))) { exit 59i32; }
 
     // …and one level inside the cap resolves, so the number is the boundary
     // rather than a shape the checker cannot handle at all.
-    Gx:d2 = raw gx(relay nested_generic(64i32), @it);
+    Gx:d2 = raw gx(raw nested_generic(64i32), @it);
     if (raw errs(@d2) != 0i64)                                  { exit 60i32; }
 
     // --- `comptime` VALUE PARAMETERS (D-064 section 2) ----------------------
@@ -409,14 +410,14 @@ func:main = int32(cstring[]:_~argv) {
     // D-056's lock levels are built on answered "expected a type". It was also
     // absent from `whole_grammar.npk`, which is why nothing caught that.
     Gx:c1 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2i32>:m; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2i32>:m; pass NIL; };",
         @it);
     if (raw errs(@c1) != 0i64)                                  { exit 61i32; }
 
     // AN UNSUFFIXED LITERAL TAKES THE PARAMETER'S TYPE, which is D-092's context
     // rule applied to the one context a generic argument has.
     Gx:c2 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2>:m; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2>:m; pass NIL; };",
         @it);
     if (raw errs(@c2) != 0i64)                                  { exit 62i32; }
 
@@ -424,7 +425,7 @@ func:main = int32(cstring[]:_~argv) {
     // int32:LEVEL` is a mismatch somebody wrote, not a width to be adjusted —
     // there is no implicit widening anywhere else either.
     Gx:c3 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2i64>:m; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, 2i64>:m; pass NIL; };",
         @it);
     if (raw errs(@c3) != 1i64)                                  { exit 63i32; }
     if (!(raw string_eq(raw code0(@c3), raw TYPE_MISMATCH())))   { exit 64i32; }
@@ -433,26 +434,26 @@ func:main = int32(cstring[]:_~argv) {
     // value argument is interned like one: `Mutex<T, 2>` and `Mutex<T, 3>` are
     // different lock levels, and D-056 exists to keep them apart.
     Gx:c4 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) { Lock<Point, 3i32>:b = a; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) never fails { Lock<Point, 3i32>:b = a; pass NIL; };",
         @it);
     if (raw errs(@c4) != 1i64)                                  { exit 65i32; }
 
     // …and the same value twice is one type, which is the other half.
     Gx:c5 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) { Lock<Point, 2i32>:b = a; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) never fails { Lock<Point, 2i32>:b = a; pass NIL; };",
         @it);
     if (raw errs(@c5) != 0i64)                                  { exit 66i32; }
 
     // THE WRONG KIND OF ARGUMENT SAYS WHICH KIND WAS WANTED. "there is no type
     // named `2`" would be true and useless; the mistake is about the position.
     Gx:c6 = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, int32>:m; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, int32>:m; pass NIL; };",
         @it);
     if (raw errs(@c6) != 1i64)                                  { exit 67i32; }
     if (!(raw string_eq(raw code0(@c6), raw TYPE_GENERIC_KIND()))) { exit 68i32; }
 
     Gx:c7 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL() { Container<2i32>:c; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL() never fails { Container<2i32>:c; pass NIL; };",
         @it);
     if (raw errs(@c7) != 1i64)                                  { exit 69i32; }
     if (!(raw string_eq(raw code0(@c7), raw TYPE_GENERIC_KIND()))) { exit 70i32; }
@@ -462,7 +463,7 @@ func:main = int32(cstring[]:_~argv) {
     // literal and nothing else, and `(COUNT)` was refused BY NAME rather than
     // silently taking a wrong value.
     Gx:c8 = raw gx(
-        "pub const int32:COUNT = 4i32; struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, (COUNT)>:m; pass NIL; };",
+        "pub const int32:COUNT = 4i32; struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { Lock<Point, (COUNT)>:m; pass NIL; };",
         @it);
     if (raw errs(@c8) != 0i64)                                  { exit 71i32; }
 
@@ -474,7 +475,7 @@ func:main = int32(cstring[]:_~argv) {
     // THE SAME CODE AN ARRAY SIZE GETS, because it is the same rule and the same
     // evaluator answers it. Two codes would make one rule look like a coincidence.
     Gx:c8b = raw gx(
-        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { int32:n = 4i32; Lock<Point, (n)>:m; pass NIL; };",
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() never fails { int32:n = 4i32; Lock<Point, (n)>:m; pass NIL; };",
         @it);
     if (raw errs(@c8b) != 1i64)                                 { exit 72i32; }
     if (!(raw string_eq(raw code0(@c8b), raw TYPE_NOT_CONSTANT()))) { exit 75i32; }
@@ -483,13 +484,13 @@ func:main = int32(cstring[]:_~argv) {
     // declared with. That is the entire content of `comptime int32:LEVEL`, and it
     // is why a value parameter carries a type where a type parameter carries
     // bounds.
-    Gx:c9 = raw gx("func:f<comptime int32:LEVEL> = int32() { pass LEVEL; };", @it);
+    Gx:c9 = raw gx("func:f<comptime int32:LEVEL> = int32() never fails { pass LEVEL; };", @it);
     if (raw errs(@c9) != 0i64)                                  { exit 73i32; }
 
     // …and it is not interchangeable with the type it holds: `LEVEL` is an
     // `int32` value, so a mismatched declaration is a mismatch.
     Gx:c10 = raw gx(
-        "func:f<comptime int32:LEVEL> = NIL() { string:s = LEVEL; pass NIL; };", @it);
+        "func:f<comptime int32:LEVEL> = NIL() never fails { string:s = LEVEL; pass NIL; };", @it);
     if (raw errs(@c10) != 1i64)                                 { exit 74i32; }
 
     // --- THE CALL SITE: INFERENCE AND THE TURBOFISH (3.3, D-064 section 3) ---
@@ -500,14 +501,14 @@ func:main = int32(cstring[]:_~argv) {
     // type it was called with. Both halves show up as an assignment: the return
     // type is what the local is checked against.
     Gx:g1 = raw gx(
-        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) { pass c.value; }; func:f = NIL(Container<int32>:c) { int32:v = raw extract(c); pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) never fails { pass c.value; }; func:f = NIL(Container<int32>:c) never fails { int32:v = raw extract(c); pass NIL; };",
         @it);
     if (raw errs(@g1) != 0i64)                                  { exit 80i32; }
 
     // …and the inferred type is the ARGUMENT's, not merely something that
     // typechecks. `Container<string>` gives `string`, from the same declaration.
     Gx:g2 = raw gx(
-        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) { pass c.value; }; func:f = NIL(Container<string>:c) { int32:v = raw extract(c); pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) never fails { pass c.value; }; func:f = NIL(Container<string>:c) never fails { int32:v = raw extract(c); pass NIL; };",
         @it);
     if (raw errs(@g2) != 1i64)                                  { exit 81i32; }
     if (!(raw string_eq(raw code0(@g2), raw TYPE_MISMATCH())))   { exit 82i32; }
@@ -515,7 +516,7 @@ func:main = int32(cstring[]:_~argv) {
     // THE TURBOFISH IS THE ONLY EXPRESSION-POSITION FORM (D-064). What it
     // supplies is not inferred, so it decides even where inference could have.
     Gx:g3 = raw gx(
-        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL(int32:n) { int32:v = raw identity::<int32>(n); pass NIL; };",
+        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32>(n); pass NIL; };",
         @it);
     if (raw errs(@g3) != 0i64)                                  { exit 83i32; }
 
@@ -523,7 +524,7 @@ func:main = int32(cstring[]:_~argv) {
     // FROM the parameter it fills — so it cannot also supply it. The honest
     // message is that `T` could not be inferred, and the fix is the turbofish.
     Gx:g4 = raw gx(
-        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL() { int32:v = raw identity(5); pass NIL; };",
+        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL() never fails { int32:v = raw identity(5); pass NIL; };",
         @it);
     if (raw errs(@g4) != 1i64)                                  { exit 84i32; }
     if (!(raw string_eq(raw code0(@g4), raw TYPE_CANNOT_INFER()))) { exit 85i32; }
@@ -531,7 +532,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and with the turbofish the same call is fine, which is what makes the
     // case above an inference limit rather than a refusal of literals.
     Gx:g5 = raw gx(
-        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL() { int32:v = raw identity::<int32>(5); pass NIL; };",
+        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL() never fails { int32:v = raw identity::<int32>(5); pass NIL; };",
         @it);
     if (raw errs(@g5) != 0i64)                                  { exit 86i32; }
 
@@ -539,13 +540,13 @@ func:main = int32(cstring[]:_~argv) {
     // same function, that an annotation gets. A call and an annotation refusing
     // the same thing for different reasons would be two rules.
     Gx:g6 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Point = { int32:x; }; func:render<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; }; func:f = NIL(Point:p) { drop render(p); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
         @it);
     if (raw errs(@g6) != 1i64)                                  { exit 87i32; }
     if (!(raw string_eq(raw code0(@g6), raw TYPE_BOUND_UNMET()))) { exit 88i32; }
 
     Gx:g7 = raw gx(
-        "trait:Printable = { func:show = string(Self:self); }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) { pass \"p\"; }; }; func:render<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; }; func:f = NIL(Point:p) { drop render(p); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) never fails { pass \"p\"; }; }; func:render<T: Printable> = NIL(T:x) never fails { discard(x.show() ?! 9tbb32); pass NIL; }; func:f = NIL(Point:p) never fails { drop render(p); pass NIL; };",
         @it);
     if (raw errs(@g7) != 0i64)                                  { exit 89i32; }
 
@@ -554,7 +555,7 @@ func:main = int32(cstring[]:_~argv) {
     // a bare one does. A rule that only matched bare parameters would make the
     // shape of the signature decide whether inference works.
     Gx:g8 = raw gx(
-        "struct:Point = { int32:x; }; func:first<T> = T(T[]:xs) { pass xs[0i64]; }; func:f = NIL(Point[]:ps) { Point:p = raw first(ps); pass NIL; };",
+        "struct:Point = { int32:x; }; func:first<T> = T(T[]:xs) never fails { pass xs[0i64]; }; func:f = NIL(Point[]:ps) never fails { Point:p = raw first(ps); pass NIL; };",
         @it);
     if (raw errs(@g8) != 0i64)                                  { exit 90i32; }
 
@@ -562,7 +563,7 @@ func:main = int32(cstring[]:_~argv) {
     // ignored — the window was stepped over — so `plain::<int32>(n)` checked as
     // `plain(n)` and the turbofish meant nothing at all.
     Gx:g9 = raw gx(
-        "func:plain = int32(int32:n) { pass n; }; func:f = NIL(int32:n) { int32:v = raw plain::<int32>(n); pass NIL; };",
+        "func:plain = int32(int32:n) never fails { pass n; }; func:f = NIL(int32:n) never fails { int32:v = raw plain::<int32>(n); pass NIL; };",
         @it);
     if (raw errs(@g9) != 1i64)                                  { exit 91i32; }
     if (!(raw string_eq(raw code0(@g9), raw TYPE_GENERIC_ARITY()))) { exit 92i32; }
@@ -570,7 +571,7 @@ func:main = int32(cstring[]:_~argv) {
     // TOO MANY TYPE ARGUMENTS names both counts, the same shape the value-argument
     // arity message uses.
     Gx:g10 = raw gx(
-        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL(int32:n) { int32:v = raw identity::<int32, string>(n); pass NIL; };",
+        "func:identity<T> = T(T:x) never fails { pass x; }; func:f = NIL(int32:n) never fails { int32:v = raw identity::<int32, string>(n); pass NIL; };",
         @it);
     if (raw errs(@g10) != 1i64)                                 { exit 93i32; }
     if (!(raw string_eq(raw code0(@g10), raw TYPE_GENERIC_ARITY()))) { exit 94i32; }
@@ -580,14 +581,14 @@ func:main = int32(cstring[]:_~argv) {
     // dropped, making `Into<int32>` and `Into<string>` one trait. The same hole as
     // the struct one, a declaration kind over.
     Gx:g11 = raw gx(
-        "trait:Into<T> = { func:into = T(Self:self); }; struct:Point = { int32:x; }; impl:Point:Into<int32> = { func:into = int32(Point:self) { pass 1i32; }; }; func:f = NIL(Point:p) { int32:v = raw p.into(); pass NIL; };",
+        "trait:Into<T> = { func:into = T(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Into<int32> = { func:into = int32(Point:self) never fails { pass 1i32; }; }; func:f = NIL(Point:p) never fails { int32:v = raw p.into(); pass NIL; };",
         @it);
     if (raw errs(@g11) != 0i64)                                 { exit 95i32; }
 
     // …and an impl of a DIFFERENT instantiation does not satisfy a bound naming
     // this one, which is the property the arguments being read buys.
     Gx:g12 = raw gx(
-        "trait:Into<T> = { func:into = T(Self:self); }; struct:Point = { int32:x; }; struct:Box<U: Into<string>> = { U:held; }; impl:Point:Into<int32> = { func:into = int32(Point:self) { pass 1i32; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        "trait:Into<T> = { func:into = T(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<U: Into<string>> = { U:held; }; impl:Point:Into<int32> = { func:into = int32(Point:self) never fails { pass 1i32; }; }; func:f = NIL() never fails { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@g12) != 1i64)                                 { exit 96i32; }
     if (!(raw string_eq(raw code0(@g12), raw TYPE_BOUND_UNMET()))) { exit 97i32; }
@@ -601,22 +602,23 @@ func:main = int32(cstring[]:_~argv) {
     //
     // A type satisfying the bound gets the trait — and the method.
     Gx:k1 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; }; func:f = NIL(Point:q) never fails { int32:v = raw q.l(); pass NIL; };",
         @it);
     if (raw errs(@k1) != 0i64)                                  { exit 110i32; }
 
     // …and a type NOT satisfying the bound does not. Without this the case above
     // would pass against a checker that handed every type every blanket method.
     Gx:k2 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; }; func:f = NIL(Point:q) never fails { int32:v = raw q.l(); pass NIL; };",
         @it);
-    if (raw errs(@k2) != 1i64)                                  { exit 111i32; }
+    // two since the flip: no method (blanket inapplicable) + unlicensed callee.
+    if (raw errs(@k2) != 2i64)                                  { exit 111i32; }
     if (!(raw string_eq(raw code0(@k2), raw TYPE_NO_METHOD())))  { exit 112i32; }
 
     // A BLANKET IMPL SATISFIES A BOUND, which is the same fact asked the other
     // way: `Box<U: Lo>` accepts `Point` because the blanket impl reaches it.
     Gx:k3 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; struct:Box<U: Lo> = { U:held; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<U: Lo> = { U:held; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; }; func:f = NIL() never fails { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@k3) != 0i64)                                  { exit 113i32; }
 
@@ -624,7 +626,7 @@ func:main = int32(cstring[]:_~argv) {
     // and that is NOT an ambiguity — it is the priority the specification states,
     // expressed as the order the question is asked.
     Gx:k4 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) { pass 1i32; }; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 3i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; }; func:f = NIL(Point:q) { int32:v = raw q.l(); pass NIL; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Lo = { func:l = int32(Point:self) never fails { pass 3i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; }; func:f = NIL(Point:q) never fails { int32:v = raw q.l(); pass NIL; };",
         @it);
     if (raw errs(@k4) != 0i64)                                  { exit 114i32; }
 
@@ -633,7 +635,7 @@ func:main = int32(cstring[]:_~argv) {
     // and `Qr` both — and with no specialization (D-064 section 7) there is no
     // rule to choose by.
     Gx:k5 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; }; impl:<U: Qr>:U:Lo = { func:l = int32(U:self) { pass 2i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Qr = { func:q = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; }; impl:<U: Qr>:U:Lo = { func:l = int32(U:self) never fails { pass 2i32; }; };",
         @it);
     if (raw errs(@k5) != 1i64)                                  { exit 115i32; }
     if (!(raw string_eq(raw code0(@k5), raw TYPE_COHERENCE())))  { exit 116i32; }
@@ -641,7 +643,7 @@ func:main = int32(cstring[]:_~argv) {
     // …while a blanket impl beside a CONCRETE one is not a conflict (D-105).
     // Overlapping is the point; §2.6 already says which wins.
     Gx:k6 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; struct:Point = { int32:x; }; impl:Point:Lo = { func:l = int32(Point:self) { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 2i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Lo = { func:l = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; };",
         @it);
     if (raw errs(@k6) != 0i64)                                  { exit 117i32; }
 
@@ -649,7 +651,7 @@ func:main = int32(cstring[]:_~argv) {
     // because a zero target cannot be compared against anything; the target is
     // the parameter now, so `Self` substitutes and the missing method is seen.
     Gx:k7 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); func:m = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; func:m = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k7) != 1i64)                                  { exit 118i32; }
     if (!(raw string_eq(raw code0(@k7), raw TYPE_IMPL_INCOMPLETE()))) { exit 119i32; }
@@ -658,7 +660,7 @@ func:main = int32(cstring[]:_~argv) {
     // `Self` matches one the trait declares with `Self`. This is D-103's
     // substitution reaching a case it could not reach while the target was zero.
     Gx:k8 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(Self:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(Self:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k8) != 0i64)                                  { exit 120i32; }
 
@@ -667,7 +669,7 @@ func:main = int32(cstring[]:_~argv) {
     // satisfying a bound, which is adding methods to types it does not own. §2.6
     // gives the form with a trait and only with one.
     Gx:k9 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; impl:<T: Pr>:T = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; impl:<T: Pr>:T = { func:l = int32(T:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k9) != 1i64)                                  { exit 121i32; }
     if (!(raw string_eq(raw code0(@k9), raw TYPE_NOT_A_TRAIT()))) { exit 122i32; }
@@ -676,14 +678,14 @@ func:main = int32(cstring[]:_~argv) {
     // requiring `Pr` and a blanket impl bounded only by `Qr` cannot promise it,
     // and skipping blanket impls left that unenforced.
     Gx:k10 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Qr = { func:q = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Qr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Qr = { func:q = int32(Self:self) never fails; }; trait:Lo = Pr & { func:l = int32(Self:self) never fails; }; impl:<T: Qr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k10) != 1i64)                                 { exit 123i32; }
 
     // …and bounded by the supertrait it is satisfied, since a parameter satisfies
     // a bound by declaring it.
     Gx:k11 = raw gx(
-        "trait:Pr = { func:p = int32(Self:self); }; trait:Lo = Pr & { func:l = int32(Self:self); }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = Pr & { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k11) != 0i64)                                 { exit 124i32; }
 
@@ -691,24 +693,24 @@ func:main = int32(cstring[]:_~argv) {
     pass 0i32;
 };
 
-// `struct:C<T> = { T:v; }; func:f = NIL() { C< C< … int32 … > >:x; pass NIL; };`
+// `struct:C<T> = { T:v; }; func:f = NIL() never fails { C< C< … int32 … > >:x; pass NIL; };`
 // with `depth` levels of nesting. Built rather than written out, because sixty-five
 // levels typed by hand is a transcription error waiting to happen and the number
 // is the whole point of the test.
-func:nested_generic = string(int32:depth) {
-    string:s = "struct:C<T> = { T:v; }; func:f = NIL() { ";
+func:nested_generic = string(int32:depth) never fails {
+    string:s = "struct:C<T> = { T:v; }; func:f = NIL() never fails { ";
     int32:i = 0i32;
     while (i < depth) {
-        s = relay string_concat(s, "C< ");
+        s = raw string_concat(s, "C< ");
         i = i + 1i32;
     }
-    s = relay string_concat(s, "int32");
+    s = raw string_concat(s, "int32");
     int32:j = 0i32;
     while (j < depth) {
-        s = relay string_concat(s, " >");
+        s = raw string_concat(s, " >");
         j = j + 1i32;
     }
-    pass (relay string_concat(s, ":x; pass NIL; };"));
+    pass (raw string_concat(s, ":x; pass NIL; };"));
 };
 
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the

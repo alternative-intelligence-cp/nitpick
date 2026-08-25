@@ -6,11 +6,11 @@
 // rung — and a rung names valid Nitpick.
 mod:turbofish_value;
 
-func:g = int32(int32:x) { pass x; };
+func:g = int32(int32:x) never fails { pass x; };
 
 func:main = int32(cstring[]:_~argv) {
     func int32(int32):f = g;
-    int32:v = raw f::<int32>(1i32);
+    int32:v = f::<int32>(1i32) ?! 9tbb32;
     exit v;
 };
 

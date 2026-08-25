@@ -28,17 +28,17 @@ struct:Built = {
 };
 
 // Parse a module and run phase 1 over it.
-func:collect = Built(string:src, InternTable->:it) {
+func:collect = Built(string:src, InternTable->:it) never fails {
     DiagList:lexed = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @lexed);
     Ast:ast = raw ast_init();
     DiagList:pdiags = raw diaglist_init();
     Parser:p = raw parser_init(@toks, @ast, @pdiags, it);
-    DeclId:mod_id = relay p_parse_module(@p);
+    DeclId:mod_id = raw p_parse_module(@p);
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
     Built:b = Built{ ast: ast, tab: tab, diags: diags, scope: scope };
     pass b;
@@ -74,7 +74,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- the span is read THROUGH the declaration -------------------------------
     // Not copied into the symbol: one fact, one place, and it cannot go stale.
-    Span:sp_add = relay symbol_span(@b1.ast, @b1.tab, sym_add);
+    Span:sp_add = raw symbol_span(@b1.ast, @b1.tab, sym_add);
     if (sp_add.line != 1i32)                                { exit 16i32; }
     if (sp_add.col != 1i32)                                 { exit 17i32; }
 

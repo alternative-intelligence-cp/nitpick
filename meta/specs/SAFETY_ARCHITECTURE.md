@@ -111,9 +111,8 @@ The ultimate safety net. If an unrecoverable state is reached, execution is trap
 
 ## Escape Hatches (Opt-in Unsafe)
 
-For low-level systems programming, safety checks can be intentionally bypassed, but they are highly visible and grep-able:
+For low-level systems programming, safety checks can be intentionally bypassed, but they are highly visible and grep-able. (**`raw` is no longer on this list** — since D-163's licence flipped on at 1.1.2, `raw` is a CHECKED, zero-cost unwrap, refused (`NITPICK-TYPE-042`) unless the callee declares `never fails`; it bypasses nothing.)
 
-*   **`raw`** / `_!`: unwrap a `Result<T>`'s value. **D-163 (settled; the contract landed 1.1.0) makes this a CHECKED, zero-cost unwrap, not a bypass**: `raw` is licensed only on a call whose callee is declared `never fails`, so it proves the check redundant rather than skipping it, and leaves the Escape-Hatches list. The contract exists and is checked since 1.1.0; the refusal of an unlicensed `raw` flips at 1.1.2 (after the sweeps), until when `raw` still behaves as the unchecked bypass described here (D-001).
 *   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers.
 *   **`#wild_ptr<T>(addr)`**: Constructs a pointer from an integer address; legal only in `wild` context (D-019).
 *   **`=>!`**: Unchecked cast, opting out of the compile-time data-loss check.

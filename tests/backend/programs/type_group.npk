@@ -21,7 +21,7 @@ impl:Cat:Speaks = { func:say = int32(Cat:self) { pass 5i32; }; };
 // An array of trait objects as a parameter, iterated.
 func:total = int32((dyn Speaks)[2]:pair) {
     int32:sum = 0i32;
-    for (dyn Speaks:s in pair) { sum = sum + (raw s.say()); }
+    for (dyn Speaks:s in pair) { sum = sum + (s.say() ?! 9tbb32); }
     pass sum;
 };
 
@@ -31,9 +31,9 @@ func:main = int32(cstring[]:_~argv) {
 
     // an array of trait objects, mixed
     (dyn Speaks)[2]:arr = [d, c];
-    if ((raw arr[0].say()) != 1i32)          { exit 10i32; }
-    if ((raw arr[1].say()) != 5i32)          { exit 11i32; }
-    if ((raw total(arr)) != 6i32)            { exit 12i32; }
+    if ((arr[0].say() ?! 9tbb32) != 1i32)          { exit 10i32; }
+    if ((arr[1].say() ?! 9tbb32) != 5i32)          { exit 11i32; }
+    if ((total(arr) ?! 9tbb32) != 6i32)            { exit 12i32; }
 
     // an optional trait object: empty, then holding a pre-built dyn
     (dyn Speaks)?:maybe = NIL;
@@ -45,7 +45,7 @@ func:main = int32(cstring[]:_~argv) {
     // a pointer to a trait object
     dyn Speaks:one = d;
     (dyn Speaks)->:p = @one;
-    if ((raw (<-p).say()) != 1i32)           { exit 15i32; }
+    if (((<-p).say() ?! 9tbb32) != 1i32)           { exit 15i32; }
 
     exit 42i32;
 };

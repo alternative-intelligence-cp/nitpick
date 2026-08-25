@@ -105,7 +105,7 @@ pub func:p_advance = Token(Parser->:p) never fails {
 
 pub func:p_accept = bool(Parser->:p, TokenKind:k) never fails {
     if (raw p_at(p, k)) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
         pass true;
     }
     pass false;
@@ -202,17 +202,17 @@ pub func:p_sync = NIL(Parser->:p) never fails {
         p.panic = false;
         pass NIL;
     }
-    drop p_advance(p);
+    discard(raw p_advance(p));
     while (true) {
         TokenKind:k = raw p_kind(p);
         if (k == TokenKind.Eof) { break; }
         if (raw is_sync_point(k)) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
     }
     // A `;` marks the end of the broken construct, so step over it: leaving it
     // would make the next rule start on a terminator and fail immediately.
     if (raw p_at(p, TokenKind.PSemi)) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
     }
     p.panic = false;
     pass NIL;
@@ -281,7 +281,7 @@ pub func:p_qualifiers = int32(Parser->:p) never fails {
     while (true) {
         int32:bit = raw p_qualifier_bit(raw p_kind(p));
         if (bit == 0i32) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
         q = q | bit;
     }
     pass q;
@@ -308,13 +308,13 @@ pub func:p_recover = NIL(Parser->:p) never fails {
     while (true) {
         if (raw p_at_end(p))        { break; }
         if (raw p_can_start_item(p)) { break; }
-        drop p_advance(p);
+        discard(raw p_advance(p));
     }
     // A `;` here terminates the construct that failed. Leaving it would make the
     // next rule start on a terminator and fail immediately -- a phantom, which is
     // the thing this whole mechanism exists to prevent.
     if (raw p_at(p, TokenKind.PSemi)) {
-        drop p_advance(p);
+        discard(raw p_advance(p));
     }
     p.panic = false;
     pass NIL;

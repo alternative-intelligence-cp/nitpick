@@ -513,8 +513,8 @@ pub func:collect_decl = NIL(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     if (raw intern_is_none(name)) {
         pass NIL;
     }
-    drop symtab_declare(t, ast, diags, scope, name,
-                        raw SYM_DECL(), id.index, raw decl_flag_bits(d));
+    discard(raw symtab_declare(t, ast, diags, scope, name,
+                        raw SYM_DECL(), id.index, raw decl_flag_bits(d)));
     pass NIL;
 };
 

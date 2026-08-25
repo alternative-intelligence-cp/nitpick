@@ -5,7 +5,7 @@
 // KNOWN_DEALLOCATORS is the counterexample this refuses to repeat).
 
 // expect-error: NITPICK-MOVE-002
-func:use_after_destroy = NIL() {
+func:use_after_destroy = NIL() never fails {
     arena<int64>:a = arena_make(4i64);
     a.destroy();
     Handle<int64>:h = a.alloc();
@@ -14,7 +14,7 @@ func:use_after_destroy = NIL() {
 };
 
 // expect-error: NITPICK-MOVE-002
-func:double_destroy = NIL() {
+func:double_destroy = NIL() never fails {
     arena<int64>:a = arena_make(4i64);
     a.destroy();
     a.destroy();
@@ -22,7 +22,7 @@ func:double_destroy = NIL() {
 };
 
 // expect-error: NITPICK-MOVE-002
-func:shared_use_after_destroy = NIL() {
+func:shared_use_after_destroy = NIL() never fails {
     shared_arena<int64>:s = shared_arena_make(4i64);
     s.destroy();
     Handle<int64>:h = s.alloc(1i64);

@@ -38,13 +38,13 @@ struct:Cx = {
     int64:parse_errs;
 };
 
-func:cx = Cx(string:src, InternTable->:it) {
+func:cx = Cx(string:src, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    ExprId:node = relay p_parse_expr(@p);
+    ExprId:node = raw p_parse_expr(@p);
 
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
@@ -67,7 +67,7 @@ func:cx = Cx(string:src, InternTable->:it) {
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd,
                                   @inst, @fninsts, @ets);
-    int32:t = relay type_of_expr(@e, node);
+    int32:t = raw type_of_expr(@e, node);
 
     Cx:out = Cx{ types: types, diags: diags, result: t,
                  parse_errs: raw diaglist_count(@pd) };
@@ -76,16 +76,16 @@ func:cx = Cx(string:src, InternTable->:it) {
 
 // Parse failures count against the same total, so a case cannot pass because the
 // expression never got built (the lesson from 0.4.2's test).
-func:errs = int64(Cx->:x) {
+func:errs = int64(Cx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Cx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:code0 = string(Cx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 // A shorthand for the two halves of the same pair: `=>` must refuse it and `=>!`
 // must accept it. Asserting both is the point — a rule that refused everything
 // would pass the first half.
-func:lossy_pair = bool(string:expr_checked, string:expr_unchecked, InternTable->:it) {
+func:lossy_pair = bool(string:expr_checked, string:expr_unchecked, InternTable->:it) never fails {
     Cx:a = raw cx(expr_checked, it);
     if (raw errs(@a) != 1i64) { pass false; }
     if (!(raw string_eq(raw code0(@a), raw TYPE_LOSSY_CAST()))) { pass false; }
