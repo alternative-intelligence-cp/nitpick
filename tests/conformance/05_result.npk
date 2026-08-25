@@ -20,9 +20,9 @@ func:doubled_plus_one = int32(int32:x) {
 func:with_explicit_check = int32(int32:x) {
     Result<int32>:r = might_fail(x);
 
-    // .is_error is a derived accessor for .error != 0i32 (D-069).
+    // .is_error is a derived accessor for .err != 0i32 (D-069).
     if (r.is_error) {
-        fail r.error;                  // forward the code, never a constant
+        fail r.err;                  // forward the code, never a constant
     }
 
     // The CHECKED read (D-007): `is_error` was tested above, so `.value`

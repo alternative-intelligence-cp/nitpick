@@ -302,7 +302,7 @@ names neither the construct nor the rule it broke.
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
 | `MoveExpr` | `place` | **`move(place)`** — transfers ownership and invalidates the source (D-065) |
 | **`IsErrExpr`** | `operand` | **`is_err(tbbValue)`** — tests a `tbb` for ERR **without trapping** (D-008, D-096) |
-| **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v, error: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097) |
+| **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v, err: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097) |
 
 > **There is no `OptionalLiteralExpr`, deliberately (D-099).** An `Optional` is
 > built by writing the value and emptied by writing `NIL`, so there is no
@@ -314,7 +314,7 @@ names neither the construct nor the rule it broke.
 > because each is spelled with a KEYWORD and the parser only builds these forms
 > from an identifier.
 >
-> - **`Result{value: v, error: e}`** is the language's only constructor and, per
+> - **`Result{value: v, err: e}`** is the language's only constructor and, per
 >   `ReturnStmt` in §2, the only legal operand of `return`. `TYPE_REFERENCE.md`
 >   §11 gives the full desugar table for `pass`/`fail` over it. The struct-literal
 >   path is gated on `TokenKind.Ident`, and `Result` is `KwResult`, so the real

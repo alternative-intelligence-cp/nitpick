@@ -83,14 +83,14 @@ func:two_reads_one_check = int32(bool:c) never fails {
     pass (a + b);
 };
 
-// --- `.error` is not tainted ------------------------------------------------------------
+// --- `.err` is not tainted ------------------------------------------------------------
 //
 // The error field is what you read to FIND OUT whether the value is safe. Refusing
 // it would leave no way to ask the question.
 
 func:reads_the_error = tbb32(bool:c) never fails {
     Result<int32>:r = might_fail(c);
-    pass (r.error);
+    pass (r.err);
 };
 
 func:main = int32(cstring[]:_~argv) {

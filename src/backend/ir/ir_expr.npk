@@ -4229,7 +4229,7 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:re = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(re, " = extractvalue ", bv.ll, " ",
                           raw string_concat(bv.ref, eidx)));
-        if (raw string_eq(f, "error")) { pass (raw iv("i32", re, fty)); }
+        if (raw string_eq(f, "err")) { pass (raw iv("i32", re, fty)); }
         if (raw string_eq(f, "is_error")) {
             string:cz = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(cz, " = icmp ne i32 ",
@@ -4555,7 +4555,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     pass (raw iv(all.text, acc, atid));
 };
 
-// `Result{ value: v, error: e }` — either field may be omitted and the omitted
+// `Result{ value: v, err: e }` — either field may be omitted and the omitted
 // one is ZERO, which is D-069's derivation rule made concrete: no error means
 // `error == 0`, and a failed Result's value slot is the type's zero.
 func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {

@@ -34,7 +34,7 @@ func:relayed = int32(int32:k) {
 };
 
 // `relay`'s error path returns the SAME code (D-080) — observed through
-// `.error` on the caller's Result.
+// `.err` on the caller's Result.
 func:pipe = int32(int32:k) {
     int32:v = relay relayed(k);
     pass (v + 100i32);
@@ -52,7 +52,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((pipe(3i32) ?! 9tbb32) != 106i32)         { exit 13i32; }
     Result<int32>:r = pipe(9i32);
     if (!r.is_error)                        { exit 14i32; }
-    if (r.error != 7tbb32)                    { exit 15i32; }
+    if (r.err != 7tbb32)                    { exit 15i32; }
 
     drop wild_release_all();
 

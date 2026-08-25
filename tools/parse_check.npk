@@ -56,7 +56,7 @@ func:main = int32(cstring[]:argv) {
     Result<int32>:loaded = srcmgr_load(@sm, path);
     if (loaded.is_error) {
         // The code is D-141's space (negative = the kernel's own), not errno.
-        string:e = raw int_to_string(loaded.error => int64);
+        string:e = raw int_to_string(loaded.err => int64);
         NioW:ew = raw nio_stderr();
         nio_put(@ew, "cannot read: error ") ?| NIL;
         nio_line(@ew, e) ?| NIL;

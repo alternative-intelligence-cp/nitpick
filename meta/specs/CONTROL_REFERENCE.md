@@ -287,7 +287,7 @@ Two checks that the compiler enforces aggressively:
     if `expr` is an error the enclosing function returns immediately **with that
     same error code, verbatim**; otherwise the expression yields `.value`
     (D-080). This is the ordinary way to forward a failure, and it exists because
-    hand-writing the equivalent — `if (r.is_error) { fail r.error; }` — is
+    hand-writing the equivalent — `if (r.is_error) { fail r.err; }` — is
     written wrong often enough to matter: the prototype's own stdlib forwards the
     original code in **0 of 19** such sites, substituting `fail 1;`.
 *   **`return Result{ … };`** — the literal form, the only way to return a value

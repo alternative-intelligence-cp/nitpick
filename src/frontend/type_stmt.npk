@@ -586,7 +586,7 @@ func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) never fails {
     pass NIL;
 };
 
-// `pass v;` desugars to `return Result{error: 0tbb32, value: v};` — so `v` is
+// `pass v;` desugars to `return Result{err: 0tbb32, value: v};` — so `v` is
 // checked against the function's SUCCESS type, not its `Result` type.
 func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
@@ -627,8 +627,8 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     pass NIL;
 };
 
-// `fail c;` desugars to `return Result{error: c, value: zero};` — so `c` is a
-// `tbb32`, the same type `Result.error` holds and the same one `failsafe` takes.
+// `fail c;` desugars to `return Result{err: c, value: zero};` — so `c` is a
+// `tbb32`, the same type `Result.err` holds and the same one `failsafe` takes.
 //
 // `fail` IN `main` OR `failsafe` IS REFUSED for the reason `relay` is: there is
 // no `Result` to fail into, and an error leaving the program's last frame has

@@ -327,7 +327,7 @@ Two ways to obtain one:
 | Source | Checked | Cost |
 |---|---|---|
 | string literal in `cstring` position | compile time — interior NUL is a compile error | zero |
-| `to_cstring(s)` on a runtime `string` | runtime — interior NUL is `Result.error` | one scan |
+| `to_cstring(s)` on a runtime `string` | runtime — interior NUL is `Result.err` | one scan |
 
 This literal-checked-at-compile-time mechanism was shared with `fmt` (D-045)
 until D-053 removed that type; `cstring` is now its only consumer.
@@ -845,7 +845,7 @@ struct<T>:Result = {
 ; Example: Result<int32>
 %Result_i32 = type { i32, i32 }
 ; .value at offset 0
-; .error at offset 4 (tbb32, 4 bytes)
+; .err at offset 4 (tbb32, 4 bytes)
 ; Total: 8 bytes, align 4
 ```
 
@@ -853,9 +853,9 @@ struct<T>:Result = {
 
 | Syntax | Desugars to | Notes |
 |---|---|---|
-| `pass(retVal);` | `return Result{error: 0tbb32, value: retVal};` | Success path |
-| `fail(errCode);` | `return Result{error: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
-| `return Result{error: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
+| `pass(retVal);` | `return Result{err: 0tbb32, value: retVal};` | Success path |
+| `fail(errCode);` | `return Result{err: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
+| `return Result{err: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
 
 > **The suffixes here read `0i32` in an earlier revision**, from before D-069
 > settled the field as a `tbb32`. The struct definition directly above already
@@ -866,20 +866,20 @@ struct<T>:Result = {
 **Either field may be omitted**, and each defaults to the zero for its side. That
 is not a convenience: it is what makes the two desugars above expressible as
 literals, since `pass` writes only `value` and `fail` writes only `error`. **Field
-order is free** — the names are matched, so `Result{value: v, error: e}` and
-`Result{error: e, value: v}` are the same node.
+order is free** — the names are matched, so `Result{value: v, err: e}` and
+`Result{err: e, value: v}` are the same node.
 
 **There is no `is_error` field to write** (D-069). It is derived on every read.
 
 > ### The error state is stored once (D-069)
 >
 > `is_error` was previously a **stored** `bool` alongside `error`, encoding the
-> same fact twice with no invariant relating them — `{error: 0, is_error: true}`
-> and `{error: 5, is_error: false}` were both constructible and neither had a
+> same fact twice with no invariant relating them — `{err: 0, is_error: true}`
+> and `{err: 5, is_error: false}` were both constructible and neither had a
 > defined meaning. The field is removed.
 >
 > **`r.is_error` remains valid source** as a derived accessor for
-> `r.error != 0i32`, so existing `pick(r.is_error)` code is unaffected. The fact
+> `r.err != 0i32`, so existing `pick(r.is_error)` code is unaffected. The fact
 > is now computed rather than stored, and so cannot contradict the field it
 > summarises.
 >
@@ -1327,7 +1327,7 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 - Represents "nothing" at the type level (like `void` in C, but as a value)
 - Return type annotation for functions that produce no meaningful value: `func:f = NIL(...)`
 - "void functions" DO NOT EXIST in Nitpick — they return `Result<NIL>` instead
-- `pass(NIL)` desugars to `return Result{ value: NIL, error: 0i32 }`
+- `pass(NIL)` desugars to `return Result{ value: NIL, err: 0i32 }`
 - To call a NIL-returning function without checking: `drop(myFunc());`
 - **`NIL` is zero-sized** (D-084). Its only value carries no information, so it
   occupies nothing: a `NIL` struct field takes no space and `pass(NIL)` moves

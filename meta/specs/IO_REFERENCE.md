@@ -162,7 +162,7 @@ ByteReader:r = await ByteReader.open(p, deadline)?;
   absolute, lexically normalized, and contains no interior NUL.
 - **`cstring` appears only at the syscall boundary** (D-049), where the conversion
   rejects interior NULs — the poison-NUL bypass.
-- **An `fd` is always valid** (D-042). POSIX's `-1` goes to `Result.error` and is
+- **An `fd` is always valid** (D-042). POSIX's `-1` goes to `Result.err` and is
   not representable, so there is no not-open state inside an open stream. `libn`'s
   `FILE.fd` is an `int64` with `-1` meaning not-open; that state is the absence of
   the stream, not a value of the field.

@@ -15,12 +15,12 @@ func:refused = int32(int32:code) {
 func:main = int32(cstring[]:_~argv) {
     Result<int32>:a = direct();
     if (a.is_error)                          { exit 10i32; }
-    if (a.error != 0tbb32)                     { exit 11i32; }
+    if (a.err != 0tbb32)                     { exit 11i32; }
     if (a.value != 41i32)                    { exit 12i32; }
 
     Result<int32>:b = refused(3i32);
     if (!b.is_error)                         { exit 13i32; }
-    if (b.error != 3tbb32)                     { exit 14i32; }
+    if (b.err != 3tbb32)                     { exit 14i32; }
     // `b.value` here would be NITPICK-TAINT-001: after a failure the value slot
     // is TAINTED, and reading it is refused — the analysis caught this very
     // file trying, which is the rule working. The zeroed slot is asserted from

@@ -139,7 +139,7 @@ pub func:nio_write_all = NIL(fd:sink, wild int8->:p, int64:n) {
     int64:off = 0i64;
     while (off < n) {
         Result<int64>:w = write(sink, @p[off], n - off);
-        if (w.is_error) { fail w.error; }
+        if (w.is_error) { fail w.err; }
         off = off + w.value;
     }
     pass NIL;
@@ -150,7 +150,7 @@ pub func:nio_write_all = NIL(fd:sink, wild int8->:p, int64:n) {
 pub func:nio_flush = NIL(NioW->:w) {
     if (w.len == 0i64) { pass NIL; }
     Result<NIL>:r = nio_write_all(w.sink, w.buf, w.len);
-    if (r.is_error) { fail r.error; }
+    if (r.is_error) { fail r.err; }
     w.len = 0i64;
     pass NIL;
 };
@@ -179,7 +179,7 @@ pub func:nio_put = NIL(NioW->:w, string:s) {
     if (w.mode == NioMode.Full) { if (w.len >= 65536i64) { must = true; } }
     if (must) {
         Result<NIL>:r = nio_flush(w);
-        if (r.is_error) { fail r.error; }
+        if (r.is_error) { fail r.err; }
     }
     pass NIL;
 };
@@ -189,7 +189,7 @@ pub func:nio_put = NIL(NioW->:w, string:s) {
 // place rather than being re-decided here.
 pub func:nio_line = NIL(NioW->:w, string:s) {
     Result<NIL>:r = nio_put(w, s);
-    if (r.is_error) { fail r.error; }
+    if (r.is_error) { fail r.err; }
     pass (relay nio_put(w, "\n"));
 };
 
@@ -198,7 +198,7 @@ pub func:nio_line = NIL(NioW->:w, string:s) {
 // close, and success past one reports bytes that may not exist.
 pub func:nio_end = NIL(NioW->:w) {
     Result<NIL>:r = nio_flush(w);
-    if (r.is_error) { fail r.error; }
+    if (r.is_error) { fail r.err; }
     if (w.owned) {
         pass (relay close(w.sink));
     }

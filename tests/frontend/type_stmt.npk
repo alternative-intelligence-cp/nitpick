@@ -184,7 +184,7 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@p3) != 0i64)                                 { exit 22i32; }
 
     // --- `fail` TAKES A `tbb32` ----------------------------------------------
-    // The same type `Result.error` holds and the same one `failsafe` receives.
+    // The same type `Result.err` holds and the same one `failsafe` receives.
     Fx:f1 = raw fx("func:f = int32() { fail 5tbb32; };", @it);
     if (raw errs(@f1) != 0i64)                                 { exit 30i32; }
 
@@ -201,7 +201,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- `return` TAKES A `Result{…}` LITERAL AND NOTHING ELSE ---------------
     // The restriction is what keeps `pass` and `fail` honest: they are sugar over
     // this form, so it has to be the only other way in.
-    Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32, error: 0tbb32}; };", @it);
+    Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32, err: 0tbb32}; };", @it);
     if (raw errs(@r1) != 0i64)                                 { exit 40i32; }
 
     Fx:r2 = raw fx("func:f = int32() { return 1i32; };", @it);
@@ -209,7 +209,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(raw code0(@r2), raw TYPE_RESULT_RETURN()))) { exit 42i32; }
 
     // …and the literal is still checked: the value is the success type.
-    Fx:r3 = raw fx("func:f = int32() { return Result{value: true, error: 0tbb32}; };", @it);
+    Fx:r3 = raw fx("func:f = int32() { return Result{value: true, err: 0tbb32}; };", @it);
     if (raw errs(@r3) != 1i64)                                 { exit 43i32; }
 
     // --- EVERY CONDITION IS A STRICT `bool` ----------------------------------

@@ -698,7 +698,7 @@ class Checker:
             if isinstance(obj, T.Slice) and e.name == "len":
                 return T.I64
             if isinstance(obj, T.ResultT):
-                if e.name == "error":
+                if e.name == "err":
                     return T.TBB32
                 if e.name == "is_error":
                     return T.BOOL          # derived: error != 0 (D-069)

@@ -1237,14 +1237,14 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     pass (e.types.t_bool);
 };
 
-// `Result{value: v, error: e}` — THE ONLY CONSTRUCTOR IN THE LANGUAGE.
+// `Result{value: v, err: e}` — THE ONLY CONSTRUCTOR IN THE LANGUAGE.
 //
 // `<T>` is never written: it comes from the enclosing function's declared success
 // type. That is what lets `pass(v)` and `fail(e)` be sugar over this form rather
 // than primitives of their own (TYPE_REFERENCE §11):
 //
-//     pass(retVal);   ->  return Result{error: 0i32, value: retVal};
-//     fail(errCode);  ->  return Result{error: errCode, value: zero};
+//     pass(retVal);   ->  return Result{err: 0i32, value: retVal};
+//     fail(errCode);  ->  return Result{err: errCode, value: zero};
 //
 // THERE IS NO `is_error` FIELD (D-069). It is derived as `error != 0` on every
 // read, so there is nothing for it to disagree with — a stored flag would be a

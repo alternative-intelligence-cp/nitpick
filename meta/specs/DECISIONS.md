@@ -33,7 +33,7 @@ remains the single explicit, greppable, auditable bypass.
 
 ---
 
-## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead; D-163 then gives `never fails` a GENERAL home — a checked contract on any function, not just an `extern` (landed 1.1.0) — and licenses `raw`/`drop` by it (the refusal flips at 1.1.2))
+## D-002 — FFI must map C failures into `Result.err` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead; D-163 then gives `never fails` a GENERAL home — a checked contract on any function, not just an `extern` (landed 1.1.0) — and licenses `raw`/`drop` by it (the refusal flips at 1.1.2))
 
 `TYPE_REFERENCE.md` §11.2 currently specifies that when a C function "does not
 provide error information, the result defaults to `Ok(val)`". **This is not the
@@ -857,7 +857,7 @@ interchangeable and the distinction is currently invisible in the source.
 |---|---|---|
 | **Address** | `libn_mem_malloc = int64(int64:n)` | `wild int8->` (untyped memory) or a typed pointer where the type is known |
 | **Size / count** | `mem_malloc_user_size = int64(int64:ptr)` | stays `int64` — genuinely a number |
-| **Status / error** | `mem_free = int64(int64:ptr)` | `NIL`, with failure carried in `Result.error` |
+| **Status / error** | `mem_free = int64(int64:ptr)` | `NIL`, with failure carried in `Result.err` |
 
 Parameters take the same treatment: `mem_free = int64(int64:ptr)` becomes
 `mem_free = NIL(wild int8->:ptr)`.
@@ -866,7 +866,7 @@ Parameters take the same treatment: `mem_free = int64(int64:ptr)` becomes
 
 Worth calling out separately. Every function already returns `Result<T>`
 implicitly — the declared type is the *success* type. So a function whose `int64`
-return value **is** a status code encodes failure twice: once in `Result.error`
+return value **is** a status code encodes failure twice: once in `Result.err`
 and once in the value, with no rule saying which wins.
 
 `mem_free` is the clearest case. Under the universal `Result` rule it should
@@ -1014,7 +1014,7 @@ Three checkable requirements on `failsafe`:
    converts every trap into an unhandled exit. Compile error.
 3. **It must return a positive value.** Reaching `failsafe` means something
    failed, so returning `0` — conventionally success — is a contradiction.
-   Negative values are reserved for system errors by the `Result.error`
+   Negative values are reserved for system errors by the `Result.err`
    convention.
 
 Requirement 3 has a natural implementation: `failsafe` carries a
@@ -2502,7 +2502,7 @@ Combined with the universal `Result<T>` rule, **an `fd` value is always valid.**
 
 In POSIX, `open()` returns `-1` on failure, so every descriptor is potentially a
 sentinel and every use site is responsible for remembering to check. Here the
-failure goes to `Result.error` and never reaches the `fd` type at all. The
+failure goes to `Result.err` and never reaches the `fd` type at all. The
 "did I check for `-1`?" bug class does not exist, because `-1` is not
 representable as an `fd`.
 
@@ -2829,7 +2829,7 @@ The language builtins now do what these wrappers were built to do:
 |---|---|---|
 | `sys_full` (7-arg) + `sys_full1`…`sys_full5` | `sys_full(CONST, ..*int64[])` | **delete** — the builtin returns `Result<int64>` directly |
 | `sys_safe` (whitelist check) + `sys1`…`sys5` | `sys(CONST, ..*int64[])` | **delete** — but see below |
-| `err_from_syscall` | — | **delete** — the builtin already produces `Result.error`; converting a negative return by hand is exactly the double-encoding D-012 objected to |
+| `err_from_syscall` | — | **delete** — the builtin already produces `Result.err`; converting a negative return by hand is exactly the double-encoding D-012 objected to |
 
 So the syscall layer collapses to **nothing**: callers use the builtins directly.
 That is a larger reduction than the variadic collapse alone implied — roughly a
@@ -3049,7 +3049,7 @@ inhabitants:
 | Source | When checked | Cost |
 |---|---|---|
 | **string literal** in `cstring` position | compile time — interior NUL is a compile error, terminator emitted into the constant | zero |
-| **`to_cstring(s)`** for a runtime `string` | runtime — interior NUL is `Result.error` | one scan |
+| **`to_cstring(s)`** for a runtime `string` | runtime — interior NUL is `Result.err` | one scan |
 
 This deliberately mirrors **D-045's `fmt`**: a type inhabited by literals whose
 constraint the compiler discharges. Two types, one mechanism — nothing new for a
@@ -4702,7 +4702,7 @@ undocumented reserved bit pattern."*
 The premise was wrong in a useful way. `tbb32`'s ERR sentinel **is** a documented
 bit pattern — `INT32_MIN`, per `TYPE_REFERENCE.md` §6 — so storing the field as
 `i32` loses nothing. The real question is what that value *means* when it appears
-in `Result.error`, which nothing answered.
+in `Result.err`, which nothing answered.
 
 It means **an error whose identity was lost**: the code itself went ERR, most
 often because it was computed from `tbb` arithmetic that saturated.
@@ -4744,10 +4744,10 @@ struct<T>:Result = {
 ```
 
 `is_error` and `error != NIL` encode **the same fact in two places, with no stated
-invariant relating them.** Nothing says what `{error: 0, is_error: true}` or
-`{error: 5, is_error: false}` mean, nothing rejects them, and both are
+invariant relating them.** Nothing says what `{err: 0, is_error: true}` or
+`{err: 5, is_error: false}` mean, nothing rejects them, and both are
 constructible today through the explicit-literal form the spec documents:
-`return Result{error: errCode, value: retVal, is_error: true};`.
+`return Result{err: errCode, value: retVal, is_error: true};`.
 
 Two representations of one fact that can disagree is precisely the latent
 inconsistency this project cannot carry. It is also the shape D-056 rejected in
@@ -4763,7 +4763,7 @@ struct<T>:Result = {
 };
 ```
 
-`r.is_error` **remains valid source** as a derived accessor for `r.error != 0i32`,
+`r.is_error` **remains valid source** as a derived accessor for `r.err != 0i32`,
 so every existing `pick(r.is_error)` and every library using it continues to read
 and behave identically. What changes is that the fact is computed rather than
 stored, and so cannot contradict the field it summarises.
@@ -4777,13 +4777,13 @@ stored, and so cannot contradict the field it summarises.
 - **No performance cost.** Testing `i32 != 0` and testing an `i8` are the same
   single instruction.
 - **`pass` / `fail` desugaring** loses its third initialiser:
-  `pass(v)` → `Result{value: v, error: 0i32}`; `fail(e)` → `Result{value: zero,
-  error: e}` with `e` checked non-zero and non-ERR.
+  `pass(v)` → `Result{value: v, err: 0i32}`; `fail(e)` → `Result{value: zero,
+  err: e}` with `e` checked non-zero and non-ERR.
 - **`fail(0i32)` is rejected** at compile time where the code is a literal, and
   traps where it is computed. A failure with no code is the same unidentifiable
   error as an ERR code, arrived at from the other direction.
 - **Returning a value *and* an error remains expressible** —
-  `Result{value: retVal, error: errCode}` — since that never depended on the
+  `Result{value: retVal, err: errCode}` — since that never depended on the
   separate flag.
 - **ABI.** This changes the `Result` layout, which is the most pervasive type in
   the language. It is free to change now and expensive later, and nothing external
@@ -5224,7 +5224,7 @@ to handle a condition it cannot otherwise distinguish.
 ### `fd` is an `fd`
 
 `FILE.fd` is an `int64` with `-1` meaning not-open. D-042 already settled this:
-kernel identifiers are distinct types, and **POSIX's `-1` goes to `Result.error`
+kernel identifiers are distinct types, and **POSIX's `-1` goes to `Result.err`
 and is not representable** in an `fd`. The unopened state is not a value of the
 field; it is the absence of the stream.
 
@@ -5469,7 +5469,7 @@ int32:v = _^ parse(s);           // shorthand
 ```
 
 - **If the operand is an error**, the enclosing function returns immediately with
-  `Result{ value: zero, error: <the same code, verbatim> }`.
+  `Result{ value: zero, err: <the same code, verbatim> }`.
 - **Otherwise** the expression evaluates to `.value`.
 
 `relay` joins `raw` / `_!`, `drop` / `_?`, and `discard` / `_~` as a keyword with
@@ -6741,9 +6741,9 @@ and `.is_error` answers it. D-096 recorded the operand as a `Result`; corrected.
 
 | Syntax | Desugars to |
 |---|---|
-| `pass(retVal);` | `return Result{error: 0tbb32, value: retVal};` |
-| `fail(errCode);` | `return Result{error: errCode, value: zero};` |
-| `return Result{error: e, value: v};` | (literal, no desugar) |
+| `pass(retVal);` | `return Result{err: 0tbb32, value: retVal};` |
+| `fail(errCode);` | `return Result{err: errCode, value: zero};` |
+| `return Result{err: e, value: v};` | (literal, no desugar) |
 
 and `AST_REFERENCE.md` §2 restricts `ReturnStmt` to *"the literal `Result{…}`
 form only"*. `<T>` is never written — it comes from the enclosing function's
@@ -9756,7 +9756,7 @@ language; when `#ptr_add` lands (0.9) it graduates to `lib/nio.npk` and the
 floor loses a symbol. `write_raw` (0.8.3's bare-return write) is gone: two
 spellings for one job, and the unwrapped return was a pre-D-075 shape.
 
-**The error-code space, concretely.** `Result.error` has said "< 0 system,
+**The error-code space, concretely.** `Result.err` has said "< 0 system,
 > 0 user" since D-005 laid out `Result`; the floor now honors it: the error slot carries the
 kernel's return exactly as delivered (ENOENT is −2 — 0.8.3's floor negated
 errno to positive, which this repairs). Floor-detected conditions reuse the
@@ -10349,7 +10349,7 @@ open. Decided NO: a borrow-returning `get` would be a RETURNED borrow,
 which D-004 refuses for every function in the language (`BORROW-001`) — an
 arena exemption would be meaning-by-context. So `get(h)` returns
 `Result<T>` by value and `put(h, v)` writes back, both failing a stale
-handle with **error `-4106` in `Result.error`** — a condition the program
+handle with **error `-4106` in `Result.err`** — a condition the program
 handles, never a trap. The set: `alloc() -> Handle<T>` (bare — its only
 failure is an OOM trap), `get`, `put`, `free` (`Result`), `reset`,
 `destroy` (bare `NIL`). Operations dispatch on the receiver's type before

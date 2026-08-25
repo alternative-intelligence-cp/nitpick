@@ -1032,7 +1032,7 @@ class Emitter:
 
         if isinstance(obj_ty, T.ResultT):
             idx = 0 if obj_ty.inner == T.NIL else 1
-            if e.name == "error":
+            if e.name == "err":
                 r = self.tmp()
                 self.w("%s = extractvalue %s %s, %d" % (r, obj.ty, obj.ref, idx))
                 return Val("i32", r, T.TBB32)

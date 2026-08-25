@@ -207,7 +207,7 @@ The set is `alloc() -> Handle<T>`, `get(h) -> Result<T>`,
 `destroy() -> NIL` (D-017 as amended by D-152). `get` returns the element
 **by value**: a borrow-returning `get` would be a returned borrow, which
 D-004 refuses everywhere — mutation is spelled `put`. A stale handle fails
-`get`/`put`/`free` with **`-4106` in `Result.error`**, never a trap.
+`get`/`put`/`free` with **`-4106` in `Result.err`**, never a trap.
 `destroy` CONSUMES the arena (a compile-time move, like `dalloc`), and an
 un-destroyed arena is a wild-role leak the exit-time check names (D-151).
 

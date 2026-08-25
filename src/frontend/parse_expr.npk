@@ -799,7 +799,7 @@ func:p_primary = ExprId(Parser->:p) never fails {
         pass (raw p_keyword_operand(p, sp, ExprKind.ExprIsErrExpr));
     }
 
-    // `Result{value: v, error: e}` -- THE ONLY CONSTRUCTOR IN THE LANGUAGE, and
+    // `Result{value: v, err: e}` -- THE ONLY CONSTRUCTOR IN THE LANGUAGE, and
     // per AST_REFERENCE §2 the only legal operand of `return`. `pass` and `fail`
     // are sugar over it (TYPE_REFERENCE §11).
     //
@@ -851,7 +851,7 @@ func:p_keyword_operand = ExprId(Parser->:p, Span:sp, ExprKind:kind) never fails 
     pass (raw ast_add_expr(p.ast, kind, sp, o.index, 0i32, 0i32, 0i64));
 };
 
-// `Result{value: v, error: e}` -- A FIXED SHAPE, not a general struct literal.
+// `Result{value: v, err: e}` -- A FIXED SHAPE, not a general struct literal.
 //
 // Exactly two fields, in either written order, either omissible, held in slots
 // `a` and `b`. It does not reuse `StructLiteralExpr` because that node's window
@@ -878,7 +878,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
     discard(raw p_advance(p));
     discard(raw p_expect(p, TokenKind.PLBrace));
     int32:value = 0i32;
-    int32:error = 0i32;
+    int32:errv = 0i32;
     bool:saw_value = false;
     bool:saw_error = false;
     while (true) {
@@ -916,14 +916,14 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
                 saw_value = true;
                 value = v.index;
             } else {
-                if (raw string_eq(text, "error")) {
+                if (raw string_eq(text, "err")) {
                     if (saw_error) {
                         drop p_error_at(p, raw PARSE_WRAPPER_FIELD(),
                             "`error` is given twice here, and a `Result{…}` has one of each field",
                             field.span);
                     }
                     saw_error = true;
-                    error = v.index;
+                    errv = v.index;
                 } else {
                     // `is_error` EARNS ITS OWN SENTENCE. The prototype stored it
                     // as a third field and D-069 made it derived, so somebody
@@ -944,7 +944,7 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
     }
     discard(raw p_expect(p, TokenKind.PRBrace));
     pass (raw ast_add_expr(p.ast, ExprKind.ExprResultLiteralExpr, sp,
-                             value, error, 0i32, 0i64));
+                             value, errv, 0i32, 0i64));
 };
 
 // Each field contributes TWO entries to the window: the name's intern index and

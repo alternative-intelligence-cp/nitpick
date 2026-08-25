@@ -242,7 +242,7 @@ sufficient for the throughput Nikola needs.
 `TYPE_REFERENCE.md` §11.2 gives `Result<T>` as `{ T value, i32 error, i8 is_error }`.
 *(Superseded by **D-069**: the stored `is_error` is removed, leaving
 `{ T value, i32 error }`. `r.is_error` remains valid source as a derived accessor
-for `r.error != 0i32`.)*
+for `r.err != 0i32`.)*
 But `tbb` types are specified elsewhere as having a **sticky ERR state** on
 overflow — that state has to live somewhere in the representation. Storing the
 error field as a bare `i32` either loses the ERR encoding or implies a reserved
@@ -312,7 +312,7 @@ entire language grammar from Day 1" — and does not currently meet it:
 - `@cast<T>(p)` is used in `TYPE_REFERENCE.md` §27 but is absent from
   `BUILTIN_REFERENCE.md`.
 - `TYPE_REFERENCE.md` §11.2 documents a third `Result` construction —
-  `return Result{ error: errCode, value: retVal, is_error: true }`, returning a
+  `return Result{ err: errCode, value: retVal, is_error: true }`, returning a
   value *and* an error simultaneously. Partial success has real safety semantics
   and is not discussed in `SAFETY_ARCHITECTURE.md`.
 
