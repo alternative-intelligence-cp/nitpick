@@ -1,0 +1,66 @@
+// expect-exit: 42
+//
+// LOOP STATE IS FRAME-RESIDENT IN A COROUTINE (D-177, 1.1.4 stage D2) —
+// uniformly, whether or not the body suspends, so no detector exists for
+// the emitter's needs to drift from. The counter, limit, step, direction,
+// base pointer, receiver address, `for` binding and `when` flag all live in
+// frame slots, re-read where used; an SSA copy or an alloca would die at a
+// suspension inside the body. Exercised: a RANGE `for` (inclusive, 0..4
+// runs five times), an ARRAY `for` whose iterable is itself a crossing
+// local, a counted `loop`, and a `when` whose tracking flag survives the
+// suspensions to pick the `then` clause.
+mod:async_loops;
+
+async func:one = int32() { pass 1i32; };
+
+async func:ranged = int32(int32:v) {
+    int32:acc = v;
+    for (int32:i in 0i32..4i32) {
+        acc = acc + i;                      // +0+1+2+3+4 = +10
+        discard(await one() ?| 0i32);
+    }
+    pass acc;
+};
+
+async func:arrayed = int32(int32:v) {
+    int32[3]:xs = [1i32, 2i32, 3i32];
+    int32:acc = v;
+    for (int32:e in xs) {
+        acc = acc + e;                      // +6
+        discard(await one() ?| 0i32);
+    }
+    pass acc;
+};
+
+async func:counted = int32(int32:v) {
+    int32:acc = v;
+    loop (0i64, 3i64, 1i64) {
+        acc = acc + 2i32;                   // three iterations: +6
+        discard(await one() ?| 0i32);
+    }
+    pass acc;
+};
+
+async func:whened = int32(int32:n) {
+    int32:acc = 0i32;
+    when (n > 0i32) {
+        acc = acc + n;                      // 3+2+1
+        n = n - 1i32;
+        discard(await one() ?| 0i32);
+    } then {
+        acc = acc + 1i32;                   // the body ran: +1
+    } end {
+        acc = 0i32 - 100i32;                // never
+    }
+    pass acc;                               // 7
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await ranged(1i32) ?| 0i32;   // 11
+    int32:b = await arrayed(4i32) ?| 0i32;  // 10
+    int32:c = await counted(6i32) ?| 0i32;  // 12
+    int32:d = await whened(3i32) ?| 0i32;   // 7
+    exit a + b + c + d + 2i32;              // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 99i32; };

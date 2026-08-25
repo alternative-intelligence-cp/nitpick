@@ -376,6 +376,8 @@ class Checker:
         elif isinstance(st, S.Pick):
             self._expr(st.selector)
             for arm in st.arms:
+                if arm.guard is not None:
+                    raise RungError("a `where` guard", "0.9", arm.guard)
                 s = Scope(self.scope)
                 self._pattern(arm.pattern, st.selector, s)
                 self._block(arm.body, s)

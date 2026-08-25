@@ -670,7 +670,16 @@ class Parser:
             self.expect("(")
             pat = self.parse_pattern()
             self.expect(")")
-            arms.append(S.PickArm(label, pat, self.parse_block()))
+            # `where (g)` -- parsed so rejection-suite fixtures using guards
+            # stay within the seed's grammar (the parser never restricts,
+            # D-085); the seed CHECKER rungs it, since nothing the seed
+            # compiles for real ever guards an arm.
+            guard = None
+            if self.accept("where"):
+                self.expect("(")
+                guard = self.parse_expr()
+                self.expect(")")
+            arms.append(S.PickArm(label, pat, self.parse_block(), guard))
             if not self.accept(","):
                 break
         self.expect("}")

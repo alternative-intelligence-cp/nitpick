@@ -2083,14 +2083,13 @@ func:await_callee_decl = int32(ExprEmitter->:x, ExprId:cid) never fails {
 // the state word, because everything live is already frame-resident (params)
 // or refused (crossing locals, until stage D).
 func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
-    // Stage-C shape guards, each retired by stage D/E: the hidden `for`
-    // iterator slot and the hidden `pick` result slot cross the suspension,
-    // and neither is frame-resident yet.
-    if (x.fe.for_depth > 0i32) {
-        pass (raw iv_rung("`await` inside a `for` body", "1.1", n.span));
-    }
-    if (x.fe.pick_count > 0i32) {
-        pass (raw iv_rung("`await` inside a `pick`", "1.1", n.span));
+    // The one pick position that still refuses (D3): a `where` guard. The
+    // compare CHAIN re-reads the selector value after a failed guard to test
+    // the next arm, and that value cannot survive a suspension inside the
+    // guard. Arm BODIES are fine — their bindings are frame-resident now.
+    if (x.fe.guard_depth > 0i32) {
+        pass (raw iv_rung("an `await` inside a `pick` arm's `where` guard",
+                          "1.1", n.span));
     }
     // THE FIRST-EVALUATION RULE (stage C): every temp this statement minted so
     // far must be an alloca. An SSA value from before the suspension would

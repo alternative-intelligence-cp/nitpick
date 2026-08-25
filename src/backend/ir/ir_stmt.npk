@@ -167,17 +167,10 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
     // fallthrough — both live or die with `PickExpr`, which is 0.9's.
 
-    if (s.kind == StmtKind.StmtForStmt) {
-        // Depth, not a flag: `for` nests. An `await` under any `for` rungs in
-        // stage C — the hidden iterator slot crosses the suspension.
-        x.fe.for_depth = x.fe.for_depth + 1i32;
-        IrVal:fv = raw emit_for(x, s);
-        x.fe.for_depth = x.fe.for_depth - 1i32;
-        pass fv;
-    }
-    if (s.kind == StmtKind.StmtLoopStmt) { pass (raw emit_counted(x, s, false)); }
-    if (s.kind == StmtKind.StmtTillStmt) { pass (raw emit_counted(x, s, true)); }
-    if (s.kind == StmtKind.StmtWhenStmt) { pass (raw emit_when(x, s)); }
+    if (s.kind == StmtKind.StmtForStmt) { pass (raw emit_for(x, s, sid)); }
+    if (s.kind == StmtKind.StmtLoopStmt) { pass (raw emit_counted(x, s, sid, false)); }
+    if (s.kind == StmtKind.StmtTillStmt) { pass (raw emit_counted(x, s, sid, true)); }
+    if (s.kind == StmtKind.StmtWhenStmt)  { pass (raw emit_when(x, s, sid)); }
 
     if (s.kind == StmtKind.StmtGiveStmt) { pass (raw emit_give(x, s)); }
     if (s.kind == StmtKind.StmtFallStmt) { pass (raw emit_fall(x, s)); }
@@ -221,7 +214,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     bool:framed = false;
     if (x.fe.is_async) {
         if (raw exprtypes_crossing(x.et, sid.index)) {
-            int32:cidx = raw fnem_cross_find(x.fe, sid.index);
+            int32:cidx = raw fnem_cross_find(x.fe, sid.index, 0i32);
             if (cidx < 0i32) {
                 pass (raw iv_rung("a local live across `await` inside a value `pick`",
                                   "1.1", s.span));
@@ -359,7 +352,8 @@ func:loop_i64 = string(ExprEmitter->:x, IrVal:v) never fails {
 // at compile time where it is a literal; otherwise it TRAPS (BAD_STEP, -4101),
 // the runtime fallback D-022 specifies, because a zero step cannot terminate
 // and a negative one contradicts bounds it cannot see.
-func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails {
+func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
+                          bool:is_till) never fails {
     VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
     if (!(raw verify_is_none(cinv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
@@ -391,11 +385,26 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, go_l);
 
-    string:slot = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, slot, "i64");
+    string:slot = raw loop_slot(x, sid, 1i32, "i64");
+    if (slot.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop irw_line(x.fe.w, raw cat5("store i64 ", sv, ", ptr ", slot, ""));
-    string:asc = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(asc, " = icmp slt i64 ", sv, ", ", lv));
+    // The limit, the step and the direction persist across iterations — and
+    // in a coroutine, across suspensions — so they live in slots, re-read
+    // where used, never carried as SSA values into a later segment.
+    string:lv_s = raw loop_slot(x, sid, 2i32, "i64");
+    if (lv_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, lv_s, "i64", lv);
+    string:pv_s = raw loop_slot(x, sid, 5i32, "i64");
+    if (pv_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, pv_s, "i64", pv);
+    string:asc0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(asc0, " = icmp slt i64 ", sv, ", ", lv));
+    string:ascb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(ascb, " = zext i1 ",
+                      raw string_concat(asc0, " to i8")));
+    string:asc_s = raw loop_slot(x, sid, 6i32, "i8");
+    if (asc_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, asc_s, "i8", ascb);
 
     string:head_l = raw irw_new_label(x.fe.w, "ct.head");
     string:body_l = raw irw_new_label(x.fe.w, "ct.body");
@@ -405,12 +414,17 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails
     drop s_start(x, head_l);
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", slot, "", ""));
+    string:lvh = raw loop_reread(x, lv_s, "i64");
+    string:ascw = raw loop_reread(x, asc_s, "i8");
+    string:asch = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(asch, " = trunc i8 ",
+                      raw string_concat(ascw, " to i1")));
     string:up = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(up, " = icmp slt i64 ", cur, ", ", lv));
+    drop irw_line(x.fe.w, raw cat5(up, " = icmp slt i64 ", cur, ", ", lvh));
     string:down = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(down, " = icmp sgt i64 ", cur, ", ", lv));
+    drop irw_line(x.fe.w, raw cat5(down, " = icmp sgt i64 ", cur, ", ", lvh));
     string:cond = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(cond, " = select i1 ", asc, ", ",
+    drop irw_line(x.fe.w, raw cat5(cond, " = select i1 ", asch, ", ",
                       raw cat5("i1 ", up, ", i1 ", down, "")));
     drop irw_line(x.fe.w, raw cat5("br i1 ", cond, ", label %", body_l,
                       raw string_concat(", label %", done_l)));
@@ -426,12 +440,17 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails
     drop s_start(x, incr_l);
     string:c2 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(c2, " = load i64, ptr ", slot, "", ""));
+    string:pvi = raw loop_reread(x, pv_s, "i64");
+    string:ascw2 = raw loop_reread(x, asc_s, "i8");
+    string:asci = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(asci, " = trunc i8 ",
+                      raw string_concat(ascw2, " to i1")));
     string:nup = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(nup, " = add i64 ", c2, ", ", pv));
+    drop irw_line(x.fe.w, raw cat5(nup, " = add i64 ", c2, ", ", pvi));
     string:ndown = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(ndown, " = sub i64 ", c2, ", ", pv));
+    drop irw_line(x.fe.w, raw cat5(ndown, " = sub i64 ", c2, ", ", pvi));
     string:nxt = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(nxt, " = select i1 ", asc, ", ",
+    drop irw_line(x.fe.w, raw cat5(nxt, " = select i1 ", asci, ", ",
                       raw cat5("i64 ", nup, ", i64 ", ndown, "")));
     drop irw_line(x.fe.w, raw cat5("store i64 ", nxt, ", ptr ", slot, ""));
     drop s_br(x, head_l);
@@ -443,13 +462,13 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) never fails
 // whether its body ever ran. `then` runs when it did — including a `break`
 // exit, which lands at the same junction — and `end` only when the condition
 // was false from the start. One flag, one junction, never both clauses.
-func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:winv = raw stmt_when_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
     }
-    string:flag = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, flag, "i8");
+    string:flag = raw loop_slot(x, sid, 1i32, "i8");
+    if (flag.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", flag, ""));
 
     string:head_l = raw irw_new_label(x.fe.w, "wn.head");
@@ -506,7 +525,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // `for (T:x in iterable)` (0.9.7): a range walks its half-open span with the
 // BINDING as the value; a slice or array walks its elements by index, copying
 // each into the binding — a value per iteration, exactly what a binding is.
-func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:finv = raw stmt_for_invariant(x.ast, s);
     if (!(raw verify_is_none(finv))) {
         pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
@@ -525,10 +544,13 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         string:lo = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(lo, " = extractvalue ", rv.ll, " ",
                           raw string_concat(rv.ref, ", 0")));
-        string:hi = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(hi, " = extractvalue ", rv.ll, " ",
+        string:hi0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(hi0, " = extractvalue ", rv.ll, " ",
                           raw string_concat(rv.ref, ", 1")));
-        string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+        string:hi_s = raw loop_slot(x, sid, 2i32, bll.text);
+        if (hi_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+        drop loop_stash(x, hi_s, bll.text, hi0);
+        string:slot = raw for_bind_slot(x, sid, bind, btid, bll);
         drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", lo,
                           raw string_concat(", ptr ", slot)));
         string:head_l = raw irw_new_label(x.fe.w, "fr.head");
@@ -540,9 +562,10 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         string:cur = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cur, " = load ", bll.text, ", ptr ",
                           raw string_concat(slot, "")));
+        string:hih = raw loop_reread(x, hi_s, bll.text);
         string:cnd = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cnd, " = icmp slt ", bll.text, " ",
-                          raw cat3(cur, ", ", hi)));
+                          raw cat3(cur, ", ", hih)));
         drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
                           raw string_concat(", label %", done_l)));
         x.fe.terminated = true;
@@ -567,21 +590,36 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     }
 
     if (ikind == (raw TY_SLICE())) {
-        pass (raw emit_for_indexed(x, s, iter, bind, btid, bll, false));
+        pass (raw emit_for_indexed(x, s, sid, iter, bind, btid, bll, false));
     }
     if (ikind == (raw TY_ARRAY())) {
-        pass (raw emit_for_indexed(x, s, iter, bind, btid, bll, true));
+        pass (raw emit_for_indexed(x, s, sid, iter, bind, btid, bll, true));
     }
     if (ikind == (raw TY_POINTER())) {
-        pass (raw emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+        pass (raw emit_for_iterator(x, s, sid, iter, itid, bind, btid, bll));
     }
     if (raw iterator_impl_of(x, itid) != 0i32) {
-        pass (raw emit_for_iterator(x, s, iter, itid, bind, btid, bll));
+        pass (raw emit_for_iterator(x, s, sid, iter, itid, bind, btid, bll));
     }
     // UNREACHABLE. The five arms above -- range, slice, array, pointer, and an
     // `Iterator` implementor -- are exactly the set `check_for` (D-166) admits;
     // everything else it refuses with `TYPE_NOT_ITERABLE` before the backend.
     pass (raw iv_broken(s.span));
+};
+
+// The `for` binding's slot: the frame slot in a coroutine (bound through the
+// same scope stack, so shadowing behaves), an ordinary local otherwise.
+func:for_bind_slot = string(ExprEmitter->:x, StmtId:sid, DeclNode:bind,
+                            int32:btid, LlType:bll) never fails {
+    if (x.fe.is_async) {
+        int32:ci = raw fnem_cross_find(x.fe, sid.index, 4i32);
+        if (ci >= 0i32) {
+            string:g = raw fnem_cross_gep(x.fe, ci);
+            drop fnem_bind(x.fe, raw decl_name(bind), g, btid);
+            pass g;
+        }
+    }
+    pass (raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text));
 };
 
 // The impl of the prelude `Iterator` for `it1` (0 for none): a non-blanket impl
@@ -619,9 +657,9 @@ func:iterator_impl_of = int32(ExprEmitter->:x, int32:itid) never fails {
 // call returns `Result<Item?>`; the loop reads the `Optional` out of the Result
 // (its value word), ends on the empty tag, and binds the value word otherwise.
 // `continue` re-calls `next` (head), `break` leaves (done).
-func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
-                               int32:itid, DeclNode:bind, int32:btid,
-                               LlType:bll) never fails {
+func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
+                               ExprId:iter, int32:itid, DeclNode:bind,
+                               int32:btid, LlType:bll) never fails {
     int32:idx = raw iterator_impl_of(x, itid);
     if (idx == 0i32) { pass (raw iv_broken(s.span)); }
     ImplEntry:e = raw impl_at(x.fe.ctx.impls, idx - 1i32);
@@ -670,15 +708,20 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
     LlType:opt_ll = raw ll_type(x.fe.ctx, opt_tid);
     if (!(raw ll_is_ok(opt_ll))) { pass (raw iv_from_ll_at(x, opt_ll, opt_tid, s.span)); }
 
-    string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    // The receiver's address persists across iterations — a slot (D2).
+    string:recv_s = raw loop_slot(x, sid, 3i32, "ptr");
+    if (recv_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, recv_s, "ptr", recv);
+    string:slot = raw for_bind_slot(x, sid, bind, btid, bll);
     string:head_l = raw irw_new_label(x.fe.w, "fi.head");
     string:body_l = raw irw_new_label(x.fe.w, "fi.body");
     string:done_l = raw irw_new_label(x.fe.w, "fi.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    string:recvh = raw loop_reread(x, recv_s, "ptr");
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret_ll.text, " ",
-                      raw cat5(sym, "(ptr ", recv, ")", "")));
+                      raw cat5(sym, "(ptr ", recvh, ")", "")));
     string:opt = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(opt, " = extractvalue ", ret_ll.text, " ",
                       raw string_concat(r, ", 0")));
@@ -707,9 +750,9 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
 };
 
 // The slice/array half: index 0..len, element copied into the binding.
-func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
-                              DeclNode:bind, int32:btid, LlType:bll,
-                              bool:is_array) never fails {
+func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
+                              ExprId:iter, DeclNode:bind, int32:btid,
+                              LlType:bll, bool:is_array) never fails {
     string:base = "";
     string:len = "";
     int32:itid = raw exprtypes_get(x.et, iter);
@@ -731,10 +774,17 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
                           raw string_concat(sv.ref, ", 1")));
         len = l2;
     }
-    string:idx = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, idx, "i64");
+    // Base and length persist across iterations — slots, not SSA (D2).
+    string:base_s = raw loop_slot(x, sid, 3i32, "ptr");
+    if (base_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, base_s, "ptr", base);
+    string:len_s = raw loop_slot(x, sid, 2i32, "i64");
+    if (len_s.len == 0i64) { pass (raw iv_broken(s.span)); }
+    drop loop_stash(x, len_s, "i64", len);
+    string:idx = raw loop_slot(x, sid, 1i32, "i64");
+    if (idx.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", idx, ""));
-    string:slot = raw fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    string:slot = raw for_bind_slot(x, sid, bind, btid, bll);
     string:head_l = raw irw_new_label(x.fe.w, "fe.head");
     string:body_l = raw irw_new_label(x.fe.w, "fe.body");
     string:incr_l = raw irw_new_label(x.fe.w, "fe.incr");
@@ -743,21 +793,23 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
     drop s_start(x, head_l);
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", idx, "", ""));
+    string:lenh = raw loop_reread(x, len_s, "i64");
     string:cnd = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(cnd, " = icmp ult i64 ", cur, ", ", len));
+    drop irw_line(x.fe.w, raw cat5(cnd, " = icmp ult i64 ", cur, ", ", lenh));
     drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
                       raw string_concat(", label %", done_l)));
     x.fe.terminated = true;
     drop s_start(x, body_l);
+    string:baseh = raw loop_reread(x, base_s, "ptr");
     string:ep = raw irw_temp(x.fe.w);
     if (is_array) {
         LlType:all = raw ll_type(x.fe.ctx, itid);
         if (!(raw ll_is_ok(all))) { pass (raw iv_broken(s.span)); }
         drop irw_line(x.fe.w, raw cat5(ep, " = getelementptr ", all.text,
-                          ", ptr ", raw cat4(base, ", i64 0, i64 ", cur, "")));
+                          ", ptr ", raw cat4(baseh, ", i64 0, i64 ", cur, "")));
     } else {
         drop irw_line(x.fe.w, raw cat5(ep, " = getelementptr ", bll.text,
-                          ", ptr ", raw cat4(base, ", i64 ", cur, "")));
+                          ", ptr ", raw cat4(baseh, ", i64 ", cur, "")));
     }
     string:ev = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(ev, " = load ", bll.text, ", ptr ",
@@ -983,7 +1035,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
 // arm's body. The widths match by construction: the constructor widened the
 // same declared type in.
 func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
-                          IrVal:sel, Span:at) never fails {
+                          IrVal:sel, int32:arm_idx, Span:at) never fails {
     // A STRUCT DESTRUCTURE BINDS EACH NAMED FIELD (1.0.9c): `(Point{ x, y })`
     // reads `x` and `y` out of the selector by field. The pattern is
     // irrefutable, so the arm always runs; this is the binding half of that.
@@ -1003,7 +1055,9 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             drop irw_line(x.fe.w, raw cat5(fv, " = extractvalue ", sel.ll, " ",
                               raw cat3(sel.ref, ", ",
                                   raw int_to_string(fi.index => int64))));
-            string:fslot = raw fnem_local(x.fe, fname, fi.type_id, fll.text);
+            string:fslot = raw pick_bind_slot(x, arm_idx, si, fname,
+                                              fi.type_id, fll.text);
+            if (fslot.len == 0i64) { pass (raw iv_broken(at)); }
             drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
                               raw string_concat(", ptr ", fslot)));
             si = si + 1i32;
@@ -1042,8 +1096,9 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         string:val = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(val, " = load ", pll.text, ", ptr ",
                           raw string_concat(pp, "")));
-        string:slot = raw fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
-                                       pty, pll.text);
+        string:slot = raw pick_bind_slot(x, arm_idx, 0i32,
+                          raw pat_enum_bind(x.ast, pn, 0i32), pty, pll.text);
+        if (slot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", pll.text, " ", val,
                           raw string_concat(", ptr ", slot)));
         pass (raw iv_nil());
@@ -1081,8 +1136,10 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         string:bval = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
                           raw string_concat(bpp, "")));
-        string:bslot = raw fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, bi),
-                                        bs.type_id, bpll.text);
+        string:bslot = raw pick_bind_slot(x, arm_idx, bi,
+                          raw pat_enum_bind(x.ast, pn, bi), bs.type_id,
+                          bpll.text);
+        if (bslot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
                           raw string_concat(", ptr ", bslot)));
         bi = bi + 1i32;
@@ -1215,12 +1272,12 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                         seq);
     i = 0i32;
     while (i < count) {
-        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
-                                          raw pick_arm_start(s), i));
+        StmtId:armid = raw pick_arm_at(x.ast, raw pick_arm_start(s), i);
+        StmtNode:arm = raw ast_stmt(x.ast, armid);
         drop s_start(x, labels[i => int64]);
         int32:mark = raw fnem_mark(x.fe);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
-        IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, arm.span);
+        IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span);
         if (!(raw iv_is_ok(bp))) { pass bp; }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
@@ -1259,7 +1316,8 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
     drop s_br(x, first_t);
     int32:i = 0i32;
     while (i < count) {
-        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        StmtId:armid = raw pick_arm_at(x.ast, start, i);
+        StmtNode:arm = raw ast_stmt(x.ast, armid);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         string:test_l = raw pk_named(seq,
                             raw string_concat(".t", raw int_to_string(i => int64)));
@@ -1362,9 +1420,14 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 x.fe.terminated = true;
             }
             drop s_start(x, prep_l);
-            IrVal:gb = raw bind_payload(x, pn, sel_tid, sel, arm.span);
+            IrVal:gb = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span);
             if (!(raw iv_is_ok(gb))) { pass gb; }
+            // A guard's suspension would kill the chain's selector value —
+            // the next arm's test re-reads it — so `await` rungs inside a
+            // `where` (the depth is read by `emit_await`).
+            x.fe.guard_depth = x.fe.guard_depth + 1i32;
             IrVal:gc = raw emit_cond(x, g);
+            x.fe.guard_depth = x.fe.guard_depth - 1i32;
             if (!(raw iv_is_ok(gc))) { pass gc; }
             drop irw_line(x.fe.w, raw cat5("br i1 ", gc.ref, ", label %",
                               body_l, raw string_concat(", label %", next_l)));
@@ -1374,7 +1437,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         // --- the body ------------------------------------------------------
         drop s_start(x, body_l);
         if (raw expr_is_none(g)) {
-            IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, arm.span);
+            IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span);
             if (!(raw iv_is_ok(bp))) { pass bp; }
         }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
@@ -1456,13 +1519,224 @@ pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
               raw generic_scope_none(), false));
 };
 
+// A loop's hidden slot (stage D2): the frame GEP in a coroutine, an alloca
+// otherwise. The pre-scan registered every coroutine loop's roles, so a miss
+// while async is a defect — fail closed as broken IR, never a quiet alloca.
+func:loop_slot = string(ExprEmitter->:x, StmtId:sid, int32:role,
+                        string:ll) never fails {
+    if (x.fe.is_async) {
+        int32:ci = raw fnem_cross_find(x.fe, sid.index, role);
+        if (ci < 0i32) { pass ""; }
+        pass (raw fnem_cross_gep(x.fe, ci));
+    }
+    string:a = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, a, ll);
+    pass a;
+};
+
+// A value the loop re-reads each iteration: stored to its slot once, loaded
+// fresh at each use site. In a coroutine the slot is frame-resident, so the
+// value survives a suspension inside the body.
+func:loop_stash = NIL(ExprEmitter->:x, string:slot, string:ll,
+                      string:value) never fails {
+    drop irw_line(x.fe.w, raw cat5("store ", ll, " ", value,
+                      raw string_concat(", ptr ", slot)));
+    pass NIL;
+};
+
+func:loop_reread = string(ExprEmitter->:x, string:slot, string:ll) never fails {
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = load ", ll, ", ptr ", slot));
+    pass r;
+};
+
+// A pick arm's pattern-binding slot (stage D3): role 7+ordinal on the ARM's
+// stmt index, frame-resident in a coroutine so a bind extracted at arm entry
+// survives a suspension inside the arm. The scan registered it by mirroring
+// the same field/payload resolution the emitter makes below — a miss here is
+// drift between the two, and it fails closed as broken IR.
+func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
+                             int32:name, int32:bind_tid, string:ll) never fails {
+    if (x.fe.is_async) {
+        int32:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
+        if (ci < 0i32) { pass ""; }
+        string:g = raw fnem_cross_gep(x.fe, ci);
+        drop fnem_bind(x.fe, name, g, bind_tid);
+        pass g;
+    }
+    pass (raw fnem_local(x.fe, name, bind_tid, ll));
+};
+
+// A counted loop's frame slots (stage D2): counter, limit, step, direction.
+func:scan_counted_slots = NIL(ExprEmitter->:x, StmtId:sid) never fails {
+    drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i64");
+    drop fnem_cross_add(x.fe, sid.index, 2i32, 0i32, "i64");
+    drop fnem_cross_add(x.fe, sid.index, 5i32, 0i32, "i64");
+    drop fnem_cross_add(x.fe, sid.index, 6i32, 0i32, "i8");
+    pass NIL;
+};
+
+// A pick's arm-binding slots (stage D3), registered by mirroring the same
+// resolution `bind_payload` makes: a struct destructure binds each named
+// field, an enum destructure its payload(s). Role 7+ordinal on the ARM's
+// stmt index. `bind_payload` fails closed on a miss, so a drift between
+// this mirror and the emitter is loud.
+func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
+                           int32:arm_count) never fails {
+    int32:i = 0i32;
+    while (i < arm_count) {
+        StmtId:armid = raw pick_arm_at(x.ast, arm_start, i);
+        StmtNode:arm = raw ast_stmt(x.ast, armid);
+        PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
+        if (pn.kind == PatKind.PatStructDestructure) {
+            int32:sbc = raw pat_bind_count(pn);
+            int32:sbs = raw pat_bind_start(pn);
+            int32:si = 0i32;
+            while (si < sbc) {
+                FieldInfo:fi = raw struct_field(x.tr, sel_tid,
+                                   raw ast_id_at(x.ast, sbs, si), x.scope);
+                if (fi.found) {
+                    LlType:fll = raw ll_type(x.fe.ctx, fi.type_id);
+                    if (raw ll_is_ok(fll)) {
+                        drop fnem_cross_add(x.fe, armid.index, 7i32 + si,
+                                            fi.type_id, fll.text);
+                    }
+                }
+                si = si + 1i32;
+            }
+        }
+        if (pn.kind == PatKind.PatEnumDestructure) {
+            if ((raw pat_enum_bind_count(x.ast, pn)) > 0i32) {
+                int32:segs = raw pat_enum_segment_count(x.ast, pn);
+                VariantInfo:vi = raw variant_info(x, sel_tid,
+                                     raw pat_enum_segment(x.ast, pn, segs - 1i32));
+                if (vi.found) { if (vi.payload_count > 0i32) {
+                    if ((raw pat_enum_bind_count(x.ast, pn)) == 1i32) {
+                        int32:pty = raw resolve_type(x.tr, vi.payload_ty,
+                                        raw symtab_home_scope(x.tab,
+                                            raw type_decl(x.fe.ctx.types,
+                                                sel_tid), x.scope));
+                        LlType:pll = raw ll_type(x.fe.ctx, pty);
+                        if (raw ll_is_ok(pll)) {
+                            drop fnem_cross_add(x.fe, armid.index, 7i32,
+                                                pty, pll.text);
+                        }
+                    } else {
+                        int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
+                        int32:bc = raw pat_enum_bind_count(x.ast, pn);
+                        int32:bi = 0i32;
+                        while (bi < bc) {
+                            PayloadSlot:bs = raw variant_payload_slot(x, sel_tid,
+                                                 vn2, bi);
+                            if (bs.ok) {
+                                LlType:bpll = raw ll_type(x.fe.ctx, bs.type_id);
+                                if (raw ll_is_ok(bpll)) {
+                                    drop fnem_cross_add(x.fe, armid.index,
+                                        7i32 + bi, bs.type_id, bpll.text);
+                                }
+                            }
+                            bi = bi + 1i32;
+                        }
+                    }
+                } }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// The scan's EXPRESSION descent (stage D3): the one statement-shaped thing an
+// expression can hide is a value-`pick`, whose arms hold statements — so the
+// walk follows every expression looking for `ExprPickExpr` and hands its arms
+// back to the statement scan (var-decls register, binds register).
+func:scan_expr = IrVal(ExprEmitter->:x, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass (raw iv_nil()); }
+    if (fuel <= 0i32) { pass (raw iv_nil()); }
+    ExprNode:n = raw ast_expr(x.ast, id);
+
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                     a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        IrVal:sr = raw scan_expr(x, raw pick_selector(as_stmt), fuel - 1i32);
+        if (!(raw iv_is_ok(sr))) { pass sr; }
+        drop scan_pick_binds(x, raw exprtypes_get(x.et,
+                                 raw pick_selector(as_stmt)),
+                             raw pick_arm_start(as_stmt),
+                             raw pick_arm_count(as_stmt));
+        int32:j = 0i32;
+        while (j < (raw pick_arm_count(as_stmt))) {
+            IrVal:ar = raw scan_crossing(x, raw pick_arm_at(x.ast,
+                           raw pick_arm_start(as_stmt), j), fuel - 1i32);
+            if (!(raw iv_is_ok(ar))) { pass ar; }
+            j = j + 1i32;
+        }
+        pass (raw iv_nil());
+    }
+
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            IrVal:r = raw scan_expr(x, ExprId{ index: raw ast_id_at(x.ast,
+                          raw expr_list_start(n), i) }, fuel - 1i32);
+            if (!(raw iv_is_ok(r))) { pass r; }
+            i = i + 2i32;
+        }
+        pass (raw iv_nil());
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        IrVal:cr = raw scan_expr(x, raw expr_callee(n), fuel - 1i32);
+        if (!(raw iv_is_ok(cr))) { pass cr; }
+        pass (raw scan_expr_window(x, (raw expr_list_start(n))
+                  + (raw expr_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw expr_generic_count(n)), fuel));
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw scan_expr_window(x, (raw expr_list_start(n))
+                  + (raw builtin_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw builtin_generic_count(n)), fuel));
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass (raw iv_nil()); }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (raw scan_expr_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), fuel));
+    }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass (raw iv_nil()); }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass (raw iv_nil()); }
+    IrVal:r1 = raw scan_expr(x, raw expr_lhs(n), fuel - 1i32);
+    if (!(raw iv_is_ok(r1))) { pass r1; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass (raw iv_nil()); }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        pass (raw scan_expr_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), fuel));
+    }
+    IrVal:r2 = raw scan_expr(x, raw expr_rhs(n), fuel - 1i32);
+    if (!(raw iv_is_ok(r2))) { pass r2; }
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass (raw iv_nil()); }
+    pass (raw scan_expr(x, raw expr_third(n), fuel - 1i32));
+};
+
+func:scan_expr_window = IrVal(ExprEmitter->:x, int32:start, int32:count,
+                              int32:fuel) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        IrVal:r = raw scan_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                                fuel - 1i32);
+        if (!(raw iv_is_ok(r))) { pass r; }
+        i = i + 1i32;
+    }
+    pass (raw iv_nil());
+};
+
 // THE CROSSING PRE-SCAN (stage D): before the frame type is fixed, find every
-// var-decl the suspend walk marked and register its slot. Statement positions
-// only — a var-decl lives in statement position, and the one place a nested
-// one can hide from this walk is inside a value-`pick`'s arms, which is
-// exactly where `emit_await` still rungs; a marked decl this scan missed
-// falls to the declaration-site rung below, so the answer is refusal, never
-// a dead slot.
+// var-decl the suspend walk marked and register its slot — and since D3, the
+// loop and pick hidden state too, with `scan_expr` following expressions into
+// value-`pick` arms so nothing statement-shaped hides from it. A marked decl
+// this scan still cannot reach falls to the declaration-site rung below, so
+// the answer is refusal, never a dead slot.
 func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails {
     if (raw stmt_is_none(sid)) { pass (raw iv_nil()); }
     if (fuel <= 0i32) { pass (raw iv_nil()); }
@@ -1475,9 +1749,26 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
             if (!(raw ll_is_ok(ll))) {
                 pass (raw iv_from_ll_at(x, ll, dty, s.span));
             }
-            drop fnem_cross_add(x.fe, sid.index, dty, ll.text);
+            drop fnem_cross_add(x.fe, sid.index, 0i32, dty, ll.text);
         }
-        pass (raw iv_nil());
+        pass (raw scan_expr(x, raw stmt_decl_init(x.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        IrVal:ra = raw scan_expr(x, raw stmt_target(s), fuel - 1i32);
+        if (!(raw iv_is_ok(ra))) { pass ra; }
+        pass (raw scan_expr(x, raw stmt_assigned(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPassStmt) {
+        pass (raw scan_expr(x, raw stmt_operand(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtFailStmt) {
+        pass (raw scan_expr(x, raw stmt_operand(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        pass (raw scan_expr(x, raw stmt_operand(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtExitStmt) {
+        pass (raw scan_expr(x, raw stmt_expr(s), fuel - 1i32));
     }
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:i = 0i32;
@@ -1490,14 +1781,63 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
         pass (raw iv_nil());
     }
     if (s.kind == StmtKind.StmtIfStmt) {
+        IrVal:r0 = raw scan_expr(x, raw stmt_cond(s), fuel - 1i32);
+        if (!(raw iv_is_ok(r0))) { pass r0; }
         IrVal:r1 = raw scan_crossing(x, raw stmt_then(s), fuel - 1i32);
         if (!(raw iv_is_ok(r1))) { pass r1; }
         pass (raw scan_crossing(x, raw stmt_else(s), fuel - 1i32));
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
+        IrVal:rw = raw scan_expr(x, raw stmt_cond(s), fuel - 1i32);
+        if (!(raw iv_is_ok(rw))) { pass rw; }
         pass (raw scan_crossing(x, raw stmt_body(x.ast, s), fuel - 1i32));
     }
+    // LOOP STATE IS FRAME-RESIDENT IN A COROUTINE, uniformly (stage D2): the
+    // counter, the limit, the step and direction, the base pointer, the
+    // binding — every value a loop head re-reads each iteration. An SSA copy
+    // or an alloca would die at a suspension inside the body; framing them
+    // unconditionally means no detector exists for the emitter's needs to
+    // drift from. Roles: 1 counter/index, 2 limit/hi/len, 3 base/receiver,
+    // 4 the `for` binding, 5 step, 6 direction.
+    if (s.kind == StmtKind.StmtForStmt) {
+        ExprId:fiter = raw stmt_for_iter(x.ast, s);
+        int32:fitid = raw exprtypes_get(x.et, fiter);
+        int32:fik = raw type_kind(x.fe.ctx.types, fitid);
+        DeclNode:fbind = raw ast_decl(x.ast, raw stmt_for_binding(s));
+        int32:fbtid = raw resolve_type(x.tr, raw param_type(fbind), x.scope);
+        LlType:fbll = raw ll_type(x.fe.ctx, fbtid);
+        if (!(raw ll_is_ok(fbll))) {
+            pass (raw iv_from_ll_at(x, fbll, fbtid, s.span));
+        }
+        drop fnem_cross_add(x.fe, sid.index, 4i32, fbtid, fbll.text);
+        IrVal:rfi = raw scan_expr(x, fiter, fuel - 1i32);
+        if (!(raw iv_is_ok(rfi))) { pass rfi; }
+        if (fik == (raw TY_RANGE())) {
+            drop fnem_cross_add(x.fe, sid.index, 2i32, fbtid, fbll.text);
+        }
+        if (fik == (raw TY_SLICE())) {
+            drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i64");
+            drop fnem_cross_add(x.fe, sid.index, 2i32, 0i32, "i64");
+            drop fnem_cross_add(x.fe, sid.index, 3i32, 0i32, "ptr");
+        }
+        if (fik == (raw TY_ARRAY())) {
+            drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i64");
+            drop fnem_cross_add(x.fe, sid.index, 2i32, 0i32, "i64");
+            drop fnem_cross_add(x.fe, sid.index, 3i32, 0i32, "ptr");
+        }
+        if (fik == (raw TY_POINTER())) {
+            drop fnem_cross_add(x.fe, sid.index, 3i32, 0i32, "ptr");
+        }
+        if (raw iterator_impl_of(x, fitid) != 0i32) {
+            drop fnem_cross_add(x.fe, sid.index, 3i32, 0i32, "ptr");
+        }
+        pass (raw scan_crossing(x, raw stmt_for_body(x.ast, s), fuel - 1i32));
+    }
     if (s.kind == StmtKind.StmtWhenStmt) {
+        // The `when` tracking flag persists across iterations — framed too.
+        drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i8");
+        IrVal:rwc = raw scan_expr(x, raw stmt_cond(s), fuel - 1i32);
+        if (!(raw iv_is_ok(rwc))) { pass rwc; }
         IrVal:r2 = raw scan_crossing(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
         if (!(raw iv_is_ok(r2))) { pass r2; }
         IrVal:r3 = raw scan_crossing(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
@@ -1505,15 +1845,22 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
         pass (raw scan_crossing(x, raw stmt_when_end(x.ast, s), fuel - 1i32));
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
+        drop scan_counted_slots(x, sid);
+        IrVal:rl = raw scan_counted_args(x, s, fuel);
+        if (!(raw iv_is_ok(rl))) { pass rl; }
         pass (raw scan_crossing(x, raw stmt_counted_body(s), fuel - 1i32));
     }
     if (s.kind == StmtKind.StmtTillStmt) {
+        drop scan_counted_slots(x, sid);
+        IrVal:rt = raw scan_counted_args(x, s, fuel);
+        if (!(raw iv_is_ok(rt))) { pass rt; }
         pass (raw scan_crossing(x, raw stmt_counted_body(s), fuel - 1i32));
     }
-    if (s.kind == StmtKind.StmtForStmt) {
-        pass (raw scan_crossing(x, raw stmt_for_body(x.ast, s), fuel - 1i32));
-    }
     if (s.kind == StmtKind.StmtPickStmt) {
+        IrVal:rs = raw scan_expr(x, raw pick_selector(s), fuel - 1i32);
+        if (!(raw iv_is_ok(rs))) { pass rs; }
+        drop scan_pick_binds(x, raw exprtypes_get(x.et, raw pick_selector(s)),
+                             raw pick_arm_start(s), raw pick_arm_count(s));
         int32:j = 0i32;
         while (j < (raw pick_arm_count(s))) {
             IrVal:r4 = raw scan_crossing(x, StmtId{ index: raw ast_id_at(x.ast,
@@ -1524,10 +1871,27 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
         pass (raw iv_nil());
     }
     if (s.kind == StmtKind.StmtPickArm) {
+        IrVal:rg = raw scan_expr(x, raw arm_guard(s), fuel - 1i32);
+        if (!(raw iv_is_ok(rg))) { pass rg; }
         pass (raw scan_crossing(x, raw arm_body(s), fuel - 1i32));
     }
     if (s.kind == StmtKind.StmtDeferStmt) {
         pass (raw scan_crossing(x, StmtId{ index: s.a }, fuel - 1i32));
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        pass (raw scan_expr(x, raw stmt_expr(s), fuel - 1i32));
+    }
+    pass (raw iv_nil());
+};
+
+// A counted loop's bound expressions, scanned for hidden value-picks.
+func:scan_counted_args = IrVal(ExprEmitter->:x, StmtNode:s, int32:fuel) never fails {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        IrVal:r = raw scan_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
+        if (!(raw iv_is_ok(r))) { pass r; }
+        i = i + 1i32;
     }
     pass (raw iv_nil());
 };

@@ -1,0 +1,96 @@
+// expect-exit: 42
+//
+// PICKS SUSPEND (D-177, 1.1.4 stage D3). An arm's pattern bindings are
+// frame-resident in a coroutine — the scan registers each by mirroring the
+// emitter's own field/payload resolution (role 7+ordinal on the arm's stmt
+// index), and `bind_payload` fails closed if the two ever drift — so a bind
+// extracted at arm entry survives a suspension inside the arm. Exercised:
+// a single enum payload read after an await, a multi-payload arm, a struct
+// destructure, a guarded arm (the guard itself stays synchronous — an
+// `await` inside `where` is the one pick position that still rungs), and a
+// VALUE pick whose arm declares a local across an await, `give`n after.
+mod:async_pick;
+
+enum:Ev = { Nudge(int32); Slide(int32, int32); Stop; };
+struct:Pt = { int32:x; int32:y; };
+
+async func:one = int32() { pass 1i32; };
+
+async func:enumy = int32(int32:v) {
+    Ev:e = Ev.Nudge(v);
+    int32:r = 0i32;
+    pick (e) {
+        (Ev.Nudge(d)) {
+            discard(await one() ?| 0i32);
+            r = d + 1i32;
+        },
+        (Ev.Slide(a, b)) { r = a + b; },
+        (Ev.Stop) { r = 0i32; }
+    }
+    pass r;
+};
+
+async func:multy = int32(int32:v) {
+    Ev:e = Ev.Slide(v, 3i32);
+    int32:r = 0i32;
+    pick (e) {
+        (Ev.Nudge(d)) { r = d; },
+        (Ev.Slide(a, b)) {
+            discard(await one() ?| 0i32);
+            r = a + b;
+        },
+        (Ev.Stop) { r = 0i32; }
+    }
+    pass r;
+};
+
+async func:structy = int32(int32:v) {
+    Pt:p = Pt{ x: v, y: 4i32 };
+    int32:r = 0i32;
+    pick (p) {
+        (Pt{ x, y }) {
+            discard(await one() ?| 0i32);
+            r = x + y;
+        }
+    }
+    pass r;
+};
+
+async func:guarded = int32(int32:v) {
+    Ev:e = Ev.Nudge(v);
+    int32:r = 0i32;
+    pick (e) {
+        (Ev.Nudge(d)) where (d > 10i32) {
+            discard(await one() ?| 0i32);
+            r = d + 100i32;
+        },
+        (Ev.Nudge(d)) {
+            discard(await one() ?| 0i32);
+            r = d;
+        },
+        (*) { r = 0i32; }
+    }
+    pass r;
+};
+
+async func:valued = int32(int32:v) {
+    int32:r = pick (v) {
+        (1i32) {
+            int32:w = await one() ?| 0i32;
+            give w + 4i32;                    // 5
+        },
+        (*) { give 0i32; }
+    };
+    pass r;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await enumy(5i32) ?| 0i32;      // 6
+    int32:b = await multy(4i32) ?| 0i32;      // 7
+    int32:c = await structy(6i32) ?| 0i32;    // 10
+    int32:d = await guarded(9i32) ?| 0i32;    // 9
+    int32:e2 = await valued(1i32) ?| 0i32;    // 5
+    exit a + b + c + d + e2 + 5i32;           // 42
+};
+
+func:failsafe = int32(tbb32:_~e) { exit 99i32; };
