@@ -2122,7 +2122,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (av.state != (raw LL_OK())) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, cft, i), av, at);
         if (av.state != (raw LL_OK())) { pass av; }
-        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 7i32 + i);
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 9i32 + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
@@ -2157,6 +2157,11 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     drop irw_line(x.fe.w, raw cat4("store ptr ", old_h, ", ptr ", sg));
     drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
                       x.fe.join_gep, ""));
+    // AND ENQUEUED (D-071, 1.1.8): a spawned task is runnable immediately,
+    // so it advances whenever this task waits — the join collects it, but
+    // the join is not what makes it run.
+    drop irw_line(x.fe.w, raw cat3("call void @npk_rq_push(ptr ",
+                      cfv.ref, ")"));
     pass (raw iv("i32", "0", 0i32));
 };
 
@@ -2436,13 +2441,36 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, "ret i8 1");
         x.fe.terminated = true;
         drop s_start(x, psg);
-        // The wind-up poll every resume segment owes (D-177): a task woken to
-        // be wound up learns it here, at the first instruction after waking.
+        // THE WIND-UP POLL (D-177), and its meaning: a task whose wind-up
+        // word is set does not resume its work — the wait completes with the
+        // wind-up error instead of its value, the task runs its own `defer`s,
+        // and it fails with `DeadlineExceeded`. That is the whole cooperative
+        // model, and it needs to exist at ONE site only: every wait in the
+        // language bottoms out here, so an awaiting task learns through its
+        // awaitee's failure rather than through a second mechanism — and no
+        // frame is abandoned, because each level unwinds in order.
         string:pw = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat4(pw, " = load i32, ptr ",
                           x.fe.windup_gep, ""));
         drop irw_line(x.fe.w, raw cat3("call void @npk_windup_note(i32 ",
                           pw, ")"));
+        string:pwb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(pwb, " = icmp ne i32 ",
+                          raw string_concat(pw, ", 0")));
+        string:wu_l2 = raw irw_new_label(x.fe.w, "wu.unwind");
+        string:go_l2 = raw irw_new_label(x.fe.w, "wu.go");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", pwb, ", label %", wu_l2,
+                          raw string_concat(", label %", go_l2)));
+        x.fe.terminated = true;
+        drop s_start(x, wu_l2);
+        IrVal:wud = raw run_all_defers(x);
+        if (!(raw iv_is_ok(wud))) { pass wud; }
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string((raw x_site(x, n.span)) => int64),
+                          ")"));
+        drop fnem_ret_fail(x.fe, "-4107");
+        x.fe.terminated = true;
+        drop s_start(x, go_l2);
         pass (raw iv("i32", "0", 0i32));
     }
 

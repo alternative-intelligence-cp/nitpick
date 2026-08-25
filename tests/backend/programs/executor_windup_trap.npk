@@ -1,0 +1,36 @@
+// expect-exit: 46
+//
+// THE BACKSTOP BENEATH THE COURTESY (D-177, 1.1.8b). This child SWALLOWS
+// its wind-up — `?|` on a wait catches the wind-up error like any other,
+// which is the price of `?|` meaning one thing everywhere — and goes back
+// to sleeping. The cooperative path cannot contain it, so the grace
+// expires and the join TRAPS `DeadlineExceeded`: the guarantee is the
+// trap, the cooperative unwind is the courtesy. Total containment is the
+// join deadline plus the stated 250ms grace, not twice the deadline.
+mod:executor_windup_trap;
+async func:stubborn = NIL(int32:n) {
+    while (n > 0i32) {
+        await sleep(raw duration_secs(30i64)) ?| NIL;   // swallows the wind-up
+        n = n - 1i32;
+    }
+    pass NIL;
+};
+async func:parent = int32(int32:_~v) {
+    drop stubborn(3i32);
+    pass 1i32;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = await parent(0i32) ?| 0i32;
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 46i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

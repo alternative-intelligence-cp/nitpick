@@ -130,6 +130,301 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; FUTEX_WAIT_BITSET so a cross-thread wake (1.1.9) needs no new mechanism.
 @npk_park_word = internal global i32 0
 
+; THE FRAME HEADER, AS THE EXECUTOR SEES IT. Must match the `%"npk.frame.hdr"`
+; the emitter writes (emit_runtime_declares) — one shape, two spellings, and
+; the harness's runtime-signature check is what keeps them honest.
+;   0 resume_fn | 1 state | 2 windup | 3 result | 4 join_head
+;   5 sibling   | 6 awaitee | 7 qnext | 8 wake_at
+%npk.hdr = type { ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64 }
+
+; THE READY QUEUE and THE SLEEPERS, both intrusive through `qnext` — a task is
+; ready or sleeping, never both, so one link word serves. `wake_at` is the
+; sleeper's absolute monotonic timepoint, and **-1 once the task has
+; completed**: a task never sleeps to a negative timepoint, so the marker
+; cannot collide with a real deadline, and a join that arrives after its
+; child already finished reads it instead of waiting forever.
+@npk_rq_head = internal global ptr null
+@npk_rq_tail = internal global ptr null
+@npk_sl_head = internal global ptr null
+
+define void @npk_rq_push(ptr %f) {
+entry:
+  %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
+  store ptr null, ptr %qn
+  %t = load ptr, ptr @npk_rq_tail
+  %empty = icmp eq ptr %t, null
+  br i1 %empty, label %first, label %append
+first:
+  store ptr %f, ptr @npk_rq_head
+  store ptr %f, ptr @npk_rq_tail
+  ret void
+append:
+  %tq = getelementptr %npk.hdr, ptr %t, i32 0, i32 7
+  store ptr %f, ptr %tq
+  store ptr %f, ptr @npk_rq_tail
+  ret void
+}
+
+define ptr @npk_rq_pop() {
+entry:
+  %h = load ptr, ptr @npk_rq_head
+  %none = icmp eq ptr %h, null
+  br i1 %none, label %empty, label %take
+empty:
+  ret ptr null
+take:
+  %hq = getelementptr %npk.hdr, ptr %h, i32 0, i32 7
+  %nx = load ptr, ptr %hq
+  store ptr %nx, ptr @npk_rq_head
+  %last = icmp eq ptr %nx, null
+  br i1 %last, label %clear, label %done
+clear:
+  store ptr null, ptr @npk_rq_tail
+  br label %done
+done:
+  store ptr null, ptr %hq
+  ret ptr %h
+}
+
+define void @npk_sl_push(ptr %f, i64 %at) {
+entry:
+  %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
+  store i64 %at, ptr %wa
+  %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
+  %h = load ptr, ptr @npk_sl_head
+  store ptr %h, ptr %qn
+  store ptr %f, ptr @npk_sl_head
+  ret void
+}
+
+; The earliest sleeper's timepoint, or 0 when nothing sleeps.
+define i64 @npk_sl_earliest() {
+entry:
+  %h = load ptr, ptr @npk_sl_head
+  br label %loop
+loop:
+  %cur = phi ptr [ %h, %entry ], [ %nx, %step ]
+  %best = phi i64 [ 0, %entry ], [ %nb, %step ]
+  %at_end = icmp eq ptr %cur, null
+  br i1 %at_end, label %done, label %step
+step:
+  %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
+  %w = load i64, ptr %wa
+  %unset = icmp eq i64 %best, 0
+  %lower = icmp slt i64 %w, %best
+  %take = or i1 %unset, %lower
+  %nb = select i1 %take, i64 %w, i64 %best
+  %qn = getelementptr %npk.hdr, ptr %cur, i32 0, i32 7
+  %nx = load ptr, ptr %qn
+  br label %loop
+done:
+  ret i64 %best
+}
+
+; Move every sleeper whose timepoint has arrived onto the ready queue. The
+; list is rebuilt rather than spliced: one pass, no removal bookkeeping.
+define void @npk_sl_wake_due(i64 %now) {
+entry:
+  ; the cursor is a SLOT rather than a phi: the body rejoins the head from
+  ; two blocks, and a phi over three predecessors written as two is the
+  ; verifier error this cost once already.
+  %cs = alloca ptr, align 8
+  %h = load ptr, ptr @npk_sl_head
+  store ptr %h, ptr %cs
+  store ptr null, ptr @npk_sl_head
+  br label %loop
+loop:
+  %cur = load ptr, ptr %cs
+  %at_end = icmp eq ptr %cur, null
+  br i1 %at_end, label %done, label %again
+again:
+  %qn = getelementptr %npk.hdr, ptr %cur, i32 0, i32 7
+  %nx = load ptr, ptr %qn
+  store ptr %nx, ptr %cs
+  %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
+  %w = load i64, ptr %wa
+  %due = icmp sle i64 %w, %now
+  br i1 %due, label %ready, label %keep
+ready:
+  call void @npk_rq_push(ptr %cur)
+  br label %loop
+keep:
+  %sh = load ptr, ptr @npk_sl_head
+  store ptr %sh, ptr %qn
+  store ptr %cur, ptr @npk_sl_head
+  br label %loop
+done:
+  ret void
+}
+
+; ONE STEP OF THE EXECUTOR (D-071). Returns the frame it drove to DONE, or
+; null. Everything blocking in the language ends up here: a task that waits
+; is a task off the ready queue, so a SIBLING runs — which is the property
+; D-071 exists to guarantee and the reason blocking is never a syscall on
+; the thread while work remains.
+define ptr @npk_step(i64 %dl) {
+entry:
+  %fz = load i32, ptr @npk_frozen
+  %stop = icmp ne i32 %fz, 0
+  br i1 %stop, label %frozen, label %go
+frozen:
+  ; D-063: after a trap nothing is resumed, anywhere, ever again.
+  call void @npk_trap(i32 -4102)
+  unreachable
+go:
+  %now = call i64 @npk_mono_now()
+  call void @npk_sl_wake_due(i64 %now)
+  %t = call ptr @npk_rq_pop()
+  %idle = icmp eq ptr %t, null
+  br i1 %idle, label %nothing, label %run
+run:
+  %rfp = getelementptr %npk.hdr, ptr %t, i32 0, i32 0
+  %rf = load ptr, ptr %rfp
+  %rc = call i8 %rf(ptr %t)
+  %done = icmp eq i8 %rc, 0
+  br i1 %done, label %finished, label %parked
+finished:
+  %wa = getelementptr %npk.hdr, ptr %t, i32 0, i32 8
+  store i64 -1, ptr %wa
+  ret ptr %t
+parked:
+  %at = call i64 @npk_park_take()
+  %nowake = icmp eq i64 %at, 0
+  br i1 %nowake, label %unwakeable, label %sleep
+unwakeable:
+  ; a suspension that named no wake condition: nothing could ever resume it
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+sleep:
+  call void @npk_sl_push(ptr %t, i64 %at)
+  ret ptr null
+nothing:
+  %e = call i64 @npk_sl_earliest()
+  %dead = icmp eq i64 %e, 0
+  br i1 %dead, label %deadlock, label %wait
+deadlock:
+  ; nothing ready and nothing sleeping, with work outstanding: no future
+  ; event can advance the program
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+wait:
+  ; THE WAIT IS CLAMPED BY THE CALLER'S DEADLINE. Without this the executor
+  ; sleeps to the earliest sleeper — which may be far past a join deadline —
+  ; and the containment D-062 promises becomes a wait. The first
+  ; long-sleeping child caught it: a 30-second task ran to completion under
+  ; a 120ms join.
+  %has_dl = icmp ne i64 %dl, 0
+  br i1 %has_dl, label %clamp, label %plain
+clamp:
+  %sooner = icmp slt i64 %dl, %e
+  %until = select i1 %sooner, i64 %dl, i64 %e
+  call void @npk_park_sleep(i64 %until)
+  ret ptr null
+plain:
+  call void @npk_park_sleep(i64 %e)
+  ret ptr null
+}
+
+; Has this task completed? (`wake_at` is -1 exactly then.)
+define i32 @npk_task_done(ptr %f) {
+entry:
+  %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
+  %w = load i64, ptr %wa
+  %d = icmp eq i64 %w, -1
+  %r = zext i1 %d to i32
+  ret i32 %r
+}
+
+; RUN UNTIL ONE TASK COMPLETES — the shape both the entry shim (root) and the
+; join (each child) need. `dl` is an absolute monotonic deadline, or 0 for
+; none. Returns 0 when the target completed, 1 when the deadline expired.
+define i32 @npk_run_until(ptr %target, i64 %dl) {
+entry:
+  br label %loop
+loop:
+  %already = call i32 @npk_task_done(ptr %target)
+  %fin = icmp ne i32 %already, 0
+  br i1 %fin, label %ok, label %check
+check:
+  %has_dl = icmp ne i64 %dl, 0
+  br i1 %has_dl, label %timecheck, label %step
+timecheck:
+  %now = call i64 @npk_mono_now()
+  %over = icmp sgt i64 %now, %dl
+  br i1 %over, label %expired, label %step
+step:
+  %r = call ptr @npk_step(i64 %dl)
+  br label %loop
+ok:
+  ret i32 0
+expired:
+  ret i32 1
+}
+
+; THE WIND-UP SETTER (D-177/D-083): the join's deadline expired, so every
+; unfinished child in this list is told to unwind — the cooperative model,
+; where a task learns at its next resume that it is being wound up and runs
+; its own `defer`s. Preemptive destruction stays removed (D-062).
+define void @npk_windup_all(ptr %head) {
+entry:
+  br label %loop
+loop:
+  %cur = phi ptr [ %head, %entry ], [ %nx, %next ]
+  %at_end = icmp eq ptr %cur, null
+  br i1 %at_end, label %done, label %mark
+mark:
+  %wp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 2
+  store i32 1, ptr %wp
+  ; AND WOKEN. A wind-up a sleeping task cannot see is not a grace period,
+  ; it is dead time: the flag is read at the next RESUME, so the resume has
+  ; to happen. Due-ing the sleeper (wake_at 0, which every `now` is past)
+  ; brings it back through the ordinary wake path — no list surgery, and a
+  ; task already ready or running is unaffected because only sleepers read
+  ; this word. A completed task keeps its -1.
+  %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
+  %w = load i64, ptr %wa
+  %fin = icmp eq i64 %w, -1
+  br i1 %fin, label %next, label %due
+due:
+  store i64 0, ptr %wa
+  br label %next
+next:
+  %sp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 5
+  %nx = load ptr, ptr %sp
+  br label %loop
+done:
+  ret void
+}
+
+; The program-level JOIN DEADLINE (D-083): fixed where the executor is
+; created — one greppable location, an auditable value, and not "whatever the
+; runtime felt like". Five seconds: long enough that no correct computation
+; trips it, short enough that a stuck task is contained rather than waited on
+; forever. 1.1.9's `Thread.spawn` sets it per executor.
+@npk_join_deadline_ns = internal global i64 5000000000
+
+; THE WIND-UP GRACE (D-177): how long a wound-up task has to run its own
+; `defer`s and finish. Unwinding is a few resumes — microseconds in practice
+; — so 250ms is enormously generous, and a SHORT stated grace keeps total
+; containment at `deadline + 250ms` rather than twice the deadline. The
+; first cut granted a second full deadline; halving the audit surface is
+; worth more than the generosity.
+@npk_windup_grace_ns = internal global i64 250000000
+
+define i64 @npk_windup_grace() {
+entry:
+  %v = load i64, ptr @npk_windup_grace_ns
+  ret i64 %v
+}
+
+define i64 @npk_join_deadline() {
+entry:
+  %v = load i64, ptr @npk_join_deadline_ns
+  ret i64 %v
+}
+
 define void @npk_park_until(i64 %at) {
 entry:
   store i64 %at, ptr @npk_park_at

@@ -1,0 +1,45 @@
+// expect-exit: 44
+//
+// THE COOPERATIVE WIND-UP (D-062/D-083/D-177, 1.1.8b). The child outlives
+// the executor's join deadline — the value fixed where the executor is
+// created, one auditable constant. Scope exit does not wait: the deadline
+// expires, every unfinished child's wind-up word is set AND the sleeping
+// child is due'd (a wind-up a task cannot see is dead time, not a grace),
+// and at its next resume the wait completes with `DeadlineExceeded`
+// instead of its value. The child unwinds through its own `defer`s,
+// completes with that error, and the join relays it as the parent's own —
+// so main reads a `Result` error rather than taking a trap. Preemptive
+// destruction stays removed: nothing is killed, the task is asked.
+//
+// The child writes `relay await` — a wait that should be windable
+// PROPAGATES. `?|` on a wait swallows the wind-up like any other error,
+// which is uniform (`?|` means one thing everywhere) and is exactly why
+// the trap in executor_windup_trap.npk exists beneath it.
+mod:executor_windup;
+async func:hog = NIL(int32:_~v) {
+    relay await sleep(raw duration_secs(30i64));   // windable: propagates
+    pass NIL;
+};
+async func:parent = int32(int32:_~v) {
+    drop hog(1i32);
+    pass 1i32;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Result<int32>:r = await parent(0i32);
+    if (r.is_error) {
+        if (r.err == DeadlineExceeded) { exit 44i32; }
+        exit 43i32;
+    }
+    exit 11i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 45i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

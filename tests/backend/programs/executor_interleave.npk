@@ -1,0 +1,46 @@
+// expect-exit: 42
+//
+// D-071's PROPERTY, MADE TRUE (1.1.8b): a waiting task cannot stall a
+// runnable sibling. The three spawned workers are enqueued at their spawn
+// and run to completion DURING the parent's own 30ms sleep — the executor
+// pops a ready task whenever the current one parks, so the join at scope
+// exit finds them already finished. Serialising them would add 30ms the
+// upper bound refuses; skipping the parent's own sleep would fail the
+// lower. The spawn, the sleep and the join all share one run loop.
+mod:executor_interleave;
+error:Never;
+async func:worker = NIL(int32:_~id) {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    pass NIL;
+};
+async func:parent = int32(int32:_~v) {
+    drop worker(1i32);
+    drop worker(2i32);
+    drop worker(3i32);
+    // The parent sleeps 30ms; the three children (10ms each) must run
+    // CONCURRENTLY during it — if the executor serialised them, the join
+    // below would add 30ms more.
+    await sleep(raw duration_ms(30i64)) ?| NIL;
+    pass 7i32;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int64:t0 = raw mono_now();
+    int32:r = await parent(0i32) ?| 0i32;
+    int64:dt = (raw mono_now()) - t0;
+    if (r != 7i32)         { exit 11i32; }
+    if (dt < 28000000i64)  { exit 12i32; }   // the parent's own sleep happened
+    if (dt > 55000000i64)  { exit 13i32; }   // but NOT 30+30 serialised
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Never)            { exit 90i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
