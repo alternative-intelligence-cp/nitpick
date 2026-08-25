@@ -9809,6 +9809,7 @@ trap codes continue that region below `E_EOF`:
 | −4100 | `TBB_ERR` | an ERR value at a bare comparison, or a checked cast out of tbb — the taint about to steer control flow or launder into a number (D-008 §5, D-144; registered 0.9.5) |
 | −4101 | `BAD_STEP` | a counted loop's step was not positive at runtime where it could not be a literal (registered 0.9.9) |
 | −4102 | `UNREACHABLE` | `#unreachable()` was reached — an arm a stricter analysis had excluded turned out to be reachable, made a controlled stop rather than undefined behaviour (D-061; registered 1.0.9c) |
+| −4107 | `DEADLINE_EXCEEDED` | time ran out (D-176; registered 1.1.3): the catchable `Result` error every deadline API returns, and the trap a JOIN raises when a task outlives its mandatory deadline |
 
 The guards are emitted in EVERY build — D-068's rule, restated at the emission
 site: a build without the verifier still emits the check, and 1.3's static
@@ -11814,3 +11815,57 @@ not a D-163-style sweep. The change:
 
 Discovered when the user, reviewing the 1.0 close, explained the design history
 behind `?|` — the reason it was chosen over `?` in the first place.
+
+---
+
+## D-176 — `Duration`, the monotonic clock, and the deadline substrate — **SETTLED**
+
+B-2, the hard blocker for cycle 1.1: every deadline API (D-056/62/71/83) uses
+a duration type defined in no spec. Five parts, decided together because they
+are one substrate.
+
+**1. `Duration` is a prelude struct over `int64` nanoseconds.**
+
+```nitpick
+struct:Duration = { int64:ns; };
+```
+
+Not a primitive (it earns no special checking) and not a `timespec` pair —
+the pair invites the tv_nsec-normalisation bug class C has carried for
+decades, and a single `i64` of nanoseconds spans ±292 years, orders with one
+compare, and fits one atomic word. Constructors are prelude functions —
+`duration_ns`, `duration_ms`, `duration_secs` — all `never fails`; their
+multiplications ride ordinary `int64` arithmetic, whose overflow TRAPS
+(D-142), so a span past ±292 years is a controlled stop, not a wrap. There
+is no `Duration` arithmetic surface until an API needs one: YAGNI, and every
+helper added later must keep `never fails` provable.
+
+**2. Deadline parameters are RELATIVE spans, and say so.** Every API sheet
+wrote `deadline` but typed a span; a name that lies fails the blueprint rule.
+The parameter is a `Duration` named **`within`** — `recv(within)`,
+`acquire(within)` — and the executor converts to an ABSOLUTE monotonic
+timepoint ONCE, at suspension entry, so re-arms and spurious wakes cannot
+stretch the wait. No user-facing `Instant` type exists; the executor's
+absolute timepoints are internal `int64` nanoseconds.
+
+**3. The clock is `CLOCK_MONOTONIC`, through the floor.** One primitive:
+`mono_now() → int64` — nanoseconds since an arbitrary epoch, `never fails`
+(`clock_gettime(CLOCK_MONOTONIC, valid-ptr)` cannot fail on Linux; the floor
+still guards the impossible branch with the D-061 trap, because "cannot
+fail" is a claim, and this project checks claims). Wall clocks are excluded
+from the deadline path entirely: NTP steps a wall clock, and a deadline that
+moves with the wall is D-056's containment silently voided.
+
+**4. Executor waits are absolute-monotonic.** The futex integration (1.1.5)
+uses `FUTEX_WAIT_BITSET | FUTEX_CLOCK_MONOTONIC` with the absolute timepoint
+from rule 2 — the kernel owns the arithmetic, and a wake-and-repark loop
+cannot accumulate drift.
+
+**5. `DEADLINE_EXCEEDED` is pinned at −4107** in the D-141/D-142 space. It
+is BOTH channels' code, one value: as a `Result` error it is catchable — a
+`recv(within)` that times out returns it, and "a `recv` that returns
+`DEADLINE_EXCEEDED` is exactly how a worker notices shutdown"
+(CONCURRENCY §6) — and as a trap code it is what a JOIN raises when a task
+outlives its mandatory deadline (D-062/D-083), where expiry is a defect, not
+an event. One number, so a log reader never learns two spellings for "time
+ran out".

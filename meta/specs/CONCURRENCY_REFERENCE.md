@@ -371,6 +371,13 @@ ch.len()                           -> Result<int64>
   value**. The prototype returned `0i64` for a bad handle, a closed channel, *and*
   a received zero — and its actor loop, built on that ambiguity, silently
   discarded any message whose value was zero.
+- **The deadline substrate is D-176** (1.1.3): the parameter is a RELATIVE
+  `Duration` (prelude `{ int64:ns }`) named `within` — the sheets here that
+  write `deadline` predate the naming rule and read as `within` — converted
+  ONCE to an absolute `CLOCK_MONOTONIC` timepoint at suspension entry
+  (`mono_now()`, the floor's clock), so re-arms cannot drift. Expiry is
+  `DEADLINE_EXCEEDED` (−4107): a catchable `Result` error at a `recv`/
+  `acquire`, the JOIN's trap code when a task outlives its bound.
 - **Deadlines are mandatory** (D-056). There is no unbounded `recv`, and a zero
   deadline expresses "do not wait" — which is why `try_send` and `try_recv` do not
   exist as separate operations.

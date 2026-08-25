@@ -1,0 +1,28 @@
+// expect-exit: 42
+//
+// The deadline substrate (D-176, 1.1.3). `mono_now()` is CLOCK_MONOTONIC
+// nanoseconds — never fails, strictly non-decreasing — and `Duration` is the
+// prelude's span type over int64 ns, with constructors whose multiplications
+// trap on overflow like any int64 arithmetic (D-142).
+mod:duration;
+
+func:main = int32(cstring[]:_~argv) {
+    int64:t0 = raw mono_now();
+    int64:t1 = raw mono_now();
+    if (t1 < t0)                                    { exit 10i32; }
+    if (t0 <= 0i64)                                 { exit 11i32; }
+
+    Duration:a = raw duration_ns(1500i64);
+    if (a.ns != 1500i64)                            { exit 12i32; }
+    Duration:b = raw duration_ms(3i64);
+    if (b.ns != 3000000i64)                         { exit 13i32; }
+    Duration:c = raw duration_secs(2i64);
+    if (c.ns != 2000000000i64)                      { exit 14i32; }
+
+    // spans order with one compare, which is the representation's point
+    if (!(b.ns < c.ns))                             { exit 15i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

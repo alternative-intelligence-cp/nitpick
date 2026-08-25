@@ -36,6 +36,7 @@ RUNTIME_ARGS = {
     "wildx_call":    ["ptr", "i64"],
     "wildx_free":    ["ptr"],
     "wild_live_count":  [],
+    "mono_now":         [],
     "wild_release_all": [],
     "calloc":        ["i64", "i64"],
     "ralloc":        ["ptr", "i64"],

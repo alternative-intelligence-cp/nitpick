@@ -108,6 +108,33 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
   ret i64 %r
 }
 
+; --- the monotonic clock (D-176, 1.1.3) ------------------------------------
+; CLOCK_MONOTONIC nanoseconds since an arbitrary epoch -- the deadline
+; substrate's one clock. Wall clocks are excluded from the deadline path:
+; NTP steps them, and a deadline that moves with the wall silently voids
+; D-056's containment. clock_gettime(1, valid-ptr) cannot fail on Linux;
+; the impossible branch still traps (D-061's posture: "cannot fail" is a
+; claim, and claims are checked).
+define i64 @npk_mono_now() {
+entry:
+  %ts = alloca [2 x i64], align 16
+  %p = ptrtoint ptr %ts to i64
+  %r = call i64 @npk_sys6(i64 228, i64 1, i64 %p, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp ne i64 %r, 0
+  br i1 %bad, label %impossible, label %ok
+impossible:
+  call void @npk_trap(i32 -4102)
+  unreachable
+ok:
+  %sp = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  %s = load i64, ptr %sp
+  %np = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  %n = load i64, ptr %np
+  %m = mul i64 %s, 1000000000
+  %t = add i64 %m, %n
+  ret i64 %t
+}
+
 ; ---------------------------------------------------------------------------
 ; The trap route (D-142, cycle 0.9.0): how a RUNTIME FAULT becomes a controlled
 ; shutdown. Emitted guards (division by zero, INT_MIN/-1 — and every guard a
@@ -135,6 +162,10 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            generation no longer matches (D-152); staleness
 ;                            is a condition the program handles, not a
 ;                            defect the runtime ends
+;   -4107  DEADLINE_EXCEEDED time ran out (D-176): as a Result error it is the
+;                            catchable timeout every deadline API returns; as a
+;                            trap code it is a JOIN giving up on a task that
+;                            outlived its mandatory deadline (D-062/D-083)
 ;   -4105  HEAP_LEAK         exit reached with live `wild` memory -- the
 ;                            K-semantics rule (CONTROL_REFERENCE 4.6) made
 ;                            real at 0.10.1; failsafe may clean up with

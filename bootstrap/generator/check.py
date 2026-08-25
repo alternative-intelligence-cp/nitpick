@@ -72,6 +72,7 @@ BUILTINS = {
     "wildx_call":    (T.I64, False),
     "wildx_free":    (T.NIL, False),
     "wild_live_count":  (T.I64, False),
+    "mono_now": (T.I64, False),
     "wild_release_all": (T.NIL, False),
     "calloc":        (T.Ptr(T.Prim("int8")), False),
     "ralloc":        (T.Ptr(T.Prim("int8")), False),

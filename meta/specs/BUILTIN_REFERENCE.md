@@ -138,6 +138,7 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `read_file` | `cstring → Result<string>` | Whole file. | `Result` — may fail |
 | `read_stdin` | `() → Result<string>` | Whole stream. | `Result` — may fail |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. | **never fails** (traps on misuse) |
+| `mono_now` | `() → int64` | `CLOCK_MONOTONIC` nanoseconds since an arbitrary epoch (D-176) — the deadline substrate's one clock. The impossible-failure branch traps (D-061). | **never fails** (traps on misuse) |
 | `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. | `Result` — may fail |
 | `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. | `Result` — may fail |
 | `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. | `Result` — may fail |
