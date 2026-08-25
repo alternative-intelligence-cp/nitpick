@@ -356,6 +356,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = raw stmt_decl_init(x.ast, s);
         if (!(raw expr_is_none(init))) {
+            drop check_first_eval(x, init);
             drop suspend_expr(x, init, fuel - 1i32);
         }
         // AFTER the initialiser: the name binds once the initialiser has run,
@@ -370,6 +371,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
+        drop check_first_eval_assign(x, s);
         drop suspend_expr(x, raw stmt_target(s), fuel - 1i32);
         drop suspend_expr(x, raw stmt_assigned(s), fuel - 1i32);
         pass NIL;
@@ -387,6 +389,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtExitStmt) {
+        drop check_first_eval(x, raw stmt_expr(s));
         drop suspend_expr(x, raw stmt_expr(s), fuel - 1i32);
         pass NIL;
     }
@@ -395,6 +398,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
+        drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_then(s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_else(s), fuel - 1i32);
@@ -402,12 +406,14 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop loop_push(x, s.span);
+        drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
         drop loop_pop(x);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
+        drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
@@ -424,12 +430,14 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtForStmt) {
         drop loop_push(x, s.span);
+        drop check_first_eval(x, raw stmt_for_iter(x.ast, s));
         drop suspend_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
         drop loop_pop(x);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
+        drop check_first_eval(x, raw pick_selector(s));
         drop suspend_expr(x, raw pick_selector(s), fuel - 1i32);
         drop suspend_window(x, raw pick_arm_start(s), raw pick_arm_count(s), fuel);
         pass NIL;
@@ -451,6 +459,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
     if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
 
     if (raw stmt_carries_expr(s.kind)) {
+        drop check_first_eval(x, raw stmt_expr(s));
         drop suspend_expr(x, raw stmt_expr(s), fuel - 1i32);
         pass NIL;
     }
@@ -464,6 +473,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
 func:suspend_operand = NIL(Suspend->:x, StmtNode:s, int32:fuel) never fails {
     ExprId:v = raw stmt_operand(s);
     if (raw expr_is_none(v)) { pass NIL; }
+    drop check_first_eval(x, v);
     drop suspend_expr(x, v, fuel - 1i32);
     pass NIL;
 };
@@ -483,6 +493,7 @@ func:suspend_counted = NIL(Suspend->:x, StmtNode:s, int32:fuel) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
     int32:i = 0i32;
     while (i < n) {
+        drop check_first_eval(x, raw stmt_counted_arg(x.ast, s, i));
         drop suspend_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
         i = i + 1i32;
     }
@@ -605,5 +616,283 @@ func:suspend_expr_window = NIL(Suspend->:x, int32:start, int32:count,
                           fuel - 1i32);
         i = i + 1i32;
     }
+    pass NIL;
+};
+
+// --- D-178: the first-evaluation rule -----------------------------------------------
+//
+// A statement suspends AT MOST ONCE, BEFORE anything else it computes. The
+// walk is in evaluation order: literals may precede the suspension (they
+// lower inline and cost no temporary); anything else evaluated before it
+// would be an SSA value the resume path cannot reproduce. The `await`'s own
+// arguments are exempt — they evaluate before the suspension and are
+// consumed into the callee's frame. A value-`pick` whose arms suspend is
+// itself a suspension of the enclosing statement (its selector is consumed
+// by the dispatch, exempt like the await's arguments); the arm bodies'
+// statements each carry their own copy of this rule via the ordinary walk.
+
+// The literal kinds — the evaluations that cost no temporary, so they may
+// precede a suspension.
+func:expr_is_literal_kind = bool(ExprKind:k) never fails {
+    if (k == ExprKind.ExprIntLiteral)         { pass true; }
+    if (k == ExprKind.ExprFloatLiteral)       { pass true; }
+    if (k == ExprKind.ExprCharLiteral)        { pass true; }
+    if (k == ExprKind.ExprStringLiteral)      { pass true; }
+    if (k == ExprKind.ExprRawStringLiteral)   { pass true; }
+    if (k == ExprKind.ExprBlockStringLiteral) { pass true; }
+    if (k == ExprKind.ExprBoolLiteral)        { pass true; }
+    pass (k == ExprKind.ExprSentinelLiteral);
+};
+
+func:fe_err = NIL(Suspend->:x, string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_FIRST_EVAL(), msg, sp));
+    pass NIL;
+};
+
+// Does this expression suspend anywhere inside — an `await`, or a
+// value-`pick` any of whose arm statements suspend?
+func:has_susp = bool(Suspend->:x, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprAwaitExpr) { pass true; }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:ps = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        if (raw has_susp(x, raw pick_selector(ps), fuel - 1i32)) { pass true; }
+        int32:j = 0i32;
+        while (j < (raw pick_arm_count(ps))) {
+            if (raw stmt_has_susp(x, StmtId{ index: raw ast_id_at(x.ast,
+                    raw pick_arm_start(ps), j) }, fuel - 1i32)) { pass true; }
+            j = j + 1i32;
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            if (raw has_susp(x, ExprId{ index: raw ast_id_at(x.ast,
+                    raw expr_list_start(n), i) }, fuel - 1i32)) { pass true; }
+            i = i + 2i32;
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        if (raw has_susp(x, raw expr_callee(n), fuel - 1i32)) { pass true; }
+        pass (raw has_susp_window(x, (raw expr_list_start(n))
+                  + (raw expr_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw expr_generic_count(n)), fuel));
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw has_susp_window(x, (raw expr_list_start(n))
+                  + (raw builtin_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw builtin_generic_count(n)), fuel));
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass false; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (raw has_susp_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), fuel));
+    }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass false; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass false; }
+    if (raw has_susp(x, raw expr_lhs(n), fuel - 1i32)) { pass true; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass false; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        pass (raw has_susp_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), fuel));
+    }
+    if (raw has_susp(x, raw expr_rhs(n), fuel - 1i32)) { pass true; }
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass false; }
+    pass (raw has_susp(x, raw expr_third(n), fuel - 1i32));
+};
+
+func:has_susp_window = bool(Suspend->:x, int32:start, int32:count,
+                            int32:fuel) never fails {
+    int32:i = 0i32;
+    while (i < count) {
+        if (raw has_susp(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                         fuel - 1i32)) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+func:stmt_has_susp = bool(Suspend->:x, StmtId:id, int32:fuel) never fails {
+    if (raw stmt_is_none(id)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    StmtNode:s = raw ast_stmt(x.ast, id);
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        pass (raw has_susp(x, raw stmt_decl_init(x.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        if (raw has_susp(x, raw stmt_target(s), fuel - 1i32)) { pass true; }
+        pass (raw has_susp(x, raw stmt_assigned(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(s))) {
+            if (raw stmt_has_susp(x, StmtId{ index: raw ast_id_at(x.ast,
+                    raw stmt_list_start(s), i) }, fuel - 1i32)) { pass true; }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        if (raw has_susp(x, raw arm_guard(s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_has_susp(x, raw arm_body(s), fuel - 1i32));
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        pass (raw has_susp(x, raw stmt_expr(s), fuel - 1i32));
+    }
+    // Any other statement kind (a loop, an if, a nested pick) walks its own
+    // statements through `suspend_stmt`, where each inner statement gets its
+    // own copy of the rule; for the ENCLOSING statement's prefix question
+    // those forms cannot appear inside an expression at all.
+    pass false;
+};
+
+// The evaluation-order walk. State: 0 = before the suspension (literals
+// only), 1 = the suspension happened (unconstrained after), 2 = reported.
+func:fe_walk = int32(Suspend->:x, ExprId:id, int32:st, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass st; }
+    if (st == 2i32) { pass 2i32; }
+    if (fuel <= 0i32) { pass st; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (st == 1i32) {
+        // The suspension already happened; what follows is unconstrained —
+        // unless it suspends AGAIN, which is the second re-entry the rule
+        // exists to forbid.
+        if (raw has_susp(x, id, raw SUSPEND_DEPTH())) {
+            drop fe_err(x,
+                "a statement suspends at most once (D-178): bind the first `await`'s result, then take the second in its own statement",
+                n.span);
+            pass 2i32;
+        }
+        pass 1i32;
+    }
+
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        // The operand's arguments are exempt — but an inner suspension in
+        // them is a SECOND one, and the second re-entry is what the rule
+        // forbids.
+        if (raw has_susp(x, raw expr_operand(n), raw SUSPEND_DEPTH())) {
+            drop fe_err(x,
+                "a statement suspends at most once (D-178): this `await`'s operand suspends again — bind the inner result first",
+                n.span);
+            pass 2i32;
+        }
+        pass 1i32;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        // A value-pick that suspends counts as the suspension; its selector
+        // is consumed by the dispatch, and its arm statements carry their
+        // own copies of this rule.
+        if (raw has_susp(x, id, raw SUSPEND_DEPTH())) { pass 1i32; }
+        pass 0i32;
+    }
+    if (raw expr_is_literal_kind(n.kind)) { pass 0i32; }
+
+    if (!(raw has_susp(x, id, raw SUSPEND_DEPTH()))) {
+        // A non-literal evaluated with the suspension still ahead.
+        drop fe_err(x,
+            "an `await` is the first evaluation its statement performs (D-178): everything before it must be a bare literal — bind the await first (`T:t = relay await f(…);`) and compute from `t`",
+            n.span);
+        pass 2i32;
+    }
+
+    // The suspension is inside this node: descend in evaluation order.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:st2 = st;
+        ExprNode:cal = raw ast_expr(x.ast, raw expr_callee(n));
+        if (cal.kind != ExprKind.ExprIdentifierExpr) {
+            st2 = raw fe_walk(x, raw expr_callee(n), st2, fuel - 1i32);
+        }
+        pass (raw fe_walk_window(x, (raw expr_list_start(n))
+                  + (raw expr_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw expr_generic_count(n)),
+                  st2, fuel));
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw fe_walk_window(x, (raw expr_list_start(n))
+                  + (raw builtin_generic_count(n)),
+                  (raw expr_list_count(n)) - (raw builtin_generic_count(n)),
+                  st, fuel));
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:st3 = st;
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            st3 = raw fe_walk(x, ExprId{ index: raw ast_id_at(x.ast,
+                      raw expr_list_start(n), i) }, st3, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass st3;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (raw fe_walk_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), st, fuel));
+    }
+    if (shape == (raw EXPR_SHAPE_NONE()))   { pass st; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass st; }
+    int32:st4 = raw fe_walk(x, raw expr_lhs(n), st, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass st4; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        pass (raw fe_walk_window(x, raw expr_list_start(n),
+                  raw expr_list_count(n), st4, fuel));
+    }
+    st4 = raw fe_walk(x, raw expr_rhs(n), st4, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass st4; }
+    pass (raw fe_walk(x, raw expr_third(n), st4, fuel - 1i32));
+};
+
+func:fe_walk_window = int32(Suspend->:x, int32:start, int32:count, int32:st,
+                            int32:fuel) never fails {
+    int32:s2 = st;
+    int32:i = 0i32;
+    while (i < count) {
+        s2 = raw fe_walk(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                         s2, fuel - 1i32);
+        i = i + 1i32;
+    }
+    pass s2;
+};
+
+// One statement position's rule: nothing to say unless it suspends.
+func:check_first_eval = NIL(Suspend->:x, ExprId:root) never fails {
+    if (raw expr_is_none(root)) { pass NIL; }
+    if (!(raw has_susp(x, root, raw SUSPEND_DEPTH()))) { pass NIL; }
+    int32:st = raw fe_walk(x, root, 0i32, raw SUSPEND_DEPTH());
+    if (st == 0i32) {
+        // has_susp saw a suspension fe_walk never reached — a shape hole in
+        // this rule's own walk. Fail closed, the walk's standing posture.
+        ExprNode:rn = raw ast_expr(x.ast, root);
+        drop suspend_err(x,
+            "this statement suspends somewhere the first-evaluation walk cannot see, so the rule cannot be checked",
+            rn.span);
+    }
+    pass NIL;
+};
+
+// The assignment form: a value that suspends writes through a BARE NAME —
+// a field or element target computes its address before the suspension.
+func:check_first_eval_assign = NIL(Suspend->:x, StmtNode:s) never fails {
+    ExprId:val = raw stmt_assigned(s);
+    if (raw expr_is_none(val)) { pass NIL; }
+    if (!(raw has_susp(x, val, raw SUSPEND_DEPTH()))) { pass NIL; }
+    ExprId:tgt = raw stmt_target(s);
+    if (!(raw expr_is_none(tgt))) {
+        ExprNode:tn = raw ast_expr(x.ast, tgt);
+        if (tn.kind != ExprKind.ExprIdentifierExpr) {
+            drop fe_err(x,
+                "an assignment whose value suspends writes through a bare name (D-178): a field or element target computes its address before the suspension — bind the await first, then store",
+                tn.span);
+            pass NIL;
+        }
+    }
+    drop check_first_eval(x, val);
     pass NIL;
 };

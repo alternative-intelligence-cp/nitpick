@@ -1,0 +1,56 @@
+// expect-error: NITPICK-SUSPEND-002
+// expect-error: NITPICK-SUSPEND-002
+// expect-error: NITPICK-SUSPEND-002
+// expect-error: NITPICK-SUSPEND-002
+//
+// D-178: a statement suspends at most once, before anything else it
+// computes. `v + await f(v)` freezes `v` in a register the resume path
+// cannot reproduce; two awaits in one statement are two re-entries the
+// first's values cannot survive; a field target computes its address
+// before the suspension; and an await inside an await's own arguments is
+// the two-suspension case wearing a different coat. Each fix is the same
+// one line: bind the await first — and a bound result that crosses a later
+// suspension is frame-resident automatically (stage D).
+mod:await_first;
+
+struct:Box = { int32:f; };
+
+async func:f = int32(int32:v) {
+    pass v + 1i32;
+};
+
+async func:g = int32() {
+    pass 2i32;
+};
+
+async func:bad_prefix = int32(int32:v) {
+    int32:a = v + (relay await f(v));
+    pass a;
+};
+
+async func:bad_twice = int32(int32:v) {
+    int32:a = (await f(v) ?| 0i32) + (await g() ?| 0i32);
+    pass a;
+};
+
+async func:bad_target = int32(int32:v) {
+    Box:b = Box{ f: 0i32 };
+    b.f = relay await f(v);
+    pass b.f;
+};
+
+async func:bad_arg = int32(int32:v) {
+    int32:a = relay await f(v + relay await g());
+    pass a;
+};
+
+// The legal shapes, in the same file so over-refusal is caught here too:
+// bind-first, a literal prefix, and an await's own (consumed) arguments.
+async func:fine = int32(int32:v) {
+    int32:t = relay await f(v);
+    int32:u = 1i32 + (await g() ?| 0i32);
+    pass t + u;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

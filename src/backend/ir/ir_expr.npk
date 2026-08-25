@@ -2147,12 +2147,11 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv_rung("an `await` inside a `pick` arm's `where` guard",
                           "1.1", n.span));
     }
-    // THE FIRST-EVALUATION RULE (stage C): every temp this statement minted so
-    // far must be an alloca. An SSA value from before the suspension would
-    // not dominate a use after the resume switch re-enters — the spill that
-    // fixes it is stage D's frame work, so until then the await must be the
-    // first thing its statement evaluates (`x = relay await f(…)`, not
-    // `x = y + await f(…)`).
+    // THE FIRST-EVALUATION BACKSTOP (D-178): the checker's SUSPEND-002 rule
+    // refuses a suspension after other evaluation, so no legal program
+    // reaches this — it stands as the belt to that suspender, refusing
+    // loudly if a checker regression ever lets an SSA value straddle the
+    // resume switch.
     if (!(raw irw_clean_since_mark(x.fe.w))) {
         pass (raw iv_rung("an `await` after other evaluation in its statement",
                           "1.1", n.span));

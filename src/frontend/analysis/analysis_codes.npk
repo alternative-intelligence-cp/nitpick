@@ -207,3 +207,12 @@ pub func:WILDX_EXCLUDED = string() never fails      { pass "NITPICK-WILDX-003"; 
 // walk in this compiler carries: a construct the walk has no entry for means
 // "nobody measured", and silence and "nothing to measure" must stay apart.
 pub func:SUSPEND_INTERNAL = string() never fails { pass "NITPICK-SUSPEND-001"; };
+
+// D-178: a statement suspends at most once, before anything else it computes.
+// The one real refusal the suspend walk owns — everything the statement
+// evaluates before its `await` must be a bare literal (the await's own
+// arguments are exempt: they are consumed into the callee's frame), an
+// assignment whose value awaits takes a bare name as its target, and a
+// second suspension in one statement is a second re-entry the first's
+// values cannot survive.
+pub func:SUSPEND_FIRST_EVAL = string() never fails { pass "NITPICK-SUSPEND-002"; };

@@ -11983,4 +11983,144 @@ only inside `async`; the spawn form only inside `async`):
 
 No user-visible `Future`/`Task` type (D-058 stands); no `coro.destroy`-style
 preemption (D-062 stands); no thread migration (D-032 stands — a frame never
-changes executors, which is what lets D-153 stay atomics-free).
+changes executors, which is what lets D-153 stay atomics-free). Mid-statement
+suspension is out by D-178: an `await` is the first evaluation its statement
+performs.
+
+## D-178 — A statement suspends at most once, before anything else it computes — **SETTLED**
+
+Ratified during 1.1.4: the resolution of the first-evaluation question stage
+C surfaced. `x = v + relay await f(v);` evaluates `v` into an SSA value,
+suspends, and re-enters mid-body on resume — a value from before the
+suspension cannot dominate its use after it. Two candidate answers existed:
+make the compiler spill in-flight temporaries into the frame (hand-built
+liveness — the largest single analysis the backend would own, and exactly
+the machinery D-177 declined to inherit from LLVM's CoroSplit), or make the
+restriction a language rule. **The rule won**, with the spill explicitly
+available as a LATER addition if deemed necessary — it cannot break a
+conforming program.
+
+### The rule
+
+An `await` is the FIRST evaluation its statement performs, and a statement
+contains at most one. Precisely:
+
+- Everything the statement evaluates before the `await` must be a bare
+  literal — literals lower inline and cost no temporary, so `1i32 +
+  (await f() ?| 0i32)` stands while `v + (await f() ?| 0i32)` refuses.
+- The `await`'s own arguments are exempt: they evaluate before the
+  suspension and are CONSUMED into the callee's frame (`await f(v)` is the
+  idiom, not a violation).
+- An assignment whose value awaits takes a BARE NAME as its target — a
+  field or element target computes an address before the suspension.
+- The unwrap keywords sit outside and cost nothing: `relay await f(v)`,
+  `await f(v) ?| d`, `await f(v) ?! c` are all first-evaluated.
+- The workaround is always one line, and stage D made it free: bind first
+  (`int32:t = relay await f(v); x = v + t;`) — a bound result that crosses
+  a later suspension is frame-resident automatically.
+
+Enforced by the CHECKER (`NITPICK-SUSPEND-002`, from the suspend walk,
+which already sees every statement in evaluation order); the backend's
+temp-count guard stays as the defensive backstop, the same belt-and-braces
+every checker-guaranteed property gets. A suspension inside a `pick`
+`where` guard remains a backend capability rung (the compare chain re-reads
+the selector), not part of this rule.
+
+### Why the rule and not the spill
+
+Every suspension point is STATEMENT-VISIBLE: a reader auditing a coroutine
+never has to reconstruct which half-evaluated expression is frozen across a
+re-entry, because that state cannot exist — and neither does the verifier.
+This is the blueprint philosophy applied to time: nothing suspends
+mid-thought. (Cross-reference: D-177's lowering is what makes the rule
+cheap; D-163's licence already keeps `raw` off `await`.)
+
+## D-179 — Errors are a nominal type, not a number: `Error`, origin chains, and the exhaustive `failsafe` — **SETTLED**
+
+Proposed by the user (initially as a note against their own design, then
+through an external design review they brought in), analysed and shaped
+in-session, ratified 1.1.4-close. The finding: using `tbb` for error handling
+violates the blueprint philosophy twice — a balanced-ternary MATH type
+carrying failure identity is meaning-by-context, and `tbb` already has a
+second job (the D-008 ERR taint, a math sentinel). Errors become their own
+type; the taint system is purified back to one meaning.
+
+### The type
+
+**`Error` is nominal and compiler-known.** Its machine representation is the
+same 4-byte word the `Result` error slot holds today — and it is NOT a
+number, by the same doctrine that makes `bool` and `char` non-integers
+(semantic meaning outranks representation): no arithmetic, no ordering, no
+casts in or out; equality and `pick` dispatch only; a value exists only by
+naming a DECLARED error constant. `Result<T>`'s error half is `Error`;
+`fail`, `?!` and `failsafe` take `Error`. `Result` stays ONE-generic —
+`Result<T, E>` with per-function error types was considered and REJECTED: it
+requires inferred union types through the call graph, varies the error
+slot's size (breaking the uniform coroutine frame header, the join's
+heterogeneous child walk, and `npk_failsafe`'s ABI), and reintroduces the
+question "what error type does this return?" that uniformity exists to
+kill. The reachable-error question is answered by ANALYSIS over declared
+constants, not by the type system.
+
+### Declarations and domains
+
+A new declaration form, `error:Name;`, names one error constant. The SYSTEM
+domain is exactly the constants the prelude/runtime declares (the D-142
+table becomes prelude declarations with their fixed negative codes — the
+runtime's hardcoded values are the stability constraint); user code cannot
+declare into it, which turns the old "negative = system, positive = user"
+convention into a compiler-enforced fact — the sign is now an encoding
+detail, not a user-facing rule. User constants get compiler-assigned
+positive codes, deterministically (module-graph order), per program —
+codes are identity within one build, not an ABI across programs.
+
+### The origin chain
+
+`fail E;` stamps the failure site and resets the chain; every `relay`
+(`_^`) hop APPENDS its site; `?!` stamps before trapping. Sites are
+compile-time-interned ids (module, function, line) in a table emitted with
+the program; the chain is a FIXED ring (8 sites + a depth counter),
+per-thread, allocator-free, written only on the failure path — the success
+path costs exactly today's single zero store. `failsafe` reads the chain
+through prelude accessors. **Chain fidelity is guaranteed within one
+synchronous propagation**; a parked child's error carries its CODE in the
+result slot and the join re-stamps the winning error at the join site —
+chains are diagnostics, codes are semantics, and semantics are never
+truncated. D-080 is amended one line: relay propagates the error's IDENTITY
+verbatim; the chain grows.
+
+### The exhaustive `failsafe`
+
+There is one `failsafe` per program (D-013), so the reachability question
+is one program-wide set: every error constant appearing at any `fail` or
+`?!` site, PLUS the entire system family (heap integrity can fire anywhere,
+so every failsafe must face it), PLUS everything a spawned child can fail
+with. The set is CONSERVATIVE — no flow-sensitive narrowing; over-coverage
+is safe and simple is verifiable. `failsafe` must contain a `pick` over its
+`Error` parameter whose NAMED arms cover the computed set; **`(*)` is
+permitted and counts for nothing** — the compile-time force (a new failure
+mode anywhere breaks the build until every failsafe names it) and the
+defensive runtime floor beneath the proof, both.
+
+### What stays out (decided, not deferred)
+
+Error PAYLOADS (context data beyond identity + chain) — they are where
+fixed-size dies; identity, domain and origin cover the stated need, and a
+payload design can only ever arrive as its own decision with its own
+layout. Generic `Result<T, E>` — rejected above. Narrowing of the reachable
+set — the conservative set is the semantics. None of the three is blocked
+by v1; each would be a new decision.
+
+### Consequences
+
+D-080 amended (identity-verbatim + chain-append); D-142's table becomes
+prelude declarations (same values, `npk_failsafe(i32)` ABI unchanged — the
+argument IS the Error word); D-176's −4107 becomes the `DeadlineExceeded`
+constant in both its channels; D-008 untouched — ERR stays a math sentinel
+only. Scheduled as 1.1.5–1.1.7, DELIBERATELY BEFORE the executor
+(now 1.1.8): the executor mints deadline, windup and parking failures, and
+built after this change it is built once. The migration flips every
+`fail`/`?!` site in `src/` and `tests/` from numeric tbb literals to named
+constants — a large mechanical sweep with proven tooling, and a readability
+gain: the compiler's own trap conventions (`?! 9tbb32`, `?! 25tbb32`…)
+finally get names.
