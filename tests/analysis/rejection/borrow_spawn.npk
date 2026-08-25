@@ -1,0 +1,50 @@
+// expect-error: NITPICK-BORROW-004
+//
+// D-180: the borrow-across-await rule narrows to borrow-across-SPAWN. The
+// awaited call below is LEGAL — its borrow's referent is frame-resident by
+// construction (the suspend walk marks every address-taken local in an
+// `async` function as crossing, and stage D lays crossing locals into the
+// coroutine frame), which is what made the async I/O surface writable at
+// all. The SPAWN is refused, and not because the storage could dangle:
+// lexical lifetime (D-062/D-083) has the scope outlive the task. It is the
+// aliasing half — two tasks holding borrows of one storage is a mutation
+// the holder cannot see, at a suspension point it did not choose.
+mod:borrow_spawn;
+
+async func:reads = int32(int32->:p) {
+    pass (<-p);
+};
+
+async func:writes = NIL(int32->:p) {
+    <-p = 9i32;
+    pass NIL;
+};
+
+async func:ok_await = int32(int32:v) {
+    int32:x = v;
+    int32:got = relay await reads(@x);   // legal: `x` is frame-resident
+    pass got;
+};
+
+async func:bad_spawn = int32(int32:v) {
+    int32:x = v;
+    drop writes(@x);                      // BORROW-004
+    pass x;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await ok_await(1i32) ?| 0i32;
+    exit a;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

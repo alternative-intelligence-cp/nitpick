@@ -419,8 +419,7 @@ UNTESTED_CODES = {
     # reason is the one-shot Astree run: a rule added AFTER the analysis is
     # verified is a re-verification, and this project gets one attempt. Cycle 1.1
     # lowers concurrency and closures, and these become testable then.
-    "NITPICK-BORROW-004":  "ahead of the language -- there is no spawn yet (cycle 1.1)",
-    "NITPICK-BORROW-005":  "ahead of the language -- there is no reachable `await` yet (cycle 1.1)",
+    "NITPICK-BORROW-005":  "RETIRED by D-180 -- the blanket borrow-across-await rule's residue is empty: every borrow an async function can spell is frame-resident (the suspend walk marks address-taken locals as crossing, stage D frames them) or crosses a spawn, which is BORROW-004. Kept declared so the reasoning outlives the rule",
     "NITPICK-BORROW-006":  "ahead of the language -- there are no closures yet (cycle 1.1)",
 
     # OPEN -- a question, not an omission.

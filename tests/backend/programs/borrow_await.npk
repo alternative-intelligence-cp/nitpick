@@ -1,0 +1,42 @@
+// expect-exit: 42
+//
+// D-180 AT RUNTIME: a borrow passed into an awaited callee, and MUTATED
+// through, across a real suspension. `x` is address-taken in an `async`
+// function, so the suspend walk marked it crossing and stage D put it in
+// the coroutine frame — the pointer the callee holds points into heap
+// storage that outlives every suspension, which is exactly why the blanket
+// borrow-across-await rule could go. The callee sleeps between reading and
+// writing, so the mutation lands after the awaiter has been suspended and
+// resumed; if the storage had been an ordinary alloca the write would have
+// gone to a destroyed activation.
+mod:borrow_await;
+
+async func:bump = NIL(int32->:p) {
+    int32:seen = <-p;
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    <-p = seen + 40i32;
+    pass NIL;
+};
+
+async func:host = int32(int32:v) {
+    int32:x = v;
+    relay await bump(@x);
+    pass x;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = await host(2i32) ?| 0i32;
+    exit r;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

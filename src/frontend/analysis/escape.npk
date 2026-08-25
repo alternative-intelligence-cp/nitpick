@@ -787,6 +787,26 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         pass ((raw type_kind(x.types, ty)) == (raw TY_POINTER()));
     }
 
+    // THE SPAWN (D-180, wired at 1.1.8): `drop f(…)` on an `async` callee
+    // starts a task the joining scope outlives but does not order itself
+    // against moment to moment. Lexical lifetime (D-062/D-083) closes the
+    // dangling half; the ALIASING half is why the ban stays — two tasks
+    // holding borrows of one storage is a mutation the holder cannot see, at
+    // a suspension point it did not choose.
+    if (n.kind == ExprKind.ExprDropExpr) {
+        ExprId:sp_op = raw expr_operand(n);
+        ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
+        if (sp_n.kind == ExprKind.ExprCallExpr) {
+            if (raw callee_is_async(x, sp_n)) {
+                int32:sgc = raw expr_generic_count(sp_n);
+                drop escape_spawn_args(x, (raw expr_list_start(sp_n)) + sgc,
+                                       (raw expr_list_count(sp_n)) - sgc, d);
+                pass false;
+            }
+        }
+        pass (raw escape_expr(x, sp_op, d));
+    }
+
     // A CALL. Rule 4 lives here, and so do the two CALLER-SIDE rules that make
     // "passing down needs no annotation" actually hold — see `escape_call_like`.
     if (n.kind == ExprKind.ExprCallExpr) {
@@ -811,20 +831,20 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
                                      false, raw expr_none(), d));
     }
 
-    // RULE 4, THIRD CROSSING — a borrow held across a suspension.
+    // RULE 4'S THIRD CROSSING, NARROWED TO THE SPAWN (D-180).
     //
-    // UNREACHABLE AT THIS RUNG AND WRITTEN ANYWAY. `async` lowers to coroutine
-    // state machines in cycle 1.1; until then nothing constructs an `await` in a
-    // compilable program. The rule is here now because a rule added AFTER the
-    // analysis is verified is a re-verification, and this project gets one
-    // Astrée run.
+    // A borrow MAY be passed into and held by a directly-awaited callee. The
+    // hazard the blanket rule guarded — a pointer into the resume function's
+    // activation, which dies when the machine suspends — cannot be spelled:
+    // the suspend walk marks every address-taken local in an `async` function
+    // as crossing ("an address outlives its mention"), stage D lays every
+    // crossing local into the coroutine frame, and that frame outlives every
+    // suspension by construction. Parameters are frame-resident the same way.
+    // What the blanket rule actually refused was the async I/O surface —
+    // `await write(fd, @buf, n)` — whose hazard the compiler had already
+    // removed. The residue is the SPAWN, which `escape_spawn_args` refuses.
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        if (raw escape_expr(x, raw expr_operand(n), d)) {
-            drop escape_err(x, raw BORROW_SUSPENDED(),
-                "a borrow cannot be held across an `await`: the frame it borrows from does not survive the suspension (D-004 rule 4)",
-                n.span);
-        }
-        pass false;
+        pass (raw escape_expr(x, raw expr_operand(n), d));
     }
 
     // A STRUCT LITERAL'S WINDOW ALTERNATES NAME, VALUE — the names are field
@@ -1503,6 +1523,20 @@ pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) never fails {
 //
 // THERE IS NO SPAWN IN THE LANGUAGE YET. Concurrency lowers in cycle 1.1, and when
 // a spawn arrives it is this function that its argument list goes through.
+// Does this call reach an `async` function? The spawn's whole identity.
+func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cn = raw ast_expr(x.ast, c);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, cn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    pass (raw decl_has(d, raw DECL_ASYNC()));
+};
+
 pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) {
@@ -1510,7 +1544,7 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
         if (raw escape_expr(x, a, depth)) {
             ExprNode:anode = raw ast_expr(x.ast, a);
             drop escape_err(x, raw BORROW_SPAWNED(),
-                "a borrow cannot cross a thread spawn: the spawned frame is not inner to this one, so nothing bounds the borrow's validity (D-004 rule 4)",
+                "a borrow cannot cross a spawn (D-004 rule 4, narrowed by D-180): the scope outlives the task, so this is not about dangling — it is that two tasks holding borrows of one storage is a mutation the holder cannot see, at a suspension point it did not choose",
                 anode.span);
         }
         i = i + 1i32;

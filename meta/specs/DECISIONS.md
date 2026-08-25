@@ -12149,3 +12149,60 @@ built after this change it is built once. The migration flips every
 constants — a large mechanical sweep with proven tooling, and a readability
 gain: the compiler's own trap conventions (`?! 9tbb32`, `?! 25tbb32`…)
 finally get names.
+
+## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED**
+
+C-8, settled at 1.1.8's close, on evidence that did not exist when the
+question was raised: D-177's crossing-locals analysis is now built, and it
+decides the thing the rule was guessing at.
+
+### What the blanket rule was protecting against
+
+D-004 rule 4's third crossing refused a borrow held across an `await`,
+reasoning that "the frame it borrows from does not survive the suspension".
+Under the lowering that is true of ONE kind of storage: a local that stays an
+ordinary `alloca` lives in the resume function's activation, which is
+destroyed when the machine returns SUSPENDED. A pointer to it, held by an
+awaited callee across the suspension, dangles on resume.
+
+It is NOT true of the other kind. A local whose live range crosses a
+suspension is FRAME-RESIDENT (D-177 stage D): its storage is in the
+heap-allocated coroutine frame, which outlives every suspension by
+construction, and so does a parameter, which the caller wrote into the frame
+before the machine ever ran.
+
+### Why the hazard cannot arise
+
+**The suspend walk marks every address-taken local in an `async` function as
+crossing** — "an address outlives its mention", written into the walk when it
+was built, because the walk cannot follow where a pointer goes. So in an
+`async` function, `@x` on a local of that function makes `x` frame-resident,
+and the dangling case has no way to be spelled. The blanket rule was
+therefore refusing programs whose hazard the compiler had already removed —
+including the entire async I/O surface (`await write(fd, @buf, n)`), which is
+what made C-8 urgent.
+
+### The rule now
+
+- **A borrow may be passed into and held by a directly-awaited callee.** Its
+  referent is frame-resident by the guarantee above; the awaiter is suspended
+  for the whole of the awaitee's life and its frame outlives it.
+- **A borrow may NOT cross a spawn** — task or thread — which is
+  `BORROW-004`, wired to the spawn form (`drop f(…)` on an `async` callee) by
+  this decision. Lexical lifetime (D-062/D-083) closes the DANGLING half: the
+  spawner joins the child at scope exit and outlives it. The ban stays for the
+  ALIASING half, exactly as D-083 says: two tasks holding borrows of one
+  storage is a race, and on one executor it is still a mutation the holder
+  cannot see, at a suspension point it did not choose. Race freedom is what
+  the rule is for, and lifetime does not buy it.
+- **`BORROW-005` retires.** With the blanket rule gone its residue is empty:
+  every borrow an `async` function can spell is either frame-resident (safe)
+  or crosses a spawn (`BORROW-004`). The code stays declared with this as its
+  stated reason rather than being deleted, so a future reader finds the
+  reasoning instead of a gap in the numbering.
+
+### What this does not change
+
+`@` stays second-class (D-004 rules 1–3 untouched): a borrow still may not be
+returned, stored in anything outliving the frame, or given to an `extern`.
+The borrow-checker deep dive's obs. #1 closes with this.
