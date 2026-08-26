@@ -1598,6 +1598,59 @@ pub func:decl_kind_article = string(DeclNode:d) never fails {
     pass "a declaration of another kind";
 };
 
+// `Channel<T, LEVEL, CAP>` — a type and two constants (D-072/D-182). The
+// element may not contain a borrow: `send` transfers ownership across a
+// boundary the borrow could not cross (D-004/D-180), which makes a slice —
+// itself a borrow (D-070) — unsendable. Send an owning type instead.
+func:resolve_channel_type = int32(TypeResolver->:r, TypeNode:n, int32:scope,
+                                  int32:count) never fails {
+    if (count != 3i32) {
+        pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+            "`Channel<T, LEVEL, CAP>` takes three arguments: the element type, the D-056 lock level, and the capacity (0 is a rendezvous channel)",
+            n.span));
+    }
+    int32:elem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
+                     raw type_args_start(n), 0i32) }, scope);
+    if (raw type_is_invalid(r.types, elem)) { pass elem; }
+    int32:ek = raw type_kind(r.types, elem);
+    if (ek == (raw TY_SLICE())) {
+        pass (raw ty_error(r, raw TYPE_UNKNOWN(),
+            "a channel's element may not be a slice (D-072): a slice is a borrow (D-070), `send` transfers ownership across a boundary a borrow cannot cross (D-004/D-180) — send an owning type",
+            n.span));
+    }
+    int32:lvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+    int32:cap = raw channel_const_arg(r, n, 2i32, scope, "the capacity");
+    pass (raw tt_channel(r.types, elem, lvl, cap));
+};
+
+// One of the two constant arguments, folded. They must be compile-time
+// constants: a level decided at runtime is a level the lock analysis (D-056)
+// cannot reason about, and a capacity decided at runtime is the `mode` field
+// D-072 removed.
+func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
+                               int32:scope, string:what) never fails {
+    TypeNode:an = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast,
+                      raw type_args_start(n), i) });
+    if (an.kind != TypeKind.TypeComptimeArg) {
+        string:c1 = raw string_concat("`Channel`'s ", what);
+        discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+            raw string_concat(c1,
+                " is a constant, not a type: it is part of the channel's identity, and one decided at runtime is the `mode` field D-072 removed"),
+            n.span));
+        pass 0i32;
+    }
+    ConstVal:cv = raw fold_const(r, ExprId{ index: an.a }, scope);
+    if (cv.kind == (raw CV_NONE())) {
+        string:c2 = raw string_concat("`Channel`'s ", what);
+        discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+            raw string_concat(c2,
+                " must fold to a constant at compile time (D-072): the level the lock analysis reasons about, and the capacity that monomorphizes the behaviour"),
+            n.span));
+        pass 0i32;
+    }
+    pass (cv.num =>! int32);
+};
+
 // `Result<T>` and `Optional<T>` — one argument each, and the argument is a type.
 func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                                      TokenKind:as_kind, int32:scope) never fails {
@@ -1612,6 +1665,14 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     }
 
     int32:count = raw type_args_count(n);
+    // `Channel<T, LEVEL, CAP>` (D-072) is the one builtin constructor with
+    // VALUE parameters: the lock level and the capacity live in the type, so
+    // each instantiation monomorphizes to one behaviour with no runtime
+    // branch — which is what the prototype's `mode` field dispatched at
+    // every operation instead.
+    if (kind == (raw TY_CHANNEL())) {
+        pass (raw resolve_channel_type(r, n, scope, count));
+    }
     if (count != 1i32) {
         // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).
         string:g1 = raw string_concat("`",

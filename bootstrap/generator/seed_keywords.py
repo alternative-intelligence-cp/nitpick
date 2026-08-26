@@ -6,6 +6,7 @@
 # them and the checker can refuse them by rung (D-085).
 
 KEYWORDS = {
+    "Channel",
     "ERR",
     "Future",
     "Handle",

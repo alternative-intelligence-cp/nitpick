@@ -498,7 +498,7 @@ pub func:is_keyword = bool(string:text) {
     # Constructors and aggregates: reached through their own type nodes or their
     # generic arguments, never as a bare name.
     NOT_SCALAR = {"Result", "Optional", "Handle", "arena", "shared_arena",
-                  "atomic", "Future", "simd", "complex", "array", "buffer",
+                  "atomic", "Channel", "Future", "simd", "complex", "array", "buffer",
                   "vec2", "vec3", "vec9", "matrix", "tmatrix", "tensor",
                   "ttensor", "dyn", "func"}
 
@@ -574,7 +574,13 @@ pub func:is_keyword = bool(string:text) {
     # later rung and is `builtin_is_generic` only.
     GENERIC = {"Result": "TY_RESULT", "Optional": "TY_OPTIONAL",
                "arena": "TY_ARENA", "Handle": "TY_HANDLE",
-               "shared_arena": "TY_SHARED_ARENA"}
+               "shared_arena": "TY_SHARED_ARENA",
+               # 1.1.10 (D-182): `atomic<T>` is storage with an operation set,
+               # `Channel<T, LEVEL, CAP>` an opaque handle. Both belong HERE
+               # rather than in the generated file — an edit to that file is
+               # erased by the next regeneration, which is how the atomic
+               # mapping went missing between two green runs.
+               "atomic": "TY_ATOMIC", "Channel": "TY_CHANNEL"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

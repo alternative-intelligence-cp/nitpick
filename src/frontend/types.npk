@@ -112,6 +112,11 @@ pub func:TY_SHARED_ARENA = int32() never fails { pass 28i32; };  // a = element 
 pub func:TY_ASSOC = int32() never fails { pass 29i32; };  // a = trait decl, b = name
 pub func:TY_ERROR = int32() never fails { pass 30i32; };  // D-179: a nominal non-number over 4 bytes
 pub func:TY_ATOMIC = int32() never fails { pass 31i32; };  // D-182: a = element; storage-only, no allocating ctor (D-033)
+// D-182: a CHANNEL ENDPOINT — `a` = element, `b` = lock level, `c` = capacity.
+// The VALUE is an opaque generation-checked handle, not an address: that is
+// what lets it cross a spawn (D-004/D-180 refuse a borrow there) and ride in
+// a message, while the creating scope still owns the channel's life.
+pub func:TY_CHANNEL = int32() never fails { pass 32i32; };
 
 pub struct:Type = {
     int32:kind;
@@ -404,6 +409,14 @@ pub func:tt_arena = int32(TypeTable->:t, int32:elem) never fails {
 pub func:tt_atomic = int32(TypeTable->:t, int32:elem, int64:size,
                            int32:align) never fails {
     pass (raw tt_intern(t, raw TY_ATOMIC(), elem, 0i32, 0i32, size, align, 0i32));
+};
+
+// A channel handle is 8 bytes: a 32-bit index and a 32-bit generation, the
+// same shape `Handle<T>` (D-152) uses and for the same reason — a stale one
+// is a caught error rather than a dangling read.
+pub func:tt_channel = int32(TypeTable->:t, int32:elem, int32:level,
+                            int32:cap) never fails {
+    pass (raw tt_intern(t, raw TY_CHANNEL(), elem, level, cap, 8i64, 8i32, 0i32));
 };
 
 pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) never fails {

@@ -402,6 +402,9 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // an atomic changes is how it is ACCESSED, and that lives in the
     // operations, not in the layout.
     if (k == (raw TY_ATOMIC()))   { pass (raw ll_type(c, raw type_elem(c.types, id))); }
+    // D-182: a channel ENDPOINT is a handle — an index and a generation —
+    // not a pointer, which is what lets it cross a spawn.
+    if (k == (raw TY_CHANNEL()))  { pass (raw ll_ok("{ i32, i32 }")); }
 
     if (k == (raw TY_STRING()))   { pass (raw ll_ok("{ ptr, i64, i64 }")); }
 
