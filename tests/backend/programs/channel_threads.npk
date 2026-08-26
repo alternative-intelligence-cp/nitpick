@@ -1,0 +1,59 @@
+// expect-exit: 100
+//
+// TWO THREADS AND ONE CHANNEL (D-072/D-182, 1.1.10-C). Channels are the
+// cross-thread mechanism — D-180 refuses a borrow across a spawn precisely so
+// that this is the way data moves — and until 1.1.10-C the channel had no
+// synchronisation of any kind: `count`, `head` and `tail` were read, compared
+// and written with plain loads and stores.
+//
+// It did not fail loudly. Two senders both saw room, both wrote the same slot,
+// and the receiver waited out its deadline for values that had been
+// overwritten: **21 of 40 runs of exactly this program lost messages** and
+// exited 71. The other 19 passed, which is the part that matters — a data race
+// is not a test that fails, it is a test that stops failing when you look at
+// it. Every channel operation now runs under the channel's own futex mutex.
+//
+// 100 sends, 50 from each of two threads, one value each: the sum IS the count,
+// so a lost message and a duplicated one cannot cancel out.
+mod:channel_threads;
+error:Sent;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+thread async func:worker = NIL(Channel<int32, 3i32, 64i64>:ch) joins JOIN_2S {
+    int32:i = 0i32;
+    while (i < 50i32) {
+        await ch.send(1i32, raw duration_ms(500i64)) ?! Sent;
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 64i64>:ch = channel() ?! Unreachable;
+    drop worker(ch);
+    drop worker(ch);
+    int32:got = 0i32;
+    int32:sum = 0i32;
+    while (got < 100i32) {
+        Result<int32>:r = await ch.recv(raw duration_ms(2000i64));
+        if (r.is_error) {
+            if (r.err == DeadlineExceeded) { exit 71i32; }   // a lost message
+            exit 72i32;
+        }
+        sum = sum + r.value;
+        got = got + 1i32;
+    }
+    exit sum;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

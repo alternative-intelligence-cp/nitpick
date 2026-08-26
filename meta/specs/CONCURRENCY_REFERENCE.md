@@ -406,7 +406,15 @@ with a zero deadline, which asks and acts atomically.
   exist as separate operations.
 - **`send` takes ownership**, written `move(v)` (D-065), so the transfer is visible
   at the call site.
-- **Every operation suspends the task, never the thread** (D-071).
+- **Every operation suspends the task, never the thread** (D-071). What that
+  rule governs is waiting for a PEER OPERATION — a full channel's sender, an
+  empty channel's receiver — which is unbounded and must never cost a thread.
+  It is not a claim that a channel operation is lock-free: the ring itself is
+  protected by a per-channel futex mutex, a bounded critical section around a
+  single element copy, held by no task across a suspension. *(1.1.10-C1 added
+  that mutex; before it, two threads sending to one channel raced on `count`,
+  `head` and `tail`, and 21 of 40 runs of a two-thread producer test silently
+  lost messages.)*
 
 ### 6.3 What may be sent
 

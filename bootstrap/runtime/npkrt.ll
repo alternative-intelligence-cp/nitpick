@@ -278,25 +278,102 @@ entry:
 ; through another channel. A stale endpoint is `StaleHandle` (-4106), a
 ; caught error rather than a dangling read, exactly as arenas already work.
 ;
-; ONE TABLE, GROWN BY DOUBLING, NEVER SHRUNK — a slot's generation is bumped
-; on close, so a reused slot cannot answer to an old endpoint. Generations
-; are EVEN while live and ODD once closed, the parity discipline D-152 uses
-; for handles: a closed channel's endpoint is distinguishable from a live
-; one by its low bit alone.
+; ONE TABLE OF POINTERS, GROWN BY DOUBLING, NEVER SHRUNK, AND NEVER MOVED OUT
+; FROM UNDER A READER. The table used to hold the channel STRUCTS inline, and
+; growing it copied them to new addresses — fine with one thread, and a
+; use-after-free with two, because a reader mid-operation holds the old
+; address. Now each channel is allocated on its own and never moves; only the
+; array of POINTERS grows, and the old array is never freed. A reader that
+; loaded the previous array still sees valid pointers at every index below the
+; count it observed, so no reader needs the open lock. The wasted arrays total
+; about one final array across the program's life, and are runtime-internal
+; storage (D-151) rather than anything a program is accountable for.
+;
+; The count is published with a RELEASE store after the pointer is in place,
+; and read with an ACQUIRE load, so a reader that sees the count sees the
+; channel behind it.
+;
+; Generations are EVEN while live and ODD once reclaimed, the parity
+; discipline D-152 uses for handles. `close` does NOT move the generation —
+; closing is an end of stream on a live channel, reclamation is what
+; invalidates a handle, and nothing reclaims one until the managed lowering
+; lands (D-182, B-6). The channel struct is deliberately permanent, which is
+; what will let a reclaimed index keep its generation across reuse.
 ;
 ;   0 buf | 1 cap | 2 elem_size | 3 head | 4 tail | 5 count
-;   6 gen | 7 closed | 8 waiters
+;   6 gen | 7 closed | 8 lock
 %npk.chan = type { ptr, i64, i64, i64, i64, i64, i32, i32, i32 }
 
 @npk_ch_tab = internal global ptr null
 @npk_ch_cap = internal global i64 0
 @npk_ch_n = internal global i64 0
+@npk_ch_open_lock = internal global i32 0
+
+; A FUTEX MUTEX, three-state (0 free, 1 held, 2 held-and-contended). The third
+; state is what keeps the uncontended path syscall-free in BOTH directions: an
+; unlock only enters the kernel when it can see that somebody is waiting.
+;
+; A CHANNEL WITHOUT ONE LOSES MESSAGES. Before this, `count`, `head` and `tail`
+; were read, compared and written with plain loads and stores; two threads
+; sending to one channel both saw room, both wrote the same slot, and the
+; receiver waited out its deadline for values that had been overwritten. It
+; reproduced in 21 of 40 runs of a two-thread producer test — a data race that
+; silently drops data, which in this language is not a performance bug.
+define internal void @npk_mx_lock(ptr %w) {
+entry:
+  %c0 = cmpxchg ptr %w, i32 0, i32 1 seq_cst seq_cst
+  %ok0 = extractvalue { i32, i1 } %c0, 1
+  br i1 %ok0, label %done, label %loop
+loop:
+  ; Claim it as CONTENDED whatever it was. If it was free we now hold it; if
+  ; it was held, the holder will see 2 on release and wake us.
+  %old = atomicrmw xchg ptr %w, i32 2 seq_cst
+  %free = icmp eq i32 %old, 0
+  br i1 %free, label %done, label %wait
+wait:
+  %wp = ptrtoint ptr %w to i64
+  ; futex(word, FUTEX_WAIT|PRIVATE, expected 2, NULL, NULL, 0). A spurious
+  ; return or a value that already changed simply retries the claim.
+  %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 128, i64 2, i64 0, i64 0, i64 0)
+  br label %loop
+done:
+  ret void
+}
+
+define internal void @npk_mx_unlock(ptr %w) {
+entry:
+  %old = atomicrmw xchg ptr %w, i32 0 seq_cst
+  %contended = icmp eq i32 %old, 2
+  br i1 %contended, label %wake, label %done
+wake:
+  %wp = ptrtoint ptr %w to i64
+  ; futex(word, FUTEX_WAKE|PRIVATE, 1, ...)
+  %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 129, i64 1, i64 0, i64 0, i64 0)
+  br label %done
+done:
+  ret void
+}
+
+define internal void @npk_ch_lock(ptr %ch) {
+entry:
+  %w = getelementptr %npk.chan, ptr %ch, i32 0, i32 8
+  call void @npk_mx_lock(ptr %w)
+  ret void
+}
+
+define internal void @npk_ch_unlock(ptr %ch) {
+entry:
+  %w = getelementptr %npk.chan, ptr %ch, i32 0, i32 8
+  call void @npk_mx_unlock(ptr %w)
+  ret void
+}
 
 define internal ptr @npk_ch_at(i32 %i) {
 entry:
-  %t = load ptr, ptr @npk_ch_tab
+  %t = load atomic ptr, ptr @npk_ch_tab acquire, align 8
   %ix = sext i32 %i to i64
-  %p = getelementptr %npk.chan, ptr %t, i64 %ix
+  %slot = getelementptr ptr, ptr %t, i64 %ix
+  %p = load ptr, ptr %slot
   ret ptr %p
 }
 
@@ -304,6 +381,7 @@ entry:
 ; { index, generation } as an i64 so one register carries it.
 define i64 @npk_ch_open(i64 %cap, i64 %esz) {
 entry:
+  call void @npk_mx_lock(ptr @npk_ch_open_lock)
   %n = load i64, ptr @npk_ch_n
   %c = load i64, ptr @npk_ch_cap
   %full = icmp sge i64 %n, %c
@@ -312,32 +390,30 @@ grow:
   %nc0 = shl i64 %c, 1
   %first = icmp eq i64 %c, 0
   %nc = select i1 %first, i64 16, i64 %nc0
-  %bytes = mul i64 %nc, ptrtoint (ptr getelementptr (%npk.chan, ptr null, i32 1) to i64)
+  %bytes = mul i64 %nc, 8
+  %m = call ptr @npk_alloc_internal(i64 %bytes)
+  call void @npk_zero(ptr %m, i64 %bytes)
   %old = load ptr, ptr @npk_ch_tab
-  %oldi = ptrtoint ptr %old to i64
-  %was = icmp eq i64 %oldi, 0
-  br i1 %was, label %fresh, label %again
-fresh:
-  %m0 = call ptr @npk_alloc_internal(i64 %bytes)
-  call void @npk_zero(ptr %m0, i64 %bytes)
-  store ptr %m0, ptr @npk_ch_tab
-  store i64 %nc, ptr @npk_ch_cap
-  br label %have
-again:
-  ; the table holds no interior pointers, so a copy is a move
-  %m1 = call ptr @npk_alloc_internal(i64 %bytes)
-  call void @npk_zero(ptr %m1, i64 %bytes)
-  %oldbytes = mul i64 %c, ptrtoint (ptr getelementptr (%npk.chan, ptr null, i32 1) to i64)
-  call ptr @memcpy(ptr %m1, ptr %old, i64 %oldbytes)
-  store ptr %m1, ptr @npk_ch_tab
+  %was = icmp eq ptr %old, null
+  br i1 %was, label %pub, label %copy
+copy:
+  %oldbytes = mul i64 %c, 8
+  call ptr @memcpy(ptr %m, ptr %old, i64 %oldbytes)
+  ; THE OLD ARRAY IS NOT FREED. A reader holding it still resolves every index
+  ; below the count it observed, which is what lets `npk_ch_at` run without
+  ; taking this lock.
+  br label %pub
+pub:
+  store atomic ptr %m, ptr @npk_ch_tab release, align 8
   store i64 %nc, ptr @npk_ch_cap
   br label %have
 have:
   %idx = load i64, ptr @npk_ch_n
-  %ni = add i64 %idx, 1
-  store i64 %ni, ptr @npk_ch_n
-  %i32i = trunc i64 %idx to i32
-  %ch = call ptr @npk_ch_at(i32 %i32i)
+  ; THE CHANNEL IS ALLOCATED ON ITS OWN AND NEVER MOVES, so growing the table
+  ; cannot pull it out from under an operation in flight on another thread.
+  %chbytes = add i64 0, ptrtoint (ptr getelementptr (%npk.chan, ptr null, i32 1) to i64)
+  %ch = call ptr @npk_alloc_internal(i64 %chbytes)
+  call void @npk_zero(ptr %ch, i64 %chbytes)
   ; a rendezvous channel (CAP 0) still needs one slot to hand the value over
   %rendez = icmp eq i64 %cap, 0
   %slots = select i1 %rendez, i64 1, i64 %cap
@@ -349,23 +425,19 @@ have:
   store i64 %cap, ptr %cp
   %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
   store i64 %esz, ptr %ep
-  %hp = getelementptr %npk.chan, ptr %ch, i32 0, i32 3
-  store i64 0, ptr %hp
-  %tp = getelementptr %npk.chan, ptr %ch, i32 0, i32 4
-  store i64 0, ptr %tp
-  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
-  store i64 0, ptr %np
+  ; head, tail, count, closed and the lock word are already zero, and a fresh
+  ; struct's generation starts EVEN, which is what live means.
   %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
-  %g = load i32, ptr %gp
-  ; EVEN means live: a fresh slot starts at 0, a reused one was bumped to odd
-  ; at close and is bumped again here.
-  %odd = and i32 %g, 1
-  %isodd = icmp ne i32 %odd, 0
-  %g2 = add i32 %g, 1
-  %gen = select i1 %isodd, i32 %g2, i32 %g
-  store i32 %gen, ptr %gp
-  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
-  store i32 0, ptr %clp
+  %gen = load i32, ptr %gp
+  ; PUBLISH THE POINTER, THEN THE COUNT. A reader acquires the count and so
+  ; cannot see an index whose pointer is not yet stored.
+  %tab = load ptr, ptr @npk_ch_tab
+  %slot = getelementptr ptr, ptr %tab, i64 %idx
+  store ptr %ch, ptr %slot
+  %ni = add i64 %idx, 1
+  store atomic i64 %ni, ptr @npk_ch_n release, align 8
+  call void @npk_mx_unlock(ptr @npk_ch_open_lock)
+  %i32i = trunc i64 %idx to i32
   %packed_lo = zext i32 %i32i to i64
   %packed_hi0 = zext i32 %gen to i64
   %packed_hi = shl i64 %packed_hi0, 32
@@ -378,7 +450,7 @@ have:
 define internal ptr @npk_ch_get(i64 %h) {
 entry:
   %ix64 = and i64 %h, 4294967295
-  %n = load i64, ptr @npk_ch_n
+  %n = load atomic i64, ptr @npk_ch_n acquire, align 8
   %oob = icmp uge i64 %ix64, %n
   br i1 %oob, label %stale, label %live
 live:
@@ -413,8 +485,10 @@ ok:
   ; outstanding endpoint stale the instant the producer finished, so a reader
   ; mid-drain was told its handle was dangling — StaleHandle standing in for
   ; ChannelClosed, a use-after-free report for an orderly end of stream.
+  call void @npk_ch_lock(ptr %ch)
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   store i32 1, ptr %clp
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 stale:
   ret i32 -4106
@@ -427,8 +501,10 @@ entry:
   %bad = icmp eq ptr %ch, null
   br i1 %bad, label %yes, label %look
 look:
+  call void @npk_ch_lock(ptr %ch)
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   %c = load i32, ptr %clp
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 %c
 yes:
   ret i32 1
@@ -447,6 +523,10 @@ entry:
   %bad = icmp eq ptr %ch, null
   br i1 %bad, label %stale, label %live
 live:
+  ; EVERY READ AND WRITE OF THE RING IS UNDER THE CHANNEL'S LOCK. `count`,
+  ; `head` and `tail` are a single piece of state, and testing one then
+  ; writing another is only atomic if nothing else can run between them.
+  call void @npk_ch_lock(ptr %ch)
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   %cl = load i32, ptr %clp
   %isclosed = icmp ne i32 %cl, 0
@@ -479,10 +559,13 @@ write:
   store i64 %t3, ptr %tp
   %c2 = add i64 %cnt, 1
   store i64 %c2, ptr %np
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 wouldblock:
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 1
 closed:
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 -4108
 stale:
   ret i32 -4106
@@ -494,6 +577,7 @@ entry:
   %bad = icmp eq ptr %ch, null
   br i1 %bad, label %stale, label %live
 live:
+  call void @npk_ch_lock(ptr %ch)
   %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
   %cnt = load i64, ptr %np
   %empty = icmp eq i64 %cnt, 0
@@ -518,6 +602,7 @@ take:
   store i64 %h3, ptr %hp
   %c2 = sub i64 %cnt, 1
   store i64 %c2, ptr %np
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 nothing:
   ; EMPTY AND CLOSED IS AN END, NOT A WAIT. A closed channel that still holds
@@ -528,8 +613,10 @@ nothing:
   %isclosed = icmp ne i32 %cl, 0
   br i1 %isclosed, label %closed, label %wouldblock
 wouldblock:
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 1
 closed:
+  call void @npk_ch_unlock(ptr %ch)
   ret i32 -4108
 stale:
   ret i32 -4106
