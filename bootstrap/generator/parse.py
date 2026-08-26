@@ -61,7 +61,7 @@ ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="}
 RESULT_UNARY = {"raw", "drop", "relay", "await"}
 MEMORY_QUALS = {"wild", "wildx", "stack", "fixed", "const", "nodrop"}
 VISIBILITY = {"pub"}
-FUNC_MODIFIERS = {"async", "comptime", "inline", "noinline"}
+FUNC_MODIFIERS = {"async", "comptime", "inline", "noinline", "thread"}
 
 
 class Parser:
@@ -293,6 +293,13 @@ class Parser:
                 self.accept("<=")
                 self.parse_expr()
                 has_contract = True
+                continue
+            # `joins <const Duration>` (D-181) -- carried like `never fails`,
+            # WITHOUT has_contract: it states a thread's join deadline and
+            # changes no lowering the seed performs. The real frontend reads
+            # it at the spawn.
+            if self.accept("joins"):
+                self.parse_expr()
                 continue
             # `never fails` (D-163) -- parsed and carried as a fact, WITHOUT
             # has_contract: the checker rung-refuses the verification contracts

@@ -5123,7 +5123,7 @@ stopping thread and reads it in the actor loop with no synchronization at all.
 | `barrier.npk` | reimplemented natively — 34 lines wrapping three C shims, and the operation is a count, a mutex, and a condition variable |
 | `atomic.npk` | not ported (already settled) — superseded by the language-level `atomic<T>` |
 | `Thread.detach` | **removed.** It returns success and leaks a 2 MiB stack and a context page, and lexical lifetime means nothing is detached. |
-| `Thread.sleep_ns/ms` | reimplemented — the prototype's are `pass NIL;` with no syscall, so every sleeping loop is a spin loop (audit §2) |
+| `Thread.sleep_ns/ms` | ~~reimplemented~~ — **STRUCK by D-181**: D-071 postdates this row, and under "all blocking is task suspension" a thread-blocking sleep is a second waiting mechanism that stalls every sibling task on its executor. `await sleep(within)` is the one way to wait. |
 | `Thread.hardware_concurrency` | reimplemented — hardcoded to `4` |
 | `CondVar.wait` | **removed**; `timedwait` is the only form, per D-056 |
 
@@ -12206,3 +12206,104 @@ what made C-8 urgent.
 `@` stays second-class (D-004 rules 1–3 untouched): a borrow still may not be
 returned, stored in anything outliving the frame, or given to an `extern`.
 The borrow-checker deep dive's obs. #1 closes with this.
+
+## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
+
+C-9's thread half, ratified from `meta/roadmap/1.1/C9_THREAD_STUDY.md`. It
+closes a gap D-083 itself opened: **`Thread.spawn` appears nowhere in the spec
+set**, so the language had rules about a construct it could not spell.
+
+### 1. A thread body is a function; the spawn form is the one that exists
+
+```nitpick
+thread async func:sensor_loop = NIL(fd:dev) joins SENSOR_JOIN { … };
+
+async func:main = int32(cstring[]:_~argv) {
+    drop sensor_loop(dev);      // starts the thread; scope exit joins it
+};
+```
+
+**`thread` is a function modifier** beside `async`, and a thread starts
+through the SAME spawn form a task uses — `drop f(args)`. No handle (D-083),
+no `Thread.spawn(f, arg)` (the prototype's erased the job type and zeroed
+captured environments — D-073 §thread-pools).
+
+Reusing the spawn form is not economy, it is rule inheritance: D-179's
+`NIL`-success requirement, D-177's join and wind-up, D-180's borrow ban (a
+literal data race here rather than an interleaving one), and D-163's
+licensing all apply unchanged. A second spawn spelling would restate every
+one, and "which spelling does this rule apply to?" is the meaning-by-context
+the blueprint philosophy exists to prevent.
+
+**The modifier is on the DECLARATION, not the call site.** The cost is
+stated plainly: reading `drop f(x)` does not tell you a thread was created.
+It is paid because a thread body OWNS an executor and an arena (D-034) while
+a task does not — under D-032's pinning they are different kinds of
+function, not one function used two ways — because `rg 'thread async func:'`
+answers "how many threads does this program have" exactly and completely,
+and because `main` already works this way.
+
+### 2. `joins <const Duration>` — where the join deadline is stated
+
+D-083 requires the deadline fixed where the executor is created, and
+*reviewable*. It rides the declaration in the contract position, beside
+`never fails`, and takes a CONSTANT expression of type `Duration` — an inline
+`Duration{ ns: … }` or a named `const`. The program-level default applies
+where the clause is absent, and that default is itself a stated constant, not
+"whatever the runtime felt like".
+
+### 3. The executor becomes per-thread state
+
+One `%npk.exec` struct — ready queue, sleepers, park word and request, join
+deadline, origin-chain ring, frame arena (D-034) — reached through **one
+`%fs`-relative word** installed by `CLONE_SETTLS`, honouring the ABI's
+`%fs:0 = self` convention and using `%fs:8` for our pointer.
+
+Chosen over LLVM `thread_local` globals deliberately: this program is static
+and freestanding and owns its own `_start`, so the initial-exec model would
+mean the runtime parsing `PT_TLS` and installing TLS blocks itself — a
+strictly larger trusted computing base for the same result, and this project
+has one Astrée run to spend.
+
+**What does NOT move:**
+
+| State | Scope | Why |
+|---|---|---|
+| ready queue, sleepers, park word | per-thread | sharing one would migrate tasks, which D-032 forbids outright |
+| join deadline | per-thread | D-083: fixed where the executor is created |
+| frame arena | per-thread | D-034, and it is what keeps the arena single-threaded |
+| origin-chain ring | per-thread | two threads' in-flight errors interleaved into one history would make the diagnostic fiction |
+| **the freeze flag (D-063)** | **GLOBAL** | "a trap is a whole-program event; no task is ever resumed after one" — a per-thread freeze would let siblings run on against unknown state, which is exactly what D-063 refuses |
+| the heap | global | already thread-safe (0.10), and per-thread heaps would break `wild` ownership transfer |
+
+### 4. Creation and the join, concretely
+
+- **`clone(2)`**, not `pthread_create` — the zero-dependency rule, and the
+  runtime already owns `_start`, guard-paged mmap and `exit`.
+- **The stack** is one mmap with a `PROT_NONE` guard page below it — the
+  three-region shape `wildx` already uses. Size is a stated constant (2 MiB).
+- **`CHILD_CLEARTID` IS the join.** The kernel clears a word and futex-wakes
+  it at thread exit; the joining scope waits on that word under the deadline.
+  This is what makes D-083's "there is no thread handle" implementable rather
+  than aspirational — nothing needs to be named to be joined.
+- **`hardware_concurrency`** is `sched_getaffinity` (the prototype hardcoded
+  `4` — D-073).
+
+### 5. Failure
+
+A thread's root task is a task: its error rides the frame, the join collects
+it, and the first child error relays into the spawning scope verbatim
+(D-080/D-177). A TRAP is D-063 unchanged — global freeze, `failsafe` on the
+trapping thread as a plain call, `exit_group`.
+
+### 6. Two amendments this forces
+
+- **`Thread.sleep_ns/ms` is STRUCK, not reimplemented.** D-073's row predates
+  D-071: under "all blocking is task suspension", `await sleep(within)` is
+  the one way to wait, and a thread-blocking sleep would be a second
+  mechanism, invisible at the call site, that stalls every sibling task on
+  its executor — the precise hazard D-071 was written against.
+- **`atomic<T>`'s minimal set is owed by the thread half**, not only by
+  channels: the park word is written by one thread and read by another.
+  Relaxed load/store plus one compare-exchange; the full permitted-`T`
+  question stays with C-9's channel half.

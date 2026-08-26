@@ -63,12 +63,15 @@ VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "acquires"
                       | "invariant" | "fails" | "on" | "with" | "never"
 
-; the contract position after a parameter list (D-163):
+; the contract position after a parameter list (D-163, D-181):
 ;   Contracts ::= ( "requires" Expr | "ensures" Expr
-;                 | "acquires" ["<="] Expr | "never" "fails" )*
+;                 | "acquires" ["<="] Expr | "never" "fails"
+;                 | "joins" Expr )*
+; `joins <const Duration>` states a THREAD's join deadline where its executor
+; is created (D-083/D-181) — one greppable, reviewable place per thread.
 ; `never fails` is also legal after a function TYPE's parameter list.
 
-AsyncKeyword        ::= "async" | "await"
+AsyncKeyword        ::= "async" | "await" | "thread" | "joins"
 
 ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
                       | "comptime" | "inline" | "noinline" | "macro" | "derive"

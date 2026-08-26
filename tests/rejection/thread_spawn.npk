@@ -1,0 +1,31 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// A `thread` spawn CREATES an executor (D-181) — the clone, the guard-paged
+// stack, the `%fs` install and the CHILD_CLEARTID join are 1.1.9c. Until
+// then it refuses by name rather than starting the task on the spawner's
+// executor, which would be a thread body running as a task: the one thing
+// D-032's pinning says is a different kind of thing.
+
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:worker = NIL(int32:_~v) joins JOIN_2S {
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    drop worker(1i32);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

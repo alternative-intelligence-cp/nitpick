@@ -167,6 +167,18 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
                                                0i32, 0i32, 0i32, 0i64);
             drop ast_scratch_push(p.ast, nf.index);
         } else {
+            // `joins <const Duration>` (D-181) — a thread's join deadline,
+            // stated where its executor is created (D-083). A marker-plus-
+            // expression clause: the deadline is an ordinary constant
+            // expression, and the body check is what requires it to be one.
+            if (raw p_at(p, TokenKind.KwJoins)) {
+                discard(raw p_advance(p));
+                ExprId:jd = raw p_parse_expr(p);
+                VerifyId:jv = raw ast_add_verify(p.ast, VerifyKind.VerifyJoinsWithin,
+                                                   sp, jd.index, 0i32, 0i32, 0i64);
+                drop ast_scratch_push(p.ast, jv.index);
+                continue;
+            }
             int32:kind = 0i32;
             if (raw p_at(p, TokenKind.KwRequires)) { kind = raw CONTRACT_REQUIRES(); }
             if (raw p_at(p, TokenKind.KwEnsures))  { kind = raw CONTRACT_ENSURES(); }

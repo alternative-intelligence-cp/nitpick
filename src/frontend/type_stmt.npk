@@ -1023,6 +1023,31 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                 d.span));
         }
     }
+    // THE `thread` MODIFIER'S RULES (D-181). A thread body owns an executor
+    // and the arena its frames come from (D-034), which is why it is a
+    // different kind of function rather than the same one used differently:
+    // it is `async` (D-071 — a thread's entry point is an async func), its
+    // success is `NIL` (nothing can collect a thread's value; only its error
+    // reaches the join), and the two functions outside the Result regime
+    // cannot be threads at all.
+    if (raw decl_has(d, raw DECL_THREAD())) {
+        if (!e.fn_is_async) {
+            discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                "a `thread` function is `async` (D-071/D-181): a thread's entry point runs on its own executor, and `await` is how anything on an executor waits",
+                d.span));
+        }
+        if (e.fn_terminal) {
+            discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                "`main` and `failsafe` cannot be `thread` functions (D-181): `main` already owns the program's first executor, and `failsafe` runs on the trapping thread as a plain call (D-063)",
+                d.span));
+        }
+        if ((raw type_kind(e.types, sg.success)) != (raw TY_NIL())) {
+            discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                "a `thread` function's success type is `NIL` (D-181, inheriting D-179's spawn rule): a thread is started by `drop f(…)`, and only its ERROR reaches the join — a value would have nowhere to go",
+                d.span));
+        }
+    }
+
     // `failsafe` TAKES EXACTLY ONE `Error` (D-179): the runtime routes every
     // uncaught failure through it, and the route has one shape. Checked here
     // because this is where the function's identity is already in hand.

@@ -71,6 +71,11 @@ pub func:DECL_RET_WILDX = int32() never fails { pass 128i32; };
 pub func:DECL_RET_STACK = int32() never fails { pass 256i32; };
 pub func:DECL_RET_CONST = int32() never fails { pass 512i32; };
 pub func:DECL_RET_FIXED = int32() never fails { pass 1024i32; };
+// `thread` (D-181): this function is a THREAD BODY — it owns an executor and
+// the arena its task frames come from (D-034), which is what makes it a
+// different kind of function from a task rather than the same one used
+// differently (D-032's pinning).
+pub func:DECL_THREAD = int32() never fails    { pass 2048i32; };
 
 func:p_return_quals = int32(Parser->:p) never fails {
     int32:q = 0i32;
@@ -696,6 +701,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
         if (m == TokenKind.KwNoinline) { bit = raw DECL_NOINLINE(); }
         if (m == TokenKind.KwComptime) { bit = raw DECL_COMPTIME(); }
         if (m == TokenKind.KwAsync)    { bit = raw DECL_ASYNC(); }
+        if (m == TokenKind.KwThread)   { bit = raw DECL_THREAD(); }
         if (bit == 0i32) { break; }
         flags = flags | bit;
         discard(raw p_advance(p));

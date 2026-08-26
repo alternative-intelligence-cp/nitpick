@@ -407,6 +407,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // links a child onto the join list instead of calling anything.
         int32:spd = raw await_callee_decl(x, raw expr_operand(n));
         if (spd != 0i32) {
+            // A THREAD spawn creates an executor (D-181); 1.1.9c builds
+            // that. Until then it refuses by name rather than starting a
+            // task on the wrong executor.
+            if (raw decl_has(raw ast_decl(x.ast, DeclId{ index: spd }),
+                             raw DECL_THREAD())) {
+                pass (raw iv_rung("a `thread` spawn", "1.1", n.span));
+            }
             pass (raw emit_spawn(x, raw expr_operand(n), n, spd));
         }
         IrVal:v = raw emit_expr(x, raw expr_operand(n));

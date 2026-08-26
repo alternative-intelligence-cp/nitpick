@@ -1,0 +1,31 @@
+// expect-error: NITPICK-TYPE-045
+// expect-error: NITPICK-TYPE-045
+// expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-045
+// expect-error: NITPICK-TYPE-045
+//
+// D-181's rules for the `thread` modifier. A thread body owns an executor
+// and the arena its task frames come from (D-034), which is what makes it a
+// different KIND of function from a task rather than the same one used
+// differently — so it is `async` (D-071: a thread's entry point runs on its
+// own executor, and `await` is how anything on one waits), its success type
+// is `NIL` (it starts through the spawn form, and only its error reaches
+// the join — a value would have nowhere to go), and neither `main` nor
+// `failsafe` may be one: `main` already owns the program's first executor,
+// and `failsafe` runs on the trapping thread as a plain call (D-063). The
+// last declaration earns FOUR refusals between D-177 and D-181 — async
+// failsafe, thread failsafe, and a non-NIL success — which is the rules
+// composing rather than overlapping: each names a different thing wrong.
+mod:thread_rules;
+
+thread func:not_async = NIL(int32:_~v) {
+    pass NIL;
+};
+
+thread async func:gives_a_value = int32(int32:v) {
+    pass v;
+};
+
+async func:main = int32(cstring[]:_~argv) { exit 0i32; };
+
+thread async func:failsafe = int32(Error:_~e) { exit 1i32; };

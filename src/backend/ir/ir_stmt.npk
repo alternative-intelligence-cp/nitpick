@@ -1971,8 +1971,13 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // by the frontend and changes no emitted byte — the backend owes it
         // nothing, so it passes through where `requires`/`ensures` still rung.
         if (cv.kind != VerifyKind.VerifyNeverFails) {
-            if (cv.a != (raw CONTRACT_ACQUIRES())) {
-                pass (raw iv_rung("a `requires`/`ensures` contract", "1.3", cv.span));
+            // `joins <const Duration>` (D-181) is read by the THREAD SPAWN,
+            // not by the body — it states the executor's join deadline, and
+            // the body owes it nothing.
+            if (cv.kind != VerifyKind.VerifyJoinsWithin) {
+                if (cv.a != (raw CONTRACT_ACQUIRES())) {
+                    pass (raw iv_rung("a `requires`/`ensures` contract", "1.3", cv.span));
+                }
             }
         }
         ci = ci + 1i32;
