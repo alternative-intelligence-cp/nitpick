@@ -2129,6 +2129,30 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
         }
     }
 
+    // Rule 4 — NO `async` METHOD (D-182, 1.1.10-D5). Async trait methods work
+    // through GENERICS and not through `dyn`, and the reason is mechanical
+    // rather than a policy: an `async` method is not a function, it is a
+    // coroutine — a frame type whose SIZE is part of the callee's identity,
+    // plus a resume function. A vtable slot is one address, and the caller
+    // must allocate the callee's frame before it can call anything at all, so
+    // behind `dyn`, where the concrete type is erased, there is no size to
+    // allocate. It is rule 2's problem in a different place: `Self` erased
+    // leaves nowhere to put the result, and a coroutine erased leaves nothing
+    // to put the frame in.
+    //
+    // Caught by emitting one: a trait with an `async` method got a vtable
+    // thunk like any other, and the thunk called a synchronous symbol that
+    // does not exist for a coroutine — `use of undefined value` from llc,
+    // which is the compiler discovering at link time what the type system
+    // should have said at the declaration.
+    if (raw decl_has(m, raw DECL_ASYNC())) {
+        bad = true;
+        if (report) {
+            drop not_object_safe(r, trait_id, mname,
+                "is `async`, and an `async` method is a coroutine rather than a function: its frame's SIZE belongs to the concrete callee, which `dyn` erases, and a vtable slot is one address with nowhere to put it. Async trait methods dispatch through GENERICS (D-182) — take `<T: Trait>` instead of `dyn Trait`", at);
+        }
+    }
+
     // Rule 2 — `Self` NOWHERE BUT THE RECEIVER (D-157, extended at 1.0.5).
     // This read the RETURN's top node and nothing else, so
     // `bool(Self:self, Self:other)` passed object safety outright, and behind a

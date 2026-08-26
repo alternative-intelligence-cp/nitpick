@@ -2099,6 +2099,20 @@ func:emit_pipe = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 func:await_callee_decl = int32(ExprEmitter->:x, ExprId:cid) never fails {
     if (raw expr_is_none(cid)) { pass 0i32; }
     ExprNode:cn = raw ast_expr(x.ast, cid);
+    // A METHOD CALL (1.1.10-D2). The checker already resolved which method
+    // this reaches — through an impl, or through a generic bound (D-182
+    // settles async trait methods as generics-yes, `dyn`-no) — and recorded
+    // its declaration, so the await site reads that answer rather than
+    // repeating the lookup. `await job.run()` is the call the `Work` trait
+    // exists to make, and it refused until now.
+    if (cn.kind == ExprKind.ExprMethodCallExpr) {
+        int32:md = raw exprtypes_callee(x.et, cid);
+        if (md == 0i32) { pass 0i32; }
+        DeclNode:mdecl = raw ast_decl(x.ast, DeclId{ index: md });
+        if (mdecl.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+        if (!(raw decl_has(mdecl, raw DECL_ASYNC()))) { pass 0i32; }
+        pass md;
+    }
     if (cn.kind != ExprKind.ExprCallExpr) { pass 0i32; }
     ExprId:callee = raw expr_callee(cn);
     if (raw expr_is_none(callee)) { pass 0i32; }
@@ -2122,23 +2136,102 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
                       raw fnem_frame_size_arg(cfr_ty), ")"));
     drop fnem_frame_init(x.fe, cfr_ty, fr, crs);
-    int32:gcount = raw expr_generic_count(cn);
+    // A CALL's window holds generic arguments first and value arguments after;
+    // a METHOD call's holds only value arguments, and the slot `expr_generic_count`
+    // reads means something else on that node — read blind it swallowed the
+    // whole argument list, and the callee got its parameters unwritten (a
+    // method awaited with one argument saw zero, and read whatever the frame
+    // was allocated with).
+    int32:gcount = 0i32;
+    if (cn.kind != ExprKind.ExprMethodCallExpr) {
+        gcount = raw expr_generic_count(cn);
+    }
     int32:start = (raw expr_list_start(cn)) + gcount;
     int32:count = (raw expr_list_count(cn)) - gcount;
     int32:cft = raw exprtypes_callee_ft(x.et, cid);
+    // A METHOD CALL'S RECEIVER IS PARAMETER 0 (1.1.10-D2), exactly as it is
+    // for an ordinary method call — `self` is a parameter, and the only thing
+    // unusual about it here is that it is not in the argument window.
+    int32:base = 0i32;
+    if (cn.kind == ExprKind.ExprMethodCallExpr) {
+        IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
+        if (rv.state != (raw LL_OK())) { pass rv; }
+        rv = raw emit_fit(x, raw call_param_want(x, cft, 0i32), rv, at);
+        if (rv.state != (raw LL_OK())) { pass rv; }
+        string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
+        drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
+                          raw string_concat(", ptr ", rg)));
+        base = 1i32;
+    }
     int32:i = 0i32;
     while (i < count) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, cft, i), av, at);
+        av = raw emit_fit(x, raw call_param_want(x, cft, base + i), av, at);
         if (av.state != (raw LL_OK())) { pass av; }
-        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + i);
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + base + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
     }
     pass (raw iv("ptr", fr, 0i32));
+};
+
+// THE ASYNC CALLEE'S NAME AT A CALL SITE, specialization included (1.1.10-D1).
+// A coroutine's frame type and resume symbol are derived from its name, and a
+// generic one's name is the name of the INSTANTIATION — `worker<Job>`, the
+// same spelling `emit_program` gives the definition — not the template's.
+// Returns "" when the callee is generic and no instantiation matches, which is
+// the one case that still refuses: the specialization would not exist to call.
+//
+// Until this, an `await` or a spawn of a generic callee refused outright, and
+// that refusal is what made D-182's own pool design unbuildable: a
+// `ThreadPool<J, …>` is N worker TASKS generic in the job type, so every one
+// of its spawns is this call.
+func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
+                                int32:cdi, DeclNode:cdecl) never fails {
+    // A METHOD'S SYMBOL IS READ, NOT REBUILT (1.0.5b's rule, and the reason
+    // two impls in one module may both define `run`): the checker recorded
+    // the qualified spelling — `Job:Work.run` — and the frame type and resume
+    // symbol are derived from exactly that.
+    if (cn.kind == ExprKind.ExprMethodCallExpr) {
+        string:mn = raw intern_get(x.interns, raw decl_name(cdecl));
+        int32:msym = raw exprtypes_callee_sym(x.et, cid);
+        if (msym != 0i32) { pass (raw intern_get(x.interns, msym)); }
+        // A CALL THROUGH A BOUND NAMES THE SPECIALIZATION'S IMPL (1.0.6b's
+        // rule, and the same reasoning): `async func:do_one<J: Work>` calling
+        // `job.run()` records no symbol, because at check time the receiver is
+        // the PARAMETER `J` and there is no impl yet. Here there is — `J` has
+        // been substituted and the trait the method came through was recorded
+        // — so the two combine into the name the impl was emitted under. This
+        // is the call `Work` exists for, so without it the pool cannot be
+        // written.
+        ExprId:rid = raw expr_operand(cn);
+        int32:rty = raw exprtypes_get(x.et, rid);
+        if ((raw type_kind(x.fe.ctx.types, rty)) == (raw TY_SELF())) {
+            if (x.tr.self_type != 0i32) {
+                pass (raw method_symbol_name(x.fe.ctx.types, x.interns,
+                          x.tr.self_type, x.cur_trait, mn));
+            }
+        }
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
+            int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
+            if (conc != rty) {
+                int32:btrait = raw exprtypes_callee_trait(x.et, cid);
+                pass (raw method_symbol_name(x.fe.ctx.types, x.interns,
+                          conc, btrait, mn));
+            }
+        }
+        pass "";
+    }
+    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
+    Symbol:cs = raw symtab_get(x.tab, cnode.a);
+    string:fname = raw intern_get(x.interns, cs.name);
+    if ((raw decl_generic_window(x.ast, cdecl)).count == 0i32) { pass fname; }
+    int32:sn = raw fninst_for_call(x, cdi, cid);
+    if (sn == 0i32) { pass ""; }
+    pass (raw intern_get(x.interns, sn));
 };
 
 // THE SPAWN (D-058/D-177 stage E): `drop f(…)` on an `async` callee builds
@@ -2150,12 +2243,11 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
                         int32:cdi) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
-        pass (raw iv_rung("a spawned generic call", "1.1", n.span));
+    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (fname.len == 0i64) {
+        pass (raw iv_rung("a spawned generic call with no recorded instantiation",
+                          "1.1", n.span));
     }
-    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
-    Symbol:cs = raw symtab_get(x.tab, cnode.a);
-    string:fname = raw intern_get(x.interns, cs.name);
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
@@ -2191,12 +2283,11 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
                                int32:cdi) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
-        pass (raw iv_rung("a generic `thread` spawn", "1.1", n.span));
+    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (fname.len == 0i64) {
+        pass (raw iv_rung("a generic `thread` spawn with no recorded instantiation",
+                          "1.1", n.span));
     }
-    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
-    Symbol:cs = raw symtab_get(x.tab, cnode.a);
-    string:fname = raw intern_get(x.interns, cs.name);
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
@@ -2380,6 +2471,10 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     ExprNode:cn = raw ast_expr(x.ast, cid);
     string:m = raw intern_get(x.interns, cn.payload =>! int32);
     bool:is_send = raw string_eq(m, "send");
+    // Substituted for the same reason `channel()` is: inside a generic body the
+    // recorded channel type still names the parameter, and the element's
+    // LLVM type and size are what the copy is measured in.
+    ch_tid = raw subst_emitted_type(x.fe.ctx, ch_tid);
     int32:elem = raw type_elem(x.fe.ctx.types, ch_tid);
     LlType:ell = raw ll_type(x.fe.ctx, elem);
     if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, at)); }
@@ -2564,17 +2659,16 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     }
     int32:cdi = raw await_callee_decl(x, cid);
     if (cdi == 0i32) {
-        pass (raw iv_rung("an `await` of a method, indirect or builtin call",
+        pass (raw iv_rung("an `await` of an indirect or builtin call",
                           "1.1", n.span));
     }
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
-        pass (raw iv_rung("an `await` of a generic call", "1.1", n.span));
+    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (fname.len == 0i64) {
+        pass (raw iv_rung("an `await` of a generic call with no recorded instantiation",
+                          "1.1", n.span));
     }
-    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
-    Symbol:cs = raw symtab_get(x.tab, cnode.a);
-    string:fname = raw intern_get(x.interns, cs.name);
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
 
@@ -2798,6 +2892,13 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(name, "channel")) {
         int32:crt = raw exprtypes_get(x.et, id);
         int32:cht = raw type_elem(x.fe.ctx.types, crt);
+        // THROUGH THE INSTANTIATION'S BINDING (1.1.10-D3). The checker recorded
+        // the TEMPLATE's type — `Channel<J, …>` inside `pool_create<J>` — and
+        // the element's SIZE is what the ring copies. Unsubstituted, `J`
+        // measures 0, so the channel was opened with a zero-byte element and
+        // every value came back all zeroes: a pool whose jobs all arrived
+        // blank, with nothing failing anywhere.
+        cht = raw subst_emitted_type(x.fe.ctx, cht);
         int32:celem = raw type_elem(x.fe.ctx.types, cht);
         int64:ccap = (raw type_chan_cap(x.fe.ctx.types, cht)) => int64;
         int64:cesz = raw type_size(x.fe.ctx.types, celem);

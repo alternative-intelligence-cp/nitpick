@@ -1064,7 +1064,19 @@ func:unwrap_licence_of = int32(ExprTyper->:e, ExprNode:opn, ExprId:opid) never f
 func:unwrap_callee_is_async = bool(ExprTyper->:e, ExprNode:opn, ExprId:opid) never fails {
     int32:d = 0i32;
     if (opn.kind == ExprKind.ExprMethodCallExpr) {
+        // TYPED HERE, not merely read from the table. Which method a call
+        // reaches is the CHECKER's answer, recorded while the call is typed —
+        // and the first time an `await` asks, the call underneath it has not
+        // been typed yet, so the table says 0 and the await reports that an
+        // `async` method is not async. Typing it is idempotent (the table
+        // memoizes), and it is the same order the channel-await acceptance
+        // needs for the same reason: a receiver has to have a type before
+        // anything can be said about what it resolves to.
         d = raw exprtypes_callee(e.expr_types, opid);
+        if (d == 0i32) {
+            discard(raw type_of_expr(e, opid));
+            d = raw exprtypes_callee(e.expr_types, opid);
+        }
     }
     if (opn.kind == ExprKind.ExprCallExpr) {
         ExprNode:cal = raw ast_expr(e.ast, raw expr_callee(opn));

@@ -47,6 +47,24 @@ pub struct:IrWriter = {
     Sink:body;
     bool:in_fn;
 
+    // THE MODULE'S COROUTINE FRAME TYPES, held apart and spliced in AHEAD of
+    // the first function (1.1.10-D1). A frame type's shape is not known until
+    // its body has been scanned for crossing locals, so it is written where it
+    // is discovered — in the middle of the module — while the call sites that
+    // ask for its SIZE may be anywhere, including earlier. LLVM will not size
+    // a forward-referenced named type, so `async func:main` awaiting a helper
+    // declared below it produced `base element of getelementptr must be
+    // sized` from llc rather than a program. Every existing test happened to
+    // declare its callees first, which is why nothing caught it.
+    //
+    // `out` is the head — everything before the first function, where the
+    // aggregate types a frame may embed are already defined — and `tail` is
+    // everything from the first function on. The assembled text is
+    // head, frame types, tail.
+    Sink:types;
+    Sink:tail;
+    bool:seen_fn;
+
     // `%t0`, `%t1`, … WITHIN ONE FUNCTION. Reset at each function's start, so a
     // function's IR depends on that function alone — which is what makes a
     // one-function change produce a one-function diff.
@@ -82,6 +100,9 @@ pub func:irw_to_buffer = IrWriter() never fails {
                            allocas: raw sink_to_buffer(1024i64),
                            body: raw sink_to_buffer(4096i64),
                            in_fn: false,
+                           types: raw sink_to_buffer(1024i64),
+                           tail: raw sink_to_buffer(4096i64),
+                           seen_fn: false,
                            next_temp: 0i32, next_label: 0i32,
                            stmt_mark: 0i32, alloca_since: 0i32,
                            site_paths: (alloc(16i64 * #size_of<string>())) =>! wild string->,
@@ -94,7 +115,17 @@ pub func:irw_to_buffer = IrWriter() never fails {
 // module stream otherwise.
 func:irw_sink = Sink->(IrWriter->:w) never fails {
     if (w.in_fn) { pass (@w.body); }
+    if (w.seen_fn) { pass (@w.tail); }
     pass (@w.out);
+};
+
+// A COROUTINE FRAME TYPE, into the sink that splices ahead of every function
+// (1.1.10-D1). Not `irw_raw`: the whole point is that this line does NOT stay
+// where it was written.
+pub func:irw_frame_type = NIL(IrWriter->:w, string:line) never fails {
+    drop sink_write(@w.types, line);
+    drop sink_write(@w.types, "\n");
+    pass NIL;
 };
 
 // OPEN A FUNCTION'S BUFFERS (1.0.9a). The define line and `entry:` label are
@@ -109,8 +140,12 @@ pub func:irw_open_fn = NIL(IrWriter->:w) never fails {
 // CLOSE A FUNCTION: allocas first, then the body, into the module stream.
 pub func:irw_close_fn = NIL(IrWriter->:w) never fails {
     w.in_fn = false;
-    drop sink_append(@w.out, @w.allocas);
-    drop sink_append(@w.out, @w.body);
+    // INTO THE SAME STREAM THE `define` LINE WENT TO, which is the tail once
+    // any function has begun (1.1.10-D1) — splicing into `out` unconditionally
+    // put every function's body in the head, ahead of its own header.
+    Sink->:dst = raw irw_sink(w);
+    drop sink_append(dst, @w.allocas);
+    drop sink_append(dst, @w.body);
     pass NIL;
 };
 
@@ -227,6 +262,9 @@ pub func:irw_new_label = string(IrWriter->:w, string:stem) never fails {
 // EVERY FUNCTION STARTS FROM ZERO. Called at the head of each one, so that the
 // numbering of a function's temporaries is a property of that function.
 pub func:irw_begin_function = NIL(IrWriter->:w) never fails {
+    // From here on the module stream is the TAIL; the frame types splice in
+    // between it and the head.
+    w.seen_fn = true;
     w.next_temp = 0i32;
     w.next_label = 0i32;
     w.stmt_mark = 0i32;
@@ -294,6 +332,8 @@ pub func:irw_text = string(IrWriter->:w) never fails {
     // the view: `out`, then the hoisted allocas, then the body. Outside a
     // function both are empty of anything current and `out` holds it all.
     string:t = raw string_from_bytes(w.out.buf, w.out.len);
+    t = raw string_concat(t, raw string_from_bytes(w.types.buf, w.types.len));
+    t = raw string_concat(t, raw string_from_bytes(w.tail.buf, w.tail.len));
     if (w.in_fn) {
         t = raw string_concat(t,
                 raw string_from_bytes(w.allocas.buf, w.allocas.len));

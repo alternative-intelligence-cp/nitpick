@@ -1,0 +1,47 @@
+// expect-exit: 42
+//
+// AWAITING AND SPAWNING A GENERIC ASYNC FUNCTION (D-177/D-181, 1.1.10-D1).
+// A coroutine's frame type and resume symbol are derived from its name, and a
+// generic one's name is the INSTANTIATION's — `twice<int32>`, the same
+// spelling the definition is emitted under — not the template's. Until this,
+// all three sites refused outright, and that refusal is what made D-182's own
+// pool design unbuildable: a `ThreadPool<J, …>` is N worker TASKS generic in
+// the job type, so every one of its spawns is exactly this call.
+//
+// Both an `await` and a `thread` spawn are exercised, and `twice` is
+// instantiated twice, so the two specializations must have distinct frames.
+mod:async_generic;
+error:E1;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+async func:twice<T> = int32(T:_~tag, int32:n) {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    pass n + n;
+};
+thread async func:shout<T> = NIL(T:_~tag, Channel<int32, 3i32, 4i64>:ch)
+        joins JOIN_2S {
+    await ch.send(2i32, raw duration_ms(500i64)) ?! E1;
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await twice(5i32, 10i32) ?! E1;        // twice<int32> -> 20
+    int32:b = await twice(true, 10i32) ?! E1;        // twice<bool>  -> 20
+    Channel<int32, 3i32, 4i64>:ch = channel() ?! Unreachable;
+    drop shout(1i64, ch);                            // shout<int64>, on a thread
+    Result<int32>:r = await ch.recv(raw duration_ms(2000i64));
+    if (r.is_error) { exit 71i32; }
+    exit a + b + r.value;                            // 20 + 20 + 2 = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

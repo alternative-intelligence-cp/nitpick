@@ -1,4 +1,4 @@
-// Object safety (4.2). Three rules, and the diagnostic says WHICH ONE — "trait is
+// Object safety (4.2). FOUR rules, and the diagnostic says WHICH ONE — "trait is
 // not object safe" sends the reader to re-derive the list.
 //
 // A NON-OBJECT-SAFE TRAIT IS STILL A GOOD TRAIT. Only `dyn` is refused, which is
@@ -75,3 +75,24 @@ func:ok_object_safe = NIL(dyn Drawable:d) never fails { pass NIL; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(Error:_~e) { exit 1i32; };
+
+// Rule 4 — no `async` method (D-182, 1.1.10-D5). Async trait methods dispatch
+// through GENERICS and not through `dyn`, and the reason is mechanical: an
+// `async` method is not a function, it is a coroutine — a frame type whose
+// SIZE belongs to the concrete callee, plus a resume function. The caller must
+// allocate that frame before it can call anything, and behind `dyn` the
+// concrete type is erased, so there is no size to allocate; a vtable slot is
+// one address with nowhere to put it. It is rule 2's problem in a different
+// place.
+//
+// Found by emitting one: before this rule, a trait with an `async` method got
+// a vtable thunk like any other, and the thunk called a synchronous symbol
+// that does not exist for a coroutine — `use of undefined value` from llc,
+// the compiler discovering at link time what the type system should have said
+// at the declaration.
+//
+// The trait itself is fine, and `tests/backend/programs/thread_pool` uses
+// exactly this shape through a generic bound. Only `dyn` is refused.
+trait:Work = { async func:run = int32(Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:async_dyn = NIL(dyn Work:w) never fails { pass NIL; };

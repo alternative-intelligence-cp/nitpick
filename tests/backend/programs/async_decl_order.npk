@@ -1,0 +1,48 @@
+// expect-exit: 42
+//
+// AN ASYNC CALLER DECLARED ABOVE ITS CALLEE (1.1.10-D1). This is ordinary
+// Nitpick — declaration order carries no meaning, the resolver binds names
+// across the whole module — and until the frame types were spliced ahead of
+// the functions it did not compile. Not with a diagnostic: with
+// `base element of getelementptr must be sized` out of llc, because the call
+// site asks for the callee frame's SIZE and LLVM will not size a named type
+// it has not seen yet.
+//
+// A coroutine's frame shape is not known until its body has been scanned for
+// locals that cross a suspension, so the type is written where it is
+// discovered — in the middle of the module — while the sites that need it may
+// be anywhere. The writer now holds those definitions apart and splices them
+// in ahead of the first function.
+//
+// Every async test written before this one happened to declare its callees
+// first, which is exactly why nothing caught it: the bug was in the shape of
+// the test file, not in the feature under test.
+mod:async_decl_order;
+error:E1;
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await helper(21i32) ?! E1;
+    int32:b = await deeper() ?! E1;
+    exit a + b;
+};
+async func:helper = int32(int32:n) {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    pass n;
+};
+async func:deeper = int32() {
+    int32:v = await helper(21i32) ?! E1;     // a callee declared ABOVE this one
+    pass v;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

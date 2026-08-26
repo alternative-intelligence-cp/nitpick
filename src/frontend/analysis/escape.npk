@@ -703,6 +703,17 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     }
     if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE())) { pass false; }   // an index, not an address
+    // A CHANNEL ENDPOINT IS THE SAME SHAPE AND THE SAME ANSWER (D-182): an
+    // index and a generation, which is precisely what lets it cross a spawn
+    // where a borrow may not. It reached the conservative default below and
+    // was called address-carrying — safe, but a claim the decision
+    // contradicts, and the conservative side of this fence refuses programs.
+    if (k == (raw TY_CHANNEL())) { pass false; }
+    // `atomic<T>` IS `T`'s storage (D-182 §4) — same bytes, same alignment —
+    // so it carries an address exactly when `T` does.
+    if (k == (raw TY_ATOMIC())) {
+        pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+    }
     if (k == (raw TY_OPTIONAL())) {
         pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
     }

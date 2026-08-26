@@ -191,6 +191,18 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     if (k == (raw TY_ENUM()))    { pass false; }
     if (k == (raw TY_NIL()))     { pass false; }
     if (k == (raw TY_ARRAY()))   { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
+    // A HANDLE AND A CHANNEL ENDPOINT ARE INDICES, NOT ADDRESSES (D-152,
+    // D-182) — which is the whole reason both exist in those shapes. Reaching
+    // the conservative default made every struct holding one "pointer
+    // bearing", and that answer is read by the escape analysis and by the
+    // channel-element rule: an actor's message carrying a reply endpoint —
+    // D-182's own example of what handles made possible — was refused as an
+    // element that owns heap storage, on the strength of a field that owns
+    // nothing.
+    if (k == (raw TY_HANDLE()))  { pass false; }
+    if (k == (raw TY_CHANNEL())) { pass false; }
+    // `atomic<T>` is `T`'s storage, so it carries an address exactly when `T` does.
+    if (k == (raw TY_ATOMIC()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_OPTIONAL())){ pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_RESULT()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_STRUCT())) {

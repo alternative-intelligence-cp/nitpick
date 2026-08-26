@@ -1,0 +1,120 @@
+// expect-exit: 42
+//
+// `Work`, AND A POOL THAT IS N WORKER TASKS ON ONE CHANNEL (D-072/D-073/D-182,
+// 1.1.10-D3). No new primitive and no new runtime: the pool is a struct
+// holding a channel, the workers are ordinary tasks, and the job type is a
+// GENERIC parameter bound by a trait.
+//
+// The job type is why it is generic. Closures are gone (D-018), so a job
+// cannot be a captured environment — D-073's complaint about the prototype's
+// `submit(int64, ?->, int64)` was exactly that it erased the job type and
+// zeroed the environment. A generic parameter keeps the type, the captured
+// environment becomes explicit struct fields, and monomorphization makes the
+// frame size known, which is what lets a worker `await job.run()` at all.
+//
+// THE WORKERS ARE SPAWNED BY THE OWNING SCOPE, not inside a `create`. D-062
+// joins a function's spawned tasks at THAT function's exits, so a pool whose
+// workers were spawned inside its constructor would join them before it
+// returned — the constructor would block until the workers finished, having
+// been handed no work. "A pool is N worker tasks receiving from one channel"
+// is not a slogan here; it is what the lifetime rule leaves you with, and it
+// is why `create` opens the channel and nothing else.
+//
+// Scope exit is also what replaces `shutdown` and `wait_idle`: main does not
+// exit until every worker has finished, under a deadline.
+mod:thread_pool;
+error:E1;
+
+trait:Work = { async func:run = int32(Self:self); };
+
+struct:Sum = { int32:a; int32:b; };
+impl:Sum:Work = {
+    async func:run = int32(Sum:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        pass self.a + self.b;
+    };
+};
+
+// THE OPERATIONS ARE FREE GENERIC FUNCTIONS, not an inherent impl. D-161's
+// segment rule reads `impl:<J>:ThreadPool<J>` as a BLANKET IMPL OF A TRAIT, so
+// an inherent impl over a FAMILY cannot be spelled — the same constraint
+// `generic_list` works within, and the reason it has `list_make<T>` and
+// `list_at<T>` rather than methods. UFCS means `pool_submit(pool, …)` and a
+// method call would read the same at the call site anyway.
+struct:ThreadPool<J> = { Channel<J, 3i32, 8i64>:jobs; };
+
+func:pool_create<J> = ThreadPool<J>() {
+    Channel<J, 3i32, 8i64>:ch = channel() ?! Unreachable;
+    // A GENERIC STRUCT LITERAL TAKES NO ARGUMENTS: they come from the context
+    // it is built into, which here is the declared return type.
+    pass ThreadPool{ jobs: ch };
+};
+async func:pool_submit<J> = NIL(ThreadPool<J>:pool, J:job, Duration:within) {
+    await pool.jobs.send(job, within) ?! E1;
+    pass NIL;
+};
+func:pool_close<J> = NIL(ThreadPool<J>:pool) {
+    discard(pool.jobs.close() ?! E1);
+    pass NIL;
+};
+
+// ONE WORKER. It ends when the channel is closed and drained — an end of
+// stream, not an error to report — which is how the pool shuts down without a
+// stop flag anybody has to write or read.
+async func:worker<J: Work> = NIL(Channel<J, 3i32, 8i64>:jobs,
+                                 Channel<int32, 4i32, 8i64>:out) {
+    bool:running = true;
+    while (running) {
+        Result<J>:r = await jobs.recv(raw duration_ms(2000i64));
+        if (r.is_error) {
+            running = false;
+        } else {
+            int32:v = await r.value.run() ?! E1;
+            await out.send(v, raw duration_ms(2000i64)) ?! E1;
+        }
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    ThreadPool<Sum>:pool = pool_create::<Sum>() ?! E1;
+    Channel<int32, 4i32, 8i64>:out = channel() ?! Unreachable;
+
+    drop worker::<Sum>(pool.jobs, out);
+    drop worker::<Sum>(pool.jobs, out);
+    drop worker::<Sum>(pool.jobs, out);
+
+    int32:i = 0i32;
+    while (i < 6i32) {
+        await pool_submit(pool, Sum{ a: i, b: i },
+                          raw duration_ms(2000i64)) ?! E1;
+        i = i + 1i32;
+    }
+    pool_close(pool) ?! E1;
+
+    int32:got = 0i32;
+    int32:total = 0i32;
+    while (got < 6i32) {
+        Result<int32>:r = await out.recv(raw duration_ms(2000i64));
+        if (r.is_error) { exit 71i32; }
+        total = total + r.value;
+        got = got + 1i32;
+    }
+    // 2*(0+1+2+3+4+5) = 30, whichever worker ran which job
+    if (total != 30i32) { exit 72i32; }
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

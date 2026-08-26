@@ -1,0 +1,75 @@
+// expect-exit: 42
+//
+// AN ACTOR IS A TASK WITH A MAILBOX (D-073/D-182 §7, 1.1.10-D4) — a struct and
+// a loop, and no new primitive anywhere in it. The prototype spawned an OS
+// thread per actor; under D-071 a waiting task suspends rather than parking a
+// thread, so the thread bought nothing and cost every defect in `thread.npk`.
+//
+// THE REPLY ENDPOINT RIDES IN THE MESSAGE, which is the thing D-182 changed.
+// Endpoints were specified as borrows, and a borrow cannot cross a spawn
+// (D-004/D-180) — so the prototype needed `set_reply_channel`/`reply`, all of
+// which were stubs returning zero. As generation-checked handles they travel
+// like any other value, so "ask" is just a request carrying the channel to
+// answer on, and the type system already knows what it is.
+//
+// The actor's state is an ordinary local in the loop. It does not need a lock,
+// an atomic, or a mutex: exactly one task touches it, which is the property
+// actors are for, and here it is a consequence of the state being a local
+// rather than a rule anybody has to enforce.
+mod:actor;
+error:E1;
+
+struct:Req = {
+    int32:add;
+    Channel<int32, 5i32, 1i64>:reply;
+};
+
+// The mailbox is a `Channel<Req, …>` — §6, not a second queue.
+async func:counter = NIL(Channel<Req, 3i32, 4i64>:inbox) {
+    int32:total = 0i32;
+    bool:running = true;
+    while (running) {
+        Result<Req>:m = await inbox.recv(raw duration_ms(2000i64));
+        if (m.is_error) {
+            running = false;                    // closed and drained: an end
+        } else {
+            total = total + m.value.add;
+            await m.value.reply.send(total, raw duration_ms(2000i64)) ?! E1;
+        }
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<Req, 3i32, 4i64>:inbox = channel() ?! Unreachable;
+    Channel<int32, 5i32, 1i64>:reply = channel() ?! Unreachable;
+    drop counter(inbox);
+
+    int32:last = 0i32;
+    int32:i = 0i32;
+    while (i < 4i32) {
+        await inbox.send(Req{ add: 10i32, reply: reply },
+                         raw duration_ms(2000i64)) ?! E1;
+        Result<int32>:r = await reply.recv(raw duration_ms(2000i64));
+        if (r.is_error) { exit 71i32; }
+        last = r.value;                         // 10, 20, 30, 40
+        i = i + 1i32;
+    }
+    discard(inbox.close() ?! E1);
+    if (last != 40i32) { exit 72i32; }
+    exit last + 2i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

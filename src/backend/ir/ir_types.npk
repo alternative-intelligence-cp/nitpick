@@ -332,6 +332,15 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     if (k == (raw TY_SHARED_ARENA())) { has_elem = true; }
     if (k == (raw TY_HANDLE()))       { has_elem = true; }
     if (k == (raw TY_RANGE()))        { has_elem = true; }
+    // `atomic<T>` and `Channel<T, LEVEL, CAP>` keep their element in slot `a`
+    // like the rest (1.1.10-D3). Added to the type system at 1.1.10-A/B and
+    // missed here, which made `subst_emitted_type` answer "nothing to
+    // substitute" for `Channel<J, …>`: the channel was then opened with `J`'s
+    // size, and an unsubstituted parameter measures ZERO, so a generic pool
+    // copied nothing into its ring and every job arrived blank. Nothing
+    // failed; the values were simply zero.
+    if (k == (raw TY_ATOMIC()))       { has_elem = true; }
+    if (k == (raw TY_CHANNEL()))      { has_elem = true; }
     if (has_elem) {
         pass (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32));
     }
@@ -412,6 +421,15 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
     if (k == (raw TY_STRUCT()))  { pass ((raw tt_haspt(c.types, elem)) == 1i32); }
+    // AN UNSUBSTITUTED PARAMETER IS NOT AN OWNING TYPE, it is an unknown, and
+    // the question is asked again — with an answer — on every specialization.
+    // `Channel<J, …>` inside `worker<J>` is the template's own signature, and
+    // refusing it here refuses the template rather than any actual channel:
+    // D-182's pool would not compile though every instantiation of it is
+    // legal. The specialization is where an owning element is caught.
+    if (k == (raw TY_PARAM()))   { pass true; }
+    if (k == (raw TY_SELF()))    { pass true; }
+    if (k == (raw TY_ASSOC()))   { pass true; }
     pass false;
 };
 

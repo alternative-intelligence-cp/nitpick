@@ -116,6 +116,42 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                             raw type_align(r.types, inner)));
     }
 
+    // THE FOUR BUILTIN FAMILIES THAT HOLD A TYPE (1.1.10-D3). `arena<T>`,
+    // `Handle<T>`, `atomic<T>` and `Channel<T, LEVEL, CAP>` are generic in
+    // exactly the way a slice is, and were missing here — so a generic
+    // function taking any of them could not be instantiated at all:
+    // `worker<J>(Channel<J, …>)` met `Channel<Sum, …>` and reported a type
+    // mismatch against its own parameter, because the parameter was never
+    // substituted. Found writing D-182's own pool, which is `worker<J>` over a
+    // channel of jobs and cannot be spelled any other way.
+    //
+    // A channel's LEVEL and CAP ride through unchanged: they are constants,
+    // not types, and substitution has nothing to say about them.
+    if (k == (raw TY_ARENA())) {
+        pass (raw tt_arena(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+    }
+    if (k == (raw TY_SHARED_ARENA())) {
+        pass (raw tt_shared_arena(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+    }
+    if (k == (raw TY_HANDLE())) {
+        pass (raw tt_handle(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+    }
+    if (k == (raw TY_ATOMIC())) {
+        int32:ael = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        pass (raw tt_atomic(r.types, ael,
+                            raw type_size(r.types, ael),
+                            raw type_align(r.types, ael)));
+    }
+    if (k == (raw TY_CHANNEL())) {
+        pass (raw tt_channel(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls),
+                  raw type_chan_level(r.types, t),
+                  raw type_chan_cap(r.types, t)));
+    }
+
     // AN INSTANCE'S ARGUMENTS ARE SUBSTITUTED AND IT IS REBUILT — `Container<T>`
     // becomes `Container<int32>`, a different interned type with its own mangled
     // name. A trait instance is the same case: `Printable<T>` as a BOUND is a
