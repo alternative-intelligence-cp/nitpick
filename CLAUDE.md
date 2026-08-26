@@ -24,10 +24,13 @@ everywhere with `raw`/`drop` licensed by it (D-163), the `Duration` clock, corou
 lowering as hand-written switched-resume state machines (D-177/D-178), the typed
 `Error` system with origin chains and an exhaustive `failsafe` (D-179), per-thread
 executors, real threads over `clone(2)` (D-181), and `atomic<T>` plus channels,
-thread pools and actors (D-182). **Next is 1.1.11 (sync primitives), which is
-BLOCKED on B-6** — a `Mutex` guard releases at scope exit, and the managed regime's
-RAII does not exist yet; see `meta/roadmap/OPEN_DECISIONS.md`. Then 1.1.12 (the
-reactor) and 1.1.13 (the Bridge).
+thread pools and actors (D-182). **Cycle 1.2 — the managed
+lowering — was inserted ahead of the rest** (D-183): 1.1.11's `Mutex` hands out a
+guard whose release IS scope exit, and the default regime implements no drops at
+all, so the regime every program gets is leak-until-exit. Phase C renumbered
+around it (self-hosting 1.3, verification 1.4, Astrée 1.5; the map is in
+`ROADMAP.md`). After 1.2: 1.1.11 sync primitives, 1.1.12 the reactor, 1.1.13 the
+Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

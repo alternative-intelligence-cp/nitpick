@@ -1,70 +1,60 @@
-# Cycle 1.2 — Self-hosting
+# Cycle 1.2 — The managed lowering
 
-**Phase C, the milestone that matters.** Everything before 1.2 is validated against
-the seed's output; after it, the compiler validates itself. This is where the seed
-is retired, the fixpoint is re-closed after 0.9–1.1's additions, builds become
-byte-reproducible across environments, and `npkg` — the permanent build/test/verify
-runner — replaces the throwaway Python harness.
+**Phase C, inserted at the close of 1.1.10.** The memory model's DEFAULT regime
+is "managed — static ownership, RAII at scope exit", and the backend implements
+none of it. Nothing is dropped at a closing brace, so the regime every program
+gets unless it says otherwise is leak-until-exit — an interim D-151 records as
+knowingly accepted ("managed-regime storage whose RAII arrives with the managed
+lowering").
 
-> Detailed **map**. Its subcycles are written when reached. The audit found this
-> cycle's *acceptance criteria* are the part most in need of correction before it
-> starts — four of its gating items are about measuring the right thing.
+**Why here and not later.** It blocks 1.1.11: a `Mutex<T, LEVEL>` hands out a
+guard whose release IS scope exit, and closures are gone (D-018) so no
+scoped-callback form can stand in. Verifying (1.4) a compiler whose default
+regime is unimplemented, or handing Astrée (1.5) a program that leaks by
+design, are the other two reasons it cannot wait. Phase C was renumbered to
+make room; the mapping is in `ROADMAP.md`.
 
-## The state this cycle starts from (the audit's finding)
+**Read `B6_MANAGED_LOWERING_STUDY.md` first** — six questions whose answers
+constrain each other, each with a recommendation. **D-183** records what was
+settled.
 
-The stage-1/stage-2 fixpoint **already runs** as a harness stage and passes today
-(closed early, 0.8.1). So 1.2 is not inventing the fixpoint — it is **re-closing it
-after 0.9–1.1 change the compiler**, retiring the seed as the builder, and making the
-reproducibility claims true beyond one machine. But the audit found the *acceptance
-criterion as written is unsatisfiable* and the *committed seed it assumes does not
-exist* — so the cycle must first correct what it is measuring.
+## The one that changes the language
 
-## Decisions in (see `../OPEN_DECISIONS.md` §3)
+§4 of the study. D-065 settled that nothing moves by being passed, which was
+consistent while nothing was dropped and is a **double free** the moment
+anything is. The answer is that **a type with a drop is move-only**: passing or
+assigning it without `move` is a type error. This will make existing code fail
+to compile until a `move` is written, and every such site is a place where two
+names believed they owned one thing.
 
-- **C-10 — correct the fixpoint criterion.** BUILD_REFERENCE/D-085 say "stage 1 and
-  stage 2 byte-identical" — unsatisfiable (two independent emitters). The real check
-  is "stage-N's emission of the compiler equals stage-N+1's." An implementer
-  following the spec literally concludes self-hosting is broken. *Fix the spec first.*
-- **C-11 — commit the seed IR and fix the deletion plan.** `bootstrap/seed/` is empty
-  though four docs claim it holds committed IR; `LAYOUT.md` would delete the only
-  rebuild-from-LLVM path and `npkrt.o` (linked into stage 1). Also schedule D-015's
-  npkrt-replacement, currently unscheduled.
-- **C-12 — define byte-reproducibility cross-environment** (pin the toolchain as an
-  input; build-twice-from-different-cwd; make the seed path-independent).
-- **C-13 — the seed-retirement schedule** (the constraint 0.9–1.1 have been obeying:
-  `src/` may not use a construct the current builder can't compile; name the switch
-  point — which is *here*).
-- **B-4 — schedule `npkg`** — the permanent runner; without it, "the day self-hosting
-  closes is the day the project has no test runner."
-
-  `npkg` also carries a **D-149 obligation**, not an implementation detail:
-  **the closed-world link** — only `npkc`-produced objects plus the audited
-  runtime allowlist may appear in any link line, with no relaxing flag. This
-  is D-011's undefined-symbol scan made a language-level guarantee for every
-  user program; it is what makes "in-process FFI does not exist" structural
-  rather than hortatory.
-
-## Subcycle shape (to be filled when reached)
+## Subcycles
 
 | # | Topic | Gated on |
 |---|---|---|
-| 1.2.0 | **Correct the criterion & commit the seed** — C-10 spec fix; C-11 seed commit (path-independent) + LAYOUT amendment | C-10, C-11 |
-| 1.2.1 | **The builder switch** — `src/` adopts the 0.9–1.1 features it deferred; the builder moves from regenerated seed to committed stage IR (C-13) | C-13 |
-| 1.2.2 | **Re-close the fixpoint** — stage-1/stage-2 emission equality after the source adopts generics/async; the concrete collections become generic | C-1 (1.0), all rungs |
-| 1.2.3 | **Byte-reproducibility** — toolchain pinned in the lock/manifest; build-twice-cross-cwd check; a pinned hash (C-12) | C-12 |
-| 1.2.4 | **`npkg`** — a minimal build/test/verify runner; the D-011 undefined-symbol scan written into BUILD_REFERENCE §4 as a permanent step; the Python harness's succession | B-4 |
+| 1.2.0 | **The drop table and the generated function** — `@"npk.drop.<T>"` per type that needs one, nothing emitted for types that do not; scalars, `string`, arrays, structs (reverse field order), enums (on the tag), `T?`, `Result<T>`, `atomic<T>`. A `check_drops_total` instrument: every type kind either drops, is stated not to, or fails the harness — the B-7 shape, applied where it is now load-bearing | D-183 |
+| 1.2.1 | **Scope exits** — drops at the closing brace, `break`, `continue`, `pass`, `fail`, `relay`, `return`, `exit`; inner-to-outer on a multi-scope exit; `defer` BEFORE drops; a trap runs neither (D-014); **a suspension is not a scope exit** (D-177) | 1.2.0 |
+| 1.2.2 | **Move-only types** — the type rule of study §4, the diagnostic that names the type and the reason, and the `src/`/`tests/` sweep it forces. The 0.8.0/1.1.0 shape: land the rule REPORTING, sweep, then flip it to refusing | 1.2.1 |
+| 1.2.3 | **Drop flags** — the conditional-move residue: static proof where the bindings analysis can decide, a one-bit local where it cannot, and an instrument counting how often it cannot. Measurement before optimisation | 1.2.2 |
+| 1.2.4 | **`dyn` drops** — the vtable's drop slot (D-158/D-159's shape, one pointer), and dropping through it | 1.2.0 |
+| 1.2.5 | **Channels, arenas, and the leak check** — reclaim a channel slot and bump its generation, making `StaleHandle` reachable and testable for the first time; retire 1.1.10-B's rung on owning channel elements; arena and shared-arena release; drops before D-151's exit check, in that order | 1.2.1, 1.2.4 |
+
+## Done when
+
+A `Mutex` guard releases at the closing brace; a `string` local is freed once
+and exactly once; `StaleHandle` has a test that provokes it from source; the
+channel-element rung is gone; a program that copies an owning value without
+`move` does not compile; and the fixpoint still holds byte-identical.
 
 ## Watch for
 
-- **The harness-to-`npkg` handoff is the risky moment.** `LAYOUT.md` deletes the
-  Python harness at 1.2; `npkg` must exist and run every whole-suite check the harness
-  did (the five instruments, the real-parser sweep, the fixpoint, the zero-dependency
-  scan) *before* the harness goes. Sequence 1.2.4 so `npkg` is proven against the
-  harness's results before the harness is retired — never a gap where neither runs.
-- **`npkg` needs a process-spawn primitive** the language does not have (it must
-  invoke `llc`/`ld.lld`, and 1.3 will need it for z3). This is the same primitive C-17
-  needs; build it once, here, and 1.3 inherits it. Today Python spawns the tools;
-  `npkg` in Nitpick cannot until the floor grows a spawn builtin.
-- **Reproducibility is a deliverable, not a hope** — C-12's build-twice check is what
-  turns D-078 from a claim into a tested property. Without it, "byte-reproducible"
-  means "byte-identical in one process on one machine," which is not the guarantee.
+- **The zero-cost floor.** A type with no drop must generate no call. If a
+  scalar-only function's IR changes at all, the design has slipped — and the
+  `nf-inert` twins check is the existing instrument closest to noticing.
+- **`exit` ordering.** Drops run, THEN D-151's leak check. Backwards, and every
+  clean program starts trapping the day the feature lands.
+- **The suspension boundary.** Drops belong on scope-exit edges, not
+  function-return edges. A coroutine's locals outlive its suspensions, and
+  1.1.4's crossing-locals walk already knows which ones.
+- **The sweep is the cycle's bulk, as it was at 1.1.1.** Expect the move-only
+  rule to touch far more sites than the drop machinery does, and expect the
+  instrument to measure the real debt before the refusal flips.

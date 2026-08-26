@@ -264,7 +264,8 @@ rewritten.** Whether that held is Phase B's answer to give.
 ## The 0.8-close replanning — what changed, and why
 
 The roadmap as it stood at 0.8-close planned in detail through 0.9 and mapped the rest in one line each
-(`1.0 generics · 1.1 async · 1.2 self-hosting · 1.3 verification · 1.4 Astrée`).
+(`1.0 generics · 1.1 async · 1.2 the managed lowering · 1.3 self-hosting ·
+1.4 verification · 1.5 Astrée`).
 The audit found that thin region hides **five unscheduled load-bearing subsystems**
 and **~20 gating decisions**, and that the rung-refusal discipline has **four live
 holes, two of them safety**. Four structural changes follow:
@@ -313,14 +314,15 @@ the sharpening is bounded work rather than open discovery.
 |---|---|
 | ~~**1.0**~~ | ~~**Generics, traits, `dyn`**~~ — **DONE** (`done/1.0/`). The trait/`dyn` boundary the checker never had to answer, built rung by rung: reversible `%Name` mangling with a depth cap and dedup (D-156), monomorphization, traits and impls with `never fails` contract-checking (the D-163 hook), associated types that resolve, bind, and disqualify and their projections (D-160, D-164), and `dyn` — vtables, thunks, construction, dispatch, widening (D-158/D-159). The tail settled the library-facing decisions (D-165 module globals, D-166 `for` over an `Iterator`, D-168 `&{ }` via `ToString`, D-123 `Hash`/`Ord` derives) and the grammar/trait ones (D-170 parenthesised types, D-171 every impl names its target, D-172 `Trait.method`), struck two redundant operators (`?|` D-167, `++`/`--` D-174), and added `check_rung_names_open_cycle` — the instrument that makes a cycle's close a checked fact. **Closed with zero rung strings naming the cycle; the fixpoint held byte-identical throughout.** |
 | **1.1** | **Async and concurrency** — **opens with D-163: `never fails` on every function, checked; `raw` and `drop` licensed only by it; a `Result` never discarded without a keyword** (three subcycles: the contract and the instrument, the `src/` sweep of ~7,900 sites, the `tests/` sweep and the refusal — the 0.8.0 shape), then coroutine lowering (D-177/D-178, 1.1.4 — landed), **the typed-error system (D-179, 1.1.5–1.1.7: `Error` as a nominal non-number, origin chains on `relay`, and the exhaustive `failsafe` — deliberately before the executor so its failures are born named)**, per-thread executors (1.1.8), channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
-| **1.2** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.1), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.2/`. |
-| **1.3** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.3/`. |
-| **1.4** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.3 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.4/`. |
+| **1.2** | **The managed lowering** — RAII at scope exit: the memory model's DEFAULT regime, of which the backend implements nothing. Nothing is dropped at a closing brace, so the regime every program gets unless it says otherwise is leak-until-exit, and D-151's own text records the interim as accepted ("managed-regime storage whose RAII arrives with the managed lowering"). What a drop IS per type, its ORDER against `defer` and against D-014's rule that a trap runs neither, `nodrop`, the move analysis deciding which paths still own a value at the brace, the early exits, and what a COPY of an owning value is. **Inserted here because it blocks 1.1.11**: a `Mutex` hands out a guard whose release IS scope exit, and closures are gone (D-018) so no scoped-callback form can stand in. Verifying (1.4) a compiler whose default regime is unimplemented, or handing Astrée (1.5) a program that leaks by design, are the other two reasons it cannot wait. Map: `1.2/`. **B-6.** |
+| **1.3** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.1), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.3/`. |
+| **1.4** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.4/`. |
+| **1.5** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.4 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.5/`. |
 
-**1.2 is the milestone that matters.** Everything before it is validated against the
+**1.3 is the milestone that matters.** Everything before it is validated against the
 seed's output; after it, the compiler validates itself.
 
-**1.4 is the one that cannot be retried.** Confirm the accepted input format with
+**1.5 is the one that cannot be retried.** Confirm the accepted input format with
 AbsInt long before the clock starts — promoted from a carried note to a numbered
 gate (C-19) with a cycle deadline.
 
@@ -334,11 +336,11 @@ and the website, and it is planned in **`meta/SWITCH.md`**: what moves where, wh
 replace it, the version restarting at `0.0`, and the one step that cannot be
 undone cleanly.
 
-Nothing there happens until 1.4 is finished. It is written down because the plan
+Nothing there happens until 1.5 is finished. It is written down because the plan
 was worked out in conversation, and a plan that lives only in a conversation
 evaporates.
 
-The audit folded three corrections into the switch's inputs (see `1.4/README.md`
+The audit folded three corrections into the switch's inputs (see `1.5/README.md`
 and `OPEN_DECISIONS.md`): the ship-list is stale (`MACRO_REFERENCE.md`, added at
 0.6, is in no list), the prototype-coverage pass is owned by no cycle, and
 `meta/specs/` inherits every doc-staleness gap in the audit's Theme F before it
@@ -369,9 +371,9 @@ can replace `nitpick-docs`.
   lines of `raw` and `drop`; written under the licence they need no second sweep.
   1.1 retires the word's old home (D-149's Bridge) and owns the spawn form whose
   error channel D-163 requires, so it is the cycle that gives the word its new one.
-- **Verification is 1.3, but its obligations are carried forward from every cycle** —
+- **Verification is 1.4, but its obligations are carried forward from every cycle** —
   0.9.0's rung refusals for `limit`/contracts are the first installment, so the
-  constructs are honestly refused until 1.3 can honestly check them.
+  constructs are honestly refused until 1.4 can honestly check them.
 
 
 ## The cycle-numbering convention, relaxed at 0.10
@@ -385,3 +387,25 @@ order — correctness over comfort — the convention lost: **the cycle is `0.10
 it sorts before `0.9` in a plain listing, and the map above is authoritative
 over lexical order.** (Decided at the merge of the 0.8-close replanning; the
 alternative and its cost are recorded in `audit-0.8-close/` provenance.)
+
+**And at 1.1.10-close, Phase C WAS renumbered** — the thing the paragraph above
+declined to do. The difference is the whole of it: there, renumbering would
+have bought lexical sort order, which is comfort. Here a subsystem the memory
+model has always specified turned out to have no cycle at all, and it blocks
+the next subcycle (**B-6**): a `Mutex` guard releases at scope exit, and scope
+exit does nothing. A missing half of the memory model is not a numbering
+question.
+
+| was | is | topic |
+|---|---|---|
+| 1.2 | **1.3** | Self-hosting |
+| 1.3 | **1.4** | Verification |
+| 1.4 | **1.5** | Astrée preparation |
+
+**1.2 is now the managed lowering.** The cost the older note predicted is real
+and was paid: the cycle folders, the nine rung strings naming the verification
+cycle, `OPEN_DECISIONS.md`'s Blocks column and the forward references in
+`DECISIONS.md` were all swept. **Archived notes under `done/` were NOT
+rewritten** — they record what was true when written, so "scheduled for 1.3" in
+an archive means verification under the old map, and this table is how to read
+it.

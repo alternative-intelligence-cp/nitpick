@@ -10209,7 +10209,7 @@ the stub lowering, the C SDK header (the wire protocol and ring layout as a
 C header plus a reference event loop — the CONTRACT is the protocol, not a
 language binding, so later Rust/other SDKs are alternative implementations
 with zero compiler work), and the wire-conformance suite are 1.1 work
-(map row 1.1.8); the `npkg` closed-world link rule is a 1.2 obligation. The
+(map row 1.1.8); the `npkg` closed-world link rule is a 1.3 obligation. The
 C reference driver and conformance harness are buildable out-of-tree at any
 time — the v3 POC (18/18 kernel checks) is their seed.
 
@@ -10635,9 +10635,9 @@ same-basename modules, which surfaces as an `ld` duplicate symbol.
 
 **Proven at 1.0.0**: the compiler self-compiles with 1549 module-qualified
 function definitions and the stage-1/stage-2 fixpoint holds byte-identical —
-the deterministic, path-free property the 1.2 fixpoint requires. The value
+the deterministic, path-free property the 1.3 fixpoint requires. The value
 delivered is reversible module-qualified names, generic-instantiation naming
-(1.0.2), 1.2-separate-compilation readiness, and — once D-162 landed —
+(1.0.2), 1.3-separate-compilation readiness, and — once D-162 landed —
 same-named-type coexistence.
 
 **D-163 (1.1.0)**: where a FUNCTION TYPE appears as a generic argument, the
@@ -11778,8 +11778,9 @@ so "post/pre" was already half-fiction, and no rung lowered either.
   exists to forbid, and it is pure developer comfort — subordinate to safety and
   correctness. It also opens the sequence-point class of bugs (`a[i++] = i++`)
   that a safety-critical language must not carry.
-- **No owner cycle.** The roadmap runs 1.0 generics · 1.1 async · 1.2
-  self-hosting · 1.3 verification · 1.4 Astrée. None would ever lower an
+- **No owner cycle.** The roadmap runs 1.0 generics · 1.1 async · 1.2 the
+  managed lowering · 1.3 self-hosting · 1.4 verification · 1.5 Astrée. None
+  would ever lower an
   increment operator — evidence it was never a planned feature, only an
   unremoved prototype inheritance.
 
@@ -12496,3 +12497,105 @@ No new syntax. With §1's endpoints and §3's `Work`, an actor is a struct plus
 an async loop receiving from its own mailbox, and `ask` is a helper over a
 reply endpoint carried in the message. A third spawn-shaped construct beside
 `drop f(x)` and `thread` is what the blueprint philosophy refuses.
+
+## D-183 — The managed lowering: RAII at scope exit, and a type with a drop is move-only — **SETTLED** (cycle 1.2; study in `meta/roadmap/1.2/B6_MANAGED_LOWERING_STUDY.md`)
+
+Closes **B-6**. The memory model's DEFAULT regime is "managed — static
+ownership, RAII at scope exit" and the backend implements none of it: nothing
+is dropped at a closing brace, so the regime a program gets unless it says
+otherwise is leak-until-exit. D-151 records that as a knowingly accepted
+interim — "managed-regime storage whose RAII arrives with the managed
+lowering" — and 1.1.10 is where the interim ran out.
+
+### Why it could not wait for self-hosting
+
+A `Mutex<T, LEVEL>` hands out a guard, and `CONCURRENCY_REFERENCE` §9's own
+example ends `}   // guard drops here; the lock is released`. **A guard is the
+first type whose entire meaning is its scope.** Without a drop it never
+releases and every `Mutex` deadlocks on its second acquisition; closures are
+gone (D-018), so no scoped-callback form can stand in. Channels needed none of
+this because an endpoint is a copyable handle. Phase C was renumbered to insert
+cycle 1.2 — the map is in `ROADMAP.md`, and the 0.10 note there explains why
+the same renumber was declined once before and why the answer differs here.
+
+### A drop is a generated function per type, and most types have none
+
+`@"npk.drop.<T>"`, emitted once beside the type's other machinery. **A type
+with no drop generates no call at all** — the feature costs nothing for the
+scalars that dominate every program, and if a scalar-only function's IR moves,
+the design has slipped.
+
+Scalars, `Handle<T>`, channel endpoints, pointers and slices drop nothing: an
+index is not an owner, a pointer is not an owner (`wild` memory stays manual
+via `defer`/`dalloc`, which is what makes the regime explicit), and a slice is
+a borrow. `string` frees its body; an array drops its elements; a struct drops
+its fields in **reverse declaration order**; an enum drops the ACTIVE variant's
+payload; `T?` and `Result<T>` drop the inner when there is one; `atomic<T>`
+drops as `T`; arenas release their slabs.
+
+**A `Channel` drop reclaims the slot and bumps the generation**, which closes
+the hole 1.1.10 had to leave open: D-182 makes an endpoint generation-checked
+so a stale one is `StaleHandle` rather than a dangling read, but nothing
+reclaims a slot, so the generation never moves and `StaleHandle` is
+**unreachable from source**. Reclamation is what makes the check real.
+
+`dyn` drops through a **drop slot in the vtable** (D-158/D-159's shape, one
+pointer). Note the contrast with D-182's async rule as implemented at
+1.1.10-D5: an `async` method cannot go behind `dyn` because the caller needs
+the frame SIZE before it calls, and erasure removes it. A drop needs no size
+from the caller — one call, one pointer — so it works where the coroutine does
+not.
+
+### Order: `defer` first, then drops; a trap runs neither
+
+Within a scope, drops run in reverse declaration order. **`defer` bodies run
+BEFORE the drops of the same scope**: D-080 lists both on the same exits
+without ordering them, and a `defer` body can name the scope's bindings, so
+dropping first would hand it freed storage. The pair stays legible — `defer` is
+what the author wrote, drops are what the regime owes, and the author's code
+runs while its world is intact.
+
+**A trap runs neither** (D-014, unchanged). Every path that LEAVES a scope runs
+its drops — the closing brace, `break`, `continue`, `pass`, `fail`, `relay`,
+`return`, `exit` — innermost first when several are unwound. **A suspension is
+not a scope exit** (D-177): the frame lives on and its locals with it, which
+falls out correctly only if drops are emitted at scope-exit edges rather than
+function-return edges. On `exit`, **drops run and THEN D-151's leak check**;
+backwards, every clean program starts trapping the day this lands.
+
+### A type with a drop is MOVE-ONLY — the part that changes the language
+
+D-065 settled that nothing moves by being passed: ownership transfers only
+where `move` is written. That was consistent while nothing was dropped. The
+moment drops exist it is a **double free** — `f(s)` copies a `string`'s body
+pointer and both the caller's binding and the callee's parameter drop it.
+
+So: **passing or assigning a value whose type has a drop, without `move`, is a
+type error** naming the type and the reason, and the source is invalidated by
+the machinery D-065 already has.
+
+The alternative — deep-copying on assignment — was rejected as implicit expense
+and implicit behaviour, which the blueprint philosophy refuses outright, and
+because it makes the cost of a line depend on the type of a name declared
+somewhere else. The chosen rule is explicit and greppable, and it turns
+something that is currently a *lie* into a *fact*: D-072 writes
+`send(move(v), deadline)` in its own signature, and 1.1.10-D found that nothing
+required the `move`. Under this rule it is required — and 1.1.10-B's rung
+refusing channels whose element owns heap storage is **retired** rather than
+made permanent.
+
+**This will make existing code fail to compile until a `move` is written**, and
+that is the correct direction: every such site is a place where two names
+believed they owned one thing. The sweep gets the 0.8.0/1.1.0 treatment — land
+the rule REPORTING, measure the real debt, sweep, then flip it to refusing.
+
+### Conditional moves get a drop flag, but only where the analysis cannot decide
+
+A binding moved on one branch and not another can be neither dropped
+unconditionally nor skipped. Where the bindings analysis (D-065) proves the
+answer, the drop is emitted or elided outright; where it cannot, a one-bit
+local is set at initialisation, cleared by the move, and tested at the drop. A
+flag per owning local would be simple and uniformly wasteful, so **an
+instrument counts the residue** — proving most of them away is most of the
+value, and this is the one part of the design where measurement precedes
+optimisation.

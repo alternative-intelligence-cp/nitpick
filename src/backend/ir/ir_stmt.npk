@@ -176,10 +176,10 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     if (s.kind == StmtKind.StmtGiveStmt) { pass (raw emit_give(x, s)); }
     if (s.kind == StmtKind.StmtFallStmt) { pass (raw emit_fall(x, s)); }
     if (s.kind == StmtKind.StmtProveStmt) {
-        pass (raw iv_rung("`prove`", "1.3", s.span));
+        pass (raw iv_rung("`prove`", "1.4", s.span));
     }
     if (s.kind == StmtKind.StmtAssertStaticStmt) {
-        pass (raw iv_rung("`assert_static`", "1.3", s.span));
+        pass (raw iv_rung("`assert_static`", "1.4", s.span));
     }
 
     // FAIL CLOSED — StmtNone, a bare PickArm, or a kind nobody classified.
@@ -191,11 +191,11 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // LIVE-1's repair (0.9.0): a `limit<Rules>` that lowered to a bare alloca
     // told the program its rule held while nothing checked it — the worst
-    // outcome D-068 names. Refused until 1.3 emits the real check; the same
+    // outcome D-068 names. Refused until 1.4 emits the real check; the same
     // shape `prove` has had since 0.7.
     VerifyId:lim = raw stmt_decl_limit(x.ast, s);
     if (!(raw verify_is_none(lim))) {
-        pass (raw iv_rung("a `limit<Rules>` constraint", "1.3", s.span));
+        pass (raw iv_rung("a `limit<Rules>` constraint", "1.4", s.span));
     }
     int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
     LlType:ll = raw ll_type(x.fe.ctx, dty);
@@ -357,7 +357,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                           bool:is_till) never fails {
     VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
     if (!(raw verify_is_none(cinv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
     }
     string:sv = "0";
     int32:base = 0i32;
@@ -466,7 +466,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:winv = raw stmt_when_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
     }
     string:flag = raw loop_slot(x, sid, 1i32, "i8");
     if (flag.len == 0i64) { pass (raw iv_broken(s.span)); }
@@ -529,7 +529,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:finv = raw stmt_for_invariant(x.ast, s);
     if (!(raw verify_is_none(finv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
     }
     ExprId:iter = raw stmt_for_iter(x.ast, s);
     int32:itid = raw exprtypes_get(x.et, iter);
@@ -836,10 +836,10 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 
 func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // LIVE-1 (0.9.0): an invariant the backend never read was an obligation
-    // that silently vanished. Refused until 1.3 checks it.
+    // that silently vanished. Refused until 1.4 checks it.
     VerifyId:winv = raw stmt_while_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
     }
     string:head_l = raw irw_new_label(x.fe.w, "wh.head");
     string:body_l = raw irw_new_label(x.fe.w, "wh.body");
@@ -2068,7 +2068,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     int32:ccount = raw fn_contract_count(x.ast, d);
     while (ci < ccount) {
         VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
-        // `never fails` (D-163) is NOT a 1.3 contract: it is checked entirely
+        // `never fails` (D-163) is NOT a 1.4 contract: it is checked entirely
         // by the frontend and changes no emitted byte — the backend owes it
         // nothing, so it passes through where `requires`/`ensures` still rung.
         if (cv.kind != VerifyKind.VerifyNeverFails) {
@@ -2077,7 +2077,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
             // the body owes it nothing.
             if (cv.kind != VerifyKind.VerifyJoinsWithin) {
                 if (cv.a != (raw CONTRACT_ACQUIRES())) {
-                    pass (raw iv_rung("a `requires`/`ensures` contract", "1.3", cv.span));
+                    pass (raw iv_rung("a `requires`/`ensures` contract", "1.4", cv.span));
                 }
             }
         }
@@ -2131,7 +2131,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // A parameter's `limit` is the same dropped guarantee (LIVE-1).
         VerifyId:plim = raw param_limit(pd);
         if (!(raw verify_is_none(plim))) {
-            pass (raw iv_rung("a `limit<Rules>` constraint", "1.3", pd.span));
+            pass (raw iv_rung("a `limit<Rules>` constraint", "1.4", pd.span));
         }
         // UNDER THE INSTANTIATION'S BINDING (1.0.2b): `T:x` resolves to the
         // argument, not to "there is no type named T". The scope is pushed

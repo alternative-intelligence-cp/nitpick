@@ -168,7 +168,7 @@ pub func:esc_byte = string(uint8:b) never fails {
         }
     }
     string:hex = "0123456789ABCDEF";
-    // MASK AFTER THE WIDENING. This function is seed-compiled until 1.2, and the
+    // MASK AFTER THE WIDENING. This function is seed-compiled until 1.3, and the
     // seed extends by the TARGET's signedness (the 0.7.5 divergence, met in the
     // wild): byte 226 — the lead of every em-dash — sign-extended to -30 and
     // indexed the hex table at -1. The mask makes the value 0..255 under EITHER
@@ -1502,7 +1502,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // the INT_MIN/-1 case: LLVM UB with no defined value, and D-008 already
     // refused inventing one, so it traps too. The guard is emitted, never
     // elided — a build without the verifier still has to emit the check
-    // (D-068), and 1.3's static discharge may remove only what it proves.
+    // (D-068), and 1.4's static discharge may remove only what it proves.
     bool:divlike = false;
     if (op == TokenKind.OpSlash)   { divlike = true; }
     if (op == TokenKind.OpPercent) { divlike = true; }

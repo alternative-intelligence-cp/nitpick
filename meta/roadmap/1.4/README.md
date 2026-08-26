@@ -1,63 +1,66 @@
-# Cycle 1.4 — Astrée preparation
+# Cycle 1.4 — Verification
 
-**Phase C, the one that cannot be retried.** A single non-renewable 30-day Astrée
-run. Everything about this cycle is shaped by that fact: the work is preparation so
-thorough that the 30 days are spent analyzing, not discovering that the input format
-was wrong.
+**Phase C.** `prove`, `limit<Rules>`, contracts (`requires`/`ensures`), Z3 over
+SMT-LIB2, and NIKOS (or its deferral). This is the cycle that makes Layer 1 real —
+the mathematical prevention of invalid states that is the whole first line of the
+safety architecture.
 
-> Detailed **map**, and deliberately short — most of 1.4's content is *gates that
-> must close earlier*, not subcycles that run here. The audit's central finding is
-> that the most important gate has no owner and points at an unexamined assumption.
+> Detailed **map**. The audit's verdict: this is **the least-built major subsystem**,
+> and the specs "answer *what* but almost never *how*." Its subcycles cannot be
+> written in full until five decisions settle — but the decisions and the subcycle
+> shape are captured now so the cycle is bounded work, not open research.
 
-## The gate that must close before 1.3 exits (C-19)
+## The state this cycle starts from (the audit's finding)
 
-The docs assume Astrée analyzes "monomorphized output" (0.4.7 notes,
-TRAITS_REFERENCE §351). But **the compiler emits LLVM IR, and Astrée accepts C** —
-not LLVM IR, not binaries. If AbsInt confirms C-only:
+The **surface is built**: the grammar, AST, and name-resolution for contracts,
+`limit`, invariants, and `Rules` bodies all parse and bind and are grammar-tested.
+Everything from **typing through Z3 is not** — and one piece is worse than unbuilt:
+the backend currently **drops `limit`/contracts/invariants silently** (LIVE-1, which
+0.9.0 converts to an honest rung refusal). So 1.4 turns those refusals into real
+checks, and it does so on top of a surface that was left un-type-checked (a
+`requires 5i32` passes today; rule names in `limit<R>` are never resolved).
 
-- an entire **C-emission path** becomes unplanned Phase-C work, and discovering it at
-  the start of the 30 days is the failure this whole cycle exists to prevent;
-- that path must be scheduled *now* (a 1.3-or-earlier subcycle), not at 1.4.
+## Decisions in (five, before the cycle starts — see `../OPEN_DECISIONS.md` §4)
 
-So C-19 is promoted from the carried "confirm with AbsInt" note to a **numbered gate
-answered before 1.3 exits**, with the full question list (below) written down. This
-is the single most important item in the post-0.8 plan's tail, because it is the one
-whose late discovery is unrecoverable.
-
-## The AbsInt question list (settle during 1.3, at the latest)
-
-1. **Accepted input format** — C? which C standard/subset? Any LLVM-IR or binary
-   path at all? (Decides whether a C-emitter is Phase-C work.)
-2. **Analysis entry points** — how the entry set is specified for a program whose
-   `main` is `async` over an executor.
-3. **The concurrency-model mapping** — how the D-071 executor/coroutine model is
-   presented to a tool that reasons about threads (Astrée has concurrency support, but
-   the mapping from pinned tasks + futex parking to its model is non-trivial).
-4. **Runtime-floor stubbing policy** — what Astrée is told about `sys`, the allocator,
-   and the hand-written IR routines it cannot see the source of.
-5. **The evidence package** — whether the SMT elimination manifest and z3 unsat cores
-   (D-040 anticipates this) are part of what Astrée or the certification consumes.
+- **C-17 — the SMT emitter + invocation architecture.** *Blocks the cycle's start.*
+  Theory choices, the obligation catalogue matching the manifest's `kind` column, the
+  counterexample→span contract, and **the process-spawn primitive** to invoke z3
+  (which the language lacks and `npkg` — built in 1.3 — provides). The cycle's first
+  act.
+- **C-14 — elision ownership** (`--verify` vs `--smt-opt`; both can't own it without
+  reintroducing D-039's non-determinism for the artifact Astrée reads).
+- **C-15 — limit-check placement/typing/subsumption** (+ close the frontend holes:
+  resolve rule names, type `Rules` bodies).
+- **C-16 — contract runtime semantics under universal `Result`** (violation channel,
+  error codes, `result`'s type, `old()`, and **implement D-014's injected `ensures
+  result > 0` on `failsafe`** — currently nowhere).
+- **B-5 — NIKOS: specify or defer** (a named deliverable with zero spec).
 
 ## Subcycle shape (to be filled when reached)
 
 | # | Topic | Gated on |
 |---|---|---|
-| 1.4.0 | **The confirmed input path** — whatever C-19 settled (a C-emitter if C-only, or the direct path if not); proven on a small program end-to-end into Astrée before the clock starts | C-19 |
-| 1.4.1 | **Entry points, stubs, concurrency mapping** — the analysis harness Astrée needs, per the question list | C-19 |
-| 1.4.2 | **The dry run** — a full pass on a representative program *before* the 30-day clock, so the real run finds analysis results, not setup errors | 1.4.0, 1.4.1 |
+| 1.4.0 | **The SMT emitter + z3 invocation** — AST→SMT-LIB2 per the theory choices; z3 as a spawned tool (over 1.3's spawn primitive); model→span mapping; the manifest (D-040) | C-17 |
+| 1.4.1 | **Type the verification surface** — resolve `limit<R>` rule names, type `Rules` bodies (`$` typed, clauses `bool`), type contract conditions (`requires`/`result`) | C-15, C-16 |
+| 1.4.2 | **`limit<Rules>`** — static discharge via z3, runtime-check injection where undischarged (C-15), subsumption (Rules composition); replaces 0.9.0's rung refusal | C-14, C-15 |
+| 1.4.3 | **Contracts** — `requires`/`ensures` static + runtime; the D-014 `failsafe` injection + non-empty-body check (C-16); replaces 0.9.0's rung refusal | C-16 |
+| 1.4.4 | **`prove` / `assert_static`** — z3 obligations with path-condition accumulation; `assert_static` folds at the frontend (the comptime evaluator exists, 0.6); the `prove`-without-`--verify` behavior (verification F6) | C-14 |
+| 1.4.5 | **The aliasing/disjointness analysis §2.1 presupposes** — the conservative `$$m`/`$$i` refusal that z3 then relaxes (the 0.5 analyses don't contain it; 1.4 must create the error it suppresses) | — |
+| 1.4.6 | **NIKOS** — per B-5, either the reference + implementation, or the clean deferral | B-5 |
 
 ## Watch for
 
-- **The clock starts once, and does not stop.** Every setup question answered on the
-  30-day clock is a day not spent on the analysis that clock is for. 1.4.2's dry run
-  is the whole risk-reduction of the cycle — treat a failed dry run as a schedule
-  input, not a surprise.
-- **The switch (`meta/SWITCH.md`) waits on 1.4** and inherits three audit
-  corrections: the stale ship-list (`MACRO_REFERENCE.md`, added at 0.6, is in no
-  list), the unowned prototype-coverage pass, and `meta/specs/`'s completeness
-  (it inherits every Theme-F doc-staleness gap before it can replace `nitpick-docs`).
-  These are folded into `OPEN_DECISIONS` and should be swept during 1.3/1.4 while both
-  doc sets are still live — not after the archive.
-- **Nothing about the switch happens until 1.4 is finished.** It is written down
-  because a plan that lives only in conversation evaporates (SWITCH.md's own reason),
-  not because it is imminent.
+- **The Astrée gate (C-19) must be answered before this cycle exits**, not at 1.5 —
+  because if AbsInt confirms Astrée reads C (not LLVM IR / not monomorphized output),
+  a C-emission path becomes Phase-C work, and discovering that at the start of a
+  non-renewable 30-day trial is the worst possible timing. Promote it to a 1.4-exit
+  gate (it is in `../1.5/README.md` and `OPEN_DECISIONS` C-19).
+- **Verification's obligations were carried from every cycle** — 0.9.0's rung
+  refusals, D-014's failsafe contract, the counted-loop `step > 0`, cast-range,
+  bounds, overflow. 1.4 is where the tooling is wired, not where correctness starts;
+  the obligation catalogue (C-17) must enumerate all of them or the manifest's `kind`
+  column has gaps.
+- **z3 is invoked, never linked** (D-039/D-067) — and its version is recorded in the
+  manifest but the non-determinism it can introduce (timeout-dependent binaries) is
+  exactly what C-14 must contain. A verification pass that changes the artifact by
+  the solver's mood is the one thing this cycle must not ship.
