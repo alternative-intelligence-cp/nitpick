@@ -257,6 +257,18 @@ pub func:QUAL_CONST = int32() never fails  { pass 8i32; };
 pub func:QUAL_FIXED = int32() never fails  { pass 16i32; };
 pub func:QUAL_NODROP = int32() never fails { pass 32i32; };
 
+// D-183: `move T:p` — a CONSUMING parameter. The caller transfers ownership
+// and the callee owns it, dropping it at its own scope exit like any local.
+// The same word the call site already writes (`move(x)`), at the other end of
+// the same event, which is what the blueprint philosophy asks of a notation.
+//
+// The DEFAULT is the other one, and that is D-065 unchanged: passing transfers
+// nothing, so an ordinary parameter is a value the callee may read and may not
+// keep. Marking the rare case rather than the common one is what keeps
+// `string_eq(name, "main")` — and every literal argument in the language —
+// spelled the way it always was.
+pub func:QUAL_MOVE = int32() never fails   { pass 64i32; };
+
 pub func:p_qualifier_bit = int32(TokenKind:k) never fails {
     if (k == TokenKind.KwStack)  { pass (raw QUAL_STACK()); }
     if (k == TokenKind.KwWild)   { pass (raw QUAL_WILD()); }
@@ -264,6 +276,7 @@ pub func:p_qualifier_bit = int32(TokenKind:k) never fails {
     if (k == TokenKind.KwConst)  { pass (raw QUAL_CONST()); }
     if (k == TokenKind.KwFixed)  { pass (raw QUAL_FIXED()); }
     if (k == TokenKind.KwNodrop) { pass (raw QUAL_NODROP()); }
+    if (k == TokenKind.KwMove)   { pass (raw QUAL_MOVE()); }
     pass 0i32;
 };
 

@@ -1,0 +1,19 @@
+
+// --- `move T:p` — a CONSUMING parameter (D-183) ------------------------------
+//
+// The caller transfers ownership with the same word the declaration uses, and
+// the callee owns the value. The DEFAULT is the other one and is D-065
+// unchanged: passing transfers nothing, so an ordinary parameter is a value
+// the callee may read and may not keep — which is what lets `string_eq(name,
+// "main")`, and every literal argument in the language, stay spelled the way
+// it always was.
+error:MpCat;
+func:mp_consume = int32(move string:s) never fails { pass (s.len =>! int32); };
+func:mp_read = int32(string:s) never fails { pass (s.len =>! int32); };
+func:mp_use = int32() {
+    string:built = string_concat("ab", "cd") ?! MpCat;
+    int32:a = mp_read(built) ?! MpCat;      // borrowed: no `move`, still usable
+    int32:b = mp_read("literal") ?! MpCat;  // a literal, which cannot be borrowed
+    int32:c = mp_consume(move(built)) ?! MpCat;
+    pass a + b + c;
+};

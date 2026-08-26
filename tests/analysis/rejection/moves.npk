@@ -119,3 +119,27 @@ struct:NodropField = { nodrop int32:f; };
 
 // expect-error: NITPICK-MOVE-003
 nodrop int32:nodrop_global = 1i32;
+
+// --- `move` states a transfer, and only a parameter has a caller -------------
+//
+// D-183 gives `move T:p` its meaning: the CALLER transferred ownership in, so
+// the callee owns the value and drops it at its own scope exit. That is a
+// statement about a call, and a local, a field and a global do not have one —
+// so `move` on any of them is the same kind of untruth `nodrop` on a managed
+// binding is, and is refused for the same reason.
+//
+// `move` on a PARAMETER is correct and is exercised by the accept suite, not
+// here.
+
+// expect-error: NITPICK-MOVE-004
+func:move_on_local = NIL() never fails {
+    move int32:n = 1i32;
+    discard(n);
+    pass NIL;
+};
+
+// expect-error: NITPICK-MOVE-004
+struct:MoveField = { move int32:f; };
+
+// expect-error: NITPICK-MOVE-004
+move int32:move_global = 1i32;

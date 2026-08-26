@@ -126,6 +126,13 @@ pub func:MOVE_USE_AFTER_FREE = string() never fails { pass "NITPICK-MOVE-002"; }
 // something untrue about the binding it is written on.
 pub func:MOVE_NODROP_MANAGED = string() never fails { pass "NITPICK-MOVE-003"; };
 
+// D-183: `move` on a declaration that is not a PARAMETER. It states that the
+// binding's ownership was transferred in by a caller, and only a parameter has
+// a caller. On a local, a field or a global it is the same kind of untruth
+// `nodrop` on a managed binding is — a reader who believes it is reasoning
+// about a transfer that never happened.
+pub func:MOVE_QUAL_NOT_PARAM = string() never fails { pass "NITPICK-MOVE-004"; };
+
 // --- exhaustiveness (0.5.4) ----------------------------------------------------
 //
 // A `pick` covers every case, and `(*)` may not absorb ERR (D-008 §5.1).

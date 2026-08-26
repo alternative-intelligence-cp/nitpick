@@ -446,7 +446,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         int32:pi = 0i32;
         while (pi < (raw fn_param_count(x.ast, d))) {
             DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, pi));
-            drop check_nodrop_quals(x, raw param_quals(pd), pd.span, "a parameter");
+            drop check_nodrop_quals(x, raw param_quals(pd), pd.span, "a parameter", true);
             pi = pi + 1i32;
         }
         StmtId:body = raw fn_body(x.ast, d);
@@ -467,7 +467,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         while (fi < (raw item_member_count(x.ast, d))) {
             DeclNode:fdec = raw ast_decl(x.ast, raw item_member(x.ast, d, fi));
             if (fdec.kind == DeclKind.DeclFieldDecl) {
-                drop check_nodrop_quals(x, raw field_quals(fdec), fdec.span, "a field");
+                drop check_nodrop_quals(x, raw field_quals(fdec), fdec.span, "a field", false);
             }
             fi = fi + 1i32;
         }
@@ -486,7 +486,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
     // could appear — which makes the rule two halves rather than one: the
     // initialiser has to be there, and it has to be constant.
     if (d.kind == DeclKind.DeclGlobalDecl) {
-        drop check_nodrop_quals(x, raw global_quals(d), d.span, "a global");
+        drop check_nodrop_quals(x, raw global_quals(d), d.span, "a global", false);
         if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) { pass NIL; }
 
         ExprId:init = raw global_init(d);
@@ -1395,7 +1395,7 @@ func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed
 // 0.5.1, `fixed` from assignment in 0.5.2, and this one had nowhere to attach until
 // there was an ownership analysis to attach it to.
 func:check_qualifiers = NIL(Assign->:x, StmtNode:s) never fails {
-    drop check_nodrop_quals(x, raw stmt_quals(x.ast, s), s.span, "a binding");
+    drop check_nodrop_quals(x, raw stmt_quals(x.ast, s), s.span, "a binding", false);
     pass NIL;
 };
 
@@ -1410,7 +1410,18 @@ func:check_qualifiers = NIL(Assign->:x, StmtNode:s) never fails {
 // `what` names the position, because "a binding that is not `wild`" sends the
 // reader looking at a local when the mistake is on a field.
 func:check_nodrop_quals = NIL(Assign->:x, int32:q, Span:at,
-                              string:what) never fails {
+                              string:what, bool:is_param) never fails {
+    // `move` STATES THAT A CALLER TRANSFERRED OWNERSHIP IN (D-183), and only a
+    // parameter has a caller. Everywhere else it is the same untruth `nodrop`
+    // on a managed binding is.
+    if (!is_param) {
+        if ((q & (raw QUAL_MOVE())) != 0i32) {
+            string:mm = raw string_concat("`move` states that a caller transferred ownership into this binding, and ", what);
+            drop assign_err(x, raw MOVE_QUAL_NOT_PARAM(),
+                raw string_concat(mm, " has no caller — only a parameter does"),
+                at);
+        }
+    }
     if ((q & (raw QUAL_NODROP())) == 0i32) { pass NIL; }
     int32:manual = (raw QUAL_WILD()) | (raw QUAL_WILDX());
     if ((q & manual) != 0i32) { pass NIL; }

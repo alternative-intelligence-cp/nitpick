@@ -4460,7 +4460,7 @@ is.
 
 ---
 
-## D-065 — `move` is an operator, not a memory qualifier — **SETTLED**
+## D-065 — `move` is an operator, not a memory qualifier — **SETTLED; the qualifier half is narrowed by D-183** (`move T:p` is a CONSUMING PARAMETER, and the operator form below is untouched)
 
 Settles the `LEXICAL_REFERENCE.md` open item. The production
 
@@ -12632,6 +12632,36 @@ call site already uses for the same event, at the other end of it. **OPEN: a
 grammar change, and therefore the user's call. Cycle 1.2 is blocked on it**,
 since the drop calls wait on the move-only rule and the rule waits on this. The
 rule is implemented and gated meanwhile.
+
+### `move T:p` — the consuming parameter, and what it narrows in D-065
+
+The marker is spelled **`move`**, in declaration position on a parameter: the
+same word the call site already writes for the same event, at the other end of
+it. `f(move(x))` transfers, and `func:f = R(move T:p)` is where it arrives.
+
+**The default is unchanged and is D-065's own rule**: passing transfers
+nothing, so an ordinary parameter is a value the callee may read and may not
+keep. Marking the RARE case rather than the common one is what keeps
+`string_eq(name, "main")` — and every literal argument in the language —
+spelled the way it always was, which the borrow-shaped alternative could not do
+(1.2.1b: a borrow needs a place, and a literal has none).
+
+**This narrows D-065's second half, and the narrowing is deliberate.** That
+decision is titled "`move` is an operator, not a memory qualifier" and removed
+`move` from `MemoryQualifier` on the grounds that it "is not a qualifier and
+never was". Both halves of that reasoning survive: `move(place)` remains a
+keyword operator with a parenthesized operand, and `move` is still not a MEMORY
+qualifier — it says nothing about how storage is managed, which is what
+`wild`/`wildx`/`stack` say. What D-183 adds is a different thing that happens
+to occupy the same grammatical slot: a statement about **how this binding was
+initialised** — by a caller who gave up ownership. D-065 removed it because in
+2024's design nothing in declaration position needed it; drops are what create
+the need.
+
+Mechanically it rides `p_qualifier_bit`, so it parses wherever a qualifier can
+and is REFUSED (`NITPICK-MOVE-004`) anywhere but a parameter — the same
+parses-everywhere-refused-where-meaningless shape `nodrop` already has, and the
+house rule that the parser never restricts.
 
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
