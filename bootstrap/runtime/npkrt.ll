@@ -454,8 +454,12 @@ pop:
   %nx = load ptr, ptr %cn
   store ptr %nx, ptr %hp
   store ptr null, ptr %cn
+  ; DUE-NOW IS 1, NOT 0, AND THE DIFFERENCE IS LOAD-BEARING. A monotonic
+  ; timepoint of 1ns is always in the past, so it is due; and it is
+  ; distinguishable from the 0 a FRESH frame carries, which is what lets
+  ; `npk_sl_push` below tell "a waker got here first" from "never slept".
   %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
-  store atomic i64 0, ptr %wa seq_cst, align 8
+  store atomic i64 1, ptr %wa seq_cst, align 8
   %op = getelementptr %npk.hdr, ptr %f, i32 0, i32 11
   %ow = load ptr, ptr %op
   %noown = icmp eq ptr %ow, null
@@ -1143,8 +1147,24 @@ define void @npk_sl_push(ptr %f, i64 %at) {
 entry:
   %ex = call ptr @npk_exec()
   %p_npk_sl_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
+  ; A WAKE THAT LANDED BEFORE THE SLEEP MUST SURVIVE IT. Registering on a
+  ; channel and being pushed onto this list are two steps, and the channel's
+  ; lock covers only the first — so a peer on another thread can wake this
+  ; task in between, and a plain store of the deadline here would erase that.
+  ; The task then slept to its deadline for a value that had already arrived,
+  ; and the deadline is the only thing that ever woke it: a sender reporting
+  ; DeadlineExceeded with room in the buffer, or an executor with nothing
+  ; ready and nothing sleeping declaring deadlock, both under load and neither
+  ; reproducibly. 27 runs in 200 before the exchange went in.
   %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
-  store atomic i64 %at, ptr %wa seq_cst, align 8
+  %prev = atomicrmw xchg ptr %wa, i64 %at seq_cst
+  %woken = icmp eq i64 %prev, 1
+  br i1 %woken, label %keep, label %sleep
+keep:
+  ; put the marker back: this task is due now, not at `at`
+  store atomic i64 1, ptr %wa seq_cst, align 8
+  br label %sleep
+sleep:
   %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
   %h = load ptr, ptr %p_npk_sl_head
   store ptr %h, ptr %qn
@@ -1642,7 +1662,8 @@ define void @npk_trap(i32 %code) noreturn {
 hard:
   ; re-entry: failsafe trapped. There is no second handler to hand the
   ; situation to, so this is the one uncatchable stop: exit 70 directly.
-  %x = call i64 @npk_sys6(i64 60, i64 70, i64 0, i64 0, i64 0, i64 0, i64 0)
+  ; EXIT_GROUP (231), NOT EXIT (60) — see `npk_exit`.
+  %x = call i64 @npk_sys6(i64 231, i64 70, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
 run:
   store i32 1, ptr @npk_in_failsafe
@@ -1677,8 +1698,21 @@ trap:
   call void @npk_trap(i32 -4105)
   unreachable
 leave:
+  ; EXIT_GROUP (231), NOT EXIT (60). `exit` ends the CALLING THREAD; the
+  ; process continues with whatever else is running, and its final status
+  ; becomes whichever thread happens to finish last. With one thread the two
+  ; are indistinguishable, which is why this stood from the first runtime
+  ; until threads landed (1.1.9) and nothing noticed: a two-thread program
+  ; then exited 100, or 0, or 70, depending on scheduling — 27 runs in 200.
+  ;
+  ; It is not a flaky exit code. `exit` from `main` or `failsafe` is the
+  ; CONTROLLED SHUTDOWN (D-013/D-014): the whole point is that the program
+  ; stops. A `main` that returns while worker threads keep running has not
+  ; shut down at all — it has abandoned them, and with actuators live that is
+  ; the uncontrolled stop the safety case exists to prevent. The status the
+  ; parent reads being wrong is the mildest of its consequences.
   %c = sext i32 %code to i64
-  %r = call i64 @npk_sys6(i64 60, i64 %c, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %r = call i64 @npk_sys6(i64 231, i64 %c, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
 }
 

@@ -89,6 +89,15 @@ class Expect:
         self.notes = []         # [(code, line|None, col|None)]
         self.exit = 0
         self.no_parse_error = False
+        # HOW MANY TIMES TO RUN IT (1.1.10-C). One run is not a test of a
+        # concurrent program: a schedule-dependent bug passes most of the time,
+        # and "most" is what makes it survive. Two real defects hid behind
+        # single runs of a green suite -- `npk_exit` calling `exit` rather than
+        # `exit_group`, so a threaded program's status was whichever thread
+        # finished last, and a channel wake landing between registering and
+        # sleeping, which the sleeper-push then erased. Neither reproduced in
+        # fewer than about twenty runs, and both are gone from 200.
+        self.stress = 1
 
     @property
     def expects_failure(self):
@@ -125,6 +134,8 @@ def read_expectations(path):
                 e.notes.append((body.split(":", 1)[1].strip(), None, None))
             elif body.startswith("expect-exit:"):
                 e.exit = int(body.split(":", 1)[1].strip())
+            elif body.startswith("stress:"):
+                e.stress = int(body.split(":", 1)[1].strip())
             elif body.startswith("expect-no-parse-error"):
                 e.no_parse_error = True
     return e
@@ -227,12 +238,24 @@ def check_positive(name, group, exp, tmp, tools):
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
-    try:
-        got = subprocess.run([base], capture_output=True, timeout=10).returncode
-    except subprocess.TimeoutExpired:
-        return ["%s: timed out" % name]
-    if got != exp.exit:
-        return ["%s: exited %d, expected %d" % (name, got, exp.exit)]
+    # A `// stress: N` marker runs it N times and requires the SAME answer
+    # every time. These binaries take milliseconds, so a concurrency test
+    # earning its keep costs about a second.
+    seen = {}
+    for _ in range(max(1, exp.stress)):
+        try:
+            got = subprocess.run([base], capture_output=True, timeout=10).returncode
+        except subprocess.TimeoutExpired:
+            return ["%s: timed out" % name]
+        if got != exp.exit:
+            seen[got] = seen.get(got, 0) + 1
+    if seen:
+        if exp.stress > 1:
+            detail = ", ".join("%d x%d" % (rc, n) for rc, n in sorted(seen.items()))
+            return ["%s: expected %d every run, got %s in %d runs -- a "
+                    "schedule-dependent answer is a bug that passes most of "
+                    "the time" % (name, exp.exit, detail, exp.stress)]
+        return ["%s: exited %d, expected %d" % (name, list(seen)[0], exp.exit)]
     return []
 
 
