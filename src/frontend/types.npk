@@ -1073,6 +1073,18 @@ pub func:type_param_start_of = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).b);
 };
 
+// A `Channel<T, LEVEL, CAP>`'s two CONSTANTS (D-072/D-182). `type_elem` is the
+// element; the level rides `b` and the capacity `c`. Named for the same reason
+// the windows above are: read raw, `.c` is a capacity here, a parameter count
+// on a function type, and an argument count on an instance — three questions
+// that look identical at the call site.
+pub func:type_chan_level = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).b);
+};
+pub func:type_chan_cap = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).c);
+};
+
 // AN INSTANTIATION'S ARGUMENT WINDOW. Slots `b` and `c` again, and reading one
 // through `type_param_start_of` would return a struct's arguments as a function's
 // parameters — which is the whole reason these are named accessors rather than a

@@ -1,0 +1,59 @@
+// expect-exit: 42
+//
+// A CHANNEL ACROSS A SPAWN (D-182, 1.1.10-B) — the case the handle
+// representation exists for. D-180 refuses a BORROW that crosses a spawn,
+// because the parent's frame is not held still for the child; an endpoint is
+// an index and a generation, so it crosses by value and the check that it
+// still names a live channel happens at every use.
+//
+// This also exercises the suspending receive. Main's first `recv` finds the
+// buffer empty and suspends; the producer runs, fills it, sleeps, sends its
+// last value and closes. The handle main re-reads on the far side of that
+// suspension must be the one it had — which is why a channel await's receiver
+// is FRAME-RESIDENT and not an alloca. It rode an alloca for one build, and
+// the second turn of the loop read whatever the resume path had left there:
+// reported as `StaleHandle`, with nothing stale about it.
+mod:channel_cross;
+error:S1;
+error:CL;
+async func:producer = NIL(Channel<int32, 3i32, 2i64>:ch) {
+    await ch.send(10i32, raw duration_ms(200i64)) ?! S1;
+    await ch.send(15i32, raw duration_ms(200i64)) ?! S1;
+    await sleep(raw duration_ms(30i64)) ?| NIL;   // let the consumer drain
+    await ch.send(17i32, raw duration_ms(200i64)) ?! S1;
+    discard(ch.close() ?! CL);
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 2i64>:ch = channel() ?! Unreachable;
+    drop producer(ch);
+    int32:sum = 0i32;
+    int32:n = 0i32;
+    while (n < 3i32) {
+        Result<int32>:r = await ch.recv(raw duration_ms(500i64));
+        if (r.is_error) {
+            if (r.err == ChannelClosed)    { exit 71i32; }
+            if (r.err == DeadlineExceeded) { exit 72i32; }
+            if (r.err == StaleHandle)      { exit 73i32; }
+            exit 74i32;
+        }
+        sum = sum + r.value;
+        n = n + 1i32;
+    }
+    exit sum;                                     // 10 + 15 + 17 = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (S1)               { exit 61i32; },
+        (CL)               { exit 64i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

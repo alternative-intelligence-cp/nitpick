@@ -1,0 +1,63 @@
+// expect-exit: 42
+//
+// A CHANNEL IN ONE TASK (D-182, 1.1.10-B). `Channel<T, LEVEL, CAP>` is a type
+// carrying two CONSTANTS — the D-056 lock level the deadlock analysis reasons
+// about, and the capacity, which is part of the type because a buffer size
+// decided at runtime is a buffer size no analysis can bound.
+//
+// AN ENDPOINT IS A HANDLE, NOT A BORROW: { index, generation }, which is what
+// lets it cross a spawn (channel_cross) where a borrow may not (D-180).
+//
+// EVERY BLOCKING OPERATION CARRIES A DEADLINE. There is no untimed `recv`,
+// because an untimed wait is an uncontrolled stop with no failsafe path — the
+// deadline is what turns "wait forever" into a `DeadlineExceeded` a caller
+// must handle.
+//
+// CLOSING IS AN END OF STREAM, NOT A RECLAMATION. A closed channel that still
+// holds values delivers them first; only when it is empty AND closed does
+// `recv` report `ChannelClosed`. The handle stays valid throughout — the
+// generation guards the SLOT, and closing does not reclaim it.
+mod:channel_basic;
+error:Full;
+error:Sent;
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 2i64>:ch = channel() ?! Unreachable;
+
+    await ch.send(20i32, raw duration_ms(50i64)) ?! Sent;
+    await ch.send(22i32, raw duration_ms(50i64)) ?! Sent;
+
+    // CLOSED, BUT NOT DRAINED — both values are still owed to the receiver.
+    discard(ch.close() ?! Full);
+
+    Result<int32>:a = await ch.recv(raw duration_ms(50i64));
+    if (a.is_error) { exit 11i32; }
+    Result<int32>:b = await ch.recv(raw duration_ms(50i64));
+    if (b.is_error) { exit 12i32; }
+
+    // NOW empty and closed: an end, reported as one.
+    Result<int32>:c = await ch.recv(raw duration_ms(50i64));
+    if (!c.is_error)                  { exit 13i32; }
+    if (c.err != ChannelClosed)       { exit 14i32; }
+
+    // A SEND AFTER A CLOSE is refused the same way, and does not block.
+    Result<NIL>:d = await ch.send(1i32, raw duration_ms(50i64));
+    if (!d.is_error)                  { exit 15i32; }
+    if (d.err != ChannelClosed)       { exit 16i32; }
+
+    exit a.value + b.value;                   // 20 + 22 = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Full)             { exit 62i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

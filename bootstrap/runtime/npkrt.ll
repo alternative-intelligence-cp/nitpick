@@ -270,6 +270,271 @@ entry:
   ret ptr %p
 }
 
+; --- channels (D-072/D-182, 1.1.10) -----------------------------------------
+;
+; THE RUNTIME OWNS CHANNEL STORAGE; THE SCOPE OWNS ITS LIFE. An endpoint is an
+; index and a generation, not an address — which is what lets it cross a
+; spawn (D-004/D-180 refuse a borrow there), ride in a message, or travel
+; through another channel. A stale endpoint is `StaleHandle` (-4106), a
+; caught error rather than a dangling read, exactly as arenas already work.
+;
+; ONE TABLE, GROWN BY DOUBLING, NEVER SHRUNK — a slot's generation is bumped
+; on close, so a reused slot cannot answer to an old endpoint. Generations
+; are EVEN while live and ODD once closed, the parity discipline D-152 uses
+; for handles: a closed channel's endpoint is distinguishable from a live
+; one by its low bit alone.
+;
+;   0 buf | 1 cap | 2 elem_size | 3 head | 4 tail | 5 count
+;   6 gen | 7 closed | 8 waiters
+%npk.chan = type { ptr, i64, i64, i64, i64, i64, i32, i32, i32 }
+
+@npk_ch_tab = internal global ptr null
+@npk_ch_cap = internal global i64 0
+@npk_ch_n = internal global i64 0
+
+define internal ptr @npk_ch_at(i32 %i) {
+entry:
+  %t = load ptr, ptr @npk_ch_tab
+  %ix = sext i32 %i to i64
+  %p = getelementptr %npk.chan, ptr %t, i64 %ix
+  ret ptr %p
+}
+
+; A fresh channel: `cap` slots of `esz` bytes each. Returns the packed handle
+; { index, generation } as an i64 so one register carries it.
+define i64 @npk_ch_open(i64 %cap, i64 %esz) {
+entry:
+  %n = load i64, ptr @npk_ch_n
+  %c = load i64, ptr @npk_ch_cap
+  %full = icmp sge i64 %n, %c
+  br i1 %full, label %grow, label %have
+grow:
+  %nc0 = shl i64 %c, 1
+  %first = icmp eq i64 %c, 0
+  %nc = select i1 %first, i64 16, i64 %nc0
+  %bytes = mul i64 %nc, ptrtoint (ptr getelementptr (%npk.chan, ptr null, i32 1) to i64)
+  %old = load ptr, ptr @npk_ch_tab
+  %oldi = ptrtoint ptr %old to i64
+  %was = icmp eq i64 %oldi, 0
+  br i1 %was, label %fresh, label %again
+fresh:
+  %m0 = call ptr @npk_alloc_internal(i64 %bytes)
+  call void @npk_zero(ptr %m0, i64 %bytes)
+  store ptr %m0, ptr @npk_ch_tab
+  store i64 %nc, ptr @npk_ch_cap
+  br label %have
+again:
+  ; the table holds no interior pointers, so a copy is a move
+  %m1 = call ptr @npk_alloc_internal(i64 %bytes)
+  call void @npk_zero(ptr %m1, i64 %bytes)
+  %oldbytes = mul i64 %c, ptrtoint (ptr getelementptr (%npk.chan, ptr null, i32 1) to i64)
+  call ptr @memcpy(ptr %m1, ptr %old, i64 %oldbytes)
+  store ptr %m1, ptr @npk_ch_tab
+  store i64 %nc, ptr @npk_ch_cap
+  br label %have
+have:
+  %idx = load i64, ptr @npk_ch_n
+  %ni = add i64 %idx, 1
+  store i64 %ni, ptr @npk_ch_n
+  %i32i = trunc i64 %idx to i32
+  %ch = call ptr @npk_ch_at(i32 %i32i)
+  ; a rendezvous channel (CAP 0) still needs one slot to hand the value over
+  %rendez = icmp eq i64 %cap, 0
+  %slots = select i1 %rendez, i64 1, i64 %cap
+  %bufsz = mul i64 %slots, %esz
+  %buf = call ptr @npk_alloc_internal(i64 %bufsz)
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  store ptr %buf, ptr %bp
+  %cp = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  store i64 %cap, ptr %cp
+  %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
+  store i64 %esz, ptr %ep
+  %hp = getelementptr %npk.chan, ptr %ch, i32 0, i32 3
+  store i64 0, ptr %hp
+  %tp = getelementptr %npk.chan, ptr %ch, i32 0, i32 4
+  store i64 0, ptr %tp
+  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
+  store i64 0, ptr %np
+  %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  %g = load i32, ptr %gp
+  ; EVEN means live: a fresh slot starts at 0, a reused one was bumped to odd
+  ; at close and is bumped again here.
+  %odd = and i32 %g, 1
+  %isodd = icmp ne i32 %odd, 0
+  %g2 = add i32 %g, 1
+  %gen = select i1 %isodd, i32 %g2, i32 %g
+  store i32 %gen, ptr %gp
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  store i32 0, ptr %clp
+  %packed_lo = zext i32 %i32i to i64
+  %packed_hi0 = zext i32 %gen to i64
+  %packed_hi = shl i64 %packed_hi0, 32
+  %packed = or i64 %packed_hi, %packed_lo
+  ret i64 %packed
+}
+
+; Resolve a handle, or null when it is stale — the slot was closed and its
+; generation moved on (D-152's parity discipline).
+define internal ptr @npk_ch_get(i64 %h) {
+entry:
+  %ix64 = and i64 %h, 4294967295
+  %n = load i64, ptr @npk_ch_n
+  %oob = icmp uge i64 %ix64, %n
+  br i1 %oob, label %stale, label %live
+live:
+  %i32i = trunc i64 %ix64 to i32
+  %ch = call ptr @npk_ch_at(i32 %i32i)
+  %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  %g = load i32, ptr %gp
+  %want0 = lshr i64 %h, 32
+  %want = trunc i64 %want0 to i32
+  %same = icmp eq i32 %g, %want
+  br i1 %same, label %ok, label %stale
+ok:
+  ret ptr %ch
+stale:
+  ret ptr null
+}
+
+; Close: the generation moves to ODD, so every endpoint naming this slot
+; becomes stale at once and the slot can be reused later without ambiguity.
+define i32 @npk_ch_close(i64 %h) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %ok
+ok:
+  ; CLOSING IS NOT RECLAIMING. The generation guards the SLOT — it moves when
+  ; a channel's storage is handed to a different channel, so a handle kept
+  ; past that point is caught rather than aimed at a stranger's buffer.
+  ; Closing changes a live channel's STATE: the slot, the buffer and every
+  ; value still in it are exactly where the holder left them, and a receiver
+  ; has to be able to drain them. Bumping the generation here made every
+  ; outstanding endpoint stale the instant the producer finished, so a reader
+  ; mid-drain was told its handle was dangling — StaleHandle standing in for
+  ; ChannelClosed, a use-after-free report for an orderly end of stream.
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  store i32 1, ptr %clp
+  ret i32 0
+stale:
+  ret i32 -4106
+}
+
+; Is this channel closed (or its handle stale)?
+define i32 @npk_ch_closed(i64 %h) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %yes, label %look
+look:
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  %c = load i32, ptr %clp
+  ret i32 %c
+yes:
+  ret i32 1
+}
+
+; ONE NON-BLOCKING STEP OF EACH OPERATION. The blocking is NOT here: under
+; D-071 a full or empty channel suspends the TASK, and suspension is the
+; emitted code's business (it owns the state machine). The runtime offers the
+; step and says whether it happened, so the same primitive serves a task that
+; parks and a `send` with a zero deadline that gives up immediately.
+;
+;   0 = done   1 = would block   -4106 = stale handle   -4108 = closed
+define i32 @npk_ch_try_send(i64 %h, ptr %src) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %live
+live:
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  %cl = load i32, ptr %clp
+  %isclosed = icmp ne i32 %cl, 0
+  br i1 %isclosed, label %closed, label %room
+room:
+  %cp = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  %cap = load i64, ptr %cp
+  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
+  %cnt = load i64, ptr %np
+  ; a rendezvous channel (CAP 0) holds exactly one in flight: the receiver
+  ; takes it before the sender is released, which the task-level protocol
+  ; enforces by the sender suspending until `count` returns to zero.
+  %rendez = icmp eq i64 %cap, 0
+  %limit = select i1 %rendez, i64 1, i64 %cap
+  %isfull = icmp sge i64 %cnt, %limit
+  br i1 %isfull, label %wouldblock, label %write
+write:
+  %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
+  %esz = load i64, ptr %ep
+  %tp = getelementptr %npk.chan, ptr %ch, i32 0, i32 4
+  %tail = load i64, ptr %tp
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  %buf = load ptr, ptr %bp
+  %off = mul i64 %tail, %esz
+  %dst = getelementptr i8, ptr %buf, i64 %off
+  call ptr @memcpy(ptr %dst, ptr %src, i64 %esz)
+  %t2 = add i64 %tail, 1
+  %wrap = icmp sge i64 %t2, %limit
+  %t3 = select i1 %wrap, i64 0, i64 %t2
+  store i64 %t3, ptr %tp
+  %c2 = add i64 %cnt, 1
+  store i64 %c2, ptr %np
+  ret i32 0
+wouldblock:
+  ret i32 1
+closed:
+  ret i32 -4108
+stale:
+  ret i32 -4106
+}
+
+define i32 @npk_ch_try_recv(i64 %h, ptr %dst) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %live
+live:
+  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
+  %cnt = load i64, ptr %np
+  %empty = icmp eq i64 %cnt, 0
+  br i1 %empty, label %nothing, label %take
+take:
+  %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
+  %esz = load i64, ptr %ep
+  %hp = getelementptr %npk.chan, ptr %ch, i32 0, i32 3
+  %head = load i64, ptr %hp
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  %buf = load ptr, ptr %bp
+  %off = mul i64 %head, %esz
+  %src = getelementptr i8, ptr %buf, i64 %off
+  call ptr @memcpy(ptr %dst, ptr %src, i64 %esz)
+  %cp = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  %cap = load i64, ptr %cp
+  %rendez = icmp eq i64 %cap, 0
+  %limit = select i1 %rendez, i64 1, i64 %cap
+  %h2 = add i64 %head, 1
+  %wrap = icmp sge i64 %h2, %limit
+  %h3 = select i1 %wrap, i64 0, i64 %h2
+  store i64 %h3, ptr %hp
+  %c2 = sub i64 %cnt, 1
+  store i64 %c2, ptr %np
+  ret i32 0
+nothing:
+  ; EMPTY AND CLOSED IS AN END, NOT A WAIT. A closed channel that still holds
+  ; values delivers them first — a producer's last writes are not lost by its
+  ; closing.
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  %cl = load i32, ptr %clp
+  %isclosed = icmp ne i32 %cl, 0
+  br i1 %isclosed, label %closed, label %wouldblock
+wouldblock:
+  ret i32 1
+closed:
+  ret i32 -4108
+stale:
+  ret i32 -4106
+}
+
 ; --- threads (D-181, 1.1.9c) -------------------------------------------------
 ;
 ; A THREAD IS A CLONE WITH ITS OWN EXECUTOR. `clone(2)` rather than

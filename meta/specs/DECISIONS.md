@@ -9819,6 +9819,7 @@ trap codes continue that region below `E_EOF`:
 | −4101 | `BAD_STEP` | a counted loop's step was not positive at runtime where it could not be a literal (registered 0.9.9) |
 | −4102 | `UNREACHABLE` | `#unreachable()` was reached — an arm a stricter analysis had excluded turned out to be reachable, made a controlled stop rather than undefined behaviour (D-061; registered 1.0.9c) |
 | −4107 | `DEADLINE_EXCEEDED` | time ran out (D-176; registered 1.1.3): the catchable `Result` error every deadline API returns, and the trap a JOIN raises when a task outlives its mandatory deadline |
+| −4108 | `ChannelClosed` | a `send` to a closed channel, or a `recv` from one that is closed AND drained (D-072/D-182; registered 1.1.10). A closed channel still delivers what it holds — a producer's last writes are not lost by its closing — so this is the END of a stream, and a `recv` loop reads it as termination rather than as a fault. |
 
 The guards are emitted in EVERY build — D-068's rule, restated at the emission
 site: a build without the verifier still emits the check, and 1.3's static
@@ -12345,6 +12346,49 @@ identifiers (D-042) already have.
 
 `CONCURRENCY_REFERENCE.md` §6.4 and §7 are amended: `ask` remains as
 convenience, no longer as a workaround for a rule that no longer bites.
+
+**What the generation guards, and what it does not** *(added 1.1.10-B, from a
+bug)*. The generation moves when a channel's SLOT is reused — when its storage
+is handed to a different channel — so an endpoint kept past that point is
+caught instead of aimed at a stranger's buffer. **Closing is not that.** Close
+is a state change on a live channel: the slot, the buffer and every value still
+in it stay where the holder left them, and a receiver has to be able to drain
+them. The first implementation bumped the generation on `close`, which made
+every outstanding endpoint stale the instant a producer finished — a consumer
+mid-drain was told its handle was dangling, `StaleHandle` standing in for
+`ChannelClosed`, a use-after-free report for an orderly end of stream. Two
+errors that must never be confused: one says the program has a lifetime bug,
+the other says the stream ended normally.
+
+The reclaiming half is **not built**, and knowing why matters more than the
+gap. "Scope exit closes and reclaims" is the managed regime's RAII, and the
+backend has no managed drop at all yet — a channel would be the only one in the
+compiler, and standing up one type's lifetime discipline ahead of the general
+mechanism is the two-parallel-mechanisms trap the blueprint philosophy names
+outright. So until the managed lowering lands (**B-6** in
+`meta/roadmap/OPEN_DECISIONS.md`, recommended as its own cycle before
+self-hosting), a channel's slot is never reused, the generation never moves
+after `open`, and `StaleHandle` is consequently **unreachable from source** —
+it can fire only on a fabricated handle. The check is correct and it is the
+right check; it is guarding against a reuse that nothing performs yet. This is
+recorded rather than quietly tolerated, because a safety property that cannot
+currently fire is exactly the kind of thing that reads as tested when it is
+not.
+
+**What may ride a channel, until then** *(added 1.1.10-B)*. The same gap has a
+second face. §6.3 already bars a borrow from being sent; the sharper problem is
+an element that OWNS heap storage. D-065 settled that nothing moves by being
+passed — ownership transfers only where `move` is written — so `ch.send(s, dl)`
+on a `string` copies a body pointer and the far side becomes a second owner of
+it. D-072 writes `send(move(v), deadline)` in its own signature, but nothing
+*requires* the `move`, and requiring it would mean nothing until a drop exists
+for it to suppress. So this rung refuses an owning element by name: what
+transfers is what transfers by copying its bytes — scalars, `Handle<T>`,
+channel endpoints, pointer-free structs (layout's own `haspt` answer, the same
+question the escape analysis asks of the same table) and arrays of those, which
+covers `CONCURRENCY_REFERENCE`'s own `Sample` example. When the managed
+lowering lands, this is one of the refusals it retires, and the `move`
+requirement becomes enforceable at the same moment it becomes meaningful.
 
 ### 2. `channel()` constructs, typed from context
 

@@ -462,6 +462,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_ATOMIC())) {
             pass (raw emit_atomic_method(x, id, n, amrecv));
         }
+        if (amk == (raw TY_CHANNEL())) {
+            pass (raw emit_channel_method(x, id, n, amrecv));
+        }
         if (amk == (raw TY_POINTER())) {
             if ((raw type_kind(x.fe.ctx.types,
                      raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
@@ -2298,11 +2301,252 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     pass (raw iv(ell.text, rw, etid));
 };
 
+// A CHANNEL HANDLE, PACKED BACK INTO ONE WORD for the runtime calls.
+func:chan_handle_word = string(ExprEmitter->:x, IrVal:hv) never fails {
+    string:lo = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lo, " = extractvalue { i32, i32 } ", hv.ref,
+                      ", 0", ""));
+    string:hi = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(hi, " = extractvalue { i32, i32 } ", hv.ref,
+                      ", 1", ""));
+    string:lo64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(lo64, " = zext i32 ",
+                      raw string_concat(lo, " to i64")));
+    string:hi64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hi64, " = zext i32 ",
+                      raw string_concat(hi, " to i64")));
+    string:sh = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(sh, " = shl i64 ",
+                      raw string_concat(hi64, ", 32")));
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w, " = or i64 ", sh, ", ", lo64));
+    pass w;
+};
+
+// `ch.close()` (D-072) — synchronous: closing is a state change, not a wait.
+// A stale handle answers `StaleHandle`, so a double close is a caught error
+// rather than a second teardown.
+func:emit_channel_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                                 int32:recv_tid) never fails {
+    string:m = raw intern_get(x.interns, n.payload =>! int32);
+    if (!(raw string_eq(m, "close"))) {
+        // `send`/`recv` suspend, so they are reached through `await` and
+        // lowered there — a channel operation that blocks is not a call.
+        pass (raw iv_rung("a channel `send`/`recv` outside `await`", "1.1", n.span));
+    }
+    IrVal:hv = raw emit_expr(x, raw expr_operand(n));
+    if (hv.state != (raw LL_OK())) { pass hv; }
+    string:hw = raw chan_handle_word(x, hv);
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = call i32 @npk_ch_close(i64 ", hw,
+                      ")", ""));
+    string:r0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r0, " = insertvalue { i32 } undef, i32 ",
+                      rc, ", 0", ""));
+    IrVal:out = raw iv("{ i32 }", r0, raw exprtypes_get(x.et, id));
+    out.wrapped = true;
+    out.inner = "";
+    pass out;
+};
+
 // `await g(x)` — the machines compose (D-177). Allocate g's frame, store the
 // arguments, advance our own state, and DRIVE: g DONE hands back its result
 // slot and the frame is freed; g SUSPENDED propagates — we save nothing but
 // the state word, because everything live is already frame-resident (params)
 // or refused (crossing locals, until stage D).
+// IS THIS AWAIT'S OPERAND A CHANNEL `send`/`recv`? They are the language's
+// only intrinsic suspensions besides `sleep` — a full or empty channel
+// suspends the TASK (D-071), which is emitted code's business because only
+// the state machine can suspend.
+func:await_channel_recv = int32(ExprEmitter->:x, ExprId:cid) never fails {
+    if (raw expr_is_none(cid)) { pass 0i32; }
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    if (cn.kind != ExprKind.ExprMethodCallExpr) { pass 0i32; }
+    int32:rt = raw exprtypes_get(x.et, raw expr_operand(cn));
+    if ((raw type_kind(x.fe.ctx.types, rt)) != (raw TY_CHANNEL())) { pass 0i32; }
+    pass rt;
+};
+
+// `await ch.send(v, within)` / `await ch.recv(within)` (D-072/D-182).
+//
+// THE DEADLINE IS ABSOLUTE BEFORE THE LOOP STARTS: the span is converted
+// once, at suspension entry (D-176 rule 2), so a retry cannot extend it.
+// Each turn tries the non-blocking step; "would block" suspends the task
+// and comes back. The first cut RE-POLLS on a short timer rather than being
+// woken by the peer — correct and bounded, never missing a wakeup, with the
+// per-channel futex wake named as the follow-up in 1.1.10's plan.
+func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
+                                int32:ch_tid, Span:at) never fails {
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    string:m = raw intern_get(x.interns, cn.payload =>! int32);
+    bool:is_send = raw string_eq(m, "send");
+    int32:elem = raw type_elem(x.fe.ctx.types, ch_tid);
+    LlType:ell = raw ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, at)); }
+
+    // THE LOOP'S STATE IS FRAME-RESIDENT (D-182). Everything below outlives
+    // the suspension the retry makes, and an SSA value computed before the
+    // loop does not dominate the resume switch's re-entry — the pre-scan
+    // reserved these slots on this statement, which D-178 guarantees carries
+    // at most one suspension.
+    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int32:vi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
+    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
+    if (di_ < 0i32) { pass (raw iv_broken(at)); }
+    if (vi_ < 0i32) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
+    string:hwslot = raw fnem_cross_gep(x.fe, hi_);
+    string:dslot = raw fnem_cross_gep(x.fe, di_);
+    string:slot = raw fnem_cross_gep(x.fe, vi_);
+    string:eslot = raw fnem_cross_gep(x.fe, ei_);
+
+    IrVal:hv = raw emit_expr(x, raw expr_operand(cn));
+    if (hv.state != (raw LL_OK())) { pass hv; }
+    string:hw0 = raw chan_handle_word(x, hv);
+    drop irw_line(x.fe.w, raw cat4("store i64 ", hw0, ", ptr ", hwslot));
+
+    int32:start = raw expr_list_start(cn);
+    if (is_send) {
+        IrVal:sv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (sv.state != (raw LL_OK())) { pass sv; }
+        // THE SLOT IS THE ELEMENT'S, AND `fits` ADMITS MORE THAN EQUALITY —
+        // a concrete value into a `dyn`, a `T` into a `T?`, a `T` into an
+        // `atomic<T>`. The checker asked `fits` for this argument, so the
+        // value here is not necessarily already the element's shape, and
+        // storing it raw writes the argument's bytes into a slot sized and
+        // shaped for something else. `emit_fit` is what builds it.
+        sv = raw emit_fit(x, elem, sv, at);
+        if (sv.state != (raw LL_OK())) { pass sv; }
+        drop irw_line(x.fe.w, raw cat5("store ", ell.text, " ", sv.ref,
+                          raw string_concat(", ptr ", slot)));
+    }
+    // the deadline, absolute, computed once
+    int32:dai = 0i32;
+    if (is_send) { dai = 1i32; }
+    IrVal:dv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, dai) });
+    if (dv.state != (raw LL_OK())) { pass dv; }
+    string:dns = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dns, " = extractvalue ", dv.ll, " ",
+                      raw string_concat(dv.ref, ", 0")));
+    string:t0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(t0, " = call i64 @npk_mono_now()", ""));
+    string:dabs0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dabs0, " = add i64 ", t0, ", ", dns));
+    drop irw_line(x.fe.w, raw cat4("store i64 ", dabs0, ", ptr ", dslot));
+    drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", eslot, ""));
+
+    string:head = raw irw_new_label(x.fe.w, "ch.try");
+    string:blocked = raw irw_new_label(x.fe.w, "ch.block");
+    string:fin = raw irw_new_label(x.fe.w, "ch.done");
+    drop s_br(x, head);
+    drop s_start(x, head);
+    string:fn = "@npk_ch_try_recv";
+    if (is_send) { fn = "@npk_ch_try_send"; }
+    string:hw = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(hw, " = load i64, ptr ", hwslot, ""));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = call i32 ", fn, "(i64 ",
+                      raw cat4(hw, ", ptr ", slot, ")")));
+    drop irw_line(x.fe.w, raw cat4("store i32 ", rc, ", ptr ", eslot));
+    string:again = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(again, " = icmp eq i32 ",
+                      raw string_concat(rc, ", 1")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", again, ", label %", blocked,
+                      raw string_concat(", label %", fin)));
+    x.fe.terminated = true;
+
+    drop s_start(x, blocked);
+    string:now = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(now, " = call i64 @npk_mono_now()", ""));
+    string:dabs = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(dabs, " = load i64, ptr ", dslot, ""));
+    string:over = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(over, " = icmp sgt i64 ", now, ", ", dabs));
+    string:expired = raw irw_new_label(x.fe.w, "ch.late");
+    string:park = raw irw_new_label(x.fe.w, "ch.park");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", over, ", label %", expired,
+                      raw string_concat(", label %", park)));
+    x.fe.terminated = true;
+    drop s_start(x, expired);
+    drop irw_line(x.fe.w, raw cat3("store i32 -4107, ptr ", eslot, ""));
+    drop s_br(x, fin);
+    drop s_start(x, park);
+    // wake at the sooner of "a short retry" and the deadline itself
+    string:soon = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(soon, " = add i64 ",
+                      raw string_concat(now, ", 1000000")));
+    string:sooner = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sooner, " = icmp slt i64 ", soon, ", ", dabs));
+    string:wake = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(wake, " = select i1 ", sooner, ", i64 ",
+                      raw cat3(soon, ", i64 ", dabs)));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ", wake, ")"));
+    string:sg = raw fnem_new_seg(x.fe);
+    int32:sk = raw fnem_seg_index(x.fe);
+    drop irw_line(x.fe.w, raw cat5("store i32 ",
+                      raw int_to_string(sk => int64), ", ptr ",
+                      x.fe.state_gep, ""));
+    drop irw_line(x.fe.w, "ret i8 1");
+    x.fe.terminated = true;
+    drop s_start(x, sg);
+    // the wind-up poll every resume segment owes (D-177): a wound-up task
+    // stops waiting on a channel like it stops waiting on anything else
+    string:pw = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(pw, " = load i32, ptr ", x.fe.windup_gep, ""));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_windup_note(i32 ", pw, ")"));
+    string:pwb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(pwb, " = icmp ne i32 ",
+                      raw string_concat(pw, ", 0")));
+    string:wu = raw irw_new_label(x.fe.w, "ch.wind");
+    string:go = raw irw_new_label(x.fe.w, "ch.go");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", pwb, ", label %", wu,
+                      raw string_concat(", label %", go)));
+    x.fe.terminated = true;
+    drop s_start(x, wu);
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop fnem_ret_fail(x.fe, "-4107");
+    x.fe.terminated = true;
+    drop s_start(x, go);
+    drop s_br(x, head);
+
+    drop s_start(x, fin);
+    // rc is 0 on success and a negative Error otherwise; the loop's own
+    // expiry wrote -4107 into the slot, so one read serves both paths
+    string:err = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(err, " = load i32, ptr ",
+                      raw string_concat(eslot, "")));
+    int32:rt_id = raw exprtypes_get(x.et, cid);
+    if (is_send) {
+        string:o0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
+                          err, ", 0", ""));
+        IrVal:so = raw iv("{ i32 }", o0, rt_id);
+        so.wrapped = true;
+        so.inner = "";
+        pass so;
+    }
+    string:got = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(got, " = load ", ell.text, ", ptr ",
+                      raw string_concat(slot, "")));
+    LlType:rll = raw ll_wrap_result(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(rll))) { pass (raw iv_from_ll_at(x, rll, elem, at)); }
+    string:v0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(v0, " = insertvalue ", rll.text, " undef, ",
+                      raw cat4(ell.text, " ", got, ", 0")));
+    string:v1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(v1, " = insertvalue ", rll.text, " ",
+                      raw string_concat(v0, raw cat3(", i32 ", err, ", 1"))));
+    IrVal:ro = raw iv(rll.text, v1, rt_id);
+    ro.wrapped = true;
+    ro.inner = ell.text;
+    pass ro;
+};
+
 func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // The one pick position that still refuses (D3): a `where` guard. The
     // compare CHAIN re-reads the selector value after a failed guard to test
@@ -2322,6 +2566,10 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                           "1.1", n.span));
     }
     ExprId:cid = raw expr_operand(n);
+    int32:cht = raw await_channel_recv(x, cid);
+    if (cht != 0i32) {
+        pass (raw emit_channel_await(x, id, cid, cht, n.span));
+    }
     int32:cdi = raw await_callee_decl(x, cid);
     if (cdi == 0i32) {
         pass (raw iv_rung("an `await` of a method, indirect or builtin call",
@@ -2551,6 +2799,50 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           ExprNode:cnode, int32:start, int32:count) never fails {
     string:name = raw intern_get(x.interns, cnode.payload =>! int32);
+
+    // `channel()` (D-182): the runtime opens the channel and hands back a
+    // packed { index, generation }. Capacity and element size come from the
+    // TYPE — which is why the call takes no arguments.
+    if (raw string_eq(name, "channel")) {
+        int32:crt = raw exprtypes_get(x.et, id);
+        int32:cht = raw type_elem(x.fe.ctx.types, crt);
+        int32:celem = raw type_elem(x.fe.ctx.types, cht);
+        int64:ccap = (raw type_chan_cap(x.fe.ctx.types, cht)) => int64;
+        int64:cesz = raw type_size(x.fe.ctx.types, celem);
+        string:hr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(hr, " = call i64 @npk_ch_open(i64 ",
+                          raw int_to_string(ccap), ", i64 ",
+                          raw cat3(raw int_to_string(cesz), ")", "")));
+        // the packed word becomes the { i32, i32 } the type lowers to
+        string:lo = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(lo, " = trunc i64 ",
+                          raw string_concat(hr, " to i32")));
+        string:sh = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(sh, " = lshr i64 ",
+                          raw string_concat(hr, ", 32")));
+        string:hi = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(hi, " = trunc i64 ",
+                          raw string_concat(sh, " to i32")));
+        string:h0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(h0, " = insertvalue { i32, i32 } undef, i32 ",
+                          lo, ", 0", ""));
+        string:h1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(h1, " = insertvalue { i32, i32 } ", h0,
+                          ", i32 ", raw string_concat(hi, ", 1")));
+        // wrapped as the Result the checker gave it
+        string:r0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(r0,
+                          " = insertvalue { { i32, i32 }, i32 } undef, { i32, i32 } ",
+                          h1, ", 0", ""));
+        string:r1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(r1,
+                          " = insertvalue { { i32, i32 }, i32 } ",
+                          raw string_concat(r0, ", i32 0, 1")));
+        IrVal:cv = raw iv("{ { i32, i32 }, i32 }", r1, crt);
+        cv.wrapped = true;
+        cv.inner = "{ i32, i32 }";
+        pass cv;
+    }
 
     // THE SUSPENSION PRIMITIVE (D-071, 1.1.8). `suspend_until(at)` is the
     // bottom of the waiting stack — every blocking operation in the language

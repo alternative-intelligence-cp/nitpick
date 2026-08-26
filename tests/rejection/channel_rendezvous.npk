@@ -1,0 +1,33 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// A RENDEZVOUS CHANNEL (CAP 0) IS NOT A ONE-SLOT BUFFER (D-182). In a
+// rendezvous the sender waits for a RECEIVER — the hand-off is the
+// synchronisation, which is the whole reason to ask for one. The buffered
+// path this rung builds would give a send that returns the moment it
+// deposits, with no receiver in sight: the same source, quietly not
+// synchronising. Refused by name until stage C registers waiters, because a
+// channel that is silently not the channel you asked for is worse than one
+// that will not compile. A buffered channel lowers and runs today
+// (tests/backend/programs/channel_basic).
+mod:channel_rendezvous;
+error:Sent;
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 0i64>:ch = channel() ?! Unreachable;
+    await ch.send(1i32, raw duration_ms(50i64)) ?! Sent;
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

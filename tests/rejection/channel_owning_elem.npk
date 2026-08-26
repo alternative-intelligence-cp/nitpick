@@ -1,0 +1,40 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// AN OWNING ELEMENT DOES NOT RIDE A CHANNEL AT THIS RUNG (D-072 §6.3, D-065).
+// A channel hands its element to another task, and D-065 settled that nothing
+// moves by being passed — ownership transfers only where `move` is written. So
+// a `string` element would arrive at the far side as a SECOND owner of the same
+// body: both sides hold the pointer, and which of them frees it is the managed
+// lowering's question, which has no answer yet (B-6 in OPEN_DECISIONS.md).
+//
+// D-072 writes `send(move(v), deadline)` in its own signature, but nothing
+// requires the `move`, and requiring it would mean nothing until there is a
+// drop for it to suppress. Refusing the element is what makes the hazard
+// unreachable instead of silent.
+//
+// What DOES ride today is everything that transfers by copying its bytes:
+// scalars, `Handle<T>`, channel endpoints, pointer-free structs, and arrays of
+// those — including the `Sample` struct CONCURRENCY_REFERENCE's own example
+// sends.
+mod:channel_owning_elem;
+error:Sent;
+async func:main = int32(cstring[]:_~argv) {
+    Channel<string, 3i32, 2i64>:ch = channel() ?! Unreachable;
+    await ch.send("hello", raw duration_ms(50i64)) ?! Sent;
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

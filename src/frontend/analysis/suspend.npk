@@ -56,6 +56,7 @@ use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
+use "../types.npk".*;
 use "../expr_types.npk".*;
 use "./analysis_codes.npk".*;
 
@@ -66,6 +67,7 @@ pub struct:Suspend = {
     Ast->:ast;
     SymbolTable->:tab;
     ExprTypes->:ets;
+    TypeTable->:types;      // D-182: to recognise a channel await's receiver
     DiagList->:diags;
 
     // The locals registry, reset per function: binder stmt index, binder
@@ -103,7 +105,7 @@ pub struct:Suspend = {
 };
 
 pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
-                                DiagList->:diags) never fails {
+                                TypeTable->:types, DiagList->:diags) never fails {
     wild int8->:a = alloc(64i64 * #size_of<int32>());
     wild int8->:b = alloc(64i64 * #size_of<int64>());
     wild int8->:c = alloc(64i64 * #size_of<int64>());
@@ -112,7 +114,7 @@ pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
     wild int8->:f = alloc(32i64 * #size_of<int32>());
     wild int8->:g = alloc(64i64 * #size_of<int64>());
     wild int8->:h = alloc(((raw LOOP_STACK_CAP()) => int64) * #size_of<int64>());
-    Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, diags: diags,
+    Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, types: types, diags: diags,
                          lstmt: a =>! wild int32->,
                          ldecl: b =>! wild int64->,
                          luse: c =>! wild int64->,
@@ -521,7 +523,34 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
     // evaluate before the machine can yield, so the point lands after their
     // uses (walked first) and they do not cross it.
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        drop suspend_expr(x, raw expr_operand(n), fuel - 1i32);
+        // A CHANNEL await's operand is RE-READ AFTER the suspension: the
+        // retry loop loads the handle again on every turn, so its receiver
+        // is live across the wait and must be frame-resident. An ordinary
+        // await consumes its arguments INTO the callee's frame before
+        // suspending, so those uses are genuinely before the point. The
+        // difference is which side of `susp_add` the operand is walked on,
+        // and getting it wrong left the handle in an alloca that the resume
+        // path found full of garbage — a stale-handle error with no stale
+        // handle in sight.
+        ExprId:awop2 = raw expr_operand(n);
+        ExprNode:awn2 = raw ast_expr(x.ast, awop2);
+        bool:chan_await = false;
+        if (awn2.kind == ExprKind.ExprMethodCallExpr) {
+            int32:awrt2 = raw exprtypes_get(x.ets, raw expr_operand(awn2));
+            if (awrt2 != 0i32) {
+                if ((raw type_kind(x.types, awrt2)) == (raw TY_CHANNEL())) {
+                    chan_await = true;
+                }
+            }
+        }
+        if (chan_await) {
+            int64:cat = raw pos_of(n.span);
+            if (x.cursor >= cat) { cat = x.cursor + 1i64; }
+            drop susp_add(x, cat);
+            drop suspend_expr(x, awop2, fuel - 1i32);
+            pass NIL;
+        }
+        drop suspend_expr(x, awop2, fuel - 1i32);
         int64:sat = raw pos_end(n.span);
         if (x.cursor >= sat) { sat = x.cursor + 1i64; }
         drop susp_add(x, sat);

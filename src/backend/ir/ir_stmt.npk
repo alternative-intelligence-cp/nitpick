@@ -129,6 +129,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // Each statement opens a fresh temp mark (D-177): `emit_await` refuses to
     // suspend past an SSA value this statement already minted.
     drop irw_stmt_mark(x.fe.w);
+    x.fe.cur_stmt = sid.index;
 
     if (s.kind == StmtKind.StmtBlockStmt)   { pass (raw emit_block(x, sid)); }
     if (s.kind == StmtKind.StmtVarDeclStmt) { pass (raw emit_vardecl(x, s, sid)); }
@@ -1622,6 +1623,75 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
     pass (raw fnem_local(x.fe, name, bind_tid, ll));
 };
 
+// A CHANNEL AWAIT'S LOOP STATE (D-182), reserved on the enclosing
+// STATEMENT because D-178 guarantees at most one suspension per statement.
+// The handle word, the absolute deadline, the value in flight and the
+// outcome all outlive the suspension the retry loop makes, so they live in
+// the frame — an SSA value computed before the loop does not dominate the
+// resume switch's re-entry, which is the verifier error this reserves
+// against.
+//   20 handle word | 21 deadline | 22 value | 23 outcome
+func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
+                              int32:fuel) never fails {
+    if (raw expr_is_none(eid)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, eid);
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        ExprId:op = raw expr_operand(n);
+        ExprNode:opn = raw ast_expr(x.ast, op);
+        if (opn.kind == ExprKind.ExprMethodCallExpr) {
+            int32:rt = raw exprtypes_get(x.et, raw expr_operand(opn));
+            if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_CHANNEL())) {
+                int32:el = raw type_elem(x.fe.ctx.types, rt);
+                LlType:ell = raw ll_type(x.fe.ctx, el);
+                if (raw ll_is_ok(ell)) {
+                    drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
+                    drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                    drop fnem_cross_add(x.fe, sid.index, 22i32, el, ell.text);
+                    drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+                }
+            }
+        }
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        int32:i = 0i32;
+        while (i < (raw expr_list_count(n))) {
+            drop scan_channel_await(x, sid, ExprId{ index: raw ast_id_at(x.ast,
+                     raw expr_list_start(n), i) }, fuel - 1i32);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        int32:j = 0i32;
+        while (j < (raw expr_list_count(n))) {
+            drop scan_channel_await(x, sid, ExprId{ index: raw ast_id_at(x.ast,
+                     raw expr_list_start(n), j) }, fuel - 1i32);
+            j = j + 1i32;
+        }
+        drop scan_channel_await(x, sid, raw expr_lhs(n), fuel - 1i32);
+        pass NIL;
+    }
+    drop scan_channel_await(x, sid, raw expr_lhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        int32:k = 0i32;
+        while (k < (raw expr_list_count(n))) {
+            drop scan_channel_await(x, sid, ExprId{ index: raw ast_id_at(x.ast,
+                     raw expr_list_start(n), k) }, fuel - 1i32);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    drop scan_channel_await(x, sid, raw expr_rhs(n), fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop scan_channel_await(x, sid, raw expr_third(n), fuel - 1i32);
+    pass NIL;
+};
+
 // A counted loop's frame slots (stage D2): counter, limit, step, direction.
 func:scan_counted_slots = NIL(ExprEmitter->:x, StmtId:sid) never fails {
     drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i64");
@@ -1797,6 +1867,37 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
     if (fuel <= 0i32) { pass (raw iv_nil()); }
     StmtNode:s = raw ast_stmt(x.ast, sid);
 
+    // Every statement is asked whether it carries a channel await — but ONLY
+    // through the accessor its own kind has. A blanket `stmt_expr` on a block
+    // reads a statement-window start as an expression index, and the walk
+    // trapped on the first program that reached it: an accessor is a promise
+    // about a layout, and calling one on the wrong kind is reading a
+    // different node's slot.
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop scan_channel_await(x, sid, raw stmt_decl_init(x.ast, s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop scan_channel_await(x, sid, raw stmt_target(s), 128i32);
+        drop scan_channel_await(x, sid, raw stmt_assigned(s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop scan_channel_await(x, sid, raw stmt_cond(s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop scan_channel_await(x, sid, raw stmt_cond(s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop scan_channel_await(x, sid, raw stmt_cond(s), 128i32);
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        drop scan_channel_await(x, sid, raw stmt_expr(s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtPassStmt) {
+        drop scan_channel_await(x, sid, raw stmt_operand(s), 128i32);
+    }
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        drop scan_channel_await(x, sid, raw stmt_operand(s), 128i32);
+    }
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         if (raw exprtypes_crossing(x.et, sid.index)) {
             int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);

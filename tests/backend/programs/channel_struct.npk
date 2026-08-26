@@ -1,0 +1,45 @@
+// expect-exit: 42
+//
+// A POINTER-FREE STRUCT RIDES A CHANNEL (D-072 §6.3), which is
+// CONCURRENCY_REFERENCE's own example — `Channel<Sample, 3i32, 64i64>`. The
+// companion refusal (tests/rejection/channel_owning_elem) turns away an element
+// that OWNS heap storage, and this is the other side of that line: a struct
+// whose fields are all scalars transfers by copying its bytes, with no second
+// owner of anything, so it crosses exactly as an `int32` does.
+//
+// The line is layout's own `haspt` answer — "can this struct hold an address" —
+// which is the same question asked of the same table the escape analysis asks
+// it of, rather than a second opinion invented for channels.
+mod:channel_struct;
+error:Sent;
+struct:Sample = { int32:id; int32:value; bool:ok; };
+async func:main = int32(cstring[]:_~argv) {
+    Channel<Sample, 3i32, 4i64>:ch = channel() ?! Unreachable;
+    await ch.send(Sample{ id: 1i32, value: 40i32, ok: true },
+                  raw duration_ms(50i64)) ?! Sent;
+    await ch.send(Sample{ id: 2i32, value: 2i32, ok: false },
+                  raw duration_ms(50i64)) ?! Sent;
+    Result<Sample>:a = await ch.recv(raw duration_ms(50i64));
+    if (a.is_error)          { exit 11i32; }
+    Result<Sample>:b = await ch.recv(raw duration_ms(50i64));
+    if (b.is_error)          { exit 12i32; }
+    if (a.value.id != 1i32)  { exit 13i32; }
+    if (b.value.id != 2i32)  { exit 14i32; }
+    if (!a.value.ok)         { exit 15i32; }
+    if (b.value.ok)          { exit 16i32; }
+    exit a.value.value + b.value.value;      // 40 + 2 = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

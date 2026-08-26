@@ -547,6 +547,22 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 "`shared_arena_make` needs a `shared_arena<T>` annotation to read its element type from",
                 n.span));
         }
+        // `channel()` READS ITS TYPE FROM THE ANNOTATION (D-182), exactly as
+        // `arena_make` reads its element: the element, the lock level and
+        // the capacity all live in the type (D-072), so the call takes no
+        // arguments and has nothing to infer from but context.
+        if (raw callee_is_builtin_named(e, n, "channel")) {
+            drop type_args_only(e, start, count);
+            int32:cwant = raw expected_value(e);
+            if (cwant != 0i32) {
+                if ((raw type_kind(e.types, cwant)) == (raw TY_CHANNEL())) {
+                    pass (raw tt_result(e.types, cwant, 8i64, 8i32));
+                }
+            }
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                "`channel()` needs a `Channel<T, LEVEL, CAP>` annotation to read its element, level and capacity from — they live in the type (D-072), which is what makes each instantiation one behaviour with no runtime branch",
+                n.span));
+        }
         if (raw callee_is_builtin_named(e, n, "arena_make")) {
             drop type_args_only(e, start, count);
             int32:want = raw expected_value(e);
@@ -1019,6 +1035,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_ATOMIC())) {
         pass (raw type_atomic_method(e, n, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
+        pass (raw type_channel_method(e, n, recv, name, start, count));
     }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
@@ -1668,6 +1687,78 @@ func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) neve
 // Every read-modify-write yields the PREVIOUS value, `compare_exchange`
 // included — for a strong CAS `previous == expected` IS success, so one
 // shape serves the whole family and no second return convention is needed.
+// A CHANNEL'S THREE OPERATIONS (D-072/D-182):
+//
+//   await ch.send(move(v), within)  -> Result<NIL>
+//   await ch.recv(within)           -> Result<T>
+//   ch.close()                      -> Result<NIL>
+//
+// `send` and `recv` are `async` — under D-071 a full or empty channel
+// suspends the TASK rather than parking the thread, which is what stops one
+// waiting task from stalling its siblings. Both take a MANDATORY deadline
+// (D-056): there is no unbounded wait in this language, and a zero span
+// expresses "do not wait" exactly, in the same call, with the same result
+// type — which is why `try_send`/`try_recv` do not exist.
+func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                                 int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:elem = raw type_elem(e.types, recv);
+
+    if (raw string_eq(m, "close")) {
+        if (count != 0i32) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`close` takes no arguments (D-072)", n.span));
+        }
+        pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+    }
+    bool:is_send = raw string_eq(m, "send");
+    bool:is_recv = raw string_eq(m, "recv");
+    if ((!is_send) && (!is_recv)) {
+        string:c1 = raw string_concat("a channel has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "`: the set is `send`, `recv` and `close` (D-072) — `try_send`/`try_recv` do not exist because a zero deadline says \"do not wait\" in the same call"),
+            n.span));
+    }
+    int32:want_args = 1i32;
+    if (is_send) { want_args = 2i32; }
+    if (count != want_args) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`send` takes the value and a deadline; `recv` takes a deadline — the deadline is mandatory (D-056), and a zero span is how \"do not wait\" is written",
+            n.span));
+    }
+    if (is_send) {
+        int32:saved = e.expected;
+        e.expected = elem;
+        int32:vt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        e.expected = saved;
+        if (vt != 0i32) {
+            if (!(raw type_is_invalid(e.types, vt))) {
+                if (!(raw fits(e, elem, vt))) {
+                    drop te_assign_mismatch(e, elem, vt, n.span);
+                }
+            }
+        }
+    }
+    // the deadline: a `Duration`, the one span type (D-176)
+    int32:dsaved = e.expected;
+    e.expected = 0i32;
+    int32:dt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start,
+                   want_args - 1i32) });
+    e.expected = dsaved;
+    if (dt != 0i32) {
+        if (!(raw type_is_invalid(e.types, dt))) {
+            if (!(raw string_eq(raw type_display(e.types, e.interns, dt), "Duration"))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "a channel deadline is a `Duration` (D-176): a relative span the executor converts once, at suspension entry",
+                    n.span));
+            }
+        }
+    }
+    if (is_send) { pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32)); }
+    pass (raw tt_result(e.types, elem, raw type_size(e.types, elem),
+                        raw type_align(e.types, elem)));
+};
+
 func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                                 int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);

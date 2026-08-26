@@ -360,6 +360,13 @@ Channel<T, LEVEL, CAP>
 | `LEVEL` | D-056 lock level — a channel blocks, so it is a blocking primitive |
 | `CAP` | `comptime int64` capacity. `0` is a rendezvous channel; `> 0` is buffered. |
 
+**`CAP == 0` does not lower yet** *(1.1.10-B)*: it refuses with
+`NITPICK-RUNG-001` naming stage C. A rendezvous is not a one-slot buffer — its
+sender waits for a RECEIVER, and that hand-off is the synchronisation being
+asked for, so it needs the waiter registration stage C builds. Lowering it onto
+the buffered path meanwhile would give a send that returns the moment it
+deposits: the same source, quietly not synchronising.
+
 Capacity lives in the **type**, so each instantiation monomorphizes to one
 behaviour with no runtime branch (D-064). The prototype dispatched on an `int32`
 `mode` field at every operation, and its rendezvous path stored the payload in the
@@ -373,8 +380,15 @@ There is no `oneshot` mode. It is a capacity-1 channel the sender closes.
 await ch.send(move(v), deadline)   -> Result<NIL>
 await ch.recv(deadline)            -> Result<T>
 ch.close()                         -> Result<NIL>
-ch.len()                           -> Result<int64>
 ```
+
+**`len()` was struck** *(1.1.10-B)*. This sheet listed a fourth operation that
+D-072 — the decision this section records — never settled; the implemented set
+is the decided three. It is not a gap to fill later: a concurrent channel's
+length is stale before the caller can read it, so `len()` is a hint that reads
+like a fact, and every use that matters is a decision made on it a moment too
+late. What the honest version of that question looks like is a `send` or `recv`
+with a zero deadline, which asks and acts atomically.
 
 - **`recv` returns `Result<T>`.** A closed channel is an **error code, never a
   value**. The prototype returned `0i64` for a bad handle, a closed channel, *and*
@@ -422,6 +436,17 @@ by a different mechanism. They were specified as borrows, which made them
 unable to cross a spawn (D-004/D-180) and so unusable for the thing channels
 are for; as handles they may cross freely, and a stale one is
 `StaleHandle` (−4106) rather than a dangling read.
+
+A closed channel is **not** a reclaimed one, and the two must never be
+confused: `close` ends the stream, leaving the slot, the buffer and everything
+still in it exactly where they were so a receiver can drain them; reclamation
+is what moves the generation and makes a surviving endpoint stale. An
+implementation that bumped the generation on `close` reported `StaleHandle` —
+"your handle is dangling" — for an orderly end of stream. **The reclaiming half
+is not built** (D-182, and **B-6** in `meta/roadmap/OPEN_DECISIONS.md`): it is
+the managed regime's RAII, which the backend does not have for any type yet, so
+today a channel outlives its creating scope and `StaleHandle` cannot be
+provoked from source.
 
 There is therefore **no `destroy` and no endpoint reference counting**. It also
 closes a teardown race: the prototype's `destroy` freed the mutex and both

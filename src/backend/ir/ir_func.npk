@@ -153,6 +153,11 @@ pub struct:FnEmitter = {
     int32:seg_count;
     int32:seg_cap;
     int32:guard_depth;             // inside a `pick` arm's `where` guard (D3 rung)
+    // The statement being emitted (D-182): a channel `await` is a suspension
+    // inside an EXPRESSION, and its loop state must be frame-resident like
+    // any crossing local. D-178 guarantees at most one suspension per
+    // statement, so the statement's index is a sufficient key.
+    int32:cur_stmt;
     int32:fn_site;                 // the join's chain-stamp site (D-179, 1.1.6)
 
     // CROSSING LOCALS (stage D): the pre-scan registers each var-decl the
@@ -211,6 +216,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         awaitee_gep: "",
         seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         seg_count: 0i32, seg_cap: 8i32, guard_depth: 0i32, fn_site: 0i32,
+        cur_stmt: 0i32,
         cross_stmts: (alloc(8i64 * 4i64)) =>! wild int32->,
         cross_roles: (alloc(8i64 * 4i64)) =>! wild int32->,
         cross_types: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -270,6 +276,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.seg_count = 0i32;
     fe.guard_depth = 0i32;
     fe.fn_site = 0i32;
+    fe.cur_stmt = 0i32;
     fe.cross_count = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.

@@ -1,0 +1,56 @@
+// expect-exit: 42
+//
+// THE DEADLINE IS THE POINT (D-182, 1.1.10-B). A channel operation that cannot
+// proceed does not wait forever and does not fail immediately: it waits until
+// the deadline the caller named, and then reports `DeadlineExceeded` as a
+// value the caller has to handle. Both directions block, and both are bounded
+// — an empty channel bounds the receiver, a full one bounds the sender.
+//
+// The bound must be REAL in both directions. An early version's executor
+// waited on its own next timer rather than the caller's deadline, so a wait
+// that was supposed to last 120ms lasted as long as the work did: containment
+// silently became patience. Timing it is what catches that.
+mod:channel_deadline;
+error:Sent;
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 1i64>:ch = channel() ?! Unreachable;
+
+    // EMPTY: the receiver is the one that waits.
+    int64:t0 = raw mono_now();
+    Result<int32>:r = await ch.recv(raw duration_ms(40i64));
+    int64:t1 = raw mono_now();
+    if (!r.is_error)                     { exit 11i32; }
+    if (r.err != DeadlineExceeded)       { exit 12i32; }
+    if ((t1 - t0) < 35000000i64)         { exit 13i32; }   // it really waited
+    if ((t1 - t0) > 2000000000i64)       { exit 14i32; }   // and really stopped
+
+    // FULL: the sender is the one that waits. Capacity is 1, and nothing
+    // is receiving.
+    await ch.send(42i32, raw duration_ms(50i64)) ?! Sent;
+    int64:t2 = raw mono_now();
+    Result<NIL>:s = await ch.send(7i32, raw duration_ms(40i64));
+    int64:t3 = raw mono_now();
+    if (!s.is_error)                     { exit 21i32; }
+    if (s.err != DeadlineExceeded)       { exit 22i32; }
+    if ((t3 - t2) < 35000000i64)         { exit 23i32; }
+    if ((t3 - t2) > 2000000000i64)       { exit 24i32; }
+
+    // The value that DID fit is still there, and the refused one is not.
+    Result<int32>:g = await ch.recv(raw duration_ms(50i64));
+    if (g.is_error)                      { exit 31i32; }
+    exit g.value;                                          // 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

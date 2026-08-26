@@ -437,7 +437,20 @@ class Parser:
             # is builtin, so this always parses.
             self.next()
             while not self.at(">"):
-                generic_args.append(self.parse_type())
+                # A GENERIC ARGUMENT MAY BE A VALUE, not only a type:
+                # `Channel<T, LEVEL, CAP>` (D-072) and `Mutex<Config, 2>` put
+                # constants in the list. The seed does not USE them -- every
+                # generic instantiation but `Result` becomes RUNG-001 in the
+                # checker -- but it must PARSE them, because the parser never
+                # restricts (D-085) and a rung test has to reach the backend
+                # to be refused there. Parsing one as a type made
+                # `Channel<int32, 3i32, 2i64>` a parse error, which is the
+                # seed disagreeing with stage 1 about the grammar.
+                if self.at_kind(INT):
+                    n = self.next()
+                    generic_args.append(S.IntLit(n.value, n.width)._at(n))
+                else:
+                    generic_args.append(self.parse_type())
                 if not self.accept(","):
                     break
             self.expect(">")

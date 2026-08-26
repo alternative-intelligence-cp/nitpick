@@ -2432,6 +2432,26 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         }
         ExprId:awop = raw expr_operand(n);
         ExprNode:awn = raw ast_expr(e.ast, awop);
+        // A CHANNEL `send`/`recv` IS AN INTRINSIC SUSPENSION (D-072/D-182):
+        // it waits, so it is awaited, and it is not a call to an `async`
+        // function because no frame is composed — the executor's own step is
+        // what resumes it.
+        bool:aw_chan = false;
+        if (awn.kind == ExprKind.ExprMethodCallExpr) {
+            // TYPED HERE, not read from the table: the receiver has not been
+            // typed yet the first time an `await` asks, and a check that
+            // depends on whether some earlier expression happened to record
+            // it is a check that answers differently in the same program.
+            int32:awrt = raw type_of_expr(e, raw expr_operand(awn));
+            if (awrt != 0i32) {
+                if ((raw type_kind(e.types, awrt)) == (raw TY_CHANNEL())) {
+                    string:awm = raw intern_get(e.interns, awn.payload =>! int32);
+                    if (raw string_eq(awm, "send")) { aw_chan = true; }
+                    if (raw string_eq(awm, "recv")) { aw_chan = true; }
+                }
+            }
+        }
+        if (aw_chan) { pass (raw type_of_expr(e, awop)); }
         if (!(raw unwrap_callee_is_async(e, awn, awop))) {
             discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
                 "`await` takes a call to an `async` function (D-177): a synchronous call completes without suspending and is not awaited",

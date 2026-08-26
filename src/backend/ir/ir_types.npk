@@ -376,6 +376,45 @@ pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
 
 // --- the lowering -----------------------------------------------------------------
 
+
+// WHAT MAY RIDE A CHANNEL AT THIS RUNG (D-072 §6.3, D-065). A channel hands its
+// element to ANOTHER TASK, and D-065 is explicit that nothing moves by being
+// passed — ownership transfers only where `move` is written. So an element that
+// owns heap storage would arrive at the far side as a SECOND owner of the same
+// body: `ch.send(s, dl)` on a `string` copies a pointer, and both sides then
+// believe they hold it. Which of them frees it is the managed lowering's
+// question (B-6), and it has no answer yet.
+//
+// So the rung transfers what it can transfer by copying the bytes: scalars, the
+// index-shaped handles, pointer-free structs, and arrays of those. Everything
+// else refuses by name. `tt_haspt` is layout's own answer to "can this struct
+// hold an address" and is exactly the question here; 0 means layout never
+// computed it, which is refused with the rest — an unasked question is not a
+// no.
+func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    int32:k = raw type_kind(c.types, elem);
+    if (k == (raw TY_BOOL()))    { pass true; }
+    if (k == (raw TY_INT()))     { pass true; }
+    if (k == (raw TY_CHAR()))    { pass true; }
+    if (k == (raw TY_FLOAT()))   { pass true; }
+    if (k == (raw TY_TBB()))     { pass true; }
+    if (k == (raw TY_KERNEL()))  { pass true; }
+    if (k == (raw TY_ERROR()))   { pass true; }
+    if (k == (raw TY_ENUM()))    { pass true; }
+    if (k == (raw TY_NIL()))     { pass true; }
+    // An index and a generation, both ways: a `Handle<T>` into an arena the
+    // runtime owns, and a channel endpoint — the shapes that exist BECAUSE
+    // they cross a task boundary without carrying an address.
+    if (k == (raw TY_HANDLE()))  { pass true; }
+    if (k == (raw TY_CHANNEL())) { pass true; }
+    if (k == (raw TY_ARRAY()))   {
+        pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT()))  { pass ((raw tt_haspt(c.types, elem)) == 1i32); }
+    pass false;
+};
+
 pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     int32:k = raw type_kind(c.types, id);
 
@@ -404,7 +443,23 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_ATOMIC()))   { pass (raw ll_type(c, raw type_elem(c.types, id))); }
     // D-182: a channel ENDPOINT is a handle — an index and a generation —
     // not a pointer, which is what lets it cross a spawn.
-    if (k == (raw TY_CHANNEL()))  { pass (raw ll_ok("{ i32, i32 }")); }
+    if (k == (raw TY_CHANNEL()))  {
+        // A RENDEZVOUS CHANNEL IS NOT A ONE-SLOT BUFFER, and this rung can only
+        // build the buffer. In a rendezvous the sender waits for a RECEIVER to
+        // be present — the hand-off is the synchronisation, and that is the
+        // point of asking for one. What the buffered path would give instead is
+        // a send that returns the moment it deposits, with no receiver in sight:
+        // the same code, quietly not synchronising. Refused by name until stage
+        // C registers waiters, because a channel that silently is not the
+        // channel you asked for is worse than one that will not compile.
+        if ((raw type_chan_cap(c.types, id)) == 0i32) {
+            pass (raw ll_rung("1.1 stage C — a rendezvous channel (CAP 0), whose sender waits for a receiver rather than for buffer space; a buffered channel (CAP 1 or more) lowers today"));
+        }
+        if (!(raw chan_elem_ok(c, raw type_elem(c.types, id), 8i32))) {
+            pass (raw ll_rung("a later cycle (B-6) — this element OWNS heap storage, and a channel hands its element to another task; D-065 moves ownership only where `move` is written, so the far side would become a second owner of the same body, and which side frees it is the managed lowering's question. Scalars, `Handle<T>`, channel endpoints, pointer-free structs and arrays of those transfer by copying their bytes and ride today"));
+        }
+        pass (raw ll_ok("{ i32, i32 }"));
+    }
 
     if (k == (raw TY_STRING()))   { pass (raw ll_ok("{ ptr, i64, i64 }")); }
 
