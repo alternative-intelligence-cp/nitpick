@@ -1017,6 +1017,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_SHARED_ARENA())) {
         pass (raw type_sarena_method(e, n, recv, name, start, count));
     }
+    if ((raw type_kind(e.types, recv)) == (raw TY_ATOMIC())) {
+        pass (raw type_atomic_method(e, n, recv, name, start, count));
+    }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
     // asked first, and until 0.4.6 it was not asked at all: an `impl` declares
@@ -1641,6 +1644,81 @@ func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) neve
 // reset  ()                -> NIL            invalidates every handle
 // destroy()                -> NIL            consumes the arena (a move,
 //                                            enforced by the binding analysis)
+// `atomic<T>`'s OPERATION SET — EXACTLY SIX, ALL SEQUENTIALLY CONSISTENT
+// (D-016, CONCURRENCY_REFERENCE 4.2/4.3; D-182 as corrected).
+//
+//   load()                       -> T
+//   store(v)                     -> NIL
+//   swap(v)                      -> T      the previous value
+//   fetch_add(n) / fetch_sub(n)  -> T      the previous value (integers)
+//   compare_exchange(exp, new)   -> T      the previous value
+//
+// NO ORDERING ARGUMENT. The study proposed one and was wrong: D-016 settled
+// that every high-level atomic method is SeqCst, and the reasoning is this
+// project's own — a misused weak ordering does not fail loudly or
+// reproducibly, it produces intermittent corruption that surfaces on a
+// different CPU, under load, months later, having passed every test written
+// for it. That is the numerical-drift failure class, which the safety case
+// cannot tolerate. It also keeps data-race freedom provable, which relaxed
+// orderings make combinatorial. The five ordering keywords stay reserved for
+// low-level intrinsics that do not exist yet.
+//
+// Every one is `never fails` (D-163): an atomic operation on valid storage
+// cannot fail, and a `Result` here would make an increment a decision point.
+// Every read-modify-write yields the PREVIOUS value, `compare_exchange`
+// included — for a strong CAS `previous == expected` IS success, so one
+// shape serves the whole family and no second return convention is needed.
+func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                                int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:elem = raw type_elem(e.types, recv);
+    drop require_place_operand(e, raw expr_operand(n), "an atomic operation");
+
+    int32:want_args = 0i32;
+    bool:known = false;
+    if (raw string_eq(m, "load"))             { known = true; }
+    if (raw string_eq(m, "store"))            { known = true; want_args = 1i32; }
+    if (raw string_eq(m, "swap"))             { known = true; want_args = 1i32; }
+    if (raw string_eq(m, "fetch_add"))        { known = true; want_args = 1i32; }
+    if (raw string_eq(m, "fetch_sub"))        { known = true; want_args = 1i32; }
+    if (raw string_eq(m, "compare_exchange")) { known = true; want_args = 2i32; }
+    if (!known) {
+        string:u1 = raw string_concat("`atomic<T>` has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(u1, "`: the set is exactly `load`, `store`, `swap`, `fetch_add`, `fetch_sub` and `compare_exchange`, all sequentially consistent (D-016) — a suffixed weak ordering is refused rather than offered"),
+            n.span));
+    }
+    if (count != want_args) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "an atomic operation takes only its values — the ordering is not a parameter, because every high-level atomic method is SeqCst (D-016)",
+            n.span));
+    }
+    int32:vi = 0i32;
+    while (vi < count) {
+        int32:saved = e.expected;
+        e.expected = elem;
+        int32:at = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, vi) });
+        e.expected = saved;
+        if (at != 0i32) {
+            if (!(raw type_is_invalid(e.types, at))) {
+                if (at != elem) {
+                    drop te_assign_mismatch(e, elem, at, n.span);
+                }
+            }
+        }
+        vi = vi + 1i32;
+    }
+    if ((raw string_eq(m, "fetch_add")) || (raw string_eq(m, "fetch_sub"))) {
+        if ((raw type_kind(e.types, elem)) != (raw TY_INT())) {
+            pass (raw te_error(e, raw TYPE_NOT_NUMERIC(),
+                "`fetch_add`/`fetch_sub` are arithmetic, so the element is an integer (D-182)",
+                n.span));
+        }
+    }
+    if (raw string_eq(m, "store")) { pass e.types.t_nil; }
+    pass elem;
+};
+
 func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                                int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);

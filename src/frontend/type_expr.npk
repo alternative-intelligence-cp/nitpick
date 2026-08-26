@@ -1503,6 +1503,15 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
     if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
     }
+    // `atomic<T>` TAKES A `T` — ONE DIRECTION ONLY (D-182). Initialising the
+    // storage is writing it before anything can share it, which needs no
+    // atomicity and is the form the spec documents
+    // (`atomic<int32>:counter = 0i32;`). The reverse is NOT admitted: reading
+    // one is `load()`, always, because a plain read of shared storage is
+    // exactly what the type exists to make unwritable by accident.
+    if ((raw type_kind(e.types, want)) == (raw TY_ATOMIC())) {
+        if ((raw type_elem(e.types, want)) == got) { pass true; }
+    }
     // A `dyn` SLOT TAKES ANY TYPE THAT IMPLEMENTS ITS TRAITS (5.2), and another
     // `dyn` that carries at least them (5.3). This is not a coercion in the sense
     // the paragraph above rules out — nothing about the value changes, it is a

@@ -1,0 +1,49 @@
+// expect-error: NITPICK-TYPE-001
+// expect-error: NITPICK-TYPE-001
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+//
+// D-182's atomic rules. The permitted set is the integer widths up to 64,
+// `bool`, a pointer or a kernel identifier: a float's read-modify-write is a
+// CAS loop the author should write visibly, an aggregate is a lock-free
+// promise this is not, and a `tbb`'s sticky ERR (D-008) has no
+// read-modify-write meaning at all. The operation set is exactly six and
+// takes no ordering — a suffixed weak ordering is refused rather than
+// offered (D-016) — and reading an atomic is `load()`, never a plain read.
+mod:atomic_rules;
+
+struct:Pair = { int32:a; int32:b; };
+
+func:bad_float = int32() never fails {
+    atomic<flt64>:f = 0.0f64;
+    discard(f.load());
+    pass 0i32;
+};
+
+func:bad_aggregate = int32() never fails {
+    atomic<Pair>:p = Pair{ a: 1i32, b: 2i32 };
+    discard(p.load());
+    pass 0i32;
+};
+
+func:bad_op = int32() never fails {
+    atomic<int32>:c = 0i32;
+    discard(c.load_acquire());
+    pass 0i32;
+};
+
+func:bad_arity = int32() never fails {
+    atomic<int32>:c = 0i32;
+    discard(c.fetch_add(1i32, 2i32));
+    pass 0i32;
+};
+
+func:bad_plain_read = int32() never fails {
+    atomic<int32>:c = 0i32;
+    int32:v = c;
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

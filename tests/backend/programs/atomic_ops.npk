@@ -1,0 +1,43 @@
+// expect-exit: 42
+//
+// `atomic<T>` (D-182, 1.1.10-A). The type IS its element's storage — same
+// bytes, same alignment, so an `atomic<int32>` field costs what an `int32`
+// field costs and initialising it from a plain value is legal (writing
+// storage nothing can share yet). Reading it is NOT: `load()` always, because
+// a plain read of shared storage is what the type exists to make unwritable
+// by accident.
+//
+// EXACTLY SIX OPERATIONS AND NO ORDERING ARGUMENT (D-016). The design study
+// proposed explicit orderings and was wrong: a misused weak ordering does
+// not fail loudly or reproducibly — it is intermittent corruption on another
+// CPU months later, having passed every test written for it. Every method is
+// SeqCst, and the five ordering keywords stay reserved for intrinsics that
+// do not exist.
+//
+// Every read-modify-write yields the PREVIOUS value, `compare_exchange`
+// included: for a strong CAS `previous == expected` is success, so one shape
+// serves the family and a CAS loop never re-reads to find out what it saw.
+mod:atomic_ops;
+async func:main = int32(cstring[]:_~argv) {
+    atomic<int32>:c = 0i32;
+    c.store(5i32);
+    int32:a = c.load();                       // 5
+    int32:b = c.fetch_add(3i32);              // 5, leaves 8
+    int32:d = c.swap(20i32);                  // 8
+    int32:seen = c.compare_exchange(20i32, 42i32);
+    if (seen != 20i32) { exit 11i32; }        // it swapped
+    int32:no = c.compare_exchange(1i32, 99i32);
+    if (no != 42i32) { exit 12i32; }          // it did not
+    exit (a + b + d) + (c.load() - 18i32);    // 5+5+8 + (42-18) = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

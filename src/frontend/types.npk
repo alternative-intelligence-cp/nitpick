@@ -111,6 +111,7 @@ pub func:TY_SHARED_ARENA = int32() never fails { pass 28i32; };  // a = element 
 // carrying one has escaped its substitution.
 pub func:TY_ASSOC = int32() never fails { pass 29i32; };  // a = trait decl, b = name
 pub func:TY_ERROR = int32() never fails { pass 30i32; };  // D-179: a nominal non-number over 4 bytes
+pub func:TY_ATOMIC = int32() never fails { pass 31i32; };  // D-182: a = element; storage-only, no allocating ctor (D-033)
 
 pub struct:Type = {
     int32:kind;
@@ -395,6 +396,16 @@ pub func:tt_arena = int32(TypeTable->:t, int32:elem) never fails {
 // contract, so the value is the reference. Chunked storage never moves;
 // slots are written once at `alloc(v)` and immutable after, which is what
 // makes concurrent `get` race-free with no per-slot synchronization.
+// `atomic<T>` IS ITS ELEMENT'S STORAGE, not a box around it: same size, same
+// alignment, so an `atomic<int32>` field costs exactly what an `int32` field
+// costs and `atomic_from_ptr` can alias existing memory (D-033/D-182). What
+// differs is the OPERATIONS — every access names an ordering, and there is
+// no plain read.
+pub func:tt_atomic = int32(TypeTable->:t, int32:elem, int64:size,
+                           int32:align) never fails {
+    pass (raw tt_intern(t, raw TY_ATOMIC(), elem, 0i32, 0i32, size, align, 0i32));
+};
+
 pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) never fails {
     int32:id = raw tt_intern(t, raw TY_SHARED_ARENA(), elem, 0i32, 0i32, 8i64, 8i32, 0i32);
     drop tt_set_haspt(t, id, true);

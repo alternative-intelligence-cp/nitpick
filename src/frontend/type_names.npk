@@ -119,6 +119,11 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_CSTRING())) { pass "cstring"; }
     if (k == (raw TY_NIL()))     { pass "NIL"; }
     if (k == (raw TY_ERROR()))   { pass "Error"; }
+    if (k == (raw TY_ATOMIC())) {
+        string:a1 = raw string_concat("atomic<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(a1, ">"));
+    }
     if (k == (raw TY_ANY()))     { pass "any"; }
     if (k == (raw TY_CHAR())) {
         pass (raw string_concat("char",

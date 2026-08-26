@@ -5040,7 +5040,11 @@ producers sending to **one** channel — which needs one lock, not N.
 ### Endpoints and lifetime
 
 A channel's storage belongs to the scope that created it, and endpoints are
-second-class borrows of it. They cannot outlive that scope, which is the same rule
+~~second-class borrows of it~~ **— amended by D-182: an endpoint is an opaque
+generation-checked HANDLE, not a borrow. As borrows they could not cross a
+spawn (D-004/D-180), which made channels unusable for the thing channels are
+for; as handles they may travel freely while the scope still owns the
+channel's life.** They cannot outlive that scope, which is the same rule
 tasks (D-062) and borrows (D-004) already follow.
 
 This is what closes the teardown race in audit §5, where `destroy` freed the mutex
@@ -12307,3 +12311,144 @@ trapping thread as a plain call, `exit_group`.
   channels: the park word is written by one thread and read by another.
   Relaxed load/store plus one compare-exchange; the full permitted-`T`
   question stays with C-9's channel half.
+
+## D-182 — Channels: endpoints are handles, `channel()` constructs, `Work` replaces the job, and `atomic<T>`'s set — **SETTLED**
+
+C-9's channel half, ratified from `meta/roadmap/1.1/C9_CHANNEL_STUDY.md`, and
+with it the last of cycle 1.1's decision load. D-072's surface —
+`Channel<T, LEVEL, CAP>`, `send`/`recv`/`close`, mandatory deadlines, no
+`select`, no `try_*` — is untouched. This settles what D-072 left as prose.
+
+### 1. An endpoint is a HANDLE, not a borrow
+
+**This corrects two sentences already in the spec set**, and the correction
+is the decision's centre. D-072 §Endpoints says endpoints are "second-class
+borrows"; `CONCURRENCY_REFERENCE.md` §7 says a reply endpoint cannot travel
+in a message "because an endpoint is a second-class borrow and borrows may
+not cross a thread spawn". Both are true together, and together they make
+channels **unusable for what channels are**: `drop producer(ch)` is a spawn,
+and D-180 kept the spawn ban on reasoning that stands — two tasks holding
+borrows of one storage is a mutation the holder cannot see.
+
+The rule was the error, not the ban. **An endpoint is an opaque, copyable
+value — an index and a generation — naming a channel whose storage the
+runtime owns**, exactly the shape `Handle<T>` (D-152) and the kernel
+identifiers (D-042) already have.
+
+| Property | Consequence |
+|---|---|
+| not an address | the aliasing hazard does not exist; an endpoint may cross a spawn, ride in a message, or be sent through another channel |
+| generation-checked | a stale endpoint is `StaleHandle` (−4106) — a catchable error, never a dangling read |
+| not reference-counted | D-072's rule survives intact; nothing is freed by an endpoint going out of scope |
+| lexically bounded | the CREATING scope still owns the channel's life; scope exit closes and reclaims, and D-062 has already joined every task that could hold one |
+| copyable | which is what makes D-072's own fan-in answer — several producers, one channel — expressible at all |
+
+`CONCURRENCY_REFERENCE.md` §6.4 and §7 are amended: `ask` remains as
+convenience, no longer as a workaround for a rule that no longer bites.
+
+### 2. `channel()` constructs, typed from context
+
+```nitpick
+Channel<Sample, 3i32, 64i64>:ch = channel()?;
+```
+
+A bare-name builtin reading its type from the annotation, exactly as
+`arena_make()` does (D-152). It takes NO arguments — capacity and level live
+in the type, which is what D-072 put them there for — and returns a
+`Result`, because creation allocates and allocation can fail.
+
+Rejected: `Channel.create(…)` (no other builtin generic carries a static
+method) and a bespoke declaration form (a binding shape for one type is
+meaning-by-context).
+
+### 3. A job is a `Work` value; pools are generic over it
+
+```nitpick
+trait:Work = { func:run = NIL(Self:self); };      // async, per §5
+ThreadPool<J, LEVEL, CAP>                          // J: Work
+```
+
+Closures are gone (D-018), so a job cannot be a captured environment — and
+D-073's complaint about the prototype's `submit(int64, ?->, int64)` was
+exactly that it erased the job type and zeroed the environment. A generic
+parameter keeps the type, the captured environment becomes explicit struct
+fields, and monomorphization makes the frame size known, which is what lets
+a worker `await job.run()` at all. A pool is then D-073's own sentence: N
+worker tasks receiving from one channel — no new primitive, no new runtime.
+
+### 4. `atomic<T>`
+
+**Permitted `T`:** integer widths up to 64, `bool`, and pointer-shaped
+values. **Not** floats (an atomic FP RMW is a CAS loop the author should
+write visibly), **not** aggregates (lock-free structs are a different and
+much larger promise), and **not** `tbb` — its ERR taint is a computation
+discipline, and a read-modify-write over a sticky sentinel has no specified
+meaning.
+
+Operations take an explicit ordering from the keywords the lexer already
+carries (`relaxed`/`acquire`/`release`/`acq_rel`/`seq_cst`), and every one
+is `never fails` (D-163): an atomic operation on valid storage cannot fail,
+and wrapping it in a `Result` would make an increment a decision point.
+
+**Exactly six operations, all SEQUENTIALLY CONSISTENT.** The study proposed
+an explicit ordering on every call and **was wrong**: D-016 and
+`CONCURRENCY_REFERENCE.md` §4.3 already settled that every high-level
+`atomic<T>` method is SeqCst, with the five ordering keywords reserved for
+low-level intrinsics that do not exist. The reasoning is this project's own
+and stands: a misused weak ordering does not fail loudly or reproducibly —
+it produces intermittent corruption that surfaces on a different CPU, under
+load, months later, having passed every test written for it. That is the
+numerical-drift failure class the safety case cannot tolerate, and SeqCst is
+also what keeps data-race freedom provable rather than combinatorial.
+Corrected during 1.1.10-A, before any of it was built.
+
+```nitpick
+counter.load()                        -> T     never fails
+counter.store(v)                      -> NIL   never fails
+counter.swap(v)                       -> T     never fails (previous value)
+counter.fetch_add(n) / fetch_sub(n)   -> T     never fails (integers)
+counter.compare_exchange(exp, new)    -> T     never fails (previous value)
+
+int32:seen = counter.compare_exchange(exp, new);
+if (seen == exp) { … it swapped … }
+```
+
+**Every read-modify-write returns the PREVIOUS VALUE**, `compare_exchange`
+included. The study proposed a `Cas<T> { swapped, observed }` struct against
+the bare-bool alternative, and the bool's defect stands — it forces every CAS
+loop to re-read the location, which is slower and a second opportunity to
+observe a different value. But the previous value carries the same
+information with NO new type (for a strong compare-exchange
+`previous == expected` **is** success) and gives the family one shape rather
+than two.
+
+**All are `never fails`** (D-163): an atomic operation on valid storage
+cannot fail, and wrapping it in a `Result` would make an increment a
+decision point.
+
+### 5. Async trait methods: generics yes, `dyn` no
+
+- **Through a generic parameter — supported.** Monomorphization gives each
+  instantiation a concrete callee, so the frame size is known at the call
+  site and D-177's `await` lowering works unchanged.
+- **Through `dyn` — REFUSED by name, with the reason stated.** `await
+  w.write(…)` on a `dyn Writer` needs the callee's frame size exactly where
+  `dyn` guarantees the callee is unknown. The honest implementations are an
+  allocation per call or a size in the vtable and an allocation anyway —
+  both on the path D-153 exists to keep predictable. **This is a stated
+  capability gap, not a hidden one**, and it stays available later.
+
+### 6. CondVar
+
+`timedwait` (the only form — D-073 removed `wait`) **releases the lock,
+suspends the TASK (D-071), and reacquires before returning**, with the
+reacquisition under D-056's level discipline like any other. A CondVar
+carries the level of the lock it is paired with and the pairing is fixed at
+construction, so no call site can get "which lock does this go with" wrong.
+
+### 7. Actors are a pattern, not a primitive
+
+No new syntax. With §1's endpoints and §3's `Work`, an actor is a struct plus
+an async loop receiving from its own mailbox, and `ask` is a helper over a
+reply endpoint carried in the message. A third spawn-shaped construct beside
+`drop f(x)` and `thread` is what the blueprint philosophy refuses.

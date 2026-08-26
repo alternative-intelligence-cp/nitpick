@@ -1606,11 +1606,6 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         // A REAL constructor whose kind no rung supplies yet. Naming the rung
         // beats "there is no type named", which would send the reader looking
         // for a declaration that was never theirs to write (D-085).
-        if (as_kind == TokenKind.KwAtomic) {
-            pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-                "`atomic<T>` lands with 1.1's concurrency work",
-                n.span));
-        }
         pass (raw ty_error(r, raw TYPE_UNKNOWN(),
             "this builtin type constructor is not available at this rung yet",
             n.span));
@@ -1642,6 +1637,33 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     }
     if (kind == (raw TY_HANDLE())) {
         pass (raw tt_handle(r.types, inner));
+    }
+    // `atomic<T>`'s PERMITTED SET (D-182): the integer widths up to 64,
+    // `bool`, and pointer-shaped values. Not floats — an atomic
+    // read-modify-write on one is a CAS loop the author should write
+    // visibly. Not aggregates — a lock-free struct is a different and much
+    // larger promise. And not `tbb`: its ERR taint is a computation
+    // discipline (D-008), and a read-modify-write over a sticky sentinel has
+    // no specified meaning at all.
+    if (kind == (raw TY_ATOMIC())) {
+        int32:ak = raw type_kind(r.types, inner);
+        bool:ok = false;
+        if (ak == (raw TY_INT())) {
+            if ((raw type_int_bits(r.types, inner)) <= 64i32) { ok = true; }
+        }
+        if (ak == (raw TY_BOOL()))    { ok = true; }
+        if (ak == (raw TY_POINTER())) { ok = true; }
+        if (ak == (raw TY_KERNEL()))  { ok = true; }
+        if (!ok) {
+            string:a1 = raw string_concat("`atomic<",
+                            raw type_display(r.types, r.interns, inner));
+            pass (raw ty_error(r, raw TYPE_UNKNOWN(),
+                raw string_concat(a1, ">` is not one of the atomic types (D-182): the integer widths up to 64, `bool`, a pointer, or a kernel identifier — a float's read-modify-write is a CAS loop to write visibly, an aggregate is a lock-free promise this is not, and a `tbb`'s sticky ERR has no read-modify-write meaning"),
+                n.span));
+        }
+        pass (raw tt_atomic(r.types, inner,
+                            raw type_size(r.types, inner),
+                            raw type_align(r.types, inner)));
     }
     if (kind == (raw TY_SHARED_ARENA())) {
         if ((raw type_align(r.types, inner)) > 16i32) {

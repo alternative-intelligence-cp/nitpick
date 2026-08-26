@@ -459,6 +459,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_SHARED_ARENA())) {
             pass (raw emit_sarena_method(x, id, n, amrecv));
         }
+        if (amk == (raw TY_ATOMIC())) {
+            pass (raw emit_atomic_method(x, id, n, amrecv));
+        }
         if (amk == (raw TY_POINTER())) {
             if ((raw type_kind(x.fe.ctx.types,
                      raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
@@ -2237,6 +2240,62 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
                       x.fe.join_gep, ""));
     pass (raw iv("i32", "0", 0i32));
+};
+
+// `atomic<T>`'s OPERATIONS (D-182, D-016). The receiver is a PLACE — the
+// checker required one — so each lowers to LLVM's own atomic over that
+// address: nothing is copied first, which is the whole point of the type.
+//
+// EVERY ONE IS `seq_cst`. There is no ordering parameter to read, because
+// D-016 settled that a weak ordering misused is intermittent corruption on
+// another CPU months later — and one spelling here means no program can ask
+// for the dangerous one by accident.
+func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                                int32:recv_tid) never fails {
+    string:m = raw intern_get(x.interns, n.payload =>! int32);
+    PlaceVal:pl = raw addr_of(x, raw expr_operand(n));
+    if (pl.state != (raw LL_OK())) { pass (raw iv_from_place(pl)); }
+    int32:elem = raw type_elem(x.fe.ctx.types, recv_tid);
+    LlType:ell = raw ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, n.span)); }
+    string:algn = raw int_to_string((raw type_align(x.fe.ctx.types, elem)) => int64);
+    int32:start = raw expr_list_start(n);
+    int32:etid = raw exprtypes_get(x.et, id);
+
+    if (raw string_eq(m, "load")) {
+        string:r = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(r, " = load atomic ", ell.text, ", ptr ",
+                          raw cat5(pl.addr, " seq_cst, align ", algn, "", "")));
+        pass (raw iv(ell.text, r, etid));
+    }
+    IrVal:v0 = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+    if (v0.state != (raw LL_OK())) { pass v0; }
+    if (raw string_eq(m, "store")) {
+        drop irw_line(x.fe.w, raw cat5("store atomic ", ell.text, " ", v0.ref,
+                          raw cat5(", ptr ", pl.addr, " seq_cst, align ", algn, "")));
+        pass (raw iv_nil());
+    }
+    if (raw string_eq(m, "compare_exchange")) {
+        IrVal:v1 = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 1i32) });
+        if (v1.state != (raw LL_OK())) { pass v1; }
+        string:cx = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cx, " = cmpxchg ptr ", pl.addr, ", ",
+                          raw cat5(ell.text, " ", v0.ref, ", ",
+                              raw cat5(ell.text, " ", v1.ref,
+                                  " seq_cst seq_cst", ""))));
+        string:prev = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(prev, " = extractvalue { ", ell.text,
+                          ", i1 } ", raw string_concat(cx, ", 0")));
+        pass (raw iv(ell.text, prev, etid));
+    }
+    string:opname = "xchg";
+    if (raw string_eq(m, "fetch_add")) { opname = "add"; }
+    if (raw string_eq(m, "fetch_sub")) { opname = "sub"; }
+    string:rw = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rw, " = atomicrmw ", opname, " ptr ",
+                      raw cat5(pl.addr, ", ", ell.text, " ",
+                          raw string_concat(v0.ref, " seq_cst"))));
+    pass (raw iv(ell.text, rw, etid));
 };
 
 // `await g(x)` — the machines compose (D-177). Allocate g's frame, store the

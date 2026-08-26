@@ -416,8 +416,12 @@ lock, not N (D-072).
 ### 6.5 Lifetime
 
 A channel's storage belongs to the scope that created it; endpoints are
-second-class borrows of it and cannot outlive that scope — the same rule tasks
-(D-062) and borrows (D-004) follow.
+**opaque generation-checked handles** into it (D-182) and cannot outlive that
+scope — the same lexical rule tasks (D-062) and borrows (D-004) follow, held
+by a different mechanism. They were specified as borrows, which made them
+unable to cross a spawn (D-004/D-180) and so unusable for the thing channels
+are for; as handles they may cross freely, and a stale one is
+`StaleHandle` (−4106) rather than a dangling read.
 
 There is therefore **no `destroy` and no endpoint reference counting**. It also
 closes a teardown race: the prototype's `destroy` freed the mutex and both
@@ -444,10 +448,11 @@ The mailbox is a `Channel<M, LEVEL, CAP>` — §6, not a second queue.
 
 **`ask` is how a reply is obtained.** The prototype's `set_reply_channel`,
 `get_reply_channel`, and `reply` are all stubs returning zero or failure. The
-obvious alternative — putting a reply channel inside the message — is not
-available: an endpoint is a second-class borrow and borrows may not cross a thread
-spawn (D-004). `ask` keeps the reply channel in the caller's scope, where it is
-legal, and the runtime routes the reply to it.
+obvious alternative — putting a reply channel inside the message — **is
+available since D-182**: an endpoint is a generation-checked handle rather
+than a borrow, so it may ride in a message like any other value. `ask`
+remains as convenience — it keeps the reply endpoint's lifetime obvious at
+the call site — rather than as a workaround for a rule that no longer bites.
 
 `R = NIL` for an actor that does not reply; `ask` is still useful there as an
 acknowledgement, which is how backpressure is expressed.
