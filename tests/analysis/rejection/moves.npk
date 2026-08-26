@@ -96,3 +96,26 @@ func:nodrop_on_managed = NIL() never fails {
     discard(n);
     pass NIL;
 };
+
+// AND WHEREVER ELSE THE QUALIFIER CAN BE WRITTEN (1.2.1c). The rule read only
+// STATEMENT qualifiers, so it saw locals and nothing else — while `nodrop`
+// also parses on a PARAMETER, a struct FIELD and a GLOBAL, and was accepted in
+// silence in all three. A qualifier permitted where it says something untrue
+// is worse than one that is merely unread: a reader who believes it is
+// reasoning about a lifetime that is not there, which is the exact harm this
+// rule exists to prevent — and it was unprevented in three of the four places
+// the qualifier can appear. Each names its own position, because "a binding
+// that is not `wild`" sends the reader looking at a local when the mistake is
+// on a field.
+
+// expect-error: NITPICK-MOVE-003
+func:nodrop_on_parameter = NIL(nodrop int32:p) never fails {
+    discard(p);
+    pass NIL;
+};
+
+// expect-error: NITPICK-MOVE-003
+struct:NodropField = { nodrop int32:f; };
+
+// expect-error: NITPICK-MOVE-003
+nodrop int32:nodrop_global = 1i32;
