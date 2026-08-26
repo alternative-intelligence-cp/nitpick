@@ -1368,6 +1368,9 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     if (!(raw fits(e, pt, got))) {
                         drop te_mismatch_at(e, pt, got, raw arg_span(e, a, at));
                     }
+                    // D-183 §4: the callee takes ownership, so a place handed
+                    // over here has to say so.
+                    drop require_move_if_owning(e, a, got, raw arg_span(e, a, at));
                 }
             }
         }

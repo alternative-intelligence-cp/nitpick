@@ -428,6 +428,19 @@ def check_kinds_typed():
 #              the compiler is broken.
 #   SCHEDULED  reachable, and no case yet, with where it lands.
 UNTESTED_CODES = {
+    # MEASURED AND UNARMED (1.2.1a). D-183 §4's move-only rule is implemented
+    # and wired to every value slot, and gated at a single early return: fired,
+    # it reports 256 sites in src/ and lib/, and reading them showed the rule
+    # needs a companion it does not yet have. A by-value parameter of an owning
+    # type means two different things -- `strtab_add` STORES its string and
+    # must be transferred, `string_eq` only READS and must not be -- so the
+    # missing half is a convention for read-only parameters (`$$i string`, the
+    # second-class borrow, which cannot escape and so provably cannot store).
+    # That is an API change across the compiler and a call about the language's
+    # standard idiom. The code comes off this list when the rule is armed, and
+    # the check itself insists on that: an entry that gains a test fails.
+    "NITPICK-TYPE-046":    "D-183 move-only: implemented, measured at 256 sites, "
+                           "gated pending the read-only-parameter convention",
     # INTERNAL -- a defect in this compiler. No source triggers one.
     "NITPICK-ASSIGN-004":  "internal -- an unclassified node kind in the binding walk",
     "NITPICK-BORROW-008":  "internal -- an unclassified node kind in the escape walk",

@@ -128,3 +128,51 @@ recording: the plan had the mechanism before the rule that makes the mechanism
 sound, which reads naturally and is backwards. **A drop is only correct in a
 language where ownership is unique**, and making ownership unique is the
 larger half of this cycle.
+
+### 1.2.1a — the move-only rule, measured — and the half of it that is missing
+
+The rule of study §4 is implemented and wired to every value slot: var-decl,
+assignment, call arguments, `pass`, and struct-literal fields. It fires when a
+**place** of an owning type is read into a value position, and stays silent for
+a temporary — `string:s = string_concat(a, b) ?! E;` has no second name to
+invalidate, which is what keeps the rule from turning construction into
+ceremony.
+
+**The measurement, which is what this step was for:**
+
+| | sites |
+|---|---|
+| `src/frontend/resolve_type.npk` | 69 |
+| `src/backend/emit_program.npk` | 55 |
+| `src/frontend/module_graph.npk` | 41 |
+| `src/frontend/diagnostics.npk` | 25 |
+| `src/backend/ir/ir_writer.npk` | 21 |
+| eleven other files | 45 |
+| **total** | **256** |
+
+By type: `string` 200, `ConstVal` 32, `Diagnostic` 12, `FoldFlow` 9, and four
+one-offs. For scale, D-163's comparable sweep was ~8,900 sites.
+
+**Then reading them showed the rule is not yet right, and the rule is
+unarmed until it is.** A by-value parameter of an owning type means two
+different things in this compiler today:
+
+- `strtab_add(t, data)` **stores** its string. The caller must transfer
+  ownership, and `move` is exactly right.
+- `string_eq(a, b)` only **reads** its arguments. Demanding `move` there would
+  invalidate the caller's binding for a call that never took ownership —
+  turning correct code into a use-after-move to satisfy a rule about an
+  ownership transfer that did not happen.
+
+The missing half is a convention for read-only parameters. Nitpick already has
+the mechanism: `$$i string`, the second-class borrow (D-004), which **cannot
+escape** — so a callee that borrows provably cannot store, and the two meanings
+stop being one spelling. That is what makes `move` at the remaining sites both
+correct and informative.
+
+It is also an API change across the compiler and a decision about the
+language's standard idiom for passing a string, so it is the user's rather than
+one taken mid-sweep. The rule sits measured and gated at a single early return
+whose comment says exactly this — the same shape as the drop calls held back at
+1.2.0b, and for the same reason: the mechanism is right and the rule around it
+is not settled.

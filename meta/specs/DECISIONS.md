@@ -12598,6 +12598,28 @@ that is the correct direction: every such site is a place where two names
 believed they owned one thing. The sweep gets the 0.8.0/1.1.0 treatment — land
 the rule REPORTING, measure the real debt, sweep, then flip it to refusing.
 
+### The open half: what a read-only parameter of an owning type is
+
+*(1.2.1a, from measuring the rule against the compiler.)* Wired to every value
+slot the rule fires at **256 sites** in `src/` and `lib/` — 200 of them plain
+`string`, concentrated in five files. Reading them showed a by-value parameter
+of an owning type means two different things today:
+
+- `strtab_add(t, data)` **stores** its string, so the caller must transfer and
+  `move` is exactly right.
+- `string_eq(a, b)` only **reads**, and demanding `move` there would invalidate
+  the caller's binding for a call that never took ownership — correct code
+  turned into a use-after-move to satisfy a rule about a transfer that did not
+  happen.
+
+So the move-only rule needs a companion: a convention for read-only parameters.
+The mechanism exists — `$$i string`, the second-class borrow (D-004), which
+**cannot escape**, so a callee that borrows provably cannot store, and the two
+meanings stop sharing one spelling. Settling that is what makes `move` at the
+remaining sites both correct and informative, and it is an API change across
+the compiler plus a decision about the language's standard idiom for passing a
+string. **OPEN, and the rule is implemented but gated until it is answered.**
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

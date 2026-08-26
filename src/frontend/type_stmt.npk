@@ -506,6 +506,8 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
+    // D-183 §4: an owning value copied out of a place leaves two owners.
+    drop require_move_if_owning(e, init, got, s.span);
     pass NIL;
 };
 
@@ -553,6 +555,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         pass NIL;
     }
 
+    drop require_move_if_owning(e, value, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
@@ -623,6 +626,9 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (want == 0i32) { pass NIL; }
+    // D-183 §4: `pass s;` hands ownership to the caller AND the scope is
+    // ending, so without `move` the value would be both returned and dropped.
+    drop require_move_if_owning(e, v, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
