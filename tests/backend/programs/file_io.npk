@@ -13,7 +13,7 @@ func:roundtrip = bool(cstring:path, string:data) never fails {
     if (w.is_error) { pass false; }
     Result<string>:r = read_file(path);
     if (r.is_error) { pass false; }
-    string:back = r.value;
+    string:back = move(r.value);   // the Result is not read again (D-183)
     if (back.len != data.len) { pass false; }
     int64:i = 0i64;
     while (i < data.len) {

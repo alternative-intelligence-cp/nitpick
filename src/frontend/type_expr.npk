@@ -291,23 +291,20 @@ func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
 
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
-    // NOT YET ARMED (D-183). The sweep took it from 146 sites to 28; what is
-    // left is struct literals taking places, and one question with no answer
-    // yet — a GETTER over a container of owning values. Returning a borrow is
-    // refused by D-004 rule 2 and returning a value copies one the container
-    // still owns, so `fnem_iter_slot` has no correct spelling today. Arming
-    // the rule before that is answered would refuse code with nothing to
-    // replace it.
-    pass NIL;
-
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
     if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
     string:m1 = raw string_concat("`",
                     raw type_display(e.types, e.interns, ty));
-    drop diaglist_push(e.diags, raw diag_note(raw TYPE_MOVE_REQUIRED(),
-        raw string_concat(m1, "` owns storage that is released at scope exit, so it is move-only (D-183): copying it here would leave two owners and one double free. Write `move(...)` to transfer it, which invalidates the source — or build the value in place, since a temporary has no second name to invalidate"),
+    // AN ERROR SINCE THE SWEEP CLOSED (1.2.2): it landed reporting, measured
+    // 459 sites (146 once `pass` moved implicitly), and the sweep took the
+    // compiler to zero under it — transfers written, consuming parameters
+    // declared, genuinely-shared reads made EXPLICIT copies (`.clone()`, or
+    // `string_concat(x, "")` inside `never fails` emitters), and the rest
+    // restructured to read in place.
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
+        raw string_concat(m1, "` owns storage that is released at scope exit, so it is move-only (D-183): copying it here would leave two owners and one double free. Write `move(...)` to transfer it (invalidating the source), take an explicit copy with `.clone()`, or build the value in place — a temporary has no second name to invalidate"),
         at));
     pass NIL;
 };

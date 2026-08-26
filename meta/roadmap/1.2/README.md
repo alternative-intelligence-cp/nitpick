@@ -333,3 +333,46 @@ sweep were `quickcheck` timing out at 60 seconds on a self-check that takes 59
 — and empty output greps as zero. The counts only became trustworthy when run
 against the binary directly, with the diagnostics read from **stderr**, which
 is where this compiler puts them.
+
+### 1.2.2 — the rule is ARMED: the compiler is move-only clean, and TYPE-046 is an error
+
+**The getter question answered itself, and better than the options I framed.**
+The 0.8.1 escape rule already lets a borrow travel up one frame when it is
+rooted at a PARAMETER — the constructor pattern the compiler is built out of —
+so a getter over a container is `T->(Container->:c)` returning `$$i c.field`,
+verified end-to-end by a running program. Where a sentinel return made the
+borrow awkward (`fnem_iter_slot`'s `""`), the getter became an INDEX and the
+caller reads the table in place, which also dissolved `fnem_lookup`: returning
+a `LocalSlot` copied a string the table still owns, and a borrow cannot ride in
+a struct field (D-004 rule 3), so it is `fnem_lookup_idx` now.
+
+**`string` implements `Clone`** — the prelude trait existed with no impl. That
+is the language's one spelling for "I genuinely want a second owner": explicit,
+greppable, allocating. Inside `never fails` emitters the same idea is spelled
+`raw string_concat(x, "")`, since `clone` may fail and an emitter may not.
+
+**What the sweep settled, structurally rather than site-by-site:**
+
+- Constructors CONSUME what they store: `iv`, `iv_rung`, `pv`, `pv_rung`,
+  `ll_ok`, `ll_rung`, `rt`, `diag_make`, `cv_str`, `flow_ret`, `lexer_init`,
+  `srcmgr_add`, `rootlist_add`, `graph_init` all take `move` on the values
+  they keep, and their bodies move them into the literal.
+- `Resolution.first` was STRUCK: it always equalled `path` when ambiguous and
+  was read once — a field that duplicates another is two owners of one body
+  the moment drops exist. The sweep found a redundant field, which is the
+  design working.
+- `ll_text_is_scalar_int` asks the scalar question of a bare type string;
+  callers were building a throwaway `LlType` — copying a lent string into a
+  local that existed only to be asked — at every cast site.
+- `diaglist_sort` is move choreography now: `cur` moves out, the shifts move
+  slot-to-slot, the insert moves back in; the pure-read walks hold borrows.
+
+**Then the armed rule swept the test suite and found real things:**
+`enum_payloads` copied a pick arm's payload binding out of an enum the enum
+still owns (now an explicit copy — `move` would hollow the enum);
+`file_io` copied `r.value` out of a `Result` it never read again (now a
+move); and a `type_generic` probe copied a container field to prove a
+substitution that `.len` proves without owning anything.
+
+TYPE-046 is an ERROR, off `UNTESTED_CODES`, with its rejection case beside
+TYPE-047's in `tests/types/rejection/move_rules.npk`.

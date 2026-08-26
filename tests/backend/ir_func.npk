@@ -72,12 +72,15 @@ func:main = int32(cstring[]:_~argv) {
 
     // …and the parameter slots are real bindings: both resolve, to the right
     // slots and the right types.
-    LocalSlot:px = raw fnem_lookup(@f2, nx);
-    LocalSlot:py = raw fnem_lookup(@f2, ny);
-    if (!px.found)                                         { exit 23i32; }
-    if (!(raw string_eq(px.slot, "%t0")))                  { exit 24i32; }
-    if (px.type_id != i32t)                                { exit 25i32; }
-    if (!(raw string_eq(py.slot, "%t1")))                  { exit 26i32; }
+    // `fnem_lookup` became `fnem_lookup_idx` at 1.2.2: returning the slot
+    // COPIED a string the table still owns, and a borrow cannot ride in a
+    // struct field (D-004 rule 3) — so the caller reads the table in place.
+    int32:px = raw fnem_lookup_idx(@f2, nx);
+    int32:py = raw fnem_lookup_idx(@f2, ny);
+    if (px < 0i32)                                         { exit 23i32; }
+    if (!(raw string_eq(raw fnem_local_slot_at(@f2, px), "%t0"))) { exit 24i32; }
+    if ((raw fnem_local_type_at(@f2, px)) != i32t)         { exit 25i32; }
+    if (!(raw string_eq(raw fnem_local_slot_at(@f2, py), "%t1"))) { exit 26i32; }
 
     // --- `Result<NIL>` IS `{i32}`, AND ITS `pass` IS A CONSTANT (D-084) -------
     IrWriter:w3 = raw irw_to_buffer();
@@ -130,16 +133,15 @@ func:main = int32(cstring[]:_~argv) {
     string:outer = raw fnem_local(@f7, nx, i32t, "i32");
     int32:mark = raw fnem_mark(@f7);
     string:inner = raw fnem_local(@f7, nx, i64t, "i64");
-    LocalSlot:sh = raw fnem_lookup(@f7, nx);
-    if (!(raw string_eq(sh.slot, inner)))                  { exit 40i32; }
-    if (sh.type_id != i64t)                                { exit 41i32; }
+    int32:sh = raw fnem_lookup_idx(@f7, nx);
+    if (!(raw string_eq(raw fnem_local_slot_at(@f7, sh), inner))) { exit 40i32; }
+    if ((raw fnem_local_type_at(@f7, sh)) != i64t)         { exit 41i32; }
     drop fnem_release(@f7, mark);
-    LocalSlot:back = raw fnem_lookup(@f7, nx);
-    if (!(raw string_eq(back.slot, outer)))                { exit 42i32; }
-    if (back.type_id != i32t)                              { exit 43i32; }
-    // A name never bound answers `found: false`, not somebody else's slot.
-    LocalSlot:no = raw fnem_lookup(@f7, ny);
-    if (no.found)                                          { exit 44i32; }
+    int32:back = raw fnem_lookup_idx(@f7, nx);
+    if (!(raw string_eq(raw fnem_local_slot_at(@f7, back), outer))) { exit 42i32; }
+    if ((raw fnem_local_type_at(@f7, back)) != i32t)       { exit 43i32; }
+    // A name never bound answers -1, not somebody else's slot.
+    if ((raw fnem_lookup_idx(@f7, ny)) >= 0i32)            { exit 44i32; }
 
     // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
     IrWriter:w8 = raw irw_to_buffer();

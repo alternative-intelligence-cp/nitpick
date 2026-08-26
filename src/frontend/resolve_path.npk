@@ -63,11 +63,11 @@ func:rootlist_grow = NIL(RootList->:l) never fails {
 
 // A dependency declared at `../nfs` roots at `../nfs/src` (BUILD_REFERENCE §3),
 // so the `/src` is appended HERE rather than at every use site.
-pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) never fails {
+pub func:rootlist_add = NIL(RootList->:l, move string:name, move string:dir) never fails {
     if (l.count >= l.cap) {
         drop rootlist_grow(l);
     }
-    Root:r = Root{ name: name, dir: raw path_join(dir, "src") };
+    Root:r = Root{ name: move(name), dir: raw path_join(dir, "src") };
     l.items[l.count => int64] = move(r);
     l.count = l.count + 1i32;
     pass NIL;
@@ -90,9 +90,13 @@ pub func:RESOLVED_AMBIGUOUS = int32() never fails { pass 2i32; };
 
 pub struct:Resolution = {
     int32:status;
-    string:path;      // the file, when status is OK
-    string:first;     // the two candidates, when AMBIGUOUS
-    string:second;
+    // The file when OK; the FIRST candidate when AMBIGUOUS — one value, and it
+    // was two fields until D-183's move-only sweep asked who owned the copy.
+    // `first` always equalled `path` in the ambiguous case and was read once,
+    // in the report; a field that duplicates another is two owners of one
+    // body the moment drops exist.
+    string:path;
+    string:second;    // the second candidate, when AMBIGUOUS
 };
 
 // --- resolving ---------------------------------------------------------------------
@@ -109,19 +113,23 @@ pub func:resolve_use = Resolution(string:from, string:target, RootList->:roots,
     pass (raw resolve_in_roots(target, roots, stdlib));
 };
 
-func:resolve_single = Resolution(string:candidate) never fails {
-    Resolution:r = Resolution{ status: raw RESOLVED_NOT_FOUND(),
-                               path: candidate, first: "", second: "" };
+func:resolve_single = Resolution(move string:candidate) never fails {
     // A candidate with an interior NUL names no file (D-049): not-found,
     // never an error — the NUL can only come from a user-written import.
+    // Probed BEFORE the struct is built, so the candidate is loaned to the
+    // probe and then MOVED into the result — the literal used to store it
+    // while `to_cstring` still needed it, which is a copy and two owners.
+    int32:st = raw RESOLVED_NOT_FOUND();
     Result<cstring>:c = to_cstring(candidate);
     if (!c.is_error) {
         if (path_exists(c.value)) {
-            r.status = raw RESOLVED_OK();
+            st = raw RESOLVED_OK();
         }
     }
+    Resolution:r = Resolution{ status: st, path: move(candidate), second: "" };
     pass r;
 };
+
 
 func:resolve_relative = Resolution(string:from, string:target) never fails {
     pass (raw resolve_single(raw path_relative_to(from, target)));
@@ -135,8 +143,11 @@ func:resolve_relative = Resolution(string:from, string:target) never fails {
 // existing `use` resolves to, in a module nobody edited — so the build fails and
 // names both instead (BUILD_REFERENCE §3).
 func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdlib) never fails {
+    // `path` starts empty rather than holding a copy of `target`: the loop
+    // still needs `target` to build every candidate, and the not-found report
+    // names the target it was given rather than reading it back out of here.
     Resolution:r = Resolution{ status: raw RESOLVED_NOT_FOUND(),
-                               path: target, first: "", second: "" };
+                               path: "", second: "" };
     int32:found = 0i32;
 
     int32:i = 0i32;
@@ -148,8 +159,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
         if (!c.is_error) { c_there = path_exists(c.value); }
         if (c_there) {
             if (found == 0i32) {
-                r.path = candidate;
-                r.first = candidate;
+                r.path = move(candidate);
             } else {
                 if (found == 1i32) {
                     r.second = move(candidate);
@@ -171,8 +181,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
         if (!sc.is_error) { sc_there = path_exists(sc.value); }
         if (sc_there) {
             if (found == 0i32) {
-                r.path = scand;
-                r.first = scand;
+                r.path = move(scand);
             } else {
                 if (found == 1i32) {
                     r.second = move(scand);
@@ -205,7 +214,7 @@ pub func:report_resolution = NIL(DiagList->:diags, Resolution:r,
     if (r.status == (raw RESOLVED_AMBIGUOUS())) {
         string:m1 = raw string_concat("`", target);
         string:m2 = raw string_concat(m1, "` is supplied by more than one root: ");
-        string:m3 = raw string_concat(m2, r.first);
+        string:m3 = raw string_concat(m2, r.path);
         string:m4 = raw string_concat(m3, " and ");
         string:m5 = raw string_concat(m4, r.second);
         drop diaglist_push(diags,

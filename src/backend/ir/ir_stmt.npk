@@ -348,7 +348,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     string:then_l = raw irw_new_label(x.fe.w, "if.then");
     string:done_l = raw irw_new_label(x.fe.w, "if.done");
-    string:else_l = done_l;
+    string:else_l = raw string_concat(done_l, "");
     bool:has_else = !(raw stmt_is_none(raw stmt_else(s)));
     if (has_else) { else_l = raw irw_new_label(x.fe.w, "if.else"); }
 
@@ -1218,7 +1218,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         string:bbase = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(bbase, " = getelementptr ", sel.ll,
                           ", ptr ", raw string_concat(mtmp, ", i32 0, i32 1")));
-        string:bpp = bbase;
+        string:bpp = raw string_concat(bbase, "");
         if (bs.offset != 0i64) {
             string:bpp2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(bpp2, " = getelementptr i8, ptr ",
@@ -1287,8 +1287,8 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 
     // The discriminant: a payload-carrying enum's tag lives in slot 0; a plain
     // enum, a bool, a char or an integer IS its own discriminant.
-    string:disc = sel.ref;
-    string:disc_ll = sel.ll;
+    string:disc = raw string_concat(sel.ref, "");
+    string:disc_ll = raw string_concat(sel.ll, "");
     if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_ENUM())) {
         if (raw enum_has_payload(x.ast, x.fe.ctx.types, sel_tid)) {
             string:tag = raw irw_temp(x.fe.w);
@@ -1334,16 +1334,16 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     wild int8->:lm = alloc((count => int64) * #size_of<string>());
     wild string->:labels = lm =>! wild string->;
     string:cases = "";
-    string:default_l = done_l;
+    string:default_l = raw string_concat(done_l, "");
     int32:i = 0i32;
     while (i < count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                           raw pick_arm_start(s), i));
         string:arm_l = raw pk_label(seq, i);
-        labels[i => int64] = arm_l;
+        labels[i => int64] = raw string_concat(arm_l, "");
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         if (pn.kind == PatKind.PatWildcard) {
-            default_l = arm_l;
+            default_l = raw string_concat(arm_l, "");
         } else {
             IrVal:c = raw pattern_const(x, pn, sel_tid, arm.span);
             if (!(raw iv_is_ok(c))) { pass c; }
@@ -1473,7 +1473,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 drop irw_line(x.fe.w, raw cat5(c1, " = icmp ", gep2, " ",
                                   raw cat5(disc_ll, " ", disc, ", ", plo.ref)));
                 string:hp = move(lep);
-                if (raw pat_range_inclusive(pn)) { hp = lip; }
+                if (raw pat_range_inclusive(pn)) { hp = move(lip); }
                 string:c2 = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(c2, " = icmp ", hp, " ",
                                   raw cat5(disc_ll, " ", disc, ", ", phi.ref)));

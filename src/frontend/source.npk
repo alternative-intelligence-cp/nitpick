@@ -51,11 +51,11 @@ func:srcmgr_grow = NIL(SourceManager->:m) never fails {
 };
 
 // Returns the file index, which is what a Span carries.
-pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) never fails {
+pub func:srcmgr_add = int32(SourceManager->:m, move string:path, move string:text) never fails {
     if (m.count >= m.cap) {
         drop srcmgr_grow(m);
     }
-    SourceFile:f = SourceFile{ path: path, text: text };
+    SourceFile:f = SourceFile{ path: move(path), text: move(text) };
     m.files[m.count => int64] = move(f);
     int32:index = m.count;
     m.count = m.count + 1i32;

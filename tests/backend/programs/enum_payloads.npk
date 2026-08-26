@@ -19,7 +19,9 @@ enum:Msg = {
 func:read_text = string(Msg:m) never fails {
     string:out = "";
     pick (m) {
-        (Msg.Text(s)) { out = s; },
+        // `s` is the arm's binding of the payload the enum still owns, so the
+        // way out is an explicit copy (D-183) — `move` would hollow the enum.
+        (Msg.Text(s)) { out = raw string_concat(s, ""); },
         (*) { out = "wrong-arm"; }
     }
     pass out;

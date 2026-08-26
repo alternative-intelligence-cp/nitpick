@@ -37,8 +37,8 @@ pub struct:Lexer = {
     int32[8]:interp_brace;   // brace depth at each open interpolation
 };
 
-pub func:lexer_init = Lexer(int32:file, string:text) never fails {
-    Lexer:lx = Lexer{ text: text, file: file, pos: 0i64, line: 1i32, col: 1i32,
+pub func:lexer_init = Lexer(int32:file, move string:text) never fails {
+    Lexer:lx = Lexer{ text: move(text), file: file, pos: 0i64, line: 1i32, col: 1i32,
                       in_template: false, interp_depth: 0i32, brace_depth: 0i32,
                       interp_brace: [] };
     pass lx;

@@ -27,3 +27,15 @@ func:keeps_what_it_borrowed = NIL(Box->:b, string:text) never fails {
 
 // The same body is correct once the parameter says it received ownership.
 // (In `tests/accept/accept.npk`, with its callers transferring.)
+
+// A TYPE WITH A DROP IS MOVE-ONLY (D-183 §4). `built` owns a heap body that
+// scope exit will release, so copying it into a second binding would leave two
+// owners and one double free. The transfer must be written (`move`), or the
+// second name takes an explicit fresh copy (`.clone()`, allocating) — what it
+// cannot be is silent.
+// expect-error: NITPICK-TYPE-046
+func:copies_an_owner = int32() {
+    string:built = relay string_concat("ab", "cd");
+    string:second = built;
+    pass ((built.len + second.len) =>! int32);
+};

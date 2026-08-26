@@ -293,20 +293,20 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     if (fe.bare) {
         LlType:vt = raw ll_type(fe.ctx, ret_type);
         if (vt.state != (raw LL_OK())) { pass vt; }
-        fe.ret_ll = vt.text;
-        fe.val_ll = vt.text;
+        fe.ret_ll = raw string_concat(vt.text, "");
+        fe.val_ll = raw string_concat(vt.text, "");
         fe.val_zero = raw ll_zero(vt);
         pass vt;
     }
 
     LlType:rt = raw ll_wrap_result(fe.ctx, ret_type);
     if (rt.state != (raw LL_OK())) { pass rt; }
-    fe.ret_ll = rt.text;
+    fe.ret_ll = raw string_concat(rt.text, "");
     fe.val_ll = "";
     fe.val_zero = "";
     if (!fe.ret_nil) {
         LlType:vt = raw ll_type(fe.ctx, ret_type);
-        fe.val_ll = vt.text;
+        fe.val_ll = raw string_concat(vt.text, "");
         fe.val_zero = raw ll_zero(vt);
     }
     pass rt;
@@ -320,7 +320,7 @@ pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) never fa
     if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
     fe.pnames[fe.pcount => int64] = name;
     fe.ptypes[fe.pcount => int64] = type_id;
-    fe.plls[fe.pcount => int64] = t.text;
+    fe.plls[fe.pcount => int64] = raw string_concat(t.text, "");
     fe.pcount = fe.pcount + 1i32;
     pass t;
 };
@@ -507,7 +507,7 @@ pub func:fnem_new_seg = string(FnEmitter->:fe) never fails {
         fe.seg_cap = ncap =>! int32;
     }
     string:lb = raw irw_new_label(fe.w, "seg");
-    fe.seg_labels[fe.seg_count => int64] = lb;
+    fe.seg_labels[fe.seg_count => int64] = raw string_concat(lb, "");
     fe.seg_count = fe.seg_count + 1i32;
     pass lb;
 };
@@ -685,18 +685,17 @@ pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:l
 // means. Forward search would resolve every shadowed name to its OUTERMOST
 // declaration, silently, in exactly the programs the frontend went out of its way
 // to permit.
-pub func:fnem_lookup = LocalSlot(FnEmitter->:fe, int32:name) never fails {
+// THE INDEX, NOT THE SLOT (D-183). Returning the slot copied a string the
+// table still owns — a second owner the moment drops exist — and a borrow
+// cannot ride in a struct field (D-004 rule 3). The caller reads
+// `fnem_local_slot_at` / `fnem_local_type_at` in place; -1 is not-found.
+pub func:fnem_lookup_idx = int32(FnEmitter->:fe, int32:name) never fails {
     int32:i = fe.lcount;
     while (i > 0i32) {
         i = i - 1i32;
-        if (fe.lnames[i => int64] == name) {
-            LocalSlot:s = LocalSlot{ found: true, slot: fe.lslots[i => int64],
-                                     type_id: fe.ltypes[i => int64] };
-            pass s;
-        }
+        if (fe.lnames[i => int64] == name) { pass i; }
     }
-    LocalSlot:none = LocalSlot{ found: false, slot: "", type_id: 0i32 };
-    pass none;
+    pass (0i32 - 1i32);
 };
 
 // Block entry and exit. The mark is the local count; release truncates back to
@@ -824,7 +823,7 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
         // and returning a value copies one the container still owns. Left as
         // the copy it always was; the move-only rule flags it, and the rule
         // is gated until this is answered.
-        string:it = fe.loop_iters[i => int64];
+        string:it = move(fe.loop_iters[i => int64]);
         if (it.len > 0i64) { pass it; }
     }
     pass "";

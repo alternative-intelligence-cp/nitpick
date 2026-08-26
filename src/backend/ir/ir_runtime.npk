@@ -39,10 +39,12 @@ pub struct:RtSig = {
     string:a3;
 };
 
-func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
-                int32:argc, string:a0, string:a1, string:a2, string:a3) never fails {
-    RtSig:s = RtSig{ found: true, sym: sym, ret: ret, wrapped: wrapped,
-                     inner: inner, argc: argc, a0: a0, a1: a1, a2: a2, a3: a3 };
+func:rt = RtSig(move string:sym, move string:ret, bool:wrapped, move string:inner,
+                int32:argc, move string:a0, move string:a1, move string:a2,
+                move string:a3) never fails {
+    RtSig:s = RtSig{ found: true, sym: move(sym), ret: move(ret), wrapped: wrapped,
+                     inner: move(inner), argc: argc, a0: move(a0), a1: move(a1),
+                     a2: move(a2), a3: move(a3) };
     pass s;
 };
 

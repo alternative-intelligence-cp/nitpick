@@ -309,8 +309,12 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@i2) != 1i64)                                  { exit 41i32; }
     if (!(raw string_eq(raw code0(@i2), raw TYPE_MISMATCH())))   { exit 42i32; }
 
+    // `.len` rather than a copy of the field: `string:v = c.value;` is a
+    // second owner of the container's string and is refused since D-183
+    // armed. Reading through the field still proves the substitution — a
+    // `.len` on anything but a string would be TYPE-019.
     Gx:i3 = raw gx(
-        "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) never fails { string:v = c.value; pass NIL; };",
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) never fails { int64:v = c.value.len; discard(v); pass NIL; };",
         @it);
     if (raw errs(@i3) != 0i64)                                  { exit 43i32; }
 

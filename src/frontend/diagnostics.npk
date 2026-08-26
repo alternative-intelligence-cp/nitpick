@@ -34,10 +34,10 @@ pub struct:Diagnostic = {
     Span:span;
 };
 
-pub func:diag_make = Diagnostic(int32:severity, string:code, string:message,
+pub func:diag_make = Diagnostic(int32:severity, move string:code, move string:message,
                                 Span:span) never fails {
-    Diagnostic:d = Diagnostic{ severity: severity, code: code,
-                               message: message, span: span };
+    Diagnostic:d = Diagnostic{ severity: severity, code: move(code),
+                               message: move(message), span: span };
     pass d;
 };
 
@@ -92,13 +92,13 @@ pub func:diaglist_init = DiagList() never fails {
 // A LINEAR SCAN over a list bounded at 256 entries. A compiler emitting hundreds
 // of diagnostics has already failed usefully at the first few, which is what
 // bounds the list in the first place.
-pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) never fails {
+pub func:diaglist_push = NIL(DiagList->:list, move Diagnostic:d) never fails {
     if (raw diaglist_has(list, d)) { pass NIL; }
     if (list.count >= 256i64) {
         list.overflowed = true;
         pass NIL;
     }
-    list.items[list.count] = d;
+    list.items[list.count] = move(d);
     list.count = list.count + 1i64;
     pass NIL;
 };
@@ -106,7 +106,7 @@ pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) never fails {
 func:diaglist_has = bool(DiagList->:list, Diagnostic:d) never fails {
     int64:i = 0i64;
     while (i < list.count) {
-        Diagnostic:e = list.items[i];
+        Diagnostic->:e = $$i list.items[i];
         if (e.severity == d.severity) {
             if (e.span.file == d.span.file) {
                 if (e.span.offset == d.span.offset) {
@@ -154,12 +154,12 @@ pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
 pub func:diaglist_sort = NIL(DiagList->:list) never fails {
     int64:i = 1i64;
     while (i < list.count) {
-        Diagnostic:cur = list.items[i];
+        Diagnostic:cur = move(list.items[i]);
         int64:j = i;
         while (j > 0i64) {
-            Diagnostic:prev = list.items[j - 1i64];
+            Diagnostic:prev = move(list.items[j - 1i64]);
             if (raw span_before(cur.span, prev.span)) {
-                list.items[j] = prev;
+                list.items[j] = move(prev);
                 j = j - 1i64;
             } else {
                 j = 0i64 - 1i64;
@@ -170,7 +170,7 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
             // walk back to the insertion point
             int64:k = i;
             while (k > 0i64) {
-                Diagnostic:p2 = list.items[k - 1i64];
+                Diagnostic->:p2 = $$i list.items[k - 1i64];
                 if (raw span_before(cur.span, p2.span)) {
                     k = k - 1i64;
                 } else {
@@ -179,7 +179,7 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
                 }
             }
         }
-        list.items[j] = cur;
+        list.items[j] = move(cur);
         i = i + 1i64;
     }
     pass NIL;

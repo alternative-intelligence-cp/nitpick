@@ -12616,6 +12616,18 @@ common statement in the language, to say something the construct already says
 unambiguously. Ceremony that carries no information is a cost with no
 purchase.
 
+### The getter answer, and `Clone` (1.2.2)
+
+The "getter over a container of owning values" question closed without new
+surface: the 0.8.1 escape refinement already permits a borrow to travel up ONE
+frame when rooted at a parameter, so a getter is `T->(C->:c)` returning
+`$$i c.field` — the constructor pattern, now named as the getter pattern too.
+Where a sentinel return does not fit a borrow, the getter returns an INDEX and
+the caller reads in place. And `string` now implements the prelude's `Clone`:
+the one spelling for a deliberate second owner — explicit, greppable,
+allocating — with `raw string_concat(x, "")` as the same idea inside
+`never fails` emitters, since `clone` may fail and an emitter may not.
+
 ### The open half: what a read-only parameter of an owning type is
 
 *(1.2.1a, from measuring the rule against the compiler; corrected at 1.2.1e.)*

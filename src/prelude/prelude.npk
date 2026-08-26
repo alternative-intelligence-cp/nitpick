@@ -180,6 +180,16 @@ impl:tbb16:Hash = { func:hash = uint64(tbb16:self) never fails { if (is_err(self
 impl:tbb32:Hash = { func:hash = uint64(tbb32:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
 impl:tbb64:Hash = { func:hash = uint64(tbb64:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
 
+// A string CLONES BY ALLOCATING A FRESH BODY (D-183). This is the language's
+// one spelling for "I genuinely want a second owner": explicit at the call
+// site (`x.clone()`), greppable, and it allocates — which is exactly why it is
+// not what assignment does. Concatenation with the empty string IS the fresh
+// copy, and the result carries `cap = n`, so the clone owns its body and drops
+// it independently of the original.
+impl:string:Clone = { func:clone = string(string:self) {
+    pass (relay string_concat(self, ""));
+}; };
+
 // A string HASHES ITS BYTES (D-123) -- FNV-1a is over bytes, and self.ptr[i] walks
 // them.
 impl:string:Hash = { func:hash = uint64(string:self) never fails {

@@ -53,13 +53,13 @@ pub struct:LlType = {
     string:rung;     // meaningful when LL_RUNG
 };
 
-pub func:ll_ok = LlType(string:text) never fails {
-    LlType:t = LlType{ state: raw LL_OK(), text: text, rung: "" };
+pub func:ll_ok = LlType(move string:text) never fails {
+    LlType:t = LlType{ state: raw LL_OK(), text: move(text), rung: "" };
     pass t;
 };
 
-func:ll_rung = LlType(string:rung) never fails {
-    LlType:t = LlType{ state: raw LL_RUNG(), text: "", rung: rung };
+func:ll_rung = LlType(move string:rung) never fails {
+    LlType:t = LlType{ state: raw LL_RUNG(), text: "", rung: move(rung) };
     pass t;
 };
 
@@ -944,18 +944,28 @@ pub func:tbb_max_decimal = string(int32:bits) never fails {
 
 // True when this lowered to a plain `iN`, which is exactly the set of types one
 // LLVM instruction — `add`, `icmp`, `zext` — is valid over.
-pub func:ll_is_scalar_int = bool(LlType:t) never fails {
-    if (t.state != (raw LL_OK())) { pass false; }
-    if (t.text.len < 2i64) { pass false; }
-    if (t.text.ptr[0i64] != 105u8) { pass false; }   // 'i'
+// The same question asked of a bare TYPE STRING (D-183's sweep): callers that
+// hold `v.ll` needed to build a throwaway LlType — copying a lent string into
+// a local that existed only to be asked this — so the text rule lives here and
+// the LlType form delegates.
+pub func:ll_text_is_scalar_int = bool(string:text) never fails {
+    if (text.len < 2i64) { pass false; }
+    if (text.ptr[0i64] != 105u8) { pass false; }   // 'i'
     int64:i = 1i64;
-    while (i < t.text.len) {
-        if (t.text.ptr[i] < 48u8) { pass false; }    // '0'
-        if (t.text.ptr[i] > 57u8) { pass false; }    // '9'
+    while (i < text.len) {
+        if (text.ptr[i] < 48u8) { pass false; }    // '0'
+        if (text.ptr[i] > 57u8) { pass false; }    // '9'
         i = i + 1i64;
     }
     pass true;
 };
+
+pub func:ll_is_scalar_int = bool(LlType:t) never fails {
+    if (t.state != (raw LL_OK())) { pass false; }
+    pass (raw ll_text_is_scalar_int(t.text));
+};
+
+
 
 // The three float texts, asked of the TEXT like the neighbours above.
 pub func:ll_is_float_text = bool(string:t) never fails {

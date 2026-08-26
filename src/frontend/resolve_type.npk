@@ -727,8 +727,8 @@ pub func:cv_char = ConstVal(int32:ty, int64:n) never fails {
     ConstVal:v = ConstVal{ kind: raw CV_CHAR(), type_id: ty, num: n, text: "" };
     pass v;
 };
-pub func:cv_str = ConstVal(int32:ty, string:t) never fails {
-    ConstVal:v = ConstVal{ kind: raw CV_STRING(), type_id: ty, num: 0i64, text: t };
+pub func:cv_str = ConstVal(int32:ty, move string:t) never fails {
+    ConstVal:v = ConstVal{ kind: raw CV_STRING(), type_id: ty, num: 0i64, text: move(t) };
     pass v;
 };
 
@@ -781,7 +781,7 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
     int32:i = 0i32;
     while (i < e.count) {
         if (e.names[i => int64] == name) {
-            e.vals[i => int64] = v;
+            e.vals[i => int64] = move(v);
             pass NIL;
         }
         i = i + 1i32;
@@ -831,8 +831,8 @@ func:flow_fail = FoldFlow() never fails {
     FoldFlow:f = FoldFlow{ returned: false, failed: true, value: raw cv_none() };
     pass f;
 };
-func:flow_ret = FoldFlow(ConstVal:v) never fails {
-    FoldFlow:f = FoldFlow{ returned: true, failed: false, value: v };
+func:flow_ret = FoldFlow(move ConstVal:v) never fails {
+    FoldFlow:f = FoldFlow{ returned: true, failed: false, value: move(v) };
     pass f;
 };
 

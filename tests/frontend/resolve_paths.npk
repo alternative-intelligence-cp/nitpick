@@ -91,7 +91,8 @@ func:main = int32(cstring[]:_~argv) {
     drop rootlist_add(@two, "b", ".");
     Resolution:r6 = raw resolve_use(from, "frontend/ast.npk", @two, "");
     if (r6.status != (raw RESOLVED_AMBIGUOUS()))                 { exit 60i32; }
-    if (r6.first.len == 0i64)                                    { exit 61i32; }
+    // `first` was struck at 1.2.2: it always equalled `path` when ambiguous.
+    if (r6.path.len == 0i64)                                     { exit 61i32; }
     if (r6.second.len == 0i64)                                   { exit 62i32; }
 
     // The standard library is a root like any other and gets NO precedence: a

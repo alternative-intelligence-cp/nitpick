@@ -73,7 +73,7 @@ pub struct:ModuleGraph = {
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
-                                  RootList->:roots, string:stdlib) never fails {
+                                  RootList->:roots, move string:stdlib) never fails {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<ModuleEntry>());
     ModuleGraph:g = ModuleGraph{
@@ -83,7 +83,7 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         interns: interns,
         diags: diags,
         roots: roots,
-        stdlib: stdlib,
+        stdlib: move(stdlib),
         prelude: 0i32 - 1i32,
         mods: mem =>! wild ModuleEntry->,
         count: 0i32,
