@@ -2,24 +2,39 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE B UNDERWAY — cycle 0.7 done; npkc emits and its programs run
+## Status: PHASE C UNDERWAY — cycle 1.1 at 1.1.10; async, threads and channels run
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 123 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 182 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-**Cycles 0.0–0.7 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+**Cycles 0.0–1.0 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 the module/symbol/visibility passes, the type system, the static analyses, macros
-with `comptime` and `#[derive]`, and now the first backend rung. **`npkc` exists**:
+with `comptime` and `#[derive]`, IR emission, `nlibc` and the runtime floor, full
+type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists**:
 `src/main.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
-`tools/check.npk` is a thin wrapper over it) and `src/backend/` — writer, type
-lowering, functions, expressions, statements, places, `pick`, and `emit_program`.
-**Subset 1 compiles, links and runs under this compiler**: the harness executes 19
-real-backend programs and asserts 9 `NITPICK-RUNG-001` rejections on every full
-run. **Cycle 0.8 — `nlibc` core and runtime symbols — is next**, opening with the
-sweep that brings `src/` itself under the real checker (the sources still carry
-seed-era `=>` where `=>!` is required) and the `%Name` mangling decision.
+`tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
+**112 real-backend programs** and asserts 8 `NITPICK-RUNG-001` rejections on every
+full run, and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
+through every cycle since 0.8.
+
+**Cycle 1.1 (async and concurrency) is underway.** Landed: `never fails` checked
+everywhere with `raw`/`drop` licensed by it (D-163), the `Duration` clock, coroutine
+lowering as hand-written switched-resume state machines (D-177/D-178), the typed
+`Error` system with origin chains and an exhaustive `failsafe` (D-179), per-thread
+executors, real threads over `clone(2)` (D-181), and `atomic<T>` plus channels,
+thread pools and actors (D-182). **Next is 1.1.11 (sync primitives), which is
+BLOCKED on B-6** — a `Mutex` guard releases at scope exit, and the managed regime's
+RAII does not exist yet; see `meta/roadmap/OPEN_DECISIONS.md`. Then 1.1.12 (the
+reactor) and 1.1.13 (the Bridge).
+
+**A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
+the harness require the same exit code every run. Two serious defects hid behind
+single green runs — `npk_exit` calling `exit` rather than `exit_group`, so a
+threaded program's status was whichever thread finished last, and a channel wake
+landing between registering and sleeping, which the sleeper-push then erased.
+Neither reproduced in fewer than about twenty runs.
 
 `tools/check.npk` still runs the whole frontend over a program and exits 0 on a
 clean one — Phase A's checker, now one thin `main` over the shared pipeline.
@@ -36,7 +51,7 @@ function `fail`/`relay`, drops a trait's `never fails` in an impl, or `fail`s
 inside a `defer` (D-163, 1.1.0) — each with its own code, its own span, and a
 case in one of the six rejection suites showing it refuse.
 
-**Seven whole-tree checks run on every harness invocation** and each found
+**Two dozen whole-tree checks run on every harness invocation** and each found
 something on its first run: `check_kinds_typed` (every expression kind is typed),
 `check_kinds_lowered_or_refused` (every Expr/Stmt/Decl kind lowers, refuses by
 name, or is confessed — plus the LIVE-1 carrier accessors stay read; its first
@@ -53,7 +68,7 @@ its holes — none was found by a test.
 ### Building and testing
 
 ```
-python3 bootstrap/harness/harness.py                    # everything, ~11 minutes
+python3 bootstrap/harness/harness.py                    # everything, ~20 minutes
 python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 ```
 
@@ -113,6 +128,7 @@ parse failure some lines away from the mistake:
 | `assoc` | the associated-type keyword (D-160) — so `bool:assoc;` is not a field |
 | `on` | a keyword — so `Node?:on = nd;` is parsed as the expression `Node ? …` and fails at the `:` |
 | `is_err`, `defaults`, `any` | keyword forms (`is_err(x)`, D-096), a struck-but-reserved operator word (D-167), and the type — each has cost a build as a local name |
+| `channel`, `atomic`, `thread`, `joins` | the constructor, the type, the function modifier and the contract clause (D-181/D-182) — `thread` in particular reads like an ordinary noun |
 | `error` | the declaration keyword (D-179) — so `error` is not a local name, and `Result`'s field is `.err` |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
