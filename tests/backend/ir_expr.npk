@@ -307,6 +307,13 @@ func:main = int32(cstring[]:_~argv) {
         "define { i32, i32 } @npk_calls() {\nentry:\n  %t0 = call ptr @npk_alloc(i64 64)\n  %t1 = call { i32, i32 } @npk_f(i32 7)\n  %t2 = extractvalue { i32, i32 } %t1, 0\n"))) { exit 65i32; }
 
     // --- A STRING LITERAL: a module-level constant plus three insertvalues ----
+    //
+    // CAPACITY IS ZERO, AND LENGTH IS NOT (D-183, 1.2.0). A literal's body is
+    // that module constant, so a drop must never hand it to `npk_dalloc` —
+    // and the capacity field, which nothing reads, is what says so: 0 means
+    // the body is not ours. A heap-built string keeps `cap = n`. This test
+    // pins the distinction, because the two fields held the same number
+    // before and a drop could not have told them apart.
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
     ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
@@ -315,7 +322,7 @@ func:main = int32(cstring[]:_~argv) {
     IrVal:vs = raw emit_expr(@x7, s_lit);
     if (!(raw iv_is_ok(vs)))                                 { exit 70i32; }
     if (!(raw string_eq(raw irw_text(@w7),
-        "define { i32, i32 } @npk_hello() {\nentry:\n  %t0 = insertvalue { ptr, i64, i64 } undef, ptr @.str.0, 0\n  %t1 = insertvalue { ptr, i64, i64 } %t0, i64 3, 1\n  %t2 = insertvalue { ptr, i64, i64 } %t1, i64 3, 2\n"))) { exit 71i32; }
+        "define { i32, i32 } @npk_hello() {\nentry:\n  %t0 = insertvalue { ptr, i64, i64 } undef, ptr @.str.0, 0\n  %t1 = insertvalue { ptr, i64, i64 } %t0, i64 3, 1\n  %t2 = insertvalue { ptr, i64, i64 } %t1, i64 0, 2\n"))) { exit 71i32; }
 
     // The constant itself: a linefeed becomes `\0A`, uppercase hex, no
     // NUL terminator — the length is carried, not implied.

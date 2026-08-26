@@ -58,3 +58,36 @@ channel-element rung is gone; a program that copies an owning value without
 - **The sweep is the cycle's bulk, as it was at 1.1.1.** Expect the move-only
   rule to touch far more sites than the drop machinery does, and expect the
   instrument to measure the real debt before the refusal flips.
+
+## Log
+
+### 1.2.0a — the ownership bit, the predicate, and the instrument — DONE
+
+**Literals now carry `cap = 0`.** The prerequisite for any string drop: a
+literal's body is a module constant, and the capacity field — read by nothing —
+is what tells an owned body from a static one. Both literal-emission sites
+changed; the empty-template site already wrote 0.
+
+**`type_drops` answers for every kind**, with the composite answers recorded by
+LAYOUT the way `haspt` already is: a struct owns something exactly when one of
+its fields does, an enum exactly when some variant's payload does, and layout
+is the one pass that walks every field's resolved type. Storing it in a `Type`
+slot would make two structurally identical structs intern as different types,
+which is the mistake `tt_set_haspt`'s comment records having already been made
+once.
+
+`arena<T>`, `shared_arena<T>` and `Channel<T, …>` answer NO today and must
+answer YES at 1.2.5. That is written into the predicate rather than left
+implicit, because the channel one is load-bearing: reclaiming a slot is what
+moves its generation, and until it does, D-182's `StaleHandle` cannot be
+provoked from source.
+
+**`check_drops_total`** is the instrument, and it is the B-7 shape applied where
+it is now load-bearing. A type kind absent from `type_drops` falls to "owns
+nothing" — which, if the kind owns something, is a leak that nothing reports,
+since no test fails when a drop is merely not emitted. So a kind must be named
+by the predicate or excused in a table WITH A REASON, and the check also catches
+the two stale directions: an excuse for a kind that is now handled, and an
+excuse for a kind that no longer exists. Verified by making all three fail.
+
+Nothing is dropped yet — 1.2.0b emits the drop functions, 1.2.1 calls them.

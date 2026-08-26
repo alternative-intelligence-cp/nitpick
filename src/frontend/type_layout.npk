@@ -147,6 +147,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
 
     Lay:l = raw lay_start();
     bool:haspt = false;
+    bool:drops = false;
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
@@ -164,10 +165,16 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // one place every field's RESOLVED type passes through, which is
             // exactly what the escape analysis cannot reconstruct for itself.
             if (raw field_holds_ptr(r, ft)) { haspt = true; }
+            // AND THE DROP BIT, on the same walk and for the same reason
+            // (D-183, 1.2.0): this is the one place every field's RESOLVED
+            // type passes through, and a struct owns something exactly when
+            // one of its fields does.
+            if (raw type_drops(r.types, ft, 64i32)) { drops = true; }
         }
         i = i + 1i32;
     }
     drop tt_set_haspt(r.types, struct_type, haspt);
+    drop tt_set_drops(r.types, struct_type, drops);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -309,6 +316,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
             int32:home = raw symtab_home_scope(r.tab, did.index, scope);
             int64:wsize = 0i64;
             int32:walign = 1i32;
+            bool:edrops = false;
             int32:i = 0i32;
             while (i < (raw item_member_count(r.ast, d))) {
                 DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
@@ -335,6 +343,12 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         int32:pa = raw type_align(r.types, pt);
                         vsize = (raw align_up(vsize, pa)) + ps;
                         if (pa > walign) { walign = pa; }
+                        // The drop bit, on the same walk (D-183, 1.2.0): an
+                        // enum owns something exactly when SOME variant's
+                        // payload does. Which variant is live is a runtime
+                        // question the drop function answers on the tag; this
+                        // is only whether the type needs one at all.
+                        if (raw type_drops(r.types, pt, 64i32)) { edrops = true; }
                         j = j + 1i32;
                     }
                     if (vsize > wsize) { wsize = vsize; }
@@ -344,6 +358,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
             if (wsize > 0i64) {
                 discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
+            drop tt_set_drops(r.types, t, edrops);
         }
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);

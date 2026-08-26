@@ -146,6 +146,15 @@ pub struct:TypeTable = {
     // The layout-recorded pointer-bearing bits, parallel to `items` — see
     // `tt_set_haspt` for why this is not a `Type` slot.
     wild int32->:haspt;
+
+    // THE LAYOUT-RECORDED DROP BITS (D-183, 1.2.0), parallel in the same way
+    // and for the same reason. Whether a struct or enum OWNS anything is a
+    // question about its fields, and layout is the one pass that walks every
+    // field's resolved type; asking again later would mean re-resolving, and
+    // storing it in a `Type` slot would make two structurally identical
+    // structs intern as different types. 0 = not computed, 1 = owns nothing,
+    // 2 = owns something and must be dropped.
+    wild int32->:drops;
 };
 
 // --- construction ----------------------------------------------------------------------
@@ -157,10 +166,13 @@ func:tt_grow = NIL(TypeTable->:t) never fails {
     t.items = bigger =>! wild Type->;
     wild int8->:hp = ralloc(t.haspt =>! wild int8->, (nc => int64) * 4i64);
     wild int32->:hw = hp =>! wild int32->;
+    wild int8->:dp = ralloc(t.drops =>! wild int8->, (nc => int64) * 4i64);
+    wild int32->:dw = dp =>! wild int32->;
     // The grown tail must read "not computed" — ralloc copies only the old block.
     int32:z = t.cap;
-    while (z < nc) { hw[z => int64] = 0i32; z = z + 1i32; }
+    while (z < nc) { hw[z => int64] = 0i32; dw[z => int64] = 0i32; z = z + 1i32; }
     t.haspt = hw;
+    t.drops = dw;
     t.cap = nc;
     pass NIL;
 };
@@ -227,6 +239,65 @@ pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     t.haspt[id => int64] = 1i32;
     if (has) { t.haspt[id => int64] = 2i32; }
     pass NIL;
+};
+
+// The drop bit, written once by layout from absent to known — the same
+// once-only discipline `tt_set_haspt` documents.
+pub func:tt_set_drops = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
+    t.drops[id => int64] = 1i32;
+    if (has) { t.drops[id => int64] = 2i32; }
+    pass NIL;
+};
+
+pub func:tt_drops = int32(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { pass 0i32; }
+    if (id >= t.count) { pass 0i32; }
+    pass (t.drops[id => int64]);
+};
+
+// DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
+//
+// The answer for a struct or enum is layout's, recorded above; every other
+// kind answers from its own shape. Most answer NO, and that is the point: a
+// type with no drop generates no call, so the feature costs nothing for the
+// scalars that dominate every program.
+//
+// NOT owning: scalars of every width, `Error`, the kernel ids, `NIL`; a
+// POINTER (`wild` memory is manual, via `defer`/`dalloc` — that is what makes
+// the regime explicit); a SLICE (a borrow, D-070); a `Handle<T>` and a channel
+// endpoint (indices, not owners — D-152/D-182).
+//
+// `arena<T>`, `shared_arena<T>` and `Channel<T, …>` answer NO *for now* and
+// must answer YES at 1.2.5, which is where slab release and channel-slot
+// reclamation land. That is written down rather than left implicit because
+// the channel one is load-bearing: reclaiming a slot is what moves its
+// generation, and until it does, D-182's `StaleHandle` cannot be provoked
+// from source at all.
+pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    // A string owns its body unless the body is a literal's, and `cap == 0`
+    // is how it says so (D-183) — the drop is conditional, but the TYPE needs
+    // one either way.
+    if (k == (raw TY_STRING()))   { pass true; }
+    if (k == (raw TY_ARRAY()))    {
+        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT()))   {
+        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_ATOMIC()))   {
+        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT()))   { pass ((raw tt_drops(t, id)) == 2i32); }
+    if (k == (raw TY_ENUM()))     { pass ((raw tt_drops(t, id)) == 2i32); }
+    pass false;
 };
 
 pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
@@ -747,7 +818,8 @@ pub func:typetable_init = TypeTable() never fails {
         items: mem =>! wild Type->, count: 0i32, cap: 64i32,
         t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
         t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32, t_error: 0i32,
-        haspt: hmem =>! wild int32->
+        haspt: hmem =>! wild int32->,
+        drops: (calloc(n, 4i64)) =>! wild int32->
     };
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this

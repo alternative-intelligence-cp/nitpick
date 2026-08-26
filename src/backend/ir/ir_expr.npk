@@ -607,10 +607,16 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             drop irw_line(x.fe.w, raw cat5(s2,
                 " = insertvalue { ptr, i64, i64 } ", s1, ", i64 ",
                 raw string_concat(slen, ", 1")));
+    // CAPACITY ZERO MEANS THE BODY IS NOT OURS (D-183). A literal's body is a
+    // module constant, so a drop must never hand it to `npk_dalloc` — which
+    // validates and traps, correctly. The capacity field is read by nothing
+    // (not the runtime, not this emitter, not the seed), so it carries the
+    // ownership bit: 0 here, `n` on a heap-built string, and the string drop
+    // is `if cap != 0`. It says the same thing from the other side too — a
+    // literal is not growable in place.
             string:s3 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(s3,
-                " = insertvalue { ptr, i64, i64 } ", s2, ", i64 ",
-                raw string_concat(slen, ", 2")));
+            drop irw_line(x.fe.w, raw cat4(s3,
+                " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
             pass (raw iv("{ ptr, i64, i64 }", s3, ctid));
         }
         // int, bool and char are one numeric constant at the node's width.
@@ -944,9 +950,16 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64, i64 } ", a,
                                      ", i64 ", raw string_concat(len, ", 1")));
+    // CAPACITY ZERO MEANS THE BODY IS NOT OURS (D-183). A literal's body is a
+    // module constant, so a drop must never hand it to `npk_dalloc` — which
+    // validates and traps, correctly. The capacity field is read by nothing
+    // (not the runtime, not this emitter, not the seed), so it carries the
+    // ownership bit: 0 here, `n` on a heap-built string, and the string drop
+    // is `if cap != 0`. It says the same thing from the other side too — a
+    // literal is not growable in place.
     string:c = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(c, " = insertvalue { ptr, i64, i64 } ", b,
-                                     ", i64 ", raw string_concat(len, ", 2")));
+    drop irw_line(x.fe.w, raw cat4(c, " = insertvalue { ptr, i64, i64 } ", b,
+                                     ", i64 0, 2"));
     pass (raw iv("{ ptr, i64, i64 }", c, 0i32));
 };
 

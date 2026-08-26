@@ -579,6 +579,78 @@ def _sites_by_function(pattern, paths, definition):
     return found
 
 
+# EVERY TYPE KIND HAS AN ANSWER ABOUT OWNERSHIP (1.2.0). `type_drops` decides
+# whether a value of a type owns anything that must be released at scope exit
+# (D-183), and a kind it does not name falls to its default of "owns nothing" —
+# which is a leak if the kind actually owns something, and a silent one, since
+# nothing fails when a drop is simply not emitted.
+#
+# This is the B-7 shape (a new type kind meeting a walker written before it),
+# applied where it is now load-bearing. Five of 1.1.10-D's seven defects were
+# that pattern; the difference here is that the failure mode is not a crash but
+# storage that is never freed.
+#
+# A kind may be absent from `type_drops` only by appearing below WITH A REASON.
+DROPS_DEFAULT_OK = {
+    "TY_INVALID":   "resolution already failed; nothing was built to own anything",
+    "TY_NIL":       "no value, no storage",
+    "TY_BOOL":      "scalar", "TY_INT": "scalar", "TY_CHAR": "scalar",
+    "TY_FLOAT":     "scalar", "TY_TBB": "scalar",
+    "TY_KERNEL":    "a kernel identifier is a number (D-042)",
+    "TY_ERROR":     "a code word, not an address (D-179)",
+    "TY_CSTRING":   "the kernel's storage (argv), never ours to free (D-049)",
+    "TY_POINTER":   "a pointer is not an owner; `wild` memory is manual, via "
+                    "`defer`/`dalloc`, which is what makes the regime explicit",
+    "TY_SLICE":     "a borrow (D-070)",
+    "TY_HANDLE":    "an index, not an owner (D-152)",
+    "TY_CHANNEL":   "an endpoint is an index (D-182) -- but the CHANNEL ITSELF "
+                    "must be reclaimed at 1.2.5, which is what finally moves a "
+                    "slot's generation and makes StaleHandle reachable",
+    "TY_ARENA":     "slab release lands at 1.2.5",
+    "TY_SHARED_ARENA": "slab release lands at 1.2.5",
+    "TY_ANY":       "unsized; never a value at this rung",
+    "TY_TRAIT":     "a bound, not a value",
+    "TY_DYN":       "drops through the vtable's drop slot at 1.2.4",
+    "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",
+    "TY_SELF":      "resolves to the concrete type before it is asked",
+    "TY_PARAM":     "substituted before it is asked; the specialization answers",
+    "TY_ASSOC":     "a projection; resolves to its bound type",
+    "TY_RANGE":     "two scalars",
+    "TY_COMPTIME":  "a compile-time argument, never a runtime value",
+}
+
+
+def check_drops_total():
+    """`type_drops` names every type kind, or DROPS_DEFAULT_OK states why not."""
+    fails = []
+    with open(os.path.join(ROOT, "src", "frontend", "types.npk"),
+              encoding="utf-8") as fh:
+        src = fh.read()
+    kinds = re.findall(r"pub func:(TY_[A-Z_]+) = int32", src)
+    m = re.search(r"^pub func:type_drops = .*?^\};", src, re.M | re.S)
+    if not m:
+        return ["drops-total: `type_drops` not found in src/frontend/types.npk"]
+    body = "\n".join(l for l in m.group(0).split("\n")
+                     if not l.lstrip().startswith("//"))
+    named = set(re.findall(r"TY_[A-Z_]+", body))
+    for k in kinds:
+        if k in named or k in DROPS_DEFAULT_OK:
+            continue
+        fails.append("drops-total: `type_drops` does not name %s and "
+                     "DROPS_DEFAULT_OK gives no reason -- a kind that owns "
+                     "something and is not named leaks silently, because "
+                     "nothing fails when a drop is simply not emitted" % k)
+    for k in sorted(DROPS_DEFAULT_OK):
+        if k not in kinds:
+            fails.append("drops-total: DROPS_DEFAULT_OK names %s, which is no "
+                         "longer a type kind" % k)
+        elif k in named:
+            fails.append("drops-total: %s is both named by `type_drops` and "
+                         "excused in DROPS_DEFAULT_OK -- one of the two is "
+                         "stale" % k)
+    return fails
+
+
 def check_slot_sites_agree():
     """Every `fits` site has an `emit_fit` partner, by the table above.
 
@@ -1707,6 +1779,7 @@ def main(argv):
         failures += check_codes_centralised()
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
+        failures += check_drops_total()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
         failures += check_ll_types_agree()
