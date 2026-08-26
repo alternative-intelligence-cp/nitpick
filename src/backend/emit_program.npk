@@ -1058,6 +1058,11 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         }
     }
 
+    // THE DROP BODIES (D-183, 1.2.1), before the string table so their own
+    // literals — none today, but a drop is ordinary code — still land. The
+    // loop RE-READS the count: a struct's drop calls its fields' drops, which
+    // registers them, exactly as the generic-instance loop above grows.
+    drop emit_drop_bodies(w, @c, tr, @g.ast, @g.tab, diags);
     drop strtab_write_all(@st, w);
     // The site tables LAST (D-179, 1.1.6): every stamp site has registered by
     // now — emitting them beside the declares wrote a one-row sentinel table
@@ -1068,6 +1073,185 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // type wherever its definition appears, so the late ones go at the end.
     drop emit_late_headers(w, tr, @c, diags, g, headers_before);
     pass ((raw diaglist_count(diags)) == before);
+};
+
+// --- the drop bodies (D-183, 1.2.1) ------------------------------------------
+//
+// One function per type that owns something, `@"npk.drop.<dty>"`, taking the
+// value BY POINTER: a drop reads and releases storage rather than consuming a
+// copy, and an aggregate passed by value would be copied to be freed.
+//
+// Types that own nothing never reach here, because nothing registers them —
+// which is the whole cost model. A scalar-only program emits no drop bodies
+// and no calls, and its IR is byte-for-byte what it was before this landed.
+func:emit_drop_bodies = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
+                            Ast->:ast, SymbolTable->:tab,
+                            DiagList->:diags) never fails {
+    int32:i = 0i32;
+    while (i < (raw drop_type_count(c))) {
+        int32:dty = raw drop_type_at(c, i);
+        drop emit_one_drop(w, c, tr, ast, tab, diags, dty);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
+                         Ast->:ast, SymbolTable->:tab, DiagList->:diags,
+                         int32:dty) never fails {
+    LlType:t = raw ll_type(c, dty);
+    if (!(raw ll_is_ok(t))) { pass NIL; }
+    string:sym = raw drop_fn_sym(c, dty);
+    drop irw_raw(w, raw cat4("define internal void ", sym, "(ptr %v) {", ""));
+    drop irw_raw(w, "entry:");
+    int32:k = raw type_kind(c.types, dty);
+
+    // A STRING FREES ITS BODY ONLY WHEN IT OWNS IT (D-183): `cap == 0` is a
+    // literal's body, which is a module constant, and `npk_dalloc` traps on
+    // one — correctly.
+    if (k == (raw TY_STRING())) {
+        drop irw_raw(w, "  %cp = getelementptr { ptr, i64, i64 }, ptr %v, i32 0, i32 2");
+        drop irw_raw(w, "  %cap = load i64, ptr %cp");
+        drop irw_raw(w, "  %own = icmp ne i64 %cap, 0");
+        drop irw_raw(w, "  br i1 %own, label %free, label %done");
+        drop irw_raw(w, "free:");
+        drop irw_raw(w, "  %bp = getelementptr { ptr, i64, i64 }, ptr %v, i32 0, i32 0");
+        drop irw_raw(w, "  %b = load ptr, ptr %bp");
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %b)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // `atomic<T>` IS `T`'s storage, so it is dropped as one.
+    if (k == (raw TY_ATOMIC())) {
+        int32:inner = raw type_elem(c.types, dty);
+        drop irw_raw(w, raw cat4("  call void ", raw drop_fn_sym(c, inner),
+                          "(ptr %v)", ""));
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // `Result<T>` is `{ T, i32 }`: an error case carries no value to drop.
+    if (k == (raw TY_RESULT())) {
+        int32:inner = raw type_elem(c.types, dty);
+        drop irw_raw(w, raw cat5("  %ep = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 1", "", ""));
+        drop irw_raw(w, "  %err = load i32, ptr %ep");
+        drop irw_raw(w, "  %ok = icmp eq i32 %err, 0");
+        drop irw_raw(w, "  br i1 %ok, label %val, label %done");
+        drop irw_raw(w, "val:");
+        drop irw_raw(w, raw cat5("  %vp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 0", "", ""));
+        drop irw_raw(w, raw cat4("  call void ", raw drop_fn_sym(c, inner),
+                          "(ptr %vp)", ""));
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // `Optional<T>` is `{ i8, T }`, TAG FIRST, and 1 means present.
+    if (k == (raw TY_OPTIONAL())) {
+        int32:inner = raw type_elem(c.types, dty);
+        drop irw_raw(w, raw cat5("  %tp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 0", "", ""));
+        drop irw_raw(w, "  %tag = load i8, ptr %tp");
+        drop irw_raw(w, "  %has = icmp ne i8 %tag, 0");
+        drop irw_raw(w, "  br i1 %has, label %some, label %done");
+        drop irw_raw(w, "some:");
+        drop irw_raw(w, raw cat5("  %vp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 1", "", ""));
+        drop irw_raw(w, raw cat4("  call void ", raw drop_fn_sym(c, inner),
+                          "(ptr %vp)", ""));
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // AN ARRAY DROPS EVERY ELEMENT, ascending — order among siblings is not
+    // observable, and ascending is the cheaper induction.
+    if (k == (raw TY_ARRAY())) {
+        int32:el = raw type_elem(c.types, dty);
+        string:n = raw int_to_string((raw type_array_count(c.types, dty)) => int64);
+        drop irw_raw(w, "  br label %loop");
+        drop irw_raw(w, "loop:");
+        drop irw_raw(w, "  %i = phi i64 [ 0, %entry ], [ %ni, %body ]");
+        drop irw_raw(w, raw cat4("  %at_end = icmp uge i64 %i, ", n, "", ""));
+        drop irw_raw(w, "  br i1 %at_end, label %done, label %body");
+        drop irw_raw(w, "body:");
+        drop irw_raw(w, raw cat5("  %ep = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i64 %i", "", ""));
+        drop irw_raw(w, raw cat4("  call void ", raw drop_fn_sym(c, el),
+                          "(ptr %ep)", ""));
+        drop irw_raw(w, "  %ni = add i64 %i, 1");
+        drop irw_raw(w, "  br label %loop");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // A STRUCT DROPS ITS FIELDS IN REVERSE DECLARATION ORDER (D-183), and
+    // only the ones that own something.
+    if (k == (raw TY_STRUCT())) {
+        DeclId:did = DeclId{ index: raw type_decl(c.types, dty) };
+        DeclNode:d = raw ast_decl(ast, did);
+        int32:home = raw symtab_home_scope(tab, did.index, 0i32);
+        // count the fields first, so the walk can run backwards
+        int32:nf = 0i32;
+        int32:m = 0i32;
+        while (m < (raw item_member_count(ast, d))) {
+            DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, m));
+            if (fm.kind == DeclKind.DeclFieldDecl) { nf = nf + 1i32; }
+            m = m + 1i32;
+        }
+        int32:fi = nf;
+        while (fi > 0i32) {
+            fi = fi - 1i32;
+            // find the fi'th field decl
+            int32:seen = 0i32;
+            int32:q = 0i32;
+            while (q < (raw item_member_count(ast, d))) {
+                DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, q));
+                if (fm.kind == DeclKind.DeclFieldDecl) {
+                    if (seen == fi) {
+                        int32:ft = raw resolve_type(tr, raw field_type(fm), home);
+                        if (raw type_drops(c.types, ft, 64i32)) {
+                            string:g = raw cat5("  %f", raw int_to_string(fi => int64),
+                                          " = getelementptr ", t.text, "");
+                            drop irw_raw(w, raw cat5(g, ", ptr %v, i32 0, i32 ",
+                                              raw int_to_string(fi => int64), "", ""));
+                            drop irw_raw(w, raw cat5("  call void ",
+                                              raw drop_fn_sym(c, ft), "(ptr %f",
+                                              raw int_to_string(fi => int64), ")"));
+                        }
+                        q = raw item_member_count(ast, d);
+                    } else {
+                        seen = seen + 1i32;
+                        q = q + 1i32;
+                    }
+                } else {
+                    q = q + 1i32;
+                }
+            }
+        }
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // Anything else registered is a defect: `type_drops` said it owns
+    // something and this does not know how to release it.
+    drop irw_raw(w, "  ret void");
+    drop irw_raw(w, "}");
+    pass NIL;
 };
 
 func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,

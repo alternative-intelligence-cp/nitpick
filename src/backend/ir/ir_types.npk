@@ -124,6 +124,18 @@ pub struct:LlCtx = {
     wild int32->:vt_sym;
     int32:vt_count;
     int32:vt_cap;
+
+    // THE TYPES A DROP WAS EMITTED FOR (D-183, 1.2.1), recorded on demand at
+    // the call sites and emitted as bodies after the module's functions. A
+    // registry rather than a sweep over the type table: only types actually
+    // dropped need a function, and a type nothing drops may not have its
+    // named aggregate defined at all — emitting a body for it would reference
+    // a type llc has never seen. Grows while the bodies are emitted, because a
+    // struct's drop calls its fields' drops, so the emission loop re-reads the
+    // count exactly as the generic-instance loop does.
+    wild int32->:drop_types;
+    int32:drop_count;
+    int32:drop_cap;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) never fails {
@@ -135,8 +147,38 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      vt_self: (alloc(vn * #size_of<int32>())) =>! wild int32->,
                      vt_trait: (alloc(vn * #size_of<int32>())) =>! wild int32->,
                      vt_sym: (alloc(vn * #size_of<int32>())) =>! wild int32->,
-                     vt_count: 0i32, vt_cap: vn =>! int32 };
+                     vt_count: 0i32, vt_cap: vn =>! int32,
+                     drop_types: (alloc(vn * #size_of<int32>())) =>! wild int32->,
+                     drop_count: 0i32, drop_cap: vn =>! int32 };
     pass c;
+};
+
+// THE DROP SYMBOL for a type, and the registration that guarantees a body.
+// Idempotent: a type dropped in forty scopes is emitted once.
+pub func:drop_fn_sym = string(LlCtx->:c, int32:dty) never fails {
+    if (c.drop_count >= c.drop_cap) {
+        int32:nc = c.drop_cap * 2i32;
+        c.drop_types = (ralloc(c.drop_types =>! wild int8->,
+                               (nc => int64) * #size_of<int32>())) =>! wild int32->;
+        c.drop_cap = nc;
+    }
+    bool:seen = false;
+    int32:i = 0i32;
+    while (i < c.drop_count) {
+        if (c.drop_types[i => int64] == dty) { seen = true; }
+        i = i + 1i32;
+    }
+    if (!seen) {
+        c.drop_types[c.drop_count => int64] = dty;
+        c.drop_count = c.drop_count + 1i32;
+    }
+    pass (raw string_concat("@\"npk.drop.",
+              raw string_concat(raw int_to_string(dty => int64), "\"")));
+};
+
+pub func:drop_type_count = int32(LlCtx->:c) never fails { pass c.drop_count; };
+pub func:drop_type_at = int32(LlCtx->:c, int32:i) never fails {
+    pass (c.drop_types[i => int64]);
 };
 
 // Record one impl's table. Called by the pre-pass; the emitter reads it back

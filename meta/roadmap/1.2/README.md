@@ -32,8 +32,8 @@ names believed they owned one thing.
 | # | Topic | Gated on |
 |---|---|---|
 | 1.2.0 | **The drop table and the generated function** — `@"npk.drop.<T>"` per type that needs one, nothing emitted for types that do not; scalars, `string` (**with the `cap == 0` ownership bit, which means literals change to `cap = 0` first**), arrays, structs (reverse field order), enums (on the tag), `T?`, `Result<T>`, `atomic<T>`. A `check_drops_total` instrument: every type kind either drops, is stated not to, or fails the harness — the B-7 shape, applied where it is now load-bearing | D-183 |
-| 1.2.1 | **Scope exits** — drops at the closing brace, `break`, `continue`, `pass`, `fail`, `relay`, `return`, `exit`; inner-to-outer on a multi-scope exit; `defer` BEFORE drops; a trap runs neither (D-014); **a suspension is not a scope exit** (D-177) | 1.2.0 |
-| 1.2.2 | **Move-only types** — the type rule of study §4, the diagnostic that names the type and the reason, and the `src/`/`tests/` sweep it forces. The 0.8.0/1.1.0 shape: land the rule REPORTING, sweep, then flip it to refusing | 1.2.1 |
+| 1.2.1 | **Move-only types** — the type rule of study §4, the diagnostic that names the type and the reason, and the `src/`/`tests/` sweep it forces. The 0.8.0/1.1.0 shape: land the rule REPORTING, measure the real debt, sweep, then flip it to refusing. **Moved ahead of the call sites — see below** | 1.2.0 |
+| 1.2.2 | **Turning the drops on** — uncomment the one call in `run_defers_down_to`; the machinery beneath it (scope frames, the unwind, the bodies) landed at 1.2.0b | 1.2.1 |
 | 1.2.3 | **Drop flags** — the conditional-move residue: static proof where the bindings analysis can decide, a one-bit local where it cannot, and an instrument counting how often it cannot. Measurement before optimisation | 1.2.2 |
 | 1.2.4 | **`dyn` drops** — the vtable's drop slot (D-158/D-159's shape, one pointer), and dropping through it | 1.2.0 |
 | 1.2.5 | **Channels, arenas, and the leak check** — reclaim a channel slot and bump its generation, making `StaleHandle` reachable and testable for the first time; retire 1.1.10-B's rung on owning channel elements; arena and shared-arena release; drops before D-151's exit check, in that order | 1.2.1, 1.2.4 |
@@ -91,3 +91,40 @@ the two stale directions: an excuse for a kind that is now handled, and an
 excuse for a kind that no longer exists. Verified by making all three fail.
 
 Nothing is dropped yet — 1.2.0b emits the drop functions, 1.2.1 calls them.
+
+### 1.2.0b — the machinery, and why the order in this table changed — DONE
+
+Everything a drop needs, built and **not yet called**:
+
+- A **scope frame** carries the locals mark it was pushed at, parallel to the
+  defer frame and pushed with it — so a scope's drops are its locals above that
+  mark, walked backwards, which is reverse declaration order for free.
+- `run_defers_down_to` is the single seam. Every exit passes through it —
+  normal block end, `break`, `continue`, and every function exit — so "defers
+  first, then drops, innermost scope first" is a property of one loop rather
+  than an ordering anybody has to maintain at each exit.
+- `@"npk.drop.<T>"` bodies for `string` (conditional on the `cap == 0`
+  ownership bit), structs (fields in reverse, only the owning ones), arrays,
+  `Result<T>` (the value only when `err == 0`), `Optional<T>` (tag 1 means
+  present), and `atomic<T>` (as its element). Registered on demand at the call
+  sites and emitted after the module's functions, the loop re-reading its count
+  because a struct's drop registers its fields'.
+
+**Then the order in this table turned out to be wrong, and the compiler said
+so.** Wiring the call before the MOVE-ONLY rule is not a leak fix, it is a
+use-after-free: D-065 settled that nothing moves by being passed, so a `string`
+handed to `strtab_add` is COPIED into the table and then freed at the caller's
+closing brace, leaving the table pointing at released storage. The compiler
+does exactly this, everywhere.
+
+That was predicted from D-183 §4 and then **measured rather than argued**: with
+the call in, `string_lib`, `fd_io` and `line_discipline` segfaulted, `file_io`
+and `07_strings` failed, and npkc could no longer compile itself. With it out,
+all five pass again.
+
+So 1.2.1 is now the move-only rule and 1.2.2 turns the calls on — one
+commented line, whose comment says exactly this. The sequencing error is worth
+recording: the plan had the mechanism before the rule that makes the mechanism
+sound, which reads naturally and is backwards. **A drop is only correct in a
+language where ownership is unique**, and making ownership unique is the
+larger half of this cycle.

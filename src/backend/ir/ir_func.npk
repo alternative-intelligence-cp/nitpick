@@ -97,6 +97,13 @@ pub struct:FnEmitter = {
     int32:dcount;
     int32:dcap;
     wild int32->:dframes;
+
+    // THE LOCALS MARK EACH SCOPE WAS PUSHED AT (D-183, 1.2.1), parallel to
+    // `dframes`. A scope's DROPS are its locals above this mark, and they run
+    // on the same unwind its defers do — so the two stacks are pushed and
+    // popped together, and "defers first, then drops, innermost scope first"
+    // is a property of one loop rather than an ordering anybody maintains.
+    wild int32->:dlmarks;
     int32:dfcount;
     int32:dfcap;
 
@@ -197,6 +204,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         terminated: false,
         dstmts: ds =>! wild int32->, dcount: 0i32, dcap: 16i32,
         dframes: df =>! wild int32->, dfcount: 0i32, dfcap: 16i32,
+        dlmarks: (alloc(16i64 * 4i64)) =>! wild int32->,
         loop_heads: lh =>! wild string->, loop_dones: ld =>! wild string->,
         loop_depths: lp =>! wild int32->,
         loop_labels: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -705,9 +713,12 @@ pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) never fails {
         int32:nc = fe.dfcap * 2i32;
         wild int8->:m = ralloc(fe.dframes =>! wild int8->, (nc =>! int64) * 4i64);
         fe.dframes = m =>! wild int32->;
+        wild int8->:m2 = ralloc(fe.dlmarks =>! wild int8->, (nc =>! int64) * 4i64);
+        fe.dlmarks = m2 =>! wild int32->;
         fe.dfcap = nc;
     }
     fe.dframes[fe.dfcount => int64] = fe.dcount;
+    fe.dlmarks[fe.dfcount => int64] = fe.lcount;
     fe.dfcount = fe.dfcount + 1i32;
     pass NIL;
 };
@@ -742,6 +753,23 @@ pub func:fnem_defer_frame_hi = int32(FnEmitter->:fe, int32:f) never fails {
 };
 pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.dstmts[i => int64];
+};
+
+// A SCOPE'S OWN LOCALS: those bound between its mark and the next scope's, or
+// the live top for the innermost. The drop unwind walks this window backwards,
+// which is reverse declaration order within the scope (D-183).
+pub func:fnem_scope_lmark = int32(FnEmitter->:fe, int32:f) never fails {
+    pass fe.dlmarks[f => int64];
+};
+pub func:fnem_scope_lhi = int32(FnEmitter->:fe, int32:f) never fails {
+    if (f == (fe.dfcount - 1i32)) { pass fe.lcount; }
+    pass fe.dlmarks[(f + 1i32) => int64];
+};
+pub func:fnem_local_slot_at = string(FnEmitter->:fe, int32:i) never fails {
+    pass fe.lslots[i => int64];
+};
+pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
+    pass fe.ltypes[i => int64];
 };
 
 pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done,

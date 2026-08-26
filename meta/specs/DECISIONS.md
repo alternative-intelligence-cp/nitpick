@@ -12598,6 +12598,22 @@ that is the correct direction: every such site is a place where two names
 believed they owned one thing. The sweep gets the 0.8.0/1.1.0 treatment — land
 the rule REPORTING, measure the real debt, sweep, then flip it to refusing.
 
+### The rule comes BEFORE the mechanism, and the compiler proved it
+
+The plan for this cycle had scope-exit drops landing first and the move-only
+rule after, which reads naturally and is backwards. **A drop is only correct in
+a language where ownership is unique.** Emitting drops while a copy still makes
+two owners is not a leak fix, it is a use-after-free: a `string` handed to a
+table is copied into it and then freed at the caller's closing brace, leaving
+the table pointing at released storage — and the compiler's own `strtab_add`
+does exactly that.
+
+Measured rather than argued, at 1.2.0b: with the drop calls wired and the rule
+absent, three string-heavy programs segfaulted, two more failed, and npkc could
+no longer compile itself. The machinery is therefore built and deliberately not
+called — one commented line, whose comment says why — and the move-only rule
+lands first.
+
 ### Conditional moves get a drop flag, but only where the analysis cannot decide
 
 A binding moved on one branch and not another can be neither dropped

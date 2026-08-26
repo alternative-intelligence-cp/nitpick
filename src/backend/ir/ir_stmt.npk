@@ -86,6 +86,42 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
+        // THIS SCOPE'S DROPS BELONG HERE (D-183, 1.2.1) — after its defers,
+        // because a `defer` body can name the scope's bindings and dropping
+        // first would hand it freed storage; and before the enclosing scope's
+        // anything, because that is what innermost-first means.
+        //
+        // AND THEY ARE NOT CALLED YET, ON PURPOSE. Wiring this line before the
+        // MOVE-ONLY rule (D-183 §4, subcycle 1.2.2) is a use-after-free, not a
+        // leak fix: D-065 settled that nothing moves by being passed, so a
+        // `string` handed to `strtab_add` is COPIED into the table and then
+        // freed at the caller's closing brace, leaving the table pointing at
+        // released storage. Measured rather than reasoned: with the call in,
+        // three string-heavy programs segfaulted and npkc could no longer
+        // compile itself. Uncomment with 1.2.2, not before.
+        //
+        //   IrVal:dr = raw run_scope_drops(x, f);
+        //   if (!(raw iv_is_ok(dr))) { pass dr; }
+        discard(f);
+    }
+    pass (raw iv_nil());
+};
+
+// One scope's drops. A local whose type owns nothing emits nothing at all —
+// the feature has to cost zero for the scalars that dominate every program.
+pub func:run_scope_drops = IrVal(ExprEmitter->:x, int32:f) never fails {
+    int32:lhi = raw fnem_scope_lhi(x.fe, f);
+    int32:llo = raw fnem_scope_lmark(x.fe, f);
+    int32:i = lhi;
+    while (i > llo) {
+        i = i - 1i32;
+        int32:dty = raw fnem_local_type_at(x.fe, i);
+        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+            string:sym = raw drop_fn_sym(x.fe.ctx, dty);
+            drop irw_line(x.fe.w, raw cat4("call void ", sym, "(ptr ",
+                              raw string_concat(raw fnem_local_slot_at(x.fe, i),
+                                                ")")));
+        }
     }
     pass (raw iv_nil());
 };
