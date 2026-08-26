@@ -50,3 +50,20 @@ async func:bare_call = int32(int32:v) {
 
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 async func:failsafe = int32(Error:_~e) { exit 1i32; };  // TYPE-043: async failsafe
+
+// A CHANNEL `send`/`recv` OBEYS THE SAME RULE (D-072/D-177, 1.1.10-D). Both are
+// `async`, so both run only under `await` — and a bare one is not a suspension
+// in the wrong place, it is an operation that does not happen: the value is
+// never sent, the value is never received, and the `Result` says nothing about
+// it.
+//
+// It escaped the rule above for a while because it is a METHOD on a builtin
+// type rather than a call to a declared `async` function, and the backend
+// caught it instead — as a RUNG, "not supported at this backend rung, enabled
+// by cycle 1.1", which promised a capability that was never going to arrive.
+async func:bare_chan = NIL() {
+    Channel<int32, 3i32, 2i64>:ch = channel() ?! Unreachable;
+    // expect-error: NITPICK-TYPE-043
+    ch.send(1i32, raw duration_ms(10i64)) ?! Unreachable;
+    pass NIL;
+};

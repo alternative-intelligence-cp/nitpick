@@ -1074,7 +1074,15 @@ func:unwrap_callee_is_async = bool(ExprTyper->:e, ExprNode:opn, ExprId:opid) nev
         // anything can be said about what it resolves to.
         d = raw exprtypes_callee(e.expr_types, opid);
         if (d == 0i32) {
+            // UNDER THE AWAIT, because that is what it is. This pre-typing
+            // happens before the await sets its operand, and the rules that
+            // ask "is this call under an `await`?" — a bare `async` call, a
+            // bare channel `send`/`recv` — would answer no and report a
+            // suspension nobody wrote, about the very call being awaited.
+            int32:pre_saved = e.await_operand;
+            e.await_operand = opid.index;
             discard(raw type_of_expr(e, opid));
+            e.await_operand = pre_saved;
             d = raw exprtypes_callee(e.expr_types, opid);
         }
     }
@@ -2463,7 +2471,17 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                 }
             }
         }
-        if (aw_chan) { pass (raw type_of_expr(e, awop)); }
+        if (aw_chan) {
+            // UNDER THE AWAIT, like every other branch here: `send` and `recv`
+            // are themselves `async` (1.1.10-D), and typing them without
+            // saying so makes the rule that catches a bare channel operation
+            // fire on the one shape that is correct.
+            int32:ch_saved = e.await_operand;
+            e.await_operand = awop.index;
+            int32:ch_ty = raw type_of_expr(e, awop);
+            e.await_operand = ch_saved;
+            pass ch_ty;
+        }
         if (!(raw unwrap_callee_is_async(e, awn, awop))) {
             discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
                 "`await` takes a call to an `async` function (D-177): a synchronous call completes without suspending and is not awaited",

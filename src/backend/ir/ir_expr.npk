@@ -2423,7 +2423,15 @@ func:emit_channel_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (!(raw string_eq(m, "close"))) {
         // `send`/`recv` suspend, so they are reached through `await` and
         // lowered there — a channel operation that blocks is not a call.
-        pass (raw iv_rung("a channel `send`/`recv` outside `await`", "1.1", n.span));
+        // A DEFECT, NOT A RUNG (1.1.10-D). `send` and `recv` are `async`, and
+        // the checker now refuses a bare one by name (TYPE-043) for the same
+        // reason it refuses a bare call to any `async` function: written
+        // without `await` the operation does not happen. So reaching here
+        // means the checker let one through, which is a hole in the checker
+        // rather than a capability arriving in some later cycle — and it used
+        // to say "enabled by cycle 1.1", promising a feature that was never
+        // going to exist.
+        pass (raw iv_broken(n.span));
     }
     IrVal:hv = raw emit_expr(x, raw expr_operand(n));
     if (hv.state != (raw LL_OK())) { pass hv; }

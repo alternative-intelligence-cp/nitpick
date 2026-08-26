@@ -1037,7 +1037,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
         pass (raw type_atomic_method(e, n, recv, name, start, count));
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
-        pass (raw type_channel_method(e, n, recv, name, start, count));
+        pass (raw type_channel_method(e, n, id, recv, name, start, count));
     }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
@@ -1699,7 +1699,7 @@ func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) neve
 // (D-056): there is no unbounded wait in this language, and a zero span
 // expresses "do not wait" exactly, in the same call, with the same result
 // type — which is why `try_send`/`try_recv` do not exist.
-func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:recv,
                                  int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
     int32:elem = raw type_elem(e.types, recv);
@@ -1713,6 +1713,25 @@ func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     }
     bool:is_send = raw string_eq(m, "send");
     bool:is_recv = raw string_eq(m, "recv");
+    // `send` AND `recv` ARE `async`, AND THE SAME RULE APPLIES TO THEM
+    // (D-058/D-177, closed at 1.1.10-D). A declared `async` function called
+    // bare is already refused here; a channel operation escaped that rule
+    // because it is a METHOD on a builtin type rather than a call to a
+    // declared function, so `ch.send(v, dl) ?! E1;` type-checked. The backend
+    // then refused it as a RUNG — "not supported yet, enabled by cycle 1.1" —
+    // which is the wrong answer twice: it is not a capability that arrives
+    // later, and what the source says is a send that never happens. A
+    // suspension the reader cannot see is exactly what the blueprint rule
+    // forbids, and a value silently not sent is the failure mode a channel
+    // exists to prevent.
+    if (is_send || is_recv) {
+        if (n_id.index != e.await_operand) {
+            pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
+                raw string_concat(raw string_concat("`", m),
+                    "` is `async` and runs only under `await` (D-072/D-177): written bare it suspends where nothing says so, and the operation does not happen at all"),
+                n.span));
+        }
+    }
     if ((!is_send) && (!is_recv)) {
         string:c1 = raw string_concat("a channel has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),

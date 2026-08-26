@@ -51,11 +51,34 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
 | 1.1.4 | **Coroutine lowering** — `@llvm.coro` state machines over 0.10.3's frame allocator; `await` yields `T`; `drop work()` spawns | C-7, 0.10.3 |
 | 1.1.5 | **The executor** — run queue, futex park/wake, the D-063 stop-the-world trap hook, `async func:main` over the entry shim | C-7 |
 | 1.1.6 | **Task lifetime & the join** — D-062 lexical join with the mandatory deadline; the wind-up token; the borrow-across-await narrowing (C-8) | C-8 |
-| 1.1.7 | **Channels** — `Channel<T,LEVEL,CAP>` over §6; the construction API (C-9); no `select`, deadline-mandatory `recv` | C-9 |
-| 1.1.8 | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
-| 1.1.9 | **Actors & thread pools** — tasks-with-mailboxes and N-workers-one-channel; the `Job` representation (C-9) | C-9 |
-| 1.1.10 | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
-| 1.1.11 | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
+| ~~1.1.7~~ | *(planned as Channels; the numbering moved — see below)* | C-9 |
+| 1.1.8 | **The executor** — DONE. Run queue, sleepers, futex park/wake, wind-up | C-7 |
+| 1.1.9 | **Threads (D-181)** — DONE. `thread` functions, `joins`, `clone(2)`, per-thread executors | C-9 |
+| 1.1.10 | **`atomic<T>`, channels, pools, actors** — DONE, four stages A–D. See `1.1.10.md` | C-9 |
+| **1.1.11** | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
+| **1.1.12** | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
+| **1.1.13** | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
+
+**THE NUMBERING MOVED, AND THIS TABLE NOW RECORDS WHAT HAPPENED** rather than
+what was guessed. The plan above was written before the cycle started and put
+channels at 1.1.7 with sync primitives, actors and pools after them. What the
+work actually needed was different, and in an order the plan could not have
+known: the typed-error system (D-179) was inserted at 1.1.5–1.1.7 so that the
+executor's failures would be born named, which pushed everything down three;
+and actors and pools turned out to be *tests* of the channel machinery rather
+than a subcycle of their own — D-182's whole claim about them is "no new
+primitive, no new runtime", and a subcycle that builds nothing is a subcycle
+that should not exist. Sync primitives, the reactor and the Bridge are what
+remain, renumbered 1.1.11–1.1.13.
+
+The next one is **1.1.11, sync primitives**, and it starts closer to done than
+it looks: 1.1.10-C1 built a three-state futex mutex in the runtime for the
+channel's own ring, so the parking substrate a `Mutex<T, LEVEL>` needs already
+exists and is exercised by a two-thread test. What 1.1.11 adds is the TYPE —
+`Mutex<T, LEVEL>` owns its data (D-056), acquisition is `async` and
+deadline-bounded, and the guard's scope is what releases it, which is the one
+piece that leans on the managed lowering (B-6) and must be looked at before it
+is built rather than after.
 
 ## Watch for
 
