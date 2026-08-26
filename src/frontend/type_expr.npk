@@ -26,6 +26,7 @@ use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./type_codes.npk".*;
 use "./types.npk".*;
+use "./parser.npk".*;   // QUAL_MOVE (D-183)
 use "./num_width.npk".*;
 use "./parse_expr.npk".*;
 use "./parse_pick.npk".*;
@@ -237,40 +238,57 @@ pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) n
 //
 // `move(x)` is not a place (its root is the move node), so it passes here
 // without a special case, and D-065's existing machinery invalidates `x`.
+// YOU CANNOT TRANSFER WHAT YOU WERE ONLY LENT (D-183).
+//
+// An ordinary parameter of an owning type is a value the callee may read and
+// may not keep: D-065 settled that passing transfers nothing, so the caller
+// still owns it. `move(p)` on such a parameter would hand a SECOND owner to
+// whatever receives it while the caller holds the first — which is the double
+// free the whole rule exists to prevent, written one frame further down.
+//
+// This is what forces a function that STORES its argument to say so.
+// `strtab_add` keeps the string it is given, so storing it needs `move`, and
+// `move` on a borrowed parameter is refused here — leaving exactly one way to
+// write the function: declare the parameter `move string:text`, at which point
+// its callers must transfer at the call site too. The chain closes without the
+// escape analysis needing to learn about ownership.
+func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+                                   Span:at) never fails {
+    if (ty == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, ty)) { pass NIL; }
+    if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
+    PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(e.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:sy = raw symtab_get(e.tab, rn.a);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: sy.origin });
+    if (pd.kind != DeclKind.DeclParamDecl) { pass NIL; }
+    if (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
+        "this parameter was lent, not given (D-065: passing transfers nothing), so there is no ownership here to move on — the caller still holds it. Declare it `move` to say the function receives ownership, and its callers will transfer at the call site",
+        at));
+    pass NIL;
+};
+
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
-    // NOT YET ARMED, AND THE MEASUREMENT IS WHY (1.2.1). Wired to every value
-    // slot it fired at 256 sites in `src/` and `lib/` — 200 of them plain
-    // `string`, concentrated in resolve_type (69), emit_program (55),
-    // module_graph (41), diagnostics (25) and ir_writer (21) — and reading
-    // them showed the rule is not yet right.
-    //
-    // A by-value parameter of an owning type means two different things in
-    // this compiler today. `strtab_add(t, data)` STORES its string, so the
-    // caller must transfer it and `move` is exactly right. `string_eq(a, b)`
-    // only READS its arguments, and demanding `move` there would invalidate
-    // the caller's binding for a call that borrows — turning correct code
-    // into a use-after-move to satisfy a rule about ownership it never took.
-    //
-    // So the missing half is a convention for read-only parameters — `$$i
-    // string`, the second-class borrow D-004 already provides and which
-    // cannot escape, so a callee that borrows provably cannot store. That is
-    // an API change across the compiler and a decision about the language's
-    // standard idiom, which is the user's to make; the rule stays here,
-    // measured and unarmed, until it is.
+    // NOT YET ARMED — the sweep is 1.2.2's (D-183). Measured with the
+    // diagnostic cap lifted, because the list holds 256 and a debt reported
+    // AT the cap is the cap, not the debt: 459 sites with every slot wired,
+    // and **146** once `pass` moves implicitly. The 146 are the genuine
+    // transfers — `strtab_add` storing its string, `DiagList` storing a
+    // diagnostic, values copied back OUT of containers — and they are
+    // concentrated in the backend's IR emitters, not the frontend.
     pass NIL;
 
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
     if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
-    // REPORTING, NOT REFUSING, UNTIL THE SWEEP IS DONE (1.2.1, the 0.8.0/1.1.0
-    // shape). The rule is settled and the measurement is what it buys first:
-    // 256 sites across `src/` and `lib/` at the moment it landed, 200 of them
-    // plain `string`, concentrated in five files. Flipping it to an error
-    // before those are written stops the compiler from checking itself, which
-    // is the one tool the sweep needs. `diag_note` is severity 0 and does not
-    // fail a build.
     string:m1 = raw string_concat("`",
                     raw type_display(e.types, e.interns, ty));
     drop diaglist_push(e.diags, raw diag_note(raw TYPE_MOVE_REQUIRED(),
@@ -2617,7 +2635,9 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // does to the SOURCE is the borrow checker's business in 0.5.
     if (n.kind == ExprKind.ExprMoveExpr) {
         drop require_place_operand(e, raw expr_operand(n), "move");
-        pass (raw type_of_expr(e, raw expr_operand(n)));
+        int32:mvt = raw type_of_expr(e, raw expr_operand(n));
+        drop refuse_move_of_borrowed(e, raw expr_operand(n), mvt, n.span);
+        pass mvt;
     }
 
     // `..^coll` (D-026) expands a collection AT A CALL SITE and nowhere else.

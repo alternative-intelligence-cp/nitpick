@@ -12598,12 +12598,38 @@ that is the correct direction: every such site is a place where two names
 believed they owned one thing. The sweep gets the 0.8.0/1.1.0 treatment — land
 the rule REPORTING, measure the real debt, sweep, then flip it to refusing.
 
+### `pass` MOVES, always — the one implicit transfer, and why it is not an exception
+
+*(1.2.1e.)* `pass v;` hands the value to the caller and control leaves the
+frame, so the binding cannot be read again on any path. There is no second
+owner to create and no ambiguity to resolve: **`pass` always transfers**, in
+every function, for every type. That is one rule with no exceptions, which is
+what the blueprint philosophy asks — it is not "sometimes a copy, sometimes a
+move", it is a construct that means one thing everywhere.
+
+So a return needs no `move(...)` written on it, and the scope-exit drop skips
+what a `pass` carried out, exactly as it skips what `move` took.
+
+The alternative — requiring `move(v)` on every return — was measured before
+being rejected: it is **313 of the 459** sites the rule fires at, on the most
+common statement in the language, to say something the construct already says
+unambiguously. Ceremony that carries no information is a cost with no
+purchase.
+
 ### The open half: what a read-only parameter of an owning type is
 
-*(1.2.1a, from measuring the rule against the compiler.)* Wired to every value
-slot the rule fires at **256 sites** in `src/` and `lib/` — 200 of them plain
-`string`, concentrated in five files. Reading them showed a by-value parameter
-of an owning type means two different things today:
+*(1.2.1a, from measuring the rule against the compiler; corrected at 1.2.1e.)*
+Wired to every value slot the rule fires at **459 sites**, and at **146** once
+`pass` moves implicitly. Those 146 are the genuine ownership transfers, and
+they sit in the backend's IR emitters rather than the frontend.
+
+*(The figure first recorded here was 256 across five frontend files. That was
+the DIAGNOSTIC CAP, not the debt — `DiagList` holds 256 — so it was the first
+256 diagnostics in emission order, which walks the frontend first. A debt
+reported at the cap is the cap. Measured again with the cap lifted.)*
+
+Reading them showed a by-value parameter of an owning type means two different
+things today:
 
 - `strtab_add(t, data)` **stores** its string, so the caller must transfer and
   `move` is exactly right.

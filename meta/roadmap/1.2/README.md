@@ -226,3 +226,51 @@ calls wait on the move-only rule, and the move-only rule waits on this.
 *Noted in passing:* `nodrop` on a parameter is accepted although D-065 requires
 it to sit on `wild`/`wildx` — a qualifier permitted where it says something
 untrue. Small, real, and unrelated to this decision.
+
+### 1.2.1e — `move T:p` lands, and the measurement is corrected
+
+**`move T:p` is in.** One line in `p_qualifier_bit` plus one bit constant —
+`move` was already a lexer keyword, so there is no new syntactic form. It
+parses wherever a qualifier can and is refused (`NITPICK-MOVE-004`) anywhere
+but a parameter, the same shape `nodrop` has. D-065's heading and
+`LEXICAL_REFERENCE`'s row are amended rather than left to contradict it: the
+operator form is untouched and `move` is still not a MEMORY qualifier — it
+says how the binding was initialised, not how its storage is managed.
+
+**`TYPE-047` closes the chain without touching the escape analysis.** Moving
+out of an ordinary parameter is refused: it was lent, not given, so there is
+no ownership here to pass on. A function that STORES its argument therefore
+has exactly one way to be written — declare the parameter `move`, at which
+point its callers must transfer too. Storing → needs `move` → refused on a
+lent parameter → the parameter must be declared `move` → callers transfer.
+No new ownership model in the escape walk.
+
+**`pass` moves implicitly.** It always transfers, in every function, for every
+type, and control leaves the frame so the binding cannot be read again. One
+rule, no exceptions. Requiring `move(v)` on every return would have been 313
+of the 459 sites, on the most common statement in the language, to say what
+the construct already says.
+
+**And the earlier measurement was wrong.** 1.2.1a recorded 256 sites across
+five frontend files. `DiagList` holds **256** — that was the cap, so the
+number was the cap and the distribution was just the first 256 diagnostics in
+emission order, which walks the frontend first. Measured again with the cap
+lifted:
+
+| | sites |
+|---|---|
+| every slot wired | **459** |
+| with `pass` moving implicitly | **146** |
+
+and the 146 sit in `ir_expr` (74), `ir_stmt` (20), `ir_func` (17) —
+the backend's IR emitters — with `resolve_path`, `diagnostics` and a few
+others behind them. By type: `string` 132, `Diagnostic` 7, `ConstVal` 3.
+
+They are the genuine transfers: `strtab_add` storing its string, `DiagList`
+storing a diagnostic, values copied back OUT of a container. That last shape
+is the one to watch in the sweep — reading a stored value copies it, and the
+container still owns the original.
+
+**The lesson for the next measurement**: count with an instrument, not with
+diagnostics. D-163's sweep could report 8,921 because the harness counted;
+this one reported the cap because the compiler did.

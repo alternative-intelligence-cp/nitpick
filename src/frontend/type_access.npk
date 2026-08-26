@@ -20,6 +20,7 @@ use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./type_codes.npk".*;
 use "./types.npk".*;
+use "./parser.npk".*;   // QUAL_MOVE (D-183)
 use "./type_names.npk".*;
 use "./parse_expr.npk".*;
 use "./parse_decl.npk".*;
@@ -478,7 +479,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     // The receiver is argument 0, matched against the method's receiver
     // parameter like any other — no `skip`.
-    pass (raw check_args(e, ft, start, count, 0i32, n.span));
+    pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
 };
 
 pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
@@ -603,7 +604,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // the arguments against, the emitter fits them to. A function value's own
     // type serves an indirect call the same way.
     drop exprtypes_set_callee_ft(e.expr_types, id, callee);
-    pass (raw check_args(e, callee, start, count, 0i32, n.span));
+    pass (raw check_args(e, callee, start, count, 0i32, n.span, 0i32));
 };
 
 // A variant constructor: the callee is `Enum.Variant`, the variant carries a
@@ -821,7 +822,7 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // The SUBSTITUTED signature is the one the emitter must fit arguments to —
     // and the one `fninst_for_call` matches the specialization by (1.0.6e).
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
-    pass (raw check_args(e, ft, start, count, 0i32, n.span));
+    pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
 };
 
 // SOLVE WHAT THE ARGUMENTS SAY, and nothing else.
@@ -1104,7 +1105,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
                 if (raw type_is_func(e.types, fld.type_id)) {
                     drop exprtypes_set_callee_ft(e.expr_types, id, fld.type_id);
                     pass (raw check_args(e, fld.type_id, start, count, 0i32,
-                                           n.span));
+                                           n.span, 0i32));
                 }
             }
         }
@@ -1267,7 +1268,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
         }
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
-    pass (raw check_args(e, ft, start, count, 1i32, n.span));
+    pass (raw check_args(e, ft, start, count, 1i32, n.span, raw exprtypes_callee(e.expr_types, id)));
 };
 
 // Arity and argument types. `skip` is 1 for a UFCS call, whose first parameter
@@ -1277,8 +1278,26 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
 // from a flag somebody has to remember to read (D-100). A fixed function takes
 // exactly its parameter count; a variadic one takes at least its fixed count and
 // checks everything after that against the collected element type.
+// `cdecl` is the CALLEE's declaration index, or 0 when the call reaches no
+// declaration (a function-valued field). It is here for one question only:
+// which parameters are declared `move` (D-183), since a `move` parameter is
+// the one kind whose argument must be a transfer rather than a loan. The
+// function TYPE cannot answer it — qualifiers live on the declaration.
+// Is the callee's parameter at `idx` declared `move`? 0 for an unknown callee,
+// and out-of-range answers no — a variadic's trailing arguments have no
+// declared parameter of their own.
+func:param_is_move = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
+    if (cdecl == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cdecl });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (idx < 0i32) { pass false; }
+    if (idx >= (raw fn_param_count(e.ast, d))) { pass false; }
+    DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, d, idx));
+    pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
+};
+
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
-                        int32:skip, Span:at) never fails {
+                        int32:skip, Span:at, int32:cdecl) never fails {
     bool:variadic = raw type_is_variadic(e.types, ft);
     int32:total = (raw type_param_count_of(e.types, ft)) - skip;
 
@@ -1368,9 +1387,15 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     if (!(raw fits(e, pt, got))) {
                         drop te_mismatch_at(e, pt, got, raw arg_span(e, a, at));
                     }
-                    // D-183 §4: the callee takes ownership, so a place handed
-                    // over here has to say so.
-                    drop require_move_if_owning(e, a, got, raw arg_span(e, a, at));
+                    // ONLY A `move` PARAMETER TAKES OWNERSHIP (D-183). An
+                    // ordinary one is a loan, and demanding a transfer for a
+                    // loan would invalidate the caller's binding for a call
+                    // that never took it — which is what made the
+                    // borrow-shaped design unworkable at 1.2.1b.
+                    if (raw param_is_move(e, cdecl, skip + i)) {
+                        drop require_move_if_owning(e, a, got,
+                            raw arg_span(e, a, at));
+                    }
                 }
             }
         }

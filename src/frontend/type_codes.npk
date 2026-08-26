@@ -205,3 +205,10 @@ pub func:TYPE_THREAD_RULES = string() never fails { pass "NITPICK-TYPE-045"; };
 // `move` a fact rather than a decoration. A TEMPORARY needs none: there is no
 // second name to invalidate.
 pub func:TYPE_MOVE_REQUIRED = string() never fails { pass "NITPICK-TYPE-046"; };
+
+// D-183: `move(p)` where `p` is an ordinary parameter of an owning type. The
+// caller transferred nothing (D-065), so there is nothing here to transfer on
+// — moving it would hand a second owner to whatever receives it while the
+// caller still holds the first. Declaring the parameter `move` is how a
+// function says it received ownership and may pass it along.
+pub func:TYPE_MOVE_OF_BORROWED = string() never fails { pass "NITPICK-TYPE-047"; };

@@ -1,0 +1,29 @@
+// D-183's ownership rules at the type level.
+//
+// `move T:p` marks a CONSUMING parameter: the caller transferred ownership in,
+// so the callee owns the value. The DEFAULT is the other one, and it is D-065
+// unchanged — passing transfers nothing, so an ordinary parameter is a value
+// the callee may read and may not keep.
+
+mod:move_rules;
+
+struct:Box = { string:held; };
+
+// YOU CANNOT TRANSFER WHAT YOU WERE ONLY LENT. `text` was lent, so there is no
+// ownership here to move on — moving it would hand a second owner to the box
+// while the caller still holds the first, which is the double free the whole
+// rule exists to prevent, written one frame further down.
+//
+// This is what forces a function that STORES its argument to say so: storing
+// needs `move`, `move` on a lent parameter is refused here, and the only way
+// to write the function is to declare the parameter `move` — at which point
+// its callers must transfer at the call site too. The chain closes without the
+// escape analysis needing to learn about ownership.
+// expect-error: NITPICK-TYPE-047
+func:keeps_what_it_borrowed = NIL(Box->:b, string:text) never fails {
+    b.held = move(text);
+    pass NIL;
+};
+
+// The same body is correct once the parameter says it received ownership.
+// (In `tests/accept/accept.npk`, with its callers transferring.)
