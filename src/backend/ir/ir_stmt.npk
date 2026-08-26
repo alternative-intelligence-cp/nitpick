@@ -707,11 +707,11 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
         it1 = raw type_elem(x.fe.ctx.types, itid);
         IrVal:pv = raw emit_expr(x, iter);
         if (!(raw iv_is_ok(pv))) { pass pv; }
-        recv = pv.ref;
+        recv = move(pv.ref);
     } else {
         PlaceVal:apv = raw addr_of(x, iter);
         if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(apv)); }
-        recv = apv.addr;
+        recv = move(apv.addr);
     }
 
     // The impl's `next` method and its D-156 symbol.
@@ -796,7 +796,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     if (is_array) {
         PlaceVal:pv2 = raw addr_of(x, iter);
         if (pv2.state != (raw LL_OK())) { pass (raw iv_from_place(pv2)); }
-        base = pv2.addr;
+        base = move(pv2.addr);
         len = raw int_to_string(
             (raw type_array_count(x.fe.ctx.types, itid)) => int64);
     } else {
@@ -805,11 +805,11 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
         string:d = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(d, " = extractvalue ", sv.ll, " ",
                           raw string_concat(sv.ref, ", 0")));
-        base = d;
+        base = move(d);
         string:l2 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(l2, " = extractvalue ", sv.ll, " ",
                           raw string_concat(sv.ref, ", 1")));
-        len = l2;
+        len = move(l2);
     }
     // Base and length persist across iterations — slots, not SSA (D2).
     string:base_s = raw loop_slot(x, sid, 3i32, "ptr");
@@ -930,7 +930,7 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // returning `dyn Speaks` builds the fat pointer here.
         v = raw emit_fit(x, x.fe.ret_type, v, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
-        vref = v.ref;
+        vref = move(v.ref);
     }
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
@@ -1223,7 +1223,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             string:bpp2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(bpp2, " = getelementptr i8, ptr ",
                               bbase, ", i64 ", raw int_to_string(bs.offset)));
-            bpp = bpp2;
+            bpp = move(bpp2);
         }
         string:bval = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
@@ -1294,7 +1294,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             string:tag = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", sel.ll,
                               " ", raw string_concat(sel.ref, ", 0")));
-            disc = tag;
+            disc = move(tag);
             disc_ll = "i32";
         }
     }
@@ -1447,7 +1447,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 string:eb = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat3(eb, " = icmp ne i8 ",
                                   raw string_concat(eqv, ", 0")));
-                hit = eb;
+                hit = move(eb);
             }
         }
         if (hit.len == 0i64) {
@@ -1472,14 +1472,14 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 string:c1 = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(c1, " = icmp ", gep2, " ",
                                   raw cat5(disc_ll, " ", disc, ", ", plo.ref)));
-                string:hp = lep;
+                string:hp = move(lep);
                 if (raw pat_range_inclusive(pn)) { hp = lip; }
                 string:c2 = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(c2, " = icmp ", hp, " ",
                                   raw cat5(disc_ll, " ", disc, ", ", phi.ref)));
                 string:c3 = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(c3, " = and i1 ", c1, ", ", c2));
-                hit = c3;
+                hit = move(c3);
             }
         }
         if (hit.len == 0i64) {
@@ -1488,7 +1488,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
             string:cc = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(cc, " = icmp eq ", disc_ll, " ",
                               raw cat3(disc, ", ", pc.ref)));
-            hit = cc;
+            hit = move(cc);
         }
 
         // --- bindings, then the guard --------------------------------------

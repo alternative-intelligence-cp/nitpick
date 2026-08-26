@@ -59,7 +59,12 @@ BINARY_LEVELS = [
 
 ASSIGN_OPS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="}
 RESULT_UNARY = {"raw", "drop", "relay", "await"}
-MEMORY_QUALS = {"wild", "wildx", "stack", "fixed", "const", "nodrop"}
+# `move` joins them at D-183: `move T:p` is a CONSUMING PARAMETER, the caller
+# having transferred ownership in. The seed does not enforce that — ownership
+# is the compiler's analysis, exactly as the borrow rules behind `$$i` are —
+# but it must PARSE it, because `src/` may only use what the current builder
+# compiles (C-13) and the D-183 sweep needs it in `src/`.
+MEMORY_QUALS = {"wild", "wildx", "stack", "fixed", "const", "nodrop", "move"}
 VISIBILITY = {"pub"}
 FUNC_MODIFIERS = {"async", "comptime", "inline", "noinline", "thread"}
 

@@ -174,7 +174,7 @@ pub func:irw_entry = NIL(IrWriter->:w, string:text) never fails {
 };
 
 // One stamp site, registered: its id, minting the row on first sight.
-pub func:irw_site = int32(IrWriter->:w, string:path, int32:line) never fails {
+pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fails {
     int32:i = 0i32;
     while (i < w.site_count) {
         if (w.site_lines[i => int64] == line) {
@@ -193,7 +193,7 @@ pub func:irw_site = int32(IrWriter->:w, string:path, int32:line) never fails {
         w.site_lines = nb =>! wild int32->;
         w.site_cap = ncap =>! int32;
     }
-    w.site_paths[w.site_count => int64] = path;
+    w.site_paths[w.site_count => int64] = move(path);
     w.site_lines[w.site_count => int64] = line;
     w.site_count = w.site_count + 1i32;
     pass w.site_count;

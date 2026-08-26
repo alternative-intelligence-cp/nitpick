@@ -593,7 +593,20 @@ class Checker:
 
         if isinstance(e, S.Unary):
             if e.op == "move":
-                raise RungError("move(...)", "0.9", e)
+                # D-183: `move(place)` TRANSFERS OWNERSHIP, and ownership is a
+                # CHECKER fact — the real backend lowers it as the operand and
+                # nothing else (ir_expr's ExprMoveExpr arm). So the seed types
+                # it as its operand and emits it as its operand. It does not
+                # enforce the transfer, exactly as it does not enforce the
+                # borrow rules behind `$$i` a few lines below; the compiler's
+                # own analyses own both.
+                #
+                # It rung-refused this until 1.2.2, which made `move(...)`
+                # unusable in `src/` — the C-13 rule that `src/` may use only
+                # what the CURRENT BUILDER can compile. D-183's sweep needs it
+                # in `src/`, so the builder learns it first.
+                self._expr(e.operand)
+                return
             self._expr(e.operand)
             return
 

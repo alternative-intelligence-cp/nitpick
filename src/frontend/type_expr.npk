@@ -268,6 +268,21 @@ func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: sy.origin });
     if (pd.kind != DeclKind.DeclParamDecl) { pass NIL; }
     if (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32) { pass NIL; }
+    // A POINTER PARAMETER IS NOT THE VALUE IT POINTS AT. `move(list.items[i])`
+    // where `list` is `DiagList->` moves an element WITHIN the pointee — a
+    // mutation of the container, which is what a mutable reference is for, and
+    // exactly what an insertion sort does. Nothing leaves the caller's
+    // ownership: the array still holds as many elements as it did. What this
+    // rule is about is a BY-VALUE parameter, where the value itself was lent
+    // and moving it on would give it a second owner.
+    //
+    // (Moving out of a container leaves a hole the container still believes it
+    // owns. That is real and is NOT this rule's business — it belongs with
+    // partial-move tracking, recorded as an open item on D-183.)
+    int32:rt = raw exprtypes_get(e.expr_types, r.id);
+    if (rt != 0i32) {
+        if ((raw type_kind(e.types, rt)) == (raw TY_POINTER())) { pass NIL; }
+    }
     discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
         "this parameter was lent, not given (D-065: passing transfers nothing), so there is no ownership here to move on — the caller still holds it. Declare it `move` to say the function receives ownership, and its callers will transfer at the call site",
         at));
@@ -276,13 +291,13 @@ func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
 
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
-    // NOT YET ARMED — the sweep is 1.2.2's (D-183). Measured with the
-    // diagnostic cap lifted, because the list holds 256 and a debt reported
-    // AT the cap is the cap, not the debt: 459 sites with every slot wired,
-    // and **146** once `pass` moves implicitly. The 146 are the genuine
-    // transfers — `strtab_add` storing its string, `DiagList` storing a
-    // diagnostic, values copied back OUT of containers — and they are
-    // concentrated in the backend's IR emitters, not the frontend.
+    // NOT YET ARMED (D-183). The sweep took it from 146 sites to 28; what is
+    // left is struct literals taking places, and one question with no answer
+    // yet — a GETTER over a container of owning values. Returning a borrow is
+    // refused by D-004 rule 2 and returning a value copies one the container
+    // still owns, so `fnem_iter_slot` has no correct spelling today. Arming
+    // the rule before that is answered would refuse code with nothing to
+    // replace it.
     pass NIL;
 
     if (ty == 0i32) { pass NIL; }

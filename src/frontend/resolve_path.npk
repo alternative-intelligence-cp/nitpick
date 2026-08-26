@@ -68,7 +68,7 @@ pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) never fails {
         drop rootlist_grow(l);
     }
     Root:r = Root{ name: name, dir: raw path_join(dir, "src") };
-    l.items[l.count => int64] = r;
+    l.items[l.count => int64] = move(r);
     l.count = l.count + 1i32;
     pass NIL;
 };
@@ -152,7 +152,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
                 r.first = candidate;
             } else {
                 if (found == 1i32) {
-                    r.second = candidate;
+                    r.second = move(candidate);
                 }
             }
             found = found + 1i32;
@@ -175,7 +175,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
                 r.first = scand;
             } else {
                 if (found == 1i32) {
-                    r.second = scand;
+                    r.second = move(scand);
                 }
             }
             found = found + 1i32;

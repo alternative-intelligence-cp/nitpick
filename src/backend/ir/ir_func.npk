@@ -357,11 +357,13 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
 
     i = 0i32;
     while (i < fe.pcount) {
-        string:ll = fe.plls[i => int64];
         string:arg = raw string_concat("%a", raw int_to_string(i => int64));
         string:slot = raw irw_temp(fe.w);
-        drop irw_alloca(fe.w, slot, ll);
-        drop irw_line(fe.w, raw cat5("store ", ll, " ", arg,
+        // READ IN PLACE, NOT COPIED (D-183): `irw_alloca` and `cat5` LEND
+        // their arguments, so handing them the element directly transfers
+        // nothing and needs no local to own.
+        drop irw_alloca(fe.w, slot, fe.plls[i => int64]);
+        drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " ", arg,
                                        raw string_concat(", ptr ", slot)));
         drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
         i = i + 1i32;
@@ -376,7 +378,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
 // no per-loop detector for the emitter's needs to drift from. Idempotent on
 // the key for the same reason the walk's mark is.
 pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
-                              int32:type_id, string:ll) never fails {
+                              int32:type_id, move string:ll) never fails {
     if ((raw fnem_cross_find(fe, stmt_index, role)) >= 0i32) { pass NIL; }
     if (fe.cross_count >= fe.cross_cap) {
         int64:ncap = (fe.cross_cap => int64) * 2i64;
@@ -397,7 +399,7 @@ pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
     fe.cross_stmts[fe.cross_count => int64] = stmt_index;
     fe.cross_roles[fe.cross_count => int64] = role;
     fe.cross_types[fe.cross_count => int64] = type_id;
-    fe.cross_lls[fe.cross_count => int64] = ll;
+    fe.cross_lls[fe.cross_count => int64] = move(ll);
     fe.cross_geps[fe.cross_count => int64] = "";
     fe.cross_count = fe.cross_count + 1i32;
     pass NIL;
@@ -657,10 +659,10 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
 
 // --- locals -----------------------------------------------------------------------
 
-pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) never fails {
+pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:type_id) never fails {
     if (fe.lcount >= fe.lcap) { drop fnem_grow_locals(fe); }
     fe.lnames[fe.lcount => int64] = name;
-    fe.lslots[fe.lcount => int64] = slot;
+    fe.lslots[fe.lcount => int64] = move(slot);
     fe.ltypes[fe.lcount => int64] = type_id;
     fe.lcount = fe.lcount + 1i32;
     pass NIL;
@@ -772,8 +774,8 @@ pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.ltypes[i => int64];
 };
 
-pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done,
-                              int32:label, string:iter) never fails {
+pub func:fnem_loop_push = NIL(FnEmitter->:fe, move string:head, move string:done,
+                              int32:label, move string:iter) never fails {
     if (fe.loop_count >= fe.loop_cap) {
         int32:nc = fe.loop_cap * 2i32;
         wild int8->:a = ralloc(fe.loop_heads =>! wild int8->,
@@ -791,11 +793,11 @@ pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done,
         fe.loop_iters = e =>! wild string->;
         fe.loop_cap = nc;
     }
-    fe.loop_heads[fe.loop_count => int64] = head;
-    fe.loop_dones[fe.loop_count => int64] = done;
+    fe.loop_heads[fe.loop_count => int64] = move(head);
+    fe.loop_dones[fe.loop_count => int64] = move(done);
     fe.loop_depths[fe.loop_count => int64] = fe.dfcount;
     fe.loop_labels[fe.loop_count => int64] = label;
-    fe.loop_iters[fe.loop_count => int64] = iter;
+    fe.loop_iters[fe.loop_count => int64] = move(iter);
     fe.loop_count = fe.loop_count + 1i32;
     pass NIL;
 };
@@ -817,14 +819,19 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
     int32:i = fe.loop_count;
     while (i > 0i32) {
         i = i - 1i32;
+        // A GETTER OVER A CONTAINER OF OWNING VALUES has no correct spelling
+        // yet (D-183, open): returning a borrow is refused by D-004 rule 2,
+        // and returning a value copies one the container still owns. Left as
+        // the copy it always was; the move-only rule flags it, and the rule
+        // is gated until this is answered.
         string:it = fe.loop_iters[i => int64];
         if (it.len > 0i64) { pass it; }
     }
     pass "";
 };
 
-pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
-                              string:ll, int32:slot_ty, int32:start,
+pub func:fnem_pick_push = NIL(FnEmitter->:fe, move string:done, move string:slot,
+                              move string:ll, int32:slot_ty, int32:start,
                               int32:count, int32:seq) never fails {
     if (fe.pick_count >= fe.pick_cap) {
         int32:nc = fe.pick_cap * 2i32;
@@ -849,9 +856,9 @@ pub func:fnem_pick_push = NIL(FnEmitter->:fe, string:done, string:slot,
         fe.pick_depths = g =>! wild int32->;
         fe.pick_cap = nc;
     }
-    fe.pick_dones[fe.pick_count => int64] = done;
-    fe.pick_slots[fe.pick_count => int64] = slot;
-    fe.pick_lls[fe.pick_count => int64] = ll;
+    fe.pick_dones[fe.pick_count => int64] = move(done);
+    fe.pick_slots[fe.pick_count => int64] = move(slot);
+    fe.pick_lls[fe.pick_count => int64] = move(ll);
     fe.pick_tids[fe.pick_count => int64] = slot_ty;
     fe.pick_starts[fe.pick_count => int64] = start;
     fe.pick_counts[fe.pick_count => int64] = count;

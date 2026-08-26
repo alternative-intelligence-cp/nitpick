@@ -777,7 +777,7 @@ func:foldenv_new = FoldEnv() never fails {
 // has one frame, `x = x + 1i32` writes the `x` that is there, and there is no
 // nested scope in a body this evaluator accepts. Searching backwards would be the
 // same answer more slowly.
-func:foldenv_set = NIL(FoldEnv->:e, int32:name, ConstVal:v) never fails {
+func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
     int32:i = 0i32;
     while (i < e.count) {
         if (e.names[i => int64] == name) {
@@ -798,7 +798,7 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, ConstVal:v) never fails {
         e.cap = nc;
     }
     e.names[e.count => int64] = name;
-    e.vals[e.count => int64] = v;
+    e.vals[e.count => int64] = move(v);
     e.count = e.count + 1i32;
     pass NIL;
 };

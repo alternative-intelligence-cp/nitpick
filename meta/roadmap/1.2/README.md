@@ -274,3 +274,62 @@ container still owns the original.
 **The lesson for the next measurement**: count with an instrument, not with
 diagnostics. D-163's sweep could report 8,921 because the harness counted;
 this one reported the cap because the compiler did.
+
+### 1.2.1f — the sweep: 146 → 28, and what the last 28 are waiting on
+
+**The seed had to learn `move` first.** C-13's rule is that `src/` may use only
+what the CURRENT BUILDER compiles, and the seed rung-refused `move(...)` and
+did not parse `move T:p`. Both are three-line changes: ownership is a CHECKER
+fact, so the seed types and emits `move(x)` as `x` — exactly what the real
+backend's `ExprMoveExpr` arm does — and adds `move` to its qualifier set
+without enforcing anything, the same way it parses `$$i` without enforcing
+D-004.
+
+**118 of the 146 are resolved.** 70 transfers written, 12 consuming parameters
+declared, the rest restructured to read in place. `intern_add`, `strtab_add`,
+`diaglist_push`, `irw_site`, `foldenv_set`, `fnem_bind` and `fnem_cross_add`
+now say `move` on the parameter they keep — and marking `intern_add` cost
+**nothing** at its 71 call sites, because callers pass freshly-built values,
+not places. That is the shape of the whole sweep: consuming functions are rare
+and their callers were already correct.
+
+**The compiler checked the sweep, which is why it converged.** A `move` written
+where the value is still used is use-after-move, and D-065's analysis has
+caught that since 0.5.3. 122 wraps went in mechanically; **52 came back out**
+because the compiler refused them, over a few rounds of "apply, ask, revert".
+No judgement of mine was trusted where the analysis had an opinion.
+
+**Two shapes needed a rule, not a fix:**
+
+- **Permuting a container through a pointer.** `diaglist_sort` moves elements
+  between slots of a `DiagList->`. Nothing leaves the caller's ownership — the
+  array holds what it held — so TYPE-047 now fires only when the ROOT is a
+  by-value parameter. A pointer parameter is a lent reference, and moving
+  within the pointee is mutation, which is what a mutable reference is for.
+- **Reading in place beats copying.** `irw_alloca(fe.w, slot, fe.plls[i])`
+  hands the element straight to a lending parameter: no local, no copy, no
+  transfer. Several sites dissolved rather than needing `move`.
+
+### The 28 that remain, and the question under them
+
+Mostly struct literals taking places — mechanical. But underneath them sits one
+question with **no correct spelling in the language today**:
+
+> A getter over a container of owning values. `fnem_iter_slot` returns a stored
+> `string`. Returning a **borrow** is refused by D-004 rule 2 (a borrow may not
+> travel up). Returning a **value** copies one the container still owns. And
+> `pass` moving implicitly would take the element OUT of the container,
+> leaving a hole.
+
+Every option is wrong, so the rule stays gated: arming it would refuse working
+code with nothing to replace it. This is the next real decision of the cycle,
+and it is a language question rather than a sweep question.
+
+*(Also recorded: moving out of a container leaves a hole the container still
+believes it owns. That belongs with partial-move tracking, not with this rule.)*
+
+**A measurement lesson, again.** Several "zero errors" readings during this
+sweep were `quickcheck` timing out at 60 seconds on a self-check that takes 59
+— and empty output greps as zero. The counts only became trustworthy when run
+against the binary directly, with the diagnostics read from **stderr**, which
+is where this compiler puts them.

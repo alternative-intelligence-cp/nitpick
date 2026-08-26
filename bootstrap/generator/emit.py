@@ -697,6 +697,10 @@ class Emitter:
             return self.coerce(v, target)
 
         if isinstance(e, S.Unary):
+            if e.op == "move":
+                # D-183: ownership is a checker fact; the value is the operand.
+                # The real backend's ExprMoveExpr arm does exactly this.
+                return self._expr(e.operand)
             if e.op in ("@", "$$i", "$$m"):
                 # `@x` yields a SECOND-CLASS borrow (D-004): it passes down the
                 # call stack and never up. The seed lowers it as a plain address;

@@ -95,7 +95,12 @@ func:intern_grow = NIL(InternTable->:t) never fails {
 // Interning the same text twice yields the same index. That is the whole point:
 // downstream, two identifiers are the same name exactly when their indices are
 // equal.
-pub func:intern_add = int32(InternTable->:t, string:text) never fails {
+// `text` IS KEPT (D-183): the table stores it and outlives this call, so the
+// caller transfers ownership rather than lending. Note the early return above
+// — an already-interned string is NOT stored, and the transferred value is
+// dropped at this function's exit like any owned local. That is correct: the
+// caller gave it up, and the table already has an equal one.
+pub func:intern_add = int32(InternTable->:t, move string:text) never fails {
     int32:i = 0i32;
     while (i < t.count) {
         if (raw string_eq(t.items[i => int64], text)) {
@@ -106,7 +111,7 @@ pub func:intern_add = int32(InternTable->:t, string:text) never fails {
     if (t.count >= t.cap) {
         drop intern_grow(t);
     }
-    t.items[t.count => int64] = text;
+    t.items[t.count => int64] = move(text);
     int32:index = t.count;
     t.count = t.count + 1i32;
     pass index;

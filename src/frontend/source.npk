@@ -56,7 +56,7 @@ pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) never f
         drop srcmgr_grow(m);
     }
     SourceFile:f = SourceFile{ path: path, text: text };
-    m.files[m.count => int64] = f;
+    m.files[m.count => int64] = move(f);
     int32:index = m.count;
     m.count = m.count + 1i32;
     pass index;
