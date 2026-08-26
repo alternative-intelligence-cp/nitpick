@@ -177,10 +177,17 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;   5 sibling   | 6 awaitee | 7 qnext | 8 wake_at
 ; 9 thread_tls: non-null exactly when this frame is a THREAD's root task
 ; (D-181). The join reads it to know whether to pump the executor (a task) or
-; wait on the kernel's CHILD_CLEARTID word (a thread) — a dedicated slot
+; wait on the kernel's CHILD_CLEARTID word (a thread) -- a dedicated slot
 ; rather than an overload of `qnext`, because an ambiguous discriminator in a
 ; join is where a program waits on the wrong thing forever.
-%npk.hdr = type { ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr }
+; 10 chan_next, 11 owner: the channel WAIT (1.1.10-C2). A task blocked on a
+; channel is on TWO lists at once, which is why this is a second link rather
+; than a reuse of `qnext`: its own executor's sleepers, holding the deadline
+; that bounds the wait, and the channel's waiter list, shared across threads,
+; which is how a peer operation wakes it early. `owner` is the executor the
+; task is pinned to (D-032) -- the waker has to reach it, and no other slot
+; answers that: `thread_tls` is set only on a thread's root task.
+%npk.hdr = type { ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr }
 
 ; THE EXECUTOR (D-181): every word 1.1.8 kept as a runtime global, in one
 ; struct, because with threads each of them is PER-THREAD — two threads
@@ -301,8 +308,8 @@ entry:
 ; what will let a reclaimed index keep its generation across reuse.
 ;
 ;   0 buf | 1 cap | 2 elem_size | 3 head | 4 tail | 5 count
-;   6 gen | 7 closed | 8 lock
-%npk.chan = type { ptr, i64, i64, i64, i64, i64, i32, i32, i32 }
+;   6 gen | 7 closed | 8 lock | 9 recv_waiters | 10 send_waiters
+%npk.chan = type { ptr, i64, i64, i64, i64, i64, i32, i32, i32, ptr, ptr }
 
 @npk_ch_tab = internal global ptr null
 @npk_ch_cap = internal global i64 0
@@ -375,6 +382,107 @@ entry:
   %slot = getelementptr ptr, ptr %t, i64 %ix
   %p = load ptr, ptr %slot
   ret ptr %p
+}
+
+; --- waiting on a channel (D-071/D-176, 1.1.10-C2) --------------------------
+;
+; A BLOCKED TASK IS ON TWO LISTS AT ONCE, and that is the whole design. Its own
+; executor's SLEEPERS hold it against the caller's deadline, through `qnext`;
+; the CHANNEL's waiter list holds it against a peer operation, through
+; `chan_next`. Whichever comes first wins, and neither needs to know about the
+; other: a wake makes the task due, a deadline makes it due, and in both cases
+; it re-runs the same call and re-tests the same condition.
+;
+; What this replaces is a 1ms re-poll. That was bounded and correct — no thread
+; blocked, no deadline was missed — and it cost up to a millisecond per
+; hand-off plus a wakeup per millisecond per blocked task, and it could not
+; express a rendezvous, because a poll cannot ask whether a receiver is there.
+
+define internal void @npk_ch_wait_link(ptr %hp, ptr %fr) {
+entry:
+  %h = load ptr, ptr %hp
+  %cn = getelementptr %npk.hdr, ptr %fr, i32 0, i32 10
+  store ptr %h, ptr %cn
+  store ptr %fr, ptr %hp
+  ret void
+}
+
+; Remove a frame from one list if it is on it. O(n) in the waiters, walked
+; under the channel's lock — a task that gave up on its deadline MUST come
+; off, or a later peer would make a task due that is no longer waiting, and
+; `wake_at` is also how a finished task is recognised (-1).
+define internal void @npk_ch_wait_unlink(ptr %hp, ptr %fr) {
+entry:
+  br label %loop
+loop:
+  %slot = phi ptr [ %hp, %entry ], [ %nextslot, %step ]
+  %cur = load ptr, ptr %slot
+  %end = icmp eq ptr %cur, null
+  br i1 %end, label %done, label %test
+test:
+  %hit = icmp eq ptr %cur, %fr
+  br i1 %hit, label %unlink, label %step
+step:
+  %nextslot = getelementptr %npk.hdr, ptr %cur, i32 0, i32 10
+  br label %loop
+unlink:
+  %cn = getelementptr %npk.hdr, ptr %cur, i32 0, i32 10
+  %nx = load ptr, ptr %cn
+  store ptr %nx, ptr %slot
+  store ptr null, ptr %cn
+  br label %done
+done:
+  ret void
+}
+
+; Take one waiter off a list and make it runnable on ITS OWN executor.
+;
+; THE ORDER IS THE PROTOCOL. `wake_at` is set first, then the owner's park
+; word, then the futex wake. An executor about to sleep clears its park word,
+; re-checks its sleepers, and only then waits — so a waker that arrives before
+; the sleep is seen by the re-check, and one that arrives after finds a
+; non-zero park word waiting for it and the FUTEX_WAIT returns immediately.
+; Reversing either half is a lost wakeup: a task that sleeps to its deadline
+; and reports DeadlineExceeded for a value that already arrived.
+define internal void @npk_ch_wake_one(ptr %hp) {
+entry:
+  %f = load ptr, ptr %hp
+  %none = icmp eq ptr %f, null
+  br i1 %none, label %done, label %pop
+pop:
+  %cn = getelementptr %npk.hdr, ptr %f, i32 0, i32 10
+  %nx = load ptr, ptr %cn
+  store ptr %nx, ptr %hp
+  store ptr null, ptr %cn
+  %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
+  store atomic i64 0, ptr %wa seq_cst, align 8
+  %op = getelementptr %npk.hdr, ptr %f, i32 0, i32 11
+  %ow = load ptr, ptr %op
+  %noown = icmp eq ptr %ow, null
+  br i1 %noown, label %done, label %rouse
+rouse:
+  %pw = getelementptr %npk.exec, ptr %ow, i32 0, i32 5
+  store atomic i32 1, ptr %pw seq_cst, align 4
+  %wp = ptrtoint ptr %pw to i64
+  ; futex(word, FUTEX_WAKE|PRIVATE, 1, ...)
+  %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 129, i64 1, i64 0, i64 0, i64 0)
+  br label %done
+done:
+  ret void
+}
+
+define internal void @npk_ch_wake_all(ptr %hp) {
+entry:
+  br label %loop
+loop:
+  %h = load ptr, ptr %hp
+  %empty = icmp eq ptr %h, null
+  br i1 %empty, label %done, label %one
+one:
+  call void @npk_ch_wake_one(ptr %hp)
+  br label %loop
+done:
+  ret void
 }
 
 ; A fresh channel: `cap` slots of `esz` bytes each. Returns the packed handle
@@ -488,6 +596,14 @@ ok:
   call void @npk_ch_lock(ptr %ch)
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   store i32 1, ptr %clp
+  ; A CLOSE CHANGES THE ANSWER FOR EVERYBODY, in both directions: a waiting
+  ; receiver now gets ChannelClosed instead of a value, and a waiting sender
+  ; gets it instead of room. Waking one would leave the rest asleep until
+  ; their deadlines for a question already answered.
+  %rw2 = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  call void @npk_ch_wake_all(ptr %rw2)
+  %sw2 = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wake_all(ptr %sw2)
   call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 stale:
@@ -508,6 +624,162 @@ look:
   ret i32 %c
 yes:
   ret i32 1
+}
+
+; THE ONE CALL A BLOCKED OPERATION MAKES. Returns 0 done, 1 parked (the task
+; must return SUSPENDED and will be re-entered here), or a negative error.
+;
+; It begins by UNLINKING ITSELF, unconditionally. That one line is what makes
+; the call idempotent across all three ways a task can arrive here: the first
+; try, a wake by a peer, and a wake by its own deadline. Without it a task
+; that timed out would stay on the channel's list, and the next peer would
+; make a task due that had stopped waiting — writing over a `wake_at` that may
+; by then mean "finished" (-1).
+define i32 @npk_ch_recv_wait(i64 %h, ptr %dst, i64 %abs, ptr %fr) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %live
+live:
+  call void @npk_ch_lock(ptr %ch)
+  %rw = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  call void @npk_ch_wait_unlink(ptr %rw, ptr %fr)
+  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
+  %cnt = load i64, ptr %np
+  %empty = icmp eq i64 %cnt, 0
+  br i1 %empty, label %nothing, label %take
+take:
+  %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
+  %esz = load i64, ptr %ep
+  %hp = getelementptr %npk.chan, ptr %ch, i32 0, i32 3
+  %head = load i64, ptr %hp
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  %buf = load ptr, ptr %bp
+  %off = mul i64 %head, %esz
+  %src = getelementptr i8, ptr %buf, i64 %off
+  call ptr @memcpy(ptr %dst, ptr %src, i64 %esz)
+  %cp = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  %cap = load i64, ptr %cp
+  %rendez = icmp eq i64 %cap, 0
+  %limit = select i1 %rendez, i64 1, i64 %cap
+  %h2 = add i64 %head, 1
+  %wrap = icmp sge i64 %h2, %limit
+  %h3 = select i1 %wrap, i64 0, i64 %h2
+  store i64 %h3, ptr %hp
+  %c2 = sub i64 %cnt, 1
+  store i64 %c2, ptr %np
+  %sw = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wake_one(ptr %sw)
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 0
+nothing:
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  %cl = load i32, ptr %clp
+  %isclosed = icmp ne i32 %cl, 0
+  br i1 %isclosed, label %closed, label %maybewait
+maybewait:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+park:
+  call void @npk_ch_wait_link(ptr %rw, ptr %fr)
+  ; ON A RENDEZVOUS, REGISTERING IS ITSELF THE EVENT. A CAP 0 sender is
+  ; waiting for a receiver to exist, and one just did — so it is woken here
+  ; rather than by a value arriving, which on this channel never happens
+  ; first. Without it both sides park and neither is the other's wake: a
+  ; deadlock that resolves only when the deadlines run out.
+  %cp2 = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  %cap2 = load i64, ptr %cp2
+  %rz = icmp eq i64 %cap2, 0
+  br i1 %rz, label %tellsender, label %parked
+tellsender:
+  %sw2 = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wake_one(ptr %sw2)
+  br label %parked
+parked:
+  call void @npk_ch_unlock(ptr %ch)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+expired:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4107
+closed:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4108
+stale:
+  ret i32 -4106
+}
+
+define i32 @npk_ch_send_wait(i64 %h, ptr %src, i64 %abs, ptr %fr) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %live
+live:
+  call void @npk_ch_lock(ptr %ch)
+  %sw = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wait_unlink(ptr %sw, ptr %fr)
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  %cl = load i32, ptr %clp
+  %isclosed = icmp ne i32 %cl, 0
+  br i1 %isclosed, label %closed, label %room
+room:
+  %cp = getelementptr %npk.chan, ptr %ch, i32 0, i32 1
+  %cap = load i64, ptr %cp
+  %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
+  %cnt = load i64, ptr %np
+  %rendez = icmp eq i64 %cap, 0
+  %limit = select i1 %rendez, i64 1, i64 %cap
+  %isfull = icmp sge i64 %cnt, %limit
+  ; A RENDEZVOUS WAITS FOR A RECEIVER, NOT FOR ROOM (D-072). The buffer's one
+  ; slot is the hand-off, not storage: a CAP 0 send may only deposit when a
+  ; receiver is registered and therefore certain to take it. Waiting on room
+  ; alone is what made a rendezvous quietly behave as a capacity-1 buffer,
+  ; returning the moment it deposited with no receiver in sight — the same
+  ; source, not synchronising.
+  %rwh = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  %rww = load ptr, ptr %rwh
+  %norecv = icmp eq ptr %rww, null
+  %rendez_blocked = and i1 %rendez, %norecv
+  %blocked = or i1 %isfull, %rendez_blocked
+  br i1 %blocked, label %maybewait, label %write
+write:
+  %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
+  %esz = load i64, ptr %ep
+  %tp = getelementptr %npk.chan, ptr %ch, i32 0, i32 4
+  %tail = load i64, ptr %tp
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  %buf = load ptr, ptr %bp
+  %off = mul i64 %tail, %esz
+  %dst = getelementptr i8, ptr %buf, i64 %off
+  call ptr @memcpy(ptr %dst, ptr %src, i64 %esz)
+  %t2 = add i64 %tail, 1
+  %wrap = icmp sge i64 %t2, %limit
+  %t3 = select i1 %wrap, i64 0, i64 %t2
+  store i64 %t3, ptr %tp
+  %c2 = add i64 %cnt, 1
+  store i64 %c2, ptr %np
+  %rw = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  call void @npk_ch_wake_one(ptr %rw)
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 0
+maybewait:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+park:
+  call void @npk_ch_wait_link(ptr %sw, ptr %fr)
+  call void @npk_ch_unlock(ptr %ch)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+expired:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4107
+closed:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4108
+stale:
+  ret i32 -4106
 }
 
 ; ONE NON-BLOCKING STEP OF EACH OPERATION. The blocking is NOT here: under
@@ -559,6 +831,9 @@ write:
   store i64 %t3, ptr %tp
   %c2 = add i64 %cnt, 1
   store i64 %c2, ptr %np
+  ; A VALUE ARRIVED: whoever is waiting for one is now able to proceed.
+  %rw = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  call void @npk_ch_wake_one(ptr %rw)
   call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 wouldblock:
@@ -602,6 +877,9 @@ take:
   store i64 %h3, ptr %hp
   %c2 = sub i64 %cnt, 1
   store i64 %c2, ptr %np
+  ; A SLOT FREED: whoever is waiting for room is now able to proceed.
+  %sw = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wake_one(ptr %sw)
   call void @npk_ch_unlock(ptr %ch)
   ret i32 0
 nothing:
@@ -866,7 +1144,7 @@ entry:
   %ex = call ptr @npk_exec()
   %p_npk_sl_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
   %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
-  store i64 %at, ptr %wa
+  store atomic i64 %at, ptr %wa seq_cst, align 8
   %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
   %h = load ptr, ptr %p_npk_sl_head
   store ptr %h, ptr %qn
@@ -888,7 +1166,7 @@ loop:
   br i1 %at_end, label %done, label %step
 step:
   %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
-  %w = load i64, ptr %wa
+  %w = load atomic i64, ptr %wa seq_cst, align 8
   %unset = icmp eq i64 %best, 0
   %lower = icmp slt i64 %w, %best
   %take = or i1 %unset, %lower
@@ -923,7 +1201,7 @@ again:
   %nx = load ptr, ptr %qn
   store ptr %nx, ptr %cs
   %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
-  %w = load i64, ptr %wa
+  %w = load atomic i64, ptr %wa seq_cst, align 8
   %due = icmp sle i64 %w, %now
   br i1 %due, label %ready, label %keep
 ready:
@@ -966,7 +1244,7 @@ run:
   br i1 %done, label %finished, label %parked
 finished:
   %wa = getelementptr %npk.hdr, ptr %t, i32 0, i32 8
-  store i64 -1, ptr %wa
+  store atomic i64 -1, ptr %wa seq_cst, align 8
   ret ptr %t
 parked:
   %at = call i64 @npk_park_take()
@@ -981,6 +1259,28 @@ sleep:
   call void @npk_sl_push(ptr %t, i64 %at)
   ret ptr null
 nothing:
+  ; CLEAR THE PARK WORD, THEN LOOK AGAIN. This is the executor's half of the
+  ; channel wake protocol (1.1.10-C2), and the order is the whole of it. A
+  ; waker on another thread makes its task due and THEN sets this word; so a
+  ; waker that ran before the clear is caught by the re-check below, and one
+  ; that runs after it leaves the word non-zero, which makes the FUTEX_WAIT
+  ; (expecting zero) return immediately instead of sleeping. Without the
+  ; re-check, a wake that landed in the window between the last look and the
+  ; sleep would be lost, and the task would wait out its deadline for a value
+  ; that had already arrived.
+  %ex2 = call ptr @npk_exec()
+  %pw2 = getelementptr %npk.exec, ptr %ex2, i32 0, i32 5
+  store atomic i32 0, ptr %pw2 seq_cst, align 4
+  %now2 = call i64 @npk_mono_now()
+  call void @npk_sl_wake_due(i64 %now2)
+  %rqh2 = getelementptr %npk.exec, ptr %ex2, i32 0, i32 0
+  %appeared = load ptr, ptr %rqh2
+  %woke = icmp ne ptr %appeared, null
+  br i1 %woke, label %retry, label %idle2
+retry:
+  ; something became runnable; the caller loops and steps again
+  ret ptr null
+idle2:
   %e = call i64 @npk_sl_earliest()
   %dead = icmp eq i64 %e, 0
   br i1 %dead, label %deadlock, label %wait
@@ -1012,7 +1312,7 @@ plain:
 define i32 @npk_task_done(ptr %f) {
 entry:
   %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
-  %w = load i64, ptr %wa
+  %w = load atomic i64, ptr %wa seq_cst, align 8
   %d = icmp eq i64 %w, -1
   %r = zext i1 %d to i32
   ret i32 %r
@@ -1065,11 +1365,11 @@ mark:
   ; task already ready or running is unaffected because only sleepers read
   ; this word. A completed task keeps its -1.
   %wa = getelementptr %npk.hdr, ptr %cur, i32 0, i32 8
-  %w = load i64, ptr %wa
+  %w = load atomic i64, ptr %wa seq_cst, align 8
   %fin = icmp eq i64 %w, -1
   br i1 %fin, label %next, label %due
 due:
-  store i64 0, ptr %wa
+  store atomic i64 0, ptr %wa seq_cst, align 8
   br label %next
 next:
   %sp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 5

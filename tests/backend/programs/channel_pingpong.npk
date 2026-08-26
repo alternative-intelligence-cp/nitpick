@@ -1,0 +1,60 @@
+// expect-exit: 42
+//
+// THE WAKE IS AN EVENT, NOT A POLL (D-071, 1.1.10-C2). 500 round trips through
+// two capacity-1 channels: each side blocks every round, so each round is two
+// real park-and-wake pairs and nothing completes by finding a value already
+// buffered.
+//
+// THE TIMING IS THE ASSERTION. Until C2 a blocked operation re-polled every
+// millisecond, so 500 round trips could not finish in less than about half a
+// second however fast the machine was — the cost was the sleep, not the work.
+// Woken by its peer instead, the same 1000 hand-offs take single-digit
+// milliseconds. The bound here is 250ms: far under what polling could achieve
+// and far over what an event wake needs, so it distinguishes the two without
+// being a benchmark that a slow machine fails.
+mod:channel_pingpong;
+error:Sent;
+async func:worker = NIL(Channel<int32, 3i32, 1i64>:a,
+                        Channel<int32, 4i32, 1i64>:b) {
+    int32:i = 0i32;
+    while (i < 500i32) {
+        Result<int32>:r = await a.recv(raw duration_ms(2000i64));
+        if (r.is_error) { pass NIL; }
+        await b.send(r.value + 1i32, raw duration_ms(2000i64)) ?! Sent;
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 1i64>:a = channel() ?! Unreachable;
+    Channel<int32, 4i32, 1i64>:b = channel() ?! Unreachable;
+    drop worker(a, b);
+    int64:t0 = raw mono_now();
+    int32:n = 0i32;
+    int32:last = 0i32;
+    while (n < 500i32) {
+        await a.send(n, raw duration_ms(2000i64)) ?! Sent;
+        Result<int32>:r = await b.recv(raw duration_ms(2000i64));
+        if (r.is_error) { exit 71i32; }
+        last = r.value;
+        n = n + 1i32;
+    }
+    int64:t1 = raw mono_now();
+    if (last != 500i32)               { exit 72i32; }   // 499 + 1
+    if ((t1 - t0) > 250000000i64)     { exit 73i32; }   // poll-shaped, not event-shaped
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

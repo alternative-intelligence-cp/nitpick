@@ -797,6 +797,9 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // park request, the wind-up note every resume segment makes, and the
     // freeze flag D-063 has the run loop read before every resume.
     drop irw_raw(w, "declare void @npk_park_until(i64)");
+    // The frame's owning executor, stamped into every frame at birth
+    // (D-032 pins a task to it) so a channel waker can reach it.
+    drop irw_raw(w, "declare ptr @npk_exec()");
     drop irw_raw(w, "declare void @npk_windup_note(i32)");
     drop irw_raw(w, "declare i64 @npk_park_take()");
     drop irw_raw(w, "declare void @npk_park_sleep(i64)");
@@ -813,6 +816,8 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare i64 @npk_ch_open(i64, i64)");
     drop irw_raw(w, "declare i32 @npk_ch_close(i64)");
     drop irw_raw(w, "declare i32 @npk_ch_try_send(i64, ptr)");
+    drop irw_raw(w, "declare i32 @npk_ch_send_wait(i64, ptr, i64, ptr)");
+    drop irw_raw(w, "declare i32 @npk_ch_recv_wait(i64, ptr, i64, ptr)");
     drop irw_raw(w, "declare i32 @npk_ch_try_recv(i64, ptr)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
@@ -821,7 +826,7 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // error slot 3, sibling slot 5, all at fixed offsets. Declared
     // unconditionally, like the runtime block it rides with.
     drop irw_raw(w, raw string_concat("%\"npk.frame.hdr\" = type ",
-                      "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr }"));
+                      "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr }"));
     // `sys` calls the six-register trampoline directly (0.9.7).
     drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
     // The overflow intrinsics tbb multiplication rides (0.9.5). Declared for

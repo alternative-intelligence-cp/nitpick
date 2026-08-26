@@ -422,9 +422,19 @@ pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
 func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // The frame type: fixed header, then one slot per parameter.
     //   [ 0 resume_fn | 1 state | 2 windup | 3 result | 4 join_head
-    //   | 5 sibling | 6 awaitee | 7 qnext | 8 wake_at | 9+i param i ]
+    //   | 5 sibling | 6 awaitee | 7 qnext | 8 wake_at | 9 thread_tls
+    //   | 10 chan_next | 11 owner | 12+i param i ]
+    //
+    // 10 and 11 are the channel WAIT (1.1.10-C2). A task blocked on a channel
+    // is on two lists at once and they cannot share a link: its own
+    // executor's SLEEPERS, through `qnext`, holding the deadline that bounds
+    // the wait; and the CHANNEL's waiter list, through `chan_next`, shared
+    // across threads, which is how a peer operation wakes it before that
+    // deadline. `owner` is the executor the task is pinned to (D-032), which
+    // the waker needs and could not otherwise find: `thread_tls` is non-null
+    // only on a THREAD's root task, so it answers a different question.
     string:slots = raw string_concat("ptr, i32, i32, ", fe.ret_ll);
-    slots = raw string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr");
+    slots = raw string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
     int32:i = 0i32;
     while (i < fe.pcount) {
         slots = raw cat3(slots, ", ", fe.plls[i => int64]);
@@ -448,14 +458,14 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
 
     i = 0i32;
     while (i < fe.pcount) {
-        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 10i32 + i);
+        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i32 + i);
         drop fnem_bind(fe, fe.pnames[i => int64], pg, fe.ptypes[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
     while (i < fe.cross_count) {
         fe.cross_geps[i => int64] =
-            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 10i32 + fe.pcount + i);
+            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i32 + fe.pcount + i);
         i = i + 1i32;
     }
 
@@ -567,6 +577,15 @@ pub func:fnem_frame_init = NIL(FnEmitter->:fe, string:frame_ty, string:fr,
     drop irw_line(fe.w, raw cat3("store i64 0, ptr ", g8, ""));
     string:g9 = raw fnem_slot_gep(fe, frame_ty, fr, 9i32);
     drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g9, ""));
+    string:g10 = raw fnem_slot_gep(fe, frame_ty, fr, 10i32);
+    drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g10, ""));
+    // THE OWNER IS STAMPED WHERE THE FRAME IS BORN, which is the one moment
+    // the creating thread is the owning thread: D-032 pins a task to the
+    // executor that created it and never migrates it.
+    string:ox = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(ox, " = call ptr @npk_exec()", ""));
+    string:g11 = raw fnem_slot_gep(fe, frame_ty, fr, 11i32);
+    drop irw_line(fe.w, raw cat5("store ptr ", ox, ", ptr ", g11, ""));
     pass NIL;
 };
 
@@ -599,7 +618,7 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
     i = 0i32;
     while (i < fe.pcount) {
-        string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 10i32 + i);
+        string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 12i32 + i);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
                           raw int_to_string(i => int64),
                           raw string_concat(", ptr ", ag)));

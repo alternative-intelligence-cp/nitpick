@@ -360,12 +360,16 @@ Channel<T, LEVEL, CAP>
 | `LEVEL` | D-056 lock level — a channel blocks, so it is a blocking primitive |
 | `CAP` | `comptime int64` capacity. `0` is a rendezvous channel; `> 0` is buffered. |
 
-**`CAP == 0` does not lower yet** *(1.1.10-B)*: it refuses with
-`NITPICK-RUNG-001` naming stage C. A rendezvous is not a one-slot buffer — its
-sender waits for a RECEIVER, and that hand-off is the synchronisation being
-asked for, so it needs the waiter registration stage C builds. Lowering it onto
-the buffered path meanwhile would give a send that returns the moment it
-deposits: the same source, quietly not synchronising.
+**A rendezvous is not a one-slot buffer.** Its sender waits for a RECEIVER,
+not for buffer space: a `CAP == 0` send deposits only when a receiver is
+registered and therefore certain to take it, and that hand-off is the
+synchronisation being asked for. Registering as a receiver is itself the event
+such a sender waits for — on a rendezvous a value never arrives first — so a
+receiver that parks wakes a waiting sender; without that both sides park and
+neither is the other's wake. *(Refused by name at 1.1.10-B rather than lowered
+onto the buffered path, which would have given a send that returns the moment
+it deposits — the same source, quietly not synchronising — and implemented at
+1.1.10-C3 once waiter lists existed to ask the question.)*
 
 Capacity lives in the **type**, so each instantiation monomorphizes to one
 behaviour with no runtime branch (D-064). The prototype dispatched on an `int32`
@@ -406,6 +410,15 @@ with a zero deadline, which asks and acts atomically.
   exist as separate operations.
 - **`send` takes ownership**, written `move(v)` (D-065), so the transfer is visible
   at the call site.
+- **A blocked operation is woken by its peer, not by a timer.** A task that
+  cannot proceed registers on the channel and parks; the operation that
+  unblocks it — a value arriving, a slot freeing, a close — takes it off the
+  list and makes it runnable on its own executor, across threads if need be.
+  The deadline still bounds the wait, on the task's own sleeper list, so the
+  two wake paths are independent and whichever comes first wins. *(1.1.10-C2.
+  Before it a blocked operation re-polled every millisecond: bounded and
+  correct, a millisecond of latency per hand-off, and unable to express a
+  rendezvous, since a poll cannot ask whether a receiver is present.)*
 - **Every operation suspends the task, never the thread** (D-071). What that
   rule governs is waiting for a PEER OPERATION — a full channel's sender, an
   empty channel's receiver — which is unbounded and must never cost a thread.

@@ -1,0 +1,58 @@
+// expect-exit: 42
+//
+// A RENDEZVOUS CHANNEL (CAP 0) — the sender waits for a RECEIVER, not for
+// buffer space (D-072, 1.1.10-C3). The hand-off IS the synchronisation, which
+// is the reason to ask for one, and it is the thing a capacity-1 buffer does
+// not give you: a buffered send returns the moment it deposits, with no
+// receiver in sight. Stage B refused CAP 0 by name rather than lower it onto
+// the buffered path, because a channel that is silently not the channel you
+// asked for is worse than one that will not compile.
+//
+// It works in both arrival orders, and both are exercised here. When the
+// RECEIVER arrives first it registers and wakes any waiting sender —
+// registering is itself the event a rendezvous sender is waiting for, and
+// without that wake both sides park and neither is the other's wake, a
+// deadlock that resolves only when the deadlines run out. When the SENDER
+// arrives first it parks until a receiver registers.
+//
+// The timing is what proves the sender actually waited: the receiver sleeps
+// 60ms before its first `recv`, so a sender that returned early would show it.
+mod:channel_rendezvous;
+error:Sent;
+async func:sender = NIL(Channel<int32, 3i32, 0i64>:ch) {
+    await ch.send(20i32, raw duration_ms(2000i64)) ?! Sent;   // receiver is late
+    await ch.send(22i32, raw duration_ms(2000i64)) ?! Sent;   // receiver is waiting
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 0i64>:ch = channel() ?! Unreachable;
+    int64:t0 = raw mono_now();
+    drop sender(ch);
+
+    // SENDER FIRST: it is parked in `send` while this sleeps.
+    await sleep(raw duration_ms(60i64)) ?| NIL;
+    Result<int32>:a = await ch.recv(raw duration_ms(2000i64));
+    if (a.is_error) { exit 11i32; }
+    int64:t1 = raw mono_now();
+    if ((t1 - t0) < 55000000i64) { exit 12i32; }   // the sender did wait
+
+    // RECEIVER FIRST: this blocks before the second send is reached.
+    Result<int32>:b = await ch.recv(raw duration_ms(2000i64));
+    if (b.is_error) { exit 13i32; }
+
+    exit a.value + b.value;                        // 20 + 22 = 42
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Sent)             { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

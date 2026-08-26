@@ -444,17 +444,6 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // D-182: a channel ENDPOINT is a handle — an index and a generation —
     // not a pointer, which is what lets it cross a spawn.
     if (k == (raw TY_CHANNEL()))  {
-        // A RENDEZVOUS CHANNEL IS NOT A ONE-SLOT BUFFER, and this rung can only
-        // build the buffer. In a rendezvous the sender waits for a RECEIVER to
-        // be present — the hand-off is the synchronisation, and that is the
-        // point of asking for one. What the buffered path would give instead is
-        // a send that returns the moment it deposits, with no receiver in sight:
-        // the same code, quietly not synchronising. Refused by name until stage
-        // C registers waiters, because a channel that silently is not the
-        // channel you asked for is worse than one that will not compile.
-        if ((raw type_chan_cap(c.types, id)) == 0i32) {
-            pass (raw ll_rung("1.1 stage C — a rendezvous channel (CAP 0), whose sender waits for a receiver rather than for buffer space; a buffered channel (CAP 1 or more) lowers today"));
-        }
         if (!(raw chan_elem_ok(c, raw type_elem(c.types, id), 8i32))) {
             pass (raw ll_rung("a later cycle (B-6) — this element OWNS heap storage, and a channel hands its element to another task; D-065 moves ownership only where `move` is written, so the far side would become a second owner of the same body, and which side frees it is the managed lowering's question. Scalars, `Handle<T>`, channel endpoints, pointer-free structs and arrays of those transfer by copying their bytes and ride today"));
         }

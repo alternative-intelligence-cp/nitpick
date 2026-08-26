@@ -2133,7 +2133,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (av.state != (raw LL_OK())) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, cft, i), av, at);
         if (av.state != (raw LL_OK())) { pass av; }
-        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 10i32 + i);
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
@@ -2437,52 +2437,44 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop irw_line(x.fe.w, raw cat4("store i64 ", dabs0, ", ptr ", dslot));
     drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", eslot, ""));
 
+    // THE WHOLE PROTOCOL IS ONE CALL (1.1.10-C2). `npk_ch_{send,recv}_wait`
+    // takes the channel's lock, unlinks this frame from the waiter list it may
+    // still be on, re-tests the condition, and then either completes, reports
+    // an error, or registers the frame and parks it against the deadline. It
+    // returns 0 done, 1 parked, or a negative Error — so the emitted loop is a
+    // call, a branch, and a resume point, with no timing decisions in it.
+    //
+    // It used to poll: try, and if the answer was "would block", park for a
+    // millisecond and try again. That was bounded and correct and it cost up
+    // to a millisecond per hand-off — and it could not express a rendezvous,
+    // because a poll has no way to ask whether a receiver is present.
     string:head = raw irw_new_label(x.fe.w, "ch.try");
-    string:blocked = raw irw_new_label(x.fe.w, "ch.block");
     string:fin = raw irw_new_label(x.fe.w, "ch.done");
     drop s_br(x, head);
     drop s_start(x, head);
-    string:fn = "@npk_ch_try_recv";
-    if (is_send) { fn = "@npk_ch_try_send"; }
+    string:fn = "@npk_ch_recv_wait";
+    if (is_send) { fn = "@npk_ch_send_wait"; }
     string:hw = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(hw, " = load i64, ptr ", hwslot, ""));
+    string:dabs = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(dabs, " = load i64, ptr ", dslot, ""));
     string:rc = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(rc, " = call i32 ", fn, "(i64 ",
-                      raw cat4(hw, ", ptr ", slot, ")")));
+                      raw cat5(hw, ", ptr ", slot, ", i64 ",
+                          raw cat3(dabs, ", ptr %fr)", ""))));
     drop irw_line(x.fe.w, raw cat4("store i32 ", rc, ", ptr ", eslot));
     string:again = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(again, " = icmp eq i32 ",
                       raw string_concat(rc, ", 1")));
-    drop irw_line(x.fe.w, raw cat5("br i1 ", again, ", label %", blocked,
+    string:park = raw irw_new_label(x.fe.w, "ch.park");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", again, ", label %", park,
                       raw string_concat(", label %", fin)));
     x.fe.terminated = true;
 
-    drop s_start(x, blocked);
-    string:now = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat3(now, " = call i64 @npk_mono_now()", ""));
-    string:dabs = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat4(dabs, " = load i64, ptr ", dslot, ""));
-    string:over = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(over, " = icmp sgt i64 ", now, ", ", dabs));
-    string:expired = raw irw_new_label(x.fe.w, "ch.late");
-    string:park = raw irw_new_label(x.fe.w, "ch.park");
-    drop irw_line(x.fe.w, raw cat5("br i1 ", over, ", label %", expired,
-                      raw string_concat(", label %", park)));
-    x.fe.terminated = true;
-    drop s_start(x, expired);
-    drop irw_line(x.fe.w, raw cat3("store i32 -4107, ptr ", eslot, ""));
-    drop s_br(x, fin);
     drop s_start(x, park);
-    // wake at the sooner of "a short retry" and the deadline itself
-    string:soon = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat3(soon, " = add i64 ",
-                      raw string_concat(now, ", 1000000")));
-    string:sooner = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(sooner, " = icmp slt i64 ", soon, ", ", dabs));
-    string:wake = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(wake, " = select i1 ", sooner, ", i64 ",
-                      raw cat3(soon, ", i64 ", dabs)));
-    drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ", wake, ")"));
+    // The runtime already named the wake condition (it called `park_until`
+    // with the caller's deadline before returning 1), so this only has to
+    // record where to come back to.
     string:sg = raw fnem_new_seg(x.fe);
     int32:sk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
@@ -2515,8 +2507,8 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop s_br(x, head);
 
     drop s_start(x, fin);
-    // rc is 0 on success and a negative Error otherwise; the loop's own
-    // expiry wrote -4107 into the slot, so one read serves both paths
+    // rc is 0 on success and a negative Error otherwise — DeadlineExceeded
+    // included, which the runtime decides now that it owns the waiting
     string:err = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(err, " = load i32, ptr ",
                       raw string_concat(eslot, "")));
