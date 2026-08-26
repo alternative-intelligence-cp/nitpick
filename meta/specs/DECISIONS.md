@@ -12528,7 +12528,16 @@ the design has slipped.
 Scalars, `Handle<T>`, channel endpoints, pointers and slices drop nothing: an
 index is not an owner, a pointer is not an owner (`wild` memory stays manual
 via `defer`/`dalloc`, which is what makes the regime explicit), and a slice is
-a borrow. `string` frees its body; an array drops its elements; a struct drops
+a borrow. `string` frees its body **when it owns it**: a literal's body is a module
+constant, and handing that to `npk_dalloc` is a trap. The capacity field
+settles it — it is read by nothing today (not the runtime, not the emitter, not
+the seed; the only writes are the three `insertvalue`s that build a string), so
+**`cap == 0` means the body is not owned**. Literals are emitted with `cap = 0`
+— they are not growable in place, the same fact from the other side — and the
+drop is `if cap != 0 { dalloc(ptr) }`. Asking the allocator "is this yours?"
+per drop was rejected: D-150's metadata could answer it, but it turns something
+the compiler knows statically into a runtime lookup on every drop of every
+string forever. An array drops its elements; a struct drops
 its fields in **reverse declaration order**; an enum drops the ACTIVE variant's
 payload; `T?` and `Result<T>` drop the inner when there is one; `atomic<T>`
 drops as `T`; arenas release their slabs.

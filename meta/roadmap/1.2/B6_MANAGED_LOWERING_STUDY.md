@@ -35,7 +35,7 @@ cost of this feature must be zero for the scalars that dominate every program.
 | `Handle<T>`, channel endpoint | none — an index, not an owner (D-152/D-182) |
 | `T->` (pointer) | **none.** A pointer is not an owner; `wild` memory is manual (`defer`/`dalloc`), which is the whole point of the regime being explicit |
 | slice `T[]` | none — a borrow (D-070) |
-| `string` | free the body |
+| `string` | free the body **when it is owned** — see below |
 | `T[N]` array | each element, ascending, if `T` drops |
 | struct | each field in **reverse declaration order**, if it drops |
 | enum with payload | the ACTIVE variant's payload, selected on the tag |
@@ -45,6 +45,34 @@ cost of this feature must be zero for the scalars that dominate every program.
 | `arena<T>`, `shared_arena<T>` | release the slabs |
 | `Channel<T, LEVEL, CAP>` | **reclaim the slot and bump the generation** |
 | `dyn Trait` | through a **drop slot in the vtable** — see §5 |
+
+### `string`, and how a drop knows the body is its own
+
+A string is `{ ptr, len, cap }`, and a LITERAL's body is a module constant
+(`@.str.0`) — handing that to `npk_dalloc` is a trap, correctly, since the
+allocator validates before it frees. So "free the body" cannot be
+unconditional, and the drop needs to tell an owned body from a static one.
+
+Today it cannot: a literal is emitted with `cap == len`, exactly like a
+concatenated string. **The capacity field is read by nothing** — not the
+runtime, not the emitter, not the seed; the only writes are the three
+`insertvalue`s that build a string. So it is free, and the rule is:
+
+> **`cap == 0` means the body is not owned.**
+
+Literals are emitted with `cap = 0` (they are not growable in place, which is
+the same fact from the other side), heap-built strings keep `cap = n`, and a
+`string` drop is `if cap != 0 { dalloc(ptr) }`. Static, zero-cost, and it reads
+correctly at the representation level.
+
+The alternative — asking the allocator "is this yours?" at every drop — was
+rejected: D-150's metadata could answer it, but it turns a fact the compiler
+knows statically into a runtime lookup, and the same question would have to be
+re-answered on every drop of every string forever.
+
+*(An empty concatenation produces `cap = 0` and leaks its zero-byte block. That
+is a real if trivial consequence, and the fix belongs with it: `string_concat`
+of two empty strings should return the empty literal rather than allocate.)*
 
 **The channel row is the one that closes a hole 1.1.10 had to leave open.**
 D-182 makes an endpoint generation-checked so a stale one is `StaleHandle`
