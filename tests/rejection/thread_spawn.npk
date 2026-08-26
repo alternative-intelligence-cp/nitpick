@@ -1,15 +1,14 @@
 // expect-error: NITPICK-RUNG-001
 // expect-no-parse-error
 //
-// A `thread` spawn CREATES an executor (D-181) — the clone, the guard-paged
-// stack, the `%fs` install and the CHILD_CLEARTID join are 1.1.9c. Until
-// then it refuses by name rather than starting the task on the spawner's
-// executor, which would be a thread body running as a task: the one thing
-// D-032's pinning says is a different kind of thing.
+// A GENERIC thread body (D-181): the spawn site derives the callee's frame
+// type and resume symbol by name, and the specialization lookup for that
+// pairing is not wired — the same rung a generic `await` carries. Ordinary
+// thread spawns lower and run (tests/backend/programs/thread_spawn_join).
 
 const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
 
-thread async func:worker = NIL(int32:_~v) joins JOIN_2S {
+thread async func:worker<T> = NIL(T:_~v) joins JOIN_2S {
     pass NIL;
 };
 

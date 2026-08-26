@@ -807,6 +807,9 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare void @npk_windup_all(ptr)");
     drop irw_raw(w, "declare i64 @npk_join_deadline()");
     drop irw_raw(w, "declare i64 @npk_windup_grace()");
+    drop irw_raw(w, "declare ptr @npk_thread_start(ptr, ptr, i64)");
+    drop irw_raw(w, "declare i32 @npk_thread_join(ptr, i64)");
+    drop irw_raw(w, "declare i64 @npk_hardware_concurrency()");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
@@ -814,7 +817,7 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // error slot 3, sibling slot 5, all at fixed offsets. Declared
     // unconditionally, like the runtime block it rides with.
     drop irw_raw(w, raw string_concat("%\"npk.frame.hdr\" = type ",
-                      "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64 }"));
+                      "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr }"));
     // `sys` calls the six-register trampoline directly (0.9.7).
     drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
     // The overflow intrinsics tbb multiplication rides (0.9.5). Declared for

@@ -541,7 +541,7 @@ families `oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence` (D-044)
 | `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
 | `LimitNode` | `rule: Ident` — `limit<r_pos>` on a declaration or parameter |
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
-| `JoinsWithin` | `deadline: Expr` — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
+| `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
 
 `ensures` may reference the special `result` identifier.
 

@@ -26,6 +26,7 @@ use "./parser.npk".*;   // QUAL_CONST (D-165)
 use "./parse_expr.npk".*;
 use "./parse_pick.npk".*;
 use "./parse_decl.npk".*;
+use "./parse_decorate.npk".*;
 use "./symbols.npk".*;
 use "./resolve_type.npk".*;
 use "./type_decl.npk".*;
@@ -1023,6 +1024,37 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
                 d.span));
         }
     }
+    // THE `joins` CLAUSE IS TYPED HERE (D-181), unlike `requires`/`ensures`,
+    // which are the verifier's (1.3) and are typed nowhere yet. This one is
+    // not a proof obligation but a VALUE the spawn emits — an expression
+    // nobody types is an expression the emitter cannot lower, which is
+    // exactly what the first cut produced. It must be a `Duration`, and it
+    // may only appear on a `thread`: a join deadline on a function that
+    // creates no executor states a property of nothing.
+    int32:jci = 0i32;
+    while (jci < (raw fn_contract_count(e.ast, d))) {
+        VerifyNode:jcv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, jci));
+        if (jcv.kind == VerifyKind.VerifyJoinsWithin) {
+            if (!(raw decl_has(d, raw DECL_THREAD()))) {
+                discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                    "`joins` states the join deadline of a THREAD's executor (D-181/D-083), and this function creates no executor",
+                    jcv.span));
+            }
+            int32:jt = raw type_of_expr(e, raw contract_cond(jcv));
+            if (jt != 0i32) {
+                if (!(raw type_is_invalid(e.types, jt))) {
+                    if (!(raw string_eq(raw type_display(e.types, e.interns, jt),
+                                        "Duration"))) {
+                        discard(raw te_error(e, raw TYPE_THREAD_RULES(),
+                            "`joins` takes a `Duration` (D-181): a deadline is a span, and the executor converts it to an absolute monotonic timepoint once, where it is created",
+                            jcv.span));
+                    }
+                }
+            }
+        }
+        jci = jci + 1i32;
+    }
+
     // THE `thread` MODIFIER'S RULES (D-181). A thread body owns an executor
     // and the arena its frames come from (D-034), which is why it is a
     // different kind of function rather than the same one used differently:

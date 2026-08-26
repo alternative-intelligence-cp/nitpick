@@ -1,0 +1,40 @@
+// expect-exit: 42
+//
+// A REAL THREAD (D-181, 1.1.9c). `drop slow(1i32)` on a `thread async`
+// callee is `clone(2)`: a guard-paged 2 MiB stack, a fresh executor, and a
+// TLS block CLONE_SETTLS points `%fs` at — so `npk_exec` reads one word and
+// every queue, park word and error chain below it belongs to this thread
+// alone (D-032's pinning made structural rather than promised).
+//
+// Both halves of the lexical model are proved here. Main is NOT blocked by
+// the thread: its own 20ms of work finishes long before the thread's 120ms,
+// and the mid-point check refuses any run where it waited. And scope exit
+// DOES join: the whole program cannot finish before the thread does,
+// because `main`'s exit runs the same join a task gets — CHILD_CLEARTID is
+// the wait, which is what makes "there is no thread handle" (D-083)
+// implementable rather than aspirational.
+mod:thread_spawn_join;
+const Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+thread async func:slow = NIL(int32:_~v) joins JOIN_5S {
+    await sleep(raw duration_ms(120i64)) ?| NIL;   // outlives main's own work
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int64:t0 = raw mono_now();
+    drop slow(1i32);
+    await sleep(raw duration_ms(20i64)) ?| NIL;    // main finishes first
+    int64:mid = (raw mono_now()) - t0;
+    if (mid > 90000000i64) { exit 11i32; }         // main was NOT blocked
+    exit 42i32;                                     // scope exit must JOIN
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

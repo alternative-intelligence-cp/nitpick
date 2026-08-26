@@ -20,6 +20,46 @@ target triple = "x86_64-unknown-linux-gnu"
 ; whole class.
 ; ---------------------------------------------------------------------------
 
+; --- the two shapes every other definition here refers to -------------------
+;
+; Declared FIRST because LLVM sizes a `getelementptr null` at parse time: a
+; type used before it is defined is "base element must be sized", which the
+; TLS boot found by being the earliest user.
+;
+; The child's trampoline block, which `%fs` points at:
+;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word ]
+%npk.tls = type { ptr, ptr, ptr, ptr, i32 }
+
+; THE CLONE TRAMPOLINE (D-181). In assembly for one reason: after the
+; syscall the child runs on a DIFFERENT STACK, so it may not return into
+; compiler-laid-out frame offsets that belong to the parent. It pops the
+; entry function and its argument off the child stack (written there before
+; the syscall), calls with a correctly aligned %rsp, and exits THIS THREAD
+; on return — which is what clears the CHILD_CLEARTID word and wakes the
+; joiner. The parent just returns the tid.
+;   rdi=flags rsi=child_stack_top rdx=ctid rcx=tls r8=fn r9=arg
+module asm ".globl npk_clone_raw"
+module asm "npk_clone_raw:"
+module asm "  subq $16, %rsi"
+module asm "  movq %r8, 0(%rsi)"
+module asm "  movq %r9, 8(%rsi)"
+module asm "  movq %rdx, %r10"
+module asm "  movq %rcx, %r8"
+module asm "  movl $56, %eax"
+module asm "  syscall"
+module asm "  testq %rax, %rax"
+module asm "  jz 1f"
+module asm "  ret"
+module asm "1:"
+module asm "  xorl %ebp, %ebp"
+module asm "  popq %r11"
+module asm "  popq %rdi"
+module asm "  callq *%r11"
+module asm "  xorl %edi, %edi"
+module asm "  movl $60, %eax"
+module asm "  syscall"
+module asm "  hlt"
+
 module asm ".globl _start"
 module asm "_start:"
 module asm "  xorq %rbp, %rbp"
@@ -48,6 +88,9 @@ declare i32 @main({ ptr, i64 })
 
 define internal void @npk_start(i64 %sp) noreturn {
 entry:
+  ; the executor's TLS block first: every allocation, trap and error chain
+  ; below reaches its executor through `%fs:8` (D-181).
+  call void @npk_tls_boot()
   %spp = inttoptr i64 %sp to ptr
   %argc = load i64, ptr %spp
   %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
@@ -121,21 +164,298 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; loop reads it the instant the resume returns: one word, no frame-layout
 ; change, and no way for a suspension to be silent about its wake condition.
 ; A suspension with no request is a defect — nothing may park forever.
-@npk_park_at = internal global i64 0        ; absolute monotonic ns, 0 = none
-@npk_park_pending = internal global i32 0   ; a request is outstanding
 @npk_frozen = internal global i32 0         ; D-063: a trap happened; resume nothing
 
 ; The FUTEX word the thread sleeps on. Nothing ever wakes it in a
 ; single-threaded program — the timeout is the wake — but the wait is a real
 ; FUTEX_WAIT_BITSET so a cross-thread wake (1.1.9) needs no new mechanism.
-@npk_park_word = internal global i32 0
 
 ; THE FRAME HEADER, AS THE EXECUTOR SEES IT. Must match the `%"npk.frame.hdr"`
 ; the emitter writes (emit_runtime_declares) — one shape, two spellings, and
 ; the harness's runtime-signature check is what keeps them honest.
 ;   0 resume_fn | 1 state | 2 windup | 3 result | 4 join_head
 ;   5 sibling   | 6 awaitee | 7 qnext | 8 wake_at
-%npk.hdr = type { ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64 }
+; 9 thread_tls: non-null exactly when this frame is a THREAD's root task
+; (D-181). The join reads it to know whether to pump the executor (a task) or
+; wait on the kernel's CHILD_CLEARTID word (a thread) — a dedicated slot
+; rather than an overload of `qnext`, because an ambiguous discriminator in a
+; join is where a program waits on the wrong thing forever.
+%npk.hdr = type { ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr }
+
+; THE EXECUTOR (D-181): every word 1.1.8 kept as a runtime global, in one
+; struct, because with threads each of them is PER-THREAD — two threads
+; sharing a ready queue would migrate tasks, which D-032 forbids outright;
+; sharing a park word would wake the wrong thread; sharing an origin chain
+; would interleave two failures into one history and make the diagnostic
+; fiction. The frame arena (D-034) joins them when threads land.
+;
+;   0 rq_head | 1 rq_tail | 2 sl_head | 3 park_at | 4 park_pending
+;   5 park_word | 6 join_ns | 7 grace_ns | 8 chain[8] | 9 chain_n
+;   10 windup_seen
+%npk.exec = type { ptr, ptr, ptr, i64, i32, i32, i64, i64, [8 x i32], i32, i32 }
+
+; The join deadline (D-083) and the wind-up grace (D-177) are STATED
+; CONSTANTS, not "whatever the runtime felt like": five seconds and 250ms,
+; so total containment of a stuck task is deadline+grace and both halves are
+; auditable at a glance. A thread's `joins` clause overrides the first
+; where its executor is created.
+@npk_main_exec = internal global %npk.exec { ptr null, ptr null, ptr null,
+    i64 0, i32 0, i32 0, i64 5000000000, i64 250000000,
+    [8 x i32] zeroinitializer, i32 0, i32 0 }
+
+; THE CURRENT THREAD'S EXECUTOR. One accessor, so the thread-local move is
+; one edit rather than forty: 1.1.9c makes this read `%fs:8`, which
+; `CLONE_SETTLS` installs per thread. Today there is one thread and one
+; executor, and the shape is already honest.
+; THE MAIN THREAD'S TLS BLOCK, installed before anything runs. Freestanding
+; means nothing sets `%fs` for us — the first cut read `%fs:8` on a thread
+; whose `%fs` base was zero, which is a load from address 8 and exactly the
+; segfault it deserves. `arch_prctl(ARCH_SET_FS)` gives the main thread the
+; same shape `CLONE_SETTLS` gives every other one, so `npk_exec` has one path
+; rather than a branch that is right by accident of ordering.
+; Byte-zero, for the runtime's own blocks. `npk_calloc` is the user-visible
+; one and registers what it hands back; this does not.
+define internal void @npk_zero(ptr %p, i64 %n) {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %ni, %step ]
+  %done = icmp uge i64 %i, %n
+  br i1 %done, label %fin, label %step
+step:
+  %q = getelementptr i8, ptr %p, i64 %i
+  store i8 0, ptr %q
+  %ni = add i64 %i, 1
+  br label %loop
+fin:
+  ret void
+}
+
+define internal void @npk_tls_boot() {
+entry:
+  ; INTERNAL, not `npk_alloc`: the user-visible allocator registers its
+  ; blocks in the <wild-live> set (D-151), so the runtime's own TLS and
+  ; executor would be reported as leaks at a clean exit — which is exactly
+  ; what the leak tests said the first time this ran.
+  %tls = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
+  %self = getelementptr %npk.tls, ptr %tls, i32 0, i32 0
+  store ptr %tls, ptr %self
+  %ex = getelementptr %npk.tls, ptr %tls, i32 0, i32 1
+  store ptr @npk_main_exec, ptr %ex
+  %root = getelementptr %npk.tls, ptr %tls, i32 0, i32 2
+  store ptr null, ptr %root
+  %res = getelementptr %npk.tls, ptr %tls, i32 0, i32 3
+  store ptr null, ptr %res
+  %tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
+  store i32 0, ptr %tid
+  %ti = ptrtoint ptr %tls to i64
+  ; arch_prctl(ARCH_SET_FS = 0x1002, tls)
+  %r = call i64 @npk_sys6(i64 158, i64 4098, i64 %ti, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp ne i64 %r, 0
+  br i1 %bad, label %nofs, label %ok
+nofs:
+  call void @npk_trap(i32 -4102)
+  unreachable
+ok:
+  ret void
+}
+
+define ptr @npk_exec() {
+entry:
+  ; `%fs:8` is this thread's executor — installed by `CLONE_SETTLS` for a
+  ; spawned thread and by `npk_tls_boot` for the main one, so there is one
+  ; answer everywhere and no ordering to get wrong.
+  %v = call i64 asm sideeffect "movq %fs:8, $0", "=r,~{dirflag},~{fpsr},~{flags}"()
+  %p = inttoptr i64 %v to ptr
+  ret ptr %p
+}
+
+; --- threads (D-181, 1.1.9c) -------------------------------------------------
+;
+; A THREAD IS A CLONE WITH ITS OWN EXECUTOR. `clone(2)` rather than
+; pthread_create: the zero-dependency rule, and this runtime already owns
+; `_start`, guard-paged mmap and `exit`. The child gets
+;   [ PROT_NONE guard | 2 MiB stack ]
+; from one mmap — the three-region shape `wildx` already uses — plus a
+; two-word TLS block `[ self | executor ]` that CLONE_SETTLS points `%fs` at,
+; honouring the ABI's `%fs:0 = self` convention and taking `%fs:8` for ours.
+;
+; CHILD_CLEARTID IS THE JOIN. The kernel zeroes a word and futex-wakes it when
+; the thread exits, so the joining scope waits on exactly that word — which is
+; what makes D-083's "there is no thread handle" implementable rather than
+; aspirational: nothing has to be named to be joined.
+@npk_thread_stack_bytes = internal constant i64 2097152
+
+; The child's trampoline arguments, handed over in its own TLS block so no
+; shared state is read after the clone returns.
+;   [ 0 self | 1 exec | 2 root frame | 3 resume fn | 4 tid word ]
+
+define ptr @npk_thread_start(ptr %root, ptr %resume, i64 %join_ns) {
+entry:
+  ; stack: guard page + 2 MiB in one mapping, the three-region shape `wildx`
+  ; already uses.
+  %sz = load i64, ptr @npk_thread_stack_bytes
+  %tot = add i64 %sz, 4096
+  %bi = call i64 @npk_hmap(i64 %tot)
+  %stack_lo = add i64 %bi, 4096
+  ; the guard page is made PROT_NONE, and a FAILURE THERE IS FATAL: a stack
+  ; without its guard turns an overflow into silent corruption of whatever
+  ; the allocator put below it, which is the class this runtime exists to
+  ; refuse.
+  %mp = call i64 @npk_sys6(i64 10, i64 %bi, i64 4096, i64 0, i64 0, i64 0, i64 0)
+  %mpbad = icmp ne i64 %mp, 0
+  br i1 %mpbad, label %noguard, label %guarded
+noguard:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+guarded:
+  %sp = add i64 %stack_lo, %sz
+
+  ; the child's executor and its TLS block. The executor carries the join
+  ; deadline the `joins` clause stated (D-083: fixed where the executor is
+  ; created) and the same wind-up grace every executor uses.
+  ; ZEROED, not merely allocated: an executor's queue heads must start empty,
+  ; and `npk_alloc` hands back whatever the slab held. The first thread this
+  ; runtime ever started appended its root task to a garbage tail pointer.
+  %ex = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.exec, ptr null, i32 1) to i64))
+  call void @npk_zero(ptr %ex, i64 ptrtoint (ptr getelementptr (%npk.exec, ptr null, i32 1) to i64))
+  %jn = getelementptr %npk.exec, ptr %ex, i32 0, i32 6
+  store i64 %join_ns, ptr %jn
+  %gr = getelementptr %npk.exec, ptr %ex, i32 0, i32 7
+  %mg = call i64 @npk_windup_grace()
+  store i64 %mg, ptr %gr
+
+  %tls = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
+  %t_self = getelementptr %npk.tls, ptr %tls, i32 0, i32 0
+  store ptr %tls, ptr %t_self
+  %t_exec = getelementptr %npk.tls, ptr %tls, i32 0, i32 1
+  store ptr %ex, ptr %t_exec
+  %t_root = getelementptr %npk.tls, ptr %tls, i32 0, i32 2
+  store ptr %root, ptr %t_root
+  %t_res = getelementptr %npk.tls, ptr %tls, i32 0, i32 3
+  store ptr %resume, ptr %t_res
+  %t_tid = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
+  store i32 0, ptr %t_tid
+
+  ; 0x3d0f00 = CLONE_VM 0x100 | FS 0x200 | FILES 0x400 | SIGHAND 0x800
+  ;          | THREAD 0x10000 | SYSVSEM 0x40000 | SETTLS 0x80000
+  ;          | PARENT_SETTID 0x100000 | CHILD_CLEARTID 0x200000
+  ;
+  ; PARENT_SETTID AND CHILD_CLEARTID ARE A PAIR, and the first cut had only
+  ; the second: the kernel cleared the word at exit but nothing ever WROTE
+  ; the tid, so the join read zero, concluded the thread had finished, and
+  ; freed the frame a running thread was still executing on. The word is
+  ; both the handle and the wake, so it needs both halves.
+  ;
+  ; Written as one literal with its bits named — a clone flag word off by a
+  ; bit is a thread that shares the wrong thing.
+  %tlsi = ptrtoint ptr %tls to i64
+  %ctid = ptrtoint ptr %t_tid to i64
+  %r = call i64 @npk_clone_raw(i64 4001536, i64 %sp, i64 %ctid, i64 %tlsi,
+                               ptr @npk_thread_entry, i64 %tlsi)
+  %failed = icmp slt i64 %r, 0
+  br i1 %failed, label %bad, label %ok
+bad:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4103)
+  unreachable
+ok:
+  ret ptr %tls
+}
+
+; THE CHILD'S ENTRY, reached with a fresh frame on its own stack. This is why
+; the clone rides an assembly trampoline rather than a branch in IR: after
+; `clone` the child's `%rsp` is the new stack, while every frame offset the
+; compiler laid out belongs to the parent — a child that "continues" in IR
+; reads its own uninitialised stack for anything spilled. The trampoline
+; hands control here with a real call, so this function is ordinary code.
+define void @npk_thread_entry(i64 %tlsi) {
+entry:
+  %tls = inttoptr i64 %tlsi to ptr
+  %rp = getelementptr %npk.tls, ptr %tls, i32 0, i32 2
+  %root = load ptr, ptr %rp
+  call void @npk_rq_push(ptr %root)
+  %rc = call i32 @npk_run_until(ptr %root, i64 0)
+  ret void
+}
+
+define void @npk_thread_exit() noreturn {
+entry:
+  %r = call i64 @npk_sys6(i64 60, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)
+  unreachable
+}
+
+; THE JOIN: wait on the CHILD_CLEARTID word until the kernel zeroes it, under
+; the deadline. Returns 0 when the thread exited, 1 when the deadline passed.
+define i32 @npk_thread_join(ptr %tls, i64 %dl) {
+entry:
+  %tp = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
+  br label %loop
+loop:
+  %t = load i32, ptr %tp
+  %gone = icmp eq i32 %t, 0
+  br i1 %gone, label %done, label %check
+check:
+  %now = call i64 @npk_mono_now()
+  %over = icmp sgt i64 %now, %dl
+  br i1 %over, label %expired, label %wait
+wait:
+  ; FUTEX_WAIT on the tid word, with the join deadline as the absolute
+  ; monotonic timeout — the same clock discipline every wait here uses.
+  %ts = alloca [2 x i64], align 16
+  %sec = sdiv i64 %dl, 1000000000
+  %rem = srem i64 %dl, 1000000000
+  %s0 = getelementptr [2 x i64], ptr %ts, i64 0, i64 0
+  store i64 %sec, ptr %s0
+  %s1 = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
+  store i64 %rem, ptr %s1
+  %tsi = ptrtoint ptr %ts to i64
+  %wp = ptrtoint ptr %tp to i64
+  %te = zext i32 %t to i64
+  %fr = call i64 @npk_sys6(i64 202, i64 %wp, i64 137, i64 %te, i64 %tsi,
+                           i64 0, i64 -1)
+  br label %loop
+done:
+  ret i32 0
+expired:
+  ret i32 1
+}
+
+; How many hardware threads the program may use (D-073: the prototype
+; hardcoded 4). sched_getaffinity over a 1024-bit mask, popcounted.
+define i64 @npk_hardware_concurrency() {
+entry:
+  %mask = alloca [16 x i64], align 16
+  %mi = ptrtoint ptr %mask to i64
+  %z = call i64 @npk_sys6(i64 204, i64 0, i64 128, i64 %mi, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %z, 0
+  br i1 %bad, label %one, label %count
+count:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %count ], [ %ni, %step ]
+  %acc = phi i64 [ 0, %count ], [ %nacc, %step ]
+  %at_end = icmp uge i64 %i, 16
+  br i1 %at_end, label %fin, label %step
+step:
+  %wp2 = getelementptr [16 x i64], ptr %mask, i64 0, i64 %i
+  %w = load i64, ptr %wp2
+  %pc = call i64 @llvm.ctpop.i64(i64 %w)
+  %nacc = add i64 %acc, %pc
+  %ni = add i64 %i, 1
+  br label %loop
+fin:
+  %none = icmp eq i64 %acc, 0
+  br i1 %none, label %one, label %give
+give:
+  ret i64 %acc
+one:
+  ret i64 1
+}
+
+declare i64 @llvm.ctpop.i64(i64)
+declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)
 
 ; THE READY QUEUE and THE SLEEPERS, both intrusive through `qnext` — a task is
 ; ready or sleeping, never both, so one link word serves. `wake_at` is the
@@ -143,31 +463,34 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; completed**: a task never sleeps to a negative timepoint, so the marker
 ; cannot collide with a real deadline, and a join that arrives after its
 ; child already finished reads it instead of waiting forever.
-@npk_rq_head = internal global ptr null
-@npk_rq_tail = internal global ptr null
-@npk_sl_head = internal global ptr null
 
 define void @npk_rq_push(ptr %f) {
 entry:
+  %ex = call ptr @npk_exec()
+  %p_npk_rq_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 0
+  %p_npk_rq_tail = getelementptr %npk.exec, ptr %ex, i32 0, i32 1
   %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
   store ptr null, ptr %qn
-  %t = load ptr, ptr @npk_rq_tail
+  %t = load ptr, ptr %p_npk_rq_tail
   %empty = icmp eq ptr %t, null
   br i1 %empty, label %first, label %append
 first:
-  store ptr %f, ptr @npk_rq_head
-  store ptr %f, ptr @npk_rq_tail
+  store ptr %f, ptr %p_npk_rq_head
+  store ptr %f, ptr %p_npk_rq_tail
   ret void
 append:
   %tq = getelementptr %npk.hdr, ptr %t, i32 0, i32 7
   store ptr %f, ptr %tq
-  store ptr %f, ptr @npk_rq_tail
+  store ptr %f, ptr %p_npk_rq_tail
   ret void
 }
 
 define ptr @npk_rq_pop() {
 entry:
-  %h = load ptr, ptr @npk_rq_head
+  %ex = call ptr @npk_exec()
+  %p_npk_rq_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 0
+  %p_npk_rq_tail = getelementptr %npk.exec, ptr %ex, i32 0, i32 1
+  %h = load ptr, ptr %p_npk_rq_head
   %none = icmp eq ptr %h, null
   br i1 %none, label %empty, label %take
 empty:
@@ -175,11 +498,11 @@ empty:
 take:
   %hq = getelementptr %npk.hdr, ptr %h, i32 0, i32 7
   %nx = load ptr, ptr %hq
-  store ptr %nx, ptr @npk_rq_head
+  store ptr %nx, ptr %p_npk_rq_head
   %last = icmp eq ptr %nx, null
   br i1 %last, label %clear, label %done
 clear:
-  store ptr null, ptr @npk_rq_tail
+  store ptr null, ptr %p_npk_rq_tail
   br label %done
 done:
   store ptr null, ptr %hq
@@ -188,19 +511,23 @@ done:
 
 define void @npk_sl_push(ptr %f, i64 %at) {
 entry:
+  %ex = call ptr @npk_exec()
+  %p_npk_sl_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
   %wa = getelementptr %npk.hdr, ptr %f, i32 0, i32 8
   store i64 %at, ptr %wa
   %qn = getelementptr %npk.hdr, ptr %f, i32 0, i32 7
-  %h = load ptr, ptr @npk_sl_head
+  %h = load ptr, ptr %p_npk_sl_head
   store ptr %h, ptr %qn
-  store ptr %f, ptr @npk_sl_head
+  store ptr %f, ptr %p_npk_sl_head
   ret void
 }
 
 ; The earliest sleeper's timepoint, or 0 when nothing sleeps.
 define i64 @npk_sl_earliest() {
 entry:
-  %h = load ptr, ptr @npk_sl_head
+  %ex = call ptr @npk_exec()
+  %p_npk_sl_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
+  %h = load ptr, ptr %p_npk_sl_head
   br label %loop
 loop:
   %cur = phi ptr [ %h, %entry ], [ %nx, %step ]
@@ -225,13 +552,15 @@ done:
 ; list is rebuilt rather than spliced: one pass, no removal bookkeeping.
 define void @npk_sl_wake_due(i64 %now) {
 entry:
+  %ex = call ptr @npk_exec()
+  %p_npk_sl_head = getelementptr %npk.exec, ptr %ex, i32 0, i32 2
   ; the cursor is a SLOT rather than a phi: the body rejoins the head from
   ; two blocks, and a phi over three predecessors written as two is the
   ; verifier error this cost once already.
   %cs = alloca ptr, align 8
-  %h = load ptr, ptr @npk_sl_head
+  %h = load ptr, ptr %p_npk_sl_head
   store ptr %h, ptr %cs
-  store ptr null, ptr @npk_sl_head
+  store ptr null, ptr %p_npk_sl_head
   br label %loop
 loop:
   %cur = load ptr, ptr %cs
@@ -249,9 +578,9 @@ ready:
   call void @npk_rq_push(ptr %cur)
   br label %loop
 keep:
-  %sh = load ptr, ptr @npk_sl_head
+  %sh = load ptr, ptr %p_npk_sl_head
   store ptr %sh, ptr %qn
-  store ptr %cur, ptr @npk_sl_head
+  store ptr %cur, ptr %p_npk_sl_head
   br label %loop
 done:
   ret void
@@ -403,7 +732,6 @@ done:
 ; runtime felt like". Five seconds: long enough that no correct computation
 ; trips it, short enough that a stuck task is contained rather than waited on
 ; forever. 1.1.9's `Thread.spawn` sets it per executor.
-@npk_join_deadline_ns = internal global i64 5000000000
 
 ; THE WIND-UP GRACE (D-177): how long a wound-up task has to run its own
 ; `defer`s and finish. Unwinding is a few resumes — microseconds in practice
@@ -411,35 +739,44 @@ done:
 ; containment at `deadline + 250ms` rather than twice the deadline. The
 ; first cut granted a second full deadline; halving the audit surface is
 ; worth more than the generosity.
-@npk_windup_grace_ns = internal global i64 250000000
 
 define i64 @npk_windup_grace() {
 entry:
-  %v = load i64, ptr @npk_windup_grace_ns
+  %ex = call ptr @npk_exec()
+  %p_npk_windup_grace_ns = getelementptr %npk.exec, ptr %ex, i32 0, i32 7
+  %v = load i64, ptr %p_npk_windup_grace_ns
   ret i64 %v
 }
 
 define i64 @npk_join_deadline() {
 entry:
-  %v = load i64, ptr @npk_join_deadline_ns
+  %ex = call ptr @npk_exec()
+  %p_npk_join_deadline_ns = getelementptr %npk.exec, ptr %ex, i32 0, i32 6
+  %v = load i64, ptr %p_npk_join_deadline_ns
   ret i64 %v
 }
 
 define void @npk_park_until(i64 %at) {
 entry:
-  store i64 %at, ptr @npk_park_at
-  store i32 1, ptr @npk_park_pending
+  %ex = call ptr @npk_exec()
+  %p_npk_park_at = getelementptr %npk.exec, ptr %ex, i32 0, i32 3
+  %p_npk_park_pending = getelementptr %npk.exec, ptr %ex, i32 0, i32 4
+  store i64 %at, ptr %p_npk_park_at
+  store i32 1, ptr %p_npk_park_pending
   ret void
 }
 
 define i64 @npk_park_take() {
 entry:
-  %p = load i32, ptr @npk_park_pending
+  %ex = call ptr @npk_exec()
+  %p_npk_park_at = getelementptr %npk.exec, ptr %ex, i32 0, i32 3
+  %p_npk_park_pending = getelementptr %npk.exec, ptr %ex, i32 0, i32 4
+  %p = load i32, ptr %p_npk_park_pending
   %none = icmp eq i32 %p, 0
   br i1 %none, label %no, label %yes
 yes:
-  store i32 0, ptr @npk_park_pending
-  %at = load i64, ptr @npk_park_at
+  store i32 0, ptr %p_npk_park_pending
+  %at = load i64, ptr %p_npk_park_at
   ret i64 %at
 no:
   ret i64 0
@@ -449,10 +786,11 @@ no:
 ; unwinding it triggers land with the join deadline (1.1.8 stage C); today
 ; this records that the poll HAPPENED, which is what keeps the emitted poll
 ; from being dead code the optimiser may delete.
-@npk_windup_seen = internal global i32 0
 define void @npk_windup_note(i32 %w) {
 entry:
-  store i32 %w, ptr @npk_windup_seen
+  %ex = call ptr @npk_exec()
+  %p_npk_windup_seen = getelementptr %npk.exec, ptr %ex, i32 0, i32 10
+  store i32 %w, ptr %p_npk_windup_seen
   ret void
 }
 
@@ -472,6 +810,8 @@ entry:
 ; and returned instantly. The first sleeping program caught it.
 define void @npk_park_sleep(i64 %at) {
 entry:
+  %ex = call ptr @npk_exec()
+  %p_npk_park_word = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
   %ts = alloca [2 x i64], align 16
   %sec = sdiv i64 %at, 1000000000
   %rem = srem i64 %at, 1000000000
@@ -480,7 +820,7 @@ entry:
   %np = getelementptr [2 x i64], ptr %ts, i64 0, i64 1
   store i64 %rem, ptr %np
   %tp = ptrtoint ptr %ts to i64
-  %wp = ptrtoint ptr @npk_park_word to i64
+  %wp = ptrtoint ptr %p_npk_park_word to i64
   ; futex(word, FUTEX_WAIT_BITSET|PRIVATE, expected 0, &abs_timeout, NULL, ~0)
   %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 137, i64 0, i64 %tp,
                           i64 0, i64 -1)
@@ -497,46 +837,58 @@ entry:
 ; A fresh failure: the chain restarts at its origin site.
 define void @npk_chain_reset(i32 %site) {
 entry:
-  store i32 1, ptr @npk_chain_n
-  store i32 %site, ptr @npk_chain
+  %ex = call ptr @npk_exec()
+  %p_npk_chain = getelementptr %npk.exec, ptr %ex, i32 0, i32 8
+  %p_npk_chain_n = getelementptr %npk.exec, ptr %ex, i32 0, i32 9
+  store i32 1, ptr %p_npk_chain_n
+  store i32 %site, ptr %p_npk_chain
   ret void
 }
 
 ; One propagation hop. The first eight sites stay; the depth keeps counting.
 define void @npk_chain_push(i32 %site) {
 entry:
-  %d = load i32, ptr @npk_chain_n
+  %ex = call ptr @npk_exec()
+  %p_npk_chain = getelementptr %npk.exec, ptr %ex, i32 0, i32 8
+  %p_npk_chain_n = getelementptr %npk.exec, ptr %ex, i32 0, i32 9
+  %d = load i32, ptr %p_npk_chain_n
   %in = icmp ult i32 %d, 8
   br i1 %in, label %keep, label %count
 keep:
-  %slot = getelementptr [8 x i32], ptr @npk_chain, i32 0, i32 %d
+  %slot = getelementptr [8 x i32], ptr %p_npk_chain, i32 0, i32 %d
   store i32 %site, ptr %slot
   br label %count
 count:
   %d2 = add i32 %d, 1
-  store i32 %d2, ptr @npk_chain_n
+  store i32 %d2, ptr %p_npk_chain_n
   ret void
 }
 
 define i32 @npk_chain_depth() {
 entry:
-  %d = load i32, ptr @npk_chain_n
+  %ex = call ptr @npk_exec()
+  %p_npk_chain = getelementptr %npk.exec, ptr %ex, i32 0, i32 8
+  %p_npk_chain_n = getelementptr %npk.exec, ptr %ex, i32 0, i32 9
+  %d = load i32, ptr %p_npk_chain_n
   ret i32 %d
 }
 
 ; The i-th kept site, oldest first; 0 outside the kept range.
 define i32 @npk_chain_site(i32 %i) {
 entry:
+  %ex = call ptr @npk_exec()
+  %p_npk_chain = getelementptr %npk.exec, ptr %ex, i32 0, i32 8
+  %p_npk_chain_n = getelementptr %npk.exec, ptr %ex, i32 0, i32 9
   %neg = icmp slt i32 %i, 0
   br i1 %neg, label %oob, label %lo
 lo:
-  %d = load i32, ptr @npk_chain_n
+  %d = load i32, ptr %p_npk_chain_n
   %cap = icmp ult i32 %d, 8
   %kept = select i1 %cap, i32 %d, i32 8
   %in = icmp ult i32 %i, %kept
   br i1 %in, label %ok, label %oob
 ok:
-  %slot = getelementptr [8 x i32], ptr @npk_chain, i32 0, i32 %i
+  %slot = getelementptr [8 x i32], ptr %p_npk_chain, i32 0, i32 %i
   %v = load i32, ptr %slot
   ret i32 %v
 oob:
@@ -623,8 +975,6 @@ declare i32 @npk_failsafe(i32)
 ; end) and the depth counts every hop. Site 0 is reserved for the runtime
 ; itself. Allocator-free, failure-path-only: the success path never touches
 ; these words.
-@npk_chain = internal global [8 x i32] zeroinitializer
-@npk_chain_n = internal global i32 0
 
 define void @npk_trap(i32 %code) noreturn {
   ; D-063: A TRAP IS A WHOLE-PROGRAM EVENT. From here no coroutine is resumed

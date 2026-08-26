@@ -45,6 +45,7 @@ use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_names.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_decorate.npk".*;
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
@@ -407,12 +408,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // links a child onto the join list instead of calling anything.
         int32:spd = raw await_callee_decl(x, raw expr_operand(n));
         if (spd != 0i32) {
-            // A THREAD spawn creates an executor (D-181); 1.1.9c builds
-            // that. Until then it refuses by name rather than starting a
-            // task on the wrong executor.
             if (raw decl_has(raw ast_decl(x.ast, DeclId{ index: spd }),
                              raw DECL_THREAD())) {
-                pass (raw iv_rung("a `thread` spawn", "1.1", n.span));
+                pass (raw emit_thread_spawn(x, raw expr_operand(n), n, spd));
             }
             pass (raw emit_spawn(x, raw expr_operand(n), n, spd));
         }
@@ -2129,7 +2127,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (av.state != (raw LL_OK())) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, cft, i), av, at);
         if (av.state != (raw LL_OK())) { pass av; }
-        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 9i32 + i);
+        string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 10i32 + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
@@ -2169,6 +2167,75 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     // the join is not what makes it run.
     drop irw_line(x.fe.w, raw cat3("call void @npk_rq_push(ptr ",
                       cfv.ref, ")"));
+    pass (raw iv("i32", "0", 0i32));
+};
+
+// THE THREAD SPAWN (D-181): the same `drop f(…)` form, but the child gets an
+// EXECUTOR of its own rather than a place on this one — which is the whole
+// difference between a thread and a task, and why the modifier is on the
+// declaration. The frame is built exactly as a task's is (same helper, same
+// argument rules, same D-180 borrow ban); what changes is who runs it.
+//
+// The join deadline comes from the callee's `joins` clause where it has one
+// and the executor default otherwise (D-083: fixed where the executor is
+// created, stated in one greppable place). The TLS block the runtime hands
+// back is the join's handle — held by the emitter, never by the program,
+// which is what keeps "there is no thread handle" true at the surface.
+func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
+                               int32:cdi) never fails {
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
+    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
+        pass (raw iv_rung("a generic `thread` spawn", "1.1", n.span));
+    }
+    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
+    Symbol:cs = raw symtab_get(x.tab, cnode.a);
+    string:fname = raw intern_get(x.interns, cs.name);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
+    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+    IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    if (cfv.state != (raw LL_OK())) { pass cfv; }
+
+    // The deadline: the clause's constant, or the executor's default.
+    string:jns = "";
+    int32:ji = 0i32;
+    while (ji < (raw fn_contract_count(x.ast, cdecl))) {
+        VerifyNode:jv = raw ast_verify(x.ast, raw fn_contract(x.ast, cdecl, ji));
+        if (jv.kind == VerifyKind.VerifyJoinsWithin) {
+            IrVal:jd = raw emit_expr(x, raw contract_cond(jv));
+            if (jd.state != (raw LL_OK())) { pass jd; }
+            string:jx = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(jx, " = extractvalue ", jd.ll, " ",
+                              raw string_concat(jd.ref, ", 0")));
+            jns = jx;
+        }
+        ji = ji + 1i32;
+    }
+    if (jns.len == 0i64) {
+        string:jdef = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(jdef, " = call i64 @npk_join_deadline()", ""));
+        jns = jdef;
+    }
+
+    string:tls = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(tls, " = call ptr @npk_thread_start(ptr ",
+                      cfv.ref, raw cat3(", ptr ", crs, ", i64 "),
+                      raw string_concat(jns, ")")));
+    // The thread rides the SAME join list a task does — one mechanism, and
+    // the wind-up, the first-error relay and the deadline all already work
+    // on it. Slot 7 (`qnext`) carries the TLS block, which the join needs
+    // and nothing else reads: a thread is never on a ready queue, because
+    // its own executor runs it.
+    string:hdr = raw fnem_hdr_ty();
+    string:qg = raw fnem_slot_gep(x.fe, hdr, cfv.ref, 9i32);
+    drop irw_line(x.fe.w, raw cat4("store ptr ", tls, ", ptr ", qg));
+    string:sg2 = raw fnem_slot_gep(x.fe, hdr, cfv.ref, 5i32);
+    string:oldh = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(oldh, " = load ptr, ptr ",
+                      x.fe.join_gep, ""));
+    drop irw_line(x.fe.w, raw cat4("store ptr ", oldh, ", ptr ", sg2));
+    drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
+                      x.fe.join_gep, ""));
     pass (raw iv("i32", "0", 0i32));
 };
 

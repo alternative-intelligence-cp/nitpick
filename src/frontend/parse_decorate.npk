@@ -174,8 +174,14 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
             if (raw p_at(p, TokenKind.KwJoins)) {
                 discard(raw p_advance(p));
                 ExprId:jd = raw p_parse_expr(p);
+                // THE DEADLINE GOES IN SLOT `b` — where `contract_cond`
+                // reads every other clause's expression. Putting it in `a`
+                // (the kind slot) made resolve walk `expr_none`, so the
+                // name was never bound and the emitter met an unresolved
+                // identifier: a clause the walkers cannot see is a clause
+                // that silently does nothing.
                 VerifyId:jv = raw ast_add_verify(p.ast, VerifyKind.VerifyJoinsWithin,
-                                                   sp, jd.index, 0i32, 0i32, 0i64);
+                                                   sp, 0i32, jd.index, 0i32, 0i64);
                 drop ast_scratch_push(p.ast, jv.index);
                 continue;
             }

@@ -417,7 +417,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     //   [ 0 resume_fn | 1 state | 2 windup | 3 result | 4 join_head
     //   | 5 sibling | 6 awaitee | 7 qnext | 8 wake_at | 9+i param i ]
     string:slots = raw string_concat("ptr, i32, i32, ", fe.ret_ll);
-    slots = raw string_concat(slots, ", ptr, ptr, ptr, ptr, i64");
+    slots = raw string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr");
     int32:i = 0i32;
     while (i < fe.pcount) {
         slots = raw cat3(slots, ", ", fe.plls[i => int64]);
@@ -441,14 +441,14 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
 
     i = 0i32;
     while (i < fe.pcount) {
-        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 9i32 + i);
+        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 10i32 + i);
         drop fnem_bind(fe, fe.pnames[i => int64], pg, fe.ptypes[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
     while (i < fe.cross_count) {
         fe.cross_geps[i => int64] =
-            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 9i32 + fe.pcount + i);
+            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 10i32 + fe.pcount + i);
         i = i + 1i32;
     }
 
@@ -558,6 +558,8 @@ pub func:fnem_frame_init = NIL(FnEmitter->:fe, string:frame_ty, string:fr,
     drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g7, ""));
     string:g8 = raw fnem_slot_gep(fe, frame_ty, fr, 8i32);
     drop irw_line(fe.w, raw cat3("store i64 0, ptr ", g8, ""));
+    string:g9 = raw fnem_slot_gep(fe, frame_ty, fr, 9i32);
+    drop irw_line(fe.w, raw cat3("store ptr null, ptr ", g9, ""));
     pass NIL;
 };
 
@@ -590,7 +592,7 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
     i = 0i32;
     while (i < fe.pcount) {
-        string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 9i32 + i);
+        string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 10i32 + i);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
                           raw int_to_string(i => int64),
                           raw string_concat(", ptr ", ag)));
@@ -964,9 +966,33 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat3(jspan, " = call i64 @npk_join_deadline()", ""));
         string:jdl = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jdl, " = add i64 ", jnow, ", ", jspan));
-        string:jrc = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc, " = call i32 @npk_run_until(ptr ",
+        // A THREAD CHILD IS JOINED ON ITS TID WORD (D-181); a task child is
+        // joined by pumping this executor. Same list, same deadline, same
+        // wind-up — one join, two waits, chosen by a slot that means one
+        // thing.
+        string:jtg = raw fnem_slot_gep(fe, raw fnem_hdr_ty(), jh, 9i32);
+        string:jtls = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat4(jtls, " = load ptr, ptr ", jtg, ""));
+        string:jisth = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat3(jisth, " = icmp ne ptr ",
+                          raw string_concat(jtls, ", null")));
+        drop irw_line(fe.w, raw cat3("br i1 ", jisth,
+                          ", label %npk.jthread, label %npk.jtask"));
+        drop irw_label(fe.w, "npk.jthread");
+        string:jtrc = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jtrc, " = call i32 @npk_thread_join(ptr ",
+                          jtls, ", i64 ", raw string_concat(jdl, ")")));
+        drop irw_line(fe.w, "br label %npk.jwaited");
+        drop irw_label(fe.w, "npk.jtask");
+        string:jrc0 = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc0, " = call i32 @npk_run_until(ptr ",
                           jh, ", i64 ", raw string_concat(jdl, ")")));
+        drop irw_line(fe.w, "br label %npk.jwaited");
+        drop irw_label(fe.w, "npk.jwaited");
+        string:jrc = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc, " = phi i32 [ ", jtrc,
+                          ", %npk.jthread ], [ ",
+                          raw cat3(jrc0, ", %npk.jtask ]", "")));
         string:jok = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jok, " = icmp eq i32 ",
                           raw string_concat(jrc, ", 0")));
