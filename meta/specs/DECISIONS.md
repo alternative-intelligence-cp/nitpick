@@ -12613,12 +12613,25 @@ of an owning type means two different things today:
   happen.
 
 So the move-only rule needs a companion: a convention for read-only parameters.
-The mechanism exists — `$$i string`, the second-class borrow (D-004), which
-**cannot escape**, so a callee that borrows provably cannot store, and the two
-meanings stop sharing one spelling. Settling that is what makes `move` at the
-remaining sites both correct and informative, and it is an API change across
-the compiler plus a decision about the language's standard idiom for passing a
-string. **OPEN, and the rule is implemented but gated until it is answered.**
+`$$i string` — the second-class borrow (D-004) — was ratified for it and then
+**tested and found unworkable** (1.2.1b): a borrow needs a place, a literal has
+none (D-146), and so a `string->` parameter cannot accept `"main"`. The
+compiler is built out of `string_eq(name, "main")`; the convention fails for
+exactly the functions it exists to serve.
+
+Which polarity is available turns out to be forced. If the callee OWNS a
+by-value parameter, every caller must `move` — thousands of sites, and
+`string_eq(move(a), move(b))` destroys the caller's bindings, which is wrong
+rather than verbose. So the callee must NOT own by default, exactly as D-065
+already says, and the marker needed is the rare one: *this parameter takes
+ownership*. It does not exist. `move T:p` does not parse; `nodrop T:p` parses
+but is the wrong polarity.
+
+**Recommendation: a parameter modifier spelled `move`** — the same word the
+call site already uses for the same event, at the other end of it. **OPEN: a
+grammar change, and therefore the user's call. Cycle 1.2 is blocked on it**,
+since the drop calls wait on the move-only rule and the rule waits on this. The
+rule is implemented and gated meanwhile.
 
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 

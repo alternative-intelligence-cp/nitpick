@@ -176,3 +176,53 @@ one taken mid-sweep. The rule sits measured and gated at a single early return
 whose comment says exactly this — the same shape as the drop calls held back at
 1.2.0b, and for the same reason: the mechanism is right and the rule around it
 is not settled.
+
+### 1.2.1b — both candidate spellings tested, and both blocked
+
+The read-only-parameter convention was ratified as `$$i string` — the
+second-class borrow. **It does not work, and the reason is not a detail.**
+
+**A borrow needs a place, and a literal has none.** `width($$i "klmno")` is
+refused by TYPE-024, correctly: D-146 refuses taking the address of a
+temporary. So a `string->` parameter cannot accept a string literal — and
+`string_eq(name, "main")` is the shape this compiler is built out of. The
+convention fails for exactly the functions it exists to serve. Measured, not
+predicted: a borrow parameter works (`width($$i a)` runs, and `a` survives two
+calls), and the same function refuses a literal.
+
+**The scale, for the record.** `string_eq` alone has **721 call sites**; the
+by-value owning parameters number 228 across ~146 functions. So this is not a
+convention that can be adopted quietly at the edges.
+
+**Then the alternative was tested too.** `move string:s` as a parameter
+modifier — marking the rare CONSUMING parameter and leaving read-only ones
+untouched — does not parse. It needs one new grammar production.
+
+`nodrop string:s` does parse, and its existing meaning ("this binding is not
+dropped") is very nearly right — but it is the wrong polarity. Which polarity
+is available is forced, not chosen:
+
+| default | what the caller writes | cost |
+|---|---|---|
+| callee does NOT own | nothing at read-only calls; `move(x)` at consuming ones | ~a dozen annotations — but the marker for "takes ownership" does not exist |
+| callee OWNS | `move(x)` at **every** call | thousands of sites, and `string_eq(move(a), move(b))` **destroys the caller's bindings** — wrong, not merely verbose |
+
+The second is not expensive, it is incorrect: a read-only call must not
+invalidate its arguments. So the first is the only coherent design, and it
+needs the one thing that does not exist yet — a parameter modifier meaning
+*this parameter takes ownership*.
+
+**Recommendation: spell it `move`.** The language already uses `move(x)` for
+the transfer at the call site; `move T:p` at the declaration is the same word
+for the same event at the other end of it, which is what the blueprint
+philosophy asks of a notation. Default stays what D-065 already settled —
+passing transfers nothing — so read-only code, literals included, is untouched.
+
+**This is a grammar change, and grammar changes are the user's call**
+(CLAUDE.md: adding a production because the language genuinely needs one is
+ordinary work, but it must be raised). Cycle 1.2 is blocked on it: the drop
+calls wait on the move-only rule, and the move-only rule waits on this.
+
+*Noted in passing:* `nodrop` on a parameter is accepted although D-065 requires
+it to sit on `wild`/`wildx` — a qualifier permitted where it says something
+untrue. Small, real, and unrelated to this decision.
