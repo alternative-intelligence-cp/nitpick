@@ -1,4 +1,5 @@
 // expect-error: NITPICK-TYPE-043
+// expect-error: NITPICK-TYPE-048
 // expect-error: NITPICK-TYPE-043
 // expect-error: NITPICK-TYPE-043
 // expect-error: NITPICK-TYPE-043
@@ -66,4 +67,18 @@ async func:bare_chan = NIL() {
     // expect-error: NITPICK-TYPE-043
     ch.send(1i32, raw duration_ms(10i64)) ?! Unreachable;
     pass NIL;
+};
+
+// An impl may not drop (or add) the `async` its trait method declares
+// (TYPE-048, 1.1.12b): an await through a bound drives the impl by the
+// TRAIT's word, and a sync body run as a coroutine is memory corruption,
+// not a slow call.
+trait:Work48 = {
+    async func:run48 = int64(Self->:self);
+};
+struct:Job48 = { int32:n; };
+impl:Job48:Work48 = {
+    func:run48 = int64(Job48->:self) {
+        pass 1i64;
+    };
 };

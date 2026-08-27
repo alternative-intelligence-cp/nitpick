@@ -212,3 +212,10 @@ pub func:TYPE_MOVE_REQUIRED = string() never fails { pass "NITPICK-TYPE-046"; };
 // caller still holds the first. Declaring the parameter `move` is how a
 // function says it received ownership and may pass it along.
 pub func:TYPE_MOVE_OF_BORROWED = string() never fails { pass "NITPICK-TYPE-047"; };
+
+// 1.1.12b: asyncness is part of a trait method's contract. An `await`
+// through a bound resolves the TRAIT's word and drives the impl through the
+// coroutine frame protocol — a sync impl there would be run as a machine it
+// is not, and an async impl of a sync method could never be awaited. Both
+// directions refuse.
+pub func:TYPE_ASYNC_IMPL = string() never fails { pass "NITPICK-TYPE-048"; };

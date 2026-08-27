@@ -856,6 +856,7 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // The reactor (B-3a, 1.1.12a): one-shot readiness registration.
     drop irw_raw(w, "declare void @npk_io_register(i32, i32)");
     drop irw_raw(w, "declare void @npk_io_unwatch(i32)");
+    drop irw_raw(w, "declare void @npk_ofd_close(i32)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
@@ -1378,6 +1379,24 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                               raw drop_fn_sym(c, mel), "(ptr %ep)", ""));
         }
         drop irw_raw(w, "  call void @npk_dalloc(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // AN OwnedFd's DROP CLOSES ITS DESCRIPTOR (D-185, 1.1.12b). The kernel's
+    // verdict is not observable from a drop — a caller that must see it says
+    // `close(release_fd(move o))` instead; on Linux the descriptor is gone
+    // either way. Negative means a zeroed slot (an empty enum arm's payload):
+    // nothing to close.
+    if (k == (raw TY_OWNEDFD())) {
+        drop irw_raw(w, "  %f = load i32, ptr %v");
+        drop irw_raw(w, "  %dead = icmp slt i32 %f, 0");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        drop irw_raw(w, "  call void @npk_ofd_close(i32 %f)");
         drop irw_raw(w, "  br label %done");
         drop irw_raw(w, "done:");
         drop irw_raw(w, "  ret void");

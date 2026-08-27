@@ -707,6 +707,9 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_RGUARD()))       { pass (raw ll_ok("ptr")); }
     if (k == (raw TY_CONDVAR()))      { pass (raw ll_ok("ptr")); }
     if (k == (raw TY_BARRIER()))      { pass (raw ll_ok("ptr")); }
+    // D-185: the owning descriptor IS the kernel's number; ownership is a
+    // frontend fact (drop flag + generated drop), not a representation one.
+    if (k == (raw TY_OWNEDFD()))      { pass (raw ll_ok("i32")); }
     // AN INSTANTIATION THAT NAMES THE PARAMETER BEING EMITTED (1.0.7). A
     // `List{ … }` literal inside `list_make<T>`'s body is recorded as `List<T>`
     // (D-107: the body is typed once with `T` opaque), and in the

@@ -2369,13 +2369,42 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     // unusual about it here is that it is not in the argument window.
     int32:base = 0i32;
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
-        IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
-        if (rv.state != (raw LL_OK())) { pass rv; }
-        rv = raw emit_fit(x, raw call_param_want(x, cft, 0i32), move(rv), at);
-        if (rv.state != (raw LL_OK())) { pass rv; }
-        string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
-        drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
-                          raw string_concat(", ptr ", rg)));
+        // A POINTER RECEIVER IS PASSED BY ADDRESS (1.0.9b's rule, ported to
+        // the awaited form at 1.1.12b): a method `read = int64(Self->:self,…)`
+        // awaited as `r.read(…)` seeds slot 12 with `@r`, not with the value
+        // — storing the value wrote a 4-byte struct where the callee loads a
+        // pointer, and the first trait-impl await dereferenced its own fd
+        // number. The receiver's place outlives the child: awaits drive
+        // children inline (D-177), so the caller's frame is live for exactly
+        // the child's whole run (D-180's directly-awaited-borrow rule).
+        int32:cp0w = raw call_param_want(x, cft, 0i32);
+        bool:cwant_ptr = false;
+        if (cp0w != 0i32) {
+            int32:cp0k = raw type_kind(x.fe.ctx.types,
+                             raw subst_emitted_param(x.fe.ctx, cp0w));
+            if (cp0k == (raw TY_POINTER())) {
+                int32:crty = raw exprtypes_get(x.et, raw expr_operand(cn));
+                if ((raw type_kind(x.fe.ctx.types, crty)) != (raw TY_POINTER())) {
+                    cwant_ptr = true;
+                }
+            }
+        }
+        if (cwant_ptr) {
+            PlaceVal:crp = raw addr_of(x, raw expr_operand(cn));
+            if (crp.state != (raw LL_OK())) { pass (raw iv_from_place(move(crp))); }
+            string:rg0 = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
+            drop irw_line(x.fe.w, raw cat3("store ptr ", crp.addr,
+                              raw string_concat(", ptr ", rg0)));
+        }
+        if (!cwant_ptr) {
+            IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
+            if (rv.state != (raw LL_OK())) { pass rv; }
+            rv = raw emit_fit(x, cp0w, move(rv), at);
+            if (rv.state != (raw LL_OK())) { pass rv; }
+            string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
+            drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
+                              raw string_concat(", ptr ", rg)));
+        }
         base = 1i32;
     }
     int32:i = 0i32;
@@ -4110,6 +4139,19 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // `suspend_until`: readiness OR the deadline resumes the task, and the
     // caller re-tries its syscall to learn which. One registration, one
     // park, one return.
+    // `own_fd` / `release_fd` (D-185, 1.1.12b): the VALUE is the same i32
+    // both ways — ownership is a frontend fact (the drop flag set at the
+    // binding, cleared by the move at a `release_fd` call). Identity here.
+    if (raw string_eq(name, "own_fd")) {
+        IrVal:ofv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(ofv))) { pass ofv; }
+        pass (raw iv("i32", raw string_concat(ofv.ref, ""), 0i32));
+    }
+    if (raw string_eq(name, "release_fd")) {
+        IrVal:rfv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(rfv))) { pass rfv; }
+        pass (raw iv("i32", raw string_concat(rfv.ref, ""), 0i32));
+    }
     if (raw string_eq(name, "io_unwatch")) {
         IrVal:uwfd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (!(raw iv_is_ok(uwfd))) { pass uwfd; }
@@ -6153,6 +6195,12 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(gvv, " = load ", gil.text, ", ptr ",
                           raw string_concat(gpp, "")));
         pass (raw iv(move(gil.text), move(gvv), fty));
+    }
+    // An OwnedFd's `.value` IS the value (D-185, 1.1.12b): the owner is the
+    // kernel's i32 with a drop obligation, and reading the number neither
+    // moves nor releases it.
+    if (bkind == (raw TY_OWNEDFD())) {
+        pass (raw iv("i32", raw string_concat(bv.ref, ""), fty));
     }
     // A `Result`'s three members (D-069): `value` is slot 0, `error` slot 1, and
     // `.is_error` is DERIVED as `error != 0` — no stored flag, so there is no

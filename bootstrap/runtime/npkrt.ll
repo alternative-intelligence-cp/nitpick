@@ -2246,6 +2246,19 @@ out:
   ret void
 }
 
+; CLOSE AN OWNED DESCRIPTOR AT ITS DROP (D-185, 1.1.12b). The verdict is
+; deliberately not observable here -- a drop has no Result to carry it, and
+; on Linux the descriptor is gone whatever close returns. A caller that must
+; see the verdict releases first: `close(release_fd(move o))`. The epoll
+; interest set drops the descriptor by kernel rule when its last copy
+; closes, so no unwatch is needed.
+define void @npk_ofd_close(i32 %fd) {
+entry:
+  %fdl = sext i32 %fd to i64
+  %r = call i64 @npk_sys6(i64 3, i64 %fdl, i64 0, i64 0, i64 0, i64 0, i64 0)
+  ret void
+}
+
 ; DROP A DESCRIPTOR FROM THE REACTOR (B-3a, 1.1.12a). `io_ready` defers
 ; this so a registration lives exactly as long as its wait -- the one-shot's
 ; payload is the waiting FRAME, and a fire after that frame is freed would

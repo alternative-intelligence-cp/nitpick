@@ -494,7 +494,9 @@ pub func:is_keyword = bool(string:text) {
     KERNEL = {"fd": "KERNEL_FD", "pid": "KERNEL_PID", "tid": "KERNEL_TID",
               "uid": "KERNEL_UID", "gid": "KERNEL_GID"}
     SIMPLE = {"bool": "TY_BOOL", "string": "TY_STRING", "cstring": "TY_CSTRING",
-              "any": "TY_ANY", "NIL": "TY_NIL"}
+              "any": "TY_ANY", "NIL": "TY_NIL",
+              # 1.1.12b (D-185): the owning descriptor -- concrete, scalar-shaped.
+              "OwnedFd": "TY_OWNEDFD"}
     # Constructors and aggregates: reached through their own type nodes or their
     # generic arguments, never as a bare name.
     NOT_SCALAR = {"Result", "Optional", "Handle", "arena", "shared_arena",

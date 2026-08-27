@@ -65,9 +65,19 @@ drive children inline, so EVERY waiter registration — channels and locks
 included — resolves the executor's `cur_task`, not the frame it was
 lowered in; the nested-wait lost-wakeup this fixed was latent everywhere
 (`nested_wait.npk` regresses it). `sys` takes pointers (`ptrtoint` at the
-trampoline — the one place an address becomes a number). Next: 1.1.12b
-owned-fd byte streams, the text layer, async-behind-`dyn`, then 1.1.13 the
-Bridge.
+trampoline — the one place an address becomes a number). **1.1.12b landed
+(D-185)**: `OwnedFd` (TY 39 — the drop IS the close; `own_fd`/`release_fd`;
+move-only; a channel refuses it, a spawn MOVE is join-bounded legal),
+`Path` + `path_parse` (constructor FUNCTIONS — the language has no static
+methods), the `Reader`/`Writer` traits (`Self->` receivers, `within`) and
+`ByteReader`/`ByteWriter` as prelude retry loops over `io_ready`
+(`WouldBlock`/`Interrupted` are named prelude errnos), `Whence` seek, and
+TYPE-048 (an impl keeps its trait's `async` — a sync body driven as a
+coroutine is corruption). The awaited-method child frame now seeds `Self->`
+receivers by ADDRESS. ⚠️ OPEN_DECISIONS **S-1** (pre-Astrée): a `string`
+view can outlive its body — `x = string_slice(x, …)` is a silent UAF the
+quarantine caught in `path_parse`; decision owner: the user. Next: 1.1.12c
+the text layer + std streams, d async-behind-`dyn`, then 1.1.13 the Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

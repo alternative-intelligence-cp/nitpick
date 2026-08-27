@@ -295,6 +295,14 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
         if (raw string_eq(rgf, "value")) { pass (raw type_elem(e.types, base)); }
         pass (raw te_no_member(e, base, name, at));
     }
+    // An OwnedFd's `.value` is the descriptor NUMBER (the kernel `fd` type),
+    // readable without consuming the owner — the streams hand it to the floor
+    // quartet and to `io_ready` (D-185, 1.1.12b).
+    if (k == (raw TY_OWNEDFD())) {
+        string:off = raw intern_get(e.interns, name);
+        if (raw string_eq(off, "value")) { pass (raw tt_kernel(e.types, raw KERNEL_FD())); }
+        pass (raw te_no_member(e, base, name, at));
+    }
     if (k == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(@r, base, name, e.scope);
         if (fi.found) { pass (fi.type_id); }
@@ -654,6 +662,48 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             pass (raw te_error(e, raw TYPE_UNKNOWN(),
                 "`barrier()` needs a `Barrier<N, LEVEL>` annotation to read its party count and level from (D-056)",
                 n.span));
+        }
+        // `own_fd(f)` — the descriptor becomes OWNED: from here its scope
+        // closes it (D-185, 1.1.12b). `release_fd(move o)` is the inverse,
+        // for a caller that must observe close's verdict through the floor.
+        if (raw callee_is_builtin_named(e, n, "own_fd")) {
+            if (count != 1i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`own_fd` takes exactly one argument, the descriptor to own (D-185)",
+                    n.span));
+            }
+            int32:oft = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+            if (oft != 0i32) {
+                if (!(raw type_is_invalid(e.types, oft))) {
+                    if (!((raw type_kind(e.types, oft)) == (raw TY_KERNEL()))) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`own_fd` owns a descriptor: its argument is the kernel `fd` type (D-185)",
+                            n.span));
+                    }
+                }
+            }
+            pass (raw tt_ownedfd(e.types));
+        }
+        if (raw callee_is_builtin_named(e, n, "release_fd")) {
+            if (count != 1i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`release_fd` takes exactly one argument, the owner being released (D-185)",
+                    n.span));
+            }
+            int32:rft = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+            if (rft != 0i32) {
+                if (!(raw type_is_invalid(e.types, rft))) {
+                    if (!((raw type_kind(e.types, rft)) == (raw TY_OWNEDFD()))) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`release_fd` releases an `OwnedFd`; closing responsibility returns to the caller (D-185)",
+                            n.span));
+                    }
+                    drop require_move_if_owning(e,
+                        ExprId{ index: raw ast_id_at(e.ast, start, 0i32) },
+                        rft, n.span);
+                }
+            }
+            pass (raw tt_kernel(e.types, raw KERNEL_FD()));
         }
         if (raw callee_is_builtin_named(e, n, "mutex")) {
             int32:mwant = raw expected_value(e);

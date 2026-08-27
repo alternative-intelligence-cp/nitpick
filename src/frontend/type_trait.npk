@@ -1355,6 +1355,25 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
             pass NIL;
         }
     }
+    // ASYNCNESS IS PART OF THE CONTRACT (1.1.12b). An `await` through a
+    // bound resolves the TRAIT method's word and, when it is `async`, drives
+    // the impl through the coroutine frame protocol — a sync impl there is
+    // called as a state machine it is not, and the frame fill corrupts a
+    // plain function's stack view. The reverse is as wrong for the caller:
+    // an async impl of a sync trait method completes nothing by being
+    // called. Compared here by flag, like the `never fails` bit above,
+    // because `same_signature` compares SHAPE.
+    bool:t_async = raw decl_has(tf, raw DECL_ASYNC());
+    bool:i_async = raw decl_has(f, raw DECL_ASYNC());
+    if (t_async != i_async) {
+        string:as1 = raw string_concat("`",
+            raw intern_get(r.interns, raw decl_name(f)));
+        string:as2 = "` and its trait declaration disagree about `async` (1.1.12b): the caller's call form follows the trait's word, so the impl must keep it";
+        drop diaglist_push(r.diags,
+            raw diag_error(raw TYPE_ASYNC_IMPL(),
+                raw string_concat(as1, as2), im.span));
+        pass NIL;
+    }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
     if (raw same_signature(r, want, got, sc)) { pass NIL; }
 

@@ -17,6 +17,7 @@ KEYWORDS = {
     "NIL",
     "NULL",
     "Optional",
+    "OwnedFd",
     "RGuard",
     "Result",
     "Rules",

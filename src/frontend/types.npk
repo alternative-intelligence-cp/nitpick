@@ -123,6 +123,14 @@ pub func:TY_RGUARD = int32() never fails { pass 36i32; };  // D-056 1.1.11b: a =
 pub func:TY_CONDVAR = int32() never fails { pass 37i32; };  // D-056 1.1.11b: a = LEVEL; `timedwait` only, over a lent Guard
 pub func:TY_BARRIER = int32() never fails { pass 38i32; };  // D-056 1.1.11b: a = N, b = LEVEL; `arrive` is the one operation
 pub func:TY_CHANNEL = int32() never fails { pass 32i32; };
+// D-185 (1.1.12b): AN OWNING DESCRIPTOR — the value is the kernel's i32, and
+// the OWNERSHIP is the point: its generated drop closes it at scope exit,
+// which is what IO_REFERENCE §6's "there is no close in the surface" lowers
+// to. `own_fd(f)` wraps, `release_fd(move o)` unwraps for a caller that must
+// observe close's verdict through the floor's `close`. Move-only like every
+// owner; refused across channels and spawns (a stream cannot escape the
+// scope discipline that closes it).
+pub func:TY_OWNEDFD = int32() never fails { pass 39i32; };
 
 pub struct:Type = {
     int32:kind;
@@ -369,7 +377,15 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // value is a pointer into shared storage whose teardown needs the
     // per-scope join machinery (OPEN_DECISIONS C-22).
     if (k == (raw TY_ARENA()))    { pass true; }
+    // AN OwnedFd OWNS ITS DESCRIPTOR (D-185, 1.1.12b): the drop closes it.
+    if (k == (raw TY_OWNEDFD()))  { pass true; }
     pass false;
+};
+
+// The one OwnedFd type — interned like any scalar singleton; 4 bytes, the
+// kernel's descriptor number, owning (type_drops says so).
+pub func:tt_ownedfd = int32(TypeTable->:t) never fails {
+    pass (raw tt_intern(t, raw TY_OWNEDFD(), 0i32, 0i32, 0i32, 4i64, 4i32, 0i32));
 };
 
 pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
@@ -1165,6 +1181,11 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     // string owns its body: it transfers whole.
     if (k == (raw TY_GUARD()))   { pass true; }
     if (k == (raw TY_RGUARD()))  { pass true; }
+    // An OwnedFd — and so every stream holding one — is SCOPE-BOUND (D-185,
+    // IO_REFERENCE §6): the scope that owns it closes it, so it may not ride
+    // a channel or cross a spawn any more than a Guard may. Same wall, same
+    // reasoning: the boundary is where the closing scope would be outrun.
+    if (k == (raw TY_OWNEDFD())) { pass true; }
     if (k == (raw TY_STRING()))  { pass false; }
     if (k == (raw TY_MUTEX()))   { pass false; }
     if (k == (raw TY_RWLOCK()))  { pass false; }

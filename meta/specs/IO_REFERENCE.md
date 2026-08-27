@@ -24,14 +24,21 @@ do; files, pipes, sockets, and memory buffers are stdlib types implementing it.
 
 ```nitpick
 trait:Reader = {
-    async func:read  = int64(Self:self, uint8[]:dest, Duration:deadline);
+    async func:read  = int64(Self->:self, uint8[]:dest, Duration:within);
 };
 
 trait:Writer = {
-    async func:write = int64(Self:self, fixed uint8[]:src, Duration:deadline);
-    async func:flush = NIL(Self:self, Duration:deadline);
+    async func:write = int64(Self->:self, fixed uint8[]:wsrc, Duration:within);
+    async func:flush = NIL(Self->:self, Duration:within);
 };
 ```
+
+> **As built (D-185, 1.1.12b):** receivers are `Self->` — the first draft's
+> by-value `self` predates the move-only rule for owners (D-183), under which
+> a by-value receiver would CONSUME the stream per call. Deadline parameters
+> are relative spans named `within` (D-176). An impl must keep the trait's
+> `async` word (TYPE-048): an await through a bound drives the impl by the
+> trait's contract.
 
 Three properties, each load-bearing:
 
@@ -106,9 +113,15 @@ comptime parameter. Putting it in the type sounds tidier until every function
 accepting a writer has to become generic over it for no benefit.
 
 ```nitpick
-TextWriter:w = await TextWriter.create(sink, LineEnding.Lf)?;
-TextWriter:w = await TextWriter.create(sink, LineEnding.CrLf)?;   // greppable opt-in
+TextWriter:w = text_writer_create(sink, LineEnding.Lf) ?! …;
+TextWriter:w = text_writer_create(sink, LineEnding.CrLf) ?! …;   // greppable opt-in
 ```
+
+> **Constructor FUNCTIONS, not `Type.method`** (D-185): the language has no
+> static methods — every trait and impl method takes `self`
+> (TRAITS_REFERENCE §4.2) — so construction is a bare function, exactly as
+> `channel()` and `arena_make()` construct. This applies to every `X.open` /
+> `X.create` / `Path.parse` spelling this document used.
 
 ---
 
@@ -154,9 +167,15 @@ Stated rather than mitigated, because the mitigation belongs to the program:
 ## 5. Opening, and the path boundary
 
 ```nitpick
-Path:p = Path.parse("/etc/hosts")?;
-ByteReader:r = await ByteReader.open(p, deadline)?;
+Path:p = path_parse("/etc/hosts") ?! …;
+ByteReader:r = byte_reader_open(p, within) ?! …;
 ```
+
+> As built (D-185): the open itself is the one synchronous hop — epoll
+> cannot wait for an `open`, and io_uring is refused before Astrée (D-184) —
+> so `within` governs the waits the stream performs after it. Descriptors
+> open `O_NONBLOCK | O_CLOEXEC`; every wait after is `io_ready`, a task
+> suspension (D-071).
 
 - **Opening takes a `Path`**, never a `string` (D-051, D-054). `Path` is
   absolute, lexically normalized, and contains no interior NUL.
@@ -181,12 +200,18 @@ exit — the same lexical rule tasks (D-062), channel endpoints (D-072), and bor
 
 Consequences:
 
-- **There is no `close` in the surface.** Scope exit closes.
-- **A stream cannot escape its scope**, so there is no question of which owner
-  closes it, and no double-close.
-- **A stream cannot be sent through a channel** — it is not an owning value that
-  outlives its scope. Hand work to a task within the scope instead; D-062
-  guarantees the task finishes first.
+- **There is no `close` in the surface.** Scope exit closes: the stream's
+  `OwnedFd` field (D-185) drops with the struct, and its drop is the close.
+  `close(release_fd(move o))` is the explicit spelling for a caller that must
+  observe close's verdict — the move defuses the drop, so no double-close is
+  spellable.
+- **A stream cannot be sent through a channel** (enforced: the element
+  refusal fires on `OwnedFd` and anything holding one) — a receiver may
+  outlive the scope whose exit must close it.
+- **A MOVE into a spawn is legal** (D-185): the join (D-062) bounds the
+  thread by the creating scope, so closing responsibility stays inside it —
+  the owning-string precedent. A BORROW of a stream still refuses at the
+  spawn, like every borrow.
 
 ---
 
@@ -236,10 +261,8 @@ stream to interpret.
 - **Sockets.** The stream traits cover them, but addressing, connection setup, and
   the `Result` mapping for the socket-specific error space are not specified here.
   `ARCHIVE/nsocket` exists and has not been assessed.
-- **`io_uring` versus `epoll`.** Both are raw syscalls and either satisfies the
-  dependency rule. Which the executor uses — and whether it must support both for
-  older kernels — is a runtime decision, not a language one, and needs measuring
-  rather than deciding on paper.
+- ~~**`io_uring` versus `epoll`.**~~ **SETTLED as D-184** (1.1.12a): epoll,
+  and only epoll — no timerfd; io_uring refused before Astrée by decision.
 - **The stream registry's exact shape**, as handed to `failsafe`. It parallels the
   allocation registry D-014 already specifies, and shares its MECHANISM rather
   than inventing a second one: the sorted fixed-stride table of 0.10.1/D-151

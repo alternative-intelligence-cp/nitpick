@@ -13077,3 +13077,75 @@ SQE holds its buffer past the call's return, which makes the ownership story
 categorically larger than epoll's (nothing here outlives the wait), and a
 second reactor is a second thing to verify. If it ever lands it is a new
 decision with its own verification, behind the same `suspend_io` interface.
+
+## D-185 — Owned descriptors, `Path`, and the byte streams — **SETTLED at 1.1.12b**
+
+**`OwnedFd` (TY 39)** is the owning descriptor: the value is the kernel's
+i32, and the ownership is the point — its generated drop closes it at scope
+exit, which is what IO_REFERENCE §6's "there is no `close` in the surface"
+lowers to. Move-only like every owner (TYPE-046 covers the copy). `own_fd(f)`
+takes ownership of a kernel `fd`; `release_fd(move o)` is the inverse for a
+caller that must OBSERVE close's verdict — the move defuses the drop, the
+floor's `close` reports, and no double close is spellable. `.value` reads
+the number without consuming (the streams hand it to the floor quartet and
+`io_ready`); writing it is refused — the number is the identity the drop
+will close. The drop's own close deliberately swallows the kernel verdict:
+a drop has no `Result` to carry it, and on Linux the descriptor is gone
+either way; `close(release_fd(move o))` is the observing spelling.
+
+**Scope-boundedness rides the borrow walk.** `type_contains_borrow` answers
+true for `OwnedFd` — the same wall, for the same reason, as a `Guard`: the
+scope that owns it closes it, and a boundary is where that scope would be
+outrun. Consequences, all inherited from existing rules: a `Channel` cannot
+carry one (or any struct holding one — the streams included; RUNG-001 at
+the element), and a borrow of one cannot cross a spawn. **A MOVE into a
+spawn is legal**: the join (D-062) bounds the thread by the creating scope,
+so closing responsibility stays inside it — the owning-string precedent
+(1.2.5b), and the sanctioned way to hand a stream's work to a thread. The
+raw-number-then-own pattern (`own_fd` on the far side) is the cross-thread
+construction form, exercised by `streams_pipe.npk`.
+
+**`Path` is parsed, not passed around as a string** (D-051/D-054):
+`path_parse(string) → Result<Path>` requires absolute, refuses interior NUL
+and `..` above the root (an escape, not a path), and lexically normalizes
+(`//`, `.`, `..`). Lexical only — D-054's symlink warning stands.
+
+**No static methods exist** (TRAITS_REFERENCE §4.2 rule 1), so the
+IO_REFERENCE's `Path.parse` / `ByteReader.open` / `TextWriter.create`
+spellings cannot be built as written. **Constructor FUNCTIONS are the
+settled idiom** — `path_parse`, `byte_reader_open`, `byte_writer_create` —
+exactly as `channel()` and `arena_make()` already construct. The reference
+is amended, not the language.
+
+**The traits land as specified with two corrections** both forced by
+settled rules: receivers are `Self->` (the spec's by-value `self` predates
+move-only owners — a by-value receiver would consume the stream per call),
+and deadline parameters are `Duration:within` (D-176's naming). Every
+method is `async`, returns through `Result`, and takes a deadline; `read`'s
+`uint8[]` slice carries its own length (D-070). EOF is the error `IoEof`
+(the floor's E_EOF = −4096, D-141). `ByteReader`/`ByteWriter` hold an
+`OwnedFd` and translate nothing; their `read`/`write` are retry loops over
+the floor quartet and `io_ready` — `WouldBlock` (EAGAIN, 11) waits on
+readiness for the time that remains, `Interrupted` (EINTR, 4) retries
+immediately, and everything else — `IoEof` included — forwards verbatim
+(`fail r.err`). The two errno names are prelude declarations in the
+kernel's own code space; naming more of it is a decision for the code that
+needs it. Seek takes the `Whence` enum (§7); `flush` on the unbuffered
+byte writer moves nothing but keeps the trait's shape. Opening is the one
+synchronous hop (epoll cannot wait for an open; io_uring is refused before
+Astrée — D-184).
+
+**Asyncness is part of a trait method's contract** (TYPE-048): an impl may
+neither drop nor add the trait's `async` — an await through a bound drives
+the impl by the TRAIT's word, and a sync body run through the coroutine
+frame protocol is memory corruption, not a slow call. Found by probing at
+this rung; latent since bounds could be awaited (1.1.10-D).
+
+**Two defects this rung found and fixed elsewhere:** the awaited-method
+child frame seeded a `Self->` receiver BY VALUE (the first pointer-receiver
+await dereferenced its own fd number — the 1.0.9b address rule now applies
+to the awaited form), and `string_slice`'s VIEW semantics let
+`x = string_slice(x, …)` free the body the view points into — a silent
+use-after-free the quarantine caught in `path_parse` itself. The prelude
+copies before reassigning; the LANGUAGE-level hole (`string` cannot say
+"view") is recorded in OPEN_DECISIONS as a pre-Astrée decision.

@@ -1,0 +1,38 @@
+// expect-error: NITPICK-TYPE-046
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+//
+// D-185's ownership rules for descriptors. An OwnedFd OWNS (its drop is the
+// close), so it is move-only like every owner — a bare copy would be two
+// closes of one descriptor. Its `.value` is READ-ONLY — overwriting the
+// number would leak one descriptor and double-close another. And `own_fd`
+// owns a DESCRIPTOR: its argument is the kernel `fd` type, not a number a
+// cast happened to produce.
+mod:stream_rules;
+
+func:copies = NIL(OwnedFd:o) {
+    OwnedFd:b = o;
+    drop io_unwatch((b.value) =>! int32);
+    pass NIL;
+};
+
+func:writes_value = NIL(OwnedFd:o) {
+    o.value = 4i32 =>! fd;
+    pass NIL;
+};
+
+func:wrong_arg = NIL() {
+    OwnedFd:o = own_fd(7i32);
+    drop io_unwatch((o.value) =>! int32);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

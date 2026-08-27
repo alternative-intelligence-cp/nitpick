@@ -1,0 +1,67 @@
+// expect-exit: 42
+// stress: 40
+//
+// THE BYTE STREAMS OVER A PIPE (D-185, 1.1.12b): the async half. The reader
+// task asks before the writer thread has written — the floor read answers
+// WouldBlock, the Reader impl waits on io_ready, the write on the other
+// thread makes the descriptor readable, and the retry delivers the bytes.
+// Constructing the streams from raw ends is the from-fd form: own the fd,
+// wrap the struct. Then the writer thread ENDS: its ByteWriter drops, the
+// drop closes the write end, and the reader's next read is IoEof — scope
+// exit observable from the other side of the pipe. Nobody says close.
+mod:streams_pipe;
+error:EStep;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:late_writer = NIL(int64:wfd) joins JOIN_2S {
+    await sleep(raw duration_ms(30i64)) ?| NIL;
+    ByteWriter:w = ByteWriter{ sink: own_fd((wfd =>! int32) =>! fd) };
+    uint8[3]:msg = [55u8, 56u8, 57u8];   // "789"
+    int64:n = await w.write(msg[0i64...3i64], raw duration_ms(500i64)) ?! EStep;
+    if (n != 3i64) { fail EStep; }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EStep);   // pipe2(O_NONBLOCK)
+    wild int32->:fdi = fds =>! wild int32->;
+    int32:rfd = fdi[0i64];
+    int32:wfd = fdi[1i64];
+    drop dalloc(fds);
+
+    ByteReader:r = ByteReader{ src: own_fd(rfd =>! fd) };
+    drop late_writer(wfd => int64);
+
+    uint8[8]:buf = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    int64:got = await r.read(buf[0i64...8i64], raw duration_ms(1000i64)) ?! EStep;
+    if (got != 3i64)        { exit 10i32; }
+    if (buf[0i64] != 55u8)  { exit 11i32; }
+    if (buf[2i64] != 57u8)  { exit 12i32; }
+
+    // THE WRITER'S DROP CLOSED ITS END: the next read is EOF, not a hang —
+    // scope exit propagated through the kernel to the other side of the
+    // pipe, which is the drop-close doing observable work.
+    Result<int64>:done = await r.read(buf[0i64...8i64], raw duration_ms(500i64));
+    if (!done.is_error)      { exit 13i32; }
+    if (done.err != IoEof)   { exit 14i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EStep)            { exit 91i32; },
+        (WouldBlock)       { exit 92i32; },
+        (Interrupted)      { exit 92i32; },
+        (IoEof)            { exit 93i32; },
+        (BadPath)          { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

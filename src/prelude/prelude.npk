@@ -273,3 +273,186 @@ pub async func:io_ready = NIL(int32:iofd, int32:events, Duration:within) {
     if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
     pass NIL;
 };
+
+// --- the streams (D-185, 1.1.12b; IO_REFERENCE) -------------------------------
+//
+// TWO ERRNOS, NAMED, because every stream loop must tell them from real
+// failures: the kernel's own codes ride the error word verbatim (negative,
+// disjoint from the 4096+ system family), and these are the two that mean
+// "again", not "broken". Naming more of the errno space is a decision for
+// the code that needs it.
+pub error:WouldBlock = 11i32;      // EAGAIN — not ready; wait for readiness and retry
+pub error:Interrupted = 4i32;      // EINTR — a signal cut the call; retry immediately
+
+// A PATH IS PARSED, NOT PASSED AROUND AS A STRING (D-051/D-054): absolute,
+// lexically normalized, no interior NUL. Normalization here is LEXICAL —
+// D-054's warning stands: it does not survive symlinks, and containment
+// wants openat + O_NOFOLLOW, not a string check.
+pub error:BadPath;
+pub struct:Path = { string:text; };
+
+pub func:path_parse = Path(string:s) {
+    if (s.len == 0i64)        { fail BadPath; }
+    if (s.ptr[0i64] != 47u8)  { fail BadPath; }   // absolute, or it is not a Path
+    string:out = "";
+    int64:depth = 0i64;
+    int64:i = 1i64;
+    int64:seg = 1i64;
+    while (i <= s.len) {
+        bool:at_end = (i == s.len);
+        uint8:c = 0u8;
+        if (!at_end) {
+            c = s.ptr[i];
+            if (c == 0u8) { fail BadPath; }       // interior NUL: the poison byte
+        }
+        if (at_end || (c == 47u8)) {
+            int64:sl = i - seg;
+            if (sl > 0i64) {
+                string:sgt = relay string_slice(s, seg, i);
+                bool:dot = string_equals(sgt, ".");
+                if (!dot) {
+                    if (string_equals(sgt, "..")) {
+                        // ".." above the root is not a path, it is an escape.
+                        if (depth == 0i64) { fail BadPath; }
+                        int64:j = out.len - 1i64;
+                        while (j >= 0i64) {
+                            if (out.ptr[j] == 47u8) { break; }
+                            j = j - 1i64;
+                        }
+                        // string_slice returns a VIEW (cap 0) into the
+                        // body this assignment is about to free — concat
+                        // with "" copies it into a body of its own first.
+                        // (The silent view-over-owner hazard is recorded in
+                        // D-185 / OPEN_DECISIONS: the type cannot yet say
+                        // "view", so the discipline is the author's.)
+                        string:kept = relay string_slice(out, 0i64, j);
+                        out = relay string_concat(kept, "");
+                        depth = depth - 1i64;
+                    }
+                    if (!(string_equals(sgt, ".."))) {
+                        out = relay string_concat(out, "/");
+                        out = relay string_concat(out, sgt);
+                        depth = depth + 1i64;
+                    }
+                }
+            }
+            seg = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    if (out.len == 0i64) {
+        string:root = relay string_concat("/", "");
+        pass Path{ text: move(root) };
+    }
+    pass Path{ text: move(out) };
+};
+
+// THE STREAM TRAITS (IO_REFERENCE §1): every operation is async, returns
+// Result, and carries a deadline — there is no unbounded read. Receivers are
+// `Self->` (the spec's by-value self predates the move-only rule for owners:
+// a by-value receiver would CONSUME the stream per call). `dyn Writer` is
+// 1.1.12d's stage; concrete impls dispatch statically today.
+pub trait:Reader = {
+    async func:read = int64(Self->:self, uint8[]:dest, Duration:within);
+};
+pub trait:Writer = {
+    async func:write = int64(Self->:self, fixed uint8[]:wsrc, Duration:within);
+    async func:flush = NIL(Self->:self, Duration:within);
+};
+
+// WHERE A SEEK MEASURES FROM (IO_REFERENCE §7) — an enum, not an integer.
+pub enum:Whence = { Start; Current; End; };
+
+// THE BYTE STREAMS (IO_REFERENCE §3): no translation, ever. The OwnedFd
+// field is the lifetime story — scope exit drops the stream, the struct
+// drop reaches the descriptor, and the descriptor's drop closes it. That is
+// the whole of "there is no close in the surface" (§6). Descriptors are
+// opened NONBLOCK + CLOEXEC: every wait is a task suspension through
+// io_ready, never a parked thread (D-071).
+pub struct:ByteReader = { OwnedFd:src; };
+pub struct:ByteWriter = { OwnedFd:sink; };
+
+// The open itself is the one synchronous hop (epoll cannot wait for open;
+// io_uring is refused before Astrée — D-184): `within` governs the waits
+// the stream performs after it.
+pub func:byte_reader_open = ByteReader(Path:p, Duration:_~within) {
+    cstring:cp = relay to_cstring(p.text);
+    // O_RDONLY | O_NONBLOCK | O_CLOEXEC
+    fd:f = relay open(cp, 526336i64, 0i64);
+    pass ByteReader{ src: own_fd(f) };
+};
+
+pub func:byte_writer_create = ByteWriter(Path:p, Duration:_~within) {
+    cstring:cp = relay to_cstring(p.text);
+    // O_WRONLY | O_CREAT | O_TRUNC | O_NONBLOCK | O_CLOEXEC, mode 0644
+    fd:f = relay open(cp, 526913i64, 420i64);
+    pass ByteWriter{ sink: own_fd(f) };
+};
+
+// THE RETRY LOOP (D-184's contract): a resume from io_ready means readiness
+// was SIGNALLED — the syscall is re-tried, and a retry that still would
+// block waits again on the time that remains. EAGAIN and EINTR retry;
+// everything else — IoEof included — is the caller's to handle, forwarded
+// verbatim (`fail r.err`, the 05_result rule).
+impl:ByteReader:Reader = {
+    async func:read = int64(ByteReader->:self, uint8[]:dest, Duration:within) {
+        int64:give_up = (raw mono_now()) + within.ns;
+        while (true) {
+            Result<int64>:r = read(self.src.value, dest.ptr, dest.len);
+            if (!r.is_error) { pass r.value; }
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (!retry) { fail r.err; }
+            if (r.err == WouldBlock) {
+                int64:rem = give_up - (raw mono_now());
+                if (rem <= 0i64) { fail DeadlineExceeded; }
+                Result<NIL>:w = await io_ready((self.src.value) =>! int32, 1i32,
+                                               raw duration_ns(rem));
+                if (w.is_error) { fail w.err; }
+            }
+        }
+    };
+};
+
+impl:ByteWriter:Writer = {
+    async func:write = int64(ByteWriter->:self, fixed uint8[]:wsrc, Duration:within) {
+        int64:give_up = (raw mono_now()) + within.ns;
+        while (true) {
+            Result<int64>:r = write(self.sink.value, wsrc.ptr, wsrc.len);
+            if (!r.is_error) { pass r.value; }
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (!retry) { fail r.err; }
+            if (r.err == WouldBlock) {
+                int64:rem = give_up - (raw mono_now());
+                if (rem <= 0i64) { fail DeadlineExceeded; }
+                Result<NIL>:w = await io_ready((self.sink.value) =>! int32, 4i32,
+                                               raw duration_ns(rem));
+                if (w.is_error) { fail w.err; }
+            }
+        }
+    };
+    // Nothing is buffered at this layer (buffering is an explicit wrapper —
+    // IO_REFERENCE §4), so a flush has nothing to move — but the trait
+    // carries it so a buffered writer can stand wherever this one does.
+    async func:flush = NIL(ByteWriter->:self, Duration:_~within) {
+        pass NIL;
+    };
+};
+
+// SEEK (IO_REFERENCE §7): the new position, from an enum'd origin. lseek
+// does not block, so the deadline is carried for shape and unspent.
+impl:ByteReader = {
+    async func:seek = int64(ByteReader->:self, Whence:w, int64:off, Duration:_~within) {
+        int64:wh = 0i64;
+        pick (w) {
+            (Whence.Start)   { wh = 0i64; },
+            (Whence.Current) { wh = 1i64; },
+            (Whence.End)     { wh = 2i64; }
+        }
+        int64:np = relay sys(8i64, (self.src.value) =>! int64, off, wh);
+        pass np;
+    };
+};

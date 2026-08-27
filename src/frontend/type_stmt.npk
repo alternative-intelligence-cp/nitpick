@@ -556,6 +556,15 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                     s.span));
                 pass NIL;
             }
+            // An OwnedFd's `.value` is READ-ONLY (D-185): the number is the
+            // identity the drop will close — overwriting it would leak one
+            // descriptor and double-close another. `own_fd` a new one.
+            if ((raw type_kind(e.types, rgb)) == (raw TY_OWNEDFD())) {
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                    "an `OwnedFd`'s `.value` is READ-ONLY (D-185): the number is the identity its drop closes — overwriting it leaks one descriptor and double-closes another. Wrap a new descriptor with `own_fd` instead",
+                    s.span));
+                pass NIL;
+            }
         }
     }
 

@@ -1,0 +1,90 @@
+// expect-exit: 42
+//
+// THE BYTE STREAMS OVER A FILE (D-185, 1.1.12b; IO_REFERENCE §3/§5/§6/§7).
+// A Path is PARSED — normalization collapses "//", "." and ".."; an escape
+// above the root refuses — and opening takes it, never a string. The write
+// goes through the Writer trait's method, the read through Reader's, seek
+// through the enum'd origin — and NOBODY CLOSES ANYTHING: scope exit drops
+// the stream, the struct drop reaches the OwnedFd, and its drop is the
+// close. The 1500-iteration scope proves it: without the drop closing each
+// descriptor, EMFILE arrives near 1024.
+mod:streams_file;
+error:E9;
+
+async func:roundtrip = int32() {
+    Path:p = path_parse("/tmp//./gone/../npk_streams_file.tmp") ?! E9;
+    if (!(string_equals(p.text, "/tmp/npk_streams_file.tmp"))) { pass 10i32; }
+
+    {
+        ByteWriter:w = byte_writer_create(p, raw duration_ms(500i64)) ?! E9;
+        uint8[6]:src = [104u8, 101u8, 108u8, 108u8, 111u8, 33u8];  // "hello!"
+        int64:n = await w.write(src[0i64...6i64], raw duration_ms(500i64)) ?! E9;
+        if (n != 6i64) { pass 11i32; }
+        await w.flush(raw duration_ms(100i64)) ?! E9;
+    }
+
+    ByteReader:r = byte_reader_open(p, raw duration_ms(500i64)) ?! E9;
+    uint8[6]:buf = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    int64:got = await r.read(buf[0i64...6i64], raw duration_ms(500i64)) ?! E9;
+    if (got != 6i64)        { pass 12i32; }
+    if (buf[0i64] != 104u8) { pass 13i32; }
+    if (buf[5i64] != 33u8)  { pass 14i32; }
+
+    // seek back two, re-read "o!"
+    int64:np = await r.seek(Whence.Start, 4i64, raw duration_ms(100i64)) ?! E9;
+    if (np != 4i64) { pass 15i32; }
+    int64:g2 = await r.read(buf[0i64...6i64], raw duration_ms(500i64)) ?! E9;
+    if (g2 != 2i64)         { pass 16i32; }
+    if (buf[0i64] != 111u8) { pass 17i32; }
+
+    // exhausted: IoEof, as a code
+    Result<int64>:eof = await r.read(buf[0i64...6i64], raw duration_ms(200i64));
+    if (!eof.is_error)      { pass 18i32; }
+    if (eof.err != IoEof)   { pass 19i32; }
+    pass 5i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:v = await roundtrip() ?! E9;
+    if (v != 5i32) { exit v; }
+
+    // the drop IS the close: 1500 opens through owning scopes
+    Path:devnull = path_parse("/dev/null") ?! E9;
+    int32:i = 0i32;
+    while (i < 1500i32) {
+        {
+            ByteReader:r2 = byte_reader_open(devnull, raw duration_ms(100i64)) ?! E9;
+            if ((r2.src.value =>! int64) < 0i64) { exit 21i32; }
+        }
+        i = i + 1i32;
+    }
+
+    // the paths that are not paths
+    Result<Path>:rel = path_parse("etc/hosts");
+    if (!rel.is_error)              { exit 22i32; }
+    if (rel.err != BadPath)         { exit 23i32; }
+    Result<Path>:esc = path_parse("/../etc");
+    if (!esc.is_error)              { exit 24i32; }
+    Result<Path>:root = path_parse("/a/../b/..");
+    if (root.is_error)              { exit 25i32; }
+    if (!(string_equals(root.value.text, "/"))) { exit 26i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (WouldBlock)       { exit 93i32; },
+        (Interrupted)      { exit 93i32; },
+        (IoEof)            { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

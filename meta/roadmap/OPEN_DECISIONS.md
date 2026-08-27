@@ -91,6 +91,12 @@ closed table.
 
 ---
 
+## 2b. A safety decision 1.1.12b surfaced (pre-Astrée; owner: the user)
+
+| id | proposed | question | needed by | source |
+|---|---|---|---|---|
+| **S-1** | D-186 | **A `string` cannot say "view", and a view can outlive its body.** `string_slice` returns a VIEW (`cap == 0`, ptr into the source's body — D-183's ownership bit), so `x = string_slice(x, lo, hi);` frees the body the view points into: a THREE-TOKEN silent use-after-free, found when `path_parse` wrote it and the quarantine caught the 0xAA. The type system cannot see it — owner and view share the type `string`, and the ownership bit is runtime state. The prelude now copies before reassigning (discipline, not enforcement). **Candidates:** (a) `string_slice` returns an OWNED COPY — one allocation per slice, and the whole silent-dangling class disappears (recommended: safety > performance, and the compiler's own process-lifetime-view uses stay correct, just costlier); (b) a distinct view TYPE (`strview`?) the checker can escape-analyze — bigger, precise, D-070's slice story extended to strings; (c) refuse `x = f(x)` shapes where f is view-returning — narrow, misses flows through locals. **Must be decided before the Astrée trial** — a UAF class the language permits silently is not a property to verify around. | 1.4 (verification prep) | 1.1.12b; D-185 |
+
 ## 3. Decisions blocking 1.3 (self-hosting)
 
 | # | Proposed | Item | Blocks | Source |
