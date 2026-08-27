@@ -2437,6 +2437,11 @@ err:
 @npk_cls_guard = internal constant [14 x i64] [i64 65504, i64 65520, i64 65472, i64 65456, i64 65440, i64 65504, i64 65424, i64 65376, i64 65296, i64 65024, i64 65152, i64 64560, i64 65264, i64 64064]
 @npk_cls_part = internal global [14 x i64] zeroinitializer
 @npk_cls_full = internal global [14 x i64] zeroinitializer
+; QUARANTINE (1.2.3 debug instrument): when set, a freed small chunk is
+; poisoned and stamped but NEVER returned to the bitmap -- every stale read
+; hits 0xAA forever and every stale free hits the header-magic trap, instead
+; of depending on reuse timing. Costs memory (no reuse); for defect hunts.
+@npk_quarantine = internal global i64 0
 @npk_chtab = internal global i64 0
 @npk_chtab_cap = internal global i64 0
 @npk_chtab_len = internal global i64 0
@@ -3184,6 +3189,10 @@ poisoned:
   %fma = add i64 %b, 8
   %fmp = inttoptr i64 %fma to ptr
   store i64 %fm, ptr %fmp
+  %qv = load i64, ptr @npk_quarantine
+  %qon = icmp ne i64 %qv, 0
+  br i1 %qon, label %done, label %reclaim
+reclaim:
   %w = lshr i64 %slot, 6
   %bit = and i64 %slot, 63
   %mask = shl i64 1, %bit
@@ -4836,6 +4845,37 @@ entry:
   %al = extractvalue { ptr, i64, i64 } %a, 1
   %bp = extractvalue { ptr, i64, i64 } %b, 0
   %bl = extractvalue { ptr, i64, i64 } %b, 1
+  ; QUARANTINE TRIPWIRE (debug): a source beginning with two poison bytes is a
+  ; freed body -- trap at the READ so the backtrace names the reader.
+  %qtw = load i64, ptr @npk_quarantine
+  %qtwon = icmp ne i64 %qtw, 0
+  br i1 %qtwon, label %qchk_a, label %qok
+qchk_a:
+  %qa2 = icmp sgt i64 %al, 1
+  br i1 %qa2, label %qld_a, label %qchk_b
+qld_a:
+  %qa0 = load i8, ptr %ap
+  %qa1p = getelementptr i8, ptr %ap, i64 1
+  %qa1 = load i8, ptr %qa1p
+  %qab = icmp eq i8 %qa0, -86
+  %qab1 = icmp eq i8 %qa1, -86
+  %qhit_a = and i1 %qab, %qab1
+  br i1 %qhit_a, label %qtrap, label %qchk_b
+qchk_b:
+  %qb2 = icmp sgt i64 %bl, 1
+  br i1 %qb2, label %qld_b, label %qok
+qld_b:
+  %qb0 = load i8, ptr %bp
+  %qb1p = getelementptr i8, ptr %bp, i64 1
+  %qb1 = load i8, ptr %qb1p
+  %qbb = icmp eq i8 %qb0, -86
+  %qbb1 = icmp eq i8 %qb1, -86
+  %qhit_b = and i1 %qbb, %qbb1
+  br i1 %qhit_b, label %qtrap, label %qok
+qtrap:
+  call void @npk_heap_bad()
+  unreachable
+qok:
   %n = add i64 %al, %bl
   %p = call ptr @npk_alloc_internal(i64 %n)
   call ptr @memcpy(ptr %p, ptr %ap, i64 %al)

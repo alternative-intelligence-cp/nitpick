@@ -12730,6 +12730,26 @@ ever own what they return. `npk_dalloc` poisons freed payloads (0xAA) as a
 standing instrument, because a freed-while-shared body is otherwise invisible
 until the allocator happens to reuse the chunk.
 
+The obligation runs the other way too, and arming aggregate drops found the
+one place the compiler violated it: **a helper that derives a string from a
+LENT parameter must hand back either an owned body or a view whose base
+outlives every client** — `result_ll_value_half` passed a `slice_proven` view
+of an operand IrVal's `ll` out to become the RESULT IrVal's `ll`, which was
+sound for as long as IrVals never dropped and a use-after-free the moment
+they did. Poison alone did not catch it, because the freed chunk was recycled
+into a live line-buffer before the stale read. What caught it is the second
+standing instrument this incident adds: **`@npk_quarantine` in the runtime**
+— when set, a freed small chunk is poisoned, stamped and NEVER reused, so
+every stale read yields deterministic 0xAA at its first occurrence and every
+stale free traps on the header magic, independent of allocation timing; a
+poisoned-source tripwire in `npk_string_concat` (active only under
+quarantine) then turns the first stale READ into a trap whose backtrace names
+the reader, and one conditional breakpoint names the freer. It ships OFF —
+reclaim is the shipped behaviour — and exists because a by-tid bisect of
+drop classes proved to be a WEAK oracle: enabling any drop set shifts the
+allocator's recycling pattern, so a configuration's cleanliness proves
+nothing about the code it enables. Quarantine is timing-independent.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

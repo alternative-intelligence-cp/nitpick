@@ -139,22 +139,19 @@ pub func:run_param_drops = IrVal(ExprEmitter->:x) never fails {
 };
 
 func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
-    // AGGREGATE DROPS ARE STAGED, NOT LIVE (1.2.3, open). Direct drops of
-    // `string` locals are proven: the whole suite and the stage-1 fixpoint
-    // hold with them on. STRUCT-typed locals are excluded for now, because a
-    // bisect over the self-compile isolated a struct drop — the emitter's own
-    // `FnEmitter` state was in the guilty set — corrupting one emitted type
-    // string in stage 1's output, nondeterministically. Two true causes are
-    // already fixed (DiagList's inline `Diagnostic[256]`, whose drop walked
-    // ~250 uninitialised headers; and the source-manager text ownership), but
-    // the remaining share has not been isolated, and a drop that frees a
-    // still-referenced body is a use-after-free, not a leak — the wrong
-    // default. The leak this exclusion accepts is bounded and recorded; the
-    // investigation continues in the cycle plan.
-    int32:bts = raw fnem_local_type_at(x.fe, i);
-    int32:btk = raw type_kind(x.fe.ctx.types, bts);
-    if (btk == (raw TY_STRUCT())) { pass NIL; }
-    if (btk == (raw TY_ENUM()))   { pass NIL; }
+    // AGGREGATE DROPS WENT LIVE AT 1.2.3e. They were staged for a day behind
+    // a TY_STRUCT/TY_ENUM guard here while a one-line corruption in stage 1's
+    // output was hunted; a by-tid bisect first blamed the emitter's own
+    // `FnEmitter`, wrongly — enabling any drop set shifts the allocator's
+    // recycling pattern, so a guilty configuration proves only that SOME
+    // still-referenced body was freed SOMEWHERE. The real defect was
+    // `result_ll_value_half` passing a `slice_proven` VIEW of a lent ll out
+    // to become a longer-lived IrVal's `.ll` (see ir_expr). The quarantine
+    // allocator (`@npk_quarantine` in npkrt.ll) is what actually isolated
+    // it: free poisons and never reuses, so the one stale read produced
+    // seventeen 0xAA bytes at a deterministic line and the concat tripwire
+    // named reader and freer under gdb. That instrument stays, off by
+    // default, for the next hunt.
     string->:fl = raw fnem_local_flag_at(x.fe, i);
     if (fl.len == 0i64) { pass NIL; }
     string:lf = raw irw_temp(x.fe.w);

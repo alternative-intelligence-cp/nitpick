@@ -357,11 +357,22 @@ pub func:emit_opt_wrap = IrVal(ExprEmitter->:x, int32:opt_ty, IrVal:v,
 // present in the IrVal's own ll: `{ i64, i32 }` carries an i64, and the
 // one-slot `{ i32 }` is `Result<NIL>` with no value at all (D-163, 1.1.2 —
 // the `?!`-on-a-builtin sites the flip's sweeps write).
+//
+// RETURNS AN OWNED STRING (1.2.3). The first shape passed a `slice_proven`
+// VIEW of the lent `ll` out, and the caller moved it into the result IrVal —
+// whose life exceeds the operand IrVal that owns the body. Nothing noticed
+// for as long as IrVals never dropped; the moment struct drops armed, the
+// operand's scope-exit drop freed the body under the view, and the next
+// vardecl store emitted seventeen bytes of allocator poison as its type.
+// The quarantine allocator caught it at the read (see npkrt's
+// @npk_quarantine). A helper that derives a string from a LENT parameter
+// must hand back a body the caller owns; the "" arms are literals, which a
+// drop already skips by cap==0, so the contract is uniform either way.
 func:result_ll_value_half = string(string:ll) never fails {
     if (raw string_eq(ll, "{ i32 }")) { pass ""; }
     // strip leading "{ " and trailing ", i32 }"
     if (ll.len <= 9i64) { pass ""; }
-    pass (raw slice_proven(ll, 2i64, ll.len - 7i64));
+    pass (raw string_concat(raw slice_proven(ll, 2i64, ll.len - 7i64), ""));
 };
 
 func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {

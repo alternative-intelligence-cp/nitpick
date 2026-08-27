@@ -442,3 +442,45 @@ stage 1 runs them, and both must emit identical bytes — so the fixpoint
 comparison is a DROP-CORRECTNESS ORACLE. Neutering drops by class and
 re-comparing bisects a use-after-free to its owning type in a handful of
 rebuilds, with gdb needed only for the final naming.
+## 1.2.3e — aggregate drops armed: the residue was a view escaping a lent parameter
+
+The staged TY_STRUCT/TY_ENUM guard is gone. Stage 1 rebuilds itself
+byte-identically with struct and enum drops live in its own binary, and the
+whole suite is green behind it.
+
+**The bisect's verdict did not survive re-measurement.** Yesterday's by-tid
+isolation ({IrVal, FnEmitter} corrupt, each alone clean) reproduced on the
+day's tree and evaporated on the committed one — enabling any drop set shifts
+the allocator's recycling pattern, so a configuration being clean proves only
+that the stale body's chunk happened to land somewhere harmless. A by-class
+bisect over a recycling allocator is a WEAK oracle: it finds a guilty
+configuration, not guilty code, and the residue writeup's "FnEmitter is in
+the guilty set" was recycling luck, not a fact about FnEmitter.
+
+**The sharp instrument is `@npk_quarantine`** (npkrt.ll, ships 0): when set,
+a freed small chunk is poisoned and stamped but NEVER returned to the bitmap.
+No reuse means no timing: every stale read yields 0xAA at its first
+occurrence, deterministically, and every stale free traps on the header
+magic. Under it the one-line corruption became seventeen poison bytes at a
+fixed line, a poisoned-source tripwire in `npk_string_concat` (active only
+under quarantine) trapped at the READ with the reader's backtrace, and one
+conditional breakpoint on `npk_small_free` named the freer. Memory cost of a
+full self-compile under quarantine: 4.8 GB peak, 77 s — affordable for every
+future hunt.
+
+**The defect:** `result_ll_value_half` — the `?!`-on-a-builtin arm's "read
+the value type out of the Result's ll TEXT" helper — returned a
+`slice_proven` VIEW of its lent `ll` (ptr+2, len−9), which the caller moved
+into the result IrVal's `.ll`. The operand IrVal owning the text drops at
+scope exit; the result outlives it. Sound for as long as IrVals never
+dropped; a use-after-free the moment 1.2.3 armed them. It emitted seventeen
+bytes of whatever the recycled chunk then held as the TYPE of one store in
+`module_basename_intern` — `string_slice(...) ?! ProvenSlice` being exactly a
+bare-builtin unwrap. The helper clones now, and its comment states the
+contract: **a helper deriving a string from a LENT parameter hands back an
+owned body or a view whose base outlives every client.** The frontend's
+`slice_proven` callers all view into process-lifetime storage (source text,
+interned token text) and are sound under the same test.
+
+Also closed in this pass: the `if (false)` shape residue in
+`check_ctor_args`' enum-payload arm, and the unused `LocalSlot` struct.

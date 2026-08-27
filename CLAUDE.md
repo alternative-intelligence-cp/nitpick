@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.1 at 1.1.10; async, threads and channels run
+## Status: PHASE C UNDERWAY — cycle 1.2; the managed regime's drops are LIVE
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 182 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 183 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -26,10 +26,19 @@ lowering as hand-written switched-resume state machines (D-177/D-178), the typed
 executors, real threads over `clone(2)` (D-181), and `atomic<T>` plus channels,
 thread pools and actors (D-182). **Cycle 1.2 — the managed
 lowering — was inserted ahead of the rest** (D-183): 1.1.11's `Mutex` hands out a
-guard whose release IS scope exit, and the default regime implements no drops at
-all, so the regime every program gets is leak-until-exit. Phase C renumbered
-around it (self-hosting 1.3, verification 1.4, Astrée 1.5; the map is in
-`ROADMAP.md`). After 1.2: 1.1.11 sync primitives, 1.1.12 the reactor, 1.1.13 the
+guard whose release IS scope exit, and until this cycle the default regime
+implemented no drops at all. Landed through 1.2.3e: the cap==0 ownership bit,
+per-type generated `@"npk.drop.<tid>"` bodies, drop flags with move/`pass`
+clearing, the move-only rule for owning types (TYPE-046/047), `move T:p`
+consuming parameters, and scope-exit drops LIVE for strings, structs and enums
+— the compiler drops its own locals and still rebuilds itself byte-identically.
+Debug instruments that stay: 0xAA free-poisoning, and `@npk_quarantine`
+(npkrt.ll, ships 0) — a never-reuse mode that makes any use-after-free
+deterministic, with a poisoned-source tripwire in `npk_string_concat`.
+Phase C renumbered around the cycle (self-hosting 1.3, verification 1.4,
+Astrée 1.5; the map is in `ROADMAP.md`). Still open in 1.2: the `dyn` drop
+slot and async frame-resident flags (1.2.4), channel/arena reclamation
+(1.2.5). After 1.2: 1.1.11 sync primitives, 1.1.12 the reactor, 1.1.13 the
 Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
