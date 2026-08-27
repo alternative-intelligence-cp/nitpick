@@ -2606,6 +2606,16 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                     if (raw string_eq(awm, "send")) { aw_chan = true; }
                     if (raw string_eq(awm, "recv")) { aw_chan = true; }
                 }
+                // A MUTEX `acquire` IS THE SAME INTRINSIC SUSPENSION
+                // (D-056, 1.1.11), through a borrow or in hand.
+                int32:awmx = awrt;
+                if ((raw type_kind(e.types, awmx)) == (raw TY_POINTER())) {
+                    awmx = raw type_elem(e.types, awmx);
+                }
+                if ((raw type_kind(e.types, awmx)) == (raw TY_MUTEX())) {
+                    string:awm2 = raw intern_get(e.interns, awn.payload =>! int32);
+                    if (raw string_eq(awm2, "acquire")) { aw_chan = true; }
+                }
             }
         }
         if (aw_chan) {

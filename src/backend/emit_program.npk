@@ -839,6 +839,10 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // The creating function's exit hands the channel back (D-183, 1.2.5);
     // not a builtin a program may call.
     drop irw_raw(w, "declare i32 @npk_ch_reclaim(i64)");
+    // The mutex (D-056, 1.1.11): the acquire's park protocol and the release
+    // the guard's drop calls. Not builtins a program may call.
+    drop irw_raw(w, "declare i32 @npk_mutex_acquire_wait(ptr, i64, ptr)");
+    drop irw_raw(w, "declare void @npk_mutex_release(ptr)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
@@ -1263,6 +1267,45 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
             drop irw_raw(w, "done:");
         }
         drop irw_raw(w, "  call void @npk_arena_destroy(ptr %v)");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // A GUARD'S DROP IS THE RELEASE (D-056, 1.1.11) — the first drop in the
+    // language that frees no memory: the closing brace of the critical
+    // section lowers to exactly this call, which is what cycle 1.2 existed
+    // to make possible. Null (a zeroed frame slot) releases nothing.
+    if (k == (raw TY_GUARD())) {
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %rel");
+        drop irw_raw(w, "rel:");
+        drop irw_raw(w, "  call void @npk_mutex_release(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // A MUTEX OWNS ITS CELL AND ITS ELEMENT (D-056/D-183): by the join
+    // discipline nobody holds it at the owner's exit, so the element drops
+    // (at cell+16, when it owns) and the cell goes back.
+    if (k == (raw TY_MUTEX())) {
+        int32:mel = raw type_elem(c.types, dty);
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        if (raw type_drops(c.types, mel, 64i32)) {
+            drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 16");
+            drop irw_raw(w, raw cat4("  call void ",
+                              raw drop_fn_sym(c, mel), "(ptr %ep)", ""));
+        }
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
         drop irw_raw(w, "  ret void");
         drop irw_raw(w, "}");
         pass NIL;

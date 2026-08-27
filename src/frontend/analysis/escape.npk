@@ -1552,6 +1552,25 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        // A BORROW OF A MUTEX IS THE SANCTIONED CROSSING (D-056, 1.1.11).
+        // D-180's hazard is a mutation the holder cannot see at a suspension
+        // point it did not choose — and a mutex is the one type whose entire
+        // meaning is that mutation through it happens only under `acquire`,
+        // which IS a chosen suspension point, serialized by the lock the
+        // level analysis orders. The exemption is the TYPE, not the site: a
+        // `Mutex<T, LEVEL>->` argument crosses; a borrow of anything else —
+        // a `Guard<T>->` included, whose release must stay with its frame —
+        // does not.
+        int32:aty = raw exprtypes_get(x.etypes, a);
+        if (aty != 0i32) {
+            if ((raw type_kind(x.types, aty)) == (raw TY_POINTER())) {
+                int32:apel = raw type_elem(x.types, aty);
+                if ((raw type_kind(x.types, apel)) == (raw TY_MUTEX())) {
+                    i = i + 1i32;
+                    continue;
+                }
+            }
+        }
         if (raw escape_expr(x, a, depth)) {
             ExprNode:anode = raw ast_expr(x.ast, a);
             drop escape_err(x, raw BORROW_SPAWNED(),

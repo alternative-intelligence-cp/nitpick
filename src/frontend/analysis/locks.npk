@@ -247,6 +247,32 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
 // whose `acquires <= N` bound is what makes the analysis terminate there instead
 // of giving up. An analysis that handled only direct calls would under-approximate
 // SILENTLY, which is the failure D-056 exists to prevent.
+// A MUTEX ACQUISITION IS TYPED, NOT NAMED (D-056, 1.1.11). The 0.5.6
+// doctrine — "what marks an acquisition is a contract, not a name" — was
+// written against an `int64` handle the type system could not see through.
+// `Mutex<T, LEVEL>` puts the level IN THE TYPE, which is that doctrine's own
+// fix arriving: `m.acquire(…)` is an acquisition whose level the receiver's
+// type states, no clause required at the site. Functions still carry
+// `acquires` clauses for their callers; this is the leaf the clauses
+// summarize.
+func:mutex_acquire_level = int32(Locks->:x, ExprNode:n) never fails {
+    if (n.kind != ExprKind.ExprMethodCallExpr) { pass (raw LOCK_NONE_MIN()); }
+    ExprId:recv = raw expr_operand(n);
+    int32:rty = raw exprtypes_get(x.etypes, recv);
+    if (rty == 0i32) { pass (raw LOCK_NONE_MIN()); }
+    if ((raw type_kind(x.types, rty)) == (raw TY_POINTER())) {
+        rty = raw type_elem(x.types, rty);
+    }
+    if ((raw type_kind(x.types, rty)) != (raw TY_MUTEX())) {
+        pass (raw LOCK_NONE_MIN());
+    }
+    if (!(raw string_eq(raw intern_get(x.interns, (raw expr_name(n)) =>! int32),
+                        "acquire"))) {
+        pass (raw LOCK_NONE_MIN());
+    }
+    pass ((raw tt_get(x.types, rty)).b);
+};
+
 func:call_target = int32(Locks->:x, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprCallExpr) {
         ExprId:c = raw expr_callee(n);
@@ -572,6 +598,11 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
         pass (raw table_min(x, target));
     }
 
+    // `Guard<T>:g = relay await m.acquire(…);` — the binding this walk's own
+    // header quotes: the acquisition is the receiver type's level.
+    int32:milv = raw mutex_acquire_level(x, n);
+    if (milv != (raw LOCK_NONE_MIN())) { pass milv; }
+
     // `?!` and `?|` sit between a binding and its acquisition exactly as
     // `raw`/`relay` do, but they are TWO-operand shapes — and this walk
     // unwrapped only the one-operand family, so an acquisition under them was
@@ -620,6 +651,25 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
     int32:target = raw call_target(x, n);
     if (target != 0i32) {
         drop locks_call(x, caller, target, held, n.span);
+    }
+    int32:mlv = raw mutex_acquire_level(x, n);
+    if (mlv != (raw LOCK_NONE_MIN())) {
+        if (!x.reporting) {
+            drop table_widen(x, caller, mlv, mlv);
+        } else {
+            bool:m_ord_ok = false;
+            if (held == (raw LOCK_NONE_MAX())) { m_ord_ok = true; }
+            if (mlv > held) { m_ord_ok = true; }
+            if (!m_ord_ok) {
+                string:q1 = raw string_concat("this holds lock level ",
+                                                raw int_to_string(held => int64));
+                string:q2 = raw string_concat(q1, " and `acquire` takes level ");
+                string:q3 = raw string_concat(q2, raw int_to_string(mlv => int64));
+                string:q4 = raw string_concat(q3,
+                    " from the receiver's own type; acquisition must strictly increase, or a cycle of threads each waiting on the next becomes possible (D-056)");
+                drop locks_err(x, raw LOCK_ORDER(), move(q4), n.span);
+            }
+        }
     }
 
     if (n.kind == ExprKind.ExprCallExpr) {

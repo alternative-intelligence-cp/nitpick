@@ -383,6 +383,8 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     // failed; the values were simply zero.
     if (k == (raw TY_ATOMIC()))       { has_elem = true; }
     if (k == (raw TY_CHANNEL()))      { has_elem = true; }
+    if (k == (raw TY_MUTEX()))        { has_elem = true; }
+    if (k == (raw TY_GUARD()))        { has_elem = true; }
     if (has_elem) {
         pass (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32));
     }
@@ -695,6 +697,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_ARENA()))    { pass (raw ll_ok("{ ptr, ptr, i64, i64, i64 }")); }
     if (k == (raw TY_HANDLE()))   { pass (raw ll_ok("{ i64, i32 }")); }
     if (k == (raw TY_SHARED_ARENA())) { pass (raw ll_ok("ptr")); }
+    // A mutex and its guard are each ONE POINTER to the owned cell
+    // (D-056, 1.1.11): [lock i32 | pad | waiters ptr | T at +16].
+    if (k == (raw TY_MUTEX()))        { pass (raw ll_ok("ptr")); }
+    if (k == (raw TY_GUARD()))        { pass (raw ll_ok("ptr")); }
     // AN INSTANTIATION THAT NAMES THE PARAMETER BEING EMITTED (1.0.7). A
     // `List{ … }` literal inside `list_make<T>`'s body is recorded as `List<T>`
     // (D-107: the body is typed once with `T` opaque), and in the

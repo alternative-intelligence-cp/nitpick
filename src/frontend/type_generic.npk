@@ -151,6 +151,15 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                   raw type_chan_level(r.types, t),
                   raw type_chan_cap(r.types, t)));
     }
+    if (k == (raw TY_MUTEX())) {
+        pass (raw tt_mutex(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls),
+                  (raw tt_get(r.types, t)).b));
+    }
+    if (k == (raw TY_GUARD())) {
+        pass (raw tt_guard(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+    }
 
     // AN INSTANCE'S ARGUMENTS ARE SUBSTITUTED AND IT IS REBUILT — `Container<T>`
     // becomes `Container<int32>`, a different interned type with its own mangled

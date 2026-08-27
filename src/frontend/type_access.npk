@@ -280,6 +280,14 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
         pass (raw te_no_member(e, base, name, at));
     }
 
+    // A GUARD'S ONE MEMBER (D-056, 1.1.11): `.value` is the element the
+    // mutex owns, readable and writable for exactly as long as the guard
+    // lives — the place resolves through the cell the guard holds.
+    if (k == (raw TY_GUARD())) {
+        string:gf = raw intern_get(e.interns, name);
+        if (raw string_eq(gf, "value")) { pass (raw type_elem(e.types, base)); }
+        pass (raw te_no_member(e, base, name, at));
+    }
     if (k == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(@r, base, name, e.scope);
         if (fi.found) { pass (fi.type_id); }
@@ -585,6 +593,38 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // `arena_make` reads its element: the element, the lock level and
         // the capacity all live in the type (D-072), so the call takes no
         // arguments and has nothing to infer from but context.
+        if (raw callee_is_builtin_named(e, n, "mutex")) {
+            int32:mwant = raw expected_value(e);
+            if (mwant != 0i32) {
+                if ((raw type_kind(e.types, mwant)) == (raw TY_MUTEX())) {
+                    if (count != 1i32) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`mutex` takes the initial value of the element it will own (D-056)",
+                            n.span));
+                    }
+                    int32:mel = raw type_elem(e.types, mwant);
+                    int32:msaved = e.expected;
+                    e.expected = mel;
+                    int32:mvt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+                    e.expected = msaved;
+                    if (mvt != 0i32) {
+                        if (!(raw type_is_invalid(e.types, mvt))) {
+                            if (!(raw fits(e, mel, mvt))) {
+                                drop te_assign_mismatch(e, mel, mvt, n.span);
+                            }
+                            // D-183: the mutex OWNS its element from birth.
+                            drop require_move_if_owning(e,
+                                ExprId{ index: raw ast_id_at(e.ast, start, 0i32) },
+                                mvt, n.span);
+                        }
+                    }
+                    pass (raw tt_result(e.types, mwant, 8i64, 8i32));
+                }
+            }
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                "`mutex(initial)` needs a `Mutex<T, LEVEL>` annotation to read its element and level from — they live in the type (D-056)",
+                n.span));
+        }
         if (raw callee_is_builtin_named(e, n, "channel")) {
             drop type_args_only(e, start, count);
             int32:cwant = raw expected_value(e);
@@ -1115,6 +1155,18 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_MUTEX())) {
+        pass (raw type_mutex_method(e, n, id, recv, name, start, count));
+    }
+    // A BORROWED MUTEX ACQUIRES THE SAME WAY (D-098's one-level deref): the
+    // mutex is move-only, so a worker receives `Mutex<T, LEVEL>->` and `.`
+    // reaches through it like any member access.
+    if ((raw type_kind(e.types, recv)) == (raw TY_POINTER())) {
+        int32:mpel = raw type_elem(e.types, recv);
+        if ((raw type_kind(e.types, mpel)) == (raw TY_MUTEX())) {
+            pass (raw type_mutex_method(e, n, id, mpel, name, start, count));
+        }
     }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
@@ -1888,6 +1940,51 @@ func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
     if (is_send) { pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32)); }
     pass (raw tt_result(e.types, elem, raw type_size(e.types, elem),
                         raw type_align(e.types, elem)));
+};
+
+// `m.acquire(deadline)` — THE ONE MUTEX OPERATION (D-056, 1.1.11). It is
+// `async` like `send`/`recv` and for the same reason: a contended acquire
+// that parked the OS thread would stall every sibling task on the executor,
+// and a mutex is the likeliest place to hit that. It returns
+// `Result<Guard<T>>`; the guard's scope is the critical section, its drop is
+// the release, and there is no `release` method — a spelled release would be
+// a second way to say what the closing brace already says. No `try_acquire`
+// either: a zero deadline is how "do not wait" is written (D-056/D-176).
+func:type_mutex_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:recv,
+                               int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:elem = raw type_elem(e.types, recv);
+    if (!(raw string_eq(m, "acquire"))) {
+        string:c1 = raw string_concat("a mutex has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "`: the set is `acquire` alone (D-056) — the guard's scope releases, and a zero deadline is \"do not wait\""),
+            n.span));
+    }
+    if (n_id.index != e.await_operand) {
+        pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
+            "`acquire` is `async` and runs only under `await` (D-056/D-177): a contended acquire that parked the thread would stall every sibling task on this executor",
+            n.span));
+    }
+    if (count != 1i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`acquire` takes the deadline — mandatory (D-056): there is no infinitely blocking acquire anywhere in the concurrency surface",
+            n.span));
+    }
+    int32:dsaved = e.expected;
+    e.expected = 0i32;
+    int32:dt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    e.expected = dsaved;
+    if (dt != 0i32) {
+        if (!(raw type_is_invalid(e.types, dt))) {
+            if (!(raw string_eq(raw type_display(e.types, e.interns, dt), "Duration"))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "the deadline is a `Duration` (D-176), the one span type",
+                    n.span));
+            }
+        }
+    }
+    int32:g = raw tt_guard(e.types, elem);
+    pass (raw tt_result(e.types, g, 8i64, 8i32));
 };
 
 func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,

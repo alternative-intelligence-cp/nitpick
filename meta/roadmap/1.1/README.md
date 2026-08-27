@@ -105,3 +105,29 @@ is built rather than after.
   forever). This is safety-critical for the robotics path and is easy to under-build.
 - **`failsafe` stays non-async** (D-063) and runs on the trapping thread with every
   executor already stopped — do not let the executor work tempt an `async failsafe`.
+
+## 1.1.11a — `Mutex<T, LEVEL>` and `Guard<T>`: the release IS the closing brace
+
+Builtin type kinds like `Channel`: one managed cell per mutex, the value a
+pointer, `acquire` the sole operation — `async`, deadline-mandatory,
+`Result<Guard<T>>` — and the guard's scope-exit DROP is the release, the
+first drop in the language that frees no memory and the thing cycle 1.2
+existed to make possible. `guard.value` is the element's place through the
+cell. The waiter protocol reuses the channel's; `mutex_basic.npk` runs two
+real threads to an exact 200 under stress and watches a 1ms acquire on a
+held lock answer DeadlineExceeded.
+
+Landing it surfaced four buried edges, each a rule earning its keep: the
+keyword table is LENGTH-BUCKETED (Mutex/Guard sat unreachable in the
+7-bucket); `acquire` was already RESERVED for this operation and a keyword
+token carries no intern, so the dot-name position now interns its spelling;
+the await checker's intrinsic-suspension exemption (channels') extends to
+the mutex; and D-180's borrow-across-spawn refusal exempts `Mutex<T,L>->` —
+the hazard it names is mutation the holder cannot see at a suspension it did
+not choose, which is answered by the lock itself, so the mutex borrow is the
+sanctioned crossing while `Guard->` stays refused. The lock-level analysis
+now reads `m.acquire(…)`'s level off the receiver's TYPE — the 0.5.6
+doctrine's own fix arriving — and lock_levels.npk pins holding 5 while
+acquiring 3 as LOCK-001 with no clause at the site.
+
+RwLock, CondVar (timed only) and Barrier are 1.1.11's open half.

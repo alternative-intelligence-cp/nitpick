@@ -1867,6 +1867,19 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                     drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
                 }
             }
+            // A MUTEX ACQUIRE'S LOOP STATE (D-056, 1.1.11): the cell word,
+            // the absolute deadline, and the outcome — same protocol, no
+            // value slot (the guard IS the cell pointer). A borrowed
+            // receiver acquires the same way.
+            int32:mrt = rt;
+            if ((raw type_kind(x.fe.ctx.types, mrt)) == (raw TY_POINTER())) {
+                mrt = raw type_elem(x.fe.ctx.types, mrt);
+            }
+            if ((raw type_kind(x.fe.ctx.types, mrt)) == (raw TY_MUTEX())) {
+                drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+            }
         }
     }
     // A `channel()` OPEN needs a frame-resident stash for its handle (D-183,

@@ -1,0 +1,78 @@
+// expect-exit: 42
+// stress: 40
+//
+// `Mutex<T, LEVEL>` IS REAL (D-056, 1.1.11), and the guard's closing brace
+// is the release — the thing cycle 1.2 existed to make true. Two REAL
+// threads each add 100 under the lock; 200 is the only answer a working
+// mutex allows, and `// stress: 40` makes a torn read-modify-write loud.
+// The mutex is move-only (it owns its cell and its element), so the workers
+// borrow it — `Mutex<int32, 3i32>->` — and `.` reaches through the borrow
+// (D-098). Acquisition is `async` and deadline-bounded; the second half
+// holds one mutex across a sleep and watches a 1ms acquire answer
+// DeadlineExceeded instead of blocking anything.
+mod:mutex_basic;
+error:E9;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:bump = NIL(Mutex<int32, 3i32>->:m,
+                             Channel<int32, 4i32, 4i64>:done) joins JOIN_2S {
+    int32:i = 0i32;
+    while (i < 100i32) {
+        Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+        g.value = g.value + 1i32;
+        i = i + 1i32;
+    }
+    await done.send(1i32, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+thread async func:holder = NIL(Mutex<int32, 5i32>->:m,
+                               Channel<int32, 4i32, 4i64>:done) joins JOIN_2S {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    await done.send(2i32, raw duration_ms(500i64)) ?! E9;   // held from here
+    await sleep(raw duration_ms(120i64)) ?| NIL;            // ...and across this
+    g.value = 7i32;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! Unreachable;
+    Channel<int32, 4i32, 4i64>:done = channel() ?! Unreachable;
+    drop bump(@m, done);
+    drop bump(@m, done);
+    discard(await done.recv(raw duration_ms(2000i64)) ?! E9);
+    discard(await done.recv(raw duration_ms(2000i64)) ?! E9);
+    int32:total = 0i32;
+    {
+        Guard<int32>:g = await m.acquire(raw duration_ms(500i64)) ?! E9;
+        total = g.value;
+    }
+    if (total != 200i32) { exit 10i32; }
+
+    // contention: the holder sleeps inside its guard's scope; a 1ms acquire
+    // gives up with DeadlineExceeded rather than waiting it out.
+    Mutex<int32, 5i32>:h = mutex(0i32) ?! Unreachable;
+    drop holder(@h, done);
+    discard(await done.recv(raw duration_ms(2000i64)) ?! E9);
+    Result<Guard<int32>>:late = await h.acquire(raw duration_ms(1i64));
+    if (!late.is_error)                  { exit 11i32; }
+    if (late.err != DeadlineExceeded)    { exit 12i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

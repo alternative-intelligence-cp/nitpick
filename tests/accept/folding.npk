@@ -104,14 +104,14 @@ func:each_length_is_what_it_folded_to = NIL(Holder->:h) never fails {
 const int32:LOW = 1i32;
 const int32:HIGH = LOW + 2i32;
 
-struct:Guard = { int32:v; };
+struct:Lease = { int32:v; };
 
-func:take_low = Guard() acquires LOW { pass Guard{ v: 1i32 }; };
-func:take_high = Guard() acquires HIGH { pass Guard{ v: 3i32 }; };
+func:take_low = Lease() acquires LOW { pass Lease{ v: 1i32 }; };
+func:take_high = Lease() acquires HIGH { pass Lease{ v: 3i32 }; };
 
 func:upward_still_passes = NIL() {
-    Guard:a = take_low() ?! E9;
-    Guard:b = take_high() ?! E9;
+    Lease:a = take_low() ?! E9;
+    Lease:b = take_high() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;

@@ -3584,6 +3584,29 @@ anything decided here.
 
 ## D-056 — Deadlock: lock levels prove the common case, deadlines contain the rest — **SETTLED**
 
+> **`Mutex<T, LEVEL>` and `Guard<T>` LANDED at 1.1.11** — builtin type kinds
+> like `Channel`, one managed cell per mutex ([lock | listlock | waiters | T]),
+> the value one pointer. `acquire` is the sole operation: `async`,
+> deadline-mandatory, returning `Result<Guard<T>>`; there is no `release`
+> method and no `try_acquire` — the guard's scope-exit DROP is the release
+> (the first drop in the language that frees no memory, and the thing cycle
+> 1.2 existed to make possible), and a zero deadline is "do not wait".
+> `guard.value` reads and writes the element through the cell for exactly the
+> guard's lifetime. The waiter protocol reuses the channel's (frame links,
+> owner rouse); a woken waiter re-runs the acquire and may lose to a barger,
+> which the deadline bounds. Three sharpenings the build forced:
+> **the acquisition is TYPED, not named** — the 0.5.6 doctrine's "contract,
+> not a name" was written against an `int64` handle, and the receiver's type
+> now carries the level to the ordering analysis directly, no clause needed
+> at the site; **a borrow of a mutex crosses a spawn** — D-180's hazard
+> (mutation the holder cannot see, at a suspension it did not choose) is
+> answered by the lock itself, so `Mutex<T, LEVEL>->` is the sanctioned
+> crossing while `Guard<T>->` stays refused; and **`acquire` the reserved
+> word interns its own spelling in name position** — it was reserved FOR this
+> operation, and a keyword token carries no intern, so `.acquire(` is its one
+> legal home. `RwLock`, `CondVar` (timed only) and `Barrier` remain 1.1.11's
+> open half.
+
 `--verify-concurrency` is documented as verifying "data race **and deadlock**
 freedom". Data-race freedom is accounted for (D-004, D-017, D-032). **Deadlock
 freedom had no mechanism anywhere** — the flag promised a safety property nothing

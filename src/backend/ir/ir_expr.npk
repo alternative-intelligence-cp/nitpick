@@ -2672,6 +2672,20 @@ func:await_channel_recv = int32(ExprEmitter->:x, ExprId:cid) never fails {
     pass rt;
 };
 
+// Is this await's operand `m.acquire(…)` on a mutex? The receiver's TYPE is
+// the detector, exactly as the channel's is.
+func:await_mutex_acquire = int32(ExprEmitter->:x, ExprId:cid) never fails {
+    if (raw expr_is_none(cid)) { pass 0i32; }
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    if (cn.kind != ExprKind.ExprMethodCallExpr) { pass 0i32; }
+    int32:rt = raw exprtypes_get(x.et, raw expr_operand(cn));
+    if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_POINTER())) {
+        rt = raw type_elem(x.fe.ctx.types, rt);
+    }
+    if ((raw type_kind(x.fe.ctx.types, rt)) != (raw TY_MUTEX())) { pass 0i32; }
+    pass rt;
+};
+
 // `await ch.send(v, within)` / `await ch.recv(within)` (D-072/D-182).
 //
 // THE DEADLINE IS ABSOLUTE BEFORE THE LOOP STARTS: the span is converted
@@ -2680,6 +2694,128 @@ func:await_channel_recv = int32(ExprEmitter->:x, ExprId:cid) never fails {
 // and comes back. The first cut RE-POLLS on a short timer rather than being
 // woken by the peer — correct and bounded, never missing a wakeup, with the
 // per-channel futex wake named as the follow-up in 1.1.10's plan.
+// `await m.acquire(within)` (D-056, 1.1.11) — the channel-await protocol
+// with a mutex behind it: absolute deadline computed once, one runtime call
+// per turn (0 acquired / 1 parked / negative Error), the wind-up poll every
+// resume segment owes, and the value on success is the GUARD — the cell
+// pointer itself, whose scope-exit drop is the release.
+func:emit_mutex_acquire = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
+                                int32:mx_tid, Span:at) never fails {
+    ExprNode:cn = raw ast_expr(x.ast, cid);
+    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
+    if (di_ < 0i32) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
+    string:cslot = raw fnem_cross_gep(x.fe, hi_);
+    string:dslot = raw fnem_cross_gep(x.fe, di_);
+    string:eslot = raw fnem_cross_gep(x.fe, ei_);
+
+    IrVal:mv = raw emit_expr(x, raw expr_operand(cn));
+    if (mv.state != (raw LL_OK())) { pass mv; }
+    // Through a borrow, the cell is one load away (D-098).
+    string:mref = raw string_concat(mv.ref, "");
+    int32:mrt0 = raw exprtypes_get(x.et, raw expr_operand(cn));
+    if ((raw type_kind(x.fe.ctx.types, mrt0)) == (raw TY_POINTER())) {
+        string:mld = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(mld, " = load ptr, ptr ", mref, ""));
+        mref = raw string_concat(mld, "");
+    }
+    string:ci0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(ci0, " = ptrtoint ptr ",
+                      raw string_concat(mref, " to i64")));
+    drop irw_line(x.fe.w, raw cat4("store i64 ", ci0, ", ptr ", cslot));
+
+    int32:start = raw expr_list_start(cn);
+    IrVal:dv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+    if (dv.state != (raw LL_OK())) { pass dv; }
+    string:dns = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dns, " = extractvalue ", dv.ll, " ",
+                      raw string_concat(dv.ref, ", 0")));
+    string:t0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(t0, " = call i64 @npk_mono_now()", ""));
+    string:dabs0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dabs0, " = add i64 ", t0, ", ", dns));
+    drop irw_line(x.fe.w, raw cat4("store i64 ", dabs0, ", ptr ", dslot));
+    drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", eslot, ""));
+
+    string:head = raw irw_new_label(x.fe.w, "mx.try");
+    string:fin = raw irw_new_label(x.fe.w, "mx.done");
+    drop s_br(x, head);
+    drop s_start(x, head);
+    string:cw = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(cw, " = load i64, ptr ", cslot, ""));
+    string:cp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(cp, " = inttoptr i64 ",
+                      raw string_concat(cw, " to ptr")));
+    string:dabs = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(dabs, " = load i64, ptr ", dslot, ""));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = call i32 @npk_mutex_acquire_wait(ptr ",
+                      cp, ", i64 ",
+                      raw cat3(dabs, ", ptr %fr)", "")));
+    drop irw_line(x.fe.w, raw cat4("store i32 ", rc, ", ptr ", eslot));
+    string:again = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(again, " = icmp eq i32 ",
+                      raw string_concat(rc, ", 1")));
+    string:park = raw irw_new_label(x.fe.w, "mx.park");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", again, ", label %", park,
+                      raw string_concat(", label %", fin)));
+    x.fe.terminated = true;
+
+    drop s_start(x, park);
+    string:sg = raw fnem_new_seg(x.fe);
+    int32:sk = raw fnem_seg_index(x.fe);
+    drop irw_line(x.fe.w, raw cat5("store i32 ",
+                      raw int_to_string(sk => int64), ", ptr ",
+                      x.fe.state_gep, ""));
+    drop irw_line(x.fe.w, "ret i8 1");
+    x.fe.terminated = true;
+    drop s_start(x, sg);
+    string:pw = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(pw, " = load i32, ptr ", x.fe.windup_gep, ""));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_windup_note(i32 ", pw, ")"));
+    string:pwb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(pwb, " = icmp ne i32 ",
+                      raw string_concat(pw, ", 0")));
+    string:wu = raw irw_new_label(x.fe.w, "mx.wind");
+    string:go = raw irw_new_label(x.fe.w, "mx.go");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", pwb, ", label %", wu,
+                      raw string_concat(", label %", go)));
+    x.fe.terminated = true;
+    drop s_start(x, wu);
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      raw int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop fnem_ret_fail(x.fe, "-4107");
+    x.fe.terminated = true;
+    drop s_start(x, go);
+    drop s_br(x, head);
+
+    drop s_start(x, fin);
+    string:err = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(err, " = load i32, ptr ",
+                      raw string_concat(eslot, "")));
+    string:gcell = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(gcell, " = load i64, ptr ", cslot, ""));
+    string:gp2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(gp2, " = inttoptr i64 ",
+                      raw string_concat(gcell, " to ptr")));
+    int32:rt_id = raw exprtypes_get(x.et, id);
+    string:v0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(v0,
+                      " = insertvalue { ptr, i32 } undef, ptr ", gp2, ", 0", ""));
+    string:v1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(v1, " = insertvalue { ptr, i32 } ", v0,
+                      ", i32 ", raw string_concat(err, ", 1")));
+    IrVal:mo = raw iv("{ ptr, i32 }", move(v1), rt_id);
+    mo.wrapped = true;
+    mo.inner = "ptr";
+    pass mo;
+};
+
 func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                                 int32:ch_tid, Span:at) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
@@ -2904,6 +3040,10 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:cht = raw await_channel_recv(x, cid);
     if (cht != 0i32) {
         pass (raw emit_channel_await(x, id, cid, cht, n.span));
+    }
+    int32:mxt = raw await_mutex_acquire(x, cid);
+    if (mxt != 0i32) {
+        pass (raw emit_mutex_acquire(x, id, cid, mxt, n.span));
     }
     int32:cdi = raw await_callee_decl(x, cid);
     if (cdi == 0i32) {
@@ -3223,6 +3363,56 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // `channel()` (D-182): the runtime opens the channel and hands back a
     // packed { index, generation }. Capacity and element size come from the
     // TYPE — which is why the call takes no arguments.
+    // `mutex(initial)` (D-056, 1.1.11): one managed cell the mutex owns —
+    // [lock i32 | pad | waiters ptr | T at +16] — lock free, list empty, the
+    // element moved in at birth. The value is the cell pointer.
+    if (raw string_eq(name, "mutex")) {
+        int32:mrt = raw exprtypes_get(x.et, id);
+        int32:mxt = raw type_elem(x.fe.ctx.types, mrt);
+        mxt = raw subst_emitted_type(x.fe.ctx, mxt);
+        int32:mel = raw type_elem(x.fe.ctx.types, mxt);
+        LlType:mell = raw ll_type(x.fe.ctx, mel);
+        if (!(raw ll_is_ok(mell))) { pass (raw iv_from_ll_at(x, mell, mel, n.span)); }
+        string:mesz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(mesz, " = getelementptr ", mell.text,
+                          ", ptr null, i32 1", ""));
+        string:meszi = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(meszi, " = ptrtoint ptr ",
+                          raw string_concat(mesz, " to i64")));
+        string:mcsz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(mcsz, " = add i64 16, ",
+                          raw string_concat(meszi, "")));
+        string:mcell = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(mcell,
+                          " = call ptr @npk_alloc_managed(i64 ",
+                          raw string_concat(mcsz, ")")));
+        drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", mcell, ""));
+        string:mwp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(mwp, " = getelementptr i8, ptr ",
+                          raw string_concat(mcell, ", i64 8")));
+        drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", mwp, ""));
+        IrVal:miv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (miv.state != (raw LL_OK())) { pass miv; }
+        miv = raw emit_fit(x, mel, move(miv), n.span);
+        if (miv.state != (raw LL_OK())) { pass miv; }
+        string:mep = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(mep, " = getelementptr i8, ptr ",
+                          raw string_concat(mcell, ", i64 16")));
+        drop irw_line(x.fe.w, raw cat5("store ", miv.ll, " ", miv.ref,
+                          raw string_concat(", ptr ", mep)));
+        string:mr0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(mr0,
+                          " = insertvalue { ptr, i32 } undef, ptr ", mcell,
+                          ", 0", ""));
+        string:mr1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(mr1,
+                          " = insertvalue { ptr, i32 } ",
+                          raw string_concat(mr0, ", i32 0, 1")));
+        IrVal:mvv = raw iv("{ ptr, i32 }", move(mr1), mrt);
+        mvv.wrapped = true;
+        mvv.inner = "ptr";
+        pass mvv;
+    }
     if (raw string_eq(name, "channel")) {
         int32:crt = raw exprtypes_get(x.et, id);
         int32:cht = raw type_elem(x.fe.ctx.types, crt);
@@ -4780,6 +4970,19 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             pass (raw pv_rung("a field of an unlowered type", move(bll.rung), n.span));
         }
 
+        // A GUARD'S `.value` PLACE (D-056, 1.1.11): load the cell out of the
+        // guard's slot, and the element's place is cell+16 — writable for
+        // exactly as long as the guard lives, which the drop-at-brace makes
+        // the critical section.
+        if (bkind == (raw TY_GUARD())) {
+            int32:gel = raw type_elem(x.fe.ctx.types, btid);
+            string:gcell = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(gcell, " = load ptr, ptr ", baddr));
+            string:gpl = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(gpl, " = getelementptr i8, ptr ",
+                              raw string_concat(gcell, ", i64 16")));
+            pass (raw pv(move(gpl), gel));
+        }
         int32:idx = 0i32 - 1i32;
         int32:fty = raw exprtypes_get(x.et, id);
         if (bkind == (raw TY_STRING()))  { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
@@ -5281,6 +5484,20 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
         fll = "i64";
         if (idx == 0i32) { fll = "ptr"; }
+    }
+    // A GUARD'S `.value` READS THROUGH THE CELL (D-056, 1.1.11): the base
+    // value IS the cell pointer, and the element lives at +16.
+    if (bkind == (raw TY_GUARD())) {
+        int32:gel = raw type_elem(x.fe.ctx.types, btid);
+        LlType:gil = raw ll_type(x.fe.ctx, gel);
+        if (!(raw ll_is_ok(gil))) { pass (raw iv_from_ll_at(x, gil, gel, n.span)); }
+        string:gpp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(gpp, " = getelementptr i8, ptr ",
+                          raw string_concat(bv.ref, ", i64 16")));
+        string:gvv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(gvv, " = load ", gil.text, ", ptr ",
+                          raw string_concat(gpp, "")));
+        pass (raw iv(move(gil.text), move(gvv), fty));
     }
     // A `Result`'s three members (D-069): `value` is slot 0, `error` slot 1, and
     // `.is_error` is DERIVED as `error != 0` — no stored flag, so there is no

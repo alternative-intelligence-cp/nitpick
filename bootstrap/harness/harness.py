@@ -546,6 +546,7 @@ SLOT_SITE_PAIRS = {
     "arm_give_type":       {"emit_give"},
     "type_safe_unwrap":    {"emit_expr_kind"},      # `r ? d` lowers inline
     "type_arena_method":   {"emit_arena_method"},
+    "type_call":           {"call_builtin"},        # `mutex(initial)` fits the element (D-056, 1.1.11)
     # The channel `send` value, built into the element's slot on the frame
     # before the retry loop (D-182, 1.1.10-B). `recv` builds nothing.
     "type_channel_method": {"emit_channel_await"},

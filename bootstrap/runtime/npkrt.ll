@@ -804,6 +804,58 @@ stale:
   ret i32 -4106
 }
 
+; --- the mutex (D-056, 1.1.11) ----------------------------------------------
+;
+; One managed cell per mutex: [ state i32 | listlock i32 | waiters ptr | T ].
+; The STATE is task-level (0 free, 1 held) and changes only under the
+; LISTLOCK, a thread-level npk_mx futex held for a few instructions — the
+; same two-tier shape the channel uses, and the same waiter protocol
+; (npk_ch_wait_link/unlink/wake_one ride the frame's chan_next and owner
+; slots; a task blocked on a mutex is not blocked on a channel, so the reuse
+; is free). Acquisition is task-fair-enough: a woken waiter re-runs the
+; acquire and may lose to a barger, which the deadline bounds.
+define i32 @npk_mutex_acquire_wait(ptr %cell, i64 %abs, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  ; unlink self, unconditionally — idempotent across the first try, a wake
+  ; by the releaser, and a wake by the deadline (the channel's own rule).
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  %st = load i32, ptr %cell
+  %free = icmp eq i32 %st, 0
+  br i1 %free, label %take, label %busy
+take:
+  store i32 1, ptr %cell
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 0
+busy:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+park:
+  call void @npk_ch_wait_link(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+expired:
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 -4107
+}
+
+; The release IS the guard's generated drop (D-183): the closing brace of
+; the critical section lowers to exactly this call.
+define void @npk_mutex_release(ptr %cell) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  store i32 0, ptr %cell
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wake_one(ptr %wp)
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
 ; THE ONE CALL A BLOCKED OPERATION MAKES. Returns 0 done, 1 parked (the task
 ; must return SUSPENDED and will be re-entered here), or a negative error.
 ;

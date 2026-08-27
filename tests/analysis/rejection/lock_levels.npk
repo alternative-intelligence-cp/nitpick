@@ -20,19 +20,19 @@
 
 error:E9;
 
-struct:Guard = { int32:v; };
+struct:Lease = { int32:v; };
 
-func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
-func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
-func:take_3 = Guard() acquires 3i32 { pass Guard{ v: 3i32 }; };
-func:take_9 = Guard() acquires 9i32 { pass Guard{ v: 9i32 }; };
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
+func:take_3 = Lease() acquires 3i32 { pass Lease{ v: 3i32 }; };
+func:take_9 = Lease() acquires 9i32 { pass Lease{ v: 9i32 }; };
 
 // --- acquiring downward -----------------------------------------------------------
 
 // expect-error: NITPICK-LOCK-001
 func:downward = NIL() never fails {
-    Guard:a = take_2() ?! E9;
-    Guard:b = take_1() ?! E9;
+    Lease:a = take_2() ?! E9;
+    Lease:b = take_1() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -43,8 +43,8 @@ func:downward = NIL() never fails {
 // equal" would permit exactly that.
 // expect-error: NITPICK-LOCK-001
 func:same_level_twice = NIL() never fails {
-    Guard:a = take_2() ?! E9;
-    Guard:b = take_2() ?! E9;
+    Lease:a = take_2() ?! E9;
+    Lease:b = take_2() ?! E9;
     discard(a.v);
     discard(b.v);
     pass NIL;
@@ -57,14 +57,14 @@ func:same_level_twice = NIL() never fails {
 // not.
 
 func:reaches_1 = NIL() never fails {
-    Guard:g = take_1() ?! E9;
+    Lease:g = take_1() ?! E9;
     discard(g.v);
     pass NIL;
 };
 
 // expect-error: NITPICK-LOCK-001
 func:transitively_downward = NIL() never fails {
-    Guard:a = take_3() ?! E9;
+    Lease:a = take_3() ?! E9;
     discard(a.v);
     drop reaches_1();
     pass NIL;
@@ -97,7 +97,7 @@ struct:Loose = { int32:v; };
 // expect-error: NITPICK-LOCK-002
 impl:Loose:Storage = {
     pub func:commit = NIL(Self:self) never fails {
-        Guard:g = take_9() ?! E9;
+        Lease:g = take_9() ?! E9;
         discard(g.v);
         pass NIL;
     };
@@ -115,5 +115,19 @@ fixed int32:RUNTIME_LEVEL = 2i32;
 
 // expect-error: NITPICK-LOCK-003
 func:level_is_not_constant = NIL() acquires RUNTIME_LEVEL {
+    pass NIL;
+};
+
+// --- the TYPED acquisition (D-056, 1.1.11) -----------------------------------------
+//
+// `m.acquire(…)` carries its level in the RECEIVER'S TYPE — the 0.5.6
+// doctrine's own fix arriving: no clause is needed at the site, and the
+// ordering rule reads the level off `Mutex<T, LEVEL>` directly. Holding 5
+// and acquiring 3 is the downward acquisition that makes circular wait
+// possible, wherever the level came from.
+// expect-error: NITPICK-LOCK-001
+async func:typed_downward = NIL(Mutex<int32, 3i32>->:low) acquires 5i32 {
+    Guard<int32>:g = relay await low.acquire(raw duration_ms(5i64));
+    discard(g.value);
     pass NIL;
 };

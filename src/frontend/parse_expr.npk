@@ -456,16 +456,24 @@ func:p_postfix = ExprId(Parser->:p) never fails {
         if (k == TokenKind.PDot) {
             discard(raw p_advance(p));
             Token:n = raw p_advance(p);
+            // `acquire` WAS RESERVED FOR THE MUTEX OPERATION (D-056), and a
+            // keyword token carries no intern — its one legal home is exactly
+            // this position, the name after the dot, so it interns its own
+            // spelling here and reaches the method dispatch like any name.
+            int64:mnm = n.payload;
+            if (n.kind == TokenKind.KwAcquire) {
+                mnm = (raw intern_add(p.interns, "acquire")) => int64;
+            }
             // `p.magnitude()` is a METHOD CALL, not a call over a member access
             // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
             // (D-006), which needs the receiver kept apart from the callee --
             // and a `CallExpr` whose callee is a `MemberAccessExpr` buries it one
             // level down, leaving every consumer to test for both shapes.
             if (raw p_at(p, TokenKind.PLParen)) {
-                e = raw p_method_call(p, e, sp, n.payload);
+                e = raw p_method_call(p, e, sp, mnm);
             } else {
                 e = raw ast_add_expr(p.ast, ExprKind.ExprMemberAccessExpr, sp,
-                                       e.index, 0i32, 0i32, n.payload);
+                                       e.index, 0i32, 0i32, mnm);
             }
         } else {
             if (k == TokenKind.OpQuestionDot) {

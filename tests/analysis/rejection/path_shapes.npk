@@ -22,11 +22,11 @@ error:E5;
 error:E9;
 
 struct:Cell = { int32->:slot; };
-struct:Guard = { int32:v; };
+struct:Lease = { int32:v; };
 
 func:sink = NIL(int32->:p) never fails { pass NIL; };
-func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
-func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
 func:might_fail = int32(bool:c) {
     if (c) { fail E5; }
     pass 7i32;
@@ -111,10 +111,10 @@ func:checked_only_inside_a_loop = int32(bool:c) never fails {
 // ACROSS A BRANCH: level 2 is taken before the branch and level 1 inside it.
 // expect-error: NITPICK-LOCK-001
 func:downward_inside_a_branch = NIL(bool:c) never fails {
-    Guard:a = take_2() ?! E9;
+    Lease:a = take_2() ?! E9;
     discard(a.v);
     if (c) {
-        Guard:b = take_1() ?! E9;
+        Lease:b = take_1() ?! E9;
         discard(b.v);
     }
     pass NIL;
@@ -123,10 +123,10 @@ func:downward_inside_a_branch = NIL(bool:c) never fails {
 // IN A LOOP BODY.
 // expect-error: NITPICK-LOCK-001
 func:downward_inside_a_loop = NIL(bool:c) never fails {
-    Guard:a = take_2() ?! E9;
+    Lease:a = take_2() ?! E9;
     discard(a.v);
     while (c) {
-        Guard:b = take_1() ?! E9;
+        Lease:b = take_1() ?! E9;
         discard(b.v);
     }
     pass NIL;
@@ -135,11 +135,11 @@ func:downward_inside_a_loop = NIL(bool:c) never fails {
 // IN A `pick` ARM.
 // expect-error: NITPICK-LOCK-001
 func:downward_inside_a_pick_arm = NIL(int32:n) never fails {
-    Guard:a = take_2() ?! E9;
+    Lease:a = take_2() ?! E9;
     discard(a.v);
     pick (n) {
         (0i32) {
-            Guard:b = take_1() ?! E9;
+            Lease:b = take_1() ?! E9;
             discard(b.v);
         },
         (*) { }
@@ -152,11 +152,11 @@ func:downward_inside_a_pick_arm = NIL(int32:n) never fails {
 // analysis that treated an exit as ordinary flow would refuse it.
 func:early_exit_is_not_a_violation = NIL(bool:c) never fails {
     if (c) {
-        Guard:a = take_2() ?! E9;
+        Lease:a = take_2() ?! E9;
         discard(a.v);
         pass NIL;
     }
-    Guard:b = take_1() ?! E9;
+    Lease:b = take_1() ?! E9;
     discard(b.v);
     pass NIL;
 };

@@ -116,6 +116,8 @@ pub func:TY_ATOMIC = int32() never fails { pass 31i32; };  // D-182: a = element
 // The VALUE is an opaque generation-checked handle, not an address: that is
 // what lets it cross a spawn (D-004/D-180 refuse a borrow there) and ride in
 // a message, while the creating scope still owns the channel's life.
+pub func:TY_MUTEX = int32() never fails { pass 33i32; };  // D-056: a = element, b = LEVEL; the value is one ptr to an owned cell
+pub func:TY_GUARD = int32() never fails { pass 34i32; };  // D-056: a = element; holds the cell ptr, its DROP is the release
 pub func:TY_CHANNEL = int32() never fails { pass 32i32; };
 
 pub struct:Type = {
@@ -333,6 +335,13 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     }
     if (k == (raw TY_STRUCT()))   { pass ((raw tt_drops(t, id)) == 2i32); }
     if (k == (raw TY_ENUM()))     { pass ((raw tt_drops(t, id)) == 2i32); }
+    // A MUTEX OWNS ITS CELL AND ITS ELEMENT (D-056, 1.1.11): the drop frees
+    // both — by the join discipline nobody can still hold it at the owner's
+    // exit. A GUARD owns an OBLIGATION rather than memory: its drop is the
+    // RELEASE, which is what "the guard's scope is the critical section"
+    // lowers to, and why both are move-only like every owner.
+    if (k == (raw TY_MUTEX()))    { pass true; }
+    if (k == (raw TY_GUARD()))    { pass true; }
     // A `dyn` OWNS the heap cell its coercion moved the concrete value into
     // (D-183, 1.2.4). Erasure needs indirection; indirection that survives
     // the frame needs the heap (the alloca spill dangled the moment a `dyn`
@@ -540,6 +549,19 @@ pub func:tt_atomic = int32(TypeTable->:t, int32:elem, int64:size,
 pub func:tt_channel = int32(TypeTable->:t, int32:elem, int32:level,
                             int32:cap) never fails {
     pass (raw tt_intern(t, raw TY_CHANNEL(), elem, level, cap, 8i64, 8i32, 0i32));
+};
+
+// `Mutex<T, LEVEL>` (D-056, 1.1.11): one pointer to a heap cell the mutex
+// owns — the lock word, the waiter list, and the element live behind it.
+pub func:tt_mutex = int32(TypeTable->:t, int32:elem, int32:level) never fails {
+    pass (raw tt_intern(t, raw TY_MUTEX(), elem, level, 0i32, 8i64, 8i32, 0i32));
+};
+
+// `Guard<T>` (D-056, 1.1.11): the acquisition's receipt. Holds the cell
+// pointer; its generated DROP is the release, which is the entire reason
+// the managed lowering had to precede this type.
+pub func:tt_guard = int32(TypeTable->:t, int32:elem) never fails {
+    pass (raw tt_intern(t, raw TY_GUARD(), elem, 0i32, 0i32, 8i64, 8i32, 0i32));
 };
 
 pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) never fails {
@@ -1112,7 +1134,12 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     if (k == (raw TY_DYN()))     { pass true; }
     if (k == (raw TY_CSTRING())) { pass true; }
     if (k == (raw TY_ANY()))     { pass true; }
+    // A GUARD borrows its mutex's cell — it may not outrun the mutex, and a
+    // task boundary is exactly where it would. A MUTEX owns its cell like a
+    // string owns its body: it transfers whole.
+    if (k == (raw TY_GUARD()))   { pass true; }
     if (k == (raw TY_STRING()))  { pass false; }
+    if (k == (raw TY_MUTEX()))   { pass false; }
     if (k == (raw TY_ARRAY()))   {
         pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
     }

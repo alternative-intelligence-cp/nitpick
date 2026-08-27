@@ -12,18 +12,18 @@
 
 error:E9;
 
-struct:Guard = { int32:v; };
+struct:Lease = { int32:v; };
 
-func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
-func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
-func:take_3 = Guard() acquires 3i32 { pass Guard{ v: 3i32 }; };
+func:take_1 = Lease() acquires 1i32 { pass Lease{ v: 1i32 }; };
+func:take_2 = Lease() acquires 2i32 { pass Lease{ v: 2i32 }; };
+func:take_3 = Lease() acquires 3i32 { pass Lease{ v: 3i32 }; };
 
 // --- upward is the whole point ------------------------------------------------------
 
 func:strictly_increasing = NIL() {
-    Guard:a = take_1() ?! E9;
-    Guard:b = take_2() ?! E9;
-    Guard:c = take_3() ?! E9;
+    Lease:a = take_1() ?! E9;
+    Lease:b = take_2() ?! E9;
+    Lease:c = take_3() ?! E9;
     discard(a.v);
     discard(b.v);
     discard(c.v);
@@ -38,10 +38,10 @@ func:strictly_increasing = NIL() {
 
 func:released_at_scope_exit = NIL() {
     {
-        Guard:a = take_3() ?! E9;
+        Lease:a = take_3() ?! E9;
         discard(a.v);
     }
-    Guard:b = take_1() ?! E9;
+    Lease:b = take_1() ?! E9;
     discard(b.v);
     pass NIL;
 };
@@ -51,14 +51,14 @@ func:released_at_scope_exit = NIL() {
 // call and a binding alike would refuse every second call to an ordinary helper.
 
 func:reaches_3 = NIL() {
-    Guard:g = take_3() ?! E9;
+    Lease:g = take_3() ?! E9;
     discard(g.v);
     pass NIL;
 };
 
 func:bare_call_holds_nothing = NIL() {
     reaches_3() ?! E9;
-    Guard:b = take_1() ?! E9;
+    Lease:b = take_1() ?! E9;
     discard(b.v);
     reaches_3() ?! E9;
     pass NIL;
@@ -71,7 +71,7 @@ func:ordinary_helper = int32(int32:n) never fails {
 };
 
 func:calls_an_ordinary_helper = int32() {
-    Guard:a = take_2() ?! E9;
+    Lease:a = take_2() ?! E9;
     int32:v = raw ordinary_helper(a.v);
     pass v;
 };
@@ -89,7 +89,7 @@ struct:Tight = { int32:v; };
 // the trait's.
 impl:Tight:Storage = {
     pub func:commit = NIL(Self:self) {
-        Guard:g = take_2() ?! E9;
+        Lease:g = take_2() ?! E9;
         discard(g.v);
         pass NIL;
     };
@@ -112,7 +112,7 @@ struct:Alone = { int32:v; };
 
 impl:Alone = {
     pub func:whatever = NIL(Self:self) {
-        Guard:g = take_3() ?! E9;
+        Lease:g = take_3() ?! E9;
         discard(g.v);
         pass NIL;
     };

@@ -1682,6 +1682,21 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     if (kind == (raw TY_CHANNEL())) {
         pass (raw resolve_channel_type(r, n, scope, count));
     }
+    // `Mutex<T, LEVEL>` (D-056, 1.1.11): the level lives in the type, which
+    // is what makes every acquisition statically orderable — the whole
+    // reason the prototype's `int64` handle form was unanalysable.
+    if (kind == (raw TY_MUTEX())) {
+        if (count != 2i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`Mutex<T, LEVEL>` takes two arguments: the element type it owns, and the D-056 lock level",
+                n.span));
+        }
+        int32:melem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
+                          raw type_args_start(n), 0i32) }, scope);
+        if (raw type_is_invalid(r.types, melem)) { pass melem; }
+        int32:mlvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        pass (raw tt_mutex(r.types, melem, mlvl));
+    }
     if (count != 1i32) {
         // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).
         string:g1 = raw string_concat("`",
@@ -1707,6 +1722,11 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     }
     if (kind == (raw TY_HANDLE())) {
         pass (raw tt_handle(r.types, inner));
+    }
+    // `Guard<T>` (D-056, 1.1.11): what `acquire` returns; naming it in an
+    // annotation is how the spec's own example binds one.
+    if (kind == (raw TY_GUARD())) {
+        pass (raw tt_guard(r.types, inner));
     }
     // `atomic<T>`'s PERMITTED SET (D-182): the integer widths up to 64,
     // `bool`, and pointer-shaped values. Not floats — an atomic
