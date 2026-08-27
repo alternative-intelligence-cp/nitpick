@@ -44,7 +44,7 @@ impl:Sum:Work = {
 // method call would read the same at the call site anyway.
 struct:ThreadPool<J> = { Channel<J, 3i32, 8i64>:jobs; };
 
-func:pool_create<J> = ThreadPool<J>() {
+func:pool_create<J> = ThreadPool<J>() gives {
     Channel<J, 3i32, 8i64>:ch = channel() ?! Unreachable;
     // A GENERIC STRUCT LITERAL TAKES NO ARGUMENTS: they come from the context
     // it is built into, which here is the declared return type.

@@ -1,0 +1,43 @@
+// THE `gives` CONTRACT'S RULES (D-183, 1.2.6). A function whose return
+// carries a channel is a FACTORY only when it says so; the clause is what
+// moves the reclaim to the caller, and each rule below keeps a channel from
+// ending up with no owner or two.
+mod:gives_rules;
+error:E9;
+
+pub struct:Pool = { Channel<int32, 2i32, 8i64>:jobs; int32:n; };
+
+// Creating a channel in a channel-returning function that does not say
+// `gives`: a getter by shape, and a creation inside a getter is a channel
+// nobody's exit reclaims.
+// expect-error: NITPICK-TYPE-007
+func:silent_factory = Channel<int32, 2i32, 8i64>() never fails {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    pass c;
+};
+
+// `gives` on a channel-free return is a claim about nothing.
+// expect-error: NITPICK-TYPE-007
+func:gives_nothing = int32() never fails gives {
+    pass 4i32;
+};
+
+// A channel behind an Optional has no statically known offset to stash from.
+// expect-error: NITPICK-TYPE-007
+func:hidden_channel = Channel<int32, 2i32, 8i64>?() never fails gives {
+    pass NIL;
+};
+
+func:real_factory = Channel<int32, 2i32, 8i64>() never fails gives {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    pass c;
+};
+
+// In a `gives` function, a `gives` call is legal only in TRANSIT — the
+// direct operand of `pass`. Bound locally, its channels' reclaim would be
+// scoped to this frame while the value is bound for the caller's.
+// expect-error: NITPICK-TYPE-007
+func:rescopes = Channel<int32, 2i32, 8i64>() never fails gives {
+    Channel<int32, 2i32, 8i64>:c = raw real_factory();
+    pass c;
+};

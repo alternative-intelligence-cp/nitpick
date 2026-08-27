@@ -1894,6 +1894,42 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
             }
         }
     }
+    // A `gives` CALL reserves one stash per channel its result carries
+    // (D-183, 1.2.6): the caller owns their reclaim, and in a coroutine the
+    // stash must be frame-resident like `channel()`'s own. Inside a `gives`
+    // function the only legal position is transit (checker rule), which
+    // takes no stash, so nothing is reserved.
+    if (!x.fe.is_gives) {
+        bool:g_call = (n.kind == ExprKind.ExprCallExpr);
+        if (n.kind == ExprKind.ExprMethodCallExpr) { g_call = true; }
+        if (g_call) {
+            int32:gcd = raw exprtypes_callee(x.et, eid);
+            if (gcd != 0i32) {
+                DeclNode:gcdn = raw ast_decl(x.ast, DeclId{ index: gcd });
+                bool:g_fn = (gcdn.kind == DeclKind.DeclFunctionDecl);
+                bool:g_gives = false;
+                if (g_fn) { g_gives = raw fn_declares_gives(x.ast, gcdn); }
+                if (g_gives) {
+                    int32:grt = raw exprtypes_get(x.et, eid);
+                    if ((raw type_kind(x.fe.ctx.types, grt)) == (raw TY_RESULT())) {
+                        grt = raw type_elem(x.fe.ctx.types, grt);
+                    }
+                    int32:gn = raw gives_chan_count(x, grt);
+                    int32:gi = 0i32;
+                    while (gi < gn) {
+                        int32:k2 = 0i32;
+                        while ((raw fnem_cross_find(x.fe, sid.index,
+                                                    30i32 + k2)) >= 0i32) {
+                            k2 = k2 + 1i32;
+                        }
+                        drop fnem_cross_add(x.fe, sid.index, 30i32 + k2,
+                                            0i32, "i64");
+                        gi = gi + 1i32;
+                    }
+                }
+            }
+        }
+    }
     int32:shape = raw expr_shape(n.kind);
     if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
     if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
@@ -2317,8 +2353,14 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
             // not by the body — it states the executor's join deadline, and
             // the body owes it nothing.
             if (cv.kind != VerifyKind.VerifyJoinsWithin) {
-                if (cv.a != (raw CONTRACT_ACQUIRES())) {
-                    pass (raw iv_rung("a `requires`/`ensures` contract", "1.4", cv.span));
+                // `gives` (D-183, 1.2.6) is read by the CALL SITES — the
+                // caller stashes the returned channels — and by this
+                // function's own `channel()` lowerings, which register no
+                // reclaim. The body owes it nothing beyond that bit.
+                if (cv.kind != VerifyKind.VerifyGives) {
+                    if (cv.a != (raw CONTRACT_ACQUIRES())) {
+                        pass (raw iv_rung("a `requires`/`ensures` contract", "1.4", cv.span));
+                    }
                 }
             }
         }
@@ -2341,6 +2383,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
 
     LlType:rt = raw fnem_begin(x.fe, fname, did.index, succ);
     if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
+    x.fe.is_gives = raw fn_declares_gives(x.ast, d);
     if (fn_async) {
         // THE COROUTINE (D-177): same walk, different skeleton. The seam
         // (`fnem_ret_agg`), the frame-resident parameters and the entry

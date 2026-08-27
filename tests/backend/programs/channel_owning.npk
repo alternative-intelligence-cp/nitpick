@@ -49,6 +49,20 @@ async func:main = int32(cstring[]:_~argv) {
     }
     if (acc != 250i32)                    { exit 10i32; }
     if ((await fills() ?! E9) != 5i32)    { exit 11i32; }
+
+    // A FAILED SEND DROPS ITS ELEMENT (1.2.6): the ring is full and the
+    // deadline is zero, so the send fails without transferring — and the
+    // moved string is dropped by the operation, the rule a failing callee
+    // already applies to its `move` parameters. The allocator referees.
+    Channel<string, 4i32, 2i64>:tight = channel() ?! Unreachable;
+    string:a1 = string_concat("one", "") ?! E9;
+    string:a2 = string_concat("two", "") ?! E9;
+    await tight.send(move(a1), raw duration_ms(50i64)) ?! E9;
+    await tight.send(move(a2), raw duration_ms(50i64)) ?! E9;
+    string:a3 = string_concat("three", "") ?! E9;
+    Result<NIL>:rf = await tight.send(move(a3), raw duration_ms(0i64));
+    if (!rf.is_error)                     { exit 12i32; }
+    if (rf.err != DeadlineExceeded)       { exit 13i32; }
     exit 42i32;
 };
 

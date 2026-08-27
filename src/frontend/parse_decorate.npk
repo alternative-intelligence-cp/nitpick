@@ -167,6 +167,19 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
                                                0i32, 0i32, 0i32, 0i64);
             drop ast_scratch_push(p.ast, nf.index);
         } else {
+            // `gives` (D-183, 1.2.6) — a marker contract: the return value
+            // HANDS ITS CHANNELS TO THE CALLER, whose function exit owns
+            // their reclaim. Without it, a channel-returning function is a
+            // getter — a view of channels owned elsewhere — and CREATING a
+            // channel inside one is the type error that keeps the silent
+            // process-lifetime leak unreachable.
+            if (raw p_at(p, TokenKind.KwGives)) {
+                discard(raw p_advance(p));
+                VerifyId:gv = raw ast_add_verify(p.ast, VerifyKind.VerifyGives, sp,
+                                                   0i32, 0i32, 0i32, 0i64);
+                drop ast_scratch_push(p.ast, gv.index);
+                continue;
+            }
             // `joins <const Duration>` (D-181) — a thread's join deadline,
             // stated where its executor is created (D-083). A marker-plus-
             // expression clause: the deadline is an ordinary constant

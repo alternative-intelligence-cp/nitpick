@@ -155,6 +155,7 @@ pub struct:FnEmitter = {
     // `fnem_open`; the GEP registers below are cut in the entry block, so
     // they dominate every resume segment.
     bool:is_async;
+    bool:is_gives;                 // D-183 1.2.6: this fn's creations register no reclaim
     string:frame_ty;
     string:resume_sym;
     string:state_gep;
@@ -217,6 +218,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
     FnEmitter:fe = FnEmitter{
         w: w, ctx: ctx,
         sym: "", bare: false, ret_nil: false, ret_type: 0i32,
+        is_gives: false,
         ret_ll: "", val_ll: "", val_zero: "",
         pnames: pn =>! wild int32->, ptypes: pt =>! wild int32->,
         plls: pl =>! wild string->, pcount: 0i32, pcap: 8i32,
@@ -309,6 +311,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.dfcount = 0i32;
     fe.loop_count = 0i32;
     fe.is_async = false;
+    fe.is_gives = false;
     fe.frame_ty = "";
     fe.resume_sym = "";
     fe.seg_count = 0i32;

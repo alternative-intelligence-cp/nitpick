@@ -90,6 +90,13 @@ pub struct:ExprTyper = {
     // D-177: the enclosing function is `async` — where `await` and the spawn
     // form are legal, and whose locals the across-await liveness walk watches.
     bool:fn_is_async;
+    // D-183 (1.2.6): the enclosing function declared `gives` — its return
+    // hands its channels to the caller, so its own creations register no
+    // reclaim, and a `gives` call inside it is legal only in TRANSIT (the
+    // direct operand of `pass`/`return`), which `give_operand` marks the
+    // way `await_operand` marks the await's.
+    bool:fn_gives;
+    int32:give_operand;
     // The one call expression currently blessed to have an `async` callee —
     // the operand of the `await` or spawn-`drop` being typed. Everything else
     // with an `async` callee is a bare call, which has no frame to run the
@@ -173,7 +180,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
-                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, await_operand: 0i32,
+                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
                              counted_depth: 0i32,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),

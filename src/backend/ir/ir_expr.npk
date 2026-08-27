@@ -273,13 +273,170 @@ func:node_ll = LlType(ExprEmitter->:x, ExprId:id) never fails {
 // rather than sixty — the same wrapper shape `type_of_expr` uses for the same
 // reason, and only where the kind walk left the field empty, since a call's
 // value deliberately carries its `Result` type.
+// --- the `gives` call-site stash (D-183, 1.2.6) -----------------------------
+//
+// A call to a `gives` function hands its channels to THIS frame: each one's
+// packed handle is stashed beside the frame and the function's exit — after
+// its joins — drains and reclaims it, exactly as if `channel()` had been
+// called here. The checker's shape rule guarantees the channels sit at the
+// top level of the return (bare, or direct struct fields), so the walk below
+// is the whole walk. In a `gives` function the only legal position is
+// transit (the `pass` operand), so no stash is taken there at all.
+
+// The callee DECL of a call-shaped node, 0 when there is none to name.
+func:gives_callee_of = int32(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        ExprId:op = raw expr_operand(n);
+        if (raw expr_is_none(op)) { pass 0i32; }
+        ExprNode:opn = raw ast_expr(x.ast, op);
+        pass (raw gives_callee_of(x, op, opn));
+    }
+    if (n.kind != ExprKind.ExprCallExpr) {
+        if (n.kind != ExprKind.ExprMethodCallExpr) { pass 0i32; }
+    }
+    pass (raw exprtypes_callee(x.et, id));
+};
+
+// How many channels the SUCCESS type carries at its top level — the count the
+// async pre-scan reserves stash slots for, and the emitter consumes.
+pub func:gives_chan_count = int32(ExprEmitter->:x, int32:t) never fails {
+    int32:st = raw subst_emitted_type(x.fe.ctx, t);
+    int32:k = raw type_kind(x.fe.ctx.types, st);
+    if (k == (raw TY_CHANNEL())) { pass 1i32; }
+    if (k != (raw TY_STRUCT())) { pass 0i32; }
+    int32:sdecl = raw type_decl(x.fe.ctx.types, st);
+    if (sdecl == 0i32) { pass 0i32; }
+    DeclNode:sd = raw ast_decl(x.ast, DeclId{ index: sdecl });
+    int32:nm = raw item_member_count(x.ast, sd);
+    int32:kk = 0i32;
+    int32:cnt = 0i32;
+    while (kk < nm) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, kk));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            // `struct_field` rather than a bare resolve: a generic
+            // instance's field carries the INSTANTIATION's binding
+            // (`Channel<Sum,…>`, not `Channel<J,…>`).
+            FieldInfo:fi = raw struct_field(x.tr, st, raw decl_name(m), x.scope);
+            if (fi.found) {
+                if ((raw type_kind(x.fe.ctx.types, fi.type_id)) == (raw TY_CHANNEL())) {
+                    cnt = cnt + 1i32;
+                }
+            }
+        }
+        kk = kk + 1i32;
+    }
+    pass cnt;
+};
+
+// Stash one channel out of the WRAPPED result at extractvalue path `path`
+// (the value half is field 0; a failed call's zeroed handle reclaims as a
+// stale no-op — generation 2 is the floor, so all-zero aliases nothing).
+func:gives_stash_one = NIL(ExprEmitter->:x, IrVal->:v, string:path,
+                           int32:chty) never fails {
+    string:c = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c, " = extractvalue ", v.ll, " ",
+                      raw cat3(v.ref, ", ", path)));
+    string:lo = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(lo, " = extractvalue { i32, i32 } ",
+                      raw string_concat(c, ", 0")));
+    string:hi = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hi, " = extractvalue { i32, i32 } ",
+                      raw string_concat(c, ", 1")));
+    string:lo64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(lo64, " = zext i32 ",
+                      raw string_concat(lo, " to i64")));
+    string:hi64 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hi64, " = zext i32 ",
+                      raw string_concat(hi, " to i64")));
+    string:hish = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hish, " = shl i64 ",
+                      raw string_concat(hi64, ", 32")));
+    string:h = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(h, " = or i64 ", hish, ", ",
+                      raw string_concat(lo64, "")));
+    string:cstash = "";
+    if (x.fe.is_async) {
+        int32:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
+                                        30i32 + x.fe.chopen_ord);
+        if (cfi < 0i32) { pass NIL; }
+        x.fe.chopen_ord = x.fe.chopen_ord + 1i32;
+        cstash = raw fnem_cross_gep(x.fe, cfi);
+    } else {
+        cstash = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, cstash, "i64");
+    }
+    drop irw_line(x.fe.w, raw cat5("store i64 ", h, ", ptr ", cstash, ""));
+    int32:cdrop = 0i32;
+    int32:cel = raw type_elem(x.fe.ctx.types, chty);
+    if (raw type_drops(x.fe.ctx.types, cel, 64i32)) { cdrop = cel; }
+    drop fnem_chfin_add(x.fe, raw string_concat(cstash, ""), cdrop);
+    pass NIL;
+};
+
+// The whole stash for one call's result.
+func:stash_gives_result = NIL(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                              IrVal->:v) never fails {
+    if (x.fe.is_gives) { pass NIL; }
+    int32:cd = raw gives_callee_of(x, id, n);
+    if (cd == 0i32) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(x.ast, DeclId{ index: cd });
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    if (!(raw fn_declares_gives(x.ast, cdn))) { pass NIL; }
+    int32:rt = raw exprtypes_get(x.et, id);
+    if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_RESULT())) {
+        rt = raw type_elem(x.fe.ctx.types, rt);
+    }
+    int32:st = raw subst_emitted_type(x.fe.ctx, rt);
+    int32:k = raw type_kind(x.fe.ctx.types, st);
+    if (k == (raw TY_CHANNEL())) {
+        drop gives_stash_one(x, v, "0", st);
+        pass NIL;
+    }
+    if (k != (raw TY_STRUCT())) { pass NIL; }
+    int32:sdecl = raw type_decl(x.fe.ctx.types, st);
+    if (sdecl == 0i32) { pass NIL; }
+    DeclNode:sd = raw ast_decl(x.ast, DeclId{ index: sdecl });
+    int32:nm = raw item_member_count(x.ast, sd);
+    int32:kk = 0i32;
+    int32:ford = 0i32;
+    while (kk < nm) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, kk));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            FieldInfo:finf = raw struct_field(x.tr, st, raw decl_name(m), x.scope);
+            if (finf.found) {
+                if ((raw type_kind(x.fe.ctx.types, finf.type_id)) == (raw TY_CHANNEL())) {
+                    drop gives_stash_one(x, v,
+                        raw cat3("0, ", raw int_to_string(ford => int64), ""),
+                        finf.type_id);
+                }
+            }
+            ford = ford + 1i32;
+        }
+        kk = kk + 1i32;
+    }
+    pass NIL;
+};
+
 pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) never fails {
+    ExprNode:xn = raw ast_expr(x.ast, id);
     IrVal:v = raw emit_expr_kind(x, id);
     if (v.state != (raw LL_OK())) { pass v; }
     if (v.type_id == 0i32) {
         if (raw exprtypes_known(x.et, id)) {
             v.type_id = raw exprtypes_get(x.et, id);
         }
+    }
+    // A `gives` call's channels become THIS frame's to reclaim (D-183,
+    // 1.2.6) — stashed the moment the result exists, so a discarded or
+    // partially-used result still hands nothing to nobody.
+    if (xn.kind == ExprKind.ExprCallExpr) {
+        drop stash_gives_result(x, id, xn, @v);
+    }
+    if (xn.kind == ExprKind.ExprMethodCallExpr) {
+        drop stash_gives_result(x, id, xn, @v);
+    }
+    if (xn.kind == ExprKind.ExprAwaitExpr) {
+        drop stash_gives_result(x, id, xn, @v);
     }
     pass v;
 };
@@ -2649,6 +2806,18 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       raw string_concat(", label %", go)));
     x.fe.terminated = true;
     drop s_start(x, wu);
+    // A WOUND-UP SEND DROPS ITS ELEMENT (D-183, 1.2.6): the move handed it
+    // to the operation, the operation never completed, and a callee that
+    // fails drops what it owns — the same rule a failing function applies
+    // to its `move` parameters. Reaching this block means the last attempt
+    // parked, so the value slot still holds the untransferred element.
+    if (is_send) {
+        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+            drop irw_line(x.fe.w, raw cat4("call void ",
+                              raw drop_fn_sym(x.fe.ctx, elem),
+                              raw string_concat("(ptr ", slot), ")"));
+        }
+    }
     IrVal:wd = raw run_all_defers(x);
     if (!(raw iv_is_ok(wd))) { pass wd; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
@@ -2666,6 +2835,28 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       raw string_concat(eslot, "")));
     int32:rt_id = raw exprtypes_get(x.et, cid);
     if (is_send) {
+        // A FAILED SEND DROPS ITS ELEMENT (D-183, 1.2.6). On success the
+        // ring took the transfer and the slot's bytes are a dead duplicate;
+        // on ANY error — deadline, closed, stale — the move happened but
+        // the transfer did not, and a callee that fails drops what it owns.
+        // (The long-form `Result{value, err}` — both halves filled — is the
+        // recorded road to HANDING the element back if a real need arrives;
+        // it inverts the taint rule, so it waits for a named design.)
+        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+            string:sfb = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(sfb, " = icmp ne i32 ",
+                              raw string_concat(err, ", 0")));
+            string:sfd = raw irw_new_label(x.fe.w, "ch.sfail");
+            string:sfk = raw irw_new_label(x.fe.w, "ch.skept");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", sfb, ", label %", sfd,
+                              raw string_concat(", label %", sfk)));
+            drop s_start(x, sfd);
+            drop irw_line(x.fe.w, raw cat4("call void ",
+                              raw drop_fn_sym(x.fe.ctx, elem),
+                              raw string_concat("(ptr ", slot), ")"));
+            drop s_br(x, sfk);
+            drop s_start(x, sfk);
+        }
         string:o0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
                           err, ", 0", ""));
@@ -3062,9 +3253,12 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         // pre-1.2.5 status quo, recorded as D-183's open item: an explicit
         // ownership marker for factory channels is a language-surface
         // question. Everything else reclaims at the creating function.
-        bool:cfinal = !(raw type_contains_channel(x.fe.ctx.types,
-                            raw subst_emitted_type(x.fe.ctx, x.fe.ret_type),
-                            64i32));
+        // The exemption keys on the CLAUSE now (D-183, 1.2.6): a `gives`
+        // function's creations are handed to the caller by declaration, and
+        // the checker refuses a creation in a channel-returning function
+        // that does not say it — so a non-`gives` creator here always owns
+        // its reclaim.
+        bool:cfinal = !x.fe.is_gives;
         if (cfinal) {
             if (x.fe.loop_count > 0i32) {
                 pass (raw iv_rung(

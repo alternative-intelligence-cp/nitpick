@@ -600,3 +600,21 @@ ownership, the factory-channel marker, deep views) and C-22 (per-scope
 joins: channels-in-loops, `shared_arena` teardown, `dyn` elements). Next:
 1.1.11's sync primitives — the `Mutex` guard whose release IS scope exit,
 the thing this cycle existed to make true.
+
+## 1.2.6 — `gives`, and the failed send's element (post-close, user-ratified)
+
+The two 1.2.5 open questions closed on the user's ratification. A failed
+`send` DROPS its untransferred element — on the error branch and on the
+wind-up unwind — which is the rule a failing callee already applies to its
+`move` parameters; the user's stated intent that the long form
+`return Result{…}` can carry BOTH halves is recorded on D-183 as the road
+to handing the element back if a need arrives (it inverts the taint rule,
+so it waits for a named design). And factories say **`gives`**: one new
+keyword in the `joins`/`never fails` clause family. The caller's call sites
+stash the returned channels (top-level shape enforced) and the caller's
+exit reclaims them; unmarked channel-returning functions are getters, and
+creating a channel inside one is a type error naming the clause. Transit
+through nested factories is `pass`-operand-only, spawn-`drop` of a factory
+already refuses through the NIL rule, and a discarded result still
+stashes. thread_pool and channel_reclaim wear the clause; gives_rules.npk
+holds the refusals.

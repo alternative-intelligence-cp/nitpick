@@ -42,9 +42,11 @@ flags; the wind-up unwind drops too, and the first test to drive a wind-up
 found the rouse and the grace-wait defects). Channels reclaim at their
 creating function's exit — `StaleHandle` is reachable, slots reuse under
 moved generations — and OWNING elements cross channels under the heap's
-first futex mutex, with `move` required at the send. A function whose
-return type carries a channel is a FACTORY by type (creations live to
-process end; ownership marker recorded open). Owning elements in ARENAS
+first futex mutex, with `move` required at the send. A factory says
+`gives` after its parameter list (1.2.6): the caller's exit then owns the
+returned channels' reclaim, and creating a channel in an unmarked
+channel-returning function refuses. A failed `send` drops its element —
+the rule a failing callee already applies to its `move` parameters. Owning elements in ARENAS
 refuse at `arena_make` until the generated deep-view family lands (D-183).
 Phase C renumbered around the cycle (self-hosting 1.3, verification 1.4,
 Astrée 1.5; the map is in `ROADMAP.md`). Next: 1.1.11 sync primitives
@@ -152,6 +154,7 @@ parse failure some lines away from the mistake:
 | `is_err`, `defaults`, `any` | keyword forms (`is_err(x)`, D-096), a struck-but-reserved operator word (D-167), and the type — each has cost a build as a local name |
 | `channel`, `atomic`, `thread`, `joins` | the constructor, the type, the function modifier and the contract clause (D-181/D-182) — `thread` in particular reads like an ordinary noun |
 | `error` | the declaration keyword (D-179) — so `error` is not a local name, and `Result`'s field is `.err` |
+| `gives` | the factory contract clause (D-183 1.2.6) — a channel-returning creator hands its channels' reclaim to the caller |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

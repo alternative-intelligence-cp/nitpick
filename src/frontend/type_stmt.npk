@@ -634,7 +634,13 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     int32:saved = e.expected;
     e.expected = want;
+    // THE TRANSIT POSITION (D-183, 1.2.6): in a `gives` function, a call to
+    // another `gives` function is legal only HERE — the value in flight to
+    // the caller, with no local reclaim scoped to this frame.
+    int32:gsaved = e.give_operand;
+    e.give_operand = v.index;
     int32:got = raw type_of_expr(e, v);
+    e.give_operand = gsaved;
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
@@ -1029,6 +1035,34 @@ func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
 // the RETURN type — and a bad parameter type is a mistake in a declaration
 // exactly as much as a bad return is. That asymmetry is what let `..*int64`
 // without the brackets sit unreported in an uncalled function.
+
+// THE SHAPE A `gives` RETURN MAY TAKE (D-183, 1.2.6): its channels sit where
+// the caller's stash can name them at compile time — bare, or as DIRECT
+// fields of the returned struct. A channel behind a tag, an array or a
+// second nesting level has no statically known offset to stash from.
+func:gives_shape_ok = bool(ExprTyper->:e, int32:t) never fails {
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_CHANNEL())) { pass true; }
+    if (k != (raw TY_STRUCT())) { pass false; }
+    int32:sdecl = raw type_decl(e.types, t);
+    if (sdecl == 0i32) { pass false; }
+    DeclNode:sd = raw ast_decl(e.ast, DeclId{ index: sdecl });
+    TypeResolver:sr = raw etyper_resolver(e);
+    int32:home = raw symtab_home_scope(e.tab, sdecl, e.scope);
+    int32:nm = raw item_member_count(e.ast, sd);
+    int32:kk = 0i32;
+    while (kk < nm) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, sd, kk));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:ft = raw resolve_type(@sr, raw field_type(m), home);
+            if ((raw type_kind(e.types, ft)) != (raw TY_CHANNEL())) {
+                if (raw type_contains_channel(e.types, ft, 64i32)) { pass false; }
+            }
+        }
+        kk = kk + 1i32;
+    }
+    pass true;
+};
 func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     DeclNode:d = raw ast_decl(e.ast, fid);
     int32:name = raw decl_name(d);
@@ -1045,6 +1079,31 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     e.fn_terminal = sg.terminal;
     e.fn_never_fails = raw fn_declares_never_fails(e.ast, d);
     e.fn_is_async = raw decl_has(d, raw DECL_ASYNC());
+    e.fn_gives = raw fn_declares_gives(e.ast, d);
+    // `gives` STATES A HAND-OFF (D-183, 1.2.6): the return carries channels
+    // whose reclaim becomes the caller's. A `gives` with no channel in the
+    // return is a claim about nothing; and the channels must sit at the TOP
+    // LEVEL of the return type — bare, or direct fields of a returned
+    // struct — because the caller's stash reads them at statically known
+    // offsets, and a channel behind a tag or a nesting level is one the
+    // stash cannot name.
+    // A GENERIC template's return is not laid out and its parameters are
+    // unbound, so the two type-shaped validations wait: every behavioural
+    // rule keys on the `gives` bit itself, and an instantiation whose
+    // return carries no channel simply stashes nothing.
+    if (e.fn_gives) { if (gw.count == 0i32) {
+        if (!(raw type_contains_channel(e.types, sg.success, 64i32))) {
+            discard(raw te_error(e, raw TYPE_MISMATCH(),
+                "`gives` hands the return's CHANNELS to the caller (D-183), and this return type carries none",
+                d.span));
+        } else {
+            if (!(raw gives_shape_ok(e, sg.success))) {
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                    "a `gives` return carries its channels at the TOP LEVEL — bare, or as direct fields of the returned struct (D-183): behind a tag, an array or a nesting level the caller's stash cannot name them",
+                    d.span));
+            }
+        }
+    } }
     // `async main` is D-058's entry shim; `async failsafe` is refused: the
     // crash path may not depend on an executor that may itself be the
     // casualty of whatever is being escaped from (D-177).

@@ -479,7 +479,34 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     // The receiver is argument 0, matched against the method's receiver
     // parameter like any other — no `skip`.
+    drop check_gives_call_position(e, id, n);
     pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
+};
+
+
+// A `gives` CALL'S POSITION RULE (D-183, 1.2.6). The callee's return hands
+// its channels over; WHO owns their reclaim depends on where the call sits.
+// In an ordinary function: anywhere — the call site stashes the handles and
+// this function's exit reclaims them. In a `gives` function: only the direct
+// operand of `pass`/`return` (transit — the value is in flight to the
+// caller); anywhere else would scope the reclaim to THIS frame while the
+// value's life belongs to the caller's, and the channels would die under
+// whoever received them.
+func:check_gives_call_position = NIL(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    int32:cd = raw callee_decl_index(e, n);
+    if (cd == 0i32) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
+    // Only a FUNCTION has a contracts window — a callee resolving to any
+    // other declaration (a struct used as a value, mid-error shapes) must
+    // not have one walked.
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    if (!(raw fn_declares_gives(e.ast, cdn))) { pass NIL; }
+    if (!e.fn_gives) { pass NIL; }
+    if (id.index == e.give_operand) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_MISMATCH(),
+        "a call to a `gives` function inside a `gives` function is legal only as the direct operand of `pass`/`return` (D-183): anywhere else scopes the channels' reclaim to THIS frame while the value is bound for the caller's",
+        n.span));
+    pass NIL;
 };
 
 pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
@@ -563,6 +590,19 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             int32:cwant = raw expected_value(e);
             if (cwant != 0i32) {
                 if ((raw type_kind(e.types, cwant)) == (raw TY_CHANNEL())) {
+                    // A CREATION IN A CHANNEL-RETURNING FUNCTION SAYS `gives`
+                    // (D-183, 1.2.6). Without the clause this function is a
+                    // GETTER by shape — its return is a view of channels
+                    // owned elsewhere — and a creation inside it would be
+                    // the silent process-lifetime leak the clause exists to
+                    // make impossible: nobody's exit would ever reclaim it.
+                    if (!e.fn_gives) {
+                        if (raw type_contains_channel(e.types, e.fn_success, 64i32)) {
+                            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                                "this function RETURNS a channel and CREATES one — say `gives` after the parameter list (D-183): the caller then owns the reclaim. Without it a channel-returning function is a getter, and a creation inside a getter is a channel nobody's exit reclaims",
+                                n.span));
+                        }
+                    }
                     pass (raw tt_result(e.types, cwant, 8i64, 8i32));
                 }
             }
@@ -634,6 +674,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // then freed the source out from under its own lexer. A genuinely
     // indirect call (a function-typed value) still passes 0, and its
     // parameters cannot be `move` at this rung.
+    drop check_gives_call_position(e, id, n);
     pass (raw check_args(e, callee, start, count, 0i32, n.span,
                          raw callee_decl_index(e, n)));
 };
@@ -856,6 +897,7 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // The SUBSTITUTED signature is the one the emitter must fit arguments to —
     // and the one `fninst_for_call` matches the specialization by (1.0.6e).
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
+    drop check_gives_call_position(e, id, n);
     pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
 };
 

@@ -7,20 +7,20 @@
 // creating function's exit — after its defers, drops and child joins —
 // hands the slot back: the generation moves, every outstanding endpoint
 // answers StaleHandle, the buffer is freed, and the slot enters the free
-// stack for the next `channel()` to revive. ONE exemption, by TYPE: a
-// function whose return type carries a channel is a FACTORY — its creations
-// are handed to the caller and live to process end (D-183 records the open
-// item: an explicit ownership marker for factory channels). So `maker`'s
-// channel outlives `maker`, while `filler`'s — smuggled out through a
-// pointer instead of the return type — is reclaimed at `filler`'s exit and
-// the smuggled copy answers StaleHandle: escape through the SIGNATURE is
-// the declared hand-off, escape around it is caught by the generation.
+// stack for the next `channel()` to revive. A FACTORY says `gives` (1.2.6):
+// its creations register no reclaim of their own, and the CALLER's call
+// site stashes the returned handles so the CALLER's exit owns them —
+// `maker`'s channel dies when the function that called `maker` does, not at
+// process end. `filler`'s channel — smuggled out through a pointer instead
+// of the declared hand-off — is reclaimed at `filler`'s own exit, and the
+// smuggled copy answers StaleHandle: escape through the SIGNATURE is the
+// hand-off, escape around it is caught by the generation.
 mod:channel_reclaim;
 error:E9;
 
-// A FACTORY: the return type carries the channel, so the caller receives a
-// live one and the creation site registers no reclaim.
-func:maker = Channel<int32, 2i32, 8i64>() never fails {
+// A FACTORY, and it says so: `gives` hands the returned channel's reclaim
+// to the caller; the creation site here registers none.
+func:maker = Channel<int32, 2i32, 8i64>() never fails gives {
     Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
     pass c;
 };
@@ -42,7 +42,8 @@ async func:afiller = NIL(Channel<int32, 2i32, 8i64>->:out) {
 };
 
 async func:main = int32(cstring[]:_~argv) {
-    // 1: a factory's channel is alive in the caller's hands.
+    // 1: a factory's channel is alive in the caller's hands — its
+    // reclaim now belongs to MAIN's exit (`gives`), not to process end.
     Channel<int32, 2i32, 8i64>:kept = raw maker();
     await kept.send(7i32, raw duration_ms(50i64)) ?! E9;
     int32:got = await kept.recv(raw duration_ms(50i64)) ?! E9;

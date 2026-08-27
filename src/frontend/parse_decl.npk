@@ -192,6 +192,18 @@ pub func:fn_declares_never_fails = bool(Ast->:ast, DeclNode:d) never fails {
     }
     pass false;
 };
+
+// Does this function declare `gives` (D-183, 1.2.6)? Same window, same walk.
+pub func:fn_declares_gives = bool(Ast->:ast, DeclNode:d) never fails {
+    int32:c = 0i32;
+    int32:cn = raw fn_contract_count(ast, d);
+    while (c < cn) {
+        VerifyNode:v = raw ast_verify(ast, raw fn_contract(ast, d, c));
+        if (v.kind == VerifyKind.VerifyGives) { pass true; }
+        c = c + 1i32;
+    }
+    pass false;
+};
 pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) never fails {
     int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
                  + (raw fn_param_count(ast, d)) + (raw fn_contract_count(ast, d));

@@ -12890,6 +12890,46 @@ a general owning-getter story; the drop-side machinery (the live-slot walk
 in the generated arena drop, the `free`/`reset`/`destroy` pre-drops) is
 already built and waits behind the refusal.
 
+### `gives`, and what a failed `send` does with the element (1.2.6)
+
+Both 1.2.5 open questions closed on the user's ratification, one of them
+shaped by a design intent they stated for the record: **the long form
+`return Result{…}` was retained alongside the `pass`/`fail` sugars so that a
+return could one day carry BOTH a value and an error** — the sugars fill one
+half each.
+
+**A failed `send` DROPS its element.** The move handed it to the operation,
+the operation never completed, and the language already has exactly one rule
+for that shape: a callee that fails drops what it owns, the same thing
+`run_param_drops` does for `move` parameters on every fail path. So the send
+lowering drops the untransferred element on the error branch and on the
+wind-up unwind; on success the ring took the transfer and the value slot's
+bytes are a dead duplicate. Retrying with the same value takes an explicit
+`.clone()` before the send — a visible cost. The long form is the RECORDED
+ROAD to handing the element back (Rust's `SendError(T)` shape) if a real
+need arrives: it inverts the taint rule — a value half meaningful on the
+error path — so it waits for a named, distinct-type design rather than a
+special case of `Result`.
+
+**`gives` — the factory says so.** A function whose return carries a channel
+writes `gives` after its parameter list (the `joins`/`never fails` clause
+family, one new keyword). Marked, the CALLER owns the reclaim: every call
+site stashes the result's channels — bare, or direct fields of the returned
+struct; the shape rule refuses anything deeper — and the caller's exit
+drains and reclaims them like its own creations, a zeroed failed-call handle
+reclaiming as a stale no-op (generation 2 is the floor). Unmarked
+channel-returning functions are GETTERS — views of channels owned elsewhere,
+no reclaim anywhere new — and CREATING a channel inside one is a type error
+naming the clause, which is what makes the silent process-lifetime factory
+leak unreachable. Inside a `gives` function, a call to another `gives`
+function is legal only in TRANSIT (the direct operand of `pass`/`return`):
+anywhere else would scope the channels' reclaim to the middle frame while
+the value is bound for the caller's. `drop f()` of a `gives` callee already
+refuses through the NIL rule, and a `discard`ed result still stashes — the
+channels are reclaimed regardless of what became of the value around them.
+This supersedes 1.2.5's return-type-keyed factory exemption and closes its
+open item.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only
