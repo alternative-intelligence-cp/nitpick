@@ -12825,6 +12825,46 @@ sleep for a full fresh deadline and the cooperative path was dead on
 arrival; executor_windup_trap.npk now spins to earn its trap, and
 windup_drain.npk pins the courtesy half.
 
+### The channel's life, and the heap's first lock (1.2.5)
+
+**The creating FUNCTION's exit reclaims its channels** — after its defers,
+drops and child joins, so every task that could hold an endpoint has
+completed and nobody is stranded mid-drain. Reclaiming is what closing never
+was: the generation moves (every outstanding endpoint answers `StaleHandle`
+— reachable from source at last), the buffer is freed after a drain that
+DROPS any owning element nobody received, and the slot enters a free stack
+`open` revives — fresh buffer, ring cleared, generation bumped back to even.
+The slot's chan STRUCT is immortal, and every operation re-checks the
+generation UNDER the channel's lock, which is what makes a reclaim racing an
+escaped handle's in-flight op safe: the blocked op wakes to the re-check,
+never to freed memory. Fresh channels start at generation 2, so an all-zero
+handle (a zeroed field, a failed call's zeroed value half) aliases nothing.
+It is a creation-site finalizer, not a value drop — endpoints are copyable
+non-owners by D-182, so no value can say when the life ends. Two named
+edges: a `channel()` inside a LOOP refuses (OPEN_DECISIONS C-22 — one stash
+per site would reclaim only the last iteration's channel; per-scope joins
+are the honest prerequisite), and a function whose RETURN TYPE carries a
+channel is a FACTORY — `pool_create` returning the pool that holds one — so
+its creations are handed to the caller and live to process end. **Open**: an
+explicit ownership marker for factory channels (language surface, the
+user's call), and the failed `send`'s element — the move happened, the
+transfer did not, and the value leaks; an error that hands the element back
+is the shape to weigh.
+
+**Owning elements ride (the 1.1.10-B rung retired), and the heap took its
+first lock for them.** A `string` sent across a thread is allocated on the
+sender and freed by the receiver's drop — and the allocator's bookkeeping
+was single-threaded by exactly the invariant the rung enforced. One futex
+mutex now guards `alloc`/`dalloc`/`ralloc`'s table work; uncontended cost is
+an atomic exchange each way, and correctness bought its keep first. What
+still refuses as an element is a BORROW — `T->`, a slice, anything holding
+one (`type_contains_borrow`, computed by layout beside `haspt` and `drops`;
+`string`'s owned body excepted, `dyn` refused as erased) — because no move
+can carry a borrowed target across a task boundary. The send REQUIRES
+`move` of an owning place (D-072's own signature, finally enforced by
+TYPE-046), and the reclaim's drain is emitted at the creation site, where
+the element type is known.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

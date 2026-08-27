@@ -155,6 +155,10 @@ pub struct:TypeTable = {
     // structs intern as different types. 0 = not computed, 1 = owns nothing,
     // 2 = owns something and must be dropped.
     wild int32->:drops;
+    // Channel containment, same discipline (D-183, 1.2.5).
+    wild int32->:haschan;
+    // Borrow containment (D-183, 1.2.5b): pointers that are NOT owned bodies.
+    wild int32->:hasborrow;
 };
 
 // --- construction ----------------------------------------------------------------------
@@ -167,12 +171,16 @@ func:tt_grow = NIL(TypeTable->:t) never fails {
     wild int8->:hp = ralloc(t.haspt =>! wild int8->, (nc => int64) * 4i64);
     wild int32->:hw = hp =>! wild int32->;
     wild int8->:dp = ralloc(t.drops =>! wild int8->, (nc => int64) * 4i64);
+    wild int8->:hcp = ralloc(t.haschan =>! wild int8->, (nc => int64) * 4i64);
+    wild int8->:hbp = ralloc(t.hasborrow =>! wild int8->, (nc => int64) * 4i64);
     wild int32->:dw = dp =>! wild int32->;
     // The grown tail must read "not computed" — ralloc copies only the old block.
     int32:z = t.cap;
     while (z < nc) { hw[z => int64] = 0i32; dw[z => int64] = 0i32; z = z + 1i32; }
     t.haspt = hw;
     t.drops = dw;
+    t.haschan = hcp =>! wild int32->;
+    t.hasborrow = hbp =>! wild int32->;
     t.cap = nc;
     pass NIL;
 };
@@ -255,6 +263,34 @@ pub func:tt_drops = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if (id >= t.count) { pass 0i32; }
     pass (t.drops[id => int64]);
+};
+
+// The channel-containment bit, written once by layout (D-183, 1.2.5).
+pub func:tt_set_haschan = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
+    t.haschan[id => int64] = 1i32;
+    if (has) { t.haschan[id => int64] = 2i32; }
+    pass NIL;
+};
+pub func:tt_haschan = int32(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { pass 0i32; }
+    if (id >= t.count) { pass 0i32; }
+    pass (t.haschan[id => int64]);
+};
+
+// The borrow-containment bit, written once by layout (D-183, 1.2.5b).
+pub func:tt_set_hasborrow = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! BoundsId; }
+    if (id >= t.count) { !!! BoundsId; }
+    t.hasborrow[id => int64] = 1i32;
+    if (has) { t.hasborrow[id => int64] = 2i32; }
+    pass NIL;
+};
+pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { pass 0i32; }
+    if (id >= t.count) { pass 0i32; }
+    pass (t.hasborrow[id => int64]);
 };
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
@@ -828,7 +864,9 @@ pub func:typetable_init = TypeTable() never fails {
         t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
         t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32, t_error: 0i32,
         haspt: hmem =>! wild int32->,
-        drops: (calloc(n, 4i64)) =>! wild int32->
+        drops: (calloc(n, 4i64)) =>! wild int32->,
+        haschan: (calloc(n, 4i64)) =>! wild int32->,
+        hasborrow: (calloc(n, 4i64)) =>! wild int32->
     };
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this
@@ -1048,6 +1086,65 @@ pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) never fail
 
 pub func:type_kind = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).kind);
+};
+
+// DOES THIS TYPE CARRY A BORROW-LIKE POINTER (D-183, 1.2.5b) — an address
+// whose target the value does NOT own? A `string` and a `dyn`'s fat pointer
+// own their bodies and transfer whole under `move`; a `T->`, a slice, and
+// anything holding one names storage that stays behind — which is exactly
+// what may not cross a task boundary. Channel elements ask this question:
+// owning types ride (their bodies transfer with them), borrows do not.
+// A `dyn` is refused here anyway: its CONCRETE content is erased, so whether
+// a borrow hides behind it is unknowable — fail closed.
+pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_POINTER())) { pass true; }
+    if (k == (raw TY_SLICE()))   { pass true; }
+    if (k == (raw TY_DYN()))     { pass true; }
+    if (k == (raw TY_CSTRING())) { pass true; }
+    if (k == (raw TY_ANY()))     { pass true; }
+    if (k == (raw TY_STRING()))  { pass false; }
+    if (k == (raw TY_ARRAY()))   {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT()))  {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    // Structs and enums answer from layout's walk, like `tt_drops`.
+    if (k == (raw TY_STRUCT()))  { pass ((raw tt_hasborrow(t, id)) == 2i32); }
+    if (k == (raw TY_ENUM()))    { pass ((raw tt_hasborrow(t, id)) == 2i32); }
+    pass false;
+};
+
+// DOES THIS TYPE CARRY A CHANNEL HANDLE anywhere a value copy would carry it
+// (D-183, 1.2.5)? The reclaim machinery asks it of RETURN types: a function
+// whose return carries a channel is a FACTORY — its creations are handed to
+// the caller by type, so the creation site registers no reclaim. Pointees are
+// NOT contained: a pointer in the value does not put the handle in the copy.
+pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_CHANNEL()))  { pass true; }
+    if (k == (raw TY_ARRAY()))    {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT()))   {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    // Structs and enums answer from layout's walk, like `tt_drops` — the
+    // one pass that sees every field's resolved type recorded the bit.
+    if (k == (raw TY_STRUCT()))   { pass ((raw tt_haschan(t, id)) == 2i32); }
+    if (k == (raw TY_ENUM()))     { pass ((raw tt_haschan(t, id)) == 2i32); }
+    pass false;
 };
 
 pub func:type_size = int64(TypeTable->:t, int32:id) never fails {

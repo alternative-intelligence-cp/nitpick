@@ -189,6 +189,15 @@ pub struct:FnEmitter = {
     // types). A drop flag is one byte beside the value, and a crossing
     // local's byte must cross with it — an alloca flag dies between resumes.
     wild string->:cross_fgeps;
+    // CHANNEL RECLAIM STASHES (D-183, 1.2.5): one slot per `channel()` site,
+    // holding the packed i64 handle; the creating FUNCTION's exit — after
+    // its defers, drops and child joins — loads each and reclaims. An i64
+    // alloca in a sync body, a role-30+ frame slot in a coroutine.
+    wild string->:chfins;
+    wild int32->:chfin_elems;      // the element's tid when it OWNS, else 0
+    int32:chfin_count;
+    int32:chfin_cap;
+    int32:chopen_ord;              // per-statement channel-open ordinal
     int32:cross_count;
     int32:cross_cap;
 };
@@ -246,6 +255,9 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         cross_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         cross_geps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         cross_fgeps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        chfins: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        chfin_elems: (alloc(8i64 * 4i64)) =>! wild int32->,
+        chfin_count: 0i32, chfin_cap: 8i32, chopen_ord: 0i32,
         cross_count: 0i32, cross_cap: 8i32
     };
     pass fe;
@@ -304,6 +316,8 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.fn_site = 0i32;
     fe.cur_stmt = 0i32;
     fe.cross_count = 0i32;
+    fe.chfin_count = 0i32;
+    fe.chopen_ord = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
     drop irw_begin_function(fe.w);
@@ -465,6 +479,75 @@ pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
 // The flag slot's GEP for a crossing entry — "" when the entry has none.
 pub func:fnem_cross_fgep = string(FnEmitter->:fe, int32:idx) never fails {
     pass (raw string_from_bytes(fe.cross_fgeps[idx => int64].ptr, fe.cross_fgeps[idx => int64].len));
+};
+
+// One channel-open stash slot (D-183, 1.2.5). `elem` is the element's tid
+// when the element OWNS something — the reclaim drains and drops what the
+// buffer still holds before handing the slot back — and 0 otherwise.
+pub func:fnem_chfin_add = NIL(FnEmitter->:fe, move string:slot,
+                              int32:elem) never fails {
+    if (fe.chfin_count >= fe.chfin_cap) {
+        int32:nc = fe.chfin_cap * 2i32;
+        fe.chfins = (ralloc(fe.chfins =>! wild int8->,
+                            (nc => int64) * #size_of<string>())) =>! wild string->;
+        fe.chfin_elems = (ralloc(fe.chfin_elems =>! wild int8->,
+                            (nc => int64) * 4i64)) =>! wild int32->;
+        fe.chfin_cap = nc;
+    }
+    fe.chfins[fe.chfin_count => int64] = move(slot);
+    fe.chfin_elems[fe.chfin_count => int64] = elem;
+    fe.chfin_count = fe.chfin_count + 1i32;
+    pass NIL;
+};
+pub func:fnem_chfin_at = string(FnEmitter->:fe, int32:i) never fails {
+    pass (raw string_from_bytes(fe.chfins[i => int64].ptr, fe.chfins[i => int64].len));
+};
+pub func:fnem_chfin_elem = int32(FnEmitter->:fe, int32:i) never fails {
+    pass (fe.chfin_elems[i => int64]);
+};
+
+// The drain-then-reclaim for one stash (D-183, 1.2.5b), shared by the sync
+// unwind and the coroutine's post-join site. An owning element still in the
+// ring belongs to nobody the program can reach — the send transferred it in
+// and no recv took it out — so the reclaim drops each one first: try_recv
+// into a scratch slot while it answers 0, the generated drop for each, then
+// the slot goes back. A rendezvous ring is empty by construction and the
+// loop exits on its first probe.
+pub func:fnem_chfin_reclaim = NIL(FnEmitter->:fe, int32:i) never fails {
+    string:cst = raw fnem_chfin_at(fe, i);
+    string:chv = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat4(chv, " = load i64, ptr ", cst, ""));
+    int32:el = raw fnem_chfin_elem(fe, i);
+    if (el != 0i32) {
+        LlType:ell = raw ll_type(fe.ctx, el);
+        if (raw ll_is_ok(ell)) {
+            string:tmp = raw irw_temp(fe.w);
+            drop irw_alloca(fe.w, tmp, ell.text);
+            string:dh = raw irw_new_label(fe.w, "ch.drain");
+            string:dd = raw irw_new_label(fe.w, "ch.drop");
+            string:dz = raw irw_new_label(fe.w, "ch.drained");
+            drop irw_line(fe.w, raw cat3("br label %", dh, ""));
+            drop irw_label(fe.w, dh);
+            string:trc = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat5(trc, " = call i32 @npk_ch_try_recv(i64 ",
+                              chv, ", ptr ", raw string_concat(tmp, ")")));
+            string:got = raw irw_temp(fe.w);
+            drop irw_line(fe.w, raw cat3(got, " = icmp eq i32 ",
+                              raw string_concat(trc, ", 0")));
+            drop irw_line(fe.w, raw cat5("br i1 ", got, ", label %", dd,
+                              raw string_concat(", label %", dz)));
+            drop irw_label(fe.w, dd);
+            drop irw_line(fe.w, raw cat4("call void ",
+                              raw drop_fn_sym(fe.ctx, el),
+                              raw string_concat("(ptr ", tmp), ")"));
+            drop irw_line(fe.w, raw cat3("br label %", dh, ""));
+            drop irw_label(fe.w, dz);
+        }
+    }
+    string:crc = raw irw_temp(fe.w);
+    drop irw_line(fe.w, raw cat3(crc, " = call i32 @npk_ch_reclaim(i64 ",
+                      raw string_concat(chv, ")")));
+    pass NIL;
 };
 
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
@@ -1283,6 +1366,15 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
             drop irw_line(fe.w, "br label %npk.join");
         }
         drop irw_label(fe.w, "npk.jend");
+        // CHANNEL RECLAIMS (D-183, 1.2.5), after the join: every task that
+        // could hold an endpoint has completed, so moving the generation
+        // strands nobody mid-drain — an ESCAPED handle used later answers
+        // StaleHandle, which is the guarantee, not a casualty.
+        int32:cfi = 0i32;
+        while (cfi < fe.chfin_count) {
+            drop fnem_chfin_reclaim(fe, cfi);
+            cfi = cfi + 1i32;
+        }
         drop irw_line(fe.w, "ret i8 0");
 
         // A RESUME STATE NOBODY ASSIGNED IS A DEFECT, not a branch: the state

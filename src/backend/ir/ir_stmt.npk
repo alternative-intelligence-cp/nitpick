@@ -105,6 +105,16 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
     if (depth == 0i32) {
         IrVal:pr = raw run_param_drops(x);
         if (!(raw iv_is_ok(pr))) { pass pr; }
+        // CHANNEL RECLAIMS (D-183, 1.2.5) — SYNC functions only: they spawn
+        // nothing, so there is no join to order against; a coroutine's
+        // reclaims sit after its join, at `npk.jend` in `fnem_close`.
+        if (!x.fe.is_async) {
+            int32:cfi = 0i32;
+            while (cfi < x.fe.chfin_count) {
+                drop fnem_chfin_reclaim(x.fe, cfi);
+                cfi = cfi + 1i32;
+            }
+        }
     }
     pass (raw iv_nil());
 };
@@ -240,6 +250,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // suspend past an SSA value this statement already minted.
     drop irw_stmt_mark(x.fe.w);
     x.fe.cur_stmt = sid.index;
+    x.fe.chopen_ord = 0i32;
 
     if (s.kind == StmtKind.StmtBlockStmt)   { pass (raw emit_block(x, sid)); }
     if (s.kind == StmtKind.StmtVarDeclStmt) { pass (raw emit_vardecl(x, s, sid)); }
@@ -1854,6 +1865,31 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                     drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
                     drop fnem_cross_add(x.fe, sid.index, 22i32, el, move(ell.text));
                     drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+                }
+            }
+        }
+    }
+    // A `channel()` OPEN needs a frame-resident stash for its handle (D-183,
+    // 1.2.5): role 30+k on the enclosing statement, k counting the sites the
+    // statement holds. The reclaim loop walks every stash, so a pairing swap
+    // between scan order and emission order is harmless — all stashes are
+    // i64 handles and all of them are reclaimed.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:cbe = raw expr_callee(n);
+        if (!(raw expr_is_none(cbe))) {
+            ExprNode:cbn = raw ast_expr(x.ast, cbe);
+            if (cbn.kind == ExprKind.ExprIdentifierExpr) {
+                if (cbn.a == 0i32) {
+                    if (raw string_eq(raw intern_get(x.interns,
+                                          cbn.payload =>! int32), "channel")) {
+                        int32:k = 0i32;
+                        while ((raw fnem_cross_find(x.fe, sid.index,
+                                                    30i32 + k)) >= 0i32) {
+                            k = k + 1i32;
+                        }
+                        drop fnem_cross_add(x.fe, sid.index, 30i32 + k,
+                                            0i32, "i64");
+                    }
                 }
             }
         }

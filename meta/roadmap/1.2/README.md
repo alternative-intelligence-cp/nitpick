@@ -546,3 +546,29 @@ new awaitee at resume) — which flipped executor_windup_trap.npk: its finite
 swallower now DRAINS and completes cleanly, the cooperative path working
 for the first time. That test spins forever now to earn its trap, and
 windup_drain.npk pins the drain.
+
+## 1.2.5a+b — channels reclaimed, StaleHandle reachable, owning elements ride
+
+The creating function's exit — after defers, drops and the child join —
+drains, drops and reclaims each channel it opened: generation moved, buffer
+freed, slot into a free stack `open` revives. Every channel op re-checks the
+generation under the channel's lock (the slot struct is immortal), fresh
+channels start at generation 2 so a zeroed handle aliases nothing, and
+`channel_reclaim.npk` watches a smuggled copy answer `StaleHandle` — the
+error D-152 promised, reachable from source for the first time. Sync
+creators stash the handle in an alloca; coroutines in a role-30 frame slot
+the pre-scan reserves; the reclaim sits after the join in both regimes.
+Named edges: `channel()` in a loop refuses (C-22 — per-scope joins are the
+prerequisite), and a function whose return type carries a channel is a
+FACTORY by type — its creations are handed out and live to process end,
+with the ownership-marker design recorded open.
+
+Owning elements ride, and the rung retired honestly: the heap's bookkeeping
+was single-threaded by exactly the invariant the rung enforced, so
+`alloc`/`dalloc`/`ralloc` took a futex mutex FIRST, and `channel_owning.npk`
+sends fifty strings across a real thread — allocated on the producer, freed
+by the consumer's drops — then fills a ring it never drains and lets the
+creator's exit drop what nobody received. Elements that still refuse are
+borrows (`type_contains_borrow`, a third layout bit beside `haspt` and
+`drops`; `dyn` stays refused as erased), and a send of an owning place now
+requires the `move` D-072 always wrote in its signature.

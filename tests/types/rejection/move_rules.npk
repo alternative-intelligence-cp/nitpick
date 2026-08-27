@@ -54,3 +54,15 @@ func:copies_a_dyn = int32() never fails {
     dyn Says:b = a;
     pass ((a.val() ?! Unreachable) + (b.val() ?! Unreachable));
 };
+
+// A CHANNEL TAKES OWNERSHIP OF ITS ELEMENT (D-072/D-183, 1.2.5b): the far
+// side's recv hands the value to a new owner whose drop frees it, so a send
+// of an owning PLACE must say `move` — a copy would leave the sender's
+// binding and the ring both believing they own one body.
+// expect-error: NITPICK-TYPE-046
+async func:sends_a_copy = NIL() {
+    Channel<string, 1i32, 8i64>:ch = channel() ?! Unreachable;
+    string:s = relay string_concat("a", "b");
+    await ch.send(s, raw duration_ms(1i64)) ?! Unreachable;
+    pass NIL;
+};

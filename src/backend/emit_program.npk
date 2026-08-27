@@ -836,6 +836,9 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare i32 @npk_ch_send_wait(i64, ptr, i64, ptr)");
     drop irw_raw(w, "declare i32 @npk_ch_recv_wait(i64, ptr, i64, ptr)");
     drop irw_raw(w, "declare i32 @npk_ch_try_recv(i64, ptr)");
+    // The creating function's exit hands the channel back (D-183, 1.2.5);
+    // not a builtin a program may call.
+    drop irw_raw(w, "declare i32 @npk_ch_reclaim(i64)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join

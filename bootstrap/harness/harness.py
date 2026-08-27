@@ -603,11 +603,12 @@ DROPS_DEFAULT_OK = {
                     "`defer`/`dalloc`, which is what makes the regime explicit",
     "TY_SLICE":     "a borrow (D-070)",
     "TY_HANDLE":    "an index, not an owner (D-152)",
-    "TY_CHANNEL":   "an endpoint is an index (D-182) -- but the CHANNEL ITSELF "
-                    "must be reclaimed at 1.2.5, which is what finally moves a "
-                    "slot's generation and makes StaleHandle reachable",
-    "TY_ARENA":     "slab release lands at 1.2.5",
-    "TY_SHARED_ARENA": "slab release lands at 1.2.5",
+    "TY_CHANNEL":   "an endpoint is an index (D-182); the CHANNEL ITSELF is "
+                    "reclaimed by the creating function's exit (D-183 1.2.5) "
+                    "-- a creation-site finalizer after the join, not a value "
+                    "drop, because endpoints are copyable non-owners",
+    "TY_ARENA":     "slab release lands at 1.2.5c",
+    "TY_SHARED_ARENA": "slab release lands at 1.2.5c",
     "TY_ANY":       "unsized; never a value at this rung",
     "TY_TRAIT":     "a bound, not a value",
     "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",

@@ -312,6 +312,11 @@ entry:
 %npk.chan = type { ptr, i64, i64, i64, i64, i64, i32, i32, i32, ptr, ptr }
 
 @npk_ch_tab = internal global ptr null
+; RECLAIMED SLOT INDEXES (D-183, 1.2.5) — a LIFO the open path pops before
+; growing the table. Guarded by the open lock, like the table itself.
+@npk_ch_fstk = internal global ptr null
+@npk_ch_fn = internal global i64 0
+@npk_ch_fcap = internal global i64 0
 @npk_ch_cap = internal global i64 0
 @npk_ch_n = internal global i64 0
 @npk_ch_open_lock = internal global i32 0
@@ -520,6 +525,54 @@ pub:
   store i64 %nc, ptr @npk_ch_cap
   br label %have
 have:
+  ; REUSE A RECLAIMED SLOT FIRST (D-183, 1.2.5). The slot's chan struct is
+  ; immortal; reviving it means a fresh buffer, cleared ring state, and the
+  ; generation bumped from the reclaim's ODD back to EVEN — at which point
+  ; every handle from the slot's previous life answers StaleHandle, which is
+  ; the reachability D-152's discipline promised.
+  %rfn = load i64, ptr @npk_ch_fn
+  %rhave = icmp sgt i64 %rfn, 0
+  br i1 %rhave, label %revive, label %fresh
+revive:
+  %rfn2 = add i64 %rfn, -1
+  store i64 %rfn2, ptr @npk_ch_fn
+  %rstk = load ptr, ptr @npk_ch_fstk
+  %rslotp = getelementptr i64, ptr %rstk, i64 %rfn2
+  %ridx = load i64, ptr %rslotp
+  %rt = load ptr, ptr @npk_ch_tab
+  %rchp = getelementptr ptr, ptr %rt, i64 %ridx
+  %rch = load ptr, ptr %rchp
+  call void @npk_ch_lock(ptr %rch)
+  %rrendez = icmp eq i64 %cap, 0
+  %rslots = select i1 %rrendez, i64 1, i64 %cap
+  %rbufsz = mul i64 %rslots, %esz
+  %rbuf = call ptr @npk_alloc_internal(i64 %rbufsz)
+  %rbp = getelementptr %npk.chan, ptr %rch, i32 0, i32 0
+  store ptr %rbuf, ptr %rbp
+  %rcapp = getelementptr %npk.chan, ptr %rch, i32 0, i32 1
+  store i64 %cap, ptr %rcapp
+  %reszp = getelementptr %npk.chan, ptr %rch, i32 0, i32 2
+  store i64 %esz, ptr %reszp
+  %rhp = getelementptr %npk.chan, ptr %rch, i32 0, i32 3
+  store i64 0, ptr %rhp
+  %rtp = getelementptr %npk.chan, ptr %rch, i32 0, i32 4
+  store i64 0, ptr %rtp
+  %rnp = getelementptr %npk.chan, ptr %rch, i32 0, i32 5
+  store i64 0, ptr %rnp
+  %rgp = getelementptr %npk.chan, ptr %rch, i32 0, i32 6
+  %rg = load i32, ptr %rgp
+  %rg2 = add i32 %rg, 1
+  store i32 %rg2, ptr %rgp
+  %rclp = getelementptr %npk.chan, ptr %rch, i32 0, i32 7
+  store i32 0, ptr %rclp
+  call void @npk_ch_unlock(ptr %rch)
+  call void @npk_mx_unlock(ptr @npk_ch_open_lock)
+  %rpl = and i64 %ridx, 4294967295
+  %rph0 = zext i32 %rg2 to i64
+  %rph = shl i64 %rph0, 32
+  %rpacked = or i64 %rph, %rpl
+  ret i64 %rpacked
+fresh:
   %idx = load i64, ptr @npk_ch_n
   ; THE CHANNEL IS ALLOCATED ON ITS OWN AND NEVER MOVES, so growing the table
   ; cannot pull it out from under an operation in flight on another thread.
@@ -537,9 +590,14 @@ have:
   store i64 %cap, ptr %cp
   %ep = getelementptr %npk.chan, ptr %ch, i32 0, i32 2
   store i64 %esz, ptr %ep
-  ; head, tail, count, closed and the lock word are already zero, and a fresh
-  ; struct's generation starts EVEN, which is what live means.
+  ; head, tail, count, closed and the lock word are already zero. The
+  ; generation starts at TWO, not zero (D-183, 1.2.5b): an all-zero handle —
+  ; a zeroed struct field, a failed call's zeroed value half — must alias NO
+  ; live channel, and slot gen 0 would have matched it. Even is what live
+  ; means, and 2 is the first even a handle can carry — the arena's virgin
+  ; promotion, applied here.
   %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  store i32 2, ptr %gp
   %gen = load i32, ptr %gp
   ; PUBLISH THE POINTER, THEN THE COUNT. A reader acquires the count and so
   ; cannot see an index whose pointer is not yet stored.
@@ -598,6 +656,20 @@ ok:
   ; mid-drain was told its handle was dangling — StaleHandle standing in for
   ; ChannelClosed, a use-after-free report for an orderly end of stream.
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+gck.ok:
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   store i32 1, ptr %clp
   ; A CLOSE CHANGES THE ANSWER FOR EVERYBODY, in both directions: a waiting
@@ -622,12 +694,114 @@ entry:
   br i1 %bad, label %yes, label %look
 look:
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  ; a reclaimed slot's old handle asks a question with one answer
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 1
+gck.ok:
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   %c = load i32, ptr %clp
   call void @npk_ch_unlock(ptr %ch)
   ret i32 %c
 yes:
   ret i32 1
+}
+
+; RECLAIM (D-183, 1.2.5): the creating function's exit — after its defers,
+; drops and child joins — hands the channel back. Closing was never
+; reclaiming (the drain doctrine above); THIS is where the generation moves,
+; every outstanding endpoint becomes stale at once, the buffer is freed, and
+; the slot index enters the free stack for `open` to reuse. The slot's chan
+; STRUCT is immortal — an op on another thread that resolved its handle
+; before this ran and blocks on the lock wakes to the re-check, never to
+; freed memory. Waiters are woken so nobody sleeps out a deadline on a
+; question that now answers StaleHandle. A generation at the retire cap
+; pins the slot out of the stack forever, the arena's own rule.
+define i32 @npk_ch_reclaim(i64 %h) {
+entry:
+  %ch = call ptr @npk_ch_get(i64 %h)
+  %bad = icmp eq ptr %ch, null
+  br i1 %bad, label %stale, label %live
+live:
+  call void @npk_ch_lock(ptr %ch)
+  %gp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  %g = load i32, ptr %gp
+  %want0 = lshr i64 %h, 32
+  %want = trunc i64 %want0 to i32
+  %same = icmp eq i32 %g, %want
+  br i1 %same, label %take, label %lost
+lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+take:
+  %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
+  store i32 1, ptr %clp
+  %g2 = add i32 %g, 1
+  store i32 %g2, ptr %gp
+  %bp = getelementptr %npk.chan, ptr %ch, i32 0, i32 0
+  %buf = load ptr, ptr %bp
+  %nobuf = icmp eq ptr %buf, null
+  br i1 %nobuf, label %woken, label %freebuf
+freebuf:
+  call void @npk_dalloc(ptr %buf)
+  store ptr null, ptr %bp
+  br label %woken
+woken:
+  %rw = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
+  call void @npk_ch_wake_all(ptr %rw)
+  %sw = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
+  call void @npk_ch_wake_all(ptr %sw)
+  call void @npk_ch_unlock(ptr %ch)
+  ; retire at the cap: a slot at 0xFFFFFFFE never re-enters the stack
+  %tired = icmp uge i32 %g2, -2
+  br i1 %tired, label %done, label %push
+push:
+  call void @npk_mx_lock(ptr @npk_ch_open_lock)
+  %fn = load i64, ptr @npk_ch_fn
+  %fc = load i64, ptr @npk_ch_fcap
+  %full = icmp sge i64 %fn, %fc
+  br i1 %full, label %grow, label %put
+grow:
+  %nc0 = shl i64 %fc, 1
+  %first = icmp eq i64 %fc, 0
+  %nc = select i1 %first, i64 16, i64 %nc0
+  %nbytes = mul i64 %nc, 8
+  %nm = call ptr @npk_alloc_internal(i64 %nbytes)
+  %old = load ptr, ptr @npk_ch_fstk
+  %had = icmp eq ptr %old, null
+  br i1 %had, label %swap, label %copyold
+copyold:
+  %obytes = mul i64 %fc, 8
+  call ptr @memcpy(ptr %nm, ptr %old, i64 %obytes)
+  call void @npk_dalloc(ptr %old)
+  br label %swap
+swap:
+  store ptr %nm, ptr @npk_ch_fstk
+  store i64 %nc, ptr @npk_ch_fcap
+  br label %put
+put:
+  %stk = load ptr, ptr @npk_ch_fstk
+  %slotp = getelementptr i64, ptr %stk, i64 %fn
+  %idx = and i64 %h, 4294967295
+  store i64 %idx, ptr %slotp
+  %fn2 = add i64 %fn, 1
+  store i64 %fn2, ptr @npk_ch_fn
+  call void @npk_mx_unlock(ptr @npk_ch_open_lock)
+  br label %done
+done:
+  ret i32 0
+stale:
+  ret i32 -4106
 }
 
 ; THE ONE CALL A BLOCKED OPERATION MAKES. Returns 0 done, 1 parked (the task
@@ -646,6 +820,20 @@ entry:
   br i1 %bad, label %stale, label %live
 live:
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+gck.ok:
   %rw = getelementptr %npk.chan, ptr %ch, i32 0, i32 9
   call void @npk_ch_wait_unlink(ptr %rw, ptr %fr)
   %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
@@ -721,6 +909,20 @@ entry:
   br i1 %bad, label %stale, label %live
 live:
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+gck.ok:
   %sw = getelementptr %npk.chan, ptr %ch, i32 0, i32 10
   call void @npk_ch_wait_unlink(ptr %sw, ptr %fr)
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
@@ -803,6 +1005,20 @@ live:
   ; `head` and `tail` are a single piece of state, and testing one then
   ; writing another is only atomic if nothing else can run between them.
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+gck.ok:
   %clp = getelementptr %npk.chan, ptr %ch, i32 0, i32 7
   %cl = load i32, ptr %clp
   %isclosed = icmp ne i32 %cl, 0
@@ -857,6 +1073,20 @@ entry:
   br i1 %bad, label %stale, label %live
 live:
   call void @npk_ch_lock(ptr %ch)
+  %gckp = getelementptr %npk.chan, ptr %ch, i32 0, i32 6
+  ; RECLAIM RE-CHECK (D-183, 1.2.5): the handle was resolved before this
+  ; lock was taken, and a reclaim may have moved the slot's generation while
+  ; we blocked on it. The slot's struct is immortal, so the load is safe; the
+  ; BUFFER is not ours unless the generation still matches.
+  %gnow = load i32, ptr %gckp
+  %gwant0 = lshr i64 %h, 32
+  %gwant = trunc i64 %gwant0 to i32
+  %gsame = icmp eq i32 %gnow, %gwant
+  br i1 %gsame, label %gck.ok, label %gck.lost
+gck.lost:
+  call void @npk_ch_unlock(ptr %ch)
+  ret i32 -4106
+gck.ok:
   %np = getelementptr %npk.chan, ptr %ch, i32 0, i32 5
   %cnt = load i64, ptr %np
   %empty = icmp eq i64 %cnt, 0
@@ -2461,6 +2691,17 @@ err:
 ; hits 0xAA forever and every stale free hits the header-magic trap, instead
 ; of depending on reuse timing. Costs memory (no reuse); for defect hunts.
 @npk_quarantine = internal global i64 0
+; THE HEAP MUTEX (D-183, 1.2.5b). The allocator's bookkeeping — class heads,
+; bitmaps, the chunk table, the large table — was single-threaded by an
+; invariant the channel rung enforced: owning data never crossed a thread, so
+; every thread freed only what it allocated. Owning channel elements END that
+; invariant (a body allocated on the sender's thread is dropped on the
+; receiver's), so the bookkeeping takes one futex mutex. Uncontended cost is
+; an atomic exchange each way; the poison loop and the syscall-bearing large
+; paths hold it longer, which is correctness buying its keep first
+; (performance is measured after, per the standing order).
+@npk_heap_mx = internal global i32 0
+
 @npk_chtab = internal global i64 0
 @npk_chtab_cap = internal global i64 0
 @npk_chtab_len = internal global i64 0
@@ -3344,6 +3585,7 @@ done:
 
 define internal ptr @npk_alloc_impl(i64 %n, i64 %wild) {
 entry:
+  call void @npk_mx_lock(ptr @npk_heap_mx)
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
   br i1 %uninit, label %init, label %sized
@@ -3378,9 +3620,11 @@ bigger:
   br label %pick
 small:
   %sp = call ptr @npk_small_alloc(i64 %n1, i64 %ci, i64 %wild)
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %sp
 large:
   %lp = call ptr @npk_large_new(i64 %n1, i64 16, i64 %wild)
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %lp
 }
 
@@ -3458,6 +3702,7 @@ virginheap:
   %uninit = icmp eq i64 %sec, 0
   br i1 %uninit, label %bad, label %route
 route:
+  call void @npk_mx_lock(ptr @npk_heap_mx)
   %lgidx = call i64 @npk_lg_find(i64 %ip)
   %islarge = icmp sge i64 %lgidx, 0
   br i1 %islarge, label %lg, label %sm
@@ -3493,8 +3738,10 @@ inplace:
   %g1 = call i64 @npk_m_guard(i64 %fa1)
   %gp1 = inttoptr i64 %fa1 to ptr
   store i64 %g1, ptr %gp1
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %old
 move:
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ; the regime travels with the data: a wild block moves to a wild block
   %mb = add i64 %ip, -16
   %mw = call i64 @npk_m_largew(i64 %mb)
@@ -3525,8 +3772,10 @@ sm:
   br i1 %fitscls, label %inplace2, label %move2
 inplace2:
   store i64 %n, ptr %oszp2
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %old
 move2:
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   %mb2 = add i64 %ip, -16
   %mw2 = call i64 @npk_m_livew(i64 %mb2)
   %mha2 = add i64 %mb2, 8
@@ -3563,6 +3812,7 @@ virginheap:
   %uninit = icmp eq i64 %sec, 0
   br i1 %uninit, label %bad, label %route
 route:
+  call void @npk_mx_lock(ptr @npk_heap_mx)
   %lgidx = call i64 @npk_lg_find(i64 %ip)
   %islarge = icmp sge i64 %lgidx, 0
   br i1 %islarge, label %lg, label %sm
@@ -3577,9 +3827,11 @@ lg:
   %msz = load i64, ptr %mszp
   call void @npk_lg_remove(i64 %lgidx)
   call void @npk_hunmap(i64 %base, i64 %msz)
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret void
 sm:
   call void @npk_small_free(i64 %ip)
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret void
 }
 

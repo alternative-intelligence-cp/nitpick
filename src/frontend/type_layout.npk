@@ -148,6 +148,8 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     Lay:l = raw lay_start();
     bool:haspt = false;
     bool:drops = false;
+    bool:haschan = false;
+    bool:hasborrow = false;
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
@@ -170,11 +172,18 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // type passes through, and a struct owns something exactly when
             // one of its fields does.
             if (raw type_drops(r.types, ft, 64i32)) { drops = true; }
+            // AND CHANNEL CONTAINMENT (D-183, 1.2.5), same walk, same reason:
+            // a function whose return carries a channel is a factory, and
+            // the reclaim machinery asks the RETURN type.
+            if (raw type_contains_channel(r.types, ft, 64i32)) { haschan = true; }
+            if (raw type_contains_borrow(r.types, ft, 64i32)) { hasborrow = true; }
         }
         i = i + 1i32;
     }
     drop tt_set_haspt(r.types, struct_type, haspt);
     drop tt_set_drops(r.types, struct_type, drops);
+    drop tt_set_haschan(r.types, struct_type, haschan);
+    drop tt_set_hasborrow(r.types, struct_type, hasborrow);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -317,6 +326,8 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
             int64:wsize = 0i64;
             int32:walign = 1i32;
             bool:edrops = false;
+            bool:ehaschan = false;
+            bool:ehasborrow = false;
             int32:i = 0i32;
             while (i < (raw item_member_count(r.ast, d))) {
                 DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
@@ -349,6 +360,12 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         // question the drop function answers on the tag; this
                         // is only whether the type needs one at all.
                         if (raw type_drops(r.types, pt, 64i32)) { edrops = true; }
+                        if (raw type_contains_channel(r.types, pt, 64i32)) {
+                            ehaschan = true;
+                        }
+                        if (raw type_contains_borrow(r.types, pt, 64i32)) {
+                            ehasborrow = true;
+                        }
                         j = j + 1i32;
                     }
                     if (vsize > wsize) { wsize = vsize; }
@@ -359,6 +376,8 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                 discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
             drop tt_set_drops(r.types, t, edrops);
+            drop tt_set_haschan(r.types, t, ehaschan);
+            drop tt_set_hasborrow(r.types, t, ehasborrow);
         }
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);

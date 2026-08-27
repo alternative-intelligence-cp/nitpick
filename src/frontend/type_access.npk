@@ -1795,6 +1795,14 @@ func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
                 if (!(raw fits(e, elem, vt))) {
                     drop te_assign_mismatch(e, elem, vt, n.span);
                 }
+                // D-072 WRITES `move` IN ITS OWN SIGNATURE, and D-183's
+                // move-only rule is what finally requires it: the channel
+                // takes ownership of its element — the far side's recv hands
+                // it to a new owner and that owner's drop frees it — so a
+                // PLACE of an owning type must transfer here, not copy.
+                drop require_move_if_owning(e,
+                    ExprId{ index: raw ast_id_at(e.ast, start, 0i32) },
+                    vt, n.span);
             }
         }
     }

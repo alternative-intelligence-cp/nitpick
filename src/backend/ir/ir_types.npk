@@ -452,17 +452,36 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     if (k == (raw TY_TBB()))     { pass true; }
     if (k == (raw TY_KERNEL()))  { pass true; }
     if (k == (raw TY_ERROR()))   { pass true; }
-    if (k == (raw TY_ENUM()))    { pass true; }
     if (k == (raw TY_NIL()))     { pass true; }
     // An index and a generation, both ways: a `Handle<T>` into an arena the
     // runtime owns, and a channel endpoint — the shapes that exist BECAUSE
     // they cross a task boundary without carrying an address.
     if (k == (raw TY_HANDLE()))  { pass true; }
     if (k == (raw TY_CHANNEL())) { pass true; }
+    // OWNING ELEMENTS RIDE (D-183, 1.2.5b — the 1.1.10-B rung retired). A
+    // `string` and every owning aggregate transfer WHOLE under the send's
+    // `move`: the body's pointer crosses with its ownership, the receiver's
+    // drop frees it, and the heap's mutex (npkrt) is what made a
+    // cross-thread free sound. What still refuses is a BORROW: a `T->`, a
+    // slice, or anything holding one names storage that stays behind on the
+    // sender's frame — `type_contains_borrow` is layout's transitive answer,
+    // with `string`'s owned body excepted and `dyn` refused as erased.
+    if (k == (raw TY_STRING()))  { pass true; }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT())) {
+        pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
+    }
     if (k == (raw TY_ARRAY()))   {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
-    if (k == (raw TY_STRUCT()))  { pass ((raw tt_haspt(c.types, elem)) == 1i32); }
+    if (k == (raw TY_ENUM()))    {
+        pass (!(raw type_contains_borrow(c.types, elem, fuel)));
+    }
+    if (k == (raw TY_STRUCT()))  {
+        pass (!(raw type_contains_borrow(c.types, elem, fuel)));
+    }
     // AN UNSUBSTITUTED PARAMETER IS NOT AN OWNING TYPE, it is an unknown, and
     // the question is asked again — with an answer — on every specialization.
     // `Channel<J, …>` inside `worker<J>` is the template's own signature, and
@@ -505,7 +524,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // not a pointer, which is what lets it cross a spawn.
     if (k == (raw TY_CHANNEL()))  {
         if (!(raw chan_elem_ok(c, raw type_elem(c.types, id), 8i32))) {
-            pass (raw ll_rung("a later cycle (B-6) — this element OWNS heap storage, and a channel hands its element to another task; D-065 moves ownership only where `move` is written, so the far side would become a second owner of the same body, and which side frees it is the managed lowering's question. Scalars, `Handle<T>`, channel endpoints, pointer-free structs and arrays of those transfer by copying their bytes and ride today"));
+            pass (raw ll_rung("per-scope join machinery (C-22) for `dyn` elements — everything else that refuses here carries a BORROW: a `T->`, a slice, or a struct holding one names storage that stays behind on the sender's frame, and no move can carry a borrowed target across a task boundary. Owning elements — strings, owning aggregates — ride since D-183's 1.2.5b: the send's `move` transfers the body with its ownership, and the receiver's drop frees it"));
         }
         pass (raw ll_ok("{ i32, i32 }"));
     }

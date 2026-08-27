@@ -2959,10 +2959,57 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         int32:celem = raw type_elem(x.fe.ctx.types, cht);
         int64:ccap = (raw type_chan_cap(x.fe.ctx.types, cht)) => int64;
         int64:cesz = raw type_size(x.fe.ctx.types, celem);
+        // THE CREATING FUNCTION OWNS THE RECLAIM (D-182/D-183, 1.2.5):
+        // endpoints are copyable non-owners, so nothing about the VALUE can
+        // say when the channel's life ends — the CREATION SITE can, and
+        // does: the packed handle is stashed beside the frame, and the
+        // function's exit — after its defers, drops and child joins — hands
+        // the slot back, which moves the generation and makes StaleHandle
+        // reachable. Inside a LOOP the one stash would hold only the last
+        // iteration's handle and the rest would leak their slots; that needs
+        // per-scope join machinery, and it refuses by name until it exists.
+        // A FACTORY HANDS ITS CHANNELS OUT (D-183, 1.2.5): a function whose
+        // RETURN TYPE carries a channel — `pool_create` returning the pool
+        // that holds one — cannot be its reclaimer, and nothing else can be
+        // yet (endpoints are copyable non-owners by D-182, so no value says
+        // when the life ends). Its creations live to process end, the
+        // pre-1.2.5 status quo, recorded as D-183's open item: an explicit
+        // ownership marker for factory channels is a language-surface
+        // question. Everything else reclaims at the creating function.
+        bool:cfinal = !(raw type_contains_channel(x.fe.ctx.types,
+                            raw subst_emitted_type(x.fe.ctx, x.fe.ret_type),
+                            64i32));
+        if (cfinal) {
+            if (x.fe.loop_count > 0i32) {
+                pass (raw iv_rung(
+                    "a `channel()` inside a loop — one stash per creation SITE reclaims only the last iteration's channel, and per-iteration reclaim needs per-scope join machinery",
+                    "per-scope join machinery (C-22)", n.span));
+            }
+        }
         string:hr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(hr, " = call i64 @npk_ch_open(i64 ",
                           raw int_to_string(ccap), ", i64 ",
                           raw cat3(raw int_to_string(cesz), ")", "")));
+        string:cstash = "";
+        if (cfinal) {
+            if (x.fe.is_async) {
+                int32:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
+                                                30i32 + x.fe.chopen_ord);
+                // A MISS IS A DEFECT, NOT A RUNG: the pre-scan and this
+                // site walk the same tree, and drift between them fails
+                // closed as broken IR.
+                if (cfi < 0i32) { pass (raw iv_broken(n.span)); }
+                x.fe.chopen_ord = x.fe.chopen_ord + 1i32;
+                cstash = raw fnem_cross_gep(x.fe, cfi);
+            } else {
+                cstash = raw irw_temp(x.fe.w);
+                drop irw_alloca(x.fe.w, cstash, "i64");
+            }
+            drop irw_line(x.fe.w, raw cat5("store i64 ", hr, ", ptr ", cstash, ""));
+            int32:cdrop = 0i32;
+            if (raw type_drops(x.fe.ctx.types, celem, 64i32)) { cdrop = celem; }
+            drop fnem_chfin_add(x.fe, raw string_concat(cstash, ""), cdrop);
+        }
         // the packed word becomes the { i32, i32 } the type lowers to
         string:lo = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(lo, " = trunc i64 ",

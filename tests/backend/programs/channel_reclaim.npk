@@ -1,0 +1,94 @@
+// expect-exit: 42
+// stress: 40
+//
+// THE CREATING FUNCTION'S EXIT RECLAIMS ITS CHANNELS (D-182/D-183, 1.2.5),
+// and `StaleHandle` is REACHABLE FROM SOURCE for the first time. Endpoints
+// are copyable non-owners, so the CREATION SITE stashes the handle and the
+// creating function's exit — after its defers, drops and child joins —
+// hands the slot back: the generation moves, every outstanding endpoint
+// answers StaleHandle, the buffer is freed, and the slot enters the free
+// stack for the next `channel()` to revive. ONE exemption, by TYPE: a
+// function whose return type carries a channel is a FACTORY — its creations
+// are handed to the caller and live to process end (D-183 records the open
+// item: an explicit ownership marker for factory channels). So `maker`'s
+// channel outlives `maker`, while `filler`'s — smuggled out through a
+// pointer instead of the return type — is reclaimed at `filler`'s exit and
+// the smuggled copy answers StaleHandle: escape through the SIGNATURE is
+// the declared hand-off, escape around it is caught by the generation.
+mod:channel_reclaim;
+error:E9;
+
+// A FACTORY: the return type carries the channel, so the caller receives a
+// live one and the creation site registers no reclaim.
+func:maker = Channel<int32, 2i32, 8i64>() never fails {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    pass c;
+};
+
+// NOT a factory: the return type is NIL, and the handle leaves through a
+// pointer. The creation reclaims at exit; the smuggled copy goes stale.
+func:filler = NIL(Channel<int32, 2i32, 8i64>->:out) never fails {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    <-out = c;
+    pass NIL;
+};
+
+// The async twin of `filler`: the stash is a frame slot and the reclaim
+// runs after the coroutine's join.
+async func:afiller = NIL(Channel<int32, 2i32, 8i64>->:out) {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    <-out = c;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // 1: a factory's channel is alive in the caller's hands.
+    Channel<int32, 2i32, 8i64>:kept = raw maker();
+    await kept.send(7i32, raw duration_ms(50i64)) ?! E9;
+    int32:got = await kept.recv(raw duration_ms(50i64)) ?! E9;
+    if (got != 7i32)             { exit 10i32; }
+
+    // 2: a sync smuggler's channel is reclaimed at its exit.
+    Channel<int32, 2i32, 8i64>:h1 = raw maker();
+    drop filler(@h1);
+    Result<NIL>:s1 = await h1.send(5i32, raw duration_ms(50i64));
+    if (!s1.is_error)            { exit 11i32; }
+    if (s1.err != StaleHandle)   { exit 12i32; }
+
+    // 3: the async smuggler, through the frame stash and the post-join
+    // reclaim.
+    Channel<int32, 2i32, 8i64>:h2 = raw maker();
+    await afiller(@h2) ?! E9;
+    Result<int32>:r2 = await h2.recv(raw duration_ms(50i64));
+    if (!r2.is_error)            { exit 13i32; }
+    if (r2.err != StaleHandle)   { exit 14i32; }
+
+    // 4: a fresh channel — plausibly reviving a reclaimed slot — works,
+    // while the stale handles keep answering stale: the generation check.
+    Channel<int32, 2i32, 8i64>:live = channel() ?! Unreachable;
+    await live.send(9i32, raw duration_ms(50i64)) ?! E9;
+    int32:got2 = await live.recv(raw duration_ms(50i64)) ?! E9;
+    if (got2 != 9i32)            { exit 15i32; }
+    Result<NIL>:s3 = await h1.send(1i32, raw duration_ms(50i64));
+    if (!s3.is_error)            { exit 16i32; }
+    if (s3.err != StaleHandle)   { exit 17i32; }
+    discard(h2.close() ?| NIL);
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

@@ -1,0 +1,69 @@
+// expect-exit: 42
+// stress: 40
+//
+// OWNING ELEMENTS CROSS A CHANNEL (D-183, 1.2.5b — the 1.1.10-B rung
+// retired). A `string` allocated on the producer THREAD is freed on the
+// consumer's: the send's `move` transfers the body with its ownership, the
+// receiver's per-iteration drop frees it, and the heap mutex in npkrt is
+// what makes a cross-thread free sound at all — 50 bodies over a real
+// thread under `// stress: 40` is the allocator's bookkeeping under genuine
+// contention, and a double free or a torn bitmap traps through the heap
+// arms. The second half fills a channel and never drains it: the creating
+// function's NORMAL exit drains the ring — dropping what nobody ever
+// received — then reclaims the slot.
+mod:channel_owning;
+error:E9;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:producer = NIL(Channel<string, 3i32, 8i64>:ch) joins JOIN_2S {
+    int32:i = 0i32;
+    while (i < 50i32) {
+        string:s = relay string_concat("abc", "de");
+        await ch.send(move(s), raw duration_ms(500i64)) ?! E9;
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// Filled, never drained: the exit's reclaim drops all four bodies.
+async func:fills = int32() {
+    Channel<string, 4i32, 8i64>:full = channel() ?! Unreachable;
+    int32:j = 0i32;
+    while (j < 4i32) {
+        string:b = relay string_concat("xyzw", "");
+        await full.send(move(b), raw duration_ms(50i64)) ?! E9;
+        j = j + 1i32;
+    }
+    pass 5i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<string, 3i32, 8i64>:ch = channel() ?! Unreachable;
+    drop producer(ch);
+    int32:acc = 0i32;
+    int32:got = 0i32;
+    while (got < 50i32) {
+        string:v = await ch.recv(raw duration_ms(2000i64)) ?! E9;
+        acc = acc + (v.len =>! int32);
+        got = got + 1i32;
+    }
+    if (acc != 250i32)                    { exit 10i32; }
+    if ((await fills() ?! E9) != 5i32)    { exit 11i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};
