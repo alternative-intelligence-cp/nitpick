@@ -1697,6 +1697,49 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         int32:mlvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
         pass (raw tt_mutex(r.types, melem, mlvl));
     }
+    // `RwLock<T, LEVEL>` — the same two arguments, the same reasons.
+    if (kind == (raw TY_RWLOCK())) {
+        if (count != 2i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`RwLock<T, LEVEL>` takes two arguments: the element type it owns, and the D-056 lock level",
+                n.span));
+        }
+        int32:rwelem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
+                           raw type_args_start(n), 0i32) }, scope);
+        if (raw type_is_invalid(r.types, rwelem)) { pass rwelem; }
+        int32:rwlvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        pass (raw tt_rwlock(r.types, rwelem, rwlvl));
+    }
+    // `CondVar<LEVEL>` — one constant: the level of the wait itself (D-056:
+    // every blocking primitive is levelled).
+    if (kind == (raw TY_CONDVAR())) {
+        if (count != 1i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`CondVar<LEVEL>` takes one argument, the D-056 lock level of the wait",
+                n.span));
+        }
+        int32:cvlvl = raw channel_const_arg(r, n, 0i32, scope, "the lock level");
+        pass (raw tt_condvar(r.types, cvlvl));
+    }
+    // `Barrier<N, LEVEL>` — the spec's table wrote `Barrier<N>`, and D-056's
+    // own sentence corrects it: EVERY blocking primitive is levelled, and an
+    // `arrive` while holding a lock a peer needs to arrive is the wedge the
+    // levels exist to forbid. The amendment is recorded on D-056.
+    if (kind == (raw TY_BARRIER())) {
+        if (count != 2i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`Barrier<N, LEVEL>` takes two arguments: how many tasks meet, and the D-056 lock level of the wait",
+                n.span));
+        }
+        int32:bn = raw channel_const_arg(r, n, 0i32, scope, "the party count");
+        int32:blvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
+        if (bn < 1i32) {
+            pass (raw ty_error(r, raw TYPE_UNKNOWN(),
+                "a barrier needs at least one party; zero tasks can never meet",
+                n.span));
+        }
+        pass (raw tt_barrier(r.types, bn, blvl));
+    }
     if (count != 1i32) {
         // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).
         string:g1 = raw string_concat("`",
@@ -1727,6 +1770,10 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     // annotation is how the spec's own example binds one.
     if (kind == (raw TY_GUARD())) {
         pass (raw tt_guard(r.types, inner));
+    }
+    // `RGuard<T>` — the read hold `RwLock.read` returns.
+    if (kind == (raw TY_RGUARD())) {
+        pass (raw tt_rguard(r.types, inner));
     }
     // `atomic<T>`'s PERMITTED SET (D-182): the integer widths up to 64,
     // `bool`, and pointer-shaped values. Not floats — an atomic

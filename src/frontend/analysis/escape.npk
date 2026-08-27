@@ -1565,7 +1565,12 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
         if (aty != 0i32) {
             if ((raw type_kind(x.types, aty)) == (raw TY_POINTER())) {
                 int32:apel = raw type_elem(x.types, aty);
-                if ((raw type_kind(x.types, apel)) == (raw TY_MUTEX())) {
+                int32:apk = raw type_kind(x.types, apel);
+                bool:sanctioned = (apk == (raw TY_MUTEX()));
+                if (apk == (raw TY_RWLOCK()))  { sanctioned = true; }
+                if (apk == (raw TY_CONDVAR())) { sanctioned = true; }
+                if (apk == (raw TY_BARRIER())) { sanctioned = true; }
+                if (sanctioned) {
                     i = i + 1i32;
                     continue;
                 }

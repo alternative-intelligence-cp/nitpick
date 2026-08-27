@@ -1,0 +1,109 @@
+// expect-exit: 42
+// stress: 40
+//
+// THE REST OF D-056'S TABLE (1.1.11b): `RwLock<T, LEVEL>`, `CondVar<LEVEL>`
+// (timedwait only), `Barrier<N, LEVEL>`. Two reader threads hold RGuards
+// CONCURRENTLY — 350 each is only possible if read holds share — and a
+// write guard is the same `Guard<T>` a mutex hands out, because an
+// exclusive hold is one meaning everywhere. The condvar runs the classic
+// shape: the waiter loops on the predicate under its guard, the signaler
+// flips it under the same mutex and signals; `timedwait` lends the guard
+// and returns with it reacquired. The barrier's second half proves the
+// GIVEBACK: a party that timed out has NOT arrived, so the next round
+// completes instead of wedging one short.
+mod:sync_prims;
+error:E9;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:reader = NIL(RwLock<int32, 3i32>->:r,
+                               Channel<int32, 4i32, 8i64>:done) joins JOIN_2S {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+    while (i < 50i32) {
+        RGuard<int32>:g = relay await r.read(raw duration_ms(500i64));
+        acc = acc + g.value;
+        i = i + 1i32;
+    }
+    await done.send(acc, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+thread async func:waiter = NIL(Mutex<int32, 3i32>->:m, CondVar<4i32>->:cv,
+                               Channel<int32, 4i32, 8i64>:done) joins JOIN_2S {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    while (g.value == 0i32) {
+        await cv.timedwait(g, raw duration_ms(1000i64)) ?! E9;
+    }
+    await done.send(g.value, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+thread async func:party = NIL(Barrier<3i32, 6i32>->:b,
+                              Channel<int32, 4i32, 8i64>:done) joins JOIN_2S {
+    await b.arrive(raw duration_ms(1000i64)) ?! E9;
+    await done.send(1i32, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 4i32, 8i64>:done = channel() ?! Unreachable;
+
+    // RWLOCK: two concurrent readers, then an exclusive writer.
+    RwLock<int32, 3i32>:r = rwlock(7i32) ?! Unreachable;
+    drop reader(@r, done);
+    drop reader(@r, done);
+    int32:s1 = await done.recv(raw duration_ms(2000i64)) ?! E9;
+    int32:s2 = await done.recv(raw duration_ms(2000i64)) ?! E9;
+    if ((s1 + s2) != 700i32)             { exit 10i32; }
+    {
+        Guard<int32>:w = await r.write(raw duration_ms(500i64)) ?! E9;
+        w.value = 9i32;
+    }
+    {
+        RGuard<int32>:rg = await r.read(raw duration_ms(500i64)) ?! E9;
+        if (rg.value != 9i32)            { exit 11i32; }
+    }
+
+    // CONDVAR: flip the predicate under the mutex, then signal.
+    Mutex<int32, 3i32>:m = mutex(0i32) ?! Unreachable;
+    CondVar<4i32>:cv = condvar() ?! Unreachable;
+    drop waiter(@m, @cv, done);
+    await sleep(raw duration_ms(30i64)) ?| NIL;
+    {
+        Guard<int32>:g = await m.acquire(raw duration_ms(500i64)) ?! E9;
+        g.value = 5i32;
+    }
+    discard(cv.signal() ?| NIL);
+    if ((await done.recv(raw duration_ms(2000i64)) ?! E9) != 5i32) { exit 12i32; }
+
+    // BARRIER: a lone arrival times out AND hands its slot back...
+    Barrier<3i32, 6i32>:b = barrier() ?! Unreachable;
+    Result<NIL>:lone = await b.arrive(raw duration_ms(30i64));
+    if (!lone.is_error)                  { exit 13i32; }
+    if (lone.err != DeadlineExceeded)    { exit 14i32; }
+    // ...so a full round of three still completes.
+    drop party(@b, done);
+    drop party(@b, done);
+    await b.arrive(raw duration_ms(1000i64)) ?! E9;
+    int32:p1 = await done.recv(raw duration_ms(2000i64)) ?! E9;
+    int32:p2 = await done.recv(raw duration_ms(2000i64)) ?! E9;
+    if ((p1 + p2) != 2i32)               { exit 15i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

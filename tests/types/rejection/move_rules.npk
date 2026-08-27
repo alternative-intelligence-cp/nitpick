@@ -85,3 +85,13 @@ func:owns_in_an_arena = int32() never fails {
     arena<string>:a = arena_make(4i64);
     pass 0i32;
 };
+
+// A SHARED HOLD IS READ-ONLY (D-056, 1.1.11b): a write through an
+// `RGuard.value` is the unsynchronized mutation the write lock exists to
+// serialize.
+// expect-error: NITPICK-TYPE-007
+async func:writes_through_a_read = NIL(RwLock<int32, 3i32>->:r) {
+    RGuard<int32>:g = relay await r.read(raw duration_ms(5i64));
+    g.value = 4i32;
+    pass NIL;
+};

@@ -263,14 +263,44 @@ func:mutex_acquire_level = int32(Locks->:x, ExprNode:n) never fails {
     if ((raw type_kind(x.types, rty)) == (raw TY_POINTER())) {
         rty = raw type_elem(x.types, rty);
     }
-    if ((raw type_kind(x.types, rty)) != (raw TY_MUTEX())) {
+    int32:rk = raw type_kind(x.types, rty);
+    string:mnm = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
+    if (rk == (raw TY_MUTEX())) {
+        if (raw string_eq(mnm, "acquire")) { pass ((raw tt_get(x.types, rty)).b); }
         pass (raw LOCK_NONE_MIN());
     }
-    if (!(raw string_eq(raw intern_get(x.interns, (raw expr_name(n)) =>! int32),
-                        "acquire"))) {
+    if (rk == (raw TY_RWLOCK())) {
+        if (raw string_eq(mnm, "read"))  { pass ((raw tt_get(x.types, rty)).b); }
+        if (raw string_eq(mnm, "write")) { pass ((raw tt_get(x.types, rty)).b); }
         pass (raw LOCK_NONE_MIN());
     }
-    pass ((raw tt_get(x.types, rty)).b);
+    pass (raw LOCK_NONE_MIN());
+};
+
+// A WAIT THAT YIELDS NO HOLD (D-056, 1.1.11b): `timedwait` sleeps at the
+// condvar's own level and reacquires with nothing held; `arrive` waits and
+// then HOLDS NOTHING. Both are ordered against what the caller holds — a
+// wait below a held level is the same wedge shape — but binding their
+// `Result<NIL>` raises no held level, unlike binding a guard.
+func:sync_wait_level = int32(Locks->:x, ExprNode:n) never fails {
+    if (n.kind != ExprKind.ExprMethodCallExpr) { pass (raw LOCK_NONE_MIN()); }
+    ExprId:recv = raw expr_operand(n);
+    int32:rty = raw exprtypes_get(x.etypes, recv);
+    if (rty == 0i32) { pass (raw LOCK_NONE_MIN()); }
+    if ((raw type_kind(x.types, rty)) == (raw TY_POINTER())) {
+        rty = raw type_elem(x.types, rty);
+    }
+    int32:rk = raw type_kind(x.types, rty);
+    string:mnm = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
+    if (rk == (raw TY_CONDVAR())) {
+        if (raw string_eq(mnm, "timedwait")) { pass ((raw tt_get(x.types, rty)).a); }
+        pass (raw LOCK_NONE_MIN());
+    }
+    if (rk == (raw TY_BARRIER())) {
+        if (raw string_eq(mnm, "arrive")) { pass ((raw tt_get(x.types, rty)).b); }
+        pass (raw LOCK_NONE_MIN());
+    }
+    pass (raw LOCK_NONE_MIN());
 };
 
 func:call_target = int32(Locks->:x, ExprNode:n) never fails {
@@ -653,6 +683,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
         drop locks_call(x, caller, target, held, n.span);
     }
     int32:mlv = raw mutex_acquire_level(x, n);
+    if (mlv == (raw LOCK_NONE_MIN())) { mlv = raw sync_wait_level(x, n); }
     if (mlv != (raw LOCK_NONE_MIN())) {
         if (!x.reporting) {
             drop table_widen(x, caller, mlv, mlv);

@@ -49,11 +49,14 @@ channel-returning function refuses. A failed `send` drops its element —
 the rule a failing callee already applies to its `move` parameters. Owning elements in ARENAS
 refuse at `arena_make` until the generated deep-view family lands (D-183).
 Phase C renumbered around the cycle (self-hosting 1.3, verification 1.4,
-Astrée 1.5; the map is in `ROADMAP.md`). 1.1.11a landed `Mutex<T, LEVEL>`/`Guard<T>`: acquire is async and
-deadline-mandatory, the guard's scope-exit drop IS the release, the level
-feeds the 0.5.6 ordering analysis from the receiver's type, and a borrow of
-a mutex is the sanctioned spawn crossing. Next: RwLock/CondVar/Barrier
-(1.1.11b), 1.1.12 the reactor, 1.1.13 the Bridge.
+Astrée 1.5; the map is in `ROADMAP.md`). **1.1.11 is COMPLETE**: `Mutex<T,LEVEL>`/`Guard<T>` (the guard's scope-exit
+drop IS the release), `RwLock<T,LEVEL>` (`read` → read-only `RGuard<T>`,
+`write` → the same `Guard<T>`), `CondVar<LEVEL>` (`timedwait` lends the
+guard and reacquires; a timed-out wait SPENDS it — nulled, not held past
+the deadline), and `Barrier<N,LEVEL>` (a timed-out party hands its slot
+back). Levels feed the 0.5.6 ordering analysis from the receiver's types;
+borrows of the primitives are the sanctioned spawn crossings. Next: 1.1.12
+the reactor, 1.1.13 the Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
@@ -157,7 +160,7 @@ parse failure some lines away from the mistake:
 | `channel`, `atomic`, `thread`, `joins` | the constructor, the type, the function modifier and the contract clause (D-181/D-182) — `thread` in particular reads like an ordinary noun |
 | `error` | the declaration keyword (D-179) — so `error` is not a local name, and `Result`'s field is `.err` |
 | `gives` | the factory contract clause (D-183 1.2.6) — a channel-returning creator hands its channels' reclaim to the caller |
-| `Mutex`, `Guard`, `acquire` | the sync primitive's type keywords and its one operation (D-056, 1.1.11) — `acquire` interns itself only after a `.` |
+| `Mutex`, `Guard`, `acquire`, `RwLock`, `RGuard`, `CondVar`, `Barrier` | the sync primitives' type keywords (D-056, 1.1.11) — `acquire` interns itself only after a `.` |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

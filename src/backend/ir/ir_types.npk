@@ -385,6 +385,8 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     if (k == (raw TY_CHANNEL()))      { has_elem = true; }
     if (k == (raw TY_MUTEX()))        { has_elem = true; }
     if (k == (raw TY_GUARD()))        { has_elem = true; }
+    if (k == (raw TY_RWLOCK()))       { has_elem = true; }
+    if (k == (raw TY_RGUARD()))       { has_elem = true; }
     if (has_elem) {
         pass (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32));
     }
@@ -701,6 +703,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // (D-056, 1.1.11): [lock i32 | pad | waiters ptr | T at +16].
     if (k == (raw TY_MUTEX()))        { pass (raw ll_ok("ptr")); }
     if (k == (raw TY_GUARD()))        { pass (raw ll_ok("ptr")); }
+    if (k == (raw TY_RWLOCK()))       { pass (raw ll_ok("ptr")); }
+    if (k == (raw TY_RGUARD()))       { pass (raw ll_ok("ptr")); }
+    if (k == (raw TY_CONDVAR()))      { pass (raw ll_ok("ptr")); }
+    if (k == (raw TY_BARRIER()))      { pass (raw ll_ok("ptr")); }
     // AN INSTANTIATION THAT NAMES THE PARAMETER BEING EMITTED (1.0.7). A
     // `List{ … }` literal inside `list_make<T>`'s body is recorded as `List<T>`
     // (D-107: the body is typed once with `T` opaque), and in the

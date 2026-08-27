@@ -1875,9 +1875,32 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
             if ((raw type_kind(x.fe.ctx.types, mrt)) == (raw TY_POINTER())) {
                 mrt = raw type_elem(x.fe.ctx.types, mrt);
             }
-            if ((raw type_kind(x.fe.ctx.types, mrt)) == (raw TY_MUTEX())) {
+            int32:mrk = raw type_kind(x.fe.ctx.types, mrt);
+            if (mrk == (raw TY_MUTEX())) {
                 drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
                 drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+            }
+            if (mrk == (raw TY_RWLOCK())) {
+                drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+            }
+            // The condvar's TWO-PHASE wait adds the phase, the mutex cell
+            // and the lent guard's slot address (D-056, 1.1.11b).
+            if (mrk == (raw TY_CONDVAR())) {
+                drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 22i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
+                drop fnem_cross_add(x.fe, sid.index, 24i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 25i32, 0i32, "i64");
+            }
+            // The barrier waits out a GENERATION.
+            if (mrk == (raw TY_BARRIER())) {
+                drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
+                drop fnem_cross_add(x.fe, sid.index, 22i32, 0i32, "i64");
                 drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
             }
         }

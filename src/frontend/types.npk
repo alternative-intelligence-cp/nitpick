@@ -118,6 +118,10 @@ pub func:TY_ATOMIC = int32() never fails { pass 31i32; };  // D-182: a = element
 // a message, while the creating scope still owns the channel's life.
 pub func:TY_MUTEX = int32() never fails { pass 33i32; };  // D-056: a = element, b = LEVEL; the value is one ptr to an owned cell
 pub func:TY_GUARD = int32() never fails { pass 34i32; };  // D-056: a = element; holds the cell ptr, its DROP is the release
+pub func:TY_RWLOCK = int32() never fails { pass 35i32; };  // D-056 1.1.11b: a = element, b = LEVEL; one ptr to the owned cell
+pub func:TY_RGUARD = int32() never fails { pass 36i32; };  // D-056 1.1.11b: a = element; a READ hold — `.value` is read-only, the drop releases a reader
+pub func:TY_CONDVAR = int32() never fails { pass 37i32; };  // D-056 1.1.11b: a = LEVEL; `timedwait` only, over a lent Guard
+pub func:TY_BARRIER = int32() never fails { pass 38i32; };  // D-056 1.1.11b: a = N, b = LEVEL; `arrive` is the one operation
 pub func:TY_CHANNEL = int32() never fails { pass 32i32; };
 
 pub struct:Type = {
@@ -342,6 +346,13 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // lowers to, and why both are move-only like every owner.
     if (k == (raw TY_MUTEX()))    { pass true; }
     if (k == (raw TY_GUARD()))    { pass true; }
+    // The same reasoning kind for kind (1.1.11b): an RwLock owns cell and
+    // element; an RGuard owns a READ obligation its drop discharges; a
+    // CondVar and a Barrier own their cells.
+    if (k == (raw TY_RWLOCK()))   { pass true; }
+    if (k == (raw TY_RGUARD()))   { pass true; }
+    if (k == (raw TY_CONDVAR()))  { pass true; }
+    if (k == (raw TY_BARRIER()))  { pass true; }
     // A `dyn` OWNS the heap cell its coercion moved the concrete value into
     // (D-183, 1.2.4). Erasure needs indirection; indirection that survives
     // the frame needs the heap (the alloca spill dangled the moment a `dyn`
@@ -562,6 +573,21 @@ pub func:tt_mutex = int32(TypeTable->:t, int32:elem, int32:level) never fails {
 // the managed lowering had to precede this type.
 pub func:tt_guard = int32(TypeTable->:t, int32:elem) never fails {
     pass (raw tt_intern(t, raw TY_GUARD(), elem, 0i32, 0i32, 8i64, 8i32, 0i32));
+};
+
+// `RwLock<T, LEVEL>` and its READ hold (D-056, 1.1.11b).
+pub func:tt_rwlock = int32(TypeTable->:t, int32:elem, int32:level) never fails {
+    pass (raw tt_intern(t, raw TY_RWLOCK(), elem, level, 0i32, 8i64, 8i32, 0i32));
+};
+pub func:tt_rguard = int32(TypeTable->:t, int32:elem) never fails {
+    pass (raw tt_intern(t, raw TY_RGUARD(), elem, 0i32, 0i32, 8i64, 8i32, 0i32));
+};
+// `CondVar<LEVEL>` and `Barrier<N, LEVEL>` (D-056, 1.1.11b).
+pub func:tt_condvar = int32(TypeTable->:t, int32:level) never fails {
+    pass (raw tt_intern(t, raw TY_CONDVAR(), level, 0i32, 0i32, 8i64, 8i32, 0i32));
+};
+pub func:tt_barrier = int32(TypeTable->:t, int32:n, int32:level) never fails {
+    pass (raw tt_intern(t, raw TY_BARRIER(), n, level, 0i32, 8i64, 8i32, 0i32));
 };
 
 pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) never fails {
@@ -1138,8 +1164,12 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     // task boundary is exactly where it would. A MUTEX owns its cell like a
     // string owns its body: it transfers whole.
     if (k == (raw TY_GUARD()))   { pass true; }
+    if (k == (raw TY_RGUARD()))  { pass true; }
     if (k == (raw TY_STRING()))  { pass false; }
     if (k == (raw TY_MUTEX()))   { pass false; }
+    if (k == (raw TY_RWLOCK()))  { pass false; }
+    if (k == (raw TY_CONDVAR())) { pass false; }
+    if (k == (raw TY_BARRIER())) { pass false; }
     if (k == (raw TY_ARRAY()))   {
         pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
     }

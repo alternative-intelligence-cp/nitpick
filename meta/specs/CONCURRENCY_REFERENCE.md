@@ -546,7 +546,7 @@ it removes the second counter that made it expressible.
 | Mutex | `Mutex<T, LEVEL>` | owns its data (D-056); no recursive variant |
 | Read/write lock | `RwLock<T, LEVEL>` | owns its data |
 | Condition variable | `CondVar<LEVEL>` | **`wait` is removed** — `timedwait` is the only form (D-056) |
-| Barrier | `Barrier<comptime int32:N>` | reimplemented natively; the prototype wraps three C shims |
+| Barrier | `Barrier<N, LEVEL>` | reimplemented natively; LEVELLED like every blocking primitive (D-056's own rule — amended at 1.1.11b from the unlevelled `Barrier<N>` this table first wrote) |
 
 Every acquisition is **`async`**, deadline-bounded, and returns `Result`. There is
 no infinitely blocking acquire anywhere in the concurrency surface.

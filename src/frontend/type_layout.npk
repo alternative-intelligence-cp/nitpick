@@ -221,6 +221,10 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     // address by construction (D-056, 1.1.11).
     if (k == (raw TY_MUTEX()))   { pass true; }
     if (k == (raw TY_GUARD()))   { pass true; }
+    if (k == (raw TY_RWLOCK()))  { pass true; }
+    if (k == (raw TY_RGUARD()))  { pass true; }
+    if (k == (raw TY_CONDVAR())) { pass true; }
+    if (k == (raw TY_BARRIER())) { pass true; }
     // `atomic<T>` is `T`'s storage, so it carries an address exactly when `T` does.
     if (k == (raw TY_ATOMIC()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_OPTIONAL())){ pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }

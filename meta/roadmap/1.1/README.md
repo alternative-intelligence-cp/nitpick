@@ -131,3 +131,28 @@ doctrine's own fix arriving — and lock_levels.npk pins holding 5 while
 acquiring 3 as LOCK-001 with no clause at the site.
 
 RwLock, CondVar (timed only) and Barrier are 1.1.11's open half.
+
+## 1.1.11b — RwLock, CondVar, Barrier: the table is complete
+
+`RwLock<T, LEVEL>`: `read` returns `RGuard<T>` — shared, `.value`
+read-only, its drop releases a reader — and `write` returns the same
+`Guard<T>` a mutex does, because an exclusive hold is one meaning
+everywhere; the cell carries a KIND so one `npk_guard_release` picks the
+wake policy (mutex wakes one, writer release wakes the crowd of readers).
+`CondVar<LEVEL>`'s `timedwait` LENDS the guard, releases link-first (no
+lost signal), reacquires under the same absolute deadline — and on
+DeadlineExceeded the guard is SPENT: holding a lock past an expired
+deadline is the unbounded acquire D-056 forbids, so the lent guard's cell
+is nulled and the caller re-acquires. POSIX reacquires unboundedly;
+Nitpick deliberately does not. `Barrier<N, LEVEL>` gained the LEVEL the
+spec table omitted (D-056's own sentence corrects it), and a timed-out or
+wound-up party hands its slot back so the next round completes.
+
+The ordering analysis split HOLDS from WAITS: binding a guard raises the
+held level for the rest of the block; binding `arrive`/`timedwait`'s
+`Result<NIL>` raises nothing — the first sync_prims draft was refused by
+its own analysis for holding a level no binding held. sync_prims.npk runs
+two threads reading concurrently (700 exact), the classic
+predicate-loop wait/signal, and the barrier timeout-then-complete round,
+under stress. Two more reserved words bit on the way (`gid`, and cat5's
+arity twice); the reserved-word table keeps growing for a reason.

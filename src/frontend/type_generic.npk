@@ -160,6 +160,16 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
         pass (raw tt_guard(r.types,
                   raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
     }
+    if (k == (raw TY_RWLOCK())) {
+        pass (raw tt_rwlock(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls),
+                  (raw tt_get(r.types, t)).b));
+    }
+    if (k == (raw TY_RGUARD())) {
+        pass (raw tt_rguard(r.types,
+                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+    }
+    // CondVar and Barrier carry only constants — nothing to substitute.
 
     // AN INSTANCE'S ARGUMENTS ARE SUBSTITUTED AND IT IS REBUILT — `Container<T>`
     // becomes `Container<int32>`, a different interned type with its own mangled

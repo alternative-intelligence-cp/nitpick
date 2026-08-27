@@ -842,7 +842,17 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // The mutex (D-056, 1.1.11): the acquire's park protocol and the release
     // the guard's drop calls. Not builtins a program may call.
     drop irw_raw(w, "declare i32 @npk_mutex_acquire_wait(ptr, i64, ptr)");
-    drop irw_raw(w, "declare void @npk_mutex_release(ptr)");
+    drop irw_raw(w, "declare void @npk_guard_release(ptr)");
+    drop irw_raw(w, "declare i32 @npk_rw_read_wait(ptr, i64, ptr)");
+    drop irw_raw(w, "declare i32 @npk_rw_write_wait(ptr, i64, ptr)");
+    drop irw_raw(w, "declare void @npk_rw_release_read(ptr)");
+    drop irw_raw(w, "declare void @npk_cv_begin(ptr, ptr, i64, ptr)");
+    drop irw_raw(w, "declare void @npk_cv_done(ptr, ptr)");
+    drop irw_raw(w, "declare void @npk_cv_signal(ptr)");
+    drop irw_raw(w, "declare void @npk_cv_broadcast(ptr)");
+    drop irw_raw(w, "declare i64 @npk_barrier_arrive(ptr)");
+    drop irw_raw(w, "declare i32 @npk_barrier_poll(ptr, i64, i64, ptr)");
+    drop irw_raw(w, "declare void @npk_barrier_cancel(ptr, i64, ptr)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
@@ -1281,7 +1291,68 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
         drop irw_raw(w, "  br i1 %dead, label %done, label %rel");
         drop irw_raw(w, "rel:");
-        drop irw_raw(w, "  call void @npk_mutex_release(ptr %c)");
+        drop irw_raw(w, "  call void @npk_guard_release(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // AN RGUARD'S DROP RELEASES A READER (D-056, 1.1.11b); null releases
+    // nothing, like the write guard's.
+    if (k == (raw TY_RGUARD())) {
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %rel");
+        drop irw_raw(w, "rel:");
+        drop irw_raw(w, "  call void @npk_rw_release_read(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // AN RWLOCK OWNS ITS CELL AND ELEMENT like the mutex; a CONDVAR and a
+    // BARRIER own bare cells (D-056, 1.1.11b). By the join discipline nobody
+    // waits at the owner's exit.
+    if (k == (raw TY_RWLOCK())) {
+        int32:rwel = raw type_elem(c.types, dty);
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        if (raw type_drops(c.types, rwel, 64i32)) {
+            drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 24");
+            drop irw_raw(w, raw cat4("  call void ",
+                              raw drop_fn_sym(c, rwel), "(ptr %ep)", ""));
+        }
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+    if (k == (raw TY_CONDVAR())) {
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %c)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+    if (k == (raw TY_BARRIER())) {
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %c)");
         drop irw_raw(w, "  br label %done");
         drop irw_raw(w, "done:");
         drop irw_raw(w, "  ret void");
@@ -1299,7 +1370,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         drop irw_raw(w, "  br i1 %dead, label %done, label %live");
         drop irw_raw(w, "live:");
         if (raw type_drops(c.types, mel, 64i32)) {
-            drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 16");
+            drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 24");
             drop irw_raw(w, raw cat4("  call void ",
                               raw drop_fn_sym(c, mel), "(ptr %ep)", ""));
         }

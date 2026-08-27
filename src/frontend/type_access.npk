@@ -288,6 +288,13 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
         if (raw string_eq(gf, "value")) { pass (raw type_elem(e.types, base)); }
         pass (raw te_no_member(e, base, name, at));
     }
+    // An RGuard's `.value` READS the element; writing through a shared hold
+    // is refused where assignment targets are checked.
+    if (k == (raw TY_RGUARD())) {
+        string:rgf = raw intern_get(e.interns, name);
+        if (raw string_eq(rgf, "value")) { pass (raw type_elem(e.types, base)); }
+        pass (raw te_no_member(e, base, name, at));
+    }
     if (k == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(@r, base, name, e.scope);
         if (fi.found) { pass (fi.type_id); }
@@ -593,6 +600,61 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // `arena_make` reads its element: the element, the lock level and
         // the capacity all live in the type (D-072), so the call takes no
         // arguments and has nothing to infer from but context.
+        if (raw callee_is_builtin_named(e, n, "rwlock")) {
+            int32:rwant = raw expected_value(e);
+            if (rwant != 0i32) {
+                if ((raw type_kind(e.types, rwant)) == (raw TY_RWLOCK())) {
+                    if (count != 1i32) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`rwlock` takes the initial value of the element it will own (D-056)",
+                            n.span));
+                    }
+                    int32:rel = raw type_elem(e.types, rwant);
+                    int32:rsaved = e.expected;
+                    e.expected = rel;
+                    int32:rvt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+                    e.expected = rsaved;
+                    if (rvt != 0i32) {
+                        if (!(raw type_is_invalid(e.types, rvt))) {
+                            if (!(raw fits(e, rel, rvt))) {
+                                drop te_assign_mismatch(e, rel, rvt, n.span);
+                            }
+                            drop require_move_if_owning(e,
+                                ExprId{ index: raw ast_id_at(e.ast, start, 0i32) },
+                                rvt, n.span);
+                        }
+                    }
+                    pass (raw tt_result(e.types, rwant, 8i64, 8i32));
+                }
+            }
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                "`rwlock(initial)` needs an `RwLock<T, LEVEL>` annotation to read its element and level from (D-056)",
+                n.span));
+        }
+        if (raw callee_is_builtin_named(e, n, "condvar")) {
+            drop type_args_only(e, start, count);
+            int32:cvwant = raw expected_value(e);
+            if (cvwant != 0i32) {
+                if ((raw type_kind(e.types, cvwant)) == (raw TY_CONDVAR())) {
+                    pass (raw tt_result(e.types, cvwant, 8i64, 8i32));
+                }
+            }
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                "`condvar()` needs a `CondVar<LEVEL>` annotation to read its level from (D-056)",
+                n.span));
+        }
+        if (raw callee_is_builtin_named(e, n, "barrier")) {
+            drop type_args_only(e, start, count);
+            int32:bwant = raw expected_value(e);
+            if (bwant != 0i32) {
+                if ((raw type_kind(e.types, bwant)) == (raw TY_BARRIER())) {
+                    pass (raw tt_result(e.types, bwant, 8i64, 8i32));
+                }
+            }
+            pass (raw te_error(e, raw TYPE_UNKNOWN(),
+                "`barrier()` needs a `Barrier<N, LEVEL>` annotation to read its party count and level from (D-056)",
+                n.span));
+        }
         if (raw callee_is_builtin_named(e, n, "mutex")) {
             int32:mwant = raw expected_value(e);
             if (mwant != 0i32) {
@@ -1159,13 +1221,31 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_MUTEX())) {
         pass (raw type_mutex_method(e, n, id, recv, name, start, count));
     }
-    // A BORROWED MUTEX ACQUIRES THE SAME WAY (D-098's one-level deref): the
-    // mutex is move-only, so a worker receives `Mutex<T, LEVEL>->` and `.`
-    // reaches through it like any member access.
+    if ((raw type_kind(e.types, recv)) == (raw TY_RWLOCK())) {
+        pass (raw type_rwlock_method(e, n, id, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_CONDVAR())) {
+        pass (raw type_condvar_method(e, n, id, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_BARRIER())) {
+        pass (raw type_barrier_method(e, n, id, recv, name, start, count));
+    }
+    // A BORROWED PRIMITIVE OPERATES THE SAME WAY (D-098's one-level deref):
+    // all four sync primitives are move-only, so workers receive borrows and
+    // `.` reaches through them like any member access.
     if ((raw type_kind(e.types, recv)) == (raw TY_POINTER())) {
         int32:mpel = raw type_elem(e.types, recv);
         if ((raw type_kind(e.types, mpel)) == (raw TY_MUTEX())) {
             pass (raw type_mutex_method(e, n, id, mpel, name, start, count));
+        }
+        if ((raw type_kind(e.types, mpel)) == (raw TY_RWLOCK())) {
+            pass (raw type_rwlock_method(e, n, id, mpel, name, start, count));
+        }
+        if ((raw type_kind(e.types, mpel)) == (raw TY_CONDVAR())) {
+            pass (raw type_condvar_method(e, n, id, mpel, name, start, count));
+        }
+        if ((raw type_kind(e.types, mpel)) == (raw TY_BARRIER())) {
+            pass (raw type_barrier_method(e, n, id, mpel, name, start, count));
         }
     }
 
@@ -1985,6 +2065,161 @@ func:type_mutex_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:rec
     }
     int32:g = raw tt_guard(e.types, elem);
     pass (raw tt_result(e.types, g, 8i64, 8i32));
+};
+
+// `r.read(deadline)` / `r.write(deadline)` (D-056, 1.1.11b). Both `async`,
+// both deadline-mandatory. `write` returns the same `Guard<T>` a mutex's
+// `acquire` does — an exclusive hold is ONE meaning everywhere, and its drop
+// is the release; `read` returns `RGuard<T>`, the shared hold whose `.value`
+// is read-only and whose drop releases a reader.
+func:type_rwlock_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:recv,
+                                int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:elem = raw type_elem(e.types, recv);
+    bool:is_rd = raw string_eq(m, "read");
+    bool:is_wr = raw string_eq(m, "write");
+    if ((!is_rd) && (!is_wr)) {
+        string:c1 = raw string_concat("an rwlock has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "`: the set is `read` and `write` (D-056) — the guards' scopes release"),
+            n.span));
+    }
+    if (n_id.index != e.await_operand) {
+        pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
+            "`read`/`write` are `async` and run only under `await` (D-056/D-177): a contended acquisition that parked the thread would stall every sibling task on this executor",
+            n.span));
+    }
+    if (count != 1i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`read`/`write` take the deadline — mandatory (D-056): there is no infinitely blocking acquire anywhere in the concurrency surface",
+            n.span));
+    }
+    int32:dsaved = e.expected;
+    e.expected = 0i32;
+    int32:dt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    e.expected = dsaved;
+    if (dt != 0i32) {
+        if (!(raw type_is_invalid(e.types, dt))) {
+            if (!(raw string_eq(raw type_display(e.types, e.interns, dt), "Duration"))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "the deadline is a `Duration` (D-176), the one span type",
+                    n.span));
+            }
+        }
+    }
+    if (is_wr) {
+        pass (raw tt_result(e.types, raw tt_guard(e.types, elem), 8i64, 8i32));
+    }
+    pass (raw tt_result(e.types, raw tt_rguard(e.types, elem), 8i64, 8i32));
+};
+
+// `cv.timedwait(guard, deadline)` / `cv.signal()` / `cv.broadcast()`
+// (D-056, 1.1.11b). The guard is LENT: the wait releases the mutex behind
+// it, sleeps, and REACQUIRES before returning — on success. On
+// DeadlineExceeded the guard is SPENT: the runtime does not hold a lock for
+// a deadline that already passed, the emitted code nulls the lent guard's
+// cell so its drop releases nothing, and the caller re-acquires explicitly.
+// `wait` without a deadline does not exist (D-056). `signal`/`broadcast`
+// never suspend and never fail.
+func:type_condvar_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:recv,
+                                 int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    if (raw string_eq(m, "signal")) {
+        if (count != 0i32) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`signal` takes no arguments: it wakes one waiter, or nobody", n.span));
+        }
+        pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+    }
+    if (raw string_eq(m, "broadcast")) {
+        if (count != 0i32) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`broadcast` takes no arguments: it wakes every waiter", n.span));
+        }
+        pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+    }
+    if (!(raw string_eq(m, "timedwait"))) {
+        string:c1 = raw string_concat("a condvar has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "`: the set is `timedwait`, `signal` and `broadcast` (D-056) — `wait` without a deadline does not exist"),
+            n.span));
+    }
+    if (n_id.index != e.await_operand) {
+        pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
+            "`timedwait` is `async` and runs only under `await` (D-056/D-177)",
+            n.span));
+    }
+    if (count != 2i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`timedwait` takes the held guard and the deadline (D-056)",
+            n.span));
+    }
+    int32:gsaved = e.expected;
+    e.expected = 0i32;
+    int32:gt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    e.expected = gsaved;
+    if (gt != 0i32) {
+        if (!(raw type_is_invalid(e.types, gt))) {
+            if ((raw type_kind(e.types, gt)) != (raw TY_GUARD())) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`timedwait`'s first argument is the `Guard<T>` you hold — the wait releases its mutex and reacquires it before returning",
+                    n.span));
+            }
+        }
+    }
+    int32:dsaved = e.expected;
+    e.expected = 0i32;
+    int32:dt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+    e.expected = dsaved;
+    if (dt != 0i32) {
+        if (!(raw type_is_invalid(e.types, dt))) {
+            if (!(raw string_eq(raw type_display(e.types, e.interns, dt), "Duration"))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "the deadline is a `Duration` (D-176), the one span type",
+                    n.span));
+            }
+        }
+    }
+    pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+};
+
+// `b.arrive(deadline)` (D-056, 1.1.11b): the one barrier operation — the
+// N-th arrival releases everyone, an earlier one waits, and the deadline
+// bounds the wait. A timed-out party has NOT arrived: its slot is given
+// back, so the barrier is not wedged one short forever.
+func:type_barrier_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:recv,
+                                 int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    if (!(raw string_eq(m, "arrive"))) {
+        string:c1 = raw string_concat("a barrier has no operation `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(c1, "`: the set is `arrive` alone (D-056)"),
+            n.span));
+    }
+    if (n_id.index != e.await_operand) {
+        pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
+            "`arrive` is `async` and runs only under `await` (D-056/D-177)",
+            n.span));
+    }
+    if (count != 1i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`arrive` takes the deadline — mandatory (D-056)",
+            n.span));
+    }
+    int32:dsaved = e.expected;
+    e.expected = 0i32;
+    int32:dt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    e.expected = dsaved;
+    if (dt != 0i32) {
+        if (!(raw type_is_invalid(e.types, dt))) {
+            if (!(raw string_eq(raw type_display(e.types, e.interns, dt), "Duration"))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "the deadline is a `Duration` (D-176), the one span type",
+                    n.span));
+            }
+        }
+    }
+    pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
 };
 
 func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,

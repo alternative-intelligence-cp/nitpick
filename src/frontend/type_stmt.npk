@@ -543,6 +543,21 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     int32:want = raw type_of_expr(e, target);
     drop require_place(e, target, s.span);
+    // A SHARED HOLD IS READ-ONLY (D-056, 1.1.11b): writing through an
+    // `RGuard.value` would be the unsynchronized mutation the write lock
+    // exists to serialize — acquire `write` for a `Guard` instead.
+    ExprNode:rgt = raw ast_expr(e.ast, target);
+    if (rgt.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:rgb = raw exprtypes_get(e.expr_types, raw expr_operand(rgt));
+        if (rgb != 0i32) {
+            if ((raw type_kind(e.types, rgb)) == (raw TY_RGUARD())) {
+                discard(raw te_error(e, raw TYPE_MISMATCH(),
+                    "an `RGuard`'s `.value` is READ-ONLY (D-056): a read hold is shared, and a write through it is the unsynchronized mutation the write lock exists to serialize — acquire `write` for a `Guard`",
+                    s.span));
+                pass NIL;
+            }
+        }
+    }
 
     int32:saved = e.expected;
     e.expected = want;

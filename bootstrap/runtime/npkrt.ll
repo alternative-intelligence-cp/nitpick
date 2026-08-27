@@ -843,15 +843,251 @@ expired:
   ret i32 -4107
 }
 
-; The release IS the guard's generated drop (D-183): the closing brace of
-; the critical section lowers to exactly this call.
-define void @npk_mutex_release(ptr %cell) {
+; The release IS the guard's generated drop (D-183), and ONE symbol serves
+; every exclusive hold: the cell's KIND (at +16) chooses the wake policy —
+; a mutex wakes one waiter (they all want the same thing), an rwlock's
+; writer release wakes ALL (a crowd of readers may now proceed together).
+define void @npk_guard_release(ptr %cell) {
 entry:
   %llp = getelementptr i8, ptr %cell, i64 4
   call void @npk_mx_lock(ptr %llp)
   store i32 0, ptr %cell
+  %kp = getelementptr i8, ptr %cell, i64 16
+  %kind = load i32, ptr %kp
   %wp = getelementptr i8, ptr %cell, i64 8
+  %isrw = icmp eq i32 %kind, 1
+  br i1 %isrw, label %all, label %one
+one:
   call void @npk_ch_wake_one(ptr %wp)
+  br label %out
+all:
+  call void @npk_ch_wake_all(ptr %wp)
+  br label %out
+out:
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
+; A reader's release: the count comes down, and zero wakes the crowd — a
+; parked writer is in it.
+define void @npk_rw_release_read(ptr %cell) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %st = load i32, ptr %cell
+  %st2 = add i32 %st, -1
+  %gone = icmp sle i32 %st2, 1
+  %nst = select i1 %gone, i32 0, i32 %st2
+  store i32 %nst, ptr %cell
+  %iszero = icmp eq i32 %nst, 0
+  br i1 %iszero, label %wake, label %out
+wake:
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wake_all(ptr %wp)
+  br label %out
+out:
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
+; The rwlock's two acquires, over the mutex cell's own shape. State: 0 free,
+; 1 a writer, N>=2 is N-1 readers.
+define i32 @npk_rw_read_wait(ptr %cell, i64 %abs, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  %st = load i32, ptr %cell
+  %held = icmp eq i32 %st, 1
+  br i1 %held, label %busy, label %take
+take:
+  %isfree = icmp eq i32 %st, 0
+  %inc = add i32 %st, 1
+  %nst = select i1 %isfree, i32 2, i32 %inc
+  store i32 %nst, ptr %cell
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 0
+busy:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+park:
+  call void @npk_ch_wait_link(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+expired:
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 -4107
+}
+
+define i32 @npk_rw_write_wait(ptr %cell, i64 %abs, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  %st = load i32, ptr %cell
+  %free = icmp eq i32 %st, 0
+  br i1 %free, label %take, label %busy
+take:
+  store i32 1, ptr %cell
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 0
+busy:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+park:
+  call void @npk_ch_wait_link(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+expired:
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 -4107
+}
+
+; --- the condvar (D-056, 1.1.11b) -------------------------------------------
+;
+; `timedwait`'s phase 0: LINK FIRST, THEN RELEASE — a signal landing between
+; a release and a late link would be lost; one landing after the link marks
+; the frame due, which the sleeper-push protocol keeps (the channel's own
+; guarantee). The mutex release is the ordinary guard release. The park is
+; bounded by the caller's absolute deadline, like every wait in the surface.
+define void @npk_cv_begin(ptr %cv, ptr %m, i64 %abs, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cv, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cv, i64 8
+  call void @npk_ch_wait_link(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  call void @npk_guard_release(ptr %m)
+  call void @npk_park_until(i64 %abs)
+  ret void
+}
+
+; Off the list, on every completed path — idempotent like every unlink.
+define void @npk_cv_done(ptr %cv, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cv, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cv, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
+define void @npk_cv_signal(ptr %cv) {
+entry:
+  %llp = getelementptr i8, ptr %cv, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cv, i64 8
+  call void @npk_ch_wake_one(ptr %wp)
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
+define void @npk_cv_broadcast(ptr %cv) {
+entry:
+  %llp = getelementptr i8, ptr %cv, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cv, i64 8
+  call void @npk_ch_wake_all(ptr %wp)
+  call void @npk_mx_unlock(ptr %llp)
+  ret void
+}
+
+; --- the barrier (D-056, 1.1.11b) -------------------------------------------
+;
+; [ count | listlock | waiters | kind | generation +20 | N +24 ]. The N-th
+; arrival resets the count, moves the GENERATION and wakes everyone; an
+; earlier arrival waits the generation out. A timed-out or wound-up party
+; has NOT arrived: its slot is handed back under the lock, so the barrier is
+; not wedged one short forever — unless its round already completed, in
+; which case there is nothing to hand back.
+define i64 @npk_barrier_arrive(ptr %cell) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %cnt = load i32, ptr %cell
+  %c2 = add i32 %cnt, 1
+  %np = getelementptr i8, ptr %cell, i64 24
+  %n = load i32, ptr %np
+  %full = icmp sge i32 %c2, %n
+  br i1 %full, label %release, label %waitgen
+release:
+  store i32 0, ptr %cell
+  %gp = getelementptr i8, ptr %cell, i64 20
+  %g = load i32, ptr %gp
+  %g2 = add i32 %g, 1
+  store i32 %g2, ptr %gp
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wake_all(ptr %wp)
+  call void @npk_mx_unlock(ptr %llp)
+  ret i64 -1
+waitgen:
+  store i32 %c2, ptr %cell
+  %gp2 = getelementptr i8, ptr %cell, i64 20
+  %gw = load i32, ptr %gp2
+  call void @npk_mx_unlock(ptr %llp)
+  %gz = zext i32 %gw to i64
+  ret i64 %gz
+}
+
+define i32 @npk_barrier_poll(ptr %cell, i64 %mygen, i64 %abs, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  %gp = getelementptr i8, ptr %cell, i64 20
+  %g = load i32, ptr %gp
+  %gz = zext i32 %g to i64
+  %moved = icmp ne i64 %gz, %mygen
+  br i1 %moved, label %done, label %still
+done:
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 0
+still:
+  %now = call i64 @npk_mono_now()
+  %late = icmp sge i64 %now, %abs
+  br i1 %late, label %expired, label %park
+expired:
+  %cnt = load i32, ptr %cell
+  %c2 = add i32 %cnt, -1
+  %neg = icmp slt i32 %c2, 0
+  %nc = select i1 %neg, i32 0, i32 %c2
+  store i32 %nc, ptr %cell
+  call void @npk_mx_unlock(ptr %llp)
+  ret i32 -4107
+park:
+  call void @npk_ch_wait_link(ptr %wp, ptr %fr)
+  call void @npk_mx_unlock(ptr %llp)
+  call void @npk_park_until(i64 %abs)
+  ret i32 1
+}
+
+define void @npk_barrier_cancel(ptr %cell, i64 %mygen, ptr %fr) {
+entry:
+  %llp = getelementptr i8, ptr %cell, i64 4
+  call void @npk_mx_lock(ptr %llp)
+  %wp = getelementptr i8, ptr %cell, i64 8
+  call void @npk_ch_wait_unlink(ptr %wp, ptr %fr)
+  %gp = getelementptr i8, ptr %cell, i64 20
+  %g = load i32, ptr %gp
+  %gz = zext i32 %g to i64
+  %same = icmp eq i64 %gz, %mygen
+  br i1 %same, label %giveback, label %out
+giveback:
+  %cnt = load i32, ptr %cell
+  %c2 = add i32 %cnt, -1
+  %neg = icmp slt i32 %c2, 0
+  %nc = select i1 %neg, i32 0, i32 %c2
+  store i32 %nc, ptr %cell
+  br label %out
+out:
   call void @npk_mx_unlock(ptr %llp)
   ret void
 }
