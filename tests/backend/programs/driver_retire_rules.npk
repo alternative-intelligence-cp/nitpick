@@ -1,0 +1,25 @@
+// expect-exit: 97
+//
+// THE REGISTRY'S DOUBLE-FREE TRAPS (D-188). `driver_retire` on a slot that
+// is not active — never claimed, or already retired — is the registry's
+// equivalent of freeing a foreign pointer, and it takes the allocator's
+// posture exactly: a deterministic trap (`-4102`, Unreachable) through the
+// controlled route, never a silent pass. Reaching the statement after it is
+// the defect this test exists to refuse.
+mod:driver_retire_rules;
+
+func:main = int32(cstring[]:_~argv) {
+    drop driver_retire(5i64);   // slot 5 was never claimed
+    exit 11i32;                 // unreachable if the registry holds its rule
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)    { exit 97i32; },
+        (HeapOom)        { exit 93i32; },
+        (HeapBadRequest) { exit 93i32; },
+        (WildLeak)       { exit 92i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 90i32;
+};

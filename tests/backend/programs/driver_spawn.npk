@@ -1,0 +1,61 @@
+// expect-exit: 0
+// stress: 40
+// argv: MOCK_DRIVER
+//
+// THE BRIDGE'S SPAWN, END TO END (1.1.13a; D-149 over D-055): a real child
+// process — clone with SIGCHLD|CLONE_PIDFD, the allocation-free child path,
+// execve of the mock driver — and the INIT handshake over the control
+// socketpair, the sealed memfd riding SCM_RIGHTS. Then `bridge_reap`: kill
+// via pidfd, a bounded waitid, the region unmapped, the registry slot
+// retired LAST.
+//
+// The exit code is 0 ON PURPOSE: a clean exit runs the controlled-exit
+// checks, so this test also asserts the whole reclaim — no wild allocation
+// leaked (spawn's scratch, the packet buffers, the reap's siginfo), and no
+// driver left registered (D-188). The path to the mock arrives through
+// argv (the harness builds fixtures and substitutes MOCK_DRIVER), because
+// `Path` refuses relative paths by design.
+mod:driver_spawn;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+    if ((b.child => int64) <= 0i64) { exit 11i32; }
+    if (b.reg_slot < 0i64)          { exit 12i32; }
+
+    // The backstop reap (the graceful `bridge_close` is 1.1.13b): SIGKILL,
+    // reap, unmap, retire. Idempotence is part of the contract — the second
+    // call finds `closed` and does nothing.
+    drop bridge_reap(@b);
+    drop bridge_reap(@b);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

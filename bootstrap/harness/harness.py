@@ -89,6 +89,14 @@ class Expect:
         self.notes = []         # [(code, line|None, col|None)]
         self.exit = 0
         self.no_parse_error = False
+        # `// argv: TOK ...` -- extra argv for the RUN. A token that names a
+        # fixture (its basename, uppercased -- MOCK_DRIVER for
+        # tests/backend/fixtures/mock_driver.npk) is substituted with the
+        # built fixture's absolute path; anything else passes verbatim. This
+        # is how a test reaches a helper BINARY without hardcoding a path:
+        # `Path` refuses relative paths by design, and a fixed absolute path
+        # would bake one machine's layout into the suite.
+        self.argv = []
         # HOW MANY TIMES TO RUN IT (1.1.10-C). One run is not a test of a
         # concurrent program: a schedule-dependent bug passes most of the time,
         # and "most" is what makes it survive. Two real defects hid behind
@@ -136,6 +144,8 @@ def read_expectations(path):
                 e.exit = int(body.split(":", 1)[1].strip())
             elif body.startswith("stress:"):
                 e.stress = int(body.split(":", 1)[1].strip())
+            elif body.startswith("argv:"):
+                e.argv = body.split(":", 1)[1].split()
             elif body.startswith("expect-no-parse-error"):
                 e.no_parse_error = True
     return e
@@ -1590,13 +1600,14 @@ def check_backend_rejection(binary, path, name, exp):
     return check_module_rejection(binary, path, name, exp)
 
 
-def check_emitted_program(binary, path, name, exp, tmp):
-    """A program COMPILED BY THIS COMPILER'S BACKEND, run, and its exit compared.
+def emit_and_link(binary, path, name, base, tmp):
+    """Compile `path` with the REAL backend and link it to the binary at `base`.
 
     The seed is nowhere in this path: `emit_check` loads, checks and EMITS with
-    the real compiler, and what runs is what `emit_program` wrote. This is the
-    strongest instrument the backend has -- a byte-pin proves the text is stable,
-    but only execution proves the text means what the source said.
+    the real compiler, and what runs is what `emit_program` wrote. Shared by the
+    program sweep and the FIXTURES build (a helper binary a test spawns), so a
+    fixture is held to every check a program is -- symbol uniqueness, hoisted
+    allocas, the zero-dependency scan.
     """
     try:
         r = subprocess.run([binary, path], capture_output=True, timeout=30)
@@ -1608,7 +1619,6 @@ def check_emitted_program(binary, path, name, exp, tmp):
     if r.returncode != 0:
         got = r.stderr.decode("utf-8", "replace").strip().replace("\n", ", ")
         return ["%s: expected IR, got a refusal (%s)" % (name, got)]
-    base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
     with open(base + ".ll", "wb") as fh:
         fh.write(r.stdout)
     ir_text = r.stdout.decode("utf-8", "replace")
@@ -1632,13 +1642,44 @@ def check_emitted_program(binary, path, name, exp, tmp):
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
-    try:
-        got = subprocess.run([base], capture_output=True, timeout=10).returncode
-    except subprocess.TimeoutExpired:
-        return ["%s: timed out" % name]
-    if got != exp.exit:
+    return []
+
+
+def check_emitted_program(binary, path, name, exp, tmp, fixture_map=None):
+    """A program COMPILED BY THIS COMPILER'S BACKEND, run, and its exit compared.
+
+    A byte-pin proves the text is stable; only execution proves the text means
+    what the source said. `// stress: N` runs it N times and requires the SAME
+    answer every time -- the loop lives HERE, in the stage that actually runs
+    these programs (its first home, `check_positive`, is the seed's path, which
+    none of the concurrency programs ever took: the marker was silently dead
+    for the whole real-backend suite until 1.1.13a). `// argv:` tokens resolve
+    through the fixture map (built helper binaries) or pass verbatim.
+    """
+    base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
+    fails = emit_and_link(binary, path, name, base, tmp)
+    if fails:
+        return fails
+    run = [base]
+    for tok in exp.argv:
+        run.append((fixture_map or {}).get(tok, tok))
+    seen = {}
+    for _ in range(max(1, exp.stress)):
+        try:
+            got = subprocess.run(run, capture_output=True, timeout=10).returncode
+        except subprocess.TimeoutExpired:
+            return ["%s: timed out" % name]
+        if got != exp.exit:
+            seen[got] = seen.get(got, 0) + 1
+    if seen:
+        if exp.stress > 1:
+            detail = ", ".join("%d x%d" % (rc, n) for rc, n in sorted(seen.items()))
+            return ["%s: expected %d every run, got %s in %d runs -- a "
+                    "schedule-dependent answer is a bug that passes most of "
+                    "the time (compiled by the REAL backend)"
+                    % (name, exp.exit, detail, exp.stress)]
         return ["%s: exited %d, expected %d (compiled by the REAL backend)"
-                % (name, got, exp.exit)]
+                % (name, list(seen)[0], exp.exit)]
     return []
 
 
@@ -1969,6 +2010,31 @@ def main(argv):
             # sentence made a test: subset 1 compiles and runs under THIS
             # compiler, with the same expectations the seed meets. A file another
             # one imports is a fixture here exactly as it is for the seed.
+            # HELPER BINARIES A TEST SPAWNS (1.1.13a): everything under
+            # tests/backend/fixtures/ is built by the same real-backend
+            # pipeline -- and held to the same checks -- but never run by the
+            # harness itself. A test names one in `// argv:` by its uppercased
+            # stem (MOCK_DRIVER), and receives the built binary's absolute
+            # path in its own argv; `Path` refuses relative paths by design,
+            # so the path travels through argv rather than being spelled in
+            # the source. Built into .internal/ so the path is stable across
+            # runs (a spawned child outlives no test, but a stable home keeps
+            # failures reproducible by hand).
+            fixture_map = {}
+            fixdir = os.path.join(ROOT, ".internal", "fixtures")
+            fixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                     "fixtures", "*.npk")))
+            if fixtures:
+                os.makedirs(fixdir, exist_ok=True)
+            for p in fixtures:
+                stem = os.path.basename(p)[:-4]
+                fbase = os.path.join(fixdir, stem)
+                fails = emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp)
+                if fails:
+                    failures += fails
+                    continue
+                fixture_map[stem.upper()] = fbase
+
             progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
                                                   "programs", "*.npk")))
             # A program's imported halves are fixtures, not standalone programs
@@ -1983,7 +2049,7 @@ def main(argv):
             for p in progs + conf:
                 exp = read_expectations(p)
                 failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
-                                                  exp, tmp)
+                                                  exp, tmp, fixture_map)
                 n += 1
             print("  %-11s %2d real-backend program(s)" % ("programs", n))
 

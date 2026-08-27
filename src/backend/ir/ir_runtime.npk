@@ -110,6 +110,17 @@ pub func:rt_sig = RtSig(string:name) never fails {
     if (raw string_eq(name, "wild_live_count")) {
         pass (raw rt("@npk_wild_live_count", "i64", false, "", 0i32, "", "", "", ""));
     }
+    // The driver registry pair (1.1.13a, D-149 over D-055). clone_exec is
+    // WRAPPED: a full registry or a failed clone is a Result error the
+    // caller routes, never a trap — the Bridge never traps (v3 §4.2).
+    if (raw string_eq(name, "driver_clone_exec")) {
+        pass (raw rt("@npk_driver_clone_exec", "{ i64, i32 }", true, "i64",
+                     1i32, "ptr", "", "", ""));
+    }
+    if (raw string_eq(name, "driver_retire")) {
+        pass (raw rt("@npk_driver_retire", "void", false, "", 1i32,
+                     "i64", "", "", ""));
+    }
     if (raw string_eq(name, "mono_now")) {
         pass (raw rt("@npk_mono_now", "i64", false, "", 0i32, "", "", "", ""));
     }
@@ -212,7 +223,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() never fails { pass 42i32; };
+pub func:rt_count = int32() never fails { pass 44i32; };
 
 pub func:rt_name_at = string(int32:i) never fails {
     if (i == 0i32)  { pass "aalloc"; }
@@ -234,6 +245,8 @@ pub func:rt_name_at = string(int32:i) never fails {
     if (i == 16i32) { pass "mono_now"; }
     if (i == 40i32) { pass "chain_depth"; }
     if (i == 41i32) { pass "chain_site"; }
+    if (i == 42i32) { pass "driver_clone_exec"; }
+    if (i == 43i32) { pass "driver_retire"; }
     if (i == 17i32) { pass "open"; }
     if (i == 18i32) { pass "path_exists"; }
     if (i == 19i32) { pass "ralloc"; }

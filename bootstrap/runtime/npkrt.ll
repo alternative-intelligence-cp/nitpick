@@ -1643,6 +1643,258 @@ one:
 declare i64 @llvm.ctpop.i64(i64)
 declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)
 
+; ---------------------------------------------------------------------------
+; THE DRIVER REGISTRY (1.1.13a; D-149 over D-055, v3 plan §8).
+;
+; Every foreign capability runs as a SUPERVISED CHILD PROCESS, and this table
+; is what makes "supervised" hold on the failure paths: it is preallocated
+; .bss (failsafe cannot allocate, D-014), CAS-claimed, and walked by the trap
+; route itself — `npk_driver_kill_all` runs BEFORE user `failsafe`, because
+; safing is mechanism, not policy (D-013), and an uncontrolled driver DURING
+; failsafe is exactly the hazard class D-055 exists for (actuators live while
+; the runtime is dying).
+;
+; 16 entries × 4 words [ state | pid | pidfd | pad ], flat i32s. state is
+; 0 free / 1 claiming / 2 active, atomic; pid is diagnostic only; the PIDFD
+; is the kill handle — signals travel through it exclusively, so a signal
+; after the child is reaped answers ESRCH and can never touch a recycled pid
+; (poc test 2). Fixed capacity is the point, not a limit to lift: spawn
+; refuses when full (-EAGAIN), bounded like everything failsafe walks.
+;
+; THE ENTRY OUTLIVES EVERY RESOURCE IT GUARDS (v3 §4.2): the slot is
+; PUBLISHED (state 2) before the clone, with pidfd prefilled -1 (the walker
+; skips a negative pidfd), and CLONE_PIDFD's parent_tidptr aims INTO THE
+; SLOT — the kernel writes the kill handle into registry storage during the
+; clone itself, so there is never an instant where a live child has no
+; killable entry. Retirement is teardown's LAST step, after the process is
+; dead and reaped; the harmless residue of that order (kill_all signalling a
+; pidfd whose process was just reaped) is an ESRCH, by design.
+@npk_driver_reg = internal global [64 x i32] zeroinitializer
+
+; Spawn a driver: claim a slot, clone(SIGCHLD | CLONE_PIDFD), and in the
+; child run the fixed descriptor-and-exec sequence. Returns Result<int64>
+; ({ pid, 0 } or { 0, -errno }; -EAGAIN when the registry is full).
+;
+; The param block `blk` is nine i64s, PREPARED BY THE CALLER BEFORE THE
+; CLONE (the npk_thread precedent — no shared state is read after the child
+; exists that was not written before it):
+;   [0] path   (ptr, NUL-terminated)      [5] ctrl fd      (dup3 → 3)
+;   [1] argv   (ptr, NULL-terminated)     [6] parent pid   (pre-recorded)
+;   [2] envp   (ptr, NULL-terminated)     [7] OUT: registry slot
+;   [3] /dev/null fd (dup3 → 0 and 1)     [8] OUT: pidfd
+;   [4] stderr write end (dup3 → 2)
+;
+; THE CHILD PATH IS ALLOCATION-FREE BY CONSTRUCTION: it reads the block and
+; issues raw syscalls, nothing else. Another thread may hold the allocator
+; futex at clone time, and the child — a copy with ONE thread — would
+; deadlock on the copied lock word at its first allocation. The same
+; reasoning bars running ANY Nitpick code in the child: prctl, getppid,
+; dup3 ×4, execve, exit_group(127), in that order, and nothing more.
+;
+; The caller guarantees every child-bound fd (blk[3..5]) is ≥ 4 — all are
+; born CLOEXEC and re-homed upward pre-clone if the std slots were somehow
+; free — so the dup3 shuffle onto 0/1/2/3 can never clobber a source before
+; it is consumed, and dup3 (which refuses oldfd == newfd) never sees the
+; degenerate pair. dup3 with flags 0 clears CLOEXEC on the new fd: exactly
+; the four descriptors meant to survive the exec do, and nothing else does
+; (birth-CLOEXEC makes fd-leak-freedom structural, v3 §4.3).
+define { i64, i32 } @npk_driver_clone_exec(ptr %blk) {
+entry:
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %miss ]
+  %full = icmp sge i64 %i, 16
+  br i1 %full, label %nofree, label %try
+try:
+  %base = mul i64 %i, 4
+  %sp = getelementptr i32, ptr @npk_driver_reg, i64 %base
+  %cx = cmpxchg ptr %sp, i32 0, i32 1 acq_rel monotonic
+  %won = extractvalue { i32, i1 } %cx, 1
+  br i1 %won, label %claimed, label %miss
+miss:
+  %inx = add i64 %i, 1
+  br label %scan
+nofree:
+  ; the registry is FULL: refuse, bounded — the D-055 posture, never grow.
+  ret { i64, i32 } { i64 0, i32 -11 }
+claimed:
+  %b1 = add i64 %base, 1
+  %b2 = add i64 %base, 2
+  %pidp = getelementptr i32, ptr @npk_driver_reg, i64 %b1
+  %pfdp = getelementptr i32, ptr @npk_driver_reg, i64 %b2
+  store i32 0, ptr %pidp
+  store i32 -1, ptr %pfdp
+  ; PUBLISH BEFORE THE CLONE (release pairs with the walker's acquire): from
+  ; here a trap on any thread finds this slot, even though the child does
+  ; not exist yet — the walker skips pidfd -1, and the kernel overwrites it
+  ; with the real pidfd during the clone below.
+  store atomic i32 2, ptr %sp release, align 4
+  ; clone(SIGCHLD | CLONE_PIDFD, stack 0, parent_tidptr = &slot.pidfd).
+  ; 4113 = SIGCHLD 17 | CLONE_PIDFD 0x1000. Stack 0 is fork-shape: the child
+  ; continues HERE on a copy-on-write copy of this stack — legal in ordinary
+  ; IR (unlike the CLONE_VM thread clone, which must ride the asm
+  ; trampoline), because every frame offset it reads is its own copy.
+  %pfdi = ptrtoint ptr %pfdp to i64
+  %r = call i64 @npk_sys6(i64 56, i64 4113, i64 0, i64 %pfdi, i64 0, i64 0, i64 0)
+  %isch = icmp eq i64 %r, 0
+  br i1 %isch, label %child, label %parent
+parent:
+  %failed = icmp slt i64 %r, 0
+  br i1 %failed, label %cfail, label %ok
+cfail:
+  ; the clone itself failed: retire the claimed slot, hand the errno up.
+  store atomic i32 0, ptr %sp release, align 4
+  %ec = trunc i64 %r to i32
+  %f0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %f1 = insertvalue { i64, i32 } %f0, i32 %ec, 1
+  ret { i64, i32 } %f1
+ok:
+  %pc = trunc i64 %r to i32
+  store i32 %pc, ptr %pidp
+  %pfd = load i32, ptr %pfdp
+  %o7 = getelementptr i64, ptr %blk, i64 7
+  store i64 %i, ptr %o7
+  %pfde = sext i32 %pfd to i64
+  %o8 = getelementptr i64, ptr %blk, i64 8
+  store i64 %pfde, ptr %o8
+  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
+  ret { i64, i32 } %k1
+child:
+  ; THE CHILD. PDEATHSIG first — if the runtime dies by ANY means, SIGKILL
+  ; included (where failsafe never runs), the kernel reaps this process
+  ; (poc test 3). The prctl races the parent dying between clone and here;
+  ; the recorded-parent check closes it: a mismatched getppid means the
+  ; death signal is already unarmed, so exit now.
+  %d1 = call i64 @npk_sys6(i64 157, i64 1, i64 9, i64 0, i64 0, i64 0, i64 0)
+  %pp = call i64 @npk_sys6(i64 110, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %wantp = getelementptr i64, ptr %blk, i64 6
+  %want = load i64, ptr %wantp
+  %orph = icmp ne i64 %pp, %want
+  br i1 %orph, label %cdie, label %harden
+harden:
+  ; NO_NEW_PRIVS: unconditional, free — a compromised driver cannot escalate
+  ; through setuid/fscaps, and it is the precondition for any later seccomp
+  ; filter (v3 §12).
+  %d2 = call i64 @npk_sys6(i64 157, i64 38, i64 1, i64 0, i64 0, i64 0, i64 0)
+  %np = getelementptr i64, ptr %blk, i64 3
+  %nfd = load i64, ptr %np
+  %d3 = call i64 @npk_sys6(i64 292, i64 %nfd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %d4 = call i64 @npk_sys6(i64 292, i64 %nfd, i64 1, i64 0, i64 0, i64 0, i64 0)
+  %sp2 = getelementptr i64, ptr %blk, i64 4
+  %sfd = load i64, ptr %sp2
+  %d5 = call i64 @npk_sys6(i64 292, i64 %sfd, i64 2, i64 0, i64 0, i64 0, i64 0)
+  %cp = getelementptr i64, ptr %blk, i64 5
+  %cfd = load i64, ptr %cp
+  %d6 = call i64 @npk_sys6(i64 292, i64 %cfd, i64 3, i64 0, i64 0, i64 0, i64 0)
+  %pathp = getelementptr i64, ptr %blk, i64 0
+  %path = load i64, ptr %pathp
+  %argvp = getelementptr i64, ptr %blk, i64 1
+  %argv = load i64, ptr %argvp
+  %envpp = getelementptr i64, ptr %blk, i64 2
+  %envp = load i64, ptr %envpp
+  %dx = call i64 @npk_sys6(i64 59, i64 %path, i64 %argv, i64 %envp, i64 0, i64 0, i64 0)
+  br label %cdie
+cdie:
+  ; execve returned (or the parent vanished pre-prctl): nothing to clean —
+  ; the child owns no Nitpick state — and one obligation: STOP. 127 is the
+  ; shell's exec-failure convention; the parent observes it as ctrl EOF at
+  ; the handshake, which is the failure path spawn already reports.
+  %dz = call i64 @npk_sys6(i64 231, i64 127, i64 0, i64 0, i64 0, i64 0, i64 0)
+  unreachable
+}
+
+; Retire a registry slot — teardown's LAST step (v3 §4.2), after the process
+; is dead and reaped. A retire of a slot that is not active is the registry's
+; double-free: a defect, and it traps as one (-4102), exactly as the
+; allocator treats a foreign pointer.
+define void @npk_driver_retire(i64 %slot) {
+entry:
+  %neg = icmp slt i64 %slot, 0
+  %big = icmp sge i64 %slot, 16
+  %oob = or i1 %neg, %big
+  br i1 %oob, label %bad, label %check
+check:
+  %base = mul i64 %slot, 4
+  %sp = getelementptr i32, ptr @npk_driver_reg, i64 %base
+  %st = load atomic i32, ptr %sp acquire, align 4
+  %live = icmp eq i32 %st, 2
+  br i1 %live, label %clear, label %bad
+clear:
+  store atomic i32 0, ptr %sp release, align 4
+  ret void
+bad:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+}
+
+; SIGKILL every registered driver, via pidfd only. Called by the trap route
+; before user `failsafe` runs — and callable nowhere else. No graceful
+; shutdown, no reaping, no munmap, no state change: SAFING, not cleanup. A
+; pidfd whose process is gone answers ESRCH; a prefilled -1 (mid-clone slot)
+; is skipped — that child, if it materialises, dies with the runtime by
+; PDEATHSIG, the layer beneath this one.
+define void @npk_driver_kill_all() {
+entry:
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %next ]
+  %done = icmp sge i64 %i, 16
+  br i1 %done, label %fin, label %look
+look:
+  %base = mul i64 %i, 4
+  %sp = getelementptr i32, ptr @npk_driver_reg, i64 %base
+  %st = load atomic i32, ptr %sp acquire, align 4
+  %live = icmp eq i32 %st, 2
+  br i1 %live, label %kill, label %next
+kill:
+  %b2 = add i64 %base, 2
+  %pfdp = getelementptr i32, ptr @npk_driver_reg, i64 %b2
+  %pfd = load i32, ptr %pfdp
+  %unset = icmp slt i32 %pfd, 0
+  br i1 %unset, label %next, label %sig
+sig:
+  ; pidfd_send_signal(pidfd, SIGKILL, NULL, 0) — allocation-free,
+  ; mask-independent, ESRCH-safe against pid reuse.
+  %pfde = sext i32 %pfd to i64
+  %z = call i64 @npk_sys6(i64 424, i64 %pfde, i64 9, i64 0, i64 0, i64 0, i64 0)
+  br label %next
+next:
+  %inx = add i64 %i, 1
+  br label %scan
+fin:
+  ret void
+}
+
+; How many drivers are registered — what the controlled exit checks (D-188,
+; the D-151 K-semantics rule extended to the second registry): a clean exit
+; 0 with a live driver is a program that never decided its driver's fate,
+; and it traps (-4109) rather than abandoning a supervised process to the
+; kernel backstops. The backstops still hold — kill_all runs on that trap's
+; path, then PDEATHSIG at exit_group — so the trap is the REPORT, and the
+; safing is unconditional either way.
+define i64 @npk_driver_live_count() {
+entry:
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %inx, %step ]
+  %acc = phi i64 [ 0, %entry ], [ %nacc, %step ]
+  %done = icmp sge i64 %i, 16
+  br i1 %done, label %fin, label %step
+step:
+  %base = mul i64 %i, 4
+  %sp = getelementptr i32, ptr @npk_driver_reg, i64 %base
+  %st = load atomic i32, ptr %sp acquire, align 4
+  %live = icmp eq i32 %st, 2
+  %one = zext i1 %live to i64
+  %nacc = add i64 %acc, %one
+  %inx = add i64 %i, 1
+  br label %scan
+fin:
+  ret i64 %acc
+}
+
 ; THE READY QUEUE and THE SLEEPERS, both intrusive through `qnext` — a task is
 ; ready or sleeping, never both, so one link word serves. `wake_at` is the
 ; sleeper's absolute monotonic timepoint, and **-1 once the task has
@@ -2406,6 +2658,12 @@ ok:
 ;                            K-semantics rule (CONTROL_REFERENCE 4.6) made
 ;                            real at 0.10.1; failsafe may clean up with
 ;                            wild_release_all() and exit positive
+;   -4109  DRIVER_LEAK       exit 0 reached with a driver still registered
+;                            (D-188, 1.1.13a) -- the D-151 rule extended to
+;                            the driver registry: a clean exit never abandons
+;                            a supervised process. kill_all has already run
+;                            on this trap's own path, so the driver is dead
+;                            before failsafe reports it
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
 ; A trap RAISED WHILE FAILSAFE IS RUNNING -- failsafe itself double-freeing,
@@ -2450,6 +2708,12 @@ hard:
   unreachable
 run:
   store i32 1, ptr @npk_in_failsafe
+  ; DRIVERS DIE BEFORE FAILSAFE RUNS (1.1.13a; D-149 over D-055): the
+  ; registry walk is the runtime's own act, not the program's — safing is
+  ; mechanism, not policy (D-013), and an uncontrolled driver DURING
+  ; failsafe is the hazard class the architecture exists for. SIGKILL via
+  ; pidfd only; reaping and cleanup are nobody's business on this path.
+  call void @npk_driver_kill_all()
   %r = call i32 @npk_failsafe(i32 %code)
   %bad = icmp sle i32 %r, 0
   %code2 = select i1 %bad, i32 70, i32 %r
@@ -2473,6 +2737,19 @@ define void @npk_exit(i32 %code) noreturn {
   %pass = or i1 %skip, %fail
   br i1 %pass, label %leave, label %check
 check:
+  ; THE DRIVER REGISTRY FIRST (D-188, 1.1.13a): a clean exit with a live
+  ; driver is a program that never decided its driver's fate — graver than
+  ; leaked memory, because the abandoned thing is a supervised PROCESS. The
+  ; trap route it takes runs kill_all before failsafe, so the driver is
+  ; dead before the report is made.
+  %dlive = call i64 @npk_driver_live_count()
+  %dleak = icmp ne i64 %dlive, 0
+  br i1 %dleak, label %dtrap, label %wcheck
+dtrap:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4109)
+  unreachable
+wcheck:
   %live = call i64 @npk_wild_live_count()
   %leaks = icmp ne i64 %live, 0
   br i1 %leaks, label %trap, label %leave

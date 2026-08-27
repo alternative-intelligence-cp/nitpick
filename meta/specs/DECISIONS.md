@@ -13338,3 +13338,64 @@ inline atomics carry is lifted for the aliased receiver, since having no
 place IS the property. `atomic_alias.npk` exercises load/store/swap/
 compare_exchange through an alias; `atomic_alias_rules.npk` pins the two
 store refusals. This unblocks the Bridge's ring access (1.1.13b).
+
+## D-188 — The driver registry: published before the clone, walked on the trap path, and a clean exit never abandons a driver — **SETTLED at 1.1.13a**
+
+The spawn/teardown half of the Bridge (D-149 over D-055; the v3 plan §4/§8)
+landed with three properties the plan asked for and one it did not, ratified
+by the user's standing "anything that makes things safer":
+
+**The registry entry precedes the child's existence.** `npk_driver_clone_exec`
+claims a slot (CAS, preallocated 16-entry .bss — failsafe cannot allocate,
+D-014), prefills `pidfd = -1`, and PUBLISHES state 2 **before** the clone;
+CLONE_PIDFD's parent_tidptr aims INTO the slot, so the kernel writes the kill
+handle into registry storage during the clone itself. There is no instant
+where a live child has no killable entry — v3 §4.2's "the entry outlives
+every resource it guards", strengthened to birth. Retirement
+(`driver_retire`) is teardown's LAST step, after kill/`waitid`; retiring a
+slot that is not active is the registry's double-free and traps `-4102`.
+
+**The trap path kills drivers before user `failsafe` runs.**
+`npk_driver_kill_all` — SIGKILL via pidfd only, ESRCH-safe, allocation-free,
+no reaping, no cleanup — is called by `npk_trap` itself ahead of
+`@npk_failsafe`. Safing is mechanism, not policy (D-013); an uncontrolled
+driver DURING failsafe is the hazard class D-055 exists for. The first
+schedule that ever took the trap path with a live driver (the EPIPE run
+below) demonstrated the walk killing the abandoned child.
+
+**A clean exit never abandons a supervised process** — the addition. The
+D-151 K-semantics exit rule extends to the second registry: `npk_exit` on
+code 0 checks `npk_driver_live_count()` (before the `<wild-live>` check —
+the graver defect names the trap) and refuses to report success while a
+driver entry stands: trap `-4109`, prelude `error:DriverLeak = 4109`. The
+registry, not the leak checker, tracks Bridge resources (v3 §4.5, adopted at
+D-187), so this is that tracking made an enforced invariant rather than a
+bookkeeping aid. `driver_leak.npk` proves it: spawn, `exit 0`, and the exit
+becomes failsafe reporting `DriverLeak` — with the trap path having killed
+the mock on the way, no orphan surviving.
+
+**The child path is allocation-free hand-written IR** (the npk_thread
+precedent): fork-shape clone (no CLONE_VM — the child continues in ordinary
+IR on its COW stack copy), then exactly PDEATHSIG → recorded-parent check →
+NO_NEW_PRIVS → the dup3 shuffle onto 0/1/2/3 → execve of a CONSTRUCTED
+argv/envp prepared pre-clone — and `exit_group(127)` on any miss. Every
+child-bound descriptor is re-homed ≥ 4 in the parent first, so the shuffle
+can never clobber a source. The surface is two bare-name builtins
+(`driver_clone_exec`, wrapped — the Bridge never traps; `driver_retire`,
+void), BUILTIN_REFERENCE-generated like the rest.
+
+**The library tier obeys "the Bridge never traps" literally now.** The first
+EPIPE schedule (child's execve failed and it died before the parent's
+`sendmsg`; ~1/300 under load) found `lib/nbridge.npk` using `?!` where it
+meant "fail by name": `?!` is unwrap-or-TRAP-as (D-179 — right as a test
+assert, wrong in this tier, and v3 §4.2 bars it from the Bridge by name).
+Every library site is now bind-and-`fail`; the trap semantics themselves are
+correct and unchanged. Found by stress: the marker's loop turned out to be
+dead in the real-backend harness stage (it lived only in the seed-path
+runner, which no concurrency program ever takes) — the loop now lives in
+`check_emitted_program`, restoring `// stress: N` for the whole backend
+suite. Fixtures joined the harness the same day: `tests/backend/fixtures/`
+binaries are built by the real backend, held to a program's checks, never
+run directly, and reach tests through `// argv:` substitution
+(`mock_driver.npk`, the Nitpick mock the C reference driver will replace at
+1.1.13c).

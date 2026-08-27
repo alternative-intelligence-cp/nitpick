@@ -108,7 +108,7 @@ closed table.
 | id | what | evidence | fix |
 |---|---|---|---|
 | **S-3a** | **`sys` accepts a non-integer, non-pointer argument and emits invalid IR.** A `Result`-typed argument (a `never fails` constant called WITHOUT `raw`, so `{i64,i32}`) reaches the sys arg loop's fallback branch, which `sext`s it — `sext {i64,i32} to i64`, which llc rejects. The frontend should refuse a `sys` argument that is not an integer or a pointer, at the call, rather than letting the emitter produce a cast llc kills. | `shm_sealed.npk` with `sys(SYS_FTRUNCATE(), …)` (raw-less) — llc "invalid cast opcode for cast from '{ i64, i32 }' to 'i64'". | a typing check on sys arguments (integer or pointer only), TYPE-level. |
-| **S-3b** | **`expr ?\| fallback` fails to lower (EMIT-002) when `expr` is a `sys` call carrying a POINTER argument**, while `?!` over the same call lowers fine and `?\|` over an integer-only sys call lowers fine. | The five sys calls in `shm_create_sealed`/`shm_unmap`: with `?\|`, only the two with pointer args (memfd_create, munmap) EMIT-002'd; switching all to `?!` compiled. | isolate the `?\|` lowering over a Result whose value carries a pointer-derived temp; likely a temp-liveness or clean-since-mark interaction. Worked around in nbridge by using `?!` (which is also the better fit — a negative kernel return is already a `Result` error via the sys arm's D-141 mapping). |
+| **S-3b** | **`expr ?\| fallback` fails to lower (EMIT-002) when `expr` is a `sys` call carrying a POINTER argument**, while `?!` over the same call lowers fine and `?\|` over an integer-only sys call lowers fine. | The five sys calls in `shm_create_sealed`/`shm_unmap`: with `?\|`, only the two with pointer args (memfd_create, munmap) EMIT-002'd; switching all to `?!` compiled. | isolate the `?\|` lowering over a Result whose value carries a pointer-derived temp; likely a temp-liveness or clean-since-mark interaction. ~~Worked around in nbridge by using `?!`~~ **(1.1.13a correction: that workaround was a MISUSE — `?!` is unwrap-or-TRAP-as, and v3 §4.2 bars the Bridge from trapping; nbridge now binds-and-fails at every site, see D-188. The `?\|` lowering gap itself still stands and still wants the isolation.)** |
 
 ## 3. Decisions blocking 1.3 (self-hosting)
 
@@ -184,6 +184,23 @@ numeric/encoding task, scheduled post-1.0** -- small in surface, correctness-
 critical, so each gets its own careful attention rather than riding a larger commit.
 This was the user's call at 1.0.9d ("go with your recommendation... so long as it
 all gets done eventually").
+
+## 6c. Planned research: bug/vulnerability statistics vs. language coverage (owner: the user; run before 1.5's trigger)
+
+Stated by the user at 1.1.13a: once the initial design's build is done —
+"while we are building libraries or something" — they intend to research
+**statistics on the most commonly found sources of errors, crashes, bugs,
+and hacks** (CWE-top-25-style data and the like), then audit how well
+Nitpick's shipped checks actually cover those classes, and where coverage is
+missing, decide whether anything can be added **within reason**. Until then
+the standing instruction is to implement and perfect what is already
+planned rather than grow new coverage scope mid-build.
+
+**Timing constraint (the D-183-era rule applies):** anything that review
+motivates must land BEFORE the Astrée trial — re-verification is
+unaffordable — so the review itself must happen before 1.5 pulls the
+trigger, not drift past it. Natural slot: alongside 1.3/1.4, when the
+compiler is self-hosting and the library tier is being grown anyway.
 
 ## 7. Ordering
 

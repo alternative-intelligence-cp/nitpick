@@ -1,0 +1,45 @@
+// expect-exit: 0
+// stress: 40
+//
+// THE SPAWN'S FAILURE PATH LEAVES NOTHING BEHIND. The driver path does not
+// exist, so the child's execve fails and it exits 127; the handshake reads
+// EOF and spawn fails EDriverSpawn — after killing, reaping, releasing
+// every descriptor and mapping, and retiring the registry slot it had
+// published before the clone.
+//
+// The assertion is the clean `exit 0`: the controlled exit's checks refuse
+// success while a wild allocation lives (D-151) or a driver entry stands
+// (D-188), so a leak on ANY failure branch turns this exit into a trap and
+// a 9x code from failsafe.
+mod:driver_spawn_fail;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+async func:main = int32(cstring[]:_~argv) {
+    Path:p = path_parse("/nonexistent/npk_no_such_driver") ?! E9;
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, raw duration_secs(2i64));
+    if (!br.is_error) { exit 11i32; }   // spawning nothing must not succeed
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

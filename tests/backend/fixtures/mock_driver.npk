@@ -1,0 +1,115 @@
+// THE WIRE'S OTHER END, IN NITPICK — the mock driver the spawn tests exec
+// (the C reference driver, clang-built as test tooling, arrives at 1.1.13c).
+//
+// A FIXTURE, not a test: the harness builds everything in this directory
+// with the real backend and holds it to a program's checks, but never runs
+// it directly — a test names it in `// argv:` and spawns it through the
+// Bridge. fd 3 is the control socket, per the child descriptor map (v3
+// §4.3/§10), and it arrives NONBLOCK (both socketpair ends are born so).
+//
+// What it does is the §7.5 driver obligations, minimally: answer one
+// INIT_REQ with an INIT_ACK — validating opcode, length and version — then
+// drain until EOF and exit 0 (exit-on-EOF is the universal orphan
+// backstop). The SCM_RIGHTS memfd riding the INIT_REQ is deliberately
+// dropped: a plain `read` consumes the bytes and the kernel discards the
+// ancillary descriptor, and this mock never touches the shared memory —
+// stage-b mocks will recvmsg it properly.
+mod:mock_driver;
+
+error:EBadWire;
+
+// Read exactly `need` bytes from fd 3, the ByteReader retry discipline over
+// io_ready. EOF mid-packet is a broken peer: EBadWire.
+async func:rd_exact = NIL(wild int8->:buf, int64:need) {
+    int64:got = 0i64;
+    while (got < need) {
+        wild int8->:at = #ptr_add<int8>(buf, got);
+        Result<int64>:r = read(3i32 =>! fd, at, need - got);
+        if (!r.is_error) { got = got + r.value; }
+        if (r.is_error) {
+            if (r.err == IoEof) { fail EBadWire; }
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (!retry) { fail r.err; }
+            if (r.err == WouldBlock) {
+                Result<NIL>:w = await io_ready(3i32, 1i32, raw duration_secs(5i64));
+                if (w.is_error) { fail EBadWire; }
+            }
+        }
+    }
+    pass NIL;
+};
+
+// Write exactly `need` bytes to fd 3 — EPOLLOUT (4) readiness on the retry.
+async func:wr_exact = NIL(wild int8->:buf, int64:need) {
+    int64:put = 0i64;
+    while (put < need) {
+        wild int8->:at = #ptr_add<int8>(buf, put);
+        Result<int64>:r = write(3i32 =>! fd, at, need - put);
+        if (!r.is_error) { put = put + r.value; }
+        if (r.is_error) {
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (!retry) { fail r.err; }
+            if (r.err == WouldBlock) {
+                Result<NIL>:w = await io_ready(3i32, 4i32, raw duration_secs(5i64));
+                if (w.is_error) { fail EBadWire; }
+            }
+        }
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:buf = alloc(24i64);
+    defer { drop dalloc(buf); }
+
+    // INIT_REQ: header word { opcode 0x0001 | flags 0 | length 12 }, then
+    // version u32, then shm_size as two u32 halves — 20 bytes.
+    Result<NIL>:rq = await rd_exact(buf, 20i64);
+    if (rq.is_error) { exit 3i32; }
+    int64:h = <-(#ptr_add<int64>(buf, 0i64));
+    if ((h & 65535i64) != 1i64)                  { exit 4i32; }
+    if (((h >> 32i64) & 4294967295i64) != 12i64) { exit 4i32; }
+    int64:ver = (<-(#ptr_add<int32>(buf, 2i64))) => int64;
+    if (ver != 3i64) { exit 5i32; }
+
+    // INIT_ACK: { opcode 0x8001 | flags 0 | length 4 }, then version.
+    <-(#ptr_add<int64>(buf, 0i64)) = 32769i64 | (4i64 << 32i64);
+    <-(#ptr_add<int32>(buf, 2i64)) = 3i32;
+    Result<NIL>:wa = await wr_exact(buf, 12i64);
+    if (wa.is_error) { exit 6i32; }
+
+    // Drain until EOF — the runtime closing its ctrl end is the shutdown.
+    while (true) {
+        Result<NIL>:w = await io_ready(3i32, 1i32, raw duration_secs(30i64));
+        if (w.is_error) { exit 7i32; }
+        Result<int64>:r = read(3i32 =>! fd, buf, 24i64);
+        if (r.is_error) {
+            if (r.err == IoEof) { exit 0i32; }
+            bool:again = false;
+            if (r.err == WouldBlock)  { again = true; }
+            if (r.err == Interrupted) { again = true; }
+            if (!again) { exit 8i32; }
+        }
+    }
+    exit 9i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EBadWire)         { exit 61i32; },
+        (DeadlineExceeded) { exit 62i32; },
+        (WouldBlock)       { exit 63i32; },
+        (Interrupted)      { exit 63i32; },
+        (IoEof)            { exit 63i32; },
+        (HeapOom)          { exit 65i32; },
+        (HeapBadRequest)   { exit 65i32; },
+        (WildLeak)         { exit 66i32; },
+        (Unreachable)      { exit 67i32; },
+        (*)                { exit 64i32; }
+    }
+    exit 60i32;
+};

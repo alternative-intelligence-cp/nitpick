@@ -99,8 +99,25 @@ Object safety: async + `Self->` receiver is safe (by-value `Self` alone
 still disqualifies); `Self->` receivers admitted generally — and the sync
 thunks' by-value-receiver latent (handing a method its own first bytes as
 an address) is fixed. `dyn_stream.npk`: one erased `report(dyn Writer…)`,
-two writers, two byte patterns. Next: 1.1.13 the Bridge (D-149); adopting
-`dyn Writer` in npkc's own diagnostics is 1.3 material.
+two writers, two byte patterns. **1.1.13 (the Bridge, D-149 over D-055) is
+underway — stage a is COMPLETE (D-187, D-188)**: `#ptr_add<T>`
+element-scaled; `atomic_from_ptr::<T>` fused-only over the turbofish;
+`lib/nbridge.npk`'s sealed shm (`shm_create_sealed` — the seal is the
+architecture's load-bearing line), SCM_RIGHTS pair, and `spawn_driver` →
+`bridge_reap` over `npk_driver_clone_exec` (fork-shape clone, allocation-free
+child, PDEATHSIG + NO_NEW_PRIVS + dup3 + execve); the DRIVER REGISTRY is
+published BEFORE the clone (CLONE_PIDFD writes the pidfd into the slot),
+`npk_driver_kill_all` runs on the TRAP PATH before user `failsafe`, and a
+clean exit 0 with a live driver refuses — trap −4109 `DriverLeak` (D-188,
+the D-151 exit rule's second registry). The Bridge tier never traps: `?!` is
+unwrap-or-TRAP-as (a test-main assert, barred from the Bridge by v3 §4.2 —
+an EPIPE schedule caught the misuse), so the library binds-and-fails. The
+harness grew `tests/backend/fixtures/` + `// argv:` substitution
+(`mock_driver.npk` speaks the wire), and the `// stress:` loop — dead in the
+real-backend stage until now — runs there again. Next: 1.1.13b (dispatch,
+the ring, `bridge_close`, stderr drain), then c (`extern` lowering, the
+interface hash, the C SDK + conformance). Adopting `dyn Writer` in npkc's
+own diagnostics is 1.3 material.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

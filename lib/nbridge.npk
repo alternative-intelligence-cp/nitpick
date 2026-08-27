@@ -71,20 +71,29 @@ pub func:shm_create_sealed = Shm(int64:size) {
     // memfd_create(name, MFD_CLOEXEC | MFD_ALLOW_SEALING). `sys` takes the
     // pointer directly (1.1.12a) — an address becomes a number only at the
     // trampoline.
+    //
+    // THE BRIDGE NEVER TRAPS (v3 §4.2): every kernel refusal here is a
+    // `Result` error the caller routes — restart, degrade, or escalate — so
+    // each `sys` is BOUND and failed by name, never `?!`-asserted. (`?!` is
+    // unwrap-or-TRAP: right in a test's main, wrong in this tier — the
+    // first EPIPE schedule proved it by taking the whole process down.)
     int64:cf = raw MFD_CLOEXEC() | raw MFD_ALLOW_SEALING();
-    // `sys` maps a negative kernel return into `Result.err`, so `?! E`
-    // names the failure directly — no separate sign check is needed.
     wild uint8->:np = name.ptr;
-    int64:mfd = sys(raw SYS_MEMFD_CREATE(), np, cf) ?! EShmCreate;
+    Result<int64>:rmfd = sys(raw SYS_MEMFD_CREATE(), np, cf);
+    if (rmfd.is_error) { fail EShmCreate; }
+    int64:mfd = rmfd.value;
     // ftruncate(mfd, size)
-    discard(sys(raw SYS_FTRUNCATE(), mfd, size) ?! EShmCreate);
+    Result<int64>:rtr = sys(raw SYS_FTRUNCATE(), mfd, size);
+    if (rtr.is_error) { fail EShmCreate; }
     // fcntl(mfd, F_ADD_SEALS, SHRINK|GROW|SEAL)
     int64:seals = raw F_SEAL_SHRINK() | (raw F_SEAL_GROW() | raw F_SEAL_SEAL());
-    discard(sys(raw SYS_FCNTL(), mfd, raw F_ADD_SEALS(), seals) ?! EShmSeal);
+    Result<int64>:rsl = sys(raw SYS_FCNTL(), mfd, raw F_ADD_SEALS(), seals);
+    if (rsl.is_error) { fail EShmSeal; }
     // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, mfd, 0)
     int64:pf = raw PROT_READ() | raw PROT_WRITE();
-    int64:m = sys(raw SYS_MMAP(), 0i64, size, pf, raw MAP_SHARED(), mfd, 0i64) ?! EShmMap;
-    wild int8->:base = #wild_ptr<int8>(m);
+    Result<int64>:rm = sys(raw SYS_MMAP(), 0i64, size, pf, raw MAP_SHARED(), mfd, 0i64);
+    if (rm.is_error) { fail EShmMap; }
+    wild int8->:base = #wild_ptr<int8>(rm.value);
     pass Shm{ memfd: (mfd =>! int32) =>! fd, base: base, size: size };
 };
 
@@ -93,6 +102,444 @@ pub func:shm_create_sealed = Shm(int64:size) {
 // explicit here — the regime the whole tier runs in.
 pub func:shm_unmap = NIL(Shm->:s) {
     wild int8->:sb = s.base;
-    discard(sys(raw SYS_MUNMAP(), sb, s.size) ?! EShmMap);
+    Result<int64>:um = sys(raw SYS_MUNMAP(), sb, s.size);
+    if (um.is_error) { fail EShmMap; }
+    pass NIL;
+};
+
+// --- the spawn/teardown syscall numbers (x86_64; v3 §3.5) -------------------
+pub func:SYS_SENDMSG = int64() never fails    { pass 46i64; };
+pub func:SYS_RECVMSG = int64() never fails    { pass 47i64; };
+pub func:SYS_SOCKETPAIR = int64() never fails { pass 53i64; };
+pub func:SYS_GETPID = int64() never fails     { pass 39i64; };
+pub func:SYS_WAITID = int64() never fails     { pass 247i64; };
+pub func:SYS_OPENAT = int64() never fails     { pass 257i64; };
+pub func:SYS_PIPE2 = int64() never fails      { pass 293i64; };
+pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
+
+// socket/pipe/open flags, and the SCM_RIGHTS plumbing constants.
+pub func:AF_UNIX = int64() never fails        { pass 1i64; };
+pub func:SOCK_STREAM = int64() never fails    { pass 1i64; };
+pub func:SOCK_CLOEXEC = int64() never fails   { pass 524288i64; };
+pub func:SOCK_NONBLOCK = int64() never fails  { pass 2048i64; };
+pub func:O_RDWR = int64() never fails         { pass 2i64; };
+pub func:O_CLOEXEC = int64() never fails      { pass 524288i64; };
+pub func:O_NONBLOCK = int64() never fails     { pass 2048i64; };
+pub func:AT_FDCWD = int64() never fails       { pass (0i64 - 100i64); };
+pub func:F_SETFL = int64() never fails        { pass 4i64; };
+pub func:F_DUPFD_CLOEXEC = int64() never fails { pass 1030i64; };
+pub func:SIGKILL = int64() never fails        { pass 9i64; };
+pub func:P_PIDFD = int64() never fails        { pass 3i64; };
+pub func:WEXITED = int64() never fails        { pass 4i64; };
+pub func:MSG_NOSIGNAL = int64() never fails   { pass 16384i64; };
+pub func:SOL_SOCKET = int64() never fails     { pass 1i64; };
+pub func:SCM_RIGHTS = int64() never fails     { pass 1i64; };
+
+// The wire protocol version ("NPKDRV03" — the v3 plan's magic names it).
+pub func:NPK_BRIDGE_VERSION = int64() never fails { pass 3i64; };
+
+// --- the Bridge's error family (D-179; v3's tbb32 codes predate it) ---------
+pub error:EDriverSpawn;      // spawn or handshake failed; the origin chain says where
+pub error:EDriverProtocol;   // any [UNTRUSTED] violation — the driver is killed
+pub error:EDriverFault;      // the driver died: ctrl EOF, or the pidfd fired
+pub error:EDriverDeadline;   // a dispatch or close deadline expired
+pub error:ERingFull;         // the descriptor ring has no free slot
+pub error:EBridgePoisoned;   // used after a fault; tear down and respawn (v3 §4.4)
+
+// --- descriptor helpers ------------------------------------------------------
+
+// Every child-bound descriptor must sit ABOVE the std trio before the clone:
+// the child's dup3 shuffle onto 0/1/2/3 must never clobber a source before
+// it is consumed, and dup3 refuses oldfd == newfd, so the degenerate pairs
+// are re-homed here, in the parent, where failure is still reportable. The
+// duplicate is CLOEXEC at birth like everything else; the low original is
+// closed. Descriptors are ≥ 4 in any ordinary process state — this fires
+// only when the std slots themselves were closed before spawn.
+func:fd_above_std = int64(int64:fdn) {
+    if (fdn >= 4i64) { pass fdn; }
+    Result<int64>:rup = sys(raw SYS_FCNTL(), fdn, raw F_DUPFD_CLOEXEC(), 4i64);
+    if (rup.is_error) { fail EDriverSpawn; }
+    Result<NIL>:c = close((fdn =>! int32) =>! fd);   // the low original
+    if (c.is_error) { }                              // best-effort; the dup stands
+    pass rup.value;
+};
+
+// A CLOEXEC socketpair for the control plane. OUR end additionally runs
+// NONBLOCK (D-071: every wait is a task suspension through io_ready); the
+// child's end is re-homed above the std trio for the dup3 shuffle. Returns
+// the pair packed { ours, child } through the two out-slots of `buf`, which
+// the caller provides as 8 wild bytes.
+pub struct:CtrlPair = { int64:ours; int64:child; };
+
+pub func:ctrl_socketpair = CtrlPair() {
+    wild int8->:sv = alloc(8i64);
+    defer { drop dalloc(sv); }
+    int64:fl = (raw SOCK_STREAM()) | ((raw SOCK_CLOEXEC()) | (raw SOCK_NONBLOCK()));
+    Result<int64>:rsp = sys(raw SYS_SOCKETPAIR(), raw AF_UNIX(), fl, 0i64, sv);
+    if (rsp.is_error) { fail EDriverSpawn; }
+    int64:a = (<-(#ptr_add<int32>(sv, 0i64))) => int64;
+    int64:b = (<-(#ptr_add<int32>(sv, 1i64))) => int64;
+    int64:bc = relay fd_above_std(b);
+    pass CtrlPair{ ours: a, child: bc };
+};
+
+// The stderr pipe: both ends CLOEXEC; the write end (the driver's stderr,
+// after dup3 clears CLOEXEC on it) stays BLOCKING — a full pipe blocks the
+// driver, which is why the Bridge drains it continuously (v3 §10) — while
+// OUR read end is flipped NONBLOCK so the drain is readiness-driven.
+pub func:stderr_pipe = CtrlPair() {
+    wild int8->:pv = alloc(8i64);
+    defer { drop dalloc(pv); }
+    Result<int64>:rpp = sys(raw SYS_PIPE2(), pv, raw O_CLOEXEC());
+    if (rpp.is_error) { fail EDriverSpawn; }
+    int64:rd = (<-(#ptr_add<int32>(pv, 0i64))) => int64;
+    int64:wr = (<-(#ptr_add<int32>(pv, 1i64))) => int64;
+    Result<int64>:rfl = sys(raw SYS_FCNTL(), rd, raw F_SETFL(), raw O_NONBLOCK());
+    if (rfl.is_error) { fail EDriverSpawn; }
+    int64:wc = relay fd_above_std(wr);
+    pass CtrlPair{ ours: rd, child: wc };
+};
+
+// /dev/null, CLOEXEC, for the child's stdin and stdout (v1: stdout is not
+// interpreted — v3 §10; a captured-stdout variant is a later flag).
+pub func:open_devnull = int64() {
+    cstring:dn = relay to_cstring("/dev/null");
+    wild uint8->:dp = dn.ptr;
+    int64:ofl = (raw O_RDWR()) | (raw O_CLOEXEC());
+    Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
+    if (rf.is_error) { fail EDriverSpawn; }
+    pass (relay fd_above_std(rf.value));
+};
+
+// --- SCM_RIGHTS: the one place msghdr exists (v3 §7.4) ----------------------
+//
+// The kernel's msghdr/iovec/cmsghdr, laid out as Nitpick structs over one
+// wild allocation — 56 + 16 + 24 bytes, x86_64 shapes. `namelen`, `flags`
+// and the cmsg tail pack their i32-plus-padding as single i64 words, which
+// is layout-identical and saves the struct a raft of pad fields.
+struct:MsgHdr = {
+    int64:       name;        // msg_name (NULL) — nothing is addressed on a socketpair
+    int64:       namelen;     // msg_namelen + pad
+    wild int8->: iov;
+    int64:       iovlen;
+    wild int8->: control;     // NULL when no descriptor rides along
+    int64:       controllen;
+    int64:       flags;       // msg_flags + pad
+};
+
+struct:IoVec = {
+    wild int8->: base;
+    int64:       len;
+};
+
+struct:CMsg = {
+    int64: len;               // CMSG_LEN(4) = 20
+    int32: level;             // SOL_SOCKET
+    int32: ctype;             // SCM_RIGHTS
+    int32: cfd;               // the descriptor itself
+    int32: pad;
+};
+
+// Send `len` bytes from `payload`, with `passfd` riding as SCM_RIGHTS when
+// it is >= 0 (pass -1 for a plain send). MSG_NOSIGNAL always: a plain write
+// to a socketpair whose peer died raises SIGPIPE, which terminates the
+// runtime by default — the exact event this architecture exists to prevent
+// (v3 §4.2, poc test 4). Returns the byte count the kernel accepted.
+pub func:send_fd = int64(int64:sock, int64:passfd, wild int8->:payload, int64:len) {
+    wild int8->:mb = calloc(1i64, 96i64);
+    defer { drop dalloc(mb); }
+    wild MsgHdr->:mh = mb =>! wild MsgHdr->;
+    wild IoVec->:iv = (#ptr_add<int8>(mb, 56i64)) =>! wild IoVec->;
+    iv.base = payload;
+    iv.len = len;
+    mh.iov = #ptr_add<int8>(mb, 56i64);
+    mh.iovlen = 1i64;
+    if (passfd >= 0i64) {
+        wild CMsg->:cm = (#ptr_add<int8>(mb, 72i64)) =>! wild CMsg->;
+        cm.len = 20i64;
+        cm.level = (raw SOL_SOCKET()) =>! int32;
+        cm.ctype = (raw SCM_RIGHTS()) =>! int32;
+        cm.cfd = passfd =>! int32;
+        mh.control = #ptr_add<int8>(mb, 72i64);
+        mh.controllen = 24i64;
+    }
+    Result<int64>:rn = sys(raw SYS_SENDMSG(), sock, mb, raw MSG_NOSIGNAL());
+    if (rn.is_error) { fail EDriverFault; }
+    pass rn.value;
+};
+
+// Receive up to `cap` bytes into `buf`; a descriptor that rides along comes
+// back in `.rfd` (-1 when none). MSG_CTRUNC — a truncated control payload —
+// is a protocol violation and refuses: a half-received descriptor is a leak
+// the kernel already made, and the caller's move is kill-and-teardown.
+pub struct:RecvFd = { int64:n; int64:rfd; };
+
+pub func:recv_fd = RecvFd(int64:sock, wild int8->:buf, int64:cap) {
+    wild int8->:mb = calloc(1i64, 96i64);
+    defer { drop dalloc(mb); }
+    wild MsgHdr->:mh = mb =>! wild MsgHdr->;
+    wild IoVec->:iv = (#ptr_add<int8>(mb, 56i64)) =>! wild IoVec->;
+    iv.base = buf;
+    iv.len = cap;
+    mh.iov = #ptr_add<int8>(mb, 56i64);
+    mh.iovlen = 1i64;
+    mh.control = #ptr_add<int8>(mb, 72i64);
+    mh.controllen = 24i64;
+    Result<int64>:rn = sys(raw SYS_RECVMSG(), sock, mb, 0i64);
+    if (rn.is_error) { fail EDriverFault; }
+    int64:n = rn.value;
+    // MSG_CTRUNC = 8: the kernel dropped part of the control payload.
+    if ((mh.flags & 8i64) != 0i64) { fail EDriverProtocol; }
+    int64:got = 0i64 - 1i64;
+    if (mh.controllen >= 20i64) {
+        wild CMsg->:cm = (#ptr_add<int8>(mb, 72i64)) =>! wild CMsg->;
+        if ((cm.level => int64) == (raw SOL_SOCKET())) {
+            if ((cm.ctype => int64) == (raw SCM_RIGHTS())) {
+                got = cm.cfd => int64;
+            }
+        }
+    }
+    pass RecvFd{ n: n, rfd: got };
+};
+
+// --- the spawn parameter block (the runtime contract) ------------------------
+//
+// Nine words the runtime's `driver_clone_exec` reads, plus the argv/envp
+// tails the pointers aim back into — ONE allocation, fully prepared BEFORE
+// the clone (the child copies it; nothing is shared after). Field stores
+// through the struct view are what put POINTERS into the block: the language
+// has no pointer→integer spelling outside the sys trampoline, and needs
+// none — the runtime loads the words as integers on its side of the line.
+struct:SpawnBlk = {
+    wild uint8->: path;        // [0] execve's path, NUL-terminated
+    wild int8->:  argv;        // [1] → av0 below
+    wild int8->:  envp;        // [2] → ev0 below (a CONSTRUCTED env: empty)
+    int64:        fd_null;     // [3] dup3 → 0 and 1
+    int64:        fd_stderr;   // [4] dup3 → 2
+    int64:        fd_ctrl;     // [5] dup3 → 3
+    int64:        parent_pid;  // [6] for the child's PDEATHSIG race check
+    int64:        out_slot;    // [7] OUT: the registry slot
+    int64:        out_pidfd;   // [8] OUT: the pollable kill handle
+    wild uint8->: av0;         // [9]  argv[0] = path
+    int64:        av1;         // [10] argv[1] = NULL
+    int64:        ev0;         // [11] envp[0] = NULL
+};
+
+// --- the Bridge --------------------------------------------------------------
+//
+// SINGLE-OWNER, MOVE-ONLY (it owns descriptors, so TYPE-046 makes it so):
+// the data plane is an SPSC ring, and one producer is a type-level fact —
+// two tasks dispatching on one Bridge are unrepresentable. Concurrent use
+// is expressed the way D-017 expresses it for arenas: give the owner a
+// channel. One Bridge per driver process; GPU and GUI are DIFFERENT
+// Bridges (D-055 requirement 4).
+pub struct:Bridge = {
+    pid:     child;          // diagnostic; every signal travels the pidfd
+    OwnedFd: pidfd;          // THE kill handle — drop closes it (never the process)
+    OwnedFd: ctrl;           // control socketpair, our end (NONBLOCK)
+    OwnedFd: child_stderr;   // stderr pipe, read end (NONBLOCK)
+    Shm:     shm;            // the sealed region; memfd kept for teardown
+    int64:   reg_slot;       // the registry entry `bridge_reap` retires LAST
+    uint32:  next_seq;       // dispatch sequence counter (1.1.13b)
+    bool:    closed;         // set by reap/close; makes the backstop a no-op
+};
+
+// Read `need` bytes exactly, under the absolute deadline — the ByteReader
+// retry discipline (a resume from io_ready means readiness was SIGNALLED;
+// retry, and a retry that still would block waits on the time that
+// remains). EOF mid-packet is the driver dying: EDriverFault.
+async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_up) {
+    int64:got = 0i64;
+    while (got < need) {
+        wild int8->:at = #ptr_add<int8>(buf, got);
+        Result<int64>:r = read((sock =>! int32) =>! fd, at, need - got);
+        if (!r.is_error) {
+            if (r.value == 0i64) { fail EDriverFault; }
+            got = got + r.value;
+        }
+        if (r.is_error) {
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (r.err == IoEof)       { fail EDriverFault; }
+            if (!retry) { fail r.err; }
+            if (r.err == WouldBlock) {
+                int64:rem = give_up - (raw mono_now());
+                if (rem <= 0i64) { fail EDriverDeadline; }
+                Result<NIL>:w = await io_ready(sock =>! int32, 1i32,
+                                               raw duration_ns(rem));
+                if (w.is_error) { fail EDriverDeadline; }
+            }
+        }
+    }
+    pass NIL;
+};
+
+// Spawn a driver and complete the INIT handshake under `within` (v3 §4.3,
+// all eight steps). On ANY failure past the clone the child is SIGKILLed
+// via its pidfd and reaped before this fails — a spawn that did not
+// complete leaves nothing running.
+pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, Duration:within) {
+    int64:give_up = (raw mono_now()) + within.ns;
+    // getpid first — before anything exists that a failure would strand.
+    Result<int64>:rpid = sys(raw SYS_GETPID());
+    if (rpid.is_error) { fail EDriverSpawn; }
+    int64:mypid = rpid.value;
+
+    // 1. the control pair (CLOEXEC at birth; ours NONBLOCK).
+    CtrlPair:ct = relay ctrl_socketpair();
+
+    // 2. the sealed shared memory — created, sized, sealed, mapped before
+    //    the child exists, so the driver never observes a half-made region.
+    Result<Shm>:shr = shm_create_sealed(shm_size);
+    if (shr.is_error) {
+        Result<NIL>:c1 = close((ct.ours =>! int32) =>! fd);   if (c1.is_error) { }
+        Result<NIL>:c2 = close((ct.child =>! int32) =>! fd);  if (c2.is_error) { }
+        fail EDriverSpawn;
+    }
+    Shm:shm = shr.value;
+
+    // 3. the stderr pipe and /dev/null; child-bound fds all ≥ 4.
+    Result<CtrlPair>:epr = stderr_pipe();
+    if (epr.is_error) {
+        drop spawn_scrap(@shm, ct.ours, ct.child, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64);
+        fail EDriverSpawn;
+    }
+    CtrlPair:ep = epr.value;
+    Result<int64>:dnr = open_devnull();
+    if (dnr.is_error) {
+        drop spawn_scrap(@shm, ct.ours, ct.child, ep.ours, ep.child, 0i64 - 1i64);
+        fail EDriverSpawn;
+    }
+    int64:devnull = dnr.value;
+
+    // 4. the param block — everything the child reads, written pre-clone.
+    cstring:cpath = relay to_cstring(driver.text);
+    wild int8->:bb = calloc(1i64, 96i64);
+    defer { drop dalloc(bb); }
+    wild SpawnBlk->:blk = bb =>! wild SpawnBlk->;
+    blk.path = cpath.ptr;
+    blk.argv = #ptr_add<int64>(bb, 9i64) =>! wild int8->;
+    blk.envp = #ptr_add<int64>(bb, 11i64) =>! wild int8->;
+    blk.fd_null = devnull;
+    blk.fd_stderr = ep.child;
+    blk.fd_ctrl = ct.child;
+    blk.parent_pid = mypid;
+    blk.av0 = cpath.ptr;
+
+    // 5. the clone — the registry entry is published BEFORE the child
+    //    exists, and the kernel writes the pidfd INTO the slot (npkrt).
+    Result<int64>:pr = driver_clone_exec(bb);
+    if (pr.is_error) {
+        drop spawn_scrap(@shm, ct.ours, ct.child, ep.ours, ep.child, devnull);
+        fail EDriverSpawn;
+    }
+    int64:cpid = pr.value;
+    int64:pidfd = blk.out_pidfd;
+    int64:slot = blk.out_slot;
+
+    // 6. the child's copies are installed; the parent's originals of the
+    //    child-bound three close now — the driver holds exactly what step 5
+    //    installed, and nothing else survives the exec (birth-CLOEXEC).
+    Result<NIL>:c3 = close((ct.child =>! int32) =>! fd);  if (c3.is_error) { }
+    Result<NIL>:c4 = close((ep.child =>! int32) =>! fd);  if (c4.is_error) { }
+    Result<NIL>:c5 = close((devnull =>! int32) =>! fd);   if (c5.is_error) { }
+
+    // 7. the handshake: INIT_REQ { version, shm_size } with the sealed
+    //    memfd riding SCM_RIGHTS, then INIT_ACK under the deadline.
+    wild int8->:pkt = calloc(1i64, 24i64);
+    defer { drop dalloc(pkt); }
+    // header: opcode INIT_REQ (0x0001), flags 0, length 12 — one LE word.
+    <-(#ptr_add<int64>(pkt, 0i64)) = 1i64 | (12i64 << 32i64);
+    <-(#ptr_add<int32>(pkt, 2i64)) = (raw NPK_BRIDGE_VERSION()) =>! int32;
+    <-(#ptr_add<int32>(pkt, 3i64)) = (shm_size & 4294967295i64) =>! int32;
+    <-(#ptr_add<int32>(pkt, 4i64)) = (shm_size >> 32i64) =>! int32;
+    Result<int64>:sn = send_fd(ct.ours, (shm.memfd => int64), pkt, 20i64);
+    bool:hs_ok = false;
+    if (!sn.is_error) {
+        if (sn.value == 20i64) { hs_ok = true; }
+    }
+    if (hs_ok) {
+        // INIT_ACK: header word + version, 12 bytes exactly.
+        Result<NIL>:ack = await read_exact(ct.ours, pkt, 12i64, give_up);
+        if (ack.is_error) { hs_ok = false; }
+    }
+    if (hs_ok) {
+        int64:h = <-(#ptr_add<int64>(pkt, 0i64));
+        if ((h & 65535i64) != 32769i64)                  { hs_ok = false; }
+        if (((h >> 32i64) & 4294967295i64) != 4i64)      { hs_ok = false; }
+        int64:ver = (<-(#ptr_add<int32>(pkt, 2i64))) => int64;
+        if (ver != (raw NPK_BRIDGE_VERSION()))           { hs_ok = false; }
+    }
+    if (!hs_ok) {
+        // kill via pidfd, reap, release everything, retire LAST — a spawn
+        // that did not complete leaves nothing running and nothing claimed.
+        Result<int64>:k = sys(raw SYS_PIDFD_SEND_SIGNAL(), pidfd, raw SIGKILL(), 0i64, 0i64);
+        if (k.is_error) { }
+        wild int8->:si = alloc(128i64);
+        Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pidfd, si, raw WEXITED(), 0i64);
+        if (w.is_error) { }
+        drop dalloc(si);
+        drop spawn_scrap(@shm, ct.ours, 0i64 - 1i64, ep.ours, 0i64 - 1i64, 0i64 - 1i64);
+        Result<NIL>:cp = close((pidfd =>! int32) =>! fd);  if (cp.is_error) { }
+        drop driver_retire(slot);
+        fail EDriverSpawn;
+    }
+
+    // 8. registered (from birth), sealed, acknowledged: the Bridge stands.
+    pass Bridge{
+        child:        (cpid =>! int32) =>! pid,
+        pidfd:        own_fd((pidfd =>! int32) =>! fd),
+        ctrl:         own_fd((ct.ours =>! int32) =>! fd),
+        child_stderr: own_fd((ep.ours =>! int32) =>! fd),
+        shm:          move(shm),
+        reg_slot:     slot,
+        next_seq:     0u32,
+        closed:       false
+    };
+};
+
+// The spawn failure paths' shared release: unmap and close what exists so
+// far (-1 marks a descriptor not yet created). Best-effort by design — the
+// spawn is already failing, and these can only be the runtime's own
+// descriptors.
+func:spawn_scrap = NIL(Shm->:s, int64:a, int64:b, int64:c, int64:d, int64:e) never fails {
+    wild int8->:sb = s.base;
+    Result<int64>:um = sys(raw SYS_MUNMAP(), sb, s.size);
+    if (um.is_error) { }
+    Result<NIL>:cm = close(s.memfd);
+    if (cm.is_error) { }
+    if (a >= 0i64) { Result<NIL>:ca = close((a =>! int32) =>! fd); if (ca.is_error) { } }
+    if (b >= 0i64) { Result<NIL>:cb = close((b =>! int32) =>! fd); if (cb.is_error) { } }
+    if (c >= 0i64) { Result<NIL>:cc = close((c =>! int32) =>! fd); if (cc.is_error) { } }
+    if (d >= 0i64) { Result<NIL>:cd = close((d =>! int32) =>! fd); if (cd.is_error) { } }
+    if (e >= 0i64) { Result<NIL>:ce = close((e =>! int32) =>! fd); if (ce.is_error) { } }
+    pass NIL;
+};
+
+// The teardown BACKSTOP: synchronous, bounded, `never fails` — the shape a
+// `defer` may hold (D-187: cleanup is bounded and synchronous; a defer may
+// not await). SIGKILL via pidfd (ESRCH after a voluntary exit is fine),
+// `waitid` — bounded, the process is dead — then the region and the memfd;
+// the registry entry retires LAST (v3 §4.2: the entry outlives every
+// resource it guards). The Bridge's OwnedFds close at ITS drop; a reaped
+// pidfd is inert. The graceful path is `bridge_close` (1.1.13b) — call it,
+// and this backstop finds `closed` set and does nothing.
+pub func:bridge_reap = NIL(Bridge->:b) never fails {
+    if (b.closed) { pass NIL; }
+    b.closed = true;
+    int64:pfd = (b.pidfd.value) => int64;
+    Result<int64>:k = sys(raw SYS_PIDFD_SEND_SIGNAL(), pfd, raw SIGKILL(), 0i64, 0i64);
+    if (k.is_error) { }
+    wild int8->:si = alloc(128i64);
+    Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd, si, raw WEXITED(), 0i64);
+    if (w.is_error) { }
+    drop dalloc(si);
+    wild int8->:sb = b.shm.base;
+    Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
+    if (um.is_error) { }
+    Result<NIL>:cm = close(b.shm.memfd);
+    if (cm.is_error) { }
+    drop driver_retire(b.reg_slot);
     pass NIL;
 };

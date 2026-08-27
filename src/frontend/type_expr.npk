@@ -2592,6 +2592,10 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                                 if (raw string_eq(dbn, "suspend_until"))    { d_ok_nil = true; }
                                 if (raw string_eq(dbn, "suspend_io"))       { d_ok_nil = true; }
                                 if (raw string_eq(dbn, "io_unwatch"))       { d_ok_nil = true; }
+                                // The registry retire is void at the floor
+                                // too (1.1.13a): teardown's last step yields
+                                // nothing to keep.
+                                if (raw string_eq(dbn, "driver_retire"))    { d_ok_nil = true; }
                             }
                         }
                     }
