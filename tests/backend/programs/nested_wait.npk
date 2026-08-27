@@ -1,0 +1,49 @@
+// expect-exit: 42
+// stress: 40
+//
+// A WAIT NESTED IN A HELPER COROUTINE WAKES THE TASK (1.1.12a). Awaits
+// drive child coroutines inline, so the frame a `recv` is lowered in — the
+// helper's — is NOT the frame the sweep sleeps and wakes: the task root
+// is. Every waiter registration resolves the executor's cur_task instead
+// of trusting its own frame; before that, this program's waker dued the
+// helper frame nobody sweeps, and the recv slept to its deadline for a
+// value that had already arrived — under stress, sometimes, which is why
+// it runs 40 times.
+mod:nested_wait;
+error:EStep;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+// The helper coroutine is the point: its recv parks the TASK.
+async func:relay_recv = int32(Channel<int32, 3i32, 4i64>:ch) {
+    int32:v = await ch.recv(raw duration_ms(1500i64)) ?! EStep;
+    pass v + 1i32;
+};
+
+thread async func:sender = NIL(Channel<int32, 3i32, 4i64>:ch) joins JOIN_2S {
+    await sleep(raw duration_ms(30i64)) ?| NIL;
+    await ch.send(41i32, raw duration_ms(500i64)) ?! EStep;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 4i64>:ch = channel() ?! Unreachable;
+    drop sender(ch);
+    int32:got = await relay_recv(ch) ?! EStep;
+    if (got != 42i32) { exit 10i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EStep)            { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

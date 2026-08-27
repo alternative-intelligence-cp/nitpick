@@ -39,6 +39,8 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
   permitted-`T`/return-types).
 - **B-3a — io_uring vs epoll** (decide the initial reactor; scope whether 1.1
   includes the file/socket reactor at all, or only futex-parking + timers + channels).
+  **SETTLED at 1.1.12a as D-184** — epoll without timerfd; io_uring refused
+  before Astrée by decision.
 
 ## Subcycle shape (to be filled when reached)
 
@@ -56,7 +58,7 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
 | 1.1.9 | **Threads (D-181)** — DONE. `thread` functions, `joins`, `clone(2)`, per-thread executors | C-9 |
 | 1.1.10 | **`atomic<T>`, channels, pools, actors** — DONE, four stages A–D. See `1.1.10.md` | C-9 |
 | **1.1.11** | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
-| **1.1.12** | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
+| **1.1.12** | **The reactor** — **a: DONE (D-184, B-3a closed)**: epoll WITHOUT timerfd — `epoll_pwait` as the armed executor's idle wait, carrying the sleeper deadline; eventfd as the cross-thread wake channel; EPOLLONESHOT with the task frame as payload; `suspend_io` builtin + prelude `io_ready` + deferred `io_unwatch` (registration lives exactly as long as the wait); ctl-failure = due-now, the caller's retried syscall reports; **the task-identity rule** — every waiter registration (channels and locks included) resolves `cur_task`, closing a latent nested-wait lost-wakeup (`nested_wait.npk`); `sys` takes pointers (`ptrtoint` at the trampoline). io_uring refused before Astrée by decision. **Next — b:** owned-fd byte streams; **c:** text layer + std streams; **d:** async-methods-behind-dyn | B-3a |
 | **1.1.13** | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
 
 **THE NUMBERING MOVED, AND THIS TABLE NOW RECORDS WHAT HAPPENED** rather than

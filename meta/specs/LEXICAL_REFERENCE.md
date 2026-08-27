@@ -60,7 +60,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "defaults" | "discard" | "move" | "relay"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
-                      | "acquires"
+                      | "acquires" | "gives"
                       | "invariant" | "fails" | "on" | "with" | "never"
 
 ; the contract position after a parameter list (D-163, D-181):
@@ -96,6 +96,8 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "dyn" | "any" | "Result" | "Optional"
                       | "Handle" | "arena" | "shared_arena" | "atomic" | "Future"
                       | "Channel"
+                      | "Mutex" | "Guard" | "RwLock" | "RGuard"
+                      | "CondVar" | "Barrier"
                       | "simd" | "complex" | "array" | "func"
                       | "trit" | "tryte" | "nit" | "nyte"
                       | "buffer" | "NIL"

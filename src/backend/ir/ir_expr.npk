@@ -4104,6 +4104,63 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // request goes to the executor, the state word advances to a fresh
     // segment, and the machine returns SUSPENDED. On resume the switch lands
     // at that segment and execution continues past the call.
+    // `suspend_io(fd, events, abs)` (B-3a, 1.1.12a): the reactor's one
+    // suspension — register the descriptor with the executor's epoll set
+    // (one-shot, the FRAME as the event's payload), then park exactly like
+    // `suspend_until`: readiness OR the deadline resumes the task, and the
+    // caller re-tries its syscall to learn which. One registration, one
+    // park, one return.
+    if (raw string_eq(name, "io_unwatch")) {
+        IrVal:uwfd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(uwfd))) { pass uwfd; }
+        drop irw_line(x.fe.w, raw cat3("call void @npk_io_unwatch(i32 ",
+                          uwfd.ref, ")"));
+        pass (raw iv_nil());
+    }
+    if (raw string_eq(name, "suspend_io")) {
+        if (!x.fe.is_async) { pass (raw iv_broken(n.span)); }
+        IrVal:iofd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(iofd))) { pass iofd; }
+        IrVal:ioev = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 1i32) });
+        if (!(raw iv_is_ok(ioev))) { pass ioev; }
+        IrVal:ioat = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 2i32) });
+        if (!(raw iv_is_ok(ioat))) { pass ioat; }
+        drop irw_line(x.fe.w, raw cat5("call void @npk_io_register(i32 ",
+                          iofd.ref, ", i32 ", ioev.ref, ")"));
+        drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ",
+                          ioat.ref, ")"));
+        string:iosg = raw fnem_new_seg(x.fe);
+        int32:iok = raw fnem_seg_index(x.fe);
+        drop irw_line(x.fe.w, raw cat5("store i32 ",
+                          raw int_to_string(iok => int64), ", ptr ",
+                          x.fe.state_gep, ""));
+        drop irw_line(x.fe.w, "ret i8 1");
+        x.fe.terminated = true;
+        drop s_start(x, iosg);
+        string:iow = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(iow, " = load i32, ptr ",
+                          x.fe.windup_gep, ""));
+        drop irw_line(x.fe.w, raw cat3("call void @npk_windup_note(i32 ",
+                          iow, ")"));
+        string:iowb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(iowb, " = icmp ne i32 ",
+                          raw string_concat(iow, ", 0")));
+        string:iowu = raw irw_new_label(x.fe.w, "iow.unwind");
+        string:iogo = raw irw_new_label(x.fe.w, "iow.go");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", iowb, ", label %", iowu,
+                          raw string_concat(", label %", iogo)));
+        x.fe.terminated = true;
+        drop s_start(x, iowu);
+        IrVal:iowd = raw run_all_defers(x);
+        if (!(raw iv_is_ok(iowd))) { pass iowd; }
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string((raw x_site(x, n.span)) => int64),
+                          ")"));
+        drop fnem_ret_fail(x.fe, "-4107");
+        x.fe.terminated = true;
+        drop s_start(x, iogo);
+        pass (raw iv_nil());
+    }
     if (raw string_eq(name, "suspend_until")) {
         if (!x.fe.is_async) { pass (raw iv_broken(n.span)); }
         IrVal:pa = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
@@ -4270,7 +4327,16 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                 IrVal:sav = raw emit_expr(x, said);
                 if (!(raw iv_is_ok(sav))) { pass sav; }
                 string:sref = raw string_concat(sav.ref, "");
-                if (!(raw string_eq(sav.ll, "i64"))) {
+                // An address IS a register at the syscall boundary -- the one
+                // place a pointer becomes a number, and the kernel is why
+                // (1.1.12a; `=>!` still refuses it everywhere else).
+                if (raw string_eq(sav.ll, "ptr")) {
+                    string:sw = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat4(sw, " = ptrtoint ptr ",
+                                      sav.ref, " to i64"));
+                    sref = move(sw);
+                }
+                if ((!(raw string_eq(sav.ll, "i64"))) && (!(raw string_eq(sav.ll, "ptr")))) {
                     string:sw = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(sw, " = sext ", sav.ll, " ",
                                       raw string_concat(sav.ref, " to i64")));

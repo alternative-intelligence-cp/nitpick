@@ -542,6 +542,7 @@ families `oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence` (D-044)
 | `LimitNode` | `rule: Ident` — `limit<r_pos>` on a declaration or parameter |
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
 | `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
+| `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |
 
 `ensures` may reference the special `result` identifier.
 

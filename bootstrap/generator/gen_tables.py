@@ -499,6 +499,7 @@ pub func:is_keyword = bool(string:text) {
     # generic arguments, never as a bare name.
     NOT_SCALAR = {"Result", "Optional", "Handle", "arena", "shared_arena",
                   "atomic", "Channel", "Future", "simd", "complex", "array", "buffer",
+                  "Mutex", "Guard", "RwLock", "RGuard", "CondVar", "Barrier",
                   "vec2", "vec3", "vec9", "matrix", "tmatrix", "tensor",
                   "ttensor", "dyn", "func"}
 
@@ -580,7 +581,12 @@ pub func:is_keyword = bool(string:text) {
                # rather than in the generated file — an edit to that file is
                # erased by the next regeneration, which is how the atomic
                # mapping went missing between two green runs.
-               "atomic": "TY_ATOMIC", "Channel": "TY_CHANNEL"}
+               "atomic": "TY_ATOMIC", "Channel": "TY_CHANNEL",
+               # 1.1.11 (D-056): the sync primitives are annotation-read
+               # constructors exactly as Channel is.
+               "Mutex": "TY_MUTEX", "Guard": "TY_GUARD",
+               "RwLock": "TY_RWLOCK", "RGuard": "TY_RGUARD",
+               "CondVar": "TY_CONDVAR", "Barrier": "TY_BARRIER"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

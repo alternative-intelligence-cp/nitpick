@@ -1,0 +1,69 @@
+// expect-exit: 42
+// stress: 40
+//
+// THE REACTOR EXISTS (B-3a, 1.1.12a). `io_ready(fd, events, within)` is the
+// executor's one I/O wait: register one-shot in the epoll set the first
+// caller creates, park like any wait, and let readiness or the deadline
+// resume the task — the caller re-tries its syscall to learn which. The
+// executor's idle wait becomes epoll_pwait once armed, with the eventfd
+// every cross-thread waker also writes, so channel wakes and wind-ups keep
+// landing while the thread waits on descriptors. Here: a nonblocking pipe,
+// a deadline on silence first — DeadlineExceeded, no byte — then a writer
+// thread makes it ready and the byte arrives.
+mod:io_ready_basic;
+error:EPipe;
+error:EWait;
+error:ERead;
+const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:late_writer = NIL(int64:wfd) joins JOIN_2S {
+    await sleep(raw duration_ms(40i64)) ?| NIL;
+    wild int8->:b = alloc(8i64);
+    <-b = 55i8;
+    discard(sys(1i64, wfd, b, 1i64));
+    drop dalloc(b);
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // pipe2(&fds, O_NONBLOCK)
+    wild int8->:fds = alloc(8i64);
+    discard(sys(293i64, fds, 2048i64) ?! EPipe);
+    wild int32->:fdi = fds =>! wild int32->;
+    int32:rfd = fdi[0i64];
+    int32:wfd = fdi[1i64];
+
+    // silence answers the deadline, not a hang
+    Result<NIL>:early = await io_ready(rfd, 1i32, raw duration_ms(25i64));
+    if (!early.is_error)               { exit 10i32; }
+    if (early.err != DeadlineExceeded) { exit 11i32; }
+
+    // a late writer makes it ready well inside the next deadline
+    drop late_writer(wfd => int64);
+    await io_ready(rfd, 1i32, raw duration_ms(1000i64)) ?! EWait;
+    wild int8->:rb = alloc(8i64);
+    int64:n = sys(0i64, rfd => int64, rb, 8i64) ?! ERead;
+    if (n != 1i64)                     { exit 13i32; }
+    if ((<-rb) != 55i8)                { exit 14i32; }
+    drop dalloc(rb);
+    drop dalloc(fds);
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPipe)            { exit 81i32; },
+        (EWait)            { exit 82i32; },
+        (ERead)            { exit 83i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

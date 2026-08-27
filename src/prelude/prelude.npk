@@ -255,3 +255,21 @@ pub async func:sleep = NIL(Duration:within) {
     drop suspend_until((raw mono_now()) + within.ns);
     pass NIL;
 };
+
+// `await io_ready(fd, events, within)` (B-3a, 1.1.12a): suspend until the
+// descriptor is ready for `events` (EPOLLIN 1, EPOLLOUT 4) or the deadline
+// passes — the reactor's one wait. One registration, one park, one return:
+// a resume past the deadline is the deadline's, and reports it; a resume
+// before it means READINESS WAS SIGNALLED — retry the syscall, and if it
+// still would block (stolen by a sibling, a spurious wake), call this
+// again. The stream types are loops around exactly that.
+pub async func:io_ready = NIL(int32:iofd, int32:events, Duration:within) {
+    int64:io_abs = (raw mono_now()) + within.ns;
+    // The registration lives exactly as long as the wait: a one-shot left
+    // armed past this frame would fire into freed memory. Every exit --
+    // readiness, deadline, wind-up -- runs this.
+    defer { drop io_unwatch(iofd); }
+    drop suspend_io(iofd, events, io_abs);
+    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    pass NIL;
+};

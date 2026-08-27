@@ -55,8 +55,19 @@ drop IS the release), `RwLock<T,LEVEL>` (`read` → read-only `RGuard<T>`,
 guard and reacquires; a timed-out wait SPENDS it — nulled, not held past
 the deadline), and `Barrier<N,LEVEL>` (a timed-out party hands its slot
 back). Levels feed the 0.5.6 ordering analysis from the receiver's types;
-borrows of the primitives are the sanctioned spawn crossings. Next: 1.1.12
-the reactor, 1.1.13 the Bridge.
+borrows of the primitives are the sanctioned spawn crossings. **1.1.12 (the
+reactor) is underway — a landed (D-184, B-3a closed)**: epoll WITHOUT
+timerfd (`epoll_pwait` as the armed executor's idle wait, carrying the
+sleeper deadline), an eventfd as the cross-thread wake channel,
+`suspend_io` + prelude `io_ready` + deferred `io_unwatch` (a registration
+lives exactly as long as its wait), and **the task-identity rule**: awaits
+drive children inline, so EVERY waiter registration — channels and locks
+included — resolves the executor's `cur_task`, not the frame it was
+lowered in; the nested-wait lost-wakeup this fixed was latent everywhere
+(`nested_wait.npk` regresses it). `sys` takes pointers (`ptrtoint` at the
+trampoline — the one place an address becomes a number). Next: 1.1.12b
+owned-fd byte streams, the text layer, async-behind-`dyn`, then 1.1.13 the
+Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

@@ -13003,3 +13003,77 @@ flag per owning local would be simple and uniformly wasteful, so **an
 instrument counts the residue** — proving most of them away is most of the
 value, and this is the one part of the design where measurement precedes
 optimisation.
+## D-184 — The reactor: epoll without timerfd; the task-identity rule for every wait — **SETTLED at 1.1.12a; B-3a closed**
+
+**Mechanism.** The reactor is **epoll, and only epoll** — the proposal's
+timerfd is not built. The executor already owns a deadline machine (the
+sleeper list and the futex wait's absolute timeout); once the reactor is
+armed, the idle wait becomes `epoll_pwait` whose millisecond timeout carries
+the SAME deadline the futex wait took (rounded up, so a 1ns wait is not a
+busy spin). A timerfd would be a second spelling of the sleeper list, one
+more descriptor of state to verify, and no capability.
+
+**Arming.** The first `io_ready` on an executor creates the epoll set and an
+eventfd (both CLOEXEC; the eventfd nonblocking) and stores them in the
+executor (`epfd`/`evfd`, slots 11/12; 0 = unarmed, safe because fd 0 is
+stdin). The eventfd rides the interest set with payload 0 — the drain
+marker. From then on that executor's idle wait is `epoll_pwait` forever.
+Cross-thread wakers — the channel rouse and the wind-up rouse — write 8
+bytes to the owner's eventfd AFTER the park-word/futex protocol they already
+carry; the eventfd is published with a release store and read acquire. The
+epoll branch re-checks the park word before sleeping — the futex wait's
+kernel-side expected-0 check, done by hand — or a rouse landing between the
+executor's re-check and the sleep, whose ping was skipped on a not-yet-
+visible evfd, would sleep through a due task.
+
+**Registration** is `EPOLLONESHOT` with the **task frame** as the event
+payload: ADD, and `-EEXIST` answers MOD, which re-arms a one-shot. Delivery
+(in the idle wait, owner thread only) dues the payload frame — `wake_at` 1,
+the channel waker's own protocol — and the next sweep runs it.
+
+**Surface.** `suspend_io(fd, events, abs)` is the inline suspension builtin
+(register, then park exactly as `suspend_until` — one registration, one
+park, one return, the same wind-up tail). The prelude's
+`io_ready(fd, events, within)` is its `Result` face: `DeadlineExceeded` past
+the deadline; success means READINESS WAS SIGNALLED — the caller re-tries
+its syscall, and a retry that still would block calls it again.
+`io_unwatch(fd)` (EPOLL_CTL_DEL; ENOENT is a no-op) is **deferred inside
+`io_ready`**, so the registration lives exactly as long as the wait — a
+one-shot left armed past its frame would fire into freed memory, and every
+exit (readiness, deadline, wind-up) runs the defer.
+
+**The kernel declining to watch is not the reactor's error.** A ctl failure
+past creation — EPERM (a regular file: always ready by definition), EBADF —
+marks the task due NOW and returns: the task resumes before its deadline and
+the caller's re-tried syscall reports the same errno as an ordinary
+`Result`, where the caller can handle it (D-179's posture). A file behind
+`io_ready` therefore reads instead of trapping. Only creating the reactor
+itself still traps: no descriptor, no caller, no `Result` to ride.
+
+**The task-identity rule** — the correctness find the rung forced, and it is
+not reactor-specific. Awaits drive child coroutines INLINE (D-177), so the
+frame a nested wait is lowered in — a prelude helper's, `io_ready` itself
+being the first — is NOT the frame the sweep sleeps and wakes: the task
+root is. The executor therefore records the frame `npk_step` is running
+(`cur_task`, slot 13; same-thread only), and **every waiter registration
+resolves it** — the channel/mutex/rwlock/condvar/barrier link and unlink,
+and the reactor's event payload — rather than trusting the frame they were
+lowered in. Before this, a wake for any wait nested inside a helper
+coroutine dued a frame nobody sweeps, and the task slept to its deadline
+for a value that had already arrived — latent for channels only because
+every existing test waited at task-root level. `nested_wait.npk` regresses
+it (a helper-coroutine recv against a cross-thread sender, 40 runs);
+`io_ready_basic.npk` proves the reactor (deadline on silence, then
+readiness from a writer thread, on a nonblocking pipe, 40 runs).
+
+**`sys` takes pointers.** The syscall trampoline is the one place an address
+becomes a number: a `ptr` argument lowers as `ptrtoint` (the emitter
+previously `sext`ed every non-i64 — invalid IR, latent because nothing had
+passed a pointer). `=>!` still refuses ptr→int everywhere: an opt-out of a
+check, not of a meaning.
+
+**io_uring is not going in before Astrée** — a decision, not a deferral. An
+SQE holds its buffer past the call's return, which makes the ownership story
+categorically larger than epoll's (nothing here outlives the wait), and a
+second reactor is a second thing to verify. If it ever lands it is a new
+decision with its own verification, behind the same `suspend_io` interface.

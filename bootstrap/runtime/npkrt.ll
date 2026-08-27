@@ -198,8 +198,16 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;
 ;   0 rq_head | 1 rq_tail | 2 sl_head | 3 park_at | 4 park_pending
 ;   5 park_word | 6 join_ns | 7 grace_ns | 8 chain[8] | 9 chain_n
-;   10 windup_seen
-%npk.exec = type { ptr, ptr, ptr, i64, i32, i32, i64, i64, [8 x i32], i32, i32 }
+;   10 windup_seen | 11 epfd | 12 evfd     (B-3a, 1.1.12a: the reactor --
+;   both 0 until the first io_ready; 0 is a safe sentinel because fd 0 is
+;   stdin and the kernel never hands it out again while it is open)
+;   13 cur_task -- THE FRAME npk_step IS RUNNING (1.1.12a). Awaits drive
+;   child coroutines inline, so the frame a nested wait sits in is NOT the
+;   frame the sweep sleeps and wakes -- the task root is. Every waiter
+;   registration (channel, lock, condvar, barrier, reactor) resolves this
+;   slot rather than trusting the immediate frame it was lowered in; same-
+;   thread only, so no atomics.
+%npk.exec = type { ptr, ptr, ptr, i64, i32, i32, i64, i64, [8 x i32], i32, i32, i32, i32, ptr }
 
 ; The join deadline (D-083) and the wind-up grace (D-177) are STATED
 ; CONSTANTS, not "whatever the runtime felt like": five seconds and 250ms,
@@ -208,7 +216,7 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ; where its executor is created.
 @npk_main_exec = internal global %npk.exec { ptr null, ptr null, ptr null,
     i64 0, i32 0, i32 0, i64 5000000000, i64 250000000,
-    [8 x i32] zeroinitializer, i32 0, i32 0 }
+    [8 x i32] zeroinitializer, i32 0, i32 0, i32 0, i32 0, ptr null }
 
 ; THE CURRENT THREAD'S EXECUTOR. One accessor, so the thread-local move is
 ; one edit rather than forty: 1.1.9c makes this read `%fs:8`, which
@@ -403,8 +411,18 @@ entry:
 ; hand-off plus a wakeup per millisecond per blocked task, and it could not
 ; express a rendezvous, because a poll cannot ask whether a receiver is there.
 
-define internal void @npk_ch_wait_link(ptr %hp, ptr %fr) {
+define internal void @npk_ch_wait_link(ptr %hp, ptr %fr_unused) {
 entry:
+  ; THE LINKED IDENTITY IS THE TASK, NOT THE IMMEDIATE FRAME (1.1.12a).
+  ; Awaits drive children inline, so a wait lowered inside a helper
+  ; coroutine hands this function the helper's frame -- but the frame the
+  ; sweep sleeps, dues and wakes is the task root's. Linking anything else
+  ; is a due mark nobody reads: the task sleeps to its deadline for a value
+  ; that arrived. Unlink resolves the same identity, which keeps the
+  ; entry-unlink discipline sound at any nesting depth.
+  %ex = call ptr @npk_exec()
+  %ctp = getelementptr %npk.exec, ptr %ex, i32 0, i32 13
+  %fr = load ptr, ptr %ctp
   %h = load ptr, ptr %hp
   %cn = getelementptr %npk.hdr, ptr %fr, i32 0, i32 10
   store ptr %h, ptr %cn
@@ -416,8 +434,12 @@ entry:
 ; under the channel's lock — a task that gave up on its deadline MUST come
 ; off, or a later peer would make a task due that is no longer waiting, and
 ; `wake_at` is also how a finished task is recognised (-1).
-define internal void @npk_ch_wait_unlink(ptr %hp, ptr %fr) {
+define internal void @npk_ch_wait_unlink(ptr %hp, ptr %fr_unused) {
 entry:
+  ; the same identity link records -- see npk_ch_wait_link
+  %ex = call ptr @npk_exec()
+  %ctp = getelementptr %npk.exec, ptr %ex, i32 0, i32 13
+  %fr = load ptr, ptr %ctp
   br label %loop
 loop:
   %slot = phi ptr [ %hp, %entry ], [ %nextslot, %step ]
@@ -475,6 +497,18 @@ rouse:
   %wp = ptrtoint ptr %pw to i64
   ; futex(word, FUTEX_WAKE|PRIVATE, 1, ...)
   %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 129, i64 1, i64 0, i64 0, i64 0)
+  ; ...and the eventfd, when the owner's idle wait is the reactor's
+  ; (B-3a, 1.1.12a): an epoll_pwait sleeper hears no futex.
+  %evp = getelementptr %npk.exec, ptr %ow, i32 0, i32 12
+  %evfd = load atomic i32, ptr %evp acquire, align 4
+  %noev = icmp eq i32 %evfd, 0
+  br i1 %noev, label %done, label %ping
+ping:
+  %one = alloca i64, align 8
+  store i64 1, ptr %one
+  %onep = ptrtoint ptr %one to i64
+  %evl = sext i32 %evfd to i64
+  %wr = call i64 @npk_sys6(i64 1, i64 %evl, i64 %onep, i64 8, i64 0, i64 0, i64 0)
   br label %done
 done:
   ret void
@@ -1775,6 +1809,11 @@ go:
   %idle = icmp eq ptr %t, null
   br i1 %idle, label %nothing, label %run
 run:
+  ; the one resume site records WHICH task is running: nested waits and the
+  ; reactor register the task root, not the coroutine frame they sit in
+  %exr = call ptr @npk_exec()
+  %ctp = getelementptr %npk.exec, ptr %exr, i32 0, i32 13
+  store ptr %t, ptr %ctp
   %rfp = getelementptr %npk.hdr, ptr %t, i32 0, i32 0
   %rf = load ptr, ptr %rfp
   %rc = call i8 %rf(ptr %t)
@@ -1927,6 +1966,17 @@ rouse:
   %wpi = ptrtoint ptr %pw to i64
   ; futex(word, FUTEX_WAKE|PRIVATE, 1, ...)
   %fr = call i64 @npk_sys6(i64 202, i64 %wpi, i64 129, i64 1, i64 0, i64 0, i64 0)
+  ; and the reactor's eventfd, for an epoll_pwait sleeper (B-3a)
+  %evpw = getelementptr %npk.exec, ptr %ow, i32 0, i32 12
+  %evfdw = load atomic i32, ptr %evpw acquire, align 4
+  %noevw = icmp eq i32 %evfdw, 0
+  br i1 %noevw, label %next, label %pingw
+pingw:
+  %onew = alloca i64, align 8
+  store i64 1, ptr %onew
+  %onepw = ptrtoint ptr %onew to i64
+  %evlw = sext i32 %evfdw to i64
+  %wrw = call i64 @npk_sys6(i64 1, i64 %evlw, i64 %onepw, i64 8, i64 0, i64 0, i64 0)
   br label %next
 next:
   %sp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 5
@@ -2020,6 +2070,17 @@ entry:
 define void @npk_park_sleep(i64 %at) {
 entry:
   %ex = call ptr @npk_exec()
+  ; THE REACTOR-ARMED WAIT (B-3a, 1.1.12a). Once any io_ready has run on
+  ; this executor, the idle wait is epoll_pwait over the interest set — the
+  ; registered descriptors plus the eventfd every cross-thread waker writes
+  ; — bounded by the same deadline the futex wait took. The clear-then-
+  ; recheck protocol is untouched: a waker between the caller's re-check and
+  ; this wait leaves the eventfd readable, and the wait returns immediately.
+  %evp0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
+  %evfd0 = load i32, ptr %evp0
+  %armed = icmp ne i32 %evfd0, 0
+  br i1 %armed, label %epoll, label %futex
+futex:
   %p_npk_park_word = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
   %ts = alloca [2 x i64], align 16
   %sec = sdiv i64 %at, 1000000000
@@ -2033,6 +2094,178 @@ entry:
   ; futex(word, FUTEX_WAIT_BITSET|PRIVATE, expected 0, &abs_timeout, NULL, ~0)
   %r = call i64 @npk_sys6(i64 202, i64 %wp, i64 137, i64 0, i64 %tp,
                           i64 0, i64 -1)
+  ret void
+epoll:
+  ; the futex wait re-checks its word IN the kernel (expected 0); this wait
+  ; must do the same by hand, or a rouse that landed between the caller's
+  ; re-check and here -- with the ping skipped on a not-yet-visible evfd --
+  ; sleeps through a due task until the deadline. Left set for the caller's
+  ; own clear-and-rescan, exactly as an EAGAIN futex leaves it.
+  %pwq = getelementptr %npk.exec, ptr %ex, i32 0, i32 5
+  %pwv = load atomic i32, ptr %pwq seq_cst, align 4
+  %pwbusy = icmp ne i32 %pwv, 0
+  br i1 %pwbusy, label %out, label %epgo
+epgo:
+  %epp = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
+  %epfd = load i32, ptr %epp
+  %now = call i64 @npk_mono_now()
+  %span = sub i64 %at, %now
+  %neg = icmp slt i64 %span, 0
+  %span2 = select i1 %neg, i64 0, i64 %span
+  ; nanoseconds to milliseconds, rounding UP so a 1ns wait is not a busy spin
+  %msu = add i64 %span2, 999999
+  %ms = sdiv i64 %msu, 1000000
+  %cap = icmp sgt i64 %ms, 2147483647
+  %ms2 = select i1 %cap, i64 2147483647, i64 %ms
+  %evbuf = alloca [192 x i8], align 8
+  %ebp = ptrtoint ptr %evbuf to i64
+  %epi = sext i32 %epfd to i64
+  ; epoll_pwait(epfd, events, 16, timeout_ms, NULL, 8)
+  %n = call i64 @npk_sys6(i64 281, i64 %epi, i64 %ebp, i64 16, i64 %ms2,
+                          i64 0, i64 8)
+  %none = icmp sle i64 %n, 0
+  br i1 %none, label %out, label %deliver
+deliver:
+  br label %dloop
+dloop:
+  %i = phi i64 [ 0, %deliver ], [ %i2, %dnext ]
+  %done = icmp sge i64 %i, %n
+  br i1 %done, label %out, label %done1
+done1:
+  ; the packed epoll_event: [ u32 events | u64 data ] at 12-byte stride
+  %off = mul i64 %i, 12
+  %da = add i64 %off, 4
+  %dp0 = getelementptr i8, ptr %evbuf, i64 %da
+  %data = load i64, ptr %dp0, align 4
+  %isev = icmp eq i64 %data, 0
+  br i1 %isev, label %drain, label %due
+drain:
+  ; the eventfd's counter resets on read; the wake it carried is spent
+  %tmp8 = alloca i64, align 8
+  %t8 = ptrtoint ptr %tmp8 to i64
+  %evi = sext i32 %evfd0 to i64
+  %dr = call i64 @npk_sys6(i64 0, i64 %evi, i64 %t8, i64 8, i64 0, i64 0, i64 0)
+  br label %dnext
+due:
+  ; the event's payload is the waiting FRAME: due it, the sweep runs it
+  %frp = inttoptr i64 %data to ptr
+  %wa = getelementptr %npk.hdr, ptr %frp, i32 0, i32 8
+  store atomic i64 1, ptr %wa seq_cst, align 8
+  br label %dnext
+dnext:
+  %i2 = add i64 %i, 1
+  br label %dloop
+out:
+  ret void
+}
+
+; REGISTER A DESCRIPTOR WITH THE REACTOR (B-3a, 1.1.12a) — one-shot: the
+; event fires once and disarms, the woken task re-tries its syscall, and a
+; wait that expires leaves the registration armed, which is harmless — a
+; late fire dues whatever frame owns the slot then, a spurious wake the
+; model already tolerates everywhere, and closing the fd removes it from
+; every epoll set by kernel rule. The first registration creates the epoll
+; set and the eventfd and arms the executor's idle wait.
+define void @npk_io_register(i32 %fd, i32 %ev) {
+entry:
+  %ex = call ptr @npk_exec()
+  %ctp0 = getelementptr %npk.exec, ptr %ex, i32 0, i32 13
+  %fr = load ptr, ptr %ctp0
+  %epp = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
+  %epfd0 = load i32, ptr %epp
+  %have = icmp ne i32 %epfd0, 0
+  br i1 %have, label %arm, label %create
+create:
+  ; epoll_create1(EPOLL_CLOEXEC)
+  %ep = call i64 @npk_sys6(i64 291, i64 524288, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %epbad = icmp slt i64 %ep, 0
+  br i1 %epbad, label %trap, label %mkev
+mkev:
+  ; eventfd2(0, EFD_CLOEXEC|EFD_NONBLOCK)
+  %ev2 = call i64 @npk_sys6(i64 290, i64 0, i64 526336, i64 0, i64 0, i64 0, i64 0)
+  %evbad = icmp slt i64 %ev2, 0
+  br i1 %evbad, label %trap, label %addev
+addev:
+  %ep32 = trunc i64 %ep to i32
+  store i32 %ep32, ptr %epp
+  %evp = getelementptr %npk.exec, ptr %ex, i32 0, i32 12
+  %ev32 = trunc i64 %ev2 to i32
+  ; RELEASE: a rouser that sees evfd nonzero must also see the descriptor
+  ; it names fully created; rousers load it acquire.
+  store atomic i32 %ev32, ptr %evp release, align 4
+  ; the eventfd rides the set with data 0 — the drain marker
+  %eev = alloca [12 x i8], align 4
+  store i32 1, ptr %eev, align 4
+  %edp = getelementptr i8, ptr %eev, i64 4
+  store i64 0, ptr %edp, align 4
+  %eevp = ptrtoint ptr %eev to i64
+  ; epoll_ctl(epfd, ADD, evfd, &ev)
+  %ar = call i64 @npk_sys6(i64 233, i64 %ep, i64 1, i64 %ev2, i64 %eevp, i64 0, i64 0)
+  %arbad = icmp slt i64 %ar, 0
+  br i1 %arbad, label %trap, label %arm
+trap:
+  call void @npk_chain_reset(i32 0)
+  call void @npk_trap(i32 -4102)
+  unreachable
+arm:
+  %epfd1 = load i32, ptr %epp
+  %epl = sext i32 %epfd1 to i64
+  %fdl = sext i32 %fd to i64
+  ; EPOLLONESHOT on top of the caller's interest
+  %evones = or i32 %ev, 1073741824
+  %tev = alloca [12 x i8], align 4
+  store i32 %evones, ptr %tev, align 4
+  %tdp = getelementptr i8, ptr %tev, i64 4
+  %fri = ptrtoint ptr %fr to i64
+  store i64 %fri, ptr %tdp, align 4
+  %tevp = ptrtoint ptr %tev to i64
+  ; try ADD; -EEXIST means it was seen before -- MOD rearms the one-shot
+  %r1 = call i64 @npk_sys6(i64 233, i64 %epl, i64 1, i64 %fdl, i64 %tevp, i64 0, i64 0)
+  %exists = icmp eq i64 %r1, -17
+  br i1 %exists, label %mod, label %ck1
+mod:
+  %r2 = call i64 @npk_sys6(i64 233, i64 %epl, i64 3, i64 %fdl, i64 %tevp, i64 0, i64 0)
+  %bad2 = icmp slt i64 %r2, 0
+  br i1 %bad2, label %duenow, label %out
+ck1:
+  %bad1 = icmp slt i64 %r1, 0
+  br i1 %bad1, label %duenow, label %out
+duenow:
+  ; THE KERNEL DECLINED TO WATCH THIS DESCRIPTOR -- EPERM for one epoll
+  ; cannot poll (a regular file, always ready by definition), EBADF for one
+  ; that does not exist. Neither is the reactor's error to report: the task
+  ; is due NOW, resumes before its deadline, and the caller's re-tried
+  ; syscall answers with the same errno as a proper `Result` -- the caller
+  ; handles its own mistake where it can (D-179's posture), and a file
+  ; behind `io_ready` reads instead of trapping. Only creating the reactor
+  ; itself still traps above: no descriptor, no caller, no `Result` to ride.
+  %dnp = getelementptr %npk.hdr, ptr %fr, i32 0, i32 8
+  store atomic i64 1, ptr %dnp seq_cst, align 8
+  br label %out
+out:
+  ret void
+}
+
+; DROP A DESCRIPTOR FROM THE REACTOR (B-3a, 1.1.12a). `io_ready` defers
+; this so a registration lives exactly as long as its wait -- the one-shot's
+; payload is the waiting FRAME, and a fire after that frame is freed would
+; write into freed memory. ENOENT (never watched, or closed -- the kernel
+; removed it) is the no-op answer, not an error; with no reactor armed there
+; is nothing to remove.
+define void @npk_io_unwatch(i32 %fd) {
+entry:
+  %ex = call ptr @npk_exec()
+  %epp = getelementptr %npk.exec, ptr %ex, i32 0, i32 11
+  %epfd = load i32, ptr %epp
+  %none = icmp eq i32 %epfd, 0
+  br i1 %none, label %out, label %del
+del:
+  %epl = sext i32 %epfd to i64
+  %fdl = sext i32 %fd to i64
+  ; epoll_ctl(epfd, EPOLL_CTL_DEL = 2, fd, NULL)
+  %r = call i64 @npk_sys6(i64 233, i64 %epl, i64 2, i64 %fdl, i64 0, i64 0, i64 0)
+  br label %out
+out:
   ret void
 }
 

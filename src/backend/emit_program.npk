@@ -853,6 +853,9 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare i64 @npk_barrier_arrive(ptr)");
     drop irw_raw(w, "declare i32 @npk_barrier_poll(ptr, i64, i64, ptr)");
     drop irw_raw(w, "declare void @npk_barrier_cancel(ptr, i64, ptr)");
+    // The reactor (B-3a, 1.1.12a): one-shot readiness registration.
+    drop irw_raw(w, "declare void @npk_io_register(i32, i32)");
+    drop irw_raw(w, "declare void @npk_io_unwatch(i32)");
     // THE GENERIC FRAME HEADER (D-177 stage E): every coroutine frame begins
     // with this prefix, and a spawnable child's success is `NIL` by checker
     // rule, so its result slot is `{ i32 }` — which is what lets ONE join
