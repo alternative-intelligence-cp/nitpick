@@ -610,7 +610,6 @@ DROPS_DEFAULT_OK = {
     "TY_SHARED_ARENA": "slab release lands at 1.2.5",
     "TY_ANY":       "unsized; never a value at this rung",
     "TY_TRAIT":     "a bound, not a value",
-    "TY_DYN":       "drops through the vtable's drop slot at 1.2.4",
     "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",
     "TY_SELF":      "resolves to the concrete type before it is asked",
     "TY_PARAM":     "substituted before it is asked; the specialization answers",

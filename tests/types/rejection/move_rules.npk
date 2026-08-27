@@ -39,3 +39,18 @@ func:copies_an_owner = int32() {
     string:second = built;
     pass ((built.len + second.len) =>! int32);
 };
+// A `dyn` IS AN OWNER (D-183, 1.2.4): the coercion moved the concrete value
+// into a heap cell only the fat pointer knows how to release — through the
+// vtable's slot 0 — so copying a `dyn` place duplicates the cell's owner the
+// same way copying a built string duplicates its body's.
+trait:Says = { func:val = int32(Self:self); };
+struct:Plain = { int32:v; };
+impl:Plain:Says = { func:val = int32(Plain:self) { pass self.v; }; };
+
+// expect-error: NITPICK-TYPE-046
+func:copies_a_dyn = int32() never fails {
+    Plain:p = Plain{ v: 4i32 };
+    dyn Says:a = p;
+    dyn Says:b = a;
+    pass ((a.val() ?! Unreachable) + (b.val() ?! Unreachable));
+};

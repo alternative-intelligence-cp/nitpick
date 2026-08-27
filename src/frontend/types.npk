@@ -297,6 +297,15 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     }
     if (k == (raw TY_STRUCT()))   { pass ((raw tt_drops(t, id)) == 2i32); }
     if (k == (raw TY_ENUM()))     { pass ((raw tt_drops(t, id)) == 2i32); }
+    // A `dyn` OWNS the heap cell its coercion moved the concrete value into
+    // (D-183, 1.2.4). Erasure needs indirection; indirection that survives
+    // the frame needs the heap (the alloca spill dangled the moment a `dyn`
+    // was returned — dyn_slots.npk's `choose` dispatched through a dead
+    // frame); and a heap cell needs exactly one owner. TRUE unconditionally:
+    // whether the CONCRETE type also owns something is the vtable's slot-0
+    // business, not the fat pointer's — the cell itself must be freed either
+    // way, so every `dyn` is move-only and carries a drop.
+    if (k == (raw TY_DYN()))      { pass true; }
     pass false;
 };
 

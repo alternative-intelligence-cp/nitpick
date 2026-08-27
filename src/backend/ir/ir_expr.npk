@@ -3827,8 +3827,25 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
     LlType:dll = raw ll_type(x.fe.ctx, dyn_ty);
     if (!(raw ll_is_ok(dll))) { pass (raw iv_from_ll_at(x, dll, dyn_ty, at)); }
 
+    // THE CELL IS HEAP, NOT AN ALLOCA (D-183, 1.2.4). The first shape spilled
+    // the concrete value to the coercion site's own stack — and a `dyn` is
+    // storable everywhere a value is (1.0.6e closed that matrix), so
+    // dyn_slots.npk's `choose` RETURNED one and main dispatched through a
+    // dead frame; it passed only while nothing scribbled the stack in
+    // between. The coercion moves the concrete into a managed cell the `dyn`
+    // owns — `type_drops` says TY_DYN is true, so the fat pointer is
+    // move-only and its generated drop calls vtable slot 0 on the cell, then
+    // frees it. The size is asked of LLVM (null-gep), never computed.
+    string:szg = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(szg, " = getelementptr ", v.ll,
+                      ", ptr null, i32 1", ""));
+    string:szi = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(szi, " = ptrtoint ptr ",
+                      raw string_concat(szg, " to i64")));
     string:spill = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, spill, v.ll);
+    drop irw_line(x.fe.w, raw cat3(spill,
+                      " = call ptr @npk_alloc_managed(i64 ",
+                      raw string_concat(szi, ")")));
     drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
                       raw string_concat(", ptr ", spill)));
 
@@ -4137,8 +4154,12 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
                           raw cat3(rv.ref, ", ",
                               raw int_to_string(ds.word => int64))));
         string:sp = raw irw_temp(x.fe.w);
+        // +1: TABLE slot 0 is the concrete type's drop (D-183, 1.2.4); the
+        // methods follow at declaration index + 1. `DynSlot.slot` stays the
+        // declaration index — D-158's meaning — and the shift lives here, at
+        // the one place an index becomes a table offset.
         drop irw_line(x.fe.w, raw cat5(sp, " = getelementptr ptr, ptr ", vt,
-                          ", i64 ", raw int_to_string(ds.slot => int64)));
+                          ", i64 ", raw int_to_string((ds.slot + 1i32) => int64)));
         dyn_fn = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(dyn_fn, " = load ptr, ptr ", sp));
         args = raw string_concat("ptr ", dat);

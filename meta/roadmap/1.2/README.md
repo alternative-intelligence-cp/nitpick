@@ -484,3 +484,28 @@ interned token text) and are sound under the same test.
 
 Also closed in this pass: the `if (false)` shape residue in
 `check_ctor_args`' enum-payload arm, and the unused `LocalSlot` struct.
+
+## 1.2.4a — the `dyn` drop slot, and the cell that made it meaningful
+
+`type_drops` answers TRUE for `TY_DYN`; every vtable's slot 0 is the concrete
+type's drop (null when it owns nothing) with methods at declaration index + 1;
+and the generated `dyn` drop calls slot 0 on the data pointer, then frees it.
+
+The larger change surfaced while reading the coercion: **the data pointer was
+an alloca.** `emit_dyn_from` spilled the concrete value to the coercion
+site's own stack, and a `dyn` is storable everywhere a value is (1.0.6e) — so
+`dyn_slots.npk`'s `choose` RETURNED one and dispatched through a dead frame,
+passing only while nothing scribbled the stack in between. Refusing escape
+would have regressed the whole tested dyn×slot matrix, so the coercion now
+moves the concrete into a managed heap cell the `dyn` owns
+(`npk_alloc_managed`, npkrt's managed entry, new). `dyn` is move-only like
+every owner — `dyn_vtable`'s widening and `type_group`'s Optional store each
+needed their `move` written, and both sites are exactly the two-owners bug
+the rule exists to name. `dyn_drop.npk` covers the semantics: the returned
+dyn over a deliberately scribbled stack, 200 rounds of an owning concrete
+dropping through slot 0, assignment-over dropping the old cell, move-once,
+and an enum payload's dyn dropping on the tag.
+
+Still open in 1.2.4: async bodies run no drops at all — frame-resident flags,
+scope-exit drops inside segments, completion drops, and the cancel path's
+per-state teardown are 1.2.4b.

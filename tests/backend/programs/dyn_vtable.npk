@@ -66,9 +66,11 @@ func:main = int32(cstring[]:_~argv) {
     if ((m.say() ?! E9) != 1i32)   { exit 12i32; }
     if ((m.step() ?! E9) != 2i32)  { exit 13i32; }
 
-    // WIDENING IS A VALUE REBUILD (D-159): copy the data word and the retained
-    // trait's word into the narrower shape, then dispatch through it.
-    dyn Speaks:w = m;
+    // WIDENING IS A VALUE REBUILD (D-159): the data word and the retained
+    // trait's word move into the narrower shape, then dispatch goes through
+    // it. `move`, because a `dyn` OWNS its cell (D-183, 1.2.4) — a plain copy
+    // would leave two owners of one cell, and TYPE-046 refuses it.
+    dyn Speaks:w = move(m);
     if ((w.say() ?! E9) != 1i32)   { exit 14i32; }
 
     // A slot filled by an INHERITED DEFAULT, which calls back into the impl.

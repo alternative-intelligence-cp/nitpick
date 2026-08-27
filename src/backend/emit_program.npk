@@ -265,8 +265,19 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     if (!(raw ll_is_ok(sll))) { pass NIL; }
 
     string:vtn = raw vtable_stem_of(x.fe.ctx, x.interns, self_ty, trait_ty);
-    string:entries = "";
-    int32:slots = 0i32;
+    // SLOT 0 IS THE CONCRETE TYPE'S DROP (D-183, 1.2.4), or null when the
+    // concrete owns nothing; the methods follow at declaration index + 1.
+    // Behind `dyn` the concrete type is erased, so scope exit cannot name
+    // which drop to call — the table carries it, one pointer per vtable,
+    // the same shape the methods already ride. Every (impl, trait) table of
+    // one concrete type carries the same slot 0, which is what keeps D-159's
+    // widening sound: any retained word can drop the value.
+    string:entries = "ptr null";
+    if (raw type_drops(x.fe.ctx.types, self_ty, 64i32)) {
+        entries = raw string_concat("ptr ",
+                      raw drop_fn_sym(x.fe.ctx, self_ty));
+    }
+    int32:slots = 1i32;
 
     int32:k = 0i32;
     while (k < (raw item_member_count(x.ast, td))) {
@@ -275,7 +286,7 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
             string:thunk = raw emit_thunk(x, item, td, tm, self_ty, trait_ty,
                                             sll, vtn);
             if (thunk.len == 0i64) { pass NIL; }
-            if (slots > 0i32) { entries = raw string_concat(entries, ", "); }
+            entries = raw string_concat(entries, ", ");
             entries = raw string_concat(entries,
                           raw string_concat("ptr ", thunk));
             slots = slots + 1i32;
@@ -788,6 +799,12 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
     // unconditionally because the declare block is a fixed constant.
     drop irw_raw(w, "declare void @npk_trap(i32)");
+    // The `dyn` CELL (D-183, 1.2.4): a coercion moves the concrete value
+    // into a managed heap cell the `dyn` owns — the data pointer must
+    // outlive the frame that built it, which an alloca cannot. Not a
+    // builtin a program may call; the generated dyn drop hands the cell
+    // back through `npk_dalloc` after calling vtable slot 0.
+    drop irw_raw(w, "declare ptr @npk_alloc_managed(i64)");
     // The origin chain's stamps (D-179, 1.1.6): not builtins a program may
     // call — `fail` resets, `relay` and `?!` push. Declared unconditionally,
     // like the trap they feed.
@@ -1192,6 +1209,36 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                           "(ptr %ep)", ""));
         drop irw_raw(w, "  %ni = add i64 %i, 1");
         drop irw_raw(w, "  br label %loop");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // A `dyn` DROPS THROUGH THE VTABLE'S SLOT 0 (D-183, 1.2.4): the concrete
+    // type is erased, so only the table built beside the value knows which
+    // drop applies — null there means the concrete owns nothing. The cell is
+    // the `dyn`'s own storage either way and is always handed back. Null
+    // DATA is a zeroed frame or an empty enum arm's payload slot: nothing.
+    if (k == (raw TY_DYN())) {
+        drop irw_raw(w, raw cat3("  %dp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 0"));
+        drop irw_raw(w, "  %d = load ptr, ptr %dp");
+        drop irw_raw(w, "  %dead = icmp eq ptr %d, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        drop irw_raw(w, raw cat3("  %vtp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 1"));
+        drop irw_raw(w, "  %vt = load ptr, ptr %vtp");
+        drop irw_raw(w, "  %s0 = load ptr, ptr %vt");
+        drop irw_raw(w, "  %inert = icmp eq ptr %s0, null");
+        drop irw_raw(w, "  br i1 %inert, label %free, label %call");
+        drop irw_raw(w, "call:");
+        drop irw_raw(w, "  call void %s0(ptr %d)");
+        drop irw_raw(w, "  br label %free");
+        drop irw_raw(w, "free:");
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %d)");
+        drop irw_raw(w, "  br label %done");
         drop irw_raw(w, "done:");
         drop irw_raw(w, "  ret void");
         drop irw_raw(w, "}");

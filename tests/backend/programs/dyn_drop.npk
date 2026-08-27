@@ -1,0 +1,107 @@
+// expect-exit: 42
+// stress: 40
+//
+// THE `dyn` CELL IS HEAP, AND THE `dyn` OWNS IT (D-183, 1.2.4).
+//
+// Until this cycle a coercion spilled the concrete value to the COERCION
+// SITE'S OWN STACK, and a `dyn` is storable everywhere a value is (1.0.6e)
+// — so `dyn_slots.npk`'s `choose` returned one and dispatched through a dead
+// frame, passing only while nothing scribbled the stack in between. Case 1
+// here scribbles it on purpose. The rest exercise what ownership means:
+// slot 0 of every vtable is the concrete type's drop (null when it owns
+// nothing), a `dyn` local's scope exit calls it on the cell and frees the
+// cell, assignment over a live `dyn` drops the old cell first, and a moved
+// `dyn` drops exactly once, at the receiver. The 200-round loop makes the
+// allocator's own validation the referee: a double free of a cell or of an
+// owning concrete's body traps, and a missed old-value drop of this shape
+// corrupted nothing only for as long as nothing was ever freed.
+
+mod:dyn_drop;
+error:E9;
+
+trait:Speaks = { func:say = int32(Self:self); };
+
+struct:Loud  = { string:name; int32:v; };
+struct:Quiet = { int32:v; };
+
+impl:Loud:Speaks  = { func:say = int32(Loud:self)  { pass self.v; }; };
+impl:Quiet:Speaks = { func:say = int32(Quiet:self) { pass self.v; }; };
+
+enum:Slot = {
+    Empty;
+    Held(dyn Speaks);
+};
+
+// The returned `dyn` — the case that dangled under the alloca spill.
+func:mk = dyn Speaks(int32:n) never fails {
+    Quiet:q = Quiet{ v: n };
+    dyn Speaks:d = q;
+    pass d;
+};
+
+// Overwrite the region `mk`'s frame occupied before the dispatch reads it.
+func:scribble = int32(int32:x) never fails {
+    int32:a = x + 11i32;
+    int32:b = a * 3i32;
+    int32:c = b - x;
+    int32:d = c * c;
+    int32:e = d + a;
+    int32:f = e - b;
+    int32:g = f + c;
+    int32:h = g * 2i32;
+    pass (h - g);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 1: the returned dyn survives a scribbled stack.
+    dyn Speaks:p = raw mk(30i32);
+    discard(raw scribble(9i32));
+    if ((p.say() ?! E9) != 30i32) { exit 10i32; }
+
+    // 2: an OWNING concrete moves in; each round drops the concrete through
+    // slot 0 (freeing its string body) and then the cell.
+    int32:acc = 0i32;
+    int32:i = 0i32;
+    while (i < 200i32) {
+        Loud:l = Loud{ name: (string_concat("abcde", "") ?! E9), v: 12i32 };
+        dyn Speaks:d = move(l);
+        acc = acc + (d.say() ?! E9);
+        i = i + 1i32;
+    }
+    if (acc != 2400i32) { exit 11i32; }
+
+    // 3: assignment over a live dyn drops the old cell first.
+    Quiet:q1 = Quiet{ v: 1i32 };
+    Quiet:q2 = Quiet{ v: 2i32 };
+    dyn Speaks:s = q1;
+    s = q2;
+    if ((s.say() ?! E9) != 2i32) { exit 12i32; }
+    s = q1;
+    if ((s.say() ?! E9) != 1i32) { exit 13i32; }
+
+    // 4: a moved dyn drops once, at the receiver.
+    dyn Speaks:m0 = q2;
+    dyn Speaks:m1 = move(m0);
+    if ((m1.say() ?! E9) != 2i32) { exit 14i32; }
+
+    // 5: an enum payload's dyn drops on the tag at scope exit.
+    Quiet:q3 = Quiet{ v: 3i32 };
+    dyn Speaks:e0 = q3;
+    Slot:sl = Slot.Held(move(e0));
+
+    exit 42i32;
+    pass 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 77i32; },
+        (HeapBadRequest) { exit 78i32; },
+        (HeapOom) { exit 78i32; },
+        (OutOfBounds) { exit 78i32; },
+        (Unreachable) { exit 78i32; },
+        (WildLeak) { exit 78i32; },
+        (*) { exit 79i32; }
+    }
+    exit 79i32;
+};

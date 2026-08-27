@@ -3372,6 +3372,15 @@ define ptr @npk_alloc(i64 %n) {
   ret ptr %p
 }
 
+; The MANAGED entry -- program-owned storage the GENERATED drops release
+; (D-183, 1.2.4): today the `dyn` cell a coercion moves its concrete value
+; into. Not in <wild-live> -- scope exit frees it, the way a string body's
+; drop already works -- and dalloc takes it back like any managed body.
+define ptr @npk_alloc_managed(i64 %n) {
+  %p = call ptr @npk_alloc_impl(i64 %n, i64 0)
+  ret ptr %p
+}
+
 ; The INTERNAL entry -- runtime-owned storage (string bodies, argv, file
 ; buffers). Managed-regime: not in <wild-live>; its RAII lands with the
 ; managed lowering, and wild_release_all still reclaims it wholesale.

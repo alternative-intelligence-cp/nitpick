@@ -10692,7 +10692,7 @@ comptime parameters alike — because a vtable slot holds one address and a
 generic method is a family of them.* TRAITS_REFERENCE §4.2 is restated to
 these three rules exactly.
 
-## D-158 — `dyn` dispatch: declaration-indexed vtables, own methods only — **SETTLED**
+## D-158 — `dyn` dispatch: declaration-indexed vtables, own methods only — **SETTLED; the TABLE gained a slot 0 at D-183's 1.2.4** (the concrete type's drop — methods sit at declaration index + 1)
 
 OPEN_DECISIONS C-3, with the prototype as the behavioral oracle
 (type_checker_call.cpp's dyn path, confirmed against traits_oop_specs).
@@ -12749,6 +12749,33 @@ reclaim is the shipped behaviour — and exists because a by-tid bisect of
 drop classes proved to be a WEAK oracle: enabling any drop set shifts the
 allocator's recycling pattern, so a configuration's cleanliness proves
 nothing about the code it enables. Quarantine is timing-independent.
+
+### The `dyn` cell, and the vtable's slot 0 (1.2.4)
+
+Behind `dyn` the concrete type is erased, so scope exit cannot name the drop —
+**every vtable's slot 0 is the concrete type's drop** (null when it owns
+nothing), and the methods sit at declaration index + 1. D-158's slot IS still
+the declaration index; the +1 lives at the one place an index becomes a table
+offset. Every (impl, trait) table of one concrete carries the same slot 0,
+which is what keeps D-159's widening sound: any retained word can drop the
+value.
+
+The coercion itself changed shape. The first lowering spilled the concrete
+value to the coercion site's own STACK, and a `dyn` is storable everywhere a
+value is (1.0.6e closed that matrix) — so `dyn_slots.npk`'s `choose` returned
+one and main dispatched through a dead frame, passing only while nothing
+scribbled the stack in between. **A coercion now moves the concrete value into
+a managed heap cell the `dyn` owns** (`npk_alloc_managed`, the runtime's
+managed entry): `type_drops` answers true for TY_DYN unconditionally — whether
+the CONCRETE also owns something is slot 0's business; the cell must be freed
+either way — so a `dyn` is move-only like every owner, widening consumes its
+source, assignment over a live `dyn` drops the old cell first, and the
+generated `dyn` drop calls slot 0 on the cell and hands it to `dalloc`. The
+cost is one small allocation per coercion, paid at an explicit type-erasure
+site; the alternative was a fat pointer into whichever frame happened to build
+it. A `dyn` moved into a coercion ARGUMENT is a temporary, and temporaries do
+not drop yet — that cell rides the recorded statement-end-drops debt. Channels
+of `dyn` stay behind the owning-element rung until 1.2.5.
 
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
