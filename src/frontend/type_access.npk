@@ -575,9 +575,14 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // reached the backend, which refused it as a rung — a rung names
         // valid Nitpick, and this is not.
         if (gcount > 0i32) {
-            discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
-                "this callee takes no type arguments: it is not a generic function, and a function value is one body, already instantiated",
-                n.span));
+            // `atomic_from_ptr::<T>(p)` is the one bare builtin that reads
+            // its element from a turbofish rather than an annotation (D-187);
+            // its type argument is meaningful and handled below.
+            if (!(raw callee_is_builtin_named(e, n, "atomic_from_ptr"))) {
+                discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
+                    "this callee takes no type arguments: it is not a generic function, and a function value is one body, already instantiated",
+                    n.span));
+            }
         }
     }
 
@@ -686,6 +691,40 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 }
             }
             pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
+        }
+        // `atomic_from_ptr::<T>(p)` — alias the pointee AS an atomic (D-033),
+        // element from the TURBOFISH (D-187 option A). FUSED ONLY: legal
+        // solely as the receiver of an atomic method, never stored (a stored
+        // aliased atomic is meaningless — the storage is the pointee's — and
+        // check_var_decl/check_assign refuse it). Result type `atomic<T>`;
+        // the emitter dispatches through the pointer, no address of a local.
+        if (raw callee_is_builtin_named(e, n, "atomic_from_ptr")) {
+            if (gcount != 1i32) {
+                pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
+                    "`atomic_from_ptr::<T>(p)` takes one type argument, the element it aliases (D-187)",
+                    n.span));
+            }
+            if (count != 1i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`atomic_from_ptr` takes one value argument, the pointer to alias (D-033)",
+                    n.span));
+            }
+            TypeResolver:afr = raw etyper_resolver(e);
+            int32:afel = raw resolve_type(@afr,
+                TypeId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), 0i32) },
+                e.scope);
+            int32:afp = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+            if (afp != 0i32) {
+                if (!(raw type_is_invalid(e.types, afp))) {
+                    if ((raw type_kind(e.types, afp)) != (raw TY_POINTER())) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`atomic_from_ptr` aliases a pointer's target; its argument is a pointer (D-033)",
+                            n.span));
+                    }
+                }
+            }
+            pass (raw tt_atomic(e.types, afel,
+                      raw type_size(e.types, afel), raw type_align(e.types, afel)));
         }
         if (raw callee_is_builtin_named(e, n, "own_fd")) {
             if (count != 1i32) {
@@ -1946,6 +1985,17 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
 
 // Is this call's callee the bare builtin `name`? (A builtin resolves to no
 // symbol, which is what tells it apart from a user function wearing the name.)
+// Is this INIT/RHS expression a call to `atomic_from_ptr`? An aliased atomic
+// is fused-only (D-187): it may be an atomic method's receiver but never a
+// value that is stored — the storage a store would give it is not the cell
+// it aliases. Detected here so var-decl and assign refuse it uniformly.
+pub func:expr_is_atomic_from_ptr = bool(ExprTyper->:e, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:cn = raw ast_expr(e.ast, id);
+    if (cn.kind != ExprKind.ExprCallExpr) { pass false; }
+    pass (raw callee_is_builtin_named(e, cn, "atomic_from_ptr"));
+};
+
 func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) never fails {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
@@ -2297,7 +2347,22 @@ func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                                 int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
     int32:elem = raw type_elem(e.types, recv);
-    drop require_place_operand(e, raw expr_operand(n), "an atomic operation");
+    // An INLINE atomic needs a place — its cell is its own storage. An
+    // ALIASED atomic (`atomic_from_ptr::<T>(p)`, D-187) has no place BY
+    // DESIGN: its cell is the pointer, and requiring a place is exactly the
+    // "never stored" property, not a violation of it. So the place check
+    // applies only when the receiver is not that fused constructor.
+    ExprId:amop = raw expr_operand(n);
+    bool:am_aliased = false;
+    if (!(raw expr_is_none(amop))) {
+        ExprNode:amon = raw ast_expr(e.ast, amop);
+        if (amon.kind == ExprKind.ExprCallExpr) {
+            am_aliased = raw callee_is_builtin_named(e, amon, "atomic_from_ptr");
+        }
+    }
+    if (!am_aliased) {
+        drop require_place_operand(e, amop, "an atomic operation");
+    }
 
     int32:want_args = 0i32;
     bool:known = false;

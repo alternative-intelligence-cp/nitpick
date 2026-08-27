@@ -1,0 +1,22 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+//
+// D-187: an aliased atomic is FUSED-ONLY. `atomic_from_ptr::<T>(p)` aliases
+// the pointer's cell, so a binding would hand it a different slot than the
+// one it operates on — meaningless and unsafe. It is legal solely as an
+// atomic method's receiver, in place; storing it (a declaration or an
+// assignment) is refused. Use `atomic_from_ptr::<T>(p).load()` directly.
+mod:atomic_alias_rules;
+func:main = int32(cstring[]:_~argv) {
+    wild int8->:buf = alloc(16i64);
+    wild int64->:cell = buf =>! wild int64->;
+    atomic<int64>:stored = atomic_from_ptr::<int64>(cell);
+    stored = atomic_from_ptr::<int64>(cell);
+    drop dalloc(buf);
+    drop wild_release_all();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) { (*) { exit 9i32; } }
+    exit 9i32;
+};

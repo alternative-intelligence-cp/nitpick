@@ -2607,11 +2607,47 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
 // D-016 settled that a weak ordering misused is intermittent corruption on
 // another CPU months later — and one spelling here means no program can ask
 // for the dangerous one by accident.
+// Is this call's callee the bare-name builtin `name`? The emitter's mirror of
+// callee_is_builtin_named — an identifier callee that resolved to no symbol
+// (`a == 0`) whose spelling matches.
+func:emit_callee_is_builtin = bool(ExprEmitter->:x, ExprNode:n, string:name) never fails {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cnode = raw ast_expr(x.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cnode.a != 0i32) { pass false; }
+    pass (raw string_eq(raw intern_get(x.interns, raw expr_name(cnode) =>! int32),
+                        name));
+};
+
 func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                                 int32:recv_tid) never fails {
     string:m = raw intern_get(x.interns, n.payload =>! int32);
-    PlaceVal:pl = raw addr_of(x, raw expr_operand(n));
-    if (pl.state != (raw LL_OK())) { pass (raw iv_from_place(pl)); }
+    // THE CELL ADDRESS. For an inline atomic (a field/local of atomic type)
+    // it is the receiver's own address. For an ALIASED atomic — the receiver
+    // is `atomic_from_ptr::<T>(p)` (D-187) — it is the aliased pointer `p`
+    // itself: the whole point is that no local holds the cell. Fused-only, so
+    // the receiver is that call directly, and its one argument is the pointer.
+    ExprId:aop = raw expr_operand(n);
+    string:cell = "";
+    if (!(raw expr_is_none(aop))) {
+        ExprNode:aopn = raw ast_expr(x.ast, aop);
+        if (aopn.kind == ExprKind.ExprCallExpr) {
+            if (raw emit_callee_is_builtin(x, aopn, "atomic_from_ptr")) {
+                int32:afgc = raw expr_generic_count(aopn);
+                ExprId:afpid = ExprId{ index: raw ast_id_at(x.ast,
+                    (raw expr_list_start(aopn)) + afgc, 0i32) };
+                IrVal:pv = raw emit_expr(x, afpid);
+                if (!(raw iv_is_ok(pv))) { pass pv; }
+                cell = raw string_concat(pv.ref, "");
+            }
+        }
+    }
+    if (cell.len == 0i64) {
+        PlaceVal:pl = raw addr_of(x, aop);
+        if (pl.state != (raw LL_OK())) { pass (raw iv_from_place(pl)); }
+        cell = raw string_concat(pl.addr, "");
+    }
     int32:elem = raw type_elem(x.fe.ctx.types, recv_tid);
     LlType:ell = raw ll_type(x.fe.ctx, elem);
     if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, n.span)); }
@@ -2622,21 +2658,21 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(m, "load")) {
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = load atomic ", ell.text, ", ptr ",
-                          raw cat5(pl.addr, " seq_cst, align ", algn, "", "")));
+                          raw cat5(cell, " seq_cst, align ", algn, "", "")));
         pass (raw iv(move(ell.text), move(r), etid));
     }
     IrVal:v0 = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
     if (v0.state != (raw LL_OK())) { pass v0; }
     if (raw string_eq(m, "store")) {
         drop irw_line(x.fe.w, raw cat5("store atomic ", ell.text, " ", v0.ref,
-                          raw cat5(", ptr ", pl.addr, " seq_cst, align ", algn, "")));
+                          raw cat5(", ptr ", cell, " seq_cst, align ", algn, "")));
         pass (raw iv_nil());
     }
     if (raw string_eq(m, "compare_exchange")) {
         IrVal:v1 = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 1i32) });
         if (v1.state != (raw LL_OK())) { pass v1; }
         string:cx = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(cx, " = cmpxchg ptr ", pl.addr, ", ",
+        drop irw_line(x.fe.w, raw cat5(cx, " = cmpxchg ptr ", cell, ", ",
                           raw cat5(ell.text, " ", v0.ref, ", ",
                               raw cat5(ell.text, " ", v1.ref,
                                   " seq_cst seq_cst", ""))));
@@ -2650,7 +2686,7 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(m, "fetch_sub")) { opname = "sub"; }
     string:rw = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(rw, " = atomicrmw ", opname, " ptr ",
-                      raw cat5(pl.addr, ", ", ell.text, " ",
+                      raw cat5(cell, ", ", ell.text, " ",
                           raw string_concat(v0.ref, " seq_cst"))));
     pass (raw iv(move(ell.text), move(rw), etid));
 };

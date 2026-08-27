@@ -33,6 +33,7 @@ use "./type_decl.npk".*;
 use "./type_layout.npk".*;
 use "./expr_types.npk".*;
 use "./type_expr.npk".*;
+use "./type_access.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
 use "./builtins.npk".*;     // is_builtin_name (D-163 rule 6)
 
@@ -504,6 +505,15 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
 
     ExprId:init = raw stmt_decl_init(e.ast, s);
     if (raw expr_is_none(init)) { pass NIL; }
+    // AN ALIASED ATOMIC IS FUSED-ONLY (D-187): storing it would give it a
+    // slot that is not the cell it aliases. Use it in place —
+    // `atomic_from_ptr::<T>(p).load()`.
+    if (raw expr_is_atomic_from_ptr(e, init)) {
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+            "`atomic_from_ptr` is used in place, never stored (D-187): its result aliases the pointer's cell, and a binding would give it a different one. Write `atomic_from_ptr::<T>(p).load()` / `.store(v)` / ` directly",
+            s.span));
+        pass NIL;
+    }
 
     int32:saved = e.expected;
     e.expected = want;
@@ -540,6 +550,14 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
 func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:target = raw stmt_target(s);
     ExprId:value = raw stmt_assigned(s);
+
+    // An aliased atomic is fused-only, on the RHS as at a declaration (D-187).
+    if (raw expr_is_atomic_from_ptr(e, value)) {
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+            "`atomic_from_ptr` is used in place, never stored (D-187): use `atomic_from_ptr::<T>(p).load()` / `.store(v)` directly",
+            s.span));
+        pass NIL;
+    }
 
     int32:want = raw type_of_expr(e, target);
     drop require_place(e, target, s.span);

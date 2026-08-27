@@ -13287,7 +13287,7 @@ What REMAINS of D-183's partial-place item after this: destructuring
 ownership and statement-end temporaries, unchanged; the field/element
 OVERWRITE half is closed.
 
-## D-187 — `#ptr_add<T>` is element-scaled; `atomic_from_ptr` representation OPEN — **PARTIALLY SETTLED at 1.1.13a**
+## D-187 — `#ptr_add<T>` is element-scaled; `atomic_from_ptr` is fused-only over the turbofish — **SETTLED at 1.1.13a**
 
 **`#ptr_add<T>(ptr, offset)` — SETTLED.** The offset is in **ELEMENTS of
 T**: it lowers to `getelementptr T`, so `#ptr_add<int64>(p, 1)` advances
@@ -13324,6 +13324,17 @@ language-level fork:
   where `x`'s cell-address is `p`; a new binding kind touching addr_of, the
   drop-flag machinery, and moved-from analysis.
 
-`atomic_from_ptr` stays reserved (in `is_builtin_name` and BUILTIN_REFERENCE)
-and UNTYPED until this is settled; the Bridge's ring access (1.1.13b) is
-what needs it, so it blocks b, not a.
+**RESOLVED as option (A), the user's call.** And it needs no grammar
+change: the **turbofish** is already the expression-position type-argument
+syntax (D-064), and `atomic_from_ptr::<int64>(p).load()` parses on a
+bare-name callee today — it only reached TYPE-016 at the typer. So
+`atomic_from_ptr::<T>(p)` reads its element from the turbofish, returns
+`atomic<T>`, and is **fused-only**: legal solely as an atomic method's
+receiver, where the emitter dispatches through the pointer itself (no
+`addr_of`, no local holds the cell); storing it — a declaration or an
+assignment — is refused (TYPE-007), which makes "aliased atomics are never
+stored" structural rather than a discipline. The place requirement the
+inline atomics carry is lifted for the aliased receiver, since having no
+place IS the property. `atomic_alias.npk` exercises load/store/swap/
+compare_exchange through an alias; `atomic_alias_rules.npk` pins the two
+store refusals. This unblocks the Bridge's ring access (1.1.13b).
