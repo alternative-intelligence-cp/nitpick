@@ -784,6 +784,16 @@ func:vtable_stem_of = string(LlCtx->:c, InternTable->:interns, int32:self_ty,
 
 func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                           move string:canon) never fails {
+    // INTERN ONCE, REUSE THE ID (D-186's fallout). The first cut said
+    // `intern_add(move(canon))` at every member — moving one binding many
+    // times over, so every table entry aliased ONE body. Latent-harmless
+    // while slice-derived names were views (a duplicate's drop was a no-op
+    // on cap 0); D-186's owned slices made the drops real and the second
+    // duplicate a DOUBLE FREE — npk_small_free's bitmap caught it on the
+    // first stage-1 run. The loop-carried re-`move` the checker missed is
+    // recorded as its own open (the moved-from analysis is straight-line).
+    int32:cid = raw intern_add(g.interns, move(canon));
+    string:cname = raw intern_get(g.interns, cid);
     int32:k = raw item_member_count(@g.ast, mn);
     int32:i = 0i32;
     while (i < k) {
@@ -791,10 +801,10 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
             string:nm = raw intern_get(g.interns, raw decl_name(d));
-            string:nc = raw string_concat(canon, raw string_concat(".", nm));
+            string:nc = raw string_concat(cname, raw string_concat(".", nm));
             drop modmap_members(g, map, d, move(nc));
         } else {
-            map[item.index => int64] = raw intern_add(g.interns, move(canon));
+            map[item.index => int64] = cid;
 
             // AN `impl`'s METHODS ARE IN THE MODULE TOO (1.0.4). They are
             // declarations this walk never reaches on its own — an impl GROUPS
@@ -806,7 +816,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                 int32:mi = 0i32;
                 while (mi < (raw impl_member_count(@g.ast, d))) {
                     DeclId:mid = raw impl_member(@g.ast, d, mi);
-                    map[mid.index => int64] = raw intern_add(g.interns, move(canon));
+                    map[mid.index => int64] = cid;
                     mi = mi + 1i32;
                 }
             }
@@ -817,7 +827,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                 int32:ti = 0i32;
                 while (ti < (raw item_member_count(@g.ast, d))) {
                     DeclId:tmem = raw item_member(@g.ast, d, ti);
-                    map[tmem.index => int64] = raw intern_add(g.interns, move(canon));
+                    map[tmem.index => int64] = cid;
                     ti = ti + 1i32;
                 }
             }

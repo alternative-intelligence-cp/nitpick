@@ -13250,3 +13250,39 @@ proves it with a plain `ByteWriter` and a family-instance
 file and `\r\n` in the other. Adopting `dyn Writer` inside npkc's own
 diagnostics is 1.3 self-hosting work (a compiler-internals refactor), and
 is recorded there, not here.
+
+## D-186 — `string_slice` returns an OWNED COPY; overwriting an owning field or managed element drops the old value — **SETTLED (user-ratified)**
+
+**The slice.** `string_slice(s, lo, hi)` returned a VIEW — `cap 0`, a
+pointer into the source's body — and `x = string_slice(x, lo, hi)`, three
+ordinary tokens, freed that body out from under the result: a silent
+use-after-free the type system cannot see, because view and owner share
+the type `string` and the ownership bit is runtime state. The quarantine
+caught it inside `path_parse` itself (1.1.12b; OPEN_DECISIONS S-1). Of the
+candidates — (a) owned copy, (b) a distinct view type, (c) a shape
+refusal — the user settled (a): **the copy costs one allocation and
+deletes the whole class.** An empty slice allocates nothing (`len 0` is
+never dereferenced; `cap 0` gives the drop nothing to free); OOM follows
+the allocator's trap posture, as `string_concat`'s does.
+**`string_from_bytes` deliberately stays the VIEW primitive**: it wraps a
+buffer the CALLER owns (the lexer's decode buffer, a writer's live sink),
+which is a different contract, stated at its definition — the one
+remaining view-maker, explicit and greppable.
+
+**The overwrite.** Simplifying the prelude's slice-copy dances exposed
+D-183's recorded partial-place item as a LIVE leak: `tr.acc =
+string_slice(tr.acc, …)` — a FIELD target — left the old body behind on
+every refill, because assignment-drop-old covered only flagged whole
+locals. Now **a field target, and an element target whose base is a
+managed array, drop the old value unconditionally** before the store:
+sound because a live struct's fields are always live (construction fills
+every field; partial moves do not exist) and a managed array's elements
+likewise. A `wild` pointee stays the manual regime's; an element reached
+through a pointer base is exempt. Proven observably by the b-stage
+machinery in `overwrite_owned.npk`: 2000 overwrites of an `OwnedFd` field
+and 2000 of an `OwnedFd[2]` element survive only because every old
+descriptor's drop closed it — without the drop, EMFILE near 1024.
+
+What REMAINS of D-183's partial-place item after this: destructuring
+ownership and statement-end temporaries, unchanged; the field/element
+OVERWRITE half is closed.

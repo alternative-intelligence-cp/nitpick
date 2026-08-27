@@ -453,15 +453,42 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // OVERWRITING AN OWNED VALUE RELEASES IT FIRST (D-183, 1.2.3): the
         // RHS is already computed — `s = string_concat(s, "x")` has loaned
         // the old body and finished with it — so the old value's drop sits
-        // between evaluation and the store. Only a FLAGGED whole-local
-        // target: a field or element overwrite leaking its old value is the
-        // partial-place item recorded open on D-183, and a pointer target is
-        // somebody else's value. The flag is set live after the store, which
-        // also brings an uninitialised declaration live at its first
-        // assignment.
+        // between evaluation and the store. A FLAGGED whole-local target
+        // guards its drop with the flag; a pointer target is somebody
+        // else's value and is left alone.
+        //
+        // A FIELD OR MANAGED-ELEMENT TARGET DROPS UNCONDITIONALLY (D-186,
+        // closing D-183's partial-place item): a live struct's fields are
+        // always live — construction fills every field and partial moves do
+        // not exist — and a managed array's elements likewise, so no flag
+        // is needed. The prelude's own streams exposed the leak:
+        // `tr.acc = string_slice(tr.acc, …)` left the old body behind on
+        // every refill. A `wild` pointee stays the manual regime's;
+        // elements reached through a pointer base are exempt.
         string:aflag = "";
         {
             ExprNode:tgt = raw ast_expr(x.ast, raw stmt_target(s));
+            bool:tgt_drops_old = false;
+            if (tgt.kind == ExprKind.ExprMemberAccessExpr) {
+                if (raw type_drops(x.fe.ctx.types, place.type_id, 64i32)) {
+                    // through a pointer receiver or a plain place alike: the
+                    // field belongs to the struct, and the struct's owner is
+                    // exactly who is overwriting it.
+                    tgt_drops_old = true;
+                }
+            }
+            if (tgt.kind == ExprKind.ExprIndexExpr) {
+                if (raw type_drops(x.fe.ctx.types, place.type_id, 64i32)) {
+                    int32:ibase = raw exprtypes_get(x.et, raw expr_operand(tgt));
+                    int32:ibk = raw type_kind(x.fe.ctx.types, ibase);
+                    if (ibk == (raw TY_ARRAY())) { tgt_drops_old = true; }
+                }
+            }
+            if (tgt_drops_old) {
+                drop irw_line(x.fe.w, raw cat4("call void ",
+                                  raw drop_fn_sym(x.fe.ctx, place.type_id),
+                                  raw string_concat("(ptr ", place.addr), ")"));
+            }
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
                 int32:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
                 if (tli >= 0i32) {

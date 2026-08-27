@@ -74,9 +74,12 @@ methods), the `Reader`/`Writer` traits (`Self->` receivers, `within`) and
 (`WouldBlock`/`Interrupted` are named prelude errnos), `Whence` seek, and
 TYPE-048 (an impl keeps its trait's `async` — a sync body driven as a
 coroutine is corruption). The awaited-method child frame now seeds `Self->`
-receivers by ADDRESS. ⚠️ OPEN_DECISIONS **S-1** (pre-Astrée): a `string`
-view can outlive its body — `x = string_slice(x, …)` is a silent UAF the
-quarantine caught in `path_parse`; decision owner: the user. **1.1.12c
+receivers by ADDRESS. S-1 was **settled by the user as D-186**:
+`string_slice` returns an OWNED COPY (`string_from_bytes` stays the
+explicit view primitive), and the fallout closed D-183's field/element
+overwrite leak — assigning over an owning FIELD or managed-array ELEMENT
+now drops the old value (`overwrite_owned.npk` proves both by descriptor
+exhaustion). **1.1.12c
 landed**: the text layer as GENERIC WRAPPERS — `TextWriter<W>`,
 `LineBufWriter<W>` (buffering is a TYPE, never a mode field), `LineEnding`,
 unconditional read translation with the split-`\r\n` pending flag,

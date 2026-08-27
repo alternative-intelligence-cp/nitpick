@@ -5802,16 +5802,31 @@ err:
 ok:
   %np = getelementptr i8, ptr %p, i64 %start
   %n = sub i64 %end, %start
-  ; CAPACITY ZERO: A SLICE IS A VIEW, AND A VIEW OWNS NOTHING (D-183). The
-  ; third field is the ownership bit — `cap != 0` means "this header's drop
-  ; frees this body" — and this header points INTO a body some other string
-  ; owns, at an interior offset no allocator ever handed out. Stamping `cap =
-  ; n` here made every dropped substring call `dalloc` on an interior pointer
-  ; of a live buffer: the first drops to run brought down four string-heavy
-  ; programs and stage 1's self-compile.
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %np, 0
+  ; AN OWNED COPY, NOT A VIEW (D-186, user-settled after 1.1.12b's find).
+  ; The view this returned shared its body with the source, and `x =
+  ; string_slice(x, lo, hi)` — three ordinary tokens — freed that body out
+  ; from under the result: a silent use-after-free the type system cannot
+  ; see, because view and owner share the type `string` and the ownership
+  ; bit is runtime state. The copy costs one allocation and deletes the
+  ; whole class. `string_from_bytes` below stays the explicit view
+  ; primitive over a buffer the CALLER owns — a different contract, stated
+  ; there. An empty slice allocates nothing: len 0 is never dereferenced,
+  ; and cap 0 gives the drop nothing to free.
+  %none = icmp eq i64 %n, 0
+  br i1 %none, label %empty, label %copy
+empty:
+  %ez0 = insertvalue { ptr, i64, i64 } undef, ptr %np, 0
+  %ez1 = insertvalue { ptr, i64, i64 } %ez0, i64 0, 1
+  %ez2 = insertvalue { ptr, i64, i64 } %ez1, i64 0, 2
+  %ezr0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %ez2, 0
+  %ezr1 = insertvalue { { ptr, i64, i64 }, i32 } %ezr0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %ezr1
+copy:
+  %body = call ptr @npk_alloc(i64 %n)
+  call void @llvm.memcpy.p0.p0.i64(ptr %body, ptr %np, i64 %n, i1 false)
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %body, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
-  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 0, 2
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
   %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1

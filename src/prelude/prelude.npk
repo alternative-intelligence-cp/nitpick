@@ -319,14 +319,11 @@ pub func:path_parse = Path(string:s) {
                             if (out.ptr[j] == 47u8) { break; }
                             j = j - 1i64;
                         }
-                        // string_slice returns a VIEW (cap 0) into the
-                        // body this assignment is about to free — concat
-                        // with "" copies it into a body of its own first.
-                        // (The silent view-over-owner hazard is recorded in
-                        // D-185 / OPEN_DECISIONS: the type cannot yet say
-                        // "view", so the discipline is the author's.)
-                        string:kept = relay string_slice(out, 0i64, j);
-                        out = relay string_concat(kept, "");
+                        // `string_slice` returns an OWNED COPY (D-186),
+                        // so slicing a string over itself is safe — this
+                        // exact line, as a view, was the use-after-free
+                        // that settled the decision.
+                        out = relay string_slice(out, 0i64, j);
                         depth = depth - 1i64;
                     }
                     if (!(string_equals(sgt, ".."))) {
@@ -571,14 +568,12 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
         while (i < tr.acc.len) {
             uint8:c = tr.acc.ptr[i];
             if (c == 10u8) {
-                string:seg = relay string_slice(tr.acc, tr.pos, i);
-                string:line = relay string_concat(seg, "");
+                string:line = relay string_slice(tr.acc, tr.pos, i);
                 tr.pos = i + 1i64;
                 pass line;
             }
             if (c == 13u8) {
-                string:seg2 = relay string_slice(tr.acc, tr.pos, i);
-                string:line2 = relay string_concat(seg2, "");
+                string:line2 = relay string_slice(tr.acc, tr.pos, i);
                 tr.pos = i + 1i64;
                 if (tr.pos < tr.acc.len) {
                     if (tr.acc.ptr[tr.pos] == 10u8) { tr.pos = tr.pos + 1i64; }
@@ -593,18 +588,12 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
         // no break in what we hold
         if (tr.seen_eof) {
             if (tr.pos >= tr.acc.len) { fail IoEof; }
-            string:seg3 = relay string_slice(tr.acc, tr.pos, tr.acc.len);
-            string:last = relay string_concat(seg3, "");
+            string:last = relay string_slice(tr.acc, tr.pos, tr.acc.len);
             tr.pos = tr.acc.len;
             pass last;
         }
         // refill: drop consumed bytes, then ask the inner reader
-        string:kept = "";
-        if (tr.pos < tr.acc.len) {
-            string:kview = relay string_slice(tr.acc, tr.pos, tr.acc.len);
-            kept = relay string_concat(kview, "");
-        }
-        tr.acc = move(kept);
+        tr.acc = relay string_slice(tr.acc, tr.pos, tr.acc.len);
         tr.pos = 0i64;
         int64:rem = give_up - (raw mono_now());
         if (rem <= 0i64) { fail DeadlineExceeded; }
@@ -640,11 +629,8 @@ impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
             i = i + 1i64;
         }
         if (nl >= 0i64) {
-            string:sview = relay string_slice(self.pend, 0i64, nl + 1i64);
-            string:ship = relay string_concat(sview, "");
-            string:kview = relay string_slice(self.pend, nl + 1i64, self.pend.len);
-            string:keep = relay string_concat(kview, "");
-            self.pend = move(keep);
+            string:ship = relay string_slice(self.pend, 0i64, nl + 1i64);
+            self.pend = relay string_slice(self.pend, nl + 1i64, self.pend.len);
             relay await tw_write_all(@(self.inner), ship, within);
         }
         pass wsrc.len;

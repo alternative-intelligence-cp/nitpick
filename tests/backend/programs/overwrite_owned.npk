@@ -1,0 +1,64 @@
+// expect-exit: 42
+//
+// D-186, both halves. `string_slice` returns an OWNED COPY, so
+// `x = string_slice(x, …)` — the three tokens that were a silent
+// use-after-free — is now simply correct, bytes checked. And OVERWRITING
+// AN OWNING FIELD OR MANAGED ELEMENT DROPS THE OLD VALUE (closing D-183's
+// partial-place item): a live struct's fields are always live, so the
+// drop is unconditional. The proof is the b-stage machinery: an OwnedFd's
+// drop closes, so 2000 overwrites of a field and an element only survive
+// if every old descriptor was closed on the way — without the drop,
+// EMFILE arrives near 1024.
+mod:overwrite_owned;
+error:E9;
+struct:Holder = { OwnedFd:h; string:tag; };
+
+func:main = int32(cstring[]:_~argv) {
+    // the settled shape, content-checked
+    string:x = "alpha/beta/gamma";
+    x = string_slice(x, 0i64, 10i64) ?! E9;
+    x = string_slice(x, 6i64, 10i64) ?! E9;
+    if (x.len != 4i64)                    { exit 10i32; }
+    if (!(string_equals(x, "beta")))      { exit 11i32; }
+
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+
+    // an owning FIELD overwritten 2000 times
+    fd:f0 = open(devnull, 0i64, 0i64) ?! E9;
+    Holder:hold = Holder{ h: own_fd(f0), tag: "t" };
+    int32:i = 0i32;
+    while (i < 2000i32) {
+        fd:fi = open(devnull, 0i64, 0i64) ?! E9;
+        hold.h = own_fd(fi);
+        i = i + 1i32;
+    }
+
+    // an owning ELEMENT of a managed array, same count
+    fd:a0 = open(devnull, 0i64, 0i64) ?! E9;
+    fd:a1 = open(devnull, 0i64, 0i64) ?! E9;
+    OwnedFd[2]:pair = [own_fd(a0), own_fd(a1)];
+    int32:j = 0i32;
+    while (j < 2000i32) {
+        fd:fj = open(devnull, 0i64, 0i64) ?! E9;
+        pair[0i64] = own_fd(fj);
+        j = j + 1i32;
+    }
+
+    // and the field-string overwrite that motivated it, content-checked
+    hold.tag = string_slice("prefix.suffix", 7i64, 13i64) ?! E9;
+    if (!(string_equals(hold.tag, "suffix"))) { exit 12i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
