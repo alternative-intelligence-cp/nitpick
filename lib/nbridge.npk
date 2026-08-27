@@ -116,6 +116,7 @@ pub func:SYS_WAITID = int64() never fails     { pass 247i64; };
 pub func:SYS_OPENAT = int64() never fails     { pass 257i64; };
 pub func:SYS_PIPE2 = int64() never fails      { pass 293i64; };
 pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
+pub func:SYS_SHUTDOWN = int64() never fails    { pass 48i64; };
 
 // socket/pipe/open flags, and the SCM_RIGHTS plumbing constants.
 pub func:AF_UNIX = int64() never fails        { pass 1i64; };
@@ -129,14 +130,25 @@ pub func:AT_FDCWD = int64() never fails       { pass (0i64 - 100i64); };
 pub func:F_SETFL = int64() never fails        { pass 4i64; };
 pub func:F_DUPFD_CLOEXEC = int64() never fails { pass 1030i64; };
 pub func:SIGKILL = int64() never fails        { pass 9i64; };
+pub func:SIGTERM = int64() never fails        { pass 15i64; };
 pub func:P_PIDFD = int64() never fails        { pass 3i64; };
 pub func:WEXITED = int64() never fails        { pass 4i64; };
+pub func:WNOHANG = int64() never fails        { pass 1i64; };
+pub func:WNOWAIT = int64() never fails        { pass 16777216i64; };
+pub func:SHUT_WR = int64() never fails        { pass 1i64; };
 pub func:MSG_NOSIGNAL = int64() never fails   { pass 16384i64; };
 pub func:SOL_SOCKET = int64() never fails     { pass 1i64; };
 pub func:SCM_RIGHTS = int64() never fails     { pass 1i64; };
 
 // The wire protocol version ("NPKDRV03" — the v3 plan's magic names it).
 pub func:NPK_BRIDGE_VERSION = int64() never fails { pass 3i64; };
+
+// The ring magic: the u64 whose bytes read "NPKDRV03" — 0x4E504B4452563033.
+// Compared as a NUMBER on both sides (same-host wire, §7.1), so byte order
+// is nobody's problem.
+pub func:NPK_RING_MAGIC = int64() never fails {
+    pass ((1313360708i64 << 32i64) | 1381445683i64);
+};
 
 // --- the Bridge's error family (D-179; v3's tbb32 codes predate it) ---------
 pub error:EDriverSpawn;      // spawn or handshake failed; the origin chain says where
@@ -339,9 +351,15 @@ pub struct:Bridge = {
     OwnedFd: ctrl;           // control socketpair, our end (NONBLOCK)
     OwnedFd: child_stderr;   // stderr pipe, read end (NONBLOCK)
     Shm:     shm;            // the sealed region; memfd kept for teardown
-    int64:   reg_slot;       // the registry entry `bridge_reap` retires LAST
-    uint32:  next_seq;       // dispatch sequence counter (1.1.13b)
-    bool:    closed;         // set by reap/close; makes the backstop a no-op
+    int64:   ring_cap;       // descriptor slots — power of two (§6.1), enforced at spawn
+    int64:   reg_slot;       // the registry entry teardown retires LAST
+    int64:   next_seq;       // dispatch sequence, free-running; the wire sees its low 32
+    bool:    closed;         // set by close/reap's release phase; guards every resource
+    bool:    poisoned;       // set by any dispatch fault (§4.4): the ring state is
+                             // unknown, so every later dispatch refuses until the
+                             // caller tears down and respawns — no partial results
+    wild int8->: errbuf;     // the stderr tail: 8 KiB drop-oldest ring (§10)
+    int64:   err_w;          // total stderr bytes ever drained (the ring cursor)
 };
 
 // Read `need` bytes exactly, under the absolute deadline — the ByteReader
@@ -378,9 +396,15 @@ async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_
 // Spawn a driver and complete the INIT handshake under `within` (v3 §4.3,
 // all eight steps). On ANY failure past the clone the child is SIGKILLed
 // via its pidfd and reaped before this fails — a spawn that did not
-// complete leaves nothing running.
-pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, Duration:within) {
+// complete leaves nothing running. `ring_cap` is the descriptor ring's
+// slot count — a POWER OF TWO (§6.1: index arithmetic is a mask, never a
+// modulo), enforced here, and the header plus ring must fit the region.
+pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap,
+                                     Duration:within) {
     int64:give_up = (raw mono_now()) + within.ns;
+    if (ring_cap <= 0i64)                          { fail EDriverSpawn; }
+    if ((ring_cap & (ring_cap - 1i64)) != 0i64)    { fail EDriverSpawn; }
+    if ((256i64 + (ring_cap * 32i64)) > shm_size)  { fail EDriverSpawn; }
     // getpid first — before anything exists that a failure would strand.
     Result<int64>:rpid = sys(raw SYS_GETPID());
     if (rpid.is_error) { fail EDriverSpawn; }
@@ -398,6 +422,16 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, Duration:withi
         fail EDriverSpawn;
     }
     Shm:shm = shr.value;
+
+    // 2b. THE RING HEADER (§6.1), written BEFORE the child exists so the
+    //     driver never observes a half-made region (v3 step 3). Line 0 is
+    //     read-only after this; head/tail/doorbell (lines 1–3) ride the
+    //     fresh mapping's zero fill.
+    <-(#ptr_add<int64>(shm.base, 0i64)) = raw NPK_RING_MAGIC();                    // @0  magic
+    <-(#ptr_add<int32>(shm.base, 2i64)) = (raw NPK_BRIDGE_VERSION()) =>! int32;    // @8  abi_version
+    <-(#ptr_add<int32>(shm.base, 3i64)) = ring_cap =>! int32;                      // @12 capacity
+    <-(#ptr_add<int64>(shm.base, 2i64)) = 256i64 + (ring_cap * 32i64);             // @16 bulk_offset
+    <-(#ptr_add<int64>(shm.base, 3i64)) = shm_size - (256i64 + (ring_cap * 32i64)); // @24 bulk_size
 
     // 3. the stderr pipe and /dev/null; child-bound fds all ≥ 4.
     Result<CtrlPair>:epr = stderr_pipe();
@@ -487,15 +521,22 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, Duration:withi
     }
 
     // 8. registered (from birth), sealed, acknowledged: the Bridge stands.
+    //    The stderr tail ring is allocated LAST — no failure path above
+    //    ever owns it, so none can leak it.
+    wild int8->:errbuf = alloc(8192i64);
     pass Bridge{
         child:        (cpid =>! int32) =>! pid,
         pidfd:        own_fd((pidfd =>! int32) =>! fd),
         ctrl:         own_fd((ct.ours =>! int32) =>! fd),
         child_stderr: own_fd((ep.ours =>! int32) =>! fd),
         shm:          move(shm),
+        ring_cap:     ring_cap,
         reg_slot:     slot,
-        next_seq:     0u32,
-        closed:       false
+        next_seq:     0i64,
+        closed:       false,
+        poisoned:     false,
+        errbuf:       errbuf,
+        err_w:        0i64
     };
 };
 
@@ -526,6 +567,9 @@ func:spawn_scrap = NIL(Shm->:s, int64:a, int64:b, int64:c, int64:d, int64:e) nev
 // pidfd is inert. The graceful path is `bridge_close` (1.1.13b) — call it,
 // and this backstop finds `closed` set and does nothing.
 pub func:bridge_reap = NIL(Bridge->:b) never fails {
+    // SYNC, so wind-up cannot split it: `closed` set first makes the whole
+    // release single-shot — a second reap (or a close after a reap) finds
+    // the flag and does nothing, and no resource below can double-free.
     if (b.closed) { pass NIL; }
     b.closed = true;
     int64:pfd = (b.pidfd.value) => int64;
@@ -540,6 +584,308 @@ pub func:bridge_reap = NIL(Bridge->:b) never fails {
     if (um.is_error) { }
     Result<NIL>:cm = close(b.shm.memfd);
     if (cm.is_error) { }
+    drop dalloc(b.errbuf);
+    drop driver_retire(b.reg_slot);
+    pass NIL;
+};
+
+// --- the dispatch machinery (1.1.13b; v3 §4.4/§6.2/§6.3) ---------------------
+
+// SIGKILL the driver via its pidfd — allocation-free, ESRCH-safe, and never
+// a reap: consuming the zombie is close/reap's, so their bounded `waitid`
+// stays correct whoever killed first.
+func:bridge_kill = NIL(Bridge->:b) never fails {
+    int64:pfd = (b.pidfd.value) => int64;
+    Result<int64>:k = sys(raw SYS_PIDFD_SEND_SIGNAL(), pfd, raw SIGKILL(), 0i64, 0i64);
+    if (k.is_error) { }
+    pass NIL;
+};
+
+// Has the child exited? WNOHANG|WNOWAIT: detect without consuming — the
+// zombie stays reapable by the teardown that owns the wait. `si_pid` (byte
+// 16 of siginfo) is zero when nothing was ready, the child's pid when it
+// exited; the buffer is zeroed first because WNOHANG-with-nothing-ready
+// returns 0 and writes nothing.
+func:bridge_child_dead = bool(Bridge->:b) never fails {
+    wild int8->:si = calloc(1i64, 128i64);
+    int64:pfd = (b.pidfd.value) => int64;
+    int64:wfl = (raw WEXITED()) | ((raw WNOHANG()) | (raw WNOWAIT()));
+    Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd, si, wfl, 0i64);
+    bool:dead = false;
+    if (!w.is_error) {
+        int64:spid = (<-(#ptr_add<int32>(si, 4i64))) => int64;
+        if (spid != 0i64) { dead = true; }
+    }
+    if (w.is_error) { dead = true; }   // ECHILD: already reaped — dead either way
+    drop dalloc(si);
+    pass dead;
+};
+
+// Drain whatever stderr holds into the 8 KiB drop-oldest ring (§10),
+// without blocking (the read end is NONBLOCK). Runs at dispatch entry, on
+// every wait wake, and through teardown — so a full pipe cannot block the
+// driver mid-dispatch and manufacture a fake hang. v3 sketched a standing
+// drain TASK; under D-180 a second task cannot borrow the Bridge across a
+// spawn, and the woven drain needs no second task at all — the dispatch
+// wait already wakes on stderr readability, which is when there is
+// something to drain.
+func:bridge_drain_stderr = NIL(Bridge->:b) never fails {
+    wild int8->:tmp = alloc(512i64);
+    bool:more = true;
+    while (more) {
+        Result<int64>:r = read(b.child_stderr.value, tmp, 512i64);
+        if (r.is_error) { more = false; }   // WouldBlock, EOF, anything: drained
+        if (!r.is_error) {
+            int64:n = r.value;
+            int64:i = 0i64;
+            while (i < n) {
+                <-(#ptr_add<int8>(b.errbuf, (b.err_w + i) & 8191i64)) =
+                    <-(#ptr_add<int8>(tmp, i));
+                i = i + 1i64;
+            }
+            b.err_w = b.err_w + n;
+        }
+    }
+    drop dalloc(tmp);
+    pass NIL;
+};
+
+// The last 8 KiB of driver stderr, as an OWNED string — what a fault or
+// deadline report reads (v3 §10 wanted the tail riding the error; D-179
+// errors are nominal and carry no payload, so the tail is READ from the
+// bridge instead — poisoned bridges keep it until teardown).
+pub func:bridge_stderr_tail = string(Bridge->:b) {
+    int64:len = b.err_w;
+    if (len > 8192i64) { len = 8192i64; }
+    if (len == 0i64) { pass ""; }
+    int64:startoff = (b.err_w - len) & 8191i64;
+    int64:first = 8192i64 - startoff;
+    if (first > len) { first = len; }
+    string:s1 = string_from_bytes(
+        (#ptr_add<int8>(b.errbuf, startoff)) =>! wild uint8->, first);
+    if (first == len) {
+        pass (relay string_slice(s1, 0i64, first));   // the view, copied out
+    }
+    string:s2 = string_from_bytes(b.errbuf =>! wild uint8->, len - first);
+    pass (relay string_concat(s1, s2));               // concat allocates owned
+};
+
+// Watch two descriptors, park on a third — the dispatch wait's shape (ctrl
+// reply, pidfd death, stderr pressure; all EPOLLIN). Registrations live
+// exactly as long as the wait, io_ready's discipline; a resume before the
+// deadline says only that SOMETHING signalled — the caller re-tries.
+async func:wait3 = NIL(int32:fda, int32:fdb, int32:park_fd, int64:io_abs) {
+    defer { drop io_unwatch(fda); }
+    defer { drop io_unwatch(fdb); }
+    defer { drop io_unwatch(park_fd); }
+    drop io_watch(fda, 1i32);
+    drop io_watch(fdb, 1i32);
+    drop suspend_io(park_fd, 1i32, io_abs);
+    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    pass NIL;
+};
+
+// Dispatch one request and wait for its completion (v3 §4.4): a fresh seq,
+// the descriptor into the ring, the SeqCst head publish, EXEC_NOTIFY over
+// ctrl, then the triple wait under `within`. EVERY reply byte is
+// [UNTRUSTED]: wrong opcode, wrong length or a mismatched seq KILLS the
+// driver and poisons the Bridge; a deadline expiry KILLS it too (D-055
+// rule 1 — a hang is worse than a crash, and with actuators live the hang
+// ends NOW, not at the caller's leisure); the driver dying mid-dispatch is
+// EDriverFault with the stderr tail readable via `bridge_stderr_tail`.
+// After any of those this Bridge answers EBridgePoisoned until the caller
+// tears down and respawns — the ring state is unknown, and no partial
+// result ever surfaces (§6.3). Serial per Bridge in v1: one in flight.
+pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, Duration:within) {
+    if (b.closed)   { fail EBridgePoisoned; }
+    if (b.poisoned) { fail EBridgePoisoned; }
+    int64:give_up = (raw mono_now()) + within.ns;
+    drop bridge_drain_stderr(b);
+
+    int64:myseq = b.next_seq;
+    b.next_seq = b.next_seq + 1i64;
+    int64:seq32 = myseq & 4294967295i64;
+
+    // ring accounting: head is ours, tail is the driver's — [UNTRUSTED].
+    // Free-running i64 indices; the difference is the occupancy, and a tail
+    // outside [head - cap, head] is a protocol violation, not a state.
+    wild int8->:base = b.shm.base;
+    int64:head = atomic_from_ptr::<int64>((#ptr_add<int8>(base, 64i64)) =>! wild int64->).load();
+    int64:tail = atomic_from_ptr::<int64>((#ptr_add<int8>(base, 128i64)) =>! wild int64->).load();
+    int64:used = head - tail;
+    if (used < 0i64)        { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    if (used > b.ring_cap)  { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    if (used == b.ring_cap) { fail ERingFull; }
+
+    // the descriptor — seq, kernel, bulk args (none yet; stage c's SDK
+    // defines them) — written BEFORE the head publish (§6.2 ordering).
+    wild int8->:d = #ptr_add<int8>(base, 256i64 + ((head & (b.ring_cap - 1i64)) * 32i64));
+    <-(#ptr_add<int32>(d, 0i64)) = seq32 =>! int32;
+    <-(#ptr_add<int32>(d, 1i64)) = kernel_id =>! int32;
+    <-(#ptr_add<int64>(d, 1i64)) = 0i64;
+    <-(#ptr_add<int64>(d, 2i64)) = 0i64;
+    <-(#ptr_add<int64>(d, 3i64)) = 0i64;
+    atomic_from_ptr::<int64>((#ptr_add<int8>(base, 64i64)) =>! wild int64->).store(head + 1i64);
+
+    // EXEC_NOTIFY { seq, kernel_id } — 16 bytes on the control plane.
+    wild int8->:pkt = alloc(24i64);
+    defer { drop dalloc(pkt); }
+    <-(#ptr_add<int64>(pkt, 0i64)) = 2i64 | (8i64 << 32i64);
+    <-(#ptr_add<int32>(pkt, 2i64)) = seq32 =>! int32;
+    <-(#ptr_add<int32>(pkt, 3i64)) = kernel_id =>! int32;
+    Result<int64>:sn = send_fd((b.ctrl.value => int64), 0i64 - 1i64, pkt, 16i64);
+    bool:sent = false;
+    if (!sn.is_error) { if (sn.value == 16i64) { sent = true; } }
+    if (!sent) {
+        drop bridge_kill(b);
+        b.poisoned = true;
+        drop bridge_drain_stderr(b);
+        fail EDriverFault;
+    }
+
+    // WORK_COMPLETE { seq, result } — 16 bytes, exact, under the deadline.
+    int64:got = 0i64;
+    while (got < 16i64) {
+        wild int8->:at = #ptr_add<int8>(pkt, got);
+        Result<int64>:r = read(b.ctrl.value, at, 16i64 - got);
+        if (!r.is_error) { got = got + r.value; }
+        if (r.is_error) {
+            if (r.err == IoEof) {
+                b.poisoned = true;
+                drop bridge_drain_stderr(b);
+                fail EDriverFault;
+            }
+            bool:retry = false;
+            if (r.err == WouldBlock)  { retry = true; }
+            if (r.err == Interrupted) { retry = true; }
+            if (!retry) {
+                drop bridge_kill(b);
+                b.poisoned = true;
+                fail EDriverFault;
+            }
+            if (r.err == WouldBlock) {
+                drop bridge_drain_stderr(b);
+                if (raw bridge_child_dead(b)) {
+                    b.poisoned = true;
+                    drop bridge_drain_stderr(b);
+                    fail EDriverFault;
+                }
+                if ((raw mono_now()) >= give_up) {
+                    drop bridge_kill(b);
+                    b.poisoned = true;
+                    fail EDriverDeadline;
+                }
+                Result<NIL>:w = await wait3((b.child_stderr.value) =>! int32,
+                                            (b.pidfd.value) =>! int32,
+                                            (b.ctrl.value) =>! int32, give_up);
+                if (w.is_error) {
+                    drop bridge_kill(b);
+                    b.poisoned = true;
+                    fail EDriverDeadline;
+                }
+            }
+        }
+    }
+
+    // [UNTRUSTED] the reply (§4.4 step 4): opcode, length, seq — anything
+    // else kills.
+    int64:h = <-(#ptr_add<int64>(pkt, 0i64));
+    bool:ok = true;
+    if ((h & 65535i64) != 32770i64)             { ok = false; }
+    if (((h >> 32i64) & 4294967295i64) != 8i64) { ok = false; }
+    int64:rseq = ((<-(#ptr_add<int32>(pkt, 2i64))) => int64) & 4294967295i64;
+    if (rseq != seq32)                          { ok = false; }
+    if (!ok) {
+        drop bridge_kill(b);
+        b.poisoned = true;
+        fail EDriverProtocol;
+    }
+    pass (<-(#ptr_add<int32>(pkt, 3i64)));
+};
+
+// Wait until the child is dead or the absolute deadline passes — the
+// ladder's rung shape: check, then wait readiness, then CHECK AGAIN, so a
+// spurious wake can never be mistaken for a death.
+async func:close_wait_dead = bool(Bridge->:b, int64:give_up) {
+    while (true) {
+        if (raw bridge_child_dead(b)) { pass true; }
+        int64:rem = give_up - (raw mono_now());
+        if (rem <= 0i64) { pass false; }
+        Result<NIL>:w = await io_ready((b.pidfd.value) =>! int32, 1i32,
+                                       raw duration_ns(rem));
+        if (w.is_error) { pass false; }
+    }
+    pass false;
+};
+
+// The graceful teardown (v3 §4.5 over the §5.4 ladder), each rung bounded:
+// SHUTDOWN + write-shutdown (EOF is the driver's universal exit signal) →
+// a third of the budget → SIGTERM → a third → SIGKILL, whose waitid is
+// bounded because SIGKILL cannot be ignored. The LADDER may be wound up
+// mid-await — every rung is idempotent and `closed` is still unset, so the
+// caller's reap backstop finishes the job. The RELEASE phase below is
+// synchronous — wind-up cannot split it — and single-shot behind `closed`.
+// (Not `never fails`: an async body may not carry the clause — TYPE-037,
+// a wound-up task's cancellation is an error the contract would deny. It
+// RAISES nothing of its own; every internal refusal is absorbed.)
+pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
+    if (b.closed) { pass NIL; }
+    // Budget split by SHIFTS (a division would drag the div-guard's error
+    // family into every importer's failsafe): half for the voluntary exit,
+    // a quarter for SIGTERM, the remainder for SIGKILL's bounded waitid.
+    int64:half = within.ns >> 1i64;
+    int64:quarter = within.ns >> 2i64;
+    drop bridge_drain_stderr(b);
+
+    // rung 1: SHUTDOWN { opcode 0x00FF, len 0 }, then shutdown(SHUT_WR) —
+    // the packet is advisory, the EOF is the obligation (§7.5 rule 1).
+    wild int8->:pkt = alloc(8i64);
+    <-(#ptr_add<int64>(pkt, 0i64)) = 255i64;
+    Result<int64>:sn = send_fd((b.ctrl.value => int64), 0i64 - 1i64, pkt, 8i64);
+    if (sn.is_error) { }
+    drop dalloc(pkt);
+    Result<int64>:sd = sys(raw SYS_SHUTDOWN(), (b.ctrl.value => int64), raw SHUT_WR());
+    if (sd.is_error) { }
+    // A rung is over when the child is DEAD or its budget is spent — never
+    // when a wait merely returns: a resume says only that something
+    // signalled, and treating it as proof of death once sent this close
+    // into a 28-second blocking waitid on a live driver (a stale spurious
+    // wake — re-check, always; the retry discipline is the contract).
+    int64:r1_end = (raw mono_now()) + half;
+    Result<bool>:d1 = await close_wait_dead(b, r1_end);
+    bool:dead = false;
+    if (!d1.is_error) { dead = d1.value; }
+    if (!dead) {
+        // rung 2: SIGTERM — the polite kill; a Nitpick mock dies here
+        // (default disposition), a C driver may catch it and flush.
+        int64:pfd = (b.pidfd.value) => int64;
+        Result<int64>:kt = sys(raw SYS_PIDFD_SEND_SIGNAL(), pfd, raw SIGTERM(), 0i64, 0i64);
+        if (kt.is_error) { }
+        int64:r2_end = (raw mono_now()) + quarter;
+        Result<bool>:d2 = await close_wait_dead(b, r2_end);
+        if (!d2.is_error) { dead = d2.value; }
+    }
+    if (!dead) {
+        // rung 3: SIGKILL — the ladder's floor, uncatchable, so the
+        // release phase's waitid below is bounded.
+        drop bridge_kill(b);
+    }
+
+    // THE RELEASE — synchronous, single-shot behind `closed`.
+    if (b.closed) { pass NIL; }
+    b.closed = true;
+    wild int8->:si = alloc(128i64);
+    int64:pfd2 = (b.pidfd.value) => int64;
+    Result<int64>:wr = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd2, si, raw WEXITED(), 0i64);
+    if (wr.is_error) { }
+    drop dalloc(si);
+    drop bridge_drain_stderr(b);   // the post-mortem gulp: pipes outlive writers
+    wild int8->:sb = b.shm.base;
+    Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
+    if (um.is_error) { }
+    Result<NIL>:cm = close(b.shm.memfd);
+    if (cm.is_error) { }
+    drop dalloc(b.errbuf);
     drop driver_retire(b.reg_slot);
     pass NIL;
 };

@@ -2066,6 +2066,34 @@ run:
   %exr = call ptr @npk_exec()
   %ctp = getelementptr %npk.exec, ptr %exr, i32 0, i32 13
   store ptr %t, ptr %ctp
+  ; CONSUME THE WAKE MARKER (1.1.13b) — UNLESS THE TASK IS WOUND UP. The 1
+  ; a waker stamps into `wake_at` (channel, reactor, rouse) survives the
+  ; registration-vs-sleep race by `npk_sl_push`'s exchange — but a marker
+  ; still standing at the RESUME it caused is SPENT, and leaving it made
+  ; every later sleep of a once-woken task due on arrival: the executor
+  ; never parked again, every wait after the first wake a busy-poll.
+  ; Invisible for a year of retry-loop waits (they re-poll correctly, just
+  ; hot); the first task to SLEEP after an io wake — the Bridge mock's hang
+  ; kernel — returned instantly and turned a deadline test into a fault
+  ; test. cmpxchg 1→0: only the due marker is consumed — a completed
+  ; task's -1 and a deadline timepoint pass through, and a waker's 1
+  ; landing after this clear is a live registration's, worth exactly the
+  ; one spurious resume the retry discipline absorbs.
+  ;
+  ; THE WOUND EXEMPTION is windup_drain.npk's documented contract: "a wound
+  ; task cannot linger in a wait — every park returns immediately", which
+  ; is precisely the persistent 1 doing its ONE legitimate job. The windup
+  ; word (slot 2) is stored before the due stamp and read after the
+  ; sweep's seq_cst load of it, so a wound resume always sees it set.
+  %wup = getelementptr %npk.hdr, ptr %t, i32 0, i32 2
+  %wu = load i32, ptr %wup
+  %wound = icmp ne i32 %wu, 0
+  br i1 %wound, label %resume, label %spend
+spend:
+  %wam = getelementptr %npk.hdr, ptr %t, i32 0, i32 8
+  %wac = cmpxchg ptr %wam, i64 1, i64 0 seq_cst seq_cst, align 8
+  br label %resume
+resume:
   %rfp = getelementptr %npk.hdr, ptr %t, i32 0, i32 0
   %rf = load ptr, ptr %rfp
   %rc = call i8 %rf(ptr %t)
@@ -6099,7 +6127,13 @@ empty:
   %ezr1 = insertvalue { { ptr, i64, i64 }, i32 } %ezr0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %ezr1
 copy:
-  %body = call ptr @npk_alloc(i64 %n)
+  ; THE INTERNAL ENTRY, like every string body (concat's precedent): a
+  ; string is managed-regime storage whose drop frees it — it must NOT
+  ; enter <wild-live>. The first cut said @npk_alloc, and a SLICED string
+  ; alive at `exit 0` — where drops deliberately do not run (D-183,
+  ; 1.2.3's amendment) — tripped a phantom WildLeak; found by the Bridge's
+  ; stderr-tail test, the first to hold one there.
+  %body = call ptr @npk_alloc_internal(i64 %n)
   call void @llvm.memcpy.p0.p0.i64(ptr %body, ptr %np, i64 %n, i1 false)
   %s0 = insertvalue { ptr, i64, i64 } undef, ptr %body, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1

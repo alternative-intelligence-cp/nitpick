@@ -1,4 +1,4 @@
-// THE WIRE'S OTHER END, IN NITPICK — the mock driver the spawn tests exec
+// THE WIRE'S OTHER END, IN NITPICK — the mock driver the Bridge tests exec
 // (the C reference driver, clang-built as test tooling, arrives at 1.1.13c).
 //
 // A FIXTURE, not a test: the harness builds everything in this directory
@@ -7,19 +7,30 @@
 // Bridge. fd 3 is the control socket, per the child descriptor map (v3
 // §4.3/§10), and it arrives NONBLOCK (both socketpair ends are born so).
 //
-// What it does is the §7.5 driver obligations, minimally: answer one
-// INIT_REQ with an INIT_ACK — validating opcode, length and version — then
-// drain until EOF and exit 0 (exit-on-EOF is the universal orphan
-// backstop). The SCM_RIGHTS memfd riding the INIT_REQ is deliberately
-// dropped: a plain `read` consumes the bytes and the kernel discards the
-// ancillary descriptor, and this mock never touches the shared memory —
-// stage-b mocks will recvmsg it properly.
+// Stage b: the FULL §7.5 driver obligations — recvmsg the INIT_REQ with
+// the sealed memfd riding SCM_RIGHTS, fstat the fd and cross-check
+// st_size, map it, validate magic/version/capacity, INIT_ACK — then the
+// dispatch loop: EXEC_NOTIFY in, the descriptor consumed off the ring
+// (tail advanced with a SeqCst store — §7.5 rule 4's atomics, which in
+// Nitpick is `atomic_from_ptr`), WORK_COMPLETE out. Exit-on-EOF is the
+// universal orphan backstop.
+//
+// TEST KERNELS, so one mock serves every failure-path test:
+//   555 — reply normally, then sleep 30s ignoring the ctrl (the STUBBORN
+//         driver: bridge_close's SHUTDOWN/EOF rung expires, SIGTERM lands)
+//   666 — reply with a WRONG seq            (the protocol-violation path)
+//   777 — write a dying word to stderr, exit (the fault + stderr-tail path)
+//   888 — never reply, sleep 30s            (the dispatch-deadline path)
+//   else — result = kernel_id + 7
 mod:mock_driver;
+use "../../../lib/nbridge.npk".*;
 
 error:EBadWire;
 
-// Read exactly `need` bytes from fd 3, the ByteReader retry discipline over
-// io_ready. EOF mid-packet is a broken peer: EBadWire.
+func:SYS_FSTAT = int64() never fails { pass 5i64; };
+
+// Read exactly `need` bytes from fd 3. EOF forwards as IoEof (the caller's
+// shutdown signal); a deadline on the wait is EBadWire.
 async func:rd_exact = NIL(wild int8->:buf, int64:need) {
     int64:got = 0i64;
     while (got < need) {
@@ -27,13 +38,12 @@ async func:rd_exact = NIL(wild int8->:buf, int64:need) {
         Result<int64>:r = read(3i32 =>! fd, at, need - got);
         if (!r.is_error) { got = got + r.value; }
         if (r.is_error) {
-            if (r.err == IoEof) { fail EBadWire; }
             bool:retry = false;
             if (r.err == WouldBlock)  { retry = true; }
             if (r.err == Interrupted) { retry = true; }
             if (!retry) { fail r.err; }
             if (r.err == WouldBlock) {
-                Result<NIL>:w = await io_ready(3i32, 1i32, raw duration_secs(5i64));
+                Result<NIL>:w = await io_ready(3i32, 1i32, raw duration_secs(30i64));
                 if (w.is_error) { fail EBadWire; }
             }
         }
@@ -63,39 +73,114 @@ async func:wr_exact = NIL(wild int8->:buf, int64:need) {
 };
 
 async func:main = int32(cstring[]:_~argv) {
-    wild int8->:buf = alloc(24i64);
+    wild int8->:buf = alloc(64i64);
     defer { drop dalloc(buf); }
 
-    // INIT_REQ: header word { opcode 0x0001 | flags 0 | length 12 }, then
-    // version u32, then shm_size as two u32 halves — 20 bytes.
-    Result<NIL>:rq = await rd_exact(buf, 20i64);
-    if (rq.is_error) { exit 3i32; }
+    // INIT_REQ (20 bytes) with the memfd riding SCM_RIGHTS — recvmsg after
+    // readiness, so the NONBLOCK socket cannot EAGAIN the one receive that
+    // must carry the descriptor.
+    Result<NIL>:w0 = await io_ready(3i32, 1i32, raw duration_secs(10i64));
+    if (w0.is_error) { exit 3i32; }
+    Result<RecvFd>:rr = recv_fd(3i64, buf, 64i64);
+    if (rr.is_error) { exit 3i32; }
+    RecvFd:rv = rr.value;
+    if (rv.n != 20i64)  { exit 3i32; }
+    if (rv.rfd < 0i64)  { exit 3i32; }
     int64:h = <-(#ptr_add<int64>(buf, 0i64));
     if ((h & 65535i64) != 1i64)                  { exit 4i32; }
     if (((h >> 32i64) & 4294967295i64) != 12i64) { exit 4i32; }
-    int64:ver = (<-(#ptr_add<int32>(buf, 2i64))) => int64;
-    if (ver != 3i64) { exit 5i32; }
+    int64:ver = ((<-(#ptr_add<int32>(buf, 2i64))) => int64) & 4294967295i64;
+    if (ver != (raw NPK_BRIDGE_VERSION())) { exit 5i32; }
+    int64:shsz = (((<-(#ptr_add<int32>(buf, 3i64))) => int64) & 4294967295i64)
+               | ((((<-(#ptr_add<int32>(buf, 4i64))) => int64) & 4294967295i64) << 32i64);
 
-    // INIT_ACK: { opcode 0x8001 | flags 0 | length 4 }, then version.
+    // §7.5 rule 2: fstat the received fd; st_size must agree with INIT_REQ.
+    wild int8->:st = calloc(1i64, 144i64);
+    Result<int64>:fs = sys(raw SYS_FSTAT(), rv.rfd, st);
+    int64:stsz = <-(#ptr_add<int64>(st, 6i64));
+    drop dalloc(st);
+    if (fs.is_error)   { exit 6i32; }
+    if (stsz != shsz)  { exit 6i32; }
+
+    // rule 3: map, then validate magic, version, capacity-vs-size.
+    int64:mprot = (raw PROT_READ()) | (raw PROT_WRITE());
+    Result<int64>:mm = sys(raw SYS_MMAP(), 0i64, shsz, mprot, raw MAP_SHARED(), rv.rfd, 0i64);
+    if (mm.is_error) { exit 6i32; }
+    wild int8->:shm = #wild_ptr<int8>(mm.value);
+    if ((<-(#ptr_add<int64>(shm, 0i64))) != (raw NPK_RING_MAGIC())) { exit 6i32; }
+    int64:mver = ((<-(#ptr_add<int32>(shm, 2i64))) => int64) & 4294967295i64;
+    if (mver != (raw NPK_BRIDGE_VERSION())) { exit 6i32; }
+    int64:cap = ((<-(#ptr_add<int32>(shm, 3i64))) => int64) & 4294967295i64;
+    if (cap <= 0i64)                       { exit 6i32; }
+    if ((cap & (cap - 1i64)) != 0i64)      { exit 6i32; }
+    if ((256i64 + (cap * 32i64)) > shsz)   { exit 6i32; }
+
+    // INIT_ACK { version } — 12 bytes.
     <-(#ptr_add<int64>(buf, 0i64)) = 32769i64 | (4i64 << 32i64);
-    <-(#ptr_add<int32>(buf, 2i64)) = 3i32;
+    <-(#ptr_add<int32>(buf, 2i64)) = (raw NPK_BRIDGE_VERSION()) =>! int32;
     Result<NIL>:wa = await wr_exact(buf, 12i64);
-    if (wa.is_error) { exit 6i32; }
+    if (wa.is_error) { exit 7i32; }
 
-    // Drain until EOF — the runtime closing its ctrl end is the shutdown.
+    // The dispatch loop.
     while (true) {
-        Result<NIL>:w = await io_ready(3i32, 1i32, raw duration_secs(30i64));
-        if (w.is_error) { exit 7i32; }
-        Result<int64>:r = read(3i32 =>! fd, buf, 24i64);
-        if (r.is_error) {
-            if (r.err == IoEof) { exit 0i32; }
-            bool:again = false;
-            if (r.err == WouldBlock)  { again = true; }
-            if (r.err == Interrupted) { again = true; }
-            if (!again) { exit 8i32; }
+        Result<NIL>:rn = await rd_exact(buf, 16i64);
+        if (rn.is_error) {
+            if (rn.err == IoEof) { exit 0i32; }   // ctrl closed: shutdown
+            exit 8i32;
+        }
+        int64:hh = <-(#ptr_add<int64>(buf, 0i64));
+        if ((hh & 65535i64) == 255i64) { exit 0i32; }   // SHUTDOWN packet
+        if ((hh & 65535i64) != 2i64)                  { exit 9i32; }
+        if (((hh >> 32i64) & 4294967295i64) != 8i64)  { exit 9i32; }
+        int64:seq  = ((<-(#ptr_add<int32>(buf, 2i64))) => int64) & 4294967295i64;
+        int64:kern = ((<-(#ptr_add<int32>(buf, 3i64))) => int64) & 4294967295i64;
+
+        // Consume the descriptor: tail < head, and the slot must agree
+        // with the notify — the ring and the ctrl plane carry one truth.
+        int64:mtail = atomic_from_ptr::<int64>((#ptr_add<int8>(shm, 128i64)) =>! wild int64->).load();
+        int64:mhead = atomic_from_ptr::<int64>((#ptr_add<int8>(shm, 64i64)) =>! wild int64->).load();
+        if (mtail >= mhead) { exit 10i32; }
+        wild int8->:dd = #ptr_add<int8>(shm, 256i64 + ((mtail & (cap - 1i64)) * 32i64));
+        int64:dseq  = ((<-(#ptr_add<int32>(dd, 0i64))) => int64) & 4294967295i64;
+        int64:dkern = ((<-(#ptr_add<int32>(dd, 1i64))) => int64) & 4294967295i64;
+        if (dseq != seq)   { exit 11i32; }
+        if (dkern != kern) { exit 11i32; }
+        atomic_from_ptr::<int64>((#ptr_add<int8>(shm, 128i64)) =>! wild int64->).store(mtail + 1i64);
+
+        if (kern == 777i64) {
+            // the dying declaration, for the stderr-tail test
+            cstring:dw = to_cstring("mock: dying on purpose") ?! EBadWire;
+            wild int8->:dwp = (dw.ptr) =>! wild int8->;
+            Result<int64>:ew = write(2i32 =>! fd, dwp, dw.len);
+            if (ew.is_error) { }
+            exit 33i32;
+        }
+        if (kern == 888i64) {
+            // hang: no reply, no reads — the dispatch deadline's target.
+            Result<NIL>:zz = await sleep(raw duration_secs(30i64));
+            if (zz.is_error) { }
+            exit 14i32;
+        }
+
+        int64:rseq = seq;
+        if (kern == 666i64) { rseq = (seq + 1i64) & 4294967295i64; }
+        int64:res = (kern + 7i64) & 4294967295i64;
+        <-(#ptr_add<int64>(buf, 0i64)) = 32770i64 | (8i64 << 32i64);
+        <-(#ptr_add<int32>(buf, 2i64)) = rseq =>! int32;
+        <-(#ptr_add<int32>(buf, 3i64)) = res =>! int32;
+        Result<NIL>:wc = await wr_exact(buf, 16i64);
+        if (wc.is_error) { exit 12i32; }
+
+        if (kern == 555i64) {
+            // stubborn: replied, now ignore the ctrl — bridge_close's
+            // voluntary rung expires and SIGTERM (default disposition:
+            // terminate) is what actually ends this process.
+            Result<NIL>:zs = await sleep(raw duration_secs(30i64));
+            if (zs.is_error) { }
+            exit 15i32;
         }
     }
-    exit 9i32;
+    exit 13i32;
 };
 
 func:failsafe = int32(Error:e) {
@@ -109,6 +194,17 @@ func:failsafe = int32(Error:e) {
         (HeapBadRequest)   { exit 65i32; },
         (WildLeak)         { exit 66i32; },
         (Unreachable)      { exit 67i32; },
+        (EDriverSpawn)     { exit 68i32; },
+        (EDriverFault)     { exit 68i32; },
+        (EDriverProtocol)  { exit 68i32; },
+        (EDriverDeadline)  { exit 68i32; },
+        (ERingFull)        { exit 68i32; },
+        (EBridgePoisoned)  { exit 68i32; },
+        (EShmCreate)       { exit 69i32; },
+        (EShmSeal)         { exit 69i32; },
+        (EShmMap)          { exit 69i32; },
+        (BadPath)          { exit 69i32; },
+        (OutOfBounds)      { exit 70i32; },
         (*)                { exit 64i32; }
     }
     exit 60i32;

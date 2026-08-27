@@ -275,6 +275,24 @@ pub async func:io_ready = NIL(int32:iofd, int32:events, Duration:within) {
     pass NIL;
 };
 
+// `await io_ready2(fda, eva, fdb, evb, within)` (1.1.13b): suspend until
+// EITHER descriptor is ready or the deadline passes -- the dual wait the
+// Bridge's dispatch needs (the ctrl socket and the pidfd are both
+// descriptors, which is why the reactor needs no special case). The first
+// is REGISTERED only (`io_watch`); the second carries the park. Both
+// registrations are removed on every exit, and a resume before the
+// deadline says only that SOMETHING was signalled -- the caller re-tries
+// its syscalls to learn what, exactly io_ready's contract.
+pub async func:io_ready2 = NIL(int32:fda, int32:eva, int32:fdb, int32:evb, Duration:within) {
+    int64:io_abs = (raw mono_now()) + within.ns;
+    defer { drop io_unwatch(fda); }
+    defer { drop io_unwatch(fdb); }
+    drop io_watch(fda, eva);
+    drop suspend_io(fdb, evb, io_abs);
+    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    pass NIL;
+};
+
 // --- the streams (D-185, 1.1.12b; IO_REFERENCE) -------------------------------
 //
 // TWO ERRNOS, NAMED, because every stream loop must tell them from real

@@ -4462,6 +4462,21 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           uwfd.ref, ")"));
         pass (raw iv_nil());
     }
+    // `io_watch(fd, events)` (1.1.13b): the registration half of
+    // `suspend_io`, alone — arm the one-shot with the current task as
+    // payload, park NOWHERE. The dual/triple waits register N-1 descriptors
+    // here and park once through the `suspend_io` that follows. Legal in
+    // sync code (it suspends nothing), though only an async park can ever
+    // consume the wake.
+    if (raw string_eq(name, "io_watch")) {
+        IrVal:iwfd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(iwfd))) { pass iwfd; }
+        IrVal:iwev = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 1i32) });
+        if (!(raw iv_is_ok(iwev))) { pass iwev; }
+        drop irw_line(x.fe.w, raw cat5("call void @npk_io_register(i32 ",
+                          iwfd.ref, ", i32 ", iwev.ref, ")"));
+        pass (raw iv_nil());
+    }
     if (raw string_eq(name, "suspend_io")) {
         if (!x.fe.is_async) { pass (raw iv_broken(n.span)); }
         IrVal:iofd = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });

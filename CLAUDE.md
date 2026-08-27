@@ -114,10 +114,24 @@ unwrap-or-TRAP-as (a test-main assert, barred from the Bridge by v3 §4.2 —
 an EPIPE schedule caught the misuse), so the library binds-and-fails. The
 harness grew `tests/backend/fixtures/` + `// argv:` substitution
 (`mock_driver.npk` speaks the wire), and the `// stress:` loop — dead in the
-real-backend stage until now — runs there again. Next: 1.1.13b (dispatch,
-the ring, `bridge_close`, stderr drain), then c (`extern` lowering, the
-interface hash, the C SDK + conformance). Adopting `dyn Writer` in npkc's
-own diagnostics is 1.3 material.
+real-backend stage until now — runs there again. **Stage b is COMPLETE
+(D-189)**: the §6.1 ring header (power-of-two capacity a spawn parameter),
+`io_watch` (register-only, two args) + prelude `io_ready2`, dispatch —
+descriptor before the SeqCst head publish, EXEC_NOTIFY, the TRIPLE wait
+(ctrl/pidfd/stderr), [UNTRUSTED] tail and reply validation,
+kill-on-protocol, KILL-ON-DEADLINE (a hang ends now; the graceful §5.4
+ladder is close's alone), poisoning — `bridge_close` (rungs end on
+DEATH-OR-BUDGET, never on a wait merely returning; the release phase
+synchronous behind `closed`), and the stderr tail WOVEN into the waits
+(D-180 bars a borrowing drain task) with `bridge_stderr_tail` the reader.
+The work flushed two runtime defects: the executor never CONSUMED the
+waker's due-now stamp at resume, so every once-woken task busy-polled all
+its later waits (a year latent behind retry loops; one cmpxchg at
+`npk_step`'s resume site), and D-186's slice copy allocated from the
+wild-TRACKED entry (a sliced string alive at `exit 0` was a phantom
+WildLeak). Next: 1.1.13c (`extern` lowering, the interface hash, the C SDK
++ conformance). Adopting `dyn Writer` in npkc's own diagnostics is 1.3
+material.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

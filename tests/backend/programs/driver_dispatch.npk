@@ -1,0 +1,73 @@
+// expect-exit: 0
+// stress: 40
+// argv: MOCK_DRIVER
+//
+// DISPATCH, END TO END (1.1.13b; v3 §4.4/§6.2/§6.3): the descriptor into
+// the ring, the SeqCst head publish, EXEC_NOTIFY over ctrl, the driver
+// consuming the slot (validating that the ring and the ctrl plane agree)
+// and answering WORK_COMPLETE — six round trips over a FOUR-slot ring, so
+// the free-running indices wrap and the mask arithmetic is exercised, each
+// result checked against the mock's kernel+7 function. Also the spawn-time
+// capacity refusals (not a power of two; too big for the region), and the
+// graceful close: SHUTDOWN + write-shutdown, the mock exits on EOF, the
+// voluntary rung of the §5.4 ladder completes. Exit 0 on purpose — the
+// controlled exit's checks assert every wild byte and the registry slot
+// were reclaimed.
+mod:driver_dispatch;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+
+    // capacity is enforced at spawn: 3 is not a power of two, and 4096
+    // slots do not fit a 64 KiB region beside the header.
+    Result<Bridge>:bad1 = await spawn_driver(p, 65536i64, 3i64, raw duration_secs(5i64));
+    if (!bad1.is_error) { exit 11i32; }
+    Result<Bridge>:bad2 = await spawn_driver(p, 65536i64, 4096i64, raw duration_secs(5i64));
+    if (!bad2.is_error) { exit 12i32; }
+
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+
+    int64:i = 0i64;
+    while (i < 6i64) {
+        int64:kern = 30i64 + i;
+        Result<int32>:r = await dispatch(@b, kern, raw duration_secs(5i64));
+        if (r.is_error) { exit 21i32; }
+        if ((r.value => int64) != (kern + 7i64)) { exit 22i32; }
+        i = i + 1i64;
+    }
+
+    Result<NIL>:c = await bridge_close(@b, raw duration_secs(3i64));
+    if (c.is_error) { exit 23i32; }
+    drop bridge_reap(@b);   // after close: finds `closed`, does nothing
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 85i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

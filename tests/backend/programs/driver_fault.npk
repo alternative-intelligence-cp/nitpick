@@ -1,0 +1,69 @@
+// expect-exit: 0
+// stress: 40
+// argv: MOCK_DRIVER
+//
+// A DRIVER CRASH IS A VALUE, WITH ITS LAST WORDS ATTACHED. Kernel 777
+// writes a dying declaration to stderr and exits without replying; the
+// dispatch detects the death (pidfd/EOF), drains the pipe post-mortem —
+// pipes outlive their writers — and fails EDriverFault; the tail is
+// readable from the poisoned Bridge via `bridge_stderr_tail` (v3 §10
+// wanted it riding the error; D-179 errors are nominal, so the report
+// READS it instead). A wrong-seq reply (kernel 666, on a fresh driver) is
+// the [UNTRUSTED] protocol path: kill, EDriverProtocol, poisoned.
+mod:driver_fault;
+use "../../../lib/nbridge.npk".*;
+use "../../../lib/nstr.npk".*;
+error:E9;
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+
+    // the fault path, and the tail
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+    Result<int32>:r = await dispatch(@b, 777i64, raw duration_secs(5i64));
+    if (!r.is_error)              { exit 21i32; }
+    if (r.err != EDriverFault)    { exit 22i32; }
+    string:tail = bridge_stderr_tail(@b) ?! E9;
+    if (!(raw nstr_contains(tail, "dying on purpose"))) { exit 23i32; }
+    Result<int32>:r2 = await dispatch(@b, 35i64, raw duration_secs(1i64));
+    if (!r2.is_error)             { exit 24i32; }
+    if (r2.err != EBridgePoisoned){ exit 25i32; }
+    drop bridge_reap(@b);
+
+    // the protocol path: a reply whose seq is not the one sent
+    Result<Bridge>:br2 = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(5i64));
+    Bridge:b2 = br2 ?! E9;
+    Result<int32>:r3 = await dispatch(@b2, 666i64, raw duration_secs(5i64));
+    if (!r3.is_error)             { exit 31i32; }
+    if (r3.err != EDriverProtocol){ exit 32i32; }
+    drop bridge_reap(@b2);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 85i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

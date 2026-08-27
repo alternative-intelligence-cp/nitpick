@@ -1,0 +1,60 @@
+// expect-exit: 0
+// stress: 10
+// argv: MOCK_DRIVER
+//
+// THE KILL LADDER'S MIDDLE RUNG (v3 §5.4). Kernel 555 replies normally and
+// then goes deaf — asleep, ignoring the ctrl — so bridge_close's voluntary
+// rung (SHUTDOWN packet + write-shutdown, half the budget) expires, and
+// SIGTERM is what actually ends the process: a Nitpick mock has no signal
+// handlers, so the default disposition terminates it inside the quarter-
+// budget rung and the close completes without ever reaching SIGKILL. Every
+// rung is bounded; the whole close fits the caller's 2s budget. Exit 0
+// asserts the full reclaim.
+//
+// (The SIGKILL rung needs a driver that ignores SIGTERM — a C fixture's
+// business at 1.1.13c; a Nitpick mock cannot ignore a signal, and the rung
+// itself is already exercised by every reap and deadline test.)
+mod:driver_close_ladder;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+
+    Result<int32>:r = await dispatch(@b, 555i64, raw duration_secs(5i64));
+    if (r.is_error) { exit 21i32; }
+    if ((r.value => int64) != 562i64) { exit 22i32; }
+
+    Result<NIL>:c = await bridge_close(@b, raw duration_secs(2i64));
+    if (c.is_error) { exit 23i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 85i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

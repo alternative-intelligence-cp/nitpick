@@ -13399,3 +13399,80 @@ binaries are built by the real backend, held to a program's checks, never
 run directly, and reach tests through `// argv:` substitution
 (`mock_driver.npk`, the Nitpick mock the C reference driver will replace at
 1.1.13c).
+
+## D-189 — The Bridge's dispatch plane: the ring, the triple wait, the woven stderr drain — and the executor's spent-wake defect — **SETTLED at 1.1.13b**
+
+Stage b of the Bridge (v3 §4.4/§4.5/§6/§10) landed dispatch, `bridge_close`
+and the stderr story, with four calls the v3 text left open settled here,
+and one executor defect the work flushed out of code that had been green
+for a year of tests.
+
+**`io_watch(fd, events)` is the registration half of `suspend_io`, alone**
+— two arguments, no deadline: a registration carries none, the deadline
+belongs to the one park that follows (`npk_io_register` is the whole
+lowering). The prelude's `io_ready2` is the two-descriptor face; the
+Bridge's dispatch composes a TRIPLE wait (ctrl reply, pidfd death, stderr
+pressure — all EPOLLIN, one park). Every watched descriptor still owes its
+`io_unwatch` on every exit.
+
+**A dispatch deadline kills.** v3 §4.4 said "escalation (§5.4)"; the
+settled reading is D-055 rule 1 taken literally — a hang is worse than a
+crash, and with actuators live it ends NOW: deadline expiry SIGKILLs via
+the pidfd, poisons the Bridge, fails `EDriverDeadline`. The graceful ladder
+belongs to `bridge_close` alone (SHUTDOWN + write-shutdown → half the
+budget → SIGTERM → a quarter → SIGKILL, whose `waitid` is bounded because
+SIGKILL cannot be ignored). **A rung ends when the child is DEAD or its
+budget is spent — never merely because a wait returned**: a resume says
+only that something signalled, and the first draft that treated it as
+proof of death sat 28 seconds in a blocking `waitid` on a live driver.
+`close_wait_dead` — check, wait, CHECK AGAIN — is the rung shape.
+
+**The stderr drain is WOVEN, not a task.** v3 §10 sketched a standing
+drain task; under D-180 a second task cannot borrow the Bridge across a
+spawn, and none is needed — the dispatch wait already wakes on stderr
+readability, which is exactly when there is something to drain. The drain
+runs at dispatch entry, on every wait wake, and post-mortem in teardown
+(pipes outlive their writers); the ring is 8 KiB drop-oldest in the
+Bridge; and because D-179 errors are nominal and carry no payload, the
+tail is READ from the poisoned bridge (`bridge_stderr_tail`, an owned
+string) rather than riding the error value.
+
+**Close's ladder phase may be wound up; its release phase may not be
+split.** The ladder's awaits are idempotent and leave `closed` unset, so
+a wind-up mid-ladder hands the job to the caller's `bridge_reap` backstop
+whole; the release (waitid, munmap, memfd close, errbuf free, retire — the
+non-idempotent half) is synchronous, entered behind `closed`, and so
+cannot be interrupted at a suspension it does not contain.
+
+**And the executor had been due-ing every once-woken task forever.** The
+1-stamp a waker writes into `wake_at` (channels 1.1.10-C2, the reactor
+D-184, the rouse 1.2.4b) survives the registration-vs-sleep race by
+`npk_sl_push`'s exchange — and nothing ever CONSUMED it at the resume it
+caused, so the exchange faithfully re-preserved the stale marker at every
+later sleep: after its first wake, a task never slept again — every wait a
+busy-poll. Invisible under a year of retry-loop waits, which re-poll
+correctly, just hot; found the day the mock driver's hang kernel SLEPT
+after an io wake and returned instantly, turning a deadline test into a
+fault test. The fix is one cmpxchg (1→0) at `npk_step`'s resume site: only
+the due marker is consumed, a completed task's −1 and real timepoints pass
+through, and a waker's 1 landing after the clear costs exactly the one
+spurious resume the retry discipline absorbs. The same hunt found D-186's
+`npk_string_slice` copy allocating from the WILD-TRACKED entry — string
+bodies are managed-regime and belong to the internal one, as concat's
+always did — which made any sliced string alive at `exit 0` (where drops
+deliberately do not run, D-183/1.2.3) a phantom `WildLeak`.
+
+## D-189 addendum — the spent-wake fix exempts WOUND tasks
+
+The first full run after the consume-at-resume fix failed exactly one
+test, and the failure was the design speaking: `windup_drain.npk`'s
+documented contract is "a wound task cannot linger in a wait — every park
+returns immediately", which is the persistent due-stamp doing its ONE
+legitimate job — a swallowed wind-up must drain, not sleep out its grace.
+So the resume-site clear is GUARDED: a task whose windup word is set keeps
+its 1 (every park instantly due, the cooperative drain), and every other
+task spends the marker (real sleeps after real wakes). The windup word is
+stored before the due stamp and read after the sweep's seq_cst load, so a
+wound resume always observes it. `windup_drain` (the courtesy half),
+`executor_windup_trap` (the spin-forever-earns-its-trap half) and the
+Bridge's sleep-after-wake tests now hold simultaneously.
