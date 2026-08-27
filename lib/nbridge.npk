@@ -1,0 +1,98 @@
+// nbridge — the external-driver Bridge (D-149 over D-055), nlibc tier.
+//
+// Every foreign capability Nikola needs — CUDA, a GUI toolkit, any vendor
+// blob — runs as a SEPARATE SUPERVISED PROCESS, never linked in: past the
+// FFI barrier the runtime cannot intercept a fault and route it through
+// `failsafe` (the controlled-shutdown guarantee, CLAUDE.md), so a segfault
+// in an unverified library must become a VALUE — a closed socket, a
+// pollable pidfd, an errored `Result` — not a crash of the runtime. That is
+// what process isolation buys, and it is why the driver is outside the TCB
+// and needs no verification.
+//
+// The design of record is meta/roadmap/audit-0.8-close/
+// driver_architecture_plan_v3.md (18/18 poc checks on the deployment
+// kernel). This module is built in the staged order of meta/roadmap/1.1/
+// 1.1.13.md. THIS FILE, so far: the data plane's shared memory — a SEALED
+// memfd both processes map. The seal is the single most load-bearing line
+// in the plan: without F_SEAL_SHRINK the driver calls `ftruncate(fd, 0)`
+// and the next runtime access to the mapping takes SIGBUS — the driver
+// crashing the runtime THROUGH the data plane, defeating the architecture.
+// With it the hostile shrink returns EPERM and the mapping is stable for
+// its life.
+//
+// nlibc tier: this is `wild`-and-`sys` code, exactly where the manual regime
+// belongs. Every syscall is `sys(...) → Result<int64>` (D-048); a negative
+// return is the kernel's own error, carried in `Result.err` verbatim.
+
+mod:nbridge;
+
+// --- the syscall numbers this module uses (x86_64; D-055 §3.5) --------------
+// Confined here, the nlibc tier, exactly as D-044 confines the flag→int cast.
+pub func:SYS_MMAP = int64() never fails         { pass 9i64; };
+pub func:SYS_MUNMAP = int64() never fails       { pass 11i64; };
+pub func:SYS_FTRUNCATE = int64() never fails    { pass 77i64; };
+pub func:SYS_FCNTL = int64() never fails        { pass 72i64; };
+pub func:SYS_MEMFD_CREATE = int64() never fails { pass 319i64; };
+
+// memfd_create flags, and the file seals (linux/memfd.h, fcntl.h).
+pub func:MFD_CLOEXEC = int64() never fails       { pass 1i64; };
+pub func:MFD_ALLOW_SEALING = int64() never fails { pass 2i64; };
+pub func:F_ADD_SEALS = int64() never fails       { pass 1033i64; };
+pub func:F_SEAL_SEAL = int64() never fails       { pass 1i64; };
+pub func:F_SEAL_SHRINK = int64() never fails     { pass 2i64; };
+pub func:F_SEAL_GROW = int64() never fails       { pass 4i64; };
+
+// mmap prot/flags.
+pub func:PROT_READ = int64() never fails   { pass 1i64; };
+pub func:PROT_WRITE = int64() never fails  { pass 2i64; };
+pub func:MAP_SHARED = int64() never fails  { pass 1i64; };
+
+pub error:EShmCreate;
+pub error:EShmSeal;
+pub error:EShmMap;
+
+// A sealed shared-memory region: the fd (kept, so it can be sent to the
+// driver via SCM_RIGHTS at spawn) and the runtime's own mapping.
+pub struct:Shm = {
+    fd:          memfd;
+    wild int8->: base;
+    int64:       size;
+};
+
+// Create a memfd of exactly `size` bytes, seal it against shrink and grow
+// and against further sealing, and map it shared. The ORDER is the plan's
+// (§4.3 step 2): create → size → seal → map, so the region is immutable in
+// extent before any mapping exists to be surprised by a change.
+//
+// F_SEAL_WRITE is deliberately NOT set: both sides write the ring. F_SEAL_SEAL
+// stops the driver adding seals of its own after it receives the fd.
+pub func:shm_create_sealed = Shm(int64:size) {
+    cstring:name = relay to_cstring("npk_bridge_shm");
+    // memfd_create(name, MFD_CLOEXEC | MFD_ALLOW_SEALING). `sys` takes the
+    // pointer directly (1.1.12a) — an address becomes a number only at the
+    // trampoline.
+    int64:cf = raw MFD_CLOEXEC() | raw MFD_ALLOW_SEALING();
+    // `sys` maps a negative kernel return into `Result.err`, so `?! E`
+    // names the failure directly — no separate sign check is needed.
+    wild uint8->:np = name.ptr;
+    int64:mfd = sys(raw SYS_MEMFD_CREATE(), np, cf) ?! EShmCreate;
+    // ftruncate(mfd, size)
+    discard(sys(raw SYS_FTRUNCATE(), mfd, size) ?! EShmCreate);
+    // fcntl(mfd, F_ADD_SEALS, SHRINK|GROW|SEAL)
+    int64:seals = raw F_SEAL_SHRINK() | (raw F_SEAL_GROW() | raw F_SEAL_SEAL());
+    discard(sys(raw SYS_FCNTL(), mfd, raw F_ADD_SEALS(), seals) ?! EShmSeal);
+    // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, mfd, 0)
+    int64:pf = raw PROT_READ() | raw PROT_WRITE();
+    int64:m = sys(raw SYS_MMAP(), 0i64, size, pf, raw MAP_SHARED(), mfd, 0i64) ?! EShmMap;
+    wild int8->:base = #wild_ptr<int8>(m);
+    pass Shm{ memfd: (mfd =>! int32) =>! fd, base: base, size: size };
+};
+
+// Unmap the region. The fd is closed by its owner (`OwnedFd` once the Bridge
+// struct holds one); the mapping is `wild`, so its release is manual and
+// explicit here — the regime the whole tier runs in.
+pub func:shm_unmap = NIL(Shm->:s) {
+    wild int8->:sb = s.base;
+    discard(sys(raw SYS_MUNMAP(), sb, s.size) ?! EShmMap);
+    pass NIL;
+};

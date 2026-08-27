@@ -1,0 +1,53 @@
+// expect-exit: 42
+//
+// THE SEALED SHARED MEMORY (D-149, 1.1.13; poc test 1's shape). A memfd
+// created, sized, SEALED against shrink/grow, and mapped shared. The seal
+// is the load-bearing line of the whole driver architecture: without it a
+// hostile `ftruncate(fd, 0)` from the driver makes the next runtime access
+// take SIGBUS — the driver crashing the runtime through the data plane. So
+// this proves BOTH directions: the mapping is writable and readable, AND a
+// shrink is refused with EPERM (-1) rather than succeeding. Wild-and-sys
+// code, the nlibc tier.
+mod:shm_sealed;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    Shm:s = shm_create_sealed(4096i64) ?! E9;
+
+    // the mapping is live: write a byte near the end, read it back
+    <-(#ptr_add<int8>(s.base, 4000i64)) = 55i8;
+    if ((<-(#ptr_add<int8>(s.base, 4000i64))) != 55i8) { exit 11i32; }
+
+    // THE SEAL HOLDS: a hostile shrink to zero is refused (EPERM). `sys`
+    // maps a negative kernel return into `Result.err`, so a refused shrink
+    // shows up as is_error — which is exactly the seal doing its job. A
+    // shrink that SUCCEEDED (is_error false) would be the SIGBUS-bomb the
+    // seal exists to prevent, and fails the test.
+    Result<int64>:shrink = sys(raw SYS_FTRUNCATE(), (s.memfd => int64), 0i64);
+    if (!shrink.is_error) { exit 12i32; }   // the shrink MUST be refused
+
+    // the mapping still answers after the refused shrink
+    if ((<-(#ptr_add<int8>(s.base, 4000i64))) != 55i8) { exit 14i32; }
+
+    shm_unmap(@s) ?! E9;
+    Result<NIL>:c = close(s.memfd);
+    if (c.is_error) { exit 15i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (EShmCreate)     { exit 92i32; },
+        (EShmSeal)       { exit 93i32; },
+        (EShmMap)        { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

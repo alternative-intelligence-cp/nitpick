@@ -103,6 +103,13 @@ closed table.
 |---|---|---|---|---|
 | **S-2** | — | **The moved-from analysis is straight-line: a `move(x)` re-executed by a LOOP is not refused.** `modmap_members` moved one `move`-parameter at every member — every table entry aliased one body — and it type-checked. Latent-harmless while the aliased strings were views; D-186's owned slices turned the duplicate drops into a double free `npk_small_free`'s bitmap caught on the first stage-1 run. The compiler source is fixed (intern once, reuse the id), but the CLASS is open: the 0.5 use-after-move analysis needs loop-carried states (a binding moved anywhere in a loop body is moved-from at the body's head unless reassigned on every path). Same fixed-point shape the read-before-assign analysis already runs — extend, don't invent. | 1.3 (before self-hosting is declared) | D-186 fallout; 1.1.13-era find |
 
+## 2d. Two `sys`/emit robustness gaps the Bridge's shm work surfaced (owner: backend; not blocking)
+
+| id | what | evidence | fix |
+|---|---|---|---|
+| **S-3a** | **`sys` accepts a non-integer, non-pointer argument and emits invalid IR.** A `Result`-typed argument (a `never fails` constant called WITHOUT `raw`, so `{i64,i32}`) reaches the sys arg loop's fallback branch, which `sext`s it — `sext {i64,i32} to i64`, which llc rejects. The frontend should refuse a `sys` argument that is not an integer or a pointer, at the call, rather than letting the emitter produce a cast llc kills. | `shm_sealed.npk` with `sys(SYS_FTRUNCATE(), …)` (raw-less) — llc "invalid cast opcode for cast from '{ i64, i32 }' to 'i64'". | a typing check on sys arguments (integer or pointer only), TYPE-level. |
+| **S-3b** | **`expr ?\| fallback` fails to lower (EMIT-002) when `expr` is a `sys` call carrying a POINTER argument**, while `?!` over the same call lowers fine and `?\|` over an integer-only sys call lowers fine. | The five sys calls in `shm_create_sealed`/`shm_unmap`: with `?\|`, only the two with pointer args (memfd_create, munmap) EMIT-002'd; switching all to `?!` compiled. | isolate the `?\|` lowering over a Result whose value carries a pointer-derived temp; likely a temp-liveness or clean-since-mark interaction. Worked around in nbridge by using `?!` (which is also the better fit — a negative kernel return is already a `Result` error via the sys arm's D-141 mapping). |
+
 ## 3. Decisions blocking 1.3 (self-hosting)
 
 | # | Proposed | Item | Blocks | Source |
