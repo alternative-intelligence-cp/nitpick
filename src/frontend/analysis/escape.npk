@@ -46,6 +46,7 @@ use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../types.npk".*;
 use "../resolve_type.npk".*;
+use "../type_layout.npk".*;
 use "../expr_types.npk".*;
 use "./analysis_codes.npk".*;
 
@@ -1260,10 +1261,13 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) ne
         while (i < (raw item_member_count(x.ast, d))) {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
-                // The checker already resolved every field annotation; a
-                // failed RE-resolution here is an internal inconsistency.
-                int32:ft = resolve_type(x.tr, raw field_type(m), home) ?! Rederived;
-                if (raw dest_can_hold(x, ft, target, fuel - 1i32)) { pass true; }
+                // THROUGH THE LAYOUT WALK, NEVER A RAW RE-RESOLVE (1.1.12c):
+                // the raw form resolved the TEMPLATE's field node with no
+                // generic binding — see gives_shape_ok, the same repair.
+                FieldInfo:fi = raw struct_field(x.tr, holder, raw decl_name(m), home);
+                if (fi.found) {
+                    if (raw dest_can_hold(x, fi.type_id, target, fuel - 1i32)) { pass true; }
+                }
             }
             i = i + 1i32;
         }

@@ -13149,3 +13149,60 @@ to the awaited form), and `string_slice`'s VIEW semantics let
 use-after-free the quarantine caught in `path_parse` itself. The prelude
 copies before reassigning; the LANGUAGE-level hole (`string` cannot say
 "view") is recorded in OPEN_DECISIONS as a pre-Astrée decision.
+
+## D-185 addendum — the text layer, and buffering as a TYPE — **SETTLED at 1.1.12c**
+
+**Composition is types, never modes.** `TextWriter<W: Writer>` translates;
+`LineBufWriter<W: Writer>` buffers by line; stacking them is spelling the
+policy in the type — a `Buffering` mode field would be the tag-selects-
+behaviour shape D-072 rejected for channels, and D-076's "never inferred
+from a terminal" is honored by construction: the std constructors BAKE §4's
+fixed policies into their return types. `LineEnding` (`Lf`/`CrLf`) is a
+creation parameter held in the writer; readers translate unconditionally —
+`\r\n`, `\n` and a lone `\r` are one break, a `\r` split from its `\n` by a
+refill boundary included (the reader carries the pending flag;
+`text_pipe.npk` forces the split across a live pipe). A final unterminated
+line is a line; `IoEof` only when nothing remains. The text interface is
+free generic functions (`text_write_str`/`text_write_line`/`text_flush`/
+`text_read_line`) — D-161's rule (an inherent impl over a family cannot be
+spelled), with the parameter inferred from `@receiver` (D-064).
+
+**The standard streams** (`std_in`/`std_out`/`std_err`) are constructors a
+program calls in `main`'s scope and passes down — not globals (§8). Each
+OWNS A DUP (`F_DUPFD_CLOEXEC`) of the inherited descriptor, so its
+scope-exit close can never close 0/1/2 from under anything else, and
+repeated construction is safe by construction. `std_out` returns
+`TextWriter<LineBufWriter<ByteWriter>>` (line-buffered always), `std_err`
+`TextWriter<ByteWriter>` (unbuffered always), `std_in`
+`TextReader<ByteReader>`. The inherited descriptors stay BLOCKING —
+`O_NONBLOCK` would ride the shared open-file description into the parent
+process — so a write to a stuffed stdout pipe blocks the thread, bounded by
+the consumer: the ONE stated exception to D-071, recorded here and in the
+prelude. A partial line in a `LineBufWriter` does not flush itself at scope
+exit (drops are generated, never user hooks) — finish lines or `flush`;
+what a TRAP loses is exactly the partial line (§4.1's posture, unchanged).
+
+**`string_bytes(s) → uint8[]`** joins the floor: the string→slice bridge,
+a borrowed view (same pointer, same length, no copy) — D-070's borrow rules
+own everything after it.
+
+**Three compiler defects the layer forced out, all fixed:**
+- **The raw-template-field-resolve class** (three sites): the drop-body
+  generator, `gives_shape_ok`, and escape's `dest_can_hold` each re-resolved
+  a struct TEMPLATE's field node with no generic binding — for a generic
+  instance's field (`BW:inner`) that reported "there is no type named `BW`"
+  against a correct program. Latent until drop generation first cascaded
+  into a generic instance (a struct whose field is itself one:
+  `TextWriter<LineBufWriter<ByteWriter>>`). All three now go through
+  `struct_field`, the walk that binds the instance's arguments first.
+- **Struct-literal vs block lookahead**: `joins JOIN_2S {` swallowed a
+  thread body whose first statement was `ByteWriter:w = ...` as a struct
+  literal — `Ident { Ident :` is the literal's whole signature, and a
+  declaration matches it. A field's value can never be followed by `=` or
+  `;` (assignment is a statement), so the fourth token settles it.
+- **Awaited bound-calls in generic bodies**: the checker records the
+  TEMPLATE's method symbol (`Wrap<W>:Writer.write`), and the awaited-call
+  frame builder trusted it over substitution — building a frame type
+  nothing emits. Substitution now outranks the recorded symbol whenever the
+  receiver's type mentions a parameter, with the receiver's pointer level
+  peeled before naming, as `.` always peels (D-098).

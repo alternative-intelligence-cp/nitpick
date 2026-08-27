@@ -1078,7 +1078,15 @@ func:gives_shape_ok = bool(ExprTyper->:e, int32:t) never fails {
     while (kk < nm) {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, sd, kk));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft = raw resolve_type(@sr, raw field_type(m), home);
+            // THROUGH THE LAYOUT WALK, NEVER A RAW RE-RESOLVE (1.1.12c). The
+            // first cut resolved the TEMPLATE's field node with no generic
+            // binding, so a generic struct's `W:inner` reported "there is no
+            // type named `W`" against a correct program — and only when an
+            // instance existed to bring this check here. `struct_field` binds
+            // the instance's arguments before it resolves anything.
+            FieldInfo:fi = raw struct_field(@sr, t, raw decl_name(m), home);
+            int32:ft = 0i32;
+            if (fi.found) { ft = fi.type_id; }
             if ((raw type_kind(e.types, ft)) != (raw TY_CHANNEL())) {
                 if (raw type_contains_channel(e.types, ft, 64i32)) { pass false; }
             }

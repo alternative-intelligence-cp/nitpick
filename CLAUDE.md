@@ -76,8 +76,19 @@ TYPE-048 (an impl keeps its trait's `async` — a sync body driven as a
 coroutine is corruption). The awaited-method child frame now seeds `Self->`
 receivers by ADDRESS. ⚠️ OPEN_DECISIONS **S-1** (pre-Astrée): a `string`
 view can outlive its body — `x = string_slice(x, …)` is a silent UAF the
-quarantine caught in `path_parse`; decision owner: the user. Next: 1.1.12c
-the text layer + std streams, d async-behind-`dyn`, then 1.1.13 the Bridge.
+quarantine caught in `path_parse`; decision owner: the user. **1.1.12c
+landed**: the text layer as GENERIC WRAPPERS — `TextWriter<W>`,
+`LineBufWriter<W>` (buffering is a TYPE, never a mode field), `LineEnding`,
+unconditional read translation with the split-`\r\n` pending flag,
+`string_bytes`, and `std_in`/`std_out`/`std_err` constructors that each own
+a CLOEXEC dup (std descriptors stay blocking — the one stated D-071
+exception). Three compiler fixes fell out: template fields must resolve
+through `struct_field`'s BOUND walk (three raw sites closed — the drop-body
+generator was reporting "no type named `W`" on nested generic instances),
+the `Ident { Ident :` struct-literal lookahead reads the fourth token, and
+awaited bound-calls in generic bodies substitute before trusting the
+recorded template symbol. Next: 1.1.12d async-behind-`dyn`, then 1.1.13 the
+Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

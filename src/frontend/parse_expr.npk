@@ -829,11 +829,22 @@ func:p_primary = ExprId(Parser->:p) never fails {
     if (k == TokenKind.Ident) {
         Token:t = raw p_advance(p);
         // `Name { field: value, ... }` -- a struct literal. Distinguished from a
-        // block by the `ident :` that must follow the brace.
+        // block by the `ident :` that must follow the brace — and, since
+        // 1.1.12c, by what follows THAT: `Name { Type:name = ...` is a BLOCK
+        // whose first statement declares a local of a user-named type, found
+        // when `joins JOIN_2S {` swallowed a thread body whose first
+        // statement was `ByteWriter:w = ...` as a literal. A field's value
+        // can never be followed by `=` or `;` (assignment is a statement,
+        // not an expression), so those two settle it.
         if (raw p_at(p, TokenKind.PLBrace)) {
             if ((raw p_peek_at(p, 1i64)).kind == TokenKind.Ident) {
                 if ((raw p_peek_at(p, 2i64)).kind == TokenKind.PColon) {
-                    pass (raw p_struct_literal(p, sp, t.payload));
+                    TokenKind:p4 = (raw p_peek_at(p, 4i64)).kind;
+                    bool:is_decl = (p4 == TokenKind.OpAssign);
+                    if (p4 == TokenKind.PSemi) { is_decl = true; }
+                    if (!is_decl) {
+                        pass (raw p_struct_literal(p, sp, t.payload));
+                    }
                 }
             }
         }

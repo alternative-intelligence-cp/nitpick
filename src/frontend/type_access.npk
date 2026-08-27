@@ -666,6 +666,27 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // `own_fd(f)` — the descriptor becomes OWNED: from here its scope
         // closes it (D-185, 1.1.12b). `release_fd(move o)` is the inverse,
         // for a caller that must observe close's verdict through the floor.
+        // `string_bytes(s)` — the string→slice bridge (D-185, 1.1.12c): the
+        // bytes as a borrowed view. A slice is a borrow (D-070); the borrow
+        // rules own everything after this.
+        if (raw callee_is_builtin_named(e, n, "string_bytes")) {
+            if (count != 1i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`string_bytes` takes exactly one argument, the string to view (D-185)",
+                    n.span));
+            }
+            int32:sbt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+            if (sbt != 0i32) {
+                if (!(raw type_is_invalid(e.types, sbt))) {
+                    if (!((raw type_kind(e.types, sbt)) == (raw TY_STRING()))) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "`string_bytes` views a `string`'s bytes (D-185)",
+                            n.span));
+                    }
+                }
+            }
+            pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
+        }
         if (raw callee_is_builtin_named(e, n, "own_fd")) {
             if (count != 1i32) {
                 pass (raw te_error(e, raw TYPE_MISMATCH(),

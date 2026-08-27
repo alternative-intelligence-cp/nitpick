@@ -1,0 +1,81 @@
+// expect-exit: 42
+//
+// THE TEXT LAYER OVER A FILE (D-185, 1.1.12c; IO_REFERENCE §3). A CrLf
+// TextWriter turns `\n` into `\r\n` — the greppable opt-in — and the bytes
+// on disk prove it; the reader turns `\r\n`, `\n` and a lone `\r` back into
+// line breaks unconditionally, and a final unterminated line is still a
+// line. Composition is TYPES: TextWriter<ByteWriter> here, and the std
+// constructors' nested TextWriter<LineBufWriter<ByteWriter>> shape is what
+// the generic machinery carries. Nobody closes anything.
+mod:text_roundtrip;
+error:E9;
+
+async func:work = int32() {
+    Path:p = path_parse("/tmp/npk_text_roundtrip.tmp") ?! E9;
+    {
+        ByteWriter:bw = byte_writer_create(p, raw duration_ms(500i64)) ?! E9;
+        TextWriter<ByteWriter>:tw = raw text_writer(move(bw), LineEnding.CrLf);
+        await text_write_line(@tw, "alpha", raw duration_ms(500i64)) ?! E9;
+        await text_write_str(@tw, "be\nta", raw duration_ms(500i64)) ?! E9;
+        await text_flush(@tw, raw duration_ms(100i64)) ?! E9;
+    }
+
+    // the bytes: "alpha\r\nbe\r\nta" — 12 of them, CR at 5 and 9
+    {
+        ByteReader:br = byte_reader_open(p, raw duration_ms(500i64)) ?! E9;
+        uint8[16]:buf = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+                         0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+        int64:n = await br.read(buf[0i64...16i64], raw duration_ms(500i64)) ?! E9;
+        if (n != 13i64)         { pass 10i32; }
+        if (buf[5i64] != 13u8)  { pass 11i32; }
+        if (buf[6i64] != 10u8)  { pass 12i32; }
+        if (buf[9i64] != 13u8)  { pass 13i32; }
+    }
+
+    // the lines: "alpha", "be", then the unterminated "ta", then IoEof
+    ByteReader:br2 = byte_reader_open(p, raw duration_ms(500i64)) ?! E9;
+    TextReader<ByteReader>:tr = raw text_reader(move(br2));
+    string:l1 = await text_read_line(@tr, raw duration_ms(500i64)) ?! E9;
+    if (!(string_equals(l1, "alpha"))) { pass 14i32; }
+    string:l2 = await text_read_line(@tr, raw duration_ms(500i64)) ?! E9;
+    if (!(string_equals(l2, "be")))    { pass 15i32; }
+    string:l3 = await text_read_line(@tr, raw duration_ms(500i64)) ?! E9;
+    if (!(string_equals(l3, "ta")))    { pass 16i32; }
+    Result<string>:done = await text_read_line(@tr, raw duration_ms(200i64));
+    if (!done.is_error)                { pass 17i32; }
+    if (done.err != IoEof)             { pass 18i32; }
+
+    // the std constructors dup and own their descriptors; the drop closes
+    // the DUP, never descriptor 0/1/2 — constructing and dropping is safe.
+    TextReader<ByteReader>:si = std_in() ?! E9;
+    TextWriter<ByteWriter>:se = std_err() ?! E9;
+    TextWriter<LineBufWriter<ByteWriter>>:so = std_out() ?! E9;
+    if ((si.inner.src.value =>! int64) < 3i64)        { pass 19i32; }
+    if ((se.inner.sink.value =>! int64) < 3i64)       { pass 20i32; }
+    if ((so.inner.inner.sink.value =>! int64) < 3i64) { pass 21i32; }
+    pass 5i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:v = await work() ?! E9;
+    if (v != 5i32) { exit v; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (WouldBlock)       { exit 92i32; },
+        (Interrupted)      { exit 92i32; },
+        (IoEof)            { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

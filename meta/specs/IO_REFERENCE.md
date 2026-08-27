@@ -143,8 +143,14 @@ that gets debugged is not the one that ships.
 
 `io_isatty` remains available; it answers a question and changes nothing.
 
-A program wanting throughput on `stdout` wraps it in its own `BufWriter`,
-explicitly.
+A program wanting throughput on `stdout` wraps it in its own buffered
+writer, explicitly.
+
+> **As built (D-185, 1.1.12c): buffering is a TYPE, never a mode field** —
+> `LineBufWriter<W: Writer>` buffers by line, and the std constructors bake
+> this table into their return types (`std_out` returns
+> `TextWriter<LineBufWriter<ByteWriter>>`). A `Buffering` field selecting
+> behaviour at runtime would be the mode-field shape D-072 rejected.
 
 ### 4.1 Buffered data is lost on a trap
 
@@ -236,6 +242,14 @@ They are **not** globals that any code may grab. They belong to `main`'s scope a
 are passed down like any other stream, which is what makes a program testable:
 the harness supplies memory streams and reads back what was written. This is the
 same argument as §1.1 and the reason diagnostics take a `dyn Writer`.
+
+> **As built (D-185, 1.1.12c):** `std_in()` / `std_out()` / `std_err()` are
+> constructors called in `main`'s scope. Each owns a `F_DUPFD_CLOEXEC` DUP of
+> the inherited descriptor — scope-exit close can never close 0/1/2 out from
+> under anything else. The inherited descriptors stay BLOCKING (`O_NONBLOCK`
+> would ride the shared open-file description into the parent process), so a
+> write to a stuffed stdout pipe blocks the thread, bounded by the consumer —
+> the ONE stated exception to D-071.
 
 ---
 

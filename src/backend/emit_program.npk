@@ -1458,7 +1458,18 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                 DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, q));
                 if (fm.kind == DeclKind.DeclFieldDecl) {
                     if (seen == fi) {
-                        int32:ft = raw resolve_type(tr, raw field_type(fm), home);
+                        // THROUGH THE BOUND WALK, NEVER A RAW RE-RESOLVE
+                        // (1.1.12c): this is a TEMPLATE's field node, and for
+                        // a generic instance its `W` means the instance's
+                        // argument — the raw form resolved it with no binding,
+                        // so the first drop body generated for a struct whose
+                        // field is itself a generic instance reported "there
+                        // is no type named `W`" against a correct program.
+                        // `struct_field` binds the instance's arguments.
+                        FieldInfo:bfi = raw struct_field(tr, dty,
+                                            raw decl_name(fm), home);
+                        int32:ft = 0i32;
+                        if (bfi.found) { ft = bfi.type_id; }
                         if (raw type_drops(c.types, ft, 64i32)) {
                             string:g = raw cat5("  %f", raw int_to_string(fi => int64),
                                           " = getelementptr ", t.text, "");

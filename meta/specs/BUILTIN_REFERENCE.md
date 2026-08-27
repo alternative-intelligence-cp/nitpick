@@ -133,6 +133,7 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) |
 | `int_to_string` | `int64 → Result<string>` | Decimal rendering. | **never fails** (audited at 1.1.1: one return, error always 0; OOM traps) |
 | `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. | `Result` — may fail |
+| `string_bytes` | `string → uint8[]` | **The string→slice bridge** (D-185, 1.1.12c): the bytes as a borrowed VIEW — same pointer, same length, no copy. The slice is a borrow (D-070), so everything that stops a borrow escaping stops this one. | **never fails** |
 | `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. | **never fails** (traps on misuse) |
 | `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). | `Result` — may fail |
 | `read_file` | `cstring → Result<string>` | Whole file. | `Result` — may fail |

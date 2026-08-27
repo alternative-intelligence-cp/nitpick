@@ -2441,7 +2441,20 @@ func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     // symbol are derived from exactly that.
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
         string:mn = raw intern_get(x.interns, raw decl_name(cdecl));
+        // SUBSTITUTION OUTRANKS THE RECORDED SYMBOL (1.1.12c). The checker
+        // records what it resolved AT CHECK TIME — for a call on a generic
+        // struct receiver inside a generic function that is the TEMPLATE's
+        // spelling (`Wrap<W>:Writer.write`), and awaiting it built a frame
+        // type nothing emits. When the receiver's type mentions a parameter,
+        // the specialization's name is derived from the SUBSTITUTED receiver
+        // below, exactly as the sync path derives its symbol; the recorded
+        // symbol stands for every concrete receiver.
         int32:msym = raw exprtypes_callee_sym(x.et, cid);
+        ExprId:presub_rid = raw expr_operand(cn);
+        int32:presub_rty = raw exprtypes_get(x.et, presub_rid);
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast, presub_rty, 64i32)) {
+            msym = 0i32;
+        }
         if (msym != 0i32) { pass (raw intern_get(x.interns, msym)); }
         // A CALL THROUGH A BOUND NAMES THE SPECIALIZATION'S IMPL (1.0.6b's
         // rule, and the same reasoning): `async func:do_one<J: Work>` calling
@@ -2462,6 +2475,12 @@ func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
             int32:conc = raw subst_emitted_type(x.fe.ctx, rty);
             if (conc != rty) {
+                // The receiver may be `Wrap<W>->` — a POINTER to the target
+                // (1.1.12c): the impl's symbol names the TARGET, so the one
+                // pointer level peels here, as `.` always peels (D-098).
+                if ((raw type_kind(x.fe.ctx.types, conc)) == (raw TY_POINTER())) {
+                    conc = raw type_elem(x.fe.ctx.types, conc);
+                }
                 int32:btrait = raw exprtypes_callee_trait(x.et, cid);
                 pass (raw method_symbol_name(x.fe.ctx.types, x.interns,
                           conc, btrait, mn));
@@ -4142,6 +4161,25 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // `own_fd` / `release_fd` (D-185, 1.1.12b): the VALUE is the same i32
     // both ways — ownership is a frontend fact (the drop flag set at the
     // binding, cleared by the move at a `release_fd` call). Identity here.
+    // `string_bytes(s)` (D-185, 1.1.12c): the string's {ptr, len} re-headed
+    // as a slice's {ptr, len} — a view, no copy, cap deliberately absent.
+    if (raw string_eq(name, "string_bytes")) {
+        IrVal:sbv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(sbv))) { pass sbv; }
+        string:sbp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sbp, " = extractvalue ", sbv.ll, " ",
+                          raw string_concat(sbv.ref, ", 0")));
+        string:sbl = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sbl, " = extractvalue ", sbv.ll, " ",
+                          raw string_concat(sbv.ref, ", 1")));
+        string:sb0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(sb0,
+                          " = insertvalue { ptr, i64 } undef, ptr ", sbp, ", 0"));
+        string:sb1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sb1, " = insertvalue { ptr, i64 } ",
+                          sb0, ", i64 ", raw string_concat(sbl, ", 1")));
+        pass (raw iv("{ ptr, i64 }", move(sb1), 0i32));
+    }
     if (raw string_eq(name, "own_fd")) {
         IrVal:ofv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (!(raw iv_is_ok(ofv))) { pass ofv; }

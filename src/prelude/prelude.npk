@@ -456,3 +456,251 @@ impl:ByteReader = {
         pass np;
     };
 };
+
+// --- the text layer (D-185, 1.1.12c; IO_REFERENCE §3/§4/§8) -------------------
+//
+// LINE-ENDING POLICY BELONGS TO THE STREAM (D-050), and buffering is a TYPE
+// you chose, never a mode a field selects at runtime (the D-072 rejection)
+// and never inferred from a terminal (D-076): `TextWriter<W>` translates,
+// `LineBufWriter<W>` buffers by line, and composing them is spelling the
+// policy in the type. Readers translate unconditionally — `\r\n`, `\n` and
+// a lone `\r` all yield one line break; there is no reader knob to get
+// wrong. Writers write `\n` unless created asking for `CrLf` — the
+// greppable opt-in.
+pub enum:LineEnding = { Lf; CrLf; };
+
+pub struct:LineBufWriter<BW: Writer> = { BW:inner; string:pend; };
+pub struct:TextWriter<W: Writer> = { W:inner; LineEnding:ending; };
+pub struct:TextReader<R: Reader> = { R:inner; string:acc; int64:pos; bool:pend_cr; bool:seen_eof; };
+
+pub func:text_writer<W: Writer> = TextWriter<W>(move W:inner, LineEnding:e) never fails {
+    pass TextWriter{ inner: move(inner), ending: e };
+};
+pub func:text_reader<R: Reader> = TextReader<R>(move R:inner) never fails {
+    pass TextReader{ inner: move(inner), acc: "", pos: 0i64,
+                     pend_cr: false, seen_eof: false };
+};
+pub func:line_buf_writer<BW: Writer> = LineBufWriter<BW>(move BW:inner) never fails {
+    pass LineBufWriter{ inner: move(inner), pend: "" };
+};
+
+// EVERY BYTE REACHES THE INNER WRITER OR THE CALL FAILS. The trait's `write`
+// may be partial per call (POSIX's shape); a wrapper that translated a
+// buffer and delivered half of it would tear a line, so the wrappers loop.
+async func:tw_write_all<W: Writer> = NIL(W->:sink, string:s, Duration:within) {
+    int64:give_up = (raw mono_now()) + within.ns;
+    int64:done = 0i64;
+    while (done < s.len) {
+        int64:rem = give_up - (raw mono_now());
+        if (rem <= 0i64) { fail DeadlineExceeded; }
+        string:sview = relay string_slice(s, done, s.len);
+        uint8[]:bytes = string_bytes(sview);
+        int64:n = relay await sink.write(bytes, raw duration_ns(rem));
+        done = done + n;
+    }
+    pass NIL;
+};
+
+// `text_write_str(@w, s, within)`: `\n` becomes the writer's ending. The
+// free-function spelling is D-161's rule — an inherent impl over a family
+// cannot be spelled — with `W` inferred from the receiver (D-064).
+pub async func:text_write_str<W: Writer> = NIL(TextWriter<W>->:tw, string:s, Duration:within) {
+    bool:crlf = false;
+    pick (tw.ending) {
+        (LineEnding.Lf)   { crlf = false; },
+        (LineEnding.CrLf) { crlf = true; }
+    }
+    if (!crlf) {
+        relay await tw_write_all(@(tw.inner), s, within);
+        pass NIL;
+    }
+    string:out = "";
+    int64:i = 0i64;
+    int64:seg = 0i64;
+    while (i < s.len) {
+        if (s.ptr[i] == 10u8) {
+            string:part = relay string_slice(s, seg, i);
+            out = relay string_concat(out, part);
+            out = relay string_concat(out, "\r\n");
+            seg = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    string:tail = relay string_slice(s, seg, s.len);
+    out = relay string_concat(out, tail);
+    relay await tw_write_all(@(tw.inner), out, within);
+    pass NIL;
+};
+
+pub async func:text_write_line<W: Writer> = NIL(TextWriter<W>->:tw, string:s, Duration:within) {
+    relay await text_write_str(tw, s, within);
+    bool:crlf2 = false;
+    pick (tw.ending) {
+        (LineEnding.Lf)   { crlf2 = false; },
+        (LineEnding.CrLf) { crlf2 = true; }
+    }
+    if (crlf2) {
+        relay await tw_write_all(@(tw.inner), "\r\n", within);
+        pass NIL;
+    }
+    relay await tw_write_all(@(tw.inner), "\n", within);
+    pass NIL;
+};
+
+pub async func:text_flush<W: Writer> = NIL(TextWriter<W>->:tw, Duration:within) {
+    relay await tw.inner.flush(within);
+    pass NIL;
+};
+
+// ONE LINE, WITHOUT ITS TERMINATOR — `\r\n`, `\n`, and a lone `\r` are one
+// break (IO_REFERENCE §3), a `\r` split from its `\n` by a refill boundary
+// included. End of input: a final unterminated line is still a line;
+// `IoEof` only when nothing remains at all.
+pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:within) {
+    int64:give_up = (raw mono_now()) + within.ns;
+    while (true) {
+        // a pending `\r` saw its `\n` arrive: consume the second half
+        if (tr.pend_cr) {
+            if (tr.pos < tr.acc.len) {
+                tr.pend_cr = false;
+                if (tr.acc.ptr[tr.pos] == 10u8) { tr.pos = tr.pos + 1i64; }
+            }
+        }
+        // scan the unconsumed bytes for a break
+        int64:i = tr.pos;
+        while (i < tr.acc.len) {
+            uint8:c = tr.acc.ptr[i];
+            if (c == 10u8) {
+                string:seg = relay string_slice(tr.acc, tr.pos, i);
+                string:line = relay string_concat(seg, "");
+                tr.pos = i + 1i64;
+                pass line;
+            }
+            if (c == 13u8) {
+                string:seg2 = relay string_slice(tr.acc, tr.pos, i);
+                string:line2 = relay string_concat(seg2, "");
+                tr.pos = i + 1i64;
+                if (tr.pos < tr.acc.len) {
+                    if (tr.acc.ptr[tr.pos] == 10u8) { tr.pos = tr.pos + 1i64; }
+                }
+                if (tr.pos >= tr.acc.len) {
+                    if (!tr.seen_eof) { tr.pend_cr = true; }
+                }
+                pass line2;
+            }
+            i = i + 1i64;
+        }
+        // no break in what we hold
+        if (tr.seen_eof) {
+            if (tr.pos >= tr.acc.len) { fail IoEof; }
+            string:seg3 = relay string_slice(tr.acc, tr.pos, tr.acc.len);
+            string:last = relay string_concat(seg3, "");
+            tr.pos = tr.acc.len;
+            pass last;
+        }
+        // refill: drop consumed bytes, then ask the inner reader
+        string:kept = "";
+        if (tr.pos < tr.acc.len) {
+            string:kview = relay string_slice(tr.acc, tr.pos, tr.acc.len);
+            kept = relay string_concat(kview, "");
+        }
+        tr.acc = move(kept);
+        tr.pos = 0i64;
+        int64:rem = give_up - (raw mono_now());
+        if (rem <= 0i64) { fail DeadlineExceeded; }
+        wild int8->:cbuf = alloc(512i64);
+        defer { drop dalloc(cbuf); }
+        uint8[]:cslice = #wild_slice<uint8>(cbuf =>! wild uint8->, 512i64);
+        Result<int64>:got = await tr.inner.read(cslice, raw duration_ns(rem));
+        if (got.is_error) {
+            if (got.err == IoEof) { tr.seen_eof = true; }
+            if (got.err != IoEof) { fail got.err; }
+        }
+        if (!got.is_error) {
+            string:fresh = raw string_from_bytes(cbuf, got.value);
+            tr.acc = relay string_concat(tr.acc, fresh);
+        }
+    }
+};
+
+// LINE BUFFERING AS A TYPE (§4): bytes gather until a `\n`, then everything
+// through the LAST `\n` goes down in one write. A partial line lives in the
+// buffer until its `\n` or an explicit `flush` — and `defer` does not run
+// on a trap (D-014), so what a trap loses is exactly the partial line, as
+// §4.1 states. NOTE: a partial line also does not flush ITSELF at scope
+// exit (drops are generated, never user hooks) — finish lines or flush.
+impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
+    async func:write = int64(LineBufWriter<BW>->:self, fixed uint8[]:wsrc, Duration:within) {
+        string:added = raw string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
+        self.pend = relay string_concat(self.pend, added);
+        int64:nl = 0i64 - 1i64;
+        int64:i = 0i64;
+        while (i < self.pend.len) {
+            if (self.pend.ptr[i] == 10u8) { nl = i; }
+            i = i + 1i64;
+        }
+        if (nl >= 0i64) {
+            string:sview = relay string_slice(self.pend, 0i64, nl + 1i64);
+            string:ship = relay string_concat(sview, "");
+            string:kview = relay string_slice(self.pend, nl + 1i64, self.pend.len);
+            string:keep = relay string_concat(kview, "");
+            self.pend = move(keep);
+            relay await tw_write_all(@(self.inner), ship, within);
+        }
+        pass wsrc.len;
+    };
+    async func:flush = NIL(LineBufWriter<BW>->:self, Duration:within) {
+        if (self.pend.len > 0i64) {
+            string:all = relay string_concat(self.pend, "");
+            self.pend = "";
+            relay await tw_write_all(@(self.inner), all, within);
+        }
+        relay await self.inner.flush(within);
+        pass NIL;
+    };
+};
+
+// TRANSLATION ON THE BYTE PATH TOO (§3: a text stream translates, always) —
+// `TextWriter` implements `Writer` so a buffered wrapper can stand inside
+// or outside it, and the byte-trait write is `text_write_str` over the
+// bytes read as text.
+impl:<W: Writer>:TextWriter<W>:Writer = {
+    async func:write = int64(TextWriter<W>->:self, fixed uint8[]:wsrc, Duration:within) {
+        string:s = raw string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
+        relay await text_write_str(self, s, within);
+        pass wsrc.len;
+    };
+    async func:flush = NIL(TextWriter<W>->:self, Duration:within) {
+        relay await self.inner.flush(within);
+        pass NIL;
+    };
+};
+
+// THE STANDARD STREAMS (§8): built IN `main`'s scope by these constructors
+// and passed down — they are not globals. Each construction OWNS A DUP of
+// the inherited descriptor (F_DUPFD_CLOEXEC), so its scope-exit close can
+// never close descriptor 0/1/2 out from under anything else. Buffering per
+// §4, in the TYPE: stdout line-buffered always, stderr unbuffered always,
+// stdin buffered by its reader. The inherited descriptors stay BLOCKING —
+// O_NONBLOCK on them would ride the shared open-file description into the
+// parent process (a real-world footgun) — so a write to a stuffed stdout
+// pipe blocks the thread, bounded by the consumer, exactly as every unix
+// tool is; that stated exception to D-071 lives here and nowhere else.
+func:std_dup = OwnedFd(int32:which) {
+    // fcntl(fd, F_DUPFD_CLOEXEC = 1030, 0)
+    int64:d = relay sys(72i64, which => int64, 1030i64, 0i64);
+    pass own_fd((d =>! int32) =>! fd);
+};
+
+pub func:std_in = TextReader<ByteReader>() {
+    OwnedFd:d = relay std_dup(0i32);
+    pass (raw text_reader(ByteReader{ src: move(d) }));
+};
+pub func:std_out = TextWriter<LineBufWriter<ByteWriter>>() {
+    OwnedFd:d = relay std_dup(1i32);
+    pass (raw text_writer(raw line_buf_writer(ByteWriter{ sink: move(d) }), LineEnding.Lf));
+};
+pub func:std_err = TextWriter<ByteWriter>() {
+    OwnedFd:d = relay std_dup(2i32);
+    pass (raw text_writer(ByteWriter{ sink: move(d) }, LineEnding.Lf));
+};
