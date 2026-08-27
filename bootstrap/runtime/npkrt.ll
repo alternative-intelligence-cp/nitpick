@@ -1389,7 +1389,26 @@ mark:
   %fin = icmp eq i64 %w, -1
   br i1 %fin, label %next, label %due
 due:
-  store atomic i64 0, ptr %wa seq_cst, align 8
+  ; DUE-NOW IS 1, NOT 0 -- the same load-bearing distinction the channel
+  ; waker records: 1 is always in the past, and distinguishable from the 0 a
+  ; fresh frame carries. And the OWNER EXECUTOR IS ROUSED (1.2.4b): a wound
+  ; task sleeping on ANOTHER thread's executor is inside that executor's
+  ; clamped FUTEX_WAIT -- possibly clamped to the task's own far deadline --
+  ; and a due mark nobody looks at is not a wind-up. Park word then futex
+  ; wake, the waker protocol npk_ch_wake_one already carries; the window is
+  ; closed by the executor's clear-then-recheck on its side. A same-thread
+  ; child's rouse is a harmless self-wake.
+  store atomic i64 1, ptr %wa seq_cst, align 8
+  %op = getelementptr %npk.hdr, ptr %cur, i32 0, i32 11
+  %ow = load ptr, ptr %op
+  %noown = icmp eq ptr %ow, null
+  br i1 %noown, label %next, label %rouse
+rouse:
+  %pw = getelementptr %npk.exec, ptr %ow, i32 0, i32 5
+  store atomic i32 1, ptr %pw seq_cst, align 4
+  %wpi = ptrtoint ptr %pw to i64
+  ; futex(word, FUTEX_WAKE|PRIVATE, 1, ...)
+  %fr = call i64 @npk_sys6(i64 202, i64 %wpi, i64 129, i64 1, i64 0, i64 0, i64 0)
   br label %next
 next:
   %sp = getelementptr %npk.hdr, ptr %cur, i32 0, i32 5

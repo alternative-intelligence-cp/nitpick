@@ -1,17 +1,22 @@
 // expect-exit: 46
 //
-// THE BACKSTOP BENEATH THE COURTESY (D-177, 1.1.8b). This child SWALLOWS
-// its wind-up — `?|` on a wait catches the wind-up error like any other,
-// which is the price of `?|` meaning one thing everywhere — and goes back
-// to sleeping. The cooperative path cannot contain it, so the grace
-// expires and the join TRAPS `DeadlineExceeded`: the guarantee is the
+// THE BACKSTOP BENEATH THE COURTESY (D-177, 1.1.8b; sharpened at 1.2.4b).
+// This child SWALLOWS its wind-up — `?|` on a wait catches the wind-up
+// error like any other, which is the price of `?|` meaning one thing
+// everywhere — and tries to wait again, FOREVER. Since 1.2.4b a wound task
+// cannot linger in a wait: `windup_all` marks it due-now and every park
+// returns immediately with the wind-up propagated into the awaitee, so a
+// FINITE swallower drains its remaining waits and completes cleanly inside
+// the grace (that is the cooperative path working, first driven by
+// windup_drop.npk). What cooperation cannot contain is a child that
+// swallows and loops without bound — it spins through the grace, the grace
+// expires, and the join TRAPS `DeadlineExceeded`: the guarantee is the
 // trap, the cooperative unwind is the courtesy. Total containment is the
 // join deadline plus the stated 250ms grace, not twice the deadline.
 mod:executor_windup_trap;
 async func:stubborn = NIL(int32:n) {
     while (n > 0i32) {
         await sleep(raw duration_secs(30i64)) ?| NIL;   // swallows the wind-up
-        n = n - 1i32;
     }
     pass NIL;
 };

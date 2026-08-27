@@ -184,6 +184,11 @@ pub struct:FnEmitter = {
     wild int32->:cross_types;
     wild string->:cross_lls;
     wild string->:cross_geps;
+    // The FLAG slot's GEP for an owning crossing var-decl (D-183, 1.2.4b):
+    // "" for every entry that needs none (hidden loop/pick roles, non-owning
+    // types). A drop flag is one byte beside the value, and a crossing
+    // local's byte must cross with it — an alloca flag dies between resumes.
+    wild string->:cross_fgeps;
     int32:cross_count;
     int32:cross_cap;
 };
@@ -240,6 +245,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         cross_types: (alloc(8i64 * 4i64)) =>! wild int32->,
         cross_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         cross_geps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
+        cross_fgeps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
         cross_count: 0i32, cross_cap: 8i32
     };
     pass fe;
@@ -419,11 +425,14 @@ pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
                                 ncap * #size_of<string>());
         wild int8->:nd = ralloc(fe.cross_geps =>! wild int8->,
                                 ncap * #size_of<string>());
+        wild int8->:nf = ralloc(fe.cross_fgeps =>! wild int8->,
+                                ncap * #size_of<string>());
         fe.cross_stmts = na =>! wild int32->;
         fe.cross_roles = nr =>! wild int32->;
         fe.cross_types = nb =>! wild int32->;
         fe.cross_lls = nc =>! wild string->;
         fe.cross_geps = nd =>! wild string->;
+        fe.cross_fgeps = nf =>! wild string->;
         fe.cross_cap = ncap =>! int32;
     }
     fe.cross_stmts[fe.cross_count => int64] = stmt_index;
@@ -431,6 +440,7 @@ pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
     fe.cross_types[fe.cross_count => int64] = type_id;
     fe.cross_lls[fe.cross_count => int64] = move(ll);
     fe.cross_geps[fe.cross_count => int64] = "";
+    fe.cross_fgeps[fe.cross_count => int64] = "";
     fe.cross_count = fe.cross_count + 1i32;
     pass NIL;
 };
@@ -450,6 +460,11 @@ pub func:fnem_cross_find = int32(FnEmitter->:fe, int32:stmt_index,
 pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
     pass (raw string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
+};
+
+// The flag slot's GEP for a crossing entry — "" when the entry has none.
+pub func:fnem_cross_fgep = string(FnEmitter->:fe, int32:idx) never fails {
+    pass (raw string_from_bytes(fe.cross_fgeps[idx => int64].ptr, fe.cross_fgeps[idx => int64].len));
 };
 
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
@@ -486,6 +501,30 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
         slots = raw cat3(slots, ", ", fe.cross_lls[i => int64]);
         i = i + 1i32;
     }
+    // DROP-FLAG SLOTS (D-183, 1.2.4b): one i8 per owning `move` parameter,
+    // then one per owning crossing var-decl (role 0) — appended AFTER the
+    // crossing region so every established index keeps its meaning. A flag
+    // is the byte that says the binding still owns its value; a crossing
+    // local's byte must cross with it, because an alloca dies between
+    // `resume` calls exactly like the value slot it guards would have.
+    i = 0i32;
+    while (i < fe.pcount) {
+        if (fe.pmoves[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+                slots = raw string_concat(slots, ", i8");
+            }
+        }
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while (i < fe.cross_count) {
+        if (fe.cross_roles[i => int64] == 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
+                slots = raw string_concat(slots, ", i8");
+            }
+        }
+        i = i + 1i32;
+    }
     drop irw_frame_type(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
     drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr) {", ""));
     drop irw_label(fe.w, "entry");
@@ -514,6 +553,39 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // at close, once every state is known.
     string:s0 = raw fnem_new_seg(fe);
     drop irw_label(fe.w, s0);
+
+    // THE FLAG GEPS, and the parameter flags' one-time seed. The GEPs go to
+    // the ENTRY stream (they must dominate every segment); the `store i8 1`
+    // lines land HERE, in state 0's body, which runs exactly once per task —
+    // the spawner's transfer is the binding's initialisation, and no spawn
+    // site has to know this layout. A crossing var-decl's flag needs no seed:
+    // its declaration stores 0 or 1 when it executes, and every path that
+    // reads the flag is dominated by the declaration dynamically — a frame
+    // reused from the free list carries garbage there only until then.
+    int32:fslot = 12i32 + fe.pcount + fe.cross_count;
+    i = 0i32;
+    while (i < fe.pcount) {
+        if (fe.pmoves[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+                string:pfg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
+                fslot = fslot + 1i32;
+                drop irw_line(fe.w, raw cat3("store i8 1, ptr ", pfg, ""));
+                drop fnem_flag_at(fe, i, move(pfg));
+            }
+        }
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while (i < fe.cross_count) {
+        if (fe.cross_roles[i => int64] == 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
+                fe.cross_fgeps[i => int64] =
+                    raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
+                fslot = fslot + 1i32;
+            }
+        }
+        i = i + 1i32;
+    }
     pass NIL;
 };
 
@@ -810,6 +882,13 @@ pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
 // create OWNED bindings: `emit_vardecl`, and the prologue for `move` params.
 pub func:fnem_flag_last = NIL(FnEmitter->:fe, move string:flag) never fails {
     fe.lflags[(fe.lcount - 1i32) => int64] = move(flag);
+    pass NIL;
+};
+// The by-index form, for a coroutine's `move` parameters (D-183, 1.2.4b):
+// they are the first `pcount` binding entries — bound in order before any
+// body local — and their frame flag GEPs are cut after every bind.
+pub func:fnem_flag_at = NIL(FnEmitter->:fe, int32:i, move string:flag) never fails {
+    fe.lflags[i => int64] = move(flag);
     pass NIL;
 };
 pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int32:i) never fails {
@@ -1114,9 +1193,29 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat3(jgspan, " = call i64 @npk_windup_grace()", ""));
         string:jgdl = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jgdl, " = add i64 ", jgnow, ", ", jgspan));
-        string:jrc2 = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc2, " = call i32 @npk_run_until(ptr ",
+        // THE GRACE WAIT FORKS LIKE THE FIRST ONE (1.2.4b): a THREAD child
+        // unwinds on its own executor, and pumping THIS one while it does
+        // found nothing ready, nothing sleeping, and work outstanding — the
+        // deadlock trap, from the first test to ever drive a wind-up. The
+        // tid futex is the wait that means "that thread", and `jisth` above
+        // already knows which child this is.
+        drop irw_line(fe.w, raw cat3("br i1 ", jisth,
+                          ", label %npk.jwthread, label %npk.jwtask"));
+        drop irw_label(fe.w, "npk.jwthread");
+        string:jrc2t = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc2t, " = call i32 @npk_thread_join(ptr ",
+                          jtls, ", i64 ", raw string_concat(jgdl, ")")));
+        drop irw_line(fe.w, "br label %npk.jwjoined");
+        drop irw_label(fe.w, "npk.jwtask");
+        string:jrc2k = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc2k, " = call i32 @npk_run_until(ptr ",
                           jh, ", i64 ", raw string_concat(jgdl, ")")));
+        drop irw_line(fe.w, "br label %npk.jwjoined");
+        drop irw_label(fe.w, "npk.jwjoined");
+        string:jrc2 = raw irw_temp(fe.w);
+        drop irw_line(fe.w, raw cat5(jrc2, " = phi i32 [ ", jrc2t,
+                          ", %npk.jwthread ], [ ",
+                          raw cat3(jrc2k, ", %npk.jwtask ]", "")));
         string:jok2 = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jok2, " = icmp eq i32 ",
                           raw string_concat(jrc2, ", 0")));

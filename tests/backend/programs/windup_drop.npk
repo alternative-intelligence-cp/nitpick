@@ -1,0 +1,41 @@
+// expect-exit: 42
+// stress: 40
+//
+// A WOUND-UP TASK DROPS WHAT IT OWNS (D-183, 1.2.4b). The worker owns two
+// strings across its suspensions, then sleeps far past its own `joins`
+// deadline. The join winds it up — cooperatively (D-062/D-177): its next
+// resume takes the unwind branch, which runs its defers AND, since 1.2.4b,
+// its scope drops — then fails DeadlineExceeded, which is what main's
+// scope-exit join hands `failsafe`. The heap arms referee the unwind: a
+// drop that frees a still-shared body, or one that runs twice, exits
+// through a Heap arm instead of 42, and `// stress: 40` makes a
+// schedule-shaped miss loud rather than lucky.
+mod:windup_drop;
+const Duration:JOIN_300MS = Duration{ ns: 300000000i64 };
+
+thread async func:sleepy = NIL(int32:_~v) joins JOIN_300MS {
+    string:early = relay string_concat("abcdef", "");
+    await sleep(raw duration_ms(20i64)) ?| NIL;      // `early` crosses here
+    string:late = relay string_concat("xyz", "");
+    await sleep(raw duration_ms(10000i64)) ?| NIL;   // wound up during this
+    discard((early.len + late.len) =>! int32);       // never reached
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    drop sleepy(1i32);
+    exit 0i32;                                        // the exit's join winds it up
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 42i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

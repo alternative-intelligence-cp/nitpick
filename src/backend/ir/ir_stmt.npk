@@ -117,7 +117,6 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
 // The test is one load and one branch; a moved-out binding's flag is zero, so
 // the drop is skipped exactly where D-065 says the binding no longer owns.
 pub func:run_scope_drops = IrVal(ExprEmitter->:x, int32:f) never fails {
-    if (x.fe.is_async) { pass (raw iv_nil()); }
     int32:lhi = raw fnem_scope_lhi(x.fe, f);
     int32:llo = raw fnem_scope_lmark(x.fe, f);
     int32:i = lhi;
@@ -129,7 +128,6 @@ pub func:run_scope_drops = IrVal(ExprEmitter->:x, int32:f) never fails {
 };
 
 pub func:run_param_drops = IrVal(ExprEmitter->:x) never fails {
-    if (x.fe.is_async) { pass (raw iv_nil()); }
     int32:i = x.fe.pcount;
     while (i > 0i32) {
         i = i - 1i32;
@@ -325,6 +323,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // value-`pick`), and it refuses rather than silently taking an alloca.
     string:slot = "";
     bool:framed = false;
+    string:ffl = "";
     if (x.fe.is_async) {
         if (raw exprtypes_crossing(x.et, sid.index)) {
             int32:cidx = raw fnem_cross_find(x.fe, sid.index, 0i32);
@@ -333,6 +332,11 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
                                   "1.1", s.span));
             }
             slot = raw fnem_cross_gep(x.fe, cidx);
+            // The FLAG slot beside it (D-183, 1.2.4b) — non-empty exactly
+            // when this decl's type owns; the walk widened owning locals to
+            // the function's end, so an owning decl in a suspending function
+            // is here, framed, and its flag byte crosses with its value.
+            ffl = raw fnem_cross_fgep(x.fe, cidx);
             framed = true;
         }
     }
@@ -356,19 +360,24 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
                           raw string_concat(", ptr ", slot)));
     }
     drop fnem_bind(x.fe, raw stmt_name(s), raw string_concat(slot, ""), dty);
-    // THE DROP FLAG (D-183, 1.2.3): one bit beside every OWNING local, live
-    // when the binding holds a value, cleared by `move` and by `pass`, tested
-    // at the scope-exit drop. An uninitialised declaration starts dead and
-    // its first assignment brings it live. ASYNC BODIES ARE EXCLUDED for now:
-    // a flag is an alloca, an alloca dies across a suspension, and making
-    // flags frame-resident is 1.2.4's work with the cross-slot machinery —
-    // recorded in the cycle plan, not silently skipped.
-    if (!x.fe.is_async) {
-        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+    // THE DROP FLAG (D-183, 1.2.3; frame-resident half at 1.2.4b): one bit
+    // beside every OWNING local, live when the binding holds a value, cleared
+    // by `move` and by `pass`, tested at the scope-exit drop. An
+    // uninitialised declaration starts dead and its first assignment brings
+    // it live. A FRAMED local's flag is the frame byte `fnem_open_async`
+    // reserved beside its slot — an alloca would die between `resume` calls;
+    // a non-framed local in a coroutine is one the widened suspend walk
+    // proved suspension-free to the function's end, so its alloca flag and
+    // every read of it sit inside one resume call.
+    if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+        string:seed = "store i8 0, ptr ";
+        if (!(raw expr_is_none(init))) { seed = "store i8 1, ptr "; }
+        if (ffl.len > 0i64) {
+            drop irw_line(x.fe.w, raw cat3(seed, ffl, ""));
+            drop fnem_flag_last(x.fe, move(ffl));
+        } else {
             string:dfl = raw irw_temp(x.fe.w);
             drop irw_alloca(x.fe.w, dfl, "i8");
-            string:seed = "store i8 0, ptr ";
-            if (!(raw expr_is_none(init))) { seed = "store i8 1, ptr "; }
             drop irw_line(x.fe.w, raw cat3(seed, dfl, ""));
             drop fnem_flag_last(x.fe, move(dfl));
         }
@@ -383,7 +392,6 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 // partial-move item recorded open on D-183. A root that is not a flagged
 // local — a pointer parameter, a global, a temporary — clears nothing.
 pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
-    if (x.fe.is_async) { pass NIL; }
     if (raw expr_is_none(vid)) { pass NIL; }
     PlaceRoot:r = raw place_root(x.ast, vid, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
@@ -441,7 +449,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // also brings an uninitialised declaration live at its first
         // assignment.
         string:aflag = "";
-        if (!x.fe.is_async) {
+        {
             ExprNode:tgt = raw ast_expr(x.ast, raw stmt_target(s));
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
                 int32:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);

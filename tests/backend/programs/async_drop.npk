@@ -1,0 +1,123 @@
+// expect-exit: 42
+// stress: 40
+//
+// ASYNC BODIES RUN THEIR DROPS (D-183, 1.2.4b). Until this subcycle a
+// coroutine ran none at all: a drop flag was an alloca, an alloca dies
+// between `resume` calls, and the machinery was gated off rather than
+// silently wrong. Now an owning local's flag is FRAME-RESIDENT whenever the
+// local crosses a suspension — and the suspend walk itself widened: a
+// droppable local is USED at its scope's exit (the drop reads it there), so
+// "crosses" includes a local whose last textual mention sits before the
+// `await` but whose scope closes after it.
+//
+// Exercised: an owning string crossing an await and read after it; one whose
+// last MENTION is before the await (the widening case — it still drops at
+// completion, after the suspension); an owning `move` parameter dropped at
+// the coroutine's exit, its flag seeded in state 0; one moved ONWARD before
+// the await (frame flag cleared — no drop at exit); a conditional move whose
+// flag is DECIDED before the suspension and TESTED after it, both resumes
+// apart; per-iteration drops in a loop with an await inside; and a `dyn`
+// cell crossing an await. The allocator's validation referees every round: a
+// double free traps, and 40 stress runs make a schedule-shaped miss loud.
+mod:async_drop;
+error:E9;
+
+trait:Speaks = { func:say = int32(Self:self); };
+struct:Loud = { string:name; int32:v; };
+impl:Loud:Speaks = { func:say = int32(Loud:self) { pass self.v; }; };
+
+async func:tick = int32(int32:v) {
+    pass v + 1i32;
+};
+
+// An owning local crossing the await and used after it.
+async func:crossed = int32() {
+    string:s = relay string_concat("abcde", "");
+    int32:r = relay await tick(10i32);
+    pass (r + (s.len =>! int32));            // 11 + 5
+};
+
+// The WIDENING case: `s`'s last mention is before the await, but its scope
+// closes after — the drop at the closing brace is a use the text never shows.
+async func:widened = int32() {
+    string:s = relay string_concat("xy", "");
+    int32:k = (s.len =>! int32);             // last mention, before the await
+    int32:r = relay await tick(k);           // 3
+    pass r;
+};
+
+// An owning `move` parameter: dropped at the coroutine's exit...
+async func:takes = int32(move string:t) {
+    int32:r = relay await tick(t.len =>! int32);
+    pass r;                                   // t drops here, after the await
+};
+
+// ...unless the body moved it onward first — the frame flag cleared before
+// the suspension, tested after it.
+async func:hands_on = int32(move string:t) {
+    int32:r = relay await takes(move(t));
+    pass r;
+};
+
+// A conditional move: the flag's value is decided BEFORE the final
+// suspension and the drop reads it AFTER — different resume calls. On the
+// true branch `s` moves into a consuming coroutine (flag cleared, no drop at
+// exit); on the false branch it stays owned and drops at the closing brace.
+async func:cond_move = int32(bool:b) {
+    string:s = relay string_concat("pq", "");
+    int32:pre = 0i32;
+    if (b) { pre = relay await takes(move(s)); }
+    int32:r = relay await tick(pre);
+    pass r;
+};
+
+// Per-iteration drops with a suspension inside the loop body.
+async func:looped = int32() {
+    int32:acc = 0i32;
+    int32:i = 0i32;
+    while (i < 50i32) {
+        string:s = relay string_concat("abc", "");
+        int32:r = relay await tick(s.len =>! int32);   // 4
+        acc = acc + r;
+        i = i + 1i32;
+    }
+    pass acc;                                 // 200
+};
+
+// A `dyn` cell crossing an await: the fat pointer is frame-resident and the
+// cell it owns drops at completion.
+async func:dynned = int32() {
+    Loud:l = Loud{ name: relay string_concat("nm", ""), v: 6i32 };
+    dyn Speaks:d = move(l);
+    int32:r = relay await tick(0i32);         // 1
+    pass r + (d.say() ?! E9);                 // 1 + 6
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = await crossed() ?| 0i32;        // 16
+    int32:b = await widened() ?| 0i32;        // 3
+    string:arg = string_concat("abcd", "") ?! E9;
+    int32:c = await takes(move(arg)) ?| 0i32;  // 5
+    string:arg2 = string_concat("ab", "") ?! E9;
+    int32:d = await hands_on(move(arg2)) ?| 0i32; // 3
+    int32:e = await cond_move(true) ?| 0i32;  // takes("pq")=3 -> tick(3) = 4
+    int32:f = await cond_move(false) ?| 0i32; // tick(0) = 1
+    int32:g = await looped() ?| 0i32;         // 200
+    int32:h = await dynned() ?| 0i32;         // 7
+    // 16+3+5+3+4+1+200+7 = 239; 239 - 197 = 42
+    exit (a + b + c + d + e + f + g + h) - 197i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 91i32; },
+        (DeadlineExceeded) { exit 92i32; },
+        (HeapBadRequest) { exit 93i32; },
+        (HeapOom) { exit 93i32; },
+        (OutOfBounds) { exit 93i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

@@ -509,3 +509,40 @@ and an enum payload's dyn dropping on the tag.
 Still open in 1.2.4: async bodies run no drops at all — frame-resident flags,
 scope-exit drops inside segments, completion drops, and the cancel path's
 per-state teardown are 1.2.4b.
+
+## 1.2.4b — async bodies drop; the first wind-up ever driven found two more
+
+The gates are gone: a coroutine's scope exits, completion, `pass`/`fail`
+unwinds and the cooperative wind-up all run the defers-then-drops walk. The
+suspend walk widened first — a droppable local is USED at its scope's exit,
+so the checker records owning var-decls and the walk extends their lives to
+the function's end (the `defer`/`@x` position, doctrine-conservative). A
+crossing local's drop flag is a frame byte reserved beside its slot;
+parameter flags seed in state 0, which runs once per task, so no spawn site
+knows the layout. A local the widened walk did not frame is provably
+suspension-free to the function's end, and keeps its alloca flag.
+
+`async_drop.npk` covers the shapes: crossing owned strings read after the
+await, the widening case (last mention before the await, drop after), a
+`move` parameter dropped at completion, one moved onward instead, a
+conditional move decided before a suspension and tested after it, drops per
+loop iteration around an await, and a `dyn` cell crossing.
+
+`windup_drop.npk` is the first test to DRIVE a wind-up, and the mechanism
+had two dormant defects that had nothing to do with drops: `npk_windup_all`
+due'd a wound sleeper without ROUSING its owner executor (a mark nobody
+reads while that executor futex-waits toward the task's own far deadline is
+not a wind-up — it now follows the channel waker's protocol), and the join's
+GRACE wait pumped the joiner's own executor even for a THREAD child, hitting
+the "nothing ready, nothing sleeping, work outstanding" deadlock trap. The
+grace wait now forks on the child's kind like the first wait. The test winds
+up a thread mid-sleep holding two owned strings across suspensions: the
+unwind drops them, the join hands `DeadlineExceeded` to `failsafe`, and the
+heap arms referee the frees.
+
+The rouse sharpened the semantics — **a wound task cannot linger in a
+wait** (due-now sticky through `sl_push`; the wind-up propagates into each
+new awaitee at resume) — which flipped executor_windup_trap.npk: its finite
+swallower now DRAINS and completes cleanly, the cooperative path working
+for the first time. That test spins forever now to earn its trap, and
+windup_drain.npk pins the drain.

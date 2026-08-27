@@ -368,7 +368,19 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         if (idx < 0i32) {
             int64:dat = raw pos_end(s.span);
             if (x.cursor >= dat) { dat = x.cursor + 1i64; }
-            discard(raw reg_add(x, id.index, dat));
+            int32:ni = raw reg_add(x, id.index, dat);
+            // A DROPPABLE LOCAL IS USED AT ITS SCOPE'S EXIT (D-183, 1.2.4b):
+            // the drop reads the value there, so its life runs past its last
+            // textual mention. Recorded at the function's end — the same
+            // conservative position `defer` bodies and `@x` already take,
+            // under the walk's doctrine that source order may only err
+            // toward MORE crossing. The checker marked which var-decls own;
+            // a function with no suspensions never consults any of this.
+            if (raw exprtypes_owning_decl(x.ets, id.index)) {
+                if (x.fn_end > x.luse[ni => int64]) {
+                    x.luse[ni => int64] = x.fn_end;
+                }
+            }
         }
         pass NIL;
     }

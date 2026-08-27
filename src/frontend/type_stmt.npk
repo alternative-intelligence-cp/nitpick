@@ -56,7 +56,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, id);
 
-    if (s.kind == StmtKind.StmtVarDeclStmt) { drop check_var_decl(e, s); pass NIL; }
+    if (s.kind == StmtKind.StmtVarDeclStmt) { drop check_var_decl(e, id, s); pass NIL; }
     if (s.kind == StmtKind.StmtAssignStmt)  { drop check_assign(e, s);   pass NIL; }
     if (s.kind == StmtKind.StmtPassStmt)    { drop check_pass(e, s);     pass NIL; }
     if (s.kind == StmtKind.StmtFailStmt)    { drop check_fail(e, s);     pass NIL; }
@@ -484,10 +484,23 @@ func:check_cond = NIL(ExprTyper->:e, StmtNode:s) never fails {
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
 // inferred, the type was written down and the literal reads it.
-func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) never fails {
+func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:ann = raw stmt_decl_type(s);
     int32:want = raw resolve_type(@r, ann, e.scope);
+
+    // AN OWNING DECL IS RECORDED FOR THE SUSPEND WALK (D-183, 1.2.4b): its
+    // drop at scope exit is a use the source text does not show, so a local
+    // of an owning type must be frame-resident whenever a suspension sits
+    // between its declaration and the function's end — even when its last
+    // MENTION is earlier. The checker is where the declared type is resolved,
+    // so the fact is recorded here and travels on `ExprTypes` like `cross`.
+    // Before the init check: an uninitialised owning decl still drops.
+    if (want != 0i32) {
+        if (raw type_drops(e.types, want, 64i32)) {
+            drop exprtypes_mark_owning_decl(e.expr_types, sid.index);
+        }
+    }
 
     ExprId:init = raw stmt_decl_init(e.ast, s);
     if (raw expr_is_none(init)) { pass NIL; }

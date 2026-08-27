@@ -111,6 +111,13 @@ pub struct:ExprTypes = {
     wild int32->:cross;
     int32:ccount;
     int32:ccap;
+    // Var-decl statements whose DECLARED type owns something (D-183, 1.2.4b)
+    // — recorded by the checker, read by the suspend walk, which extends such
+    // a local's life to its scope's exit: the drop is a use the source text
+    // does not show. Same shape as `cross` for the same reason.
+    wild int32->:odecl;
+    int32:ocount;
+    int32:ocap;
 };
 
 pub func:exprtypes_init = ExprTypes(int32:n) never fails {
@@ -123,6 +130,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     wild int8->:ctr = alloc(size * #size_of<int32>());
     wild int8->:cft = alloc(size * #size_of<int32>());
 
+    wild int8->:ods = alloc(16i64 * #size_of<int32>());
     wild int8->:crs = alloc(16i64 * #size_of<int32>());
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
@@ -132,7 +140,9 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              callee_ft: cft =>! wild int32->,
                              count: size =>! int32,
                              cross: crs =>! wild int32->,
-                             ccount: 0i32, ccap: 16i32 };
+                             ccount: 0i32, ccap: 16i32,
+                             odecl: ods =>! wild int32->,
+                             ocount: 0i32, ocap: 16i32 };
     int64:i = 0i64;
     while (i < size) {
         t.items[i] = 0i32;
@@ -407,6 +417,37 @@ pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails 
     int32:i = 0i32;
     while (i < t.ccount) {
         if (t.cross[i => int64] == stmt_index) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// Mark one var-decl statement as declaring an OWNING local (D-183, 1.2.4b).
+// Idempotent, like the crossing mark above.
+pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < t.ocount) {
+        if (t.odecl[i => int64] == stmt_index) { pass NIL; }
+        i = i + 1i32;
+    }
+    if (t.ocount >= t.ocap) {
+        int64:ncap = (t.ocap => int64) * 2i64;
+        wild int8->:nm = ralloc(t.odecl =>! wild int8->, ncap * #size_of<int32>());
+        t.odecl = nm =>! wild int32->;
+        t.ocap = ncap =>! int32;
+    }
+    t.odecl[t.ocount => int64] = stmt_index;
+    t.ocount = t.ocount + 1i32;
+    pass NIL;
+};
+
+// Does this var-decl statement declare an owning local? Read by the suspend
+// walk, which extends the local's life to the function's end — the drop at
+// scope exit is a use no textual mention shows.
+pub func:exprtypes_owning_decl = bool(ExprTypes->:t, int32:stmt_index) never fails {
+    int32:i = 0i32;
+    while (i < t.ocount) {
+        if (t.odecl[i => int64] == stmt_index) { pass true; }
         i = i + 1i32;
     }
     pass false;

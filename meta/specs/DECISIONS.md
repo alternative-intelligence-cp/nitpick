@@ -12777,6 +12777,54 @@ it. A `dyn` moved into a coercion ARGUMENT is a temporary, and temporaries do
 not drop yet — that cell rides the recorded statement-end-drops debt. Channels
 of `dyn` stay behind the owning-element rung until 1.2.5.
 
+### Async bodies drop, and the flag crosses with the value (1.2.4b)
+
+A coroutine ran no drops at all until this subcycle — a drop flag was an
+alloca and an alloca dies between `resume` calls, so the machinery was gated
+off rather than silently wrong. Three pieces closed it:
+
+- **The suspend walk widened.** A droppable local is USED at its scope's
+  exit — the drop reads it there — so its life runs past its last textual
+  mention. The checker records which var-decls declare owning types
+  (`ExprTypes`, beside the crossing marks), and the walk extends such a
+  local's use to the function's end: the same conservative position `defer`
+  bodies and `@x` already take, under the walk's doctrine that source order
+  may only err toward MORE crossing.
+- **A crossing local's flag byte crosses with it.** The frame gains one i8
+  slot per owning `move` parameter and per owning crossing var-decl,
+  appended after the crossing region so every established index keeps its
+  meaning. Parameter flags are seeded `1` in state 0 — it runs exactly once
+  per task, so no spawn site has to know the layout; a var-decl's flag needs
+  no seed, because its declaration stores it and dominates every read
+  dynamically, reused frames included. A local the widened walk did NOT
+  frame is suspension-free to the function's end, so its alloca flag and
+  every read of it sit inside one resume call.
+- **Every unwind runs the same code.** Completion, `pass`/`fail`, and the
+  cooperative wind-up (D-062: a wound task learns at its next resume) all
+  route through the defers-then-drops walk, so drops-on-cancel cost no
+  per-state teardown machinery: the resume that notices the wind-up unwinds
+  the body's own scopes.
+
+Driving the wind-up for the first time found two dormant defects beside the
+drops: `npk_windup_all` DUE'd a wound sleeper without rousing its owner
+executor — a mark nobody looks at while that executor futex-waits toward the
+task's own far deadline is not a wind-up — so it now follows the channel
+waker's protocol (due-now `1`, park word, futex wake); and the join's GRACE
+wait pumped the joiner's own executor even for a THREAD child, which found
+nothing ready, nothing sleeping, work outstanding — the deadlock trap. The
+grace wait now forks on the child's kind exactly like the first wait.
+
+The rouse SHARPENED the wind-up semantics: **a wound task cannot linger in a
+wait.** Due-now is sticky through `npk_sl_push`, every park returns
+immediately, and the wind-up propagates into each new awaitee at resume — so
+a task that swallows its wind-up (`?|` means one thing everywhere) and has
+FINITE waits left drains them and completes cleanly inside the grace, while
+one that loops without bound spins until the grace expires and the join
+traps `DeadlineExceeded`. Before the rouse, one swallow put the task back to
+sleep for a full fresh deadline and the cooperative path was dead on
+arrival; executor_windup_trap.npk now spins to earn its trap, and
+windup_drain.npk pins the courtesy half.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

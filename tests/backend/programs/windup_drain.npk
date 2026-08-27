@@ -1,0 +1,39 @@
+// expect-exit: 42
+//
+// THE COOPERATIVE PATH DRAINS A FINITE SWALLOWER (D-177, 1.2.4b). This
+// child swallows its wind-up and tries to sleep three more times. A wound
+// task cannot linger in a wait — `windup_all` marks it due-now, every park
+// returns immediately, and the wind-up propagates into each new awaitee at
+// resume, which fails without sleeping — so the loop drains, the child
+// reaches its own `pass`, and the join completes CLEANLY inside the grace.
+// This is the exact shape executor_windup_trap.npk used when the wind-up
+// mechanism could not actually wake a sleeper; that test now spins forever
+// to earn its trap, and this one pins the courtesy half: swallowing a
+// wind-up is survivable when the remaining work is finite.
+mod:windup_drain;
+async func:yielding = NIL(int32:n) {
+    while (n > 0i32) {
+        await sleep(raw duration_secs(30i64)) ?| NIL;   // swallowed each time
+        n = n - 1i32;
+    }
+    pass NIL;
+};
+async func:parent = int32(int32:_~v) {
+    drop yielding(3i32);
+    pass 42i32;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int32:r = await parent(0i32) ?| 7i32;
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (DeadlineExceeded) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
