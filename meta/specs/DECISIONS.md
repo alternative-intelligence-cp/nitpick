@@ -3604,8 +3604,32 @@ anything decided here.
 > crossing while `Guard<T>->` stays refused; and **`acquire` the reserved
 > word interns its own spelling in name position** — it was reserved FOR this
 > operation, and a keyword token carries no intern, so `.acquire(` is its one
-> legal home. `RwLock`, `CondVar` (timed only) and `Barrier` remain 1.1.11's
-> open half.
+> legal home.
+>
+> **The rest of the table landed at 1.1.11b.** `RwLock<T, LEVEL>`: `read`
+> returns `RGuard<T>` — a shared hold whose `.value` is READ-ONLY (a write
+> through it is refused as the unsynchronized mutation the write lock exists
+> to serialize) and whose drop releases a reader; `write` returns the same
+> `Guard<T>` a mutex does, because an exclusive hold is ONE meaning
+> everywhere — which is why the cell carries a KIND and one
+> `npk_guard_release` chooses the wake policy (a mutex wakes one, a writer
+> release wakes the crowd). `CondVar<LEVEL>`: `timedwait(guard, deadline)`
+> LENDS the guard, releases its mutex link-first (no lost signal), and
+> reacquires under the same absolute deadline; on DeadlineExceeded the guard
+> is SPENT — holding a lock past an expired deadline is the unbounded
+> acquire this decision forbids — so the lent guard's cell is nulled, its
+> drop releases nothing, and the caller re-acquires explicitly. POSIX
+> reacquires unboundedly here; Nitpick deliberately does not.
+> `signal`/`broadcast` never suspend and never fail. `Barrier<N, LEVEL>` —
+> the spec table wrote `Barrier<N>`, and this decision's own sentence
+> ("every blocking primitive is levelled") corrects it — has `arrive` alone:
+> the N-th arrival moves the GENERATION and wakes everyone; a timed-out or
+> wound-up party has NOT arrived and hands its slot back under the cell's
+> lock, so the next round completes instead of wedging one short. The
+> ordering analysis was refined in kind: `acquire`/`read`/`write` yield
+> HOLDS (binding one raises the held level for the rest of the block);
+> `timedwait`/`arrive` are ordered against what the caller holds but yield
+> none — binding their `Result<NIL>` raises nothing.
 
 `--verify-concurrency` is documented as verifying "data race **and deadlock**
 freedom". Data-race freedom is accounted for (D-004, D-017, D-032). **Deadlock
