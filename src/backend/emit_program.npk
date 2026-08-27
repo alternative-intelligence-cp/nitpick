@@ -283,13 +283,49 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     while (k < (raw item_member_count(x.ast, td))) {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
-            string:thunk = raw emit_thunk(x, item, td, tm, self_ty, trait_ty,
-                                            sll, vtn);
-            if (thunk.len == 0i64) { pass NIL; }
-            entries = raw string_concat(entries, ", ");
-            entries = raw string_concat(entries,
-                          raw string_concat("ptr ", thunk));
-            slots = slots + 1i32;
+            // AN ASYNC METHOD'S SLOT IS ITS RESUME FUNCTION (D-185, 1.1.12d)
+            // — no thunk: the caller builds the frame (size below) and
+            // drives it; a wrapper function has nothing to add and no
+            // synchronous shape to wrap into.
+            if (raw decl_has(tm, raw DECL_ASYNC())) {
+                string:amn = raw method_symbol_name(x.fe.ctx.types, x.interns,
+                                 self_ty, trait_ty,
+                                 raw intern_get(x.interns, raw decl_name(tm)));
+                entries = raw string_concat(entries, ", ");
+                entries = raw string_concat(entries, raw string_concat("ptr ",
+                              raw resume_fn_sym(x.fe.ctx, item.index, amn)));
+                slots = slots + 1i32;
+            }
+            if (!(raw decl_has(tm, raw DECL_ASYNC()))) {
+                string:thunk = raw emit_thunk(x, item, td, tm, self_ty, trait_ty,
+                                                sll, vtn);
+                if (thunk.len == 0i64) { pass NIL; }
+                entries = raw string_concat(entries, ", ");
+                entries = raw string_concat(entries,
+                              raw string_concat("ptr ", thunk));
+                slots = slots + 1i32;
+            }
+        }
+        k = k + 1i32;
+    }
+    // THE FRAME-SIZE TAIL (D-185, 1.1.12d): one entry per ASYNC method, in
+    // declaration order, after the method slots — the size of the concrete
+    // coroutine's frame, as a pointer-sized constant. `dyn` erases the type
+    // that knows it; the table is where it survives erasure.
+    k = 0i32;
+    while (k < (raw item_member_count(x.ast, td))) {
+        DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, k));
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            if (raw decl_has(tm, raw DECL_ASYNC())) {
+                string:smn = raw method_symbol_name(x.fe.ctx.types, x.interns,
+                                 self_ty, trait_ty,
+                                 raw intern_get(x.interns, raw decl_name(tm)));
+                string:sfr = raw frame_ty_sym(x.fe.ctx, item.index, smn);
+                entries = raw string_concat(entries, ", ");
+                entries = raw cat3(entries, "ptr ",
+                              raw frame_size_sym(sfr));
+                slots = slots + 1i32;
+            }
         }
         k = k + 1i32;
     }
@@ -335,8 +371,21 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     LlType:rll = raw ll_wrap_result(x.fe.ctx, ret);
     if (!(raw ll_is_ok(rll))) { x.tr.enclosing = saved_tb; pass ""; }
 
+    // A POINTER RECEIVER TAKES THE DATA POINTER ITSELF (1.1.12d): a
+    // `Self->` method wants the concrete's ADDRESS, and `%d` already is it —
+    // loading a value and passing it as the address handed the method its
+    // own first bytes as a pointer. Read from the AST node: the receiver's
+    // annotation is `Self->`, a pointer TypeNode, before any resolution.
+    bool:recv_ptr = false;
+    if ((raw fn_param_count(x.ast, tm)) > 0i32) {
+        TypeNode:p0n = raw ast_type(x.ast,
+                           raw param_type(raw ast_decl(x.ast,
+                               raw fn_param(x.ast, tm, 0i32))));
+        if (p0n.kind == TypeKind.TypePointerType) { recv_ptr = true; }
+    }
     string:params = "ptr %d";
     string:args = raw string_concat(sll.text, " %r0");
+    if (recv_ptr) { args = "ptr %d"; }
     int32:pc = raw fn_param_count(x.ast, tm);
     int32:i = 1i32;
     while (i < pc) {
@@ -364,7 +413,9 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     drop irw_raw(x.fe.w, raw cat5("define internal ", rll.text, " ", sym,
                              raw cat3("(", params, ") {")));
     drop irw_label(x.fe.w, "entry");
-    drop irw_line(x.fe.w, raw cat3("%r0 = load ", sll.text, ", ptr %d"));
+    if (!recv_ptr) {
+        drop irw_line(x.fe.w, raw cat3("%r0 = load ", sll.text, ", ptr %d"));
+    }
     string:rv = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(rv, " = call ", rll.text, " ",
                              raw cat4(real, "(", args, ")")));

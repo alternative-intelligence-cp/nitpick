@@ -553,6 +553,16 @@ pub func:fnem_chfin_reclaim = NIL(FnEmitter->:fe, int32:i) never fails {
     pass NIL;
 };
 
+// `@"npk.fsz.<name>"` from `%"npk.frame.<name>"` — the frame-size global's
+// symbol, derived so both sides spell it identically.
+pub func:frame_size_sym = string(string:frame_ty) never fails {
+    if (frame_ty.len < 12i64) { pass (raw string_concat("@\"npk.fsz.bad", "\"")); }
+    Result<string>:inner = string_slice(frame_ty, 12i64, frame_ty.len - 1i64);
+    if (inner.is_error) { pass (raw string_concat("@\"npk.fsz.bad", "\"")); }
+    string:s1 = raw string_concat("@\"npk.fsz.", inner.value);
+    pass (raw string_concat(s1, "\""));
+};
+
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
 //
 // The frame type, the resume function's header, and the entry block that makes
@@ -612,6 +622,14 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
         i = i + 1i32;
     }
     drop irw_frame_type(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
+    // THE FRAME'S SIZE, AS A SYMBOL (D-185, 1.1.12d): the vtable's size tail
+    // references this global rather than the frame type directly — a global
+    // forward-references freely, where a gep constant over a named type
+    // demands the definition first, and vtables are emitted before the
+    // frames of the methods they name.
+    drop irw_raw(fe.w, raw cat5(raw frame_size_sym(fe.frame_ty),
+                      " = internal constant i64 ptrtoint (ptr getelementptr (",
+                      fe.frame_ty, ", ptr null, i32 1) to i64)", ""));
     drop irw_raw(fe.w, raw cat4("define i8 ", fe.resume_sym, "(ptr %fr) {", ""));
     drop irw_label(fe.w, "entry");
     drop irw_open_fn(fe.w);

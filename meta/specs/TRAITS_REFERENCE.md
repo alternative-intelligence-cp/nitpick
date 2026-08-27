@@ -535,11 +535,21 @@ earlier contradictory phrasings):
 1. every method takes a `self` parameter — no static methods;
 2. **`Self` appears nowhere but the receiver** — not in a later parameter,
    not in the return, not NESTED anywhere in a type tree (`Optional<Self>`,
-   `Self[]`, `Handle<Self>`, `Self->` all disqualify): behind a vtable the
-   erased value would be read at the wrong layout, and the rule admits no
-   size-based exceptions;
+   `Self[]`, `Handle<Self>` all disqualify): behind a vtable the erased
+   value would be read at the wrong layout, and the rule admits no
+   size-based exceptions. **The receiver itself may be `Self` or `Self->`**
+   (amended at 1.1.12d, D-185): one pointer level exactly — the data
+   pointer IS the erased-safe form, and `Self->->` nests like anything
+   else;
 3. **no generic methods** — type parameters and comptime parameters alike: a
-   vtable slot holds one address, and a generic method is a family of them.
+   vtable slot holds one address, and a generic method is a family of them;
+4. **an `async` method requires a `Self->` receiver** (amended at 1.1.12d,
+   D-185 — the blanket async ban lifted): the vtable carries the concrete
+   coroutine's frame SIZE in a tail after the method slots and its RESUME
+   in the method's slot, so the caller builds the frame from the TRAIT's
+   shape — which works because a pointer receiver is one word whoever
+   implements. A by-value `Self` receiver is the one part of an async
+   signature whose layout stays concrete, so it alone still disqualifies.
 
 A method whose signature mentions an **associated type** also disqualifies
 the trait (D-160) — the projection's layout is unknowable behind erasure,

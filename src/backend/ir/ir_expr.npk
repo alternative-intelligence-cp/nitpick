@@ -3516,6 +3516,222 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     pass ro;
 };
 
+// THE AWAITED `dyn` CALL (D-185, 1.1.12d). The vtable answers the two
+// questions erasure asked: WHICH coroutine (the method slot holds its
+// resume function) and HOW BIG its frame is (the size tail, one entry per
+// async method in declaration order, after the method slots). The header
+// and parameter slots sit at identical offsets in every impl of one trait
+// method — the receiver is a pointer and the signature is the trait's — so
+// the caller fills them through a synthetic PREFIX type and never needs
+// the concrete frame. The drive is the standard inline loop; the resume is
+// re-read from the frame's own slot 0 on every entry, so nothing SSA
+// straddles a suspension.
+func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
+                            ExprNode:cn, Span:at) never fails {
+    ExprId:rid = raw expr_operand(cn);
+    IrVal:rv = raw emit_expr(x, rid);
+    if (!(raw iv_is_ok(rv))) { pass rv; }
+    int32:decl = raw exprtypes_callee(x.et, cid);
+    if (decl == 0i32) { pass (raw iv_broken(at)); }
+    DynSlot:ds = raw dyn_slot_of(x, rv.type_id, decl);
+    if (!ds.found) { pass (raw iv_broken(at)); }
+
+    // the trait's method count and this method's async ordinal
+    int32:btrait = raw exprtypes_callee_trait(x.et, cid);
+    int32:tdecl = raw type_decl_of(x.fe.ctx.types, btrait);
+    if (tdecl == 0i32) { pass (raw iv_broken(at)); }
+    DeclNode:td = raw ast_decl(x.ast, DeclId{ index: tdecl });
+    int32:nmeth = 0i32;
+    int32:aord = 0i32;
+    int32:fnidx = 0i32;
+    int32:tk = 0i32;
+    while (tk < (raw item_member_count(x.ast, td))) {
+        DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, tk));
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            if (fnidx < ds.slot) {
+                if (raw decl_has(tm, raw DECL_ASYNC())) { aord = aord + 1i32; }
+            }
+            fnidx = fnidx + 1i32;
+            nmeth = nmeth + 1i32;
+        }
+        tk = tk + 1i32;
+    }
+
+    // the fat value's two words
+    string:dat = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dat, " = extractvalue ", rv.ll, " ",
+                      raw string_concat(rv.ref, ", 0")));
+    string:vt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(vt, " = extractvalue ", rv.ll, " ",
+                      raw cat3(rv.ref, ", ",
+                          raw int_to_string(ds.word => int64))));
+    string:rsp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rsp, " = getelementptr ptr, ptr ", vt,
+                      ", i64 ", raw int_to_string((ds.slot + 1i32) => int64)));
+    string:rsm = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(rsm, " = load ptr, ptr ", rsp));
+    string:szp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(szp, " = getelementptr ptr, ptr ", vt,
+                      ", i64 ",
+                      raw int_to_string((1i32 + nmeth + aord) => int64)));
+    string:szv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(szv, " = load ptr, ptr ", szp));
+    string:sz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(sz, " = load i64, ptr ", szv));
+    string:fr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(fr, " = call ptr @npk_alloc(i64 ",
+                      sz, ")"));
+
+    // the synthetic PREFIX type: header + the trait-shaped parameters —
+    // unique per await site, so no registry and no redefinition.
+    LlType:rll = raw node_ll(x, cid);
+    if (rll.state != (raw LL_OK())) {
+        pass (raw iv_from_ll_at(x, rll, raw exprtypes_get(x.et, cid), at));
+    }
+    string:rs_inner = raw dynfr_inner_name(x.fe.resume_sym);
+    string:dfr = raw cat5("%\"npk.dynfr.", rs_inner, ".",
+                      raw int_to_string((raw fnem_seg_index(x.fe)) => int64),
+                      "\"");
+    string:dslots = raw cat3("ptr, i32, i32, ", rll.text,
+                      ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr, ptr");
+    int32:cft = raw exprtypes_callee_ft(x.et, cid);
+    int32:dstart = raw expr_list_start(cn);
+    int32:dcount = raw expr_list_count(cn);
+    int32:pi = 0i32;
+    while (pi < dcount) {
+        int32:pw = raw call_param_want(x, cft, 1i32 + pi);
+        LlType:pll = raw ll_type(x.fe.ctx, raw subst_emitted_param(x.fe.ctx, pw));
+        if (!(raw ll_is_ok(pll))) { pass (raw iv_from_ll_at(x, pll, pw, at)); }
+        dslots = raw cat3(dslots, ", ", pll.text);
+        pi = pi + 1i32;
+    }
+    drop irw_frame_type(x.fe.w, raw cat4(dfr, " = type { ", dslots, " }"));
+
+    // the header, exactly as fnem_frame_init writes it — slot 0 is the
+    // vtable's resume rather than a symbol.
+    string:h0 = raw fnem_slot_gep(x.fe, dfr, fr, 0i32);
+    drop irw_line(x.fe.w, raw cat5("store ptr ", rsm, ", ptr ", h0, ""));
+    string:h1 = raw fnem_slot_gep(x.fe, dfr, fr, 1i32);
+    drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", h1, ""));
+    string:h2 = raw fnem_slot_gep(x.fe, dfr, fr, 2i32);
+    drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", h2, ""));
+    string:h4 = raw fnem_slot_gep(x.fe, dfr, fr, 4i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h4, ""));
+    string:h5 = raw fnem_slot_gep(x.fe, dfr, fr, 5i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h5, ""));
+    string:h6 = raw fnem_slot_gep(x.fe, dfr, fr, 6i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h6, ""));
+    string:h7 = raw fnem_slot_gep(x.fe, dfr, fr, 7i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h7, ""));
+    string:h8 = raw fnem_slot_gep(x.fe, dfr, fr, 8i32);
+    drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", h8, ""));
+    string:h9 = raw fnem_slot_gep(x.fe, dfr, fr, 9i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h9, ""));
+    string:h10 = raw fnem_slot_gep(x.fe, dfr, fr, 10i32);
+    drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", h10, ""));
+    string:hex = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hex, " = call ptr @npk_exec()", ""));
+    string:h11 = raw fnem_slot_gep(x.fe, dfr, fr, 11i32);
+    drop irw_line(x.fe.w, raw cat5("store ptr ", hex, ", ptr ", h11, ""));
+
+    // the receiver is parameter 0: the data pointer itself (`Self->`)
+    string:h12 = raw fnem_slot_gep(x.fe, dfr, fr, 12i32);
+    drop irw_line(x.fe.w, raw cat5("store ptr ", dat, ", ptr ", h12, ""));
+    int32:ai = 0i32;
+    while (ai < dcount) {
+        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, dstart, ai) };
+        IrVal:av = raw emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        av = raw emit_fit(x, raw call_param_want(x, cft, 1i32 + ai), move(av), at);
+        if (av.state != (raw LL_OK())) { pass av; }
+        string:ag = raw fnem_slot_gep(x.fe, dfr, fr, 13i32 + ai);
+        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
+                          raw string_concat(", ptr ", ag)));
+        ai = ai + 1i32;
+    }
+
+    // from here the standard drive, with the resume re-read from slot 0
+    drop irw_line(x.fe.w, raw cat4("store ptr ", fr, ", ptr ",
+                      x.fe.awaitee_gep));
+    string:sg = raw fnem_new_seg(x.fe);
+    int32:kk = raw fnem_seg_index(x.fe);
+    drop irw_line(x.fe.w, raw cat5("store i32 ",
+                      raw int_to_string(kk => int64), ", ptr ",
+                      x.fe.state_gep, ""));
+    drop irw_line(x.fe.w, raw cat3("br label %", sg, ""));
+    x.fe.terminated = true;
+    drop s_start(x, sg);
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(w, " = load i32, ptr ",
+                      x.fe.windup_gep, ""));
+    string:wb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(wb, " = icmp ne i32 ",
+                      raw string_concat(w, ", 0")));
+    string:wu_l = raw irw_new_label(x.fe.w, "dwu");
+    string:drv_l = raw irw_new_label(x.fe.w, "ddrv");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", wb, ", label %", wu_l,
+                      raw string_concat(", label %", drv_l)));
+    x.fe.terminated = true;
+    drop s_start(x, wu_l);
+    string:af0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(af0, " = load ptr, ptr ",
+                      x.fe.awaitee_gep, ""));
+    string:cwg = raw fnem_slot_gep(x.fe, dfr, af0, 2i32);
+    drop irw_line(x.fe.w, raw cat4("store i32 ", w, ", ptr ", cwg));
+    drop irw_line(x.fe.w, raw cat3("br label %", drv_l, ""));
+    x.fe.terminated = true;
+    drop s_start(x, drv_l);
+    string:af = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(af, " = load ptr, ptr ",
+                      x.fe.awaitee_gep, ""));
+    string:rf2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(rf2, " = load ptr, ptr ", af));
+    string:rc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rc, " = call i8 ", rf2, "(ptr ",
+                      raw string_concat(af, ")")));
+    string:dn = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(dn, " = icmp eq i8 ",
+                      raw string_concat(rc, ", 0")));
+    string:sus_l = raw irw_new_label(x.fe.w, "dsus");
+    string:dn_l = raw irw_new_label(x.fe.w, "ddn");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", dn, ", label %", dn_l,
+                      raw string_concat(", label %", sus_l)));
+    x.fe.terminated = true;
+    drop s_start(x, sus_l);
+    drop irw_line(x.fe.w, "ret i8 1");
+    x.fe.terminated = true;
+    drop s_start(x, dn_l);
+    string:rg = raw fnem_slot_gep(x.fe, dfr, af, 3i32);
+    string:res = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(res, " = load ", rll.text, ", ptr ",
+                      raw string_concat(rg, "")));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_dalloc(ptr ", af, ")"));
+    drop irw_line(x.fe.w, raw cat4("store ptr null, ptr ",
+                      x.fe.awaitee_gep, "", ""));
+    int32:rt_id = raw exprtypes_get(x.et, cid);
+    IrVal:out = raw iv(move(rll.text), move(res), rt_id);
+    out.wrapped = true;
+    out.inner = "";
+    int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
+    if ((raw type_kind(x.fe.ctx.types, inner_id)) != (raw TY_NIL())) {
+        LlType:it = raw ll_type(x.fe.ctx, inner_id);
+        if (it.state != (raw LL_OK())) {
+            pass (raw iv_from_ll_at(x, it, inner_id, at));
+        }
+        out.inner = move(it.text);
+    }
+    pass out;
+};
+
+// `@"npk.resume.<name>"` minus its dressing — the inner name, for building
+// the per-site synthetic frame-prefix type's own name.
+func:dynfr_inner_name = string(string:sym) never fails {
+    if (sym.len < 15i64) { pass (raw string_concat(sym, "")); }
+    Result<string>:cut = string_slice(sym, 13i64, sym.len - 1i64);
+    if (cut.is_error) { pass (raw string_concat(sym, "")); }
+    pass (raw string_concat(cut.value, ""));
+};
+
 func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // The one pick position that still refuses (D3): a `where` guard. The
     // compare CHAIN re-reads the selector value after a failed guard to test
@@ -3550,6 +3766,19 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:bat = raw await_barrier_arrive(x, cid);
     if (bat != 0i32) {
         pass (raw emit_barrier_arrive(x, id, cid, bat, n.span));
+    }
+    // AN AWAIT THROUGH `dyn` (D-185, 1.1.12d): the concrete callee is
+    // erased, so the frame's size and resume function come from the vtable
+    // — the size tail and the method's slot — and everything else is the
+    // standard child-drive: header, trait-shaped parameter slots, inline
+    // resume loop. Detected by the receiver's type, exactly as the sync
+    // dispatch detects it.
+    ExprNode:dyn_cn = raw ast_expr(x.ast, cid);
+    if (dyn_cn.kind == ExprKind.ExprMethodCallExpr) {
+        int32:dyn_rt = raw exprtypes_get(x.et, raw expr_operand(dyn_cn));
+        if ((raw type_kind(x.fe.ctx.types, dyn_rt)) == (raw TY_DYN())) {
+            pass (raw emit_dyn_await(x, id, cid, dyn_cn, n.span));
+        }
     }
     int32:cdi = raw await_callee_decl(x, cid);
     if (cdi == 0i32) {

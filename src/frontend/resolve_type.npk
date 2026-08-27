@@ -2222,11 +2222,32 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
     // does not exist for a coroutine — `use of undefined value` from llc,
     // which is the compiler discovering at link time what the type system
     // should have said at the declaration.
+    // AN `async` METHOD IS OBJECT-SAFE SINCE 1.1.12d (D-185) — WITH A
+    // `Self->` RECEIVER. The vtable carries the concrete coroutine's FRAME
+    // SIZE in a tail after the method slots, so the caller allocates it,
+    // fills the fixed header and the trait-shaped parameter slots, reads
+    // the resume from the method's slot, and drives inline. That works
+    // because every slot offset is the TRAIT's: a pointer receiver is one
+    // word whoever implements. A BY-VALUE `Self` receiver is the one part
+    // of the signature whose layout stays concrete, so it alone still
+    // disqualifies an async method — the erased data pointer is what the
+    // frame can carry.
     if (raw decl_has(m, raw DECL_ASYNC())) {
-        bad = true;
-        if (report) {
-            drop not_object_safe(r, trait_id, mname,
-                "is `async`, and an `async` method is a coroutine rather than a function: its frame's SIZE belongs to the concrete callee, which `dyn` erases, and a vtable slot is one address with nowhere to put it. Async trait methods dispatch through GENERICS (D-182) — take `<T: Trait>` instead of `dyn Trait`", at);
+        bool:a_ptr_recv = false;
+        if ((raw fn_param_count(r.ast, m)) > 0i32) {
+            TypeNode:ap0 = raw ast_type(r.ast,
+                raw param_type(raw ast_decl(r.ast, raw fn_param(r.ast, m, 0i32))));
+            if (ap0.kind == TypeKind.TypePointerType) {
+                TypeNode:ap1 = raw ast_type(r.ast, raw type_pointee(ap0));
+                a_ptr_recv = (ap1.kind == TypeKind.TypeSelfType);
+            }
+        }
+        if (!a_ptr_recv) {
+            bad = true;
+            if (report) {
+                drop not_object_safe(r, trait_id, mname,
+                    "is `async` with a by-value `Self` receiver: the caller builds the coroutine's frame from the TRAIT's shape, and a pointer receiver (`Self->`) is the one form whose slot is the same size whoever implements — the erased data pointer itself (D-185, 1.1.12d)", at);
+            }
         }
     }
 
@@ -2258,6 +2279,14 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
         if (pidx == 0i32) {
             TypeNode:rt0 = raw ast_type(r.ast, ptype);
             recv_is_self = (rt0.kind == TypeKind.TypeSelfType);
+            // `Self->` IS the erased-safe receiver (1.1.12d): the data
+            // pointer, handed through without a load — the thunk passes `%d`
+            // itself, and an async method's frame slot 12 stores it. One
+            // pointer level, exactly; `Self->->` nests and is refused below.
+            if (rt0.kind == TypeKind.TypePointerType) {
+                TypeNode:rt1 = raw ast_type(r.ast, raw type_pointee(rt0));
+                recv_is_self = (rt1.kind == TypeKind.TypeSelfType);
+            }
         }
 
         if (!recv_is_self) {

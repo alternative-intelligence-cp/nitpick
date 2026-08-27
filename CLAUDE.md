@@ -87,8 +87,17 @@ through `struct_field`'s BOUND walk (three raw sites closed — the drop-body
 generator was reporting "no type named `W`" on nested generic instances),
 the `Ident { Ident :` struct-literal lookahead reads the fourth token, and
 awaited bound-calls in generic bodies substitute before trusting the
-recorded template symbol. Next: 1.1.12d async-behind-`dyn`, then 1.1.13 the
-Bridge.
+recorded template symbol. **1.1.12d landed — 1.1.12 (the reactor and the
+I/O surface) is COMPLETE**: async methods behind `dyn` — the method slot
+holds the concrete RESUME, a size tail (`@"npk.fsz.<frame>"` globals) tells
+the caller how big the frame is, and the await site builds it from the
+TRAIT's shape through a per-site prefix type and drives the standard loop.
+Object safety: async + `Self->` receiver is safe (by-value `Self` alone
+still disqualifies); `Self->` receivers admitted generally — and the sync
+thunks' by-value-receiver latent (handing a method its own first bytes as
+an address) is fixed. `dyn_stream.npk`: one erased `report(dyn Writer…)`,
+two writers, two byte patterns. Next: 1.1.13 the Bridge (D-149); adopting
+`dyn Writer` in npkc's own diagnostics is 1.3 material.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

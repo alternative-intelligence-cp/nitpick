@@ -13206,3 +13206,47 @@ own everything after it.
   nothing emits. Substitution now outranks the recorded symbol whenever the
   receiver's type mentions a parameter, with the receiver's pointer level
   peeled before naming, as `.` always peels (D-098).
+
+## D-185 second addendum — async methods behind `dyn` — **SETTLED at 1.1.12d; 1.1.12 COMPLETE**
+
+**The vtable answers what erasure asked.** An async method's slot holds the
+concrete coroutine's RESUME function (no thunk — there is no synchronous
+shape to wrap), and a SIZE TAIL after the method slots holds one entry per
+async method, in declaration order: a pointer to `@"npk.fsz.<frame>"`, an
+i64 the frame's definition site emits beside itself (a gep constant over a
+named type demands the definition first; a global forward-references
+freely — the vtable is emitted before the frames it names).
+
+**The caller builds the frame from the TRAIT's shape.** Every coroutine
+frame is header (12 fixed slots) + parameters at 12+, and for one trait
+method those offsets are identical across impls — the receiver is a
+pointer and the signature is the trait's; only the locals tail differs,
+and the size entry covers it. The await site allocates the vtable's size,
+writes the header exactly as `fnem_frame_init` does (slot 0 = the slot's
+resume), stores the dyn's DATA POINTER as parameter 0 and the arguments
+after it through a per-site synthetic PREFIX type, and drives the standard
+inline loop — the resume re-read from the frame's own slot 0 at each
+entry, so nothing SSA straddles a suspension. Wind-up, result, and
+reclamation are the ordinary awaited-child protocol, unchanged.
+
+**Object safety, amended (rule 4 narrowed).** An `async` method is
+object-safe WITH a `Self->` receiver — the erased data pointer is what the
+frame can carry. A by-value `Self` receiver is the one part of the
+signature whose layout stays concrete, so it alone still disqualifies an
+async method. And rule 2's receiver exception now admits `Self->` itself
+(one pointer level, exactly): pointer-to-Self IS the erased-safe form —
+which also unblocked every `Self->`-receiver trait behind `dyn`,
+`Reader`/`Writer` included.
+
+**A latent sync defect fixed on the way**: thunks loaded the concrete BY
+VALUE for every receiver, so a `Self->` method called through sync `dyn`
+dispatch would have been handed its own first bytes as an address. A
+pointer receiver now takes `%d` itself, unloaded.
+
+**The §1.1 payoff stands**: one `report(dyn Writer:sink, …)` writes
+through erasure, and WHICH writer decides what lands — `dyn_stream.npk`
+proves it with a plain `ByteWriter` and a family-instance
+`TextWriter<ByteWriter>` (CrLf), the same erased call leaving `\n` in one
+file and `\r\n` in the other. Adopting `dyn Writer` inside npkc's own
+diagnostics is 1.3 self-hosting work (a compiler-internals refactor), and
+is recorded there, not here.

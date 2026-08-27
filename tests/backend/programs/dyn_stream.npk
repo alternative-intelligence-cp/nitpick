@@ -1,0 +1,78 @@
+// expect-exit: 42
+//
+// ASYNC METHODS BEHIND `dyn` (D-185, 1.1.12d) — and the §1.1 payoff: ONE
+// report function writes through `dyn Writer`, and WHICH writer decides
+// what lands. The vtable answers what erasure asked: the method slot holds
+// the concrete coroutine's RESUME, and the size tail its FRAME SIZE; the
+// caller allocates, fills the trait-shaped slots, and drives inline. The
+// second sink is a GENERIC INSTANCE (TextWriter<ByteWriter>, CrLf) — the
+// family vtable path — so the same erased call translates line endings the
+// plain ByteWriter passes through untouched.
+mod:dyn_stream;
+error:E9;
+
+async func:report = int64(dyn Writer:sink, Duration:within) {
+    int64:n = relay await sink.write(string_bytes("warn: x\n"), within);
+    Result<NIL>:f = await sink.flush(within);
+    if (f.is_error) { fail f.err; }
+    pass n;
+};
+
+async func:work = int32() {
+    // sink 1: raw bytes — "\n" stays "\n"
+    Path:p1 = path_parse("/tmp/npk_dyn_stream_raw.tmp") ?! E9;
+    {
+        ByteWriter:b1 = byte_writer_create(p1, raw duration_ms(500i64)) ?! E9;
+        dyn Writer:d1 = move(b1);
+        int64:n1 = await report(d1, raw duration_ms(500i64)) ?! E9;
+        if (n1 != 8i64) { pass 10i32; }
+    }
+    // sink 2: a CrLf TextWriter — the SAME call, translated
+    Path:p2 = path_parse("/tmp/npk_dyn_stream_crlf.tmp") ?! E9;
+    {
+        ByteWriter:b2 = byte_writer_create(p2, raw duration_ms(500i64)) ?! E9;
+        TextWriter<ByteWriter>:t2 = raw text_writer(move(b2), LineEnding.CrLf);
+        dyn Writer:d2 = move(t2);
+        int64:n2 = await report(d2, raw duration_ms(500i64)) ?! E9;
+        if (n2 != 8i64) { pass 11i32; }
+    }
+    // the bytes prove which writer ran
+    {
+        ByteReader:r1 = byte_reader_open(p1, raw duration_ms(500i64)) ?! E9;
+        uint8[16]:buf = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
+                         0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+        int64:g1 = await r1.read(buf[0i64...16i64], raw duration_ms(500i64)) ?! E9;
+        if (g1 != 8i64)         { pass 12i32; }
+        if (buf[7i64] != 10u8)  { pass 13i32; }   // "\n"
+        ByteReader:r2 = byte_reader_open(p2, raw duration_ms(500i64)) ?! E9;
+        int64:g2 = await r2.read(buf[0i64...16i64], raw duration_ms(500i64)) ?! E9;
+        if (g2 != 9i64)         { pass 14i32; }
+        if (buf[7i64] != 13u8)  { pass 15i32; }   // "\r"
+        if (buf[8i64] != 10u8)  { pass 16i32; }   // "\n"
+    }
+    pass 5i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:v = await work() ?! E9;
+    if (v != 5i32) { exit v; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (WouldBlock)       { exit 92i32; },
+        (Interrupted)      { exit 92i32; },
+        (IoEof)            { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
