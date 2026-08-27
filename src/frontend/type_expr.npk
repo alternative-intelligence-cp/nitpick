@@ -1750,6 +1750,40 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         pass (raw tt_pointer(e.types, pointee));
     }
 
+    // `#ptr_add<T>(ptr, offset)` — pointer arithmetic, ELEMENT-scaled
+    // (D-033/D-187): it lowers to `getelementptr T`, so the offset counts
+    // elements of T. Byte math is `T = int8`. Wild-regime work; typed here
+    // like its `#wild_*` siblings.
+    if (raw string_eq(name, "ptr_add")) {
+        if (gc != 1i32) {
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#ptr_add` takes exactly one type argument, the element type it steps by (D-187)",
+                n.span));
+        }
+        if (argc != 2i32) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`#ptr_add` takes two value arguments, a pointer and an element offset",
+                n.span));
+        }
+        int32:pae = raw resolve_type(@r,
+                        TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
+        int32:pap = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        int32:pao = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
+        if (!(raw type_is_invalid(e.types, pap))) {
+            if ((raw type_kind(e.types, pap)) != (raw TY_POINTER())) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`#ptr_add`'s first argument is the pointer to step from", n.span));
+            }
+        }
+        if (!(raw type_is_invalid(e.types, pao))) {
+            if (!(raw type_is_integer(e.types, pao))) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`#ptr_add`'s second argument is an element offset (D-187)", n.span));
+            }
+        }
+        pass (raw tt_pointer(e.types, pae));
+    }
+
     if (raw string_eq(name, "wild_slice")) {
         if (gc != 1i32) {
             pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),

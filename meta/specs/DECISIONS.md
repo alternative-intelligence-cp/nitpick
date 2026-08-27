@@ -13286,3 +13286,44 @@ descriptor's drop closed it — without the drop, EMFILE near 1024.
 What REMAINS of D-183's partial-place item after this: destructuring
 ownership and statement-end temporaries, unchanged; the field/element
 OVERWRITE half is closed.
+
+## D-187 — `#ptr_add<T>` is element-scaled; `atomic_from_ptr` representation OPEN — **PARTIALLY SETTLED at 1.1.13a**
+
+**`#ptr_add<T>(ptr, offset)` — SETTLED.** The offset is in **ELEMENTS of
+T**: it lowers to `getelementptr T`, so `#ptr_add<int64>(p, 1)` advances
+eight bytes and byte arithmetic is `T = int8`. This closes the v3 driver
+plan's §3.3 element-vs-byte question in favour of elements — the reading
+that matches the lowering primitive and needs no scaling multiply. Typed
+beside its `#wild_*` siblings (a `wild`-regime hash-builtin), lowered as a
+gep; `ptr_add.npk` pins the two spellings to the same cell.
+
+**`atomic_from_ptr` representation — OPEN, put to the user.** The v3 plan
+(§3.2) flagged the storability of an aliased atomic as unspecified and
+sidestepped it by "never store it, construct at each use". That resolution
+does not survive contact with the parser: **the fused spelling
+`atomic_from_ptr<int64>(p).load()` does not parse** — a bare-name builtin
+carries no type argument today — so the element type has to come from an
+annotation (`atomic<int64>:head = atomic_from_ptr(p);`), which is exactly
+the STORED form the plan said not to use. And a uniform pointer
+representation for `atomic<T>` is ruled out: it would break inline atomic
+FIELDS (`atomic<int64>:hits;`), which are element-typed inline storage,
+already lowered and tested (D-182). The live options are therefore a
+language-level fork:
+
+- **(A) the fused form, via a small grammar addition** — teach the parser
+  to accept a generic type argument on a bare-name builtin call, so
+  `atomic_from_ptr<int64>(p).load()` parses and dispatches through the
+  pointer with NO stored aliased atomic. Makes "aliased atomics are never
+  stored" structural (the plan's own wish), leaves the shipped inline-atomic
+  representation untouched, adds no type — at the cost of one parser
+  production and its node-kind coverage (a grammar change, hence the user's
+  call). **Recommended.**
+- **(B) a distinct `AtomicRef<T>` type** — no grammar change, but a new
+  type on the concurrency surface and a second atomic-method dispatch path.
+- **(C) a place-aliasing binding** — `atomic<T>:x = atomic_from_ptr(p)`
+  where `x`'s cell-address is `p`; a new binding kind touching addr_of, the
+  drop-flag machinery, and moved-from analysis.
+
+`atomic_from_ptr` stays reserved (in `is_builtin_name` and BUILTIN_REFERENCE)
+and UNTYPED until this is settled; the Bridge's ring access (1.1.13b) is
+what needs it, so it blocks b, not a.

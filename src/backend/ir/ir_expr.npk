@@ -6888,6 +6888,27 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv("i64", move(r), raw exprtypes_get(x.et, id)));
     }
 
+    // `#ptr_add<T>(ptr, offset)` — pointer arithmetic, ELEMENT-scaled
+    // (D-033/D-187): a `getelementptr T`, so the offset counts elements of T
+    // and the type carries the stride. Byte math is `T = int8`.
+    if (raw string_eq(name, "ptr_add")) {
+        int32:paet = raw resolve_type(x.tr,
+                         TypeId{ index: raw ast_id_at(x.ast, start, 0i32) }, x.scope);
+        LlType:pael = raw ll_type(x.fe.ctx, paet);
+        if (!(raw ll_is_ok(pael))) { pass (raw iv_from_ll_at(x, pael, paet, n.span)); }
+        ExprId:papid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
+        ExprId:paoid = ExprId{ index: raw ast_id_at(x.ast, start, gc + 1i32) };
+        IrVal:papv = raw emit_expr(x, papid);
+        if (!(raw iv_is_ok(papv))) { pass papv; }
+        IrVal:paov = raw emit_expr(x, paoid);
+        if (!(raw iv_is_ok(paov))) { pass paov; }
+        string:par = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(par, " = getelementptr ", pael.text,
+                          ", ptr ", raw cat4(papv.ref, ", ", paov.ll,
+                              raw string_concat(" ", paov.ref))));
+        pass (raw iv("ptr", move(par), raw exprtypes_get(x.et, id)));
+    }
+
     // `#wild_ptr<T>(addr)` — the ONE place an integer becomes a pointer (D-019).
     if (raw string_eq(name, "wild_ptr")) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, gc) };
