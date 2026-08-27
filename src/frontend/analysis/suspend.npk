@@ -131,8 +131,8 @@ pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
     pass x;
 };
 
-func:suspend_err = NIL(Suspend->:x, string:msg, Span:sp) never fails {
-    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_INTERNAL(), msg, sp));
+func:suspend_err = NIL(Suspend->:x, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_INTERNAL(), move(msg), sp));
     pass NIL;
 };
 
@@ -673,8 +673,8 @@ func:expr_is_literal_kind = bool(ExprKind:k) never fails {
     pass (k == ExprKind.ExprSentinelLiteral);
 };
 
-func:fe_err = NIL(Suspend->:x, string:msg, Span:sp) never fails {
-    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_FIRST_EVAL(), msg, sp));
+func:fe_err = NIL(Suspend->:x, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_FIRST_EVAL(), move(msg), sp));
     pass NIL;
 };
 

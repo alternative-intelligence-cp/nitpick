@@ -15,7 +15,12 @@ func:render = string(int32:code) never fails {
 
 func:main = int32(cstring[]:_~argv) {
     string:msg = raw render(19i32);
-    drop wild_release_all();
+    // `wild_release_all()` used to sit here, appeasing the leak check before
+    // the managed lowering existed. Under D-183 the drops ARE the cleanup, and
+    // a wholesale release before scope exit frees the very bodies the drops
+    // are about to free again — the interim's tool colliding with the thing
+    // that replaced it. It remains what it always was: failsafe's instrument
+    // (leak_cleanup exercises that), not ordinary main's.
     exit 0i32;
 };
 

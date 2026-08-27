@@ -41,16 +41,16 @@ pub func:diag_make = Diagnostic(int32:severity, move string:code, move string:me
     pass d;
 };
 
-pub func:diag_error = Diagnostic(string:code, string:message, Span:span) never fails {
-    pass (raw diag_make(2i32, code, message, span));
+pub func:diag_error = Diagnostic(move string:code, move string:message, Span:span) never fails {
+    pass (raw diag_make(2i32, move(code), move(message), span));
 };
 
-pub func:diag_warning = Diagnostic(string:code, string:message, Span:span) never fails {
-    pass (raw diag_make(1i32, code, message, span));
+pub func:diag_warning = Diagnostic(move string:code, move string:message, Span:span) never fails {
+    pass (raw diag_make(1i32, move(code), move(message), span));
 };
 
-pub func:diag_note = Diagnostic(string:code, string:message, Span:span) never fails {
-    pass (raw diag_make(0i32, code, message, span));
+pub func:diag_note = Diagnostic(move string:code, move string:message, Span:span) never fails {
+    pass (raw diag_make(0i32, move(code), move(message), span));
 };
 
 // ---------------------------------------------------------------------------
@@ -64,13 +64,24 @@ pub func:diag_note = Diagnostic(string:code, string:message, Span:span) never fa
 // ---------------------------------------------------------------------------
 
 pub struct:DiagList = {
-    Diagnostic[256]:items;
+    // WILD STORAGE, NOT AN INLINE ARRAY (D-183, 1.2.3). `Diagnostic[256]`
+    // by value made the LIST an owning aggregate, and its drop walked all 256
+    // slots — roughly 250 of them uninitialised stack garbage. A garbage
+    // header whose capacity happened non-zero handed `dalloc` a plausible
+    // pointer, which freed an INNOCENT LIVE CHUNK: stage 1's emission of one
+    // type string turned to sink garbage, differently each run. Every other
+    // table in this compiler is wild storage behind a pointer, which drops
+    // walk PAST (a pointer is not an owner); this was the one exception, and
+    // the drop machinery is what found it.
+    wild Diagnostic->:items;
     int64:count;
     bool:overflowed;
 };
 
 pub func:diaglist_init = DiagList() never fails {
-    DiagList:l = DiagList{ items: [], count: 0i64, overflowed: false };
+    wild int8->:m = alloc(256i64 * #size_of<Diagnostic>());
+    DiagList:l = DiagList{ items: m =>! wild Diagnostic->,
+                           count: 0i64, overflowed: false };
     pass l;
 };
 
@@ -134,7 +145,24 @@ pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) never fails {
     if (i >= list.count) {
         !!! BoundsId;
     }
-    pass list.items[i];
+    // A DEEP-VIEWED COPY (D-183): the container keeps ownership, and every
+    // string field in the returned value is a cap-0 view — so a caller's
+    // flagged local dropping it frees nothing. By-value ergonomics for the
+    // 40-odd call sites, at the cost of rebuilding one small struct.
+    pass (raw diag_make_view(
+        list.items[i].severity,
+        raw string_from_bytes(list.items[i].code.ptr, list.items[i].code.len),
+        raw string_from_bytes(list.items[i].message.ptr, list.items[i].message.len),
+        list.items[i].span));
+};
+
+// The view-building twin of `diag_make`: takes headers that already own
+// nothing and stores them as they are.
+func:diag_make_view = Diagnostic(int32:severity, move string:code,
+                                 move string:message, Span:span) never fails {
+    Diagnostic:d = Diagnostic{ severity: severity, code: move(code),
+                               message: move(message), span: span };
+    pass d;
 };
 
 pub func:diaglist_has_errors = bool(DiagList->:list) never fails {

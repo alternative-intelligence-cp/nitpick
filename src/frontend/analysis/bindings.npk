@@ -414,9 +414,9 @@ func:expr_is_literal = bool(ExprKind:k) never fails {
     pass (k == ExprKind.ExprSentinelLiteral);
 };
 
-func:assign_err = NIL(Assign->:x, string:code, string:msg, Span:sp) never fails {
+func:assign_err = NIL(Assign->:x, move string:code, move string:msg, Span:sp) never fails {
     if (x.quiet) { pass NIL; }
-    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 

@@ -28,14 +28,19 @@ mod:nio;
 // `\r\n` and lone `\r` become `\n`; everything else passes through. The fast
 // path returns the INPUT when it contains no `\r` at all — one scan, no copy —
 // which is every file this project's own tools will ever read back.
-pub func:nio_normalize = string(string:s) never fails {
+pub func:nio_normalize = string(string:s) {
     bool:seen_cr = false;
     int64:i = 0i64;
     while (i < s.len) {
         if (s.ptr[i] == 13u8) { seen_cr = true; break; }
         i = i + 1i64;
     }
-    if (!seen_cr) { pass s; }
+    // AN OWNED RESULT ON EVERY PATH (D-183). `pass s` returned the LENT
+    // parameter — a header sharing a body the caller still owns, which the
+    // caller of THIS function's caller then freed out from under everyone.
+    // The unchanged case pays one copy; ownership that varies by path is the
+    // kind of context-dependence the blueprint philosophy refuses anyway.
+    if (!seen_cr) { pass (relay string_concat(s, "")); }
 
     // The result is never longer than the input: `\r\n` shrinks, `\r` maps 1:1.
     wild int8->:out = alloc(s.len);
@@ -55,19 +60,25 @@ pub func:nio_normalize = string(string:s) never fails {
         }
         i = i + 1i64;
     }
-    pass (raw string_from_bytes(out, o));
+    // `string_from_bytes` is a VIEW (cap 0) over the scratch buffer; the copy
+    // makes an owner, and the scratch is freed here — it was a wild alloc
+    // that leaked before, which D-151's exit check reported the moment drops
+    // stopped masking it.
+    string:owned = relay string_concat(raw string_from_bytes(out, o), "");
+    drop dalloc(out =>! wild int8->);
+    pass owned;
 };
 
 // A text read IS read-then-normalize. There is no way to text-read without the
 // discipline, and no way to get it by accident on the byte path (read_file).
 pub func:nio_read_text = string(cstring:path) {
     string:text = relay read_file(path);
-    pass (raw nio_normalize(text));
+    pass (relay nio_normalize(text));
 };
 
 pub func:nio_stdin_text = string() {
     string:text = relay read_stdin();
-    pass (raw nio_normalize(text));
+    pass (relay nio_normalize(text));
 };
 
 // --- writing: the text writer ---------------------------------------------------
@@ -199,6 +210,17 @@ pub func:nio_line = NIL(NioW->:w, string:s) {
 pub func:nio_end = NIL(NioW->:w) {
     Result<NIL>:r = nio_flush(w);
     if (r.is_error) { fail r.err; }
+    // THE BUFFER DIES WITH THE WRITER (D-183 uncovered this): it was never
+    // freed, and every finished writer leaked its buffer — masked for as long
+    // as tests called `wild_release_all()` before exiting, and reported by
+    // D-151's exit check the moment they stopped. Freed after the flush, on
+    // BOTH paths, before the close whose error must still carry.
+    if (w.cap > 0i64) {
+        drop dalloc(w.buf =>! wild int8->);
+        w.buf = NULL;
+        w.cap = 0i64;
+        w.len = 0i64;
+    }
     if (w.owned) {
         pass (relay close(w.sink));
     }

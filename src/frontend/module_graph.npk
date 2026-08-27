@@ -137,12 +137,12 @@ pub func:graph_find = int32(ModuleGraph->:g, int32:file) never fails {
 // arrives", and the first caller that had not was a test.
 pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never fails {
     string:path = raw path_normalise(raw_path);
-    Result<int32>:loaded = srcmgr_load(@g.sm, path);
+    Result<int32>:loaded = srcmgr_load(@g.sm, raw string_concat(path, ""));
     if (loaded.is_error) {
         string:m1 = raw string_concat("cannot read `", path);
         string:m2 = raw string_concat(m1, "`");
         drop diaglist_push(g.diags,
-            raw diag_error(raw RESOLVE_NO_SUCH_FILE(), m2, from));
+            raw diag_error(raw RESOLVE_NO_SUCH_FILE(), move(m2), from));
         pass (0i32 - 1i32);
     }
     int32:file = loaded.value;
@@ -290,7 +290,7 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) neve
                     string:m2 = raw string_concat(m1,
                         "` is declared by the prelude, so a program cannot declare it: a local one would silently take over, and `#[derive]` would then generate an implementation of a trait the compiler knows nothing about");
                     drop diaglist_push(g.diags,
-                        raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
+                        raw diag_error(raw RESOLVE_DUPLICATE(), move(m2), at));
                 }
             }
         }
@@ -416,7 +416,7 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
             string:m4 = raw string_concat(m3, " and ");
             string:m5 = raw string_concat(m4, nested);
             drop diaglist_push(g.diags,
-                raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, d.span));
+                raw diag_error(raw RESOLVE_AMBIGUOUS(), move(m5), d.span));
             pass NIL;
         }
         discard(raw graph_load(g, flat, d.span));
@@ -445,7 +445,7 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
         }
     }
     drop diaglist_push(g.diags,
-        raw diag_error(raw RESOLVE_NO_SUCH_FILE(), n5, d.span));
+        raw diag_error(raw RESOLVE_NO_SUCH_FILE(), move(n5), d.span));
     pass NIL;
 };
 
@@ -596,7 +596,7 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) never fails {
                     string:m2 = raw string_concat(m1,
                         "` contains itself, so its size cannot be computed; a `->` breaks the cycle because a pointer is one word whatever it points at");
                     drop diaglist_push(g.diags,
-                        raw diag_error(raw RESOLVE_CYCLE(), m2, d.span));
+                        raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
                 }
             }
             i = i + 1i32;
@@ -680,7 +680,7 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) never fai
                     string:m4 = raw string_concat(m3,
                         " of this type; the second is unreachable, because a lookup by name finds the first and gets no say in which was meant");
                     drop diaglist_push(g.diags,
-                        raw diag_error(raw RESOLVE_DUPLICATE(), m4, b.span));
+                        raw diag_error(raw RESOLVE_DUPLICATE(), move(m4), b.span));
                 }
                 j = j + 1i32;
             }
@@ -838,7 +838,7 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
         string:m3 = raw string_concat(m2, nm);
         string:m4 = raw string_concat(m3, "`");
         drop diaglist_push(g.diags,
-            raw diag_error(raw RESOLVE_NO_SUCH_NAME(), m4, at));
+            raw diag_error(raw RESOLVE_NO_SUCH_NAME(), move(m4), at));
         pass NIL;
     }
 
@@ -850,7 +850,7 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
         string:p3 = raw string_concat(p2, target);
         string:p4 = raw string_concat(p3, "`");
         drop diaglist_push(g.diags,
-            raw diag_error(raw RESOLVE_PRIVATE(), p4, at));
+            raw diag_error(raw RESOLVE_PRIVATE(), move(p4), at));
         drop diaglist_push(g.diags,
             raw diag_note(raw RESOLVE_PRIVATE(), "declared here",
                           raw symbol_span(@g.ast, @g.tab, sym)));
@@ -931,7 +931,7 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                     string:m4 = raw string_concat(m3,
                         "`; the local declaration wins");
                     drop diaglist_push(g.diags,
-                        raw diag_warning(raw RESOLVE_SHADOWED(), m4, at));
+                        raw diag_warning(raw RESOLVE_SHADOWED(), move(m4), at));
                     if (clash != 0i32) {
                         drop diaglist_push(g.diags,
                             raw diag_note(raw RESOLVE_SHADOWED(),
@@ -971,7 +971,7 @@ func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
             }
         }
         drop diaglist_push(g.diags,
-            raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
+            raw diag_error(raw RESOLVE_DUPLICATE(), move(m2), at));
     }
     pass NIL;
 };
@@ -1003,5 +1003,5 @@ pub func:module_basename_intern = int32(ModuleGraph->:g, int32:file,
         }
     }
     string:b = string_slice(p, start, endx) ?! ProvenSlice;
-    pass (raw intern_add(it, b));
+    pass (raw intern_add(it, move(b)));
 };

@@ -123,10 +123,10 @@ func:reach_operand = NIL(Reach->:x, ExprId:id) never fails {
 
 // A prelude system constant BY NAME, into the set — the resolve pass bound
 // them into the root scope, so the lookup is one symbol away.
-func:reach_add_system = NIL(Reach->:x, string:sname) never fails {
+func:reach_add_system = NIL(Reach->:x, move string:sname) never fails {
     if (x.prelude_scope == 0i32) { pass NIL; }
     int32:sym = raw scope_lookup_local(x.tab, x.prelude_scope,
-                    raw intern_add(x.interns, sname));
+                    raw intern_add(x.interns, move(sname)));
     if (sym == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym);
     if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }

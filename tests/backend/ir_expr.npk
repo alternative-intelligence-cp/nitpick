@@ -218,8 +218,8 @@ func:main = int32(cstring[]:_~argv) {
     SourceManager:sm = raw srcmgr_init();
     ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f1, "calc", 0i32, i32t));
-    discard(raw fnem_param(@f1, nx, i32t));
-    discard(raw fnem_param(@f1, ny, i32t));
+    discard(raw fnem_param(@f1, nx, i32t, false));
+    discard(raw fnem_param(@f1, ny, i32t, false));
     drop fnem_open(@f1);
     IrVal:v1 = raw emit_expr(@x1, prod);
     if (!(raw iv_is_ok(v1)))                                 { exit 10i32; }
@@ -233,10 +233,10 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f2 = raw fnem_init(@w2, @c);
     ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f2, "cmp", 0i32, types.t_bool));
-    discard(raw fnem_param(@f2, nc1, c8t));
-    discard(raw fnem_param(@f2, nc2, c8t));
-    discard(raw fnem_param(@f2, nx, i32t));
-    discard(raw fnem_param(@f2, ny, i32t));
+    discard(raw fnem_param(@f2, nc1, c8t, false));
+    discard(raw fnem_param(@f2, nc2, c8t, false));
+    discard(raw fnem_param(@f2, nx, i32t, false));
+    discard(raw fnem_param(@f2, ny, i32t, false));
     drop fnem_open(@f2);
     IrVal:vc = raw emit_expr(@x2, cmp_c);
     if (!(raw iv_is_ok(vc)))                                 { exit 20i32; }
@@ -250,9 +250,9 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f3 = raw fnem_init(@w3, @c);
     ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f3, "casts", 0i32, i32t));
-    discard(raw fnem_param(@f3, nu, u32t));
-    discard(raw fnem_param(@f3, nx, i32t));
-    discard(raw fnem_param(@f3, ny, i64t));
+    discard(raw fnem_param(@f3, nu, u32t, false));
+    discard(raw fnem_param(@f3, nx, i32t, false));
+    discard(raw fnem_param(@f3, ny, i64t, false));
     drop fnem_open(@f3);
     IrVal:cu = raw emit_expr(@x3, widen_u);
     if (!(raw iv_is_ok(cu)))                                 { exit 30i32; }
@@ -266,8 +266,8 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f4 = raw fnem_init(@w4, @c);
     ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f4, "andand", 0i32, types.t_bool));
-    discard(raw fnem_param(@f4, nb, types.t_bool));
-    discard(raw fnem_param(@f4, nb2, types.t_bool));
+    discard(raw fnem_param(@f4, nb, types.t_bool, false));
+    discard(raw fnem_param(@f4, nb2, types.t_bool, false));
     drop fnem_open(@f4);
     IrVal:va = raw emit_expr(@x4, conj);
     if (!(raw iv_is_ok(va)))                                 { exit 40i32; }
@@ -279,8 +279,8 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f5 = raw fnem_init(@w5, @c);
     ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f5, "unary", 0i32, i32t));
-    discard(raw fnem_param(@f5, nx, i32t));
-    discard(raw fnem_param(@f5, nb, types.t_bool));
+    discard(raw fnem_param(@f5, nx, i32t, false));
+    discard(raw fnem_param(@f5, nb, types.t_bool, false));
     drop fnem_open(@f5);
     discard(raw emit_expr(@x5, neg));
     discard(raw emit_expr(@x5, not_b));

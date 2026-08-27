@@ -127,9 +127,9 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
 // would otherwise report the same finding once per round — and the diagnostic
 // list's duplicate suppression would hide that rather than fix it, which is
 // exactly the mistake 0.4.7 made when two argument errors shared a span.
-func:escape_err = NIL(Escape->:x, string:code, string:msg, Span:sp) never fails {
+func:escape_err = NIL(Escape->:x, move string:code, move string:msg, Span:sp) never fails {
     if (!x.reporting) { pass NIL; }
-    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 
@@ -909,11 +909,11 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
 // was BUILT with one in this frame, which is the narrow case this catches. Modelling
 // the pattern properly belongs with 0.5.4, where the pattern-to-type machinery is
 // built; refusing until then is a decision, not a gap left open.
-func:escape_untracked = NIL(Escape->:x, ExprId:id, string:msg) never fails {
+func:escape_untracked = NIL(Escape->:x, ExprId:id, move string:msg) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (raw escape_expr(x, id, raw ESCAPE_DEPTH())) {
         ExprNode:n = raw ast_expr(x.ast, id);
-        drop escape_err(x, raw BORROW_UNTRACKED(), msg, n.span);
+        drop escape_err(x, raw BORROW_UNTRACKED(), move(msg), n.span);
     }
     pass NIL;
 };

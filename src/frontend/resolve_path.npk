@@ -77,7 +77,16 @@ pub func:rootlist_count = int32(RootList->:l) never fails { pass l.count; };
 pub func:rootlist_at = Root(RootList->:l, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
     if (i >= l.count) { !!! BoundsIndex; }
-    pass l.items[i => int64];
+    // A DEEP-VIEWED COPY (D-183): the container keeps ownership, and every
+    // string field in the returned value is a cap-0 view — so a caller's
+    // flagged local dropping it frees nothing. By-value ergonomics for the
+    // 40-odd call sites, at the cost of rebuilding one small struct.
+    Root:r = Root{
+        name: raw string_from_bytes(l.items[i => int64].name.ptr,
+                                    l.items[i => int64].name.len),
+        dir: raw string_from_bytes(l.items[i => int64].dir.ptr,
+                                   l.items[i => int64].dir.len) };
+    pass r;
 };
 
 // --- the outcome -----------------------------------------------------------------
@@ -218,12 +227,12 @@ pub func:report_resolution = NIL(DiagList->:diags, Resolution:r,
         string:m4 = raw string_concat(m3, " and ");
         string:m5 = raw string_concat(m4, r.second);
         drop diaglist_push(diags,
-            raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, span));
+            raw diag_error(raw RESOLVE_AMBIGUOUS(), move(m5), span));
         pass NIL;
     }
     string:n1 = raw string_concat("cannot find `", target);
     string:n2 = raw string_concat(n1, "`");
     drop diaglist_push(diags,
-        raw diag_error(raw RESOLVE_NO_SUCH_FILE(), n2, span));
+        raw diag_error(raw RESOLVE_NO_SUCH_FILE(), move(n2), span));
     pass NIL;
 };

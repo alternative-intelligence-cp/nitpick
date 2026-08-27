@@ -2121,8 +2121,15 @@ def main(argv):
                     rr = subprocess.run([s1, os.path.join(ROOT, "src", "main.npk")],
                                         capture_output=True, timeout=600)
                     if rr.returncode != 0:
-                        failures.append("STAGE 1 cannot compile the compiler: %s"
-                                        % rr.stderr.decode("utf-8", "replace")[:300])
+                        # THE RETURNCODE IS PART OF THE EVIDENCE: a negative one
+                        # is a signal (-11 SIGSEGV), and an empty stderr with a
+                        # positive code is a trap that reached failsafe. The
+                        # binary is kept for the autopsy.
+                        import shutil as _sh
+                        _sh.copy(s1, os.path.join(ROOT, ".internal", "s1.failed"))
+                        failures.append("STAGE 1 cannot compile the compiler: rc=%d %s"
+                                        % (rr.returncode,
+                                           rr.stderr.decode("utf-8", "replace")[:300]))
                         ok = False
                     elif rr.stdout != stage1_ir:
                         failures.append("THE FIXPOINT DRIFTED: stage 1's emission "

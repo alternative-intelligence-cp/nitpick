@@ -96,14 +96,14 @@ pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
 // (D-049) -- and that fallibility is the point. A `string` is length-carrying,
 // so an embedded `0u8` is just a byte; terminating it silently would mean the
 // path that was checked and the path that was opened are different paths.
-pub func:srcmgr_load = int32(SourceManager->:m, string:path) {
+pub func:srcmgr_load = int32(SourceManager->:m, move string:path) {
     int32:existing = raw srcmgr_find(m, path);
     if (existing >= 0i32) {
         pass existing;
     }
     cstring:cpath = relay to_cstring(path);
     string:text = relay read_file(cpath);
-    pass (raw srcmgr_add(m, path, text));
+    pass (raw srcmgr_add(m, move(path), move(text)));
 };
 
 pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
@@ -113,7 +113,8 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if (file >= m.count) {
         fail FileUnknown;
     }
-    pass m.files[file => int64].path;
+    // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
+    pass (raw string_from_bytes(m.files[file => int64].path.ptr, m.files[file => int64].path.len));
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
@@ -123,7 +124,12 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     if (file >= m.count) {
         fail FileUnknown;
     }
-    pass m.files[file => int64].text;
+    // A VIEW (cap 0), never a copy of the owning header (D-183): the manager
+    // owns every source body for the process's life, and a caller's flagged
+    // Result local dropping a cap-carrying copy freed the file out from under
+    // the interns, the spans, and the lexer itself.
+    pass (raw string_from_bytes(m.files[file => int64].text.ptr,
+                                m.files[file => int64].text.len));
 };
 
 // Byte access, because the lexer works in bytes: the source is UTF-8 and a
@@ -155,8 +161,16 @@ pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails 
     pass r.value;
 };
 
+// A VIEW, NOT A TRANSFER (D-183). The manager owns every source body for the
+// PROCESS lifetime — the intern table holds slices into it, spans point into
+// it, diagnostics render from it — so no caller may ever own what this
+// returns. `string_from_bytes` builds the cap-0 header that says exactly
+// that: a drop of the view frees nothing. The 1.2.3 cascade briefly made the
+// LEXER an owner instead, and stage 1 freed each file's text at `lex_all`'s
+// exit — every interned identifier then pointed into freed memory, and the
+// compiler segfaulted lexing its second file.
 pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
     Result<string>:r = srcmgr_text(m, file);
     if (r.is_error) { !!! FileUnknown; }
-    pass r.value;
+    pass (raw string_from_bytes(r.value.ptr, r.value.len));
 };

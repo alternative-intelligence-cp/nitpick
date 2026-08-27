@@ -9,21 +9,29 @@
 // deterministic).
 
 func:main = int32(cstring[]:_~argv) {
-    // dalloc frees: the dirty byte survives into the recycled slot.
+    // dalloc frees, and the runtime POISONS the freed payload (D-183, 1.2.3):
+    // 0xAA in every byte, so a use-after-free reads loud deterministic garbage
+    // instead of whatever the last owner left. The poison stamp surviving into
+    // the recycled slot proves BOTH facts at once — the slot came back (the
+    // slab hands out the lowest free slot), and the instrument is standing.
+    // This used to assert the DIRTY byte survived, which was true before the
+    // poison and is exactly the leakage the poison exists to end.
     wild int8->:a = alloc(24i64);
     <-a = 65i8;
     drop dalloc(a);
     wild int8->:b = alloc(24i64);
-    if (<-b != 65i8) { exit 10i32; }
+    if ((((<-b) => int32) & 255i32) != 170i32) { exit 10i32; }   // 0xAA
 
     // ralloc preserves content across a class change (24 bytes -> large)...
     <-b = 66i8;
     wild int8->:g = ralloc(b, 4000i64);
     if (<-g != 66i8) { exit 11i32; }
 
-    // ...and freed the old block: the next same-class alloc gets that slot.
+    // ...and freed the old block — which the poison proves better than the
+    // dirty byte did: the recycled slot reads 0xAA, not the 66 the old owner
+    // left, because the free stamped it.
     wild int8->:d = alloc(24i64);
-    if (<-d != 66i8) { exit 12i32; }
+    if ((((<-d) => int32) & 255i32) != 170i32) { exit 12i32; }
 
     // calloc ZEROES a recycled dirty slot (the checked-multiply twin lives in
     // heap_calloc_overflow.npk, where the product cannot be represented).

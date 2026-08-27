@@ -376,3 +376,69 @@ substitution that `.len` proves without owning anything.
 
 TYPE-046 is an ERROR, off `UNTESTED_CODES`, with its rejection case beside
 TYPE-047's in `tests/types/rejection/move_rules.npk`.
+
+### 1.2.3 — the drops are ON (strings live, aggregates staged), and what turning them on found
+
+**String drops run in every sync function, and the stage-1 fixpoint holds
+byte-identical with the compiler dropping its own locals.** The machinery:
+one flag per owning binding (an `i8` alloca — live at initialisation, cleared
+by `move` and by `pass`, tested at the drop), `move` parameters dropped at
+function exit, lent parameters never, assignment releasing the old value
+before the store, and `exit` running defers but NO drops.
+
+**`exit` runs no drops, and that is a decision, not a dodge** (D-183 amended).
+The process is ending — wholesale reclamation at process death is the kernel's
+job, and Rust's `process::exit` runs no destructors on the same reasoning. The
+stronger half is ours specifically: `exit` is the CONTROLLED SHUTDOWN (D-013),
+the one path that must not fail, and walking the entire live program state to
+free it on the way out adds failure modes to exactly the path that exists to
+have none. Stage 1's own exit walked the whole pipeline struct and died in the
+heap validator, which is the demonstration.
+
+**What turning them on found — every one a real, latent defect:**
+
+- **`npk_string_slice` and `npk_string_from_bytes` stamped `cap = len` on
+  VIEWS** — headers pointing into bodies other strings own, claiming
+  ownership. The first drops handed `dalloc` interior pointers of live
+  buffers: four string-heavy programs down, and stage 1 with them.
+- **`int_to_string` returned an interior pointer** (digits built from the
+  buffer's end) with `cap = len`. The drop freed `buf+start`; the allocator
+  correctly refused an address it never issued. The digits are re-homed to
+  the base now, capacity the true 24.
+- **The source text's ownership was wrong end to end.** The 1.2.2 cascade
+  made the LEXER consume it, so stage 1 freed each file's text at `lex_all`'s
+  exit — and the intern table holds VIEWS into that text, so every interned
+  identifier dangled. The manager owns all source for the process's life;
+  `srcmgr_text` and everything above it hand out cap-0 views.
+- **`nio_normalize` returned its lent parameter on the unchanged path** — a
+  use-after-free for every caller — and leaked a wild scratch buffer on the
+  other; `nio_end` never freed its writer's buffer, masked for as long as
+  tests called `wild_release_all()` before exiting. Both fixed; the tests'
+  wholesale-release idiom retired (it is failsafe's instrument, D-151).
+- **`pass` of a lent owning parameter, and `pass` of a pointee-owned place,
+  are now REFUSED** (TYPE-047 extended): the first found 18 more instances
+  in `src/` (`emit_fit`'s six identity returns among them — it consumes now);
+  the second found 14 getters returning container-owned values, which became
+  cap-0 views (strings) and deep-viewed copies (aggregates).
+- **`DiagList` held `Diagnostic[256]` INLINE** — the only owning inline array
+  in the tree — and its drop walked ~250 uninitialised headers; a garbage
+  capacity with a plausible pointer freed an innocent live chunk. It is wild
+  storage now, like every other table.
+- **`npk_dalloc` poisons freed payloads (0xAA)** — a permanent instrument: a
+  freed-while-shared body is otherwise invisible until the allocator happens
+  to reuse the chunk, which makes the defect rare and schedule-shaped.
+
+**Aggregate (struct/enum) drops are STAGED, not live.** A bisect over the
+self-compile — neuter, halve, rebuild, compare — isolated the guilty class to
+struct drops, with the emitter's own `FnEmitter` state in the final set; two
+true causes above are fixed, but one shared body remains unisolated, and a
+drop that frees a still-referenced body is a use-after-free, not a leak. The
+exclusion is one guarded line in `emit_one_flagged_drop`, the leak it accepts
+is bounded (struct-typed LOCALS only; their string fields still drop when
+moved to string locals), and isolating the residue is the cycle's open item.
+
+**The debugging method is worth keeping**: seed-built npkc runs no drops,
+stage 1 runs them, and both must emit identical bytes — so the fixpoint
+comparison is a DROP-CORRECTNESS ORACLE. Neutering drops by class and
+re-comparing bisects a use-after-free to its owning type in a handful of
+rebuilds, with gdb needed only for the final naming.

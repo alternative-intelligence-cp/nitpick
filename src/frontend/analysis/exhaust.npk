@@ -62,8 +62,8 @@ pub func:exhaust_init = Exhaust(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     pass x;
 };
 
-func:exhaust_err = NIL(Exhaust->:x, string:code, string:msg, Span:sp) never fails {
-    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+func:exhaust_err = NIL(Exhaust->:x, move string:code, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 
@@ -259,7 +259,7 @@ func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
         m1 = raw string_concat(m1, " more");
     }
     string:m2 = raw string_concat(m1, "; add an arm for each, or `(*)` for the rest");
-    drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(), m2, at);
+    drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(), move(m2), at);
     pass NIL;
 };
 

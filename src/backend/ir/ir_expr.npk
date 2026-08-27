@@ -112,11 +112,17 @@ pub func:iv_nil = IrVal() never fails {
 
 // A refused TYPE, named as one. `LlType` has no span — a type is refused wherever
 // it is mentioned — so the mention supplies it, and the type names itself.
+// LENDS its LlType — this is the COLD error path, and its callers keep using
+// the type they hand in (`pll2.text` two lines later), so consuming here
+// forced every caller into a copy. The rung string is cloned instead, once,
+// on a path that is already a refusal (D-183).
 pub func:iv_from_ll_at = IrVal(ExprEmitter->:x, LlType:t, int32:type_id, Span:at) never fails {
     string:what = raw string_concat("the type `",
                       raw string_concat(raw type_display(x.fe.ctx.types,
                                               x.interns, type_id), "`"));
-    if (t.state == (raw LL_RUNG())) { pass (raw iv_rung(what, t.rung, at)); }
+    if (t.state == (raw LL_RUNG())) {
+        pass (raw iv_rung(move(what), raw string_concat(t.rung, ""), at));
+    }
     pass (raw iv_broken(at));
 };
 
@@ -296,7 +302,12 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) never fails {
 // SUBSTITUTED FIRST. Inside a specialization the value's recorded type may still
 // be the parameter `T` (D-107), so both sides are read through the binding
 // before their kinds are compared; `ll_type` does the same for the text.
-pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, IrVal:v, Span:at) never fails {
+// `v` IS CONSUMED (D-183): fitting often IS the identity, and an identity
+// passthrough of a lent value returns a header whose body the caller still
+// owns — six of this function's returns did exactly that. The callers all
+// write `v = emit_fit(x, want, move(v), at)`, the move-then-reassign shape
+// D-065's analysis accepts.
+pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, move IrVal:v, Span:at) never fails {
     if (v.state != (raw LL_OK())) { pass v; }
     if (want == 0i32) { pass v; }
     if (v.type_id == want) { pass v; }
@@ -338,7 +349,7 @@ pub func:emit_opt_wrap = IrVal(ExprEmitter->:x, int32:opt_ty, IrVal:v,
     drop irw_line(x.fe.w, raw cat5(full, " = insertvalue ", oll.text, " ",
                       raw cat5(tagged, ", ", v.ll, " ",
                           raw string_concat(v.ref, ", 1"))));
-    pass (raw iv(oll.text, full, opt_ty));
+    pass (raw iv(move(oll.text), move(full), opt_ty));
 };
 
 // The VALUE half of a Result-shaped LLVM type text — for an operand the
@@ -382,7 +393,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                 if (!(raw ll_is_ok(nll))) {
                     pass (raw iv_from_ll_at(x, nll, ntid, n.span));
                 }
-                pass (raw iv(nll.text, "zeroinitializer", ntid));
+                pass (raw iv(move(nll.text), "zeroinitializer", ntid));
             }
             pass (raw iv("i32", "0", 0i32));
         }
@@ -393,7 +404,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
         LlType:sll = raw ll_type(x.fe.ctx, stid);
         if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, stid, n.span)); }
-        pass (raw iv(sll.text, smn, stid));
+        pass (raw iv(move(sll.text), move(smn), stid));
     }
     if (n.kind == ExprKind.ExprStringLiteral) { pass (raw emit_string(x, n)); }
     if (n.kind == ExprKind.ExprIdentifierExpr){ pass (raw emit_ident(x, id, n)); }
@@ -515,7 +526,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         IrVal:qdv = raw emit_expr(x, raw expr_rhs(n));
         if (!(raw iv_is_ok(qdv))) { pass qdv; }
         // THE DEFAULT IS A SLOT (1.0.6e), of the Result's `T`.
-        qdv = raw emit_fit(x, qtid, qdv, n.span);
+        qdv = raw emit_fit(x, qtid, move(qdv), n.span);
         if (!(raw iv_is_ok(qdv))) { pass qdv; }
         drop irw_line(x.fe.w, raw cat5("store ", qdv.ll, " ", qdv.ref,
                           raw string_concat(", ptr ", qslot)));
@@ -524,7 +535,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         string:qout = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(qout, " = load ", qll.text, ", ptr ",
                           raw string_concat(qslot, "")));
-        pass (raw iv(qll.text, qout, qtid));
+        pass (raw iv(move(qll.text), move(qout), qtid));
     }
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
         // `r ?! code` (0.9.7, OP §187): the value, or `failsafe(code)` through
@@ -571,14 +582,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             string:eun = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(eun, " = extractvalue ", ev2.ll, " ",
                               raw string_concat(ev2.ref, ", 0")));
-            pass (raw iv(evh, eun, 0i32));
+            pass (raw iv(move(evh), move(eun), 0i32));
         }
         string:ein = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(ein, " = extractvalue ", ev2.ll, " ",
                           raw string_concat(ev2.ref, ", 0")));
         LlType:ell2 = raw ll_type(x.fe.ctx, etid0);
         if (!(raw ll_is_ok(ell2))) { pass (raw iv_from_ll_at(x, ell2, etid0, n.span)); }
-        pass (raw iv(ell2.text, ein, etid0));
+        pass (raw iv(move(ell2.text), move(ein), etid0));
     }
     if (n.kind == ExprKind.ExprTemplateLiteral) {
         pass (raw emit_template(x, id, n));
@@ -598,7 +609,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         ConstVal:cv = raw fold_const(x.tr, ExprId{ index: n.a }, x.scope);
         if (!(raw cv_folded(cv))) { pass (raw iv_broken(n.span)); }
         if (cv.kind == (raw CV_STRING())) {
-            string:sg = raw strtab_add(x.strs, cv.text);
+            string:sg = raw strtab_add(x.strs, raw string_concat(cv.text, ""));
             string:slen = raw int_to_string(cv.text.len);
             string:s1 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat4(s1,
@@ -617,10 +628,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             string:s3 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat4(s3,
                 " = insertvalue { ptr, i64, i64 } ", s2, ", i64 0, 2"));
-            pass (raw iv("{ ptr, i64, i64 }", s3, ctid));
+            pass (raw iv("{ ptr, i64, i64 }", move(s3), ctid));
         }
         // int, bool and char are one numeric constant at the node's width.
-        pass (raw iv(ct.text, raw int_to_string(cv.num), ctid));
+        pass (raw iv(move(ct.text), raw int_to_string(cv.num), ctid));
     }
     // A range VALUE (0.9.6, D-145): `{ T, T }`, normalized HALF-OPEN at
     // construction — the inclusive `..` stores hi+1, so every consumer sees
@@ -647,7 +658,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         drop irw_line(x.fe.w, raw cat5(rb, " = insertvalue ", rll.text, " ",
                           raw cat5(ra, ", ", rhi.ll, " ",
                               raw string_concat(hi_ref, ", 1"))));
-        pass (raw iv(rll.text, rb, rtid));
+        pass (raw iv(move(rll.text), move(rb), rtid));
     }
     if (n.kind == ExprKind.ExprSpreadExpr) {
         pass (raw iv_rung("the `..^` expansion", "1.1", n.span));
@@ -685,7 +696,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         string:out = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(out, " = load ", tll.text, ", ptr ",
                           slot));
-        pass (raw iv(tll.text, out, ttid));
+        pass (raw iv(move(tll.text), move(out), ttid));
     }
     if (n.kind == ExprKind.ExprPostfixExpr) {
         // `++`/`--` are struck (D-174): redundant with `x += 1`, hidden mutation
@@ -705,13 +716,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         string:txt = raw intern_get(x.interns, n.payload =>! int32);
         string:body = raw float_literal_body(x, txt);
         if (raw string_eq(fll.text, "double")) {
-            pass (raw iv("double", body, ftid));
+            pass (raw iv("double", move(body), ftid));
         }
         if (raw string_eq(fll.text, "float")) {
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = fptrunc double ", body,
                               " to float", ""));
-            pass (raw iv("float", fr, ftid));
+            pass (raw iv("float", move(fr), ftid));
         }
         pass (raw iv_broken(n.span));
     }
@@ -743,7 +754,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         string:ez = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(ez, " = zext i1 ",
                           raw string_concat(ec, " to i8")));
-        pass (raw iv("i8", ez, 0i32));
+        pass (raw iv("i8", move(ez), 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
         pass (raw iv_rung("a vector constructor", "1.1 (G-3)", n.span));
@@ -753,7 +764,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     // the transfer, so there is nothing for the IR to add (D-065). Found by
     // the same first run, miscategorized as iv_broken.
     if (n.kind == ExprKind.ExprMoveExpr) {
-        pass (raw emit_expr(x, raw expr_operand(n)));
+        // THE VALUE IS THE OPERAND; THE TRANSFER IS THE FLAG (D-183, 1.2.3).
+        // Reading first, clearing second — the order does not matter to the
+        // bytes (the flag is a separate word) but reads correctly.
+        IrVal:mv = raw emit_expr(x, raw expr_operand(n));
+        if (!(raw iv_is_ok(mv))) { pass mv; }
+        drop clear_root_flag(x, raw expr_operand(n));
+        pass mv;
     }
     // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
@@ -761,7 +778,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (islot.len == 0i64) { pass (raw iv_broken(n.span)); }
         string:iv2 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(iv2, " = load i64, ptr ", islot, "", ""));
-        pass (raw iv("i64", iv2, raw exprtypes_get(x.et, id)));
+        pass (raw iv("i64", move(iv2), raw exprtypes_get(x.et, id)));
     }
     // A pick EXPRESSION (0.9.7, D-059): the chain dispatch with a value slot
     // its arms `give` into.
@@ -786,13 +803,13 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         string:pslot = raw irw_temp(x.fe.w);
         drop irw_alloca(x.fe.w, pslot, pll2.text);
-        IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, pdll,
-                        n.b, n.c, pslot, pll2.text, ptid);
+        IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
+                        n.b, n.c, raw string_concat(pslot, ""), raw string_concat(pll2.text, ""), ptid);
         if (!(raw iv_is_ok(pc2))) { pass pc2; }
         string:pout = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pout, " = load ", pll2.text, ", ptr ",
                           raw string_concat(pslot, "")));
-        pass (raw iv(pll2.text, pout, ptid));
+        pass (raw iv(move(pll2.text), move(pout), ptid));
     }
     if (n.kind == ExprKind.ExprAwaitExpr) {
         pass (raw emit_await(x, id, n));
@@ -805,7 +822,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // coercion lower through one path and cannot drift apart.
         IrVal:dv = raw emit_expr(x, raw expr_operand(n));
         if (!(raw iv_is_ok(dv))) { pass dv; }
-        pass (raw emit_fit(x, raw exprtypes_get(x.et, id), dv, n.span));
+        pass (raw emit_fit(x, raw exprtypes_get(x.et, id), move(dv), n.span));
     }
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
@@ -820,7 +837,7 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (t.state != (raw LL_OK())) {
         pass (raw iv_from_ll_at(x, t, raw exprtypes_get(x.et, id), n.span));
     }
-    pass (raw iv(t.text, raw int_to_string(n.payload),
+    pass (raw iv(move(t.text), raw int_to_string(n.payload),
                  raw exprtypes_get(x.et, id)));
 };
 
@@ -876,9 +893,9 @@ func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:c = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(c,
             " = insertvalue { ptr, i64, i64 } ", b, ", i64 0", ", 2"));
-        pass (raw iv("{ ptr, i64, i64 }", c, raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ ptr, i64, i64 }", move(c), raw exprtypes_get(x.et, id)));
     }
-    pass (raw iv("{ ptr, i64, i64 }", acc, raw exprtypes_get(x.et, id)));
+    pass (raw iv("{ ptr, i64, i64 }", move(acc), raw exprtypes_get(x.et, id)));
 };
 
 // CALL `to_string` FOR A VALUE (D-168): resolve the `ToString` impl for its
@@ -937,12 +954,12 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
     drop irw_line(x.fe.w, raw cat3(sv,
         " = extractvalue { { ptr, i64, i64 }, i32 } ",
         raw string_concat(r, ", 0")));
-    pass (raw iv("{ ptr, i64, i64 }", sv, 0i32));
+    pass (raw iv("{ ptr, i64, i64 }", move(sv), 0i32));
 };
 
 func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
     string:data = raw intern_get(x.interns, n.payload =>! int32);
-    string:g = raw strtab_add(x.strs, data);
+    string:g = raw strtab_add(x.strs, raw string_concat(data, ""));
     string:len = raw int_to_string(data.len);
     string:a = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(a,
@@ -960,7 +977,7 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
     string:c = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(c, " = insertvalue { ptr, i64, i64 } ", b,
                                      ", i64 0, 2"));
-    pass (raw iv("{ ptr, i64, i64 }", c, 0i32));
+    pass (raw iv("{ ptr, i64, i64 }", move(c), 0i32));
 };
 
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -1001,7 +1018,7 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                     string:gr = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(gr, " = load ", gll.text,
                                       ", ptr ", gsym));
-                    pass (raw iv(gll.text, gr, gtid));
+                    pass (raw iv(move(gll.text), move(gr), gtid));
                 }
             }
         }
@@ -1022,7 +1039,7 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = load ", t.text, ", ptr ",
                       raw fnem_local_slot_at(x.fe, si)));
-    pass (raw iv(t.text, r, sty));
+    pass (raw iv(move(t.text), move(r), sty));
 };
 
 // --- operators ----------------------------------------------------------------------
@@ -1038,7 +1055,7 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         // (it loses -0.0: 0.0 - 0.0 is +0.0, while -(0.0) is -0.0).
         if (raw ll_is_float_text(v.ll)) {
             drop irw_line(x.fe.w, raw cat5(r, " = fneg ", v.ll, " ", v.ref));
-            pass (raw iv(v.ll, r, v.type_id));
+            pass (raw iv(raw string_concat(v.ll, ""), move(r), v.type_id));
         }
         // A `tbb` NEGATES STICKILY (D-008 §2, 1.0.9): ERR stays ERR, and
         // every other value's negation is representable by construction —
@@ -1057,16 +1074,16 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5(r, " = select i1 ", iserr, ", ",
                               raw cat5(v.ll, " ", tmn, ", ",
                                   raw cat3(v.ll, " ", neg))));
-            pass (raw iv(v.ll, r, v.type_id));
+            pass (raw iv(raw string_concat(v.ll, ""), move(r), v.type_id));
         }
         drop irw_line(x.fe.w, raw cat5(r, " = sub ", v.ll, " 0, ", v.ref));
-        pass (raw iv(v.ll, r, v.type_id));
+        pass (raw iv(raw string_concat(v.ll, ""), move(r), v.type_id));
     }
     if (op == TokenKind.OpTilde) {
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = xor ", v.ll, " ",
                                          raw string_concat(v.ref, ", -1")));
-        pass (raw iv(v.ll, r, v.type_id));
+        pass (raw iv(raw string_concat(v.ll, ""), move(r), v.type_id));
     }
     if (op == TokenKind.OpBang) {
         // FROM THE VALUE ALREADY EMITTED — re-emitting the operand to get a
@@ -1080,7 +1097,7 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         drop irw_line(x.fe.w, raw cat3(xr, " = xor i1 ", raw string_concat(c, ", true")));
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(r, " = zext i1 ", raw string_concat(xr, " to i8")));
-        pass (raw iv("i8", r, v.type_id));
+        pass (raw iv("i8", move(r), v.type_id));
     }
     pass (raw iv_broken(n.span));
 };
@@ -1093,14 +1110,15 @@ pub func:emit_cond = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     string:c = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(c, " = icmp ne ", v.ll, " ",
                                      raw string_concat(v.ref, ", 0")));
-    pass (raw iv("i1", c, 0i32));
+    pass (raw iv("i1", move(c), 0i32));
 };
 
 // The index, as i64, for a bounds compare: narrower indices sign-extend, so a
 // negative index of any width becomes a huge unsigned value and ONE unsigned
 // compare rejects both "negative" and "past the end" (D-070).
 func:index_as_i64 = string(ExprEmitter->:x, IrVal:ix) never fails {
-    if (raw string_eq(ix.ll, "i64")) { pass ix.ref; }
+    // cloned, not passed through: the parameter is lent (D-183)
+    if (raw string_eq(ix.ll, "i64")) { pass (raw string_concat(ix.ref, "")); }
     string:w = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(w, " = sext ", ix.ll, " ",
                       raw string_concat(ix.ref, " to i64")));
@@ -1179,7 +1197,7 @@ func:tbb_divlike = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:lhs, IrVal:rhs,
     drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", sticky, ", ",
                       raw cat5(lhs.ll, " ", tmn, ", ",
                           raw cat3(lhs.ll, " ", q))));
-    pass (raw iv(lhs.ll, res, lhs.type_id));
+    pass (raw iv(raw string_concat(lhs.ll, ""), raw string_concat(res, ""), lhs.type_id));
 };
 
 pub func:arith_name = string(TokenKind:op, bool:signed) never fails {
@@ -1252,7 +1270,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string:oz = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat3(oz, " = zext i1 ",
                                   raw string_concat(oc, " to i8")));
-                pass (raw iv("i8", oz, 0i32));
+                pass (raw iv("i8", move(oz), 0i32));
             }
         }
     }
@@ -1271,7 +1289,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // through to the real compare below.
     string:cmp0 = raw icmp_name(op, false);
     if (cmp0.len > 0i64) {
-        if (!(raw ll_is_scalar_int(raw ll_ok(lhs.ll)))) {
+        if (!(raw ll_is_scalar_int(raw ll_ok(raw string_concat(lhs.ll, ""))))) {
             if (!(raw ll_is_float_text(lhs.ll))) {
                 if (!(raw string_eq(lhs.ll, "ptr"))) {
                     pass (raw iv_broken(n.span));
@@ -1316,7 +1334,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             string:fz = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(fz, " = zext i1 ",
                               raw string_concat(fc, " to i8")));
-            pass (raw iv("i8", fz, 0i32));
+            pass (raw iv("i8", move(fz), 0i32));
         }
         // `tbb` EQUALITY GUARDS FIRST (0.9.5, D-008 §5): an ERR operand at a
         // comparison is a tainted value about to steer control flow, and it
@@ -1353,7 +1371,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:z = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(z, " = zext i1 ",
                           raw string_concat(c, " to i8")));
-        pass (raw iv("i8", z, 0i32));
+        pass (raw iv("i8", raw string_concat(z, ""), 0i32));
     }
 
     // FLOAT ARITHMETIC IS IEEE AND TOTAL (0.9.4, D-143): fadd through frem,
@@ -1373,7 +1391,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             string:fres = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
                               raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
-            pass (raw iv(lhs.ll, fres, lhs.type_id));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(fres), lhs.type_id));
         }
     }
 
@@ -1418,8 +1436,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string:o = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
                                   raw string_concat(ab, ", 0")));
-                bad = move(o);
-                val = move(v);
+                bad = raw string_concat(o, "");
+                val = raw string_concat(v, "");
             }
             if (op == TokenKind.OpMinus) {
                 string:v = raw irw_temp(x.fe.w);
@@ -1439,8 +1457,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string:o = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
                                   raw string_concat(ab, ", 0")));
-                bad = move(o);
-                val = move(v);
+                bad = raw string_concat(o, "");
+                val = raw string_concat(v, "");
             }
             if (op == TokenKind.OpStar) {
                 // Multiplication's overflow has no cheap sign trick; the
@@ -1458,7 +1476,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string:o = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(o, " = extractvalue { ", lhs.ll,
                                   ", i1 } ", raw string_concat(pair, ", 1")));
-                bad = move(o);
+                bad = raw string_concat(o, "");
                 val = move(v);
             }
             if (op == TokenKind.OpSlash) {
@@ -1475,7 +1493,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", sticky, ", ",
                               raw cat5(lhs.ll, " ", tmn, ", ",
                                   raw cat3(lhs.ll, " ", val))));
-            pass (raw iv(lhs.ll, res, lhs.type_id));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(res), lhs.type_id));
         }
     }
 
@@ -1494,7 +1512,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 drop irw_line(x.fe.w, raw cat3(sv2,
                                   " = extractvalue { { ptr, i64, i64 }, i32 } ",
                                   raw string_concat(scr, ", 0")));
-                pass (raw iv("{ ptr, i64, i64 }", sv2, lhs.type_id));
+                pass (raw iv("{ ptr, i64, i64 }", move(sv2), lhs.type_id));
             }
         }
     }
@@ -1578,7 +1596,10 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
                       raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
-    pass (raw iv(lhs.ll, r, lhs.type_id));
+    // ONE move per binding (D-065 invalidates the whole root): the type id is
+    // read first, the ll string moves, and nothing touches `lhs` after.
+    int32:lty = lhs.type_id;
+    pass (raw iv(move(lhs.ll), move(r), lty));
 };
 
 // `&&` and `||` short-circuit THROUGH A SLOT, not a phi — naive lowering says
@@ -1614,7 +1635,7 @@ func:emit_shortcircuit = IrVal(ExprEmitter->:x, ExprNode:n, bool:is_and) never f
     drop irw_label(x.fe.w, done_l);
     string:out = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(out, " = load i8, ptr ",  slot));
-    pass (raw iv("i8", out, 0i32));
+    pass (raw iv("i8", move(out), 0i32));
 };
 
 // --- casts --------------------------------------------------------------------------
@@ -1657,7 +1678,8 @@ func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond, Span:at) never fails {
 // carrier that reaches here is either signed or being treated as its number.
 func:tbb_resize = string(ExprEmitter->:x, string:from_ll, string:ref,
                          string:to_ll, bool:src_signed) never fails {
-    if (raw string_eq(from_ll, to_ll)) { pass ref; }
+    // cloned, not passed through: the parameter is lent (D-183)
+    if (raw string_eq(from_ll, to_ll)) { pass (raw string_concat(ref, "")); }
     int64:sw = raw ll_int_width(from_ll);
     int64:dw = raw ll_int_width(to_ll);
     string:r = raw irw_temp(x.fe.w);
@@ -1687,7 +1709,7 @@ func:tbb_resize = string(ExprEmitter->:x, string:from_ll, string:ref,
 // maps the sentinel across widths in BOTH spellings — ERR is a state, not a
 // number, and a conversion that forgot it would forge validity out of taint.
 func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
-                           LlType:want, int32:wid) never fails {
+                           move LlType:want, int32:wid) never fails {
     bool:unchecked = false;
     if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
     int32:sk = raw type_kind(x.fe.ctx.types, v.type_id);
@@ -1727,7 +1749,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                     drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", err, ", ",
                                       raw cat5(want.text, " ", mn_d, ", ",
                                           raw cat3(want.text, " ", rz))));
-                    pass (raw iv(want.text, res, wid));
+                    pass (raw iv(move(want.text), move(res), wid));
                 }
                 string:sat = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat5(sat, " = or i1 ", err, ", ", oor));
@@ -1736,14 +1758,14 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
                 drop irw_line(x.fe.w, raw cat5(res2, " = select i1 ", sat, ", ",
                                   raw cat5(want.text, " ", mn_d, ", ",
                                       raw cat3(want.text, " ", rz2))));
-                pass (raw iv(want.text, res2, wid));
+                pass (raw iv(move(want.text), move(res2), wid));
             }
             string:rz3 = raw tbb_resize(x, v.ll, v.ref, want.text, true);
             string:res3 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(res3, " = select i1 ", err, ", ",
                               raw cat5(want.text, " ", mn_d, ", ",
                                   raw cat3(want.text, " ", rz3))));
-            pass (raw iv(want.text, res3, wid));
+            pass (raw iv(move(want.text), move(res3), wid));
         }
 
         // Leaving tbb: `=>` traps on ERR (no image); `=>!` reads the carrier.
@@ -1752,10 +1774,10 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
-            pass (raw iv(want.text, fr, wid));
+            pass (raw iv(move(want.text), move(fr), wid));
         }
         string:iz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
-        pass (raw iv(want.text, iz, wid));
+        pass (raw iv(move(want.text), move(iz), wid));
     }
 
     // Entering tbb.
@@ -1796,7 +1818,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             string:q = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(q, " = fptosi ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
-            pass (raw iv(want.text, q, wid));
+            pass (raw iv(move(want.text), move(q), wid));
         }
         string:q2 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(q2, " = fptosi ", v.ll, " ",
@@ -1805,7 +1827,7 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
         drop irw_line(x.fe.w, raw cat5(res4, " = select i1 ", inr, ", ",
                           raw cat5(want.text, " ", q2, ", ",
                               raw cat3(want.text, " ", mn2))));
-        pass (raw iv(want.text, res4, wid));
+        pass (raw iv(move(want.text), move(res4), wid));
     }
 
     // int → tbb. A strictly narrower source always fits the valid range; a
@@ -1835,17 +1857,17 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
         if (!unchecked) {
             drop tbb_trap_if(x, oor2, n.span);
             string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
-            pass (raw iv(want.text, rz4, wid));
+            pass (raw iv(move(want.text), move(rz4), wid));
         }
         string:rz5 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
         string:res5 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(res5, " = select i1 ", oor2, ", ",
                           raw cat5(want.text, " ", mn2, ", ",
                               raw cat3(want.text, " ", rz5))));
-        pass (raw iv(want.text, res5, wid));
+        pass (raw iv(move(want.text), move(res5), wid));
     }
     string:rz6 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
-    pass (raw iv(want.text, rz6, wid));
+    pass (raw iv(move(want.text), move(rz6), wid));
 };
 
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -1858,7 +1880,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:wid = raw exprtypes_get(x.et, id);
 
     if (raw string_eq(v.ll, want.text)) {
-        pass (raw iv(want.text, v.ref, wid));
+        pass (raw iv(move(want.text), move(v.ref), wid));
     }
 
     // `enum =>! intN` — the TAG is the number (0.8.0, settled with the user). A
@@ -1869,10 +1891,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             string:tag = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", v.ll, " ",
                               raw string_concat(v.ref, ", 0")));
-            v = raw iv("i32", tag, v.type_id);
+            v = raw iv("i32", move(tag), v.type_id);
         }
         if (raw string_eq(v.ll, want.text)) {
-            pass (raw iv(want.text, v.ref, wid));
+            pass (raw iv(move(want.text), move(v.ref), wid));
         }
     }
 
@@ -1880,10 +1902,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // below would trunc/sext the carrier raw, which is exactly the forge and
     // launder the matrix exists to end.
     if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) {
-        pass (raw emit_tbb_cast(x, id, n, v, want, wid));
+        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
     }
     if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TBB())) {
-        pass (raw emit_tbb_cast(x, id, n, v, want, wid));
+        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
     }
 
     // FLOAT CASTS (0.9.4). The frontend already decided legality and loss
@@ -1902,7 +1924,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 drop irw_line(x.fe.w, raw cat5(fr2, " = fpext ", v.ll, " ",
                                   raw cat3(v.ref, " to ", want.text)));
             }
-            pass (raw iv(want.text, fr2, wid));
+            pass (raw iv(move(want.text), move(fr2), wid));
         }
         // float→int: signedness of the TARGET picks the instruction.
         bool:dsig = raw type_is_signed(x.fe.ctx.types, wid);
@@ -1913,7 +1935,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5(fr2, " = fptoui ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
         }
-        pass (raw iv(want.text, fr2, wid));
+        pass (raw iv(move(want.text), move(fr2), wid));
     }
     if (dst_f) {
         // int→float: signedness of the SOURCE picks the instruction.
@@ -1927,7 +1949,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             drop irw_line(x.fe.w, raw cat5(fr3, " = uitofp ", v.ll, " ",
                               raw cat3(v.ref, " to ", want.text)));
         }
-        pass (raw iv(want.text, fr3, wid));
+        pass (raw iv(move(want.text), move(fr3), wid));
     }
 
     // EVERY NON-SCALAR CAST THE CHECKER ADMITS IS LOWERED ABOVE (1.0.9c): an
@@ -1946,7 +1968,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (sbits > dbits) {
         drop irw_line(x.fe.w, raw cat5(r, " = trunc ", v.ll, " ",
                           raw cat3(v.ref, " to ", want.text)));
-        pass (raw iv(want.text, r, wid));
+        pass (raw iv(move(want.text), move(r), wid));
     }
     bool:src_signed = false;
     int32:st = v.type_id;
@@ -1966,7 +1988,7 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         drop irw_line(x.fe.w, raw cat5(r, " = zext ", v.ll, " ",
                           raw cat3(v.ref, " to ", want.text)));
     }
-    pass (raw iv(want.text, r, wid));
+    pass (raw iv(move(want.text), move(r), wid));
 };
 
 // "i32" -> 32. Only ever called on text `ll_is_scalar_int` accepted.
@@ -2039,7 +2061,7 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, ift, i), av, n.span);
+        av = raw emit_fit(x, raw call_param_want(x, ift, i), move(av), n.span);
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
@@ -2052,7 +2074,7 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat5(fp.ref, "(", args, ")", "")));
-    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+    pass (raw iv(move(ret.text), move(r), raw exprtypes_get(x.et, id)));
 };
 
 // THE PIPE IS THE CALL WRITTEN THE OTHER WAY ROUND (1.0.9c). `x |> g` is `g(x)`
@@ -2069,7 +2091,7 @@ func:emit_pipe = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 
     IrVal:av = raw emit_expr(x, lhs);
     if (!(raw iv_is_ok(av))) { pass av; }
-    av = raw emit_fit(x, raw call_param_want(x, rt, 0i32), av, n.span);
+    av = raw emit_fit(x, raw call_param_want(x, rt, 0i32), move(av), n.span);
     if (!(raw iv_is_ok(av))) { pass av; }
 
     LlType:ret = raw node_ll(x, id);
@@ -2105,7 +2127,7 @@ func:emit_pipe = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat5(callee, "(",
                           raw cat3(av.ll, " ", av.ref), ")", "")));
-    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+    pass (raw iv(move(ret.text), move(r), raw exprtypes_get(x.et, id)));
 };
 
 // Is this expression a DIRECT call to an `async` function? Returns the callee
@@ -2172,7 +2194,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
         IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
         if (rv.state != (raw LL_OK())) { pass rv; }
-        rv = raw emit_fit(x, raw call_param_want(x, cft, 0i32), rv, at);
+        rv = raw emit_fit(x, raw call_param_want(x, cft, 0i32), move(rv), at);
         if (rv.state != (raw LL_OK())) { pass rv; }
         string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
         drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
@@ -2184,14 +2206,14 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, cft, base + i), av, at);
+        av = raw emit_fit(x, raw call_param_want(x, cft, base + i), move(av), at);
         if (av.state != (raw LL_OK())) { pass av; }
         string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + base + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
     }
-    pass (raw iv("ptr", fr, 0i32));
+    pass (raw iv("ptr", move(fr), 0i32));
 };
 
 // THE ASYNC CALLEE'S NAME AT A CALL SITE, specialization included (1.1.10-D1).
@@ -2376,7 +2398,7 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = load atomic ", ell.text, ", ptr ",
                           raw cat5(pl.addr, " seq_cst, align ", algn, "", "")));
-        pass (raw iv(ell.text, r, etid));
+        pass (raw iv(move(ell.text), move(r), etid));
     }
     IrVal:v0 = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
     if (v0.state != (raw LL_OK())) { pass v0; }
@@ -2396,7 +2418,7 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:prev = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(prev, " = extractvalue { ", ell.text,
                           ", i1 } ", raw string_concat(cx, ", 0")));
-        pass (raw iv(ell.text, prev, etid));
+        pass (raw iv(move(ell.text), move(prev), etid));
     }
     string:opname = "xchg";
     if (raw string_eq(m, "fetch_add")) { opname = "add"; }
@@ -2405,7 +2427,7 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5(rw, " = atomicrmw ", opname, " ptr ",
                       raw cat5(pl.addr, ", ", ell.text, " ",
                           raw string_concat(v0.ref, " seq_cst"))));
-    pass (raw iv(ell.text, rw, etid));
+    pass (raw iv(move(ell.text), move(rw), etid));
 };
 
 // A CHANNEL HANDLE, PACKED BACK INTO ONE WORD for the runtime calls.
@@ -2458,7 +2480,7 @@ func:emit_channel_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:r0 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r0, " = insertvalue { i32 } undef, i32 ",
                       rc, ", 0", ""));
-    IrVal:out = raw iv("{ i32 }", r0, raw exprtypes_get(x.et, id));
+    IrVal:out = raw iv("{ i32 }", move(r0), raw exprtypes_get(x.et, id));
     out.wrapped = true;
     out.inner = "";
     pass out;
@@ -2536,7 +2558,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         // value here is not necessarily already the element's shape, and
         // storing it raw writes the argument's bytes into a slot sized and
         // shaped for something else. `emit_fit` is what builds it.
-        sv = raw emit_fit(x, elem, sv, at);
+        sv = raw emit_fit(x, elem, move(sv), at);
         if (sv.state != (raw LL_OK())) { pass sv; }
         drop irw_line(x.fe.w, raw cat5("store ", ell.text, " ", sv.ref,
                           raw string_concat(", ptr ", slot)));
@@ -2636,7 +2658,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         string:o0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
                           err, ", 0", ""));
-        IrVal:so = raw iv("{ i32 }", o0, rt_id);
+        IrVal:so = raw iv("{ i32 }", move(o0), rt_id);
         so.wrapped = true;
         so.inner = "";
         pass so;
@@ -2652,7 +2674,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     string:v1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v1, " = insertvalue ", rll.text, " ",
                       raw string_concat(v0, raw cat3(", i32 ", err, ", 1"))));
-    IrVal:ro = raw iv(rll.text, v1, rt_id);
+    IrVal:ro = raw iv(move(rll.text), move(v1), rt_id);
     ro.wrapped = true;
     ro.inner = move(ell.text);
     pass ro;
@@ -2775,7 +2797,7 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                       x.fe.awaitee_gep, "", ""));
 
     int32:rt_id = raw exprtypes_get(x.et, cid);
-    IrVal:out = raw iv(rll.text, res, rt_id);
+    IrVal:out = raw iv(move(rll.text), move(res), rt_id);
     out.wrapped = true;
     out.inner = "";
     int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
@@ -2849,7 +2871,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, cft, i), av, n.span);
+        av = raw emit_fit(x, raw call_param_want(x, cft, i), move(av), n.span);
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
@@ -2891,7 +2913,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat4(sym, "(", args, ")")));
     int32:rt_id = raw exprtypes_get(x.et, id);
-    IrVal:out = raw iv(ret.text, r, rt_id);
+    IrVal:out = raw iv(move(ret.text), move(r), rt_id);
     out.wrapped = true;
     // `Result<NIL>` has no value half; everything else's is the type it declares.
     out.inner = "";
@@ -2955,7 +2977,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3(r1,
                           " = insertvalue { { i32, i32 }, i32 } ",
                           raw string_concat(r0, ", i32 0, 1")));
-        IrVal:cv = raw iv("{ { i32, i32 }, i32 }", r1, crt);
+        IrVal:cv = raw iv("{ { i32, i32 }, i32 }", move(r1), crt);
         cv.wrapped = true;
         cv.inner = "{ i32, i32 }";
         pass cv;
@@ -3024,7 +3046,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:sr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(sr, " = call i32 @npk_site_line(i32 ",
                           sa.ref, ")", ""));
-        pass (raw iv("i32", sr, 0i32));
+        pass (raw iv("i32", move(sr), 0i32));
     }
     if (raw string_eq(name, "site_path")) {
         IrVal:sb = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
@@ -3033,7 +3055,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(sr2,
                           " = call { ptr, i64, i64 } @npk_site_path(i32 ",
                           sb.ref, ")", ""));
-        pass (raw iv("{ ptr, i64, i64 }", sr2, 0i32));
+        pass (raw iv("{ ptr, i64, i64 }", move(sr2), 0i32));
     }
 
     // TWO LOWER INLINE, because their whole body is a field read: a string's
@@ -3046,7 +3068,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = extractvalue ", sv.ll, " ",
                           raw string_concat(sv.ref, ", 1")));
-        pass (raw iv("i64", r, 0i32));
+        pass (raw iv("i64", move(r), 0i32));
     }
     if (raw string_eq(name, "string_is_empty")) {
         IrVal:sv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast,
@@ -3061,7 +3083,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:z = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(z, " = zext i1 ",
                           raw string_concat(c, " to i8")));
-        pass (raw iv("i8", z, 0i32));
+        pass (raw iv("i8", move(z), 0i32));
     }
 
     // `shared_arena_make(cap)` is TYPE-DIRECTED like `arena_make` (D-154).
@@ -3086,7 +3108,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(smr,
             " = call ptr @npk_sarena_make(i64 ", smst,
             ", i64 ", raw string_concat(smcr, ")")));
-        pass (raw iv("ptr", smr, smtid));
+        pass (raw iv("ptr", move(smr), smtid));
     }
 
     // `arena_make(cap)` is TYPE-DIRECTED (D-152): the element's stride comes
@@ -3113,7 +3135,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(amr,
             " = call { ptr, ptr, i64, i64, i64 } @npk_arena_make(i64 ", amst,
             ", i64 ", raw string_concat(amcr, ")")));
-        pass (raw iv("{ ptr, ptr, i64, i64, i64 }", amr, amtid));
+        pass (raw iv("{ ptr, ptr, i64, i64, i64 }", move(amr), amtid));
     }
 
     RtSig:sig = raw rt_sig(name);
@@ -3173,7 +3195,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             drop irw_line(x.fe.w, raw cat5(sb2,
                               " = insertvalue { i64, i32 } ", sa2, ", i32 ",
                               raw string_concat(serr, ", 1")));
-            pass (raw iv("{ i64, i32 }", sb2, 0i32));
+            pass (raw iv("{ i64, i32 }", move(sb2), 0i32));
         }
         // UNREACHABLE. Every `is_builtin_name` (builtins.npk) is served above:
         // four lower inline, `sys` is handled in this block, and the rest have an
@@ -3225,7 +3247,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", sig.ret, " ",
                       raw cat4(sig.sym, "(", args, ")")));
-    IrVal:out = raw iv(sig.ret, r, 0i32);
+    IrVal:out = raw iv(raw string_concat(sig.ret, ""), move(r), 0i32);
     out.wrapped = sig.wrapped;
     out.inner = move(sig.inner);
     pass out;
@@ -3246,7 +3268,7 @@ pub func:x_site = int32(ExprEmitter->:x, Span:sp) never fails {
     Result<string>:pr = srcmgr_path(x.sm, sp.file);
     string:sp_path = "?";
     if (!pr.is_error) { sp_path = move(pr.value); }
-    pass (raw irw_site(x.fe.w, sp_path, sp.line));
+    pass (raw irw_site(x.fe.w, move(sp_path), sp.line));
 };
 
 func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -3267,7 +3289,7 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
             v.inner = move(il.text);
         }
     }
-    if (!v.wrapped) { pass (raw iv(v.ll, v.ref, my_t)); }
+    if (!v.wrapped) { pass (raw iv(raw string_concat(v.ll, ""), raw string_concat(v.ref, ""), my_t)); }
 
     // The value half first — only the ok path needs it, but extracting before
     // the branch keeps every extract in the block that computed the Result.
@@ -3308,7 +3330,7 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 
     drop s_start(x, ok_l);
     if (v.inner.len == 0i64) { pass (raw iv("i32", "0", my_t)); }
-    pass (raw iv(v.inner, val, my_t));
+    pass (raw iv(raw string_concat(v.inner, ""), move(val), my_t));
 };
 
 func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -3326,7 +3348,9 @@ func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (!is_result) {
         if (!v.wrapped) {
             // Genuinely plain — a bare-`ptr` builtin, or already unwrapped.
-            pass (raw iv(v.ll, v.ref, my_t));
+            // Two fields of one root cannot both move (D-065): the ll is
+            // copied, the ref — the larger, always-unique SSA name — moves.
+            pass (raw iv(raw string_concat(v.ll, ""), move(v.ref), my_t));
         }
     }
 
@@ -3350,7 +3374,7 @@ func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = extractvalue ", v.ll, " ",
                                      raw string_concat(v.ref, ", 0")));
-    pass (raw iv(inner_ll, r, my_t));
+    pass (raw iv(move(inner_ll), move(r), my_t));
 };
 
 // --- places (0.7.7) ---------------------------------------------------------------
@@ -3407,7 +3431,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat5(h,
             " = call { i64, i32 } @npk_arena_alloc(ptr ", ap, ", i64 ",
             raw string_concat(st, ")")));
-        pass (raw iv("{ i64, i32 }", h, raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ i64, i32 }", move(h), raw exprtypes_get(x.et, id)));
     }
     if (raw string_eq(m, "reset")) {
         drop irw_line(x.fe.w, raw cat5("call void @npk_arena_reset(ptr ", ap,
@@ -3445,7 +3469,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:rr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(rr, " = insertvalue { i32 } undef, i32 ",
                           ec, ", ", "0"));
-        pass (raw iv("{ i32 }", rr, raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ i32 }", move(rr), raw exprtypes_get(x.et, id)));
     }
 
     LlType:ell = raw ll_type(x.fe.ctx, elem);
@@ -3497,14 +3521,14 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_label(x.fe.w, l_dn);
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = load ", rll.text, ", ptr ", slot));
-        pass (raw iv(rll.text, r, rtid));
+        pass (raw iv(move(rll.text), move(r), rtid));
     }
 
     // put: store the value through the slot, or report stale
     IrVal:vv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 1i32) });
     if (!(raw iv_is_ok(vv))) { pass vv; }
     // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
-    vv = raw emit_fit(x, elem, vv, n.span);
+    vv = raw emit_fit(x, elem, move(vv), n.span);
     if (!(raw iv_is_ok(vv))) { pass vv; }
     string:pslot = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, pslot, "{ i32 }");
@@ -3524,7 +3548,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_label(x.fe.w, p_dn);
     string:pr = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(pr, " = load { i32 }, ptr ", pslot, "", ""));
-    pass (raw iv("{ i32 }", pr, raw exprtypes_get(x.et, id)));
+    pass (raw iv("{ i32 }", move(pr), raw exprtypes_get(x.et, id)));
 };
 
 
@@ -3557,7 +3581,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                                        start, 0i32) });
         if (!(raw iv_is_ok(vv))) { pass vv; }
         // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
-        vv = raw emit_fit(x, elem, vv, n.span);
+        vv = raw emit_fit(x, elem, move(vv), n.span);
         if (!(raw iv_is_ok(vv))) { pass vv; }
         string:idx = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(idx,
@@ -3575,7 +3599,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:h1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(h1,
             " = insertvalue { i64, i32 } ", h0, ", i32 0, ", "1"));
-        pass (raw iv("{ i64, i32 }", h1, raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ i64, i32 }", move(h1), raw exprtypes_get(x.et, id)));
     }
 
     // get(h)
@@ -3640,7 +3664,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_label(x.fe.w, l_dn);
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = load ", rll.text, ", ptr ", slot));
-    pass (raw iv(rll.text, r, rtid));
+    pass (raw iv(move(rll.text), move(r), rtid));
 };
 
 pub struct:PlaceVal = {
@@ -3830,7 +3854,7 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
         cur = move(nx);
         i = i + 1i32;
     }
-    pass (raw iv(dll.text, cur, dyn_ty));
+    pass (raw iv(move(dll.text), move(cur), dyn_ty));
 };
 
 // WIDENING IS A VALUE REBUILD (D-159). `dyn A & B` assigned to `dyn A` copies
@@ -3881,7 +3905,7 @@ pub func:emit_dyn_widen = IrVal(ExprEmitter->:x, int32:dst_ty, IrVal:v,
         cur = move(nx);
         i = i + 1i32;
     }
-    pass (raw iv(dll.text, cur, dst_ty));
+    pass (raw iv(move(dll.text), move(cur), dst_ty));
 };
 
 // Where a method sits in a `dyn`: which bound's vtable word holds it, and which
@@ -3977,7 +4001,7 @@ func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     while (i < count) {
         IrVal:av = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) });
         if (!(raw iv_is_ok(av))) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, mft, i), av, n.span);
+        av = raw emit_fit(x, raw call_param_want(x, mft, i), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
@@ -3990,7 +4014,7 @@ func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat4(callsym, "(", args, ")")));
-    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+    pass (raw iv(move(ret.text), move(r), raw exprtypes_get(x.et, id)));
 };
 
 // `s.f(x)` THROUGH A FUNCTION-VALUED FIELD (1.0.9c). Told from a real method the
@@ -4029,7 +4053,7 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, ift, i), av, n.span);
+        av = raw emit_fit(x, raw call_param_want(x, ift, i), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
@@ -4042,7 +4066,7 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat5(fv.ref, "(", args, ")", "")));
-    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+    pass (raw iv(move(ret.text), move(r), raw exprtypes_get(x.et, id)));
 };
 
 func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -4126,14 +4150,14 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         }
         if (want_ptr) {
             PlaceVal:rp = raw addr_of(x, rid);
-            if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(rp)); }
+            if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(move(rp))); }
             args = raw string_concat("ptr ", rp.addr);
         } else {
             // THE RECEIVER IS FIT TO PARAMETER 0 (1.0.8) — a UFCS call on a free
             // function whose first parameter is a `T?` or a `dyn` takes the same
             // wrap or widening `f(p)` would. Not on the erased path above: there
             // the receiver IS the `dyn`, and the thunk loads the concrete value.
-            rv = raw emit_fit(x, p0w, rv, n.span);
+            rv = raw emit_fit(x, p0w, move(rv), n.span);
             if (!(raw iv_is_ok(rv))) { pass rv; }
             args = raw cat3(rv.ll, " ", rv.ref);
         }
@@ -4149,7 +4173,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
-        av = raw emit_fit(x, raw call_param_want(x, mft, i + 1i32), av, n.span);
+        av = raw emit_fit(x, raw call_param_want(x, mft, i + 1i32), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
         args = raw string_concat(args, ", ");
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
@@ -4224,7 +4248,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret.text, " ",
                       raw cat4(sym, "(", args, ")")));
     int32:rt_id = raw exprtypes_get(x.et, id);
-    IrVal:out = raw iv(ret.text, r, rt_id);
+    IrVal:out = raw iv(move(ret.text), move(r), rt_id);
     out.wrapped = true;
     out.inner = "";
     int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
@@ -4293,13 +4317,13 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
     pass NIL;
 };
 
-pub func:iv_from_place = IrVal(PlaceVal:p) never fails {
-    if (p.state == (raw LL_RUNG())) { pass (raw iv_rung(p.what, p.rung, p.at)); }
+pub func:iv_from_place = IrVal(move PlaceVal:p) never fails {
+    if (p.state == (raw LL_RUNG())) { pass (raw iv_rung(move(p.what), move(p.rung), p.at)); }
     pass (raw iv_broken(p.at));
 };
 
-func:pv_from_iv = PlaceVal(IrVal:v) never fails {
-    if (v.state == (raw LL_RUNG())) { pass (raw pv_rung(v.what, v.rung, v.at)); }
+func:pv_from_iv = PlaceVal(move IrVal:v) never fails {
+    if (v.state == (raw LL_RUNG())) { pass (raw pv_rung(move(v.what), move(v.rung), v.at)); }
     pass (raw pv_broken(v.at));
 };
 
@@ -4335,7 +4359,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
                     if (gd.kind == DeclKind.DeclGlobalDecl) {
                         string:gs = raw mangled_fn_sym(x.fe.ctx, gsym.origin,
                                         raw intern_get(x.interns, gsym.name));
-                        pass (raw pv(gs, raw exprtypes_get(x.et, id)));
+                        pass (raw pv(move(gs), raw exprtypes_get(x.et, id)));
                     }
                 }
             }
@@ -4367,7 +4391,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         int32:bkind = raw type_kind(x.fe.ctx.types, btid);
         LlType:bll = raw ll_type(x.fe.ctx, btid);
         if (!(raw ll_is_ok(bll))) {
-            pass (raw pv_rung("a field of an unlowered type", bll.rung, n.span));
+            pass (raw pv_rung("a field of an unlowered type", move(bll.rung), n.span));
         }
 
         int32:idx = 0i32 - 1i32;
@@ -4388,7 +4412,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", bll.text,
                           ", ptr ", raw cat3(baddr, ", i32 0, i32 ",
                               raw int_to_string(idx => int64))));
-        pass (raw pv(r, fty));
+        pass (raw pv(move(r), fty));
     }
 
     if (n.kind == ExprKind.ExprIndexExpr) {
@@ -4397,7 +4421,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         int32:elem_tid = raw exprtypes_get(x.et, id);
         LlType:ell = raw ll_type(x.fe.ctx, elem_tid);
         if (!(raw ll_is_ok(ell))) {
-            pass (raw pv_rung("an element of an unlowered type", ell.rung, n.span));
+            pass (raw pv_rung("an element of an unlowered type", move(ell.rung), n.span));
         }
 
         // A SLICE'S BOUNDS LIVE ON IT AND ARE CHECKED HERE (0.9.2, D-070):
@@ -4407,9 +4431,9 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         // nothing to check.
         if (okind == (raw TY_SLICE())) {
             IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
-            if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(ov)); }
+            if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(move(ov))); }
             IrVal:ix = raw emit_expr(x, raw expr_rhs(n));
-            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(ix)); }
+            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(move(ix))); }
             string:slen = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(slen, " = extractvalue ", ov.ll,
                               " ", raw string_concat(ov.ref, ", 1")));
@@ -4421,17 +4445,17 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             string:r = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", ell.text,
                               ", ptr ", raw cat4(data, ", i64 ", idx64, "")));
-            pass (raw pv(r, elem_tid));
+            pass (raw pv(move(r), elem_tid));
         }
         if (okind == (raw TY_POINTER())) {
             IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
-            if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(ov)); }
+            if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(move(ov))); }
             IrVal:ix = raw emit_expr(x, raw expr_rhs(n));
-            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(ix)); }
+            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(move(ix))); }
             string:r = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", ell.text,
                               ", ptr ", raw cat5(ov.ref, ", ", ix.ll, " ", ix.ref)));
-            pass (raw pv(r, elem_tid));
+            pass (raw pv(move(r), elem_tid));
         }
         if (okind == (raw TY_ARRAY())) {
             // A VALUE type: its elements are reached through ITS address, and
@@ -4444,7 +4468,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             LlType:all = raw ll_type(x.fe.ctx, obj_tid);
             if (!(raw ll_is_ok(all))) { pass (raw pv_broken(n.span)); }
             IrVal:ix = raw emit_expr(x, raw expr_rhs(n));
-            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(ix)); }
+            if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(move(ix))); }
             string:idx64 = raw index_as_i64(x, ix);
             string:bound = raw int_to_string(
                 (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
@@ -4453,7 +4477,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", all.text,
                               ", ptr ", raw cat4(base.addr, ", i64 0, ",
                                   raw cat3("i64 ", idx64, ""), "")));
-            pass (raw pv(r, elem_tid));
+            pass (raw pv(move(r), elem_tid));
         }
         pass (raw pv_broken(n.span));
     }
@@ -4461,8 +4485,8 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     // `<-p = v` — the place IS the pointer's value.
     if (n.kind == ExprKind.ExprDerefExpr) {
         IrVal:v = raw emit_expr(x, raw expr_operand(n));
-        if (!(raw iv_is_ok(v))) { pass (raw pv_from_iv(v)); }
-        pass (raw pv(v.ref, raw exprtypes_get(x.et, id)));
+        if (!(raw iv_is_ok(v))) { pass (raw pv_from_iv(move(v))); }
+        pass (raw pv(move(v.ref), raw exprtypes_get(x.et, id)));
     }
 
     pass (raw pv_broken(n.span));
@@ -4588,7 +4612,7 @@ func:emit_variant_ref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     if (!vi.found) { pass (raw iv_broken(n.span)); }
     string:tag = raw int_to_string(vi.tag => int64);
     if (!(raw enum_has_payload(x.ast, x.fe.ctx.types, etid))) {
-        pass (raw iv("i32", tag, etid));
+        pass (raw iv("i32", move(tag), etid));
     }
     LlType:ell = raw ll_type(x.fe.ctx, etid);
     if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, etid, n.span)); }
@@ -4599,7 +4623,7 @@ func:emit_variant_ref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     string:a = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(a, " = insertvalue ", ell.text,
                       " zeroinitializer, i32 ", raw string_concat(tag, ", 0")));
-    pass (raw iv(ell.text, a, etid));
+    pass (raw iv(move(ell.text), move(a), etid));
 };
 
 // `Net.Disconnect(code)` — the payload widens into the uniform `i64` word
@@ -4662,7 +4686,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         int32:phome = raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
                                                                 etid), x.scope);
         int32:ptid = raw resolve_type(x.tr, vi.payload_ty, phome);
-        av = raw emit_fit(x, ptid, av, at);
+        av = raw emit_fit(x, ptid, move(av), at);
         if (!(raw iv_is_ok(av))) { pass av; }
         string:pp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", ell.text,
@@ -4684,7 +4708,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
             ExprId:cad = ExprId{ index: raw ast_id_at(x.ast, start, ci) };
             IrVal:cav = raw emit_expr(x, cad);
             if (!(raw iv_is_ok(cav))) { pass cav; }
-            cav = raw emit_fit(x, pslot.type_id, cav, at);
+            cav = raw emit_fit(x, pslot.type_id, move(cav), at);
             if (!(raw iv_is_ok(cav))) { pass cav; }
             LlType:cpll = raw ll_type(x.fe.ctx, pslot.type_id);
             if (!(raw ll_is_ok(cpll))) {
@@ -4709,7 +4733,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
     string:whole = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(whole, " = load ", ell.text, ", ptr ",
                       raw string_concat(tmp, "")));
-    pass (raw iv(ell.text, whole, etid));
+    pass (raw iv(move(ell.text), move(whole), etid));
 };
 
 // --- member and index reads --------------------------------------------------------
@@ -4752,7 +4776,7 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:cdv = raw emit_expr(x, raw expr_rhs(n));
     if (!(raw iv_is_ok(cdv))) { pass cdv; }
     // THE DEFAULT IS A SLOT, of the inner type (D-099's list names it).
-    cdv = raw emit_fit(x, ctid, cdv, n.span);
+    cdv = raw emit_fit(x, ctid, move(cdv), n.span);
     if (!(raw iv_is_ok(cdv))) { pass cdv; }
     drop irw_line(x.fe.w, raw cat5("store ", cdv.ll, " ", cdv.ref,
                       raw string_concat(", ptr ", cslot)));
@@ -4761,7 +4785,7 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:cout = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cout, " = load ", cll.text, ", ptr ",
                       raw string_concat(cslot, "")));
-    pass (raw iv(cll.text, cout, ctid));
+    pass (raw iv(move(cll.text), move(cout), ctid));
 };
 
 // `a?.f` (D-099, 1.0.7): the field, still wrapped — the absence survives the
@@ -4805,7 +4829,7 @@ func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:sin = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(sin, " = extractvalue ", bv.ll, " ",
                       raw string_concat(bv.ref, ", 1")));
-    IrVal:fv = raw emit_member_from(x, id, n, raw iv(ill.text, sin, inner_tid),
+    IrVal:fv = raw emit_member_from(x, id, n, raw iv(move(ill.text), move(sin), inner_tid),
                                       inner_tid);
     if (!(raw iv_is_ok(fv))) { pass fv; }
     // NOT WRAPPED TWICE: a field that is itself an `Optional` IS the result.
@@ -4820,7 +4844,7 @@ func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:sout = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(sout, " = load ", rll.text, ", ptr ",
                       raw string_concat(sslot, "")));
-    pass (raw iv(rll.text, sout, rtid));
+    pass (raw iv(move(rll.text), move(sout), rtid));
 };
 
 func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -4850,7 +4874,7 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:loaded = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(loaded, " = load ", pl.text, ", ptr ",
                                          bv.ref));
-        bv = raw iv(pl.text, loaded, btid);
+        bv = raw iv(move(pl.text), move(loaded), btid);
     }
 
     int32:bkind = raw type_kind(x.fe.ctx.types, btid);
@@ -4886,14 +4910,14 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             string:rv = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(rv, " = extractvalue ", bv.ll, " ",
                               raw string_concat(bv.ref, ", 0")));
-            pass (raw iv(il.text, rv, fty));
+            pass (raw iv(move(il.text), move(rv), fty));
         }
         string:eidx = ", 1";
         if (inner_nil) { eidx = ", 0"; }
         string:re = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(re, " = extractvalue ", bv.ll, " ",
                           raw string_concat(bv.ref, eidx)));
-        if (raw string_eq(f, "err")) { pass (raw iv("i32", re, fty)); }
+        if (raw string_eq(f, "err")) { pass (raw iv("i32", move(re), fty)); }
         if (raw string_eq(f, "is_error")) {
             string:cz = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(cz, " = icmp ne i32 ",
@@ -4901,7 +4925,7 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             string:z = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(z, " = zext i1 ",
                               raw string_concat(cz, " to i8")));
-            pass (raw iv("i8", z, fty));
+            pass (raw iv("i8", move(z), fty));
         }
         pass (raw iv_broken(n.span));
     }
@@ -4921,7 +4945,7 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = extractvalue ", bv.ll, " ",
                       raw cat3(bv.ref, ", ", raw int_to_string(idx => int64))));
-    pass (raw iv(fll, r, fty));
+    pass (raw iv(move(fll), move(r), fty));
 };
 
 // An INDEX read is its place plus a load — an element's address exists by
@@ -4935,12 +4959,12 @@ func:emit_index = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw emit_range_slice(x, id, n, ix));
     }
     PlaceVal:p = raw addr_of(x, id);
-    if (p.state != (raw LL_OK())) { pass (raw iv_from_place(p)); }
+    if (p.state != (raw LL_OK())) { pass (raw iv_from_place(move(p))); }
     LlType:ell = raw ll_type(x.fe.ctx, p.type_id);
     if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, p.type_id, n.span)); }
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = load ", ell.text, ", ptr ", p.addr));
-    pass (raw iv(ell.text, r, p.type_id));
+    pass (raw iv(move(ell.text), move(r), p.type_id));
 };
 
 func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
@@ -4959,7 +4983,7 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:src_len = "";
     if (okind == (raw TY_ARRAY())) {
         PlaceVal:p = raw addr_of(x, raw expr_lhs(n));
-        if (p.state != (raw LL_OK())) { pass (raw iv_from_place(p)); }
+        if (p.state != (raw LL_OK())) { pass (raw iv_from_place(move(p))); }
         base = move(p.addr);
         src_len = raw int_to_string(
             (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
@@ -5030,13 +5054,13 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
                       ", i64 ", raw string_concat(cnt, ", 1")));
-    pass (raw iv("{ ptr, i64 }", b, raw exprtypes_get(x.et, id)));
+    pass (raw iv("{ ptr, i64 }", move(b), raw exprtypes_get(x.et, id)));
 };
 
 func:emit_addr_op = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     PlaceVal:p = raw addr_of(x, raw expr_operand(n));
-    if (p.state != (raw LL_OK())) { pass (raw iv_from_place(p)); }
-    pass (raw iv("ptr", p.addr, raw exprtypes_get(x.et, id)));
+    if (p.state != (raw LL_OK())) { pass (raw iv_from_place(move(p))); }
+    pass (raw iv("ptr", move(p.addr), raw exprtypes_get(x.et, id)));
 };
 
 func:emit_deref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -5047,7 +5071,7 @@ func:emit_deref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, n.span)); }
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = load ", ell.text, ", ptr ", v.ref));
-    pass (raw iv(ell.text, r, elem));
+    pass (raw iv(move(ell.text), move(r), elem));
 };
 
 // --- aggregate literals ------------------------------------------------------------
@@ -5088,7 +5112,7 @@ pub func:emit_global_const = string(ExprEmitter->:x, ExprId:eid) never fails {
     ConstVal:cv = raw fold_const(x.tr, eid, x.scope);
     if (!(raw cv_folded(cv))) { pass ""; }
     if (cv.kind == (raw CV_STRING())) {
-        string:g = raw strtab_add(x.strs, cv.text);
+        string:g = raw strtab_add(x.strs, raw string_concat(cv.text, ""));
         string:ln = raw int_to_string(cv.text.len);
         pass (raw cat5("{ ptr ", g, ", i64 ",
                   raw cat5(ln, ", i64 ", ln, " }", ""), ""));
@@ -5179,7 +5203,7 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         IrVal:v = raw emit_expr(x, vid);
         if (!(raw iv_is_ok(v))) { pass v; }
         // A FIELD IS A SLOT (1.0.6e): `Holder{ s: d }` with `dyn Speaks:s`.
-        v = raw emit_fit(x, fi.type_id, v, n.span);
+        v = raw emit_fit(x, fi.type_id, move(v), n.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", sll.text, " ",
@@ -5189,7 +5213,7 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         acc = move(r);
         i = i + 1i32;
     }
-    pass (raw iv(sll.text, acc, stid));
+    pass (raw iv(move(sll.text), move(acc), stid));
 };
 
 func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -5198,7 +5222,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     if (!(raw ll_is_ok(all))) { pass (raw iv_from_ll_at(x, all, atid, n.span)); }
     // `[]` is the zero array (0.8.1): absent means zero, as in `Result{…}`.
     if ((raw expr_list_count(n)) == 0i32) {
-        pass (raw iv(all.text, "zeroinitializer", atid));
+        pass (raw iv(move(all.text), "zeroinitializer", atid));
     }
     string:acc = "undef";
     int32:i = 0i32;
@@ -5208,7 +5232,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
         IrVal:v = raw emit_expr(x, eid);
         if (!(raw iv_is_ok(v))) { pass v; }
         // AN ELEMENT IS A SLOT (1.0.6e), of the array's element type.
-        v = raw emit_fit(x, raw type_elem(x.fe.ctx.types, atid), v, n.span);
+        v = raw emit_fit(x, raw type_elem(x.fe.ctx.types, atid), move(v), n.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", all.text, " ",
@@ -5218,7 +5242,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
         acc = move(r);
         i = i + 1i32;
     }
-    pass (raw iv(all.text, acc, atid));
+    pass (raw iv(move(all.text), move(acc), atid));
 };
 
 // `Result{ value: v, err: e }` — either field may be omitted and the omitted
@@ -5242,7 +5266,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         string:a = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(a, " = insertvalue ", rll.text,
                           " undef, i32 ", raw string_concat(eref, ", 0")));
-        pass (raw iv(rll.text, a, rtid));
+        pass (raw iv(move(rll.text), move(a), rtid));
     }
 
     LlType:ill = raw ll_type(x.fe.ctx, inner);
@@ -5253,7 +5277,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         IrVal:vv = raw emit_expr(x, ve);
         if (!(raw iv_is_ok(vv))) { pass vv; }
         // THE VALUE HALF IS A SLOT (1.0.6e), of the Result's `T`.
-        vv = raw emit_fit(x, inner, vv, n.span);
+        vv = raw emit_fit(x, inner, move(vv), n.span);
         if (!(raw iv_is_ok(vv))) { pass vv; }
         vref = move(vv.ref);
     }
@@ -5263,7 +5287,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue ", rll.text, " ",
                       raw cat4(a, ", i32 ", eref, ", 1")));
-    pass (raw iv(rll.text, b, rtid));
+    pass (raw iv(move(rll.text), move(b), rtid));
 };
 
 // --- the three compiler builtins ---------------------------------------------------
@@ -5288,7 +5312,7 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(r, " = ptrtoint ptr ",
                           raw string_concat(g, " to i64")));
-        pass (raw iv("i64", r, raw exprtypes_get(x.et, id)));
+        pass (raw iv("i64", move(r), raw exprtypes_get(x.et, id)));
     }
 
     // `#wild_ptr<T>(addr)` — the ONE place an integer becomes a pointer (D-019).
@@ -5299,7 +5323,7 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = inttoptr ", av.ll, " ",
                           raw string_concat(av.ref, " to ptr")));
-        pass (raw iv("ptr", r, raw exprtypes_get(x.et, id)));
+        pass (raw iv("ptr", move(r), raw exprtypes_get(x.et, id)));
     }
 
     // `#wild_slice<T>(ptr, len)` — a `{ptr, len}` built from parts the caller
@@ -5318,7 +5342,7 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:b = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
                           ", i64 ", raw string_concat(lv.ref, ", 1")));
-        pass (raw iv("{ ptr, i64 }", b, raw exprtypes_get(x.et, id)));
+        pass (raw iv("{ ptr, i64 }", move(b), raw exprtypes_get(x.et, id)));
     }
 
     // `#unreachable()` — TRAP THROUGH D-142'S ROUTE (D-061, `UNREACHABLE`,
@@ -5338,7 +5362,7 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (ull.state != (raw LL_OK())) {
             pass (raw iv_from_ll_at(x, ull, utid, n.span));
         }
-        pass (raw iv(ull.text, "undef", utid));
+        pass (raw iv(move(ull.text), "undef", utid));
     }
 
     pass (raw iv_broken(n.span));

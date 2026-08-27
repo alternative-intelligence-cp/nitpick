@@ -218,8 +218,8 @@ pub func:macrotable_find_elsewhere = bool(MacroTable->:t, int32:name) never fail
     pass false;
 };
 
-func:expand_err = NIL(Expander->:x, string:code, string:msg, Span:sp) never fails {
-    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+func:expand_err = NIL(Expander->:x, move string:code, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 
@@ -893,7 +893,7 @@ func:bind_invocation = bool(Expander->:x, DeclNode:md, ExprNode:inv, Span:at) ne
         string:n3 = raw string_concat(n2, raw int_to_string(pcount => int64));
         string:n4 = raw string_concat(n3, " argument(s) and this passes ");
         string:n5 = raw string_concat(n4, raw int_to_string(acount => int64));
-        drop expand_err(x, raw MACRO_ARITY(), n5, at);
+        drop expand_err(x, raw MACRO_ARITY(), move(n5), at);
         pass false;
     }
     x.params_start = (raw macro_param_span(x.ast, md)).start;
@@ -1553,7 +1553,7 @@ pub func:expand_audit = NIL(Expander->:x) never fails {
                         string:w1 = raw string_concat("`#", t);
                         string:w2 = raw string_concat(w1,
                             "` stands somewhere macro expansion never walks, so it was never expanded; this is a hole in the expander, not a mistake in this program");
-                        drop expand_err(x, raw MACRO_INTERNAL(), w2, n.span);
+                        drop expand_err(x, raw MACRO_INTERNAL(), move(w2), n.span);
                     } else {
                     if (raw macrotable_find_elsewhere(@x.macros, name)) {
                         // Declared, but not here. The macro is real and the
@@ -1561,12 +1561,12 @@ pub func:expand_audit = NIL(Expander->:x) never fails {
                         string:l1 = raw string_concat("`#", t);
                         string:l2 = raw string_concat(l1,
                             "` is declared in another module, and a macro is invocable only in the module that declares it");
-                        drop expand_err(x, raw MACRO_NOT_LOCAL(), l2, n.span);
+                        drop expand_err(x, raw MACRO_NOT_LOCAL(), move(l2), n.span);
                     } else {
                         string:m1 = raw string_concat("`#", t);
                         string:m2 = raw string_concat(m1,
                             "` names no macro and no compiler builtin; `#` is how both are spelled, so check the name against the macro's declaration");
-                        drop expand_err(x, raw MACRO_UNKNOWN(), m2, n.span);
+                        drop expand_err(x, raw MACRO_UNKNOWN(), move(m2), n.span);
                     }
                     }
                 }
@@ -1891,12 +1891,12 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
         if (raw macrotable_find_elsewhere(@x.macros, name)) {
             string:l1 = raw string_concat("`#", raw intern_get(x.interns, name));
             string:l2 = raw string_concat(l1, "` is declared in another module, and a macro is invocable only in the module that declares it");
-            drop expand_err(x, raw MACRO_NOT_LOCAL(), l2, d.span);
+            drop expand_err(x, raw MACRO_NOT_LOCAL(), move(l2), d.span);
             pass 0i32;
         }
         string:m1 = raw string_concat("`#", raw intern_get(x.interns, name));
         string:m2 = raw string_concat(m1, "` names no macro; `#` is also how a compiler builtin is spelled, so check the name against the macro's declaration");
-        drop expand_err(x, raw MACRO_UNKNOWN(), m2, d.span);
+        drop expand_err(x, raw MACRO_UNKNOWN(), move(m2), d.span);
         pass 0i32;
     }
 
@@ -1911,7 +1911,7 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
         string:n3 = raw string_concat(n2, raw int_to_string(pcount => int64));
         string:n4 = raw string_concat(n3, " argument(s) and this passes ");
         string:n5 = raw string_concat(n4, raw int_to_string(acount => int64));
-        drop expand_err(x, raw MACRO_ARITY(), n5, d.span);
+        drop expand_err(x, raw MACRO_ARITY(), move(n5), d.span);
         pass 0i32;
     }
 
@@ -1937,7 +1937,7 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
                                         raw site_name(site));
         string:w2 = raw string_concat(w1, ", which holds ");
         string:w3 = raw string_concat(w2, raw site_holds(site));
-        drop expand_err(x, raw MACRO_WRONG_SHAPE(), w3, d.span);
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(), move(w3), d.span);
         pass 0i32;
     }
 

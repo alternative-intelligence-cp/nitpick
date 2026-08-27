@@ -72,9 +72,10 @@ pub func:path_basename = string(string:p) never fails {
 };
 
 pub func:path_join = string(string:dir, string:rest) never fails {
-    if (dir.len == 0i64) { pass rest; }
-    if (rest.len == 0i64) { pass dir; }
-    if (raw path_is_absolute(rest)) { pass rest; }
+    // cloned, not passed through: the parameter is lent (D-183)
+    if (dir.len == 0i64) { pass (raw string_concat(rest, "")); }
+    if (rest.len == 0i64) { pass (raw string_concat(dir, "")); }
+    if (raw path_is_absolute(rest)) { pass (raw string_concat(rest, "")); }
     string:withslash = raw string_concat(dir, "/");
     pass (raw string_concat(withslash, rest));
 };
@@ -89,7 +90,8 @@ pub func:path_join = string(string:dir, string:rest) never fails {
 // A leading `..` that cannot be cancelled is KEPT: `../x` has no directory above
 // it to fold into, and dropping it would silently change which file is meant.
 pub func:path_normalise = string(string:p) never fails {
-    if (p.len == 0i64) { pass p; }
+    // cloned, not passed through: the parameter is lent (D-183)
+    if (p.len == 0i64) { pass (raw string_concat(p, "")); }
 
     bool:absolute = raw path_is_absolute(p);
     wild int8->:buf = alloc(p.len + 2i64);

@@ -3159,6 +3159,26 @@ entry:
   %dstart = add i64 %ch, %data
   %off = sub i64 %b, %dstart
   %slot = udiv i64 %off, %stride
+  ; POISON THE FREED PAYLOAD (D-183, 1.2.3 — an instrument that stays). A
+  ; body freed while a second header still points at it is invisible until
+  ; the allocator happens to REUSE the chunk, which makes the defect rare,
+  ; schedule-shaped, and unreproducible — the class the stress marker exists
+  ; for, one layer down. 0xAA in every freed byte makes the very first stale
+  ; read produce loud deterministic garbage instead: stage 2's one-in-242k-
+  ; lines corruption becomes visible at every site, every run. Cost: a short
+  ; store loop per free, on the free path only.
+  %pz = inttoptr i64 %ip to ptr
+  br label %poison
+poison:
+  %pi = phi i64 [ 0, %entry ], [ %pin, %poison_step ]
+  %pdone = icmp uge i64 %pi, %cls
+  br i1 %pdone, label %poisoned, label %poison_step
+poison_step:
+  %pp = getelementptr i8, ptr %pz, i64 %pi
+  store i8 -86, ptr %pp
+  %pin = add i64 %pi, 1
+  br label %poison
+poisoned:
   ; stamp FREED, then flip the bit
   %fm = call i64 @npk_m_freed(i64 %b)
   %fma = add i64 %b, 8
@@ -4875,10 +4895,29 @@ put_sign:
 build:
   %start = phi i64 [ %start0, %sign ], [ %sp, %put_sign ]
   %len = sub i64 24, %start
-  %base = getelementptr i8, ptr %buf, i64 %start
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %base, 0
+  ; THE HEADER POINTS AT THE ALLOCATION'S BASE (D-183). The digits were built
+  ; from the buffer's end, and the header used to carry `buf+start` with
+  ; `cap = len` — an INTERIOR pointer claiming ownership. The drop handed that
+  ; to `dalloc`, which correctly refused an address it never issued (-4102).
+  ; A short forward copy re-homes the digits at the base (dst below src, so
+  ; the overlap is safe), and the capacity is the allocation's true 24.
+  br label %rehome
+rehome:
+  %ri = phi i64 [ 0, %build ], [ %rin, %rehome_step ]
+  %rdone = icmp uge i64 %ri, %len
+  br i1 %rdone, label %homed, label %rehome_step
+rehome_step:
+  %rsi = add i64 %start, %ri
+  %rsp2 = getelementptr i8, ptr %buf, i64 %rsi
+  %rb = load i8, ptr %rsp2
+  %rdp = getelementptr i8, ptr %buf, i64 %ri
+  store i8 %rb, ptr %rdp
+  %rin = add i64 %ri, 1
+  br label %rehome
+homed:
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %buf, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
-  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %len, 2
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 24, 2
   %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
@@ -4905,9 +4944,16 @@ err:
 ok:
   %np = getelementptr i8, ptr %p, i64 %start
   %n = sub i64 %end, %start
+  ; CAPACITY ZERO: A SLICE IS A VIEW, AND A VIEW OWNS NOTHING (D-183). The
+  ; third field is the ownership bit — `cap != 0` means "this header's drop
+  ; frees this body" — and this header points INTO a body some other string
+  ; owns, at an interior offset no allocator ever handed out. Stamping `cap =
+  ; n` here made every dropped substring call `dalloc` on an interior pointer
+  ; of a live buffer: the first drops to run brought down four string-heavy
+  ; programs and stage 1's self-compile.
   %s0 = insertvalue { ptr, i64, i64 } undef, ptr %np, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
-  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 0, 2
   %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
@@ -4917,8 +4963,13 @@ ok:
 ; lexer to build a decoded string literal, where the decoded bytes are not a
 ; slice of the source.
 define { ptr, i64, i64 } @npk_string_from_bytes(ptr %p, i64 %n) {
+  ; CAP 0 FOR THE SAME REASON AS THE SLICE ABOVE: the buffer belongs to the
+  ; caller — a writer's sink, the lexer's decode buffer — and this header is a
+  ; borrowed view of it. `irw_text` builds one over the IR writer's LIVE
+  ; buffer; with `cap = n` the local holding it dropped the compiler's own
+  ; output stream from under it.
   %s0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
-  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 0, 2
   ret { ptr, i64, i64 } %s2
 }

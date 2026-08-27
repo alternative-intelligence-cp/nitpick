@@ -33,6 +33,7 @@ use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
 use "../../frontend/parse_stmt.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parser.npk".*;   // QUAL_MOVE (D-183)
 use "../../frontend/parse_decorate.npk".*;
 use "../../frontend/parse_pick.npk".*;
 use "../../frontend/type_layout.npk".*;
@@ -86,48 +87,126 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
         }
-        // THIS SCOPE'S DROPS BELONG HERE (D-183, 1.2.1) — after its defers,
-        // because a `defer` body can name the scope's bindings and dropping
-        // first would hand it freed storage; and before the enclosing scope's
-        // anything, because that is what innermost-first means.
-        //
-        // AND THEY ARE NOT CALLED YET, ON PURPOSE. Wiring this line before the
-        // MOVE-ONLY rule (D-183 §4, subcycle 1.2.2) is a use-after-free, not a
-        // leak fix: D-065 settled that nothing moves by being passed, so a
-        // `string` handed to `strtab_add` is COPIED into the table and then
-        // freed at the caller's closing brace, leaving the table pointing at
-        // released storage. Measured rather than reasoned: with the call in,
-        // three string-heavy programs segfaulted and npkc could no longer
-        // compile itself. Uncomment with 1.2.2, not before.
-        //
-        //   IrVal:dr = raw run_scope_drops(x, f);
-        //   if (!(raw iv_is_ok(dr))) { pass dr; }
-        discard(f);
+        // THIS SCOPE'S DROPS (D-183, 1.2.3) — after its defers, because a
+        // `defer` body can name the scope's bindings and dropping first would
+        // hand it freed storage; and before the enclosing scope's anything,
+        // because that is what innermost-first means. Held back until the
+        // move-only rule armed (1.2.2): drops in a language where a copy
+        // makes two owners are a use-after-free, measured, not a leak fix.
+        IrVal:dr = raw run_scope_drops(x, f);
+        if (!(raw iv_is_ok(dr))) { pass dr; }
+    }
+    // A FULL EXIT ALSO RELEASES THE `move` PARAMETERS (D-183, 1.2.3): they
+    // sit below every scope frame — bound in the prologue, before the body
+    // block pushes — so the frame walk never reaches them, which is exactly
+    // right for `break`/`continue` (depth > 0) and exactly wrong for the
+    // function's own exits. Lent parameters have no flag and are the
+    // CALLER's to drop.
+    if (depth == 0i32) {
+        IrVal:pr = raw run_param_drops(x);
+        if (!(raw iv_is_ok(pr))) { pass pr; }
     }
     pass (raw iv_nil());
 };
 
-// One scope's drops. A local whose type owns nothing emits nothing at all —
-// the feature has to cost zero for the scalars that dominate every program.
+// One scope's drops, FLAG-TESTED (D-183, 1.2.3). A binding with no flag emits
+// nothing at all — that covers every non-owning local (the feature costs zero
+// for the scalars that dominate every program) and the bindings that are
+// deliberately unflagged: pick-arm and loop bindings, bitwise copies of
+// storage a container still owns, safe precisely because they never drop.
+// The test is one load and one branch; a moved-out binding's flag is zero, so
+// the drop is skipped exactly where D-065 says the binding no longer owns.
 pub func:run_scope_drops = IrVal(ExprEmitter->:x, int32:f) never fails {
+    if (x.fe.is_async) { pass (raw iv_nil()); }
     int32:lhi = raw fnem_scope_lhi(x.fe, f);
     int32:llo = raw fnem_scope_lmark(x.fe, f);
     int32:i = lhi;
     while (i > llo) {
         i = i - 1i32;
-        int32:dty = raw fnem_local_type_at(x.fe, i);
-        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
-            string:sym = raw drop_fn_sym(x.fe.ctx, dty);
-            drop irw_line(x.fe.w, raw cat4("call void ", sym, "(ptr ",
-                              raw string_concat(raw fnem_local_slot_at(x.fe, i),
-                                                ")")));
-        }
+        drop emit_one_flagged_drop(x, i);
     }
     pass (raw iv_nil());
 };
 
+pub func:run_param_drops = IrVal(ExprEmitter->:x) never fails {
+    if (x.fe.is_async) { pass (raw iv_nil()); }
+    int32:i = x.fe.pcount;
+    while (i > 0i32) {
+        i = i - 1i32;
+        drop emit_one_flagged_drop(x, i);
+    }
+    pass (raw iv_nil());
+};
+
+func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
+    // AGGREGATE DROPS ARE STAGED, NOT LIVE (1.2.3, open). Direct drops of
+    // `string` locals are proven: the whole suite and the stage-1 fixpoint
+    // hold with them on. STRUCT-typed locals are excluded for now, because a
+    // bisect over the self-compile isolated a struct drop — the emitter's own
+    // `FnEmitter` state was in the guilty set — corrupting one emitted type
+    // string in stage 1's output, nondeterministically. Two true causes are
+    // already fixed (DiagList's inline `Diagnostic[256]`, whose drop walked
+    // ~250 uninitialised headers; and the source-manager text ownership), but
+    // the remaining share has not been isolated, and a drop that frees a
+    // still-referenced body is a use-after-free, not a leak — the wrong
+    // default. The leak this exclusion accepts is bounded and recorded; the
+    // investigation continues in the cycle plan.
+    int32:bts = raw fnem_local_type_at(x.fe, i);
+    int32:btk = raw type_kind(x.fe.ctx.types, bts);
+    if (btk == (raw TY_STRUCT())) { pass NIL; }
+    if (btk == (raw TY_ENUM()))   { pass NIL; }
+    string->:fl = raw fnem_local_flag_at(x.fe, i);
+    if (fl.len == 0i64) { pass NIL; }
+    string:lf = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(lf, " = load i8, ptr ", <-fl, ""));
+    string:lb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(lb, " = icmp ne i8 ",
+                      raw string_concat(lf, ", 0")));
+    string:dl = raw irw_new_label(x.fe.w, "drop.go");
+    string:nl = raw irw_new_label(x.fe.w, "drop.done");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", lb, ", label %", dl,
+                      raw string_concat(", label %", nl)));
+    drop s_start(x, dl);
+    drop irw_line(x.fe.w, raw cat3("call void ",
+                      raw drop_fn_sym(x.fe.ctx, raw fnem_local_type_at(x.fe, i)),
+                      raw string_concat(
+                          raw string_concat("(ptr ",
+                              raw fnem_local_slot_at(x.fe, i)), ")")));
+    drop s_br(x, nl);
+    drop s_start(x, nl);
+    pass NIL;
+};
+
 pub func:run_all_defers = IrVal(ExprEmitter->:x) never fails {
     pass (raw run_defers_down_to(x, 0i32));
+};
+
+// `exit` RUNS DEFERS AND NO DROPS (D-183, amended at 1.2.3). Two reasons, and
+// the second is the safety case. The process is ending: managed reclamation at
+// process death is what the kernel does wholesale, so drops here buy nothing —
+// Rust's `process::exit` runs no destructors on the same reasoning. And `exit`
+// is the CONTROLLED SHUTDOWN (D-013: main and failsafe only) — the one path
+// that must not fail. Walking the program's entire live state to free it, on
+// the way out, adds failure modes to exactly the path that exists to have
+// none: stage 1's own exit walked the whole pipeline struct and died in the
+// heap validator. Defers still run (D-014's list is unchanged); the D-151
+// leak check still runs and still covers what it always covered — WILD
+// allocations, whose discipline is manual and unaffected by this.
+pub func:run_exit_defers = IrVal(ExprEmitter->:x) never fails {
+    int32:f = raw fnem_defer_frames(x.fe);
+    while (f > 0i32) {
+        f = f - 1i32;
+        int32:hi = raw fnem_defer_frame_hi(x.fe, f);
+        int32:lo = raw fnem_defer_frame_lo(x.fe, f);
+        int32:i = hi;
+        while (i > lo) {
+            i = i - 1i32;
+            StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
+            IrVal:r = raw emit_stmt(x, body);
+            if (!(raw iv_is_ok(r))) { pass r; }
+        }
+    }
+    pass (raw iv_nil());
 };
 
 // --- blocks -------------------------------------------------------------------------
@@ -274,13 +353,52 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         // vtable word uninitialised — which read back as a plausible answer
         // rather than a crash. 1.0.5c did this here and nowhere else; `emit_fit`
         // is the one place now, and this is one of its sites.
-        v = raw emit_fit(x, dty, v, s.span);
+        v = raw emit_fit(x, dty, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
                           raw string_concat(", ptr ", slot)));
     }
-    drop fnem_bind(x.fe, raw stmt_name(s), slot, dty);
+    drop fnem_bind(x.fe, raw stmt_name(s), raw string_concat(slot, ""), dty);
+    // THE DROP FLAG (D-183, 1.2.3): one bit beside every OWNING local, live
+    // when the binding holds a value, cleared by `move` and by `pass`, tested
+    // at the scope-exit drop. An uninitialised declaration starts dead and
+    // its first assignment brings it live. ASYNC BODIES ARE EXCLUDED for now:
+    // a flag is an alloca, an alloca dies across a suspension, and making
+    // flags frame-resident is 1.2.4's work with the cross-slot machinery —
+    // recorded in the cycle plan, not silently skipped.
+    if (!x.fe.is_async) {
+        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+            string:dfl = raw irw_temp(x.fe.w);
+            drop irw_alloca(x.fe.w, dfl, "i8");
+            string:seed = "store i8 0, ptr ";
+            if (!(raw expr_is_none(init))) { seed = "store i8 1, ptr "; }
+            drop irw_line(x.fe.w, raw cat3(seed, dfl, ""));
+            drop fnem_flag_last(x.fe, move(dfl));
+        }
+    }
     pass (raw iv_nil());
+};
+
+// CLEAR THE DROP FLAG AT A PLACE'S ROOT (D-183, 1.2.3) — the emitter's half
+// of `move` and of `pass`'s implicit move. D-065 invalidates the WHOLE
+// binding on any move rooted at it, so the flag clears for `x` and
+// `x.f` alike; the sibling-leak that field granularity would fix is the
+// partial-move item recorded open on D-183. A root that is not a flagged
+// local — a pointer parameter, a global, a temporary — clears nothing.
+pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
+    if (x.fe.is_async) { pass NIL; }
+    if (raw expr_is_none(vid)) { pass NIL; }
+    PlaceRoot:r = raw place_root(x.ast, vid, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    int32:li = raw fnem_lookup_idx(x.fe, rn.payload =>! int32);
+    if (li < 0i32) { pass NIL; }
+    string->:fl = raw fnem_local_flag_at(x.fe, li);
+    if (fl.len == 0i64) { pass NIL; }
+    drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", <-fl, ""));
+    pass NIL;
 };
 
 func:compound_op = TokenKind(TokenKind:k) never fails {
@@ -301,7 +419,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // A PLACE, whatever shape it takes: a name's slot, a field through layout,
     // an element through a bound, a pointee through `<-` (0.7.7).
     PlaceVal:place = raw addr_of(x, raw stmt_target(s));
-    if (place.state != (raw LL_OK())) { pass (raw iv_from_place(place)); }
+    if (place.state != (raw LL_OK())) { pass (raw iv_from_place(move(place))); }
     LlType:ll = raw ll_type(x.fe.ctx, place.type_id);
     if (!(raw ll_is_ok(ll))) {
         pass (raw iv_from_ll_at(x, ll, place.type_id, s.span));
@@ -314,10 +432,51 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // FIT TO THE PLACE'S TYPE (1.0.6e). This is the site that segfaulted:
         // `q = c;` with `q` a `dyn` stored the 4-byte `Cat` over the fat
         // pointer and dispatched through the remains.
-        v = raw emit_fit(x, place.type_id, v, s.span);
+        v = raw emit_fit(x, place.type_id, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
+        // OVERWRITING AN OWNED VALUE RELEASES IT FIRST (D-183, 1.2.3): the
+        // RHS is already computed — `s = string_concat(s, "x")` has loaned
+        // the old body and finished with it — so the old value's drop sits
+        // between evaluation and the store. Only a FLAGGED whole-local
+        // target: a field or element overwrite leaking its old value is the
+        // partial-place item recorded open on D-183, and a pointer target is
+        // somebody else's value. The flag is set live after the store, which
+        // also brings an uninitialised declaration live at its first
+        // assignment.
+        string:aflag = "";
+        if (!x.fe.is_async) {
+            ExprNode:tgt = raw ast_expr(x.ast, raw stmt_target(s));
+            if (tgt.kind == ExprKind.ExprIdentifierExpr) {
+                int32:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
+                if (tli >= 0i32) {
+                    string->:tfl = raw fnem_local_flag_at(x.fe, tli);
+                    if (tfl.len > 0i64) {
+                        aflag = raw string_concat(<-tfl, "");
+                        string:of = raw irw_temp(x.fe.w);
+                        drop irw_line(x.fe.w, raw cat4(of, " = load i8, ptr ",
+                                          aflag, ""));
+                        string:ob = raw irw_temp(x.fe.w);
+                        drop irw_line(x.fe.w, raw cat3(ob, " = icmp ne i8 ",
+                                          raw string_concat(of, ", 0")));
+                        string:dl = raw irw_new_label(x.fe.w, "old.drop");
+                        string:kl = raw irw_new_label(x.fe.w, "old.kept");
+                        drop irw_line(x.fe.w, raw cat5("br i1 ", ob, ", label %",
+                                          dl, raw string_concat(", label %", kl)));
+                        drop s_start(x, dl);
+                        drop irw_line(x.fe.w, raw cat4("call void ",
+                                          raw drop_fn_sym(x.fe.ctx, place.type_id),
+                                          raw string_concat("(ptr ", place.addr), ")"));
+                        drop s_br(x, kl);
+                        drop s_start(x, kl);
+                    }
+                }
+            }
+        }
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
                           raw string_concat(", ptr ", place.addr)));
+        if (aflag.len > 0i64) {
+            drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", aflag, ""));
+        }
         pass (raw iv_nil());
     }
 
@@ -376,7 +535,8 @@ func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // An operand as an i64 — the loop machinery's working width; narrower counters
 // sign-extend.
 func:loop_i64 = string(ExprEmitter->:x, IrVal:v) never fails {
-    if (raw string_eq(v.ll, "i64")) { pass v.ref; }
+    // cloned, not passed through: the parameter is lent (D-183)
+    if (raw string_eq(v.ll, "i64")) { pass (raw string_concat(v.ref, "")); }
     string:w = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(w, " = sext ", v.ll, " ",
                       raw string_concat(v.ref, " to i64")));
@@ -469,7 +629,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 
     drop s_start(x, body_l);
     // `continue` re-enters at the INCREMENT, or the counter would never move.
-    drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), slot);
+    drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), raw string_concat(slot, ""));
     IrVal:b = raw emit_block(x, raw stmt_counted_body(s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -525,7 +685,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 
     drop s_start(x, body_l);
     drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag, ""));
-    drop fnem_loop_push(x.fe, head_l, junc_l, raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(junc_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_when_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -607,7 +767,7 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
                           raw string_concat(", label %", done_l)));
         x.fe.terminated = true;
         drop s_start(x, body_l);
-        drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
+        drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
         IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
         drop fnem_loop_pop(x.fe);
         if (!(raw iv_is_ok(b))) { pass b; }
@@ -652,7 +812,7 @@ func:for_bind_slot = string(ExprEmitter->:x, StmtId:sid, DeclNode:bind,
         int32:ci = raw fnem_cross_find(x.fe, sid.index, 4i32);
         if (ci >= 0i32) {
             string:g = raw fnem_cross_gep(x.fe, ci);
-            drop fnem_bind(x.fe, raw decl_name(bind), g, btid);
+            drop fnem_bind(x.fe, raw decl_name(bind), raw string_concat(g, ""), btid);
             pass g;
         }
     }
@@ -710,7 +870,7 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
         recv = move(pv.ref);
     } else {
         PlaceVal:apv = raw addr_of(x, iter);
-        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(apv)); }
+        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(move(apv))); }
         recv = move(apv.addr);
     }
 
@@ -777,7 +937,7 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                       raw string_concat(opt, ", 1")));
     drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", val,
                       raw string_concat(", ptr ", slot)));
-    drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -795,7 +955,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     int32:itid = raw exprtypes_get(x.et, iter);
     if (is_array) {
         PlaceVal:pv2 = raw addr_of(x, iter);
-        if (pv2.state != (raw LL_OK())) { pass (raw iv_from_place(pv2)); }
+        if (pv2.state != (raw LL_OK())) { pass (raw iv_from_place(move(pv2))); }
         base = move(pv2.addr);
         len = raw int_to_string(
             (raw type_array_count(x.fe.ctx.types, itid)) => int64);
@@ -853,7 +1013,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                       raw string_concat(ep, "")));
     drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", ev,
                       raw string_concat(", ptr ", slot)));
-    drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -890,7 +1050,7 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
-    drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -928,9 +1088,13 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         if (!(raw iv_is_ok(v))) { pass v; }
         // THE DECLARED `T` IS A SLOT (1.0.6e): `pass d;` from a function
         // returning `dyn Speaks` builds the fat pointer here.
-        v = raw emit_fit(x, x.fe.ret_type, v, s.span);
+        v = raw emit_fit(x, x.fe.ret_type, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         vref = move(v.ref);
+        // `pass` MOVES IMPLICITLY (D-183): the value leaves the frame, so the
+        // unwind below must not free the body it carries. Cleared BEFORE the
+        // defers run, or the scope drop would release the returned value.
+        drop clear_root_flag(x, val);
     }
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
@@ -955,7 +1119,7 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:d = raw run_all_defers(x);
+    IrVal:d = raw run_exit_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     // `exit` is legal only in `main` and `failsafe` (D-013), and returning from
     // either IS process exit — so it lowers to a plain `ret`. In `async main`
@@ -1118,7 +1282,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         int32:pb = raw type_int_bits(x.fe.ctx.types, sel_tid);
         string:pmn = raw tbb_min_decimal(pb);
         if (pmn.len == 0i64) { pass (raw iv_broken(at)); }
-        pass (raw iv("", pmn, 0i32));
+        pass (raw iv("", move(pmn), 0i32));
     }
     pass (raw iv_broken(at));
 };
@@ -1247,7 +1411,7 @@ func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
     // THE PICK'S SLOT IS A SLOT (1.0.6e): each arm's `give` is fit to it.
-    v = raw emit_fit(x, raw fnem_pick_tid(x.fe), v, s.span);
+    v = raw emit_fit(x, raw fnem_pick_tid(x.fe), move(v), s.span);
     if (!(raw iv_is_ok(v))) { pass v; }
     IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
@@ -1320,7 +1484,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         ci2 = ci2 + 1i32;
     }
     if (chain) {
-        pass (raw emit_pick_chain(x, sel, sel_tid, disc, disc_ll,
+        pass (raw emit_pick_chain(x, sel, sel_tid, disc, move(disc_ll),
                   raw pick_arm_start(s), count, "", "", 0i32));
     }
 
@@ -1360,7 +1524,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
     // The frame is what `fall` (and, in the expression form, `give`) resolve
     // against.
-    drop fnem_pick_push(x.fe, done_l, "", "", 0i32, raw pick_arm_start(s), count,
+    drop fnem_pick_push(x.fe, raw string_concat(done_l, ""), "", "", 0i32, raw pick_arm_start(s), count,
                         seq);
     i = 0i32;
     while (i < count) {
@@ -1388,12 +1552,12 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // guard, because a guard's whole point is to read them. Exhaustiveness was
 // proven statically (0.5), so the fall-off end is `unreachable`.
 pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
-                                 string:disc, string:disc_ll, int32:start,
-                                 int32:count, string:give_slot,
-                                 string:give_ll, int32:give_tid) never fails {
+                                 string:disc, move string:disc_ll, int32:start,
+                                 int32:count, move string:give_slot,
+                                 move string:give_ll, int32:give_tid) never fails {
     int32:seq = raw fnem_next_pick_seq(x.fe);
     string:done_l = raw pk_named(seq, ".done");
-    drop fnem_pick_push(x.fe, done_l, give_slot, give_ll, give_tid, start, count,
+    drop fnem_pick_push(x.fe, raw string_concat(done_l, ""), move(give_slot), move(give_ll), give_tid, start, count,
                         seq);
 
     bool:sel_signed = true;
@@ -1463,8 +1627,8 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                         pass (raw iv_broken(arm.span));
                     }
                 }
-                IrVal:plo = raw iv(disc_ll, raw int_to_string(lon.payload), 0i32);
-                IrVal:phi = raw iv(disc_ll, raw int_to_string(hin.payload), 0i32);
+                IrVal:plo = raw iv(move(disc_ll), raw int_to_string(lon.payload), 0i32);
+                IrVal:phi = raw iv(move(disc_ll), raw int_to_string(hin.payload), 0i32);
                 string:gep2 = "uge";
                 string:lep = "ult";
                 string:lip = "ule";
@@ -1653,7 +1817,7 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
         int32:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
         if (ci < 0i32) { pass ""; }
         string:g = raw fnem_cross_gep(x.fe, ci);
-        drop fnem_bind(x.fe, name, g, bind_tid);
+        drop fnem_bind(x.fe, name, raw string_concat(g, ""), bind_tid);
         pass g;
     }
     pass (raw fnem_local(x.fe, name, bind_tid, ll));
@@ -1683,7 +1847,7 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                 if (raw ll_is_ok(ell)) {
                     drop fnem_cross_add(x.fe, sid.index, 20i32, 0i32, "i64");
                     drop fnem_cross_add(x.fe, sid.index, 21i32, 0i32, "i64");
-                    drop fnem_cross_add(x.fe, sid.index, 22i32, el, ell.text);
+                    drop fnem_cross_add(x.fe, sid.index, 22i32, el, move(ell.text));
                     drop fnem_cross_add(x.fe, sid.index, 23i32, 0i32, "i32");
                 }
             }
@@ -1760,7 +1924,7 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                     LlType:fll = raw ll_type(x.fe.ctx, fi.type_id);
                     if (raw ll_is_ok(fll)) {
                         drop fnem_cross_add(x.fe, armid.index, 7i32 + si,
-                                            fi.type_id, fll.text);
+                                            fi.type_id, move(fll.text));
                     }
                 }
                 si = si + 1i32;
@@ -1780,7 +1944,7 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                         LlType:pll = raw ll_type(x.fe.ctx, pty);
                         if (raw ll_is_ok(pll)) {
                             drop fnem_cross_add(x.fe, armid.index, 7i32,
-                                                pty, pll.text);
+                                                pty, move(pll.text));
                         }
                     } else {
                         int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
@@ -1793,7 +1957,7 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                                 LlType:bpll = raw ll_type(x.fe.ctx, bs.type_id);
                                 if (raw ll_is_ok(bpll)) {
                                     drop fnem_cross_add(x.fe, armid.index,
-                                        7i32 + bi, bs.type_id, bpll.text);
+                                        7i32 + bi, bs.type_id, move(bpll.text));
                                 }
                             }
                             bi = bi + 1i32;
@@ -1941,7 +2105,7 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
             if (!(raw ll_is_ok(ll))) {
                 pass (raw iv_from_ll_at(x, ll, dty, s.span));
             }
-            drop fnem_cross_add(x.fe, sid.index, 0i32, dty, ll.text);
+            drop fnem_cross_add(x.fe, sid.index, 0i32, dty, move(ll.text));
         }
         pass (raw scan_expr(x, raw stmt_decl_init(x.ast, s), fuel - 1i32));
     }
@@ -2001,11 +2165,11 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
         if (!(raw ll_is_ok(fbll))) {
             pass (raw iv_from_ll_at(x, fbll, fbtid, s.span));
         }
-        drop fnem_cross_add(x.fe, sid.index, 4i32, fbtid, fbll.text);
+        drop fnem_cross_add(x.fe, sid.index, 4i32, fbtid, raw string_concat(fbll.text, ""));
         IrVal:rfi = raw scan_expr(x, fiter, fuel - 1i32);
         if (!(raw iv_is_ok(rfi))) { pass rfi; }
         if (fik == (raw TY_RANGE())) {
-            drop fnem_cross_add(x.fe, sid.index, 2i32, fbtid, fbll.text);
+            drop fnem_cross_add(x.fe, sid.index, 2i32, fbtid, move(fbll.text));
         }
         if (fik == (raw TY_SLICE())) {
             drop fnem_cross_add(x.fe, sid.index, 1i32, 0i32, "i64");
@@ -2191,7 +2355,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         if (specialize) {
             pt = raw type_subst(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
         }
-        LlType:pl = raw fnem_param(x.fe, raw decl_name(pd), pt);
+        LlType:pl = raw fnem_param(x.fe, raw decl_name(pd), pt,
+                        ((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
         if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;
     }

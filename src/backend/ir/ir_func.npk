@@ -75,8 +75,21 @@ pub struct:FnEmitter = {
     wild int32->:lnames;
     wild string->:lslots;
     wild int32->:ltypes;
+    // THE DROP FLAG's slot, or "" (D-183, 1.2.3): a one-bit alloca per OWNING
+    // binding, set live at initialisation, cleared by `move` and by `pass`
+    // (which moves implicitly), and tested at the scope-exit drop — so a
+    // moved-out binding is not freed a second time, and a conditionally-moved
+    // one is freed exactly when it still owns. "" means no flag and no drop:
+    // pick-arm and loop bindings are BITWISE COPIES of storage a container
+    // still owns, and are safe precisely because they are never dropped.
+    wild string->:lflags;
     int32:lcount;
     int32:lcap;
+
+    // Which parameters are `move` (consuming) — parallel to pnames. A lent
+    // parameter is the CALLER's to drop; a `move` one is this function's, at
+    // its exit, unless the body moved it onward.
+    wild int32->:pmoves;
 
     // --- control-flow state (0.7.6) ------------------------------------------
     //
@@ -200,7 +213,10 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         pnames: pn =>! wild int32->, ptypes: pt =>! wild int32->,
         plls: pl =>! wild string->, pcount: 0i32, pcap: 8i32,
         lnames: ln =>! wild int32->, lslots: ls =>! wild string->,
-        ltypes: lt =>! wild int32->, lcount: 0i32, lcap: 32i32,
+        ltypes: lt =>! wild int32->,
+        lflags: (alloc(32i64 * #size_of<string>())) =>! wild string->,
+        lcount: 0i32, lcap: 32i32,
+        pmoves: (alloc(8i64 * 4i64)) =>! wild int32->,
         terminated: false,
         dstmts: ds =>! wild int32->, dcount: 0i32, dcap: 16i32,
         dframes: df =>! wild int32->, dfcount: 0i32, dfcap: 16i32,
@@ -243,6 +259,7 @@ func:fnem_grow_params = NIL(FnEmitter->:fe) never fails {
     fe.pnames = a =>! wild int32->;
     fe.ptypes = b =>! wild int32->;
     fe.plls = c =>! wild string->;
+    fe.pmoves = (ralloc(fe.pmoves =>! wild int8->, (nc =>! int64) * 4i64)) =>! wild int32->;
     fe.pcap = nc;
     pass NIL;
 };
@@ -251,6 +268,7 @@ func:fnem_grow_locals = NIL(FnEmitter->:fe) never fails {
     int32:nc = fe.lcap * 2i32;
     wild int8->:a = ralloc(fe.lnames =>! wild int8->, (nc =>! int64) * 4i64);
     wild int8->:b = ralloc(fe.lslots =>! wild int8->, (nc =>! int64) * #size_of<string>());
+    fe.lflags = (ralloc(fe.lflags =>! wild int8->, (nc =>! int64) * #size_of<string>())) =>! wild string->;
     wild int8->:c = ralloc(fe.ltypes =>! wild int8->, (nc =>! int64) * 4i64);
     fe.lnames = a =>! wild int32->;
     fe.lslots = b =>! wild string->;
@@ -314,13 +332,17 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
 
 // Declare one parameter, in order. A refused type propagates and the function is
 // not emitted — a signature with a hole in it is not a signature minus a hole.
-pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) never fails {
+pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id,
+                             bool:is_move) never fails {
     LlType:t = raw ll_type(fe.ctx, type_id);
     if (t.state != (raw LL_OK())) { pass t; }
     if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
     fe.pnames[fe.pcount => int64] = name;
     fe.ptypes[fe.pcount => int64] = type_id;
     fe.plls[fe.pcount => int64] = raw string_concat(t.text, "");
+    int32:mv = 0i32;
+    if (is_move) { mv = 1i32; }
+    fe.pmoves[fe.pcount => int64] = mv;
     fe.pcount = fe.pcount + 1i32;
     pass t;
 };
@@ -365,7 +387,21 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
         drop irw_alloca(fe.w, slot, fe.plls[i => int64]);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " ", arg,
                                        raw string_concat(", ptr ", slot)));
-        drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
+        drop fnem_bind(fe, fe.pnames[i => int64], move(slot), fe.ptypes[i => int64]);
+        // A `move` PARAMETER IS THIS FUNCTION'S TO DROP (D-183, 1.2.3): the
+        // caller transferred ownership in, so unless the body moves it onward
+        // the value is released at THIS function's exit. A lent parameter gets
+        // no flag and no drop — it is the caller's, and dropping it here would
+        // free the caller's binding out from under it. The flag starts LIVE:
+        // the caller's transfer is this binding's initialisation.
+        if (fe.pmoves[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+                string:pfl = raw irw_temp(fe.w);
+                drop irw_alloca(fe.w, pfl, "i8");
+                drop irw_line(fe.w, raw cat3("store i8 1, ptr ", pfl, ""));
+                drop fnem_flag_last(fe, move(pfl));
+            }
+        }
         i = i + 1i32;
     }
     pass NIL;
@@ -418,7 +454,8 @@ pub func:fnem_cross_find = int32(FnEmitter->:fe, int32:stmt_index,
 };
 
 pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
-    pass fe.cross_geps[idx => int64];
+    // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
+    pass (raw string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
 };
 
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
@@ -469,7 +506,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     i = 0i32;
     while (i < fe.pcount) {
         string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i32 + i);
-        drop fnem_bind(fe, fe.pnames[i => int64], pg, fe.ptypes[i => int64]);
+        drop fnem_bind(fe, fe.pnames[i => int64], move(pg), fe.ptypes[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
@@ -664,6 +701,7 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
     fe.lnames[fe.lcount => int64] = name;
     fe.lslots[fe.lcount => int64] = move(slot);
     fe.ltypes[fe.lcount => int64] = type_id;
+    fe.lflags[fe.lcount => int64] = "";
     fe.lcount = fe.lcount + 1i32;
     pass NIL;
 };
@@ -677,7 +715,7 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
 pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) never fails {
     string:slot = raw irw_temp(fe.w);
     drop irw_alloca(fe.w, slot, ll);
-    drop fnem_bind(fe, name, slot, type_id);
+    drop fnem_bind(fe, name, raw string_concat(slot, ""), type_id);
     pass slot;
 };
 
@@ -767,10 +805,26 @@ pub func:fnem_scope_lhi = int32(FnEmitter->:fe, int32:f) never fails {
     pass fe.dlmarks[(f + 1i32) => int64];
 };
 pub func:fnem_local_slot_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass fe.lslots[i => int64];
+    pass (raw string_from_bytes(fe.lslots[i => int64].ptr, fe.lslots[i => int64].len));
 };
 pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.ltypes[i => int64];
+};
+
+// Attach a drop flag to the most recent binding (D-183, 1.2.3). Called right
+// after the `fnem_bind`/`fnem_local` that created it, by the two sites that
+// create OWNED bindings: `emit_vardecl`, and the prologue for `move` params.
+pub func:fnem_flag_last = NIL(FnEmitter->:fe, move string:flag) never fails {
+    fe.lflags[(fe.lcount - 1i32) => int64] = move(flag);
+    pass NIL;
+};
+pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int32:i) never fails {
+    pass ($$i fe.lflags[i => int64]);
+};
+pub func:fnem_param_is_move = bool(FnEmitter->:fe, int32:i) never fails {
+    if (i < 0i32) { pass false; }
+    if (i >= fe.pcount) { pass false; }
+    pass (fe.pmoves[i => int64] != 0i32);
 };
 
 pub func:fnem_loop_push = NIL(FnEmitter->:fe, move string:head, move string:done,
@@ -873,13 +927,13 @@ pub func:fnem_pick_pop = NIL(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_pick_done = string(FnEmitter->:fe) never fails {
-    pass fe.pick_dones[(fe.pick_count - 1i32) => int64];
+    pass (raw string_from_bytes(fe.pick_dones[(fe.pick_count - 1i32) => int64].ptr, fe.pick_dones[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_slot = string(FnEmitter->:fe) never fails {
-    pass fe.pick_slots[(fe.pick_count - 1i32) => int64];
+    pass (raw string_from_bytes(fe.pick_slots[(fe.pick_count - 1i32) => int64].ptr, fe.pick_slots[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_ll = string(FnEmitter->:fe) never fails {
-    pass fe.pick_lls[(fe.pick_count - 1i32) => int64];
+    pass (raw string_from_bytes(fe.pick_lls[(fe.pick_count - 1i32) => int64].ptr, fe.pick_lls[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_tid = int32(FnEmitter->:fe) never fails {
     pass fe.pick_tids[(fe.pick_count - 1i32) => int64];
@@ -902,10 +956,10 @@ pub func:fnem_next_pick_seq = int32(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_loop_head_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass fe.loop_heads[i => int64];
+    pass (raw string_from_bytes(fe.loop_heads[i => int64].ptr, fe.loop_heads[i => int64].len));
 };
 pub func:fnem_loop_done_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass fe.loop_dones[i => int64];
+    pass (raw string_from_bytes(fe.loop_dones[i => int64].ptr, fe.loop_dones[i => int64].len));
 };
 pub func:fnem_loop_depth_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.loop_depths[i => int64];
@@ -917,10 +971,10 @@ pub func:fnem_loop_pop = NIL(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_loop_head = string(FnEmitter->:fe) never fails {
-    pass fe.loop_heads[(fe.loop_count - 1i32) => int64];
+    pass (raw string_from_bytes(fe.loop_heads[(fe.loop_count - 1i32) => int64].ptr, fe.loop_heads[(fe.loop_count - 1i32) => int64].len));
 };
 pub func:fnem_loop_done = string(FnEmitter->:fe) never fails {
-    pass fe.loop_dones[(fe.loop_count - 1i32) => int64];
+    pass (raw string_from_bytes(fe.loop_dones[(fe.loop_count - 1i32) => int64].ptr, fe.loop_dones[(fe.loop_count - 1i32) => int64].len));
 };
 pub func:fnem_loop_depth = int32(FnEmitter->:fe) never fails {
     pass fe.loop_depths[(fe.loop_count - 1i32) => int64];

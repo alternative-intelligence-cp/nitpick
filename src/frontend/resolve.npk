@@ -159,7 +159,7 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
         }
     }
     drop diaglist_push(r.diags,
-        raw diag_error(raw RESOLVE_UNKNOWN(), m2, e.span));
+        raw diag_error(raw RESOLVE_UNKNOWN(), move(m2), e.span));
     pass NIL;
 };
 
@@ -982,7 +982,7 @@ pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) nev
                     string:m2 = raw string_concat(m1,
                         "` is initialised from itself, so its value cannot be computed");
                     drop diaglist_push(r.diags,
-                        raw diag_error(raw RESOLVE_CYCLE(), m2, d.span));
+                        raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
                 }
             }
         }

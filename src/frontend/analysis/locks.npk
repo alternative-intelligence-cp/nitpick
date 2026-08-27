@@ -149,8 +149,8 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     pass x;
 };
 
-func:locks_err = NIL(Locks->:x, string:code, string:msg, Span:sp) never fails {
-    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+func:locks_err = NIL(Locks->:x, move string:code, move string:msg, Span:sp) never fails {
+    drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 
@@ -740,7 +740,7 @@ func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at
     string:m3 = raw string_concat(m2, raw int_to_string(lo => int64));
     string:m4 = raw string_concat(m3,
         "; acquisition must strictly increase, or a cycle of threads each waiting on the next becomes possible (D-056)");
-    drop locks_err(x, raw LOCK_ORDER(), m4, at);
+    drop locks_err(x, raw LOCK_ORDER(), move(m4), at);
     pass NIL;
 };
 
@@ -784,7 +784,7 @@ func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) never fails {
     string:m3 = raw string_concat(m2, raw int_to_string(hi => int64));
     string:m4 = raw string_concat(m3,
         "; a call through a trait object must have a finite acquisition set, and the bound is what makes it one (D-056)");
-    drop locks_err(x, raw LOCK_EXCEEDS_BOUND(), m4, d.span);
+    drop locks_err(x, raw LOCK_EXCEEDS_BOUND(), move(m4), d.span);
     pass NIL;
 };
 

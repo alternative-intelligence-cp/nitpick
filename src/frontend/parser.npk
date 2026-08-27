@@ -113,26 +113,26 @@ pub func:p_accept = bool(Parser->:p, TokenKind:k) never fails {
 
 // --- diagnostics -------------------------------------------------------------
 
-pub func:p_error = NIL(Parser->:p, string:code, string:message) never fails {
+pub func:p_error = NIL(Parser->:p, move string:code, move string:message) never fails {
     // Suppressed while in panic mode. One error region, one diagnostic.
     if (p.panic) {
         pass NIL;
     }
     p.panic = true;
     drop diaglist_push(p.diags,
-        raw diag_error(code, message, raw p_span(p)));
+        raw diag_error(move(code), move(message), raw p_span(p)));
     pass NIL;
 };
 
 // An error about somewhere ELSE in the file. An unclosed `{` is discovered at
 // end of file and belongs at the brace; a diagnostic pointing at the last line
 // names the one place the mistake certainly is not.
-pub func:p_error_at = NIL(Parser->:p, string:code, string:message, Span:span) never fails {
+pub func:p_error_at = NIL(Parser->:p, move string:code, move string:message, Span:span) never fails {
     if (p.panic) {
         pass NIL;
     }
     p.panic = true;
-    drop diaglist_push(p.diags, raw diag_error(code, message, span));
+    drop diaglist_push(p.diags, raw diag_error(move(code), move(message), span));
     pass NIL;
 };
 
@@ -148,7 +148,7 @@ pub func:p_expect = bool(Parser->:p, TokenKind:k) never fails {
     string:m2 = raw string_concat(m1, "`, found `");
     string:m3 = raw string_concat(m2, got);
     string:m4 = raw string_concat(m3, "`");
-    drop p_error(p, raw PARSE_EXPECTED(), m4);
+    drop p_error(p, raw PARSE_EXPECTED(), move(m4));
     pass false;
 };
 

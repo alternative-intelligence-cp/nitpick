@@ -36,9 +36,9 @@ func:main = int32(cstring[]:_~argv) {
     if (!(string_equals(text, "alpha\nbeta\ngamma\ndelta"))) { exit 13i32; }
 
     // The pure normalizer, on the shapes a buffer can end with.
-    if (!(string_equals(raw nio_normalize("a\r\nb\r"), "a\nb\n")))
+    if (!(string_equals(nio_normalize("a\r\nb\r") ?! E9, "a\nb\n")))
                                                              { exit 14i32; }
-    if (!(string_equals(raw nio_normalize("plain"), "plain")))
+    if (!(string_equals(nio_normalize("plain") ?! E9, "plain")))
                                                              { exit 15i32; }
 
     // --- writing emits \n; \r\n is a creation choice ------------------------
@@ -64,9 +64,13 @@ func:main = int32(cstring[]:_~argv) {
     if (crb.is_error)                                        { exit 20i32; }
     if (!(raw bytes_equal(crb.value, "one\r\nmid\r\ntail"))) { exit 21i32; }
 
-    drop wild_release_all();
+    // `wild_release_all()` used to sit here, appeasing the leak check before
+    // the managed lowering existed. Under D-183 the drops ARE the cleanup, and
+    // a wholesale release before scope exit frees the very bodies the drops
+    // are about to free again — the interim's tool colliding with the thing
+    // that replaced it. It remains what it always was: failsafe's instrument
+    // (leak_cleanup exercises that), not ordinary main's.
 
-    drop wild_release_all();
     exit 0i32;
 };
 

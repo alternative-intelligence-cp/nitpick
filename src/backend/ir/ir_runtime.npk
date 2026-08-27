@@ -259,9 +259,11 @@ pub func:rt_name_at = string(int32:i) never fails {
     pass "write_file";
 };
 
+// Cloned, not passed through (D-183): `s` is lent, and this runs a handful of
+// times per runtime symbol while the declare block is written — cold.
 pub func:rt_arg = string(RtSig:s, int32:i) never fails {
-    if (i == 0i32) { pass s.a0; }
-    if (i == 1i32) { pass s.a1; }
-    if (i == 2i32) { pass s.a2; }
-    pass s.a3;
+    if (i == 0i32) { pass (raw string_concat(s.a0, "")); }
+    if (i == 1i32) { pass (raw string_concat(s.a1, "")); }
+    if (i == 2i32) { pass (raw string_concat(s.a2, "")); }
+    pass (raw string_concat(s.a3, ""));
 };

@@ -12701,6 +12701,35 @@ and is REFUSED (`NITPICK-MOVE-004`) anywhere but a parameter — the same
 parses-everywhere-refused-where-meaningless shape `nodrop` already has, and the
 house rule that the parser never restricts.
 
+### `exit` runs defers and NO drops (amended at 1.2.3)
+
+The earlier text here said drops run on `exit` before D-151's leak check. Built
+and measured, that was wrong twice over. The process is ending, so wholesale
+reclamation is the kernel's job — Rust's `process::exit` runs no destructors on
+the same reasoning — and `exit` is the CONTROLLED SHUTDOWN (D-013), the one
+path that must not fail: walking the entire live program state to free it on
+the way out adds failure modes to exactly the path that exists to have none.
+Stage 1's own exit walked the whole pipeline struct and died in the heap
+validator, which is the demonstration. Defers still run on `exit` (D-014's
+list is unchanged); the D-151 check still covers what it always covered, the
+WILD family, whose discipline is manual.
+
+### Views, and the runtime's obligations to them (1.2.3)
+
+The `cap == 0` ownership bit is load-bearing at runtime, and every runtime
+producer of a string header must now answer "who owns this body?" in the
+capacity field. `string_slice` and `string_from_bytes` are VIEWS and say
+`cap = 0`; `string_concat`, `int_to_string`, `read_file` and `read_stdin` are
+owners and say the allocation's true base and capacity — `int_to_string`
+having been caught returning an INTERIOR pointer with `cap = len`, which the
+first drop handed to `dalloc` and the allocator rightly refused. The SOURCE
+TEXT is the canonical case: the manager owns every file's body for the
+process's life (the intern table and every span are views into it), so
+`srcmgr_text` and everything above it hand out views, and nothing else may
+ever own what they return. `npk_dalloc` poisons freed payloads (0xAA) as a
+standing instrument, because a freed-while-shared body is otherwise invisible
+until the allocator happens to reuse the chunk.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

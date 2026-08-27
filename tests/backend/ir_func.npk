@@ -62,8 +62,8 @@ func:main = int32(cstring[]:_~argv) {
     LlType:r2 = raw fnem_begin(@f2, "add", 0i32, i32t);
     if (!(raw ll_is_ok(r2)))                               { exit 20i32; }
     if (!(raw string_eq(r2.text, "{ i32, i32 }")))         { exit 21i32; }
-    discard(raw fnem_param(@f2, nx, i32t));
-    discard(raw fnem_param(@f2, ny, i32t));
+    discard(raw fnem_param(@f2, nx, i32t, false));
+    discard(raw fnem_param(@f2, ny, i32t, false));
     drop fnem_open(@f2);
     drop fnem_ret_pass(@f2, "7");
     drop fnem_close(@f2, true);
@@ -150,7 +150,7 @@ func:main = int32(cstring[]:_~argv) {
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
     if (!(raw string_eq(bad.rung, "1.1")))                 { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
-    LlType:badp = raw fnem_param(@f8, nx, f32t);
+    LlType:badp = raw fnem_param(@f8, nx, f32t, false);
     if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }
 
     // --- THE COUNTERS RESET PER FUNCTION: two functions, one writer -----------
@@ -163,8 +163,8 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_open(@f9);
     drop fnem_close(@f9, false);
     discard(raw fnem_begin(@f9, "add", 0i32, i32t));
-    discard(raw fnem_param(@f9, nx, i32t));
-    discard(raw fnem_param(@f9, ny, i32t));
+    discard(raw fnem_param(@f9, nx, i32t, false));
+    discard(raw fnem_param(@f9, ny, i32t, false));
     drop fnem_open(@f9);
     drop fnem_ret_pass(@f9, "7");
     drop fnem_close(@f9, true);
@@ -175,8 +175,8 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:wa = raw irw_to_buffer();
     FnEmitter:fa = raw fnem_init(@wa, @c);
     discard(raw fnem_begin(@fa, "add", 0i32, i32t));
-    discard(raw fnem_param(@fa, nx, i32t));
-    discard(raw fnem_param(@fa, ny, i32t));
+    discard(raw fnem_param(@fa, nx, i32t, false));
+    discard(raw fnem_param(@fa, ny, i32t, false));
     drop fnem_open(@fa);
     drop fnem_ret_pass(@fa, "7");
     drop fnem_close(@fa, true);

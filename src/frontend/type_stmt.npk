@@ -626,6 +626,21 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (want == 0i32) { pass NIL; }
+    // `pass` MOVES (D-183), and you cannot give what you were only lent: a
+    // lent owning parameter passed back up hands the caller a header whose
+    // body the CALLER'S caller still owns — `nio_normalize`'s unchanged path
+    // did exactly this, and the first drop to run freed the returned value
+    // out from under everyone. The same rule `move(p)` answers to, asked of
+    // the implicit move.
+    drop refuse_move_of_borrowed(e, v, got, s.span);
+    // AND THE SAME AGAIN THROUGH A POINTER: `pass m.files[i].text` returns a
+    // cap-carrying copy of a value the POINTEE owns, and the first flagged
+    // local it lands in frees the container's body — which is precisely how
+    // `srcmgr_text` freed every source file out from under the interns, the
+    // spans, and the lexer. The pointer-root exemption on `move` is for
+    // permuting WITHIN a container; `pass` LEAVES, so it gets no exemption.
+    // The fix at the site is a view (`string_from_bytes`) or a clone.
+    drop refuse_pass_of_pointee_owned(e, v, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }

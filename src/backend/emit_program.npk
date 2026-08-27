@@ -645,7 +645,7 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) never fails {
         ModuleEntry:me = raw graph_at(g, m);
         string:base = raw path_basename(raw srcmgr_path_proven(@g.sm, me.file));
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
-        drop modmap_members(g, map, mn, base);
+        drop modmap_members(g, map, mn, move(base));
         m = m + 1i32;
     }
     drop llctx_set_modmap(c, map, n);
@@ -721,7 +721,7 @@ func:vtable_stem_of = string(LlCtx->:c, InternTable->:interns, int32:self_ty,
 };
 
 func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
-                          string:canon) never fails {
+                          move string:canon) never fails {
     int32:k = raw item_member_count(@g.ast, mn);
     int32:i = 0i32;
     while (i < k) {
@@ -730,9 +730,9 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
         if (d.kind == DeclKind.DeclModuleDecl) {
             string:nm = raw intern_get(g.interns, raw decl_name(d));
             string:nc = raw string_concat(canon, raw string_concat(".", nm));
-            drop modmap_members(g, map, d, nc);
+            drop modmap_members(g, map, d, move(nc));
         } else {
-            map[item.index => int64] = raw intern_add(g.interns, canon);
+            map[item.index => int64] = raw intern_add(g.interns, move(canon));
 
             // AN `impl`'s METHODS ARE IN THE MODULE TOO (1.0.4). They are
             // declarations this walk never reaches on its own — an impl GROUPS
@@ -744,7 +744,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                 int32:mi = 0i32;
                 while (mi < (raw impl_member_count(@g.ast, d))) {
                     DeclId:mid = raw impl_member(@g.ast, d, mi);
-                    map[mid.index => int64] = raw intern_add(g.interns, canon);
+                    map[mid.index => int64] = raw intern_add(g.interns, move(canon));
                     mi = mi + 1i32;
                 }
             }
@@ -755,7 +755,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                 int32:ti = 0i32;
                 while (ti < (raw item_member_count(@g.ast, d))) {
                     DeclId:tmem = raw item_member(@g.ast, d, ti);
-                    map[tmem.index => int64] = raw intern_add(g.interns, canon);
+                    map[tmem.index => int64] = raw intern_add(g.interns, move(canon));
                     ti = ti + 1i32;
                 }
             }

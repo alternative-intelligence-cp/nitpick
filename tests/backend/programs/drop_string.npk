@@ -1,0 +1,57 @@
+// expect-exit: 42
+// stress: 40
+//
+// STRING DROPS, LIVE (D-183, 1.2.3) — the managed regime's first real
+// reclamation. 500 rounds of every flag shape, in an inner scope so each
+// round's drops run at ITS closing brace:
+//
+//   - a LITERAL is never freed: its body is a module constant, `cap == 0` is
+//     the ownership bit, and `npk_dalloc` would trap on it (exit 93);
+//   - a heap string drops exactly once — a double free traps the same way,
+//     so 500 clean rounds mean each round freed its own body and no other;
+//   - a MOVED string does not drop at the source — one owner, one free;
+//   - a CONDITIONALLY moved string drops only on the rounds that kept it —
+//     the drop flag deciding at runtime;
+//   - REASSIGNMENT frees the old body before the store.
+//
+// `exit` runs defers and NO drops (D-183): the kernel reclaims, and the
+// controlled-shutdown path stays minimal.
+mod:drop_string;
+error:Cat;
+func:keepit = int64(move string:s) never fails {
+    pass s.len;                    // consumed here: this frame's exit drops it
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:i = 0i32;
+    int64:acc = 0i64;
+    while (i < 500i32) {
+        {
+            string:lit = "a literal, whose body is not ours to free";
+            string:heap = string_concat("abcdefgh", "ijklmnop") ?! Cat;
+            string:moved = string_concat("xy", "z") ?! Cat;
+            string:sink = move(moved);
+            string:cond = string_concat("c", "d") ?! Cat;
+            if (i > 249i32) { acc = acc + (keepit(move(cond)) ?! Cat); }
+            heap = string_concat("re", "assigned") ?! Cat;
+            acc = acc + lit.len + sink.len + heap.len;
+        }
+        i = i + 1i32;
+    }
+    // 500*(41+3+10) + 250*2 = 27000 + 500 = 27500
+    if (acc != 27500i64) { exit 71i32; }
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Cat)              { exit 61i32; },
+        (Unreachable)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StaleHandle)      { exit 95i32; },
+        (ChannelClosed)    { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

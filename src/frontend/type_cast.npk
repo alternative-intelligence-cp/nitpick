@@ -306,7 +306,7 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
         }
         m4 = raw string_concat(m4, raw why_lossy(tyt, from, to));
         m4 = raw string_concat(m4, ". Write `=>!` to accept that.");
-        drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), m4, at));
+        drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), move(m4), at));
         pass to;
     }
 
@@ -320,7 +320,7 @@ pub func:check_cast = int32(TypeTable->:tyt, InternTable->:interns, DiagList->:d
     string:n4 = raw string_concat(n3, "`: ");
     n4 = raw string_concat(n4, raw why_impossible(tyt, from, to));
     n4 = raw string_concat(n4, ". `=>!` does not help — it opts out of a check, not of a meaning.");
-    drop diaglist_push(diags, raw diag_error(raw TYPE_NO_CAST(), n4, at));
+    drop diaglist_push(diags, raw diag_error(raw TYPE_NO_CAST(), move(n4), at));
     pass to;
 };
 

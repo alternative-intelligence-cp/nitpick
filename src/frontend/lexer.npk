@@ -37,8 +37,11 @@ pub struct:Lexer = {
     int32[8]:interp_brace;   // brace depth at each open interpolation
 };
 
-pub func:lexer_init = Lexer(int32:file, move string:text) never fails {
-    Lexer:lx = Lexer{ text: move(text), file: file, pos: 0i64, line: 1i32, col: 1i32,
+// The text is a cap-0 VIEW of the source manager's body (D-183): the Lexer
+// holds it, the Lexer's own drop skips it, and the manager stays the one
+// owner for the process's life.
+pub func:lexer_init = Lexer(int32:file, string:text) never fails {
+    Lexer:lx = Lexer{ text: raw string_from_bytes(text.ptr, text.len), file: file, pos: 0i64, line: 1i32, col: 1i32,
                       in_template: false, interp_depth: 0i32, brace_depth: 0i32,
                       interp_brace: [] };
     pass lx;
@@ -246,7 +249,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             string:part = raw slice_proven(lx.text, tstart, lx.pos);
             pass (raw token_make(TokenKind.TemplatePart,
                       raw lexer_span_from(lx, tstart, line, col),
-                      (raw intern_add(interns, part)) => int64));
+                      (raw intern_add(interns, move(part))) => int64));
         }
 
         uint8:t2 = raw lexer_peek(lx);
@@ -322,7 +325,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             // No escape processing at all -- that is what "raw" means.
             pass (raw token_make(TokenKind.RawStringLit,
                       raw lexer_span_from(lx, start, line, col),
-                      (raw intern_add(interns, body)) => int64));
+                      (raw intern_add(interns, move(body))) => int64));
         }
     }
 
@@ -392,7 +395,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         TokenKind:sk = TokenKind.StringLit;
         if (block) { sk = TokenKind.MultiStringLit; }
         pass (raw token_make(sk, ssp,
-                  (raw intern_add(interns, dec.value)) => int64));
+                  (raw intern_add(interns, move(dec.value))) => int64));
     }
 
     // --- characters ----------------------------------------------------------
@@ -458,7 +461,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 }
             }
             drop diaglist_push(diags,
-                raw diag_error(raw LEX_UNTERMINATED_CHAR(), cmsg, sp));
+                raw diag_error(raw LEX_UNTERMINATED_CHAR(), move(cmsg), sp));
             pass (raw token_make(TokenKind.Error, sp, 0i64));
         }
         discard(raw lexer_advance(lx));
@@ -500,7 +503,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                     // again later, and the source form is what the const
                     // evaluator needs to get it right the first time.
                     pass (raw token_numeric(TokenKind.FloatLit, fsp,
-                              (raw intern_add(interns, ftext)) => int64,
+                              (raw intern_add(interns, raw string_concat(ftext, ""))) => int64,
                               raw num_float_width(ftext)));
                 }
             }
@@ -532,7 +535,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         TokenKind:kind = raw keyword_kind_of(text);
         int64:payload = 0i64;
         if (kind == TokenKind.Ident) {
-            payload = (raw intern_add(interns, text)) => int64;
+            payload = (raw intern_add(interns, move(text))) => int64;
         }
         pass (raw token_make(kind,
                              raw lexer_span_from(lx, start, line, col), payload));

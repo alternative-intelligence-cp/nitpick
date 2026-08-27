@@ -262,7 +262,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, trait_id));
         string:m2 = raw string_concat(m1,
             "` is not a trait, so it cannot be implemented; in `impl:Type:Trait` the type comes first (D-031)");
-        drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), m2, d.span));
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), move(m2), d.span));
         pass NIL;
     }
     drop impl_push(t, target, trait_id, id.index, false, scope);
@@ -1365,7 +1365,7 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
                     raw type_display(r.types, r.interns, e.trait_id));
     string:m4 = raw string_concat(m3, "` declares for it");
     drop diaglist_push(r.diags,
-        raw diag_error(raw TYPE_IMPL_INCOMPLETE(), m4, im.span));
+        raw diag_error(raw TYPE_IMPL_INCOMPLETE(), move(m4), im.span));
     pass NIL;
 };
 

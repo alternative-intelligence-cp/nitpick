@@ -124,7 +124,8 @@ pub func:intern_get = string(InternTable->:t, int32:index) never fails {
     if (index >= t.count) {
         !!! BoundsId;
     }
-    pass t.items[index => int64];
+    // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
+    pass (raw string_from_bytes(t.items[index => int64].ptr, t.items[index => int64].len));
 };
 
 pub func:intern_count = int32(InternTable->:t) never fails {

@@ -204,8 +204,8 @@ pub func:etyper_resolver = TypeResolver(ExprTyper->:e) never fails {
     pass r;
 };
 
-pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) never fails {
-    drop diaglist_push(e.diags, raw diag_error(code, message, at));
+pub func:te_error = int32(ExprTyper->:e, move string:code, move string:message, Span:at) never fails {
+    drop diaglist_push(e.diags, raw diag_error(move(code), move(message), at));
     pass 0i32;
 };
 
@@ -252,7 +252,37 @@ pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) n
 // write the function: declare the parameter `move string:text`, at which point
 // its callers must transfer at the call site too. The chain closes without the
 // escape analysis needing to learn about ownership.
-func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+// `pass <place rooted at a pointer>` for an OWNING type (D-183, 1.2.3): the
+// pointee owns that value, and passing it up makes a cap-carrying copy that
+// some flagged local will eventually drop — freeing the container's storage
+// from a frame that never owned it. Refused; the site returns a VIEW
+// (`string_from_bytes`) or an explicit clone instead.
+pub func:refuse_pass_of_pointee_owned = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+                                            Span:at) never fails {
+    if (ty == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, ty)) { pass NIL; }
+    if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
+    if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
+    PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(e.ast, r.id);
+    // The whole root itself passing up is the borrowed-param rule's business;
+    // this one fires only when the path DESCENDS from a pointer — a field or
+    // element of something the frame merely points at.
+    if (r.id.index == id.index) { pass NIL; }
+    int32:rt = raw exprtypes_get(e.expr_types, r.id);
+    if (rt == 0i32) { pass NIL; }
+    if ((raw type_kind(e.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    string:m1 = raw string_concat("`",
+                    raw type_display(e.types, e.interns, ty));
+    discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
+        raw string_concat(m1, "` is owned by what this pointer reaches, and `pass` would hand the caller a copy that eventually drops it — freeing the container's storage from a frame that never owned it (D-183). Return a view (`string_from_bytes(p.ptr, p.len)` for a string) or an explicit `.clone()`"),
+        at));
+    pass NIL;
+};
+
+pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                    Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
@@ -315,7 +345,7 @@ pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) neve
     ExprNode:n = raw ast_expr(e.ast, id);
     string:m1 = raw string_concat("`", what);
     string:m2 = raw string_concat(m1, "` needs a place — a name, a field or element of one, or what a pointer points at — and this expression is a value with no address");
-    discard(raw te_error(e, raw TYPE_NOT_A_PLACE(), m2, n.span));
+    discard(raw te_error(e, raw TYPE_NOT_A_PLACE(), move(m2), n.span));
     pass NIL;
 };
 
@@ -694,7 +724,7 @@ func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) never 
     string:m4 = raw string_concat(m3, "`: a `tbb`'s arithmetic carries ERR, stickiness and saturation (D-008), so it does not mix with `");
     string:m5 = raw string_concat(m4, raw type_display(e.types, e.interns, other));
     string:m6 = raw string_concat(m5, "`; cast the other operand to the same `tbb` width");
-    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m6, at));
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m6), at));
 };
 
 // The message names the TYPE that made it wrong, and says why that type is not a
@@ -705,7 +735,7 @@ func:te_operand_error = int32(ExprTyper->:e, Span:at, int32:t) never fails {
     string:m1 = raw string_concat("`", d);
     string:m2 = raw string_concat(m1, "` is not a number, so it has no arithmetic: ");
     string:m3 = raw string_concat(m2, raw why_not_numeric(e, t));
-    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m3, at));
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m3), at));
 };
 
 // Each of these is representationally an integer, so the reason has to be stated
@@ -748,7 +778,7 @@ pub func:te_mismatch = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) never f
             }
         }
     }
-    pass (raw te_error(e, raw TYPE_MISMATCH(), m4, at));
+    pass (raw te_error(e, raw TYPE_MISMATCH(), move(m4), at));
 };
 
 // Comparison: `== != < <= > >= <=>`. Wider than arithmetic — the types that
@@ -783,7 +813,7 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
             string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, common));
             string:m2 = raw string_concat(m1, "` has no ordering: ");
             m2 = raw string_concat(m2, raw why_not_ordered(e, common));
-            discard(raw te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+            discard(raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m2), n.span));
         }
     } else {
         // `==`/`!=` ON AN AGGREGATE IS REFUSED HERE (D-169, 1.0.9c). Equality on
@@ -798,7 +828,7 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
                             raw type_display(e.types, e.interns, common));
             string:e2 = raw string_concat(e1,
                 "` has no built-in `==`: derive or implement `Eq` and compare with `a.eq(b)`");
-            discard(raw te_error(e, raw TYPE_NOT_COMPARABLE(), e2, n.span));
+            discard(raw te_error(e, raw TYPE_NOT_COMPARABLE(), move(e2), n.span));
         }
     }
     pass (e.types.t_bool);
@@ -870,7 +900,7 @@ pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) never fails {
                                     raw type_display(e.types, e.interns, t));
     string:m2 = raw string_concat(m1,
         "`; there is no truthiness in Nitpick, so write the comparison you mean");
-    discard(raw te_error(e, raw TYPE_MISMATCH(), m2, at));
+    discard(raw te_error(e, raw TYPE_MISMATCH(), move(m2), at));
     pass NIL;
 };
 
@@ -900,7 +930,7 @@ func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) never fails {
     if (t == e.types.t_bool) {
         m2 = raw string_concat(m2, "; `!`, `&&` and `||` are the logical operators");
     }
-    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
+    pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m2), at));
 };
 
 // `++` / `--` are STRUCK at parse (D-174) — the parser refuses them by name
@@ -1259,7 +1289,7 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
             m2 = raw string_concat(m2,
                 "; a pointer is not an `Optional` — `p == NULL` asks whether it points anywhere and `<-p` brings the value back");
         }
-        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
     }
     int32:inner = raw type_elem(e.types, t);
 
@@ -1339,7 +1369,7 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
             m2 = raw string_concat(m2, "; a `Result` answers that with `.is_error`");
         }
-        pass (raw te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+        pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
     }
     pass (e.types.t_bool);
 };
@@ -1845,7 +1875,7 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
                 "; there is no implicit widening, so write the cast");
         }
     }
-    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MISMATCH(), m4, at));
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MISMATCH(), move(m4), at));
     pass NIL;
 };
 
@@ -1945,6 +1975,13 @@ func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) nev
             int32:saved = e.expected;
             e.expected = cur;
             int32:got = raw type_of_expr(e, ExprId{ index: st.a });
+            // `give` hands the arm's value to the pick's slot (D-183): an
+            // owning PLACE given bare would leave two owners — the binding
+            // and the slot — and one drop later frees the other's body. The
+            // slot that stayed unwired while every other value slot was
+            // swept, and the one that let a shared `{ ptr, i64, i64 }` text
+            // survive into stage 2's emission as sink garbage.
+            drop require_move_if_owning(e, ExprId{ index: st.a }, got, at);
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {
                 if (got != 0i32) {
@@ -2011,6 +2048,8 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
         int32:saved = e.expected;
         e.expected = elem;
         int32:got = raw type_of_expr(e, v);
+        // D-183: the array takes ownership of each element.
+        drop require_move_if_owning(e, v, got, n.span);
         e.expected = saved;
 
         if (!(raw type_is_invalid(e.types, got))) {
@@ -2771,7 +2810,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, t));
                 string:m2 = raw string_concat(m1,
                     "` is unsigned, so it has no negation");
-                pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+                pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m2), n.span));
             }
         }
         pass t;

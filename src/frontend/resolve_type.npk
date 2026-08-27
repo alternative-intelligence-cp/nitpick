@@ -223,8 +223,8 @@ func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn, Span:at
         at));
 };
 
-func:ty_error = int32(TypeResolver->:r, string:code, string:message, Span:at) never fails {
-    drop diaglist_push(r.diags, raw diag_error(code, message, at));
+func:ty_error = int32(TypeResolver->:r, move string:code, move string:message, Span:at) never fails {
+    drop diaglist_push(r.diags, raw diag_error(move(code), move(message), at));
     pass 0i32;      // the INVALID type
 };
 
@@ -508,7 +508,7 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
         string:text = raw intern_get(r.interns, name);
         string:m1 = raw string_concat("there is no type named `", text);
         string:m2 = raw string_concat(m1, "`");
-        pass (raw ty_error(r, raw TYPE_UNKNOWN(), m2, n.span));
+        pass (raw ty_error(r, raw TYPE_UNKNOWN(), move(m2), n.span));
     }
 
     Symbol:s = raw symtab_get(r.tab, sym);
@@ -560,7 +560,7 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     string:k2 = raw string_concat(k1, "` is ");
     string:k3 = raw string_concat(k2, raw decl_kind_article(dnode));
     string:k4 = raw string_concat(k3, ", not a type");
-    pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(), k4, n.span));
+    pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(), move(k4), n.span));
 };
 
 // --- instantiation (TRAITS_REFERENCE 3.3, D-064) --------------------------------------
@@ -806,7 +806,16 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
 func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
     int32:i = 0i32;
     while (i < e.count) {
-        if (e.names[i => int64] == name) { pass (e.vals[i => int64]); }
+        if (e.names[i => int64] == name) {
+            // Deep-viewed (D-183): the env owns the text; the caller's copy views.
+            ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
+                                    type_id: e.vals[i => int64].type_id,
+                                    num: e.vals[i => int64].num,
+                                    text: raw string_from_bytes(
+                                        e.vals[i => int64].text.ptr,
+                                        e.vals[i => int64].text.len) };
+            pass cv;
+        }
         i = i + 1i32;
     }
     pass (raw cv_none());
@@ -863,10 +872,10 @@ pub func:fold_gave_up = bool(TypeResolver->:r) never fails { pass r.fold_blown; 
 // THE FOLD REPORTED SOMETHING, AND IT SAYS SO ONCE. Without the guard a failure
 // deep in a nested evaluation reports at every frame it unwinds through, which
 // buries the one sentence that matters under copies of itself.
-func:fold_reported = NIL(TypeResolver->:r, string:code, string:msg, Span:sp) never fails {
+func:fold_reported = NIL(TypeResolver->:r, move string:code, move string:msg, Span:sp) never fails {
     if (r.fold_blown) { pass NIL; }
     r.fold_blown = true;
-    drop diaglist_push(r.diags, raw diag_error(code, msg, sp));
+    drop diaglist_push(r.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
 
@@ -1155,7 +1164,7 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
         ConstVal:av = raw fold_expr(r, arg, scope, fuel - 1i32);
         if (!(raw cv_folded(av))) { pass (raw cv_none()); }
         DeclNode:pn = raw ast_decl(r.ast, raw fn_param(r.ast, fndecl, i));
-        drop foldenv_set(@frame, raw decl_name(pn), av);
+        drop foldenv_set(@frame, raw decl_name(pn), move(av));
         i = i + 1i32;
     }
 
@@ -1209,7 +1218,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
     if (st.kind == StmtKind.StmtVarDeclStmt) {
         ConstVal:v = raw fold_expr(r, raw stmt_decl_init(r.ast, st), scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        drop foldenv_set(@r.env, raw stmt_name(st), v);
+        drop foldenv_set(@r.env, raw stmt_name(st), move(v));
         pass (raw flow_none());
     }
 
@@ -1221,7 +1230,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
         if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw flow_fail()); }
         ConstVal:v = raw fold_expr(r, raw stmt_assigned(st), scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        drop foldenv_set(@r.env, (raw expr_name(target)) =>! int32, v);
+        drop foldenv_set(@r.env, (raw expr_name(target)) =>! int32, move(v));
         pass (raw flow_none());
     }
 
@@ -1235,7 +1244,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
     if (st.kind == StmtKind.StmtPassStmt) {
         ConstVal:v = raw fold_expr(r, ExprId{ index: st.a }, scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        pass (raw flow_ret(v));
+        pass (raw flow_ret(move(v)));
     }
 
     if (st.kind == StmtKind.StmtWhileStmt) {
@@ -1570,7 +1579,7 @@ func:arity_error = int32(TypeResolver->:r, TypeNode:n, int32:name,
         m5 = raw string_concat(m5,
             "; a generic type is written with its arguments — `Container<int32>`, never bare `Container`");
     }
-    pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(), m5, n.span));
+    pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(), move(m5), n.span));
 };
 
 // EVERY KIND HAS A NAME (1.0.8): this answered "not a type" for an enum, a
