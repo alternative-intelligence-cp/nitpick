@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.2; the managed regime's drops are LIVE
+## Status: PHASE C UNDERWAY — cycle 1.2 COMPLETE; the managed regime is real
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 183 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -35,11 +35,21 @@ consuming parameters, and scope-exit drops LIVE for strings, structs and enums
 Debug instruments that stay: 0xAA free-poisoning, and `@npk_quarantine`
 (npkrt.ll, ships 0) — a never-reuse mode that makes any use-after-free
 deterministic, with a poisoned-source tripwire in `npk_string_concat`.
+**Cycle 1.2 is COMPLETE** (`meta/roadmap/done/1.2/`): drops are live for
+strings, structs, enums, `dyn` (which owns a heap cell and drops through
+the vtable's slot 0) and arenas, in sync AND async bodies (frame-resident
+flags; the wind-up unwind drops too, and the first test to drive a wind-up
+found the rouse and the grace-wait defects). Channels reclaim at their
+creating function's exit — `StaleHandle` is reachable, slots reuse under
+moved generations — and OWNING elements cross channels under the heap's
+first futex mutex, with `move` required at the send. A function whose
+return type carries a channel is a FACTORY by type (creations live to
+process end; ownership marker recorded open). Owning elements in ARENAS
+refuse at `arena_make` until the generated deep-view family lands (D-183).
 Phase C renumbered around the cycle (self-hosting 1.3, verification 1.4,
-Astrée 1.5; the map is in `ROADMAP.md`). Still open in 1.2: the `dyn` drop
-slot and async frame-resident flags (1.2.4), channel/arena reclamation
-(1.2.5). After 1.2: 1.1.11 sync primitives, 1.1.12 the reactor, 1.1.13 the
-Bridge.
+Astrée 1.5; the map is in `ROADMAP.md`). Next: 1.1.11 sync primitives
+(the `Mutex` guard this cycle existed for), 1.1.12 the reactor, 1.1.13
+the Bridge.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

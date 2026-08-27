@@ -607,8 +607,8 @@ DROPS_DEFAULT_OK = {
                     "reclaimed by the creating function's exit (D-183 1.2.5) "
                     "-- a creation-site finalizer after the join, not a value "
                     "drop, because endpoints are copyable non-owners",
-    "TY_ARENA":     "slab release lands at 1.2.5c",
-    "TY_SHARED_ARENA": "slab release lands at 1.2.5c",
+    "TY_SHARED_ARENA": "a pointer into SHARED storage (D-154): teardown "
+                    "needs the per-scope join machinery, OPEN_DECISIONS C-22",
     "TY_ANY":       "unsized; never a value at this rung",
     "TY_TRAIT":     "a bound, not a value",
     "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",

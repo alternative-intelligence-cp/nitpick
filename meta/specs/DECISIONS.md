@@ -12865,6 +12865,31 @@ can carry a borrowed target across a task boundary. The send REQUIRES
 TYPE-046), and the reclaim's drain is emitted at the creation site, where
 the element type is known.
 
+### Arenas destroy at scope exit, and owning elements wait for views (1.2.5c)
+
+`type_drops` answers true for `arena<T>`: the binding's scope exit drops any
+still-live owning element (live is an even, non-zero generation — the
+parity `arena_alloc`/`arena_free` keep) and calls `npk_arena_destroy`,
+which nulls what it frees and skips what is null — so the explicit
+`.destroy()` stays legal and idempotent. The slabs moved to the MANAGED
+allocation role: RAII owns them now, and D-151's exit check keeps covering
+only what stays manual. A plain arena cannot cross a thread (the channel
+element rule refuses it), so the value drop needs no join ordering;
+`shared_arena` is a pointer into storage other threads read, and its
+teardown waits on the per-scope join machinery with the rest of C-22.
+
+**An owning ELEMENT does not enter an arena yet, and the refusal closed a
+live hole**: `get` and `put` copy the element's bytes, and since 1.2.3
+armed drops, `string:s = a.get(h)` would free the arena's own body at `s`'s
+scope exit and the next `get` would read it freed. `arena_make` (and
+`shared_arena_make`) refuse an owning element type at the annotation. The
+sound accessor is a **generated deep-VIEW per element type** — the cap==0
+discipline made general, a `@"npk.view.<tid>"` family beside the drops —
+recorded here as the open item that unlocks owning elements in arenas AND
+a general owning-getter story; the drop-side machinery (the live-slot walk
+in the generated arena drop, the `free`/`reset`/`destroy` pre-drops) is
+already built and waits behind the refusal.
+
 ### The rule comes BEFORE the mechanism, and the compiler proved it
 
 The plan for this cycle had scope-exit drops landing first and the move-only

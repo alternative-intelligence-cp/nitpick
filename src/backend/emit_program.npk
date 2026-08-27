@@ -1218,6 +1218,56 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         pass NIL;
     }
 
+    // AN ARENA DESTROYS ITS SLABS (D-003/D-183, 1.2.5c) — after dropping
+    // any still-LIVE owning element: live is an even, non-zero generation
+    // (the parity discipline arena_alloc and arena_free keep), the stride is
+    // the element's static size, and `npk_arena_destroy` is already
+    // idempotent, so an explicit `.destroy()` before scope exit stays legal
+    // and the drop's call after it frees nothing twice.
+    if (k == (raw TY_ARENA())) {
+        int32:ael = (raw tt_get(c.types, dty)).a;
+        if (raw type_drops(c.types, ael, 64i32)) {
+            string:astr = raw int_to_string(raw type_size(c.types, ael));
+            drop irw_raw(w, raw cat3("  %slab = load ptr, ptr %v", "", ""));
+            drop irw_raw(w, "  %sdead = icmp eq ptr %slab, null");
+            drop irw_raw(w, "  br i1 %sdead, label %done, label %walkp");
+            drop irw_raw(w, "walkp:");
+            drop irw_raw(w, raw cat3("  %gp = getelementptr ", t.text,
+                              ", ptr %v, i32 0, i32 1"));
+            drop irw_raw(w, "  %gens = load ptr, ptr %gp");
+            drop irw_raw(w, raw cat3("  %tp = getelementptr ", t.text,
+                              ", ptr %v, i32 0, i32 3"));
+            drop irw_raw(w, "  %top = load i64, ptr %tp");
+            drop irw_raw(w, "  br label %walk");
+            drop irw_raw(w, "walk:");
+            drop irw_raw(w, "  %i = phi i64 [ 0, %walkp ], [ %i2, %next ]");
+            drop irw_raw(w, "  %in = icmp ult i64 %i, %top");
+            drop irw_raw(w, "  br i1 %in, label %probe, label %done");
+            drop irw_raw(w, "probe:");
+            drop irw_raw(w, "  %gep = getelementptr i32, ptr %gens, i64 %i");
+            drop irw_raw(w, "  %g = load i32, ptr %gep");
+            drop irw_raw(w, "  %nz = icmp ne i32 %g, 0");
+            drop irw_raw(w, "  %par = and i32 %g, 1");
+            drop irw_raw(w, "  %ev = icmp eq i32 %par, 0");
+            drop irw_raw(w, "  %live = and i1 %nz, %ev");
+            drop irw_raw(w, "  br i1 %live, label %del, label %next");
+            drop irw_raw(w, "del:");
+            drop irw_raw(w, raw cat3("  %off = mul i64 %i, ", astr, ""));
+            drop irw_raw(w, "  %ep = getelementptr i8, ptr %slab, i64 %off");
+            drop irw_raw(w, raw cat4("  call void ",
+                              raw drop_fn_sym(c, ael), "(ptr %ep)", ""));
+            drop irw_raw(w, "  br label %next");
+            drop irw_raw(w, "next:");
+            drop irw_raw(w, "  %i2 = add i64 %i, 1");
+            drop irw_raw(w, "  br label %walk");
+            drop irw_raw(w, "done:");
+        }
+        drop irw_raw(w, "  call void @npk_arena_destroy(ptr %v)");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
     // A `dyn` DROPS THROUGH THE VTABLE'S SLOT 0 (D-183, 1.2.4): the concrete
     // type is erased, so only the table built beside the value knows which
     // drop applies — null there means the concrete owns nothing. The cell is

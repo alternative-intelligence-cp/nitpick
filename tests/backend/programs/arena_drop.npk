@@ -1,0 +1,68 @@
+// expect-exit: 42
+// stress: 40
+//
+// AN ARENA IS AN OWNER (D-003/D-183, 1.2.5c): its binding's scope exit
+// destroys the slabs — no manual `.destroy()` required — and an explicit
+// destroy stays legal because `npk_arena_destroy` nulls what it frees and
+// skips what is null. The slabs are the MANAGED regime's storage now (they
+// were wild while `destroy` was the only reclaimer), so a live arena at a
+// normal exit is reclaimed by RAII, not reported by the D-151 leak check.
+// An arena is move-only like every owner: `helper` receives one LENT and
+// allocates into it through the caller's binding.
+mod:arena_drop;
+error:E9;
+error:E77;
+
+struct:Node = { int64:v; Handle<Node>:next; };
+
+// A lent arena: the callee allocates, the caller still owns.
+func:grow = Handle<Node>(arena<Node>->:a, int64:v) never fails {
+    Handle<Node>:h = (<-a).alloc();
+    (<-a).put(h, Node{ v: v, next: h }) ?! E9;
+    pass h;
+};
+
+func:scoped = int32() never fails {
+    // No destroy anywhere: the closing brace is the reclaim.
+    arena<int64>:quiet = arena_make(4i64);
+    Handle<int64>:q = quiet.alloc();
+    quiet.put(q, 55i64) ?! E9;
+    pass ((quiet.get(q) ?! E77) =>! int32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = 0i32;
+    int32:i = 0i32;
+    while (i < 100i32) {
+        r = raw scoped();                    // 100 arenas born and dropped
+        i = i + 1i32;
+    }
+    if (r != 55i32) { exit 10i32; }
+
+    arena<Node>:a = arena_make(2i64);
+    Handle<Node>:h1 = raw grow(@a, 7i64);
+    Handle<Node>:h2 = raw grow(@a, 9i64);
+    Node:n1 = a.get(h1) ?! E77;
+    Node:n2 = a.get(h2) ?! E77;
+    if ((n1.v + n2.v) != 16i64) { exit 11i32; }
+    a.free(h1) ?! E9;
+    // explicit destroy, then the scope-exit drop: idempotent by nulling.
+    a.destroy();
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (E77)              { exit 92i32; },
+        (StaleHandle)      { exit 93i32; },
+        (HeapBadRequest)   { exit 94i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

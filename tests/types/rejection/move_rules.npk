@@ -66,3 +66,22 @@ async func:sends_a_copy = NIL() {
     await ch.send(s, raw duration_ms(1i64)) ?! Unreachable;
     pass NIL;
 };
+
+// AN ARENA IS AN OWNER (D-003/D-183, 1.2.5c): its scope exit destroys the
+// slabs, so a copy would be two destroyers of one storage.
+// expect-error: NITPICK-TYPE-046
+func:copies_an_arena = int32() never fails {
+    arena<int32>:a = arena_make(4i64);
+    arena<int32>:b = a;
+    pass 0i32;
+};
+
+// AN OWNING ELEMENT DOES NOT ENTER AN ARENA YET (D-183, 1.2.5c): `get` and
+// `put` copy bytes, and a byte copy of an owner is two owners — one arena
+// body freed twice. The generated deep-view accessors are the recorded
+// answer; until then the arena refuses at its make.
+// expect-error: NITPICK-TYPE-007
+func:owns_in_an_arena = int32() never fails {
+    arena<string>:a = arena_make(4i64);
+    pass 0i32;
+};

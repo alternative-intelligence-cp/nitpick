@@ -4076,9 +4076,13 @@ floor:
   %ovf = extractvalue { i64, i1 } %bo, 1
   br i1 %ovf, label %badreq, label %mkslab
 mkslab:
-  %slab = call ptr @npk_alloc_impl(i64 %bytes, i64 1)
+  ; MANAGED, NOT WILD (D-183, 1.2.5c): the arena binding's scope-exit drop
+  ; destroys these now, so they are the managed regime's storage — like a
+  ; string body — and the D-151 exit check keeps covering only what stays
+  ; manual. They were wild while `destroy` was the only reclaimer.
+  %slab = call ptr @npk_alloc_impl(i64 %bytes, i64 0)
   %gb = shl i64 %cap, 2
-  %gens = call ptr @npk_alloc_impl(i64 %gb, i64 1)
+  %gens = call ptr @npk_alloc_impl(i64 %gb, i64 0)
   call void @llvm.memset.p0.i64(ptr %gens, i8 0, i64 %gb, i1 false)
   %r0 = insertvalue { ptr, ptr, i64, i64, i64 } undef, ptr %slab, 0
   %r1 = insertvalue { ptr, ptr, i64, i64, i64 } %r0, ptr %gens, 1

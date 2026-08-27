@@ -342,6 +342,13 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // business, not the fat pointer's — the cell itself must be freed either
     // way, so every `dyn` is move-only and carries a drop.
     if (k == (raw TY_DYN()))      { pass true; }
+    // AN ARENA OWNS ITS SLABS (D-003/D-183, 1.2.5c): the binding's scope
+    // exit destroys them — dropping any still-live owning elements first —
+    // which is what lets arenas replace a collector WITHOUT the manual
+    // `destroy` being the only reclaimer. `shared_arena` stays out: its
+    // value is a pointer into shared storage whose teardown needs the
+    // per-scope join machinery (OPEN_DECISIONS C-22).
+    if (k == (raw TY_ARENA()))    { pass true; }
     pass false;
 };
 

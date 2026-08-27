@@ -2939,6 +2939,92 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     pass out;
 };
 
+// DROP EVERY LIVE ELEMENT OF AN ARENA (D-183, 1.2.5c), emitted where the
+// element type is known — reset and destroy retire slots wholesale, and a
+// live slot of an owning type holds a body only its drop can free. Live is
+// an even, non-zero generation (arena_alloc/arena_free's parity). The
+// counter is an alloca rather than a phi so no predecessor bookkeeping is
+// needed at a method site.
+func:arena_drop_live = NIL(ExprEmitter->:x, string:ap, int32:elem) never fails {
+    if (!(raw type_drops(x.fe.ctx.types, elem, 64i32))) { pass NIL; }
+    string:all = "{ ptr, ptr, i64, i64, i64 }";
+    string:slab = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(slab, " = load ptr, ptr ", ap, ""));
+    string:sdead = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(sdead, " = icmp eq ptr ",
+                      raw string_concat(slab, ", null")));
+    string:lgo = raw irw_new_label(x.fe.w, "aw.go");
+    string:ldone = raw irw_new_label(x.fe.w, "aw.done");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", sdead, ", label %", ldone,
+                      raw string_concat(", label %", lgo)));
+    drop s_start(x, lgo);
+    string:gp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(gp, " = getelementptr ", all, ", ptr ",
+                      raw string_concat(ap, ", i32 0, i32 1")));
+    string:gens = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(gens, " = load ptr, ptr ", gp, ""));
+    string:tp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(tp, " = getelementptr ", all, ", ptr ",
+                      raw string_concat(ap, ", i32 0, i32 3")));
+    string:top = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(top, " = load i64, ptr ", tp, ""));
+    string:iv2 = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, iv2, "i64");
+    drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", iv2, ""));
+    string:lhead = raw irw_new_label(x.fe.w, "aw.head");
+    string:lbody = raw irw_new_label(x.fe.w, "aw.body");
+    string:ldel = raw irw_new_label(x.fe.w, "aw.del");
+    string:lstep = raw irw_new_label(x.fe.w, "aw.step");
+    drop s_br(x, lhead);
+    drop s_start(x, lhead);
+    string:ic = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(ic, " = load i64, ptr ", iv2, ""));
+    string:inb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(inb, " = icmp ult i64 ", ic, ", ",
+                      raw string_concat(top, "")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", inb, ", label %", lbody,
+                      raw string_concat(", label %", ldone)));
+    drop s_start(x, lbody);
+    string:gep = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(gep, " = getelementptr i32, ptr ", gens,
+                      ", i64 ", raw string_concat(ic, "")));
+    string:g = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(g, " = load i32, ptr ", gep, ""));
+    string:nz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(nz, " = icmp ne i32 ",
+                      raw string_concat(g, ", 0")));
+    string:par = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(par, " = and i32 ",
+                      raw string_concat(g, ", 1")));
+    string:ev = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(ev, " = icmp eq i32 ",
+                      raw string_concat(par, ", 0")));
+    string:lv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lv, " = and i1 ", nz, ", ",
+                      raw string_concat(ev, "")));
+    drop irw_line(x.fe.w, raw cat5("br i1 ", lv, ", label %", ldel,
+                      raw string_concat(", label %", lstep)));
+    drop s_start(x, ldel);
+    string:off = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(off, " = mul i64 ", ic, ", ",
+                      raw int_to_string(raw type_size(x.fe.ctx.types, elem))));
+    string:ep = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ep, " = getelementptr i8, ptr ", slab,
+                      ", i64 ", raw string_concat(off, "")));
+    drop irw_line(x.fe.w, raw cat4("call void ",
+                      raw drop_fn_sym(x.fe.ctx, elem),
+                      raw string_concat("(ptr ", ep), ")"));
+    drop s_br(x, lstep);
+    drop s_start(x, lstep);
+    string:i2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(i2, " = add i64 ",
+                      raw string_concat(ic, ", 1")));
+    drop irw_line(x.fe.w, raw cat5("store i64 ", i2, ", ptr ", iv2, ""));
+    drop s_br(x, lhead);
+    drop s_start(x, ldone);
+    pass NIL;
+};
+
 func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           ExprNode:cnode, int32:start, int32:count) never fails {
     string:name = raw intern_get(x.interns, cnode.payload =>! int32);
@@ -3492,11 +3578,16 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         pass (raw iv("{ i64, i32 }", move(h), raw exprtypes_get(x.et, id)));
     }
     if (raw string_eq(m, "reset")) {
+        // OWNING ELEMENTS DROP BEFORE THE RING FORGETS THEM (D-183, 1.2.5c):
+        // reset retires every live slot, and a live slot of an owning type
+        // holds a body only its drop can free.
+        drop arena_drop_live(x, ap, elem);
         drop irw_line(x.fe.w, raw cat5("call void @npk_arena_reset(ptr ", ap,
                           ", i64 ", st, ")"));
         pass (raw iv("i32", "0", 0i32));
     }
     if (raw string_eq(m, "destroy")) {
+        drop arena_drop_live(x, ap, elem);
         drop irw_line(x.fe.w, raw cat3("call void @npk_arena_destroy(ptr ",
                           ap, ")"));
         pass (raw iv("i32", "0", 0i32));
@@ -3513,6 +3604,28 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                       hv.ref, ", ", "1"));
 
     if (raw string_eq(m, "free")) {
+        // The element's drop runs before the slot retires (D-183, 1.2.5c):
+        // `arena_at` re-validates the handle, so a stale free drops nothing.
+        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+            string:fep = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fep,
+                " = call ptr @npk_arena_at(ptr ", ap,
+                raw cat5(", i64 ", st, ", i64 ", hidx, ""),
+                raw cat3(", i32 ", hgen, ")")));
+            string:fok = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(fok, " = icmp ne ptr ",
+                              raw string_concat(fep, ", null")));
+            string:fdl = raw irw_new_label(x.fe.w, "af.drop");
+            string:fkl = raw irw_new_label(x.fe.w, "af.kept");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", fok, ", label %", fdl,
+                              raw string_concat(", label %", fkl)));
+            drop s_start(x, fdl);
+            drop irw_line(x.fe.w, raw cat4("call void ",
+                              raw drop_fn_sym(x.fe.ctx, elem),
+                              raw string_concat("(ptr ", fep), ")"));
+            drop s_br(x, fkl);
+            drop s_start(x, fkl);
+        }
         string:rc = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(rc,
             " = call i32 @npk_arena_free(ptr ", ap,

@@ -541,6 +541,12 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             int32:swant = raw expected_value(e);
             if (swant != 0i32) {
                 if ((raw type_kind(e.types, swant)) == (raw TY_SHARED_ARENA())) {
+                    int32:sael = (raw tt_get(e.types, swant)).a;
+                    if (raw type_drops(e.types, sael, 64i32)) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "this element type OWNS heap storage, and a shared arena's `get` copies bytes — a copy of an owner is two owners; owning elements await the generated deep-view accessors (D-183)",
+                            n.span));
+                    }
                     pass swant;
                 }
             }
@@ -569,6 +575,22 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             int32:want = raw expected_value(e);
             if (want != 0i32) {
                 if ((raw type_kind(e.types, want)) == (raw TY_ARENA())) {
+                    // AN OWNING ELEMENT DOES NOT ENTER AN ARENA YET (D-183,
+                    // 1.2.5c). `get` and `put` copy the element's BYTES, and
+                    // a byte copy of an owner makes two owners: since 1.2.3
+                    // armed drops, `string:s = a.get(h)` would free the
+                    // arena's own body at `s`'s scope exit and the next
+                    // `get` would read it freed. The sound accessor family —
+                    // a generated deep-VIEW per element type, the cap==0
+                    // discipline made general — is recorded on D-183; until
+                    // it exists, refusing the arena at its make is what
+                    // keeps the hole unreachable instead of silent.
+                    int32:ael = (raw tt_get(e.types, want)).a;
+                    if (raw type_drops(e.types, ael, 64i32)) {
+                        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                            "this element type OWNS heap storage, and `get`/`put` copy bytes — a copy of an owner is two owners, and one arena body freed twice; owning elements await the generated deep-view accessors (D-183). An element of scalars, `Handle<T>` links and other non-owning data rides",
+                            n.span));
+                    }
                     pass want;
                 }
             }

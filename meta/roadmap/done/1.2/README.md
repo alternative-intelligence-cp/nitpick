@@ -572,3 +572,31 @@ creator's exit drop what nobody received. Elements that still refuse are
 borrows (`type_contains_borrow`, a third layout bit beside `haspt` and
 `drops`; `dyn` stays refused as erased), and a send of an owning place now
 requires the `move` D-072 always wrote in its signature.
+
+## 1.2.5c — arenas destroy at scope exit; the cycle closes
+
+`arena<T>` owns: move-only, dropped at the closing brace with a live-slot
+walk for owning elements and an idempotent `npk_arena_destroy` (explicit
+`.destroy()` stays legal — the runtime nulls what it frees). Slabs moved to
+the managed allocation role, so D-151's exit check keeps covering only what
+stays manual, and `leak_trap.npk`'s premise is untouched. A plain arena
+cannot cross a thread, so the value drop needs no join ordering;
+`shared_arena` teardown joins C-22's tenants.
+
+Arena `get`/`put` copy bytes, which made `arena<string>` a LIVE
+use-after-free since 1.2.3 armed drops — nobody had written one, and now
+nobody can: `arena_make` refuses an owning element at the annotation, with
+the generated deep-view accessor family (`@"npk.view.<tid>"`, the cap==0
+discipline made general) recorded on D-183 as what unlocks it. The
+drop-side machinery — the walk, the `free`/`reset`/`destroy` pre-drops —
+is built and waits behind the refusal.
+
+**Cycle 1.2 is complete.** The managed regime's drops are live for strings,
+structs, enums, `dyn` and arenas, in sync and async bodies alike; channels
+reclaim at their creating function's exit with `StaleHandle` reachable;
+owning elements cross channels under the heap's first lock. Open items
+travel on D-183 (partial moves, statement-end temporaries, destructure
+ownership, the factory-channel marker, deep views) and C-22 (per-scope
+joins: channels-in-loops, `shared_arena` teardown, `dyn` elements). Next:
+1.1.11's sync primitives — the `Mutex` guard whose release IS scope exit,
+the thing this cycle existed to make true.

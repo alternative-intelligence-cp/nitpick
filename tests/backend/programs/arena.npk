@@ -3,9 +3,10 @@
 // `arena<T>` AND `Handle<T>` ARE REAL (0.10.2, D-152). A cyclic graph lives
 // in an arena — two nodes holding each other's handles, a thing no ownership
 // tree can express — is traversed through generation-checked handles, and is
-// dropped WHOLESALE by `destroy`: no per-node free, and the exit-time check
-// (D-151) proves no leak, because the slab and generation array are
-// wild-role heap blocks and this program ends with `exit 0`. A stale handle
+// dropped WHOLESALE by `destroy`: no per-node free. Since 1.2.5c the slabs
+// are the MANAGED regime's storage — the binding's scope exit destroys them
+// even without the explicit `destroy` this file keeps (idempotent: the
+// runtime nulls what it frees and skips what is null). A stale handle
 // is a `Result` error (-4106), never a read of the new occupant; `reset`
 // retires every handle at once; a freed slot is reused with a new
 // generation.
@@ -92,7 +93,8 @@ func:main = int32(cstring[]:_~argv) {
     if (kv != 700i64) { exit 23i32; }
     app.store.destroy();
 
-    // drop the graph wholesale; the exit-time check proves nothing leaked
+    // drop the graph wholesale — explicitly here, though the scope exit
+    // would; both run, and the second finds nulls
     a.destroy();
     exit 0i32;
 };
