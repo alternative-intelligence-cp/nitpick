@@ -14,8 +14,12 @@ error:E9;
 struct:Holder = { int32->:inner; };
 struct:Pair = { int32:first; int32:second; };
 
-extern:"libc" = {
-    func:keepit = int32(int32->:p) never fails;
+// A bodied stand-in for what used to be an extern `keepit` (an `extern`
+// block is the DRIVER INTERFACE since D-149/D-190 — its methods are not
+// in-process callables): the escape rules treat EVERY call the same
+// (D-117), so a body changes nothing this suite measures.
+func:keepit = int32(int32->:p) never fails {
+    pass (<-p);
 };
 
 // --- rule 2: a borrow may not appear in the value of `pass` / `fail` / `return` --
@@ -153,20 +157,22 @@ func:leaks_through_a_callee = Cell() never fails {
     pass c;
 };
 
-// --- rule 4: a borrow may not cross an `extern` call ---------------------------
+// --- rule 4, RETIRED (D-190, 1.1.13c) ------------------------------------------
 
-// THE CALLEE IS NOT NITPICK. It may keep the pointer for as long as it likes and
-// nothing downstream can be checked — the same argument the zero-dependency rule
-// rests on.
-// expect-error: NITPICK-BORROW-003
+// "A borrow may not cross an `extern` call" refused here for four cycles as
+// NITPICK-BORROW-003. D-190 made the SUBJECT unrepresentable: an extern
+// block is an interface record whose generated stubs are ordinary Nitpick,
+// its methods never bind as callable symbols, and nothing address-shaped
+// can even be DECLARED in one (NITPICK-EXTERN-001, at the block, before
+// names bind — see tests/expansion/rejection/extern_shape.npk). These two
+// shapes — the exact ones that refused — now call an ordinary bodied
+// function and compile clean, which is this file's record of the change.
 func:cross_extern = NIL() never fails {
     int32:x = 5i32;
     discard(keepit(@x) ?! E9);
     pass NIL;
 };
 
-// A BORROW HELD IN A BINDING CROSSES JUST THE SAME.
-// expect-error: NITPICK-BORROW-003
 func:cross_extern_binding = NIL() never fails {
     int32:x = 5i32;
     int32->:p = @x;

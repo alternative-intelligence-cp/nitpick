@@ -13476,3 +13476,83 @@ stored before the due stamp and read after the sweep's seq_cst load, so a
 wound resume always observes it. `windup_drain` (the courtesy half),
 `executor_windup_trap` (the spin-forever-earns-its-trap half) and the
 Bridge's sleep-after-wake tests now hold simultaneously.
+
+## D-190 — `extern` blocks lower to generated driver stubs; the interface hash; the v1 wire vocabulary — **SETTLED at 1.1.13c**
+
+The Bridge's final stage makes D-149 real: `extern` stopped being a rung
+message and became the ONLY foreign-code mechanism the language has ever
+shipped. The block is the INTERFACE RECORD — never a declarer: collection
+binds nothing from it, and the expansion phase (the derive mechanism's
+sibling, `bridge_stubs.npk`) generates ordinary Nitpick source that is
+spliced before any name is bound — one `pub async func` stub per method,
+plus `<block>_iface_hash()`. The stubs marshal into the sealed ring,
+`await dispatch` under the caller's deadline, and unmarshal or fail;
+because they are ordinary members, every downstream stage — typing, the
+analyses, emission, the coroutine machinery — treats them with ZERO
+special cases. The two backend rung refusals retired; the module declaring
+a block imports `lib/nbridge.npk`, whose surface the stubs use.
+
+**A method is declared IN FULL** — explicit over implicit: `Bridge->`
+first, `Duration` last (the mandatory D-055 deadline), and the v1 wire
+vocabulary between: parameters `int32`, `int64`, `int8[]`, `uint8[]`;
+returns `NIL`, `int32`, `int64`. Everything else refuses by name
+(NITPICK-EXTERN-001), including `opaque` members — the §11 wire-handle
+tier rides the reserved LOAD_MODULE work, a settled part of the design
+whose implementation belongs to that tier, not a deferral. D-002's
+per-method contracts are dead as D-149 scheduled: the parser's mandatory
+`fails on`/`never fails` LIFTED (the productions still parse — D-085; the
+requirement ended, NITPICK-PARSE-006 retired unreused), and a contract
+still written refuses as NITPICK-EXTERN-002. A wire status of nonzero
+fails the stub `EDriverError` — the driver's own refusal as a value, with
+stderr the diagnostic channel.
+
+**The interface hash** is the connect-time answer to "built against a
+different interface": FNV-1a-shaped over each method's canonical spelling
+`name=ret(p1,...)` (the structural Bridge/Duration excluded), a `;`
+folded per method, declaration order — which is also the kernel_id
+space. It rides INIT_REQ (payload now `{u32 version, u64 shm_size, u64
+iface_hash}`); a driver computes its own table's number and refuses a
+mismatch before ACKing. **The offset basis is D-179's error-identity
+seed, 0xCBF5DAE484222325 — deliberately the same constant for every
+derived identity in the ecosystem** (and NOT the textbook FNV basis; both
+of stage c's cross-implementation defects were transcription slips in the
+NEW code — the C header's seed and the ring magic's decimal halves — each
+caught by the C driver disagreeing with the Nitpick side, which is the
+hash doing at build time exactly what it does on the wire).
+
+**The C SDK and the conformance spine.** `sdk/npkdrv.h` renders the
+protocol in C — the wire tables, the ring layout, the hash, and a
+reference event loop upholding the §7.5 obligations. The harness builds
+`tests/backend/fixtures/*.c` with the system C compiler (test tooling,
+never in the artifact — the valgrind rule; a driver is outside the TCB by
+definition) and hands the binaries to tests through the same `// argv:`
+substitution. `extern_c_driver.npk` demonstrates the four conformance
+claims end to end against the real C driver: the echo (scalars marshalled
+through the ring's bulk area and summed back), the driver-reported
+refusal (status 55 → EDriverError), the hostile tail (a free-running
+index far outside [head−cap, head] written AFTER a clean completion — the
+next dispatch's [UNTRUSTED] validation kills, EDriverProtocol), and the
+stale interface (the same hash offered to a driver built against one
+changed spelling — EDriverSpawn at the handshake, the mismatch on
+stderr). `extern_stub.npk` pins the generated stubs against the Nitpick
+mock; the EXEC_NOTIFY full-buffer retry and the SIGTERM-immune SIGKILL
+fixture are recorded on the roadmap as the batched-dispatch tier's
+obligations.
+
+## D-190 addendum — D-004 rule 4 retires as an ANALYSIS rule; the wire vocabulary carries it
+
+The first full run after the lowering failed five tests, and every failure
+was the old FFI model's residue being cleaned out rather than a defect in
+the new one. "A borrow may not cross an `extern` call" (D-004 rule 4,
+NITPICK-BORROW-003) had refused for four cycles at the CALL — and D-190
+made that subject unrepresentable: extern methods never bind as callable
+symbols, so no call can cross into one, and nothing address-shaped can
+even be DECLARED in a block (NITPICK-EXTERN-001, at the block, before
+names bind). The rule's guarantee is STRONGER now — wire-vocabulary-shaped
+instead of call-shaped, D-149's "only copies cross" made structural — and
+its analysis mechanism is retired: the escape walk's extern plumbing
+removed, BORROW-003's number retired unreused, the two rejection cases
+kept as ACCEPTED shapes recording that the exact code which refused now
+compiles. The parser's mandatory-contract unit tests flipped the same way
+(omission is the legal form), and the defer-body escape case — whose point
+was always that defers are WALKED — drives rule 3's direct store instead.

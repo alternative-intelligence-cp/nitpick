@@ -1,0 +1,95 @@
+// expect-exit: 0
+// stress: 40
+// argv: REF_DRIVER REF_DRIVER_STALE
+//
+// THE WIRE-CONFORMANCE SUITE'S SPINE (1.1.13c): a REAL C DRIVER — built by
+// the harness with the system C compiler from sdk/npkdrv.h, test tooling
+// never in the artifact — on the far end of the generated stubs. Four
+// claims, demonstrated:
+//   echo      `echo_add(40, 2)` marshals two scalars into the ring's bulk
+//             area, the C side adds them at resp_off: 42 back through the
+//             stub's unmarshal.
+//   refusal   kernel 2 reports status 55: the stub fails EDriverError —
+//             the wire delivered, the work refused, stderr says why.
+//   hostile   kernel 1 completes and then writes a tail far outside
+//             [head−cap, head]; the NEXT dispatch's [UNTRUSTED] validation
+//             kills the driver and fails EDriverProtocol (§6.2) — a
+//             hostile index never becomes a Nitpick-side read.
+//   staleness the same extern hash offered to a driver BUILT AGAINST A
+//             DIFFERENT SPELLING refuses at the handshake: EDriverSpawn,
+//             with the mismatch on the stderr the spawn already tore down.
+mod:extern_c_driver;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"cdrv" = {
+    func:echo_add     = int64(Bridge->:b, int64:x, int64:y, Duration:within);
+    func:hostile_tail = NIL(Bridge->:b, Duration:within);
+    func:refuses      = int64(Bridge->:b, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 3i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    int64:h = raw cdrv_iface_hash();
+
+    // echo, twice (seq advances; the slots rewrite)
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, h,
+                                           raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+    Result<int64>:r0 = await echo_add(@b, 40i64, 2i64, raw duration_secs(5i64));
+    if (r0.is_error)       { exit 21i32; }
+    if (r0.value != 42i64) { exit 22i32; }
+    Result<int64>:r1 = await echo_add(@b, 1000i64, 337i64, raw duration_secs(5i64));
+    if (r1.is_error)         { exit 23i32; }
+    if (r1.value != 1337i64) { exit 24i32; }
+
+    // the driver-reported refusal
+    Result<int64>:r2 = await refuses(@b, raw duration_secs(5i64));
+    if (!r2.is_error)            { exit 25i32; }
+    if (r2.err != EDriverError)  { exit 26i32; }
+
+    // the hostile tail: the poisoning dispatch AFTER it must protocol-kill
+    Result<NIL>:r3 = await hostile_tail(@b, raw duration_secs(5i64));
+    if (r3.is_error) { exit 27i32; }
+    Result<int64>:r4 = await echo_add(@b, 1i64, 1i64, raw duration_secs(5i64));
+    if (!r4.is_error)              { exit 28i32; }
+    if (r4.err != EDriverProtocol) { exit 29i32; }
+    drop bridge_reap(@b);
+
+    // staleness: same hash, differently-built driver — handshake refuses
+    string:sp2 = string_from_bytes(argv[2i64].ptr, argv[2i64].len);
+    Path:p2 = path_parse(sp2) ?! E9;
+    Result<Bridge>:br2 = await spawn_driver(p2, 65536i64, 64i64, h,
+                                            raw duration_secs(5i64));
+    if (!br2.is_error)             { exit 31i32; }
+    if (br2.err != EDriverSpawn)   { exit 32i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 85i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

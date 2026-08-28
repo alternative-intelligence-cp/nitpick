@@ -56,13 +56,15 @@ func:escape_from_a_pick_arm = int32->(int32:n) never fails {
 };
 
 // IN A `defer`, which runs at scope exit and is walked like any other body.
-// expect-error: NITPICK-BORROW-003
-extern:"libc" = {
-    func:keepit = int32(int32->:p) never fails;
-};
+// (This case drove rule 4 — a borrow into an extern call — until D-190
+// retired that rule's subject; the point here was always that DEFER BODIES
+// ARE WALKED, so it now drives rule 3's direct store instead.)
+// expect-error: NITPICK-BORROW-002
+struct:DHold = { int32->:inner; };
 func:escape_from_a_defer = NIL() never fails {
     int32:x = 1i32;
-    defer { discard(keepit(@x) ?! E9); }
+    DHold:h = DHold{ inner: NULL };
+    defer { h.inner = @x; }
     pass NIL;
 };
 

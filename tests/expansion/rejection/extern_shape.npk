@@ -1,0 +1,30 @@
+// expect-error: NITPICK-EXTERN-001
+// expect-error: NITPICK-EXTERN-001
+// expect-error: NITPICK-EXTERN-001
+// expect-error: NITPICK-EXTERN-001
+//
+// THE V1 WIRE VOCABULARY IS A CLOSED LIST (D-190), and every departure is
+// refused BY NAME where the stubs are generated: a method without the
+// leading `Bridge->`, one without the trailing `Duration` deadline, a
+// parameter type outside {int32, int64, int8[], uint8[]} — a string is
+// address-shaped, and nothing address-shaped crosses the wire (D-149) —
+// and the `opaque` wire-handle tier, reserved for the LOAD_MODULE work.
+mod:extern_shape;
+
+extern:"shapes" = {
+    func:no_bridge = int64(int32:x, Duration:within);
+    func:no_deadline = int64(Bridge->:b, int32:x);
+    func:bad_param = int64(Bridge->:b, string:s, Duration:within);
+    opaque struct:Handle;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 99i32; }
+    }
+    exit 90i32;
+};

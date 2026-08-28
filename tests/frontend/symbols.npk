@@ -134,15 +134,17 @@ func:main = int32(cstring[]:_~argv) {
     int32:blk = raw scope_open(@b5.tab, b5.scope, raw SCOPE_BLOCK());
     if ((raw scope_lookup(@b5.tab, blk, visible)) == 0i32)            { exit 42i32; }
 
-    // --- an extern block declares its FUNCTIONS, not itself -----------------------------
-    // A caller writes `open(...)`, never `libc.open(...)`, so the block has no
-    // name of its own to collide with anything.
+    // --- an extern block declares NOTHING (D-190, 1.1.13c) -----------------------------
+    // The block is the driver-interface RECORD: its methods materialise as
+    // GENERATED stubs in the expansion phase, and those stubs carry the
+    // names. Collection binds nothing from the raw declarations — this unit
+    // drives collect alone, so the name must stay unbound here.
     Built:b6 = raw collect(
-        "extern:\"libc\" = { func:open = int32(int8->:p) fails on result < 0i32 with errno; };",
+        "extern:\"libc\" = { func:open = int32(int8->:p); };",
         @it);
     if (raw diaglist_count(@b6.diags) != 0i64)              { exit 50i32; }
     int32:open_n = raw intern_add(@it, "open");
-    if ((raw scope_lookup(@b6.tab, b6.scope, open_n)) == 0i32) { exit 51i32; }
+    if ((raw scope_lookup(@b6.tab, b6.scope, open_n)) != 0i32) { exit 51i32; }
 
     // --- phase 1 does NOT enter bodies ----------------------------------------------------
     // The whole point of the two phases: a local named `f` inside a body must not

@@ -819,28 +819,32 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         pass (raw escape_expr(x, sp_op, d));
     }
 
-    // A CALL. Rule 4 lives here, and so do the two CALLER-SIDE rules that make
-    // "passing down needs no annotation" actually hold — see `escape_call_like`.
+    // A CALL — the two CALLER-SIDE rules that make "passing down needs no
+    // annotation" actually hold; see `escape_call_like`. (D-004 rule 4 — a
+    // borrow crossing an `extern` call — lived here until D-190 made its
+    // subject UNREPRESENTABLE: extern methods are an interface record whose
+    // generated stubs are ordinary Nitpick, and nothing address-shaped can
+    // even be DECLARED in a block — NITPICK-EXTERN-001 at the block is the
+    // enforcement now, wire-vocabulary-shaped rather than call-shaped.)
     if (n.kind == ExprKind.ExprCallExpr) {
         int32:gc = raw expr_generic_count(n);
         pass (raw escape_call_like(x, id, raw expr_none(),
                                      (raw expr_list_start(n)) + gc,
                                      (raw expr_list_count(n)) - gc,
-                                     raw callee_is_extern(x, n),
                                      raw expr_callee(n), d));
     }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         pass (raw escape_call_like(x, id, raw expr_operand(n),
                                      raw expr_list_start(n),
                                      raw expr_list_count(n),
-                                     false, raw expr_none(), d));
+                                     raw expr_none(), d));
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         int32:bgc = raw builtin_generic_count(n);
         pass (raw escape_call_like(x, id, raw expr_none(),
                                      (raw expr_list_start(n)) + bgc,
                                      (raw expr_list_count(n)) - bgc,
-                                     false, raw expr_none(), d));
+                                     raw expr_none(), d));
     }
 
     // RULE 4'S THIRD CROSSING, NARROWED TO THE SPAWN (D-180).
@@ -978,7 +982,7 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
 // and `tt_intern(@t, …)` — take the address of a local, call a helper, return the
 // local — is the compiler's other universal idiom.
 func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
-                             int32:count, bool:ext, ExprId:callee, int32:depth) never fails {
+                             int32:count, ExprId:callee, int32:depth) never fails {
     discard(raw escape_expr(x, callee, depth));
 
     int32:borrowed = 0i32;
@@ -986,7 +990,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     // The pointee types of the LOCAL-rooted borrows in this call — a handful
     // at most; a destination matters only if it can hold one of exactly these.
     wild int32->:lb_tys = (alloc(8i64 * 4i64)) =>! wild int32->;
-    if (raw escape_arg(x, recv, ext, depth)) {
+    if (raw escape_arg(x, recv, depth)) {
         borrowed = borrowed + 1i32;
         if (raw arg_root_is_local(x, recv)) {
             if (local_borrows < 8i32) {
@@ -998,7 +1002,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        if (raw escape_arg(x, a, ext, depth)) {
+        if (raw escape_arg(x, a, depth)) {
             borrowed = borrowed + 1i32;
             if (raw arg_root_is_local(x, a)) {
                 if (local_borrows < 8i32) {
@@ -1276,27 +1280,13 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) ne
     pass false;
 };
 
-// One argument, walked and reported on. RULE 4's `extern` crossing is here because
-// this is where an argument's own span is in hand.
-func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) never fails {
+// One argument, walked and answered: is it a borrow? (Until D-190 this was
+// also where D-004 rule 4 REPORTED — a borrow crossing an `extern` call —
+// with the argument's own span; the crossing is unrepresentable now, and
+// the wire-vocabulary refusal at the block carries the rule.)
+func:escape_arg = bool(Escape->:x, ExprId:a, int32:depth) never fails {
     if (raw expr_is_none(a)) { pass false; }
     if (!(raw escape_expr(x, a, depth))) { pass false; }
-    if (ext) {
-        // THE ARGUMENT'S SPAN, NOT THE CALL'S. Two arguments that each break the
-        // rule are two findings, and reporting both at the call's span makes them
-        // identical — which the diagnostic list then deduplicates into one, hiding
-        // the second. That is exactly how 0.4.7's argument-mismatch spans were
-        // wrong.
-        //
-        // The callee is not Nitpick. It may retain the pointer for as long as it
-        // likes and nothing downstream can be checked, which is the argument the
-        // zero-dependency rule rests on: past the FFI barrier there is no control
-        // over what happens.
-        ExprNode:anode = raw ast_expr(x.ast, a);
-        drop escape_err(x, raw BORROW_EXTERN(),
-            "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
-            anode.span);
-    }
     pass true;
 };
 
@@ -1436,19 +1426,6 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     // of a wrong `true` is a program refused, and the cost of a wrong `false` is a
     // pointer into a dead frame.
     pass true;
-};
-
-func:callee_is_extern = bool(Escape->:x, ExprNode:n) never fails {
-    ExprId:c = raw expr_callee(n);
-    if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cnode = raw ast_expr(x.ast, c);
-    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
-    if (cnode.a == 0i32) { pass false; }
-    Symbol:s = raw symtab_get(x.tab, cnode.a);
-    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
-    DeclId:did = DeclId{ index: s.origin };
-    DeclNode:d = raw ast_decl(x.ast, did);
-    pass (d.kind == DeclKind.DeclExternFn);
 };
 
 func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {

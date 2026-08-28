@@ -490,13 +490,12 @@ pub func:collect_decl = NIL(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     // hang the library name, which is why it has no name of its own to collide
     // with anything.
     if (d.kind == DeclKind.DeclExternBlock) {
-        int32:n = raw decl_win_count(d);
-        int32:i = 0i32;
-        while (i < n) {
-            DeclId:fn = DeclId{ index: raw ast_id_at(ast, raw decl_win_start(d), i) };
-            drop collect_decl(t, ast, diags, fn, scope);
-            i = i + 1i32;
-        }
+        // THE BLOCK IS THE INTERFACE RECORD, NOT A DECLARER (D-190, 1.1.13c).
+        // Its methods' names are carried by the GENERATED stubs, spliced into
+        // this module in the expansion phase before collection ran — binding
+        // the raw declarations too would declare every name twice. (Until the
+        // Bridge landed, the block's functions were the old in-process FFI
+        // surface and collected here; D-149 ended that model.)
         pass NIL;
     }
 

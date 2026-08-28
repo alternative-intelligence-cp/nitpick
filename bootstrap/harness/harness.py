@@ -1085,7 +1085,11 @@ KIND_STATUS = {
     "DeclFunctionDecl": "lowered", "DeclStructDecl": "lowered",
     "DeclEnumDecl": "lowered", "DeclFieldDecl": "lowered",
     "DeclEnumVariant": "lowered",
-    "DeclImplDecl": "rung", "DeclExternBlock": "rung", "DeclGlobalDecl": "rung",
+    "DeclImplDecl": "rung", "DeclGlobalDecl": "rung",
+    # D-190 (1.1.13c): the block is the INTERFACE RECORD -- its stubs are
+    # generated as source in the expansion phase and lower as the ordinary
+    # async functions they are; the block itself emits nothing.
+    "DeclExternBlock": "inert: interface record; its generated stubs carry the code (D-190)",
     "DeclModuleDecl": "lowered",   # 0.9.6 — emit_all descends; the hole closed
     "DeclImportDecl": "inert: resolved by the loader; nothing to emit",
     "DeclTraitDecl": "inert: a signature set; code arrives via impls (1.0)",
@@ -1096,10 +1100,10 @@ KIND_STATUS = {
     "DeclAssocTypeDecl": "inert: trait member, no code until 1.0",
     "DeclGenericParam": "inert: substituted at instantiation (1.0)",
     "DeclParamDecl": "inert: emitted inside its function's signature walk",
-    "DeclExternFn": "inert: child of DeclExternBlock, which refuses wholesale",
+    "DeclExternFn": "inert: interface-record member; the generated stub carries the code (D-190)",
     "DeclVariadicSpec": "inert: part of a signature, not a construct",
-    "DeclFailsOn": "inert: an FFI contract; consumed with extern (FFI rung)",
-    "DeclNeverFails": "inert: an FFI contract; consumed with extern (FFI rung)",
+    "DeclFailsOn": "inert: D-002's dead surface; refused by name in expansion (EXTERN-002)",
+    "DeclNeverFails": "inert: the D-163 contract, checked in the frontend; on an extern method it refuses (EXTERN-002)",
     "DeclAttribute": "inert: read by the passes it decorates, never emitted",
     "DeclErrorDecl": "lowered",  # D-179: ident references emit the assigned code inline
 }
@@ -2024,7 +2028,9 @@ def main(argv):
             fixdir = os.path.join(ROOT, ".internal", "fixtures")
             fixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
                                                      "fixtures", "*.npk")))
-            if fixtures:
+            cfixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                      "fixtures", "*.c")))
+            if fixtures or cfixtures:
                 os.makedirs(fixdir, exist_ok=True)
             for p in fixtures:
                 stem = os.path.basename(p)[:-4]
@@ -2032,6 +2038,23 @@ def main(argv):
                 fails = emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp)
                 if fails:
                     failures += fails
+                    continue
+                fixture_map[stem.upper()] = fbase
+            # C fixtures -- the conformance suite's reference DRIVERS
+            # (1.1.13c), built with the system C compiler. TEST TOOLING,
+            # NEVER IN THE ARTIFACT: the same standing as valgrind and this
+            # harness itself -- the zero-dependency rule governs what ships,
+            # and a driver is outside the TCB by definition (D-149). The
+            # protocol is the contract; sdk/npkdrv.h is its C rendering.
+            for p in cfixtures:
+                stem = os.path.basename(p)[:-2]
+                fbase = os.path.join(fixdir, stem)
+                r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
+                                   capture_output=True, text=True)
+                if r.returncode != 0:
+                    failures.append("%s: cc failed: %s"
+                                    % (os.path.relpath(p, ROOT),
+                                       r.stderr.strip()[:160]))
                     continue
                 fixture_map[stem.upper()] = fbase
 

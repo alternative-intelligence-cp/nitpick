@@ -221,17 +221,19 @@ func:main = int32(cstring[]:_~argv) {
     if (fc1.kind != DeclKind.DeclNeverFails)                  { exit 85i32; }
     if (raw diaglist_count(@gf) != 0i64)                      { exit 86i32; }
 
-    // Omitting it is an ERROR. Not a warning, and not a default: silence must
-    // not become a silent `Ok`.
+    // Omitting it is the LEGAL form since D-190 (1.1.13c): a driver method
+    // carries no per-function contract — the wire has one convention — so
+    // the contract-less spelling parses CLEAN, and a contract still written
+    // refuses later, by name, in the expansion phase (NITPICK-EXTERN-002).
+    // (Until the Bridge landed this was a parse error; D-149 scheduled the
+    // lift and the retired NITPICK-PARSE-006 records it.)
     TokenList:kg = raw lex_all(0i32,
         "extern:\"libc\" = { func:puts = int32(int8->:s); };", @it, @ld);
     Ast:ag = raw ast_init();
     DiagList:gg = raw diaglist_init();
     Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
     drop p_parse_decl(@pg);
-    if (raw diaglist_count(@gg) != 1i64)                      { exit 87i32; }
-    Diagnostic:dg = raw diaglist_at(@gg, 0i64);
-    if (!(raw string_eq(dg.code, raw PARSE_EXTERN_NO_CONTRACT()))) { exit 88i32; }
+    if (raw diaglist_count(@gg) != 0i64)                      { exit 87i32; }
 
     // --- Rules, limit, and namespaces ----------------------------------------------------
     TokenList:kh = raw lex_all(0i32,

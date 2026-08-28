@@ -1,0 +1,511 @@
+// `extern` blocks lower to GENERATED DRIVER STUBS — D-149 over D-190, 1.1.13c.
+//
+// An `extern` block names a supervised driver process and declares its
+// methods; in-process FFI does not exist (D-149). This pass — the derive
+// mechanism's sibling, run in the expansion phase for the same reason
+// (what it emits must be complete before any name is bound) — turns each
+// block into ordinary Nitpick source:
+//
+//   pub func:<block>_iface_hash = int64() ...      the connect-time check
+//   pub async func:<method> = ...                  one stub per method
+//
+// The stubs marshal into the sealed ring, dispatch under the caller's
+// deadline, and unmarshal or fail — through `lib/nbridge.npk`'s surface,
+// which the declaring module must therefore import. The block itself is
+// the INTERFACE RECORD: its method declarations are never bound as symbols
+// (the stubs carry the names), its order is the kernel_id space, and its
+// canonical spelling is what the interface hash covers.
+//
+// THE V1 WIRE VOCABULARY is deliberately small and refused-by-name at the
+// edges: parameters are `int32`, `int64`, `int8[]` or `uint8[]`; returns
+// are `NIL`, `int32` or `int64`; every method takes `Bridge->` first and
+// `Duration` last. The `opaque` wire-handle tier is v3 §11's reserved
+// LOAD_MODULE work and refuses here until that tier is built.
+
+mod:bridge_stubs;
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../parse_decl.npk".*;
+use "../parse_type.npk".*;
+use "../token.npk".*;
+use "../lexer.npk".*;
+use "../parser.npk".*;
+use "../source.npk".*;
+use "../module_graph.npk".*;
+use "./bridge_codes.npk".*;
+
+// FNV-1a over the canonical interface spelling — the D-123 combiner, the
+// same constants `resolve.npk` uses for error identities, restated here for
+// the reason stated there: the prelude's hash helpers reach user programs
+// through injection, which the compiler's own source does not receive.
+func:bs_fnv_seed = uint64() never fails {
+    pass ((3421887204u64 << 32u64) | 2216829733u64);
+};
+func:bs_fnv_step = uint64(uint64:h, uint64:v) never fails {
+    pass ((h ^ v) * 1099511628211u64);
+};
+func:bs_fnv_str = uint64(string:sv, uint64:h0) never fails {
+    uint64:h = h0;
+    int64:i = 0i64;
+    while (i < sv.len) {
+        h = raw bs_fnv_step(h, (sv.ptr[i] =>! uint64) & 255u64);
+        i = i + 1i64;
+    }
+    pass h;
+};
+
+// --- the tiny syntactic type vocabulary --------------------------------------
+//
+// These read the PARSE-side type nodes (nothing is resolved yet — this runs
+// before collection). The classification IS the v1 wire vocabulary; the
+// spellings it returns are both the hash's canonical text and the generated
+// stub's parameter types, so the two cannot drift.
+
+// 0 = not admitted; 1 = int32; 2 = int64; 3 = int8[]; 4 = uint8[];
+// 5 = NIL (returns only).
+func:bs_classify = int32(Ast->:ast, TypeId:ty) never fails {
+    if (raw type_is_none(ty)) { pass 0i32; }
+    TypeNode:n = raw ast_type(ast, ty);
+    if (n.kind == TypeKind.TypeNamedType) {
+        if (!(raw type_name_is_builtin(n))) { pass 0i32; }
+        int64:k = raw type_name_index(n);
+        if (k == 92i64)  { pass 1i32; }   // KwInt32
+        if (k == 93i64)  { pass 2i32; }   // KwInt64
+        if (k == 170i64) { pass 5i32; }   // KwNIL
+        pass 0i32;
+    }
+    if (n.kind == TypeKind.TypeArrayType) {
+        if (!(raw type_is_slice(n))) { pass 0i32; }
+        TypeNode:e = raw ast_type(ast, raw type_element(n));
+        if (e.kind != TypeKind.TypeNamedType) { pass 0i32; }
+        if (!(raw type_name_is_builtin(e)))   { pass 0i32; }
+        int64:ek = raw type_name_index(e);
+        if (ek == 90i64)  { pass 3i32; }  // KwInt8
+        if (ek == 103i64) { pass 4i32; }  // KwUint8
+        pass 0i32;
+    }
+    pass 0i32;
+};
+
+func:bs_spell = string(int32:cls) never fails {
+    if (cls == 1i32) { pass "int32"; }
+    if (cls == 2i32) { pass "int64"; }
+    if (cls == 3i32) { pass "int8[]"; }
+    if (cls == 4i32) { pass "uint8[]"; }
+    pass "NIL";
+};
+
+// Is this parse-side type `Name->` where Name interns as `want`?
+func:bs_is_ptr_to = bool(Ast->:ast, InternTable->:it, TypeId:ty, string:want) never fails {
+    if (raw type_is_none(ty)) { pass false; }
+    TypeNode:n = raw ast_type(ast, ty);
+    if (n.kind != TypeKind.TypePointerType) { pass false; }
+    TypeNode:pn = raw ast_type(ast, raw type_pointee(n));
+    if (pn.kind != TypeKind.TypeNamedType)  { pass false; }
+    if (raw type_name_is_builtin(pn))       { pass false; }
+    pass (raw string_eq(raw intern_get(it, (raw type_name_index(pn)) =>! int32), want));
+};
+
+func:bs_is_named = bool(Ast->:ast, InternTable->:it, TypeId:ty, string:want) never fails {
+    if (raw type_is_none(ty)) { pass false; }
+    TypeNode:n = raw ast_type(ast, ty);
+    if (n.kind != TypeKind.TypeNamedType) { pass false; }
+    if (raw type_name_is_builtin(n))      { pass false; }
+    pass (raw string_eq(raw intern_get(it, (raw type_name_index(n)) =>! int32), want));
+};
+
+func:bs_ident_ok = bool(string:s) never fails {
+    if (s.len == 0i64) { pass false; }
+    int64:i = 0i64;
+    while (i < s.len) {
+        uint8:c = s.ptr[i];
+        bool:ok = false;
+        if (c >= 97u8)  { if (c <= 122u8) { ok = true; } }   // a-z
+        if (c >= 65u8)  { if (c <= 90u8)  { ok = true; } }   // A-Z
+        if (c == 95u8)  { ok = true; }                        // _
+        if (i > 0i64) { if (c >= 48u8) { if (c <= 57u8) { ok = true; } } }  // 0-9
+        if (!ok) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+// --- text assembly ------------------------------------------------------------
+
+func:bs_cat = string(move string:a, string:b) never fails {
+    pass (raw string_concat(a, b));
+};
+
+func:bs_num = string(int64:v) never fails {
+    pass (raw int_to_string(v));
+};
+
+// The generated `pass` for the hash constant: a u64 emitted as two positive
+// halves, because an int64 literal is a positive decimal (D-147) and the
+// high bit may be set.
+func:bs_hash_expr = string(uint64:h) never fails {
+    int64:hi = ((h >> 32u64) & 4294967295u64) =>! int64;
+    int64:lo = (h & 4294967295u64) =>! int64;
+    string:s = raw bs_cat("((", raw bs_num(hi));
+    s = raw bs_cat(move(s), "i64 << 32i64) | ");
+    s = raw bs_cat(move(s), raw bs_num(lo));
+    pass (raw bs_cat(move(s), "i64)"));
+};
+
+// --- the block walk -----------------------------------------------------------
+
+pub func:bridge_apply = NIL(ModuleGraph->:g) never fails {
+    int32:i = 0i32;
+    while (i < (raw graph_count(g))) {
+        ModuleEntry:e = raw graph_at(g, i);
+        if (i != g.prelude) {
+            drop bridge_in_module(g, DeclId{ index: e.root }, i);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// Validate one method and append its stub text; returns the canonical
+// interface spelling for the hash ("" after a refusal — the caller keeps
+// walking so one pass reports every defect).
+func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
+                            DeclId:fnid, int32:kid) never fails {
+    DeclNode:d = raw ast_decl(ast, fnid);
+    if (d.kind != DeclKind.DeclExternFn) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "an `extern` block holds driver METHODS; the `opaque` wire-handle tier (v3 §11) is reserved for the LOAD_MODULE work and does not lower yet (D-190)",
+            d.span));
+        pass "";
+    }
+    string:name = raw intern_get(it, raw decl_name(d));
+    if ((raw decl_flags(d)) != 0i32) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method carries no modifiers and is never variadic: the wire is fixed-shape records (D-190)",
+            d.span));
+        pass "";
+    }
+    if (!(raw decl_is_none(raw extern_fn_failure(ast, d)))) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_CONTRACT(),
+            "a driver method carries no failure contract (D-149): the wire has ONE convention — every dispatch returns status, and timeouts, driver death and protocol violations arrive as the D-179 error family. Delete the clause; the contract-less spelling is the legal one",
+            d.span));
+        pass "";
+    }
+    int32:pc = raw extern_fn_param_count(ast, d);
+    if (pc < 2i32) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method takes `Bridge->` FIRST and `Duration` LAST (the mandatory deadline, D-055): declare both — the stub is generated from exactly what is written",
+            d.span));
+        pass "";
+    }
+    DeclNode:p0 = raw ast_decl(ast, raw extern_fn_param(ast, d, 0i32));
+    if (!(raw bs_is_ptr_to(ast, it, raw param_type(p0), "Bridge"))) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method's FIRST parameter is the `Bridge->` it dispatches on (D-190)",
+            p0.span));
+        pass "";
+    }
+    DeclNode:pl = raw ast_decl(ast, raw extern_fn_param(ast, d, pc - 1i32));
+    if (!(raw bs_is_named(ast, it, raw param_type(pl), "Duration"))) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method's LAST parameter is the `Duration` deadline every dispatch carries (D-055 rule 1)",
+            pl.span));
+        pass "";
+    }
+    int32:rcls = raw bs_classify(ast, raw extern_fn_return(ast, d));
+    if (rcls == 0i32) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method returns `NIL`, `int32` or `int64` in the v1 wire vocabulary (D-190); richer returns arrive with the reserved §11 tier",
+            d.span));
+        pass "";
+    }
+    if (rcls > 2i32) { if (rcls != 5i32) {
+        drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+            "a driver method returns `NIL`, `int32` or `int64` in the v1 wire vocabulary (D-190)",
+            d.span));
+        pass "";
+    } }
+
+    // classify the middles, and build the canonical spelling as we go
+    string:canon = raw bs_cat(raw string_concat(name, ""), "=");
+    canon = raw bs_cat(move(canon), raw bs_spell(rcls));
+    canon = raw bs_cat(move(canon), "(");
+    string:sig = "";
+    int32:mi = 1i32;
+    bool:bad = false;
+    while (mi < (pc - 1i32)) {
+        DeclNode:pm = raw ast_decl(ast, raw extern_fn_param(ast, d, mi));
+        int32:cls = raw bs_classify(ast, raw param_type(pm));
+        bool:okc = false;
+        if (cls >= 1i32) { if (cls <= 4i32) { okc = true; } }
+        if (!okc) {
+            drop diaglist_push(diags, raw diag_error(raw EXTERN_SHAPE(),
+                "a driver method's parameters are `int32`, `int64`, `int8[]` or `uint8[]` in the v1 wire vocabulary (D-190); nothing address-shaped crosses the wire (D-149)",
+                pm.span));
+            bad = true;
+        }
+        if (mi > 1i32) { canon = raw bs_cat(move(canon), ","); }
+        canon = raw bs_cat(move(canon), raw bs_spell(cls));
+        sig = raw bs_cat(move(sig), raw bs_num(cls => int64));
+        mi = mi + 1i32;
+    }
+    canon = raw bs_cat(move(canon), ")");
+    if (bad) { pass ""; }
+
+    // --- the stub text --------------------------------------------------------
+    // Parameters are renamed p1..pN — the stub is a fresh declaration and the
+    // caller never sees the block's own spellings.
+    string:t = raw bs_cat("pub async func:", raw string_concat(name, ""));
+    t = raw bs_cat(move(t), " = ");
+    t = raw bs_cat(move(t), raw bs_spell(rcls));
+    t = raw bs_cat(move(t), "(Bridge->:b");
+    int32:mj = 1i32;
+    while (mj < (pc - 1i32)) {
+        int32:cls = ((sig.ptr[(mj - 1i32) => int64]) =>! int32) - 48i32;
+        t = raw bs_cat(move(t), ", ");
+        t = raw bs_cat(move(t), raw bs_spell(cls));
+        t = raw bs_cat(move(t), ":p");
+        t = raw bs_cat(move(t), raw bs_num(mj => int64));
+        mj = mj + 1i32;
+    }
+    t = raw bs_cat(move(t), ", Duration:within) {\n");
+    t = raw bs_cat(move(t), "    wild int8->:base = b.shm.base;\n");
+    t = raw bs_cat(move(t), "    int64:boff = <-(#ptr_add<int64>(base, 2i64));\n");
+    t = raw bs_cat(move(t), "    wild int8->:bulk = #ptr_add<int8>(base, boff);\n");
+
+    // slots: one 8-byte word per scalar, two per slice {rel_off, len};
+    // slice bytes appended after the slot area, offsets accumulated at
+    // runtime in `aoff`.
+    int32:slots = 0i32;
+    int32:mk = 1i32;
+    while (mk < (pc - 1i32)) {
+        int32:cls = ((sig.ptr[(mk - 1i32) => int64]) =>! int32) - 48i32;
+        if (cls <= 2i32) { slots = slots + 1i32; }
+        if (cls >= 3i32) { slots = slots + 2i32; }
+        mk = mk + 1i32;
+    }
+    t = raw bs_cat(move(t), "    int64:aoff = ");
+    t = raw bs_cat(move(t), raw bs_num((slots => int64) * 8i64));
+    t = raw bs_cat(move(t), "i64;\n");
+    int32:slot = 0i32;
+    int32:mm = 1i32;
+    while (mm < (pc - 1i32)) {
+        int32:cls = ((sig.ptr[(mm - 1i32) => int64]) =>! int32) - 48i32;
+        string:pn = raw bs_cat("p", raw bs_num(mm => int64));
+        if (cls == 1i32) {
+            t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
+            t = raw bs_cat(move(t), raw bs_num(slot => int64));
+            t = raw bs_cat(move(t), "i64)) = ");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), " => int64;\n");
+            slot = slot + 1i32;
+        }
+        if (cls == 2i32) {
+            t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
+            t = raw bs_cat(move(t), raw bs_num(slot => int64));
+            t = raw bs_cat(move(t), "i64)) = ");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), ";\n");
+            slot = slot + 1i32;
+        }
+        if (cls >= 3i32) {
+            t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
+            t = raw bs_cat(move(t), raw bs_num(slot => int64));
+            t = raw bs_cat(move(t), "i64)) = aoff;\n");
+            t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
+            t = raw bs_cat(move(t), raw bs_num((slot + 1i32) => int64));
+            t = raw bs_cat(move(t), "i64)) = ");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), ".len;\n");
+            // the byte copy — proven constructs only (a bounds-checked
+            // element loop), no builtin the tree has not exercised
+            t = raw bs_cat(move(t), "    int64:ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), " = 0i64;\n    while (ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), " < ");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), ".len) {\n        <-(#ptr_add<int8>(bulk, aoff + ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), ")) = (");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), "[ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), "]) =>! int8;\n        ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), " = ci");
+            t = raw bs_cat(move(t), raw bs_num(mm => int64));
+            t = raw bs_cat(move(t), " + 1i64;\n    }\n    aoff = aoff + ");
+            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), ".len;\n");
+            slot = slot + 2i32;
+        }
+        mm = mm + 1i32;
+    }
+
+    t = raw bs_cat(move(t), "    Result<int32>:dr = await dispatch(b, ");
+    t = raw bs_cat(move(t), raw bs_num(kid => int64));
+    t = raw bs_cat(move(t), "i64, aoff, within);\n");
+    t = raw bs_cat(move(t), "    if (dr.is_error) { fail dr.err; }\n");
+    t = raw bs_cat(move(t), "    if (dr.value != 0i32) { fail EDriverError; }\n");
+    if (rcls == 5i32) {
+        t = raw bs_cat(move(t), "    pass NIL;\n};\n");
+    }
+    if (rcls == 2i32) {
+        t = raw bs_cat(move(t),
+            "    int64:rv = <-((#ptr_add<int8>(base, (boff + aoff + 7i64) & (0i64 - 8i64))) =>! wild int64->);\n");
+        t = raw bs_cat(move(t), "    pass rv;\n};\n");
+    }
+    if (rcls == 1i32) {
+        t = raw bs_cat(move(t),
+            "    int64:rv = <-((#ptr_add<int8>(base, (boff + aoff + 7i64) & (0i64 - 8i64))) =>! wild int64->);\n");
+        t = raw bs_cat(move(t), "    pass ((rv & 4294967295i64) =>! int32);\n};\n");
+    }
+    pass t;
+};
+
+// The canonical spelling alone — same classification, NO reporting (the
+// generator above already reported); "" when the method is invalid.
+func:bs_canon = string(Ast->:ast, InternTable->:it, DeclId:fnid) never fails {
+    DeclNode:d = raw ast_decl(ast, fnid);
+    if (d.kind != DeclKind.DeclExternFn) { pass ""; }
+    if ((raw decl_flags(d)) != 0i32) { pass ""; }
+    if (!(raw decl_is_none(raw extern_fn_failure(ast, d)))) { pass ""; }
+    int32:pc = raw extern_fn_param_count(ast, d);
+    if (pc < 2i32) { pass ""; }
+    DeclNode:p0 = raw ast_decl(ast, raw extern_fn_param(ast, d, 0i32));
+    if (!(raw bs_is_ptr_to(ast, it, raw param_type(p0), "Bridge"))) { pass ""; }
+    DeclNode:pl = raw ast_decl(ast, raw extern_fn_param(ast, d, pc - 1i32));
+    if (!(raw bs_is_named(ast, it, raw param_type(pl), "Duration"))) { pass ""; }
+    int32:rcls = raw bs_classify(ast, raw extern_fn_return(ast, d));
+    bool:rok = false;
+    if (rcls == 1i32) { rok = true; }
+    if (rcls == 2i32) { rok = true; }
+    if (rcls == 5i32) { rok = true; }
+    if (!rok) { pass ""; }
+    string:canon = raw bs_cat(raw intern_get(it, raw decl_name(d)), "=");
+    canon = raw bs_cat(move(canon), raw bs_spell(rcls));
+    canon = raw bs_cat(move(canon), "(");
+    int32:mi = 1i32;
+    while (mi < (pc - 1i32)) {
+        DeclNode:pm = raw ast_decl(ast, raw extern_fn_param(ast, d, mi));
+        int32:cls = raw bs_classify(ast, raw param_type(pm));
+        bool:okc = false;
+        if (cls >= 1i32) { if (cls <= 4i32) { okc = true; } }
+        if (!okc) { pass ""; }
+        if (mi > 1i32) { canon = raw bs_cat(move(canon), ","); }
+        canon = raw bs_cat(move(canon), raw bs_spell(cls));
+        mi = mi + 1i32;
+    }
+    pass (raw bs_cat(move(canon), ")"));
+};
+
+func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
+    int32:mc = raw item_member_count(@g.ast, m);
+    string:src = "";
+    int32:i = 0i32;
+    while (i < mc) {
+        DeclId:member = raw item_member(@g.ast, m, i);
+        DeclNode:d = raw ast_decl(@g.ast, member);
+        if (d.kind == DeclKind.DeclExternBlock) {
+            string:lib = raw intern_get(g.interns, raw extern_lib(d));
+            if (!(raw bs_ident_ok(lib))) {
+                drop diaglist_push(g.diags, raw diag_error(raw EXTERN_SHAPE(),
+                    "an `extern` block's name becomes the generated `<name>_iface_hash` symbol, so it must be identifier-shaped (letters, digits, underscores; not starting with a digit)",
+                    d.span));
+            }
+            if (raw bs_ident_ok(lib)) {
+                uint64:h = raw bs_fnv_seed();
+                int32:n = raw decl_win_count(d);
+                int32:k = 0i32;
+                bool:allok = true;
+                while (k < n) {
+                    DeclId:fnid = DeclId{ index: raw ast_id_at(@g.ast,
+                                              raw decl_win_start(d), k) };
+                    string:stub = raw bs_one_method(@g.ast, g.interns, g.diags,
+                                                    fnid, k);
+                    if (stub.len == 0i64) { allok = false; }
+                    if (stub.len != 0i64) {
+                        src = raw bs_cat(move(src), stub);
+                        string:canon = raw bs_canon(@g.ast, g.interns, fnid);
+                        h = raw bs_fnv_str(canon, h);
+                        h = raw bs_fnv_step(h, 59u64);   // ';' between methods
+                    }
+                    k = k + 1i32;
+                }
+                if (allok) {
+                    string:hf = raw bs_cat("pub func:",
+                                    raw string_concat(lib, ""));
+                    hf = raw bs_cat(move(hf),
+                        "_iface_hash = int64() never fails { pass ");
+                    hf = raw bs_cat(move(hf), raw bs_hash_expr(h));
+                    hf = raw bs_cat(move(hf), "; };\n");
+                    src = raw bs_cat(move(src), hf);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    if (src.len == 0i64) { pass NIL; }
+
+    // THE GENERATED TEXT IS A MODULE, PARSED LIKE ANY OTHER — the derive
+    // splice, verbatim: its members are appended to the real module's
+    // member window, marked, before collection binds a single name.
+    string:path = raw string_concat("<bridge-",
+                      raw string_concat(raw int_to_string(index => int64), ">"));
+    string:full = raw string_concat("mod:derived;\n", src);
+    int32:file = raw srcmgr_add(@g.sm, move(path), move(full));
+    string:dtext = raw srcmgr_text_proven(@g.sm, file);
+    TokenList:toks = raw lex_all(file, dtext, g.interns, g.diags);
+    Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
+    DeclId:groot = raw p_parse_module(@p);
+
+    DeclNode:gm = raw ast_decl(@g.ast, groot);
+    DeclNode:m2 = raw ast_decl(@g.ast, mod_id);
+    int32:gc = raw item_generic_count(@g.ast, m2);
+    int32:mc2 = raw item_member_count(@g.ast, m2);
+    int32:ac = raw item_attr_count(@g.ast, m2);
+    int32:ec = raw item_extra_count(@g.ast, m2);
+    int32:added = raw item_member_count(@g.ast, gm);
+
+    int32:mark = raw ast_scratch_mark(@g.ast);
+    drop ast_scratch_push(@g.ast, gc);
+    drop ast_scratch_push(@g.ast, mc2 + added);
+    drop ast_scratch_push(@g.ast, ac);
+    drop ast_scratch_push(@g.ast, ec);
+    int32:q = 0i32;
+    while (q < gc) {
+        drop ast_scratch_push(@g.ast, (raw item_generic(@g.ast, m2, q)).index);
+        q = q + 1i32;
+    }
+    int32:j = 0i32;
+    while (j < mc2) {
+        drop ast_scratch_push(@g.ast, (raw item_member(@g.ast, m2, j)).index);
+        j = j + 1i32;
+    }
+    int32:k2 = 0i32;
+    while (k2 < added) {
+        DeclId:genid = raw item_member(@g.ast, gm, k2);
+        drop ast_or_decl_flags(@g.ast, genid, raw DECL_DERIVED());
+        drop ast_scratch_push(@g.ast, genid.index);
+        k2 = k2 + 1i32;
+    }
+    int32:a2 = 0i32;
+    while (a2 < ac) {
+        drop ast_scratch_push(@g.ast, (raw item_attr(@g.ast, m2, a2)).index);
+        a2 = a2 + 1i32;
+    }
+    int32:e2 = 0i32;
+    while (e2 < ec) {
+        drop ast_scratch_push(@g.ast, (raw item_extra(@g.ast, m2, e2)).index);
+        e2 = e2 + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(@g.ast, mark);
+    drop ast_set_decl_window(@g.ast, mod_id, w.start, w.count);
+    pass NIL;
+};

@@ -17,7 +17,7 @@ error:E9;
 
 async func:main = int32(cstring[]:_~argv) {
     Path:p = path_parse("/nonexistent/npk_no_such_driver") ?! E9;
-    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(2i64));
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, 0i64, raw duration_secs(2i64));
     if (!br.is_error) { exit 11i32; }   // spawning nothing must not succeed
     exit 0i32;
 };

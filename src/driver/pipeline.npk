@@ -42,6 +42,7 @@ use "../frontend/module_graph.npk".*;
 use "../frontend/macro/macro_codes.npk".*;
 use "../frontend/macro/expand.npk".*;
 use "../frontend/macro/derive.npk".*;
+use "../frontend/macro/bridge_stubs.npk".*;
 use "../frontend/resolve.npk".*;
 use "../frontend/types.npk".*;
 use "../frontend/builtin_types.npk".*;
@@ -217,6 +218,16 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
     if ((raw diaglist_count(@f.diags)) != 0i64) {
         drop expansion_notes(@f.xp, @f.diags);
         drop expansion_notes(@f.xp, @f.diags);
+        pass 1i32;
+    }
+
+    // `extern` BLOCKS LOWER HERE TOO (D-149/D-190, 1.1.13c): each block's
+    // driver stubs and its `<name>_iface_hash` constant are generated as
+    // source and spliced like derive's impls — the block is the interface
+    // record, the stubs are the callable surface, and both must exist
+    // before collection binds a name.
+    drop bridge_apply(@f.g);
+    if ((raw diaglist_count(@f.diags)) != 0i64) {
         pass 1i32;
     }
 

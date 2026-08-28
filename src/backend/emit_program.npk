@@ -1003,7 +1003,10 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
             drop emit_impl_block(x, diags, item, d);
         }
         if (d.kind == DeclKind.DeclExternBlock) {
-            drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
+            // EMITS NOTHING, BY DESIGN (D-190, 1.1.13c): the block is the
+            // interface record — its stubs were generated in the expansion
+            // phase and emit as the ordinary async functions they are. The
+            // 1.1 rung refusal that stood here retired when they landed.
         }
         if (d.kind == DeclKind.DeclGlobalDecl) {
             drop emit_one_global(x, diags, item, d);
@@ -1094,7 +1097,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                 drop emit_impl_block(@x, diags, item, d);
             }
             if (d.kind == DeclKind.DeclExternBlock) {
-                drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
+                // Emits nothing (D-190): the interface record — the stubs
+                // generated from it are ordinary members of this module.
             }
             if (d.kind == DeclKind.DeclGlobalDecl) {
                 drop emit_one_global(@x, diags, item, d);

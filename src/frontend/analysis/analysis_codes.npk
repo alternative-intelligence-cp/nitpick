@@ -30,7 +30,12 @@ pub func:BORROW_STORED = string() never fails    { pass "NITPICK-BORROW-002"; };
 // and not a shared "rule 4", because this is the one that can fire today and the
 // one whose reason is different in kind: the callee is not Nitpick, so nothing
 // downstream can be checked at all.
-pub func:BORROW_EXTERN = string() never fails    { pass "NITPICK-BORROW-003"; };
+// NITPICK-BORROW-003 lived here: D-004 rule 4, a borrow crossing an
+// `extern` call. D-190 (1.1.13c) made the subject UNREPRESENTABLE — extern
+// methods are an interface record whose generated stubs are ordinary
+// Nitpick, nothing address-shaped can be declared in a block
+// (NITPICK-EXTERN-001 is the enforcement, at the block, before names
+// bind) — so the code is RETIRED. The number is not reused.
 
 // Rule 4, second crossing — a borrow carried into a spawned thread.
 pub func:BORROW_SPAWNED = string() never fails   { pass "NITPICK-BORROW-004"; };

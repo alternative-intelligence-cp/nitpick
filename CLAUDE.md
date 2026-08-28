@@ -129,8 +129,20 @@ waker's due-now stamp at resume, so every once-woken task busy-polled all
 its later waits (a year latent behind retry loops; one cmpxchg at
 `npk_step`'s resume site), and D-186's slice copy allocated from the
 wild-TRACKED entry (a sliced string alive at `exit 0` was a phantom
-WildLeak). Next: 1.1.13c (`extern` lowering, the interface hash, the C SDK
-+ conformance). Adopting `dyn Writer` in npkc's own diagnostics is 1.3
+WildLeak). **Stage c is COMPLETE (D-190) — 1.1.13 and the Bridge are
+DONE**: `extern` blocks lower to GENERATED stubs (`bridge_stubs.npk`, the
+derive mechanism's sibling — source synthesized and spliced before
+collection; the block binds nothing, the stubs are ordinary async fns,
+zero downstream special cases), methods declared IN FULL (`Bridge->`
+first, `Duration` last, the v1 wire vocabulary between; departures refuse
+EXTERN-001, written contracts EXTERN-002 — D-002's mandatory-contract
+parse rule lifted as D-149 scheduled), the INTERFACE HASH rides INIT_REQ
+under D-179's error-identity seed (one derived-identity constant
+ecosystem-wide) and a stale driver refuses at the handshake, and
+`sdk/npkdrv.h` + harness-built C reference drivers prove the wire end to
+end (`extern_c_driver.npk`: echo through the ring, driver-reported
+refusal → EDriverError, hostile tail → protocol kill, stale interface →
+EDriverSpawn). Adopting `dyn Writer` in npkc's own diagnostics is 1.3
 material.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes

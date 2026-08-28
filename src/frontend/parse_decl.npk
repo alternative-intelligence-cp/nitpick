@@ -1385,13 +1385,14 @@ func:p_parse_failure = DeclId(Parser->:p) never fails {
         pass (raw ast_add_decl(p.ast, DeclKind.DeclFailsOn, sp,
                                  pred.index, errno, 0i32, 0i64));
     }
-    // THE RATIONALE IS D-002's AND IT IS RETIRED (1.0.8): D-149 makes `extern`
-    // a driver interface with one wire convention, and the checker will refuse
-    // a contract on an `extern` declaration when the Bridge lands (1.1). The
-    // parser still implements D-002's requirement until then; the message no
-    // longer cites C for it.
-    drop p_error(p, raw PARSE_EXTERN_NO_CONTRACT(),
-        "an `extern` function must state `fails on ...` or `never fails` at this rung (D-002); the driver interface D-149 replaces this with the wire's own convention at cycle 1.1");
+    // THE BRIDGE LANDED (1.1.13c), AND D-002's REQUIREMENT LIFTS AS D-149
+    // SCHEDULED: a driver method carries NO per-function contract — the wire
+    // has one universal failure convention, so the contract-less spelling is
+    // the legal one, and a contract still WRITTEN is refused by name in the
+    // expansion phase (NITPICK-EXTERN-002), where the stubs are generated.
+    // The two productions above stay parsed (the parser never restricts,
+    // D-085); only the mandatory-ness ends, exactly as the retired message
+    // said it would.
     pass (raw decl_none());
 };
 

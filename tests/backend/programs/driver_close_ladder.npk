@@ -22,12 +22,12 @@ async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) { exit 7i32; }
     string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
     Path:p = path_parse(mp) ?! E9;
-    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(5i64));
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, 0i64, raw duration_secs(5i64));
     Bridge:b = br ?! E9;
 
-    Result<int32>:r = await dispatch(@b, 555i64, raw duration_secs(5i64));
+    Result<int32>:r = await dispatch(@b, 555i64, 0i64, raw duration_secs(5i64));
     if (r.is_error) { exit 21i32; }
-    if ((r.value => int64) != 562i64) { exit 22i32; }
+    if ((r.value => int64) != 0i64) { exit 22i32; }   // status ok; value in resp
 
     Result<NIL>:c = await bridge_close(@b, raw duration_secs(2i64));
     if (c.is_error) { exit 23i32; }

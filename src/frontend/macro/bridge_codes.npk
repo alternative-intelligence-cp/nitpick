@@ -1,0 +1,26 @@
+// The extern-block (driver interface) codes — D-149 over D-190, 1.1.13c.
+//
+// An `extern` block is the INTERFACE RECORD for a supervised driver process:
+// its methods become GENERATED stubs (marshal into the sealed ring, dispatch
+// under the mandatory deadline, unmarshal or fail), and the block itself is
+// compile-time material. These are the refusals that keep that lowering
+// honest — reported in the expansion phase, where the stubs are made,
+// because what the resolver binds has to be complete before names are bound.
+
+mod:bridge_codes;
+
+// The block or a method has a shape the lowering does not accept: a name
+// that is not identifier-shaped, an `opaque` member (the §11 wire-handle
+// tier is reserved, not yet lowered), a method without the leading
+// `Bridge->` receiver or trailing `Duration` deadline, or a type outside
+// the v1 wire vocabulary (int32, int64, int8[]/uint8[] parameters; NIL,
+// int32, int64 returns).
+pub func:EXTERN_SHAPE = string() never fails { pass "NITPICK-EXTERN-001"; };
+
+// A D-002-era failure contract (`fails on`, `with errno`, `never fails`) on
+// a driver method. The wire HAS a universal failure convention (D-149):
+// every dispatch returns status plus payload, and timeouts, driver death
+// and protocol violations arrive as the D-179 error family — there is
+// nothing per-function to declare, and a `never fails` driver call is a
+// contradiction (a driver may always fail).
+pub func:EXTERN_CONTRACT = string() never fails { pass "NITPICK-EXTERN-002"; };

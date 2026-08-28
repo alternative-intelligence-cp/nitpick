@@ -76,7 +76,7 @@ async func:main = int32(cstring[]:_~argv) {
     wild int8->:buf = alloc(64i64);
     defer { drop dalloc(buf); }
 
-    // INIT_REQ (20 bytes) with the memfd riding SCM_RIGHTS — recvmsg after
+    // INIT_REQ (28 bytes) with the memfd riding SCM_RIGHTS — recvmsg after
     // readiness, so the NONBLOCK socket cannot EAGAIN the one receive that
     // must carry the descriptor.
     Result<NIL>:w0 = await io_ready(3i32, 1i32, raw duration_secs(10i64));
@@ -84,15 +84,17 @@ async func:main = int32(cstring[]:_~argv) {
     Result<RecvFd>:rr = recv_fd(3i64, buf, 64i64);
     if (rr.is_error) { exit 3i32; }
     RecvFd:rv = rr.value;
-    if (rv.n != 20i64)  { exit 3i32; }
+    if (rv.n != 28i64)  { exit 3i32; }
     if (rv.rfd < 0i64)  { exit 3i32; }
     int64:h = <-(#ptr_add<int64>(buf, 0i64));
     if ((h & 65535i64) != 1i64)                  { exit 4i32; }
-    if (((h >> 32i64) & 4294967295i64) != 12i64) { exit 4i32; }
+    if (((h >> 32i64) & 4294967295i64) != 20i64) { exit 4i32; }
     int64:ver = ((<-(#ptr_add<int32>(buf, 2i64))) => int64) & 4294967295i64;
     if (ver != (raw NPK_BRIDGE_VERSION())) { exit 5i32; }
     int64:shsz = (((<-(#ptr_add<int32>(buf, 3i64))) => int64) & 4294967295i64)
                | ((((<-(#ptr_add<int32>(buf, 4i64))) => int64) & 4294967295i64) << 32i64);
+    // the interface hash rides at bytes 20..28; this GENERIC mock has no
+    // interface table, so it accepts any (the C reference driver checks).
 
     // §7.5 rule 2: fstat the received fd; st_size must agree with INIT_REQ.
     wild int8->:st = calloc(1i64, 144i64);
@@ -143,6 +145,7 @@ async func:main = int32(cstring[]:_~argv) {
         wild int8->:dd = #ptr_add<int8>(shm, 256i64 + ((mtail & (cap - 1i64)) * 32i64));
         int64:dseq  = ((<-(#ptr_add<int32>(dd, 0i64))) => int64) & 4294967295i64;
         int64:dkern = ((<-(#ptr_add<int32>(dd, 1i64))) => int64) & 4294967295i64;
+        int64:dresp = <-(#ptr_add<int64>(dd, 3i64));
         if (dseq != seq)   { exit 11i32; }
         if (dkern != kern) { exit 11i32; }
         atomic_from_ptr::<int64>((#ptr_add<int8>(shm, 128i64)) =>! wild int64->).store(mtail + 1i64);
@@ -162,12 +165,17 @@ async func:main = int32(cstring[]:_~argv) {
             exit 14i32;
         }
 
+        // THE RESPONSE ABI (D-190): the VALUE goes to the descriptor's
+        // resp_off in the shared region; WORK_COMPLETE's result field is the
+        // STATUS — 0 is success, nonzero is a driver-reported error.
+        if (dresp >= 0i64) { if ((dresp + 8i64) <= shsz) {
+            <-((#ptr_add<int8>(shm, dresp)) =>! wild int64->) = kern + 7i64;
+        } }
         int64:rseq = seq;
         if (kern == 666i64) { rseq = (seq + 1i64) & 4294967295i64; }
-        int64:res = (kern + 7i64) & 4294967295i64;
         <-(#ptr_add<int64>(buf, 0i64)) = 32770i64 | (8i64 << 32i64);
         <-(#ptr_add<int32>(buf, 2i64)) = rseq =>! int32;
-        <-(#ptr_add<int32>(buf, 3i64)) = res =>! int32;
+        <-(#ptr_add<int32>(buf, 3i64)) = 0i32;
         Result<NIL>:wc = await wr_exact(buf, 16i64);
         if (wc.is_error) { exit 12i32; }
 

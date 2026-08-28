@@ -12,10 +12,12 @@ pub func:PARSE_UNCLOSED = string() never fails      { pass "NITPICK-PARSE-003"; 
 pub func:PARSE_ASSIGN_EXPR = string() never fails   { pass "NITPICK-PARSE-004"; };
 pub func:PARSE_BAD_PATTERN = string() never fails   { pass "NITPICK-PARSE-005"; };
 
-// D-002: an `extern` function with no failure contract. A parse error rather
-// than a semantic one because the contract is part of the declaration's SHAPE --
-// there is no `extern` function without one to build a node for.
-pub func:PARSE_EXTERN_NO_CONTRACT = string() never fails { pass "NITPICK-PARSE-006"; };
+// NITPICK-PARSE-006 lived here: D-002's mandatory failure contract on an
+// `extern` function. The Bridge (1.1.13c, D-149/D-190) lifted the
+// requirement — a driver method carries NO per-function contract, the wire
+// has one convention — so the code is RETIRED, and a contract that IS
+// written refuses as NITPICK-EXTERN-002 in the expansion phase. The number
+// is not reused.
 
 // D-061: `(!)`, the removed unreachable marker. It gets a code of its own rather
 // than a generic "bad pattern" so the diagnostic can name the replacement --

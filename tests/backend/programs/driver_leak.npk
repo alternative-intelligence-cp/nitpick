@@ -22,7 +22,7 @@ async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) { exit 7i32; }
     string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
     Path:p = path_parse(mp) ?! E9;
-    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, raw duration_secs(5i64));
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, 0i64, raw duration_secs(5i64));
     Bridge:b = br ?! E9;
     if (b.closed) { exit 11i32; }
     exit 0i32;   // abandoning a live driver: the exit check must refuse this

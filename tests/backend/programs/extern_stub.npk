@@ -1,0 +1,72 @@
+// expect-exit: 0
+// stress: 40
+// argv: MOCK_DRIVER
+//
+// THE GENERATED STUBS, END TO END (D-149 over D-190): this module's
+// `extern` block never binds a symbol of its own — the expansion phase
+// generates `mockif_iface_hash()` and one `async func` stub per method,
+// and THOSE are what this file calls. `probe` (kernel_id 0, no payload)
+// and `plus` (kernel_id 1, two scalars marshalled into the ring's bulk
+// area) both dispatch through the sealed ring against the generic mock,
+// which answers kernel_id + 7 at the descriptor's resp_off with status 0
+// — so the stubs' unmarshalling, the kernel-id space (declaration order)
+// and the response ABI are all pinned by the exit code. Exit 0 asserts
+// the full reclaim under both controlled-exit checks.
+mod:extern_stub;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"mockif" = {
+    func:probe = int64(Bridge->:b, Duration:within);
+    func:plus  = int64(Bridge->:b, int64:x, int32:y, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+
+    int64:h = raw mockif_iface_hash();
+    if (h == 0i64) { exit 11i32; }
+
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, h,
+                                           raw duration_secs(5i64));
+    Bridge:b = br ?! E9;
+
+    Result<int64>:r0 = await probe(@b, raw duration_secs(5i64));
+    if (r0.is_error) { exit 21i32; }
+    if (r0.value != 7i64) { exit 22i32; }     // kernel 0 + 7
+
+    Result<int64>:r1 = await plus(@b, 40i64, 2i32, raw duration_secs(5i64));
+    if (r1.is_error) { exit 23i32; }
+    if (r1.value != 8i64) { exit 24i32; }     // kernel 1 + 7 (the mock's rule)
+
+    drop bridge_reap(@b);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 85i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

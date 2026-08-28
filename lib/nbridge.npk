@@ -147,7 +147,7 @@ pub func:NPK_BRIDGE_VERSION = int64() never fails { pass 3i64; };
 // Compared as a NUMBER on both sides (same-host wire, §7.1), so byte order
 // is nobody's problem.
 pub func:NPK_RING_MAGIC = int64() never fails {
-    pass ((1313360708i64 << 32i64) | 1381445683i64);
+    pass ((1313884996i64 << 32i64) | 1381380147i64);
 };
 
 // --- the Bridge's error family (D-179; v3's tbb32 codes predate it) ---------
@@ -157,6 +157,9 @@ pub error:EDriverFault;      // the driver died: ctrl EOF, or the pidfd fired
 pub error:EDriverDeadline;   // a dispatch or close deadline expired
 pub error:ERingFull;         // the descriptor ring has no free slot
 pub error:EBridgePoisoned;   // used after a fault; tear down and respawn (v3 §4.4)
+pub error:EDriverError;      // the driver REPORTED failure: WORK_COMPLETE's status
+                             // was nonzero — the wire delivered, the work refused;
+                             // the stderr tail is the diagnostic channel (D-190)
 
 // --- descriptor helpers ------------------------------------------------------
 
@@ -399,8 +402,14 @@ async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_
 // complete leaves nothing running. `ring_cap` is the descriptor ring's
 // slot count — a POWER OF TWO (§6.1: index arithmetic is a mask, never a
 // modulo), enforced here, and the header plus ring must fit the region.
+// `iface_hash` is the extern block's interface hash (D-190: FNV over the
+// canonical method spellings — the generated `<block>_iface_hash()` is
+// where a caller gets it), carried in INIT_REQ so a driver built against a
+// STALE interface refuses at the handshake, loudly, before any call. Zero
+// means "no interface" — a raw Bridge with hand-marshalled dispatches; the
+// reference drivers accept it.
 pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap,
-                                     Duration:within) {
+                                     int64:iface_hash, Duration:within) {
     int64:give_up = (raw mono_now()) + within.ns;
     if (ring_cap <= 0i64)                          { fail EDriverSpawn; }
     if ((ring_cap & (ring_cap - 1i64)) != 0i64)    { fail EDriverSpawn; }
@@ -481,17 +490,21 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
 
     // 7. the handshake: INIT_REQ { version, shm_size } with the sealed
     //    memfd riding SCM_RIGHTS, then INIT_ACK under the deadline.
-    wild int8->:pkt = calloc(1i64, 24i64);
+    wild int8->:pkt = calloc(1i64, 32i64);
     defer { drop dalloc(pkt); }
-    // header: opcode INIT_REQ (0x0001), flags 0, length 12 — one LE word.
-    <-(#ptr_add<int64>(pkt, 0i64)) = 1i64 | (12i64 << 32i64);
+    // header: opcode INIT_REQ (0x0001), flags 0, length 20 — one LE word.
+    // Payload: version u32, shm_size u64, iface_hash u64 — the u64s as u32
+    // halves so no store straddles its own alignment.
+    <-(#ptr_add<int64>(pkt, 0i64)) = 1i64 | (20i64 << 32i64);
     <-(#ptr_add<int32>(pkt, 2i64)) = (raw NPK_BRIDGE_VERSION()) =>! int32;
     <-(#ptr_add<int32>(pkt, 3i64)) = (shm_size & 4294967295i64) =>! int32;
     <-(#ptr_add<int32>(pkt, 4i64)) = (shm_size >> 32i64) =>! int32;
-    Result<int64>:sn = send_fd(ct.ours, (shm.memfd => int64), pkt, 20i64);
+    <-(#ptr_add<int32>(pkt, 5i64)) = (iface_hash & 4294967295i64) =>! int32;
+    <-(#ptr_add<int32>(pkt, 6i64)) = ((iface_hash >> 32i64) & 4294967295i64) =>! int32;
+    Result<int64>:sn = send_fd(ct.ours, (shm.memfd => int64), pkt, 28i64);
     bool:hs_ok = false;
     if (!sn.is_error) {
-        if (sn.value == 20i64) { hs_ok = true; }
+        if (sn.value == 28i64) { hs_ok = true; }
     }
     if (hs_ok) {
         // INIT_ACK: header word + version, 12 bytes exactly.
@@ -696,7 +709,13 @@ async func:wait3 = NIL(int32:fda, int32:fdb, int32:park_fd, int64:io_abs) {
 // After any of those this Bridge answers EBridgePoisoned until the caller
 // tears down and respawns — the ring state is unknown, and no partial
 // result ever surfaces (§6.3). Serial per Bridge in v1: one in flight.
-pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, Duration:within) {
+// `arg_len` is how many bytes of request the caller marshalled at the
+// BULK REGION'S START before calling (v1 is serial, so the args always sit
+// at bulk offset 0); the response area starts at the next 8-aligned byte
+// after them, and the descriptor tells the driver both. A raw dispatch
+// with no payload passes 0.
+pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
+                                Duration:within) {
     if (b.closed)   { fail EBridgePoisoned; }
     if (b.poisoned) { fail EBridgePoisoned; }
     int64:give_up = (raw mono_now()) + within.ns;
@@ -717,14 +736,21 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, Duration:within) {
     if (used > b.ring_cap)  { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
     if (used == b.ring_cap) { fail ERingFull; }
 
-    // the descriptor — seq, kernel, bulk args (none yet; stage c's SDK
-    // defines them) — written BEFORE the head publish (§6.2 ordering).
+    // the descriptor — { seq u32, kernel u32, arg_off u64, arg_len u64,
+    // resp_off u64 } — written BEFORE the head publish (§6.2 ordering).
+    // Offsets are relative to the mapping's base; the response area is the
+    // first 8-aligned byte past the request, and the Bridge later reads
+    // ONLY the return size it sized there — a driver can scribble anywhere
+    // in the shared mapping regardless, so the response contract is about
+    // where WE read, never a bound on the driver.
+    int64:boff = <-(#ptr_add<int64>(base, 2i64));
+    int64:resp_off = (boff + arg_len + 7i64) & (0i64 - 8i64);
     wild int8->:d = #ptr_add<int8>(base, 256i64 + ((head & (b.ring_cap - 1i64)) * 32i64));
     <-(#ptr_add<int32>(d, 0i64)) = seq32 =>! int32;
     <-(#ptr_add<int32>(d, 1i64)) = kernel_id =>! int32;
-    <-(#ptr_add<int64>(d, 1i64)) = 0i64;
-    <-(#ptr_add<int64>(d, 2i64)) = 0i64;
-    <-(#ptr_add<int64>(d, 3i64)) = 0i64;
+    <-(#ptr_add<int64>(d, 1i64)) = boff;
+    <-(#ptr_add<int64>(d, 2i64)) = arg_len;
+    <-(#ptr_add<int64>(d, 3i64)) = resp_off;
     atomic_from_ptr::<int64>((#ptr_add<int8>(base, 64i64)) =>! wild int64->).store(head + 1i64);
 
     // EXEC_NOTIFY { seq, kernel_id } — 16 bytes on the control plane.

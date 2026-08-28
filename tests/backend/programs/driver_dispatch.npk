@@ -24,20 +24,25 @@ async func:main = int32(cstring[]:argv) {
 
     // capacity is enforced at spawn: 3 is not a power of two, and 4096
     // slots do not fit a 64 KiB region beside the header.
-    Result<Bridge>:bad1 = await spawn_driver(p, 65536i64, 3i64, raw duration_secs(5i64));
+    Result<Bridge>:bad1 = await spawn_driver(p, 65536i64, 3i64, 0i64, raw duration_secs(5i64));
     if (!bad1.is_error) { exit 11i32; }
-    Result<Bridge>:bad2 = await spawn_driver(p, 65536i64, 4096i64, raw duration_secs(5i64));
+    Result<Bridge>:bad2 = await spawn_driver(p, 65536i64, 4096i64, 0i64, raw duration_secs(5i64));
     if (!bad2.is_error) { exit 12i32; }
 
-    Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, raw duration_secs(5i64));
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, 0i64, raw duration_secs(5i64));
     Bridge:b = br ?! E9;
 
     int64:i = 0i64;
     while (i < 6i64) {
         int64:kern = 30i64 + i;
-        Result<int32>:r = await dispatch(@b, kern, raw duration_secs(5i64));
+        Result<int32>:r = await dispatch(@b, kern, 0i64, raw duration_secs(5i64));
         if (r.is_error) { exit 21i32; }
-        if ((r.value => int64) != (kern + 7i64)) { exit 22i32; }
+        // WORK_COMPLETE's result is the STATUS (0 = ok); the VALUE lands at
+        // the descriptor's resp_off — with arg_len 0 that is the bulk start.
+        if ((r.value => int64) != 0i64) { exit 22i32; }
+        int64:boff = <-(#ptr_add<int64>(b.shm.base, 2i64));
+        int64:got = <-((#ptr_add<int8>(b.shm.base, boff)) =>! wild int64->);
+        if (got != (kern + 7i64)) { exit 25i32; }
         i = i + 1i64;
     }
 

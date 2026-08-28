@@ -1,0 +1,27 @@
+// expect-error: NITPICK-EXTERN-002
+// expect-error: NITPICK-EXTERN-002
+//
+// A DRIVER METHOD CARRIES NO FAILURE CONTRACT (D-149): the wire has ONE
+// convention — every dispatch returns status, and timeouts, driver death
+// and protocol violations arrive as the D-179 family — so D-002's
+// `fails on` and `never fails` are dead surface on an `extern` method, and
+// both refuse by name. (The productions still PARSE — the parser never
+// restricts, D-085; the refusal is the expansion phase's, where the stubs
+// are generated.)
+mod:extern_contract;
+
+extern:"contracts" = {
+    func:old_style = int64(Bridge->:b, Duration:within) fails on result < 0i32 with errno;
+    func:bold_claim = int64(Bridge->:b, Duration:within) never fails;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 99i32; }
+    }
+    exit 90i32;
+};

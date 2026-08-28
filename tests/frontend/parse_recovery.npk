@@ -129,14 +129,16 @@ func:main = int32(cstring[]:_~argv) {
     }
 
     DiagList:d5 = raw diaglist_init();
+    // A contract-less extern method parses CLEAN since D-190 — the lift
+    // D-149 scheduled — so what this pins is that nothing here needs
+    // recovering FROM anymore.
     TokenList:t5 = raw lex_all(0i32,
         "extern:\"libc\" = { func:puts = int32(int8->:s); };", @it, @d5);
     Ast:a5 = raw ast_init();
     DiagList:g5 = raw diaglist_init();
     Parser:p5 = raw parser_init(@t5, @a5, @g5, @it);
     discard(raw p_parse_decl(@p5));
-    if (!(raw string_eq((raw diaglist_at(@g5, 0i64)).code,
-                        raw PARSE_EXTERN_NO_CONTRACT()))) {
+    if (raw diaglist_count(@g5) != 0i64) {
         exit 27i32;
     }
 
