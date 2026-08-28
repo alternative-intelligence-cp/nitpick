@@ -143,6 +143,23 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
 
+    // --- `simd` casts are ELEMENTWISE (D-194) -----------------------------------
+    //
+    // Same lane count on both sides — a cast never changes N (the splat
+    // constructor is the one broadcast, and nothing narrows lanes) — and the
+    // class is the ELEMENT pair's own class: what `=>` accepts scalar-to-
+    // scalar it accepts lane-to-lane, `=>!` likewise, and a pair with no
+    // scalar conversion has no vector one.
+    if (fk == (raw TY_SIMD())) {
+        if (tk != (raw TY_SIMD())) { pass (raw CAST_IMPOSSIBLE()); }
+        if (((raw tt_get(tyt, from)).b) != ((raw tt_get(tyt, to)).b)) {
+            pass (raw CAST_IMPOSSIBLE());
+        }
+        pass (raw cast_class(tyt, raw type_elem(tyt, from),
+                             raw type_elem(tyt, to)));
+    }
+    if (tk == (raw TY_SIMD())) { pass (raw CAST_IMPOSSIBLE()); }
+
     // --- `bool` is not a small integer, in either direction ---------------------
     //
     // `bool => uint8` has an obvious meaning and loses nothing, so it is allowed.

@@ -152,6 +152,14 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (raw string_concat(a1, ">"));
     }
+    if (k == (raw TY_SIMD())) {
+        string:s1 = raw string_concat("simd<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        string:s2 = raw string_concat(s1, ", ");
+        string:s3 = raw string_concat(s2,
+                        raw int_to_string(((raw tt_get(tyt, t)).b) => int64));
+        pass (raw string_concat(s3, ">"));
+    }
     if (k == (raw TY_ANY()))     { pass "any"; }
     if (k == (raw TY_CHAR())) {
         pass (raw string_concat("char",

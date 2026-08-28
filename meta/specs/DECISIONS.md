@@ -13699,3 +13699,119 @@ U+FFFD — an innocent-looking total function must not be the way an
 invalid `string` enters a program. The owned copy rides D-186's
 `string_slice` over a `string_from_bytes` view of a scratch buffer, which
 is what unblocked this without the floor primitive §6b once waited on.
+
+## D-194 — `simd<T, N>`: the complete v1 surface — **SETTLED (1.3.0 batch, user-ratified)**
+
+The full proposal is `meta/roadmap/1.3/1.3.0.md` G-4; the operative rules:
+
+- **Elements**: the plain integer widths ≤64, `flt32`/`flt64`, and `bool` —
+  admitted because comparisons PRODUCE `simd<bool, N>` and results must be
+  bindable. A bool vector supports `== !=`, indexing, `.all()`/`.any()`,
+  nothing else. The twisted and ternary families are excluded: per-lane
+  sticky-ERR select chains erase the hardware-vector win.
+- **Lanes**: comptime N in 2..64, total size ≤ 64 bytes; alignment = next
+  power of two ≥ size, capped 64. Odd N legal (vec3 is a real consumer).
+- **Constructor**: `simd(…)` is TYPE-DIRECTED from the annotation (the
+  `channel()` precedent) — exactly N arguments, or ONE which splats.
+- **Operations**: elementwise `+ - * /` (`%`, `& | ^ << >>` integer-only);
+  comparisons yield `simd<bool, N>`. Integer vector division carries D-007
+  as ANY-LANE checks: a zero lane traps DivByZero, INT_MIN/−1 traps
+  DivOverflow — one vector compare + reduce, not per-lane branches.
+- **Indexing**: `v[i]` bounds-checked read/write; `.len` is N.
+- **Reductions as methods**: `.sum()/.min()/.max()` (numeric),
+  `.all()/.any()` (bool). **Implementation amendment (1.3.1)**: lowered as
+  extract-and-fold chains rather than the `llvm.vector.reduce.*`
+  intrinsics the proposal named — the chains need no per-shape `declare`
+  lines, cannot become libcalls by construction, and ARE the ordered
+  reduction float `.sum()` requires; `all`/`any` collapse through one
+  `bitcast <N x i1> to iN` and one integer compare. A second amendment:
+  `%` is admitted on FLOAT lanes too — scalar `flt64 % flt64` is legal
+  (frem, 0.9.4), and a vector rule that differed would be the
+  context-dependence the blueprint forbids.
+- **Casts**: `simd<T,N> => simd<U,N>` elementwise under the scalar rules;
+  N never changes; no scalar↔vector casts (splat is the one broadcast).
+- **Shuffles are OUT by decision** (not deferral): no consumer in evidence
+  (D-143), and a wrong permute API is permanent. Reopens only with a
+  consumer on the table.
+- No `ToString` — a builtin generic does not render (the channel rule).
+
+## D-195 — `tfp*` lowers to native `iN`; the D-144 discipline; exact-decimal rendering — **SETTLED (1.3.0 batch, user-ratified)**
+
+`tfp32/64/128/256` = Q16.16/Q32.32/Q64.64/Q128.128 (D-036) lowering to
+native `i32/i64/i128/i256` — deviating from TYPE_REFERENCE §5's word-struct
+tables for the wide pair (byte-identical in memory; direct arithmetic).
+ERR = most-negative raw, sticky, branch-free per D-144. mul widens ×2 and
+range-checks back; div: zero divisor → ERR (D-007's twisted rule), else
+widen, shift by F, divide, range-check. Comparisons ERR-aware per D-008;
+`is_err` admits the widths. `.floor()`/`.trunc()` are METHODS (§5's
+`tfp256_*` free functions struck). Literals convert to nearest-Q by exact
+compile-time integer arithmetic; out-of-range refuses (TYPE-031
+discipline). `ToString` renders the EXACT finite decimal expansion (a Q
+value is a binary fraction; determinism is the family's point) — trailing
+zeros trimmed, mandatory fraction digit, "ERR" for the sentinel.
+
+## D-196 — `dim256<Unit>`: units are exponent vectors; `unit:` declarations join the grammar — **SETTLED (1.3.0 batch, user-ratified)**
+
+A unit is an exponent vector over the seven SI base dimensions; the named
+units are names for vectors (`Joules` = mass·length²·time⁻²). Multiply and
+divide ADD/SUBTRACT vectors — the algebra is TOTAL, dissolving §5a's "if
+registered": `force * dist` IS the Joules vector whether or not anything
+names it. Add/sub/compare demand equal vectors, refusing with both units
+shown. Everything erases before lowering (`dim256` IS `tfp256` at IR,
+D-036; every D-195 rule applies). Casts: `=> tfp256` drops the unit;
+`tfp256 =>! dim256<U>` asserts one (the silent unit-gain "warning" in §5a
+becomes a refusal without `=>!`). **The user ratified the grammar
+addition**: `unit:Hertz = 1 / Seconds;` declares a named unit — the
+semantic-intent lever, landing IN 1.3.3 with the rest.
+
+## D-197 — the ternary/nonary bases; Kleene logic rides `&` and `|` — **SETTLED (1.3.0 batch, user-ratified)**
+
+`trit`/`nit` = `i8`, `tryte` (10 trits)/`nyte` (5 nits) = `i16` on the
+binary rung — 3^10 = 9^5 = 59049 states, why both fit; the representation
+is the RUNG'S, never the identity (ternary hardware is a target). ERR = a
+binary-spare state (−128 / −32768), sticky, D-144 style; on ternary
+hardware ERR is that target's own lowering choice. Ops: `+ - *` all four,
+`/ %` at tryte/nyte only, comparisons in balanced order, negation `0 - x`,
+overflow → ERR. Digit access `.trit(i)`/`.nit(i)` bounds-checked; `.len`.
+**The user ratified the operator spelling for the Kleene logic**: on
+`trit`/`nit`, `&` is three-valued AND (min), `|` is OR (max) — True=1,
+Unknown=0, False=−1, ERR sticky — and NOT is `0 - x`, which in balanced
+ternary IS logical negation. Single gates on a ternary target; no new
+spellings.
+
+## D-198 — `frac*`: invariant-normalized mixed numbers, exact-or-ERR — **SETTLED (1.3.0 batch, user-ratified)**
+
+`{whole: iN, num: iN, denom: uN}`; after EVERY operation the prototype's
+five invariants hold (denom > 0; num ≥ 0 when whole ≠ 0; num < denom;
+gcd = 1; sign on whole, or on num when whole = 0) — normalization is
+automatic, and §20's function family becomes OPERATORS `+ - * /` with
+comparisons. ERR: denom 0, any component at its width's most-negative, or
+overflow during normalization — sticky. The family's promise is "exact or
+ERR", never "rounded". `int => frac` lossless; `frac =>! flt64` rounds so
+it is the acknowledged form (correcting §20); widths widen `=>` / narrow
+`=>!`. `ToString`: "whole num/denom".
+
+## D-199 — `complex<T>` over flt and tfp elements; Smith's division — **SETTLED (1.3.0 batch, user-ratified)**
+
+`T` ∈ {`flt32`, `flt64`, `tfp32`, `tfp64`} (§21's `fix*` names obsolete
+per D-036); layout `{T, T}`; constructor `complex(re, im)` type-directed.
+Operators `+ - * /` — float division by Smith's algorithm (the naive
+formula silently overflows at |denom| ≈ √max), tfp by the direct formulas
+under D-195's ERR discipline (any component ERR → both ERR). Methods
+`.re() .im() .conj() .abs2()` on every element; `.abs()` float-only
+(`llvm.sqrt` is an instruction; a fixed-point square root has no consumer
+— refused by the same rule as shuffles). `ToString`: "3+4i" via the
+element's rendering.
+
+## D-200 — the library tier: nvec, ntensor; rank-9 inline dims; int64 dimensions — **SETTLED (1.3.0 batch, user-ratified)**
+
+`lib/nvec.npk`: `vec2/3/4` as structs over `simd<flt64, N>` with
+`.x/.y/.z/.w`, dot/cross/length; `vec9` a struct of nine `flt64` with §25's
+`mRC` fields (matrix semantics, not a 9-lane vector). `lib/ntensor.npk`:
+`matrix<T>` `{ptr, rows: int64, cols: int64}`; `tensor<T>` with RANK
+CAPPED AT 9 and dims INLINE `{ptr, ndims: int64, dims: [9 x int64]}` — one
+allocation, and rank 9 is Nikola's manifold by construction (the
+prototype's ttensor carries dims[9]). `tmatrix`/`ttensor` are the same
+containers over `tryte`. All four OWN their heap cell — the 1.2 managed
+regime drops them. Dimensions are int64, not the prototype's int32
+(Nikola-scale tensors against a 2^31 ceiling is a foreseeable regret).

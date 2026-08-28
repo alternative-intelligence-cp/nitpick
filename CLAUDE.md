@@ -164,6 +164,21 @@ unknown-operand fallback; the S-3 rows), and float/char `ToString` landed
 no wide division by construction, 353 python-generated known-answer
 vectors; total UTF-8 with U+FFFD for non-scalars). The bare-builtin
 signature table is proposed as P-3 (OPEN_DECISIONS §3), owed before 1.4.
+**Cycle 1.3 (the exotic numeric tier) is UNDERWAY** — 1.3.0 ratified the
+whole surface as D-194…D-200 (the survey corrected the tier's story: `tfp`
+is Twisted FIXED Point per D-036/D-037, the prototype's floating tfp_ops is
+the superseded design; `dim256` units are exponent vectors with `unit:`
+declarations ratified; ternary Kleene logic rides `&`/`|`; frac is
+invariant-normalized exact-or-ERR; tensors cap at rank 9 with inline dims).
+**1.3.1 landed `simd<T, N>`**: TY_SIMD through every walker (the B-7 sweep
+enumerated up front), annotation-directed `simd(…)` with splat, elementwise
+ops/compares (verdicts are `simd<bool, N>`), bounds-checked lane places,
+`.len`, ordered extract-chain reductions (no intrinsics — nothing can
+become a libcall), elementwise casts, and D-007 any-lane division guards
+(zero → DivByZero, structural INT_MIN/−1 → DivOverflow). TYPE-029 (the
+Tier-1 vector refusal) retired with the ctor rung; `.any` joined `.acquire`
+in the keyword-after-dot interning. `simd_basic`/`simd_div0`/`simd_divmin`/
+`simd_oob` + `simd_rules.npk` (14 refusals).
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

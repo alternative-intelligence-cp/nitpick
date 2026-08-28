@@ -382,6 +382,7 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     // copied nothing into its ring and every job arrived blank. Nothing
     // failed; the values were simply zero.
     if (k == (raw TY_ATOMIC()))       { has_elem = true; }
+    if (k == (raw TY_SIMD()))         { has_elem = true; }
     if (k == (raw TY_CHANNEL()))      { has_elem = true; }
     if (k == (raw TY_MUTEX()))        { has_elem = true; }
     if (k == (raw TY_GUARD()))        { has_elem = true; }
@@ -524,6 +525,30 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // an atomic changes is how it is ACCESSED, and that lives in the
     // operations, not in the layout.
     if (k == (raw TY_ATOMIC()))   { pass (raw ll_type(c, raw type_elem(c.types, id))); }
+    // `simd<T, N>` (D-135/D-194) — the LLVM vector type ITSELF; landing in a
+    // vector register is the whole mechanism. Only substitution can mint a
+    // non-scalar element (the spelling's resolution refuses one), so a
+    // non-scalar arriving here is the compiler's defect, not the program's.
+    if (k == (raw TY_SIMD())) {
+        int32:sel = raw type_elem(c.types, id);
+        int32:selk = raw type_kind(c.types, sel);
+        string:sset = "";
+        if (selk == (raw TY_INT())) {
+            sset = raw string_concat("i",
+                       raw int_to_string((raw type_int_bits(c.types, sel)) => int64));
+        }
+        if (selk == (raw TY_FLOAT())) {
+            if ((raw type_int_bits(c.types, sel)) == 32i32) { sset = "float"; }
+            if ((raw type_int_bits(c.types, sel)) == 64i32) { sset = "double"; }
+        }
+        if (selk == (raw TY_BOOL())) { sset = "i8"; }
+        if (sset.len == 0i64) { pass (raw ll_broken()); }
+        string:sv1 = raw string_concat("<",
+                         raw int_to_string(((raw tt_get(c.types, id)).b) => int64));
+        string:sv2 = raw string_concat(sv1, " x ");
+        string:sv3 = raw string_concat(sv2, sset);
+        pass (raw ll_ok(raw string_concat(sv3, ">")));
+    }
     // D-182: a channel ENDPOINT is a handle — an index and a generation —
     // not a pointer, which is what lets it cross a spawn.
     if (k == (raw TY_CHANNEL()))  {

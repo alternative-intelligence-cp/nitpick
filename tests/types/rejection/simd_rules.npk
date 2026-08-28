@@ -1,0 +1,139 @@
+// `simd<T, N>`'s boundary rules (D-194, 1.3.1). The element set is the
+// plain scalars; the lane count is bounded by the register file; the
+// constructor is annotation-directed; casts are elementwise and never
+// change N; a `bool` vector holds verdicts, not numbers.
+mod:simd_rules;
+
+struct:Box = { int32:v; };
+
+// A struct is not a lane.
+// expect-error: NITPICK-TYPE-001
+func:bad_elem = NIL() never fails {
+    simd<Box, 4>:v = simd(Box{ v: 1i32 });
+    if (v.len == 4i64) { }
+    pass NIL;
+};
+
+// The twisted families' per-lane sticky ERR erases the vector win.
+// expect-error: NITPICK-TYPE-001
+func:tbb_elem = NIL() never fails {
+    simd<tbb32, 4>:v = simd(5tbb32);
+    if (v.len == 4i64) { }
+    pass NIL;
+};
+
+// One lane is the scalar.
+// expect-error: NITPICK-TYPE-001
+func:one_lane = NIL() never fails {
+    simd<int32, 1>:v = simd(1i32);
+    if (v.len == 1i64) { }
+    pass NIL;
+};
+
+// Past the 64-byte register file.
+// expect-error: NITPICK-TYPE-001
+func:too_wide = NIL() never fails {
+    simd<int64, 16>:v = simd(1i64);
+    if (v.len == 16i64) { }
+    pass NIL;
+};
+
+// The constructor reads the type from the annotation (the channel rule).
+// expect-error: NITPICK-TYPE-001
+func:no_annotation = NIL() never fails {
+    discard(simd(1i32, 2i32));
+    pass NIL;
+};
+
+// Two components into four lanes is neither N nor the splat.
+// expect-error: NITPICK-TYPE-007
+func:wrong_count = NIL() never fails {
+    simd<int32, 4>:v = simd(1i32, 2i32);
+    if (v.len == 4i64) { }
+    pass NIL;
+};
+
+// A component must fit the element.
+// expect-error: NITPICK-TYPE-007
+func:wrong_component = NIL() never fails {
+    simd<int32, 2>:v = simd(1i32, 2.0f64);
+    if (v.len == 2i64) { }
+    pass NIL;
+};
+
+// Elementwise operations take exactly the same vector type: no scalar mixing.
+// expect-error: NITPICK-TYPE-008
+func:scalar_mix = NIL() never fails {
+    simd<int32, 4>:v = simd(1i32);
+    simd<int32, 4>:w = v + 1i32;
+    if (w.len == 4i64) { }
+    pass NIL;
+};
+
+// ... and no cross-shape mixing either.
+// expect-error: NITPICK-TYPE-008
+func:shape_mix = NIL() never fails {
+    simd<int32, 4>:v = simd(1i32);
+    simd<int64, 4>:w = simd(1i64);
+    simd<int32, 4>:q = v + w;
+    if (q.len == 4i64) { }
+    pass NIL;
+};
+
+// A `bool` vector holds verdicts: no arithmetic.
+// expect-error: NITPICK-TYPE-008
+func:bool_arith = NIL() never fails {
+    simd<bool, 4>:m = simd(true);
+    simd<bool, 4>:m2 = m + m;
+    if (m2.len == 4i64) { }
+    pass NIL;
+};
+
+// ... and no ordering — collapse it instead.
+// expect-error: NITPICK-TYPE-008
+func:bool_order = NIL() never fails {
+    simd<bool, 4>:m = simd(true);
+    simd<bool, 4>:m2 = m < m;
+    if (m2.len == 4i64) { }
+    pass NIL;
+};
+
+// A cast never changes the lane count — not a lossy conversion, NO
+// conversion: the types have no values in common.
+// expect-error: NITPICK-TYPE-032
+func:lane_change = NIL() never fails {
+    simd<int32, 4>:v = simd(1i32);
+    simd<int32, 8>:w = v => simd<int32, 8>;
+    if (w.len == 8i64) { }
+    pass NIL;
+};
+
+// A narrowing element cast is acknowledged, like its scalar.
+// expect-error: NITPICK-TYPE-009
+func:lossy_elem = NIL() never fails {
+    simd<int64, 4>:v = simd(1i64);
+    simd<int32, 4>:w = v => simd<int32, 4>;
+    if (w.len == 4i64) { }
+    pass NIL;
+};
+
+// Reductions respect the element family.
+// expect-error: NITPICK-TYPE-007
+func:bool_sum = NIL() never fails {
+    simd<bool, 4>:m = simd(true);
+    bool:s = m.sum();
+    if (s) { }
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-007
+func:numeric_all = NIL() never fails {
+    simd<int32, 4>:v = simd(1i32);
+    bool:s = v.all();
+    if (s) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

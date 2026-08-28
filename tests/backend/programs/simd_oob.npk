@@ -1,0 +1,25 @@
+// expect-exit: 96
+//
+// A LANE INDEX IS BOUNDS-CHECKED (D-194): the lane count is the type's
+// constant, the index is a run-time value, and past-the-end traps
+// OutOfBounds exactly as an array's does.
+mod:simd_oob;
+
+func:main = int32(cstring[]:argv) {
+    simd<int32, 4>:a = simd(7i32);
+    int64:bad = argv.len + 3i64;     // 4 with one argv entry
+    if (a[bad] == 7i32) { exit 10i32; }
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -145,6 +145,16 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                             raw type_size(r.types, ael),
                             raw type_align(r.types, ael)));
     }
+    // `simd<T, N>` rebuilds around the substituted element; the lane count
+    // is a constant and rides through, like a channel's LEVEL and CAP. The
+    // admitted-element check ran at the SPELLING's resolution; a bound
+    // parameter that lands outside the set is caught by the ll belt (the
+    // ops never admit it either way).
+    if (k == (raw TY_SIMD())) {
+        int32:sel = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        pass (raw tt_simd(r.types, sel, (raw tt_get(r.types, t)).b,
+                          raw type_size(r.types, sel)));
+    }
     if (k == (raw TY_CHANNEL())) {
         pass (raw tt_channel(r.types,
                   raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls),

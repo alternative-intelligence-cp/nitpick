@@ -641,6 +641,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_ATOMIC())) {
             pass (raw emit_atomic_method(x, id, n, amrecv));
         }
+        if (amk == (raw TY_SIMD())) {
+            pass (raw emit_simd_method(x, id, n, amrecv));
+        }
         if (amk == (raw TY_CHANNEL())) {
             pass (raw emit_channel_method(x, id, n, amrecv));
         }
@@ -954,7 +957,47 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv("i8", move(ez), 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
-        pass (raw iv_rung("a vector constructor", "1.3 (G-3)", n.span));
+        // `simd(a, …)` (D-194, 1.3.1): N `insertelement`s build the value
+        // over `poison`; ONE argument is the splat — the same inserts, one
+        // operand emitted once. The checker proved the count and each
+        // element's fit, and rung "1.3 (G-3)" retired here when it did.
+        int32:vt = raw exprtypes_get(x.et, id);
+        LlType:vll = raw ll_type(x.fe.ctx, vt);
+        if (!(raw ll_is_ok(vll))) { pass (raw iv_from_ll_at(x, vll, vt, n.span)); }
+        int32:velem = raw type_elem(x.fe.ctx.types, vt);
+        LlType:vel = raw ll_type(x.fe.ctx, velem);
+        if (!(raw ll_is_ok(vel))) { pass (raw iv_from_ll_at(x, vel, velem, n.span)); }
+        int32:vlanes = (raw tt_get(x.fe.ctx.types, vt)).b;
+        int32:vcnt = raw expr_list_count(n);
+        int32:vstart = raw expr_list_start(n);
+        string:vcur = "poison";
+        string:vone = "";
+        if (vcnt == 1i32) {
+            IrVal:vsv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, 0i32) });
+            if (!(raw iv_is_ok(vsv))) { pass vsv; }
+            vsv = raw emit_fit(x, velem, move(vsv), n.span);
+            if (!(raw iv_is_ok(vsv))) { pass vsv; }
+            vone = raw string_concat(vsv.ref, "");
+        }
+        int32:vi = 0i32;
+        while (vi < vlanes) {
+            string:vref = raw string_concat(vone, "");
+            if (vcnt != 1i32) {
+                IrVal:vav = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, vi) });
+                if (!(raw iv_is_ok(vav))) { pass vav; }
+                vav = raw emit_fit(x, velem, move(vav), n.span);
+                if (!(raw iv_is_ok(vav))) { pass vav; }
+                vref = raw string_concat(vav.ref, "");
+            }
+            string:vtp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(vtp, " = insertelement ", vll.text, " ",
+                              raw cat5(vcur, ", ", vel.text, " ",
+                                  raw cat4(vref, ", i64 ",
+                                      raw int_to_string(vi => int64), ""))));
+            vcur = move(vtp);
+            vi = vi + 1i32;
+        }
+        pass (raw iv(raw string_concat(vll.text, ""), move(vcur), vt));
     }
     // `move(place)` LOWERS: it yields the place's value, and what it does to
     // the SOURCE is static — the 0.5 move analysis already blessed and tracked
@@ -1476,6 +1519,16 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (lhs.state != (raw LL_OK())) { pass lhs; }
     IrVal:rhs = raw emit_expr(x, raw expr_rhs(n));
     if (rhs.state != (raw LL_OK())) { pass rhs; }
+
+    // `simd<T, N>` (D-194, 1.3.1): elementwise on the vector registers, one
+    // arm for the whole family — placed before the non-scalar compare belt
+    // below, which would call a vector a defect.
+    int32:svlt0 = raw exprtypes_get(x.et, raw expr_lhs(n));
+    if (svlt0 != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, svlt0)) == (raw TY_SIMD())) {
+            pass (raw emit_simd_binop(x, n, op, svlt0, lhs, rhs));
+        }
+    }
 
     // A COMPARISON ON A NON-SCALAR IS NOW A DEFECT, NOT A RUNG (D-169, 1.0.9c).
     // `icmp` takes integers, pointers and nothing else; the checker refuses `==`
@@ -2080,6 +2133,13 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv(move(want.text), move(v.ref), wid));
     }
 
+    // A VECTOR CAST IS THE ELEMENT'S CAST AT VECTOR TYPE (D-194, 1.3.1): the
+    // same opcode the scalar element pair would take, operands and result
+    // spelled `<N x _>` — the cast instructions all accept vector types.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_SIMD())) {
+        pass (raw emit_simd_cast(x, n, v, move(want), wid));
+    }
+
     // `enum =>! intN` — the TAG is the number (0.8.0, settled with the user). A
     // payload-less enum already IS its `i32` tag; a payload-carrying one holds
     // the tag in slot 0, so the cast extracts it and then proceeds as a scalar.
@@ -2645,6 +2705,314 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
                       x.fe.join_gep, ""));
     pass (raw iv("i32", "0", 0i32));
+};
+
+// `simd<T, N>`'s ELEMENTWISE OPERATIONS (D-194, 1.3.1). The scalar opcodes
+// all take vector operands, so an add is one `add <N x T>`; comparisons
+// yield `<N x i1>`, widened to the byte lanes `simd<bool, N>` stores.
+// Integer division carries D-007 as ANY-LANE guards: one vector compare,
+// one `bitcast <N x i1> to iN`, one scalar test — never per-lane branches.
+// INT_MIN rides the structural trick (the one nonzero value equal to its
+// own negation) elementwise, so the guard is total at every element width
+// with no constant table.
+func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
+                             int32:vt, IrVal:lhs, IrVal:rhs) never fails {
+    int32:elem = raw type_elem(x.fe.ctx.types, vt);
+    int32:ek = raw type_kind(x.fe.ctx.types, elem);
+    int32:lanes = (raw tt_get(x.fe.ctx.types, vt)).b;
+    bool:isflt = false;
+    if (ek == (raw TY_FLOAT())) { isflt = true; }
+    bool:signed = false;
+    if (ek == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, elem);
+    }
+    string:lanestr = raw int_to_string(lanes => int64);
+
+    // --- comparisons: <N x i1>, widened to the stored <N x i8> ---
+    string:pred = "";
+    if (isflt) {
+        if (op == TokenKind.OpEqEq)  { pred = "fcmp oeq"; }
+        if (op == TokenKind.OpNotEq) { pred = "fcmp une"; }
+        if (op == TokenKind.OpLt)    { pred = "fcmp olt"; }
+        if (op == TokenKind.OpLtEq)  { pred = "fcmp ole"; }
+        if (op == TokenKind.OpGt)    { pred = "fcmp ogt"; }
+        if (op == TokenKind.OpGtEq)  { pred = "fcmp oge"; }
+    }
+    if (!isflt) {
+        if (op == TokenKind.OpEqEq)  { pred = "icmp eq"; }
+        if (op == TokenKind.OpNotEq) { pred = "icmp ne"; }
+        string:so = "u";
+        if (signed) { so = "s"; }
+        if (op == TokenKind.OpLt)    { pred = raw cat3("icmp ", so, "lt"); }
+        if (op == TokenKind.OpLtEq)  { pred = raw cat3("icmp ", so, "le"); }
+        if (op == TokenKind.OpGt)    { pred = raw cat3("icmp ", so, "gt"); }
+        if (op == TokenKind.OpGtEq)  { pred = raw cat3("icmp ", so, "ge"); }
+    }
+    if (pred.len > 0i64) {
+        string:cv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cv, " = ", pred, " ",
+                          raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+        string:zv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(zv, " = zext <", lanestr, " x i1> ",
+                          raw cat5(cv, " to <", lanestr, " x i8>", "")));
+        pass (raw iv(raw cat4("<", lanestr, " x i8>", ""), move(zv), 0i32));
+    }
+
+    // --- arithmetic, bitwise, shifts ---
+    string:ins = "";
+    if (isflt) {
+        if (op == TokenKind.OpPlus)    { ins = "fadd"; }
+        if (op == TokenKind.OpMinus)   { ins = "fsub"; }
+        if (op == TokenKind.OpStar)    { ins = "fmul"; }
+        if (op == TokenKind.OpSlash)   { ins = "fdiv"; }
+        if (op == TokenKind.OpPercent) { ins = "frem"; }
+    }
+    if (!isflt) {
+        if (op == TokenKind.OpPlus)    { ins = "add"; }
+        if (op == TokenKind.OpMinus)   { ins = "sub"; }
+        if (op == TokenKind.OpStar)    { ins = "mul"; }
+        if (op == TokenKind.OpAmp)     { ins = "and"; }
+        if (op == TokenKind.OpPipe)    { ins = "or"; }
+        if (op == TokenKind.OpCaret)   { ins = "xor"; }
+        if (op == TokenKind.OpShl)     { ins = "shl"; }
+        if (op == TokenKind.OpShr) {
+            ins = "lshr";
+            if (signed) { ins = "ashr"; }
+        }
+        if (op == TokenKind.OpSlash) {
+            ins = "udiv";
+            if (signed) { ins = "sdiv"; }
+        }
+        if (op == TokenKind.OpPercent) {
+            ins = "urem";
+            if (signed) { ins = "srem"; }
+        }
+    }
+    if (ins.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    // The D-007 guards, any-lane (integer division only).
+    bool:divlike = false;
+    if (!isflt) {
+        if (op == TokenKind.OpSlash)   { divlike = true; }
+        if (op == TokenKind.OpPercent) { divlike = true; }
+    }
+    if (divlike) {
+        string:zl = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(zl, " = icmp eq ", lhs.ll, " ",
+                          raw string_concat(rhs.ref, ", zeroinitializer")));
+        string:zb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(zb, " = bitcast <", lanestr, " x i1> ",
+                          raw cat5(zl, " to i", lanestr, "", "")));
+        string:zany = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(zany, " = icmp ne i", lanestr, " ",
+                          raw string_concat(zb, ", 0")));
+        string:trap_l = raw irw_new_label(x.fe.w, "vdiv.zero");
+        string:ok_l = raw irw_new_label(x.fe.w, "vdiv.ok");
+        string:next_l = raw string_concat(ok_l, "");
+        if (signed) { next_l = raw irw_new_label(x.fe.w, "vdiv.chk"); }
+        drop irw_line(x.fe.w, raw cat5("br i1 ", zany, ", label %", trap_l,
+                          raw string_concat(", label %", next_l)));
+        drop irw_label(x.fe.w, trap_l);
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
+        drop irw_line(x.fe.w, "unreachable");
+        if (signed) {
+            drop irw_label(x.fe.w, next_l);
+            LlType:gel = raw ll_type(x.fe.ctx, elem);
+            if (!(raw ll_is_ok(gel))) { pass (raw iv_broken(n.span)); }
+            // The all-minus-one splat, spelled out: N elements is at most 64.
+            string:mo = "<";
+            int32:mi = 0i32;
+            while (mi < lanes) {
+                if (mi > 0i32) { mo = raw string_concat(mo, ", "); }
+                mo = raw cat3(mo, gel.text, " -1");
+                mi = mi + 1i32;
+            }
+            mo = raw string_concat(mo, ">");
+            string:ngv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ngv, " = sub ", lhs.ll,
+                              " zeroinitializer, ", lhs.ref));
+            string:m0 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(m0, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(lhs.ref, ", ", ngv)));
+            string:nzv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nzv, " = icmp ne ", lhs.ll, " ",
+                              raw string_concat(lhs.ref, ", zeroinitializer")));
+            string:mv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(mv, " = and <", lanestr, " x i1> ",
+                              raw cat3(m0, ", ", nzv)));
+            string:ov = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ov, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(rhs.ref, ", ", mo)));
+            string:bv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bv, " = and <", lanestr, " x i1> ",
+                              raw cat3(mv, ", ", ov)));
+            string:bb = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bb, " = bitcast <", lanestr, " x i1> ",
+                              raw cat5(bv, " to i", lanestr, "", "")));
+            string:bany = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bany, " = icmp ne i", lanestr, " ",
+                              raw string_concat(bb, ", 0")));
+            string:min_l = raw irw_new_label(x.fe.w, "vdiv.min");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", bany, ", label %", min_l,
+                              raw string_concat(", label %", ok_l)));
+            drop irw_label(x.fe.w, min_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
+            drop irw_line(x.fe.w, "unreachable");
+        }
+        drop irw_label(x.fe.w, ok_l);
+    }
+
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
+                      raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+    pass (raw iv(raw string_concat(lhs.ll, ""), move(r), lhs.type_id));
+};
+
+// `simd`'s REDUCTIONS (D-194, 1.3.1): extract-and-fold chains — ordered BY
+// CONSTRUCTION, which is the determinism float `.sum()` requires (a
+// reassociated float sum is a different number on a different machine).
+// `all`/`any` collapse the byte lanes through one `bitcast <N x i1> to iN`
+// and one integer compare. No intrinsic anywhere, so nothing here can
+// become a libcall the zero-dependency scan would have to provide.
+func:emit_simd_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                              int32:recv_tid) never fails {
+    string:m = raw intern_get(x.interns, n.payload =>! int32);
+    IrVal:rv = raw emit_expr(x, raw expr_operand(n));
+    if (!(raw iv_is_ok(rv))) { pass rv; }
+    int32:elem = raw type_elem(x.fe.ctx.types, recv_tid);
+    int32:lanes = (raw tt_get(x.fe.ctx.types, recv_tid)).b;
+    int32:ek = raw type_kind(x.fe.ctx.types, elem);
+    string:lanestr = raw int_to_string(lanes => int64);
+    int32:etid = raw exprtypes_get(x.et, id);
+
+    bool:want_all = raw string_eq(m, "all");
+    bool:want_any = raw string_eq(m, "any");
+    if (want_all || want_any) {
+        string:nz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(nz, " = icmp ne ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", zeroinitializer")));
+        string:bc = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(bc, " = bitcast <", lanestr, " x i1> ",
+                          raw cat5(nz, " to i", lanestr, "", "")));
+        string:cr = raw irw_temp(x.fe.w);
+        if (want_all) {
+            drop irw_line(x.fe.w, raw cat5(cr, " = icmp eq i", lanestr, " ",
+                              raw string_concat(bc, ", -1")));
+        }
+        if (want_any) {
+            drop irw_line(x.fe.w, raw cat5(cr, " = icmp ne i", lanestr, " ",
+                              raw string_concat(bc, ", 0")));
+        }
+        string:z8 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(z8, " = zext i1 ",
+                          raw string_concat(cr, " to i8")));
+        pass (raw iv("i8", move(z8), etid));
+    }
+
+    LlType:ell = raw ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(ell))) { pass (raw iv_from_ll_at(x, ell, elem, n.span)); }
+    bool:isflt = false;
+    if (ek == (raw TY_FLOAT())) { isflt = true; }
+    bool:signed = false;
+    if (ek == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, elem);
+    }
+    string:acc = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(acc, " = extractelement ", rv.ll, " ",
+                      raw string_concat(rv.ref, ", i64 0")));
+    int32:i = 1i32;
+    while (i < lanes) {
+        string:ei = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ei, " = extractelement ", rv.ll, " ",
+                          raw cat4(rv.ref, ", i64 ",
+                              raw int_to_string(i => int64), "")));
+        if (raw string_eq(m, "sum")) {
+            string:sop = "add";
+            if (isflt) { sop = "fadd"; }
+            string:na = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(na, " = ", sop, " ",
+                              raw cat5(ell.text, " ", acc, ", ", ei)));
+            acc = move(na);
+        } else {
+            string:cpred = "";
+            if (raw string_eq(m, "min")) {
+                cpred = "icmp ult";
+                if (signed) { cpred = "icmp slt"; }
+                if (isflt)  { cpred = "fcmp olt"; }
+            }
+            if (raw string_eq(m, "max")) {
+                cpred = "icmp ugt";
+                if (signed) { cpred = "icmp sgt"; }
+                if (isflt)  { cpred = "fcmp ogt"; }
+            }
+            if (cpred.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:cc = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cc, " = ", cpred, " ",
+                              raw cat5(ell.text, " ", acc, ", ", ei)));
+            string:sel = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(sel, " = select i1 ", cc, ", ",
+                              raw cat5(ell.text, " ", acc, ", ",
+                                  raw cat3(ell.text, " ", ei))));
+            acc = move(sel);
+        }
+        i = i + 1i32;
+    }
+    pass (raw iv(raw string_concat(ell.text, ""), move(acc), etid));
+};
+
+// A vector cast, element-opcode at vector type (D-194): the checker's
+// elementwise `cast_class` admitted it, so only the instruction is picked
+// here — same-text casts already returned above.
+func:emit_simd_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+                            move LlType:want, int32:wid) never fails {
+    int32:se = raw type_elem(x.fe.ctx.types, v.type_id);
+    int32:de = raw type_elem(x.fe.ctx.types, wid);
+    int32:sk = raw type_kind(x.fe.ctx.types, se);
+    int32:dk = raw type_kind(x.fe.ctx.types, de);
+    bool:sf = false;
+    if (sk == (raw TY_FLOAT())) { sf = true; }
+    bool:df = false;
+    if (dk == (raw TY_FLOAT())) { df = true; }
+    int32:sb = raw type_int_bits(x.fe.ctx.types, se);
+    if (sk == (raw TY_BOOL())) { sb = 8i32; }
+    int32:db = raw type_int_bits(x.fe.ctx.types, de);
+    if (dk == (raw TY_BOOL())) { db = 8i32; }
+    bool:ssig = false;
+    if (sk == (raw TY_INT())) { ssig = raw type_is_signed(x.fe.ctx.types, se); }
+    string:opn = "";
+    if (sf && df) {
+        opn = "fpext";
+        if (sb > db) { opn = "fptrunc"; }
+    }
+    if (sf && (!df)) {
+        opn = "fptoui";
+        if (raw type_is_signed(x.fe.ctx.types, de)) { opn = "fptosi"; }
+    }
+    if ((!sf) && df) {
+        opn = "uitofp";
+        if (ssig) { opn = "sitofp"; }
+    }
+    if ((!sf) && (!df)) {
+        if (sb > db) { opn = "trunc"; }
+        if (sb < db) {
+            opn = "zext";
+            if (ssig) { opn = "sext"; }
+        }
+        // Same width, different signedness: the bits are the value.
+        if (sb == db) {
+            pass (raw iv(move(want.text), raw string_concat(v.ref, ""), wid));
+        }
+    }
+    if (opn.len == 0i64) { pass (raw iv_broken(n.span)); }
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = ", opn, " ",
+                      raw cat5(v.ll, " ", v.ref, " to ",
+                          raw string_concat(want.text, ""))));
+    pass (raw iv(move(want.text), move(r), wid));
 };
 
 // `atomic<T>`'s OPERATIONS (D-182, D-016). The receiver is a PLACE — the
@@ -6296,6 +6664,27 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
                                   raw cat3("i64 ", idx64, ""), "")));
             pass (raw pv(move(r), elem_tid));
         }
+        // A LANE'S PLACE (D-194, 1.3.1): the array shape exactly — the
+        // vector's own address, the constant lane bound checked at run
+        // time, and a GEP through it (element addressing of vectors is
+        // ordinary LLVM). Reads load it; `v[i] = x` stores through it.
+        if (okind == (raw TY_SIMD())) {
+            PlaceVal:vbase = raw addr_of(x, raw expr_lhs(n));
+            if (vbase.state != (raw LL_OK())) { pass vbase; }
+            LlType:vall = raw ll_type(x.fe.ctx, obj_tid);
+            if (!(raw ll_is_ok(vall))) { pass (raw pv_broken(n.span)); }
+            IrVal:vix = raw emit_expr(x, raw expr_rhs(n));
+            if (!(raw iv_is_ok(vix))) { pass (raw pv_from_iv(move(vix))); }
+            string:vidx64 = raw index_as_i64(x, vix);
+            string:vbound = raw int_to_string(
+                ((raw tt_get(x.fe.ctx.types, obj_tid)).b) => int64);
+            drop emit_bounds_guard(x, vidx64, vbound, n.span);
+            string:vr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(vr, " = getelementptr ", vall.text,
+                              ", ptr ", raw cat4(vbase.addr, ", i64 0, ",
+                                  raw cat3("i64 ", vidx64, ""), "")));
+            pass (raw pv(move(vr), elem_tid));
+        }
         pass (raw pv_broken(n.span));
     }
 
@@ -6767,6 +7156,12 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             pass (raw iv("i8", move(z), fty));
         }
         pass (raw iv_broken(n.span));
+    }
+    // A vector's `.len` is its lane count — a TYPE constant (D-194).
+    if (bkind == (raw TY_SIMD())) {
+        pass (raw iv("i64",
+                     raw int_to_string(((raw tt_get(x.fe.ctx.types, btid)).b) => int64),
+                     fty));
     }
     if (bkind == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(x.tr, btid, n.payload =>! int32, x.scope);

@@ -568,6 +568,10 @@ SLOT_SITE_PAIRS = {
     # and the arena emitter is where it would be.
     "want_handle_of":      {"emit_arena_method"},
     "type_null_coalesce":  {"emit_coalesce"},          # lowered at 1.0.7
+    # The simd constructor's components, fit to the element before their
+    # insertelement (D-194, 1.3.1) -- an inline arm, so the enclosing
+    # emitter function is the partner, the type_safe_unwrap precedent.
+    "type_vector_ctor":    {"emit_expr_kind"},
 }
 
 
@@ -1062,7 +1066,7 @@ KIND_STATUS = {
     "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
     "ExprNullCoalesceExpr": "rung",
     "ExprDefaultsExpr": "inert: a bare `?` and the word `defaults` struck at parse (D-175, PARSE-011); the backend guard is a defensive confession",
-    "ExprVectorCtorExpr": "rung",
+    "ExprVectorCtorExpr": "lowered",  # 1.3.1 — simd<T, N> construction (D-194)
     "ExprAwaitExpr": "lowered",  # 1.1.4 — the machines compose; positional rungs remain until D/E
     "ExprIterationVarExpr": "lowered",  # 0.9.7
     "ExprDynCastExpr": "lowered",  # 1.0.9b — the fit to the dyn target

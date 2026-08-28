@@ -998,6 +998,21 @@ extern:"storage_driver" = {
 | `simd<flt64, 2>` | `<2 x double>` | 16 bytes | 16 |
 | `simd<int32, 8>` | `<8 x i32>` | 32 bytes | 32 |
 
+> **Implemented at 1.3.1 (D-194).** Elements: the integer widths 8..64,
+> `flt32`/`flt64`, and `bool` (comparison results must be bindable); lanes
+> 2..64, total ≤ 64 bytes; alignment = next power of two ≥ size, capped 64.
+> `simd(…)` constructs annotation-directed — N components, or ONE that
+> splats. Operations are elementwise on identical types (`+ - * / %`; and
+> `& | ^ << >>` on integer lanes); comparisons yield `simd<bool, N>`;
+> `v[i]` is a bounds-checked lane place; `.len` is the lane count. Integer
+> vector division carries D-007 as ANY-LANE checks (zero → DivByZero,
+> INT_MIN/−1 → DivOverflow). Reductions are methods — `.sum()/.min()/.max()`
+> on numeric lanes, `.all()/.any()` on `bool` lanes — lowered as ordered
+> extract-and-fold chains: float `.sum()` is deterministic BY CONSTRUCTION,
+> and nothing lowers to a libcall. Casts are elementwise under the scalar
+> rules and never change N. Shuffles are OUT by decision (D-194): no
+> consumer in evidence.
+
 ---
 
 ## 15. Vector / Matrix / Tensor Types (Tier 1 — **library**, not keywords)

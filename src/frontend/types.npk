@@ -132,6 +132,14 @@ pub func:TY_CHANNEL = int32() never fails { pass 32i32; };
 // scope discipline that closes it).
 pub func:TY_OWNEDFD = int32() never fails { pass 39i32; };
 
+// D-135/D-194 (1.3.1): the vector MECHANISM — an LLVM vector in a register
+// is what makes SIMD fast, so the type IS that shape. a = element, b = lane
+// count; both are the type's identity (one instantiation, one behaviour —
+// the Channel precedent). Elements are the plain scalars only; the twisted
+// and ternary families are excluded by D-194 (per-lane sticky-ERR chains
+// erase the hardware-vector win).
+pub func:TY_SIMD = int32() never fails { pass 40i32; };
+
 pub struct:Type = {
     int32:kind;
     int32:a;
@@ -379,6 +387,9 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (k == (raw TY_ARENA()))    { pass true; }
     // AN OwnedFd OWNS ITS DESCRIPTOR (D-185, 1.1.12b): the drop closes it.
     if (k == (raw TY_OWNEDFD()))  { pass true; }
+    // A `simd` VALUE IS LANES OF PLAIN SCALARS (D-194) — nothing to drop,
+    // stated rather than defaulted per the B-7 walker discipline.
+    if (k == (raw TY_SIMD()))     { pass false; }
     pass false;
 };
 
@@ -568,6 +579,17 @@ pub func:tt_arena = int32(TypeTable->:t, int32:elem) never fails {
 pub func:tt_atomic = int32(TypeTable->:t, int32:elem, int64:size,
                            int32:align) never fails {
     pass (raw tt_intern(t, raw TY_ATOMIC(), elem, 0i32, 0i32, size, align, 0i32));
+};
+
+// `simd<T, N>` (D-194): size = element × lanes; alignment = the next power
+// of two at or above the size, capped at 64 — the shape LLVM lays vectors
+// out in, stated here so the frontend's layout agrees with the backend's.
+pub func:tt_simd = int32(TypeTable->:t, int32:elem, int32:lanes,
+                         int64:elem_size) never fails {
+    int64:sz = elem_size * (lanes => int64);
+    int32:al = 1i32;
+    while (((al => int64) < sz) && (al < 64i32)) { al = al * 2i32; }
+    pass (raw tt_intern(t, raw TY_SIMD(), elem, lanes, 0i32, sz, al, 0i32));
 };
 
 // A channel handle is 8 bytes: a 32-bit index and a 32-bit generation, the

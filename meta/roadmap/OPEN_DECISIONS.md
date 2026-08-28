@@ -153,7 +153,7 @@ everything from *typing* through *Z3* is not. Five decisions, plus the Astrée g
 
 ---
 
-## 4b. The cycle-1.3 batch (G-4…G-10 → D-194…D-200; blocks 1.3.1+)
+## 4b. ~~The cycle-1.3 batch~~ RATIFIED as D-194…D-200 (user: "go with your recommendations" — Kleene on `&`/`|`, `unit:` declarations in)
 
 The exotic-tier surface, proposed at cycle open with recommendations —
 **the full batch lives in `1.3/1.3.0.md`**, one proposal per family:

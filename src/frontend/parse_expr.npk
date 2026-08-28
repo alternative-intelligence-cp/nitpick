@@ -464,6 +464,12 @@ func:p_postfix = ExprId(Parser->:p) never fails {
             if (n.kind == TokenKind.KwAcquire) {
                 mnm = (raw intern_add(p.interns, "acquire")) => int64;
             }
+            // `any` IS THE TYPE KEYWORD (D-194 follows D-056's rule): after a
+            // dot it is `simd<bool, N>`'s reduction, and a keyword token
+            // carries no intern — same treatment, same reason.
+            if (n.kind == TokenKind.KwAny) {
+                mnm = (raw intern_add(p.interns, "any")) => int64;
+            }
             // `p.magnitude()` is a METHOD CALL, not a call over a member access
             // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
             // (D-006), which needs the receiver kept apart from the callee --

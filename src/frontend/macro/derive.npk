@@ -25,6 +25,8 @@ use "../parse_expr.npk".*;
 use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
 use "../token.npk".*;
+use "../token_kind.npk".*;
+use "../parse_type.npk".*;
 use "../lexer.npk".*;
 use "../parser.npk".*;
 use "../source.npk".*;
@@ -203,6 +205,30 @@ func:PRIME_TEXT = string() never fails { pass "100000001B3hexu64"; };
 // the basis, bit for bit.
 func:BASIS_TEXT = string() never fails { pass "(0u64 - 3750763034362895579u64)"; };
 
+// IS THIS FIELD'S SPELLED TYPE `simd<…>`? Derive runs before collection,
+// so the TYPE TABLE does not exist yet — but the field's own type NODE
+// does, and a builtin-named node carries its TokenKind (D-194's derives
+// branch on it: `Eq` collapses lanes, five others refuse by name).
+func:dv_field_is_simd = bool(Ast->:ast, DeclNode:m) never fails {
+    TypeNode:tn = raw ast_type(ast, raw field_type(m));
+    if (tn.kind != TypeKind.TypeNamedType) { pass false; }
+    if (!(raw type_name_is_builtin(tn))) { pass false; }
+    pass ((raw type_name_index(tn)) == ((TokenKind.KwSimd =>! int32) =>! int64));
+};
+
+func:dv_has_simd_field = bool(Ast->:ast, DeclNode:d) never fails {
+    int32:n = raw item_member_count(ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            if (raw dv_field_is_simd(ast, m)) { pass true; }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
 // `impl:Point:Eq = { pub func:eq = bool(Point:self, Point:other) { … }; };`
 //
 // FIELD BY FIELD, IN DECLARATION ORDER, and by `!=` rather than by calling the
@@ -223,11 +249,22 @@ func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            s = raw string_concat(s, "if (self.");
-            s = raw string_concat(s, f);
-            s = raw string_concat(s, " != other.");
-            s = raw string_concat(s, f);
-            s = raw string_concat(s, ") { pass false; }\n");
+            // A `simd` field's `!=` is a VERDICT VECTOR (D-194): any
+            // differing lane makes the structs unequal, so the lanes
+            // collapse with `.any()` — the one derive a vector admits.
+            if (raw dv_field_is_simd(ast, m)) {
+                s = raw string_concat(s, "if ((self.");
+                s = raw string_concat(s, f);
+                s = raw string_concat(s, " != other.");
+                s = raw string_concat(s, f);
+                s = raw string_concat(s, ").any()) { pass false; }\n");
+            } else {
+                s = raw string_concat(s, "if (self.");
+                s = raw string_concat(s, f);
+                s = raw string_concat(s, " != other.");
+                s = raw string_concat(s, f);
+                s = raw string_concat(s, ") { pass false; }\n");
+            }
         }
         i = i + 1i32;
     }
@@ -623,13 +660,31 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
         if (is_enum) { s = raw string_concat(s, raw gen_eq_enum(tn, head)); }
         else { s = raw string_concat(s, raw gen_eq_struct(ast, interns, d, tn, head)); }
     }
+    // THE FIVE DERIVES A `simd` FIELD REFUSES (D-194): an order over a
+    // vector has no scalar verdict, a hash and a rendering have no impls to
+    // call — and generating them would point diagnostics at source nobody
+    // wrote (the enum-ordering rule, applied again).
+    bool:has_simd = false;
+    if (!is_enum) { has_simd = raw dv_has_simd_field(ast, d); }
     if (raw derive_wants(want, raw DERIVE_TO_STRING())) {
+        if (has_simd) {
+            drop diaglist_push(diags, raw diag_error(raw DERIVE_SIMD_FIELD(),
+                "`ToString` cannot be derived over a `simd` field (D-194): a vector has no built-in rendering — write the impl and say what the lanes mean",
+                d.span));
+        } else {
         if (is_enum) { s = raw string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, false, head)); }
         else { s = raw string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, false, head)); }
+        }
     }
     if (raw derive_wants(want, raw DERIVE_DEBUG())) {
+        if (has_simd) {
+            drop diaglist_push(diags, raw diag_error(raw DERIVE_SIMD_FIELD(),
+                "`Debug` cannot be derived over a `simd` field (D-194): a vector has no built-in rendering — write the impl and say what the lanes mean",
+                d.span));
+        } else {
         if (is_enum) { s = raw string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, true, head)); }
         else { s = raw string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, true, head)); }
+        }
     }
 
     // ORDERING AN ENUM NEEDS ITS TAG, WHICH NO OPERATOR YIELDS. `<` on an enum is
@@ -637,17 +692,35 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
     // rather than generated into something that does not compile, because a
     // diagnostic inside generated code points at a line nobody wrote.
     if (raw derive_wants(want, raw DERIVE_ORD())) {
+        if (has_simd) {
+            drop diaglist_push(diags, raw diag_error(raw DERIVE_SIMD_FIELD(),
+                "`Ord` cannot be derived over a `simd` field (D-194): an order over a vector has no scalar verdict — write the impl and say which order you mean",
+                d.span));
+        } else {
         if (is_enum) { s = raw string_concat(s, raw gen_cmp_enum(tn, false, head)); }
         else { s = raw string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, false, head)); }
+        }
     }
     if (raw derive_wants(want, raw DERIVE_PARTIAL_ORD())) {
+        if (has_simd) {
+            drop diaglist_push(diags, raw diag_error(raw DERIVE_SIMD_FIELD(),
+                "`PartialOrd` cannot be derived over a `simd` field (D-194): an order over a vector has no scalar verdict — write the impl and say which order you mean",
+                d.span));
+        } else {
         if (is_enum) { s = raw string_concat(s, raw gen_cmp_enum(tn, true, head)); }
         else { s = raw string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, true, head)); }
+        }
     }
 
     if (raw derive_wants(want, raw DERIVE_HASH())) {
+        if (has_simd) {
+            drop diaglist_push(diags, raw diag_error(raw DERIVE_SIMD_FIELD(),
+                "`Hash` cannot be derived over a `simd` field (D-194): the lanes have no built-in hash — write the impl and fold them deliberately",
+                d.span));
+        } else {
         if (is_enum) { s = raw string_concat(s, raw gen_hash_enum(tn, head)); }
         else { s = raw string_concat(s, raw gen_hash_struct(ast, interns, d, tn, head)); }
+        }
     }
     pass s;
 };

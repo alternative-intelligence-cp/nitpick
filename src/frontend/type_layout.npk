@@ -227,6 +227,8 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     if (k == (raw TY_BARRIER())) { pass true; }
     // `atomic<T>` is `T`'s storage, so it carries an address exactly when `T` does.
     if (k == (raw TY_ATOMIC()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
+    // A `simd` value is lanes of plain scalars (D-194) — no address inside.
+    if (k == (raw TY_SIMD()))    { pass false; }
     if (k == (raw TY_OPTIONAL())){ pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_RESULT()))  { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_STRUCT())) {

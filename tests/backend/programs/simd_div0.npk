@@ -1,0 +1,29 @@
+// expect-exit: 91
+//
+// D-007 AT VECTOR WIDTH (D-194): ANY zero lane in an integer vector divisor
+// traps DivByZero through the D-142 route — one vector compare, one
+// `bitcast <N x i1> to iN`, one scalar test, never per-lane branches. The
+// zero hides in lane 2 behind three good lanes.
+mod:simd_div0;
+
+func:main = int32(cstring[]:argv) {
+    simd<int32, 4>:a = simd(8i32);
+    simd<int32, 4>:b = simd(2i32, 4i32, (argv.len - 1i64) =>! int32, 8i32);
+    simd<int32, 4>:q = a / b;
+    if (q[0i64] == 4i32) { exit 10i32; }
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 91i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (DivOverflow)    { exit 92i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

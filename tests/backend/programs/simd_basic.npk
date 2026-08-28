@@ -1,0 +1,92 @@
+// expect-exit: 42
+//
+// `simd<T, N>` (D-135/D-194, 1.3.1): the vector MECHANISM — an LLVM vector
+// in a register. Type-directed construction (N components, or ONE that
+// splats), elementwise arithmetic/bitwise/shifts, comparisons yielding
+// `simd<bool, N>`, bounds-checked lane access, `.len`, the ordered
+// reductions, and elementwise casts under the scalar rules.
+mod:simd_basic;
+
+func:main = int32(cstring[]:_~argv) {
+    // Construction, splat, float arithmetic.
+    simd<flt64, 4>:v = simd(1.0f64, 2.0f64, 3.0f64, 4.0f64);
+    simd<flt64, 4>:w = simd(0.5f64);
+    simd<flt64, 4>:s = v + w;
+    if (s.len != 4i64)                    { exit 11i32; }
+    if (s[0i64] != 1.5f64)                { exit 12i32; }
+    if (s[3i64] != 4.5f64)                { exit 13i32; }
+    if (s.sum() != 12.0f64)               { exit 14i32; }
+    if (s.min() != 1.5f64)                { exit 15i32; }
+    if (s.max() != 4.5f64)                { exit 16i32; }
+
+    // Comparisons: one verdict per lane; all/any collapse.
+    simd<bool, 4>:m = s > v;
+    if (!(m.all()))                       { exit 17i32; }
+    simd<bool, 4>:m2 = v > s;
+    if (m2.any())                         { exit 18i32; }
+    simd<bool, 4>:meq = m == m2;
+    if (meq.any())                        { exit 19i32; }
+
+    // Integer lanes: arithmetic, guarded division, remainder.
+    simd<int32, 4>:a = simd(10i32, 20i32, 30i32, 40i32);
+    simd<int32, 4>:b = simd(3i32);
+    simd<int32, 4>:q = a / b;
+    if (q.sum() != 32i32)                 { exit 20i32; }
+    simd<int32, 4>:r = a % b;
+    if (r.sum() != 4i32)                  { exit 21i32; }
+
+    // Bitwise and shifts, elementwise.
+    simd<uint8, 8>:x = simd(3u8);
+    simd<uint8, 8>:y = simd(1u8);
+    simd<uint8, 8>:sh = x << y;
+    if (sh[0i64] != 6u8)                  { exit 22i32; }
+    simd<uint8, 8>:andv = x & y;
+    if (andv[7i64] != 1u8)                { exit 23i32; }
+
+    // Unsigned ordering compares unsigned (a high-bit lane is LARGE).
+    simd<uint8, 2>:hu = simd(200u8, 1u8);
+    simd<uint8, 2>:lo2 = simd(100u8, 0u8);
+    simd<bool, 2>:gt = hu > lo2;
+    if (!(gt.all()))                      { exit 24i32; }
+
+    // Lane writes are places, bounds-checked like an array's.
+    simd<int32, 4>:pw = simd(0i32);
+    pw[2i64] = 9i32;
+    if (pw[2i64] != 9i32)                 { exit 25i32; }
+    if (pw.sum() != 9i32)                 { exit 26i32; }
+
+    // Elementwise casts: lossless with `=>`, lossy acknowledged with `=>!`.
+    simd<flt64, 4>:fc = a => simd<flt64, 4>;
+    if (fc[1i64] != 20.0f64)              { exit 27i32; }
+    simd<int32, 4>:back = fc =>! simd<int32, 4>;
+    if (back[3i64] != 40i32)              { exit 28i32; }
+    simd<int64, 4>:widen = a => simd<int64, 4>;
+    if (widen.sum() != 100i64)            { exit 29i32; }
+
+    // Odd lane count (vec3's shape) and the 64-byte ceiling's inside edge.
+    simd<flt64, 3>:v3 = simd(1.0f64, 2.0f64, 3.0f64);
+    if (v3.sum() != 6.0f64)               { exit 30i32; }
+    simd<int8, 64>:wide = simd(1i8);
+    if (wide.len != 64i64)                { exit 31i32; }
+    if (wide.sum() != 64i8)               { exit 32i32; }
+
+    // Signed min/max order signed.
+    simd<int32, 4>:sg = simd(5i32, 0i32 - 7i32, 3i32, 0i32 - 1i32);
+    if (sg.min() != (0i32 - 7i32))        { exit 33i32; }
+    if (sg.max() != 5i32)                 { exit 34i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 91i32; },
+        (DivOverflow)    { exit 92i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

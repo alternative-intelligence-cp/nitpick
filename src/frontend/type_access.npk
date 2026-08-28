@@ -257,6 +257,13 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         pass (raw te_no_member(e, base, name, at));
     }
+    // A VECTOR'S LANE COUNT (D-194) — the one data member; everything else
+    // on a `simd` is a method.
+    if (k == (raw TY_SIMD())) {
+        string:f = raw intern_get(e.interns, name);
+        if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        pass (raw te_no_member(e, base, name, at));
+    }
     // A STRING'S THREE FIELDS (`{ptr, len, cap}`), and a `cstring`'s two — the
     // members the compiler's own sources read on every line that walks bytes
     // (`s.ptr[i]`), and which only `.len` of had a rule until 0.7.8. The bytes
@@ -391,6 +398,10 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
     if (k == (raw TY_ARRAY()))   { pass (raw type_elem(e.types, base)); }
     if (k == (raw TY_SLICE()))   { pass (raw type_elem(e.types, base)); }
     if (k == (raw TY_POINTER())) { pass (raw type_elem(e.types, base)); }
+    // A LANE READS AND WRITES AS THE ELEMENT (D-194), bounds-checked like an
+    // array's — the lane count is in the type, so the check is against a
+    // constant.
+    if (k == (raw TY_SIMD()))    { pass (raw type_elem(e.types, base)); }
 
     string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, base));
     string:m2 = raw string_concat(m1, "` cannot be indexed");
@@ -1393,6 +1404,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_ATOMIC())) {
         pass (raw type_atomic_method(e, n, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_SIMD())) {
+        pass (raw type_simd_method(e, n, recv, name, count));
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
@@ -2420,6 +2434,50 @@ func:type_barrier_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
         }
     }
     pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+};
+
+// THE VECTOR'S OWN OPERATIONS (D-194) — five methods the TYPE carries, the
+// arena/atomic precedent: `sum`/`min`/`max` collapse numeric lanes to one
+// scalar (the ordered reduction — deterministic — on float sums), and
+// `all`/`any` collapse a comparison's verdict vector to one `bool`.
+func:type_simd_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                              int32:name, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:elem = raw type_elem(e.types, recv);
+    bool:isbool = false;
+    if (elem == e.types.t_bool) { isbool = true; }
+    bool:known = false;
+    bool:boolonly = false;
+    if (raw string_eq(m, "sum")) { known = true; }
+    if (raw string_eq(m, "min")) { known = true; }
+    if (raw string_eq(m, "max")) { known = true; }
+    if (raw string_eq(m, "all")) { known = true; boolonly = true; }
+    if (raw string_eq(m, "any")) { known = true; boolonly = true; }
+    if (!known) {
+        string:u1 = raw string_concat("`simd<T, N>` has no method `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(u1, "`: the set is exactly `sum`, `min`, `max` on numeric lanes and `all`, `any` on `bool` lanes (D-194)"),
+            n.span));
+    }
+    if (count != 0i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "a vector reduction takes no arguments — it collapses the lanes it is called on (D-194)",
+            n.span));
+    }
+    if (boolonly) {
+        if (!isbool) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`all` and `any` collapse a `simd<bool, N>` — a comparison's verdict vector; numeric lanes reduce with `sum`, `min`, `max` (D-194)",
+                n.span));
+        }
+        pass (e.types.t_bool);
+    }
+    if (isbool) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`bool` lanes hold verdicts, not numbers: they collapse with `all` or `any` (D-194)",
+            n.span));
+    }
+    pass elem;
 };
 
 func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,

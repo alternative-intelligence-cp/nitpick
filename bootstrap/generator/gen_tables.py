@@ -588,7 +588,9 @@ pub func:is_keyword = bool(string:text) {
                # constructors exactly as Channel is.
                "Mutex": "TY_MUTEX", "Guard": "TY_GUARD",
                "RwLock": "TY_RWLOCK", "RGuard": "TY_RGUARD",
-               "CondVar": "TY_CONDVAR", "Barrier": "TY_BARRIER"}
+               "CondVar": "TY_CONDVAR", "Barrier": "TY_BARRIER",
+               # 1.3.1 (D-135/D-194): the vector mechanism.
+               "simd": "TY_SIMD"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')
