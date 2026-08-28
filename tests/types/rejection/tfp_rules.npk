@@ -1,0 +1,102 @@
+// `tfp`'s boundary rules (D-195, 1.3.2): a twisted type computes only with
+// itself at its own width; the raw representation is NEVER exposed —
+// bitwise and shifts would launder ERR in one instruction (`ERR << 1` is
+// 0), striking TYPE_REFERENCE §5's raw-bit rows; `tbb` and `tfp` have no
+// conversion (the raw bits mean different VALUES); and a literal past the
+// balanced range refuses rather than saturating.
+mod:tfp_rules;
+
+// Width mixing refuses like tbb's.
+// expect-error: NITPICK-TYPE-008
+func:width_mix = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    tfp32:b = 1.0tfp32;
+    tfp64:c = a + (b => tfp64);
+    tfp64:d = a + b;
+    if (is_err(c)) { }
+    if (is_err(d)) { }
+    pass NIL;
+};
+
+// Plain-integer mixing refuses.
+// expect-error: NITPICK-TYPE-008
+func:int_mix = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    tfp64:c = a + 1i64;
+    if (is_err(c)) { }
+    pass NIL;
+};
+
+// No bitwise, no shifts: the raw bits are not the value's API.
+// expect-error: NITPICK-TYPE-008
+func:bitwise = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    tfp64:c = a & a;
+    if (is_err(c)) { }
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-008
+func:shifted = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    tfp64:c = a << a;
+    if (is_err(c)) { }
+    pass NIL;
+};
+
+// The two twisted families do not convert: same carrier, different VALUES.
+// expect-error: NITPICK-TYPE-032
+func:tbb_cross = NIL() never fails {
+    tbb32:t = 5tbb32;
+    tfp32:f = t =>! tfp32;
+    if (is_err(f)) { }
+    pass NIL;
+};
+
+// A literal past the balanced range refuses (the sentinel's magnitude
+// included): tfp32 holds less than 32768.0.
+// expect-error: NITPICK-TYPE-031
+func:lit_range = NIL() never fails {
+    tfp32:a = 40000.0tfp32;
+    if (is_err(a)) { }
+    pass NIL;
+};
+
+// Narrowing inside the family is acknowledged.
+// expect-error: NITPICK-TYPE-009
+func:narrow_unacknowledged = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    tfp32:b = a => tfp32;
+    if (is_err(b)) { }
+    pass NIL;
+};
+
+// Leaving for an integer drops the fraction: `=>!` only (§5's own rule).
+// expect-error: NITPICK-TYPE-009
+func:to_int_unacknowledged = NIL() never fails {
+    tfp64:a = 1.0tfp64;
+    int64:b = a => int64;
+    if (b == 0i64) { }
+    pass NIL;
+};
+
+// `int32`'s most negative value has no image in `tfp64` (the balance), so
+// entering needs `=>!` from B >= I.
+// expect-error: NITPICK-TYPE-009
+func:from_wide_int = NIL() never fails {
+    tfp64:a = 5i32 => tfp64;
+    if (is_err(a)) { }
+    pass NIL;
+};
+
+// A float value may not be representable: `=>!` always.
+// expect-error: NITPICK-TYPE-009
+func:from_float = NIL() never fails {
+    tfp64:a = 1.5f64 => tfp64;
+    if (is_err(a)) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

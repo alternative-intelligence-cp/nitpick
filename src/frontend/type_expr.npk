@@ -28,6 +28,7 @@ use "./type_codes.npk".*;
 use "./types.npk".*;
 use "./parser.npk".*;   // QUAL_MOVE (D-183)
 use "./num_width.npk".*;
+use "./numeric.npk".*;   // tfp_q_decimal (D-195, 1.3.2)
 use "./parse_expr.npk".*;
 use "./parse_pick.npk".*;
 use "./parse_stmt.npk".*;
@@ -486,6 +487,30 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
         pass (raw tt_float(e.types, bits));
     }
     if (kind == (raw TY_TBB()))   { pass (raw lit_ranged(e, n, raw tt_tbb(e.types, bits))); }
+    // A `tfp` LITERAL FOLDS TO ITS EXACT Q VALUE AT CHECK TIME (D-195,
+    // 1.3.2): both forms — `5tfp64` rides the integer payload, `3.14tfp64`
+    // the kept text — go through the ONE conversion the emitter also uses,
+    // and a value past the width's balanced range refuses here with the
+    // D-148 discipline rather than saturating silently.
+    if (kind == (raw TY_TFP())) {
+        string:qtx = "";
+        if (n.kind == ExprKind.ExprFloatLiteral) {
+            qtx = raw intern_get(e.interns, n.payload =>! int32);
+        }
+        if (n.kind == ExprKind.ExprIntLiteral) {
+            qtx = raw int_to_string(n.payload);
+        }
+        if ((raw tfp_q_decimal(qtx, bits)).len == 0i64) {
+            string:q1 = raw string_concat(
+                "the value of this literal does not fit `tfp",
+                raw int_to_string(bits => int64));
+            pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                raw string_concat(q1,
+                    "` (D-148/D-195): the balanced range excludes the sentinel's magnitude, and a literal must be the number written"),
+                n.span));
+        }
+        pass (raw tt_tfp(e.types, bits));
+    }
     if (kind == (raw TY_CHAR()))  { pass (raw lit_ranged(e, n, raw tt_char(e.types, bits))); }
 
     // A SUFFIX IS PRESENT AND NAMES A TYPE NO RUNG SUPPLIES YET — `frac`, `tfp`,
@@ -643,6 +668,11 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             if ((raw type_kind(e.types, werr)) == (raw TY_TBB())) {
                 pass werr;
             }
+            // The other twisted family has the same state (D-195):
+            // `tfp64:e = ERR;` is the taint at that width.
+            if ((raw type_kind(e.types, werr)) == (raw TY_TFP())) {
+                pass werr;
+            }
         }
         pass (e.types.t_tbb32);
     }
@@ -696,23 +726,32 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) nev
         pass (raw te_simd_op(e, at, rt, lt));
     }
 
-    // `tbb` ARITHMETIC IS REAL (D-008): saturating, ERR-propagating, sticky —
-    // operations that belong to the TYPE, which is exactly why the backend lowers
-    // them at 0.9 rather than as one `add`. The CHECKER's job is only the type,
-    // and the type of `tbb32 + tbb32` is `tbb32`; refusing here made
-    // `tests/rejection/tbb_arithmetic.npk` fail in the wrong stage, with a type
-    // error where D-085 promises a rung refusal.
+    // TWISTED ARITHMETIC IS REAL (D-008, D-195): saturating, ERR-propagating,
+    // sticky — operations that belong to the TYPE, which is exactly why the
+    // backend lowers them specially rather than as one `add`. The CHECKER's
+    // job is only the type: `tbb32 + tbb32` is `tbb32`, `tfp64 + tfp64` is
+    // `tfp64`, and each family computes only with ITSELF at its own width.
     if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
         if (lt == rt) { pass lt; }
     }
-    // A `tbb` MIXED WITH ANYTHING ELSE — a plain integer, or another `tbb`
-    // width — is the refusal, and it is said as one (1.0.8). This fell through
-    // to "is not a number, so it has no arithmetic", which contradicted the
-    // branch above it and blamed the type rather than the mixing.
+    if ((raw type_kind(e.types, lt)) == (raw TY_TFP())) {
+        if (lt == rt) { pass lt; }
+    }
+    // A twisted type MIXED WITH ANYTHING ELSE — a plain integer, a float, or
+    // another width of its own family — is the refusal, and it is said as one
+    // (1.0.8). This fell through to "is not a number, so it has no
+    // arithmetic", which contradicted the branch above it and blamed the
+    // type rather than the mixing.
     if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
         pass (raw te_tbb_mixed(e, at, lt, rt));
     }
     if ((raw type_kind(e.types, rt)) == (raw TY_TBB())) {
+        pass (raw te_tbb_mixed(e, at, rt, lt));
+    }
+    if ((raw type_kind(e.types, lt)) == (raw TY_TFP())) {
+        pass (raw te_tbb_mixed(e, at, lt, rt));
+    }
+    if ((raw type_kind(e.types, rt)) == (raw TY_TFP())) {
         pass (raw te_tbb_mixed(e, at, rt, lt));
     }
 
@@ -744,9 +783,9 @@ func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) never 
     string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, tbb));
     string:m2 = raw string_concat(m1, "` computes only with another `");
     string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, tbb));
-    string:m4 = raw string_concat(m3, "`: a `tbb`'s arithmetic carries ERR, stickiness and saturation (D-008), so it does not mix with `");
+    string:m4 = raw string_concat(m3, "`: a twisted type's arithmetic carries ERR, stickiness and saturation (D-008/D-195), so it does not mix with `");
     string:m5 = raw string_concat(m4, raw type_display(e.types, e.interns, other));
-    string:m6 = raw string_concat(m5, "`; cast the other operand to the same `tbb` width");
+    string:m6 = raw string_concat(m5, "`; cast the other operand to the same width first");
     pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m6), at));
 };
 
@@ -1460,8 +1499,11 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    // Both twisted families (D-195): `tfp` carries the same sentinel on the
+    // same carrier, and the same no-trap guarantee is the point.
+    if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
-        string:m1 = raw string_concat("`is_err` tests a `tbb` for ERR, and this is `",
+        string:m1 = raw string_concat("`is_err` tests a twisted value for ERR, and this is `",
                                         raw type_display(e.types, e.interns, t));
         string:m2 = raw string_concat(m1, "`");
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
@@ -2998,10 +3040,12 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
     if (op == TokenKind.OpMinus) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
-        // NEGATION IS TOTAL ON A `tbb` (D-008 §2, admitted at 1.0.9): the
-        // sentinel is the one value whose negation would overflow, and it is
-        // not a value. `-x` is the same `tbb`, and ERR stays ERR (sticky).
+        // NEGATION IS TOTAL ON A TWISTED TYPE (D-008 §2, admitted at 1.0.9;
+        // D-195 extends the balance to `tfp`): the sentinel is the one value
+        // whose negation would overflow, and it is not a value. `-x` is the
+        // same type, and ERR stays ERR (sticky).
         if ((raw type_kind(e.types, t)) == (raw TY_TBB())) { pass t; }
+        if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
             pass (raw te_operand_error(e, n.span, t));
         }

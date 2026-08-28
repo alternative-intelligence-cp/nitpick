@@ -178,7 +178,18 @@ become a libcall), elementwise casts, and D-007 any-lane division guards
 (zero → DivByZero, structural INT_MIN/−1 → DivOverflow). TYPE-029 (the
 Tier-1 vector refusal) retired with the ctor rung; `.any` joined `.acquire`
 in the keyword-after-dot interning. `simd_basic`/`simd_div0`/`simd_divmin`/
-`simd_oob` + `simd_rules.npk` (14 refusals).
+`simd_oob` + `simd_rules.npk` (14 refusals). **1.3.2 landed `tfp*`** —
+twisted fixed point on native `i32..i256`, the tbb machinery generalized
+to both twisted kinds (compare-trap, add/sub, `%`, negation, ERR, is_err)
+plus Q-scaled mul/div through widened intermediates with round-trip
+narrowing; literals fold EXACTLY in subset-1 limb arithmetic (the seed
+still builds src/ — C-13); the cast matrix with sentinel maps and
+trap-on-ERR-exit under both spellings; `.floor()`/`.trunc()`; exact-decimal
+`ToString` (uint256 core, 100 python-`fractions` vectors); REACH refined
+(twisted division arms no DivByZero; TbbErr armed for both families).
+Three D-195 amendments recorded: compare-on-ERR TRAPS (D-008 §5 outranked
+the carried spec row), raw bitwise/shifts STRUCK (`ERR << 1` is an ERR
+laundry), tbb↔tfp casts impossible.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

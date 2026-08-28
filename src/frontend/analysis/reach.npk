@@ -318,14 +318,30 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
     // The conditional system machinery.
     if (n.kind == ExprKind.ExprBinaryExpr) {
         TokenKind:op = raw expr_op(n);
-        if (op == TokenKind.OpSlash)   { x.saw_div = true; }
-        if (op == TokenKind.OpPercent) { x.saw_div = true; }
+        bool:divlike = false;
+        if (op == TokenKind.OpSlash)   { divlike = true; }
+        if (op == TokenKind.OpPercent) { divlike = true; }
+        if (divlike) {
+            // A TWISTED division cannot reach the trap (D-007's
+            // fail-operational row: a zero divisor yields ERR, and D-008's
+            // balance makes INT_MIN/-1 structurally absent) — arming
+            // DivByZero for it would demand an arm nothing can enter.
+            int32:dtid = raw exprtypes_get(x.ets, id);
+            int32:dk2 = raw type_kind(x.types, dtid);
+            if (dk2 == (raw TY_TBB())) { divlike = false; }
+            if (dk2 == (raw TY_TFP())) { divlike = false; }
+        }
+        if (divlike) { x.saw_div = true; }
     }
     if (n.kind == ExprKind.ExprIndexExpr) { x.saw_index = true; }
     int32:ntid = raw exprtypes_get(x.ets, id);
     if (ntid != 0i32) {
         int32:nk = raw type_kind(x.types, ntid);
         if (nk == (raw TY_TBB()))          { x.saw_tbb = true; }
+        // The other twisted family traps the same -4100 at a tainted
+        // comparison or a cast out (D-195); the error identity stays
+        // `TbbErr` — one taint, one name.
+        if (nk == (raw TY_TFP()))          { x.saw_tbb = true; }
         if (nk == (raw TY_ARENA()))        { x.saw_arena = true; }
         if (nk == (raw TY_SHARED_ARENA())) { x.saw_arena = true; }
     }

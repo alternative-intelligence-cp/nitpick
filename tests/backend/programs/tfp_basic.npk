@@ -1,0 +1,63 @@
+// expect-exit: 42
+//
+// `tfp` — TWISTED FIXED POINT (D-036/D-037/D-195, 1.3.2): Q-format on the
+// native carrier, most-negative raw as sticky ERR, D-144's branch-free
+// discipline. Exact literals both forms, add/mul/div (division by zero
+// yields ERR, never the trap — D-007's fail-operational row), stickiness,
+// total negation, floor/trunc toward -inf/zero on negatives, ordering,
+// the ERR sentinel by context, is_err, and the cast matrix's every class:
+// out of the family (int, flt), within it (widen/narrow round-trip), into
+// it (int lossless, flt acknowledged).
+mod:tfp_basic;
+func:main = int32(cstring[]:_~argv) {
+    tfp64:a = 2.5tfp64;
+    tfp64:b = 0.25tfp64;
+    tfp64:c = a + b;
+    tfp64:p = a * b;
+    tfp64:q = a / b;
+    if (is_err(c)) { exit 11i32; }
+    if (c != 2.75tfp64)  { exit 12i32; }
+    if (p != 0.625tfp64) { exit 13i32; }
+    if (q != 10.0tfp64)  { exit 14i32; }
+    tfp64:z = 0.0tfp64;
+    tfp64:d = a / z;
+    if (!(is_err(d))) { exit 15i32; }
+    tfp64:sticky = d + 1.0tfp64;
+    if (!(is_err(sticky))) { exit 16i32; }
+    tfp64:neg = -a;
+    if (neg != (0.0tfp64 - 2.5tfp64)) { exit 17i32; }
+    tfp64:fl = 2.75tfp64;
+    if (fl.floor() != 2.0tfp64) { exit 18i32; }
+    tfp64:nfl = -2.75tfp64;
+    if (nfl.floor() != (0.0tfp64 - 3.0tfp64)) { exit 19i32; }
+    if (nfl.trunc() != (0.0tfp64 - 2.0tfp64)) { exit 20i32; }
+    if (!(a > b)) { exit 21i32; }
+    tfp64:e2 = ERR;
+    if (!(is_err(e2))) { exit 22i32; }
+    int64:iq = q =>! int64;
+    if (iq != 10i64) { exit 23i32; }
+    tfp128:w = (a => tfp128);
+    tfp64:nar = w =>! tfp64;
+    if (nar != a) { exit 24i32; }
+    flt64:fq = q =>! flt64;
+    if (fq != 10.0f64) { exit 25i32; }
+    tfp64:fromi = 7i16 => tfp64;
+    if (fromi != 7.0tfp64) { exit 26i32; }
+    tfp32:small = 3.5f64 =>! tfp32;
+    if (small != 3.5tfp32) { exit 27i32; }
+    tfp32:mx = 32767.5tfp32;
+    tfp32:sat = mx + mx;
+    if (!(is_err(sat))) { exit 28i32; }
+    tfp64:rm = 5.5tfp64 % 2.0tfp64;
+    if (rm != 1.5tfp64) { exit 29i32; }
+    exit 42i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 90i32; },
+        (HeapOom) { exit 95i32; }, (HeapBadRequest) { exit 95i32; },
+        (OutOfBounds) { exit 96i32; }, (Unreachable) { exit 97i32; },
+        (WildLeak) { exit 98i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

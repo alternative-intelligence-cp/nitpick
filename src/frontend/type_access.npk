@@ -1408,6 +1408,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_SIMD())) {
         pass (raw type_simd_method(e, n, recv, name, count));
     }
+    if ((raw type_kind(e.types, recv)) == (raw TY_TFP())) {
+        pass (raw type_tfp_method(e, n, recv, name, count));
+    }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
     }
@@ -2434,6 +2437,28 @@ func:type_barrier_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
         }
     }
     pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+};
+
+// A `tfp`'s OWN OPERATIONS (D-195): `floor` and `trunc`, §5's free-function
+// family made METHODS — one mechanism. Both are total: ERR stays ERR
+// (sticky), every valid value's floor and truncation are representable.
+func:type_tfp_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                             int32:name, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    bool:known = false;
+    if (raw string_eq(m, "floor")) { known = true; }
+    if (raw string_eq(m, "trunc")) { known = true; }
+    if (!known) {
+        string:u1 = raw string_concat("`tfp` has no method `", m);
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            raw string_concat(u1, "`: the set is exactly `floor` and `trunc` (D-195)"),
+            n.span));
+    }
+    if (count != 0i32) {
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+            "`floor` and `trunc` take no arguments (D-195)", n.span));
+    }
+    pass recv;
 };
 
 // THE VECTOR'S OWN OPERATIONS (D-194) — five methods the TYPE carries, the

@@ -13815,3 +13815,41 @@ prototype's ttensor carries dims[9]). `tmatrix`/`ttensor` are the same
 containers over `tryte`. All four OWN their heap cell — the 1.2 managed
 regime drops them. Dimensions are int64, not the prototype's int32
 (Nikola-scale tensors against a 2^31 ceiling is a foreseeable regret).
+
+### D-195 amendments (1.3.2, recorded at implementation)
+
+1. **Comparison on ERR TRAPS — the parenthetical corrected.** The proposal
+   said "ERR == x false, ERR != x true, orderings false", copied from
+   TYPE_REFERENCE §5's carried-over row. D-008 §5 settled the opposite,
+   with its rationale explicit: a comparison is a decision point, and the
+   NaN-style alternative was REJECTED for breaking trichotomy and
+   obstructing Z3. One taint discipline, both twisted families, one code
+   (−4100, `TbbErr`). §5's row is corrected.
+2. **Bitwise and shifts on the raw representation are REFUSED**, striking
+   §5's "on raw bits — useful for scaling" rows: `ERR << 1` is zero — a
+   one-instruction ERR laundry, precisely the hole D-008's stickiness
+   exists to close. `tbb` never admitted them; `tfp` does not either.
+   Scaling is multiplication by a power-of-two constant, which is
+   ERR-correct.
+3. **A cast OUT of the family traps on ERR under BOTH spellings.** What
+   `=>!` acknowledges is the value's precision loss; ERR is not a value
+   (D-008 §1 excludes it from the range), and the sentinel shifted down by
+   F is a plausible mid-range number — the worst laundering. NOTE the
+   asymmetry this creates with tbb, whose `=>!` reads the carrier raw
+   (landed 0.9.5): the tbb carrier at least surfaces as the recognizable
+   INT_MIN. Flagged for the user as a safety observation rather than
+   changed under this decision.
+4. **`tbb ↔ tfp` casts are CAST_IMPOSSIBLE** — same carrier, different
+   VALUES (the 2^F scale); a reinterpretation would be a forgery.
+5. **`is_err`, the `ERR` sentinel-by-context, unary `-` (total under
+   balance) and full ORDERING extend to `tfp`** — unlike `tbb`, whose
+   values are codes with equality only, a `tfp` is a number.
+6. **REACH refined**: a twisted division cannot reach DivByZero/DivOverflow
+   (ERR instead), so the failsafe set no longer demands those arms for it —
+   and `TbbErr` is demanded wherever either twisted family is touched.
+7. **Literal folding runs in subset-1 arithmetic** (u32 limbs + the
+   multiply-decimal-by-two bit method, round-half-even), because the seed
+   still builds src/ and wide integers are outside its subset (C-13); the
+   emitter's `iN` constant and the checker's range answer come from the one
+   conversion. The prelude's `ToString` (exact expansion, `uint256` core)
+   is npkc-compiled and uses the wide tier freely.

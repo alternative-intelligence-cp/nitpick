@@ -405,8 +405,8 @@ structural INT_MIN/−1 check, which is width-independent by construction).
 |---|---|---|---|---|---|
 | `tfp32` | `i32` | 4 bytes | Q16.16 | 4 | 16-bit integer + 16-bit fraction |
 | `tfp64` | `i64` | 8 bytes | Q32.32 | 8 | 32-bit integer + 32-bit fraction |
-| `tfp128` | `{i64, i64}` | 16 bytes | Q64.64 | 8 | 64-bit integer + 64-bit fraction |
-| `tfp256` | `{i64, i64, i64, i64}` | 32 bytes | Q128.128 | 8 | 128-bit integer + 128-bit fraction |
+| `tfp128` | `i128` | 16 bytes | Q64.64 | 16 | native carrier (D-195; the word-struct rows were pre-D-011) |
+| `tfp256` | `i256` | 32 bytes | Q128.128 | 16 | native carrier (D-195) |
 
 **Literal syntax:** Suffix the numeric literal with the type name:
 ```nitpick
@@ -420,27 +420,41 @@ tfp32:ratio = 1.5tfp32;
 - Mul: `(a * b) >> FRAC_BITS` (multiply raws, shift right by fractional bit count)
 - Div: `(a << FRAC_BITS) / b` (shift left by fractional bits, then divide)
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`, `<=>` (spaceship)
-  - **ERR-aware semantics:** Operations that overflow produce the `ERR` sentinel (most negative value); comparisons propagate ERR — `ERR == anything` is always false, `ERR != anything` is always true.
-- Shift: `<<`, `>>` (on raw bits — useful for scaling)
-- Remainder: `%` (on raw bits)
-- Unary negation: `-val`
-- Bitwise: `&`, `|`, `^`, `~` (on raw representation)
+  - **ERR-aware semantics (corrected at 1.3.2, D-195):** operations that
+    overflow produce the `ERR` sentinel (most negative value) and it is
+    STICKY; a comparison on an ERR operand TRAPS to `failsafe` (D-008 §5 —
+    the NaN-style "always false/true" this row once described was rejected
+    there for breaking trichotomy). `is_err(x)` is the test that looks
+    without trapping.
+- Remainder: `%` — the same-scale remainder, under the ERR discipline
+- Unary negation: `-val` (total: the balance excludes the one overflowing value)
+- ~~Shift / bitwise on the raw representation~~ — STRUCK at 1.3.2 (D-195):
+  `ERR << 1` is zero, a one-instruction ERR laundry; the raw bits are not
+  the value's API. Scaling is multiplication by a power-of-two constant.
 
-**`tfp256`-specific intrinsics:**
+**`floor` and `trunc` are METHODS on every width** (D-195 struck the
+`tfp256_*` free-function family — one mechanism):
 ```nitpick
 tfp256:x = 3.7tfp256;
-tfp256:floored = tfp256_floor(x);   // -> 3.0tfp256
-tfp256:trunced = tfp256_trunc(x);   // -> 3.0tfp256 (toward zero)
+tfp256:floored = x.floor();   // -> 3.0tfp256 (toward -inf)
+tfp256:trunced = x.trunc();   // -> 3.0tfp256 (toward zero)
 ```
 
 **Cast support:**
 ```nitpick
+tfp32:g = 42.5tfp32;
+flt64:fl  = g => flt64;         // OK — 32 raw bits fit a 53-bit mantissa exactly
 tfp256:f = 42.5tfp256;
-flt64:fl  = f => flt64;         // OK — nearest representable, no loss possible
+flt64:f2  = f =>! flt64;        // Q128.128 into 52 mantissa bits LOSES (corrected at 1.3.2)
 int64:i   = f => int64;         // COMPILE ERROR — drops the fractional part
-int64:i2  = f =>! int64;        // OK — explicit opt-in to the loss, yields 42
+int64:i2  = f =>! int64;        // OK — explicit opt-in, truncates toward zero, yields 42
 tfp64:f64 = f =>! tfp64;        // narrowing: precision loss, so =>! is required
+tfp128:w  = 1.5tfp64 => tfp128; // widening keeps every value; ERR maps to ERR
 ```
+
+> A cast OUT of the family TRAPS on an ERR operand under BOTH spellings
+> (D-195): `=>!` acknowledges precision loss, and ERR is not a value —
+> no acknowledgment converts a taint.
 
 `=>` is a **compile-time error** wherever data loss is possible — not a runtime
 trap and not a warning. `=>!` is the sole opt-out, and it is deliberately

@@ -1,0 +1,27 @@
+// expect-exit: 90
+//
+// A CAST OUT OF THE FAMILY TRAPS ON ERR UNDER BOTH SPELLINGS (D-195): what
+// `=>!` acknowledges is the value's precision loss, and ERR is not a value
+// at all — the sentinel shifted down by F would be a plausible mid-range
+// number, the worst possible laundering.
+mod:tfp_cast_err;
+
+func:main = int32(cstring[]:argv) {
+    tfp64:z = ((argv.len - 1i64) =>! int32) =>! tfp64;   // 0.0 at run time
+    tfp64:e = 1.0tfp64 / z;                              // ERR
+    int64:launder = e =>! int64;
+    if (launder == 0i64) { exit 10i32; }
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

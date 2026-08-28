@@ -998,3 +998,105 @@ pub func:std_err = TextWriter<ByteWriter>() {
     OwnedFd:d = relay std_dup(2i32);
     pass (raw text_writer(ByteWriter{ sink: move(d) }, LineEnding.Lf));
 };
+
+// A `tfp`'S EXACT DECIMAL (D-195, §6b's discipline continued): a Q value is
+// a binary fraction whose decimal expansion is finite (≤ F digits), and the
+// canonical rendering IS that exact expansion — determinism is the family's
+// whole point, so "shortest that round-trips" (a float concept) does not
+// apply. One `uint256` core serves every width: the fraction's digits fall
+// out of repeated ×10-and-shift (never division), the integer half through
+// divmod-10 at width (inline-expanded, no libcall). "ERR" renders the
+// sentinel; the sign rides the raw carrier's.
+pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
+                             uint64:fbits) never fails {
+    string:ip = "";
+    if (ipart == 0u256) { ip = "0"; }
+    uint256:n = ipart;
+    while (n != 0u256) {
+        uint256:q = n / 10u256;
+        uint256:r = n - (q * 10u256);
+        ip = raw string_concat(raw digit_char((r =>! uint64)), ip);
+        n = q;
+    }
+    string:fp = "";
+    int64:emitted = 0i64;
+    int64:lastnz = 0i64;
+    uint256:f = frac;
+    uint256:mask = (1u256 << (fbits => uint256)) - 1u256;
+    while (emitted < (fbits =>! int64)) {
+        if (f == 0u256) { emitted = fbits =>! int64; } else {
+            uint256:t = f * 10u256;
+            uint256:d = t >> (fbits => uint256);
+            f = t & mask;
+            fp = raw string_concat(fp, raw digit_char((d =>! uint64)));
+            emitted = emitted + 1i64;
+            if (d != 0u256) { lastnz = emitted; }
+        }
+    }
+    if (lastnz == 0i64) { fp = "0"; }
+    if (lastnz > 0i64) {
+        if (lastnz < fp.len) {
+            fp = string_slice(fp, 0i64, lastnz) ?| "0";
+        }
+    }
+    string:out = "";
+    if (neg) { out = "-"; }
+    out = raw string_concat(out, ip);
+    out = raw string_concat(out, ".");
+    pass (raw string_concat(out, fp));
+};
+
+impl:tfp32:ToString = { func:to_string = string(tfp32:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    wild int8->:b = alloc(4i64);
+    wild tfp32->:tp = b =>! wild tfp32->;
+    <-tp = self;
+    wild int32->:ip2 = b =>! wild int32->;
+    int32:rawv = <-ip2;
+    drop dalloc(b);
+    bool:neg = false;
+    if (rawv < 0i32) { neg = true; rawv = 0i32 - rawv; }
+    uint256:mag = (rawv =>! uint32) => uint256;
+    pass (raw tfp_render(neg, mag >> 16u256, mag & 65535u256, 16u64));
+}; };
+impl:tfp64:ToString = { func:to_string = string(tfp64:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    wild int8->:b = alloc(8i64);
+    wild tfp64->:tp = b =>! wild tfp64->;
+    <-tp = self;
+    wild int64->:ip2 = b =>! wild int64->;
+    int64:rawv = <-ip2;
+    drop dalloc(b);
+    bool:neg = false;
+    if (rawv < 0i64) { neg = true; rawv = 0i64 - rawv; }
+    uint256:mag = (rawv =>! uint64) => uint256;
+    pass (raw tfp_render(neg, mag >> 32u256, mag & 4294967295u256, 32u64));
+}; };
+impl:tfp128:ToString = { func:to_string = string(tfp128:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    wild int8->:b = alloc(16i64);
+    wild tfp128->:tp = b =>! wild tfp128->;
+    <-tp = self;
+    wild int128->:ip2 = b =>! wild int128->;
+    int128:rawv = <-ip2;
+    drop dalloc(b);
+    bool:neg = false;
+    if (rawv < 0i128) { neg = true; rawv = 0i128 - rawv; }
+    uint256:mag = (rawv =>! uint128) => uint256;
+    uint256:fmask = (1u256 << 64u256) - 1u256;
+    pass (raw tfp_render(neg, mag >> 64u256, mag & fmask, 64u64));
+}; };
+impl:tfp256:ToString = { func:to_string = string(tfp256:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    wild int8->:b = alloc(32i64);
+    wild tfp256->:tp = b =>! wild tfp256->;
+    <-tp = self;
+    wild int256->:ip2 = b =>! wild int256->;
+    int256:rawv = <-ip2;
+    drop dalloc(b);
+    bool:neg = false;
+    if (rawv < 0i256) { neg = true; rawv = 0i256 - rawv; }
+    uint256:mag = rawv =>! uint256;
+    uint256:fmask2 = (1u256 << 128u256) - 1u256;
+    pass (raw tfp_render(neg, mag >> 128u256, mag & fmask2, 128u64));
+}; };

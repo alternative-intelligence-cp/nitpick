@@ -1,0 +1,26 @@
+// expect-exit: 90
+//
+// COMPARISON ON ERR TRAPS (D-008 §5, D-195): a comparison is a decision
+// point, and a tainted value must not steer one — the NaN-style "all
+// comparisons false" alternative was REJECTED for breaking trichotomy.
+// One taint discipline, both twisted families, trap -4100 (`TbbErr`).
+mod:tfp_cmp_err;
+
+func:main = int32(cstring[]:argv) {
+    tfp64:z = ((argv.len - 1i64) =>! int32) =>! tfp64;   // 0.0 at run time
+    tfp64:e = 1.0tfp64 / z;                              // ERR
+    if (e > 0.5tfp64) { exit 10i32; }
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

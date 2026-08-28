@@ -284,6 +284,8 @@ pub func:is_keyword = bool(string:text) {
     # for. Emitted BY NAME so there is no numeric coupling to types.npk.
     FAMILY = [(r'^u\d+$', "TY_INT"), (r'^i\d+$', "TY_INT"),
               (r'^f\d+$', "TY_FLOAT"), (r'^tbb\d+$', "TY_TBB"),
+              # 1.3.2 (D-195): the tfp suffixes name the twisted fixed kind.
+              (r'^tfp\d+$', "TY_TFP"),
               (r'^char\d+$', "TY_CHAR")]
     wl.append("")
     wl.append("// The TYPE a suffix names, as a `TY_*` kind.")
@@ -550,10 +552,12 @@ pub func:is_keyword = bool(string:text) {
         elif name in NOT_SCALAR:
             continue
         else:
-            m = re.match(r'^(int|uint|tbb|flt|char)(\d+)$', name)
+            m = re.match(r'^(int|uint|tbb|tfp|flt|char)(\d+)$', name)
             if m:
                 fam, bits = m.group(1), m.group(2)
                 kind = {"int": "TY_INT", "uint": "TY_INT", "tbb": "TY_TBB",
+                        # 1.3.2 (D-195): twisted fixed point, native iN.
+                        "tfp": "TY_TFP",
                         "flt": "TY_FLOAT", "char": "TY_CHAR"}[fam]
                 sgn = "true" if fam == "int" else "false"
                 bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(true, raw %s(), %si32, %s, 0i32)); }'

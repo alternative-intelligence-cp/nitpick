@@ -140,6 +140,12 @@ pub func:TY_OWNEDFD = int32() never fails { pass 39i32; };
 // erase the hardware-vector win).
 pub func:TY_SIMD = int32() never fails { pass 40i32; };
 
+// D-036/D-037/D-195 (1.3.2): TWISTED FIXED POINT — Q(N/2).(N/2) on a native
+// iN carrier, the most negative raw value the sticky ERR sentinel (the tbb
+// tables serve both twisted families — same carrier, same sentinel).
+// a = total bits; F = bits/2.
+pub func:TY_TFP = int32() never fails { pass 41i32; };
+
 pub struct:Type = {
     int32:kind;
     int32:a;
@@ -390,6 +396,8 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // A `simd` VALUE IS LANES OF PLAIN SCALARS (D-194) — nothing to drop,
     // stated rather than defaulted per the B-7 walker discipline.
     if (k == (raw TY_SIMD()))     { pass false; }
+    // A `tfp` IS ITS CARRIER'S BITS (D-195) — nothing to drop.
+    if (k == (raw TY_TFP()))      { pass false; }
     pass false;
 };
 
@@ -536,6 +544,14 @@ pub func:tt_tbb = int32(TypeTable->:t, int32:bits) never fails {
     // carrier is signed by construction. Widening a negative code by zext
     // turned -9 into four billion, found by fd_io's write-after-close (0.8.5).
     pass (raw tt_intern(t, raw TY_TBB(), bits, 1i32, 0i32, bytes,
+                        raw int_align(bits), 0i32));
+};
+
+// `tfpN` — the twisted twin (D-195): same carrier, same signedness reasoning,
+// same sentinel; the Q scale (F = N/2) lives in the OPERATIONS, not the layout.
+pub func:tt_tfp = int32(TypeTable->:t, int32:bits) never fails {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_TFP(), bits, 1i32, 0i32, bytes,
                         raw int_align(bits), 0i32));
 };
 
@@ -1328,6 +1344,10 @@ pub func:type_is_ordered = bool(TypeTable->:t, int32:id) never fails {
     if (k == (raw TY_INT()))   { pass true; }
     if (k == (raw TY_FLOAT())) { pass true; }
     if (k == (raw TY_CHAR()))  { pass true; }
+    // A `tfp` is a NUMBER and orders as one (D-195) — unlike `tbb`, whose
+    // values are codes compared only for identity. An ERR operand at any
+    // comparison still traps (D-008 §5); the ordering here is for values.
+    if (k == (raw TY_TFP()))   { pass true; }
     pass false;
 };
 

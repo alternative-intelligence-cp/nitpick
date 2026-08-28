@@ -91,6 +91,10 @@ pub func:type_range = ValueRange(TypeTable->:tyt, int32:t) never fails {
     // Twisted Balanced Binary. So `tbbN` holds magnitudes up to `2^(N-1) - 1`,
     // the same as `intN` minus one value.
     if (k == (raw TY_TBB()))   { pass (raw vr(true, bits - 1i32)); }
+    // A `tfp`'s INTEGER magnitude — Q(I).(F) holds |v| < 2^(I-1) (D-195).
+    // Its own casts are classified by the dedicated arms above; this row
+    // exists so the lossy DIAGNOSTIC explains the right direction.
+    if (k == (raw TY_TFP()))   { pass (raw vr(true, (bits / 2i32) - 1i32)); }
     if (k == (raw TY_FLOAT())) { pass (raw vr(true, raw float_significand_bits(bits))); }
     if (k == (raw TY_BOOL()))  { pass (raw vr(false, 1i32)); }
     if (k == (raw TY_CHAR())) {
@@ -170,6 +174,54 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // that answer is the truthiness this language does not have (0.4.2). `=>!`
     // exists to opt out of a CHECK, not to invent a meaning.
     if (tk == (raw TY_BOOL())) { pass (raw CAST_IMPOSSIBLE()); }
+
+    // --- `tfp` casts (D-195) — value conversions under the sentinel discipline --
+    //
+    // Within the family: widening keeps every value (the raw shifts up by the
+    // F difference; ERR maps to ERR) so `=>` accepts it; narrowing loses
+    // precision, `=>!`. Leaving the family drops the fraction (`=>! intN`,
+    // §5's own rule) or precision (`=>!` to a float — except `tfp32 => flt64`,
+    // whose 32 raw bits fit a 53-bit mantissa losslessly). Entering it from an
+    // integer is lossless exactly when the integer's whole range fits the
+    // Q integer half (B < I; the balanced range excludes the one extra
+    // negative value, which is why B == I does not fit); from a float it is
+    // always `=>!`. `tbb` and everything else has no conversion at all — the
+    // raw bits mean different VALUES (scale 2^F), so a reinterpretation would
+    // be a forgery, not a cast.
+    if (fk == (raw TY_TFP())) {
+        int32:fb = raw type_int_bits(tyt, from);
+        if (tk == (raw TY_TFP())) {
+            if ((raw type_int_bits(tyt, to)) > fb) { pass (raw CAST_OK()); }
+            pass (raw CAST_LOSSY());
+        }
+        if (tk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
+        if (tk == (raw TY_FLOAT())) {
+            int32:tfb = raw type_int_bits(tyt, to);
+            if (tfb > 64i32) { pass (raw CAST_IMPOSSIBLE()); }
+            if (fb == 32i32) {
+                if (tfb == 64i32) { pass (raw CAST_OK()); }
+            }
+            pass (raw CAST_LOSSY());
+        }
+        pass (raw CAST_IMPOSSIBLE());
+    }
+    if (tk == (raw TY_TFP())) {
+        int32:tb = raw type_int_bits(tyt, to);
+        if (fk == (raw TY_INT())) {
+            int32:sb = raw type_int_bits(tyt, from);
+            if (raw type_is_signed(tyt, from)) {
+                if (sb < (tb / 2i32)) { pass (raw CAST_OK()); }
+            } else {
+                if (sb < (tb / 2i32)) { pass (raw CAST_OK()); }
+            }
+            pass (raw CAST_LOSSY());
+        }
+        if (fk == (raw TY_FLOAT())) {
+            if ((raw type_int_bits(tyt, from)) > 64i32) { pass (raw CAST_IMPOSSIBLE()); }
+            pass (raw CAST_LOSSY());
+        }
+        pass (raw CAST_IMPOSSIBLE());
+    }
 
     // --- `tbb` is never a straight bit operation (D-008 §6) ----------------------
     //
