@@ -568,6 +568,29 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
         int32:stid = raw exprtypes_get(x.et, id);
+        // A frac's ERR is the canonical TRIPLE (D-198): {minN, minN, 0},
+        // spelled as the aggregate constant.
+        if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_FRAC())) {
+            int32:fsb = raw type_int_bits(x.fe.ctx.types, stid);
+            string:fsmn = raw tbb_min_decimal(fsb);
+            if (fsmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:fscll = raw frac_comp_ll(fsb);
+            LlType:fsll = raw ll_type(x.fe.ctx, stid);
+            if (!(raw ll_is_ok(fsll))) {
+                pass (raw iv_from_ll_at(x, fsll, stid, n.span));
+            }
+            string:fsc = raw string_concat("{ ", fscll);
+            fsc = raw string_concat(fsc, " ");
+            fsc = raw string_concat(fsc, fsmn);
+            fsc = raw string_concat(fsc, ", ");
+            fsc = raw string_concat(fsc, fscll);
+            fsc = raw string_concat(fsc, " ");
+            fsc = raw string_concat(fsc, fsmn);
+            fsc = raw string_concat(fsc, ", ");
+            fsc = raw string_concat(fsc, fscll);
+            fsc = raw string_concat(fsc, " 0 }");
+            pass (raw iv(move(fsll.text), move(fsc), stid));
+        }
         int32:sbits2 = raw type_int_bits(x.fe.ctx.types, stid);
         string:smn = raw tbb_min_decimal(sbits2);
         if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
@@ -972,6 +995,18 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIsErrExpr) {
         IrVal:ov = raw emit_expr(x, raw expr_operand(n));
         if (!(raw iv_is_ok(ov))) { pass ov; }
+        // A frac's look is the aggregate disjunction (D-198): whole or num
+        // at the sentinel, or denom 0.
+        if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_FRAC())) {
+            int32:zb = raw type_int_bits(x.fe.ctx.types, ov.type_id);
+            string:zmn = raw tbb_min_decimal(zb);
+            if (zmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:ze = raw frac_err_test(x, ov, raw frac_comp_ll(zb), zmn);
+            string:zz = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(zz, " = zext i1 ",
+                              raw string_concat(ze, " to i8")));
+            pass (raw iv("i8", move(zz), 0i32));
+        }
         int32:obits = raw type_int_bits(x.fe.ctx.types, ov.type_id);
         string:mn = raw tbb_min_decimal(obits);
         if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
@@ -1344,6 +1379,31 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         // overflow on, and it is not a value. A select, branch-free, the
         // same shape the type's arithmetic has.
         int32:utid = raw exprtypes_get(x.et, raw expr_operand(n));
+        // A frac negates through the CORE — sub from the zero frac {0, 0, 1}
+        // (D-198): exact, invariant-preserving, and sticky under the same
+        // taint select as every other frac operation.
+        if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_FRAC())) {
+            int32:ufb = raw type_int_bits(x.fe.ctx.types, utid);
+            string:ufcll = raw frac_comp_ll(ufb);
+            string:ufmn = raw tbb_min_decimal(ufb);
+            string:ufbound = raw tbb_max_decimal(ufb);
+            if (ufmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:uferr = raw frac_err_test(x, v, ufcll, ufmn);
+            string:ufa = raw frac_args256(x, v);
+            string:ufr = raw irw_temp(x.fe.w);
+            string:ufh = raw cat5(ufr, " = call ", raw frac_ret_ll(),
+                              " @\"npk.prelude.npk_frac_sub\"(",
+                              "i256 0, i256 0, i256 1, ");
+            string:uft = raw cat3(ufa, ", i256 ", ufbound);
+            drop irw_line(x.fe.w, raw string_concat(ufh,
+                              raw string_concat(uft, ")")));
+            string:ufp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ufp, " = extractvalue ",
+                              raw frac_ret_ll(), " ",
+                              raw string_concat(ufr, ", 0")));
+            pass (raw frac_pack(x, ufp, uferr, ufcll,
+                                raw string_concat(v.ll, ""), ufmn, v.type_id));
+        }
         bool:twneg = ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TBB()));
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TFP())) { twneg = true; }
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_DIM())) { twneg = true; }
@@ -1764,6 +1824,45 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
         }
     }
 
+    // FRAC ARITHMETIC (D-198, 1.3.5): unpack → widen → THE PRELUDE CORE →
+    // narrow-or-ERR (see the frac lowering block). The four operators map to
+    // the four core symbols; the checker's gate means nothing else arrives.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FRAC())) {
+            int32:fcb = raw type_int_bits(x.fe.ctx.types, lt);
+            string:fcll = raw frac_comp_ll(fcb);
+            string:fmn = raw tbb_min_decimal(fcb);
+            string:fbound = raw tbb_max_decimal(fcb);
+            if (fmn.len == 0i64) { pass (raw iv_broken(at)); }
+            string:aerr = raw frac_err_test(x, lhs, fcll, fmn);
+            string:berr = raw frac_err_test(x, rhs, fcll, fmn);
+            string:ftaint = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ftaint, " = or i1 ", aerr, ", ", berr));
+            string:fname = "";
+            if (op == TokenKind.OpPlus)  { fname = "npk_frac_add"; }
+            if (op == TokenKind.OpMinus) { fname = "npk_frac_sub"; }
+            if (op == TokenKind.OpStar)  { fname = "npk_frac_mul"; }
+            if (op == TokenKind.OpSlash) { fname = "npk_frac_div"; }
+            if (fname.len == 0i64) { pass (raw iv_broken(at)); }
+            string:fa = raw frac_args256(x, lhs);
+            string:fb = raw frac_args256(x, rhs);
+            string:fcallr = raw irw_temp(x.fe.w);
+            string:fhead = raw cat5(fcallr, " = call ", raw frac_ret_ll(),
+                                " @\"npk.prelude.", fname);
+            string:fargs = raw cat5("\"(", fa, ", ", fb, ", i256 ");
+            drop irw_line(x.fe.w, raw string_concat(fhead,
+                              raw string_concat(fargs,
+                                  raw string_concat(fbound, ")"))));
+            string:fres0 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fres0, " = extractvalue ",
+                              raw frac_ret_ll(), " ",
+                              raw string_concat(fcallr, ", 0")));
+            pass (raw frac_pack(x, fres0, ftaint, fcll,
+                                raw string_concat(lhs.ll, ""), fmn,
+                                lhs.type_id));
+        }
+    }
+
     // TERNARY ARITHMETIC (D-197, 1.3.4): sticky ERR, overflow past the
     // BALANCED bound → ERR — the D-144 discipline against the family's own
     // range rather than the carrier's (a tryte overflows at ±29524, not at
@@ -2150,6 +2249,46 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         }
     }
 
+    // A FRAC COMPARES THROUGH THE EXACT CORE (D-198, 1.3.5) — BEFORE the
+    // non-scalar belt below, which would call the first aggregate the
+    // checker ADMITS to comparison a defect. Taint traps first (a
+    // comparison is a decision point — D-008 §5), then the sign of the
+    // cross-multiplied difference answers every predicate, signed.
+    int32:fqlt = raw exprtypes_get(x.et, raw expr_lhs(n));
+    if (fqlt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, fqlt)) == (raw TY_FRAC())) {
+            string:qpred = raw icmp_name(op, true);
+            if (qpred.len > 0i64) {
+                int32:qcb = raw type_int_bits(x.fe.ctx.types, fqlt);
+                string:qcll = raw frac_comp_ll(qcb);
+                string:qmn = raw tbb_min_decimal(qcb);
+                if (qmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+                string:qa = raw frac_err_test(x, lhs, qcll, qmn);
+                string:qb = raw frac_err_test(x, rhs, qcll, qmn);
+                string:qt = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(qt, " = or i1 ", qa, ", ", qb));
+                drop tbb_trap_if(x, qt, n.span);
+                string:qaa = raw frac_args256(x, lhs);
+                string:qbb = raw frac_args256(x, rhs);
+                string:qr = raw irw_temp(x.fe.w);
+                string:qh = raw cat5(qr,
+                                 " = call { i32, i32 } @\"npk.prelude.npk_frac_cmp\"(",
+                                 qaa, ", ", qbb);
+                drop irw_line(x.fe.w, raw string_concat(qh, ")"));
+                string:qs = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(qs, " = extractvalue { i32, i32 } ",
+                                  raw string_concat(qr, ", 0")));
+                string:qc = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(qc, " = icmp ", qpred, " i32 ",
+                                  raw string_concat(qs, ", 0")));
+                string:qz = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(qz, " = zext i1 ",
+                                  raw string_concat(qc, " to i8")));
+                pass (raw iv("i8", move(qz), 0i32));
+            }
+        }
+    }
+
     // A COMPARISON ON A NON-SCALAR IS NOW A DEFECT, NOT A RUNG (D-169, 1.0.9c).
     // `icmp` takes integers, pointers and nothing else; the checker refuses `==`
     // on a struct, array, `Result`, `string`, `dyn`, two non-`NIL` `Optional`s
@@ -2192,6 +2331,10 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // A ternary value's carrier is signed (D-197): balanced order compares
     // as numeric order — the value representation's whole point.
     if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) {
+        signed = true;
+    }
+    // A frac compares through the core's SIGN (D-198) — a signed int32.
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FRAC())) {
         signed = true;
     }
 
@@ -2780,6 +2923,137 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
     pass (raw iv(move(want.text), move(rz6), wid));
 };
 
+// --- the frac lowering (D-198, 1.3.5) -----------------------------------------
+//
+// A frac is `{ iN, iN, iN }`, and its arithmetic is the PRELUDE CORE's: the
+// emitter unpacks, widens to i256, calls the deterministic prelude symbol
+// (`@"npk.prelude.npk_frac_*"` — every prelude function emits into every
+// program), and narrows back or lands on the canonical ERR triple
+// {minN, minN, 0}. Taint is the EMITTER's: the operands' `is_err` is OR-ed
+// into the final selects and the core stays taint-blind — stickiness is the
+// caller's, exactness is the core's.
+
+// The FracParts half of the core's return, and the full Result wrapper.
+func:frac_parts_ll = string() never fails { pass "{ i8, i256, i256, i256 }"; };
+func:frac_ret_ll = string() never fails { pass "{ { i8, i256, i256, i256 }, i32 }"; };
+
+// is_err over a frac value: whole==min | num==min | denom==0 — D-198's
+// disjunction, so a partially-forged state reads as ERR too.
+func:frac_err_test = string(ExprEmitter->:x, IrVal:v, string:cll,
+                            string:mn) never fails {
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 0")));
+    string:n2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(n2, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 1")));
+    string:d = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(d, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 2")));
+    string:t1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t1, " = icmp eq ", cll, " ",
+                      raw cat3(w, ", ", mn)));
+    string:t2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t2, " = icmp eq ", cll, " ",
+                      raw cat3(n2, ", ", mn)));
+    string:t3 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t3, " = icmp eq ", cll, " ",
+                      raw string_concat(d, ", 0")));
+    string:o1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(o1, " = or i1 ", t1, ", ", t2));
+    string:o2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(o2, " = or i1 ", o1, ", ", t3));
+    pass o2;
+};
+
+// A frac value's three components widened to i256 — whole and num sext,
+// denom zext (it is unsigned) — as call-argument text.
+func:frac_args256 = string(ExprEmitter->:x, IrVal:v) never fails {
+    string:w = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 0")));
+    string:n2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(n2, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 1")));
+    string:d = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(d, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 2")));
+    int32:cb = raw type_int_bits(x.fe.ctx.types, v.type_id);
+    string:cll = raw frac_comp_ll(cb);
+    string:we = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(we, " = sext ", cll, " ",
+                      raw string_concat(w, " to i256")));
+    string:ne = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ne, " = sext ", cll, " ",
+                      raw string_concat(n2, " to i256")));
+    string:de = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(de, " = zext ", cll, " ",
+                      raw string_concat(d, " to i256")));
+    string:a1 = raw string_concat("i256 ", we);
+    a1 = raw string_concat(a1, ", i256 ");
+    a1 = raw string_concat(a1, ne);
+    a1 = raw string_concat(a1, ", i256 ");
+    pass (raw string_concat(a1, de));
+};
+
+func:frac_comp_ll = string(int32:bits) never fails {
+    pass (raw string_concat("i", raw int_to_string(bits => int64)));
+};
+
+// Narrow the core's parts back to the width, or land on the ERR triple —
+// `bad` is the OR of the operands' taint and the core's own `ok: false`.
+func:frac_pack = IrVal(ExprEmitter->:x, string:partsref, string:taint,
+                       string:cll, string:structll, string:mn,
+                       int32:ftid) never fails {
+    string:ok8 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ok8, " = extractvalue ", raw frac_parts_ll(), " ",
+                      raw string_concat(partsref, ", 0")));
+    string:okb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(okb, " = icmp ne i8 ",
+                      raw string_concat(ok8, ", 0")));
+    string:notok = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(notok, " = xor i1 ",
+                      raw string_concat(okb, ", true")));
+    string:bad = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(bad, " = or i1 ", taint, ", ", notok));
+    string:w256 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(w256, " = extractvalue ", raw frac_parts_ll(), " ",
+                      raw string_concat(partsref, ", 1")));
+    string:n256 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(n256, " = extractvalue ", raw frac_parts_ll(), " ",
+                      raw string_concat(partsref, ", 2")));
+    string:d256 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(d256, " = extractvalue ", raw frac_parts_ll(), " ",
+                      raw string_concat(partsref, ", 3")));
+    string:wt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(wt, " = trunc i256 ", w256, " to ", cll));
+    string:nt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(nt, " = trunc i256 ", n256, " to ", cll));
+    string:dt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dt, " = trunc i256 ", d256, " to ", cll));
+    string:ws = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ws, " = select i1 ", bad, ", ",
+                      raw cat5(cll, " ", mn, ", ",
+                          raw cat3(cll, " ", wt))));
+    string:ns = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ns, " = select i1 ", bad, ", ",
+                      raw cat5(cll, " ", mn, ", ",
+                          raw cat3(cll, " ", nt))));
+    string:ds = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(ds, " = select i1 ", bad, ", ",
+                      raw cat5(cll, " 0, ", cll, " ", dt)));
+    string:u0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " undef, ",
+                      raw string_concat(raw cat3(cll, " ", ws), ", 0")));
+    string:u1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u1, " = insertvalue ", structll, " ",
+                      raw string_concat(raw cat5(u0, ", ", cll, " ", ns), ", 1")));
+    string:u2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u2, " = insertvalue ", structll, " ",
+                      raw string_concat(raw cat5(u1, ", ", cll, " ", ds), ", 2")));
+    pass (raw iv(raw string_concat(structll, ""), move(u2), ftid));
+};
+
 // TERNARY CASTS (D-197, 1.3.4). Within the family the VALUE is the value and
 // the SENTINEL maps; a target whose balanced bound is smaller takes the
 // tbb⇄tbb runtime discipline — trap under `=>`, saturate to ERR under `=>!`
@@ -2960,6 +3234,243 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
     pass (raw iv(move(want.text), move(res5), wid));
 };
 
+// The insert chain for a frac triple — one helper, three users.
+func:frac_build = string(ExprEmitter->:x, string:structll, string:cll,
+                         string:w, string:n2, string:d) never fails {
+    string:u0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " undef, ",
+                      raw string_concat(raw cat3(cll, " ", w), ", 0")));
+    string:u1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u1, " = insertvalue ", structll, " ",
+                      raw string_concat(raw cat5(u0, ", ", cll, " ", n2), ", 1")));
+    string:u2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(u2, " = insertvalue ", structll, " ",
+                      raw string_concat(raw cat5(u1, ", ", cll, " ", d), ", 2")));
+    pass u2;
+};
+
+// FRAC CASTS (D-198, 1.3.5). Widths widen `=>` (components extend, the
+// sentinel maps) and narrow `=>!` (a reduced form that does not fit absorbs
+// as ERR — the family's own discipline). Leaving — `=>!` only, and ERR
+// TRAPS UNDER BOTH SPELLINGS (D-144 as amended): `flt64` computes
+// whole + num/denom in double (each conversion rounds once — the
+// acknowledged loss), `intN` truncates toward zero (whole, plus one when
+// whole is negative and num nonzero — the mixed form's own edge).
+// Entering from an integer builds {v, 0, 1} with the balanced-bound guard
+// (trap under `=>`, absorb under `=>!`); the most-negative forge-edge lies
+// inside the guard.
+func:emit_frac_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+                            move LlType:want, int32:wid) never fails {
+    bool:unchecked = false;
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
+    int32:sk = raw type_kind(x.fe.ctx.types, v.type_id);
+    int32:dk = raw type_kind(x.fe.ctx.types, wid);
+
+    if (sk == (raw TY_FRAC())) {
+        int32:sb = raw type_int_bits(x.fe.ctx.types, v.type_id);
+        string:scll = raw frac_comp_ll(sb);
+        string:smn = raw tbb_min_decimal(sb);
+        if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:serr = raw frac_err_test(x, v, scll, smn);
+        string:sw = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sw, " = extractvalue ", v.ll, " ",
+                          raw string_concat(v.ref, ", 0")));
+        string:sn = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sn, " = extractvalue ", v.ll, " ",
+                          raw string_concat(v.ref, ", 1")));
+        string:sd = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(sd, " = extractvalue ", v.ll, " ",
+                          raw string_concat(v.ref, ", 2")));
+
+        if (dk == (raw TY_FRAC())) {
+            int32:db = raw type_int_bits(x.fe.ctx.types, wid);
+            string:dcll = raw frac_comp_ll(db);
+            string:dmn = raw tbb_min_decimal(db);
+            if (dmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            if (db > sb) {
+                string:ww = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(ww, " = sext ", scll, " ",
+                                  raw cat3(sw, " to ", dcll)));
+                string:wn = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(wn, " = sext ", scll, " ",
+                                  raw cat3(sn, " to ", dcll)));
+                string:wd = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(wd, " = zext ", scll, " ",
+                                  raw cat3(sd, " to ", dcll)));
+                string:pw = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(pw, " = select i1 ", serr, ", ",
+                                  raw cat5(dcll, " ", dmn, ", ",
+                                      raw cat3(dcll, " ", ww))));
+                string:pn = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(pn, " = select i1 ", serr, ", ",
+                                  raw cat5(dcll, " ", dmn, ", ",
+                                      raw cat3(dcll, " ", wn))));
+                string:pd = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(pd, " = select i1 ", serr, ", ",
+                                  raw cat5(dcll, " 0, ", dcll, " ", wd)));
+                string:bw = raw frac_build(x, want.text, dcll, pw, pn, pd);
+                pass (raw iv(move(want.text), move(bw), wid));
+            }
+            // Narrowing — `=>!` only by the checker: components range-check
+            // against the smaller balanced bounds; a miss absorbs as ERR.
+            string:dbound = raw tbb_max_decimal(db);
+            string:ubound = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ubound, " = add ", scll, " ",
+                              raw cat3(dbound, ", ", dbound)));
+            string:ub1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ub1, " = add ", scll, " ",
+                              raw string_concat(ubound, ", 1")));
+            string:c1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(c1, " = icmp sgt ", scll, " ",
+                              raw cat3(sw, ", ", dbound)));
+            string:c2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(c2, " = icmp slt ", scll, " ",
+                              raw cat4(sw, ", -", dbound, "")));
+            string:c3 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(c3, " = icmp sgt ", scll, " ",
+                              raw cat3(sn, ", ", dbound)));
+            string:c4 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(c4, " = icmp slt ", scll, " ",
+                              raw cat4(sn, ", -", dbound, "")));
+            string:c5 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(c5, " = icmp ugt ", scll, " ",
+                              raw cat3(sd, ", ", ub1)));
+            string:o1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o1, " = or i1 ", c1, ", ", c2));
+            string:o2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o2, " = or i1 ", o1, ", ", c3));
+            string:o3 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o3, " = or i1 ", o2, ", ", c4));
+            string:o4 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o4, " = or i1 ", o3, ", ", c5));
+            string:nbad = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nbad, " = or i1 ", serr, ", ", o4));
+            string:tw = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(tw, " = trunc ", scll, " ",
+                              raw cat3(sw, " to ", dcll)));
+            string:tn = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(tn, " = trunc ", scll, " ",
+                              raw cat3(sn, " to ", dcll)));
+            string:td = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(td, " = trunc ", scll, " ",
+                              raw cat3(sd, " to ", dcll)));
+            string:qw = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(qw, " = select i1 ", nbad, ", ",
+                              raw cat5(dcll, " ", dmn, ", ",
+                                  raw cat3(dcll, " ", tw))));
+            string:qn = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(qn, " = select i1 ", nbad, ", ",
+                              raw cat5(dcll, " ", dmn, ", ",
+                                  raw cat3(dcll, " ", tn))));
+            string:qd = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(qd, " = select i1 ", nbad, ", ",
+                              raw cat5(dcll, " 0, ", dcll, " ", td)));
+            string:bn = raw frac_build(x, want.text, dcll, qw, qn, qd);
+            pass (raw iv(move(want.text), move(bn), wid));
+        }
+
+        // Leaving the family: the taint has no image — trap, both spellings.
+        drop tbb_trap_if(x, serr, n.span);
+        if (dk == (raw TY_FLOAT())) {
+            string:fw = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fw, " = sitofp ", scll, " ",
+                              raw string_concat(sw, " to double")));
+            string:fn2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fn2, " = sitofp ", scll, " ",
+                              raw string_concat(sn, " to double")));
+            string:fdd = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fdd, " = uitofp ", scll, " ",
+                              raw string_concat(sd, " to double")));
+            string:fq = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fq, " = fdiv double ", fn2, ", ", fdd));
+            string:fs = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fs, " = fadd double ", fw, ", ", fq));
+            pass (raw iv(move(want.text), move(fs), wid));
+        }
+        // → intN: truncation toward zero — whole, plus one when whole is
+        // negative and num nonzero.
+        string:ineg = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ineg, " = icmp slt ", scll, " ",
+                          raw string_concat(sw, ", 0")));
+        string:inz = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(inz, " = icmp ne ", scll, " ",
+                          raw string_concat(sn, ", 0")));
+        string:iboth = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(iboth, " = and i1 ", ineg, ", ", inz));
+        string:iadj = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(iadj, " = zext i1 ", iboth, " to ",
+                          scll));
+        string:iw = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(iw, " = add ", scll, " ",
+                          raw cat3(sw, ", ", iadj)));
+        string:irz = raw tbb_resize(x, scll, iw, want.text, true);
+        pass (raw iv(move(want.text), move(irz), wid));
+    }
+
+    // Entering the family: int → frac builds {v, 0, 1} under the balanced
+    // bound's guard.
+    int32:db2 = raw type_int_bits(x.fe.ctx.types, wid);
+    string:dcll2 = raw frac_comp_ll(db2);
+    string:dmn2 = raw tbb_min_decimal(db2);
+    if (dmn2.len == 0i64) { pass (raw iv_broken(n.span)); }
+    int64:dbnd2 = 0i64;
+    if (db2 == 8i32)  { dbnd2 = 127i64; }
+    if (db2 == 16i32) { dbnd2 = 32767i64; }
+    if (db2 == 32i32) { dbnd2 = 2147483647i64; }
+    if (db2 == 64i32) { dbnd2 = 9223372036854775807i64; }
+    string:dbs2 = raw tbb_max_decimal(db2);
+    bool:ssig = raw type_is_signed(x.fe.ctx.types, v.type_id);
+    int32:sbw = raw type_int_bits(x.fe.ctx.types, v.type_id);
+    bool:can_exceed = true;
+    if (sbw < 63i32) {
+        int64:smax = 1i64 << ((sbw - 1i32) => int64);
+        if (!ssig) { smax = (1i64 << (sbw => int64)) - 1i64; }
+        if (smax <= dbnd2) { can_exceed = false; }
+    }
+    if (!can_exceed) {
+        string:rz0 = raw tbb_resize(x, v.ll, v.ref, dcll2, ssig);
+        string:b0 = raw frac_build(x, want.text, dcll2, rz0, "0", "1");
+        pass (raw iv(move(want.text), move(b0), wid));
+    }
+    string:oor2 = "";
+    if (ssig) {
+        string:h3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(h3, " = icmp sgt ", v.ll, " ",
+                          raw cat3(v.ref, ", ", dbs2)));
+        string:l3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(l3, " = icmp slt ", v.ll, " ",
+                          raw cat4(v.ref, ", -", dbs2, "")));
+        string:o5 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(o5, " = or i1 ", h3, ", ", l3));
+        oor2 = move(o5);
+    } else {
+        string:o6 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(o6, " = icmp ugt ", v.ll, " ",
+                          raw cat3(v.ref, ", ", dbs2)));
+        oor2 = move(o6);
+    }
+    if (!unchecked) {
+        drop tbb_trap_if(x, oor2, n.span);
+        string:rz4 = raw tbb_resize(x, v.ll, v.ref, dcll2, ssig);
+        string:b4 = raw frac_build(x, want.text, dcll2, rz4, "0", "1");
+        pass (raw iv(move(want.text), move(b4), wid));
+    }
+    string:rz5 = raw tbb_resize(x, v.ll, v.ref, dcll2, ssig);
+    string:sw5 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sw5, " = select i1 ", oor2, ", ",
+                      raw cat5(dcll2, " ", dmn2, ", ",
+                          raw cat3(dcll2, " ", rz5))));
+    string:sn5 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sn5, " = select i1 ", oor2, ", ",
+                      raw cat5(dcll2, " ", dmn2, ", ",
+                          raw string_concat(dcll2, " 0"))));
+    string:sd5 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(sd5, " = select i1 ", oor2, ", ",
+                      raw cat4(dcll2, " 0, ", dcll2, " 1")));
+    string:b5 = raw frac_build(x, want.text, dcll2, sw5, sn5, sd5);
+    pass (raw iv(move(want.text), move(b5), wid));
+};
+
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
@@ -3031,6 +3542,19 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     }
     if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TERN())) {
         pass (raw emit_tern_cast(x, n, v, move(want), wid));
+    }
+
+    // The exact rationals (D-198, 1.3.5): an aggregate family with its own
+    // matrix — before the early-out for uniformity with its siblings (its
+    // struct text collides with nothing the checker admits as a partner).
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_FRAC())) {
+        if (v.type_id == wid) {
+            pass (raw iv(move(want.text), move(v.ref), wid));
+        }
+        pass (raw emit_frac_cast(x, n, v, move(want), wid));
+    }
+    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_FRAC())) {
+        pass (raw emit_frac_cast(x, n, v, move(want), wid));
     }
 
     if (raw string_eq(v.ll, want.text)) {
@@ -8062,6 +8586,21 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         pass (raw iv("i64",
                      raw int_to_string((raw type_tern_digits(x.fe.ctx.types, btid)) => int64),
                      fty));
+    }
+    // A frac's read-only component views (D-198): whole/num/denom by index.
+    if (bkind == (raw TY_FRAC())) {
+        string:fnm = raw intern_get(x.interns, n.payload =>! int32);
+        string:fidx = "0";
+        if (raw string_eq(fnm, "num"))   { fidx = "1"; }
+        if (raw string_eq(fnm, "denom")) { fidx = "2"; }
+        LlType:fmll = raw ll_type(x.fe.ctx, fty);
+        if (!(raw ll_is_ok(fmll))) {
+            pass (raw iv_from_ll_at(x, fmll, fty, n.span));
+        }
+        string:fmv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(fmv, " = extractvalue ", bv.ll, " ",
+                          raw cat3(bv.ref, ", ", fidx)));
+        pass (raw iv(move(fmll.text), move(fmv), fty));
     }
     if (bkind == (raw TY_STRUCT())) {
         FieldInfo:fi = raw struct_field(x.tr, btid, n.payload =>! int32, x.scope);

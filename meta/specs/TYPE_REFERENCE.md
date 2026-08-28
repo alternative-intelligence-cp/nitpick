@@ -1243,11 +1243,39 @@ Supported unit dimensions (compile-time annotations only):
 %frac32 = type { i32, i32, i32 }
 ```
 
-Operations:
-- `frac_add(a, b)`, `frac_sub(a, b)`, `frac_mul(a, b)`, `frac_div(a, b)`
-- `frac_simplify(a)` — reduce to lowest terms (GCD reduction)
-- `frac_to_flt64(a)` — convert to floating point
-- `frac_from_int(whole, numer, denom)` — construct from parts
+**The function family above became OPERATORS at ratification** (D-196 batch's
+D-198, landed 1.3.5) — the blueprint's one-mechanism rule — and normalization
+is AUTOMATIC after every operation, never a call:
+
+- **Operators are `+ - * /` and the comparisons, exactly** — no `%`, no
+  bitwise. Same-width only. Negation is unary `-` (through the same core).
+- **The five invariants hold after every operation**: denom > 0; num ≥ 0
+  when whole ≠ 0; num < denom; gcd(num, denom) = 1; the sign rides whole
+  (or num when whole = 0). "Call `frac_simplify` yourself" was a latent-ERR
+  generator and is gone.
+- **ERR** is `{minN, minN, 0}` canonically, and `is_err` answers the
+  disjunction — whole or num at the width's most-negative, or denom 0 — so a
+  partially-forged state reads as ERR too. Sticky, D-144 discipline;
+  division by an exact zero yields ERR (D-007's twisted row); a tainted
+  operand at a comparison traps (−4100); overflow during normalization — a
+  reduced form that still exceeds the width — is ERR: the family's promise
+  is "exact or ERR", never "rounded".
+- **No literals** — `int => frac` is the lossless entry (`{v, 0, 1}`), and a
+  ratio is division. No `pick` selectors — ERR is the only nameable case,
+  and `is_err` is the look.
+- **Members `.whole` / `.num` / `.denom`** are read-only component views
+  (values, not places — the invariants cannot be broken through them).
+- **Casts**: widths widen `=>`, narrow `=>!` (absorbing as ERR when the
+  reduced form does not fit); `frac =>! flt64` rounds (the acknowledged
+  form — this section's old `frac_to_flt64` implied a checked conversion,
+  corrected at ratification); `frac =>! intN` truncates toward zero; ERR
+  traps under BOTH spellings on any exit; a float never enters, and the
+  other twisted families are reached through the plain integer.
+- **`ToString`**: "whole num/denom" — "3 1/3", "-2 5/8", "0", "ERR".
+- **The implementation is the PRELUDE's** (1.3.5): one `int256` core —
+  `npk_gcd256`, `npk_frac_norm`, the four operations, `cmp` — with the
+  width's bounds as parameters; the emitter unpacks, calls, and repacks.
+  The arithmetic a verifier reads is Nitpick source, not hand IR.
 
 ---
 

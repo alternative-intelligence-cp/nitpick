@@ -164,6 +164,16 @@ pub func:TY_DIM = int32() never fails { pass 42i32; };
 // a planned target, and the frontend checks these as ternary (§7).
 pub func:TY_TERN = int32() never fails { pass 43i32; };
 
+// D-198 (1.3.5): the exact rationals `frac8/16/32/64` — invariant-normalized
+// mixed numbers `{whole: iN, num: iN, denom: uN}`, value = whole + num/denom,
+// exact or ERR. a = COMPONENT bits (8/16/32/64); the layout is the triple
+// (sizes 3/6/12/24, component alignment). The canonical ERR is
+// {minN, minN, 0}, and `is_err` is D-198's disjunction — whole or num at the
+// width's most-negative, or denom 0 — so a partially-forged state reads as
+// ERR too. The FIRST non-scalar twisted family: everything that assumed "a
+// twisted value is one register" gets its own frac arm.
+pub func:TY_FRAC = int32() never fails { pass 44i32; };
+
 pub struct:Type = {
     int32:kind;
     int32:a;
@@ -431,6 +441,8 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (k == (raw TY_DIM()))      { pass false; }
     // A ternary value IS its carrier's bits (D-197) — nothing to drop.
     if (k == (raw TY_TERN()))     { pass false; }
+    // A frac is three plain components (D-198) — nothing to drop.
+    if (k == (raw TY_FRAC()))     { pass false; }
     pass false;
 };
 
@@ -626,6 +638,14 @@ pub func:type_tern_base = int32(TypeTable->:t, int32:id) never fails {
 
 pub func:type_tern_digits = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).c);
+};
+
+// --- the exact rationals (D-198, 1.3.5) ----------------------------------------
+
+pub func:tt_frac = int32(TypeTable->:t, int32:bits) never fails {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_FRAC(), bits, 1i32, 0i32, bytes * 3i64,
+                        raw int_align(bits), 0i32));
 };
 
 // --- `dim256<Unit>` (D-196, 1.3.3) --------------------------------------------
@@ -1574,6 +1594,9 @@ pub func:type_is_ordered = bool(TypeTable->:t, int32:id) never fails {
     // A ternary value orders in BALANCED order (D-197), which under the
     // value representation IS numeric order — the whole point of it.
     if (k == (raw TY_TERN()))  { pass true; }
+    // A frac is an exact rational and orders as one (D-198) — the compare
+    // runs through the exact core, never a component-wise guess.
+    if (k == (raw TY_FRAC()))  { pass true; }
     pass false;
 };
 

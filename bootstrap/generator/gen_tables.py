@@ -567,12 +567,15 @@ pub func:is_keyword = bool(string:text) {
         elif name in NOT_SCALAR:
             continue
         else:
-            m = re.match(r'^(int|uint|tbb|tfp|flt|char)(\d+)$', name)
+            m = re.match(r'^(int|uint|tbb|tfp|flt|frac|char)(\d+)$', name)
             if m:
                 fam, bits = m.group(1), m.group(2)
                 kind = {"int": "TY_INT", "uint": "TY_INT", "tbb": "TY_TBB",
                         # 1.3.2 (D-195): twisted fixed point, native iN.
                         "tfp": "TY_TFP",
+                        # 1.3.5 (D-198): exact rationals -- bits is the
+                        # COMPONENT width of the {iN, iN, uN} triple.
+                        "frac": "TY_FRAC",
                         "flt": "TY_FLOAT", "char": "TY_CHAR"}[fam]
                 sgn = "true" if fam == "int" else "false"
                 bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(true, raw %s(), %si32, %s, 0i32)); }'

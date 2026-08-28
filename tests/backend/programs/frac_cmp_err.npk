@@ -1,0 +1,27 @@
+// expect-exit: 24
+//
+// A tainted frac at a bare comparison TRAPS (-4100) — D-008 §5 through
+// D-198, the one taint discipline every twisted family shares; the exact
+// core is never consulted for a value that is not a value. `is_err` is the
+// look; comparisons are decisions.
+mod:frac_cmp_err;
+
+func:main = int32(cstring[]:argv) {
+    frac32:z = (argv.len =>! int32 - 1i32) => frac32;   // 0 at run time
+    frac32:e = (5i32 => frac32) / z;                    // ERR
+    frac32:one = 1i32 => frac32;
+    if (e < one) { exit 10i32; }                        // must trap
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

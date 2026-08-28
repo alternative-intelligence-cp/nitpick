@@ -119,6 +119,18 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     // writes a symbol onto an identifier, and `type_ident` reads it back.
     if (s.kind == StmtKind.StmtPickStmt) {
         int32:selt = raw type_of_expr(e, raw pick_selector(s));
+        // A FRAC SELECTOR IS REFUSED BY NAME (D-198, 1.3.5): a frac has no
+        // enumerable cases beyond ERR — `is_err` is the look, comparisons
+        // are the decisions — and the scalar pick machinery compares one
+        // register where a frac is three.
+        if (selt != 0i32) {
+            if ((raw type_kind(e.types, selt)) == (raw TY_FRAC())) {
+                drop diaglist_push(e.diags, raw diag_error(raw TYPE_FRAC_RULES(),
+                    "a `pick` does not select on a frac (D-198): its only nameable case is ERR — `is_err` is the look, and comparisons are the decisions",
+                    s.span));
+                pass NIL;
+            }
+        }
         drop type_pick_bindings(e, s, selt);
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
@@ -644,6 +656,18 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                 pass NIL;
             }
             discard(raw type_tern_arith(e, s.span, raw assign_base_op(op),
+                                        want, got));
+            pass NIL;
+        }
+        // And the frac gate (D-198): no `%=`, no bitwise-assign.
+        bool:fracside = ((raw type_kind(e.types, want)) == (raw TY_FRAC()));
+        if ((raw type_kind(e.types, got)) == (raw TY_FRAC())) { fracside = true; }
+        if (fracside) {
+            if (raw is_bitwise_assign(op)) {
+                discard(raw type_bitwise(e, s.span, want, got));
+                pass NIL;
+            }
+            discard(raw type_frac_arith(e, s.span, raw assign_base_op(op),
                                         want, got));
             pass NIL;
         }

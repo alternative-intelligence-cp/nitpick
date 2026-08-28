@@ -234,7 +234,22 @@ early-out defeated the tbb cast matrix at SAME-WIDTH crossings** —
 `tbb32⇄int32` share `i32`, so the crossings 0.9.5's audit hole was
 ABOUT rode through unchecked, passing by coincidence (INT_MIN's bit
 pattern IS the sentinel); the tbb intercept now precedes the early-out
-as tfp's has since 1.3.2.
+as tfp's has since 1.3.2. **1.3.5 landed the `frac*` exact rationals**
+(D-198): the tier's first NON-SCALAR family — `{whole: iN, num: iN,
+denom: uN}`, five invariants after every operation, exact or ERR. The
+algorithms are the PRELUDE's, in Nitpick, in `int256` (one core, the
+width's bounds as parameters; the emitter unpacks → calls the
+deterministic prelude symbol → repacks-or-ERR — the arithmetic a
+verifier reads is source, not hand IR); operators `+ - * /` and
+comparisons exactly (TYPE-052 gates `%`, pick selectors, and literals —
+`int => frac` is the entry); read-only members `.whole/.num/.denom`;
+canonical ERR `{minN, minN, 0}` with the disjunctive `is_err`; casts
+widen `=>`/narrow `=>!`-absorbing, `=>! flt64` rounds, `=>! int`
+truncates toward zero, ERR traps both spellings on exit, and a float
+NEVER enters. Found: D-169's non-scalar compare belt called the first
+checker-ADMITTED aggregate comparison a defect (the frac arm now
+precedes it), plus two reserved-word collisions (`tid`, `fd`) in new
+emitter code that only npkc's own parse catches.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

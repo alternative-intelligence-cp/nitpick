@@ -555,6 +555,21 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
     // `Optional<U>` slot takes a `U` (D-099); asking the wrapper for a width would
     // report "no width suffix" about a slot that plainly names one.
     int32:want = raw expected_value(e);
+    // A FRAC SLOT TAKES NO LITERAL (D-198): `int => frac` is the entry, and
+    // a bare integer is not a mixed number's spelling. Said with the cast in
+    // hand rather than through the generic family refusal.
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_FRAC())) {
+            string:fw1 = raw string_concat("a `",
+                            raw type_display(e.types, e.interns, want));
+            string:fw2 = raw string_concat(fw1,
+                "` is built by conversion, not spelled as a literal (D-198): write `<int> => ");
+            string:fw3 = raw string_concat(fw2,
+                            raw type_display(e.types, e.interns, want));
+            pass (raw te_error(e, raw TYPE_FRAC_RULES(),
+                raw string_concat(fw3, "`"), n.span));
+        }
+    }
     // A TERNARY SLOT takes an unsuffixed INTEGER literal in any base (D-197):
     // decimal and the balanced sequences are SPELLINGS of one value — D-147
     // folded the digits at scan and dropped the base, so they are one thing
@@ -732,6 +747,10 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             // The ternary family carries the same state (D-197):
             // `tryte:t = ERR;` is the taint at that base and width.
             if ((raw type_kind(e.types, werr)) == (raw TY_TERN())) {
+                pass werr;
+            }
+            // And a frac (D-198): the canonical ERR triple at that width.
+            if ((raw type_kind(e.types, werr)) == (raw TY_FRAC())) {
                 pass werr;
             }
         }
@@ -938,6 +957,27 @@ pub func:type_tern_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
                     "` has no division: a single balanced digit divides into nothing anyone writes (D-197) — `tryte` and `nyte` divide"),
                 at));
         }
+    }
+    pass lt;
+};
+
+// FRAC ARITHMETIC (D-198, 1.3.5): `+ - * /` and nothing else — no `%` (the
+// ratified operator list is exact, and a mixed-number remainder has no
+// meaning ratified for it) and no bitwise. Same-type-only; the VALUE
+// semantics — exact or ERR, sticky, division by an exact zero → ERR — are
+// the prelude core's, reached through the emitter's synthesized call.
+pub func:type_frac_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
+                                 int32:lt, int32:rt) never fails {
+    if (lt != rt) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_FRAC())) {
+            pass (raw te_tbb_mixed(e, at, lt, rt));
+        }
+        pass (raw te_tbb_mixed(e, at, rt, lt));
+    }
+    if (op == TokenKind.OpPercent) {
+        pass (raw te_error(e, raw TYPE_FRAC_RULES(),
+            "a frac has no `%` (D-198): the operator list is `+ - * /` and the comparisons, exactly",
+            at));
     }
     pass lt;
 };
@@ -1679,6 +1719,7 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) == (raw TY_TERN())) { pass (e.types.t_bool); }
+    if ((raw type_kind(e.types, t)) == (raw TY_FRAC())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
         string:m1 = raw string_concat("`is_err` tests a twisted value for ERR, and this is `",
                                         raw type_display(e.types, e.interns, t));
@@ -3198,6 +3239,13 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         if ((raw type_kind(e.types, rt)) == (raw TY_TERN())) {
             pass (raw type_tern_arith(e, n.span, op, lt, rt));
         }
+        // And the frac gate (D-198): `%` does not exist for it.
+        if ((raw type_kind(e.types, lt)) == (raw TY_FRAC())) {
+            pass (raw type_frac_arith(e, n.span, op, lt, rt));
+        }
+        if ((raw type_kind(e.types, rt)) == (raw TY_FRAC())) {
+            pass (raw type_frac_arith(e, n.span, op, lt, rt));
+        }
     }
     if (op == TokenKind.OpPlus) {
         if ((raw type_kind(e.types, lt)) == (raw TY_STRING())) {
@@ -3263,6 +3311,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass t; }
         if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass t; }
         if ((raw type_kind(e.types, t)) == (raw TY_TERN())) { pass t; }
+        if ((raw type_kind(e.types, t)) == (raw TY_FRAC())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
             pass (raw te_operand_error(e, n.span, t));
         }

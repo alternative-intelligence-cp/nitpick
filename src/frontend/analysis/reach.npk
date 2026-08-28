@@ -216,6 +216,7 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
             if (ak2 == (raw TY_TFP())) { adiv = false; }
             if (ak2 == (raw TY_DIM())) { adiv = false; }
             if (ak2 == (raw TY_TERN())) { adiv = false; }
+            if (ak2 == (raw TY_FRAC())) { adiv = false; }
         }
         if (adiv) { x.saw_div = true; }
         drop reach_expr(x, raw stmt_target(s), fuel - 1i32);
@@ -350,6 +351,7 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
             if (dk2 == (raw TY_TFP())) { divlike = false; }
             if (dk2 == (raw TY_DIM())) { divlike = false; }
             if (dk2 == (raw TY_TERN())) { divlike = false; }
+            if (dk2 == (raw TY_FRAC())) { divlike = false; }
         }
         if (divlike) { x.saw_div = true; }
     }
@@ -365,6 +367,7 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
         if (nk == (raw TY_TFP()))          { x.saw_tbb = true; }
         if (nk == (raw TY_DIM()))          { x.saw_tbb = true; }
         if (nk == (raw TY_TERN()))         { x.saw_tbb = true; }
+        if (nk == (raw TY_FRAC()))         { x.saw_tbb = true; }
         if (nk == (raw TY_ARENA()))        { x.saw_arena = true; }
         if (nk == (raw TY_SHARED_ARENA())) { x.saw_arena = true; }
     }

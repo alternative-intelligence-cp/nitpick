@@ -1143,3 +1143,198 @@ pub unit:Sieverts = Joules / Kilograms;
 pub unit:Katals = Moles / Seconds;
 pub unit:MetersPerSecond = Meters / Seconds;
 pub unit:MetersPerSecondSquared = Meters / (Seconds * Seconds);
+
+// THE FRAC CORE (D-198, 1.3.5): the exact-rational algorithms, in Nitpick,
+// in int256 — ONE implementation for all four widths, the width's balanced
+// bound a parameter, `ok` the answer to "does the reduced form fit". The
+// EMITTER lowers the frac operators to calls of these (every prelude
+// function emits into every program under its deterministic symbol), so the
+// arithmetic a verifier reads is this source, not hand-written IR. int256
+// because frac64's cross-products reach 2^127 and their SUM overflows i128;
+// nothing below can overflow 256 bits (the largest intermediate is a mul
+// product at ~2^254). The core is TAINT-BLIND: the emitter tests the
+// operands' ERR and discards the result under taint — stickiness is the
+// caller's, exactness is ours.
+pub struct:FracParts = {
+    bool:ok;
+    int256:whole;
+    int256:num;
+    int256:denom;
+};
+
+func:frac_bad = FracParts() never fails {
+    FracParts:b = FracParts{ ok: false, whole: 0i256, num: 0i256, denom: 0i256 };
+    pass b;
+};
+
+pub func:npk_gcd256 = int256(int256:a, int256:b) never fails {
+    int256:x = a;
+    int256:y = b;
+    while (y != 0i256) {
+        int256:t = x % y;
+        x = y;
+        y = t;
+    }
+    pass x;
+};
+
+// Canonical form — D-198's five invariants — from any {w, n, d} with d > 0;
+// d ≤ 0 is ERR (`ok: false`), and so is a reduced form whose components
+// exceed the width's bounds: "exact or ERR", never rounded. The width's
+// valid component ranges are balanced (±bound for whole and num — the
+// most-negative is the sentinel) and 1..2·bound+1 for the unsigned denom.
+pub func:npk_frac_norm = FracParts(int256:w0, int256:n0, int256:d0,
+                                   int256:bound) never fails {
+    if (d0 <= 0i256) { pass (raw frac_bad()); }
+    int256:w = w0;
+    int256:n = n0;
+    int256:d = d0;
+    if (n < 0i256) {
+        int256:an = 0i256 - n;
+        if (an >= d) {
+            w = w - (an / d);
+            n = 0i256 - (an % d);
+        }
+    } else {
+        if (n >= d) {
+            w = w + (n / d);
+            n = n % d;
+        }
+    }
+    if (n != 0i256) {
+        int256:an2 = n;
+        if (an2 < 0i256) { an2 = 0i256 - an2; }
+        int256:g = raw npk_gcd256(an2, d);
+        if (g > 1i256) {
+            n = n / g;
+            d = d / g;
+        }
+    } else {
+        d = 1i256;
+    }
+    if (w != 0i256) {
+        if (n < 0i256) {
+            w = w - 1i256;
+            n = d + n;
+        }
+    }
+    if (w > bound)                     { pass (raw frac_bad()); }
+    if (w < (0i256 - bound))           { pass (raw frac_bad()); }
+    if (n > bound)                     { pass (raw frac_bad()); }
+    if (n < (0i256 - bound))           { pass (raw frac_bad()); }
+    if (d > ((2i256 * bound) + 1i256)) { pass (raw frac_bad()); }
+    FracParts:out = FracParts{ ok: true, whole: w, num: n, denom: d };
+    pass out;
+};
+
+// The improper form w·d + n — exact under the sign convention for negatives
+// too: -2 + 5/8 is -11 over 8.
+func:frac_improper = int256(int256:w, int256:n, int256:d) never fails {
+    pass ((w * d) + n);
+};
+
+pub func:npk_frac_add = FracParts(int256:aw, int256:an, int256:ad,
+                                  int256:bw, int256:bn, int256:bd,
+                                  int256:bound) never fails {
+    if (ad <= 0i256) { pass (raw frac_bad()); }
+    if (bd <= 0i256) { pass (raw frac_bad()); }
+    pass (raw npk_frac_norm(aw + bw, (an * bd) + (bn * ad), ad * bd, bound));
+};
+
+pub func:npk_frac_sub = FracParts(int256:aw, int256:an, int256:ad,
+                                  int256:bw, int256:bn, int256:bd,
+                                  int256:bound) never fails {
+    if (ad <= 0i256) { pass (raw frac_bad()); }
+    if (bd <= 0i256) { pass (raw frac_bad()); }
+    pass (raw npk_frac_norm(aw - bw, (an * bd) - (bn * ad), ad * bd, bound));
+};
+
+pub func:npk_frac_mul = FracParts(int256:aw, int256:an, int256:ad,
+                                  int256:bw, int256:bn, int256:bd,
+                                  int256:bound) never fails {
+    if (ad <= 0i256) { pass (raw frac_bad()); }
+    if (bd <= 0i256) { pass (raw frac_bad()); }
+    int256:pa = raw frac_improper(aw, an, ad);
+    int256:pb = raw frac_improper(bw, bn, bd);
+    pass (raw npk_frac_norm(0i256, pa * pb, ad * bd, bound));
+};
+
+pub func:npk_frac_div = FracParts(int256:aw, int256:an, int256:ad,
+                                  int256:bw, int256:bn, int256:bd,
+                                  int256:bound) never fails {
+    if (ad <= 0i256) { pass (raw frac_bad()); }
+    if (bd <= 0i256) { pass (raw frac_bad()); }
+    int256:pa = raw frac_improper(aw, an, ad);
+    int256:pb = raw frac_improper(bw, bn, bd);
+    // Division by an exact zero is ERR (D-007's twisted row): pb = 0 makes
+    // the new denominator 0, which `norm` refuses — but the sign fix below
+    // must not run on it, so it is said here too.
+    int256:nn = pa * bd;
+    int256:nd = ad * pb;
+    if (nd == 0i256) { pass (raw frac_bad()); }
+    if (nd < 0i256) {
+        nn = 0i256 - nn;
+        nd = 0i256 - nd;
+    }
+    pass (raw npk_frac_norm(0i256, nn, nd, bound));
+};
+
+// Exact three-way comparison by cross-multiplied improper forms — the
+// common denominator ad·bd is positive, so the numerators' order IS the
+// values'. -1, 0, 1.
+pub func:npk_frac_cmp = int32(int256:aw, int256:an, int256:ad,
+                              int256:bw, int256:bn, int256:bd) never fails {
+    int256:pa = (raw frac_improper(aw, an, ad)) * bd;
+    int256:pb = (raw frac_improper(bw, bn, bd)) * ad;
+    if (pa < pb) { pass (0i32 - 1i32); }
+    if (pa > pb) { pass 1i32; }
+    pass 0i32;
+};
+
+// A frac RENDERS ITS MIXED NUMBER (D-198, D-168): "3 1/3", "-2 5/8", "0",
+// "ERR" — exact by construction; the sign rides whole, or num when whole
+// is 0. The members are the read-only component views (1.3.5).
+impl:frac8:ToString = { func:to_string = string(frac8:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    if (self.num == 0i8) { pass (raw int_to_string(self.whole => int64)); }
+    string:head = "";
+    if (self.whole != 0i8) {
+        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+    }
+    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
+    pass (raw string_concat(head,
+              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+}; };
+impl:frac16:ToString = { func:to_string = string(frac16:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    if (self.num == 0i16) { pass (raw int_to_string(self.whole => int64)); }
+    string:head = "";
+    if (self.whole != 0i16) {
+        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+    }
+    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
+    pass (raw string_concat(head,
+              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+}; };
+impl:frac32:ToString = { func:to_string = string(frac32:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    if (self.num == 0i32) { pass (raw int_to_string(self.whole => int64)); }
+    string:head = "";
+    if (self.whole != 0i32) {
+        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+    }
+    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
+    pass (raw string_concat(head,
+              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+}; };
+impl:frac64:ToString = { func:to_string = string(frac64:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    if (self.num == 0i64) { pass (raw int_to_string(self.whole)); }
+    string:head = "";
+    if (self.whole != 0i64) {
+        head = raw string_concat(raw int_to_string(self.whole), " ");
+    }
+    string:fr = raw string_concat(raw int_to_string(self.num), "/");
+    pass (raw string_concat(head,
+              raw string_concat(fr, raw uint_to_decimal(self.denom))));
+}; };

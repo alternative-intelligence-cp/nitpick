@@ -13930,6 +13930,54 @@ ERR", never "rounded". `int => frac` lossless; `frac =>! flt64` rounds so
 it is the acknowledged form (correcting §20); widths widen `=>` / narrow
 `=>!`. `ToString`: "whole num/denom".
 
+### D-198 implementation record (1.3.5)
+
+Design points fixed inside the ratified frame, at open:
+
+1. **The algorithms live in the PRELUDE, in Nitpick, in `int256`** — one
+   generic core (`npk_gcd256`, `npk_frac_norm`, add/sub/mul/div, `cmp`)
+   with the width's balanced bounds as parameters and an `ok` flag for
+   "does the reduced form fit". The emitter unpacks a frac's components,
+   widens, calls the deterministic prelude symbol (every prelude function
+   emits into every program), and narrows back or lands on the canonical
+   ERR triple. Grounds: hand-written runtime IR with loops is
+   verification-hostile, inline per-site gcd expansion is unreviewable,
+   and the D-193 precedent put exactly this kind of careful arithmetic in
+   the prelude. `int256` because frac64's cross-products reach 2^127 and
+   their SUM overflows i128; the mul/div paths go through the IMPROPER
+   form (w·d + n), whose product tops out near 2^254. The core is
+   TAINT-BLIND: the emitter tests the operands' ERR and discards the
+   result under taint — stickiness is the caller's, exactness the core's.
+2. **D-198's layout stands over the prototype's**: denom is UNSIGNED
+   (the oracle used all-signed components with positivity as an
+   invariant). Canonical ERR is `{minN, minN, 0}`; `is_err` answers the
+   ratified disjunction so partially-forged states read as ERR.
+3. **Read-only members `.whole`/`.num`/`.denom`** — unlike tfp's hidden
+   raw bits, a frac's components ARE the spec's value model and its
+   ToString renders them; as values-not-places the invariants cannot be
+   broken through them, and the prelude's own ToString reads them.
+4. **No literals** (`int => frac` is the entry; a bare integer is not a
+   mixed number's spelling — the refusal names the cast) and **no `pick`
+   selectors** (ERR is the only nameable case; the scalar pick machinery
+   compares one register where a frac is three). TYPE-052 carries the
+   family's own rules, `%` included — the ratified operator list is
+   exact.
+5. **Casts**: widths widen `=>` / narrow `=>!`-absorbing-as-ERR;
+   `frac =>! flt64` rounds (flt32 is not a ratified exit); `frac =>! int`
+   truncates toward zero (whole plus one when whole is negative and num
+   nonzero — the mixed form's edge); ERR traps both spellings on any exit
+   (D-144 as amended); a FLOAT NEVER ENTERS — a float is not exact, and
+   the exact family will not launder one; cross-twisted-family is
+   impossible (the D-195 amendment-4 rule).
+6. **Found at implementation: D-169's non-scalar comparison belt.** The
+   emitter's aggregate-compare fail-closed belt (right for everything the
+   checker refuses) sat ahead of the frac compare — frac is the FIRST
+   aggregate the checker ADMITS to comparison, so the belt called a legal
+   program a defect. The frac arm now precedes the belt. Also two
+   reserved-word collisions in new emitter code (`tid`, `fd` as locals —
+   the CLAUDE.md table's own rows) that only npkc's parse catches, the
+   seed's checker never building backend files.
+
 ## D-199 — `complex<T>` over flt and tfp elements; Smith's division — **SETTLED (1.3.0 batch, user-ratified)**
 
 `T` ∈ {`flt32`, `flt64`, `tfp32`, `tfp64`} (§21's `fix*` names obsolete

@@ -1,0 +1,78 @@
+// The exact rationals: what refuses, by name (D-198, 1.3.5).
+//
+// TYPE-052 is the family's OWN rules — no `%`, no `pick` selector, no
+// literal spelling. Mixing and bitwise ride the twisted-mixing/bitwise
+// messages (TYPE-008), the lossy exits ride TYPE-009, and the conversions
+// that do not exist ride TYPE-032.
+mod:frac_rules;
+
+// The ratified operator list is `+ - * /` exactly — no remainder.
+// expect-error: NITPICK-TYPE-052
+func:no_mod = frac32(frac32:a, frac32:b) never fails {
+    pass (a % b);
+};
+
+// A pick does not select on a frac: ERR is its only nameable case.
+// expect-error: NITPICK-TYPE-052
+func:no_pick = int32(frac32:f) never fails {
+    int32:r = 0i32;
+    pick (f) {
+        (*) { r = 1i32; }
+    }
+    pass r;
+};
+
+// A frac is built by conversion, never spelled as a literal.
+// expect-error: NITPICK-TYPE-052
+func:no_literal = frac32() never fails {
+    frac32:f = 5;
+    pass f;
+};
+
+// The family computes only with itself.
+// expect-error: NITPICK-TYPE-008
+func:mixed = frac32(frac32:f) never fails {
+    pass (f + 1i32);
+};
+
+// A digit string has bitwise operations; an exact rational does not.
+// expect-error: NITPICK-TYPE-008
+func:no_bitwise = frac32(frac32:a, frac32:b) never fails {
+    pass (a & b);
+};
+
+// `frac => flt64` refuses without the bang — a float rounds, a frac is
+// exact, and the acknowledged form is how the loss is owned.
+// expect-error: NITPICK-TYPE-009
+func:silent_round = flt64(frac32:f) never fails {
+    pass (f => flt64);
+};
+
+// Narrowing inside the family is the bang's too: the reduced form may not
+// fit, and it absorbs as ERR when it does not.
+// expect-error: NITPICK-TYPE-009
+func:silent_narrow = frac8(frac32:f) never fails {
+    pass (f => frac8);
+};
+
+// `flt32` is not a ratified exit, and a float never ENTERS at all — the
+// exact family will not launder one.
+// expect-error: NITPICK-TYPE-032
+func:no_flt32 = frac32(frac32:f) never fails {
+    frac32:g = f;
+    discard((g =>! flt32));
+    pass g;
+};
+// expect-error: NITPICK-TYPE-032
+func:no_float_entry = frac32(flt64:v) never fails {
+    pass (v =>! frac32);
+};
+
+// Cross-twisted-family casts do not exist — through the plain integer.
+// expect-error: NITPICK-TYPE-032
+func:cross_family = frac32(tbb32:t) never fails {
+    pass (t =>! frac32);
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

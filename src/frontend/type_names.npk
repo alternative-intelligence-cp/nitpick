@@ -190,6 +190,10 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
         if ((raw type_tern_digits(tyt, t)) == 1i32) { pass "nit"; }
         pass "nyte";
     }
+    if (k == (raw TY_FRAC())) {
+        pass (raw string_concat("frac",
+                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+    }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }
