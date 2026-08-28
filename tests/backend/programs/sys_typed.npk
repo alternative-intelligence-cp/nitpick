@@ -1,0 +1,61 @@
+// expect-exit: 42
+// stress: 40
+//
+// `sys` TYPED (S-3, 1.1-interlude close): the call is `Result<int64>` by
+// contract (D-048), its arguments are kernel registers, and the two S-3 rows
+// hold —
+//   S-3b: `?|` lowers over a `sys` call. The two unwrap forms had drifted:
+//         `?!` carried the unknown-operand fallback and `?|` died as an
+//         internal defect (the typer skipped the DEFAULT'S visit on an
+//         unknown lhs, and the emitter had no value-half derivation). Both
+//         are exercised here, one arm that keeps the value and one that
+//         takes the default.
+//   zext: an UNSIGNED argument zero-extends into its register. The old blind
+//         `sext` smeared a `uint32` high bit across the register — lseek to
+//         0x80000000 became a NEGATIVE offset and EINVAL.
+mod:sys_typed;
+error:EStr;
+error:EMemfd;
+error:ESeek;
+error:EClose;
+
+func:main = int32(cstring[]:_~argv) {
+    // S-3b, integer-only: getpid(39) via `?|` — the default is never taken.
+    int64:selfpid = sys(39i64) ?| 0i64;
+    if (selfpid <= 0i64) { exit 11i32; }
+
+    // S-3b, pointer-arg: read(0, buf, 1) on fd -1 fails (EBADF) — the
+    // default IS taken.
+    wild int8->:b = alloc(8i64);
+    int64:n = sys(0i64, 0i64 - 1i64, b, 1i64) ?| 7i64;
+    drop dalloc(b);
+    if (n != 7i64) { exit 12i32; }
+
+    // zext: memfd_create(name, MFD_CLOEXEC), then lseek(fd, 0x80000000u32,
+    // SEEK_SET). Sign-extended, the offset is negative and lseek refuses;
+    // zero-extended it is 2 GiB past the start of an empty file, which
+    // lseek allows and reports back.
+    cstring:nm = to_cstring("npk_sys_typed") ?! EStr;
+    wild uint8->:np = nm.ptr;
+    int64:mfd = sys(319i64, np, 1i64) ?! EMemfd;
+    uint32:off = 2147483648u32;
+    int64:at = sys(8i64, mfd, off, 0i64) ?! ESeek;
+    if (at != 2147483648i64) { exit 13i32; }
+    discard(sys(3i64, mfd) ?! EClose);
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EStr)            { exit 81i32; },
+        (EMemfd)          { exit 82i32; },
+        (ESeek)           { exit 83i32; },
+        (EClose)          { exit 84i32; },
+        (HeapBadRequest)  { exit 95i32; },
+        (HeapOom)         { exit 95i32; },
+        (Unreachable)     { exit 97i32; },
+        (WildLeak)        { exit 98i32; },
+        (*)               { exit 99i32; }
+    }
+    exit 9i32;
+};

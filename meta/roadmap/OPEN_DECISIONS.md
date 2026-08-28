@@ -103,12 +103,23 @@ closed table.
 |---|---|---|---|---|
 | **S-2** | — | **The moved-from analysis is straight-line: a `move(x)` re-executed by a LOOP is not refused.** `modmap_members` moved one `move`-parameter at every member — every table entry aliased one body — and it type-checked. Latent-harmless while the aliased strings were views; D-186's owned slices turned the duplicate drops into a double free `npk_small_free`'s bitmap caught on the first stage-1 run. The compiler source is fixed (intern once, reuse the id), but the CLASS is open: the 0.5 use-after-move analysis needs loop-carried states (a binding moved anywhere in a loop body is moved-from at the body's head unless reassigned on every path). Same fixed-point shape the read-before-assign analysis already runs — extend, don't invent. | 1.4 (before self-hosting is declared) | D-186 fallout; 1.1.13-era find |
 
-## 2d. Two `sys`/emit robustness gaps the Bridge's shm work surfaced (owner: backend; not blocking)
+## 2d. ~~Two `sys`/emit robustness gaps the Bridge's shm work surfaced~~ CLOSED by D-192 at the 1.1 interlude
+
+Both rows were one hole — `sys` carried the bare-builtin UNKNOWN type. D-192
+types the call (`Result<int64>`, D-048) and its arguments (integer-family ≤64
+bits, kernel ids, pointers; arity 1..7; unknown-typed arguments refuse with
+"bind it to a typed name first"), picks the extension by signedness (`zext`
+for unsigned and kernel ids — the blind `sext` smeared a `uint32` high bit),
+and gives `?|` the `?!` unknown-operand fallback (typer AND emitter halves).
+`tests/types/rejection/sys_args.npk` (ten refusals), `sys_typed.npk`,
+`unwrap_unknown.npk`. **The residue became P-3 below** (§3): a still-unknown
+builtin's `?|` default or argument shape mismatch surfaces only at llc until
+the builtin surface is typed from a signature table.
 
 | id | what | evidence | fix |
 |---|---|---|---|
-| **S-3a** | **`sys` accepts a non-integer, non-pointer argument and emits invalid IR.** A `Result`-typed argument (a `never fails` constant called WITHOUT `raw`, so `{i64,i32}`) reaches the sys arg loop's fallback branch, which `sext`s it — `sext {i64,i32} to i64`, which llc rejects. The frontend should refuse a `sys` argument that is not an integer or a pointer, at the call, rather than letting the emitter produce a cast llc kills. | `shm_sealed.npk` with `sys(SYS_FTRUNCATE(), …)` (raw-less) — llc "invalid cast opcode for cast from '{ i64, i32 }' to 'i64'". | a typing check on sys arguments (integer or pointer only), TYPE-level. |
-| **S-3b** | **`expr ?\| fallback` fails to lower (EMIT-002) when `expr` is a `sys` call carrying a POINTER argument**, while `?!` over the same call lowers fine and `?\|` over an integer-only sys call lowers fine. | The five sys calls in `shm_create_sealed`/`shm_unmap`: with `?\|`, only the two with pointer args (memfd_create, munmap) EMIT-002'd; switching all to `?!` compiled. | isolate the `?\|` lowering over a Result whose value carries a pointer-derived temp; likely a temp-liveness or clean-since-mark interaction. ~~Worked around in nbridge by using `?!`~~ **(1.1.13a correction: that workaround was a MISUSE — `?!` is unwrap-or-TRAP-as, and v3 §4.2 bars the Bridge from trapping; nbridge now binds-and-fails at every site, see D-188. The `?\|` lowering gap itself still stands and still wants the isolation.)** |
+| ~~**S-3a**~~ | **CLOSED (D-192).** ~~`sys` accepts a non-integer, non-pointer argument and emits invalid IR.** A `Result`-typed argument (a `never fails` constant called WITHOUT `raw`, so `{i64,i32}`) reaches the sys arg loop's fallback branch, which `sext`s it — `sext {i64,i32} to i64`, which llc rejects. The frontend should refuse a `sys` argument that is not an integer or a pointer, at the call, rather than letting the emitter produce a cast llc kills. | `shm_sealed.npk` with `sys(SYS_FTRUNCATE(), …)` (raw-less) — llc "invalid cast opcode for cast from '{ i64, i32 }' to 'i64'". | a typing check on sys arguments (integer or pointer only), TYPE-level.~~ |
+| ~~**S-3b**~~ | **CLOSED (D-192).** ~~`expr ?\| fallback` fails to lower (EMIT-002) when `expr` is a `sys` call carrying a POINTER argument**, while `?!` over the same call lowers fine and `?\|` over an integer-only sys call lowers fine. | The five sys calls in `shm_create_sealed`/`shm_unmap`: with `?\|`, only the two with pointer args (memfd_create, munmap) EMIT-002'd; switching all to `?!` compiled. | isolate the `?\|` lowering over a Result whose value carries a pointer-derived temp; likely a temp-liveness or clean-since-mark interaction. ~~Worked around in nbridge by using `?!`~~ **(1.1.13a correction: that workaround was a MISUSE — `?!` is unwrap-or-TRAP-as, and v3 §4.2 bars the Bridge from trapping; nbridge now binds-and-fails at every site, see D-188. The `?\|` lowering gap itself still stands and still wants the isolation.)**~~ |
 
 ## 3. Decisions blocking 1.4 (self-hosting)
 
@@ -120,6 +131,7 @@ closed table.
 | **C-13** | D-156 | **Seed-retirement schedule.** SUBSET_1 §4 says `src/` adopts each rung's features, but the seed (sole builder until 1.3) lowers only subset 1 — so `src/` adopting a 0.9 construct breaks the builder. Add a normative rule: `src/` may not use any construct the *current builder* cannot compile, and name the cycle at which the builder switches from regenerated seed to committed stage IR. | 0.9–1.1 (pre-1.4) | modules #4 |
 | **C-22** | next free | **Per-iteration channel reclaim needs per-scope joins.** D-183's 1.2.5 reclaims a channel at its creating FUNCTION's exit, after the child join — sound because D-062 has joined every task that could hold an endpoint by then. A `channel()` inside a LOOP would need that same ordering per iteration: reclaim at the loop body's scope exit, after joining only the tasks that iteration spawned — and joins are per-function today (one `join_head` list per frame). Until per-scope join machinery exists, `channel()` inside a loop refuses by this row's name; the workaround is creating the channel outside the loop, which is also the design that does not open and tear down a channel per iteration. (Factory channels got owners at 1.2.6 without waiting: the `gives` clause moves the reclaim to the caller's function exit, which exists today.) It is what `shared_arena` teardown waits on: a shared arena's value is a POINTER into storage other threads read, so its release needs the same joined-before-freed ordering, and TY_SHARED_ARENA stays excused from `type_drops` by this row's name (plain `arena` drops since 1.2.5c — it cannot cross a thread, so the value drop is sound). `dyn` channel elements are this row's third tenant: erased content can hide a borrow. | 1.4 | D-183, 1.2.5 |
 | **B-4** | D-157 | **Schedule `npkg`** — the permanent build/test/verify runner. BUILD_REFERENCE assigns it the fixpoint and harness, but no cycle builds it while LAYOUT deletes the Python harness at 1.3. Schedule a minimal `npkg` (build/test/verify) in or before 1.3, and write the D-011 undefined-symbol scan into BUILD_REFERENCE §4 as a permanent pipeline step (it lives only in the throwaway harness today). | 1.4 | modules #7 |
+| **P-3** | next free | **Type the whole bare-builtin surface from a generated signature table.** D-192 typed `sys`; every OTHER bare-name builtin still types UNKNOWN ("no signature yet", type_access's fall-through), so an argument shape or a `?|` default that disagrees with the floor's actual signature surfaces only at llc — or at RUNTIME (`unwrap_unknown.npk`'s first draft passed a `string` where `write_file` wants a `cstring`, and the kernel refused with the error swallowed). BUILTIN_REFERENCE already carries every signature and the generator already scrapes the file (names, never-fails); emit a `(name → param types, return type)` table, type builtin calls through `check_args` like every other call, and retire the emitter's unknown-operand fallbacks (`?|`/`?!` value-half derivation) plus the floor-signature coercion authority in the call emitter. Blast radius is real — `Result<T>` types materialize at every builtin use site, `raw`-licence and REACH interactions need a sweep — so it is its own subcycle, decided before the fixpoint re-close. | 1.4 | D-192 residue |
 
 ---
 
@@ -167,7 +179,7 @@ does not silently regrow.
 
 ---
 
-## 6b. Float and char `ToString` await floor support (D-168, deferred at 1.0.9d)
+## 6b. ~~Float and char `ToString` await floor support~~ CLOSED by D-193 at the 1.1 interlude
 
 D-168 renders `&{ x }` through `ToString`, and the prelude supplies it for every
 scalar EXCEPT the floats and the characters. **Floats**: a correct `flt32`/`flt64`
@@ -184,6 +196,20 @@ numeric/encoding task, scheduled post-1.0** -- small in surface, correctness-
 critical, so each gets its own careful attention rather than riding a larger commit.
 This was the user's call at 1.0.9d ("go with your recommendation... so long as it
 all gets done eventually").
+
+**CLOSED (D-193), with ZERO new floor surface** — both landed as prelude
+Nitpick through the ordinary `ToString` impl lookup. Floats:
+`flt_bits_shortest`, Steele–White/Dragon4 over `uint2048` (exact, ties to
+even, subnormals and the unequal gap; NO wide division by construction, so
+no libcall can appear); bits reach it through a store-as-float/load-as-
+integer scratch buffer because `=>!` stays a value conversion. Format:
+fixed for decimal exponent in [-4, 15] (mandatory ".0"), `d[.ddd]e±EE`
+outside, "±0.0"/"±inf"/"nan". `flt_tostring.npk`: 238 flt64 + 115 flt32
+python-generated known answers, values built FROM BITS. Chars:
+`codepoint_to_string`, TOTAL — `char32` scalar, `char16`/`char8` code
+UNITS with U+FFFD for surrogates/non-ASCII-lone-units/out-of-range — the
+owned copy riding D-186's `string_slice` (which is what removed the floor
+blocker this row was parked on). `char_tostring.npk`.
 
 ## 6c. Planned research: bug/vulnerability statistics vs. language coverage (owner: the user; run before 1.5's trigger)
 

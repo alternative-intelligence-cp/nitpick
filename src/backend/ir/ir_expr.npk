@@ -677,10 +677,25 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (qtid == x.fe.ctx.types.t_nil) {
             pass (raw iv_nil());
         }
-        LlType:qll = raw ll_type(x.fe.ctx, qtid);
-        if (!(raw ll_is_ok(qll))) { pass (raw iv_from_ll_at(x, qll, qtid, n.span)); }
+        // A SIGNATURE-LESS CALLEE (`sys`) RECORDS NO TYPE — "its signature
+        // arrives with call checking" — so the slot's shape is derived from
+        // the OPERAND'S OWN LL, exactly the rule `?!` has carried one arm
+        // below since 1.1.2. The two unwrap forms drifting apart is how
+        // S-3b happened: `sys(...) ?!` lowered and `sys(...) ?|` died as an
+        // internal defect (1.1-interlude close).
+        string:qtext = "";
+        if (qtid == 0i32) {
+            string:qvh = raw result_ll_value_half(qv.ll);
+            if (qvh.len == 0i64) { pass (raw iv_nil()); }
+            qtext = move(qvh);
+        }
+        if (qtid != 0i32) {
+            LlType:qll = raw ll_type(x.fe.ctx, qtid);
+            if (!(raw ll_is_ok(qll))) { pass (raw iv_from_ll_at(x, qll, qtid, n.span)); }
+            qtext = raw string_concat(qll.text, "");
+        }
         string:qslot = raw irw_temp(x.fe.w);
-        drop irw_alloca(x.fe.w, qslot, qll.text);
+        drop irw_alloca(x.fe.w, qslot, raw string_concat(qtext, ""));
         string:qerr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(qerr, " = extractvalue ", qv.ll, " ",
                           raw string_concat(qv.ref, ", 1")));
@@ -696,7 +711,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         string:qin = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(qin, " = extractvalue ", qv.ll, " ",
                           raw string_concat(qv.ref, ", 0")));
-        drop irw_line(x.fe.w, raw cat5("store ", qll.text, " ", qin,
+        drop irw_line(x.fe.w, raw cat5("store ", qtext, " ", qin,
                           raw string_concat(", ptr ", qslot)));
         drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
         drop irw_label(x.fe.w, qd_l);
@@ -710,9 +725,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
         drop irw_label(x.fe.w, qj_l);
         string:qout = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(qout, " = load ", qll.text, ", ptr ",
+        drop irw_line(x.fe.w, raw cat5(qout, " = load ", qtext, ", ptr ",
                           raw string_concat(qslot, "")));
-        pass (raw iv(move(qll.text), move(qout), qtid));
+        pass (raw iv(move(qtext), move(qout), qtid));
     }
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
         // `r ?! code` (0.9.7, OP §187): the value, or `failsafe(code)` through
@@ -4863,8 +4878,28 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                     sref = move(sw);
                 }
                 if ((!(raw string_eq(sav.ll, "i64"))) && (!(raw string_eq(sav.ll, "ptr")))) {
+                    // NARROWER THAN A REGISTER: the RECORDED type picks the
+                    // extension — a signed integer sign-extends, an unsigned
+                    // one and the kernel identifiers zero-extend (the old
+                    // blind `sext` smeared a `uint32` flag word's high bit
+                    // across the register). The typer's S-3a rule admits
+                    // integer-family, kernel ids and pointers ONLY, so any
+                    // other shape arriving here is the compiler's defect,
+                    // not the program's.
+                    int32:sak = raw type_kind(x.fe.ctx.types, sav.type_id);
+                    string:sop = "";
+                    if (sak == (raw TY_INT())) {
+                        sop = "zext";
+                        if (raw type_is_signed(x.fe.ctx.types, sav.type_id)) {
+                            sop = "sext";
+                        }
+                    }
+                    if (sak == (raw TY_KERNEL())) { sop = "zext"; }
+                    if (sop.len == 0i64) { pass (raw iv_broken(cnode.span)); }
                     string:sw = raw irw_temp(x.fe.w);
-                    drop irw_line(x.fe.w, raw cat5(sw, " = sext ", sav.ll, " ",
+                    drop irw_line(x.fe.w, raw cat5(sw,
+                                      raw cat3(" = ", sop, " "),
+                                      sav.ll, " ",
                                       raw string_concat(sav.ref, " to i64")));
                     sref = move(sw);
                 }
@@ -4900,7 +4935,10 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             drop irw_line(x.fe.w, raw cat5(sb2,
                               " = insertvalue { i64, i32 } ", sa2, ", i32 ",
                               raw string_concat(serr, ", 1")));
-            pass (raw iv("{ i64, i32 }", move(sb2), 0i32));
+            // THE RECORDED TYPE RIDES OUT — `Result<int64>` since the typer
+            // states D-048's contract (S-3a); the fit paths downstream see the
+            // real type instead of the bare-builtin UNKNOWN.
+            pass (raw iv("{ i64, i32 }", move(sb2), raw exprtypes_get(x.et, id)));
         }
         // UNREACHABLE. Every `is_builtin_name` (builtins.npk) is served above:
         // four lower inline, `sys` is handled in this block, and the rest have an

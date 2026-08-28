@@ -196,6 +196,19 @@ Direct access to operating system syscalls.
 |---|---|---|---|
 | `sys(CONST, ..*int64[])` | `Result<int64>` | The only syscall form. Reaches any OS syscall; returns `tbb32` error codes (negative for system errors). | `Result` — may fail |
 
+> ### The contract is CHECKED (D-192, the 1.1 interlude)
+>
+> The call TYPES as `Result<int64>` — not the bare-builtin unknown — so a
+> `?|` default, a `discard`, or a wrong annotation over a `sys` call is
+> refused like any other typed `Result`. Every argument must fit a kernel
+> register: integer-family at 64 bits or below, a kernel identifier
+> (`fd`, `pid`, …), or a pointer (the one place an address becomes a
+> number, at the trampoline). The syscall number comes first and at most
+> six register arguments follow. An argument whose type the checker cannot
+> resolve (a nested bare-builtin call) is refused with "bind it to a typed
+> name first". At the trampoline a signed integer sign-extends and an
+> unsigned one or a kernel identifier ZERO-extends into its register.
+
 > ### There is one syscall form, not three (D-048)
 >
 > The original three tiers were a danger ladder along two axes — how many

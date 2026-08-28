@@ -850,6 +850,75 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 "`arena_make` needs an `arena<T>` annotation to read its element type from; write `arena<T>:a = arena_make(cap);`",
                 n.span));
         }
+        // `sys(NR, args…)` — EVERY ARGUMENT IS A KERNEL REGISTER (D-048).
+        // Integer-family widths extend, a kernel identifier is its number,
+        // and a pointer's address becomes the register (1.1.12a's one
+        // sanctioned crossing). Anything else has no register form — and
+        // before this rule those reached the trampoline and died as INVALID
+        // IR at llc (the 1.1-interlude S-3a row: a never-fails call written
+        // without `raw` types as `Result<int64>`, and `sext { i64, i32 } to
+        // i64` is not an instruction). An UNKNOWN argument — a nested
+        // bare-name builtin call, whose value shape only the emitter would
+        // see — is refused the same way: bind it to a typed name first.
+        if (raw callee_is_builtin_named(e, n, "sys")) {
+            // `sys` RETURNS `Result<int64>` BY CONTRACT (D-048) — the kernel's
+            // register mapped into the D-141 convention. Recording the type
+            // HERE, instead of the bare-builtin UNKNOWN, is what lets `?|`
+            // check its default, `discard` refuse a swallowed error, and a
+            // wrong annotation refuse at the binding — the whole S-3 family.
+            if (count < 1i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`sys(NR, args…)` needs the syscall number first (D-048)",
+                    n.span));
+            }
+            if (count > 7i32) {
+                pass (raw te_error(e, raw TYPE_MISMATCH(),
+                    "`sys(NR, args…)` carries at most six register arguments after the syscall number — the kernel has six argument registers (D-048)",
+                    n.span));
+            }
+            int32:sai = 0i32;
+            while (sai < count) {
+                ExprId:sa = ExprId{ index: raw ast_id_at(e.ast, start, sai) };
+                if (raw is_spread(e, sa)) {
+                    ExprNode:ssn = raw ast_expr(e.ast, sa);
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                        "`..^` expands a collection into a variadic parameter, and this callee has none the checker can see — a builtin's arguments are fixed registers, and pass the elements yourself otherwise",
+                        ssn.span));
+                }
+                int32:sat = raw type_of_expr(e, sa);
+                bool:sok = false;
+                if (raw type_is_integer(e.types, sat)) {
+                    sok = true;
+                    if ((raw type_int_bits(e.types, sat)) > 64i32) {
+                        ExprNode:swn = raw ast_expr(e.ast, sa);
+                        discard(raw te_error(e, raw TYPE_MISMATCH(),
+                            "an argument to `sys` is one kernel register, and this integer is wider than 64 bits — narrow it explicitly first (`=>!` states where the width is given up)",
+                            swn.span));
+                    }
+                }
+                if ((raw type_kind(e.types, sat)) == (raw TY_KERNEL())) { sok = true; }
+                if ((raw type_kind(e.types, sat)) == (raw TY_POINTER())) { sok = true; }
+                if (raw type_is_invalid(e.types, sat)) { sok = true; }
+                if (sat == 0i32) {
+                    ExprNode:sun = raw ast_expr(e.ast, sa);
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                        "this argument's type is not resolved here — a bare-name builtin call has no signature the checker can see, and its value may not be register-shaped; bind the result to a typed name and pass that name",
+                        sun.span));
+                    sok = true;
+                }
+                if (!sok) {
+                    ExprNode:sbn = raw ast_expr(e.ast, sa);
+                    string:sm1 = raw string_concat(
+                        "an argument to `sys` must fit a kernel register — integer-family, a kernel identifier (`fd`, `pid`, …), or a pointer whose address becomes the register (1.1.12a); this is `",
+                        raw type_display(e.types, e.interns, sat));
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                        raw string_concat(sm1, "`"), sbn.span));
+                }
+                sai = sai + 1i32;
+            }
+            pass (raw tt_result(e.types, raw tt_int(e.types, 64i32, true),
+                                8i64, 8i32));
+        }
         // A bare-name builtin has no signature yet. Its arguments are still
         // typed, so a mistake inside one is not hidden by the callee being
         // unknown.

@@ -156,7 +156,14 @@ local whose last textual use preceded a later suspension sat on the dying
 resume stack). **G-3 settled (the user): the exotic tier is NEW CYCLE 1.3**,
 and Phase C renumbered a second time — self-hosting 1.4, verification 1.5,
 Astrée 1.6. Adopting `dyn Writer` in npkc's own diagnostics is 1.4
-material.
+material. **The 1.1 interlude closed the self-contained backlog**: `sys` is
+TYPED (D-192 — `Result<int64>` by D-048's contract, register-shaped
+arguments refused by name, zext for unsigned/kernel args, `?|` given `?!`'s
+unknown-operand fallback; the S-3 rows), and float/char `ToString` landed
+(D-193, §6b — shortest-round-trip Dragon4 over `uint2048` in the PRELUDE,
+no wide division by construction, 353 python-generated known-answer
+vectors; total UTF-8 with U+FFFD for non-scalars). The bare-builtin
+signature table is proposed as P-3 (OPEN_DECISIONS §3), owed before 1.4.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

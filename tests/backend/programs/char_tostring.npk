@@ -1,0 +1,72 @@
+// expect-exit: 42
+//
+// CHARACTER ToString (§6b, D-005, D-168). `char32` is a Unicode SCALAR VALUE
+// and renders as itself in UTF-8; `char16` is a UTF-16 CODE UNIT, so a lone
+// surrogate half renders as U+FFFD; `char8` is a UTF-8 CODE UNIT, so only
+// the ASCII range renders as itself — a non-ASCII unit alone is a fragment
+// of a character, not a character. The encoder is TOTAL: out-of-range and
+// surrogate scalars become U+FFFD, never a fabricated byte sequence, because
+// an innocent total function must not be how an invalid UTF-8 `string` is
+// minted. The expected strings hold the real UTF-8 bytes.
+mod:char_tostring;
+
+func:main = int32(cstring[]:_~argv) {
+    // ASCII, all three widths.
+    char8:a8 = 65char8;
+    char16:a16 = 65char16;
+    char32:a32 = 65char32;
+    if (!(raw string_equals(`&{ a8 }`, "A")))  { exit 11i32; }
+    if (!(raw string_equals(`&{ a16 }`, "A"))) { exit 12i32; }
+    if (!(raw string_equals(`&{ a32 }`, "A"))) { exit 13i32; }
+
+    // Two-byte: é is U+00E9 — a scalar for char16/char32, but a lone
+    // non-ASCII UNIT for char8, which renders the replacement character.
+    char16:e16 = 233char16;
+    char32:e32 = 233char32;
+    char8:u8 = 233char8;
+    if (!(raw string_equals(`&{ e16 }`, "é")))  { exit 14i32; }
+    if (!(raw string_equals(`&{ e32 }`, "é")))  { exit 15i32; }
+    if (!(raw string_equals(`&{ u8 }`, "�")))   { exit 16i32; }
+
+    // Three-byte: € U+20AC.
+    char16:eu = 8364char16;
+    if (!(raw string_equals(`&{ eu }`, "€")))   { exit 17i32; }
+
+    // Four-byte: 💩 U+1F4A9 — above the BMP, char32 only.
+    char32:poo = 128169char32;
+    if (!(raw string_equals(`&{ poo }`, "💩"))) { exit 18i32; }
+
+    // A lone high surrogate is not a scalar value: U+FFFD.
+    char16:sur = 55296char16;
+    if (!(raw string_equals(`&{ sur }`, "�")))  { exit 19i32; }
+
+    // Past U+10FFFF is not Unicode: U+FFFD. The literal envelope already
+    // refuses `1114112char32` at the checker (TYPE-031) — only the
+    // acknowledged reinterpretation can mint one, and the encoder still
+    // refuses to render it as bytes.
+    uint32:over = 1114112u32;
+    char32:big = over =>! char32;
+    if (!(raw string_equals(`&{ big }`, "�")))  { exit 20i32; }
+
+    // NUL renders as one NUL byte — a string is length-delimited (D-070).
+    char8:z = 0char8;
+    string:zs = `&{ z }`;
+    if (zs.len != 1i64)                          { exit 21i32; }
+
+    // Interpolated mid-template with text around it.
+    char32:g = 128169char32;
+    if (!(raw string_equals(`<&{ g }>`, "<💩>"))) { exit 22i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

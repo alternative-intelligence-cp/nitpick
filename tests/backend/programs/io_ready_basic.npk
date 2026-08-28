@@ -20,7 +20,9 @@ thread async func:late_writer = NIL(int64:wfd) joins JOIN_2S {
     await sleep(raw duration_ms(40i64)) ?| NIL;
     wild int8->:b = alloc(8i64);
     <-b = 55i8;
-    discard(sys(1i64, wfd, b, 1i64));
+    // S-3a typed `sys` (`Result<int64>`, D-048): the wake write's error can no
+    // longer be silently discarded — a failed wake now fails the test loudly.
+    discard(sys(1i64, wfd, b, 1i64) ?! EPipe);
     drop dalloc(b);
     pass NIL;
 };

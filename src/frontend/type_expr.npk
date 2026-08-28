@@ -1247,7 +1247,20 @@ func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) never fails {
 // went at runtime.
 func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:t = raw type_of_expr(e, raw expr_lhs(n));
-    if (t == 0i32) { pass 0i32; }
+    // A SIGNATURE-LESS CALLEE (`sys`, any bare-name builtin) leaves the
+    // operand UNKNOWN — but the DEFAULT is still typed, on its own terms,
+    // because the emitter lowers it by its recorded type. Bailing before the
+    // rhs visit is how S-3b happened: `sys(...) ?| 0i64` died as an internal
+    // defect at the DEFAULT'S span, the literal having no recorded type to
+    // size it by. `?!` has always typed its rhs before this bail, one arm
+    // below (1.1-interlude close).
+    if (t == 0i32) {
+        int32:s0 = e.expected;
+        e.expected = 0i32;
+        discard(raw type_of_expr(e, raw expr_rhs(n)));
+        e.expected = s0;
+        pass 0i32;
+    }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
         pass (raw te_not_result(e, n, t, "?|"));

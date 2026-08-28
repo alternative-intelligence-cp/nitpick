@@ -146,6 +146,295 @@ pub func:uint_to_decimal = string(uint64:v) never fails {
     pass acc;
 };
 
+// A UNICODE SCALAR VALUE AS ONE OWNED STRING (§6b, D-168). The encoder is
+// TOTAL: a surrogate half or a value past U+10FFFF renders as U+FFFD, the
+// replacement character — never a fabricated byte sequence, because a
+// `string` is UTF-8 by convention and an innocent-looking total function
+// must not be the way an invalid one is minted. The owned copy rides
+// D-186's `string_slice` over a `string_from_bytes` view of a scratch
+// buffer, which is what unblocked this without a floor primitive.
+pub func:codepoint_to_string = string(uint32:cp) never fails {
+    uint32:c = cp;
+    if (c > 1114111u32)                     { c = 65533u32; }
+    if ((c >= 55296u32) && (c <= 57343u32)) { c = 65533u32; }
+    wild int8->:b = alloc(4i64);
+    int64:len = 0i64;
+    if (c < 128u32) {
+        b[0i64] = c =>! int8;
+        len = 1i64;
+    }
+    if ((c >= 128u32) && (c < 2048u32)) {
+        b[0i64] = (192u32 | (c >> 6u32)) =>! int8;
+        b[1i64] = (128u32 | (c & 63u32)) =>! int8;
+        len = 2i64;
+    }
+    if ((c >= 2048u32) && (c < 65536u32)) {
+        b[0i64] = (224u32 | (c >> 12u32)) =>! int8;
+        b[1i64] = (128u32 | ((c >> 6u32) & 63u32)) =>! int8;
+        b[2i64] = (128u32 | (c & 63u32)) =>! int8;
+        len = 3i64;
+    }
+    if (c >= 65536u32) {
+        b[0i64] = (240u32 | (c >> 18u32)) =>! int8;
+        b[1i64] = (128u32 | ((c >> 12u32) & 63u32)) =>! int8;
+        b[2i64] = (128u32 | ((c >> 6u32) & 63u32)) =>! int8;
+        b[3i64] = (128u32 | (c & 63u32)) =>! int8;
+        len = 4i64;
+    }
+    string:v = raw string_from_bytes(b, len);
+    string:owned = string_slice(v, 0i64, len) ?| "";
+    drop dalloc(b);
+    pass owned;
+};
+
+// THE CHARACTERS RENDER THEIR TEXT (D-005, D-168, §6b). `char32` is a
+// Unicode SCALAR VALUE and renders as itself. `char16` is a UTF-16 CODE
+// UNIT: a lone surrogate half has no text, and the encoder's own guard
+// renders it U+FFFD. `char8` is a UTF-8 CODE UNIT: a non-ASCII unit alone
+// is not a character either — it is a fragment of one — so only the ASCII
+// range renders as itself. The masks pin the unit's unsigned value
+// whatever the cast does with the storage type's sign bit.
+impl:char8:ToString  = { func:to_string = string(char8:self) never fails {
+    uint32:u = (self =>! uint32) & 255u32;
+    if (u < 128u32) { pass (raw codepoint_to_string(u)); }
+    pass (raw codepoint_to_string(65533u32));
+}; };
+impl:char16:ToString = { func:to_string = string(char16:self) never fails {
+    pass (raw codepoint_to_string((self =>! uint32) & 65535u32));
+}; };
+impl:char32:ToString = { func:to_string = string(char32:self) never fails {
+    pass (raw codepoint_to_string(self =>! uint32));
+}; };
+
+// A FLOAT'S SHORTEST ROUND-TRIP DECIMAL (§6b, D-168). Exact integer
+// arithmetic end to end — the Steele–White (Dragon4) discipline over the
+// wide-integer tier — because a NAIVE conversion drifts, and numeric drift
+// is the safety rationale's own named failure. NO WIDE DIVISION is used:
+// every ×10 is a shift-and-add, and a digit is at most nine subtractions,
+// so nothing here can lower to a runtime library call the zero-dependency
+// scan would have to provide.
+//
+// The loop maintains value = R/S with the half-gaps MP (above) and MM
+// (below) of the float's neighbourhood; a digit is emitted while neither
+// gap is entered, and the last digit rounds toward the true value, ties to
+// even. An EVEN mantissa owns its boundaries (IEEE round-nearest-even), so
+// every gap test carries the inclusive arm. Worst case fits comfortably:
+// R, S and the boundaries stay under 2^1130 for flt64's full range,
+// subnormals included, against uint2048's headroom.
+//
+// The format is fixed notation while the decimal exponent E sits in
+// [-4, 15] — with a mandatory ".0" or fraction — and `d[.ddd]e±EE`
+// outside it; "0.0"/"-0.0", "inf"/"-inf" and "nan" are spelled directly.
+pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
+                                    uint64:exp_bits) never fails {
+    uint64:mant_mask = (1u64 << mant_bits) - 1u64;
+    uint64:exp_mask = (1u64 << exp_bits) - 1u64;
+    uint64:sgn = (bits >> (mant_bits + exp_bits)) & 1u64;
+    uint64:biased = (bits >> mant_bits) & exp_mask;
+    uint64:frac = bits & mant_mask;
+    string:neg = "";
+    if (sgn == 1u64) { neg = "-"; }
+    if (biased == exp_mask) {
+        if (frac == 0u64) { pass (raw string_concat(neg, "inf")); }
+        pass "nan";
+    }
+    if ((biased == 0u64) && (frac == 0u64)) {
+        pass (raw string_concat(neg, "0.0"));
+    }
+    // Decode: value = f × 2^e. A normal carries the implicit bit and
+    // e = biased - bias - mant_bits; a subnormal is the bare fraction at
+    // the minimum exponent.
+    uint64:bias = (1u64 << (exp_bits - 1u64)) - 1u64;
+    uint64:f = frac;
+    int64:e = (1i64 - (bias =>! int64)) - (mant_bits =>! int64);
+    if (biased != 0u64) {
+        f = frac | (1u64 << mant_bits);
+        e = ((biased =>! int64) - (bias =>! int64)) - (mant_bits =>! int64);
+    }
+    bool:even = ((f & 1u64) == 0u64);
+    uint2048:F = f => uint2048;
+    uint2048:R = 0u2048;
+    uint2048:S = 0u2048;
+    uint2048:MP = 0u2048;
+    if (e >= 0i64) {
+        uint2048:ew = ((e =>! uint64) => uint2048);
+        R = (F << ew) << 1u2048;
+        S = 2u2048;
+        MP = 1u2048 << ew;
+    }
+    if (e < 0i64) {
+        uint2048:nw = (((0i64 - e) =>! uint64) => uint2048);
+        R = F << 1u2048;
+        S = (1u2048 << nw) << 1u2048;
+        MP = 1u2048;
+    }
+    uint2048:MM = MP;
+    // A power-of-two mantissa above the smallest normal exponent has a
+    // HALF-gap below (its lower neighbour is twice as close): scale all
+    // but MM by two.
+    if ((frac == 0u64) && (biased > 1u64)) {
+        R = R << 1u2048;
+        S = S << 1u2048;
+        MP = MP << 1u2048;
+    }
+    // Scale into [first digit ≥ 1]: while the upper boundary reaches past
+    // one, take a power of ten into S; while ×10 would still not reach it,
+    // take one into the numerator side.
+    int32:k = 0i32;
+    bool:go = true;
+    while (go) {
+        uint2048:hp = R + MP;
+        bool:hi = false;
+        if (hp > S) { hi = true; }
+        if (even && (hp == S)) { hi = true; }
+        if (hi) {
+            S = (S << 3u2048) + (S << 1u2048);
+            k = k + 1i32;
+        } else { go = false; }
+    }
+    go = true;
+    while (go) {
+        uint2048:hp = R + MP;
+        uint2048:h10 = (hp << 3u2048) + (hp << 1u2048);
+        bool:lo = false;
+        if (h10 < S) { lo = true; }
+        if ((!even) && (h10 == S)) { lo = true; }
+        if (lo) {
+            R = (R << 3u2048) + (R << 1u2048);
+            MP = (MP << 3u2048) + (MP << 1u2048);
+            MM = (MM << 3u2048) + (MM << 1u2048);
+            k = k - 1i32;
+        } else { go = false; }
+    }
+    // Digits, high to low. `d` is at most nine subtractions because
+    // R < S entering each round; the stop tests are the two gaps.
+    wild int8->:db = alloc(24i64);
+    int64:dn = 0i64;
+    bool:more = true;
+    while (more) {
+        R = (R << 3u2048) + (R << 1u2048);
+        MP = (MP << 3u2048) + (MP << 1u2048);
+        MM = (MM << 3u2048) + (MM << 1u2048);
+        uint64:d = 0u64;
+        while (R >= S) {
+            R = R - S;
+            d = d + 1u64;
+        }
+        bool:lo = false;
+        if (R < MM) { lo = true; }
+        if (even && (R == MM)) { lo = true; }
+        uint2048:hp = R + MP;
+        bool:hi = false;
+        if (hp > S) { hi = true; }
+        if (even && (hp == S)) { hi = true; }
+        uint64:emitd = d;
+        if ((!lo) && hi) { emitd = d + 1u64; }
+        if (lo && hi) {
+            // Both gaps open: round to the nearer, an exact tie to even.
+            uint2048:t2 = R << 1u2048;
+            if (t2 > S) { emitd = d + 1u64; }
+            if (t2 == S) {
+                if ((d & 1u64) == 1u64) { emitd = d + 1u64; }
+            }
+        }
+        db[dn] = (48u64 + emitd) =>! int8;
+        dn = dn + 1i64;
+        if (lo)  { more = false; }
+        if (hi)  { more = false; }
+        if (dn >= 20i64) { more = false; }
+    }
+    // A round-up of a trailing 9 carries left; all nines collapse to "1"
+    // one decimal position up.
+    bool:overflowed = false;
+    int64:ci = dn - 1i64;
+    while (ci >= 0i64) {
+        if (db[ci] == 58i8) {
+            db[ci] = 48i8;
+            if (ci == 0i64) { overflowed = true; }
+            if (ci > 0i64) { db[ci - 1i64] = db[ci - 1i64] + 1i8; }
+        }
+        ci = ci - 1i64;
+    }
+    if (overflowed) {
+        db[0i64] = 49i8;
+        dn = 1i64;
+        k = k + 1i32;
+    }
+    string:dview = raw string_from_bytes(db, dn);
+    string:digits = string_slice(dview, 0i64, dn) ?| "";
+    drop dalloc(db);
+    // Compose. value = 0.digits × 10^k; E is the scientific exponent.
+    int32:big_e = k - 1i32;
+    string:out = "";
+    if ((big_e >= (0i32 - 4i32)) && (big_e <= 15i32)) {
+        if (k <= 0i32) {
+            out = "0.";
+            int32:z = 0i32 - k;
+            while (z > 0i32) {
+                out = raw string_concat(out, "0");
+                z = z - 1i32;
+            }
+            out = raw string_concat(out, digits);
+        }
+        if ((k > 0i32) && ((k => int64) < dn)) {
+            string:hd = string_slice(digits, 0i64, k => int64) ?| "";
+            string:tl = string_slice(digits, k => int64, dn) ?| "";
+            out = raw string_concat(hd, ".");
+            out = raw string_concat(out, tl);
+        }
+        if ((k > 0i32) && ((k => int64) >= dn)) {
+            out = raw string_concat(out, digits);
+            int64:z2 = (k => int64) - dn;
+            while (z2 > 0i64) {
+                out = raw string_concat(out, "0");
+                z2 = z2 - 1i64;
+            }
+            out = raw string_concat(out, ".0");
+        }
+    } else {
+        string:fs = string_slice(digits, 0i64, 1i64) ?| "";
+        out = raw string_concat(out, fs);
+        if (dn > 1i64) {
+            string:rs = string_slice(digits, 1i64, dn) ?| "";
+            out = raw string_concat(out, ".");
+            out = raw string_concat(out, rs);
+        }
+        out = raw string_concat(out, "e");
+        int32:ea = big_e;
+        if (big_e < 0i32) {
+            out = raw string_concat(out, "-");
+            ea = 0i32 - big_e;
+        }
+        if (big_e >= 0i32) { out = raw string_concat(out, "+"); }
+        if (ea < 10i32) { out = raw string_concat(out, "0"); }
+        out = raw string_concat(out, raw int_to_string(ea => int64));
+    }
+    pass (raw string_concat(neg, out));
+};
+
+// THE FLOATS RENDER SHORTEST-ROUND-TRIP (§6b). The bits travel through a
+// scratch buffer — a store as the float, a load as the integer — because
+// `=>!` is a VALUE conversion everywhere and must not quietly mean
+// "reinterpret" for one pair of types.
+impl:flt64:ToString = { func:to_string = string(flt64:self) never fails {
+    wild int8->:b = alloc(8i64);
+    wild flt64->:fp = b =>! wild flt64->;
+    <-fp = self;
+    wild uint64->:ip = b =>! wild uint64->;
+    uint64:w = <-ip;
+    drop dalloc(b);
+    pass (raw flt_bits_shortest(w, 52u64, 11u64));
+}; };
+impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
+    wild int8->:b = alloc(4i64);
+    wild flt32->:fp = b =>! wild flt32->;
+    <-fp = self;
+    wild uint32->:ip = b =>! wild uint32->;
+    uint32:w = <-ip;
+    drop dalloc(b);
+    pass (raw flt_bits_shortest(w => uint64, 23u64, 8u64));
+}; };
+
 // FNV-1a, THE DERIVED HASH (D-123). The combiner is specified so a derived hash
 // is the same across builds -- a verified compiler cannot have one that drifts.
 // The offset basis (0xcbf29ce484222325) is past the 64-bit literal envelope, so it

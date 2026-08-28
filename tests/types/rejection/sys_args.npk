@@ -1,0 +1,99 @@
+// `sys` is TYPED (S-3a, 1.1-interlude): every argument is one kernel register
+// — integer-family at register width, a kernel identifier, or a pointer whose
+// address becomes the register (1.1.12a) — and the call is `Result<int64>` by
+// contract (D-048). Before this rule a non-register argument reached the
+// trampoline and died as INVALID IR at llc, and a wrong annotation or a
+// mismatched `?|` default sailed through untyped.
+mod:sys_args;
+
+struct:Pair = { int32:a; int32:b; };
+
+func:NR = int64() never fails { pass 39i64; };
+
+// A `Result` is not a register: a never-fails call written WITHOUT `raw`
+// still carries the wrapper.
+// expect-error: NITPICK-TYPE-007
+func:result_arg = NIL() never fails {
+    Result<int64>:r = sys(NR());
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// `bool` is not an integer (D-036): semantics outrank representation.
+// expect-error: NITPICK-TYPE-007
+func:bool_arg = NIL() never fails {
+    Result<int64>:r = sys(39i64, true);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// An aggregate has no register form.
+// expect-error: NITPICK-TYPE-007
+func:struct_arg = NIL() never fails {
+    Pair:p = Pair{ a: 1i32, b: 2i32 };
+    Result<int64>:r = sys(39i64, p);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// A bare-name builtin call has no signature the checker can see — its value
+// may not be register-shaped, so it is refused here: bind it first.
+// expect-error: NITPICK-TYPE-007
+func:unknown_arg = NIL() never fails {
+    Result<int64>:r = sys(39i64, raw string_byte_length("x"));
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// Wider than a register: one argument is one register, and `int128` is two.
+// expect-error: NITPICK-TYPE-007
+func:wide_arg = NIL() never fails {
+    int128:w = 5i128;
+    Result<int64>:r = sys(39i64, w);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// The syscall number comes first — zero arguments name no syscall.
+// expect-error: NITPICK-TYPE-007
+func:no_number = NIL() never fails {
+    Result<int64>:r = sys();
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// The kernel has six argument registers; an eighth argument fits nowhere.
+// expect-error: NITPICK-TYPE-007
+func:eight_args = NIL() never fails {
+    Result<int64>:r = sys(39i64, 1i64, 2i64, 3i64, 4i64, 5i64, 6i64, 7i64);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// The typed contract reaches the consumers: a discarded `sys` swallows an
+// error the old UNKNOWN typing let through silently.
+// expect-error: NITPICK-TYPE-039
+func:discarded = NIL() never fails {
+    discard(sys(39i64));
+    pass NIL;
+};
+
+// ... a `?|` default is checked against the contract's `int64` ...
+// expect-error: NITPICK-TYPE-007
+func:default_mismatch = NIL() never fails {
+    int64:g = sys(39i64) ?| 7i32;
+    if (g == 0i64) { }
+    pass NIL;
+};
+
+// ... and a wrong annotation refuses at the binding.
+// expect-error: NITPICK-TYPE-007
+func:wrong_annotation = NIL() never fails {
+    Result<int32>:r = sys(39i64);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
