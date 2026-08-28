@@ -581,6 +581,15 @@ asymmetry bugs is eliminated structurally.
 - **Casts are never straight bit operations.** The sentinel differs at every
   width, so sign-extending `tbb8` ERR yields a *valid* `tbb32` value. See
   D-008 §6. `FORMAL_DRAFT` 2.3.1 names a `tbb_widen<T>()` intrinsic for this.
+- **A cast OUT of the family traps on an ERR operand under BOTH spellings**
+  (D-144 as amended at 1.3.2, one rule with `tfp`): `=>!` acknowledges the
+  VALUE's loss, and ERR is not a value — no acknowledgment converts a taint.
+  The value itself is range-classified like any numeric pair, so `tbb64 =>
+  int8` and `tbb32 => uint32` are compile errors and take the bang, exactly
+  as the plain matrix spells `int64 => int8` and `int32 => uint32`. Entering,
+  `=>` traps on a value with no image (the sentinel bit pattern, or out of
+  range) and `=>!` saturates it to ERR — the family's own discipline, the
+  reason entering is a runtime question while leaving is a compile-time one.
 - **No implicit default value.** Definite-assignment analysis rejects
   read-before-write at compile time, which is stronger than any default (D-010).
   Assignment *replaces* a value, so an ERR taint is cleared by `x = 5i32`;

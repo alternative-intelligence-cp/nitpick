@@ -230,7 +230,7 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // `tbb32` that is an ordinary valid number. Every cast touching a `tbb` is a
     // conversion with a sentinel test in it, which the backend must emit and
     // which 0.7 lowers.
-    if (fk == (raw TY_TBB())) { pass (raw cast_from_tbb(tyt, to, tk)); }
+    if (fk == (raw TY_TBB())) { pass (raw cast_from_tbb(tyt, from, to, tk)); }
     if (tk == (raw TY_TBB())) { pass (raw cast_to_tbb(tyt, from, fk)); }
 
     // --- a handle's number is readable; a handle is not forgeable ----------------
@@ -317,19 +317,36 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     pass (raw CAST_LOSSY());
 };
 
-// `tbbN => X`. Widening between `tbb`s maps ERR to the target's ERR and
-// sign-extends everything else; narrowing maps ERR and anything out of range to
-// the target's ERR — which is not silent loss but the type's own discipline
-// (D-008 §3), the same saturation its arithmetic performs.
-func:cast_from_tbb = int32(TypeTable->:tyt, int32:to, int32:tk) never fails {
+// `tbbN => X`. Within the family every width pair is legal in both spellings
+// and the SENTINEL maps — ERR is a state, not a number, and the narrowing
+// trap/saturation is the type's own discipline (D-008 §3, D-144). LEAVING the
+// family, two separate questions, answered separately (D-144 as amended at
+// 1.3.2, aligning with tfp's D-195 rule):
+//
+// - The TAINT: ERR has no image anywhere outside a twisted family, so it
+//   TRAPS (−4100) under BOTH spellings. What `=>!` acknowledges is the
+//   VALUE's loss; ERR is not a value (D-008 §1), and no acknowledgment
+//   converts a taint. Until 1.3.2 the bang read the carrier raw — ERR
+//   crossed as INT_MIN, a laundering path.
+// - The VALUE: classified by RANGE like every numeric pair, so `tbb64 =>
+//   int8` and `tbb32 => uint32` take the bang exactly as `int64 => int8`
+//   and `int32 => uint32` would. Until 1.3.2 every int/float target was
+//   CAST_OK and the emitter resized the carrier raw — a silent width/sign
+//   loss under the checked spelling.
+func:cast_from_tbb = int32(TypeTable->:tyt, int32:from, int32:to, int32:tk) never fails {
     if (tk == (raw TY_TBB())) { pass (raw CAST_OK()); }
-    // `tbb => intN` and `tbb => flt`: ERR HAS NO REPRESENTATION THERE. The spec
-    // makes this trap to `failsafe` unless guarded, so it is a legal cast that
-    // carries a mandatory runtime check — the controlled-shutdown path, not a
-    // silent reinterpretation. 0.5's flow analysis is what can elide the check
-    // when `is_err` already guards it.
-    if (tk == (raw TY_INT()))   { pass (raw CAST_OK()); }
-    if (tk == (raw TY_FLOAT())) { pass (raw CAST_OK()); }
+    if (tk == (raw TY_INT())) {
+        ValueRange:fr = raw type_range(tyt, from);
+        ValueRange:tr = raw type_range(tyt, to);
+        if (raw range_fits(fr, tr)) { pass (raw CAST_OK()); }
+        pass (raw CAST_LOSSY());
+    }
+    if (tk == (raw TY_FLOAT())) {
+        ValueRange:fr2 = raw type_range(tyt, from);
+        ValueRange:tr2 = raw type_range(tyt, to);
+        if (raw range_fits(fr2, tr2)) { pass (raw CAST_OK()); }
+        pass (raw CAST_LOSSY());
+    }
     pass (raw CAST_IMPOSSIBLE());
 };
 

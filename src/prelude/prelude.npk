@@ -462,12 +462,14 @@ impl:tid:Hash = { func:hash = uint64(tid:self) never fails { pass (raw fnv_mix(r
 impl:uid:Hash = { func:hash = uint64(uid:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
 impl:gid:Hash = { func:hash = uint64(gid:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
 
-// A tbb HASHES ERR AS A FIXED WORD, ITS VALUE OTHERWISE (D-008): the checked read
-// cannot touch ERR, so the guard comes first.
-impl:tbb8:Hash = { func:hash = uint64(tbb8:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
-impl:tbb16:Hash = { func:hash = uint64(tbb16:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
-impl:tbb32:Hash = { func:hash = uint64(tbb32:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
-impl:tbb64:Hash = { func:hash = uint64(tbb64:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self => uint64)); }; };
+// A tbb HASHES ERR AS A FIXED WORD, ITS VALUE OTHERWISE (D-008): the guard
+// comes first, so the cast's ERR trap (both spellings, D-144 as amended at
+// 1.3.2) cannot fire; the bang is the signed→unsigned acknowledgment, the
+// same spelling the plain matrix requires of `int64 =>! uint64`.
+impl:tbb8:Hash = { func:hash = uint64(tbb8:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tbb16:Hash = { func:hash = uint64(tbb16:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tbb32:Hash = { func:hash = uint64(tbb32:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tbb64:Hash = { func:hash = uint64(tbb64:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
 
 // A string CLONES BY ALLOCATING A FRESH BODY (D-183). This is the language's
 // one spelling for "I genuinely want a second owner": explicit at the call

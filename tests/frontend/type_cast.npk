@@ -210,9 +210,24 @@ func:main = int32(cstring[]:_~argv) {
 
     // `tbb => intN` is legal and carries a MANDATORY runtime check: ERR has no
     // representation in a plain integer, so it traps to `failsafe` — the
-    // controlled-shutdown path, never a silent reinterpretation.
+    // controlled-shutdown path, never a silent reinterpretation. Since the
+    // 1.3.2 alignment the trap fires under BOTH spellings — `=>!`
+    // acknowledges the VALUE's loss, and ERR is not a value.
     Cx:t3 = raw cx("1tbb32 => int32", @it);
     if (raw errs(@t3) != 0i64)                               { exit 72i32; }
+
+    // …and the VALUE crossing is classified by RANGE like any numeric pair
+    // (D-144 as amended at 1.3.2): a narrower or unsigned target can lose a
+    // genuine value, so it takes the bang — exactly as the plain matrix
+    // spells `int64 => int8`. Until 1.3.2 these rode `=>` and the emitter
+    // resized the carrier raw.
+    if (!(raw lossy_pair("1tbb64 => int8", "1tbb64 =>! int8", @it)))     { exit 75i32; }
+    if (!(raw lossy_pair("1tbb32 => uint32", "1tbb32 =>! uint32", @it))) { exit 76i32; }
+    // The float side is the significand question, same as the plain ints:
+    // tbb32's 31 magnitude bits fit flt64's 53 and not flt32's 24.
+    if (!(raw lossy_pair("1tbb32 => flt32", "1tbb32 =>! flt32", @it)))   { exit 77i32; }
+    Cx:t7 = raw cx("1tbb32 => flt64", @it);
+    if (raw errs(@t7) != 0i64)                               { exit 78i32; }
 
     // `intN => tbb` likewise: a source value equal to the target's sentinel would
     // forge a taint, so it traps on that value.

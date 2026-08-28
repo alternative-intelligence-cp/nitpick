@@ -33,5 +33,25 @@ func:forged = fd(Point:p) never fails {
     pass h;
 };
 
+// LEAVING A `tbb` IS RANGE-CLASSIFIED LIKE ANY NUMERIC PAIR (D-144 as amended
+// at 1.3.2): a narrower target can lose a genuine value, so the checked
+// spelling refuses it exactly as it refuses `int64 => int8`. Until 1.3.2 every
+// int/float target rode `=>` and the emitter resized the carrier raw — a
+// silent loss under the checked spelling.
+// expect-error: NITPICK-TYPE-009
+func:tbb_narrow_out = int8(tbb64:v) never fails {
+    int8:small = v => int8;
+    pass small;
+};
+
+// The sign crossing is the same question: a negative tbb value has no unsigned
+// image, so `=>` refuses and `=>!` is the acknowledgment (the prelude's own
+// Hash impls spell it with the bang).
+// expect-error: NITPICK-TYPE-009
+func:tbb_sign_out = uint32(tbb32:v) never fails {
+    uint32:u = v => uint32;
+    pass u;
+};
+
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(Error:_~e) { exit 1i32; };

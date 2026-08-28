@@ -189,7 +189,14 @@ trap-on-ERR-exit under both spellings; `.floor()`/`.trunc()`; exact-decimal
 (twisted division arms no DivByZero; TbbErr armed for both families).
 Three D-195 amendments recorded: compare-on-ERR TRAPS (D-008 §5 outranked
 the carried spec row), raw bitwise/shifts STRUCK (`ERR << 1` is an ERR
-laundry), tbb↔tfp casts impossible.
+laundry), tbb↔tfp casts impossible. **The flagged tbb asymmetry was then
+settled by the user and landed as the D-144 amendment**: leaving tbb, ERR
+traps under BOTH spellings (`=>!` acknowledges the VALUE's loss; the
+0.9.5 carrier read crossed taint as INT_MIN), and the value crossing is
+range-classified like any numeric pair — closing a second hole where
+`tbb64 => int8` truncated and `tbb32 => uint32` sign-extended raw under
+the CHECKED spelling; the prelude's four `tbbN:Hash` impls now spell
+their guarded crossing `=>!`.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

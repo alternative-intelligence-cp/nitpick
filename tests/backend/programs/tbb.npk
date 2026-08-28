@@ -70,8 +70,9 @@ func:main = int32(cstring[]:_~argv) {
     tbb32:f32v = fits =>! tbb32;
     if (is_err(f32v))                           { exit 26i32; }
 
-    // Leaving tbb with the bang reads the carrier; the checked spelling's
-    // trap is its own program (tbb_cast_trap).
+    // Leaving tbb with the bang reads the VALUE — a valid one converts, and
+    // ERR traps under both spellings since the 1.3.2 alignment (the trap
+    // programs are tbb_cast_trap and tbb_cast_bang_trap).
     if ((okv =>! int32) != 41i32)               { exit 27i32; }
 
     drop wild_release_all();

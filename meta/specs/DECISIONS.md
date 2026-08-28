@@ -9934,16 +9934,48 @@ deliberately unguarded — it IS the handler). Ordering on tbb was already a
 compile error (D-093); D-008 §5's runtime-ordering text is annotated as
 narrowed in the doc-sync.
 
-**The cast matrix.** Per the settled `cast_from_tbb`/`cast_to_tbb` arms,
-every crossing is legal and carries its runtime semantics: `=>` traps (−4100)
-where the value has no image — ERR leaving tbb, a sentinel-or-out-of-range
-value entering — and `=>!` is the greppable acceptance: entering saturates to
-ERR, leaving reads the raw carrier. **tbb⇄tbb maps the sentinel across widths
+**The cast matrix** *(leaving side amended at 1.3.2 — see the amendment
+below)*. Per the settled `cast_from_tbb`/`cast_to_tbb` arms as landed at
+0.9.5: every crossing is legal and carries its runtime semantics: `=>` traps
+(−4100) where the value has no image — ERR leaving tbb, a
+sentinel-or-out-of-range value entering — and `=>!` is the greppable
+acceptance: entering saturates to ERR, leaving reads the raw carrier.
+**tbb⇄tbb maps the sentinel across widths
 in both spellings** — ERR is a state, not a number; widening must not
 sign-extend it into a valid value and narrowing must not truncate it into
 zero. float→tbb compares in double (one bound table serves both float
 widths); NaN fails the ordered bounds and is out-of-range garbage like any
 other.
+
+### D-144 amendment — the leaving side (1.3.2 follow-up, user-settled)
+
+D-195's amendment 3 gave `tfp` the rule that a cast OUT of the family traps
+on ERR under BOTH spellings, and flagged the asymmetry with tbb's landed
+`=>!`-reads-the-carrier for the user rather than changing 0.9.5 behavior
+under a tfp decision. **The user settled it: tbb aligns — one rule, no
+laundering path.** Leaving a twisted family:
+
+- **The TAINT: ERR traps (−4100) under both spellings.** What `=>!`
+  acknowledges is the VALUE's loss; ERR is not a value (D-008 §1), and no
+  acknowledgment converts a taint. The struck carrier read crossed ERR as
+  INT_MIN — recognizable, but unchecked, and one `is_err` short of honest.
+- **The VALUE: classified by RANGE like every numeric pair**, which the
+  0.9.5 arms never did — every int/float target was CAST_OK and the emitter
+  resized the carrier raw, so `tbb64 => int8` truncated and `tbb32 =>
+  uint32` sign-extended into huge positives, silently, under the CHECKED
+  spelling. Now `tbb64 => int8`, `tbb32 => uint32` and `tbb64 => flt64`
+  take the bang exactly as the plain matrix spells `int64 => int8`,
+  `int32 => uint32` and `int64 => flt64`; fits (`tbb32 => int32`,
+  `tbb32 => flt64`) stay `=>`. The prelude's four `tbbN:Hash` impls — the
+  tree's only affected sites — now spell their guarded signed→unsigned
+  crossing `=>!`, matching every neighboring impl.
+
+The entering side and tbb⇄tbb are unchanged — entering's runtime
+check-or-saturate IS the family's own discipline (the target has an
+absorbing state; a plain target has none, which is why leaving is a
+compile-time question). Proven by `tbb_cast_bang_trap` (the −4100 under the
+bang), the `lossy_pair` rows in the frontend matrix test, and two
+`NITPICK-TYPE-009` rejection rows.
 
 **`ERR` takes the width of its slot** (`tbb64:e = ERR;` works; bare ERR with
 no tbb context stays tbb32), from one shared sentinel table in the emitter —
@@ -13835,10 +13867,11 @@ regime drops them. Dimensions are int64, not the prototype's int32
    `=>!` acknowledges is the value's precision loss; ERR is not a value
    (D-008 §1 excludes it from the range), and the sentinel shifted down by
    F is a plausible mid-range number — the worst laundering. NOTE the
-   asymmetry this creates with tbb, whose `=>!` reads the carrier raw
-   (landed 0.9.5): the tbb carrier at least surfaces as the recognizable
+   asymmetry this created with tbb, whose `=>!` read the carrier raw
+   (landed 0.9.5): the tbb carrier at least surfaced as the recognizable
    INT_MIN. Flagged for the user as a safety observation rather than
-   changed under this decision.
+   changed under this decision — **and settled by the user at the 1.3.2
+   close: tbb aligns to the trap rule. See the D-144 amendment.**
 4. **`tbb ↔ tfp` casts are CAST_IMPOSSIBLE** — same carrier, different
    VALUES (the 2^F scale); a reinterpretation would be a forgery.
 5. **`is_err`, the `ERR` sentinel-by-context, unary `-` (total under

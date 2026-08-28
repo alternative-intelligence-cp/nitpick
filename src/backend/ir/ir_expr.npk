@@ -2135,14 +2135,18 @@ func:tbb_resize = string(ExprEmitter->:x, string:from_ll, string:ref,
     pass r;
 };
 
-// THE tbb CAST MATRIX (0.9.5, D-144) — closing the audit's third Theme-A hole:
-// same-width int⇄tbb rode the no-op fast path, so a taint could be forged or
-// laundered with no spelling saying so. The contract, per the settled
-// `cast_from_tbb`/`cast_to_tbb` arms: every crossing is legal (`CAST_OK`) and
-// CARRIES ITS RUNTIME CHECK — `=>` traps (TBB_ERR, -4100) where the value has
-// no image (an ERR leaving tbb, a sentinel-or-out-of-range value entering),
-// and `=>!` is the greppable acceptance: the same conversion SATURATES to ERR
-// instead of trapping (entering) or reads the raw carrier (leaving). tbb⇄tbb
+// THE tbb CAST MATRIX (0.9.5, D-144; leaving-side amended 1.3.2) — closing
+// the audit's third Theme-A hole: same-width int⇄tbb rode the no-op fast
+// path, so a taint could be forged or laundered with no spelling saying so.
+// The contract, per the settled `cast_from_tbb`/`cast_to_tbb` arms: ENTERING,
+// every int/float source is legal (`CAST_OK`) and carries its runtime check —
+// `=>` traps (TBB_ERR, -4100) on a sentinel-or-out-of-range value, `=>!` is
+// the greppable acceptance and SATURATES it to ERR, the family's own
+// discipline. LEAVING, ERR traps under BOTH spellings (the 1.3.2 alignment
+// with tfp's D-195 rule — `=>!` acknowledges the VALUE's loss and ERR is not
+// a value; the carrier read it used to license crossed taint as INT_MIN),
+// and the value pair is range-classified by the checker like any numeric
+// pair, so a width- or sign-losing exit takes the bang. tbb⇄tbb
 // maps the sentinel across widths in BOTH spellings — ERR is a state, not a
 // number, and a conversion that forgot it would forge validity out of taint.
 // The largest valid INTEGER PART per tfp width — (2^(I-1)) - 1, I = N/2.
@@ -2443,8 +2447,13 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
             pass (raw iv(move(want.text), move(res3), wid));
         }
 
-        // Leaving tbb: `=>` traps on ERR (no image); `=>!` reads the carrier.
-        if (!unchecked) { drop tbb_trap_if(x, err, n.span); }
+        // Leaving tbb: ERR TRAPS UNDER BOTH SPELLINGS (D-144 as amended at
+        // 1.3.2, aligned with tfp's D-195 rule): `=>!` acknowledges the
+        // VALUE's loss, and ERR is not a value — the carrier read it used
+        // to license crossed the taint as INT_MIN, a laundering path. The
+        // value conversion below is loss-free under `=>` (the checker now
+        // range-classifies the pair) and accepted-loss under `=>!`.
+        drop tbb_trap_if(x, err, n.span);
         if (dk == (raw TY_FLOAT())) {
             string:fr = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
