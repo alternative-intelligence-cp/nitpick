@@ -7074,6 +7074,23 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", sig.ret, " ",
                       raw cat4(sig.sym, "(", args, ")")));
+    // A CHECKER-TYPED BUILTIN UNWRAPS AT THE SOURCE (1.3.7). `buffer_new`
+    // is typed as the bare value by its `type_call` arm — never fails, so
+    // the call needs no `raw` — but the floor still answers in the Result
+    // envelope. Handing the envelope out under the bare recorded type made
+    // the binding store 32 bytes into a 24-byte slot: extract the value
+    // half HERE, where the shapes are both known.
+    int32:bt_rec = raw exprtypes_get(x.et, id);
+    if (sig.wrapped) {
+        if (bt_rec != 0i32) {
+            if ((raw type_kind(x.fe.ctx.types, bt_rec)) != (raw TY_RESULT())) {
+                string:uv = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(uv, " = extractvalue ", sig.ret,
+                                  " ", raw string_concat(r, ", 0")));
+                pass (raw iv(move(sig.inner), move(uv), bt_rec));
+            }
+        }
+    }
     IrVal:out = raw iv(raw string_concat(sig.ret, ""), move(r), 0i32);
     out.wrapped = sig.wrapped;
     out.inner = move(sig.inner);
@@ -8223,6 +8240,10 @@ func:builtin_field_index = int32(ExprEmitter->:x, int32:kind, int32:name) never 
     if (kind == (raw TY_STRING())) {
         if (raw string_eq(f, "cap")) { pass 2i32; }
     }
+    // A buffer carries the string's trio (D-200/§23).
+    if (kind == (raw TY_BUFFER())) {
+        if (raw string_eq(f, "cap")) { pass 2i32; }
+    }
     pass (0i32 - 1i32);
 };
 
@@ -8300,6 +8321,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
         if (bkind == (raw TY_STRING()))  { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_CSTRING())) { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_SLICE()))   { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
+        if (bkind == (raw TY_BUFFER()))  { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_STRUCT())) {
             FieldInfo:fi = raw struct_field(x.tr, btid, n.payload =>! int32,
                                               x.scope);
@@ -8818,6 +8840,11 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         fll = "i64";
         if (idx == 0i32) { fll = "ptr"; }
     }
+    if (bkind == (raw TY_BUFFER())) {
+        idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
+        fll = "i64";
+        if (idx == 0i32) { fll = "ptr"; }
+    }
     // A GUARD'S `.value` READS THROUGH THE CELL (D-056, 1.1.11): the base
     // value IS the cell pointer, and the element lives at +16.
     bool:g_hold = (bkind == (raw TY_GUARD()));
@@ -9267,6 +9294,21 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     string:name = raw intern_get(x.interns, raw builtin_name(n));
     int32:gc = raw builtin_generic_count(n);
     int32:start = raw expr_list_start(n);
+
+    // `#sqrt(x)` (D-200, 1.3.7): the instruction, via the declared intrinsic.
+    if (raw string_eq(name, "sqrt")) {
+        IrVal:sqv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (!(raw iv_is_ok(sqv))) { pass sqv; }
+        string:sqn = "llvm.sqrt.f64";
+        if (raw string_eq(sqv.ll, "float")) { sqn = "llvm.sqrt.f32"; }
+        string:sqr = raw irw_temp(x.fe.w);
+        string:sqh = raw cat5(sqr, " = call ", sqv.ll, " @", sqn);
+        drop irw_line(x.fe.w, raw string_concat(sqh,
+                          raw string_concat(
+                              raw string_concat("(", raw cat3(sqv.ll, " ", sqv.ref)),
+                              ")")));
+        pass (raw iv(raw string_concat(sqv.ll, ""), move(sqr), sqv.type_id));
+    }
 
     // `#size_of<T>()` — ASK LLVM, never compute: gep one element past null and
     // read the offset. A hand-rolled size that disagrees with the one LLVM lays

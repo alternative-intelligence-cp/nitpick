@@ -4483,6 +4483,34 @@ define ptr @npk_alloc_managed(i64 %n) {
   ret ptr %p
 }
 
+; buffer_new (D-200/S23, 1.3.7): the MANAGED owning byte cell -- a zeroed
+; body with len = cap = n, whose scope-exit drop (the string's cap-gated
+; body, shared because the layout is) frees it. n <= 0 is the empty,
+; non-owning buffer {null, 0, 0} -- cap 0 is the not-mine bit. Allocation
+; failure traps inside the allocator (HeapOom -> failsafe), so the Result
+; is always the ok arm -- `never fails` on the frontend side.
+define { { ptr, i64, i64 }, i32 } @npk_buffer_new(i64 %n) {
+entry:
+  %pos = icmp sgt i64 %n, 0
+  br i1 %pos, label %mk, label %empty
+mk:
+  %p = call ptr @npk_alloc_impl(i64 %n, i64 0)
+  call ptr @memset(ptr %p, i32 0, i64 %n)
+  %b0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
+  %b1 = insertvalue { ptr, i64, i64 } %b0, i64 %n, 1
+  %b2 = insertvalue { ptr, i64, i64 } %b1, i64 %n, 2
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %b2, 0
+  %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %r1
+empty:
+  %e0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %e1 = insertvalue { ptr, i64, i64 } %e0, i64 0, 1
+  %e2 = insertvalue { ptr, i64, i64 } %e1, i64 0, 2
+  %s0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %e2, 0
+  %s1 = insertvalue { { ptr, i64, i64 }, i32 } %s0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %s1
+}
+
 ; The INTERNAL entry -- runtime-owned storage (string bodies, argv, file
 ; buffers). Managed-regime: not in <wild-live>; its RAII lands with the
 ; managed lowering, and wild_release_all still reclaims it wholesale.

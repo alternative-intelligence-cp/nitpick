@@ -502,7 +502,10 @@ pub func:is_keyword = bool(string:text) {
     SIMPLE = {"bool": "TY_BOOL", "string": "TY_STRING", "cstring": "TY_CSTRING",
               "any": "TY_ANY", "NIL": "TY_NIL",
               # 1.1.12b (D-185): the owning descriptor -- concrete, scalar-shaped.
-              "OwnedFd": "TY_OWNEDFD"}
+              "OwnedFd": "TY_OWNEDFD",
+              # 1.3.7 (D-200/#23): the managed owning byte cell -- a bare
+              # type, string's typed twin; it was mis-filed as generic.
+              "buffer": "TY_BUFFER"}
     # 1.3.4 (D-197): the balanced ternary/nonary bases -- name -> (bits, base).
     # The digit count derives from the pair (base 3: 8 bits = 1 digit, 16 = 10;
     # base 9: 8 = 1, 16 = 5), so the spec's `which` slot carries the BASE.
@@ -514,6 +517,7 @@ pub func:is_keyword = bool(string:text) {
                   "Mutex", "Guard", "RwLock", "RGuard", "CondVar", "Barrier",
                   "vec2", "vec3", "vec9", "matrix", "tmatrix", "tensor",
                   "ttensor", "dyn", "func",
+                  # "buffer" moved to SIMPLE at 1.3.7 -- it is a bare type.
                   # 1.3.3 (D-196): `dim256<Unit>` -- the one builtin whose
                   # argument is a UNIT NAME, not a type; resolve_type owns it.
                   "dim256"}

@@ -43,6 +43,7 @@ RUNTIME_ARGS = {
     "calloc":        ["i64", "i64"],
     "ralloc":        ["ptr", "i64"],
     "dalloc":        ["ptr"],
+    "buffer_new":    ["i64"],
     "string_concat": ["{ ptr, i64, i64 }", "{ ptr, i64, i64 }"],
     "int_to_string": ["i64"],
     "open":          ["{ ptr, i64 }", "i64", "i64"],

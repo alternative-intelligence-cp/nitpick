@@ -1,0 +1,107 @@
+// `lib/ntensor.npk` — the runtime-dimensioned containers (D-200, 1.3.7).
+//
+// `matrix<T>` and `tensor<T>` own their cell through a `buffer` field, so
+// the 1.2 managed regime reclaims every container here at scope exit —
+// the exit-time leak registry is the proof. Bounds live in the LIBRARY as
+// refusal-shaped `fail`s (`BadIndex`/`BadShape` are ntensor's own declared
+// errors); the buffer body is in-bounds by construction. `tmatrix` is NOT
+// a type: D-200's words are "the same containers over `tryte`", so this
+// test instantiates `matrix<tryte>` and drives a twisted overflow through
+// it — the ERR is the ternary family's, visible through the container.
+mod:ntensor_basic;
+
+use "../../../lib/ntensor.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    // matrix<flt64>: zeroed birth, round trips, both bounds refused.
+    matrix<flt64>:mx = mat_of::<flt64>(3i64, 4i64) ?! BadShape;
+    if (mx.rows != 3i64)                              { exit 10i32; }
+    if (mx.cols != 4i64)                              { exit 11i32; }
+    if (mx.cells.len != 96i64)                        { exit 12i32; }
+    if ((mx.get(0i64, 0i64) ?! BadIndex) != 0.0f64)   { exit 13i32; }
+    mx.set(1i64, 2i64, 6.5f64) ?! BadIndex;
+    mx.set(2i64, 3i64, 0.25f64) ?! BadIndex;
+    if ((mx.get(1i64, 2i64) ?! BadIndex) != 6.5f64)   { exit 14i32; }
+    if ((mx.get(2i64, 3i64) ?! BadIndex) != 0.25f64)  { exit 15i32; }
+    if ((mx.get(1i64, 3i64) ?! BadIndex) != 0.0f64)   { exit 16i32; }
+    Result<flt64>:row_over = mx.get(3i64, 0i64);
+    if (!row_over.is_error)                           { exit 17i32; }
+    Result<flt64>:col_neg = mx.get(0i64, 0i64 - 1i64);
+    if (!col_neg.is_error)                            { exit 18i32; }
+    Result<matrix<flt64>>:zshape = mat_of::<flt64>(0i64, 4i64);
+    if (!zshape.is_error)                             { exit 19i32; }
+
+    // matrix<tryte> — "tmatrix" is an instance, not a type. The twisted
+    // family's semantics ride through: an overflowing add of two stored
+    // trytes is ERR, and `is_err` is the non-trapping look (D-197).
+    matrix<tryte>:tm = mat_of::<tryte>(2i64, 2i64) ?! BadShape;
+    tm.set(0i64, 0i64, 42) ?! BadIndex;
+    tm.set(0i64, 1i64, 29524) ?! BadIndex;
+    tm.set(1i64, 0i64, 29524) ?! BadIndex;
+    tryte:t00 = tm.get(0i64, 0i64) ?! BadIndex;
+    if ((t00 => int32) != 42i32)                      { exit 20i32; }
+    tryte:big_a = tm.get(0i64, 1i64) ?! BadIndex;
+    tryte:big_b = tm.get(1i64, 0i64) ?! BadIndex;
+    tryte:sum = big_a + big_b;
+    if (!is_err(sum))                                 { exit 21i32; }
+    tryte:back = tm.get(1i64, 1i64) ?! BadIndex;
+    if ((back => int32) != 0i32)                      { exit 22i32; }
+
+    // tensor<flt64>: rank 1, rank 3 (row-major), and rank 9 — Nikola's
+    // manifold shape, one allocation, dims inline.
+    int64[1]:s1 = [5i64];
+    tensor<flt64>:t1 = tensor_of::<flt64>(s1[0i32...1i32]) ?! BadShape;
+    int64[1]:i4 = [4i64];
+    t1.set(i4[0i32...1i32], 1.5f64) ?! BadIndex;
+    if ((t1.get(i4[0i32...1i32]) ?! BadIndex) != 1.5f64) { exit 23i32; }
+
+    int64[3]:s3 = [2i64, 3i64, 4i64];
+    tensor<flt64>:t3 = tensor_of::<flt64>(s3[0i32...3i32]) ?! BadShape;
+    if (t3.cells.len != 192i64)                       { exit 24i32; }
+    int64[3]:at = [1i64, 2i64, 3i64];
+    int64[3]:origin = [0i64, 0i64, 0i64];
+    t3.set(at[0i32...3i32], 2.5f64) ?! BadIndex;
+    if ((t3.get(at[0i32...3i32]) ?! BadIndex) != 2.5f64) { exit 25i32; }
+    if ((t3.get(origin[0i32...3i32]) ?! BadIndex) != 0.0f64) { exit 26i32; }
+    // The flat offset is row-major: [1][2][3] of 2×3×4 is cell 23, the last.
+    <-(#ptr_add<flt64>(t3.cells.ptr, 23i64)) = 9.0f64;
+    if ((t3.get(at[0i32...3i32]) ?! BadIndex) != 9.0f64) { exit 27i32; }
+
+    int64[9]:s9 = [2i64, 1i64, 1i64, 1i64, 1i64, 1i64, 1i64, 1i64, 3i64];
+    tensor<flt64>:t9 = tensor_of::<flt64>(s9[0i32...9i32]) ?! BadShape;
+    if (t9.ndims != 9i64)                             { exit 28i32; }
+    int64[9]:c9 = [1i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 2i64];
+    t9.set(c9[0i32...9i32], 0.5f64) ?! BadIndex;
+    if ((t9.get(c9[0i32...9i32]) ?! BadIndex) != 0.5f64) { exit 29i32; }
+
+    // The shape refusals: rank 0, rank 10, a zero extent — and an index
+    // tuple whose arity is not the rank.
+    int64[10]:s10 = [1i64, 1i64, 1i64, 1i64, 1i64,
+                     1i64, 1i64, 1i64, 1i64, 1i64];
+    Result<tensor<flt64>>:r10 = tensor_of::<flt64>(s10[0i32...10i32]);
+    if (!r10.is_error)                                { exit 30i32; }
+    Result<tensor<flt64>>:r0 = tensor_of::<flt64>(s10[0i32...0i32]);
+    if (!r0.is_error)                                 { exit 31i32; }
+    int64[2]:sz = [2i64, 0i64];
+    Result<tensor<flt64>>:rz = tensor_of::<flt64>(sz[0i32...2i32]);
+    if (!rz.is_error)                                 { exit 32i32; }
+    Result<flt64>:wrong_rank = t3.get(i4[0i32...1i32]);
+    if (!wrong_rank.is_error)                         { exit 33i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 90i32; },
+        (BadIndex) { exit 91i32; },
+        (BadShape) { exit 92i32; },
+        (OutOfBounds) { exit 94i32; },
+        (HeapOom) { exit 95i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (Unreachable) { exit 97i32; },
+        (WildLeak) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

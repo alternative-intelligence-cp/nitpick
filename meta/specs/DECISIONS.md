@@ -14041,6 +14041,48 @@ containers over `tryte`. All four OWN their heap cell — the 1.2 managed
 regime drops them. Dimensions are int64, not the prototype's int32
 (Nikola-scale tensors against a 2^31 ceiling is a foreseeable regret).
 
+### D-200 implementation record (1.3.7)
+
+Landed as ratified — `lib/nvec.npk` and `lib/ntensor.npk`, ordinary
+Nitpick — plus the two mechanisms the decision presumed and the language
+did not yet have:
+
+1. **`buffer` landed minimally as the managed owning byte cell**
+   (TYPE_REFERENCE §23 rewritten to match): `TY_BUFFER`, re-filed from the
+   generic stand-in to a simple type; `buffer_new(int64) → buffer`
+   (**never fails** — n zeroed bytes, `len == cap == n`; `n <= 0` is the
+   EMPTY non-owning buffer, an answer not an error; OOM traps per D-150);
+   members `.ptr/.len/.cap` — the string's trio with the string's
+   meanings, `cap == 0` the same ownership bit, the DROP BODY shared with
+   the string's; move-only (TYPE-046) and `==`-refused (D-169) like the
+   string; rides a channel whole under the send's `move`. §23's earlier
+   draft rows did NOT land, by decision at the subcycle open: the
+   per-width read/write verb family (a second copy of `#ptr_add` + `<-`),
+   `buffer_free` (the managed drop IS the free), `resize`, and
+   `buffer_bytes` (no consumer yet — add by decision when one exists).
+2. **`#sqrt` joined the `#`-builtins** (flt32/flt64 → `llvm.sqrt.*`, the
+   machine instruction): `length` is ratified, and a prelude Newton
+   iteration would compute a subtly DIFFERENT number than the instruction
+   — the drift this language refuses. Everything else refuses by name
+   (`tfp` recorded as refused for want of a consumer).
+3. **The containers**: `matrix<T>` `{buffer, rows, cols}` with
+   `mat_of::<T>`, `tensor<T>` `{buffer, ndims, int64[9] dims}` with
+   `tensor_of::<T>(int64[] dims)` — one allocation, rank ≤ 9 enforced at
+   creation, row-major offsets on access, EVERY index bounds-checked in
+   the library (`fail BadIndex`/`BadShape`, ntensor's own declared
+   errors; the buffer body is in-bounds by construction). `tmatrix`/
+   `ttensor` shipped as documented instances (`matrix<tryte>`), with the
+   ternary ERR semantics proven THROUGH the container in the tests.
+4. **Found by the first exercise** (the pattern every subcycle repeats):
+   a checker-typed never-fails builtin returning through the floor's
+   Result envelope was handed out under its bare recorded type, so the
+   binding stored 32 bytes into a 24-byte slot — the generic rt path now
+   extracts the value half at the call site when the recorded type is
+   non-Result (`buffer_new` was the first such builtin); and the generic
+   struct literal's spelling inside a generic factory is the BARE name
+   (`matrix{ … }` — instantiation from context, the prelude's own
+   `TextWriter{}` idiom), where `matrix<T>{ … }` does not parse.
+
 ### D-195 amendments (1.3.2, recorded at implementation)
 
 1. **Comparison on ERR TRAPS — the parenthetical corrected.** The proposal

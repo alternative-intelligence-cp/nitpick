@@ -84,6 +84,7 @@ BUILTINS = {
     "calloc":        (T.Ptr(T.Prim("int8")), False),
     "ralloc":        (T.Ptr(T.Prim("int8")), False),
     "dalloc":        (T.NIL, False),
+    "buffer_new":    (T.STRING, True),
     "string_concat": (T.STRING, True),
     "int_to_string": (T.STRING, True),
     # The fd quartet (D-141): one syscall each, Result-wrapped, E_EOF for

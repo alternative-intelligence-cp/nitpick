@@ -261,6 +261,25 @@ taint-trapping), `is_err`/`ERR` on tfp elements only, NO casts either
 direction, methods `.re/.im/.conj/.abs2` everywhere and `.abs` float-only
 (`llvm.sqrt` declared in the fixed block), four concrete-instance
 prelude `ToString` impls ("3+4i"; ERR pairs render "ERR"), TYPE-053.
+**1.3.7 landed the library tier** (D-200): `buffer` minimally as the
+MANAGED owning byte cell (`buffer_new(int64)` never fails — zeroed,
+`len == cap == n`, `n <= 0` the empty answer; the string's trio, the
+string's shared drop body, move-only, `==`-refused; §23's draft verb
+family/`buffer_free`/`resize` struck by decision — typed access is
+`#ptr_add` + `<-`), `#sqrt` (flt32/64 → `llvm.sqrt.*`, the instruction —
+a Newton loop computes a DIFFERENT number), `lib/nvec.npk` (vec2/3/4
+over `simd<flt64, N>`, ctor FUNCTIONS, dot/cross/length2/length; vec9 as
+nine named `flt64` fields with identity and 3×3 mul) and
+`lib/ntensor.npk` (`matrix<T>` `{buffer, rows, cols}`, `tensor<T>` rank
+≤ 9 dims INLINE, library bounds `fail`s — `tmatrix`/`ttensor` are
+`matrix<tryte>` instances, the twisted ERR proven THROUGH the
+container). Found: a checker-typed never-fails builtin's Result envelope
+rode out under the bare recorded type — `buffer:b = buffer_new(16i64)`
+stored 32 bytes into a 24-byte slot (the generic rt path now extracts at
+the site; `buffer_new` is the first of its class); a generic struct
+literal in a generic factory is the BARE `matrix{ … }` (the
+`TextWriter{}` idiom — `matrix<T>{ … }` does not parse); checker-typed
+builtins are called WITHOUT `raw` (`own_fd` precedent).
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

@@ -145,6 +145,10 @@ pub func:rt_sig = RtSig(string:name) never fails {
     if (raw string_eq(name, "dalloc")) {
         pass (raw rt("@npk_dalloc", "void", false, "", 1i32, "ptr", "", "", ""));
     }
+    if (raw string_eq(name, "buffer_new")) {
+        pass (raw rt("@npk_buffer_new", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 1i32, "i64", "", "", ""));
+    }
     if (raw string_eq(name, "string_concat")) {
         pass (raw rt("@npk_string_concat", "{ { ptr, i64, i64 }, i32 }", true,
                      "{ ptr, i64, i64 }", 2i32,
@@ -223,7 +227,7 @@ pub func:rt_sig = RtSig(string:name) never fails {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() never fails { pass 44i32; };
+pub func:rt_count = int32() never fails { pass 45i32; };
 
 pub func:rt_name_at = string(int32:i) never fails {
     if (i == 0i32)  { pass "aalloc"; }
@@ -247,6 +251,7 @@ pub func:rt_name_at = string(int32:i) never fails {
     if (i == 41i32) { pass "chain_site"; }
     if (i == 42i32) { pass "driver_clone_exec"; }
     if (i == 43i32) { pass "driver_retire"; }
+    if (i == 44i32) { pass "buffer_new"; }
     if (i == 17i32) { pass "open"; }
     if (i == 18i32) { pass "path_exists"; }
     if (i == 19i32) { pass "ralloc"; }

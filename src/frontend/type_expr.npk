@@ -1199,6 +1199,10 @@ func:equatable = bool(ExprTyper->:e, ExprNode:n, int32:common) never fails {
     if (k == (raw TY_ARRAY()))  { pass false; }
     if (k == (raw TY_RESULT())) { pass false; }
     if (k == (raw TY_STRING())) { pass false; }
+    // A buffer is bytes behind a pointer, like a string: `==` on the trio
+    // would compare the ADDRESS, not the bytes — refused the same way
+    // (D-200/§23).
+    if (k == (raw TY_BUFFER())) { pass false; }
     if (k == (raw TY_DYN()))    { pass false; }
     if (k == (raw TY_OPTIONAL())) {
         if (raw expr_is_nil_lit(e, raw expr_lhs(n))) { pass true; }
@@ -2117,6 +2121,37 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:argc = (raw expr_list_count(n)) - gc;
     TypeResolver:r = raw etyper_resolver(e);
 
+    // `#sqrt(x)` (D-200, 1.3.7): the square root INSTRUCTION, exposed
+    // because `length` is a ratified library operation and a hand-rolled
+    // Newton iteration computes a subtly DIFFERENT number than the
+    // instruction — the drift this language refuses. Floats only; the
+    // fixed-point families refused a square root for want of a consumer.
+    if (raw string_eq(name, "sqrt")) {
+        if (gc != 0i32) {
+            pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#sqrt` takes no type arguments", n.span));
+        }
+        if (argc != 1i32) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "`#sqrt` takes exactly one argument, the value", n.span));
+        }
+        int32:sqt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        if (sqt == 0i32) { pass 0i32; }
+        if (raw type_is_invalid(e.types, sqt)) { pass 0i32; }
+        bool:sqok = false;
+        if ((raw type_kind(e.types, sqt)) == (raw TY_FLOAT())) {
+            int32:sqb = raw type_int_bits(e.types, sqt);
+            if ((sqb == 32i32) || (sqb == 64i32)) { sqok = true; }
+        }
+        if (!sqok) {
+            string:sq1 = raw string_concat("`#sqrt` takes a `flt32` or `flt64`, and this is `",
+                            raw type_display(e.types, e.interns, sqt));
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                raw string_concat(sq1, "` — the square root is an instruction on floats and nothing else (D-200)"),
+                n.span));
+        }
+        pass sqt;
+    }
     if (raw string_eq(name, "size_of")) {
         if (gc != 1i32) {
             pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),

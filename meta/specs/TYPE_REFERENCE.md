@@ -1324,7 +1324,7 @@ complex<flt64>:z = complex(3.0flt64, 4.0flt64);  // 3 + 4i
 
 > **Memory Model Note (string, buffer):**
 > Nitpick supports multiple memory spaces: managed/`stack` (default, scope-determined), `wild` (unmanaged C-like memory), and `wildx` (JIT executable memory). There is no `gc` space and no collector (D-003).
-> By default, `string` and `uint8[]`-backed storage are scope-managed (stack-allocated where escape analysis permits, otherwise arena- or `wild`-backed with a determined owner). `buffer` is often allocated in `wild` memory, hence the existence of manual `buffer_free()`. No pin operator is needed: nothing relocates memory implicitly, so a pointer taken for FFI stays valid for the lifetime its owner guarantees (D-020).
+> By default, `string` and `uint8[]`-backed storage are scope-managed (stack-allocated where escape analysis permits, otherwise arena- or `wild`-backed with a determined owner). A `buffer` is MANAGED heap storage (1.3.7): its scope-exit drop is the reclaim, and there is no `buffer_free` — manual release is the `wild` regime's spelling, not this type's. No pin operator is needed: nothing relocates memory implicitly, so a pointer taken for FFI stays valid for the lifetime its owner guarantees (D-020).
 
 ## 22. binary — **REMOVED (D-074)**
 
@@ -1345,11 +1345,13 @@ owning byte container is what a read fills and a write drains.
 
 ---
 
-## 23. buffer — Mutable Raw Memory Buffer (Tier 0/1)
+## 23. buffer — The Managed Owning Byte Cell (Tier 0) — as landed, 1.3.7 (D-200)
 
-The **owning** byte container — what a read fills and a write drains. A slice
-(`uint8[]`) cannot own, which is why this type survives D-074's removal of
-`binary`.
+The **owning** byte container — mutable heap storage with exactly one owner. A
+slice (`uint8[]`) cannot own, which is why this type survives D-074's removal
+of `binary`. It landed in 1.3.7 as the mechanism D-200's containers presume:
+`matrix<T>`/`tensor<T>` own their cells through a `buffer` field, and the 1.2
+managed regime reclaims it at scope exit.
 
 ```llvm
 ; buffer layout: struct { ptr data, i64 length, i64 capacity }
@@ -1358,44 +1360,88 @@ The **owning** byte container — what a read fills and a write drains. A slice
 ```
 
 ```nitpick
-buffer:buf = buffer_new(1024i64);  // 1024 byte buffer
-buffer_write_i32(buf, 0i64, 42i32);  // write int32 at offset 0
+buffer:buf = buffer_new(1024i64);          // 1024 zeroed bytes, len == cap
+<-(#ptr_add<int32>(buf.ptr, 0i64)) = 42i32; // a typed write, the general way
+int32:back = <-(#ptr_add<int32>(buf.ptr, 0i64));
+uint8:b0 = buf.ptr[0i64];                  // byte reads index the ptr
 ```
 
-Operations:
-- `buffer_new(cap)` — allocate
-- `buffer_free(buf)` — deallocate
-- `buffer_write_i8/i16/i32/i64(buf, offset, val)` — typed writes
-- `buffer_read_i8/i16/i32/i64(buf, offset)` — typed reads
-- `buffer_bytes(buf)` — borrow the contents as `uint8[]`; `fixed` for a read-only view *(was `buffer_to_binary`; D-074)*
-- `buffer_resize(buf, new_cap)` — grow/shrink (ralloc)
+The surface, exactly (1.3.7 landed this MINIMALLY):
+
+- `buffer_new(n)` — `int64 → buffer`, **never fails**: `n` zeroed bytes with
+  `len == cap == n`; `n <= 0` is the EMPTY non-owning buffer (null ptr,
+  `cap == 0`), an answer rather than an error. Allocation failure traps
+  (D-150). The count is `int64` by declaration — a signature-less builtin
+  adopts nothing (the `sys` rule).
+- Members `.ptr` (`uint8->`), `.len`, `.cap` — the string's trio with the
+  string's meanings; `cap == 0` is the same ownership bit, so the drop body
+  is SHARED with the string's.
+- The **scope-exit drop is the reclaim** (D-183): a buffer is move-only
+  (TYPE-046), rides a channel whole under the send's `move`, and needs no
+  `free`.
+- Typed access is `#ptr_add<T>` + `<-` — the general mechanism the Bridge
+  already exercises (D-187).
+- `==` refuses as the string's does (D-169): the trio would compare the
+  address, not the bytes.
+
+**Deliberately NOT landed** (the earlier draft rows, superseded by decision):
+the per-width `buffer_write_i8/…/read_i64` verb family (a second copy of
+`#ptr_add`), `buffer_free` (the managed drop IS the free; manual reclaim is
+the `wild` regime's spelling), `buffer_resize`, and `buffer_bytes` (a borrow
+of the body — nothing needs it yet; add by decision when a consumer exists).
 
 ---
 
-## 25. vec9 / tmatrix / ttensor — Extended Vector Types (Tier 1)
+## 25. The Library Tier: nvec / ntensor (Tier 1 — Written in Nitpick) — as landed, 1.3.7 (D-200)
 
-### vec9 — 3×3 Matrix as Flat Vector
+None of these are compiler types. D-200 ratified them as LIBRARIES —
+`lib/nvec.npk` and `lib/ntensor.npk`, ordinary Nitpick over `simd<T, N>`
+(1.3.1) and `buffer` (§23) — and 1.3.7 landed them exactly so.
 
-```llvm
-; vec9 layout: 9 floats contiguous
-%vec9_flt32 = type { float, float, float,
-                     float, float, float,
-                     float, float, float }
+### vec2 / vec3 / vec4 — `lib/nvec.npk`
+
+Structs of one `simd<flt64, N>` field, with constructor FUNCTIONS
+`vec2_of/vec3_of/vec4_of` (D-185 — the language has no static methods; the
+bare names are the structs'). Methods, all `never fails`: lane reads
+`.x()/.y()/.z()/.w()`, `.dot(o)` (the elementwise product's `.sum()` — the
+1.3.1 ordered reduction), `.length2()`, `.length()` (`#sqrt` — the
+instruction, because a hand-rolled Newton iteration computes a subtly
+DIFFERENT number), and `.cross(o)` on `vec3` alone — the one dimension where
+it means what it says.
+
+### vec9 — nine named fields
+
+```nitpick
+pub struct:vec9 = {
+    flt64:m00; flt64:m01; flt64:m02;
+    flt64:m10; flt64:m11; flt64:m12;
+    flt64:m20; flt64:m21; flt64:m22;
+};
 ```
 
-Used for 3×3 rotation matrices, 2D homogeneous transforms.
-Access: `v.m00`, `v.m01`, ... `v.m22` (9 fields named mRC = row R, col C)
+Matrix SEMANTICS, not a lane vector (D-200): `mRC` = row R, col C, with
+`vec9_id()` and `.mul(o)` — the 3×3 product, the one operation the semantics
+name.
 
-### tmatrix — Ternary-Element Matrix
+### matrix\<T\> / tensor\<T\> — `lib/ntensor.npk`
 
-Like `matrix<T>` but element type is `trit`/`tryte` (ternary valued).
-Used for quantum state simulation.
+`matrix<T>` is `{ buffer:cells; int64:rows; int64:cols; }` with
+`mat_of::<T>(rows, cols)` (zeroed birth) and bounds-checked `.get(r, c)` /
+`.set(r, c, v)` — the bounds are LIBRARY refusals (`fail BadIndex` /
+`BadShape`, ntensor's own declared errors); the buffer body is in-bounds by
+construction. `tensor<T>` is `{ buffer:cells; int64:ndims; int64[9]:dims; }`
+— ONE allocation, **rank capped at 9** (Nikola's manifold by construction),
+dims INLINE, row-major strides computed on access, shapes handed to
+`tensor_of::<T>(dims)` as an `int64[]` slice. Dimensions are `int64` (D-200:
+Nikola-scale tensors against a 2^31 ceiling is a foreseeable regret). Both
+containers OWN their cell through the buffer field, so the 1.2 managed
+regime reclaims them with no code in the library.
 
-### ttensor — Ternary-Element Tensor
+### tmatrix / ttensor — instances, not types
 
-N-dimensional generalization of `tmatrix`. Element type is `trit`/`tryte`.
-
-Priority: **P4** — post-bootstrap.
+D-200's own words: "the same containers over `tryte`". `matrix<tryte>` and
+`tensor<tryte>` are the spellings; the ternary family's twisted semantics
+(ERR on overflow, D-197) ride through the container unchanged.
 
 ---
 

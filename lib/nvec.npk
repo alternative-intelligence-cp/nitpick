@@ -1,0 +1,120 @@
+// nvec — the small-vector tier over `simd<flt64, N>` (D-200, 1.3.7).
+//
+// `vec2`/`vec3`/`vec4` are LIBRARY structs — one `simd` field each — with
+// constructor FUNCTIONS (D-185's rule: the language has no static methods,
+// and the bare names belong to the structs). The operations are D-200's
+// list exactly: lane reads `.x()/.y()/.z()/.w()`, `.dot()` (the elementwise
+// product's `.sum()` — the 1.3.1 ordered reduction), `.length2()`,
+// `.length()` (`#sqrt`, the instruction), and `.cross()` on `vec3` alone —
+// the one dimension where it means what it says.
+//
+// `vec9` is NINE NAMED FIELDS `m00…m22` — matrix semantics, not a lane
+// vector (D-200) — with the identity and the 3×3 product.
+
+mod:nvec;
+
+pub struct:vec2 = { simd<flt64, 2>:v; };
+pub struct:vec3 = { simd<flt64, 3>:v; };
+pub struct:vec4 = { simd<flt64, 4>:v; };
+
+pub func:vec2_of = vec2(flt64:x, flt64:y) never fails {
+    vec2:out = vec2{ v: simd(x, y) };
+    pass out;
+};
+
+pub func:vec3_of = vec3(flt64:x, flt64:y, flt64:z) never fails {
+    vec3:out = vec3{ v: simd(x, y, z) };
+    pass out;
+};
+
+pub func:vec4_of = vec4(flt64:x, flt64:y, flt64:z, flt64:w) never fails {
+    vec4:out = vec4{ v: simd(x, y, z, w) };
+    pass out;
+};
+
+impl:vec2 = {
+    func:x = flt64(vec2:self) never fails { pass (self.v[0i64]); };
+    func:y = flt64(vec2:self) never fails { pass (self.v[1i64]); };
+    func:dot = flt64(vec2:self, vec2:o) never fails {
+        pass ((self.v * o.v).sum());
+    };
+    func:length2 = flt64(vec2:self) never fails {
+        pass ((self.v * self.v).sum());
+    };
+    func:length = flt64(vec2:self) never fails {
+        pass (#sqrt((self.v * self.v).sum()));
+    };
+};
+
+impl:vec3 = {
+    func:x = flt64(vec3:self) never fails { pass (self.v[0i64]); };
+    func:y = flt64(vec3:self) never fails { pass (self.v[1i64]); };
+    func:z = flt64(vec3:self) never fails { pass (self.v[2i64]); };
+    func:dot = flt64(vec3:self, vec3:o) never fails {
+        pass ((self.v * o.v).sum());
+    };
+    func:length2 = flt64(vec3:self) never fails {
+        pass ((self.v * self.v).sum());
+    };
+    func:length = flt64(vec3:self) never fails {
+        pass (#sqrt((self.v * self.v).sum()));
+    };
+    func:cross = vec3(vec3:self, vec3:o) never fails {
+        flt64:ax = self.v[0i64];
+        flt64:ay = self.v[1i64];
+        flt64:az = self.v[2i64];
+        flt64:bx = o.v[0i64];
+        flt64:by = o.v[1i64];
+        flt64:bz = o.v[2i64];
+        pass (raw vec3_of((ay * bz) - (az * by),
+                          (az * bx) - (ax * bz),
+                          (ax * by) - (ay * bx)));
+    };
+};
+
+impl:vec4 = {
+    func:x = flt64(vec4:self) never fails { pass (self.v[0i64]); };
+    func:y = flt64(vec4:self) never fails { pass (self.v[1i64]); };
+    func:z = flt64(vec4:self) never fails { pass (self.v[2i64]); };
+    func:w = flt64(vec4:self) never fails { pass (self.v[3i64]); };
+    func:dot = flt64(vec4:self, vec4:o) never fails {
+        pass ((self.v * o.v).sum());
+    };
+    func:length2 = flt64(vec4:self) never fails {
+        pass ((self.v * self.v).sum());
+    };
+    func:length = flt64(vec4:self) never fails {
+        pass (#sqrt((self.v * self.v).sum()));
+    };
+};
+
+// A 3×3 as nine named scalars (§25): mRC = row R, col C.
+pub struct:vec9 = {
+    flt64:m00; flt64:m01; flt64:m02;
+    flt64:m10; flt64:m11; flt64:m12;
+    flt64:m20; flt64:m21; flt64:m22;
+};
+
+pub func:vec9_id = vec9() never fails {
+    vec9:out = vec9{ m00: 1.0f64, m01: 0.0f64, m02: 0.0f64,
+                     m10: 0.0f64, m11: 1.0f64, m12: 0.0f64,
+                     m20: 0.0f64, m21: 0.0f64, m22: 1.0f64 };
+    pass out;
+};
+
+impl:vec9 = {
+    // The 3×3 product — the one operation the matrix semantics name.
+    func:mul = vec9(vec9:self, vec9:o) never fails {
+        vec9:out = vec9{
+            m00: (self.m00 * o.m00) + (self.m01 * o.m10) + (self.m02 * o.m20),
+            m01: (self.m00 * o.m01) + (self.m01 * o.m11) + (self.m02 * o.m21),
+            m02: (self.m00 * o.m02) + (self.m01 * o.m12) + (self.m02 * o.m22),
+            m10: (self.m10 * o.m00) + (self.m11 * o.m10) + (self.m12 * o.m20),
+            m11: (self.m10 * o.m01) + (self.m11 * o.m11) + (self.m12 * o.m21),
+            m12: (self.m10 * o.m02) + (self.m11 * o.m12) + (self.m12 * o.m22),
+            m20: (self.m20 * o.m00) + (self.m21 * o.m10) + (self.m22 * o.m20),
+            m21: (self.m20 * o.m01) + (self.m21 * o.m11) + (self.m22 * o.m21),
+            m22: (self.m20 * o.m02) + (self.m21 * o.m12) + (self.m22 * o.m22) };
+        pass out;
+    };
+};

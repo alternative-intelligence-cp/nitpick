@@ -686,6 +686,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_SLICE()))   { pass true; }
     if (k == (raw TY_STRING()))  { pass true; }
     if (k == (raw TY_CSTRING())) { pass true; }
+    if (k == (raw TY_BUFFER()))  { pass true; }   // the owned body's address (D-200/§23)
     if (k == (raw TY_ANY()))     { pass true; }
     if (k == (raw TY_INT()))     { pass false; }
     if (k == (raw TY_BOOL()))    { pass false; }
@@ -1395,6 +1396,7 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     if (k == (raw TY_SLICE()))    { pass true; }
     if (k == (raw TY_STRING()))   { pass true; }
     if (k == (raw TY_CSTRING()))  { pass true; }
+    if (k == (raw TY_BUFFER()))   { pass true; }   // the owned body's address (D-200/§23)
     if (k == (raw TY_DYN()))      { pass true; }
     if (k == (raw TY_ANY()))      { pass true; }
 

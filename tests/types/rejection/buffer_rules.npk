@@ -1,0 +1,72 @@
+// `buffer` and `#sqrt` — the 1.3.7 surface: what refuses, by name (D-200).
+//
+// `buffer_new`'s count is `int64` BY DECLARATION (the floor call takes
+// i64, and a signature-less callee adopts nothing — the `sys` rule), a
+// buffer is an OWNER (move-only, TYPE-046, the same rule every dropping
+// type obeys), and `#sqrt` is an instruction on floats and nothing else.
+mod:buffer_rules;
+
+// The byte count is one argument, exactly.
+// expect-error: NITPICK-TYPE-007
+func:no_args = buffer() never fails {
+    buffer:b = buffer_new();
+    pass (move(b));
+};
+
+// expect-error: NITPICK-TYPE-007
+func:two_args = buffer() never fails {
+    buffer:b = buffer_new(4i64, 4i64);
+    pass (move(b));
+};
+
+// The count is `int64`, not a narrower integer the call would widen behind
+// the author's back.
+// expect-error: NITPICK-TYPE-007
+func:narrow_count = buffer() never fails {
+    buffer:b = buffer_new(16i32);
+    pass (move(b));
+};
+
+// A buffer owns its bytes: a second binding is a second owner, so the
+// transfer must be written.
+// expect-error: NITPICK-TYPE-046
+func:copies_a_buffer = int64() never fails {
+    buffer:b = buffer_new(8i64);
+    buffer:c = b;
+    pass (b.len + c.len);
+};
+
+// The square root is an instruction on `flt32`/`flt64` and nothing else —
+// an integer square root would be a silently different function.
+// expect-error: NITPICK-TYPE-007
+func:sqrt_int = int32(int32:x) never fails {
+    pass (#sqrt(x));
+};
+
+// A tfp is fixed point; D-200 recorded the family's square root as refused
+// for want of a consumer, so the operand rule catches it by name.
+// expect-error: NITPICK-TYPE-007
+func:sqrt_tfp = tfp64(tfp64:x) never fails {
+    pass (#sqrt(x));
+};
+
+// `#sqrt` takes no type arguments.
+// expect-error: NITPICK-TYPE-016
+func:sqrt_typed = flt64(flt64:x) never fails {
+    pass (#sqrt<flt64>(x));
+};
+
+// And exactly one value.
+// expect-error: NITPICK-TYPE-007
+func:sqrt_two = flt64(flt64:x) never fails {
+    pass (#sqrt(x, x));
+};
+
+// A buffer's `==` would compare the ADDRESS, not the bytes — the string's
+// refusal, for the string's reason (D-169).
+// expect-error: NITPICK-TYPE-034
+func:buffer_eq = bool() never fails {
+    buffer:a = buffer_new(4i64);
+    buffer:b = buffer_new(4i64);
+    pass (a == b);
+};

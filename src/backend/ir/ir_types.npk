@@ -477,6 +477,9 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     // sender's frame — `type_contains_borrow` is layout's transitive answer,
     // with `string`'s owned body excepted and `dyn` refused as erased.
     if (k == (raw TY_STRING()))  { pass true; }
+    // A buffer transfers whole exactly as a string does (D-200/§23): the
+    // owned body's pointer crosses WITH its ownership under the send's move.
+    if (k == (raw TY_BUFFER()))  { pass true; }
     if (k == (raw TY_OPTIONAL())) {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
@@ -621,6 +624,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_TERN())) {
         pass (raw ll_int_bits(raw type_int_bits(c.types, id)));
     }
+    // A buffer is the string's typed twin (D-200/§23): `{ ptr, i64, i64 }`.
+    if (k == (raw TY_BUFFER())) { pass (raw ll_ok("{ ptr, i64, i64 }")); }
     // A complex is its element pair (D-199): `{ T, T }`.
     if (k == (raw TY_COMPLEX())) {
         LlType:cel = raw ll_type(c, raw type_elem(c.types, id));
