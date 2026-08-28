@@ -13990,6 +13990,44 @@ under D-195's ERR discipline (any component ERR → both ERR). Methods
 — refused by the same rule as shuffles). `ToString`: "3+4i" via the
 element's rendering.
 
+### D-199 implementation record (1.3.6)
+
+Design points fixed inside the ratified frame, at open:
+
+1. **The arithmetic lives in the PRELUDE, per element type** (the 1.3.5
+   architecture, paying twice here): the tfp bodies use the LANGUAGE'S OWN
+   tfp operators — Q scaling, saturation and stickiness arrive for free —
+   with the any-component-ERR → BOTH canonicalization an explicit `is_err`
+   line a verifier reads; the float bodies write Smith's division as
+   ordinary branches over IEEE-total operations, and flt32 computes IN
+   flt32 (widening through double would double-round). The emitter unpacks
+   `{T, T}`, calls the deterministic per-element prelude symbol, and the
+   returned pair IS the value.
+2. **The constructor reuses the ctor node** — `ExprVectorCtorExpr` already
+   records which keyword built it, so `complex(re, im)` is a parse-arm
+   extension and two consumer branches, not a new AST kind.
+3. **No order** (mathematics, not policy — the refusal rides the shared
+   not-ordered code with the mathematics in the message, and suggests
+   `.abs2()` for magnitude); **equality only**, per-component: IEEE on
+   float elements (a NaN component makes `==` false and `!=` true), and
+   tfp elements trap a tainted operand first (D-008 §5). The equality
+   emit precedes D-169's non-scalar belt — the 1.3.5 lesson applied at
+   the category's second member, this time at design.
+4. **`is_err`/`ERR` follow the element family**: the pair disjunction on
+   tfp elements; a refusal by name on float elements (a float carries
+   NaN, not ERR). No `pick` selectors (the frac posture). TYPE-053
+   carries the family's rules.
+5. **No casts in either direction** — construction is `complex(re, im)`,
+   reading is `.re()`/`.im()`, element conversions happen at the
+   components. `.abs()` is float-only (`llvm.sqrt` is an instruction
+   there; a fixed-point square root has no consumer — the shuffle
+   refusal's rule); `.abs2()` is the total magnitude everywhere.
+6. **`ToString` is four concrete-instance prelude impls**
+   (`impl:complex<flt64>:ToString` — the instance-impl machinery landed
+   at 1.0 and the overlap suite already exercised it): sign-aware
+   "3+4i" / "3-4i" via the element's own rendering; a tfp ERR pair
+   renders "ERR".
+
 ## D-200 — the library tier: nvec, ntensor; rank-9 inline dims; int64 dimensions — **SETTLED (1.3.0 batch, user-ratified)**
 
 `lib/nvec.npk`: `vec2/3/4` as structs over `simd<flt64, N>` with

@@ -1439,6 +1439,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_TERN())) {
         pass (raw type_tern_method(e, n, recv, name, start, count));
     }
+    if ((raw type_kind(e.types, recv)) == (raw TY_COMPLEX())) {
+        pass (raw type_complex_method(e, n, recv, name, count));
+    }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
     }
@@ -2508,6 +2511,43 @@ func:type_tern_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         }
     }
     pass (raw tt_tern(e.types, 8i32, tbase));
+};
+
+// THE COMPLEX METHODS (D-199, 1.3.6): `.re()`/`.im()` extract the element,
+// `.conj()` passes the receiver through, `.abs2()` is the element-typed
+// magnitude squared (total — no square root), and `.abs()` exists on FLOAT
+// elements only — `llvm.sqrt` is an instruction there, and a fixed-point
+// square root has no consumer (the shuffle refusal's rule).
+func:type_complex_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                                 int32:name, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:celem = raw type_elem(e.types, recv);
+    bool:known = false;
+    if (raw string_eq(m, "re"))   { known = true; }
+    if (raw string_eq(m, "im"))   { known = true; }
+    if (raw string_eq(m, "conj")) { known = true; }
+    if (raw string_eq(m, "abs2")) { known = true; }
+    if (raw string_eq(m, "abs"))  { known = true; }
+    if (!known) {
+        string:u1 = raw string_concat("a complex has no method `", m);
+        pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+            raw string_concat(u1, "`: the set is `re`, `im`, `conj`, `abs2`, and `abs` on float elements (D-199)"),
+            n.span));
+    }
+    if (count != 0i32) {
+        pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+            "the complex methods take no arguments (D-199)", n.span));
+    }
+    if (raw string_eq(m, "abs")) {
+        if ((raw type_kind(e.types, celem)) != (raw TY_FLOAT())) {
+            pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+                "`.abs()` exists on float elements only (D-199): a fixed-point square root has no consumer — `.abs2()` is total everywhere",
+                n.span));
+        }
+        pass celem;
+    }
+    if (raw string_eq(m, "conj")) { pass recv; }
+    pass celem;
 };
 
 func:type_tfp_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,

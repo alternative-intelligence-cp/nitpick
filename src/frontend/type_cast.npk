@@ -314,6 +314,14 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
         pass (raw CAST_IMPOSSIBLE());
     }
 
+    // --- the complex numbers have NO CASTS (D-199, 1.3.6) ------------------------
+    //
+    // Construction is `complex(re, im)`, reading is `.re()`/`.im()`, and
+    // element conversions happen at the COMPONENTS — a whole-value cast has
+    // no ratified meaning in either direction.
+    if (fk == (raw TY_COMPLEX())) { pass (raw CAST_IMPOSSIBLE()); }
+    if (tk == (raw TY_COMPLEX())) { pass (raw CAST_IMPOSSIBLE()); }
+
     // --- the exact rationals (D-198, 1.3.5) --------------------------------------
     //
     // WITHIN the family widths widen `=>` — the reduced form always fits a
@@ -621,6 +629,12 @@ pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) never fa
     }
     if (fk == (raw TY_TERN())) {
         pass "a ternary value converts within its own family, or to an integer or a float (D-197); another twisted family is reached through the plain integer";
+    }
+    if (fk == (raw TY_COMPLEX())) {
+        pass "a complex has no casts (D-199): it is built with `complex(re, im)` and read with `.re()`/`.im()` — convert the components";
+    }
+    if (tk == (raw TY_COMPLEX())) {
+        pass "a complex has no casts (D-199): it is built with `complex(re, im)` — convert the components and construct";
     }
     if (fk == (raw TY_FRAC())) {
         pass "a frac converts within its own family, to `flt64` with `=>!` (it rounds), or to an integer with `=>!` (it truncates) — D-198; another twisted family is reached through the plain integer";

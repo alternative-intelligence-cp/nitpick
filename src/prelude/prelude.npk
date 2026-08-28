@@ -1338,3 +1338,231 @@ impl:frac64:ToString = { func:to_string = string(frac64:self) never fails {
     pass (raw string_concat(head,
               raw string_concat(fr, raw uint_to_decimal(self.denom))));
 }; };
+
+// THE COMPLEX CORES (D-199, 1.3.6): per element type, in Nitpick — the tfp
+// bodies use the LANGUAGE'S OWN tfp operators, so Q scaling, saturation and
+// stickiness arrive for free and the any-component-ERR → BOTH
+// canonicalization is an explicit line a verifier reads; the float bodies
+// are IEEE-total, with division by SMITH'S algorithm — the naive formula
+// overflows at |denominator| ≈ √max, a silent-wrong-answer class. flt32
+// computes IN flt32: widening through double would double-round. The
+// emitter unpacks `complex<T>`'s `{T, T}`, calls the deterministic prelude
+// symbol, and the returned pair IS the value.
+
+pub struct:CplxF32 = {
+    flt32:re;
+    flt32:im;
+};
+
+pub func:npk_cplx_add_f32 = CplxF32(flt32:a, flt32:b, flt32:c, flt32:d) never fails {
+    CplxF32:r = CplxF32{ re: a + c, im: b + d };
+    pass r;
+};
+
+pub func:npk_cplx_sub_f32 = CplxF32(flt32:a, flt32:b, flt32:c, flt32:d) never fails {
+    CplxF32:r = CplxF32{ re: a - c, im: b - d };
+    pass r;
+};
+
+pub func:npk_cplx_mul_f32 = CplxF32(flt32:a, flt32:b, flt32:c, flt32:d) never fails {
+    CplxF32:r = CplxF32{ re: (a * c) - (b * d), im: (a * d) + (b * c) };
+    pass r;
+};
+
+// Smith's algorithm: scale by the larger of |c|, |d| so the denominator
+// never overflows where the value itself is representable.
+pub func:npk_cplx_div_f32 = CplxF32(flt32:a, flt32:b, flt32:c, flt32:d) never fails {
+    flt32:ac = c;
+    if (ac < 0.0f32) { ac = 0.0f32 - ac; }
+    flt32:ad = d;
+    if (ad < 0.0f32) { ad = 0.0f32 - ad; }
+    if (ac >= ad) {
+        flt32:ratio = d / c;
+        flt32:den = c + (d * ratio);
+        CplxF32:r = CplxF32{ re: (a + (b * ratio)) / den,
+                                  im: (b - (a * ratio)) / den };
+        pass r;
+    }
+    flt32:ratio2 = c / d;
+    flt32:den2 = (c * ratio2) + d;
+    CplxF32:r2 = CplxF32{ re: ((a * ratio2) + b) / den2,
+                               im: ((b * ratio2) - a) / den2 };
+    pass r2;
+};
+
+pub func:npk_cplx_abs2_f32 = flt32(flt32:a, flt32:b) never fails {
+    pass ((a * a) + (b * b));
+};
+
+pub struct:CplxF64 = {
+    flt64:re;
+    flt64:im;
+};
+
+pub func:npk_cplx_add_f64 = CplxF64(flt64:a, flt64:b, flt64:c, flt64:d) never fails {
+    CplxF64:r = CplxF64{ re: a + c, im: b + d };
+    pass r;
+};
+
+pub func:npk_cplx_sub_f64 = CplxF64(flt64:a, flt64:b, flt64:c, flt64:d) never fails {
+    CplxF64:r = CplxF64{ re: a - c, im: b - d };
+    pass r;
+};
+
+pub func:npk_cplx_mul_f64 = CplxF64(flt64:a, flt64:b, flt64:c, flt64:d) never fails {
+    CplxF64:r = CplxF64{ re: (a * c) - (b * d), im: (a * d) + (b * c) };
+    pass r;
+};
+
+// Smith's algorithm: scale by the larger of |c|, |d| so the denominator
+// never overflows where the value itself is representable.
+pub func:npk_cplx_div_f64 = CplxF64(flt64:a, flt64:b, flt64:c, flt64:d) never fails {
+    flt64:ac = c;
+    if (ac < 0.0f64) { ac = 0.0f64 - ac; }
+    flt64:ad = d;
+    if (ad < 0.0f64) { ad = 0.0f64 - ad; }
+    if (ac >= ad) {
+        flt64:ratio = d / c;
+        flt64:den = c + (d * ratio);
+        CplxF64:r = CplxF64{ re: (a + (b * ratio)) / den,
+                                  im: (b - (a * ratio)) / den };
+        pass r;
+    }
+    flt64:ratio2 = c / d;
+    flt64:den2 = (c * ratio2) + d;
+    CplxF64:r2 = CplxF64{ re: ((a * ratio2) + b) / den2,
+                               im: ((b * ratio2) - a) / den2 };
+    pass r2;
+};
+
+pub func:npk_cplx_abs2_f64 = flt64(flt64:a, flt64:b) never fails {
+    pass ((a * a) + (b * b));
+};
+
+pub struct:CplxT32 = {
+    tfp32:re;
+    tfp32:im;
+};
+
+// The tfp cores canonicalize: any component ERR makes BOTH ERR (D-199 —
+// half a taint steering the other half is the hole stickiness closes).
+func:cplx_fix_t32 = CplxT32(tfp32:re2, tfp32:im2) never fails {
+    if (is_err(re2)) {
+        CplxT32:e = CplxT32{ re: ERR, im: ERR };
+        pass e;
+    }
+    if (is_err(im2)) {
+        CplxT32:e2 = CplxT32{ re: ERR, im: ERR };
+        pass e2;
+    }
+    CplxT32:ok = CplxT32{ re: re2, im: im2 };
+    pass ok;
+};
+
+pub func:npk_cplx_add_t32 = CplxT32(tfp32:a, tfp32:b, tfp32:c, tfp32:d) never fails {
+    pass (raw cplx_fix_t32(a + c, b + d));
+};
+
+pub func:npk_cplx_sub_t32 = CplxT32(tfp32:a, tfp32:b, tfp32:c, tfp32:d) never fails {
+    pass (raw cplx_fix_t32(a - c, b - d));
+};
+
+pub func:npk_cplx_mul_t32 = CplxT32(tfp32:a, tfp32:b, tfp32:c, tfp32:d) never fails {
+    pass (raw cplx_fix_t32((a * c) - (b * d), (a * d) + (b * c)));
+};
+
+// The direct formulas (D-199): the elements' own division carries the ERR
+// discipline — a zero denominator IS the tfp zero-divisor rule.
+pub func:npk_cplx_div_t32 = CplxT32(tfp32:a, tfp32:b, tfp32:c, tfp32:d) never fails {
+    tfp32:den = (c * c) + (d * d);
+    pass (raw cplx_fix_t32(((a * c) + (b * d)) / den,
+                                     ((b * c) - (a * d)) / den));
+};
+
+pub func:npk_cplx_abs2_t32 = tfp32(tfp32:a, tfp32:b) never fails {
+    tfp32:s = (a * a) + (b * b);
+    if (is_err(s)) { pass ERR; }
+    pass s;
+};
+
+pub struct:CplxT64 = {
+    tfp64:re;
+    tfp64:im;
+};
+
+// The tfp cores canonicalize: any component ERR makes BOTH ERR (D-199 —
+// half a taint steering the other half is the hole stickiness closes).
+func:cplx_fix_t64 = CplxT64(tfp64:re2, tfp64:im2) never fails {
+    if (is_err(re2)) {
+        CplxT64:e = CplxT64{ re: ERR, im: ERR };
+        pass e;
+    }
+    if (is_err(im2)) {
+        CplxT64:e2 = CplxT64{ re: ERR, im: ERR };
+        pass e2;
+    }
+    CplxT64:ok = CplxT64{ re: re2, im: im2 };
+    pass ok;
+};
+
+pub func:npk_cplx_add_t64 = CplxT64(tfp64:a, tfp64:b, tfp64:c, tfp64:d) never fails {
+    pass (raw cplx_fix_t64(a + c, b + d));
+};
+
+pub func:npk_cplx_sub_t64 = CplxT64(tfp64:a, tfp64:b, tfp64:c, tfp64:d) never fails {
+    pass (raw cplx_fix_t64(a - c, b - d));
+};
+
+pub func:npk_cplx_mul_t64 = CplxT64(tfp64:a, tfp64:b, tfp64:c, tfp64:d) never fails {
+    pass (raw cplx_fix_t64((a * c) - (b * d), (a * d) + (b * c)));
+};
+
+// The direct formulas (D-199): the elements' own division carries the ERR
+// discipline — a zero denominator IS the tfp zero-divisor rule.
+pub func:npk_cplx_div_t64 = CplxT64(tfp64:a, tfp64:b, tfp64:c, tfp64:d) never fails {
+    tfp64:den = (c * c) + (d * d);
+    pass (raw cplx_fix_t64(((a * c) + (b * d)) / den,
+                                     ((b * c) - (a * d)) / den));
+};
+
+pub func:npk_cplx_abs2_t64 = tfp64(tfp64:a, tfp64:b) never fails {
+    tfp64:s = (a * a) + (b * b);
+    if (is_err(s)) { pass ERR; }
+    pass s;
+};
+
+// A COMPLEX RENDERS "3+4i" / "3-4i" via the element's own rendering
+// (D-199); a tfp-element ERR pair renders "ERR". The sign splice reads the
+// imaginary component: negative imaginaries render their magnitude behind
+// `-`, everything else behind `+` (a float NaN imaginary lands on `+nan i`,
+// which is the honest reading of an unordered sign).
+impl:complex<flt32>:ToString = { func:to_string = string(complex<flt32>:self) never fails {
+    flt32:im2 = self.im();
+    string:sign = "+";
+    if (im2 < 0.0f32) { sign = "-"; im2 = 0.0f32 - im2; }
+    string:h = raw string_concat(`&{self.re()}`, sign);
+    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+}; };
+impl:complex<flt64>:ToString = { func:to_string = string(complex<flt64>:self) never fails {
+    flt64:im2 = self.im();
+    string:sign = "+";
+    if (im2 < 0.0f64) { sign = "-"; im2 = 0.0f64 - im2; }
+    string:h = raw string_concat(`&{self.re()}`, sign);
+    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+}; };
+impl:complex<tfp32>:ToString = { func:to_string = string(complex<tfp32>:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    tfp32:im2 = self.im();
+    string:sign = "+";
+    if (im2 < 0.0tfp32) { sign = "-"; im2 = 0.0tfp32 - im2; }
+    string:h = raw string_concat(`&{self.re()}`, sign);
+    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+}; };
+impl:complex<tfp64>:ToString = { func:to_string = string(complex<tfp64>:self) never fails {
+    if (is_err(self)) { pass "ERR"; }
+    tfp64:im2 = self.im();
+    string:sign = "+";
+    if (im2 < 0.0tfp64) { sign = "-"; im2 = 0.0tfp64 - im2; }
+    string:h = raw string_concat(`&{self.re()}`, sign);
+    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+}; };

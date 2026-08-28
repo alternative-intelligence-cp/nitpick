@@ -813,7 +813,11 @@ func:p_primary = ExprId(Parser->:p) never fails {
     //
     // The vector names are LIBRARY types now, so `vec3(1.0f64, 2.0f64, 3.0f64)` is
     // an ordinary call over an ordinary identifier and needs nothing here.
-    if (k == TokenKind.KwSimd) {
+    // `complex(re, im)` takes the same shape (D-199, 1.3.6): the ctor node
+    // records which keyword built it, and the consumers branch on that.
+    bool:is_ctor_kw = (k == TokenKind.KwSimd);
+    if (k == TokenKind.KwComplex) { is_ctor_kw = true; }
+    if (is_ctor_kw) {
         if ((raw p_peek_at(p, 1i64)).kind == TokenKind.PLParen) {
             Token:vt = raw p_advance(p);
             discard(raw p_advance(p));

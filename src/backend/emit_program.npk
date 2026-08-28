@@ -937,6 +937,10 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)");
     drop irw_raw(w, "declare { i128, i1 } @llvm.smul.with.overflow.i128(i128, i128)");
     drop irw_raw(w, "declare { i256, i1 } @llvm.smul.with.overflow.i256(i256, i256)");
+    // `.abs()` on float-element complex (D-199, 1.3.6) — the sqrt is an
+    // instruction on this target, which is exactly why it is float-only.
+    drop irw_raw(w, "declare float @llvm.sqrt.f32(float)");
+    drop irw_raw(w, "declare double @llvm.sqrt.f64(double)");
     drop irw_blank(w);
     pass NIL;
 };

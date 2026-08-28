@@ -568,6 +568,25 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
         int32:stid = raw exprtypes_get(x.et, id);
+        // A tfp-element complex's ERR is the both-components pair (D-199).
+        if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_COMPLEX())) {
+            int32:sxe = raw type_elem(x.fe.ctx.types, stid);
+            LlType:sxl = raw ll_type(x.fe.ctx, sxe);
+            if (!(raw ll_is_ok(sxl))) { pass (raw iv_from_ll_at(x, sxl, sxe, n.span)); }
+            string:sxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, sxe));
+            if (sxm.len == 0i64) { pass (raw iv_broken(n.span)); }
+            LlType:sxll = raw ll_type(x.fe.ctx, stid);
+            if (!(raw ll_is_ok(sxll))) { pass (raw iv_from_ll_at(x, sxll, stid, n.span)); }
+            string:sxc = raw string_concat("{ ", sxl.text);
+            sxc = raw string_concat(sxc, " ");
+            sxc = raw string_concat(sxc, sxm);
+            sxc = raw string_concat(sxc, ", ");
+            sxc = raw string_concat(sxc, sxl.text);
+            sxc = raw string_concat(sxc, " ");
+            sxc = raw string_concat(sxc, sxm);
+            sxc = raw string_concat(sxc, " }");
+            pass (raw iv(move(sxll.text), move(sxc), stid));
+        }
         // A frac's ERR is the canonical TRIPLE (D-198): {minN, minN, 0},
         // spelled as the aggregate constant.
         if ((raw type_kind(x.fe.ctx.types, stid)) == (raw TY_FRAC())) {
@@ -679,6 +698,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // The ternary digit extraction (D-197).
         if (amk == (raw TY_TERN())) {
             pass (raw emit_tern_method(x, id, n, amrecv));
+        }
+        // The complex methods (D-199).
+        if (amk == (raw TY_COMPLEX())) {
+            pass (raw emit_complex_method(x, id, n, amrecv));
         }
         if (amk == (raw TY_CHANNEL())) {
             pass (raw emit_channel_method(x, id, n, amrecv));
@@ -995,6 +1018,20 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIsErrExpr) {
         IrVal:ov = raw emit_expr(x, raw expr_operand(n));
         if (!(raw iv_is_ok(ov))) { pass ov; }
+        // A tfp-element complex's look is the pair disjunction (D-199); the
+        // checker gated float elements away.
+        if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_COMPLEX())) {
+            int32:cxe = raw type_elem(x.fe.ctx.types, ov.type_id);
+            LlType:cxl = raw ll_type(x.fe.ctx, cxe);
+            if (!(raw ll_is_ok(cxl))) { pass (raw iv_from_ll_at(x, cxl, cxe, n.span)); }
+            string:cxm = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, cxe));
+            if (cxm.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:cxt2 = raw cplx_err_test(x, ov, cxl.text, cxm);
+            string:cxz = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(cxz, " = zext i1 ",
+                              raw string_concat(cxt2, " to i8")));
+            pass (raw iv("i8", move(cxz), 0i32));
+        }
         // A frac's look is the aggregate disjunction (D-198): whole or num
         // at the sentinel, or denom 0.
         if ((raw type_kind(x.fe.ctx.types, ov.type_id)) == (raw TY_FRAC())) {
@@ -1019,6 +1056,28 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv("i8", move(ez), 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
+        // `complex(re, im)` shares the ctor node (D-199, 1.3.6): two
+        // insertvalues build the pair — the checker proved the count and
+        // the element types.
+        if (((n.payload =>! int32) =>! TokenKind) == TokenKind.KwComplex) {
+            int32:cxt = raw exprtypes_get(x.et, id);
+            LlType:cxll = raw ll_type(x.fe.ctx, cxt);
+            if (!(raw ll_is_ok(cxll))) { pass (raw iv_from_ll_at(x, cxll, cxt, n.span)); }
+            int32:cxstart = raw expr_list_start(n);
+            IrVal:rev = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 0i32) });
+            if (!(raw iv_is_ok(rev))) { pass rev; }
+            IrVal:imv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, cxstart, 1i32) });
+            if (!(raw iv_is_ok(imv))) { pass imv; }
+            string:cu0 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", cxll.text,
+                              " undef, ",
+                              raw string_concat(raw cat3(rev.ll, " ", rev.ref), ", 0")));
+            string:cu1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", cxll.text, " ",
+                              raw string_concat(
+                                  raw cat5(cu0, ", ", imv.ll, " ", imv.ref), ", 1")));
+            pass (raw iv(move(cxll.text), move(cu1), cxt));
+        }
         // `simd(a, …)` (D-194, 1.3.1): N `insertelement`s build the value
         // over `poison`; ONE argument is the splat — the same inserts, one
         // operand emitted once. The checker proved the count and each
@@ -1525,6 +1584,96 @@ func:float_literal_body = string(ExprEmitter->:x, string:txt) never fails {
 // floor clears the fraction bits (`ashr` semantics: toward −inf); trunc
 // biases a NEGATIVE value by 2^F−1 first, so the clear rounds toward zero.
 // Branch-free, sticky: ERR in, ERR out.
+// THE COMPLEX METHODS (D-199, 1.3.6): `.re()`/`.im()` extract, `.conj()`
+// negates the imaginary (fneg on floats; the sticky sub-from-zero select on
+// tfp — ERR stays ERR), `.abs2()` calls the per-element prelude core, and
+// `.abs()` is `llvm.sqrt` over it, float elements only by the checker.
+func:emit_complex_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                                 int32:recv_tid) never fails {
+    string:m = raw intern_get(x.interns, n.payload =>! int32);
+    IrVal:rv = raw emit_expr(x, raw expr_operand(n));
+    if (!(raw iv_is_ok(rv))) { pass rv; }
+    int32:cel = raw type_elem(x.fe.ctx.types, recv_tid);
+    LlType:cell = raw ll_type(x.fe.ctx, cel);
+    if (!(raw ll_is_ok(cell))) { pass (raw iv_from_ll_at(x, cell, cel, n.span)); }
+
+    if (raw string_eq(m, "re")) {
+        string:xr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(xr, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 0")));
+        pass (raw iv(raw string_concat(cell.text, ""), move(xr), cel));
+    }
+    if (raw string_eq(m, "im")) {
+        string:xi = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(xi, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 1")));
+        pass (raw iv(raw string_concat(cell.text, ""), move(xi), cel));
+    }
+    if (raw string_eq(m, "conj")) {
+        string:cr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cr, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 0")));
+        string:ci = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ci, " = extractvalue ", rv.ll, " ",
+                          raw string_concat(rv.ref, ", 1")));
+        string:ni = "";
+        if ((raw type_kind(x.fe.ctx.types, cel)) == (raw TY_FLOAT())) {
+            string:fneg = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fneg, " = fneg ", cell.text, " ",
+                              ci));
+            ni = move(fneg);
+        } else {
+            string:cmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, cel));
+            if (cmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:cie = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cie, " = icmp eq ", cell.text, " ",
+                              raw cat3(ci, ", ", cmn)));
+            string:cs = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cs, " = sub ", cell.text, " 0, ",
+                              ci));
+            string:csel = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(csel, " = select i1 ", cie, ", ",
+                              raw cat5(cell.text, " ", cmn, ", ",
+                                  raw cat3(cell.text, " ", cs))));
+            ni = move(csel);
+        }
+        string:cu0 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", rv.ll,
+                          " undef, ",
+                          raw string_concat(raw cat3(cell.text, " ", cr), ", 0")));
+        string:cu1 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", rv.ll, " ",
+                          raw string_concat(
+                              raw cat5(cu0, ", ", cell.text, " ", ni), ", 1")));
+        pass (raw iv(raw string_concat(rv.ll, ""), move(cu1), recv_tid));
+    }
+    // abs2 / abs: the prelude core, then the sqrt instruction for abs.
+    string:aa = raw cplx_args(x, rv, cell.text);
+    string:asx = raw cplx_sfx(x, cel);
+    string:aret = raw string_concat("{ ",
+                      raw string_concat(raw string_concat(cell.text, ""), ", i32 }"));
+    string:acall = raw irw_temp(x.fe.w);
+    string:ah = raw cat5(acall, " = call ", aret,
+                      " @\"npk.prelude.npk_cplx_abs2_", asx);
+    drop irw_line(x.fe.w, raw string_concat(ah,
+                      raw string_concat(raw string_concat("\"(", aa), ")")));
+    string:aval = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(aval, " = extractvalue ", aret, " ",
+                      raw string_concat(acall, ", 0")));
+    if (raw string_eq(m, "abs2")) {
+        pass (raw iv(raw string_concat(cell.text, ""), move(aval), cel));
+    }
+    string:sqname = "llvm.sqrt.f64";
+    if (raw string_eq(cell.text, "float")) { sqname = "llvm.sqrt.f32"; }
+    string:sq = raw irw_temp(x.fe.w);
+    string:sh = raw cat5(sq, " = call ", cell.text, " @", sqname);
+    drop irw_line(x.fe.w, raw string_concat(sh,
+                      raw string_concat(
+                          raw string_concat("(", raw cat3(cell.text, " ", aval)),
+                          ")")));
+    pass (raw iv(raw string_concat(cell.text, ""), move(sq), cel));
+};
+
 // DIGIT EXTRACTION (D-197, 1.3.4): `.trit(i)` / `.nit(i)`. The value
 // representation computes the digit on demand by the OFFSET TRICK —
 // `v + bound` is 0..base^digits−1 unsigned, and digit i is that divided by
@@ -1821,6 +1970,42 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
             drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
                               raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
             pass (raw iv(raw string_concat(lhs.ll, ""), move(fres), lhs.type_id));
+        }
+    }
+
+    // COMPLEX ARITHMETIC (D-199, 1.3.6): unpack → THE PER-ELEMENT PRELUDE
+    // CORE → the returned pair IS the value (its ll equals the complex's).
+    // Taint lives INSIDE the tfp bodies (the any → both canonicalization);
+    // float bodies are IEEE-total with Smith's division. The emitter adds
+    // nothing but the plumbing.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_COMPLEX())) {
+            int32:cel = raw type_elem(x.fe.ctx.types, lt);
+            LlType:cell = raw ll_type(x.fe.ctx, cel);
+            if (!(raw ll_is_ok(cell))) { pass (raw iv_from_ll_at(x, cell, cel, at)); }
+            string:cop = "";
+            if (op == TokenKind.OpPlus)  { cop = "add"; }
+            if (op == TokenKind.OpMinus) { cop = "sub"; }
+            if (op == TokenKind.OpStar)  { cop = "mul"; }
+            if (op == TokenKind.OpSlash) { cop = "div"; }
+            if (cop.len == 0i64) { pass (raw iv_broken(at)); }
+            string:csx = raw cplx_sfx(x, cel);
+            string:ca = raw cplx_args(x, lhs, cell.text);
+            string:cb = raw cplx_args(x, rhs, cell.text);
+            string:cret = raw string_concat("{ ",
+                              raw string_concat(raw string_concat(lhs.ll, ""), ", i32 }"));
+            string:ccall = raw irw_temp(x.fe.w);
+            string:ch1 = raw cat5(ccall, " = call ", cret,
+                              " @\"npk.prelude.npk_cplx_", cop);
+            string:ch2 = raw cat5("_", csx, "\"(", ca, ", ");
+            drop irw_line(x.fe.w, raw string_concat(ch1,
+                              raw string_concat(ch2,
+                                  raw string_concat(cb, ")"))));
+            string:cval = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(cval, " = extractvalue ", cret, " ",
+                              raw string_concat(ccall, ", 0")));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(cval),
+                         lhs.type_id));
         }
     }
 
@@ -2285,6 +2470,72 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 drop irw_line(x.fe.w, raw cat3(qz, " = zext i1 ",
                                   raw string_concat(qc, " to i8")));
                 pass (raw iv("i8", move(qz), 0i32));
+            }
+        }
+    }
+
+    // COMPLEX EQUALITY (D-199, 1.3.6) — before the belt, the frac lesson at
+    // the category's second member. Equality only (the checker refused the
+    // orderings): per-component — IEEE on float elements, where a NaN
+    // component makes `==` false and `!=` true; tfp elements trap a tainted
+    // operand first (D-008 §5).
+    int32:cqlt = raw exprtypes_get(x.et, raw expr_lhs(n));
+    if (cqlt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, cqlt)) == (raw TY_COMPLEX())) {
+            bool:cis_eq = (op == TokenKind.OpEqEq);
+            bool:cis_ne = (op == TokenKind.OpNotEq);
+            if (cis_eq || cis_ne) {
+                int32:cqel = raw type_elem(x.fe.ctx.types, cqlt);
+                LlType:cqll = raw ll_type(x.fe.ctx, cqel);
+                if (!(raw ll_is_ok(cqll))) {
+                    pass (raw iv_from_ll_at(x, cqll, cqel, n.span));
+                }
+                bool:ctfp = ((raw type_kind(x.fe.ctx.types, cqel)) == (raw TY_TFP()));
+                if (ctfp) {
+                    string:cmn = raw tbb_min_decimal(
+                                     raw type_int_bits(x.fe.ctx.types, cqel));
+                    if (cmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+                    string:ce1 = raw cplx_err_test(x, lhs, cqll.text, cmn);
+                    string:ce2 = raw cplx_err_test(x, rhs, cqll.text, cmn);
+                    string:cet = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat5(cet, " = or i1 ", ce1, ", ", ce2));
+                    drop tbb_trap_if(x, cet, n.span);
+                }
+                string:lre = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lre, " = extractvalue ", lhs.ll, " ",
+                                  raw string_concat(lhs.ref, ", 0")));
+                string:lim = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lim, " = extractvalue ", lhs.ll, " ",
+                                  raw string_concat(lhs.ref, ", 1")));
+                string:rre = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(rre, " = extractvalue ", rhs.ll, " ",
+                                  raw string_concat(rhs.ref, ", 0")));
+                string:rim = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(rim, " = extractvalue ", rhs.ll, " ",
+                                  raw string_concat(rhs.ref, ", 1")));
+                string:cinstr = "icmp eq ";
+                if (!ctfp) { cinstr = "fcmp oeq "; }
+                if (cis_ne) {
+                    cinstr = "icmp ne ";
+                    if (!ctfp) { cinstr = "fcmp une "; }
+                }
+                string:cc1 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(cc1, " = ", cinstr, cqll.text,
+                                  raw string_concat(" ",
+                                      raw cat3(lre, ", ", rre))));
+                string:cc2 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(cc2, " = ", cinstr, cqll.text,
+                                  raw string_concat(" ",
+                                      raw cat3(lim, ", ", rim))));
+                string:cjoin = "and";
+                if (cis_ne) { cjoin = "or"; }
+                string:cc3 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(cc3, " = ", cjoin, " i1 ",
+                                  raw cat3(cc1, ", ", cc2)));
+                string:cz = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(cz, " = zext i1 ",
+                                  raw string_concat(cc3, " to i8")));
+                pass (raw iv("i8", move(cz), 0i32));
             }
         }
     }
@@ -3232,6 +3483,53 @@ func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
                       raw cat5(want.text, " ", mn2, ", ",
                           raw cat3(want.text, " ", rz5))));
     pass (raw iv(move(want.text), move(res5), wid));
+};
+
+// --- the complex lowering (D-199, 1.3.6) --------------------------------------
+
+// The per-element core suffix: f32/f64/t32/t64.
+func:cplx_sfx = string(ExprEmitter->:x, int32:elem) never fails {
+    int32:eb = raw type_int_bits(x.fe.ctx.types, elem);
+    if ((raw type_kind(x.fe.ctx.types, elem)) == (raw TY_FLOAT())) {
+        if (eb == 32i32) { pass "f32"; }
+        pass "f64";
+    }
+    if (eb == 32i32) { pass "t32"; }
+    pass "t64";
+};
+
+// Both components as call-argument text, at the element's ll.
+func:cplx_args = string(ExprEmitter->:x, IrVal:v, string:ell) never fails {
+    string:re = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(re, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 0")));
+    string:im = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(im, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 1")));
+    string:a1 = raw cat3(ell, " ", re);
+    a1 = raw string_concat(a1, ", ");
+    a1 = raw string_concat(a1, raw cat3(ell, " ", im));
+    pass a1;
+};
+
+// The taint test for a tfp-element pair: either component at the sentinel.
+func:cplx_err_test = string(ExprEmitter->:x, IrVal:v, string:ell,
+                            string:mn) never fails {
+    string:re = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(re, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 0")));
+    string:im = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(im, " = extractvalue ", v.ll, " ",
+                      raw string_concat(v.ref, ", 1")));
+    string:t1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t1, " = icmp eq ", ell, " ",
+                      raw cat3(re, ", ", mn)));
+    string:t2 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t2, " = icmp eq ", ell, " ",
+                      raw cat3(im, ", ", mn)));
+    string:o = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(o, " = or i1 ", t1, ", ", t2));
+    pass o;
 };
 
 // The insert chain for a frac triple — one helper, three users.

@@ -1292,12 +1292,33 @@ complex<flt64>:z = complex(3.0flt64, 4.0flt64);  // 3 + 4i
 %complex_flt64 = type { double, double }
 ```
 
-Operations:
-- `complex_add(a, b)`, `complex_sub(a, b)`, `complex_mul(a, b)`, `complex_div(a, b)`
-- `complex_abs(a)` — magnitude (√(real² + imag²))
-- `complex_conj(a)` — complex conjugate
-- `complex_real(a)`, `complex_imag(a)` — extract components
-- Supports all `T` that support arithmetic: `flt32`, `flt64`, `tfp32`, `tfp64` (the `fix*` names are obsolete — D-036)
+**The function family above became OPERATORS AND METHODS at ratification**
+(D-199, landed 1.3.6):
+
+- `T` ∈ {`flt32`, `flt64`, `tfp32`, `tfp64`} exactly, gated at resolution.
+- **Construction is `complex(re, im)`**, type-directed from a `complex<T>`
+  slot (the `simd(…)` shape); there are no literals and NO CASTS in either
+  direction — element conversions happen at the components.
+- **Operators `+ - * /`, same-type only.** Float division is SMITH'S
+  algorithm — the naive formula's denominator c² + d² overflows at
+  |denominator| ≈ √max, a silent-wrong-answer class — and flt32 computes in
+  flt32 (no double-rounding through a wider width). tfp elements use the
+  direct formulas THROUGH the language's own tfp operators, and any
+  component ERR canonicalizes to BOTH components ERR after every operation.
+- **No order** — the complex numbers have none (mathematics, not policy);
+  `==`/`!=` are per-component, IEEE on floats (a NaN component makes `==`
+  false, `!=` true) and taint-trapping on tfp (D-008 §5). No `pick`
+  selectors; `is_err` reads the pair disjunction on tfp elements and
+  refuses on float elements (a float carries NaN, not ERR).
+- **Methods**: `.re()` `.im()` `.conj()` `.abs2()` on every element type;
+  `.abs()` on FLOAT elements only (`llvm.sqrt` is an instruction there; a
+  fixed-point square root has no consumer). `.abs2()` is the total
+  magnitude-squared everywhere.
+- **`ToString`**: "3+4i" / "3-4i" via the element's own rendering; a tfp
+  ERR pair renders "ERR".
+- **The arithmetic is the PRELUDE'S**, per element type, in Nitpick — the
+  tfp bodies get Q scaling, saturation and stickiness from the operators
+  themselves, and Smith's branches read as source, not hand IR.
 
 ---
 

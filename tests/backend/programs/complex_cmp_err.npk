@@ -1,0 +1,28 @@
+// expect-exit: 24
+//
+// A tainted tfp-element complex at `==` TRAPS (-4100) — D-008 §5 through
+// D-199: equality is a decision point, and half a taint steering it is the
+// hole the any → both canonicalization exists to close. `is_err` is the
+// look.
+mod:complex_cmp_err;
+
+func:main = int32(cstring[]:argv) {
+    tfp32:z = ((argv.len - 1i64) =>! int32) =>! tfp32;   // 0.0 at run time
+    complex<tfp32>:tz = complex(z, z);
+    complex<tfp32>:ta = complex(1.0tfp32, 2.0tfp32);
+    complex<tfp32>:e = ta / tz;                          // ERR pair
+    if (e == ta) { exit 10i32; }                         // must trap
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

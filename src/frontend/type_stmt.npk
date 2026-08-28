@@ -130,6 +130,14 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                     s.span));
                 pass NIL;
             }
+            // The same posture for a complex (D-199): equality is the one
+            // decision, and its cases are not enumerable.
+            if ((raw type_kind(e.types, selt)) == (raw TY_COMPLEX())) {
+                drop diaglist_push(e.diags, raw diag_error(raw TYPE_COMPLEX_RULES(),
+                    "a `pick` does not select on a complex (D-199): equality is its one comparison, and `is_err` looks at tfp elements",
+                    s.span));
+                pass NIL;
+            }
         }
         drop type_pick_bindings(e, s, selt);
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
@@ -669,6 +677,18 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
             }
             discard(raw type_frac_arith(e, s.span, raw assign_base_op(op),
                                         want, got));
+            pass NIL;
+        }
+        // And the complex gate (D-199), the same shape.
+        bool:cplxside = ((raw type_kind(e.types, want)) == (raw TY_COMPLEX()));
+        if ((raw type_kind(e.types, got)) == (raw TY_COMPLEX())) { cplxside = true; }
+        if (cplxside) {
+            if (raw is_bitwise_assign(op)) {
+                discard(raw type_bitwise(e, s.span, want, got));
+                pass NIL;
+            }
+            discard(raw type_complex_arith(e, s.span, raw assign_base_op(op),
+                                           want, got));
             pass NIL;
         }
         if (raw is_bitwise_assign(op)) {

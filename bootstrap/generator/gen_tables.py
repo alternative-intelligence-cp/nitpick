@@ -614,7 +614,10 @@ pub func:is_keyword = bool(string:text) {
                # 1.3.1 (D-135/D-194): the vector mechanism.
                "simd": "TY_SIMD",
                # 1.3.3 (D-196): twisted fixed point with a unit vector.
-               "dim256": "TY_DIM"}
+               "dim256": "TY_DIM",
+               # 1.3.6 (D-199): the complex numbers -- {T, T} over the four
+               # ratified element types.
+               "complex": "TY_COMPLEX"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

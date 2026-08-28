@@ -753,6 +753,12 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             if ((raw type_kind(e.types, werr)) == (raw TY_FRAC())) {
                 pass werr;
             }
+            // And a tfp-element complex (D-199): both components tainted.
+            if ((raw type_kind(e.types, werr)) == (raw TY_COMPLEX())) {
+                if ((raw type_kind(e.types, raw type_elem(e.types, werr))) == (raw TY_TFP())) {
+                    pass werr;
+                }
+            }
         }
         pass (e.types.t_tbb32);
     }
@@ -982,6 +988,28 @@ pub func:type_frac_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
     pass lt;
 };
 
+// COMPLEX ARITHMETIC (D-199, 1.3.6): `+ - * /` and nothing else — the
+// complex numbers have no `%` and no order. Same-type-only; the VALUE
+// semantics are the prelude cores' — the tfp element bodies use the
+// language's own tfp operators (Q scaling, saturation, stickiness for
+// free) with the any-component-ERR → both canonicalization an explicit
+// line, and the float bodies are IEEE with Smith's division.
+pub func:type_complex_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
+                                    int32:lt, int32:rt) never fails {
+    if (lt != rt) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_COMPLEX())) {
+            pass (raw te_tbb_mixed(e, at, lt, rt));
+        }
+        pass (raw te_tbb_mixed(e, at, rt, lt));
+    }
+    if (op == TokenKind.OpPercent) {
+        pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+            "a complex number has no `%` (D-199): the operator list is `+ - * /` and equality, exactly",
+            at));
+    }
+    pass lt;
+};
+
 // THE KLEENE OPERATORS (D-197, user-ratified): on the SINGLE DIGITS, `&` is
 // three-valued AND (min) and `|` is OR (max) — True=1, Unknown=0, False=−1,
 // ERR sticky — and NOT is `0 - x`, which in balanced ternary IS logical
@@ -1204,6 +1232,9 @@ pub func:why_not_ordered = string(ExprTyper->:e, int32:t) never fails {
     }
     if (k == (raw TY_KERNEL())) {
         pass "a kernel identifier is an opaque handle, and the order the kernel handed them out means nothing (D-042); cast if the number is what is meant";
+    }
+    if (k == (raw TY_COMPLEX())) {
+        pass "the complex numbers have no total order — mathematics, not policy (D-199); compare `.abs2()` if magnitude is what is meant";
     }
     pass "only integers, floats and characters have one";
 };
@@ -1720,6 +1751,17 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) == (raw TY_TERN())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) == (raw TY_FRAC())) { pass (e.types.t_bool); }
+    // A complex follows its ELEMENT family (D-199): tfp elements carry the
+    // taint; float elements carry NaN, and `is_err` on them is a category
+    // mistake said by name.
+    if ((raw type_kind(e.types, t)) == (raw TY_COMPLEX())) {
+        if ((raw type_kind(e.types, raw type_elem(e.types, t))) == (raw TY_TFP())) {
+            pass (e.types.t_bool);
+        }
+        pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+            "`is_err` reads the twisted taint, and a float-element complex has none (D-199): a float carries NaN — compare the components, or use tfp elements",
+            n.span));
+    }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
         string:m1 = raw string_concat("`is_err` tests a twisted value for ERR, and this is `",
                                         raw type_display(e.types, e.interns, t));
@@ -2299,7 +2341,64 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
 // Until 1.3.1 this arm refused as TYPE-029 ("Tier 1, no rung supplies one
 // yet") — retired with the tier: D-135 settled `simd<T, N>` as the
 // mechanism and made `vec2` and its family library types over it.
+// `complex(re, im)` (D-199, 1.3.6): the ctor node records WHICH keyword
+// built it, and this is the complex branch — exactly two components, each
+// typed at the element, the element read from the `complex<T>` slot.
+func:type_complex_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
+    int32:start = raw expr_list_start(n);
+    int32:cnt = raw expr_list_count(n);
+    int32:want = raw expected_value(e);
+    bool:directed = false;
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_COMPLEX())) { directed = true; }
+    }
+    if (!directed) {
+        int32:i0 = 0i32;
+        while (i0 < cnt) {
+            discard(raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i0) }));
+            i0 = i0 + 1i32;
+        }
+        pass (raw te_error(e, raw TYPE_UNKNOWN(),
+            "`complex(…)` needs a `complex<T>` annotation to read its element from (D-199) — the element lives in the type",
+            n.span));
+    }
+    if (cnt != 2i32) {
+        pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
+            "`complex(re, im)` takes exactly two components (D-199)",
+            n.span));
+    }
+    int32:celem = raw type_elem(e.types, want);
+    int32:ci = 0i32;
+    while (ci < 2i32) {
+        ExprId:aid = ExprId{ index: raw ast_id_at(e.ast, start, ci) };
+        int32:saved = e.expected;
+        e.expected = celem;
+        int32:at2 = raw type_of_expr(e, aid);
+        e.expected = saved;
+        if (at2 != 0i32) {
+            if (!(raw type_is_invalid(e.types, at2))) {
+                if (at2 != celem) {
+                    string:c1 = raw string_concat("this component is `",
+                                    raw type_display(e.types, e.interns, at2));
+                    string:c2 = raw string_concat(c1, "` and the element is `");
+                    string:c3 = raw string_concat(c2,
+                                    raw type_display(e.types, e.interns, celem));
+                    discard(raw te_error(e, raw TYPE_MISMATCH(),
+                                  raw string_concat(c3, "`"), n.span));
+                }
+            }
+        }
+        ci = ci + 1i32;
+    }
+    pass want;
+};
+
 func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
+    // The ctor node is SHARED (the payload says which keyword built it) —
+    // `complex(…)` branches away here (D-199).
+    if (((n.payload =>! int32) =>! TokenKind) == TokenKind.KwComplex) {
+        pass (raw type_complex_ctor(e, n));
+    }
     int32:start = raw expr_list_start(n);
     int32:cnt = raw expr_list_count(n);
     int32:want = raw expected_value(e);
@@ -3245,6 +3344,13 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         }
         if ((raw type_kind(e.types, rt)) == (raw TY_FRAC())) {
             pass (raw type_frac_arith(e, n.span, op, lt, rt));
+        }
+        // And the complex gate (D-199): no `%`, no order.
+        if ((raw type_kind(e.types, lt)) == (raw TY_COMPLEX())) {
+            pass (raw type_complex_arith(e, n.span, op, lt, rt));
+        }
+        if ((raw type_kind(e.types, rt)) == (raw TY_COMPLEX())) {
+            pass (raw type_complex_arith(e, n.span, op, lt, rt));
         }
     }
     if (op == TokenKind.OpPlus) {

@@ -1,0 +1,103 @@
+// expect-exit: 0
+//
+// `complex<T>` end to end (D-199, 1.3.6), both element families: floats
+// compute IEEE with SMITH'S division — proven here on a case whose naive
+// denominator (c² + d²) overflows to inf — and NaN components make `==`
+// false and `!=` true; tfp elements ride the language's own Q arithmetic
+// with the any-component-ERR → BOTH canonicalization. The arithmetic lives
+// in the per-element PRELUDE cores; the emitter only plumbs.
+mod:complex_basic;
+
+func:main = int32(cstring[]:argv) {
+    // Floats: (3+4i)(2-1i) = 10+5i; (10+5i)/(2-1i) = 3+4i (round trip).
+    complex<flt64>:a = complex(3.0f64, 4.0f64);
+    complex<flt64>:b = complex(2.0f64, 0.0f64 - 1.0f64);
+    complex<flt64>:p = a * b;
+    if (p.re() != 10.0f64)                     { exit 10i32; }
+    if (p.im() != 5.0f64)                      { exit 11i32; }
+    complex<flt64>:q = p / b;
+    if (q.re() != 3.0f64)                      { exit 12i32; }
+    if (q.im() != 4.0f64)                      { exit 13i32; }
+
+    // Add, sub, conj, abs2, abs.
+    complex<flt64>:s = a + b;
+    if (s.re() != 5.0f64)                      { exit 14i32; }
+    if (s.im() != 3.0f64)                      { exit 15i32; }
+    complex<flt64>:d = a - b;
+    if (d.re() != 1.0f64)                      { exit 16i32; }
+    if (d.im() != 5.0f64)                      { exit 17i32; }
+    complex<flt64>:cj = a.conj();
+    if (cj.im() != (0.0f64 - 4.0f64))          { exit 18i32; }
+    if (a.abs2() != 25.0f64)                   { exit 19i32; }
+    if (a.abs() != 5.0f64)                     { exit 20i32; }
+
+    // Smith survives where the naive formula overflows: c = d = ~1e200 —
+    // c*c + d*d overflows to inf naively; Smith's answer is finite.
+    complex<flt64>:hug = complex(1.0e200f64, 1.0e200f64);
+    complex<flt64>:one = complex(1.0f64, 0.0f64);
+    complex<flt64>:tiny = one / hug;
+    if (!(tiny.re() > 4.9e-201f64))            { exit 21i32; }
+    if (!(tiny.re() < 5.1e-201f64))            { exit 22i32; }
+    if (!(tiny.im() < (0.0f64 - 4.9e-201f64))) { exit 40i32; }
+
+    // Equality is per-component; NaN makes == false and != true.
+    if (!(a == a))                             { exit 23i32; }
+    if (a == b)                                { exit 24i32; }
+    flt64:z = (argv.len - 1i64) =>! flt64;
+    complex<flt64>:nanc = complex(z / z, 0.0f64);
+    if (nanc == nanc)                          { exit 25i32; }
+    if (!(nanc != nanc))                       { exit 26i32; }
+
+    // tfp elements: exact Q arithmetic, sticky ERR canonicalized to BOTH.
+    complex<tfp32>:ta = complex(1.5tfp32, 2.0tfp32);
+    complex<tfp32>:tb = complex(0.5tfp32, 0.0tfp32);
+    complex<tfp32>:tp = ta * tb;
+    if (tp.re() != 0.75tfp32)                  { exit 27i32; }
+    if (tp.im() != 1.0tfp32)                   { exit 28i32; }
+    complex<tfp32>:tq = ta / tb;
+    if (tq.re() != 3.0tfp32)                   { exit 29i32; }
+    if (tq.im() != 4.0tfp32)                   { exit 30i32; }
+
+    // Division by the zero complex degrades to ERR (both components).
+    complex<tfp32>:tz = complex(0.0tfp32, 0.0tfp32);
+    complex<tfp32>:terr = ta / tz;
+    if (!(is_err(terr)))                       { exit 31i32; }
+    if (!(is_err(terr + ta)))                  { exit 32i32; }
+    complex<tfp32>:eslot = ERR;
+    if (!(is_err(eslot)))                      { exit 33i32; }
+    if (!(is_err(ta * eslot)))                 { exit 34i32; }
+
+    // The any → both canonicalization: a half-tainted product is fully ERR.
+    complex<tfp32>:half = complex(ERR, 1.0tfp32);
+    complex<tfp32>:fixed2 = half + tb;
+    trit:probe = 0;
+    if (is_err(fixed2)) { probe = 1; }
+    if ((probe => int32) != 1i32)              { exit 35i32; }
+
+    // tfp equality traps on taint — the trap program is its own; a valid
+    // pair compares exactly.
+    if (!(tp == tp))                           { exit 36i32; }
+
+    // ToString via the element's rendering — asserted on the tfp side,
+    // whose fraction digit is mandatory and deterministic: "0.75+1.0i".
+    string:fs = `&{tp}`;
+    if (fs.len != 9i64)                        { exit 37i32; }
+    string:es = `&{terr}`;
+    if (es.len != 3i64)                        { exit 39i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 90i32; },
+        (DivByZero) { exit 91i32; },
+        (DivOverflow) { exit 92i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (Unreachable) { exit 97i32; },
+        (WildLeak) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

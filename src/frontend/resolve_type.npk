@@ -1963,6 +1963,37 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         }
         pass (raw tt_simd(r.types, vel, vlanes, raw type_size(r.types, vel)));
     }
+    // `complex<T>` (D-199, 1.3.6): one element type, from the RATIFIED four —
+    // floats compute IEEE, tfp elements carry the ERR discipline; everything
+    // else (ints, tbb, a nested complex) has no ratified arithmetic here.
+    if (kind == (raw TY_COMPLEX())) {
+        if (count != 1i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`complex<T>` takes one argument, the element type (D-199)",
+                n.span));
+        }
+        int32:cel = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
+                        raw type_args_start(n), 0i32) }, scope);
+        if (raw type_is_invalid(r.types, cel)) { pass cel; }
+        int32:ck = raw type_kind(r.types, cel);
+        bool:cok = false;
+        if (ck == (raw TY_FLOAT())) {
+            int32:cb = raw type_int_bits(r.types, cel);
+            if ((cb == 32i32) || (cb == 64i32)) { cok = true; }
+        }
+        if (ck == (raw TY_TFP())) {
+            int32:cb2 = raw type_int_bits(r.types, cel);
+            if ((cb2 == 32i32) || (cb2 == 64i32)) { cok = true; }
+        }
+        if (!cok) {
+            string:c1 = raw string_concat("`complex<",
+                            raw type_display(r.types, r.interns, cel));
+            pass (raw ty_error(r, raw TYPE_COMPLEX_RULES(),
+                raw string_concat(c1, ", …>` is not one of the ratified element types (D-199): `flt32`, `flt64`, `tfp32`, `tfp64`"),
+                n.span));
+        }
+        pass (raw tt_complex(r.types, cel));
+    }
     // `dim256<Unit>` (D-196, 1.3.3): the ONE builtin whose argument is a UNIT
     // NAME, not a type. A single name only — composition lives in `unit:`
     // declarations, so annotations stay flat, greppable, and NAMED. A name

@@ -194,6 +194,11 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
         pass (raw string_concat("frac",
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
+    if (k == (raw TY_COMPLEX())) {
+        string:ce = raw string_concat("complex<",
+                        raw type_display(tyt, interns, raw type_elem(tyt, t)));
+        pass (raw string_concat(ce, ">"));
+    }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }

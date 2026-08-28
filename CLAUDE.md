@@ -249,7 +249,18 @@ truncates toward zero, ERR traps both spellings on exit, and a float
 NEVER enters. Found: D-169's non-scalar compare belt called the first
 checker-ADMITTED aggregate comparison a defect (the frac arm now
 precedes it), plus two reserved-word collisions (`tid`, `fd`) in new
-emitter code that only npkc's own parse catches.
+emitter code that only npkc's own parse catches. **1.3.6 landed
+`complex<T>`** (D-199): `{T, T}` over the ratified four elements,
+`complex(re, im)` reusing the ctor node (the payload names the
+keyword), the arithmetic in per-element PRELUDE cores — tfp bodies ride
+the language's own Q operators with the any-component-ERR → BOTH
+canonicalization an explicit line, float bodies write SMITH'S division
+(the naive denominator overflows at √max) with flt32 computing in
+flt32 — equality only (no total order exists; per-component, NaN-aware,
+taint-trapping), `is_err`/`ERR` on tfp elements only, NO casts either
+direction, methods `.re/.im/.conj/.abs2` everywhere and `.abs` float-only
+(`llvm.sqrt` declared in the fixed block), four concrete-instance
+prelude `ToString` impls ("3+4i"; ERR pairs render "ERR"), TYPE-053.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

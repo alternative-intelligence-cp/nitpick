@@ -459,6 +459,7 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     if (k == (raw TY_DIM()))     { pass true; }
     if (k == (raw TY_TERN()))    { pass true; }
     if (k == (raw TY_FRAC()))    { pass true; }
+    if (k == (raw TY_COMPLEX())) { pass true; }
     if (k == (raw TY_KERNEL()))  { pass true; }
     if (k == (raw TY_ERROR()))   { pass true; }
     if (k == (raw TY_NIL()))     { pass true; }
@@ -619,6 +620,15 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // choice — a ternary target would lower these natively (§7).
     if (k == (raw TY_TERN())) {
         pass (raw ll_int_bits(raw type_int_bits(c.types, id)));
+    }
+    // A complex is its element pair (D-199): `{ T, T }`.
+    if (k == (raw TY_COMPLEX())) {
+        LlType:cel = raw ll_type(c, raw type_elem(c.types, id));
+        if (!(raw ll_is_ok(cel))) { pass cel; }
+        string:cp = raw string_concat("{ ", cel.text);
+        cp = raw string_concat(cp, ", ");
+        cp = raw string_concat(cp, cel.text);
+        pass (raw ll_ok(raw string_concat(cp, " }")));
     }
     // A frac is the component triple (D-198): `{ iN, iN, iN }` — the denom's
     // unsignedness is a fact about its OPERATIONS, not its bits.
