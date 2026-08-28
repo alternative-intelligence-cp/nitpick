@@ -13860,6 +13860,64 @@ Unknown=0, False=−1, ERR sticky — and NOT is `0 - x`, which in balanced
 ternary IS logical negation. Single gates on a ternary target; no new
 spellings.
 
+### D-197 implementation record (1.3.4)
+
+Design points fixed inside the ratified frame, at open:
+
+1. **The binary rung stores the VALUE, not packed digits.** One `TY_TERN`
+   kind (a = carrier bits, b = base, c = digit count; the balanced bound
+   derives as (base^digits−1)/2). The PROTOTYPE packs trits into
+   LUT-driven split bytes with ripple-carry loops — the
+   emulation-as-identity §7 warns against, plus runtime LUT state a
+   verifier would carry. The value representation makes balanced order
+   NUMERIC order, arithmetic native with one bound check, and the ERR
+   sentinels (−128/−32768) COINCIDE with the tbb carrier minimums —
+   `tbb_min_decimal` serves a third family and `tbb_divlike` runs
+   verbatim (a quotient's magnitude never exceeds its dividend's).
+2. **The prototype's `trit_add` CLAMP is overruled.** The oracle
+   saturates a trit sum to ±1 while its own multiply errs; D-197's text
+   ("sticky, D-144 discipline; overflow → ERR") is uniform and outranks
+   it — `1 + 1` at `trit` is ERR, exactly as `MAX + 1` is at `tbb`.
+   `+ - *` run widened in i32 (two bounds' sum and 29524² both fit) with
+   one balanced-bound check narrowing back.
+3. **Literals are contextual, any base.** D-147 folds balanced digits to
+   the value at scan and drops the base — a base is a SPELLING — so a
+   ternary slot takes any unsuffixed integer literal (decimal, balanced,
+   hex alike; one value, one check), range-checked EXACTLY against the
+   balanced bound in a dedicated arm: a power-of-two `ValueRange` cannot
+   spell ±29524, so the family's `type_range` rows overclaim to the
+   enclosing power of two — the safe direction, consulted only by the
+   leaving-cast classification it can only tighten.
+4. **`.trit`/`.nit` join the after-dot keyword interning** (the
+   D-056/`acquire` mechanism): the type keywords have no intern, and the
+   digit extraction is their one legal home after a `.`. Digits compute
+   by the OFFSET TRICK — `(v + bound)` is unsigned 0..base^digits−1;
+   digit i = that / base^i mod base − (base−1)/2 — with base^i a
+   branch-free select over the ≤10 constants; the index takes the D-070
+   bounds guard, and an ERR receiver yields an ERR digit.
+5. **Casts**: one family within itself (value-preserving, sentinel maps;
+   a smaller-bound target takes the tbb⇄tbb runtime discipline;
+   tryte⇄nyte is a pure relabel — same 59049 values); leaving traps ERR
+   under BOTH spellings with the value range-classified (D-144 as
+   amended); entering is check-or-saturate against the balanced bound —
+   the sentinel-forge case lies inside the range guard, so it needs no
+   separate check. Cross-twisted-family is IMPOSSIBLE (the D-195
+   amendment-4 precedent) — through the plain integer.
+6. **`ToString` renders the VALUE** ("ERR" or the number, the tbb shape);
+   the balanced digit string is what the digit methods are for.
+7. **Found at implementation: the same-text early-out defeated the tbb
+   cast matrix at SAME-WIDTH crossings.** `tbb32⇄int32` share the
+   carrier text `i32`, and `emit_cast`'s early-out sat ABOVE the tbb
+   intercept — so the same-width crossings rode through with NO sentinel
+   check: the audit's Theme-A hole D-144's own text says 0.9.5 closed.
+   Its tests passed by COINCIDENCE — the only int32 value outside
+   tbb32's range is INT_MIN, whose bit pattern IS the sentinel, so the
+   unchecked forge looked exactly like the saturation it should have
+   been, and the leaving direction quietly read ERR out as a number (the
+   laundering 1.3.2b closed at every OTHER width). The tbb intercept now
+   precedes the early-out, as tfp's has since 1.3.2 and tern's does from
+   birth; `tbb.npk` pins the same-width crossings.
+
 ## D-198 — `frac*`: invariant-normalized mixed numbers, exact-or-ERR — **SETTLED (1.3.0 batch, user-ratified)**
 
 `{whole: iN, num: iN, denom: uN}`; after EVERY operation the prototype's

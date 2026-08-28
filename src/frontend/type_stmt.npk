@@ -627,6 +627,26 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                 pass NIL;
             }
         }
+        // The ternary family's gates need the REAL operator too (D-197):
+        // `/=` and `%=` exist at the multi-digit types only, and `&=`/`|=`
+        // are the Kleene pair on the single digits — `x op= v` IS
+        // `x = x op v`, so the compound spelling takes the same rules.
+        bool:ternside = ((raw type_kind(e.types, want)) == (raw TY_TERN()));
+        if ((raw type_kind(e.types, got)) == (raw TY_TERN())) { ternside = true; }
+        if (ternside) {
+            if (raw is_bitwise_assign(op)) {
+                bool:kop = (op == TokenKind.OpAmpAssign);
+                if (op == TokenKind.OpPipeAssign) { kop = true; }
+                if (kop) {
+                    if (raw tern_kleene_ok(e, want, got)) { pass NIL; }
+                }
+                discard(raw type_bitwise(e, s.span, want, got));
+                pass NIL;
+            }
+            discard(raw type_tern_arith(e, s.span, raw assign_base_op(op),
+                                        want, got));
+            pass NIL;
+        }
         if (raw is_bitwise_assign(op)) {
             discard(raw type_bitwise(e, s.span, want, got));
         } else {

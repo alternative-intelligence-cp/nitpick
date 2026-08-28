@@ -264,6 +264,14 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         pass (raw te_no_member(e, base, name, at));
     }
+    // A TERNARY VALUE'S DIGIT COUNT (D-197) — 10/5/1, an `int64` like every
+    // other `.len`; the digits themselves are the `.trit(i)`/`.nit(i)`
+    // methods.
+    if (k == (raw TY_TERN())) {
+        string:f = raw intern_get(e.interns, name);
+        if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        pass (raw te_no_member(e, base, name, at));
+    }
     // A STRING'S THREE FIELDS (`{ptr, len, cap}`), and a `cstring`'s two — the
     // members the compiler's own sources read on every line that walks bytes
     // (`s.ptr[i]`), and which only `.len` of had a rule until 0.7.8. The bytes
@@ -1416,6 +1424,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_DIM())) {
         pass (raw type_tfp_method(e, n, recv, name, count));
     }
+    if ((raw type_kind(e.types, recv)) == (raw TY_TERN())) {
+        pass (raw type_tern_method(e, n, recv, name, start, count));
+    }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
     }
@@ -2447,6 +2458,46 @@ func:type_barrier_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
 // A `tfp`'s OWN OPERATIONS (D-195): `floor` and `trunc`, §5's free-function
 // family made METHODS — one mechanism. Both are total: ERR stays ERR
 // (sticky), every valid value's floor and truncation are representable.
+// THE DIGIT METHODS (D-197, 1.3.4): `.trit(i)` on the base-3 pair,
+// `.nit(i)` on the base-9 pair — each base's own name, refused across (a
+// `tryte` has trits, not nits). One integer index, bounds-checked at RUN
+// time (OutOfBounds — the emitter's guard); the result is the single-digit
+// type of the same base, and an ERR receiver yields an ERR digit —
+// extraction is sticky like every other read of a taint.
+func:type_tern_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                              int32:name, int32:start, int32:count) never fails {
+    string:m = raw intern_get(e.interns, name);
+    int32:tbase = raw type_tern_base(e.types, recv);
+    string:wantname = "trit";
+    if (tbase == 9i32) { wantname = "nit"; }
+    if (!(raw string_eq(m, wantname))) {
+        string:t1 = raw string_concat("`", raw type_display(e.types, e.interns, recv));
+        string:t2 = raw string_concat(t1, "` has no method `");
+        string:t3 = raw string_concat(t2, m);
+        string:t4 = raw string_concat(t3, "`: its digits extract with `.");
+        string:t5 = raw string_concat(t4, wantname);
+        pass (raw te_error(e, raw TYPE_TERN_RULES(),
+            raw string_concat(t5, "(i)` and count with `.len` (D-197)"),
+            n.span));
+    }
+    if (count != 1i32) {
+        pass (raw te_error(e, raw TYPE_TERN_RULES(),
+            "a digit extraction takes exactly one argument, the digit index (D-197)",
+            n.span));
+    }
+    int32:saved = e.expected;
+    e.expected = raw tt_int(e.types, 64i32, true);
+    int32:ixt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+    e.expected = saved;
+    if (ixt != 0i32) {
+        if (!(raw type_is_integer(e.types, ixt))) {
+            pass (raw te_error(e, raw TYPE_TERN_RULES(),
+                "the digit index is an integer (D-197)", n.span));
+        }
+    }
+    pass (raw tt_tern(e.types, 8i32, tbase));
+};
+
 func:type_tfp_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                              int32:name, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);

@@ -503,6 +503,10 @@ pub func:is_keyword = bool(string:text) {
               "any": "TY_ANY", "NIL": "TY_NIL",
               # 1.1.12b (D-185): the owning descriptor -- concrete, scalar-shaped.
               "OwnedFd": "TY_OWNEDFD"}
+    # 1.3.4 (D-197): the balanced ternary/nonary bases -- name -> (bits, base).
+    # The digit count derives from the pair (base 3: 8 bits = 1 digit, 16 = 10;
+    # base 9: 8 = 1, 16 = 5), so the spec's `which` slot carries the BASE.
+    TERNARY = {"trit": (8, 3), "tryte": (16, 3), "nit": (8, 9), "nyte": (16, 9)}
     # Constructors and aggregates: reached through their own type nodes or their
     # generic arguments, never as a bare name.
     NOT_SCALAR = {"Result", "Optional", "Handle", "arena", "shared_arena",
@@ -556,6 +560,10 @@ pub func:is_keyword = bool(string:text) {
         elif name in SIMPLE:
             bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(true, raw %s(), 0i32, false, 0i32)); }'
                       % (v, SIMPLE[name]))
+        elif name in TERNARY:
+            tbits, tbase = TERNARY[name]
+            bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(true, raw TY_TERN(), %di32, true, %di32)); }'
+                      % (v, tbits, tbase))
         elif name in NOT_SCALAR:
             continue
         else:

@@ -1,0 +1,64 @@
+// The ternary/nonary family: what refuses, by name (D-197, 1.3.4).
+//
+// TYPE-051 is the family's OWN rules — division on a single digit, the wrong
+// base's digit method, a digit call's arity. Mixing rides the twisted-mixing
+// message (TYPE-008), the Kleene operators on a digit STRING ride the bitwise
+// refusal (TYPE-008's own home), a lossy leaving cast rides TYPE-009, the
+// cross-family cast rides TYPE-032, and an out-of-range literal rides
+// TYPE-031 — existing rules, reached through the ternary arms.
+mod:tern_rules;
+
+// A three-state division is not an operation anyone writes.
+// expect-error: NITPICK-TYPE-051
+func:trit_div = trit(trit:a, trit:b) never fails {
+    pass (a / b);
+};
+
+// A `tryte` has trits, not nits — each base's own extraction name.
+// expect-error: NITPICK-TYPE-051
+func:wrong_digit = trit(tryte:t) never fails {
+    pass (t.nit(0i64));
+};
+
+// One argument: the digit index.
+// expect-error: NITPICK-TYPE-051
+func:digit_arity = trit(tryte:t) never fails {
+    pass (t.trit(0i64, 1i64));
+};
+
+// The family computes only with itself, width for width.
+// expect-error: NITPICK-TYPE-008
+func:mixed = tryte(tryte:t) never fails {
+    pass (t + 1i32);
+};
+
+// The Kleene pair lives on the SINGLE digits: a digit string is not a truth
+// value, so `&` on a tryte is the bitwise refusal.
+// expect-error: NITPICK-TYPE-008
+func:kleene_on_string = tryte(tryte:a, tryte:b) never fails {
+    pass (a & b);
+};
+
+// A literal past the balanced bound refuses exactly (±29524 is not a
+// power of two, and the check does not round it to one).
+// expect-error: NITPICK-TYPE-031
+func:oob_literal = tryte() never fails {
+    tryte:t = 29525;
+    pass t;
+};
+
+// Leaving with possible value loss takes the bang: tryte's ±29524 does not
+// fit int8.
+// expect-error: NITPICK-TYPE-009
+func:lossy_leave = int8(tryte:t) never fails {
+    pass (t => int8);
+};
+
+// Cross-twisted-family casts do not exist — through the plain integer.
+// expect-error: NITPICK-TYPE-032
+func:cross_family = tbb16(tryte:t) never fails {
+    pass (t =>! tbb16);
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

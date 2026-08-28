@@ -154,6 +154,16 @@ pub func:TY_TFP = int32() never fails { pass 41i32; };
 // never interned here: dimensionless IS `tfp256`, and `tt_dim` says so.
 pub func:TY_DIM = int32() never fails { pass 42i32; };
 
+// D-197 (1.3.4): the balanced ternary/nonary bases — `trit`, `tryte`, `nit`,
+// `nyte`. a = carrier bits (8/16, so `type_int_bits` answers uniformly);
+// b = BASE (3 or 9 — nonzero, so `type_is_signed`'s `b != 0` read answers
+// true, which these values are); c = DIGIT COUNT (1/10/5). The binary rung
+// stores the VALUE — balanced order is numeric order, and the ERR sentinel
+// is the carrier's most-negative (−128/−32768), the tbb tables' own rows.
+// The representation is the RUNG'S, never the identity: ternary hardware is
+// a planned target, and the frontend checks these as ternary (§7).
+pub func:TY_TERN = int32() never fails { pass 43i32; };
+
 pub struct:Type = {
     int32:kind;
     int32:a;
@@ -419,6 +429,8 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // A `dim256` is a tfp256 with a compile-time unit (D-196) — same bits,
     // nothing to drop; stated per the B-7 walker discipline.
     if (k == (raw TY_DIM()))      { pass false; }
+    // A ternary value IS its carrier's bits (D-197) — nothing to drop.
+    if (k == (raw TY_TERN()))     { pass false; }
     pass false;
 };
 
@@ -574,6 +586,46 @@ pub func:tt_tfp = int32(TypeTable->:t, int32:bits) never fails {
     int64:bytes = (bits => int64) / 8i64;
     pass (raw tt_intern(t, raw TY_TFP(), bits, 1i32, 0i32, bytes,
                         raw int_align(bits), 0i32));
+};
+
+// --- the ternary/nonary bases (D-197, 1.3.4) ----------------------------------
+
+// The digit count is a fact of the (base, bits) pair: base 3 fits one trit
+// in i8 and ten in i16; base 9 one nit in i8 and five in i16 — 3^10 = 9^5 =
+// 59049 states, which is why tryte and nyte share a carrier.
+pub func:tern_digits = int32(int32:base, int32:bits) never fails {
+    if (bits == 8i32) { pass 1i32; }
+    if (base == 3i32) { pass 10i32; }
+    pass 5i32;
+};
+
+// The BALANCED BOUND — the largest magnitude the digit string can hold,
+// (base^digits − 1)/2: ±1, ±29524, ±4, ±29524. The valid range is symmetric
+// about zero and STRICTLY inside the carrier's, which is what leaves the
+// most-negative carrier value spare for ERR.
+pub func:tern_bound = int64(int32:base, int32:digits) never fails {
+    int64:p = 1i64;
+    int32:i = 0i32;
+    while (i < digits) {
+        p = p * (base => int64);
+        i = i + 1i32;
+    }
+    pass ((p - 1i64) / 2i64);
+};
+
+pub func:tt_tern = int32(TypeTable->:t, int32:bits, int32:base) never fails {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_TERN(), bits, base,
+                        raw tern_digits(base, bits), bytes,
+                        raw int_align(bits), 0i32));
+};
+
+pub func:type_tern_base = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).b);
+};
+
+pub func:type_tern_digits = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).c);
 };
 
 // --- `dim256<Unit>` (D-196, 1.3.3) --------------------------------------------
@@ -1519,6 +1571,9 @@ pub func:type_is_ordered = bool(TypeTable->:t, int32:id) never fails {
     // A `dim256` orders as its tfp256 carrier (D-196) — the same-vector
     // demand is the comparison rule's, not this predicate's.
     if (k == (raw TY_DIM()))   { pass true; }
+    // A ternary value orders in BALANCED order (D-197), which under the
+    // value representation IS numeric order — the whole point of it.
+    if (k == (raw TY_TERN()))  { pass true; }
     pass false;
 };
 

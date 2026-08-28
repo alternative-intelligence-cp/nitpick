@@ -181,6 +181,15 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
                         raw dim_unit_text(raw type_dim_vec(tyt, t)));
         pass (raw string_concat(dv, ">"));
     }
+    // The ternary/nonary four, named from the (base, digits) pair (D-197).
+    if (k == (raw TY_TERN())) {
+        if ((raw type_tern_base(tyt, t)) == 3i32) {
+            if ((raw type_tern_digits(tyt, t)) == 1i32) { pass "trit"; }
+            pass "tryte";
+        }
+        if ((raw type_tern_digits(tyt, t)) == 1i32) { pass "nit"; }
+        pass "nyte";
+    }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }

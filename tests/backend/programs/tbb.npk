@@ -75,6 +75,18 @@ func:main = int32(cstring[]:_~argv) {
     // programs are tbb_cast_trap and tbb_cast_bang_trap).
     if ((okv =>! int32) != 41i32)               { exit 27i32; }
 
+    // THE SAME-WIDTH CROSSINGS, pinned in both directions (1.3.4): `tbb32`
+    // and `int32` share the carrier text `i32`, and until the tern work the
+    // cast emitter's same-text early-out swallowed these — no sentinel
+    // check, the exact audit hole D-144's text says 0.9.5 closed, passing
+    // by coincidence because INT_MIN's bit pattern IS the sentinel. A valid
+    // value now crosses through the real matrix; the taint and forge traps
+    // are their own programs (tbb_cast_same_trap, tbb_forge_trap).
+    if ((okv => int32) != 41i32)                { exit 32i32; }
+    tbb32:back = 41i32 => tbb32;
+    if (is_err(back))                           { exit 33i32; }
+    if ((back =>! int32) != 41i32)              { exit 34i32; }
+
     // Compound assignment takes the SAME twisted discipline as the operator
     // (1.3.3, `emit_arith_value`): until then `x += y` emitted a raw `add` —
     // no saturation, no stickiness — and `x /= zero` reached the hardware

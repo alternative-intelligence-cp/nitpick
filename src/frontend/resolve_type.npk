@@ -2107,6 +2107,9 @@ func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n)
     if (spec.kind == (raw TY_FLOAT()))  { pass (raw tt_float(r.types, spec.bits)); }
     if (spec.kind == (raw TY_TBB()))    { pass (raw tt_tbb(r.types, spec.bits)); }
     if (spec.kind == (raw TY_TFP()))    { pass (raw tt_tfp(r.types, spec.bits)); }
+    // D-197 (1.3.4): the spec's `which` slot carries the BASE (3 or 9); the
+    // digit count derives from the (base, bits) pair inside `tt_tern`.
+    if (spec.kind == (raw TY_TERN()))   { pass (raw tt_tern(r.types, spec.bits, spec.which)); }
     if (spec.kind == (raw TY_KERNEL())) { pass (raw tt_kernel(r.types, spec.which)); }
     if (spec.kind == (raw TY_BOOL()))   { pass (r.types.t_bool); }
     if (spec.kind == (raw TY_STRING())) { pass (r.types.t_string); }

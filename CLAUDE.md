@@ -216,6 +216,25 @@ and **compound assignment was a second implementation of the operators**
 reached the hardware, and a float `+=` emitted integer `add`; the
 arithmetic value core is now extracted (`emit_arith_value`) and BOTH
 spellings route through it, with `op=` held to the slot's unit.
+**1.3.4 landed the ternary/nonary bases** (`trit`/`tryte`/`nit`/`nyte`,
+D-197): ONE `TY_TERN` kind, the binary rung storing the VALUE (balanced
+order IS numeric order; the sentinels coincide with tbb's carrier
+minimums, so `tbb_min_decimal`/`tbb_divlike` serve a third family; the
+prototype's packed-trit LUTs are deliberately not carried — §7's
+emulation-as-identity warning), overflow past the BALANCED bound → ERR
+(the prototype's trit clamp OVERRULED by D-197's uniform text), `/ %` at
+the multi-digit pair only (TYPE-051), the user-ratified Kleene `&`/`|`
+on the single digits (min/max, NOT = `0 - x`), `.trit(i)`/`.nit(i)`
+digit extraction by the offset trick (bounds-checked, ERR-sticky;
+`trit`/`nit` joined the after-dot keyword interning), contextual
+literals in any base checked EXACTLY against ±29524-style bounds, the
+one-family cast matrix with the D-144-as-amended leaving rule, and four
+prelude `ToString` impls. Found at implementation: **the same-text
+early-out defeated the tbb cast matrix at SAME-WIDTH crossings** —
+`tbb32⇄int32` share `i32`, so the crossings 0.9.5's audit hole was
+ABOUT rode through unchecked, passing by coincidence (INT_MIN's bit
+pattern IS the sentinel); the tbb intercept now precedes the early-out
+as tfp's has since 1.3.2.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
@@ -321,6 +340,7 @@ parse failure some lines away from the mistake:
 | `gives` | the factory contract clause (D-183 1.2.6) — a channel-returning creator hands its channels' reclaim to the caller |
 | `Mutex`, `Guard`, `acquire`, `RwLock`, `RGuard`, `CondVar`, `Barrier` | the sync primitives' type keywords (D-056, 1.1.11) — `acquire` interns itself only after a `.` |
 | `unit` | the unit-declaration keyword (D-196, 1.3.3) — `unit:Hertz = 1 / Seconds;`; it reads like the most ordinary local name in any measurement code |
+| `trit`, `nit` | the single-digit ternary/nonary type keywords (D-197, 1.3.4) — like `acquire`/`any`, each interns itself as a NAME only after a `.` (the digit extraction `t.trit(i)`) |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

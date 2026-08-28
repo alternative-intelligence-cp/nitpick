@@ -555,6 +555,30 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
     // `Optional<U>` slot takes a `U` (D-099); asking the wrapper for a width would
     // report "no width suffix" about a slot that plainly names one.
     int32:want = raw expected_value(e);
+    // A TERNARY SLOT takes an unsuffixed INTEGER literal in any base (D-197):
+    // decimal and the balanced sequences are SPELLINGS of one value — D-147
+    // folded the digits at scan and dropped the base, so they are one thing
+    // here — and the bound is the BALANCED range, checked exactly (a
+    // power-of-two `ValueRange` cannot spell ±29524).
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_TERN())) {
+            if ((raw kind_wanted(e, example)) == (raw TY_INT())) {
+                int64:tbnd = raw tern_bound(raw type_tern_base(e.types, want),
+                                            raw type_tern_digits(e.types, want));
+                if ((n.payload > tbnd) || (n.payload < (0i64 - tbnd))) {
+                    string:tb1 = raw string_concat(
+                        "the value of this literal does not fit `",
+                        raw type_display(e.types, e.interns, want));
+                    string:tb2 = raw string_concat(tb1,
+                        "` (D-148/D-197): the balanced range is ±");
+                    pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                        raw string_concat(tb2, raw int_to_string(tbnd)),
+                        n.span));
+                }
+                pass want;
+            }
+        }
+    }
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
             pass (raw lit_ranged(e, n, want));
@@ -703,6 +727,11 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             // And a `dim256<U>` is a tfp256 with a unit (D-196): the taint
             // wears the slot's unit like any other value in it.
             if ((raw type_kind(e.types, werr)) == (raw TY_DIM())) {
+                pass werr;
+            }
+            // The ternary family carries the same state (D-197):
+            // `tryte:t = ERR;` is the taint at that base and width.
+            if ((raw type_kind(e.types, werr)) == (raw TY_TERN())) {
                 pass werr;
             }
         }
@@ -884,6 +913,44 @@ pub func:type_dim_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
     string:d3 = raw string_concat(d2, raw type_display(e.types, e.interns, rt));
     string:d4 = raw string_concat(d3, "` — addition, subtraction and `%` demand the SAME unit (D-196); `*` and `/` are the operators that combine units");
     pass (raw te_error(e, raw TYPE_DIM_MISMATCH(), move(d4), at));
+};
+
+// TERNARY ARITHMETIC (D-197, 1.3.4): `+ - *` at all four types, `/ %` at the
+// MULTI-DIGIT pair only — a three-state division is not an operation anyone
+// writes, and refusing it by name beats defining it. Same-type-only, like
+// every twisted family; the value semantics (sticky ERR, overflow → ERR,
+// division by zero → ERR) are the emitter's, this is only the type.
+pub func:type_tern_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
+                                 int32:lt, int32:rt) never fails {
+    if (lt != rt) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_TERN())) {
+            pass (raw te_tbb_mixed(e, at, lt, rt));
+        }
+        pass (raw te_tbb_mixed(e, at, rt, lt));
+    }
+    bool:divlike = (op == TokenKind.OpSlash);
+    if (op == TokenKind.OpPercent) { divlike = true; }
+    if (divlike) {
+        if ((raw type_tern_digits(e.types, lt)) == 1i32) {
+            string:g1 = raw string_concat("`", raw type_display(e.types, e.interns, lt));
+            pass (raw te_error(e, raw TYPE_TERN_RULES(),
+                raw string_concat(g1,
+                    "` has no division: a single balanced digit divides into nothing anyone writes (D-197) — `tryte` and `nyte` divide"),
+                at));
+        }
+    }
+    pass lt;
+};
+
+// THE KLEENE OPERATORS (D-197, user-ratified): on the SINGLE DIGITS, `&` is
+// three-valued AND (min) and `|` is OR (max) — True=1, Unknown=0, False=−1,
+// ERR sticky — and NOT is `0 - x`, which in balanced ternary IS logical
+// negation. The multi-digit types fall through to the bitwise refusal: a
+// digit STRING is not a truth value.
+pub func:tern_kleene_ok = bool(ExprTyper->:e, int32:lt, int32:rt) never fails {
+    if ((raw type_kind(e.types, lt)) != (raw TY_TERN())) { pass false; }
+    if (lt != rt)                                        { pass false; }
+    pass ((raw type_tern_digits(e.types, lt)) == 1i32);
 };
 
 func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) never fails {
@@ -1611,6 +1678,7 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     // a tfp256 with a unit (D-196) — the look does not care about the unit.
     if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass (e.types.t_bool); }
+    if ((raw type_kind(e.types, t)) == (raw TY_TERN())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
         string:m1 = raw string_concat("`is_err` tests a twisted value for ERR, and this is `",
                                         raw type_display(e.types, e.interns, t));
@@ -3122,6 +3190,14 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         if ((raw type_kind(e.types, rt)) == (raw TY_DIM())) {
             pass (raw type_dim_arith(e, n.span, op, lt, rt));
         }
+        // The ternary family's arithmetic gate needs the OPERATOR too
+        // (D-197): `/ %` exist at the multi-digit types only.
+        if ((raw type_kind(e.types, lt)) == (raw TY_TERN())) {
+            pass (raw type_tern_arith(e, n.span, op, lt, rt));
+        }
+        if ((raw type_kind(e.types, rt)) == (raw TY_TERN())) {
+            pass (raw type_tern_arith(e, n.span, op, lt, rt));
+        }
     }
     if (op == TokenKind.OpPlus) {
         if ((raw type_kind(e.types, lt)) == (raw TY_STRING())) {
@@ -3150,8 +3226,17 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (op == TokenKind.OpAndAnd) { pass (raw type_logical(e, n, lt, rt)); }
     if (op == TokenKind.OpOrOr)   { pass (raw type_logical(e, n, lt, rt)); }
 
-    if (op == TokenKind.OpAmp)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpPipe)  { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    // THE KLEENE PAIR (D-197): on `trit`/`nit`, `&` is three-valued AND and
+    // `|` is OR — the user-ratified spelling, single gates on a ternary
+    // target. Everything else on these operators stays the bitwise story.
+    if (op == TokenKind.OpAmp) {
+        if (raw tern_kleene_ok(e, lt, rt)) { pass lt; }
+        pass (raw type_bitwise(e, n.span, lt, rt));
+    }
+    if (op == TokenKind.OpPipe) {
+        if (raw tern_kleene_ok(e, lt, rt)) { pass lt; }
+        pass (raw type_bitwise(e, n.span, lt, rt));
+    }
     if (op == TokenKind.OpCaret) { pass (raw type_bitwise(e, n.span, lt, rt)); }
     if (op == TokenKind.OpShl)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
     if (op == TokenKind.OpShr)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
@@ -3177,6 +3262,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         if ((raw type_kind(e.types, t)) == (raw TY_TBB())) { pass t; }
         if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass t; }
         if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass t; }
+        if ((raw type_kind(e.types, t)) == (raw TY_TERN())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
             pass (raw te_operand_error(e, n.span, t));
         }

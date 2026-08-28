@@ -679,6 +679,49 @@ the type:
 > constructs they govern — groundwork laid before the single Astrée run is far
 > cheaper than groundwork added after it.
 
+**The binary rung stores the VALUE** (D-197, 1.3.4): a `tryte` is its balanced
+value −29524..29524 in the carrier, so balanced order IS numeric order and the
+ERR sentinel is the carrier's most-negative (−128 / −32768), sticky per D-144.
+The prototype's packed-trit LUT emulation is deliberately NOT carried — it is
+the emulation-as-identity this section warns against. On ternary hardware both
+choices dissolve: the value IS the digit string.
+
+**Operations** (D-197):
+
+- `+ - *` at all four types; **`/ %` at `tryte`/`nyte` only** — a three-state
+  division is not an operation anyone writes, refused by name (TYPE-051).
+- **Overflow past the BALANCED bound → ERR** at every width — `1 + 1` at
+  `trit` is ERR exactly as `MAX + 1` is at `tbb`. (The prototype clamped a
+  trit sum to ±1 while its own multiply erred; D-197's uniform rule is
+  ratified and the clamp is overruled.)
+- Division by zero yields ERR (D-007's twisted row); comparisons at all four
+  in balanced order, with the twisted taint discipline (ERR at a bare
+  comparison traps; `is_err` looks; the `pick` `ERR:` arm handles — and a
+  ternary `pick` selector demands that arm exactly as a `tbb`'s does).
+- **The Kleene pair, user-ratified**: on `trit`/`nit`, `&` is three-valued
+  AND (min) and `|` is OR (max) — True=1, Unknown=0, False=−1, ERR sticky —
+  and NOT is `0 - x`, which in balanced ternary IS logical negation. On the
+  multi-digit types the operators stay refused: a digit string is not a
+  truth value.
+- **Digit access**: `t.trit(i)` / `n.nit(i)` — each base's own name (a
+  `tryte` has trits, not nits), one integer index, bounds-checked like an
+  array's (OUT_OF_BOUNDS); an ERR receiver yields an ERR digit. `.len` is
+  the digit count (10/5/1) as an `int64`.
+- **Literals are contextual, any base**: a ternary-typed slot takes an
+  unsuffixed integer literal — `tryte:t = 42;` and `tryte:t = 1T1T0t;` are
+  one value spelled two ways (D-147 folds balanced digits at scan) —
+  range-checked EXACTLY against the balanced bound. `ERR` takes the slot's
+  type.
+- **Casts**: one family within itself — value-preserving, the sentinel maps,
+  a smaller-bound target trap-or-saturates (`=>` / `=>!`), and
+  `tryte ⇄ nyte` (the same 59049 values) is a pure relabel. Leaving to
+  int/float: ERR traps under BOTH spellings (D-144 as amended), the value
+  range-classified. Entering: out-of-range traps under `=>`, absorbs as ERR
+  under `=>!`. Another twisted family (`tbb`, `tfp`, `dim256`) is reached
+  through the plain integer — cross-family casts do not exist.
+- **`ToString`** renders the VALUE ("ERR" or the number); the balanced digit
+  string is what the digit methods are for.
+
 ---
 
 

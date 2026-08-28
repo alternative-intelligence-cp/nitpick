@@ -98,6 +98,19 @@ pub func:type_range = ValueRange(TypeTable->:tyt, int32:t) never fails {
     // A `dim256` is a tfp256 with a unit (D-196) — same magnitude row, same
     // diagnostic-only purpose; its casts are the dedicated arms'.
     if (k == (raw TY_DIM()))   { pass (raw vr(true, (bits / 2i32) - 1i32)); }
+    // A ternary type's balanced bound is not a power of two, so this row
+    // OVERCLAIMS to the enclosing one (±4 reads as ±7, ±29524 as ±32767) —
+    // the SAFE direction: it only makes a LEAVING cast stricter, and the
+    // family's own arms never consult it. trit ±1 and the i8 nit ±4 are
+    // digits==1; the i16 pair shares ±29524.
+    if (k == (raw TY_TERN())) {
+        Type:trow = raw tt_get(tyt, t);
+        if (trow.c == 1i32) {
+            if (trow.b == 3i32) { pass (raw vr(true, 1i32)); }
+            pass (raw vr(true, 3i32));
+        }
+        pass (raw vr(true, 15i32));
+    }
     if (k == (raw TY_FLOAT())) { pass (raw vr(true, raw float_significand_bits(bits))); }
     if (k == (raw TY_BOOL()))  { pass (raw vr(false, 1i32)); }
     if (k == (raw TY_CHAR())) {
@@ -259,6 +272,42 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // which 0.7 lowers.
     if (fk == (raw TY_TBB())) { pass (raw cast_from_tbb(tyt, from, to, tk)); }
     if (tk == (raw TY_TBB())) { pass (raw cast_to_tbb(tyt, from, fk)); }
+
+    // --- the ternary/nonary family (D-197, 1.3.4) --------------------------------
+    //
+    // WITHIN the family every pair is legal in both spellings — the value is
+    // the value, the SENTINEL maps, and a target whose balanced bound is
+    // smaller takes the tbb⇄tbb runtime discipline (trap under `=>`,
+    // saturate to ERR under `=>!`); tryte⇄nyte hold the same 59049 values,
+    // so that pair is a pure relabel. LEAVING to int/float is the
+    // D-144-as-amended rule: ERR traps under BOTH spellings, and the VALUE
+    // is range-classified like any numeric pair (every ternary range fits
+    // both float widths exactly — 29524 < 2^24). ENTERING from int/float is
+    // check-or-saturate, the tbb entering shape against the balanced bound.
+    // The OTHER twisted families (tbb, tfp, dim256) are CAST_IMPOSSIBLE —
+    // the D-195 amendment-4 precedent: cross-family goes through the plain
+    // integer, one rule.
+    if (fk == (raw TY_TERN())) {
+        if (tk == (raw TY_TERN()))  { pass (raw CAST_OK()); }
+        if (tk == (raw TY_INT())) {
+            ValueRange:nfr = raw type_range(tyt, from);
+            ValueRange:ntr = raw type_range(tyt, to);
+            if (raw range_fits(nfr, ntr)) { pass (raw CAST_OK()); }
+            pass (raw CAST_LOSSY());
+        }
+        if (tk == (raw TY_FLOAT())) {
+            ValueRange:nfr2 = raw type_range(tyt, from);
+            ValueRange:ntr2 = raw type_range(tyt, to);
+            if (raw range_fits(nfr2, ntr2)) { pass (raw CAST_OK()); }
+            pass (raw CAST_LOSSY());
+        }
+        pass (raw CAST_IMPOSSIBLE());
+    }
+    if (tk == (raw TY_TERN())) {
+        if (fk == (raw TY_INT()))   { pass (raw CAST_OK()); }
+        if (fk == (raw TY_FLOAT())) { pass (raw CAST_OK()); }
+        pass (raw CAST_IMPOSSIBLE());
+    }
 
     // --- a handle's number is readable; a handle is not forgeable ----------------
     //
@@ -518,6 +567,12 @@ pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) never fa
     }
     if (tk == (raw TY_DIM())) {
         pass "a `dim256`'s one cast partner is `tfp256` (D-196): only `tfp256 =>! dim256<U>` asserts a unit — convert to `tfp256` first";
+    }
+    if (fk == (raw TY_TERN())) {
+        pass "a ternary value converts within its own family, or to an integer or a float (D-197); another twisted family is reached through the plain integer";
+    }
+    if (tk == (raw TY_TERN())) {
+        pass "a ternary value is made from its own family, an integer or a float (D-197); another twisted family is reached through the plain integer";
     }
     if (fk == (raw TY_TBB())) {
         pass "a `tbb` converts only to another `tbb`, an integer or a float (D-008); this type is none of those";

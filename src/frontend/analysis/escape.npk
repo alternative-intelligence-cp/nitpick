@@ -693,6 +693,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_TBB()))     { pass false; }
     if (k == (raw TY_TFP()))     { pass false; }
     if (k == (raw TY_DIM()))     { pass false; }   // a tfp256 with a unit (D-196)
+    if (k == (raw TY_TERN()))    { pass false; }   // a balanced value in its carrier (D-197)
     if (k == (raw TY_ERROR()))   { pass false; }   // a code word, not an address (D-179)
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
@@ -1419,6 +1420,7 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     if (k == (raw TY_TBB()))      { pass false; }
     if (k == (raw TY_TFP()))      { pass false; }
     if (k == (raw TY_DIM()))      { pass false; }
+    if (k == (raw TY_TERN()))     { pass false; }
     if (k == (raw TY_KERNEL()))   { pass false; }
 
     // A FUNCTION VALUE IS A CODE ADDRESS AND NOT A DATA ONE. Closures are removed

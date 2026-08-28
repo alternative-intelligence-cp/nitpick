@@ -470,6 +470,14 @@ func:p_postfix = ExprId(Parser->:p) never fails {
             if (n.kind == TokenKind.KwAny) {
                 mnm = (raw intern_add(p.interns, "any")) => int64;
             }
+            // `trit` and `nit` ARE THE TYPE KEYWORDS (D-197 follows the same
+            // rule): after a dot they are the digit extractions.
+            if (n.kind == TokenKind.KwTrit) {
+                mnm = (raw intern_add(p.interns, "trit")) => int64;
+            }
+            if (n.kind == TokenKind.KwNit) {
+                mnm = (raw intern_add(p.interns, "nit")) => int64;
+            }
             // `p.magnitude()` is a METHOD CALL, not a call over a member access
             // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
             // (D-006), which needs the receiver kept apart from the callee --

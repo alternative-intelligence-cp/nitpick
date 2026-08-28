@@ -112,6 +112,15 @@ func:dim_wildcard_does_not_absorb_err = int32(dim256<Meters>:d) never fails {
     pass r;
 };
 
+// expect-error: NITPICK-PICK-002
+func:tern_wildcard_does_not_absorb_err = int32(tryte:t) never fails {
+    int32:r = 0i32;
+    pick (t) {
+        (*) { r = 1i32; }
+    }
+    pass r;
+};
+
 // --- arms nothing can reach ----------------------------------------------------------
 
 // expect-error: NITPICK-PICK-004

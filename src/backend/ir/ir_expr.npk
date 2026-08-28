@@ -653,6 +653,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_DIM())) {
             pass (raw emit_tfp_method(x, id, n, amrecv));
         }
+        // The ternary digit extraction (D-197).
+        if (amk == (raw TY_TERN())) {
+            pass (raw emit_tern_method(x, id, n, amrecv));
+        }
         if (amk == (raw TY_CHANNEL())) {
             pass (raw emit_channel_method(x, id, n, amrecv));
         }
@@ -1343,6 +1347,7 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         bool:twneg = ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TBB()));
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TFP())) { twneg = true; }
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_DIM())) { twneg = true; }
+        if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TERN())) { twneg = true; }
         if (twneg) {
             string:tmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, utid));
             if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
@@ -1460,6 +1465,77 @@ func:float_literal_body = string(ExprEmitter->:x, string:txt) never fails {
 // floor clears the fraction bits (`ashr` semantics: toward −inf); trunc
 // biases a NEGATIVE value by 2^F−1 first, so the clear rounds toward zero.
 // Branch-free, sticky: ERR in, ERR out.
+// DIGIT EXTRACTION (D-197, 1.3.4): `.trit(i)` / `.nit(i)`. The value
+// representation computes the digit on demand by the OFFSET TRICK —
+// `v + bound` is 0..base^digits−1 unsigned, and digit i is that divided by
+// base^i, mod base, minus (base−1)/2. The power is a branch-free select
+// over the ≤10 constants (the index is a runtime value; a loop would put a
+// phi where a ternary target has a single instruction). The index is
+// bounds-checked exactly as an array's (D-070, OUT_OF_BOUNDS); an ERR
+// receiver yields an ERR digit — extraction is sticky.
+func:emit_tern_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                              int32:recv_tid) never fails {
+    IrVal:rv = raw emit_expr(x, raw expr_operand(n));
+    if (!(raw iv_is_ok(rv))) { pass rv; }
+    int32:tbase = raw type_tern_base(x.fe.ctx.types, recv_tid);
+    int32:tdigits = raw type_tern_digits(x.fe.ctx.types, recv_tid);
+    int64:tbnd = raw tern_bound(tbase, tdigits);
+    string:tmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, recv_tid));
+    if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    IrVal:ixv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast,
+                                   raw expr_list_start(n), 0i32) });
+    if (!(raw iv_is_ok(ixv))) { pass ixv; }
+    string:ix64 = raw index_as_i64(x, ixv);
+    drop emit_bounds_guard(x, ix64, raw int_to_string(tdigits => int64), n.span);
+
+    // The receiver's taint, read before the arithmetic that would obscure it.
+    string:rerr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(rerr, " = icmp eq ", rv.ll, " ",
+                      raw cat3(rv.ref, ", ", tmn)));
+
+    // off = v + bound, in i32 — 0..59048 for every type here.
+    string:wv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(wv, " = sext ", rv.ll, " ",
+                      raw string_concat(rv.ref, " to i32")));
+    string:off = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(off, " = add i32 ", wv, ", ",
+                      raw int_to_string(tbnd)));
+
+    // base^i by selects over the type's own constants, innermost first.
+    int64:pw = 1i64;
+    string:pcur = "1";
+    int32:pi = 1i32;
+    while (pi < tdigits) {
+        pw = pw * (tbase => int64);
+        string:pc = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(pc, " = icmp uge i64 ", ix64, ", ",
+                          raw int_to_string(pi => int64)));
+        string:ps = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(ps, " = select i1 ", pc, ", ",
+                          raw cat5("i32 ", raw int_to_string(pw), ", i32 ",
+                              pcur, "")));
+        pcur = move(ps);
+        pi = pi + 1i32;
+    }
+
+    string:dq = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dq, " = udiv i32 ", off, ", ", pcur));
+    string:dr = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dr, " = urem i32 ", dq, ", ",
+                      raw int_to_string(tbase => int64)));
+    string:dv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dv, " = sub i32 ", dr, ", ",
+                      raw int_to_string(((tbase - 1i32) / 2i32) => int64)));
+    string:dt = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(dt, " = trunc i32 ",
+                      raw string_concat(dv, " to i8")));
+    string:res = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", rerr, ", ",
+                      raw cat3("i8 -128, i8 ", dt, "")));
+    pass (raw iv("i8", move(res), raw exprtypes_get(x.et, id)));
+};
+
 func:emit_tfp_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                              int32:recv_tid) never fails {
     string:m = raw intern_get(x.interns, n.payload =>! int32);
@@ -1685,6 +1761,93 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
             drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
                               raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
             pass (raw iv(raw string_concat(lhs.ll, ""), move(fres), lhs.type_id));
+        }
+    }
+
+    // TERNARY ARITHMETIC (D-197, 1.3.4): sticky ERR, overflow past the
+    // BALANCED bound → ERR — the D-144 discipline against the family's own
+    // range rather than the carrier's (a tryte overflows at ±29524, not at
+    // i16's edge), which is why the tbb sign-trick below cannot serve it.
+    // `+ - *` run widened in i32 — two bounds' sum and even 29524² fit —
+    // with one range check narrowing back. `&`/`|` are the KLEENE PAIR on
+    // the single digits (min/max, the user-ratified spelling — single gates
+    // on a ternary target). `/`/`%` reuse `tbb_divlike`: a quotient's
+    // magnitude never exceeds its dividend's, so the result is in range by
+    // construction — only the zero divisor and the taint need handling, and
+    // those are exactly what it handles.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) {
+            int32:nb = raw type_int_bits(x.fe.ctx.types, lt);
+            string:nmn = raw tbb_min_decimal(nb);
+            if (nmn.len == 0i64) { pass (raw iv_broken(at)); }
+            string:ne1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ne1, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(lhs.ref, ", ", nmn)));
+            string:ne2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ne2, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(rhs.ref, ", ", nmn)));
+            string:nerr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nerr, " = or i1 ", ne1, ", ", ne2));
+
+            if ((op == TokenKind.OpAmp) || (op == TokenKind.OpPipe)) {
+                string:kord = "slt";
+                if (op == TokenKind.OpPipe) { kord = "sgt"; }
+                string:kc = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(kc, " = icmp ", kord, " ",
+                                  raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+                string:kv = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(kv, " = select i1 ", kc, ", ",
+                                  raw cat5(lhs.ll, " ", lhs.ref, ", ",
+                                      raw cat3(lhs.ll, " ", rhs.ref))));
+                string:kr = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(kr, " = select i1 ", nerr, ", ",
+                                  raw cat5(lhs.ll, " ", nmn, ", ",
+                                      raw cat3(lhs.ll, " ", kv))));
+                pass (raw iv(raw string_concat(lhs.ll, ""), move(kr), lhs.type_id));
+            }
+
+            if (op == TokenKind.OpSlash) {
+                pass (raw tbb_divlike(x, lhs, rhs, nerr, nmn, "sdiv"));
+            }
+            if (op == TokenKind.OpPercent) {
+                pass (raw tbb_divlike(x, lhs, rhs, nerr, nmn, "srem"));
+            }
+
+            bool:nok = (op == TokenKind.OpPlus);
+            if (op == TokenKind.OpMinus) { nok = true; }
+            if (op == TokenKind.OpStar)  { nok = true; }
+            if (!nok) { pass (raw iv_broken(at)); }
+            string:nop = "add";
+            if (op == TokenKind.OpMinus) { nop = "sub"; }
+            if (op == TokenKind.OpStar)  { nop = "mul"; }
+            int64:nbnd = raw tern_bound(raw type_tern_base(x.fe.ctx.types, lt),
+                                        raw type_tern_digits(x.fe.ctx.types, lt));
+            string:nbs = raw int_to_string(nbnd);
+            string:wl = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(wl, " = sext ", lhs.ll, " ",
+                              raw string_concat(lhs.ref, " to i32")));
+            string:wr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(wr, " = sext ", lhs.ll, " ",
+                              raw string_concat(rhs.ref, " to i32")));
+            string:wv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(wv, " = ", nop, " i32 ",
+                              raw cat3(wl, ", ", wr)));
+            string:nhi = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nhi, " = icmp sgt i32 ", wv, ", ", nbs));
+            string:nlo = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nlo, " = icmp slt i32 ", wv, ", -", nbs));
+            string:noor = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(noor, " = or i1 ", nhi, ", ", nlo));
+            string:nsticky = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nsticky, " = or i1 ", nerr, ", ", noor));
+            string:ntr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ntr, " = trunc i32 ", wv, " to ",
+                              lhs.ll));
+            string:nres = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nres, " = select i1 ", nsticky, ", ",
+                              raw cat5(lhs.ll, " ", nmn, ", ",
+                                  raw cat3(lhs.ll, " ", ntr))));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(nres), lhs.type_id));
         }
     }
 
@@ -2026,6 +2189,11 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) {
         signed = true;
     }
+    // A ternary value's carrier is signed (D-197): balanced order compares
+    // as numeric order — the value representation's whole point.
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) {
+        signed = true;
+    }
 
     string:cmp = raw icmp_name(op, signed);
     if (cmp.len > 0i64) {
@@ -2060,6 +2228,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         bool:twcmp = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
         if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twcmp = true; }
         if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { twcmp = true; }
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TERN())) { twcmp = true; }
         if (twcmp) {
             int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
             string:tmn = raw tbb_min_decimal(tb);
@@ -2611,6 +2780,186 @@ func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
     pass (raw iv(move(want.text), move(rz6), wid));
 };
 
+// TERNARY CASTS (D-197, 1.3.4). Within the family the VALUE is the value and
+// the SENTINEL maps; a target whose balanced bound is smaller takes the
+// tbb⇄tbb runtime discipline — trap under `=>`, saturate to ERR under `=>!`
+// — and tryte⇄nyte (the same 59049 values) is a pure sentinel-mapped
+// relabel. LEAVING to int/float, ERR traps under BOTH spellings (the
+// D-144-as-amended rule: `=>!` acknowledges the VALUE's loss and ERR is not
+// a value). ENTERING, an out-of-range source traps under `=>` and absorbs
+// as ERR under `=>!` — the family's own discipline; the sentinel-forge case
+// needs no separate check here, because the sentinel lies OUTSIDE the
+// balanced range and the range guard already catches it.
+func:emit_tern_cast = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:v,
+                            move LlType:want, int32:wid) never fails {
+    bool:unchecked = false;
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
+    int32:sk = raw type_kind(x.fe.ctx.types, v.type_id);
+    int32:dk = raw type_kind(x.fe.ctx.types, wid);
+
+    if (sk == (raw TY_TERN())) {
+        int32:sb = raw type_int_bits(x.fe.ctx.types, v.type_id);
+        string:mn_s = raw tbb_min_decimal(sb);
+        if (mn_s.len == 0i64) { pass (raw iv_broken(n.span)); }
+        int64:sbnd = raw tern_bound(raw type_tern_base(x.fe.ctx.types, v.type_id),
+                                    raw type_tern_digits(x.fe.ctx.types, v.type_id));
+        string:err = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(err, " = icmp eq ", v.ll, " ",
+                          raw cat3(v.ref, ", ", mn_s)));
+
+        if (dk == (raw TY_TERN())) {
+            int32:db = raw type_int_bits(x.fe.ctx.types, wid);
+            string:mn_d = raw tbb_min_decimal(db);
+            if (mn_d.len == 0i64) { pass (raw iv_broken(n.span)); }
+            int64:dbnd = raw tern_bound(raw type_tern_base(x.fe.ctx.types, wid),
+                                        raw type_tern_digits(x.fe.ctx.types, wid));
+            if (dbnd < sbnd) {
+                string:dbs = raw int_to_string(dbnd);
+                string:hi = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(hi, " = icmp sgt ", v.ll, " ",
+                                  raw cat3(v.ref, ", ", dbs)));
+                string:lo = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(lo, " = icmp slt ", v.ll, " ",
+                                  raw cat4(v.ref, ", -", dbs, "")));
+                string:oor = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(oor, " = or i1 ", hi, ", ", lo));
+                if (!unchecked) {
+                    string:ne = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat3(ne, " = xor i1 ",
+                                      raw string_concat(err, ", true")));
+                    string:tv = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat5(tv, " = and i1 ", oor, ", ", ne));
+                    drop tbb_trap_if(x, tv, n.span);
+                    string:rz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+                    string:res = raw irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", err, ", ",
+                                      raw cat5(want.text, " ", mn_d, ", ",
+                                          raw cat3(want.text, " ", rz))));
+                    pass (raw iv(move(want.text), move(res), wid));
+                }
+                string:sat = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(sat, " = or i1 ", err, ", ", oor));
+                string:rz2 = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+                string:res2 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(res2, " = select i1 ", sat, ", ",
+                                  raw cat5(want.text, " ", mn_d, ", ",
+                                      raw cat3(want.text, " ", rz2))));
+                pass (raw iv(move(want.text), move(res2), wid));
+            }
+            string:rz3 = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+            string:res3 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(res3, " = select i1 ", err, ", ",
+                              raw cat5(want.text, " ", mn_d, ", ",
+                                  raw cat3(want.text, " ", rz3))));
+            pass (raw iv(move(want.text), move(res3), wid));
+        }
+
+        // Leaving the family: the taint has no image — trap, both spellings
+        // (D-144 as amended at 1.3.2).
+        drop tbb_trap_if(x, err, n.span);
+        if (dk == (raw TY_FLOAT())) {
+            string:fr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fr, " = sitofp ", v.ll, " ",
+                              raw cat3(v.ref, " to ", want.text)));
+            pass (raw iv(move(want.text), move(fr), wid));
+        }
+        string:iz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+        pass (raw iv(move(want.text), move(iz), wid));
+    }
+
+    // Entering the family.
+    int32:db2 = raw type_int_bits(x.fe.ctx.types, wid);
+    string:mn2 = raw tbb_min_decimal(db2);
+    if (mn2.len == 0i64) { pass (raw iv_broken(n.span)); }
+    int64:dbnd2 = raw tern_bound(raw type_tern_base(x.fe.ctx.types, wid),
+                                 raw type_tern_digits(x.fe.ctx.types, wid));
+    string:dbs2 = raw int_to_string(dbnd2);
+
+    if (sk == (raw TY_FLOAT())) {
+        // Ordered strict bounds at ±(bound+1) in double — every bound+1 here
+        // is a small integer, exactly representable; NaN fails the ordered
+        // compares and is out-of-range garbage like any other.
+        string:cv = raw string_concat(v.ref, "");
+        if (raw string_eq(v.ll, "float")) {
+            string:fx = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(fx, " = fpext float ",
+                              raw string_concat(v.ref, " to double")));
+            cv = move(fx);
+        }
+        string:bnd1 = raw int_to_string(dbnd2 + 1i64);
+        string:pgt = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(pgt, " = fcmp ogt double ", cv, ", -",
+                          raw string_concat(bnd1, ".0")));
+        string:plt = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(plt, " = fcmp olt double ", cv, ", ",
+                          raw string_concat(bnd1, ".0")));
+        string:inr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(inr, " = and i1 ", pgt, ", ", plt));
+        string:q = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(q, " = fptosi ", v.ll, " ",
+                          raw cat3(v.ref, " to ", want.text)));
+        if (!unchecked) {
+            string:bad = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(bad, " = xor i1 ",
+                              raw string_concat(inr, ", true")));
+            drop tbb_trap_if(x, bad, n.span);
+            pass (raw iv(move(want.text), move(q), wid));
+        }
+        string:res4 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(res4, " = select i1 ", inr, ", ",
+                          raw cat5(want.text, " ", q, ", ",
+                              raw cat3(want.text, " ", mn2))));
+        pass (raw iv(move(want.text), move(res4), wid));
+    }
+
+    // int → ternary: range-checked IN THE SOURCE'S OWN WIDTH, where the
+    // information still exists; the sentinel lies outside the balanced
+    // range, so the forge case is inside this same guard. A source whose
+    // WHOLE range fits the bound skips the check — nothing to catch, and
+    // the bound constant would not even spell at an 8-bit width
+    // (`icmp sgt i8 %v, 29524` is malformed IR).
+    bool:ssig = raw type_is_signed(x.fe.ctx.types, v.type_id);
+    int32:sbw = raw type_int_bits(x.fe.ctx.types, v.type_id);
+    bool:can_exceed = true;
+    if (sbw < 63i32) {
+        int64:smax = 1i64 << ((sbw - 1i32) => int64);
+        if (!ssig) { smax = (1i64 << (sbw => int64)) - 1i64; }
+        if (smax <= dbnd2) { can_exceed = false; }
+    }
+    if (!can_exceed) {
+        string:rz0 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+        pass (raw iv(move(want.text), move(rz0), wid));
+    }
+    string:oor2 = "";
+    if (ssig) {
+        string:h3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(h3, " = icmp sgt ", v.ll, " ",
+                          raw cat3(v.ref, ", ", dbs2)));
+        string:l3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(l3, " = icmp slt ", v.ll, " ",
+                          raw cat4(v.ref, ", -", dbs2, "")));
+        string:o3 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(o3, " = or i1 ", h3, ", ", l3));
+        oor2 = move(o3);
+    } else {
+        string:o4 = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(o4, " = icmp ugt ", v.ll, " ",
+                          raw cat3(v.ref, ", ", dbs2)));
+        oor2 = move(o4);
+    }
+    if (!unchecked) {
+        drop tbb_trap_if(x, oor2, n.span);
+        string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+        pass (raw iv(move(want.text), move(rz4), wid));
+    }
+    string:rz5 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+    string:res5 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(res5, " = select i1 ", oor2, ", ",
+                      raw cat5(want.text, " ", mn2, ", ",
+                          raw cat3(want.text, " ", rz5))));
+    pass (raw iv(move(want.text), move(res5), wid));
+};
+
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
@@ -2651,6 +3000,39 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw emit_tfp_cast(x, n, v, move(want), wid));
     }
 
+    // A tbb ON EITHER SIDE takes the matrix (0.9.5) — and it takes it BEFORE
+    // the same-text early-out below, for the same reason `tfp` does (found at
+    // 1.3.4): `tbb32` and `int32` share the carrier text `i32`, so the
+    // SAME-WIDTH crossings rode the early-out with NO sentinel check — the
+    // audit's Theme-A hole D-144's own text says 0.9.5 closed. Its tests
+    // passed by COINCIDENCE: the only int32 value outside tbb32's range is
+    // INT_MIN, whose bit pattern IS the sentinel, so the unchecked forge
+    // looked exactly like the saturation it was supposed to be — and the
+    // leaving direction quietly read ERR out as a number, the laundering the
+    // 1.3.2b alignment closed at every OTHER width. Only the same TYPE is a
+    // no-op for a twisted family.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) {
+        if (v.type_id == wid) {
+            pass (raw iv(move(want.text), move(v.ref), wid));
+        }
+        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
+    }
+    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TBB())) {
+        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
+    }
+
+    // The ternary family (D-197, 1.3.4): the same discipline at i8/i16 —
+    // `trit` shares `int8`'s text, `tryte` shares `int16`'s.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TERN())) {
+        if (v.type_id == wid) {
+            pass (raw iv(move(want.text), move(v.ref), wid));
+        }
+        pass (raw emit_tern_cast(x, n, v, move(want), wid));
+    }
+    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TERN())) {
+        pass (raw emit_tern_cast(x, n, v, move(want), wid));
+    }
+
     if (raw string_eq(v.ll, want.text)) {
         pass (raw iv(move(want.text), move(v.ref), wid));
     }
@@ -2675,16 +3057,6 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (raw string_eq(v.ll, want.text)) {
             pass (raw iv(move(want.text), move(v.ref), wid));
         }
-    }
-
-    // A tbb ON EITHER SIDE takes the matrix (0.9.5) — the generic scalar path
-    // below would trunc/sext the carrier raw, which is exactly the forge and
-    // launder the matrix exists to end.
-    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) {
-        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
-    }
-    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TBB())) {
-        pass (raw emit_tbb_cast(x, id, n, v, move(want), wid));
     }
 
     // FLOAT CASTS (0.9.4). The frontend already decided legality and loss
@@ -7683,6 +8055,12 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (bkind == (raw TY_SIMD())) {
         pass (raw iv("i64",
                      raw int_to_string(((raw tt_get(x.fe.ctx.types, btid)).b) => int64),
+                     fty));
+    }
+    // A ternary value's `.len` is its DIGIT count — a type constant (D-197).
+    if (bkind == (raw TY_TERN())) {
+        pass (raw iv("i64",
+                     raw int_to_string((raw type_tern_digits(x.fe.ctx.types, btid)) => int64),
                      fty));
     }
     if (bkind == (raw TY_STRUCT())) {

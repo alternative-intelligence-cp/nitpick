@@ -108,6 +108,14 @@ impl:tbb16:ToString = { func:to_string = string(tbb16:self) never fails { if (is
 impl:tbb32:ToString = { func:to_string = string(tbb32:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
 impl:tbb64:ToString = { func:to_string = string(tbb64:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
 
+// THE TERNARY FAMILY RENDERS THE SAME WAY (D-197, D-168): the VALUE is a
+// number and shows as one; the balanced digit string is what `.trit(i)` /
+// `.nit(i)` are for.
+impl:trit:ToString  = { func:to_string = string(trit:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:tryte:ToString = { func:to_string = string(tryte:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:nit:ToString   = { func:to_string = string(nit:self) never fails   { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:nyte:ToString  = { func:to_string = string(nyte:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+
 // THE KERNEL IDENTIFIERS RENDER THEIR NUMBER (D-042, D-168): a handle's value is
 // readable even though a handle is not forgeable.
 impl:fd:ToString  = { func:to_string = string(fd:self) never fails  { pass (raw int_to_string(self => int64)); }; };

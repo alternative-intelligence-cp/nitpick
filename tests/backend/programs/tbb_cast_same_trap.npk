@@ -1,0 +1,29 @@
+// expect-exit: 24
+//
+// The SAME-WIDTH leaving trap (1.3.4): `tbb32` and `int32` share the carrier
+// text `i32`, and until the tern work the cast emitter's same-text early-out
+// swallowed this crossing — ERR left as a plain INT_MIN with no trap, under
+// BOTH spellings, at exactly the width class the 1.3.2b alignment's tests
+// did not cover. The taint has no image; -4100, bang spelling.
+mod:tbb_cast_same_trap;
+
+func:main = int32(cstring[]:argv) {
+    tbb32:z = (argv.len =>! int32 - 1i32) =>! tbb32;   // 0, at run time
+    tbb32:e = 5tbb32 / z;                              // ERR
+    int32:laundered = e =>! int32;                     // same width — must trap
+    exit laundered;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 24i32; },
+        (DivByZero) { exit 9i32; },
+        (DivOverflow) { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

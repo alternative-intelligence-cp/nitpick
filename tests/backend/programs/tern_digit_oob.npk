@@ -1,0 +1,27 @@
+// expect-exit: 94
+//
+// A digit index is BOUNDS-CHECKED exactly as an array's (D-197 over D-070):
+// a `tryte` has digits 0..9, and asking for the tenth is the same controlled
+// shutdown an `arr[10]` of ten elements is — OUT_OF_BOUNDS, never a garbage
+// digit.
+mod:tern_digit_oob;
+
+func:main = int32(cstring[]:argv) {
+    tryte:t = 60;
+    int64:bad = argv.len - 1i64 + 10i64;   // 10 at run time — past the last digit
+    trit:d = t.trit(bad);                  // must trap
+    exit (d => int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (OutOfBounds)    { exit 94i32; },
+        (TbbErr)         { exit 90i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
