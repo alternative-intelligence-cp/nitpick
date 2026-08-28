@@ -68,6 +68,8 @@ pub struct:Suspend = {
     SymbolTable->:tab;
     ExprTypes->:ets;
     TypeTable->:types;      // D-182: to recognise a channel await's receiver
+    InternTable->:interns;  // 1.3.8: to recognise the bare suspension
+                            // primitives (`suspend_io`/`suspend_until`) by name
     DiagList->:diags;
 
     // The locals registry, reset per function: binder stmt index, binder
@@ -105,7 +107,8 @@ pub struct:Suspend = {
 };
 
 pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
-                                TypeTable->:types, DiagList->:diags) never fails {
+                                TypeTable->:types, InternTable->:interns,
+                                DiagList->:diags) never fails {
     wild int8->:a = alloc(64i64 * #size_of<int32>());
     wild int8->:b = alloc(64i64 * #size_of<int64>());
     wild int8->:c = alloc(64i64 * #size_of<int64>());
@@ -114,7 +117,8 @@ pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
     wild int8->:f = alloc(32i64 * #size_of<int32>());
     wild int8->:g = alloc(64i64 * #size_of<int64>());
     wild int8->:h = alloc(((raw LOOP_STACK_CAP()) => int64) * #size_of<int64>());
-    Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, types: types, diags: diags,
+    Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, types: types,
+                         interns: interns, diags: diags,
                          lstmt: a =>! wild int32->,
                          ldecl: b =>! wild int64->,
                          luse: c =>! wild int64->,
@@ -668,6 +672,29 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         drop suspend_expr(x, raw expr_callee(n), fuel - 1i32);
         drop suspend_expr_window(x, (raw expr_list_start(n)) + gc,
                                  (raw expr_list_count(n)) - gc, fuel);
+        // THE BARE SUSPENSION PRIMITIVES ARE SUSPENSION POINTS (1.3.8).
+        // `suspend_io`/`suspend_until` park the machine exactly as an
+        // `await` does — their lowering ends the segment with a resume —
+        // but this walk recorded nothing for them, so a local written
+        // before the park and read after it stayed an ALLOCA and re-entry
+        // found the slot holding whatever the stack held. It held the OLD
+        // BYTES at -O0 — same call path, same depth, nothing between —
+        // which is why `io_ready`'s deadline survived every run since
+        // 1.1.12: the first optimised build moved the caller's frame and
+        // the opt-O2 leg caught it on its first sweep. The point sits
+        // PAST the arguments, the await rule: they evaluate before the
+        // machine can yield.
+        ExprNode:scal = raw ast_expr(x.ast, raw expr_callee(n));
+        if (scal.kind == ExprKind.ExprIdentifierExpr) {
+            string:sbn = raw intern_get(x.interns, scal.payload =>! int32);
+            bool:is_park = raw string_eq(sbn, "suspend_io");
+            if (raw string_eq(sbn, "suspend_until")) { is_park = true; }
+            if (is_park) {
+                int64:pat = raw pos_end(n.span);
+                if (x.cursor >= pat) { pat = x.cursor + 1i64; }
+                drop susp_add(x, pat);
+            }
+        }
         pass NIL;
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {

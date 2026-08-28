@@ -1718,6 +1718,70 @@ def check_emitted_program(binary, path, name, exp, tmp, fixture_map=None):
                     % (name, exp.exit, detail, exp.stress)]
         return ["%s: exited %d, expected %d (compiled by the REAL backend)"
                 % (name, list(seen)[0], exp.exit)]
+    return check_optimised_program(name, exp, base, tmp, run)
+
+
+def check_optimised_program(name, exp, base, tmp, run):
+    """The SAME program through `opt -O2` and `llc -O2`, same answer required.
+
+    LLVM's optimiser once removed a load-bearing guarantee from the prototype
+    compiler, and the workaround there -- disabling optimisation for the
+    affected integer types -- is exactly the kind of silent semantic fork this
+    project refuses. So the optimised pipeline is not trusted, it is TESTED:
+    every real-backend program runs twice, and a program whose answer changes
+    under -O2 is a program whose emitted IR leans on behaviour the optimiser
+    is licensed to remove (1.3.8; poison-carrying flags, dead-store
+    elimination around escaped locals, and vector widening are the known
+    suspects). The zero-dependency scan runs on the optimised object too,
+    because `opt` is licensed to MINT libcalls -- a vectorised loop becoming
+    `memcpy` is a new undefined symbol the -O0 scan never saw.
+    """
+    if not shutil.which("opt"):
+        return ["%s: `opt` is not on PATH -- the optimised-output check "
+                "cannot run, and skipping it silently is how an optimiser "
+                "defect ships (install LLVM's opt, CLAUDE.md lists the "
+                "symlink set)" % name]
+    r = subprocess.run(["opt", "-O2", "-S", base + ".ll", "-o", base + ".opt.ll"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        first = next((l for l in r.stderr.splitlines() if l.strip()), r.stderr)
+        return ["%s: opt -O2 rejected the emitted IR: %s"
+                % (name, first.strip()[:160])]
+    r = subprocess.run(["llc", "-O2", "-filetype=obj", "-relocation-model=static",
+                        base + ".opt.ll", "-o", base + ".opt.o"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
+        return ["%s: llc -O2 rejected the OPTIMISED IR: %s"
+                % (name, first.strip()[:160])]
+    fails = check_zero_dependency(base + ".opt.o", runtime_allowlist(),
+                                  name + " (opt -O2)")
+    if fails:
+        return fails
+    r = subprocess.run(["ld.lld", "-static", "-o", base + ".opt", base + ".opt.o",
+                        os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: optimised link failed: %s" % (name, r.stderr.strip()[:140])]
+    orun = [base + ".opt"] + run[1:]
+    seen = {}
+    for _ in range(max(1, exp.stress)):
+        try:
+            got = subprocess.run(orun, capture_output=True, timeout=10).returncode
+        except subprocess.TimeoutExpired:
+            return ["%s: timed out under -O2 -- an optimised hang where -O0 "
+                    "terminated is an optimiser interaction, not a flake" % name]
+        if got != exp.exit:
+            seen[got] = seen.get(got, 0) + 1
+    if seen:
+        if exp.stress > 1:
+            detail = ", ".join("%d x%d" % (rc, n) for rc, n in sorted(seen.items()))
+            return ["%s: expected %d every run under -O2, got %s in %d runs "
+                    "(the -O0 build answered correctly -- the optimiser "
+                    "changed the program)"
+                    % (name, exp.exit, detail, exp.stress)]
+        return ["%s: exited %d under -O2, expected %d (the -O0 build answered "
+                "correctly -- the optimiser changed the program)"
+                % (name, list(seen)[0], exp.exit)]
     return []
 
 
@@ -2110,6 +2174,8 @@ def main(argv):
                                                   exp, tmp, fixture_map)
                 n += 1
             print("  %-11s %2d real-backend program(s)" % ("programs", n))
+            print("  %-11s every program re-run through opt -O2 + llc -O2, "
+                  "same exit required" % "opt-O2")
 
             # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
             # conformance/nf_twin/ differ only in their `never fails` clauses

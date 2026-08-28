@@ -26,6 +26,7 @@
 // enum.
 
 use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
 use "../../src/frontend/token_kind.npk".*;
 use "../../src/frontend/token.npk".*;
 use "../../src/frontend/num_width.npk".*;
@@ -51,6 +52,7 @@ use "../../src/frontend/types.npk".*;
 use "../../src/frontend/builtin_types.npk".*;
 use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_layout.npk".*;
 use "../../src/backend/ir/ir_types.npk".*;
 
@@ -292,6 +294,46 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(raw ll_zero(raw ll_type(@c, ptrt)), "null"))) { exit 101i32; }
     if (!(raw string_eq(raw ll_zero(raw ll_type(@c, x.types.t_string)), "zeroinitializer"))) { exit 102i32; }
     if (!(raw string_eq(raw ll_zero(raw ll_type(@c, pair)), "zeroinitializer"))) { exit 103i32; }
+
+    // --- THE 1.3 TIER'S TEXT (1.3.8, the cycle close) ------------------------
+    //
+    // Every representation the cycle landed, pinned. NO `// ll:` markers —
+    // the Optional precedent: the seed refuses all of these (OUT_OF_SUBSET),
+    // so there is no second lowering to diff; the pin is the real compiler
+    // asserting its own answer, which is what stops a representation
+    // drifting silently under a later edit.
+    int32:f64t  = raw tt_float(@x.types, 64i32);
+    int32:sim4  = raw tt_simd(@x.types, f64t, 4i32, 8i64);
+    int32:simi8 = raw tt_simd(@x.types, i32t, 8i32, 4i64);
+    if (!(raw ll_is(@c, sim4, "<4 x double>")))            { exit 110i32; }
+    if (!(raw ll_is(@c, simi8, "<8 x i32>")))              { exit 111i32; }
+    int32:tf64  = raw tt_tfp(@x.types, 64i32);
+    int32:tf256 = raw tt_tfp(@x.types, 256i32);
+    if (!(raw ll_is(@c, tf64, "i64")))                     { exit 112i32; }
+    if (!(raw ll_is(@c, tf256, "i256")))                   { exit 113i32; }
+    // A unit vector is compile-time metadata; the lowering is the erased
+    // carrier (D-196) — and the ZERO vector is not a dim at all.
+    int32:dimt = raw tt_dim(@x.types, 1i64);
+    if (!(raw ll_is(@c, dimt, "i256")))                    { exit 114i32; }
+    if ((raw type_kind(@x.types, raw tt_dim(@x.types, 0i64))) != (raw TY_TFP())) { exit 115i32; }
+    int32:tritt = raw tt_tern(@x.types, 8i32, 3i32);
+    int32:trytt = raw tt_tern(@x.types, 16i32, 3i32);
+    int32:nitt  = raw tt_tern(@x.types, 8i32, 9i32);
+    int32:nytt  = raw tt_tern(@x.types, 16i32, 9i32);
+    if (!(raw ll_is(@c, tritt, "i8")))                     { exit 116i32; }
+    if (!(raw ll_is(@c, trytt, "i16")))                    { exit 117i32; }
+    if (!(raw ll_is(@c, nitt, "i8")))                      { exit 118i32; }
+    if (!(raw ll_is(@c, nytt, "i16")))                     { exit 119i32; }
+    int32:fr32t = raw tt_frac(@x.types, 32i32);
+    int32:fr64t = raw tt_frac(@x.types, 64i32);
+    if (!(raw ll_is(@c, fr32t, "{ i32, i32, i32 }")))      { exit 120i32; }
+    if (!(raw ll_is(@c, fr64t, "{ i64, i64, i64 }")))      { exit 121i32; }
+    int32:cxf64 = raw tt_complex(@x.types, f64t);
+    int32:cxt64 = raw tt_complex(@x.types, tf64);
+    if (!(raw ll_is(@c, cxf64, "{ double, double }")))     { exit 122i32; }
+    if (!(raw ll_is(@c, cxt64, "{ i64, i64 }")))           { exit 123i32; }
+    int32:buft = raw tt_buffer(@x.types);
+    if (!(raw ll_is(@c, buft, "{ ptr, i64, i64 }")))       { exit 124i32; }
 
     drop wild_release_all();
 

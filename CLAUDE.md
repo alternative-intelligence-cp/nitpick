@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.2 COMPLETE; the managed regime is real
+## Status: PHASE C UNDERWAY — cycle 1.3 COMPLETE; the exotic tier is real
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 183 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 200 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -15,8 +15,8 @@ with `comptime` and `#[derive]`, IR emission, `nlibc` and the runtime floor, ful
 type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists**:
 `src/main.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
-**112 real-backend programs** and asserts 8 `NITPICK-RUNG-001` rejections on every
-full run, and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
+**172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
+since 1.3.8) and asserts 8 `NITPICK-RUNG-001` rejections on every full run, and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
 
 **Cycle 1.1 (async and concurrency) is underway.** Landed: `never fails` checked
@@ -164,7 +164,7 @@ unknown-operand fallback; the S-3 rows), and float/char `ToString` landed
 no wide division by construction, 353 python-generated known-answer
 vectors; total UTF-8 with U+FFFD for non-scalars). The bare-builtin
 signature table is proposed as P-3 (OPEN_DECISIONS §3), owed before 1.4.
-**Cycle 1.3 (the exotic numeric tier) is UNDERWAY** — 1.3.0 ratified the
+**Cycle 1.3 (the exotic numeric tier) is COMPLETE** (`meta/roadmap/done/1.3/`) — 1.3.0 ratified the
 whole surface as D-194…D-200 (the survey corrected the tier's story: `tfp`
 is Twisted FIXED Point per D-036/D-037, the prototype's floating tfp_ops is
 the superseded design; `dim256` units are exponent vectors with `unit:`
@@ -280,6 +280,27 @@ the site; `buffer_new` is the first of its class); a generic struct
 literal in a generic factory is the BARE `matrix{ … }` (the
 `TextWriter{}` idiom — `matrix<T>{ … }` does not parse); checker-typed
 builtins are called WITHOUT `raw` (`own_fd` precedent).
+**1.3.8 closed the cycle**: the tier's lowering pinned in the ir_types
+fixture (fifteen `ll_is` assertions, no `// ll:` markers — the seed
+refuses every tier type, so the pin is the real compiler asserting its
+own text), the last G-3 rung retired to a defect confession, and the
+harness grew the **opt-O2 leg**: EVERY real-backend program re-runs
+through `opt -O2` + `llc -O2` with the same expected exit (stress loops
+included), the zero-dependency scan repeated on the optimised object
+(`opt` may MINT libcalls), and a missing `opt` failing loudly. The
+prototype's optimiser-removed-guarantee lesson is now a standing
+instrument, not a one-off audit — and its FIRST full run caught a real
+one: the suspend walk recorded no suspension point for the bare
+primitives (`suspend_io`/`suspend_until`), so `io_ready`'s `give_up`
+deadline sat in an ALLOCA that re-entry re-created — every run since
+1.1.12 passed because the fresh slot happened to hold the OLD BYTES at
+-O0, and the first optimised build moved the caller's frame and broke
+eleven programs deterministically. The walk now records the park as a
+suspension (the await rule: past the arguments), `give_up` lives in the
+frame, and both levels answer identically. The second hole in the same
+analysis (D-191's `fn_end` was the first). Next: cycle 1.4
+(self-hosting), which OPENS with P-3 (the generated bare-builtin
+signature table) per OPEN_DECISIONS §3.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
