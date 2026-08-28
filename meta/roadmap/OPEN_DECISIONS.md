@@ -153,6 +153,27 @@ everything from *typing* through *Z3* is not. Five decisions, plus the Astrée g
 
 ---
 
+## 4b. The cycle-1.3 batch (G-4…G-10 → D-194…D-200; blocks 1.3.1+)
+
+The exotic-tier surface, proposed at cycle open with recommendations —
+**the full batch lives in `1.3/1.3.0.md`**, one proposal per family:
+G-4 `simd<T, N>` v1 surface (elements, lanes, type-directed constructor,
+elementwise ops, D-007 vector div guard, reductions as methods, shuffles
+OUT by decision); G-5 `tfp*` (native `iN` lowering incl. `i128`/`i256`,
+D-144 branch-free ERR, methods not name-families, exact-decimal
+`ToString`); G-6 `dim256` (units as exponent vectors over the SI base
+dimensions — total algebra, the "if registered" hole dissolves; **USER:
+user-declared `unit:` grammar, recommended yes**); G-7 ternary/nonary
+(tryte=10 trits, nyte=5 nits, binary-spare ERR, **USER: the Kleene logic
+spelling — `&`/`|` carrying the ternary meaning recommended**); G-8
+`frac*` (invariant-normalized mixed numbers, operators, exact-or-ERR);
+G-9 `complex<T>` (Smith's division on flt, `.abs2()` total); G-10 the
+library tier (`lib/nvec.npk`, `lib/ntensor.npk`, tensor rank capped 9
+with inline dims, int64 dimensions, heap-owned under 1.2's regime).
+Survey findings and two spec fixes are recorded there and in the 1.3
+README; the prototype's floating `tfp_ops.cpp` is the obsolete design
+(D-036/D-037 supersede it deliberately).
+
 ## 5. Frontend-stability items (settle before the frontend is called frozen)
 
 These would force token-table renumbering *after* the "built once, in full" freeze.

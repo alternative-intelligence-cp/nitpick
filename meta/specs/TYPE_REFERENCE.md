@@ -584,9 +584,14 @@ asymmetry bugs is eliminated structurally.
 | Nitpick Type | Base | States |
 |---|---|---|
 | `trit` | base-3 | −1, 0, 1 |
-| `tryte` | base-3 | 10 trits (Part Q) |
+| `tryte` | base-3 | 10 trits |
 | `nit` | base-9 | −4 … 4 |
-| `nyte` | base-9 | 2 nits |
+| `nyte` | base-9 | 5 nits |
+
+> `tryte` and `nyte` hold the SAME 59049 states (3^10 = 9^5), which is why
+> both lower to `i16` below. An earlier revision said `nyte` = "2 nits" — a
+> carry-over defect fixed at 1.3.0, along with a "(Part Q)" annotation on
+> `tryte` that had no referent.
 
 **How the BINARY rung lowers them**, which is a fact about a target and not about
 the type:
@@ -1150,7 +1155,7 @@ Operations:
 - `complex_abs(a)` — magnitude (√(real² + imag²))
 - `complex_conj(a)` — complex conjugate
 - `complex_real(a)`, `complex_imag(a)` — extract components
-- Supports all `T` that support arithmetic: `flt32`, `flt64`, `fix32`, `fix64`
+- Supports all `T` that support arithmetic: `flt32`, `flt64`, `tfp32`, `tfp64` (the `fix*` names are obsolete — D-036)
 
 ---
 
