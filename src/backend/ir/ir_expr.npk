@@ -648,6 +648,11 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_TFP())) {
             pass (raw emit_tfp_method(x, id, n, amrecv));
         }
+        // `dim256` has exactly the tfp256 method set (D-196): same masked
+        // adds at 256 bits; the unit is the checker's alone.
+        if (amk == (raw TY_DIM())) {
+            pass (raw emit_tfp_method(x, id, n, amrecv));
+        }
         if (amk == (raw TY_CHANNEL())) {
             pass (raw emit_channel_method(x, id, n, amrecv));
         }
@@ -918,7 +923,9 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // A `tfp` LITERAL IS ITS EXACT Q CONSTANT (D-195, 1.3.2): the same
         // conversion the checker range-tested emits the `iN` decimal here —
         // one implementation, no drift. Non-empty by the checker's proof.
-        if ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_TFP())) {
+        bool:fq = ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_TFP()));
+        if ((raw type_kind(x.fe.ctx.types, ftid)) == (raw TY_DIM())) { fq = true; }
+        if (fq) {
             int32:qb = raw type_int_bits(x.fe.ctx.types, ftid);
             string:qtx2 = raw intern_get(x.interns, n.payload =>! int32);
             string:qv2 = raw tfp_q_decimal(qtx2, qb);
@@ -1090,9 +1097,12 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
 
 func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // `5tfp64` — the integer-form tfp literal: the payload rides the same
-    // exact conversion as the fractional form (D-195).
+    // exact conversion as the fractional form (D-195). A `dim256` literal is
+    // the same Q constant at 256 bits (D-196) — the unit is the checker's.
     int32:itid = raw exprtypes_get(x.et, id);
-    if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_TFP())) {
+    bool:iq = ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_TFP()));
+    if ((raw type_kind(x.fe.ctx.types, itid)) == (raw TY_DIM())) { iq = true; }
+    if (iq) {
         int32:ib = raw type_int_bits(x.fe.ctx.types, itid);
         string:iqv = raw tfp_q_decimal(raw int_to_string(n.payload), ib);
         if (iqv.len == 0i64) { pass (raw iv_broken(n.span)); }
@@ -1332,6 +1342,7 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         int32:utid = raw exprtypes_get(x.et, raw expr_operand(n));
         bool:twneg = ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TBB()));
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_TFP())) { twneg = true; }
+        if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_DIM())) { twneg = true; }
         if (twneg) {
             string:tmn = raw tbb_min_decimal(raw type_int_bits(x.fe.ctx.types, utid));
             if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
@@ -1586,7 +1597,7 @@ func:tfp_narrow = IrVal(ExprEmitter->:x, IrVal:lhs, string:wide,
 // anyway, so the machine instruction itself can never fault; the select picks
 // the sentinel afterward. (An ERR-free dividend can never be the sentinel, so
 // sdiv's own INT_MIN/-1 case is unreachable by construction.)
-func:tbb_divlike = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:lhs, IrVal:rhs,
+func:tbb_divlike = IrVal(ExprEmitter->:x, IrVal:lhs, IrVal:rhs,
                          string:anyerr, string:tmn, string:ins) never fails {
     string:z = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(z, " = icmp eq ", lhs.ll, " ",
@@ -1635,6 +1646,286 @@ func:expr_is_nil_literal = bool(ExprEmitter->:x, ExprId:e) never fails {
     ExprNode:en = raw ast_expr(x.ast, e);
     if (en.kind != ExprKind.ExprSentinelLiteral) { pass false; }
     pass (en.payload == 0i64);
+};
+
+// THE ARITHMETIC VALUE CORE — one implementation of `op` over two emitted
+// operands, for BOTH spellings of the same semantics: the binary expression
+// and the compound assignment (`x op= v` IS `x = x op v`). Extracted at
+// 1.3.3, and the extraction is the fix: the compound path had its own raw
+// `add`/`mul`/`sdiv` tail, so a twisted `+=` wrapped instead of saturating,
+// a twisted `/=` by zero reached the hardware instead of yielding ERR, and
+// a float `+=` emitted an integer `add` — landed at 0.9.5 and latent
+// because nothing ever exercised them. Handles floats (IEEE, total),
+// the twisted families (sticky ERR, saturation, the Q operations), string
+// `+`, and plain integers with the D-007/D-142 division guards; `out_tid`
+// is the RESULT type to tag — `dim256`'s `*`//`/` compose their unit
+// vectors, so the result type is the checker's answer, not the operands'.
+pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
+                              IrVal:lhs, IrVal:rhs, int32:out_tid,
+                              Span:at) never fails {
+    bool:signed = false;
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, lt);
+    }
+    // FLOAT ARITHMETIC IS IEEE AND TOTAL (0.9.4, D-143): fadd through frem,
+    // NO guards — division by zero yields ±inf/nan, which is DEFINED behavior,
+    // the reason floats have infinities at all. `%` is frem, which llc lowers
+    // to the fmod/fmodf libcalls the floor hand-writes. (flt128 never reaches
+    // here — the checker refused its arithmetic outright.)
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FLOAT())) {
+            string:fins = "";
+            if (op == TokenKind.OpPlus)    { fins = "fadd"; }
+            if (op == TokenKind.OpMinus)   { fins = "fsub"; }
+            if (op == TokenKind.OpStar)    { fins = "fmul"; }
+            if (op == TokenKind.OpSlash)   { fins = "fdiv"; }
+            if (op == TokenKind.OpPercent) { fins = "frem"; }
+            if (fins.len == 0i64) { pass (raw iv_broken(at)); }
+            string:fres = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
+                              raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(fres), lhs.type_id));
+        }
+    }
+
+    // `tbb` ARITHMETIC (0.9.5, D-008): sticky, saturating, BRANCH-FREE. Any
+    // ERR operand yields ERR (stickiness beats every identity — ERR * 0 is
+    // ERR); overflow yields ERR (saturation); a result that lands ON the
+    // sentinel arithmetically IS ERR by construction, no extra check. Division
+    // by zero yields ERR, not a trap — this is the fail-operational row of
+    // D-007's table, the whole reason the type exists. Lowered with selects,
+    // never branches, so the operation's cost and shape are data-independent.
+    if (lt != 0i32) {
+        bool:twar = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twar = true; }
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { twar = true; }
+        if (twar) {
+            int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
+            string:tmn = raw tbb_min_decimal(tb);
+            if (tmn.len == 0i64) { pass (raw iv_broken(at)); }
+            string:e1 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(e1, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(lhs.ref, ", ", tmn)));
+            string:e2 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(e2, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(rhs.ref, ", ", tmn)));
+            string:anyerr = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(anyerr, " = or i1 ", e1, ", ", e2));
+
+            // THE Q OPERATIONS PART COMPANY HERE (D-195): a tfp multiply
+            // scales by 2^-F and a divide by 2^F, each through a widened
+            // intermediate; add, sub and `%` (a same-scale remainder) share
+            // the tbb machinery below unchanged. `dim256` is a tfp256 whose
+            // unit was ERASED by the checker's result typing (D-196) — the
+            // VALUE operations are identical.
+            bool:qops = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP()));
+            if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { qops = true; }
+            if (qops) {
+                // RE-TAGGED WITH THE NODE'S CHECKED TYPE: `dim256` is the
+                // first twisted family whose `*`/`/` RESULT type differs
+                // from its operands' (the unit vectors combine — `d / d` IS
+                // `tfp256`), and the helpers tag with `lhs.type_id`, which
+                // a later cast on this value would read as the source type.
+                // ONE move per root (D-065 invalidates the whole binding):
+                // the ll clones, the ref moves last.
+                if (op == TokenKind.OpStar) {
+                    IrVal:qm = raw tfp_mul(x, lhs, rhs, anyerr, tmn, tb);
+                    if (qm.state != (raw LL_OK())) { pass qm; }
+                    pass (raw iv(raw string_concat(qm.ll, ""), move(qm.ref),
+                                 out_tid));
+                }
+                if (op == TokenKind.OpSlash) {
+                    IrVal:qd = raw tfp_div(x, lhs, rhs, anyerr, tmn, tb);
+                    if (qd.state != (raw LL_OK())) { pass qd; }
+                    pass (raw iv(raw string_concat(qd.ll, ""), move(qd.ref),
+                                 out_tid));
+                }
+            }
+
+            string:bad = "";
+            string:val = "";
+            if (op == TokenKind.OpPlus) {
+                string:v = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(v, " = add ", lhs.ll, " ",
+                                  raw cat3(lhs.ref, ", ", rhs.ref)));
+                // Signed overflow, by the sign trick: it happened iff the
+                // operands agree in sign and the result does not.
+                string:xa = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(xa, " = xor ", lhs.ll, " ",
+                                  raw cat3(v, ", ", lhs.ref)));
+                string:xb = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(xb, " = xor ", lhs.ll, " ",
+                                  raw cat3(v, ", ", rhs.ref)));
+                string:ab = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(ab, " = and ", lhs.ll, " ",
+                                  raw cat3(xa, ", ", xb)));
+                string:o = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
+                                  raw string_concat(ab, ", 0")));
+                bad = raw string_concat(o, "");
+                val = raw string_concat(v, "");
+            }
+            if (op == TokenKind.OpMinus) {
+                string:v = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(v, " = sub ", lhs.ll, " ",
+                                  raw cat3(lhs.ref, ", ", rhs.ref)));
+                // Subtraction overflows iff the operands DISAGREE in sign and
+                // the result disagrees with the minuend.
+                string:xa = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(xa, " = xor ", lhs.ll, " ",
+                                  raw cat3(lhs.ref, ", ", rhs.ref)));
+                string:xb = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(xb, " = xor ", lhs.ll, " ",
+                                  raw cat3(v, ", ", lhs.ref)));
+                string:ab = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(ab, " = and ", lhs.ll, " ",
+                                  raw cat3(xa, ", ", xb)));
+                string:o = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
+                                  raw string_concat(ab, ", 0")));
+                bad = raw string_concat(o, "");
+                val = raw string_concat(v, "");
+            }
+            if (op == TokenKind.OpStar) {
+                // Multiplication's overflow has no cheap sign trick; the
+                // intrinsic lowers natively at every width here (D-011).
+                string:pair = raw irw_temp(x.fe.w);
+                string:mhead = raw cat5(pair, " = call { ", lhs.ll,
+                                    ", i1 } @llvm.smul.with.overflow.", lhs.ll);
+                string:margs = raw cat5("(", lhs.ll, " ", lhs.ref,
+                                    raw cat4(", ", lhs.ll, " ",
+                                        raw string_concat(rhs.ref, ")")));
+                drop irw_line(x.fe.w, raw string_concat(mhead, margs));
+                string:v = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(v, " = extractvalue { ", lhs.ll,
+                                  ", i1 } ", raw string_concat(pair, ", 0")));
+                string:o = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(o, " = extractvalue { ", lhs.ll,
+                                  ", i1 } ", raw string_concat(pair, ", 1")));
+                bad = raw string_concat(o, "");
+                val = move(v);
+            }
+            if (op == TokenKind.OpSlash) {
+                pass (raw tbb_divlike(x, lhs, rhs, anyerr, tmn, "sdiv"));
+            }
+            if (op == TokenKind.OpPercent) {
+                pass (raw tbb_divlike(x, lhs, rhs, anyerr, tmn, "srem"));
+            }
+            if (bad.len == 0i64) { pass (raw iv_broken(at)); }
+
+            string:sticky = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(sticky, " = or i1 ", anyerr, ", ", bad));
+            string:res = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", sticky, ", ",
+                              raw cat5(lhs.ll, " ", tmn, ", ",
+                                  raw cat3(lhs.ll, " ", val))));
+            pass (raw iv(raw string_concat(lhs.ll, ""), move(res), lhs.type_id));
+        }
+    }
+
+    // `+` ON STRINGS IS CONCATENATION (TYPE_REFERENCE §4), typed since 0.7.7
+    // and lowered here (0.9.7): the floor's concat, value slot extracted —
+    // the operator is total because the bump allocator is.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_STRING())) {
+            if (op == TokenKind.OpPlus) {
+                string:scr = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(scr,
+                                  " = call { { ptr, i64, i64 }, i32 } @npk_string_concat(",
+                                  raw cat4(lhs.ll, " ", lhs.ref, ", "),
+                                  raw cat3(rhs.ll, " ", rhs.ref), ")"));
+                string:sv2 = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(sv2,
+                                  " = extractvalue { { ptr, i64, i64 }, i32 } ",
+                                  raw string_concat(scr, ", 0")));
+                pass (raw iv("{ ptr, i64, i64 }", move(sv2), lhs.type_id));
+            }
+        }
+    }
+
+    // ARITHMETIC BEYOND FLOATS, INTEGERS AND `tbb` is not this rung's. The
+    // checker already refused what is never legal — this refuses what is legal
+    // and not yet lowered, which is exactly the difference between the two
+    // states.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) != (raw TY_INT())) {
+            pass (raw iv_rung("arithmetic on this type", "1.3 (G-3)", at));
+        }
+    }
+    string:ins = raw arith_name(op, signed);
+    if (ins.len == 0i64) { pass (raw iv_broken(at)); }
+
+    // LIVE-2's repair (0.9.0, D-142): division and remainder TRAP on a zero
+    // divisor — D-007's rule, and the difference between a controlled shutdown
+    // through `failsafe` and SIGFPE with actuators live. Signed division adds
+    // the INT_MIN/-1 case: LLVM UB with no defined value, and D-008 already
+    // refused inventing one, so it traps too. The guard is emitted, never
+    // elided — a build without the verifier still has to emit the check
+    // (D-068), and 1.4's static discharge may remove only what it proves.
+    bool:divlike = false;
+    if (op == TokenKind.OpSlash)   { divlike = true; }
+    if (op == TokenKind.OpPercent) { divlike = true; }
+    if (divlike) {
+        string:z = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(z, " = icmp eq ", lhs.ll, " ",
+                          raw string_concat(rhs.ref, ", 0")));
+        string:trap_l = raw irw_new_label(x.fe.w, "div.zero");
+        string:ok_l = raw irw_new_label(x.fe.w, "div.ok");
+        string:next_l = raw string_concat(ok_l, "");
+        if (signed) {
+            next_l = raw irw_new_label(x.fe.w, "div.chk");
+        }
+        drop irw_line(x.fe.w, raw cat5("br i1 ", z, ", label %", trap_l,
+                          raw string_concat(", label %", next_l)));
+        drop irw_label(x.fe.w, trap_l);
+        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                          raw int_to_string((raw x_site(x, at)) => int64), ")"));
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
+        drop irw_line(x.fe.w, "unreachable");
+        if (signed) {
+            drop irw_label(x.fe.w, next_l);
+            // INT_MIN is detected STRUCTURALLY (0.9.3): it is the one nonzero
+            // value equal to its own negation, at every width — so the guard
+            // is total over every integer this backend will ever lower, with
+            // no per-width constant table to keep in step (the table this
+            // replaces would have needed a 1234-digit literal for i4096).
+            string:negl = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(negl, " = sub ", lhs.ll, " 0, ",
+                              lhs.ref));
+            string:m0 = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(m0, " = icmp eq ", lhs.ll, " ",
+                              raw cat3(lhs.ref, ", ", negl)));
+            string:nz = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nz, " = icmp ne ", lhs.ll, " ",
+                              raw string_concat(lhs.ref, ", 0")));
+            string:m = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(m, " = and i1 ", m0, ", ", nz));
+            string:o = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(o, " = icmp eq ", lhs.ll, " ",
+                              raw string_concat(rhs.ref, ", -1")));
+            string:both = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(both, " = and i1 ", m, ", ", o));
+            string:min_l = raw irw_new_label(x.fe.w, "div.min");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", min_l,
+                              raw string_concat(", label %", ok_l)));
+            drop irw_label(x.fe.w, min_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              raw int_to_string((raw x_site(x, at)) => int64), ")"));
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
+            drop irw_line(x.fe.w, "unreachable");
+        }
+        drop irw_label(x.fe.w, ok_l);
+    }
+
+    // NO nsw, NO nuw — D-037 makes overflow defined wrapping, and the flag is
+    // the license to delete guards. The header says why at length.
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
+                      raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+    // `lhs` is a LENT parameter now (the extraction made it one), so its ll
+    // is CLONED rather than moved (D-065: passing transfers nothing) — the
+    // emitters' copy idiom, concat with "".
+    pass (raw iv(raw string_concat(lhs.ll, ""), move(r), lhs.type_id));
 };
 
 func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
@@ -1728,7 +2019,11 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         signed = raw type_is_signed(x.fe.ctx.types, lt);
     }
     // A `tfp`'s raw carrier is signed (D-195): its ordering compares signed.
+    // `dim256` IS that carrier with a compile-time unit (D-196).
     if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) {
+        signed = true;
+    }
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) {
         signed = true;
     }
 
@@ -1764,6 +2059,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         // (D-093).
         bool:twcmp = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
         if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twcmp = true; }
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_DIM())) { twcmp = true; }
         if (twcmp) {
             int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
             string:tmn = raw tbb_min_decimal(tb);
@@ -1796,247 +2092,8 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv("i8", raw string_concat(z, ""), 0i32));
     }
 
-    // FLOAT ARITHMETIC IS IEEE AND TOTAL (0.9.4, D-143): fadd through frem,
-    // NO guards — division by zero yields ±inf/nan, which is DEFINED behavior,
-    // the reason floats have infinities at all. `%` is frem, which llc lowers
-    // to the fmod/fmodf libcalls the floor hand-writes. (flt128 never reaches
-    // here — the checker refused its arithmetic outright.)
-    if (lt != 0i32) {
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FLOAT())) {
-            string:fins = "";
-            if (op == TokenKind.OpPlus)    { fins = "fadd"; }
-            if (op == TokenKind.OpMinus)   { fins = "fsub"; }
-            if (op == TokenKind.OpStar)    { fins = "fmul"; }
-            if (op == TokenKind.OpSlash)   { fins = "fdiv"; }
-            if (op == TokenKind.OpPercent) { fins = "frem"; }
-            if (fins.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:fres = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
-                              raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
-            pass (raw iv(raw string_concat(lhs.ll, ""), move(fres), lhs.type_id));
-        }
-    }
-
-    // `tbb` ARITHMETIC (0.9.5, D-008): sticky, saturating, BRANCH-FREE. Any
-    // ERR operand yields ERR (stickiness beats every identity — ERR * 0 is
-    // ERR); overflow yields ERR (saturation); a result that lands ON the
-    // sentinel arithmetically IS ERR by construction, no extra check. Division
-    // by zero yields ERR, not a trap — this is the fail-operational row of
-    // D-007's table, the whole reason the type exists. Lowered with selects,
-    // never branches, so the operation's cost and shape are data-independent.
-    if (lt != 0i32) {
-        bool:twar = ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB()));
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) { twar = true; }
-        if (twar) {
-            int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
-            string:tmn = raw tbb_min_decimal(tb);
-            if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
-            string:e1 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(e1, " = icmp eq ", lhs.ll, " ",
-                              raw cat3(lhs.ref, ", ", tmn)));
-            string:e2 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(e2, " = icmp eq ", lhs.ll, " ",
-                              raw cat3(rhs.ref, ", ", tmn)));
-            string:anyerr = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(anyerr, " = or i1 ", e1, ", ", e2));
-
-            // THE Q OPERATIONS PART COMPANY HERE (D-195): a tfp multiply
-            // scales by 2^-F and a divide by 2^F, each through a widened
-            // intermediate; add, sub and `%` (a same-scale remainder) share
-            // the tbb machinery below unchanged.
-            if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TFP())) {
-                if (op == TokenKind.OpStar) {
-                    pass (raw tfp_mul(x, lhs, rhs, anyerr, tmn, tb));
-                }
-                if (op == TokenKind.OpSlash) {
-                    pass (raw tfp_div(x, lhs, rhs, anyerr, tmn, tb));
-                }
-            }
-
-            string:bad = "";
-            string:val = "";
-            if (op == TokenKind.OpPlus) {
-                string:v = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(v, " = add ", lhs.ll, " ",
-                                  raw cat3(lhs.ref, ", ", rhs.ref)));
-                // Signed overflow, by the sign trick: it happened iff the
-                // operands agree in sign and the result does not.
-                string:xa = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(xa, " = xor ", lhs.ll, " ",
-                                  raw cat3(v, ", ", lhs.ref)));
-                string:xb = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(xb, " = xor ", lhs.ll, " ",
-                                  raw cat3(v, ", ", rhs.ref)));
-                string:ab = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(ab, " = and ", lhs.ll, " ",
-                                  raw cat3(xa, ", ", xb)));
-                string:o = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
-                                  raw string_concat(ab, ", 0")));
-                bad = raw string_concat(o, "");
-                val = raw string_concat(v, "");
-            }
-            if (op == TokenKind.OpMinus) {
-                string:v = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(v, " = sub ", lhs.ll, " ",
-                                  raw cat3(lhs.ref, ", ", rhs.ref)));
-                // Subtraction overflows iff the operands DISAGREE in sign and
-                // the result disagrees with the minuend.
-                string:xa = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(xa, " = xor ", lhs.ll, " ",
-                                  raw cat3(lhs.ref, ", ", rhs.ref)));
-                string:xb = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(xb, " = xor ", lhs.ll, " ",
-                                  raw cat3(v, ", ", lhs.ref)));
-                string:ab = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(ab, " = and ", lhs.ll, " ",
-                                  raw cat3(xa, ", ", xb)));
-                string:o = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(o, " = icmp slt ", lhs.ll, " ",
-                                  raw string_concat(ab, ", 0")));
-                bad = raw string_concat(o, "");
-                val = raw string_concat(v, "");
-            }
-            if (op == TokenKind.OpStar) {
-                // Multiplication's overflow has no cheap sign trick; the
-                // intrinsic lowers natively at every width here (D-011).
-                string:pair = raw irw_temp(x.fe.w);
-                string:mhead = raw cat5(pair, " = call { ", lhs.ll,
-                                    ", i1 } @llvm.smul.with.overflow.", lhs.ll);
-                string:margs = raw cat5("(", lhs.ll, " ", lhs.ref,
-                                    raw cat4(", ", lhs.ll, " ",
-                                        raw string_concat(rhs.ref, ")")));
-                drop irw_line(x.fe.w, raw string_concat(mhead, margs));
-                string:v = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(v, " = extractvalue { ", lhs.ll,
-                                  ", i1 } ", raw string_concat(pair, ", 0")));
-                string:o = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(o, " = extractvalue { ", lhs.ll,
-                                  ", i1 } ", raw string_concat(pair, ", 1")));
-                bad = raw string_concat(o, "");
-                val = move(v);
-            }
-            if (op == TokenKind.OpSlash) {
-                pass (raw tbb_divlike(x, n, lhs, rhs, anyerr, tmn, "sdiv"));
-            }
-            if (op == TokenKind.OpPercent) {
-                pass (raw tbb_divlike(x, n, lhs, rhs, anyerr, tmn, "srem"));
-            }
-            if (bad.len == 0i64) { pass (raw iv_broken(n.span)); }
-
-            string:sticky = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(sticky, " = or i1 ", anyerr, ", ", bad));
-            string:res = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(res, " = select i1 ", sticky, ", ",
-                              raw cat5(lhs.ll, " ", tmn, ", ",
-                                  raw cat3(lhs.ll, " ", val))));
-            pass (raw iv(raw string_concat(lhs.ll, ""), move(res), lhs.type_id));
-        }
-    }
-
-    // `+` ON STRINGS IS CONCATENATION (TYPE_REFERENCE §4), typed since 0.7.7
-    // and lowered here (0.9.7): the floor's concat, value slot extracted —
-    // the operator is total because the bump allocator is.
-    if (lt != 0i32) {
-        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_STRING())) {
-            if (op == TokenKind.OpPlus) {
-                string:scr = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat5(scr,
-                                  " = call { { ptr, i64, i64 }, i32 } @npk_string_concat(",
-                                  raw cat4(lhs.ll, " ", lhs.ref, ", "),
-                                  raw cat3(rhs.ll, " ", rhs.ref), ")"));
-                string:sv2 = raw irw_temp(x.fe.w);
-                drop irw_line(x.fe.w, raw cat3(sv2,
-                                  " = extractvalue { { ptr, i64, i64 }, i32 } ",
-                                  raw string_concat(scr, ", 0")));
-                pass (raw iv("{ ptr, i64, i64 }", move(sv2), lhs.type_id));
-            }
-        }
-    }
-
-    // ARITHMETIC BEYOND FLOATS, INTEGERS AND `tbb` is not this rung's. The
-    // checker already refused what is never legal — this refuses what is legal
-    // and not yet lowered, which is exactly the difference between the two
-    // states.
-    if (lt != 0i32) {
-        if ((raw type_kind(x.fe.ctx.types, lt)) != (raw TY_INT())) {
-            pass (raw iv_rung("arithmetic on this type", "1.3 (G-3)", n.span));
-        }
-    }
-    string:ins = raw arith_name(op, signed);
-    if (ins.len == 0i64) { pass (raw iv_broken(n.span)); }
-
-    // LIVE-2's repair (0.9.0, D-142): division and remainder TRAP on a zero
-    // divisor — D-007's rule, and the difference between a controlled shutdown
-    // through `failsafe` and SIGFPE with actuators live. Signed division adds
-    // the INT_MIN/-1 case: LLVM UB with no defined value, and D-008 already
-    // refused inventing one, so it traps too. The guard is emitted, never
-    // elided — a build without the verifier still has to emit the check
-    // (D-068), and 1.4's static discharge may remove only what it proves.
-    bool:divlike = false;
-    if (op == TokenKind.OpSlash)   { divlike = true; }
-    if (op == TokenKind.OpPercent) { divlike = true; }
-    if (divlike) {
-        string:z = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(z, " = icmp eq ", lhs.ll, " ",
-                          raw string_concat(rhs.ref, ", 0")));
-        string:trap_l = raw irw_new_label(x.fe.w, "div.zero");
-        string:ok_l = raw irw_new_label(x.fe.w, "div.ok");
-        string:next_l = raw string_concat(ok_l, "");
-        if (signed) {
-            next_l = raw irw_new_label(x.fe.w, "div.chk");
-        }
-        drop irw_line(x.fe.w, raw cat5("br i1 ", z, ", label %", trap_l,
-                          raw string_concat(", label %", next_l)));
-        drop irw_label(x.fe.w, trap_l);
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
-        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
-        drop irw_line(x.fe.w, "unreachable");
-        if (signed) {
-            drop irw_label(x.fe.w, next_l);
-            // INT_MIN is detected STRUCTURALLY (0.9.3): it is the one nonzero
-            // value equal to its own negation, at every width — so the guard
-            // is total over every integer this backend will ever lower, with
-            // no per-width constant table to keep in step (the table this
-            // replaces would have needed a 1234-digit literal for i4096).
-            string:negl = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(negl, " = sub ", lhs.ll, " 0, ",
-                              lhs.ref));
-            string:m0 = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(m0, " = icmp eq ", lhs.ll, " ",
-                              raw cat3(lhs.ref, ", ", negl)));
-            string:nz = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(nz, " = icmp ne ", lhs.ll, " ",
-                              raw string_concat(lhs.ref, ", 0")));
-            string:m = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(m, " = and i1 ", m0, ", ", nz));
-            string:o = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(o, " = icmp eq ", lhs.ll, " ",
-                              raw string_concat(rhs.ref, ", -1")));
-            string:both = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(both, " = and i1 ", m, ", ", o));
-            string:min_l = raw irw_new_label(x.fe.w, "div.min");
-            drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", min_l,
-                              raw string_concat(", label %", ok_l)));
-            drop irw_label(x.fe.w, min_l);
-            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                              raw int_to_string((raw x_site(x, n.span)) => int64), ")"));
-            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
-            drop irw_line(x.fe.w, "unreachable");
-        }
-        drop irw_label(x.fe.w, ok_l);
-    }
-
-    // NO nsw, NO nuw — D-037 makes overflow defined wrapping, and the flag is
-    // the license to delete guards. The header says why at length.
-    string:r = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
-                      raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
-    // ONE move per binding (D-065 invalidates the whole root): the type id is
-    // read first, the ll string moves, and nothing touches `lhs` after.
-    int32:lty = lhs.type_id;
-    pass (raw iv(move(lhs.ll), move(r), lty));
+    pass (raw emit_arith_value(x, op, lt, lhs, rhs,
+                               raw exprtypes_get(x.et, id), n.span));
 };
 
 // `&&` and `||` short-circuit THROUGH A SLOT, not a phi — naive lowering says
@@ -2562,6 +2619,21 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv_from_ll_at(x, want, raw exprtypes_get(x.et, id), n.span));
     }
     int32:wid = raw exprtypes_get(x.et, id);
+
+    // A `dim256` CAST IS A RELABEL AT THE SAME Q (D-196, 1.3.3): dim⇄tfp256
+    // are the only crossings the checker admits, and both are IR no-ops at
+    // `i256` — same scale, same sentinel. ERR RIDES: the crossing never
+    // leaves the twisted family, so the D-144/D-195 leaving trap does not
+    // apply. This must precede the TY_TFP intercept below: `tfp256 =>!
+    // dim256<U>` has a TFP source, and `emit_tfp_cast` would read the dim
+    // destination as LEAVING the family — trapping the taint a relabel is
+    // required to carry.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_DIM())) {
+        pass (raw iv(move(want.text), move(v.ref), wid));
+    }
+    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_DIM())) {
+        pass (raw iv(move(want.text), move(v.ref), wid));
+    }
 
     // A `tfp` ON EITHER SIDE takes ITS matrix (D-195), and it takes it BEFORE
     // the same-text early-out below: `tfp64` and `int64` share the carrier

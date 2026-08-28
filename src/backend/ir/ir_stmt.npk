@@ -525,24 +525,27 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         pass (raw iv_nil());
     }
 
-    // `x += e` is a load, the operation, a store — the seed's shape. Signedness
-    // for `/`, `%`, `>>` comes from the TARGET's type, which the checker made
-    // the value's type too.
-    bool:signed = false;
-    if ((raw type_kind(x.fe.ctx.types, place.type_id)) == (raw TY_INT())) {
-        signed = raw type_is_signed(x.fe.ctx.types, place.type_id);
-    }
+    // `x op= e` IS `x = x op e` — a load, THE SHARED ARITHMETIC CORE, a
+    // store (1.3.3, `emit_arith_value`). The raw `arith_name` tail that
+    // stood here was a SECOND implementation of the operators, and it had
+    // drifted the way second implementations do: a twisted `+=` wrapped
+    // instead of saturating, a twisted `/=` by zero reached the hardware
+    // instead of yielding ERR, a plain `/=` skipped the D-007/D-142
+    // division guards, and a float `+=` emitted an integer `add` — all
+    // landed at 0.9.5 and latent because nothing ever exercised them. The
+    // result type is the SLOT's: the checker held the operator's result to
+    // it (the `dim256` unit algebra included).
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = load ", ll.text, ", ptr ",
                                      place.addr));
     IrVal:v = raw emit_expr(x, raw stmt_assigned(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    string:ins = raw arith_name(raw compound_op(op), signed);
-    if (ins.len == 0i64) { pass (raw iv_broken(s.span)); }
-    string:r = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(r, " = ", ins, " ",
-                      raw cat5(ll.text, " ", cur, ", ", v.ref)));
-    drop irw_line(x.fe.w, raw cat5("store ", ll.text, " ", r,
+    IrVal:lhsv = raw iv(raw string_concat(ll.text, ""),
+                        raw string_concat(cur, ""), place.type_id);
+    IrVal:res = raw emit_arith_value(x, raw compound_op(op), place.type_id,
+                                     lhsv, v, place.type_id, s.span);
+    if (!(raw iv_is_ok(res))) { pass res; }
+    drop irw_line(x.fe.w, raw cat5("store ", res.ll, " ", res.ref,
                       raw string_concat(", ptr ", place.addr)));
     pass (raw iv_nil());
 };

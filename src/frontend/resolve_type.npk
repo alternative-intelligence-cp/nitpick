@@ -557,6 +557,14 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
             raw string_concat(k1, "` is an `opaque struct`: a layout this program cannot see (D-066), and no rung gives it a value type yet — that arrives with the driver interface (D-149, cycle 1.1)"),
             n.span));
     }
+    // A UNIT IS NOT A TYPE (D-196, 1.3.3): it names an exponent vector, and
+    // the one place it is written is `dim256<U>`'s argument. Said as its own
+    // refusal so the fix is in the message.
+    if (dnode.kind == DeclKind.DeclUnitDecl) {
+        pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
+            raw string_concat(k1, "` is a unit: it names a vector for `dim256<U>`, and `dim256<` is the one place it may be written"),
+            n.span));
+    }
     string:k2 = raw string_concat(k1, "` is ");
     string:k3 = raw string_concat(k2, raw decl_kind_article(dnode));
     string:k4 = raw string_concat(k3, ", not a type");
@@ -1604,6 +1612,7 @@ pub func:decl_kind_article = string(DeclNode:d) never fails {
     if (d.kind == DeclKind.DeclImplDecl)      { pass "an impl"; }
     if (d.kind == DeclKind.DeclGenericParam)  { pass "a generic parameter"; }
     if (d.kind == DeclKind.DeclAssocTypeDecl) { pass "an associated type"; }
+    if (d.kind == DeclKind.DeclUnitDecl)      { pass "a unit"; }
     pass "a declaration of another kind";
 };
 
@@ -1658,6 +1667,159 @@ func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
         pass 0i32;
     }
     pass (cv.num =>! int32);
+};
+
+// --- `dim256<Unit>` and the unit algebra (D-196, 1.3.3) -----------------------
+
+// THE SEVEN SI BASE UNITS, compiler-declared: axis index by name, −1 for
+// anything else. The order is the packed vector's (types.npk `dim_axis_get`):
+// mass, length, time, current, temperature, amount, luminous intensity. The
+// derived names (`Newtons`, `Joules`, `Hertz`, …) are PRELUDE `unit:`
+// declarations — one mechanism, and the prelude exercises the same
+// declaration a user writes.
+pub func:dim_base_axis = int32(string:name) never fails {
+    if (raw string_eq(name, "Kilograms")) { pass 0i32; }
+    if (raw string_eq(name, "Meters"))    { pass 1i32; }
+    if (raw string_eq(name, "Seconds"))   { pass 2i32; }
+    if (raw string_eq(name, "Amperes"))   { pass 3i32; }
+    if (raw string_eq(name, "Kelvin"))    { pass 4i32; }
+    if (raw string_eq(name, "Moles"))     { pass 5i32; }
+    if (raw string_eq(name, "Candela"))   { pass 6i32; }
+    pass (0i32 - 1i32);
+};
+
+// A unit NAME's vector: a base axis, or a `unit:` declaration reached through
+// the scope — evaluated ON DEMAND and memoized on the TypeTable, so
+// declaration order never matters and every declaration computes once.
+// `found: false` means a refusal was already pushed; the caller adds nothing.
+// Explicit parameters rather than a context struct, because BOTH resolution
+// contexts (`TypeResolver` here, `ExprTyper` in the check walk) need this and
+// they share nothing else that survives both.
+pub func:dim_unit_of_name = DimVecAnswer(Ast->:ast, TypeTable->:types,
+                                         SymbolTable->:tab, InternTable->:interns,
+                                         DiagList->:diags, int32:name,
+                                         int32:scope, Span:at,
+                                         int32:depth) never fails {
+    string:txt = raw intern_get(interns, name);
+    int32:ax = raw dim_base_axis(txt);
+    if (ax >= 0i32) {
+        DimVecAnswer:base = DimVecAnswer{ found: true,
+                                          vec: raw dim_axis_set(0i64, ax, 1i32) };
+        pass base;
+    }
+    DimVecAnswer:no = DimVecAnswer{ found: false, vec: 0i64 };
+    int32:sym = raw scope_lookup(tab, scope, name);
+    if (sym == 0i32) {
+        string:m1 = raw string_concat("there is no unit named `", txt);
+        drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+            raw string_concat(m1, "`: a unit is one of the seven SI base names or a `unit:` declaration in scope"),
+            at));
+        pass no;
+    }
+    Symbol:s = raw symtab_get(tab, sym);
+    DeclId:did = DeclId{ index: s.origin };
+    DeclNode:d = raw ast_decl(ast, did);
+    if (d.kind != DeclKind.DeclUnitDecl) {
+        string:m2 = raw string_concat("`", txt);
+        drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+            raw string_concat(m2, "` is not a unit: `dim256<U>` takes one of the seven SI base names or a `unit:` declaration"),
+            at));
+        pass no;
+    }
+    DimVecAnswer:cached = raw tt_unit_get(types, s.origin);
+    if (cached.found) { pass cached; }
+    // THE DEPTH BOUND IS THE CYCLE REFUSAL: `unit:A = B; unit:B = A;` has no
+    // vector, and a chain 64 names deep is not physics. Bounded like every
+    // other expansion in this compiler (the D-057 shape).
+    if (depth >= 64i32) {
+        drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+            "this unit does not resolve within 64 steps: the `unit:` declarations form a cycle, or a chain no physics has",
+            at));
+        pass no;
+    }
+    // The declaration's right-hand side evaluates IN ITS DECLARING SCOPE, not
+    // the use site's: a `pub unit:` composes its own module's names, wherever
+    // it is later written.
+    DimVecAnswer:v = raw dim_unit_eval(ast, types, tab, interns, diags,
+                                       ExprId{ index: d.b }, s.scope,
+                                       depth + 1i32);
+    if (v.found) {
+        drop tt_unit_put(types, s.origin, v.vec);
+    }
+    pass v;
+};
+
+// The `unit:` RIGHT-HAND ALGEBRA: names, `1`, `*`, `/`, parentheses — and
+// nothing else, refused by name. Parentheses vanish at parse, so the walk is
+// literals, identifiers, and the two operators.
+pub func:dim_unit_eval = DimVecAnswer(Ast->:ast, TypeTable->:types,
+                                      SymbolTable->:tab, InternTable->:interns,
+                                      DiagList->:diags, ExprId:id, int32:scope,
+                                      int32:depth) never fails {
+    ExprNode:n = raw ast_expr(ast, id);
+    DimVecAnswer:no = DimVecAnswer{ found: false, vec: 0i64 };
+
+    if (n.kind == ExprKind.ExprIntLiteral) {
+        // `1` is the dimensionless seed — the ONLY number in the algebra
+        // (`1 / Seconds` is how an inverse is written). Any other value is a
+        // magnitude, and a unit has no magnitude. An IntLiteral's payload IS
+        // its value (the fractional forms keep text; the integer form does
+        // not), and an unsuffixed bare `1` is the one spelling admitted.
+        if (n.width == NumWidth.WNone) {
+            if (n.payload == 1i64) {
+                DimVecAnswer:one = DimVecAnswer{ found: true, vec: 0i64 };
+                pass one;
+            }
+        }
+        drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+            "the only number in a `unit:` definition is `1`, the dimensionless seed — a unit has no magnitude",
+            n.span));
+        pass no;
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        pass (raw dim_unit_of_name(ast, types, tab, interns, diags,
+                                   n.payload =>! int32, scope, n.span, depth));
+    }
+    if (n.kind == ExprKind.ExprBinaryExpr) {
+        TokenKind:op = raw expr_op(n);
+        bool:mul = (op == TokenKind.OpStar);
+        bool:divi = (op == TokenKind.OpSlash);
+        if ((!mul) && (!divi)) {
+            drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+                "a `unit:` definition is built with `*` and `/` only: an exponent is repetition (`Meters * Meters`), an inverse divides (`1 / Seconds`)",
+                n.span));
+            pass no;
+        }
+        DimVecAnswer:l = raw dim_unit_eval(ast, types, tab, interns, diags,
+                                           ExprId{ index: n.a }, scope, depth);
+        if (!l.found) { pass no; }
+        DimVecAnswer:r2 = raw dim_unit_eval(ast, types, tab, interns, diags,
+                                            ExprId{ index: n.b }, scope, depth);
+        if (!r2.found) { pass no; }
+        int64:out = 0i64;
+        int32:axi = 0i32;
+        while (axi < (raw DIM_AXES())) {
+            int32:le = raw dim_axis_get(l.vec, axi);
+            int32:re = raw dim_axis_get(r2.vec, axi);
+            int32:ne = le + re;
+            if (divi) { ne = le - re; }
+            if ((ne > 127i32) || (ne < (0i32 - 127i32))) {
+                drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+                    "a unit exponent past ±127 is outside any physics — this composition does not fit",
+                    n.span));
+                pass no;
+            }
+            out = raw dim_axis_set(out, axi, ne);
+            axi = axi + 1i32;
+        }
+        DimVecAnswer:okv = DimVecAnswer{ found: true, vec: out };
+        pass okv;
+    }
+
+    drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
+        "a `unit:` definition is unit names, `1`, `*`, `/` and parentheses — nothing else has a vector",
+        n.span));
+    pass no;
 };
 
 // `Result<T>` and `Optional<T>` — one argument each, and the argument is a type.
@@ -1800,6 +1962,32 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                 n.span));
         }
         pass (raw tt_simd(r.types, vel, vlanes, raw type_size(r.types, vel)));
+    }
+    // `dim256<Unit>` (D-196, 1.3.3): the ONE builtin whose argument is a UNIT
+    // NAME, not a type. A single name only — composition lives in `unit:`
+    // declarations, so annotations stay flat, greppable, and NAMED. A name
+    // whose vector cancels to zero (`unit:Radians = 1;`) resolves to `tfp256`
+    // itself: dimensionless IS the bare number, whatever it was called.
+    if (kind == (raw TY_DIM())) {
+        if (count != 1i32) {
+            pass (raw ty_error(r, raw TYPE_UNIT_RULES(),
+                "`dim256<U>` takes exactly one argument, a unit name (D-196) — a dimensionless value is spelled `tfp256`, and composition is a `unit:` declaration's job",
+                n.span));
+        }
+        TypeNode:un = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast,
+                          raw type_args_start(n), 0i32) });
+        bool:plain = (un.kind == TypeKind.TypeNamedType);
+        if (plain) { if (un.c != 0i32) { plain = false; } }
+        if (plain) { if (un.b != 0i32) { plain = false; } }
+        if (!plain) {
+            pass (raw ty_error(r, raw TYPE_UNIT_RULES(),
+                "`dim256<U>`'s argument is a single unit NAME (D-196): one of the seven SI base names or a `unit:` declaration — compose there and annotate with the name",
+                n.span));
+        }
+        DimVecAnswer:uv = raw dim_unit_of_name(r.ast, r.types, r.tab, r.interns,
+                              r.diags, un.payload =>! int32, scope, un.span, 0i32);
+        if (!uv.found) { pass 0i32; }
+        pass (raw tt_dim(r.types, uv.vec));
     }
     if (count != 1i32) {
         // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).

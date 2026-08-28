@@ -42,6 +42,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 | `ExternBlock` | `library`, `items: ExternFn[]` | **`extern:"libc" = { … };`** (D-088) — the name slot holds a string because a library name is not an identifier |
 | `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066) |
 | `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |
+| `UnitDecl` | `name`, `expr: Expr` — **`unit:Hertz = 1 / Seconds;`** (D-196, 1.3.3): a named unit for `dim256<U>`. The RHS is unit algebra only — unit names, `1`, `*`, `/`, parentheses — evaluated to an exponent vector at resolve; slot `a` carries visibility flags, slot `b` the RHS `ExprId`, `payload` the name intern. Erased before lowering |
 
 ## 1.1 Function declaration detail
 
@@ -277,8 +278,8 @@ names neither the construct nor the rule it broke.
 
 | Node | Notes |
 |---|---|
-| `IntLiteral` | value, base (dec/hex/bin/oct/ternary/nonary), `type_suffix?` — **suffix-form bases** (`FFhex`, `1T0t`, `2An`) |
-| `FloatLiteral` | value, exponent, `type_suffix?` |
+| `IntLiteral` | value, base (dec/hex/bin/oct/ternary/nonary), `type_suffix?` — **suffix-form bases** (`FFhex`, `1T0t`, `2An`). A `dim256`-suffixed literal may carry a **`<UnitName>` tail** (D-196, 1.3.3) — slot `a` holds the unit's name intern, 0 when none |
+| `FloatLiteral` | value, exponent, `type_suffix?` — the `dim256` unit tail as on `IntLiteral`, slot `a` |
 | `CharLiteral` | `char8` / `char16` / `char32` — **not an integer** (D-005) |
 | `StringLiteral` | escape-processed |
 | `RawStringLiteral` | `r"…"` — no escape processing (D-024) |

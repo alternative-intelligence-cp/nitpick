@@ -167,6 +167,7 @@ pub func:num_width_bits = int32(NumWidth:w) never fails {
     if (w == NumWidth.WTfp64) { pass 64i32; }
     if (w == NumWidth.WTfp128) { pass 128i32; }
     if (w == NumWidth.WTfp256) { pass 256i32; }
+    if (w == NumWidth.WDim256) { pass 256i32; }
     if (w == NumWidth.WChar8) { pass 8i32; }
     if (w == NumWidth.WChar16) { pass 16i32; }
     if (w == NumWidth.WChar32) { pass 32i32; }
@@ -225,9 +226,10 @@ pub func:num_width_is_integer = bool(NumWidth:w) never fails {
 
 // The TYPE a suffix names, as a `TY_*` kind.
 //
-// TY_INVALID for a suffix whose type has no kind yet -- `frac`, `tfp`
-// and `dim256` are REAL types arriving at a later rung, and the caller
-// names the rung rather than pretending the suffix is absent (D-085).
+// TY_INVALID for a suffix whose type has no kind yet -- the `frac`
+// widths are REAL types arriving at a later rung (1.3.5), and the
+// caller names the rung rather than pretending the suffix is absent
+// (D-085).
 pub func:num_width_kind = int32(NumWidth:w) never fails {
     if (w == NumWidth.WU1) { pass (raw TY_INT()); }
     if (w == NumWidth.WU2) { pass (raw TY_INT()); }
@@ -268,6 +270,7 @@ pub func:num_width_kind = int32(NumWidth:w) never fails {
     if (w == NumWidth.WTfp64) { pass (raw TY_TFP()); }
     if (w == NumWidth.WTfp128) { pass (raw TY_TFP()); }
     if (w == NumWidth.WTfp256) { pass (raw TY_TFP()); }
+    if (w == NumWidth.WDim256) { pass (raw TY_DIM()); }
     if (w == NumWidth.WChar8) { pass (raw TY_CHAR()); }
     if (w == NumWidth.WChar16) { pass (raw TY_CHAR()); }
     if (w == NumWidth.WChar32) { pass (raw TY_CHAR()); }

@@ -163,6 +163,7 @@ KEYWORDS = {
     "uint512",
     "uint64",
     "uint8",
+    "unit",
     "use",
     "when",
     "where",

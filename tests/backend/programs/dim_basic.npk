@@ -1,0 +1,123 @@
+// expect-exit: 0
+//
+// `dim256<Unit>` end to end (D-196, 1.3.3): units are exponent vectors over
+// the seven SI base dimensions, checked through arithmetic and ERASED before
+// lowering — every value below is an `i256` under the D-195 tfp256 rules,
+// and the exit codes prove the NUMBERS while the checker proved the units.
+mod:dim_basic;
+
+unit:Furlongs = Meters;
+
+struct:PhysicsBody = {
+    dim256<Meters>:position;
+    dim256<MetersPerSecond>:velocity;
+    dim256<Kilograms>:mass;
+};
+
+func:speed_of = dim256<MetersPerSecond>(dim256<Meters>:d, dim256<Seconds>:t) never fails {
+    pass (d / t);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    dim256<Meters>:dist = 10.0dim256<Meters>;
+    dim256<Seconds>:time = 4.0dim256<Seconds>;
+
+    // Division composes the vectors: Meters/Seconds, worth exactly 2.5.
+    dim256<MetersPerSecond>:v = raw speed_of(dist, time);
+    if ((v => tfp256) != 2.5tfp256)                   { exit 10i32; }
+
+    // Cancellation IS tfp256 — the zero vector has one name.
+    tfp256:ratio = dist / dist;
+    if (ratio != 1.0tfp256)                           { exit 11i32; }
+
+    // Scaling by a bare tfp256 keeps the unit (the zero vector adds).
+    dim256<Meters>:twice = dist * 2.0tfp256;
+    if ((twice => tfp256) != 20.0tfp256)              { exit 12i32; }
+
+    // Same-unit add, subtract, remainder; ordering within a vector.
+    dim256<Meters>:sum = dist + twice;
+    if ((sum => tfp256) != 30.0tfp256)                { exit 13i32; }
+    dim256<Meters>:back = sum - dist;
+    if ((back => tfp256) != 20.0tfp256)               { exit 14i32; }
+    dim256<Meters>:rem = dist % 3.0dim256<Meters>;
+    if ((rem => tfp256) != 1.0tfp256)                 { exit 15i32; }
+    if (sum < dist)                                   { exit 16i32; }
+
+    // Multiplication composes upward: Newtons * Meters IS the Joules vector.
+    dim256<Newtons>:force = 3.0tfp256 =>! dim256<Newtons>;
+    dim256<Joules>:work = force * dist;
+    if ((work => tfp256) != 30.0tfp256)               { exit 17i32; }
+
+    // A user-declared unit is a name for a VECTOR: Furlongs IS Meters'
+    // vector, so the two annotations are the same type and combine.
+    dim256<Furlongs>:fur = 3.0dim256<Furlongs>;
+    dim256<Meters>:total = fur + dist;
+    if ((total => tfp256) != 13.0tfp256)              { exit 18i32; }
+
+    // `floor`/`trunc` keep the unit; negation is total and sticky.
+    dim256<Meters>:fl = 3.7dim256<Meters>.floor();
+    if ((fl => tfp256) != 3.0tfp256)                  { exit 19i32; }
+    dim256<Meters>:neg = 0.0dim256<Meters> - dist;
+    if ((neg => tfp256) != (0.0tfp256 - 10.0tfp256))  { exit 20i32; }
+
+    // Division by zero DEGRADES to ERR (D-007's twisted row), the taint is
+    // sticky through the algebra, and it RIDES the unit-dropping cast —
+    // the crossing never leaves the twisted family.
+    dim256<Seconds>:zt = 0.0dim256<Seconds>;
+    dim256<MetersPerSecond>:verr = dist / zt;
+    if (!(is_err(verr)))                              { exit 21i32; }
+    if (!(is_err(verr * verr)))                       { exit 22i32; }
+    if (!(is_err(verr => tfp256)))                    { exit 23i32; }
+
+    // The assertion direction carries a value in, exactly.
+    dim256<Kelvin>:temp = 291.25tfp256 =>! dim256<Kelvin>;
+    if ((temp => tfp256) != 291.25tfp256)             { exit 24i32; }
+
+    // A `pick` on a dim selector takes the twisted discipline: the ERR arm
+    // is demanded and matches the sentinel; a valid value falls through.
+    int32:seen = 0i32;
+    pick (verr) {
+        ERR: { seen = 1i32; },
+        (*) { seen = 2i32; }
+    }
+    if (seen != 1i32)                                 { exit 25i32; }
+
+    // Compound assignment: scaling keeps the slot's unit.
+    dim256<Meters>:acc = dist;
+    acc *= 2.0tfp256;
+    if ((acc => tfp256) != 20.0tfp256)                { exit 26i32; }
+    acc += dist;
+    if ((acc => tfp256) != 30.0tfp256)                { exit 27i32; }
+
+    // Aggregates — the spec's own PhysicsBody shape, and arrays: a dim is
+    // an i256 to layout, and the checker's algebra follows it through
+    // fields and elements.
+    PhysicsBody:b = PhysicsBody{
+        position: 1.5dim256<Meters>,
+        velocity: 2.0dim256<MetersPerSecond>,
+        mass: 80.0dim256<Kilograms>
+    };
+    b.position = b.position + 0.5dim256<Meters>;
+    if ((b.position => tfp256) != 2.0tfp256)          { exit 28i32; }
+    dim256<Seconds>:step = 0.5dim256<Seconds>;
+    dim256<Meters>:moved = b.velocity * step;
+    if ((moved => tfp256) != 1.0tfp256)               { exit 29i32; }
+    dim256<Meters>[3]:track = [1.0dim256<Meters>, 2.0dim256<Meters>, 3.0dim256<Meters>];
+    track[1i64] = track[1i64] + track[0i64];
+    if ((track[1i64] => tfp256) != 3.0tfp256)         { exit 30i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 90i32; },
+        (OutOfBounds) { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom) { exit 95i32; },
+        (Unreachable) { exit 97i32; },
+        (WildLeak) { exit 98i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

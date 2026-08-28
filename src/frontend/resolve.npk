@@ -698,6 +698,16 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         pass NIL;
     }
 
+    // A `unit:` DECLARATION'S RIGHT-HAND SIDE IS NOT RESOLVED HERE (D-196,
+    // 1.3.3), deliberately: its names are the unit vocabulary — the seven SI
+    // base names are compiler-known, not symbols — so `resolve_expr` would
+    // refuse `Seconds` as unbound. The CHECK walk owns the whole algebra
+    // (form, names, exponents, cycles) in one implementation, eagerly per
+    // declaration, so a broken definition still refuses when nothing uses it.
+    if (d.kind == DeclKind.DeclUnitDecl) {
+        pass NIL;
+    }
+
     if (d.kind == DeclKind.DeclRuleDecl) {
         int32:n = raw rule_clause_count(r.ast, d);
         int32:i = 0i32;

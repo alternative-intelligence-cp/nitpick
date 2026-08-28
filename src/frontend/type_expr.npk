@@ -511,12 +511,39 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) nev
         }
         pass (raw tt_tfp(e.types, bits));
     }
+    // A `dim256` LITERAL (D-196, 1.3.3): the SAME exact Q fold as `tfp256` —
+    // a dim IS a tfp256 at the value level — plus the unit the parse tail
+    // recorded in slot `a`. UNITLESS REFUSES: dimensionless is spelled
+    // `tfp256`, and one meaning gets one spelling.
+    if (kind == (raw TY_DIM())) {
+        if (n.a == 0i32) {
+            pass (raw te_error(e, raw TYPE_UNIT_RULES(),
+                "a `dim256` literal carries its unit — `1.5dim256<Meters>` (D-196); a dimensionless value is spelled `tfp256`",
+                n.span));
+        }
+        string:dtx = "";
+        if (n.kind == ExprKind.ExprFloatLiteral) {
+            dtx = raw intern_get(e.interns, n.payload =>! int32);
+        }
+        if (n.kind == ExprKind.ExprIntLiteral) {
+            dtx = raw int_to_string(n.payload);
+        }
+        if ((raw tfp_q_decimal(dtx, 256i32)).len == 0i64) {
+            pass (raw te_error(e, raw TYPE_LIT_RANGE(),
+                "the value of this literal does not fit `dim256` (D-148/D-195): the balanced range excludes the sentinel's magnitude, and a literal must be the number written",
+                n.span));
+        }
+        DimVecAnswer:lv = raw dim_unit_of_name(e.ast, e.types, e.tab, e.interns,
+                              e.diags, n.a, e.scope, n.span, 0i32);
+        if (!lv.found) { pass 0i32; }
+        pass (raw tt_dim(e.types, lv.vec));
+    }
     if (kind == (raw TY_CHAR()))  { pass (raw lit_ranged(e, n, raw tt_char(e.types, bits))); }
 
-    // A SUFFIX IS PRESENT AND NAMES A TYPE NO RUNG SUPPLIES YET — `frac`, `tfp`,
-    // `dim256`. Saying "no suffix" would be false and would send the reader to
-    // add one they already wrote (D-085: the parser never restricts, so this is
-    // where the rung is named).
+    // A SUFFIX IS PRESENT AND NAMES A TYPE NO RUNG SUPPLIES YET — the `frac`
+    // widths (1.3.5). Saying "no suffix" would be false and would send the
+    // reader to add one they already wrote (D-085: the parser never
+    // restricts, so this is where the rung is named).
     if (w != NumWidth.WNone) {
         pass (raw te_error(e, raw TYPE_UNKNOWN(),
             "this literal's type is not available at this rung yet",
@@ -673,6 +700,11 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             if ((raw type_kind(e.types, werr)) == (raw TY_TFP())) {
                 pass werr;
             }
+            // And a `dim256<U>` is a tfp256 with a unit (D-196): the taint
+            // wears the slot's unit like any other value in it.
+            if ((raw type_kind(e.types, werr)) == (raw TY_DIM())) {
+                pass werr;
+            }
         }
         pass (e.types.t_tbb32);
     }
@@ -777,6 +809,81 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) nev
         pass (raw te_mismatch(e, at, lt, rt));
     }
     pass common;
+};
+
+// Which operators the `dim256` unit algebra owns — the five arithmetic ones.
+pub func:dim_arith_op = bool(TokenKind:op) never fails {
+    if (op == TokenKind.OpPlus)    { pass true; }
+    if (op == TokenKind.OpMinus)   { pass true; }
+    if (op == TokenKind.OpStar)    { pass true; }
+    if (op == TokenKind.OpSlash)   { pass true; }
+    pass (op == TokenKind.OpPercent);
+};
+
+// `dim256` ARITHMETIC (D-196, 1.3.3). `*`/`/` ADD/SUBTRACT the unit vectors —
+// the algebra is TOTAL: a bare `tfp256` operand is the zero vector (which is
+// how scaling works with no special case), and a result that cancels IS
+// `tfp256`, because `tt_dim` returns it for the zero vector. `+ - %` demand
+// the SAME vector — the same type — refusing with both units in base form.
+// The value semantics under every operator are `tfp256`'s own (D-195): ERR
+// sticky, saturation, division by zero yielding ERR.
+pub func:type_dim_arith = int32(ExprTyper->:e, Span:at, TokenKind:op,
+                                int32:lt, int32:rt) never fails {
+    // The PARTNER RULE: a dim computes with itself and with `tfp256` — never
+    // with an int, a float, a narrower tfp, or the other twisted family.
+    bool:lok = ((raw type_kind(e.types, lt)) == (raw TY_DIM()));
+    if ((raw type_kind(e.types, lt)) == (raw TY_TFP())) {
+        if ((raw type_int_bits(e.types, lt)) == 256i32) { lok = true; }
+    }
+    bool:rok = ((raw type_kind(e.types, rt)) == (raw TY_DIM()));
+    if ((raw type_kind(e.types, rt)) == (raw TY_TFP())) {
+        if ((raw type_int_bits(e.types, rt)) == 256i32) { rok = true; }
+    }
+    if ((!lok) || (!rok)) {
+        int32:dt = lt;
+        int32:ot = rt;
+        if (!lok) { dt = rt; ot = lt; }
+        string:x1 = raw string_concat("`", raw type_display(e.types, e.interns, dt));
+        string:x2 = raw string_concat(x1, "` computes with another `dim256` or with `tfp256` (D-196) — the unit algebra runs at one width and `");
+        string:x3 = raw string_concat(x2, raw type_display(e.types, e.interns, ot));
+        string:x4 = raw string_concat(x3, "` is outside it; cast through `tfp256` first");
+        pass (raw te_error(e, raw TYPE_DIM_MISMATCH(), move(x4), at));
+    }
+
+    int64:lv = 0i64;
+    if ((raw type_kind(e.types, lt)) == (raw TY_DIM())) { lv = raw type_dim_vec(e.types, lt); }
+    int64:rv = 0i64;
+    if ((raw type_kind(e.types, rt)) == (raw TY_DIM())) { rv = raw type_dim_vec(e.types, rt); }
+
+    bool:mul = (op == TokenKind.OpStar);
+    bool:divi = (op == TokenKind.OpSlash);
+    if (mul || divi) {
+        int64:out = 0i64;
+        int32:axi = 0i32;
+        while (axi < (raw DIM_AXES())) {
+            int32:le = raw dim_axis_get(lv, axi);
+            int32:re = raw dim_axis_get(rv, axi);
+            int32:ne = le + re;
+            if (divi) { ne = le - re; }
+            if ((ne > 127i32) || (ne < (0i32 - 127i32))) {
+                pass (raw te_error(e, raw TYPE_UNIT_RULES(),
+                    "a unit exponent past ±127 is outside any physics — this operation's result unit does not fit",
+                    at));
+            }
+            out = raw dim_axis_set(out, axi, ne);
+            axi = axi + 1i32;
+        }
+        pass (raw tt_dim(e.types, out));
+    }
+
+    // `+ - %`: the units must already AGREE — same vector, same type.
+    if (lt == rt) { pass lt; }
+    string:d1 = raw string_concat("dimensional mismatch: cannot combine `",
+                    raw type_display(e.types, e.interns, lt));
+    string:d2 = raw string_concat(d1, "` and `");
+    string:d3 = raw string_concat(d2, raw type_display(e.types, e.interns, rt));
+    string:d4 = raw string_concat(d3, "` — addition, subtraction and `%` demand the SAME unit (D-196); `*` and `/` are the operators that combine units");
+    pass (raw te_error(e, raw TYPE_DIM_MISMATCH(), move(d4), at));
 };
 
 func:te_tbb_mixed = int32(ExprTyper->:e, Span:at, int32:tbb, int32:other) never fails {
@@ -1500,8 +1607,10 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     // Both twisted families (D-195): `tfp` carries the same sentinel on the
-    // same carrier, and the same no-trap guarantee is the point.
+    // same carrier, and the same no-trap guarantee is the point. `dim256` is
+    // a tfp256 with a unit (D-196) — the look does not care about the unit.
     if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass (e.types.t_bool); }
+    if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass (e.types.t_bool); }
     if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
         string:m1 = raw string_concat("`is_err` tests a twisted value for ERR, and this is `",
                                         raw type_display(e.types, e.interns, t));
@@ -1651,6 +1760,14 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
         // only way such a value comes to exist.
         if (dnode.kind == DeclKind.DeclErrorDecl) {
             pass e.types.t_error;
+        }
+        // A UNIT IS NOT A VALUE (D-196, 1.3.3): it names an exponent vector,
+        // and `dim256<U>`'s argument is the one place it is written. Said as
+        // its own refusal so the fix is in the message.
+        if (dnode.kind == DeclKind.DeclUnitDecl) {
+            pass (raw te_error(e, raw TYPE_MISMATCH(),
+                "a unit is not a value: it names a vector for `dim256<U>`, and `dim256<` is the one place it may be written",
+                n.span));
         }
         // `<comptime int32:LEVEL>` IS A VALUE, and `pass LEVEL;` reads it as one.
         // Its type is the one the parameter declares — that is the whole content
@@ -2994,6 +3111,18 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // promised the BACKEND refuses it at this rung, and the checker refused it
     // first, so the file could never reach the stage its expectation names. The
     // hole was invisible while that suite could only run against the seed.
+    // A `dim256` ON EITHER SIDE OF ARITHMETIC takes the UNIT ALGEBRA (D-196,
+    // 1.3.3) — the one place the OPERATOR decides the result TYPE, which is
+    // why the shared `type_arithmetic` (which never sees the operator)
+    // cannot carry it.
+    if (raw dim_arith_op(op)) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_DIM())) {
+            pass (raw type_dim_arith(e, n.span, op, lt, rt));
+        }
+        if ((raw type_kind(e.types, rt)) == (raw TY_DIM())) {
+            pass (raw type_dim_arith(e, n.span, op, lt, rt));
+        }
+    }
     if (op == TokenKind.OpPlus) {
         if ((raw type_kind(e.types, lt)) == (raw TY_STRING())) {
             if ((raw type_kind(e.types, rt)) == (raw TY_STRING())) {
@@ -3041,11 +3170,13 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (op == TokenKind.OpMinus) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
         // NEGATION IS TOTAL ON A TWISTED TYPE (D-008 §2, admitted at 1.0.9;
-        // D-195 extends the balance to `tfp`): the sentinel is the one value
-        // whose negation would overflow, and it is not a value. `-x` is the
-        // same type, and ERR stays ERR (sticky).
+        // D-195 extends the balance to `tfp`, D-196 to `dim256` — the unit
+        // rides): the sentinel is the one value whose negation would
+        // overflow, and it is not a value. `-x` is the same type, and ERR
+        // stays ERR (sticky).
         if ((raw type_kind(e.types, t)) == (raw TY_TBB())) { pass t; }
         if ((raw type_kind(e.types, t)) == (raw TY_TFP())) { pass t; }
+        if ((raw type_kind(e.types, t)) == (raw TY_DIM())) { pass t; }
         if (!(raw type_is_numeric(e.types, t))) {
             pass (raw te_operand_error(e, n.span, t));
         }

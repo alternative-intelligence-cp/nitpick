@@ -1102,3 +1102,36 @@ impl:tfp256:ToString = { func:to_string = string(tfp256:self) never fails {
     uint256:fmask2 = (1u256 << 128u256) - 1u256;
     pass (raw tfp_render(neg, mag >> 128u256, mag & fmask2, 128u64));
 }; };
+
+// THE SI DERIVED UNITS (D-196, 1.3.3). The seven base names are
+// compiler-known — Kilograms, Meters, Seconds, Amperes, Kelvin, Moles,
+// Candela — and everything else is THIS: the same `unit:` declaration any
+// program writes, which is the point. One mechanism, exercised by the
+// prelude itself. A name is a name for a VECTOR — `Hertz` and `Becquerels`
+// naming the same vector is physics, not a conflict, and diagnostics render
+// the base-product form rather than guessing which name was meant.
+// `Radians` and `Steradians` are the DIMENSIONLESS ratios, so `dim256<Radians>`
+// IS `tfp256` — honest, and exactly what the algebra says.
+pub unit:Radians = 1;
+pub unit:Steradians = 1;
+pub unit:Hertz = 1 / Seconds;
+pub unit:Newtons = Kilograms * Meters / (Seconds * Seconds);
+pub unit:Pascals = Newtons / (Meters * Meters);
+pub unit:Joules = Newtons * Meters;
+pub unit:Watts = Joules / Seconds;
+pub unit:Coulombs = Amperes * Seconds;
+pub unit:Volts = Watts / Amperes;
+pub unit:Farads = Coulombs / Volts;
+pub unit:Ohms = Volts / Amperes;
+pub unit:Siemens = Amperes / Volts;
+pub unit:Webers = Volts * Seconds;
+pub unit:Teslas = Webers / (Meters * Meters);
+pub unit:Henries = Webers / Amperes;
+pub unit:Lumens = Candela * Steradians;
+pub unit:Lux = Lumens / (Meters * Meters);
+pub unit:Becquerels = 1 / Seconds;
+pub unit:Grays = Joules / Kilograms;
+pub unit:Sieverts = Joules / Kilograms;
+pub unit:Katals = Moles / Seconds;
+pub unit:MetersPerSecond = Meters / Seconds;
+pub unit:MetersPerSecondSquared = Meters / (Seconds * Seconds);

@@ -468,6 +468,16 @@ information.
 > **Dimensional analysis is a `dim256`-exclusive feature.** Only `dim256` supports
 > the `<Unit>` annotation. Narrower fixed-point types do NOT support dimensional annotations.
 
+**A unit is an exponent vector** (D-196, 1.3.3) over the seven SI base
+dimensions — mass, length, time, current, temperature, amount, luminous
+intensity. A unit NAME is a name for a vector; the algebra runs on the
+vectors themselves and is TOTAL, so `force * dist` IS the Joules vector
+whether or not anything names it. Two `dim256` types are the same type
+exactly when their vectors are equal. The DIMENSIONLESS vector is not a
+`dim256` at all: it IS `tfp256`, which is why `dist / dist` is a bare
+`tfp256` and why bare `dim256` (as an annotation or a literal suffix) is
+refused — the dimensionless type already has a name.
+
 **Syntax:**
 ```nitpick
 dim256<Joules>:energy = 1000.0dim256<Joules>;
@@ -475,18 +485,30 @@ dim256<Meters>:dist   = 5.0dim256<Meters>;
 dim256<Seconds>:time  = 2.0dim256<Seconds>;
 ```
 
-**Supported unit dimensions** (compile-time annotations only — erased at IR level):
-| Keyword | Physical Quantity |
-|---|---|
-| `Joules` | Energy |
-| `Meters` | Length / Distance |
-| `Seconds` | Time |
-| `Newtons` | Force |
-| `Kelvin` | Temperature |
+**Named units.** The seven SI base units are compiler-declared
+(`Kilograms`, `Meters`, `Seconds`, `Amperes`, `Kelvin`, `Moles`,
+`Candela`); the standard derived names (`Newtons`, `Joules`, `Hertz`,
+`Pascals`, `Watts`, `MetersPerSecond`, …) are PRELUDE declarations of the
+same form any program can write (D-196, user-ratified — the grammar's
+`unit:` production):
+
+```nitpick
+unit:Hertz = 1 / Seconds;
+unit:Newtons = Kilograms * Meters / (Seconds * Seconds);
+pub unit:Furlongs = Meters;   // a name is a name for a VECTOR — this one
+                              // equals Meters' vector; declare it only to
+                              // write it in annotations
+```
+
+The right-hand side is unit algebra only — unit names, `1`, `*`, `/`,
+parentheses — evaluated at compile time. An annotation position takes a
+single NAME, never an inline expression: compose in the declaration, name
+the result, annotate with the name.
 
 > **Runtime representation:** `dim256<Joules>` is IDENTICAL to bare `tfp256` at the
 > LLVM IR level. The unit annotation is purely compile-time metadata — there is NO
-> runtime overhead.
+> runtime overhead, and every D-195 `tfp256` rule (ERR discipline, saturation,
+> exact literals, `.floor()`/`.trunc()`) applies unchanged.
 
 **Dimensional algebra enforcement (compile time):**
 ```nitpick
@@ -495,24 +517,35 @@ dim256<Meters>:dist  = 10.0dim256<Meters>;
 dim256<Seconds>:time = 5.0dim256<Seconds>;
 dim256<Meters>:speed = dist / time;      // ERROR: Meters/Seconds != Meters
                                           // Compiler: "dimensional mismatch: expected
-                                          //   Meters, got Meters/Seconds"
+                                          //   Meters, got Meters*Seconds^-1"
 
-// Multiply creates compound units (checked against expected type):
-dim256<Joules>:work = force * dist;      // OK: Newtons * Meters = Joules (if registered)
+// Multiply creates compound units — the algebra is total, no registration:
+dim256<Joules>:work = force * dist;      // OK: Newtons * Meters IS the Joules vector
 ```
 
 **Rules:**
-- Adding/subtracting same unit: ✅ result has same unit
-- Adding/subtracting different units: ❌ compile-time error
-- Multiplying/dividing units: ✅ compiler tracks compound unit algebra
-- Comparing different units: ❌ compile-time error
-- Assigning bare `tfp256` to dimensional: ⚠️ warning (unit loss)
-- Assigning dimensional to bare `tfp256`: ✅ allowed (drops unit annotation)
+- Adding/subtracting/`%` same unit: ✅ result has same unit
+- Adding/subtracting different units: ❌ compile-time error, both units shown
+- Multiplying/dividing: ✅ vectors add/subtract; a bare `tfp256` operand is the
+  zero vector, so scaling needs no special case; a canceled result IS `tfp256`
+- Comparing different units: ❌ compile-time error (same vector: full ordering —
+  a `dim256` is a number)
+- `dim256<U> => tfp256`: ✅ drops the unit — always safe, a no-op at IR; ERR
+  RIDES (the crossing never leaves the twisted family, so the D-144 leaving
+  trap does not apply)
+- `tfp256 =>! dim256<U>`: the acknowledged unit ASSERTION; without `=>!` it
+  refuses — a silent unit-gain is how unit bugs are born (this replaced the
+  pre-D-196 "warning" row: Nitpick has no warnings)
+- `dim256<U> => dim256<V>`, `dim256<U>` ⇄ anything else: ❌ CAST_IMPOSSIBLE —
+  a relabel is spelled as its two honest halves, `=> tfp256` then
+  `=>! dim256<V>`
+- Rendering: a dimensioned value has no `ToString` BY DESIGN — rendering drops
+  the unit and drops are explicit: `&{x => tfp256}`
 
 **In functions:**
 ```nitpick
 func:velocity = dim256<Meters>(dim256<Meters>:d, dim256<Seconds>:t) {
-    pass(d / t);    // Type error: d/t is Meters/Seconds, not Meters
+    pass(d / t);    // Type error: d/t is Meters*Seconds^-1, not Meters
                     // Must declare return as dim256<MetersPerSecond> or bare tfp256
 }
 ```

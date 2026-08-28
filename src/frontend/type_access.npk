@@ -1411,6 +1411,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_TFP())) {
         pass (raw type_tfp_method(e, n, recv, name, count));
     }
+    // A `dim256` has exactly the tfp256 method set (D-196) — `floor`/`trunc`
+    // pass the receiver through, so the UNIT RIDES.
+    if ((raw type_kind(e.types, recv)) == (raw TY_DIM())) {
+        pass (raw type_tfp_method(e, n, recv, name, count));
+    }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
     }

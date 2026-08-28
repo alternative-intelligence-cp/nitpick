@@ -248,7 +248,8 @@ pub func:is_keyword = bool(string:text) {
     wl.append("pub func:num_width_bits = int32(NumWidth:w) {")
     for s2 in sfx:
         m = re.match(r'^([a-z]+)(\d+)$', s2)
-        if m and m.group(1) in ("u", "i", "f", "tbb", "frac", "tfp", "char"):
+        # 1.3.3 (D-196): `dim256` carries its 256 like the tfp suffixes do.
+        if m and m.group(1) in ("u", "i", "f", "tbb", "frac", "tfp", "dim", "char"):
             wl.append("    if (w == NumWidth.%s) { pass %si32; }"
                       % (width_variant(s2), m.group(2)))
     wl.append("    pass 0i32;")
@@ -286,13 +287,16 @@ pub func:is_keyword = bool(string:text) {
               (r'^f\d+$', "TY_FLOAT"), (r'^tbb\d+$', "TY_TBB"),
               # 1.3.2 (D-195): the tfp suffixes name the twisted fixed kind.
               (r'^tfp\d+$', "TY_TFP"),
+              # 1.3.3 (D-196): the dim suffix -- tfp256 with a unit tail.
+              (r'^dim256$', "TY_DIM"),
               (r'^char\d+$', "TY_CHAR")]
     wl.append("")
     wl.append("// The TYPE a suffix names, as a `TY_*` kind.")
     wl.append("//")
-    wl.append("// TY_INVALID for a suffix whose type has no kind yet -- `frac`, `tfp`")
-    wl.append("// and `dim256` are REAL types arriving at a later rung, and the caller")
-    wl.append("// names the rung rather than pretending the suffix is absent (D-085).")
+    wl.append("// TY_INVALID for a suffix whose type has no kind yet -- the `frac`")
+    wl.append("// widths are REAL types arriving at a later rung (1.3.5), and the")
+    wl.append("// caller names the rung rather than pretending the suffix is absent")
+    wl.append("// (D-085).")
     wl.append("pub func:num_width_kind = int32(NumWidth:w) {")
     for s2 in sfx:
         for pat, ty in FAMILY:
@@ -505,7 +509,10 @@ pub func:is_keyword = bool(string:text) {
                   "atomic", "Channel", "Future", "simd", "complex", "array", "buffer",
                   "Mutex", "Guard", "RwLock", "RGuard", "CondVar", "Barrier",
                   "vec2", "vec3", "vec9", "matrix", "tmatrix", "tensor",
-                  "ttensor", "dyn", "func"}
+                  "ttensor", "dyn", "func",
+                  # 1.3.3 (D-196): `dim256<Unit>` -- the one builtin whose
+                  # argument is a UNIT NAME, not a type; resolve_type owns it.
+                  "dim256"}
 
     bt = ['// Builtin type keywords, mapped to what they are.',
           '//',
@@ -521,7 +528,7 @@ pub func:is_keyword = bool(string:text) {
           'use "./types.npk".*;',
           '',
           '// `known` is false for a name the type table has no kind for yet --',
-          '// `frac`, `tfp`, `dim256` and the exotic bases. They are REAL types and',
+          '// `frac` and the ternary/nonary bases. They are REAL types and',
           '// arrive at a later rung; the resolver names the rung rather than',
           '// pretending the name is unknown (D-085).',
           'pub struct:BuiltinTypeSpec = {',
@@ -563,7 +570,7 @@ pub func:is_keyword = bool(string:text) {
                 bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(true, raw %s(), %si32, %s, 0i32)); }'
                           % (v, kind, bits, sgn))
             else:
-                # frac/tfp/dim256/trit/tryte/nit/nyte -- real types, later rung.
+                # frac/trit/tryte/nit/nyte -- real types, later rung.
                 bt.append('    if (k == TokenKind.%s) { pass (raw bt_spec(false, 0i32, 0i32, false, 0i32)); }'
                           % v)
     bt.append('    pass (raw bt_spec(false, 0i32, 0i32, false, 0i32));')
@@ -594,7 +601,9 @@ pub func:is_keyword = bool(string:text) {
                "RwLock": "TY_RWLOCK", "RGuard": "TY_RGUARD",
                "CondVar": "TY_CONDVAR", "Barrier": "TY_BARRIER",
                # 1.3.1 (D-135/D-194): the vector mechanism.
-               "simd": "TY_SIMD"}
+               "simd": "TY_SIMD",
+               # 1.3.3 (D-196): twisted fixed point with a unit vector.
+               "dim256": "TY_DIM"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

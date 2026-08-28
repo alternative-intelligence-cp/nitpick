@@ -57,6 +57,18 @@ func:main = int32(cstring[]:argv) {
     m = 0.0f64 - m;            // -1.0
     if (m != (0.0f64 - 1.0f64))                { exit 27i32; }
 
+    // Compound assignment goes through the SAME arithmetic core as the
+    // operator (1.3.3, `emit_arith_value`): until then `f +=` emitted an
+    // integer `add` on a double — landed at 0.9.5, latent because nothing
+    // ever exercised a float compound assign.
+    flt64:acc = 10.5f64;
+    acc += 2.0f64;
+    if (acc != 12.5f64)                        { exit 28i32; }
+    acc *= 2.0f64;
+    if (acc != 25.0f64)                        { exit 29i32; }
+    acc /= z;
+    if (!(acc > 1.0e300f64))                   { exit 30i32; }
+
     // `wild_release_all()` used to sit here, appeasing the leak check before
     // the managed lowering existed. Under D-183 the drops ARE the cleanup, and
     // a wholesale release before scope exit frees the very bodies the drops

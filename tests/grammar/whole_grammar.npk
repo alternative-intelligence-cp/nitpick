@@ -66,6 +66,16 @@ pub enum:Color = {
     Green = 2i32;
 };
 
+// --- units (D-196, 1.3.3) ----------------------------------------------------------
+//
+// A named unit for `dim256<U>`: the right-hand side is unit algebra — names,
+// `1`, `*`, `/`, parentheses — evaluated at compile time to an exponent
+// vector. `pub` composes like any declaration's.
+unit:Fathoms = Meters;
+pub unit:Knots = Meters / Seconds;
+pub unit:PerSecond = 1 / Seconds;
+unit:Momentum = Kilograms * Meters / (Seconds * Seconds) * Seconds;
+
 // --- traits ------------------------------------------------------------------------
 
 pub trait:Serializable = {
@@ -386,6 +396,13 @@ func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) never fails
     // constructor. `vec3` is a LIBRARY type now, so `vec3(1.0f64, …)` is an ordinary
     // call over an ordinary identifier and needs no entry of its own.
     v = simd(1.0f64, 2.0f64, 3.0f64) => int32;
+
+    // `dim256<Unit>` (D-196): the annotation takes a single unit name, and a
+    // `dim256`-suffixed literal carries its unit as a `<Name>` tail — both
+    // literal forms, integer and fractional.
+    dim256<Knots>:knots = 12.5dim256<Knots>;
+    dim256<Meters>:fathom_floor = 5dim256<Meters>;
+    v = ((knots => tfp256) =>! int32) + ((fathom_floor => tfp256) =>! int32);
 
     pass v;
 };

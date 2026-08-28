@@ -490,6 +490,34 @@ def check_codes_centralised():
     return fails
 
 
+def check_no_kind_literals():
+    """No token-kind VALUE is written as an integer literal outside its table.
+
+    Found at 1.3.3: `bridge_stubs.npk` compared type-name payloads against
+    hardcoded numbers annotated `// KwInt32` -- a hand copy of the GENERATED
+    TokenKind enum. The `unit` keyword's insertion renumbered every kind
+    after it, and the extern wire vocabulary silently began refusing legal
+    `int64` returns. The tell is exactly the annotation a conscientious
+    author writes when hardcoding: an integer literal explained by a `Kw`
+    comment. Compare `TokenKind.KwName` symbolically instead -- the enum is
+    regenerated, copies of it are not.
+    """
+    fails = []
+    pat = re.compile(r'\d+i(?:32|64)\b.*//.*\bKw[A-Z]')
+    for p in glob.glob(os.path.join(ROOT, "src", "**", "*.npk"), recursive=True):
+        if p.endswith("token_kind.npk"):
+            continue
+        with open(p, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                if pat.search(line):
+                    fails.append("%s:%d compares a token kind by NUMBER -- the "
+                                 "TokenKind enum is generated and renumbers; a "
+                                 "copied value drifts silently. Compare "
+                                 "`TokenKind.KwName` symbolically"
+                                 % (os.path.relpath(p, ROOT), i))
+    return fails
+
+
 # Sites where `type_name` legitimately appears with a comparison operator that
 # is NOT a type-identity test (the name compared against a sentinel, or two
 # names rendered side by side). Empty today: after D-162 the frontend holds no
@@ -1111,6 +1139,7 @@ KIND_STATUS = {
     "DeclNeverFails": "inert: the D-163 contract, checked in the frontend; on an extern method it refuses (EXTERN-002)",
     "DeclAttribute": "inert: read by the passes it decorates, never emitted",
     "DeclErrorDecl": "lowered",  # D-179: ident references emit the assigned code inline
+    "DeclUnitDecl": "inert: a unit names a compile-time exponent vector (D-196); erased before lowering",
 }
 
 # THE ATTRIBUTE CARRIERS THE BACKEND MUST KEEP READING. LIVE-1 happened because
@@ -1829,6 +1858,7 @@ def main(argv):
         failures += check_kinds_lowered_or_refused()
         failures += check_codes_tested()
         failures += check_codes_centralised()
+        failures += check_no_kind_literals()
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
         failures += check_drops_total()

@@ -1,0 +1,28 @@
+// expect-exit: 24
+//
+// A tainted `dim256` at a bare comparison TRAPS (-4100) — D-008 §5 through
+// D-195, the one taint discipline both twisted families share; the unit
+// changes nothing about it. `is_err` is the look that does not trap and the
+// `pick` ERR arm is the sanctioned branch; a bare `<` is neither.
+mod:dim_cmp_err;
+
+func:main = int32(cstring[]:argv) {
+    tfp256:z = ((argv.len - 1i64) =>! int32) =>! tfp256;      // 0.0 at run time
+    dim256<Seconds>:t = z =>! dim256<Seconds>;
+    dim256<Meters>:d = 5.0dim256<Meters>;
+    dim256<MetersPerSecond>:e = d / t;                        // ERR
+    if (e < 1.0dim256<MetersPerSecond>) { exit 10i32; }       // must trap
+    exit 11i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

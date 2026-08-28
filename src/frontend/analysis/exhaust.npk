@@ -160,20 +160,28 @@ pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
         i = i + 1i32;
     }
 
-    // A `tbb` SELECTOR, WHERE THE WILDCARD DOES NOT ABSORB EVERYTHING.
+    // A TWISTED SELECTOR, WHERE THE WILDCARD DOES NOT ABSORB EVERYTHING.
     //
     // The two halves are separate findings on purpose: a `pick` may have `(*)` and
     // still be missing its `ERR:` arm, and reporting only "not exhaustive" would
     // send the author to add the wildcard they already wrote.
-    if (kind == (raw TY_TBB())) {
+    //
+    // ALL THREE TWISTED KINDS take the same demand — `tbb` from 0.9.5, `tfp`
+    // and `dim256` joined at 1.3.3 (found as a gap: 1.3.2 landed `pick` on a
+    // `tfp` selector lowering fine, with NO ERR-arm demand — the wildcard
+    // swallowed the taint, the exact hole D-008 closes for `tbb`).
+    bool:twpick = (kind == (raw TY_TBB()));
+    if (kind == (raw TY_TFP())) { twpick = true; }
+    if (kind == (raw TY_DIM())) { twpick = true; }
+    if (twpick) {
         if (!has_err) {
             drop exhaust_err(x, raw PICK_NO_ERR_ARM(),
-                "a `tbb` selector needs an explicit `ERR:` arm, and `(*)` may not stand in for it: ERR is the case a wildcard would swallow, and acting on a tainted value is what the sticky ERR exists to prevent (D-008)",
+                "a twisted selector needs an explicit `ERR:` arm, and `(*)` may not stand in for it: ERR is the case a wildcard would swallow, and acting on a tainted value is what the sticky ERR exists to prevent (D-008/D-195)",
                 at);
         }
         if (!has_wild) {
             drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(),
-                "a `tbb` has more values than a `pick` can list, so the arms below `ERR:` need a `(*)` to cover the rest",
+                "a twisted type has more values than a `pick` can list, so the arms below `ERR:` need a `(*)` to cover the rest",
                 at);
         }
         pass NIL;

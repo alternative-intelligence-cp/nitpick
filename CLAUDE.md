@@ -196,7 +196,26 @@ traps under BOTH spellings (`=>!` acknowledges the VALUE's loss; the
 range-classified like any numeric pair — closing a second hole where
 `tbb64 => int8` truncated and `tbb32 => uint32` sign-extended raw under
 the CHECKED spelling; the prelude's four `tbbN:Hash` impls now spell
-their guarded crossing `=>!`.
+their guarded crossing `=>!`. **1.3.3 landed `dim256<Unit>`** — units as
+packed 7-exponent SI vectors on interned `TY_DIM` (unit equality IS
+type-id equality; a=256 keeps `type_int_bits` uniform), THE ZERO VECTOR
+IS `tfp256` (cancellation yields the bare number, scaling needs no
+special case, bare `dim256` refuses — one meaning, one spelling),
+`unit:Name = algebra;` in the grammar (`unit` is now a keyword) with the
+seven SI base names compiler-known and the derived set as PRELUDE
+declarations, single-name annotations, `*`//`/` composing vectors with
+`+ - %`/compare demanding equality (both units shown in base-product
+form, TYPE-049/050), the one cast boundary (`=> tfp256` drops — ERR
+RIDES, the crossing never leaves the family; `tfp256 =>! dim256<U>`
+asserts), no `ToString` by design (`&{x => tfp256}` is the spelling),
+and erased lowering (the TY_TFP-site sweep at 256 bits). Two found
+defects: the `pick` ERR-arm demand had not extended to `tfp` (the
+wildcard swallowed the taint — now all three twisted kinds demand it),
+and **compound assignment was a second implementation of the operators**
+— raw `add`/`sdiv` since 0.9.5, so a twisted `+=` wrapped, `/=` by zero
+reached the hardware, and a float `+=` emitted integer `add`; the
+arithmetic value core is now extracted (`emit_arith_value`) and BOTH
+spellings route through it, with `op=` held to the slot's unit.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
@@ -301,6 +320,7 @@ parse failure some lines away from the mistake:
 | `error` | the declaration keyword (D-179) — so `error` is not a local name, and `Result`'s field is `.err` |
 | `gives` | the factory contract clause (D-183 1.2.6) — a channel-returning creator hands its channels' reclaim to the caller |
 | `Mutex`, `Guard`, `acquire`, `RwLock`, `RGuard`, `CondVar`, `Barrier` | the sync primitives' type keywords (D-056, 1.1.11) — `acquire` interns itself only after a `.` |
+| `unit` | the unit-declaration keyword (D-196, 1.3.3) — `unit:Hertz = 1 / Seconds;`; it reads like the most ordinary local name in any measurement code |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

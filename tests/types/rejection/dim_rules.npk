@@ -1,0 +1,94 @@
+// `dim256<Unit>` and the unit algebra: what refuses, by name (D-196, 1.3.3).
+//
+// TYPE-049 is the DIMENSIONAL MISMATCH — add/sub/`%`/compound-assign between
+// different vectors, or a partner outside the algebra. TYPE-050 is an
+// ill-formed UNIT — a bad `unit:` right-hand side, an unknown name, an
+// exponent past ±127, a cycle, a bare `dim256`, a non-name argument. The
+// silent unit-gain refusal rides the LOSSY code (TYPE-009) and the
+// dim⇄dim relabel rides the impossible one (TYPE-032) — existing rules,
+// reached through the dim arms.
+mod:dim_rules;
+
+// Adding different units: the compile error dimensional analysis exists for.
+// expect-error: NITPICK-TYPE-049
+func:mismatched_add = dim256<Meters>(dim256<Meters>:d, dim256<Seconds>:t) never fails {
+    pass (d + t);
+};
+
+// The partner rule: a dim computes with itself and `tfp256`, never an int.
+// expect-error: NITPICK-TYPE-049
+func:mixed_partner = dim256<Meters>(dim256<Meters>:d) never fails {
+    pass (d * 2i32);
+};
+
+// A compound assignment may not change the slot's unit: `*=` by a
+// dimensioned operand computes `Meters^2` into a `Meters` slot.
+// expect-error: NITPICK-TYPE-049
+func:compound_unit_change = dim256<Meters>(dim256<Meters>:d) never fails {
+    dim256<Meters>:acc = d;
+    acc *= d;
+    pass acc;
+};
+
+// An unknown unit name refuses at the annotation.
+// expect-error: NITPICK-TYPE-050
+func:unknown_unit = int32(dim256<Bogons>:_~x) never fails {
+    pass 0i32;
+};
+
+// A `unit:` right-hand side admits no magnitude — `1` is the only number.
+// expect-error: NITPICK-TYPE-050
+unit:BadMagnitude = 2;
+
+// …and no operators outside `*` and `/`.
+// expect-error: NITPICK-TYPE-050
+unit:BadForm = Meters + Seconds;
+
+// An exponent past ±127 is outside any physics: the doubling chain crosses
+// at 2^7 — M^64 * M^64 has no eighth bit to land in.
+unit:P2 = Meters * Meters;
+unit:P4 = P2 * P2;
+unit:P8 = P4 * P4;
+unit:P16 = P8 * P8;
+unit:P32 = P16 * P16;
+unit:P64 = P32 * P32;
+// expect-error: NITPICK-TYPE-050
+unit:P128 = P64 * P64;
+
+// A cycle has no vector; the depth bound is the refusal.
+// expect-error: NITPICK-TYPE-050
+unit:CycA = CycB;
+unit:CycB = CycA;
+
+// Bare `dim256` refuses in BOTH positions: dimensionless is spelled `tfp256`.
+// expect-error: NITPICK-TYPE-050
+func:bare_annotation = int32(dim256:_~x) never fails {
+    pass 0i32;
+};
+// expect-error: NITPICK-TYPE-050
+func:bare_literal = tfp256() never fails {
+    pass (1.5dim256 => tfp256);
+};
+
+// The argument is a single unit NAME — a type is not one.
+// expect-error: NITPICK-TYPE-050
+func:type_as_unit = int32(dim256<int32>:_~x) never fails {
+    pass 0i32;
+};
+
+// The silent unit-gain: `tfp256 => dim256<U>` refuses without the bang —
+// the assertion lead-in, on the LOSSY code.
+// expect-error: NITPICK-TYPE-009
+func:silent_gain = dim256<Meters>(tfp256:v) never fails {
+    pass (v => dim256<Meters>);
+};
+
+// A dim-to-dim relabel is not a conversion: it is spelled as its two halves
+// through `tfp256`.
+// expect-error: NITPICK-TYPE-032
+func:relabel = dim256<Seconds>(dim256<Meters>:d) never fails {
+    pass (d =>! dim256<Seconds>);
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

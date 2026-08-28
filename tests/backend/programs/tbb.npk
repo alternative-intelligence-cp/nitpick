@@ -75,6 +75,23 @@ func:main = int32(cstring[]:_~argv) {
     // programs are tbb_cast_trap and tbb_cast_bang_trap).
     if ((okv =>! int32) != 41i32)               { exit 27i32; }
 
+    // Compound assignment takes the SAME twisted discipline as the operator
+    // (1.3.3, `emit_arith_value`): until then `x += y` emitted a raw `add` —
+    // no saturation, no stickiness — and `x /= zero` reached the hardware
+    // divider instead of yielding ERR. Landed at 0.9.5, latent because
+    // nothing ever exercised a twisted compound assign.
+    tbb32:acc = 20tbb32;
+    acc += 3tbb32;
+    if ((acc =>! int32) != 23i32)               { exit 28i32; }
+    acc += big;                                 // saturates to ERR
+    if (!(is_err(acc)))                         { exit 29i32; }
+    tbb32:dacc = 20tbb32;
+    dacc /= z;                                  // divide by zero DEGRADES
+    if (!(is_err(dacc)))                        { exit 30i32; }
+    tbb32:eacc = e;
+    eacc *= 0tbb32;                             // stickiness beats identities
+    if (!(is_err(eacc)))                        { exit 31i32; }
+
     drop wild_release_all();
 
     drop wild_release_all();

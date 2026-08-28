@@ -90,6 +90,28 @@ func:tbb_bare = int32(tbb32:t) never fails {
     pass r;
 };
 
+// THE OTHER TWISTED FAMILIES TAKE THE SAME DEMAND (D-195/D-196, joined at
+// 1.3.3 — found as a gap: 1.3.2 landed `pick` on a `tfp` selector lowering
+// fine with NO ERR-arm requirement, so the wildcard swallowed the taint,
+// the exact hole this suite pins for `tbb`).
+// expect-error: NITPICK-PICK-002
+func:tfp_wildcard_does_not_absorb_err = int32(tfp64:q) never fails {
+    int32:r = 0i32;
+    pick (q) {
+        (*) { r = 1i32; }
+    }
+    pass r;
+};
+
+// expect-error: NITPICK-PICK-002
+func:dim_wildcard_does_not_absorb_err = int32(dim256<Meters>:d) never fails {
+    int32:r = 0i32;
+    pick (d) {
+        (*) { r = 1i32; }
+    }
+    pass r;
+};
+
 // --- arms nothing can reach ----------------------------------------------------------
 
 // expect-error: NITPICK-PICK-004

@@ -602,6 +602,31 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // `+` accepts, or the reverse, is a difference nobody would predict.
     TokenKind:op = raw stmt_op(s);
     if (op != TokenKind.OpAssign) {
+        // A `dim256` ON EITHER SIDE takes the unit algebra with the REAL
+        // operator (D-196, 1.3.3) — and the RESULT must keep the slot's
+        // unit, which `x op= v` cannot restate: `d *= d` computes
+        // `Meters^2` into a `Meters` slot and refuses here.
+        bool:dimside = ((raw type_kind(e.types, want)) == (raw TY_DIM()));
+        if ((raw type_kind(e.types, got)) == (raw TY_DIM())) { dimside = true; }
+        if (dimside) {
+            if (!(raw is_bitwise_assign(op))) {
+                int32:dres = raw type_dim_arith(e, s.span, raw assign_base_op(op),
+                                                want, got);
+                if (dres != 0i32) {
+                    if (dres != want) {
+                        string:c1 = raw string_concat(
+                            "this compound assignment changes the unit: the result is `",
+                            raw type_display(e.types, e.interns, dres));
+                        string:c2 = raw string_concat(c1, "` and the slot holds `");
+                        string:c3 = raw string_concat(c2,
+                            raw type_display(e.types, e.interns, want));
+                        drop diaglist_push(e.diags, raw diag_error(raw TYPE_DIM_MISMATCH(),
+                            raw string_concat(c3, "` (D-196)"), s.span));
+                    }
+                }
+                pass NIL;
+            }
+        }
         if (raw is_bitwise_assign(op)) {
             discard(raw type_bitwise(e, s.span, want, got));
         } else {
@@ -615,6 +640,19 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         drop te_assign_mismatch(e, want, got, s.span);
     }
     pass NIL;
+};
+
+// The operator inside `x op= v`, for the paths that need the REAL operator —
+// the `dim256` unit algebra is the one consumer: `*=` and `/=` combine units
+// where `+= -= %=` demand agreement, a difference `type_arithmetic` (which
+// never sees the operator) cannot carry.
+func:assign_base_op = TokenKind(TokenKind:op) never fails {
+    if (op == TokenKind.OpPlusAssign)    { pass TokenKind.OpPlus; }
+    if (op == TokenKind.OpMinusAssign)   { pass TokenKind.OpMinus; }
+    if (op == TokenKind.OpStarAssign)    { pass TokenKind.OpStar; }
+    if (op == TokenKind.OpSlashAssign)   { pass TokenKind.OpSlash; }
+    if (op == TokenKind.OpPercentAssign) { pass TokenKind.OpPercent; }
+    pass op;
 };
 
 func:is_bitwise_assign = bool(TokenKind:op) never fails {
@@ -865,6 +903,18 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         drop check_function(e, id, scope);
+        pass NIL;
+    }
+
+    // A `unit:` DECLARATION EVALUATES HERE (D-196, 1.3.3) — eagerly, so a
+    // broken definition refuses even when nothing writes the name. The
+    // evaluation memoizes on the TypeTable: an annotation that used this
+    // unit first already paid, and this asks the cache. Resolve deliberately
+    // left the right-hand side alone — the check walk owns the whole unit
+    // algebra in one implementation.
+    if (d.kind == DeclKind.DeclUnitDecl) {
+        discard(raw dim_unit_of_name(e.ast, e.types, e.tab, e.interns, e.diags,
+                                     raw decl_name(d), scope, d.span, 0i32));
         pass NIL;
     }
 

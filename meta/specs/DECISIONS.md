@@ -13796,6 +13796,55 @@ becomes a refusal without `=>!`). **The user ratified the grammar
 addition**: `unit:Hertz = 1 / Seconds;` declares a named unit — the
 semantic-intent lever, landing IN 1.3.3 with the rest.
 
+### D-196 implementation record (1.3.3)
+
+Design points fixed inside the ratified frame, at open:
+
+1. **The packed representation**: seven signed `i8` exponents in one
+   interned `TY_DIM` row (`a` = 256 so `type_int_bits` answers uniformly;
+   `b`/`c` = the vector) — unit equality IS type-id equality, and the
+   existing same-type discipline does the enforcement. Exponents refuse
+   past ±127.
+2. **The ZERO vector IS `tfp256`** — `tt_dim` returns the tfp256 id for
+   it, never interning a dimensionless dim. `dist / dist` cancels to the
+   bare number, scaling by `tfp256` is the zero vector's algebra with no
+   special case, `unit:Radians = 1;` makes `dim256<Radians>` honestly BE
+   `tfp256`, and the BARE forms refuse (`dim256:x`, `1.5dim256`) — the
+   dimensionless type already has a name, and one meaning gets one
+   spelling.
+3. **Annotations take a single unit NAME**; algebra is spelled in `unit:`
+   declarations only. Evaluation is on-demand and memoized on the
+   TypeTable (declaration order never matters), the check walk evaluates
+   every declaration eagerly so an unused broken one still refuses, and a
+   64-step depth bound is the cycle refusal (the D-057 bounded-expansion
+   shape). Resolve deliberately leaves the RHS alone — the unit
+   vocabulary is not the symbol table's, and one implementation owns the
+   walk.
+4. **The seven SI base units are compiler-known names**; the derived set
+   (`Newtons` … `Katals`, the dimensionless `Radians`/`Steradians`) is
+   PRELUDE `unit:` declarations — one mechanism, exercised by the prelude
+   itself. Two names for one vector (`Hertz`/`Becquerels`) is physics,
+   not a conflict; diagnostics render the base-product form
+   (`Kilograms*Meters^2/Seconds^2`), never a guessed name.
+5. **No `ToString` on a dimensioned value, BY DESIGN**: rendering drops
+   the unit and drops are explicit — the spelling is `&{x => tfp256}`.
+6. **The `pick` ERR-arm demand extends to `tfp` AND `dim256`** — found as
+   a 1.3.2 gap: `pick` on a `tfp` selector lowered fine with no ERR-arm
+   requirement, so `(*)` swallowed the taint, the exact D-008 hole the
+   `tbb` arm closes.
+7. **The compound-assignment miscompile** (found by `dim`'s first
+   compound test): `x op= v` had its OWN raw `add`/`mul`/`sdiv` tail in
+   the emitter since 0.9.5 — a twisted `+=` wrapped instead of
+   saturating, a twisted `/=` by zero reached the hardware instead of
+   yielding ERR, a plain `/=` skipped the D-007/D-142 division guards,
+   and a float `+=` emitted an integer `add` on a double. All latent:
+   nothing had ever exercised a non-plain-int compound assign. The fix is
+   the house shape — ONE implementation: the arithmetic value core is
+   extracted (`emit_arith_value`) and both spellings route through it.
+   `dim256` additionally holds `op=` to the SLOT's unit (`d *= d` is
+   `Meters^2` into a `Meters` slot — refused; the checker's compound arm
+   runs the algebra with the real operator).
+
 ## D-197 — the ternary/nonary bases; Kleene logic rides `&` and `|` — **SETTLED (1.3.0 batch, user-ratified)**
 
 `trit`/`nit` = `i8`, `tryte` (10 trits)/`nyte` (5 nits) = `i16` on the

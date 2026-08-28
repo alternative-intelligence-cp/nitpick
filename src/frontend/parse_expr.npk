@@ -581,6 +581,28 @@ func:p_call = ExprId(Parser->:p, ExprId:callee, Span:sp,
 
 // --- primary ------------------------------------------------------------------
 
+// `1000.0dim256<Joules>` — the dim literal's UNIT TAIL (D-196, 1.3.3): after a
+// `dim256`-suffixed literal, exactly `< Ident >` names the unit, and the
+// name's intern index is the answer (0 = no tail; the literal node's slot
+// `a`). Anything else is left for the comparison operators — and the
+// three-token shape cannot be stolen from a legal program, because a BARE
+// dim256 literal is itself refused by the checker (dimensionless is spelled
+// `tfp256`), so no legal comparison ever follows one. `>>` splits exactly as
+// a type-argument list's closer does (0.1.5).
+func:p_dim_unit_tail = int32(Parser->:p, NumWidth:w) never fails {
+    if (w != NumWidth.WDim256)                            { pass 0i32; }
+    if (!(raw p_at(p, TokenKind.OpLt)))                   { pass 0i32; }
+    if ((raw p_peek_at(p, 1i64)).kind != TokenKind.Ident) { pass 0i32; }
+    TokenKind:close = (raw p_peek_at(p, 2i64)).kind;
+    if (close != TokenKind.OpGt) {
+        if (close != TokenKind.OpShr)                     { pass 0i32; }
+    }
+    discard(raw p_advance(p));            // `<`
+    Token:un = raw p_advance(p);          // the unit name
+    discard(raw p_expect_gt(p));          // `>`, splitting `>>` if needed
+    pass (un.payload =>! int32);
+};
+
 func:p_primary = ExprId(Parser->:p) never fails {
     Span:sp = raw p_span(p);
     TokenKind:k = raw p_kind(p);
@@ -591,13 +613,15 @@ func:p_primary = ExprId(Parser->:p) never fails {
         // (num_width.npk says so from the other side), and dropping it left the
         // type checker unable to tell `42i32` from `42` -- so every literal looked
         // contextually typed and D-092's rule could not be applied.
+        int32:iu = raw p_dim_unit_tail(p, t.width);
         pass (raw ast_add_expr_w(p.ast, ExprKind.ExprIntLiteral, sp,
-                                   0i32, 0i32, 0i32, t.payload, t.width));
+                                   iu, 0i32, 0i32, t.payload, t.width));
     }
     if (k == TokenKind.FloatLit) {
         Token:t = raw p_advance(p);
+        int32:fu = raw p_dim_unit_tail(p, t.width);
         pass (raw ast_add_expr_w(p.ast, ExprKind.ExprFloatLiteral, sp,
-                                   0i32, 0i32, 0i32, t.payload, t.width));
+                                   fu, 0i32, 0i32, t.payload, t.width));
     }
     if (k == TokenKind.CharLit) {
         Token:t = raw p_advance(p);

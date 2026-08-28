@@ -77,6 +77,7 @@ ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
                       | "comptime" | "inline" | "noinline" | "macro" | "derive"
 
 TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque" | "error"
+                      | "unit"
                       | "trait" | "impl" | "Self"
                       | "Rules" | "limit" | "const" | "fixed" | BuiltinType
 

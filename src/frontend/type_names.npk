@@ -173,6 +173,14 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
         pass (raw string_concat("tfp",
                   raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
+    // `dim256<…>` renders its vector in BASE-PRODUCT form (D-196, 1.3.3) —
+    // never a guessed derived name: `Hertz` and `Becquerels` are one vector,
+    // and a diagnostic that picked one would be inventing intent.
+    if (k == (raw TY_DIM())) {
+        string:dv = raw string_concat("dim256<",
+                        raw dim_unit_text(raw type_dim_vec(tyt, t)));
+        pass (raw string_concat(dv, ">"));
+    }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }

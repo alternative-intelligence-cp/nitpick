@@ -318,6 +318,7 @@ pub func:tok_starts_decl = bool(TokenKind:k) never fails {
     if (k == TokenKind.KwExtern) { pass true; }
     if (k == TokenKind.KwOpaque) { pass true; }
     if (k == TokenKind.KwError)  { pass true; }
+    if (k == TokenKind.KwUnit)   { pass true; }
     pass (k == TokenKind.KwUse);
 };
 
@@ -749,6 +750,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) never fails {
     // from the parser. The parser never restricts (D-085).
     if (k == TokenKind.KwOpaque) { pass (raw p_parse_opaque(p, sp, flags)); }
     if (k == TokenKind.KwError)  { pass (raw p_parse_errdecl(p, sp, flags)); }
+    if (k == TokenKind.KwUnit)   { pass (raw p_parse_unitdecl(p, sp, flags)); }
 
     pass (raw p_parse_global(p, sp, flags));
 };
@@ -1110,6 +1112,22 @@ func:p_parse_errdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
     discard(raw p_expect(p, TokenKind.PSemi));
     pass (raw ast_add_decl(p.ast, DeclKind.DeclErrorDecl, sp,
                              flags, code, 0i32, name.payload));
+};
+
+// `unit:Hertz = 1 / Seconds;` — a named unit for `dim256<U>` (D-196, 1.3.3).
+// The right-hand side parses as an ORDINARY EXPRESSION; resolve holds it to
+// the unit algebra — names, `1`, `*`, `/`, parentheses — because the parser
+// never restricts (D-085), and the refusal there can name the rule instead
+// of this arm saying "expected".
+func:p_parse_unitdecl = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
+    discard(raw p_expect(p, TokenKind.KwUnit));
+    discard(raw p_expect(p, TokenKind.PColon));
+    Token:name = raw p_advance(p);
+    discard(raw p_expect(p, TokenKind.OpAssign));
+    ExprId:rhs = raw p_parse_expr(p);
+    discard(raw p_expect(p, TokenKind.PSemi));
+    pass (raw ast_add_decl(p.ast, DeclKind.DeclUnitDecl, sp,
+                             flags, rhs.index, 0i32, name.payload));
 };
 
 // `Rules<int32>:r = { $ > 0i32 };`

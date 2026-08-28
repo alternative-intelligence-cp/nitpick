@@ -25,6 +25,7 @@
 mod:bridge_stubs;
 
 use "../source_location.npk".*;
+use "../token_kind.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
 use "../intern.npk".*;
@@ -65,6 +66,16 @@ func:bs_fnv_str = uint64(string:sv, uint64:h0) never fails {
 // spellings it returns are both the hash's canonical text and the generated
 // stub's parameter types, so the two cannot drift.
 
+// A builtin type name's recorded index IS a `TokenKind` (0.2's one-bit fix:
+// `c` says which representation the payload holds). Compared SYMBOLICALLY —
+// the numbers that stood here (`92 // KwInt32`) were a second copy of a
+// GENERATED enum, and the `unit` keyword's insertion (1.3.3) renumbered
+// every kind after it, so `int64` returns refused EXTERN-001 while the
+// comments still claimed the old values. One fact, one representation.
+func:bs_kind_is = bool(int64:k, TokenKind:want) never fails {
+    pass (k == ((want =>! int32) => int64));
+};
+
 // 0 = not admitted; 1 = int32; 2 = int64; 3 = int8[]; 4 = uint8[];
 // 5 = NIL (returns only).
 func:bs_classify = int32(Ast->:ast, TypeId:ty) never fails {
@@ -73,9 +84,9 @@ func:bs_classify = int32(Ast->:ast, TypeId:ty) never fails {
     if (n.kind == TypeKind.TypeNamedType) {
         if (!(raw type_name_is_builtin(n))) { pass 0i32; }
         int64:k = raw type_name_index(n);
-        if (k == 92i64)  { pass 1i32; }   // KwInt32
-        if (k == 93i64)  { pass 2i32; }   // KwInt64
-        if (k == 170i64) { pass 5i32; }   // KwNIL
+        if (raw bs_kind_is(k, TokenKind.KwInt32)) { pass 1i32; }
+        if (raw bs_kind_is(k, TokenKind.KwInt64)) { pass 2i32; }
+        if (raw bs_kind_is(k, TokenKind.KwNIL))   { pass 5i32; }
         pass 0i32;
     }
     if (n.kind == TypeKind.TypeArrayType) {
@@ -84,8 +95,8 @@ func:bs_classify = int32(Ast->:ast, TypeId:ty) never fails {
         if (e.kind != TypeKind.TypeNamedType) { pass 0i32; }
         if (!(raw type_name_is_builtin(e)))   { pass 0i32; }
         int64:ek = raw type_name_index(e);
-        if (ek == 90i64)  { pass 3i32; }  // KwInt8
-        if (ek == 103i64) { pass 4i32; }  // KwUint8
+        if (raw bs_kind_is(ek, TokenKind.KwInt8))  { pass 3i32; }
+        if (raw bs_kind_is(ek, TokenKind.KwUint8)) { pass 4i32; }
         pass 0i32;
     }
     pass 0i32;
