@@ -229,6 +229,20 @@ pub func:SUSPEND_INTERNAL = string() never fails { pass "NITPICK-SUSPEND-001"; }
 // values cannot survive.
 pub func:SUSPEND_FIRST_EVAL = string() never fails { pass "NITPICK-SUSPEND-002"; };
 
+// An `await` inside a `pick` arm's `where` guard (1.1.13-close, D-191). A
+// guard runs BETWEEN arm selection and arm entry, and its value cannot
+// survive a suspension there — the arm bodies are frame-resident, the
+// selection machinery is not, by design.
+pub func:SUSPEND_GUARD = string() never fails { pass "NITPICK-SUSPEND-003"; };
+
+// NITPICK-SUSPEND-004 was drafted here for the indirect/builtin await and
+// RETIRED UNUSED the same day (1.1.13-close): TYPE-043 already refuses an
+// await of any non-async call, a SYNC function value is exactly that, and
+// an ASYNC function VALUE is unspellable (the func-type grammar carries no
+// `async`) — so the case has no program to arise in, and the backend's
+// belt (iv_broken) covers the impossible remainder. The number is not
+// reused.
+
 // --- the reachable-error analysis (D-179, 1.1.7) ---------------------------------
 //
 // The program-wide set of errors that can reach `failsafe`, and the rule

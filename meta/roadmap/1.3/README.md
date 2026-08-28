@@ -1,70 +1,58 @@
-# Cycle 1.3 — Self-hosting
+# Cycle 1.3 — The exotic numeric tier
 
-**Phase C, the milestone that matters.** Everything before 1.3 is validated against
-the seed's output; after it, the compiler validates itself. This is where the seed
-is retired, the fixpoint is re-closed after 0.9–1.1's additions, builds become
-byte-reproducible across environments, and `npkg` — the permanent build/test/verify
-runner — replaces the throwaway Python harness.
+**Phase C.** The types that exist because NIKOLA needs them, made primitives on
+an explicitly uncertain performance hypothesis (the pinned memory records it):
+`vec2`/`vec3`, `matrix`, `tensor`, the ternary-floating `tfp*` family, the
+`frac*` rationals, `dim256`, `simd`, and `complex`. All of them parse, resolve
+and type since Phase A; none of them lowers — their rungs cite this cycle by
+name ("1.3 (G-3)").
 
-> Detailed **map**. Its subcycles are written when reached. The audit found this
-> cycle's *acceptance criteria* are the part most in need of correction before it
-> starts — four of its gating items are about measuring the right thing.
+> Created at 1.1-close by the user's G-3 decision (D-191): **a new cycle,
+> inserted before self-hosting** — the second application of the D-183
+> renumbering precedent (self-hosting is 1.4, verification 1.5, Astrée 1.6).
+> The reasoning is the standing constraint: everything that is going in must
+> land before the fixpoint re-close and the one-shot verified artifact, and
+> "we aren't in any rush."
 
-## The state this cycle starts from (the audit's finding)
+> Detailed **map**, not a plan. Subcycles are written when the cycle is
+> reached; what is bounded now is the decision surface below.
 
-The stage-1/stage-2 fixpoint **already runs** as a harness stage and passes today
-(closed early, 0.8.1). So 1.3 is not inventing the fixpoint — it is **re-closing it
-after 0.9–1.1 change the compiler**, retiring the seed as the builder, and making the
-reproducibility claims true beyond one machine. But the audit found the *acceptance
-criterion as written is unsatisfiable* and the *committed seed it assumes does not
-exist* — so the cycle must first correct what it is measuring.
+## What exists already
 
-## Decisions in (see `../OPEN_DECISIONS.md` §3)
+- **Lexing/parsing/typing**: the full tier, since Phase A (the frontend was
+  built once, in full). The two backend rungs are `ir_expr`'s vector
+  constructor and arithmetic sites.
+- **The ternary INTEGER widths (`tbb*`) are DONE** (0.9, D-144 — branch-free
+  saturating arithmetic, the sticky ERR): this cycle's ternary work is the
+  FLOATING tier (`tfp*`) only.
+- **The hardware caveat is load-bearing** (the pinned ternary memory):
+  ternary/nonary HARDWARE is a planned target, so every binary representation
+  chosen here is a LOWERING choice and must never become the type's identity.
 
-- **C-10 — correct the fixpoint criterion.** BUILD_REFERENCE/D-085 say "stage 1 and
-  stage 2 byte-identical" — unsatisfiable (two independent emitters). The real check
-  is "stage-N's emission of the compiler equals stage-N+1's." An implementer
-  following the spec literally concludes self-hosting is broken. *Fix the spec first.*
-- **C-11 — commit the seed IR and fix the deletion plan.** `bootstrap/seed/` is empty
-  though four docs claim it holds committed IR; `LAYOUT.md` would delete the only
-  rebuild-from-LLVM path and `npkrt.o` (linked into stage 1). Also schedule D-015's
-  npkrt-replacement, currently unscheduled.
-- **C-12 — define byte-reproducibility cross-environment** (pin the toolchain as an
-  input; build-twice-from-different-cwd; make the seed path-independent).
-- **C-13 — the seed-retirement schedule** (the constraint 0.9–1.1 have been obeying:
-  `src/` may not use a construct the current builder can't compile; name the switch
-  point — which is *here*).
-- **B-4 — schedule `npkg`** — the permanent runner; without it, "the day self-hosting
-  closes is the day the project has no test runner."
+## The decision surface (settle at cycle open)
 
-  `npkg` also carries a **D-149 obligation**, not an implementation detail:
-  **the closed-world link** — only `npkc`-produced objects plus the audited
-  runtime allowlist may appear in any link line, with no relaxing flag. This
-  is D-011's undefined-symbol scan made a language-level guarantee for every
-  user program; it is what makes "in-process FFI does not exist" structural
-  rather than hortatory.
-
-## Subcycle shape (to be filled when reached)
-
-| # | Topic | Gated on |
-|---|---|---|
-| 1.3.0 | **Correct the criterion & commit the seed** — C-10 spec fix; C-11 seed commit (path-independent) + LAYOUT amendment | C-10, C-11 |
-| 1.3.1 | **The builder switch** — `src/` adopts the 0.9–1.1 features it deferred; the builder moves from regenerated seed to committed stage IR (C-13) | C-13 |
-| 1.3.2 | **Re-close the fixpoint** — stage-1/stage-2 emission equality after the source adopts generics/async; the concrete collections become generic | C-1 (1.0), all rungs |
-| 1.3.3 | **Byte-reproducibility** — toolchain pinned in the lock/manifest; build-twice-cross-cwd check; a pinned hash (C-12) | C-12 |
-| 1.3.4 | **`npkg`** — a minimal build/test/verify runner; the D-011 undefined-symbol scan written into BUILD_REFERENCE §4 as a permanent step; the Python harness's succession | B-4 |
+1. **Representations**: `vec2`/`vec3` (2×/3×flt64? alignment; the SIMD
+   register question), `matrix`/`tensor` (owned heap vs value — likely the
+   arena story), `frac*` (num/den widths, normalization timing, the
+   div-by-zero posture), `tfp*` (the binary emulation of ternary floats —
+   the D-144 precedent says saturate-and-flag, not trap), `dim256` (a fixed
+   256-wide vector? layout), `complex` (2×flt64, IEEE pairing rules),
+   `simd` (target width; the LLVM vector-type mapping).
+2. **The operator surface per type** — which of the existing operators each
+   admits (D-036's semantic-over-representation rule applies: no accidental
+   integer semantics).
+3. **The float-format question `tfp` inherits** from §6b (float `ToString`
+   needs shortest-round-trip; the drift hazard is the safety rationale's own
+   example).
+4. **What Nikola actually consumes first** — the tier should land
+   consumer-first (the D-143 precedent: totality decisions made against real
+   uses, not speculatively).
 
 ## Watch for
 
-- **The harness-to-`npkg` handoff is the risky moment.** `LAYOUT.md` deletes the
-  Python harness at 1.3; `npkg` must exist and run every whole-suite check the harness
-  did (the five instruments, the real-parser sweep, the fixpoint, the zero-dependency
-  scan) *before* the harness goes. Sequence 1.3.4 so `npkg` is proven against the
-  harness's results before the harness is retired — never a gap where neither runs.
-- **`npkg` needs a process-spawn primitive** the language does not have (it must
-  invoke `llc`/`ld.lld`, and 1.4 will need it for z3). This is the same primitive C-17
-  needs; build it once, here, and 1.4 inherits it. Today Python spawns the tools;
-  `npkg` in Nitpick cannot until the floor grows a spawn builtin.
-- **Reproducibility is a deliverable, not a hope** — C-12's build-twice check is what
-  turns D-078 from a claim into a tested property. Without it, "byte-reproducible"
-  means "byte-identical in one process on one machine," which is not the guarantee.
+- **`check_kinds_lowered_or_refused` and the `// ll:` discipline** carry this
+  cycle: every representation lands with its marker row, and the rungs only
+  retire as each type's arithmetic actually executes.
+- **LLVM's optimiser removed a load-bearing guarantee once** (the pinned
+  memory): whatever `simd`/vector lowering emits must be checked against the
+  optimised output, not just `-O0`.

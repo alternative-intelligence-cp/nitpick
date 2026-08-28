@@ -1922,6 +1922,16 @@ func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
+        // `..^` NEEDS A VARIADIC TAIL TO EXPAND INTO (1.1.13-close): a
+        // builtin's registers and an unknown callee's arguments have none,
+        // and letting the spread through here was the one position gap the
+        // call checker's own rules did not cover.
+        if (raw is_spread(e, a)) {
+            ExprNode:sn = raw ast_expr(e.ast, a);
+            discard(raw te_error(e, raw TYPE_MISMATCH(),
+                "`..^` expands a collection into a variadic parameter, and this callee has none the checker can see — a builtin's arguments are fixed registers, and pass the elements yourself otherwise",
+                sn.span));
+        }
         discard(raw type_of_expr(e, a));
         i = i + 1i32;
     }

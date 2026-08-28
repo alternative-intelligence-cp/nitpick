@@ -142,7 +142,20 @@ ecosystem-wide) and a stale driver refuses at the handshake, and
 `sdk/npkdrv.h` + harness-built C reference drivers prove the wire end to
 end (`extern_c_driver.npk`: echo through the ring, driver-reported
 refusal → EDriverError, hostile tail → protocol kill, stale interface →
-EDriverSpawn). Adopting `dyn Writer` in npkc's own diagnostics is 1.3
+EDriverSpawn). **CYCLE 1.1 IS COMPLETE** (D-191, `done/1.1/`): user
+variadics and `..^` landed at the close (the spec's "a variadic call lowers
+to building one" — gather, spread, empty tail, and the awaited gather in a
+frame slot; methods may not collect, by refusal), the await-edge rungs
+became checker rules (SUSPEND-003: no await in a `where` guard) and
+internal belts, and the close-out's first exercised programs found three
+latent defects: the collector's name was never typable in a body, a
+range-view was not counted as address-taking, and stage D's "lives to the
+function's end" extension had been a silent no-op since birth (`fn_end`
+read off a block span that covers only the opening — every address-taken
+local whose last textual use preceded a later suspension sat on the dying
+resume stack). **G-3 settled (the user): the exotic tier is NEW CYCLE 1.3**,
+and Phase C renumbered a second time — self-hosting 1.4, verification 1.5,
+Astrée 1.6. Adopting `dyn Writer` in npkc's own diagnostics is 1.4
 material.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes

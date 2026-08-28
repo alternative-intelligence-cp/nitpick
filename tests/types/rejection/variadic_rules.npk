@@ -1,0 +1,48 @@
+// The variadic boundary rules (1.1.13-close, D-191). `..*` collects for
+// FUNCTIONS — the spec's rule is written for them, and a method's four
+// dispatch shapes (direct, UFCS, bound, `dyn`) each window their arguments
+// differently, so no method may collect; and `..^` expands into a variadic
+// TAIL, which a builtin's fixed registers and a signature-less callee do
+// not have.
+mod:variadic_rules;
+
+struct:Box = { int32:v; };
+
+// expect-error: NITPICK-TYPE-007
+impl:Box = {
+    func:gather = int64(Box:self, ..*int64[]:rest) never fails {
+        pass rest.len;
+    };
+};
+
+// The trait's own copy of the rule:
+// expect-error: NITPICK-TYPE-007
+trait:Collector = {
+    func:take = int64(Self:self, ..*int64[]:rest);
+};
+// expect-error: NITPICK-TYPE-007
+impl:Box:Collector = {
+    func:take = int64(Box:self, ..*int64[]:rest) never fails {
+        pass rest.len;
+    };
+};
+
+// expect-error: NITPICK-TYPE-007
+func:spread_into_registers = NIL() never fails {
+    int64[1]:one = [9i64];
+    int64[]:xs = one[0i32...1i32];
+    Result<int64>:r = sys(60i64, ..^xs);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (*) { exit 99i32; }
+    }
+    exit 90i32;
+};

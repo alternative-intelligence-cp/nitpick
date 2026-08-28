@@ -1492,6 +1492,14 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
             }
             pass (raw resolve_type(@r, raw param_type(dnode), e.scope));
         }
+        // THE VARIADIC COLLECTOR IS A PARAMETER TOO (1.1.13-close, D-191):
+        // `..*int64[]:rest` binds `rest` as the slice it declares, and the
+        // body reads it like any slice. Missing here since 0.4 — nothing
+        // ever had a body that read its collector until user variadics
+        // landed (`sys`, the one variadic, has no body).
+        if (dnode.kind == DeclKind.DeclVariadicSpec) {
+            pass (raw resolve_type(@r, raw variadic_type(dnode), e.scope));
+        }
         if (dnode.kind == DeclKind.DeclFunctionDecl) {
             pass (raw fn_type(@r, did, s.name, e.scope));
         }

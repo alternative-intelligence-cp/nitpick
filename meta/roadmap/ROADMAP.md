@@ -313,16 +313,17 @@ the sharpening is bounded work rather than open discovery.
 | Cycle | Topic |
 |---|---|
 | ~~**1.0**~~ | ~~**Generics, traits, `dyn`**~~ — **DONE** (`done/1.0/`). The trait/`dyn` boundary the checker never had to answer, built rung by rung: reversible `%Name` mangling with a depth cap and dedup (D-156), monomorphization, traits and impls with `never fails` contract-checking (the D-163 hook), associated types that resolve, bind, and disqualify and their projections (D-160, D-164), and `dyn` — vtables, thunks, construction, dispatch, widening (D-158/D-159). The tail settled the library-facing decisions (D-165 module globals, D-166 `for` over an `Iterator`, D-168 `&{ }` via `ToString`, D-123 `Hash`/`Ord` derives) and the grammar/trait ones (D-170 parenthesised types, D-171 every impl names its target, D-172 `Trait.method`), struck two redundant operators (`?|` D-167, `++`/`--` D-174), and added `check_rung_names_open_cycle` — the instrument that makes a cycle's close a checked fact. **Closed with zero rung strings naming the cycle; the fixpoint held byte-identical throughout.** |
-| **1.1** | **Async and concurrency** — **opens with D-163: `never fails` on every function, checked; `raw` and `drop` licensed only by it; a `Result` never discarded without a keyword** (three subcycles: the contract and the instrument, the `src/` sweep of ~7,900 sites, the `tests/` sweep and the refusal — the 0.8.0 shape), then coroutine lowering (D-177/D-178, 1.1.4 — landed), **the typed-error system (D-179, 1.1.5–1.1.7: `Error` as a nominal non-number, origin chains on `relay`, and the exhaustive `failsafe` — deliberately before the executor so its failures are born named)**, per-thread executors (1.1.8), channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
+| ~~**1.1**~~ | ~~**Async and concurrency**~~ — **DONE** (`done/1.1/`). D-163 (`never fails` checked, `raw`/`drop` licensed), `Duration` and the clock (D-176), coroutines as switched-resume machines (D-177/D-178), the typed `Error` system (D-179), executors and real threads (D-181), `atomic<T>`/channels/pools/actors (D-182), the sync primitives (D-056), the reactor and the I/O surface (D-184/D-185), and **the Bridge (D-149 over D-055, 1.1.13, D-187–D-190)** — sealed shm, the supervised spawn with the registry published before the clone, dispatch over the ring with kill-on-deadline and poisoning, generated `extern` stubs with the interface hash, and the C SDK with a conformance suite against real C drivers. Closed by D-191: user variadics and `..^` landed (the spec's "a variadic call lowers to building one"), the await-edge rungs became checker rules (SUSPEND-003) and belts, and three latent crossing/typing defects found by the first programs to exercise them. The original planning row: opens with D-163: `never fails` on every function, checked; `raw` and `drop` licensed only by it; a `Result` never discarded without a keyword** (three subcycles: the contract and the instrument, the `src/` sweep of ~7,900 sites, the `tests/` sweep and the refusal — the 0.8.0 shape), then coroutine lowering (D-177/D-178, 1.1.4 — landed), **the typed-error system (D-179, 1.1.5–1.1.7: `Error` as a nominal non-number, origin chains on `relay`, and the exhaustive `failsafe` — deliberately before the executor so its failures are born named)**, per-thread executors (1.1.8), channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
 | **1.2** ✅ | **The managed lowering — DONE** (see `done/1.2/`) — — RAII at scope exit: the memory model's DEFAULT regime, of which the backend implements nothing. Nothing is dropped at a closing brace, so the regime every program gets unless it says otherwise is leak-until-exit, and D-151's own text records the interim as accepted ("managed-regime storage whose RAII arrives with the managed lowering"). What a drop IS per type, its ORDER against `defer` and against D-014's rule that a trap runs neither, `nodrop`, the move analysis deciding which paths still own a value at the brace, the early exits, and what a COPY of an owning value is. **Inserted here because it blocks 1.1.11**: a `Mutex` hands out a guard whose release IS scope exit, and closures are gone (D-018) so no scoped-callback form can stand in. Verifying (1.4) a compiler whose default regime is unimplemented, or handing Astrée (1.5) a program that leaks by design, are the other two reasons it cannot wait. Map: `1.2/`. **B-6.** |
-| **1.3** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.1), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.3/`. |
-| **1.4** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.4/`. |
-| **1.5** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.4 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.5/`. |
+| **1.3** | **The exotic numeric tier** — `vec2`/`vec3`, `matrix`, `tensor`, `tfp*`, `frac*`, `dim256`, `simd`, `complex`: parse and resolve since Phase A, lower nowhere; the rungs cite "1.3 (G-3)". Created at 1.1-close by the user's G-3 decision (D-191) — everything that is going in lands before the fixpoint re-close and the one-shot verified artifact. Map: `1.3/`. |
+| **1.4** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.3), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.4/`. |
+| **1.5** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.5/`. |
+| **1.6** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.5 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.6/`. |
 
-**1.3 is the milestone that matters.** Everything before it is validated against the
+**1.4 is the milestone that matters.** Everything before it is validated against the
 seed's output; after it, the compiler validates itself.
 
-**1.5 is the one that cannot be retried.** Confirm the accepted input format with
+**1.6 is the one that cannot be retried.** Confirm the accepted input format with
 AbsInt long before the clock starts — promoted from a carried note to a numbered
 gate (C-19) with a cycle deadline.
 
@@ -401,6 +402,23 @@ question.
 | 1.2 | **1.3** | Self-hosting |
 | 1.3 | **1.4** | Verification |
 | 1.4 | **1.5** | Astrée preparation |
+
+**And at 1.1-close it was renumbered AGAIN**, by the same reasoning applied a
+second time: the user settled G-3 as a NEW CYCLE for the exotic numeric tier
+(D-191), inserted before self-hosting so everything lands ahead of the
+fixpoint re-close and the one-shot verified artifact:
+
+| was | is | topic |
+|---|---|---|
+| — | **1.3** | The exotic numeric tier (new) |
+| 1.3 | **1.4** | Self-hosting |
+| 1.4 | **1.5** | Verification |
+| 1.5 | **1.6** | Astrée preparation |
+
+The same sweep discipline applied: cycle folders, the nine verification rung
+strings (now "1.5"), the G-3 rungs (now "1.3 (G-3)"), `OPEN_DECISIONS.md`'s
+Blocks column and the live forward references; archives under `done/` again
+NOT rewritten.
 
 **1.2 is now the managed lowering.** The cost the older note predicted is real
 and was paid: the cycle folders, the nine rung strings naming the verification

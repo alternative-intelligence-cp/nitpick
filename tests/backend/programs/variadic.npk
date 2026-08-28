@@ -1,0 +1,72 @@
+// expect-exit: 0
+//
+// USER VARIADICS, LANDED AT THE CYCLE'S CLOSE (1.1.13-close, D-191): the
+// spec's one rule — "`..*T[]:name` is a typed slice, and a variadic call
+// lowers to building one" — across every callable shape. The gathered
+// tail, the empty tail (a null-based len-0 slice, never dereferenced),
+// `..^`'s spread of an existing slice (the inverse `..*` collects), and —
+// the shape that forced
+// the frame machinery — an AWAITED variadic callee, whose gathered array
+// must live in the caller's coroutine frame (role 30) because the child
+// suspends with the slice in hand and a resume-stack alloca would die
+// under it.
+mod:variadic;
+
+func:total = int64(int64:base, ..*int64[]:rest) never fails {
+    int64:acc = base;
+    int64:i = 0i64;
+    while (i < rest.len) {
+        acc = acc + rest[i];
+        i = i + 1i64;
+    }
+    pass acc;
+};
+
+async func:atotal = int64(int64:base, ..*int64[]:rest) {
+    Result<NIL>:s = await sleep(raw duration_ns(1000i64));
+    if (s.is_error) { }
+    int64:acc = base;
+    int64:i = 0i64;
+    while (i < rest.len) {
+        acc = acc + rest[i];
+        i = i + 1i64;
+    }
+    pass acc;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // the gathered tail
+    if ((raw total(100i64, 1i64, 2i64, 3i64)) != 106i64) { exit 11i32; }
+    // the empty tail
+    if ((raw total(7i64)) != 7i64) { exit 12i32; }
+    // `..^` — an existing slice spread whole (a range-view of an array;
+    // a FIXED array does not decay to a slice, by the checker's own rule)
+    int64[3]:arr = [10i64, 20i64, 30i64];
+    int64[]:xs = arr[0i32...3i32];
+    if ((raw total(1i64, ..^xs)) != 61i64) { exit 13i32; }
+    // (a variadic FUNCTION VALUE stays unspellable — the func-TYPE grammar
+    // carries no `..*` — so the indirect shape has no source to come from;
+    // the emitters' support for TY_FUNC_VARIADIC awaits a spelling.)
+    // the AWAITED gather: the tail crosses a real suspension
+    Result<int64>:ar = await atotal(1000i64, 300i64, 30i64, 7i64);
+    if (ar.is_error) { exit 15i32; }
+    if (ar.value != 1337i64) { exit 16i32; }
+    // the awaited spread
+    Result<int64>:as2 = await atotal(2i64, ..^xs);
+    if (as2.is_error) { exit 17i32; }
+    if (as2.value != 62i64) { exit 18i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 95i32; },
+        (WildLeak)         { exit 92i32; },
+        (HeapOom)          { exit 93i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (Unreachable)      { exit 94i32; },
+        (OutOfBounds)      { exit 96i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

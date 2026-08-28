@@ -547,7 +547,8 @@ SLOT_SITE_PAIRS = {
                             "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)
                             "emit_field_call",        # `s.f(x)` through a fn-valued field (1.0.9c)
                             "emit_child_frame",       # await/spawn args, stored into the frame (1.1.4)
-                            "emit_dyn_await"},        # the same args, into the vtable-sized frame (D-185, 1.1.12d)
+                            "emit_dyn_await",         # the same args, into the vtable-sized frame (D-185, 1.1.12d)
+                            "va_fill"},               # a variadic tail's elements, fit to the collector's element (D-191, 1.1-close)
     "type_method_call":    {"emit_method_call"},      # the receiver, parameter 0 (1.0.8)
     "type_pipe":           {"emit_pipe"},             # `x |> g` fits x to g's parameter (1.0.9c)
     "check_ctor_args":     {"emit_ctor"},

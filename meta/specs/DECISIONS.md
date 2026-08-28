@@ -13248,7 +13248,7 @@ through erasure, and WHICH writer decides what lands — `dyn_stream.npk`
 proves it with a plain `ByteWriter` and a family-instance
 `TextWriter<ByteWriter>` (CrLf), the same erased call leaving `\n` in one
 file and `\r\n` in the other. Adopting `dyn Writer` inside npkc's own
-diagnostics is 1.3 self-hosting work (a compiler-internals refactor), and
+diagnostics is 1.4 self-hosting work (a compiler-internals refactor), and
 is recorded there, not here.
 
 ## D-186 — `string_slice` returns an OWNED COPY; overwriting an owning field or managed element drops the old value — **SETTLED (user-ratified)**
@@ -13556,3 +13556,60 @@ kept as ACCEPTED shapes recording that the exact code which refused now
 compiles. The parser's mandatory-contract unit tests flipped the same way
 (omission is the legal form), and the defer-body escape case — whose point
 was always that defers are WALKED — drives rule 3's direct store instead.
+
+## D-191 — Cycle 1.1 closes: variadics and `..^` land, the await edges settle, G-3 becomes cycle 1.3, and Phase C renumbers again — **SETTLED at 1.1-close (G-3: the user's call)**
+
+**User variadics and the spread are LANDED, not re-homed.** The close-out
+sweep of the cycle's rung strings found the checker already implementing the
+COMPLETE semantics (arity, element checking, `..^`'s position rules — the
+frontend was built in full, exactly as the doctrine says) and only the
+lowering missing. The spec's one rule — "`..*T[]:name` is a typed slice,
+and a variadic call lowers to building one" — is now real: the callee binds
+one more `{ ptr, i64 }` parameter through the ordinary machinery (sync and
+async alike); the call gathers trailing arguments into a hoisted `[N x
+elem]` (or takes `..^`'s slice whole, or passes the null-based empty
+slice); and an AWAITED variadic callee gathers into the CALLER'S COROUTINE
+FRAME (a role-30 slot the stage-D pre-scan sizes from the same call node),
+because the child suspends with the slice in hand and a resume-stack array
+would die under it. Boundaries, refused by name: a METHOD may not collect
+(the spec's rule is written for functions, and the four dispatch shapes
+window their arguments differently — a trait method likewise), `..^` needs
+a variadic tail the checker can see (a builtin's fixed registers are not
+one), and a variadic FUNCTION VALUE stays unspellable (the func-type
+grammar carries no `..*`; the emitters' TY_FUNC_VARIADIC support waits for
+a spelling).
+
+**The await edges settled where design refusals live.** An await in a
+`pick` arm's `where` guard refuses in the SUSPEND analysis (SUSPEND-003:
+the guard runs between arm selection and entry, and nothing there survives
+a suspension); the indirect/builtin await needed NO new rule — TYPE-043
+already refuses an await of any non-async call, and an async function
+VALUE cannot be spelled — so SUSPEND-004 was drafted and retired unused
+the same day. The five backend await-edge rungs and the spread's became
+internal belts (`iv_broken`): each guards a frontend promise, and a
+compiler that breaks its own promise should say so as a defect, not as a
+rung.
+
+**Three latent defects, found by the first programs to exercise them.**
+The variadic collector's NAME was never typable inside a body (nothing
+before this had a body that read its rest — `sys`, the one variadic, has
+none). A RANGE-VIEW was not counted as address-taking, so `arr[lo...hi]`
+left `arr` on the resume stack while the framed view pointed at it. And
+the deepest: stage D's "lives to the function's end" extension — the
+address-taken rule, the defer-use rule — had been a SILENT NO-OP SINCE
+BIRTH, because `fn_end` was read off the body block's span, which covers
+only the opening region: any address-taken local whose last textual use
+preceded a later suspension stayed a resume-stack alloca with live
+pointers into it. The fix is the order's ceiling (the settle only compares
+within one function), and the class it closes is the exact use-after-free
+stage D exists to prevent.
+
+**G-3 is settled, by the user: the exotic numeric tier is NEW CYCLE 1.3**,
+inserted before self-hosting — the D-183 renumbering precedent applied a
+second time (self-hosting 1.4, verification 1.5, Astrée 1.6), for the
+standing reason: everything that is going in lands before the fixpoint
+re-close and the one-shot verified artifact. The sweep: cycle folders, the
+nine verification rungs (now "1.5"), the G-3 rungs (now "1.3 (G-3)"),
+OPEN_DECISIONS' Blocks column and live forward references; `done/`
+archives not rewritten. Cycle 1.1 — fourteen subcycles, D-163 through
+D-190 — moves to `done/1.1/` with ZERO rung strings naming it.

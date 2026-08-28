@@ -1306,6 +1306,13 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
 
     DeclId:tfid = DeclId{ index: trait_fn };
     DeclNode:tf = raw ast_decl(r.ast, tfid);
+    // The trait's own copy of the D-191 method rule — a `..*` on a trait
+    // method would demand four gathers no dispatch shape defines.
+    if (!(raw decl_is_none(raw fn_variadic(r.ast, tf)))) {
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_MISMATCH(),
+            "a trait method may not be variadic: `..*` collects for FUNCTIONS (D-191) — take a slice parameter",
+            tf.span));
+    }
     r.self_type = raw tt_self(r.types);
     // THE TRAIT'S SIGNATURE MENTIONS THE TRAIT'S ASSOCS (D-160). `func:next =
     // Item(Self:self)` resolves `Item` the way it resolves `Self` — through the
@@ -1892,6 +1899,19 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) never fails {
         DeclId:aid = raw impl_member(r.ast, d, i);
         DeclNode:am = raw ast_decl(r.ast, aid);
         if (am.kind == DeclKind.DeclFunctionDecl) {
+            // A METHOD MAY NOT BE VARIADIC (1.1.13-close, D-191): the spec's
+            // variadic rule is written for FUNCTIONS ("a variadic call
+            // lowers to building one"), and a method's four dispatch shapes
+            // (direct, UFCS, bound, `dyn`) each window their arguments
+            // differently — no spec blesses a collecting method, so the
+            // honest answer is a refusal here, where the impl is checked,
+            // rather than four emitters guessing four gathers. A FUNCTION
+            // takes the tail.
+            if (!(raw decl_is_none(raw fn_variadic(r.ast, am)))) {
+                drop diaglist_push(r.diags, raw diag_error(raw TYPE_MISMATCH(),
+                    "a method may not be variadic: `..*` collects for FUNCTIONS (D-191) — take a slice parameter, or make this a free function",
+                    am.span));
+            }
             int32:j = i + 1i32;
             while (j < n) {
                 DeclId:bid = raw impl_member(r.ast, d, j);

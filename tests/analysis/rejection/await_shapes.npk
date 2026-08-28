@@ -1,0 +1,43 @@
+// The two await-position rules the Bridge's close-out moved into the
+// CHECKER, where design refusals live (1.1.13-close, D-191) — until then
+// each was a backend rung naming a cycle that never intended to lift it.
+mod:await_shapes;
+
+async func:helper = int64(int64:v) {
+    Result<NIL>:s = await sleep(raw duration_ns(1000i64));
+    if (s.is_error) { }
+    pass (v + 1i64);
+};
+
+// AN AWAIT MAY NOT SIT IN A `where` GUARD: the guard runs between arm
+// selection and entry, and nothing there survives a suspension — arm
+// BODIES are frame-resident, the selection machinery is not, by design.
+// expect-error: NITPICK-SUSPEND-003
+async func:guarded = int64(int64:sel) {
+    int64:r = pick (sel) {
+        (1i64) where ((await helper(1i64) ?| 0i64) > 0i64) { give 10i64; },
+        (*) { give 0i64; }
+    };
+    pass r;
+};
+
+// (An INDIRECT await needs no rule here: TYPE-043 refuses an await of any
+// non-async call — a sync function value is exactly that — and an async
+// function VALUE is unspellable, so the shape has no program to arise in;
+// `await_first.npk`'s neighbours pin TYPE-043 itself.)
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 95i32; },
+        (HeapOom)          { exit 93i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 92i32; },
+        (Unreachable)      { exit 94i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

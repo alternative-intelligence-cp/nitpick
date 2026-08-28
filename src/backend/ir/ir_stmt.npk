@@ -297,10 +297,10 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     if (s.kind == StmtKind.StmtGiveStmt) { pass (raw emit_give(x, s)); }
     if (s.kind == StmtKind.StmtFallStmt) { pass (raw emit_fall(x, s)); }
     if (s.kind == StmtKind.StmtProveStmt) {
-        pass (raw iv_rung("`prove`", "1.4", s.span));
+        pass (raw iv_rung("`prove`", "1.5", s.span));
     }
     if (s.kind == StmtKind.StmtAssertStaticStmt) {
-        pass (raw iv_rung("`assert_static`", "1.4", s.span));
+        pass (raw iv_rung("`assert_static`", "1.5", s.span));
     }
 
     // FAIL CLOSED — StmtNone, a bare PickArm, or a kind nobody classified.
@@ -316,7 +316,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // shape `prove` has had since 0.7.
     VerifyId:lim = raw stmt_decl_limit(x.ast, s);
     if (!(raw verify_is_none(lim))) {
-        pass (raw iv_rung("a `limit<Rules>` constraint", "1.4", s.span));
+        pass (raw iv_rung("a `limit<Rules>` constraint", "1.5", s.span));
     }
     int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
     LlType:ll = raw ll_type(x.fe.ctx, dty);
@@ -339,8 +339,10 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         if (raw exprtypes_crossing(x.et, sid.index)) {
             int32:cidx = raw fnem_cross_find(x.fe, sid.index, 0i32);
             if (cidx < 0i32) {
-                pass (raw iv_rung("a local live across `await` inside a value `pick`",
-                                  "1.1", s.span));
+                // The pre-scan frames every crossing value-pick local (the
+                // probe that retired this rung proved it); a missing slot is
+                // the scan broken, not a rung (1.1.13-close).
+                pass (raw iv_broken(s.span));
             }
             slot = raw fnem_cross_gep(x.fe, cidx);
             // The FLAG slot beside it (D-183, 1.2.4b) — non-empty exactly
@@ -596,7 +598,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                           bool:is_till) never fails {
     VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
     if (!(raw verify_is_none(cinv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
     }
     string:sv = "0";
     int32:base = 0i32;
@@ -705,7 +707,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:winv = raw stmt_when_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
     }
     string:flag = raw loop_slot(x, sid, 1i32, "i8");
     if (flag.len == 0i64) { pass (raw iv_broken(s.span)); }
@@ -768,7 +770,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     VerifyId:finv = raw stmt_for_invariant(x.ast, s);
     if (!(raw verify_is_none(finv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
     }
     ExprId:iter = raw stmt_for_iter(x.ast, s);
     int32:itid = raw exprtypes_get(x.et, iter);
@@ -1078,7 +1080,7 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // that silently vanished. Refused until 1.4 checks it.
     VerifyId:winv = raw stmt_while_invariant(x.ast, s);
     if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.4", s.span));
+        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
     }
     string:head_l = raw irw_new_label(x.fe.w, "wh.head");
     string:body_l = raw irw_new_label(x.fe.w, "wh.body");
@@ -1882,6 +1884,42 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
     if (n.kind == ExprKind.ExprAwaitExpr) {
         ExprId:op = raw expr_operand(n);
         ExprNode:opn = raw ast_expr(x.ast, op);
+        // AN AWAITED VARIADIC CALL'S GATHERED TAIL (1.1.13-close, role 30):
+        // the [N x elem] array the call builds must OUTLIVE the suspension
+        // the child takes — a resume-stack alloca dies at the park and the
+        // callee's slice would point into a dead stack — so the pre-scan
+        // reserves it in the caller's frame, sized from the same call node
+        // the emitter reads. A `..^` tail needs no slot (the operand's own
+        // storage follows the ordinary crossing rules).
+        if (opn.kind == ExprKind.ExprCallExpr) {
+            int32:vft = raw exprtypes_callee_ft(x.et, op);
+            if (raw type_is_variadic(x.fe.ctx.types, vft)) {
+                int32:vgc = raw expr_generic_count(opn);
+                int32:vstart = (raw expr_list_start(opn)) + vgc;
+                int32:vcount = (raw expr_list_count(opn)) - vgc;
+                int32:vfix = (raw type_param_count_of(x.fe.ctx.types, vft)) - 1i32;
+                int32:vtrail = vcount - vfix;
+                bool:vspread = false;
+                if (vtrail == 1i32) {
+                    ExprNode:vln = raw ast_expr(x.ast, ExprId{
+                        index: raw ast_id_at(x.ast, vstart, vcount - 1i32) });
+                    if (vln.kind == ExprKind.ExprSpreadExpr) { vspread = true; }
+                }
+                if (vtrail > 0i32) { if (!vspread) {
+                    int32:vcoll = raw subst_emitted_param(x.fe.ctx,
+                        raw ast_id_at(x.ast,
+                            raw type_param_start_of(x.fe.ctx.types, vft),
+                            vfix));
+                    int32:velem = raw type_elem(x.fe.ctx.types, vcoll);
+                    LlType:vell = raw ll_type(x.fe.ctx, velem);
+                    if (raw ll_is_ok(vell)) {
+                        drop fnem_cross_add(x.fe, sid.index, 30i32, 0i32,
+                            raw cat5("[", raw int_to_string(vtrail => int64),
+                                     " x ", vell.text, "]"));
+                    }
+                } }
+            }
+        }
         if (opn.kind == ExprKind.ExprMethodCallExpr) {
             int32:rt = raw exprtypes_get(x.et, raw expr_operand(opn));
             if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_CHANNEL())) {
@@ -2395,9 +2433,6 @@ func:scan_counted_args = IrVal(ExprEmitter->:x, StmtNode:s, int32:fuel) never fa
 func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                                       int32:mangled_name, GenericScope:g,
                                       bool:specialize) never fails {
-    if (raw decl_has(d, raw DECL_VARIADIC())) {
-        pass (raw iv_rung("a variadic function", "1.1", d.span));
-    }
     bool:fn_async = raw decl_has(d, raw DECL_ASYNC());
     // LIVE-1's repair (0.9.0): a `requires`/`ensures` the backend never read
     // compiled to a function that claims a contract nothing enforces — the
@@ -2422,7 +2457,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                 // reclaim. The body owes it nothing beyond that bit.
                 if (cv.kind != VerifyKind.VerifyGives) {
                     if (cv.a != (raw CONTRACT_ACQUIRES())) {
-                        pass (raw iv_rung("a `requires`/`ensures` contract", "1.4", cv.span));
+                        pass (raw iv_rung("a `requires`/`ensures` contract", "1.5", cv.span));
                     }
                 }
             }
@@ -2478,7 +2513,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // A parameter's `limit` is the same dropped guarantee (LIVE-1).
         VerifyId:plim = raw param_limit(pd);
         if (!(raw verify_is_none(plim))) {
-            pass (raw iv_rung("a `limit<Rules>` constraint", "1.4", pd.span));
+            pass (raw iv_rung("a `limit<Rules>` constraint", "1.5", pd.span));
         }
         // UNDER THE INSTANTIATION'S BINDING (1.0.2b): `T:x` resolves to the
         // argument, not to "there is no type named T". The scope is pushed
@@ -2506,6 +2541,31 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                         ((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
         if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;
+    }
+
+    // THE VARIADIC COLLECTOR IS ONE MORE PARAMETER (1.1.13-close): the spec's
+    // whole rule — "`..*T[]:name` is a typed slice, and a variadic call lowers
+    // to building one" — so the callee's side is exactly a `{ ptr, i64 }`
+    // slice binding, and sync/async ride the same fnem machinery every other
+    // parameter uses. The CALL side gathers (or `..^`-spreads) the tail.
+    DeclId:vspec = raw fn_variadic(x.ast, d);
+    if (!(raw decl_is_none(vspec))) {
+        DeclNode:vn = raw ast_decl(x.ast, vspec);
+        GenericScope:vsaved = x.tr.generics;
+        GenericScope:vesaved = x.tr.enclosing;
+        if (specialize) {
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+        }
+        int32:vt = raw resolve_type(x.tr, raw variadic_type(vn),
+                       raw symtab_home_scope(x.tab, did.index, x.scope));
+        x.tr.generics = vsaved;
+        x.tr.enclosing = vesaved;
+        if (specialize) {
+            vt = raw type_subst(x.tr, vt, g, vn.span, 64i32, x.fe.ctx.impls);
+        }
+        LlType:vl = raw fnem_param(x.fe, raw decl_name(vn), vt, false);
+        if (!(raw ll_is_ok(vl))) { pass (raw iv_from_ll_at(x, vl, vt, vn.span)); }
     }
 
     drop fnem_open(x.fe);

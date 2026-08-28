@@ -36,7 +36,11 @@ func:main = int32(cstring[]:_~argv) {
     // about which type refuses. An empty window: the rung answers before the
     // window is read.
     int32:i32t_r = raw tt_int(@types, 32i32, true);
-    int32:f32t = raw tt_func_variadic(@types, i32t_r, 0i32, 0i32, false);
+    // int4: a SUB-BYTE width — no layout exists, and decision G-2 owns
+    // whether it gets one, so it is the stable "no rung lowers this"
+    // exemplar. (This slot held a variadic FUNCTION type until user
+    // variadics landed at 1.1-close, D-191.)
+    int32:f32t = raw tt_int(@types, 4i32, true);
     int32:nx = raw intern_add(@it, "x");
     int32:ny = raw intern_add(@it, "y");
 
@@ -148,7 +152,7 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f8 = raw fnem_init(@w8, @c);
     LlType:bad = raw fnem_begin(@f8, "f", 0i32, f32t);
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
-    if (!(raw string_eq(bad.rung, "1.1")))                 { exit 51i32; }
+    if (!(raw string_eq(bad.rung, "a later cycle (G-2)"))) { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
     LlType:badp = raw fnem_param(@f8, nx, f32t, false);
     if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }

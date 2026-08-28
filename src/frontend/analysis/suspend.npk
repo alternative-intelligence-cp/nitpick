@@ -187,6 +187,26 @@ func:reg_add = int32(Suspend->:x, int32:stmt_index, int64:at) never fails {
 // One mention of a name. Only a LOCAL registers — a symbol whose origin is a
 // statement. Parameters are frame-resident by construction (the caller stored
 // them into the frame), so they are exactly the bindings this walk exempts.
+// Extend a local's recorded use to `at` WITHOUT moving the walk's cursor
+// — the address-taken extension. The use is SEMANTIC (the alias lives on
+// to `at`), not textual (the walk is still standing where it stood), and
+// routing it through `reg_use` slammed the cursor to `fn_end`: every
+// suspension after the first `@x` was then positioned past the function's
+// end, and nothing declared before it ever crossed again (1.1.13-close —
+// found when the range-view rule below inherited the slam).
+func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
+    if (sym_id == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, sym_id);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:idx = raw reg_find(x, s.origin);
+    if (idx < 0i32) {
+        StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
+        idx = raw reg_add(x, s.origin, raw pos_of(o.span));
+    }
+    if (at > x.luse[idx => int64]) { x.luse[idx => int64] = at; }
+    pass NIL;
+};
+
 func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
@@ -265,7 +285,16 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
         x.scount = 0i32;
         x.fcount = 0i32;
         x.ldepth = 0i32;
-        x.fn_end = raw pos_end(bn.span);
+        // "TO THE FUNCTION'S END" MEANS PAST EVERY SUSPENSION IN THIS
+        // SETTLE, and reading it off the body block's SPAN never delivered
+        // that: a block's span covers its opening region, so `fn_end` sat
+        // near the function's TOP and every extension through it — the
+        // address-taken rule, the defer-use rule — was a silent no-op from
+        // birth (1.1.13-close; found when the first awaited
+        // slice-of-local-array read a dead resume stack). The settle only
+        // ever compares positions within one function, so the honest value
+        // is the order's ceiling.
+        x.fn_end = 9223372036854775807i64;
         x.in_defer = false;
         x.cursor = 0i64;
 
@@ -457,6 +486,18 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickArm) {
+        // AN AWAIT MAY NOT SIT IN A `where` GUARD (1.1.13-close, D-191):
+        // the guard runs between arm selection and entry, and no value of
+        // its can survive a suspension there — arm BODIES are
+        // frame-resident, the selection machinery is not, by design.
+        ExprId:agd = raw arm_guard(s);
+        if (!(raw expr_is_none(agd))) {
+            if (raw has_susp(x, agd, 64i32)) {
+                drop diaglist_push(x.diags, raw diag_error(raw SUSPEND_GUARD(),
+                    "an `await` may not sit in a `where` guard: the guard runs between arm selection and entry, and nothing there survives a suspension — move the wait before the `pick`, or into the arm's body",
+                    s.span));
+            }
+        }
         drop suspend_expr(x, raw arm_guard(s), fuel - 1i32);
         drop suspend_stmt(x, raw arm_body(s), fuel - 1i32);
         pass NIL;
@@ -562,6 +603,10 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
             drop suspend_expr(x, awop2, fuel - 1i32);
             pass NIL;
         }
+        // (An INDIRECT await needs no rule of its own: TYPE-043 refuses an
+        // await of any non-async call, a sync function value is that, and
+        // an async function VALUE is unspellable — the func-type grammar
+        // carries no `async` — so the case has no program to arise in.)
         drop suspend_expr(x, awop2, fuel - 1i32);
         int64:sat = raw pos_end(n.span);
         if (x.cursor >= sat) { sat = x.cursor + 1i64; }
@@ -578,9 +623,33 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         if (!(raw expr_is_none(r.id))) {
             ExprNode:rn = raw ast_expr(x.ast, r.id);
             if (rn.kind == ExprKind.ExprIdentifierExpr) {
-                drop reg_use(x, rn.a, x.fn_end);
+                drop reg_extend(x, rn.a, x.fn_end);
             }
         }
+        pass NIL;
+    }
+
+    // A RANGE-VIEW ALIASES ITS ARRAY (1.1.13-close, D-191): `arr[lo...hi]`
+    // hands out `arr`'s address exactly as `@arr` does — the emitter
+    // literally takes addr_of of the place — so the rooted local stays live
+    // to the function's end like any address-taken one. Without this the
+    // array stayed a resume-stack alloca while the VIEW was framed, and a
+    // slice seeded into an awaited child pointed into a dead stack — found
+    // by the first awaited slice-of-local-array ever driven.
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprNode:rix = raw ast_expr(x.ast, raw expr_rhs(n));
+        if (rix.kind == ExprKind.ExprRangeExpr) {
+            PlaceRoot:vr = raw place_root(x.ast, raw expr_lhs(n),
+                                          raw SUSPEND_DEPTH());
+            if (!(raw expr_is_none(vr.id))) {
+                ExprNode:vrn = raw ast_expr(x.ast, vr.id);
+                if (vrn.kind == ExprKind.ExprIdentifierExpr) {
+                    drop reg_extend(x, vrn.a, x.fn_end);
+                }
+            }
+        }
+        drop suspend_expr(x, raw expr_lhs(n), fuel - 1i32);
+        drop suspend_expr(x, raw expr_rhs(n), fuel - 1i32);
         pass NIL;
     }
 

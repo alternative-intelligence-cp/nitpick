@@ -838,7 +838,12 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv(move(rll.text), move(rb), rtid));
     }
     if (n.kind == ExprKind.ExprSpreadExpr) {
-        pass (raw iv_rung("the `..^` expansion", "1.1", n.span));
+        // A `..^` outside a variadic call's tail is refused by the CHECKER
+        // (position rules in check_args; type_args_only for signature-less
+        // callees) — and a spread IN the tail is consumed by the call
+        // emitters without ever dispatching this node. Reaching here is the
+        // frontend's promise broken, not a rung (1.1.13-close).
+        pass (raw iv_broken(n.span));
     }
     // `is (cond) : a : b` — LAZY (0.9.6, D-145): only the taken arm runs.
     // Lowered with branches through a slot, NEVER `select` — select evaluates
@@ -934,7 +939,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         pass (raw iv("i8", move(ez), 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
-        pass (raw iv_rung("a vector constructor", "1.1 (G-3)", n.span));
+        pass (raw iv_rung("a vector constructor", "1.3 (G-3)", n.span));
     }
     // `move(place)` LOWERS: it yields the place's value, and what it does to
     // the SOURCE is static — the 0.5 move analysis already blessed and tracked
@@ -1700,7 +1705,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // states.
     if (lt != 0i32) {
         if ((raw type_kind(x.fe.ctx.types, lt)) != (raw TY_INT())) {
-            pass (raw iv_rung("arithmetic on this type", "1.1 (G-3)", n.span));
+            pass (raw iv_rung("arithmetic on this type", "1.3 (G-3)", n.span));
         }
     }
     string:ins = raw arith_name(op, signed);
@@ -2232,9 +2237,14 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
     int32:ift = raw exprtypes_callee_ft(x.et, id);
+    // A variadic FUNCTION VALUE gathers exactly as a direct call does — the
+    // ft carries the shape whoever holds the pointer (1.1.13-close).
+    bool:iva = raw type_is_variadic(x.fe.ctx.types, ift);
+    int32:ifitn = count;
+    if (iva) { ifitn = (raw type_param_count_of(x.fe.ctx.types, ift)) - 1i32; }
     string:args = "";
     int32:i = 0i32;
-    while (i < count) {
+    while (i < ifitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -2243,6 +2253,12 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
         i = i + 1i32;
+    }
+    if (iva) {
+        IrVal:tv = raw emit_va_tail_sync(x, ift, start, count, ifitn, n.span);
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+        if (ifitn > 0i32) { args = raw string_concat(args, ", "); }
+        args = raw cat3(args, "{ ptr, i64 }", raw string_concat(" ", tv.ref));
     }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
@@ -2407,8 +2423,16 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         }
         base = 1i32;
     }
+    // A variadic callee's tail seeds the COLLECTOR's slot with a slice whose
+    // backing array lives in the CALLER'S FRAME (role 30): the child is
+    // about to suspend, and only frame storage outlives the resume.
+    bool:fva = raw type_is_variadic(x.fe.ctx.types, cft);
+    int32:ffitn = count;
+    if (fva) {
+        ffitn = ((raw type_param_count_of(x.fe.ctx.types, cft)) - 1i32) - base;
+    }
     int32:i = 0i32;
-    while (i < count) {
+    while (i < ffitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -2418,6 +2442,14 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           raw string_concat(", ptr ", ag)));
         i = i + 1i32;
+    }
+    if (fva) {
+        IrVal:tv = raw emit_va_tail_frame(x, cft, start, count, ffitn, at);
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+        int32:vtot = raw type_param_count_of(x.fe.ctx.types, cft);
+        string:vg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + (vtot - 1i32));
+        drop irw_line(x.fe.w, raw cat3("store { ptr, i64 } ", tv.ref,
+                          raw string_concat(", ptr ", vg)));
     }
     pass (raw iv("ptr", move(fr), 0i32));
 };
@@ -2508,8 +2540,10 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
     string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
     if (fname.len == 0i64) {
-        pass (raw iv_rung("a spawned generic call with no recorded instantiation",
-                          "1.1", n.span));
+        // The checker records every instantiation it admits (1.0.2b); a
+        // spawn whose specialization is missing is the recorder broken, not
+        // a rung (1.1.13-close).
+        pass (raw iv_broken(n.span));
     }
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
@@ -2548,8 +2582,7 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
     string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
     if (fname.len == 0i64) {
-        pass (raw iv_rung("a generic `thread` spawn with no recorded instantiation",
-                          "1.1", n.span));
+        pass (raw iv_broken(n.span));   // same recorder, same promise
     }
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
@@ -3774,8 +3807,8 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // the next arm, and that value cannot survive a suspension inside the
     // guard. Arm BODIES are fine — their bindings are frame-resident now.
     if (x.fe.guard_depth > 0i32) {
-        pass (raw iv_rung("an `await` inside a `pick` arm's `where` guard",
-                          "1.1", n.span));
+        // SUSPEND-003 refuses this at the checker; the belt stays.
+        pass (raw iv_broken(n.span));
     }
     // THE FIRST-EVALUATION BACKSTOP (D-178): the checker's SUSPEND-002 rule
     // refuses a suspension after other evaluation, so no legal program
@@ -3783,8 +3816,7 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // loudly if a checker regression ever lets an SSA value straddle the
     // resume switch.
     if (!(raw irw_clean_since_mark(x.fe.w))) {
-        pass (raw iv_rung("an `await` after other evaluation in its statement",
-                          "1.1", n.span));
+        pass (raw iv_broken(n.span));
     }
     ExprId:cid = raw expr_operand(n);
     int32:cht = raw await_channel_recv(x, cid);
@@ -3818,15 +3850,16 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     }
     int32:cdi = raw await_callee_decl(x, cid);
     if (cdi == 0i32) {
-        pass (raw iv_rung("an `await` of an indirect or builtin call",
-                          "1.1", n.span));
+        // SUSPEND-004 refuses this at the checker (an await drives a direct
+        // callee or a `dyn` method); reaching here is that rule broken
+        // (1.1.13-close).
+        pass (raw iv_broken(n.span));
     }
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
     string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
     if (fname.len == 0i64) {
-        pass (raw iv_rung("an `await` of a generic call with no recorded instantiation",
-                          "1.1", n.span));
+        pass (raw iv_broken(n.span));   // same recorder, same promise
     }
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
     string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
@@ -3924,6 +3957,127 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     pass out;
 };
 
+// --- the variadic tail (1.1.13-close) ----------------------------------------
+//
+// THE SPEC'S WHOLE RULE: "`..*T[]:name` is a typed slice, and a variadic
+// call lowers to building one." The callee already binds one more slice
+// parameter (ir_stmt); these build the { ptr, i64 } the call passes —
+// either `..^coll`'s slice taken whole (the checker fixed its position:
+// last, alone in the tail), or the trailing arguments gathered into an
+// [N x elem] array. The SYNC form gathers into a hoisted alloca; the FRAME
+// form (an awaited callee) gathers into the caller's coroutine frame (role
+// 30, registered by the pre-scan) because a resume-stack alloca dies at
+// the suspension the child is about to take, and the callee's slice would
+// point into a dead stack.
+
+// The `..^` operand's ExprId when the tail is exactly the spread, else 0.
+func:va_spread_operand = int32(ExprEmitter->:x, int32:start, int32:count,
+                               int32:fixed_in_call) never fails {
+    if ((count - fixed_in_call) != 1i32) { pass 0i32; }
+    ExprId:la = ExprId{ index: raw ast_id_at(x.ast, start, count - 1i32) };
+    ExprNode:ln = raw ast_expr(x.ast, la);
+    if (ln.kind != ExprKind.ExprSpreadExpr) { pass 0i32; }
+    pass (raw expr_operand(ln)).index;
+};
+
+// The empty tail: a null-based zero-length slice — a len-0 slice is never
+// dereferenced (the prelude's own rule), so null carries no hazard.
+func:va_empty_slice = IrVal(ExprEmitter->:x, int32:coll) never fails {
+    string:z0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(z0,
+                      " = insertvalue { ptr, i64 } undef, ptr null, 0", ""));
+    string:z1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(z1, " = insertvalue { ptr, i64 } ",
+                      raw string_concat(z0, ", i64 0, 1")));
+    pass (raw iv("{ ptr, i64 }", move(z1), coll));
+};
+
+// Store the trailing arguments into the array at `arrp` and build the slice.
+func:va_fill = IrVal(ExprEmitter->:x, int32:elem, string:arrty, string:arrp,
+                     int32:start, int32:count, int32:fixed_in_call,
+                     Span:at) never fails {
+    int32:k = 0i32;
+    while ((fixed_in_call + k) < count) {
+        ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start,
+                                        fixed_in_call + k) };
+        IrVal:av = raw emit_expr(x, aid);
+        if (!(raw iv_is_ok(av))) { pass av; }
+        av = raw emit_fit(x, elem, move(av), at);
+        if (!(raw iv_is_ok(av))) { pass av; }
+        string:eg = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(eg, " = getelementptr ", arrty,
+                          ", ptr ", raw cat5(arrp, ", i64 0, i64 ",
+                              raw int_to_string(k => int64), "", "")));
+        drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
+                          raw string_concat(", ptr ", eg)));
+        k = k + 1i32;
+    }
+    string:bp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(bp, " = getelementptr ", arrty,
+                      ", ptr ", raw string_concat(arrp, ", i64 0, i64 0")));
+    string:s0 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat4(s0,
+                      " = insertvalue { ptr, i64 } undef, ptr ", bp, ", 0"));
+    string:s1 = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(s1, " = insertvalue { ptr, i64 } ", s0,
+                      ", i64 ", raw cat3(
+                          raw int_to_string((count - fixed_in_call) => int64),
+                          ", 1", "")));
+    pass (raw iv("{ ptr, i64 }", move(s1), 0i32));
+};
+
+// The sync form: `..^`'s slice whole, or a hoisted-alloca gather.
+func:emit_va_tail_sync = IrVal(ExprEmitter->:x, int32:ft, int32:start,
+                               int32:count, int32:fixed_in_call,
+                               Span:at) never fails {
+    int32:total = raw type_param_count_of(x.fe.ctx.types, ft);
+    int32:coll = raw subst_emitted_param(x.fe.ctx,
+                     raw call_param_want(x, ft, total - 1i32));
+    int32:sp = raw va_spread_operand(x, start, count, fixed_in_call);
+    if (sp != 0i32) {
+        IrVal:sv = raw emit_expr(x, ExprId{ index: sp });
+        if (!(raw iv_is_ok(sv))) { pass sv; }
+        pass sv;
+    }
+    if ((count - fixed_in_call) <= 0i32) { pass (raw va_empty_slice(x, coll)); }
+    int32:elem = raw type_elem(x.fe.ctx.types, coll);
+    LlType:el = raw ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(el))) { pass (raw iv_from_ll_at(x, el, elem, at)); }
+    string:arrty = raw cat5("[",
+                       raw int_to_string((count - fixed_in_call) => int64),
+                       " x ", el.text, "]");
+    string:arrp = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, arrp, raw string_concat(arrty, ""));
+    pass (raw va_fill(x, elem, arrty, arrp, start, count, fixed_in_call, at));
+};
+
+// The frame form: the array is the caller frame's role-30 slot for this
+// statement, sized by the pre-scan from the same call node.
+func:emit_va_tail_frame = IrVal(ExprEmitter->:x, int32:ft, int32:start,
+                                int32:count, int32:fixed_in_call,
+                                Span:at) never fails {
+    int32:total = raw type_param_count_of(x.fe.ctx.types, ft);
+    int32:coll = raw subst_emitted_param(x.fe.ctx,
+                     raw call_param_want(x, ft, total - 1i32));
+    int32:sp = raw va_spread_operand(x, start, count, fixed_in_call);
+    if (sp != 0i32) {
+        IrVal:sv = raw emit_expr(x, ExprId{ index: sp });
+        if (!(raw iv_is_ok(sv))) { pass sv; }
+        pass sv;
+    }
+    if ((count - fixed_in_call) <= 0i32) { pass (raw va_empty_slice(x, coll)); }
+    int32:elem = raw type_elem(x.fe.ctx.types, coll);
+    LlType:el = raw ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(el))) { pass (raw iv_from_ll_at(x, el, elem, at)); }
+    string:arrty = raw cat5("[",
+                       raw int_to_string((count - fixed_in_call) => int64),
+                       " x ", el.text, "]");
+    int32:ci = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 30i32);
+    if (ci < 0i32) { pass (raw iv_broken(at)); }
+    string:arrp = raw fnem_cross_gep(x.fe, ci);
+    pass (raw va_fill(x, elem, arrty, arrp, start, count, fixed_in_call, at));
+};
+
 func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     ExprId:callee = raw expr_callee(n);
     if (raw expr_is_none(callee)) { pass (raw iv_broken(n.span)); }
@@ -3978,9 +4132,15 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // concrete value into a `dyn` and a `T` into a `T?`. A `Dog` passed where
     // `dyn Speaks` was declared reached `llc` as `%Dog` and was refused there.
     int32:cft = raw exprtypes_callee_ft(x.et, id);
+    // A VARIADIC CALLEE (1.1.13-close): the fixed arguments fit their
+    // parameters as ever; the tail gathers (or `..^`-spreads) into the one
+    // slice the collector parameter is.
+    bool:cva = raw type_is_variadic(x.fe.ctx.types, cft);
+    int32:cfitn = count;
+    if (cva) { cfitn = (raw type_param_count_of(x.fe.ctx.types, cft)) - 1i32; }
     string:args = "";
     int32:i = 0i32;
-    while (i < count) {
+    while (i < cfitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -3989,6 +4149,12 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
         i = i + 1i32;
+    }
+    if (cva) {
+        IrVal:tv = raw emit_va_tail_sync(x, cft, start, count, cfitn, n.span);
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+        if (cfitn > 0i32) { args = raw string_concat(args, ", "); }
+        args = raw cat3(args, "{ ptr, i64 }", raw string_concat(" ", tv.ref));
     }
 
     // A user function: the symbol names the declaration, the declaration names
@@ -5630,9 +5796,14 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     int32:ift = raw exprtypes_callee_ft(x.et, id);
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
+    // A function-valued FIELD may hold a variadic function (1.1.13-close):
+    // the same gather every other call form makes.
+    bool:fcva = raw type_is_variadic(x.fe.ctx.types, ift);
+    int32:fcfitn = count;
+    if (fcva) { fcfitn = (raw type_param_count_of(x.fe.ctx.types, ift)) - 1i32; }
     string:args = "";
     int32:i = 0i32;
-    while (i < count) {
+    while (i < fcfitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
@@ -5641,6 +5812,12 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         if (i > 0i32) { args = raw string_concat(args, ", "); }
         args = raw cat3(args, av.ll, raw string_concat(" ", av.ref));
         i = i + 1i32;
+    }
+    if (fcva) {
+        IrVal:tv = raw emit_va_tail_sync(x, ift, start, count, fcfitn, n.span);
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+        if (fcfitn > 0i32) { args = raw string_concat(args, ", "); }
+        args = raw cat3(args, "{ ptr, i64 }", raw string_concat(" ", tv.ref));
     }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {

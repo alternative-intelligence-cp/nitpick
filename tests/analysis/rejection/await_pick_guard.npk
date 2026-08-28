@@ -1,10 +1,15 @@
-// expect-error: NITPICK-RUNG-001
+// expect-error: NITPICK-SUSPEND-003
 // expect-no-parse-error
 //
-// The one pick position an `await` still cannot take (D3): a `where` guard.
-// The compare chain re-reads the selector value after a failed guard to
-// test the next arm, and an SSA value cannot survive a suspension inside
-// the guard. Arm BODIES suspend freely — their bindings are frame-resident.
+// The one pick position an `await` cannot take: a `where` guard. The
+// compare chain re-reads the selector value after a failed guard to test
+// the next arm, and nothing there survives a suspension. Arm BODIES
+// suspend freely — their bindings are frame-resident. UNTIL 1.1-close this
+// was a backend rung naming its own cycle; the refusal now lives in the
+// suspend analysis (SUSPEND-003, D-191), which is why this file moved from
+// the backend rejection suite to this one — suites are named by the stage
+// that refuses. (`await_shapes.npk` pins the plain-selector shape; this
+// one keeps the payload-binding guard chain.)
 
 enum:Ev = { Nudge(int32); Stop; };
 

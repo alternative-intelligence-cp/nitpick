@@ -692,7 +692,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // one. NO RUNG TABLE NAMED IT; 0.7.2 assigns it to 0.9 with the rest of full
     // type lowering, rather than leaving a type whose refusal has no cycle.
     if (k == (raw TY_FUNC()))          { pass (raw ll_ok("ptr")); }
-    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("1.1")); }
+    // A variadic function VALUE is the same one word (1.1.13-close): the
+    // gathering happens at the CALL, where the checker-recorded ft says how
+    // many parameters are fixed and what the collector's element is.
+    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_ok("ptr")); }
 
     if (k == (raw TY_ARRAY()))    { pass (raw ll_array(c, id)); }
     if (k == (raw TY_RESULT()))   { pass (raw ll_result(c, id)); }
