@@ -120,8 +120,17 @@ manifest + lock
    → npkc: module → LLVM IR text (.ll)
    → opt          (subprocess, if opt-level > 0)
    → llc          (subprocess, AT opt-level) → object
+   → undefined-symbol scan   (D-011: every object, against the runtime allowlist)
    → ld.lld       (subprocess) → executable or library
 ```
+
+**The undefined-symbol scan is a permanent pipeline step, not a harness
+convenience** (D-206): after codegen, every object is scanned and the build
+fails on any undefined symbol outside the audited runtime allowlist. The link
+line itself is closed-world — only `npkc`-produced objects plus that allowlist
+may appear in it, **with no relaxing flag** — which is what makes "in-process
+FFI does not exist" a structural guarantee for every program, not a project
+convention (D-149).
 
 Verification, where `[verify]` requests it, runs against the IR and the source
 before linking, over **SMT-LIB2 text** to `z3` (D-067).
@@ -168,6 +177,12 @@ artifact.
   the order in which monomorphized instantiations are emitted and deduplicated.
 - D-064's mangled names are readable and reversible with **no hash**, so no symbol
   name depends on how the compiler was invoked.
+- **The toolchain is a pinned input** (D-204): the manifest's `[toolchain]`
+  records the LLVM version and the exact `opt`/`llc`/`ld.lld` flag sets, the
+  driver refuses a mismatching toolchain loudly, and "same inputs" includes the
+  tools. A `repro` check builds twice from different working directories and
+  byte-compares the emissions — reproducibility is a tested property, not a
+  claim about one process on one machine.
 
 This is what lets anyone confirm that the binary they are running is the binary
 that was verified, and §6's fixpoint check is impossible without it.
@@ -185,8 +200,17 @@ cannot build itself before it can compile anything.
 | **1** | the real compiler — **full frontend**, rung-1 backend | **Nitpick, subset 1** | permanent |
 | **2** | the same source, compiled by stage 1 | Nitpick | **the artifact of record** |
 
-**Stage 1 and stage 2 must be byte-identical.** If they differ, something from the
-seed still influences the output and the result is not self-hosted.
+**Self-hosting is the fixpoint of the compiler's emission of itself** (D-202,
+restating the D-079 sentence this section carried): **the first stage built from
+the current source, and the next stage built by it, must emit the compiler
+byte-identically.** Binaries are then identical from that emission onward — the
+comparison is between emissions, never between binaries produced by two
+different emitters. Before the 1.4.6 builder switch the first current-source
+stage is the seed-built compiler; after it, the snapshot-built one. When the
+builder snapshot is older than the source, the comparison is stage-N vs
+stage-N+1 where stage N is the first current-source compiler — §6.2's
+three-pass shape. If successive emissions differ, something from the previous
+stage still influences the output and the result is not self-hosted.
 
 > **The prototype `npkc` is not the seed** (D-085, superseding D-079). It
 > implements the language Nitpick *used to be* — no `relay`, no `cstring` — so

@@ -298,9 +298,29 @@ deadline sat in an ALLOCA that re-entry re-created — every run since
 eleven programs deterministically. The walk now records the park as a
 suspension (the await rule: past the arguments), `give_up` lives in the
 frame, and both levels answer identically. The second hole in the same
-analysis (D-191's `fn_end` was the first). Next: cycle 1.4
-(self-hosting), which OPENS with P-3 (the generated bare-builtin
-signature table) per OPEN_DECISIONS §3.
+analysis (D-191's `fn_end` was the first).
+**CYCLE 1.4 (self-hosting) is UNDERWAY.** 1.4.0 ratified the whole batch
+as **D-201…D-209** (`meta/roadmap/1.4/1.4.0.md`): the builtin surface
+typed from ONE generated signature table (D-201 — never-fails builtins
+type BARE, the 13-arm convention generalized; the emitter's parallel
+authority retires; the ~1,700-site `raw` shed rides a transitional
+rule), the fixpoint criterion restated (D-202 — the harness has measured
+the right thing since 0.8.1; the spec's "byte-identical binaries"
+sentence was the defect), the committed bootstrap IR + survival map +
+THE FLOOR'S PERMANENT FORM IS HAND-WRITTEN LLVM IR (D-203 — the user:
+the goal was removing the C/C++ layer, never LLVM; npkrt.ll re-homes to
+`runtime/` at the switch), reproducibility pinned and tested (D-204),
+the normative builder rule with the switch at 1.4.6 (D-205 — measured at
+open: `src/` is STILL fully subset-1; SUBSET_1 §4's gradual-adoption
+story never happened), `npkg` + `npk_spawn` + the closed-world link
+(D-206), per-scope joins with the `dyn`-element refusal permanent
+(D-207), loop-carried moved-from states (D-208), and the adoption scope
+(D-209 — generic collections and `dyn Writer` diagnostics in; mass
+`&{ }` re-spell, pipeline async, and `src/` macros OUT by decision). The
+user's bug/vuln-statistics research (§6c) began the same day — briefs in
+`meta/roadmap/RESEARCH_BRIEFS.md`. Next: 1.4.1 (the instruments — B-7's
+walker-totality check, `selfcheck.py`/`spec_coverage.py` wired in,
+alloca-hoisting on stage 1).
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

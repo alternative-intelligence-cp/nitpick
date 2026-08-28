@@ -23,11 +23,11 @@ nitpick-native/
 │   │   ├── ir/             #   LLVM IR text emission (cycle 0.7)
 │   │   └── layout/         #   type layout / ABI
 │   └── driver/             # manifest, module graph, subprocess invocation
-├── bootstrap/              # THROWAWAY. Not the compiler. (D-085)
-│   ├── generator/          #   the seed: subset-1 .npk -> .ll
-│   ├── runtime/            #   the runtime floor, hand-written .ll (D-015)
-│   ├── harness/            #   the test runner, until `npkg test` exists
-│   └── seed/               #   committed seed IR (.ll), from cycle 0.7
+├── bootstrap/              # Not the compiler. (D-085; survival map D-203)
+│   ├── generator/          #   the seed generator: subset-1 .npk -> .ll (permanent, regeneration-only)
+│   ├── runtime/            #   the runtime floor, hand-written .ll — permanent form; re-homes to runtime/ at 1.4.6 (D-015/D-203)
+│   ├── harness/            #   the test runner, until `npkg` parity is proven (SWITCH.md)
+│   └── seed/               #   committed fixpoint IR + STAMP, from the 1.4.6 switch (D-203)
 └── tests/
     ├── conformance/        # subset 1 must compile (cycle 0.0.1)
     └── rejection/          # outside subset 1 → backend diagnostic, not parse error
@@ -65,17 +65,28 @@ directory was a C-shaped habit with nothing to put in it, and it is removed.
 **5. `bootstrap/` is new, and deliberately outside `src/`.** D-085 replaced the
 prototype-as-stage-0 plan with a purpose-built seed: a throwaway program that
 reads subset-1 `.npk` and writes `.ll`. There is no separate "seed binary" — what
-gets **committed** is `seed/stage1.ll`, the IR of the *real* compiler, so
-rebuilding from nothing needs only the LLVM toolchain and the generator is needed
-to *regenerate* the seed rather than to build. Nothing here is the compiler,
-nothing here is ever in an artifact, and all of it is deleted once self-hosting
-closes — so putting it under `src/` would misrepresent what ships.
+gets **committed** is `seed/stage1.ll`: from the 1.4.6 builder switch onward, the
+**fixpoint emission of the real compiler**, beside `seed/STAMP` (source commit,
+toolchain version, sha256). Rebuilding from nothing needs only the LLVM
+toolchain — `llc` over `stage1.ll` and the runtime floor, `ld.lld -static`, and
+the result rebuilds itself from `src/` to close the fixpoint — while the
+generator is needed to *regenerate* tables and the historical seed, never to
+build. The snapshot is pinned, refreshed at cycle closes, never per-commit.
 
-`bootstrap/runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, a
-bump allocator that never frees, the `memcpy`/`memset` symbols LLVM emits calls
-to, and enough string support to build a diagnostic. Hand-written LLVM IR is what
-D-015 specifies for the first rung; real allocation and real I/O arrive with
-`nlibc` in cycle 0.8.
+**The survival map (D-203, amending this section's original "all of it is
+deleted once self-hosting closes"):** `seed/` and `generator/` survive
+indefinitely; `harness/` survives until `npkg` parity is proven, retiring under
+`meta/SWITCH.md`'s coordinated operation; and `runtime/npkrt.ll` was never
+bootstrap material at all — it is linked into every artifact including the one
+that ships, its permanent form is reviewed hand-written LLVM IR (D-203 settling
+D-015's "later" row), and it re-homes to top-level `runtime/` at 1.4.6. Nothing
+that remains in `bootstrap/` is the compiler and nothing in it is ever in an
+artifact — which is why it stays outside `src/`.
+
+`bootstrap/runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, the
+allocator, the `memcpy`/`memset` symbols LLVM emits calls to, threads, the
+executor's parking, and the driver registry. Hand-written LLVM IR was what
+D-015 specified for the first rung; D-203 made it the permanent form.
 
 **The harness is in `bootstrap/`, not `tools/`,** because it cannot yet be
 written in Nitpick: subset 1 has no directory reading and no process spawning,

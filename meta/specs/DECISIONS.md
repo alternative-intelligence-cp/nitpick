@@ -5429,7 +5429,9 @@ nothing in a symbol name depends on how the compiler happened to be invoked.
 > language Nitpick *used to be* — so seeding from it forces our own sources into a
 > foreign dialect and creates a migration debt to undo later. Read D-085 for the
 > ladder; the reproducibility requirement and the Thompson caveat below are
-> unchanged and carry forward.
+> unchanged and carry forward. The "stage 1 and stage 2 must be byte-identical"
+> sentence below was restated by **D-202** (successive *emissions* of the
+> compiler, not binaries from two emitters).
 
 The prototype builds with **CMake**, which is barred here, and nitpick-native
 cannot build itself before it can compile anything. The ladder:
@@ -5793,6 +5795,14 @@ strictly subordinate to safety.
 ---
 
 ## D-085 — The bootstrap seed is purpose-built, not the prototype — **SETTLED**
+
+> **[1.4.0 note]** The "byte-identical" fixpoint wording this record
+> carries from D-079 (here, the ladder table, and "What is unchanged")
+> was restated by **D-202**: stage 1 and stage 2 are two independent
+> emitters and can never be byte-identical as binaries — the criterion is
+> that successive **emissions of the compiler** by current-source stages
+> are byte-identical, which is what the harness has measured since 0.8.1.
+> Read those sentences through D-202.
 
 Supersedes **D-079**'s choice of stage 0. The three-stage structure, the
 byte-identical fixpoint check, and the Thompson caveat all carry forward
@@ -14121,3 +14131,236 @@ did not yet have:
    emitter's `iN` constant and the checker's range answer come from the one
    conversion. The prelude's `ToString` (exact expansion, `uint256` core)
    is npkc-compiled and uses the wide tier freely.
+
+## D-201 — the builtin surface typed from one generated signature table — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes P-3 (D-192's residue). Full rationale and survey: `meta/roadmap/1.4/1.4.0.md`.
+
+1. **BUILTIN_REFERENCE.md's marked regions are the single signature
+   authority.** The Signature column is normalized to one parseable syntax
+   (§3 gains the column it lacks; `read`/`write`'s bare `ptr` becomes
+   `wild int8->`), and the generator — which already scrapes names and
+   never-fails and hard-fails on a missing Fails column — parses it
+   strictly, hard-failing on any row it cannot read.
+2. **The generator emits the signature table as committed source**
+   (`builtins.npk` precedent): `builtin_sig_*` accessors beside
+   `is_builtin_name`/`builtin_never_fails`, all derived from the same rows
+   so the lists cannot disagree.
+3. **Regular builtin calls type through the shared argument path** (arity,
+   per-argument fits, `move` where the signature says so, spread refusal),
+   the table's type texts interned at check time. The nine irregulars keep
+   bespoke arms and are marked `special` in the table — `sys` (variadic),
+   `atomic_from_ptr` (turbofish), and the seven annotation-directed
+   constructors — so a builtin with neither signature nor special arm
+   fails generation. Typing and lowering stay separate concerns: an
+   inline-lowered builtin (`suspend_io`, `io_watch`, …) is table-typed.
+4. **The typing rule: a `never fails` builtin types as the BARE value; a
+   may-fail builtin as `Result<T>`.** This generalizes the settled 13-arm
+   convention (D-185's `own_fd`, D-200's `buffer_new`). The floor's ABI is
+   untouched — symbols answer in the envelope and the emitter extracts the
+   value half at the site, 1.3.7's `buffer_new` mechanism made general.
+   Ratified over the everything-wraps alternative: the checker refuses bad
+   arguments equally under both, and blanketing ~1,700 provably-cannot-fail
+   sites in `raw` would dilute the acknowledgement `raw` exists to be —
+   the uniform rule worth having is "`raw` appears exactly where an
+   envelope is removed on the strength of a contract".
+5. **The emitter's parallel authority retires**: the UNKNOWN-operand
+   fallbacks (`result_ll_value_half` and its `?|`/`?!` consumers, the
+   typer's `t == 0` bails, `emit_raw`'s wrapped/inner fallback,
+   `call_param_want`'s 0-means-skip) and the signedness-blind coercion
+   loop. Remaining language-type→symbol-type adaptations (`memset`'s
+   `int64` value vs `i32` symbol) become explicit per-row ABI notes in the
+   same table, signedness-correct. `rt_sig` keeps only name→symbol+ABI and
+   is GENERATED from the same rows — `check_runtime_sigs_agree` then diffs
+   npkrt.ll against the reference-derived table, putting the spec in the
+   loop for the first time.
+6. **A bare name not in the table refuses at type time** (its own code).
+   Nothing is left legitimately UNKNOWN: `type_call`'s `pass 0i32`
+   fall-through becomes an internal defect, and the unknown-tolerance arms
+   in REACH/locks/statement rules retire.
+7. **Migration (1.4.2), three steps, fixpoint green at each**: (a) table
+   and typing land with a transitional rule — `raw`/`drop` on a now-bare
+   never-fails builtin call is the identity; (b) the tree-wide re-spell,
+   with the seed's `check.BUILTINS` wrapped-flags flipped and its emitter
+   taught the extract-at-site in the same commit; (c) the transitional
+   rule removed — `raw` on a non-Result operand refuses, as everywhere.
+
+## D-202 — the fixpoint criterion restated — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes C-10. The harness has measured the right thing since 0.8.1 — the
+seed-built compiler's emission of `src/main.npk` against stage 1's
+re-emission, two `.ll` texts byte-compared — while the docs carried
+D-079's unsatisfiable sentence ("stage 1 and stage 2 must be
+byte-identical": two independent emitters can never satisfy it as
+written). The normative criterion, now in BUILD_REFERENCE §6:
+
+> Self-hosting is the fixpoint of the compiler's emission of itself: the
+> first stage built from the current source, and the next stage built by
+> it, must emit the compiler byte-identically. Binaries are identical
+> from that emission onward. Before the 1.4.6 switch the first such stage
+> is the seed-built compiler; after it, the snapshot-built one. When the
+> builder snapshot is older than the source, the comparison is stage-N vs
+> stage-N+1 where stage N is the first current-source compiler — §6.2's
+> three-pass shape.
+
+Spec-only; no code changes. D-085/D-079 carry dated annotations pointing
+here. (OPEN_DECISIONS' citation "D-085:5747" was off — the operative
+lines were 5798/5825/5883 and D-079's 5443.)
+
+## D-203 — the committed bootstrap IR, the `bootstrap/` survival map, and the floor's permanent form — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes C-11, and settles D-015's open "later" row. Three parts:
+
+1. **`bootstrap/seed/stage1.ll`** — the name LAYOUT and `npkseed.py` have
+   always used — is committed at the 1.4.6 switch, holding the FIXPOINT
+   emission of the real compiler, beside `bootstrap/seed/STAMP` (source
+   commit, toolchain version, sha256 of the `.ll`). Rebuild-from-LLVM-alone
+   is `llc stage1.ll` + `llc npkrt.ll` + `ld.lld -static` → npkc, which
+   rebuilds itself from `src/` and must close the fixpoint against the
+   committed text. **The snapshot is pinned, not tracking**: it refreshes
+   at cycle closes with the push, never per-commit; the from-scratch audit
+   path for any historical state is the generator plus the pre-switch
+   commits (the trusting-trust answer D-085 already records).
+2. **The survival map** (LAYOUT §5 amended): `seed/` and `generator/`
+   survive indefinitely (the generator regenerates tables and the
+   historical seed — needed to regenerate, never to build); `harness/`
+   survives until `npkg` parity is proven, retiring under `meta/SWITCH.md`;
+   the blanket "all of it is deleted once self-hosting closes" is struck.
+3. **The runtime floor's permanent form is reviewed, hand-written LLVM
+   IR** — D-015's "later" row is settled as its own "tuned IR" option, and
+   a Nitpick rewrite is decided OUT. `npkrt.ll` re-homes to top-level
+   `runtime/` at 1.4.6 (it is in every artifact ever linked, including the
+   one that ships — it was never bootstrap material, and its THROWAWAY
+   header was false). The user's rationale, theirs verbatim: the core
+   being LLVM "in the end" was always the assumption — the project's goal
+   was removing the C/C++ translation layer ("a pain … for verification"),
+   not LLVM itself, since "the compiler pretty much outputs LLVM so
+   getting rid of that isn't really a thing in reality"; and maintaining
+   multiple versions of the same thing is exactly what they stopped a
+   previous build attempt over. If C-19's answer (Astrée's input format)
+   forces a C rendering of the floor, that reopens in 1.5 with the real
+   constraint on the table — recorded so the interaction is not lost.
+
+## D-204 — byte-reproducibility defined and checked — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes C-12. D-078's claim becomes three checked facts (mechanics at
+1.4.5):
+
+1. **The toolchain is a pinned input**: `nitpick.toml` gains
+   `[toolchain]` with the LLVM version (20.1.2) and the exact llc/opt/
+   ld.lld flag sets; the harness (later `npkg`) verifies
+   `llvm-config --version` against it and refuses a mismatch. "Same
+   inputs" includes the tools (BUILD_REFERENCE §5).
+2. **Seed emission is path-independent on every path**: the harness path
+   already is (`module_id="test"`, relative paths, zero absolute paths in
+   the 11.2 MB emission); `npkseed.py` stops embedding its argv path as
+   the ModuleID. The real compiler already emits no ModuleID.
+3. **A `repro` harness stage builds twice from different cwds** and
+   byte-compares the emissions; after 1.4.6 it also asserts the committed
+   `stage1.ll` matches a fresh fixpoint emission and its STAMP sha256 —
+   the snapshot cannot silently rot.
+
+## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes C-13 — the rule obeyed by discipline since 0.9, whose switch cycle
+was named three different ways (1.2, 1.3, "here") and never landed.
+Normative, in SUBSET_1 §4 and BUILD_REFERENCE §6:
+
+> **`src/` may not use any construct its current builder cannot
+> compile.** Until 1.4.6 the builder is the regenerated Python seed and
+> `src/` is subset 1. At 1.4.6 the builder becomes the committed
+> `bootstrap/seed/stage1.ll`, and the constraint becomes: a feature
+> `src/` wants to use must already be in the snapshot — new features
+> enter `src/` only after a snapshot refresh, and the snapshot refreshes
+> at cycle closes.
+
+SUBSET_1 §4's adoption table is corrected to what was measured at 1.4.0:
+no adoption happened at 0.9–1.2 (`src/` is still fully subset-1 — zero
+generics, traits, or async in the 71 seed-built modules; the prelude is
+the escape valve, being data); adoption happens once, at 1.4.7, under
+D-209's scope. The seed's retirement is the switch itself: after 1.4.6 it
+is never the builder again; `check_ll_types_agree` retires WITH it (its
+question — do the two emitters agree — ends when there is one emitter),
+and `check_runtime_sigs_agree` drops to the two-way diff D-201 sharpened.
+
+## D-206 — `npkg`: build/test, the spawn primitive, the closed-world link — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes B-4. Scope for 1.4 (subcycle 1.4.8): **`npkg build` and
+`npkg test`, minimal and real**; `npkg update` stubs to a named refusal
+(nothing to resolve in a single-repo world); `npkg verify` refuses naming
+1.5 until the z3 pipeline exists.
+
+1. **`npk_spawn`**, a new floor entry generalizing `driver_clone_exec`'s
+   proven shape — fork-shape `CLONE_PIDFD` clone, allocation-free child
+   (the copied-futex rule), PDEATHSIG + NO_NEW_PRIVS, the same 16-slot
+   registry so the trap route kills outstanding tool children and a clean
+   exit with a live child refuses (D-151/D-188 extended to build tools) —
+   with caller-directed stdio in the block (stdout to a pipe or file fd,
+   not hardcoded `/dev/null`; the fd-3 control channel optional). The
+   Bridge's `spawn_driver` becomes a caller of the same primitive.
+   Waiting stays `sys(WAITID)` from Nitpick (the nbridge pattern). The
+   builtin enters BUILTIN_REFERENCE and D-201's table from birth; the
+   block layout is settled at 1.4.8 with the code in front of us.
+2. **Directory listing needs no floor addition**: `sys(SYS_GETDENTS64)`
+   over an owned buffer, dirent records parsed in Nitpick —
+   `lib/nfs.npk`, library-owned like ntensor's bounds.
+3. **`npkg` is full Nitpick against the compiler's own modules** — it
+   `use`s the real frontend for its source-scanning instruments rather
+   than reimplementing the Python regexes.
+4. **The closed-world link is law, not a flag**: only npkc-produced
+   objects plus the audited runtime allowlist may appear in a link line,
+   with no relaxing option — D-011's scan written into BUILD_REFERENCE §4
+   as a permanent pipeline step, making "in-process FFI does not exist"
+   structural for every user program.
+5. **Succession, not replacement**: parity is proven by running BOTH
+   runners and comparing verdicts; the Python harness retires under
+   `meta/SWITCH.md`, not in 1.4 — never a gap where neither runs. The
+   §7.1 self-check obligation transfers to `npkg` explicitly, and 1.4.1
+   first wires the existing `selfcheck.py` into the Python run so the
+   property is continuously held on both sides.
+
+## D-207 — per-scope joins — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes C-22. `join_head` becomes per-scope, threaded through the 1.2
+scope-exit walk that already owns drop flags: a scope's exit joins the
+tasks that scope spawned (relaying the first child error, D-163 rule 4),
+then reclaims that scope's channels, then releases its shared arenas — in
+that order, joined-before-freed. Lifts: `channel()` inside a loop
+(per-iteration reclaim at the body's exit) and **`shared_arena` teardown**
+— `TY_SHARED_ARENA` leaves `type_drops`' excuse table and drops for real,
+closing the managed-lowering hole this row was excusing. Creating the
+channel outside the loop remains the performance advice, no longer a
+language rule. **The third tenant is refused permanently**: a `dyn`
+channel element's erased content can hide a borrow, and no join ordering
+cures type-level invisibility — BORROW-004's spawn-crossing question
+cannot be asked of an erased value. A decision that it is not going in,
+not a deferral.
+
+## D-208 — loop-carried moved-from states — **SETTLED (1.4.0 batch, user-ratified)**
+
+Closes S-2. The 0.5 move analysis gains loop-header merge states: a
+binding moved anywhere in a loop body is moved-from at the body's head
+unless reassigned on every path reaching the back edge — the
+read-before-assign fixed point extended, not a new walk. Its own code,
+rejection case, and the acceptance case proving reassign-then-move-again
+loops still pass (0.5's lesson: these analyses fail closed, so
+over-refusal is the likelier defect). The first run over `src/` is
+expected to find latent instances of the `modmap_members` class; they are
+repairs, not regressions. Lands at 1.4.3, before the adoption sweep
+enlarges the code the analysis must be right about.
+
+## D-209 — the adoption scope — **SETTLED (1.4.0 batch, user-ratified)**
+
+What `src/` adopts at 1.4.7, as a list rather than an ambition. **In**:
+generics where duplication is real (the concrete collection families
+become the 1.0 generic containers — the largest mechanical simplification
+available, and the strongest pre-verification exercise generics get);
+`dyn Writer` diagnostics (D-075's stated design, and what `npkg test`'s
+capture-and-compare expects); the unwrap forms and `for`/`till` where
+they replace hand-rolled shapes — judicious, file-by-file. **Out, by
+decision (not deferral)**: a mass `&{ }` re-spell of the ~1,700 working
+diagnostic concatenations (comfort-only churn; `&{ }` is the idiom for
+new code); async in the sequential pipeline; macro/`comptime` adoption in
+`src/`. Standing rule: any adoption step that changes EMITTED IR (not
+just source spelling) is its own commit with the fixpoint and the full
+program suite between it and the next.

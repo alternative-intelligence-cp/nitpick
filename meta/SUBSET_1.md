@@ -252,17 +252,33 @@ when a partial grammar gets re-widened rung by rung, and it is what ended
 
 ## 4. How subset 1 disappears
 
-Each backend rung lifts part of it, and the compiler's source adopts what the rung
-enables:
+**The builder rule (D-205, normative):**
 
-| Rung | Lifts |
-|---|---|
-| 0.9 full type lowering | `tbb` arithmetic, LBIM, floats, richer enum payloads |
-| 1.0 generics and traits | generics, `dyn`, UFCS — the concrete collections become replaceable |
-| 1.1 async | `async` / `await` |
-| 1.2 the managed lowering | RAII at scope exit — the default regime's other half |
-| 1.4 verification | contracts, `prove`, `limit<Rules>` |
+> **`src/` may not use any construct its current builder cannot compile.**
+> Until the 1.4.6 switch the builder is the regenerated Python seed, and
+> `src/` is subset 1. At 1.4.6 the builder becomes the committed
+> `bootstrap/seed/stage1.ll`, and the constraint becomes: a language feature
+> `src/` wants to use must already be in the snapshot — new features enter
+> `src/` only after a snapshot refresh, and the snapshot refreshes at cycle
+> closes.
 
-By self-hosting (1.3) the restriction is mostly historical, and **no migration
-phase is needed** — the source was always Nitpick. That is the whole difference
+This section's original table said each rung's features would be adopted by
+`src/` as the rung landed (0.9 floats/`tbb`, 1.0 generics, 1.1 async, 1.2's
+RAII spelling). **That never happened, and could not have**: the seed was the
+sole builder and lowers only subset 1, so the builder rule silently overruled
+the table every cycle — measured at 1.4.0, `src/` contains zero generic,
+trait, or `async` declarations across all 71 seed-built modules.
+(`src/prelude/prelude.npk` is the standing escape valve: it uses the full
+language because it is *data* — scraped into a string constant, compiled by
+npkc at runtime, never by the seed.)
+
+Adoption therefore happens **once, at 1.4.7, after the builder switch**, under
+D-209's ratified scope: generics for the duplicated concrete collections,
+`dyn Writer` diagnostics (D-075), and judicious unwrap/loop forms — with a
+mass `&{ }` re-spell, async in the sequential pipeline, and macro adoption in
+`src/` decided OUT. The rungs LIFT restrictions; the builder decides when
+`src/` may USE what was lifted.
+
+By self-hosting (1.4) the restriction is historical, and **no migration phase
+is needed** — the source was always Nitpick. That is the whole difference
 between this and seeding from a foreign compiler.

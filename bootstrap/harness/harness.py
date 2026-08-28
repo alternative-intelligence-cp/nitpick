@@ -2245,12 +2245,13 @@ def main(argv):
 
             # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
             #
-            # npkc compiles ITSELF: the whole 60-module compiler through its own
+            # npkc compiles ITSELF: the whole compiler graph through its own
             # frontend, its own analyses, and its own emitter. The emitted IR is
             # assembled and linked into STAGE 1 -- a compiler with no seed in it
             # -- and stage 1 emits the compiler again. The two emissions must be
-            # BYTE-IDENTICAL (D-078/D-085): this is the 1.2 fixpoint, run as a
-            # standing instrument from the day it first closed. A drift here is
+            # BYTE-IDENTICAL (D-078/D-202): the self-hosting fixpoint (cycle
+            # 1.4; "1.2" under the numbering when this first closed at 0.8.1),
+            # run as a standing instrument from that day. A drift here is
             # either nondeterminism or a semantic divergence between what the
             # seed built and what the compiler builds -- both are stop-the-line.
             # Stage 1 is emitted THROUGH `-o` — the flag's standing coverage is
