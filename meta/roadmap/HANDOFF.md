@@ -8,44 +8,51 @@
 
 ## Where you are
 
-- HEAD is the 1.4 stretch: `41cad00` (1.4.0 — the cycle opened, D-201…
-  D-209 ratified), `cf55611` (1.4.1 — the walkers-total instrument and
-  its finds, including the enum-drop silent leak fixed), `fec4cfa`
-  (the research digests, the ratified coverage audit, D-210…D-221, and
-  every plan file), plus the handoff commit carrying this file. All
-  pushed.
-- The harness is GREEN: 60 suites, 173 real-backend programs (each
-  also through `opt -O2`), fixpoint byte-identical, all instruments
-  passing. `python3 bootstrap/harness/harness.py` reproduces it
-  (~20 min idle, 35+ under load — it is not hung, check
-  `/tmp/npk-harness-*/` for progress).
-- **Every decision through the end of cycle 1.5 is SETTLED and
-  recorded** (D-201…D-221 in `meta/specs/DECISIONS.md`). The one
-  externally-gated item is C-19 (the AbsInt contact), due by 1.5's
-  exit — the question list is in `meta/roadmap/1.6/README.md`.
+- HEAD is `ad965fc`, pushed. Since the 1.4.0–1.4.1 stretch, SIX subcycles
+  landed, each with a full green harness run and its own commit:
+  **1.4.2** (D-201, four commits: the generated builtin signature table),
+  **1.4.2b** (D-210 overflow traps, D-211 module state), **1.4.2c**
+  (D-222 — `const` retired), **1.4.3** (D-208), **1.4.3b** (D-216), and
+  **1.4.4 item 6** (D-215).
+- The harness is GREEN: 60 suites, 179 real-backend programs (each also
+  through `opt -O2`), fixpoint byte-identical.
+  `python3 bootstrap/harness/harness.py` reproduces it (~25–35 min; it is
+  not hung, check `/tmp/npk-harness-*/`).
 
-## The queue (each has an execution-grade file in `meta/roadmap/1.4/`)
+## NEXT: 1.4.4 items 1–5 — the per-scope join machinery
 
-1. **1.4.2** — P-3: the builtin signature table (D-201). THREE steps in
-   order, fixpoint green after each; never combine them.
-2. **1.4.2b** — overflow traps (D-210) + const/fixed-only module state
-   (D-211). Two commits.
-3. **1.4.3** — loop-carried moved-from states (D-208).
-4. **1.4.3b** — the consuming `pick (move(v))` (D-216).
-5. **1.4.4** — per-scope joins (D-207) + the dyn coercion refusal
-   (D-215).
-6. **1.4.5** — reproducibility mechanics (D-204).
-7. **1.4.6** — THE SWITCH (D-203/D-205): committed builder, seed
-   retires, npkrt.ll re-homes. Push at this one.
-8. **1.4.7** — adoption (D-209), smallest step first, one idiom per
-   commit.
-9. **1.4.8** — `npkg` + `npk_spawn` + the nfs riders (D-206/D-213).
-10. **1.4.9** — close: fixpoint declared per D-202, snapshot refreshed,
-    docs synced, cycle folder to `done/`.
+`meta/roadmap/1.4/1.4.4.md` is the plan; its **Execution record** carries
+every anchor measured on 2026-08-29 (frame layout, spawn link, join drive,
+scope extents, chfin reclaim, the C-22 rung to lift, the dyn rung that
+STAYS, the three harness excuse rows) so you do not re-derive them.
 
-The plan files carry file:line anchors verified at planning time —
-**re-verify each anchor before editing** (lines drift as work lands);
-the anchor tells you what to look for, not a blind offset.
+Item 6 (D-215) is done. Items 1–5 are the deep half — frame layout, scope
+exit across four exit kinds, channel reclaim re-homed, `TY_SHARED_ARENA`
+gaining a drop — and they were deliberately left for a fresh session. Read
+the record's ordering note before writing any emission, and give the
+concurrency tests `// stress: 40`.
+
+## What today's six subcycles should change about how you read a plan
+
+**Every plan file whose diagnosis could be tested was wrong about the
+diagnosis, while right about the goal.** Test the reported symptom before
+implementing the reported fix:
+
+- D-208 said the move analysis was straight-line and asked for
+  loop-carried states. The loop rule had held since 0.5.3; PARAMETERS were
+  invisible to the analysis entirely, and the audit's own evidence
+  (`modmap_members`) was a `move` PARAMETER, not a loop.
+- D-216 said TYPE-046 already refused a pick arm binding an owning
+  payload. It did not — that was a live use-after-free, confirmed by an
+  executed probe reading `0xAA` poison.
+- D-210 predicted no deliberate-wrap sites because "the hash mixers ride
+  tbb/wide". They rode plain `uint64`; FNV's multiply IS the wraparound.
+- §26 of TYPE_REFERENCE promised `fixed` on struct fields was enforced. It
+  was enforced nowhere.
+
+The pattern: **a rule believed in force because a document says so.**
+Making a dormant rule apply is how four live defects surfaced today,
+including two memory-safety holes. Expect the same from items 1–5.
 
 ## The rules that bite (each has already cost a debugging cycle)
 
@@ -116,6 +123,7 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.2.md` end to end, re-verify its anchors
-against the current tree, and begin Step 0. Announce the step you are
-on as you work; commit per the file's acceptance section.
+Read `meta/roadmap/1.4/1.4.4.md` end to end — the plan AND its execution
+record — then start on items 1–5. Re-verify each anchor before editing
+(lines drift); the anchor says what to look for, not a blind offset.
+Announce the item you are on; commit per the file's acceptance section.
