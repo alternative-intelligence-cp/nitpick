@@ -109,7 +109,7 @@ numbers and are superseded by these.
 |---|---|---|
 | 1.4.0 | **Cycle open** — the decision batch ratified; the renumbering/staleness doc sweep (this file, SUBSET_1 §4 + :266, the C-10 spec texts, C-17's stale floor count, BUILTIN_REFERENCE's stale site count, `nitpick.toml`'s "1.3" note) | ratification |
 | 1.4.1 | **The instruments** — B-7's `check_type_kinds_total`; wire `selfcheck.py` + `spec_coverage.py` into the run; `check_allocas_hoisted` on stage 1; fix whatever their first runs find | 1.4.0 |
-| 1.4.2 | **P-3** — the generated signature table, builtin calls typed for real, the emitter's parallel authority retired, the tree-wide re-spell under the transitional rule | D-201 |
+| 1.4.2 | **P-3 — DONE** — the generated signature table, builtin calls typed for real, the emitter's parallel authority retired, the tree-wide re-spell under the transitional rule | D-201 |
 | 1.4.2b | **The audit repairs** — plain-int overflow TRAPS (D-210, the Therac class off the default type) and module bindings `const`/`fixed`-only (D-211, the spellable global race closed) | D-210, D-211 |
 | 1.4.3 | **S-2** — loop-carried moved-from states in the 0.5 move analysis (the read-before-assign fixed point extended, not a new walk) | D-208 |
 | 1.4.3b | **The consuming `pick`** — `pick (move(v))`, ownership into the matched arm; owning enum payloads stop being write-only (D-216) | D-216, 1.4.3 |

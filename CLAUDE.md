@@ -331,10 +331,36 @@ README carries the full proposed verification architecture (solver
 determinism profile, encodings, obligation catalogue), 1.6's the Astrée
 preparation handbook and C-19 question list, and 1.4.2–1.4.8 each have
 execution-grade subcycle files written for a fresh executor to follow
-without asking. Next: 1.4.1 lands (the instruments — B-7's
-walkers-total check found and fixed the missing TY_ENUM drop arm, a
-silent payload leak live since 1.2, plus the contains-walker
-laundering holes), then 1.4.2 (P-3) per its file.
+without asking. 1.4.1 landed the instruments (B-7's walkers-total check
+found and fixed the missing TY_ENUM drop arm, a silent payload leak live
+since 1.2, plus the contains-walker laundering holes). **1.4.2 (P-3) is
+COMPLETE** — four commits, full harness green at each:
+BUILTIN_REFERENCE.md's marked regions are now the ONE signature
+authority, parsed strictly (`gen_tables.py` hard-fails on a row it cannot
+read) and cross-checking the Signature column's `Result<…>` against the
+Fails column; `builtins.npk` gained `builtin_sig_special/_count/_param/
+_param_move/_ret` and **`ir_runtime.npk` is GENERATED from the same
+rows** — the LLVM ABI derived, with a five-token `**ABI:**` note
+(`inline`, `sym=`, `ret=`, `args=`, `envelope`) only where a symbol
+departs, and the nine emitter-only symbols in their own §2d region. Every
+regular builtin call is TYPED (arity, per-argument fit, `move`, spread
+refusal; a `never fails` builtin is the BARE value, a may-fail one a
+`Result<T>` — D-201 §4), four bespoke arms retired into the table,
+`NITPICK-TYPE-054` carries a builtin's own call rules, and **2,215
+`raw`/`relay` plus 242 `drop` came off the tree** in 150 files, with the
+seed's three wrapped-flag flips and its extract-at-site in the same
+commit. The emitter's parallel authority is gone: `result_ll_value_half`
+and its `?|`/`?!` consumers, `emit_raw`'s wrapped/inner fallback,
+`drop`'s nine hardcoded builtin names, and the argument coercion's blind
+`zext` (the D-192 class — a negative `int32` widened into an enormous
+positive `int64`) which now reads signedness off the recorded type.
+Found on the way: **five latent unchecked pointer reinterpretations in
+`src/`** (`ralloc`/`alloc` bytes bound or cast without `=>!`, invisible
+while the callee had no type) and the instrument defect that
+`check_runtime_sigs_agree`'s derived-inner cross-check had NEVER RUN — it
+read the wrapped flag out of a leaked loop variable. Three of step 3's
+four defects were caught by the compiler checking ITSELF, none by a test.
+Next: 1.4.2b (D-210 overflow traps, D-211 const/fixed module state).
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
@@ -365,8 +391,13 @@ name, or is confessed — plus the LIVE-1 carrier accessors stay read; its first
 run found five expression kinds dying as internal defects), `check_codes_tested`
 (every code has a case, or a stated reason), `check_codes_centralised` (no code
 literal outside a `*_codes.npk`), `check_ll_types_agree` (`// ll:` markers match
-the lowering), `check_runtime_sigs_agree` (npkrt.ll vs seed vs ir_runtime,
-three ways), and `check_zero_dependency` (the undefined-symbol scan). An eighth,
+the lowering), `check_runtime_sigs_agree` (npkrt.ll vs seed vs
+the ir_runtime table BUILTIN_REFERENCE now generates — the spec in the loop
+since 1.4.2, and its derived-inner leg found dead on the day it was fixed),
+`check_builtin_sig_texts` (every type text the generated signature table hands
+the checker is one `builtin_text_type` can intern, and no arm of it is dead —
+it caught a half-done `wildx any->` on its first run), and
+`check_zero_dependency` (the undefined-symbol scan). A ninth,
 `check_decisions_current`, REPORTS rather than fails: stale decision-log
 candidates print on every full run for the doc-sync pass. They diff the compiler
 against the thing that describes it, which is how cycle 0.6 found every one of

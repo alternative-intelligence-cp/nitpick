@@ -14185,6 +14185,29 @@ Closes P-3 (D-192's residue). Full rationale and survey: `meta/roadmap/1.4/1.4.0
    taught the extract-at-site in the same commit; (c) the transitional
    rule removed — `raw` on a non-Result operand refuses, as everywhere.
 
+> **LANDED at 1.4.2** (2026-08-29), in four commits over the three steps
+> plus a preparation step. Two departures from the text above, both forced
+> by the tree and both recorded in `meta/roadmap/1.4/1.4.2.md`:
+>
+> - §1's `read`/`write` pointer is **`wild any->`**, not `wild int8->`. The
+>   prelude passes a `uint8->` (a slice's `.ptr` is a pointer to its
+>   element) and `nbridge` an `int8->`, so a signature naming either refuses
+>   the other. It is the reference's own spelling for the same idea —
+>   `ralloc` and `dalloc` have carried it since the allocator was written —
+>   and `mcpy`/`mmov`/`memset`/`string_from_bytes`/`driver_clone_exec` and
+>   the `wildx` trio were given it for the same reason: the floor takes an
+>   ADDRESS and a byte count. The acceptance is a named arm of the builtin
+>   argument check, not a loosening of `fits`.
+> - §7's transitional rule had to cover **`relay`** as well as `raw`/`drop`
+>   — 25 `relay string_concat(…)` sites in the prelude, `lib/` and the test
+>   programs go through the same `type_unwrap`.
+>
+> The seed's wrapped-flag flip was three names, not the ~25 estimated: the
+> rest were already bare. Four bespoke arms beyond the nine irregulars
+> (`string_bytes`, `buffer_new`, `own_fd`, `release_fd`) retired into the
+> table rather than being kept, since each has an ordinary signature and
+> keeping them would leave the parallel authority this decision collapses.
+
 ## D-202 — the fixpoint criterion restated — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-10. The harness has measured the right thing since 0.8.1 — the
