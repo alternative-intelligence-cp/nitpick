@@ -14584,3 +14584,62 @@ name. Contract expressions admit calls only to `never fails` PURE
 functions (no allocation, no I/O, no suspension). D-014's injected
 `ensures result > 0` on `failsafe` and the non-empty-body check are
 implemented at 1.5.3.
+
+## D-222 — `const` retires; `fixed` is the one immutability keyword — **SETTLED (user decision, 2026-08-29)**
+
+Raised by the user while reading 1.4.2b's D-211 work: the message it had just
+shipped said "module state is `const` or `fixed`", and the user's recollection
+was that `const` had been relegated to `extern "C"` blocks years ago with
+`fixed` introduced to replace it. The recollection was right, `TYPE_REFERENCE`
+§26 still said so verbatim ("`const` is **ONLY valid inside `extern { }`
+blocks**… Use 'fixed'"), and **the implementation had never enforced it** — no
+rule anywhere refused `const` outside an extern block.
+
+**What had actually drifted.** A 0.5-era paragraph made `fixed` "the
+body-scoped spelling and `const` the module-scoped one" — one rule, two
+spellings chosen by context, which is the blueprint philosophy's own target
+seen from the other side. `const`'s documented home then vanished under D-149
+(no in-process FFI, so no C ABI; the `extern` that returned at 1.1.13c is
+driver-wire stubs with no C types), and D-211 had just entrenched the pairing
+in a diagnostic every author would read.
+
+**The decision:**
+
+1. **`fixed` is the ONE immutability keyword**, in every position — local,
+   parameter, struct field, module binding. It means the value is written once
+   and never again; the write may be at compile time or at RUN time, which is
+   the half most languages make hard and the half `fixed` was invented for.
+2. **`const` is retired from the language.** Not reserved: D-088's rule ("a
+   reserved word naming nothing costs a user an identifier and gives a reader a
+   keyword they cannot look up") applies, so it is an ordinary identifier again.
+3. **The compile-time claim keeps its existing spelling.** `comptime(…)` around
+   an initialiser refuses an expression that does not fold
+   (`NITPICK-TYPE-004`), so "written once" and "and I know it now" are already
+   separable and both checked.
+4. **Every module binding lowers to LLVM `constant`.** D-165 requires a
+   compile-time-constant initialiser and D-211 requires the qualifier, so the
+   writable `global` form had no occupant left. Read-only memory is a stronger
+   statement of the same fact than a checker rule alone.
+5. **D-211's message becomes "module state is `fixed`"**; the rule it settled —
+   a module binding must carry the qualifier — is unchanged.
+
+**Giving `const` a real second meaning was considered and declined.** The
+candidate was "the value is known at COMPILE time" (C++'s `constexpr`), and the
+case for it was the `never fails` precedent: a checked declaration beats an
+inferred fact because it fails where the author wrote the claim. It was declined
+because the claim already has that checked spelling (point 3), and because
+naming it `const` would carry C++'s meaning rather than C's — the very
+collision the rename principle exists to prevent. **The general rule that
+decided it, worth applying to the next proposal of this shape: let an author
+declare intent the compiler CANNOT infer — write-once is intent — and do not add
+a keyword for structure it already derives and already lets them assert.**
+
+**Found while implementing (the reason this was worth doing beyond tidiness):**
+`fixed` on a struct FIELD enforced **nothing**. §26 had promised "a field can
+never be reassigned after construction" for as long as the keyword existed, and
+a direct write, a repeated write and a write through a pointer were all
+accepted. There were four `QUAL_FIXED` reads in the entire frontend and none
+looked at fields. Now checked in `bindings.npk` beside the other immutability
+rules, sharing `NITPICK-ASSIGN-002`. Its sibling — `const` on a LOCAL, accepted
+and meaning nothing — is closed by the retirement itself.
+

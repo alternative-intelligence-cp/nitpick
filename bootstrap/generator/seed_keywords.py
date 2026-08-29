@@ -44,7 +44,6 @@ KEYWORDS = {
     "char8",
     "complex",
     "comptime",
-    "const",
     "continue",
     "cstring",
     "defaults",

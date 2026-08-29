@@ -9,7 +9,7 @@
 // Then the writer's scope closes its end and the reader sees IoEof.
 mod:text_pipe;
 error:EStep;
-const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
 
 thread async func:feed = NIL(int64:wfd) joins JOIN_2S {
     ByteWriter:w = ByteWriter{ sink: own_fd((wfd =>! int32) =>! fd) };

@@ -17,7 +17,7 @@ use "../frontend/intern.npk".*;
 use "../frontend/ast_kind.npk".*;
 use "../frontend/ast.npk".*;
 use "../frontend/parse_decl.npk".*;
-use "../frontend/parser.npk".*;   // QUAL_CONST (D-165)
+use "../frontend/parser.npk".*;   // QUAL_FIXED (D-165, D-211)
 use "../frontend/diagnostics.npk".*;
 use "../frontend/symbols.npk".*;
 use "../frontend/module_graph.npk".*;
@@ -964,8 +964,10 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
 // since 0.9.1). Functions emit — their signatures resolve in their own home
 // scopes (D-137), so the caller's emitter serves — and the members a rung
 // refuses refuse here exactly as at top level.
-// A MODULE-LEVEL BINDING, LOWERED TO AN LLVM GLOBAL (D-165, 1.0.9d). `const`
-// gives an immutable `constant`; `fixed` and a plain binding give a `global`.
+// A MODULE-LEVEL BINDING, LOWERED TO AN LLVM CONSTANT (D-165, 1.0.9d; 1.4.2c).
+// Every one of them: D-211 requires `fixed` and D-165 requires the initialiser
+// to be a compile-time constant, so the writable `global` form the plain and
+// `fixed` spellings used to take has no occupant left.
 // The initialiser is a compile-time constant the checker has already held to
 // that shape (`TYPE_GLOBAL_NOT_CONSTANT`), rendered by `emit_global_const`. The
 // symbol follows D-156. No initialiser runs before `main`: the value is the
@@ -996,11 +998,14 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         drop refuse(diags, raw iv_broken(d.span));
         pass NIL;
     }
-    string:kw = "global";
-    if ((raw global_quals(d) & (raw QUAL_CONST())) != 0i32) { kw = "constant"; }
+    // EVERY MODULE BINDING IS `constant` (1.4.2c). D-165 requires the
+    // initialiser to be a compile-time constant and D-211 requires `fixed`, so
+    // the writable `global` form had no occupant left once `const` retired —
+    // and the memory the linker maps read-only is a stronger statement of the
+    // same fact than a checker rule alone.
     string:sym = raw mangled_fn_sym(x.fe.ctx, item.index,
                      raw intern_get(x.interns, raw decl_name(d)));
-    drop irw_raw(x.fe.w, raw cat5(sym, " = ", kw, " ",
+    drop irw_raw(x.fe.w, raw cat5(sym, " = ", "constant", " ",
                      raw cat3(gll.text, " ", cval)));
     pass NIL;
 };

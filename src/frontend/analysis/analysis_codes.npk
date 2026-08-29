@@ -94,7 +94,8 @@ pub func:BORROW_UNSETTLED = string() never fails  { pass "NITPICK-BORROW-010"; }
 // A read of a binding that is not assigned on every path reaching it.
 pub func:ASSIGN_UNASSIGNED = string() never fails { pass "NITPICK-ASSIGN-001"; };
 
-// A second assignment to a `fixed` binding, or to a `const` global. One code for
+// A second assignment to a `fixed` binding — local, parameter, struct field or
+// module binding, which are one rule in four positions. One code for
 // both, because it is one rule — assigned once, where it is declared — and a
 // reader filtering a log is asking the same question either way.
 pub func:ASSIGN_IMMUTABLE = string() never fails  { pass "NITPICK-ASSIGN-002"; };

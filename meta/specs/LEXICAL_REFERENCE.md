@@ -67,7 +67,7 @@ VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
 ;   Contracts ::= ( "requires" Expr | "ensures" Expr
 ;                 | "acquires" ["<="] Expr | "never" "fails"
 ;                 | "joins" Expr )*
-; `joins <const Duration>` states a THREAD's join deadline where its executor
+; `joins <fixed Duration>` states a THREAD's join deadline where its executor
 ; is created (D-083/D-181) — one greppable, reviewable place per thread.
 ; `never fails` is also legal after a function TYPE's parameter list.
 
@@ -79,7 +79,7 @@ ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
 TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque" | "error"
                       | "unit"
                       | "trait" | "impl" | "Self"
-                      | "Rules" | "limit" | "const" | "fixed" | BuiltinType
+                      | "Rules" | "limit" | "fixed" | BuiltinType
 
 BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "int64" | "int128" | "int256" | "int512" | "int1024"
@@ -136,6 +136,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `assoc` added | D-028 — declares an associated type |
 | **`Type` removed** | D-088 — the namespace construct it named is gone, `mod` having done that job all along and done it better (it can name a *file*, joins the module graph, and is what `use` imports from). A reserved word naming nothing costs a user an identifier and gives a reader a keyword they cannot look up — the same reasoning as D-041's 35 collection keywords and D-074's five. |
 | **`stream`, `process`, `pipe`, `debug`, `log` removed** | D-074 — all five were reserved and **defined nowhere**; `TYPE_REFERENCE` skips §24, which is where `stream` presumably went. A reserved word that names nothing costs userland an identifier and gives a reader a keyword they cannot look up. Same reasoning as D-041's 35 collection keywords. The I/O model is `IO_REFERENCE.md` and needs no language syntax. |
+| **`const` removed** | 1.4.2c — `fixed` is the one immutability keyword, in every position. `const` had been scoped to `extern \"C\"` blocks, which stopped existing when D-149 removed in-process FFI, and had drifted into an unenforced module-scope alias for `fixed` — one meaning with two spellings chosen by context. Giving it C++'s `constexpr` meaning instead was declined: that claim is already spelled `comptime(…)` and checked, and the name would carry the very C collision the rename principle prevents. Not reserved, per D-088's rule about words naming nothing. See TYPE_REFERENCE §26. |
 | **`binary` removed** | D-074 — `{ptr, i64 length}` is *identical* to a slice (D-070), with identical non-owning behaviour and sub-ranging. Its remaining distinction, immutability, is a **binding** property in Nitpick, not a type property, so an immutable byte view is `fixed uint8[]`. Redundant twice over. `buffer` is retained: a slice cannot own. |
 | **`move` moved** from `MemoryQualifier` to `ControlFlow` | D-065 — it is not a *memory* qualifier. `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`, and it belongs beside the other ownership keywords `drop` and `nodrop`. **Narrowed by D-183**: `move` also appears in DECLARATION position on a parameter (`func:f = R(move T:p)`), marking a CONSUMING parameter — the caller transferred ownership in. It still says nothing about how storage is managed, which is what a memory qualifier says; it says how the binding was initialised. It rides the qualifier slot mechanically and is refused (`NITPICK-MOVE-004`) anywhere but a parameter. |
 | **`relay` and `_^` added** | D-080 — the language had **no way to propagate an error**. With every function returning `Result<T>`, propagation is the most common operation there is, and its absence pushed callers toward `raw` (bypasses the discipline), `?!` (escalates a recoverable error to shutdown), or `?` with a default (silent success). `relay` forwards the code verbatim and runs `defer`. |

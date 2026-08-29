@@ -17,8 +17,8 @@
 mod:folding;
 error:E9;
 
-const int32:BASE = 5i32;
-const int32:DERIVED = BASE * 2i32 + 1i32;      // a const reading another const
+fixed int32:BASE = 5i32;
+fixed int32:DERIVED = BASE * 2i32 + 1i32;      // a fixed reading another const
 
 struct:Big = { int64:a; int64:b; };
 
@@ -61,7 +61,7 @@ comptime func:sum_loop = int64(int64:n) {
 // (AST_REFERENCE 3.3) so it resolves to no symbol, which is why these are answered
 // before the declaration lookup rather than after it fails. Four have compile-time
 // answers; every other builtin allocates, opens a file, or talks to the kernel.
-const string:GREET = string_concat("hel", "lo");
+fixed string:GREET = string_concat("hel", "lo");
 
 comptime func:greet_len = int64() { pass string_byte_length(GREET); };
 
@@ -101,8 +101,8 @@ func:each_length_is_what_it_folded_to = NIL(Holder->:h) never fails {
 // The lock analysis (D-056, 0.5.6) took an integer literal and nothing else. It
 // takes what folds now, and the ORDERING it enforces is unchanged: this acquires
 // upward, which is the whole point.
-const int32:LOW = 1i32;
-const int32:HIGH = LOW + 2i32;
+fixed int32:LOW = 1i32;
+fixed int32:HIGH = LOW + 2i32;
 
 struct:Lease = { int32:v; };
 

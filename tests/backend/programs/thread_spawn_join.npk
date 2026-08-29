@@ -15,7 +15,7 @@
 // the wait, which is what makes "there is no thread handle" (D-083)
 // implementable rather than aspirational.
 mod:thread_spawn_join;
-const Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
+fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
 thread async func:slow = NIL(int32:_~v) joins JOIN_5S {
     await sleep(raw duration_ms(120i64)) ?| NIL;   // outlives main's own work
     pass NIL;

@@ -108,13 +108,18 @@ impl:Loose:Storage = {
 // `acquires (1i32 + 1i32)` FOLDS since 0.6.4, and so does `acquires LEVEL` for a
 // `const` global — the same evaluator an array size uses.
 //
-// WHAT IS STILL REFUSED IS THE RULE RATHER THAN THE RUNG: `fixed` is assigned once
-// at RUN time, so it is not a value the compiler can know, and a lock level has to
-// be one — the ordering is decided while compiling or it is not decided at all.
-fixed int32:RUNTIME_LEVEL = 2i32;
+// WHAT IS STILL REFUSED IS THE RULE RATHER THAN THE RUNG: a lock level has to be
+// a value the compiler knows, because the ordering is decided while compiling or
+// it is not decided at all.
+//
+// A PARAMETER is the shape that says so now. This case named a module binding
+// until 1.4.2c, when `const` retired: every module binding is a compile-time
+// constant by construction (D-165 requires the initialiser to be one, D-211
+// requires the qualifier), so one standing in a lock level folds and is legal.
+// A parameter's value arrives at run time and cannot.
 
 // expect-error: NITPICK-LOCK-003
-func:level_is_not_constant = NIL() acquires RUNTIME_LEVEL {
+func:level_is_not_constant = NIL(int32:runtime_level) acquires runtime_level {
     pass NIL;
 };
 

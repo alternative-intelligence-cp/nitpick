@@ -120,9 +120,9 @@ func:defer_after_assignment = int32() never fails {
 // string is what diagnostic codes are written as, and refusing it would refuse the
 // construct's main use.
 
-pub const int32:LIMIT = 100i32;
-pub const string:CODE = "NPK-001";
-pub const bool:ENABLED = true;
+pub fixed int32:LIMIT = 100i32;
+pub fixed string:CODE = "NPK-001";
+pub fixed bool:ENABLED = true;
 
 // A GLOBAL WITHOUT `const` IS NOT THIS RULE'S BUSINESS.
 pub fixed int32:counter = 0i32;
@@ -134,4 +134,26 @@ func:reads_the_consts = int32() never fails {
 
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
+};
+
+// --- `fixed` IS WRITE-ONCE, NOT COMPILE-TIME-ONLY (D-222) --------------------
+//
+// The half of `fixed` that other languages make you work around: a value
+// nothing knows at compile time, written exactly once at run time, and
+// immutable from there. Declared without an initialiser, assigned later, never
+// again. `tests/analysis/rejection/definite_assignment.npk` carries the second
+// write; this is the shape that must keep compiling.
+func:da_fixed_runtime = int32(int32:seed) never fails {
+    fixed int32:derived;
+    derived = seed * 3i32;
+    pass derived;
+};
+
+// ...and the same through a struct field, written when the aggregate is built.
+struct:DaCfg = { fixed int32:bound; int32:tally; };
+
+func:da_fixed_field = int32(int32:seed) never fails {
+    DaCfg:c = DaCfg{ bound: seed * 3i32, tally: 0i32 };
+    c.tally = 5i32;                 // an ordinary field still moves
+    pass c.bound + c.tally;
 };

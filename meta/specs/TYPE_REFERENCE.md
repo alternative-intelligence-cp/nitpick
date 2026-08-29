@@ -1476,85 +1476,100 @@ D-200's own words: "the same containers over `tryte`". `matrix<tryte>` and
 
 ---
 
-## 26. `const` vs `fixed` — Immutability Keywords
+## 26. `fixed` — the immutability keyword
 
-> **These are frequently confused — this section is the authoritative reference.**
+> There is **one**, and it is `fixed`. `const` was retired from the language at
+> 1.4.2c; the history is at the end of this section because `const` is what a
+> reader arriving from another language will look for.
 
-### `fixed` — Nitpick Immutability Keyword
+`fixed` means **this value is written once and never again.** The write may
+happen at compile time or at run time — that is the point of it, and the half
+most languages make hard.
 
-`fixed` is Nitpick's native immutability keyword. It means "this value CANNOT change after initialization."
+**Every position, one meaning:**
 
-**Valid uses:**
 ```nitpick
-// Variable declaration
-fixed int32:MAX_SIZE = 1024i32;           // module-level constant
-pub fixed string:VERSION = "1.0.0";       // public module-level constant
+// A module binding. Its initialiser is the only place it can be written
+// (D-165), it must be a compile-time constant, and D-211 requires the keyword.
+pub fixed int32:MAX_SIZE = 1024i32;
+pub fixed string:VERSION = "1.0.0";
 
-// Struct field
+// A local, written where it is declared...
+func:f = NIL() never fails {
+    fixed int32:cap = 100i32;
+    // cap = 200i32;        // NITPICK-ASSIGN-002
+    pass NIL;
+};
+
+// ...or written ONCE, LATER, from a value nothing knew at compile time.
+// This is the case other languages make you work around.
+func:g = int32(int32:seed) never fails {
+    fixed int32:derived;
+    derived = raw compute(seed);   // the one write, at run time
+    // derived = 0i32;             // NITPICK-ASSIGN-002
+    pass derived;
+};
+
+// A struct field, written when the aggregate is constructed and never after —
+// including through a pointer.
 pub struct:Config = {
-    fixed string:name;       // field can never be reassigned after construction
-    int32:value;             // normal mutable field
+    fixed string:name;
+    int32:value;
 };
 
-// Local variable
-func:f = NIL() {
-    fixed int32:limit = 100i32;   // cannot be reassigned in this scope
-    // limit = 200i32;             // ERROR: ARIA-056 cannot assign to fixed
-    pass(NIL);
-};
+// A parameter the callee may not reassign.
+func:greet = NIL(fixed string:name) { pass NIL; };
 ```
 
-**Diagnostic:** Attempting to assign to a `fixed` variable or field emits:
-```
-ARIA-056: cannot assign to fixed field <f> of struct <S>
-ARIA-056: cannot assign to fixed variable <name>
-```
+**Diagnostic:** every one of these is `NITPICK-ASSIGN-002` — one question, one
+code, whatever the position. A reader filtering a log is asking the same thing
+each time.
 
-**IR representation:** `fixed` variables are still emitted as `alloca` + `store` at IR
-level — they are NOT LLVM `constant` globals unless also at module scope.
-At module scope, `pub fixed T:name = val;` → `@name = global T val` (initialized once).
-The immutability is enforced entirely by the type checker; no LLVM `readonly`/`const`
-attribute is needed since the type checker prevents further writes.
+**And the value need not be known at compile time.** Where you want to say it
+*is*, wrap the initialiser: `comptime(…)` refuses an expression that does not
+fold (`NITPICK-TYPE-004`), so the claim is checked where you wrote it.
 
-**`fixed` in function parameters:**
 ```nitpick
-func:greet = NIL(fixed string:name) {
-    // name = "other";   // ERROR: cannot reassign fixed parameter
-    pass(NIL);
-};
+fixed int32:ok = comptime(2i32 * 3i32);        // accepted
+fixed int32:no = comptime(raw runtime_val());  // refused: does not fold
 ```
 
-**`fixed` with arrays** (static arrays):
-```nitpick
-fixed int32[4]:arr = [1i32, 2i32, 3i32, 4i32];  // fixed-size, immutable array
-```
+**IR representation.** A local `fixed` is an ordinary `alloca` + `store`; the
+immutability is the checker's, and no LLVM attribute is needed because nothing
+can emit a second write. A module binding lowers to `@"npk.<module>.name" =
+constant <T> <v>` — read-only memory, since D-165 already requires the
+initialiser to be a compile-time constant and D-211 requires the keyword, so
+every module binding qualifies.
 
 ---
 
-### `const` — C Interoperability Only
+### Why `const` is not in this language
 
-`const` is **ONLY valid inside `extern { }` blocks** for C/C++ FFI compatibility.
-It is NOT a general Nitpick keyword.
+`const` was Nitpick's first deliberate rename (see `rename` in DECISIONS). The
+objection was never the concept, it was that the word means something different
+in every language that has it — the reference, the referent, both, or neither —
+and yields spellings like `const const T`. `fixed` was introduced to mean one
+flat thing: **the value never changes, ever**, nothing qualified.
 
-```nitpick
-// VALID: const in extern block (C ABI compatibility)
-extern {
-    const int32:EINVAL = 22i32;          // C-compatible const int
-    func:strlen = int64(const int8->:s); // const char* parameter
-}
+`const` survived for a while as a C-interop spelling inside `extern { }` blocks,
+and then as an unenforced module-scope alias for `fixed`. Both justifications
+are gone: **D-149 removed in-process FFI entirely**, so there is no C ABI to be
+compatible with (`extern` returned at 1.1.13c as driver-wire stubs, which carry
+no C types), and the module-scope alias was one meaning with two spellings
+chosen by context — the blueprint rule's own target.
 
-// INVALID: const outside extern block — type checker error:
-// const int32:x = 42i32;    ERROR: 'const' is only valid in extern blocks
-//                            Use 'fixed' for Nitpick constants
-```
+**Giving it a second, real meaning was considered and declined** (1.4.2c). The
+candidate was "the value is known at COMPILE time", C++'s `constexpr`. It was
+declined for two reasons: the claim already has a checked spelling —
+`comptime(…)` around the initialiser — and naming that keyword `const` would be
+exactly the C collision the rename principle exists to prevent, since it would
+carry C++'s meaning rather than C's. The general rule that decided it: **let an
+author declare intent the compiler cannot infer; do not add a keyword for
+structure it already derives and already lets them assert.**
 
-**Diagnostic for invalid `const` use:**
-```
-ARIA-XXX: 'const' is reserved for extern blocks only.
-          Use 'fixed' to declare an immutable Nitpick value.
-```
-
-**At IR level:** `const` in extern maps to C's `const` qualifier — typically a `nocapture readonly` pointer attribute in LLVM IR for pointer parameters, or a `constant` global for values.
+`const` is not a reserved word. Following D-088's precedent — "a reserved word
+naming nothing costs a user an identifier and gives a reader a keyword they
+cannot look up" — it is an ordinary identifier again.
 
 ---
 

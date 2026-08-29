@@ -69,7 +69,6 @@ pub func:DECL_DERIVED = int32() never fails   { pass 4096i32; };
 pub func:DECL_RET_WILD = int32() never fails  { pass 64i32; };
 pub func:DECL_RET_WILDX = int32() never fails { pass 128i32; };
 pub func:DECL_RET_STACK = int32() never fails { pass 256i32; };
-pub func:DECL_RET_CONST = int32() never fails { pass 512i32; };
 pub func:DECL_RET_FIXED = int32() never fails { pass 1024i32; };
 // `thread` (D-181): this function is a THREAD BODY — it owns an executor and
 // the arena its task frames come from (D-034), which is what makes it a
@@ -85,7 +84,6 @@ func:p_return_quals = int32(Parser->:p) never fails {
         if (k == TokenKind.KwWild)  { bit = raw DECL_RET_WILD(); }
         if (k == TokenKind.KwWildx) { bit = raw DECL_RET_WILDX(); }
         if (k == TokenKind.KwStack) { bit = raw DECL_RET_STACK(); }
-        if (k == TokenKind.KwConst) { bit = raw DECL_RET_CONST(); }
         if (k == TokenKind.KwFixed) { bit = raw DECL_RET_FIXED(); }
         if (bit == 0i32) { break; }
         discard(raw p_advance(p));

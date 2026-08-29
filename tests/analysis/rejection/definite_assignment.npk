@@ -120,7 +120,7 @@ func:defer_registered_too_early = int32() never fails {
 // assignment could appear. That makes the rule two halves: the initialiser has to
 // be there, and it has to be constant.
 
-pub const int32:MAX = 100i32;
+pub fixed int32:MAX = 100i32;
 
 // expect-error: NITPICK-ASSIGN-002
 func:writes_a_const_global = NIL() never fails {
@@ -130,7 +130,7 @@ func:writes_a_const_global = NIL() never fails {
 
 // NOTHING CAN EVER WRITE IT, so it can never hold a value.
 // expect-error: NITPICK-ASSIGN-001
-pub const int32:NEVER_WRITTEN;
+pub fixed int32:NEVER_WRITTEN;
 
 // A `const` READING ANOTHER `const` FOLDS (0.6.4), so `MAX * 2i32` is an
 // initialiser like any other. `fixed` is the one that does not: it is assigned once
@@ -139,12 +139,18 @@ pub const int32:NEVER_WRITTEN;
 // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is the same
 // question — is this expression constant — and since 0.6.4 the same evaluator
 // answers it. A reader filtering on this code is asking one thing.
-pub const int32:COMPUTED = MAX * 2i32;
+pub fixed int32:COMPUTED = MAX * 2i32;
 
 fixed int32:DECIDED_AT_RUNTIME = 7i32;
 
-// expect-error: NITPICK-TYPE-004
-pub const int32:FROM_FIXED = DECIDED_AT_RUNTIME;
+// (A case stood here until 1.4.2c asserting that a module binding could NOT
+// stand in a constant expression unless it was spelled `const`. That shape no
+// longer exists: D-165 requires every module binding's initialiser to be a
+// compile-time constant and D-211 requires the qualifier, so every one of them
+// IS a constant and folds — which is what this now demonstrates by compiling.
+// A non-constant INITIALISER is `NITPICK-TYPE-039`'s question and has its own
+// file, `types/rejection/global_not_constant.npk`.)
+pub fixed int32:FROM_FIXED = DECIDED_AT_RUNTIME;
 
 // --- `fixed` is assigned once -----------------------------------------------------
 
@@ -174,4 +180,26 @@ func:fixed_assigned_in_a_loop = int32(bool:c) never fails {
     fixed int32:k;
     while (c) { k = 1i32; }
     pass k;
+};
+
+// A `fixed` FIELD IS WRITTEN AT CONSTRUCTION AND NEVER AGAIN (D-222).
+// TYPE_REFERENCE §26 promised this for as long as the keyword existed and
+// nothing enforced it until 1.4.2c — a direct write, a repeated write and a
+// write through a pointer were all accepted. `.` auto-dereferences (D-006), so
+// the pointer form is the same write.
+struct:DaFixed = { fixed int32:bound; int32:tally; };
+
+// expect-error: NITPICK-ASSIGN-002
+func:da_field_write = int32() never fails {
+    DaFixed:c = DaFixed{ bound: 1i32, tally: 0i32 };
+    c.bound = 2i32;
+    pass c.bound;
+};
+
+// expect-error: NITPICK-ASSIGN-002
+func:da_field_through_ptr = int32() never fails {
+    DaFixed:c = DaFixed{ bound: 1i32, tally: 0i32 };
+    DaFixed->:p = @c;
+    p.bound = 4i32;
+    pass c.bound;
 };

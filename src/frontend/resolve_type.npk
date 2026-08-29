@@ -29,7 +29,7 @@ use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
-use "./parser.npk".*;   // QUAL_CONST, for what may stand in a constant expression
+use "./parser.npk".*;   // QUAL_FIXED, for what may stand in a constant expression
 use "./builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
 
 // WHICH GENERIC PARAMETERS ARE IN SCOPE, AND WHAT THEY STAND FOR.
@@ -1451,7 +1451,7 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
 
     DeclNode:d = raw ast_decl(r.ast, DeclId{ index: sym.origin });
     if (d.kind != DeclKind.DeclGlobalDecl) { pass (raw cv_none()); }
-    if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) { pass (raw cv_none()); }
+    if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) { pass (raw cv_none()); }
 
     // THE INITIALISER IS FOLDED IN THE SCOPE IT WAS WRITTEN IN, not the one the
     // reference stands in. A `const` in another module means what it meant there.

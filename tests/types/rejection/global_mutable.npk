@@ -12,18 +12,16 @@
 // `src/`, `lib/` and `tools/`, measured when the rule landed.
 mod:global_mutable;
 
-// `const` is a value that never changes...
-const int32:LIMIT = 40i32;
-
-// ...and `fixed` is one assigned exactly once, which the definite-assignment
-// rules already police. Both are accepted, and this file's point is that the
-// THIRD spelling is not.
+// `fixed` is the ONE immutability keyword, in every position (1.4.2c): a value
+// assigned exactly once, which the definite-assignment rules already police,
+// and at module scope the only place it CAN be assigned is here.
+fixed int32:LIMIT = 40i32;
 fixed int32:started = 0i32;
 
 // expect-error: NITPICK-TYPE-055
 int32:mutable_counter = 0i32;
 
-// The qualifier has to be one of the two: `stack` on module state is not a
+// A different qualifier is not the qualifier: `stack` on module state is not a
 // regime question, it is the same missing acknowledgement.
 // expect-error: NITPICK-TYPE-055
 stack int32:scoped_global = 1i32;

@@ -218,7 +218,7 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
             if (!(raw cv_is_int(cv))) {
                 if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
-                    "an `acquires` level must be a constant expression; a name folds only if it is a `const` global",
+                    "an `acquires` level must be a constant expression: the ordering is decided while compiling or it is not decided at all. A module binding folds (every one is a compile-time constant, D-165/D-211); a local or a parameter is a value that arrives too late",
                     cnode.span);
                 pass (raw no_level());
             }

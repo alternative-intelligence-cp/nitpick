@@ -22,7 +22,7 @@ use "./type_codes.npk".*;
 use "./types.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
-use "./parser.npk".*;   // QUAL_CONST (D-165)
+use "./parser.npk".*;   // QUAL_FIXED (D-165, D-211)
 use "./parse_expr.npk".*;
 use "./parse_pick.npk".*;
 use "./parse_decl.npk".*;
@@ -1104,8 +1104,8 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
                     }
                 }
             }
-            // D-211 (1.4.2b): MODULE STATE IS `const` OR `fixed`, AND NOTHING
-            // ELSE. A plain binding lowered to a mutable global that any task
+            // D-211 (1.4.2b): MODULE STATE IS `fixed`, AND NOTHING ELSE.
+            // A plain binding lowered to a mutable global that any task
             // could write with no rule anywhere about the crossing — process
             // state that changes, reachable from everywhere, ordered by
             // nothing. The compiler is the largest program in this ecosystem
@@ -1113,24 +1113,22 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             // `lib/` and `tools/`), which is the evidence the restriction
             // costs nothing real. Mutable process state lives in `main`'s
             // scope and flows explicitly through the calls that need it.
-            if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) {
-                if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) {
-                    discard(raw te_error(e, raw TYPE_GLOBAL_MUTABLE(),
-                        "module state is `const` or `fixed` (D-211): a plain module-level binding is a mutable global any task can write, ordered by nothing — write `const` for a value that never changes, `fixed` for one assigned exactly once, and keep mutable process state in `main`'s scope where it flows through the calls that need it",
-                        d.span));
-                }
+            if (((raw global_quals(d)) & (raw QUAL_FIXED())) == 0i32) {
+                discard(raw te_error(e, raw TYPE_GLOBAL_MUTABLE(),
+                    "module state is `fixed` (D-211): a plain module-level binding is a mutable global any task can write, ordered by nothing — write `fixed` for a value assigned exactly once, and keep mutable process state in `main`'s scope where it flows through the calls that need it",
+                    d.span));
             }
-            // D-165: A NON-CONST BINDING'S INITIALISER MUST STILL BE A
-            // COMPILE-TIME CONSTANT. No module initialiser runs before `main`, so
-            // a value that had to run would appear in an order nobody wrote —
-            // refused by name. A `const` binding's constness is the analysis
-            // pass's (`TYPE_NOT_CONSTANT`), so this covers `fixed` and plain.
-            if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) {
-                if (!(raw is_const_initialiser(e, init))) {
-                    discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
-                        "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
-                        d.span));
-                }
+            // D-165: EVERY MODULE BINDING'S INITIALISER IS A COMPILE-TIME
+            // CONSTANT. No module initialiser runs before `main`, so a value
+            // that had to run would appear in an order nobody wrote — refused
+            // by name. Checked for every module binding since `const` retired
+            // (1.4.2c): the qualifier used to gate this, which meant the one
+            // spelling that skipped the check was the one that lowered to
+            // writable memory.
+            if (!(raw is_const_initialiser(e, init))) {
+                discard(raw te_error(e, raw TYPE_GLOBAL_NOT_CONSTANT(),
+                    "a module-level binding's initialiser must be a compile-time constant — a literal, a sentinel, a struct or array of constants, another module binding, or `comptime(…)`, never a call or a value that must run (D-165); no initialiser runs before `main`",
+                    d.span));
             }
         }
         pass NIL;
