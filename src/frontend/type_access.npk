@@ -2208,6 +2208,20 @@ func:bounds_note = string(ExprTyper->:e, int32:param) never fails {
 };
 
 pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
+    // D-215: the ONE reason a `dyn` slot refuses a type that implements its
+    // traits — it carries a channel endpoint, and erasure is where the reclaim
+    // rules stop being readable. Reported here rather than at `fits`, which is
+    // a predicate and has no span; the specialisation is the same shape as the
+    // never-fails one above.
+    if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
+        if (raw type_contains_channel(e.types, got, 64i32)) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_DYN_CHANNEL(),
+                "this type carries a channel endpoint, and coercing it to `dyn` erases that (D-215): a channel's reclaim is owed by the scope that created it, and `gives` is how a function promises one to its caller — both rules read the TYPE, and behind a `dyn` neither can. Keep the endpoint in a concrete type, or hand the `dyn` something that does not hold one",
+                at));
+            pass NIL;
+        }
+    }
+
     // D-163: a may-fail function where a `never fails` one is expected gets its
     // own code — the shapes agree and only the contract differs, and the
     // generic message would show two near-identical types without saying so.

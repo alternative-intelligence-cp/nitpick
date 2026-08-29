@@ -14524,6 +14524,15 @@ this refusal, an endpoint-holding `dyn` cannot exist, and the walker's
 answer becomes exact rather than a documented residual. Lands at 1.4.4
 with D-207; the types.npk DYN comment updates to cite this decision.
 
+> **LANDED at 1.4.4 (2026-08-29)**, ahead of D-207's own items, which it
+> does not depend on. `NITPICK-TYPE-056`, and `types.npk`'s DYN arm now
+> states that its `false` is exact. One implementation note: the refusal
+> is REPORTED by the mismatch reporters (`te_mismatch_at`,
+> `te_assign_mismatch`) rather than by `fits`, which is a predicate with
+> no span and twenty-one callers — the same specialisation shape those
+> reporters already use for a may-fail function in a `never fails` slot.
+> `fits` answers `false` and says nothing.
+
 ## D-216 — the consuming `pick` — **SETTLED (user-ratified; S-5)**
 
 An owning enum payload was write-only (TYPE-046 rightly refuses the

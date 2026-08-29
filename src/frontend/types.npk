@@ -1586,16 +1586,12 @@ pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never
     if (k == (raw TY_ATOMIC()))   {
         pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
     }
-    // A `dyn`'s erased content COULD hold an endpoint, and this walker
-    // cannot see it — the same type-level invisibility D-207 refused for
-    // channel elements. Answering `true` here would demand `gives` of every
-    // dyn-returning creator, a claim about channels most such returns do
-    // not carry; the residual laundering path (an endpoint-holding concrete
-    // coerced to `dyn` and returned from its channel's creator) ends in a
-    // deterministic runtime `StaleHandle` via the slot generations, never
-    // in a dangling address. Whether the COERCION should refuse
-    // channel-carrying concretes — D-207's reasoning completed — is raised
-    // with the user at 1.4.1.
+    // A `dyn` CANNOT HOLD AN ENDPOINT, so `false` here is EXACT rather than
+    // the documented approximation it was until 1.4.4. D-215 refuses the
+    // coercion at the erasure boundary — the last point the concrete type is
+    // known — which is what makes this answer true by construction instead of
+    // by the argument that the laundering path ended in a deterministic
+    // `StaleHandle` rather than a dangling address.
     if (k == (raw TY_DYN()))      { pass false; }
     if (k == (raw TY_ARRAY()))    {
         pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));

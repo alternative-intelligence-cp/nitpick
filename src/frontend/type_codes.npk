@@ -272,3 +272,12 @@ pub func:TYPE_BUILTIN_ARGS = string() never fails { pass "NITPICK-TYPE-054"; };
 // noting the question for the concurrency cycle so it could not be forgotten;
 // this is the answer.
 pub func:TYPE_GLOBAL_MUTABLE = string() never fails { pass "NITPICK-TYPE-055"; };
+
+// 1.4.4 (D-215): a concrete type that CARRIES A CHANNEL ENDPOINT coerced to
+// `dyn`. Erasure is where the type stops being visible, and the reclaim rules
+// are type-level: `gives` is checked against a function's declared return, and
+// a channel's reclaim is scoped to the frame that created it. An endpoint
+// behind a `dyn` evades both — not by dangling (the slot generations turn a
+// stale handle into a deterministic `StaleHandle`) but by silently outliving
+// the scope that owed its reclaim. Refused where the concrete is still known.
+pub func:TYPE_DYN_CHANNEL = string() never fails { pass "NITPICK-TYPE-056"; };

@@ -1,0 +1,49 @@
+// D-215 (1.4.4): A `dyn` MAY NOT CARRY A CHANNEL ENDPOINT.
+//
+// D-207's reasoning, completed at the boundary where it stops being
+// checkable. Every rule about a channel's reclaim is stated on a TYPE — the
+// scope that created an endpoint owes its reclaim, and `gives` is how a
+// function promises one to its caller — and erasure is exactly where the type
+// stops being readable. An endpoint behind a `dyn` does not dangle (the slot
+// generations turn a stale handle into a deterministic `StaleHandle`); it
+// silently outlives the scope that owed it, with nothing able to say so.
+//
+// Refused at the coercion, the last point the concrete type is known. That is
+// also what makes `type_contains_channel`'s `false` for `dyn` EXACT rather
+// than the documented approximation it was until now.
+mod:dyn_channel;
+
+trait:Speak = { func:say = int32(Self:self) never fails; };
+
+struct:Holder = { Channel<int32, 1i32, 4i32>:ch; int32:n; };
+impl:Holder:Speak = { func:say = int32(Holder:self) never fails { pass self.n; }; };
+
+// A struct holding an endpoint, erased at a declaration.
+// expect-error: NITPICK-TYPE-056
+func:erase_decl = NIL(Holder:h) never fails {
+    dyn Speak:d = h;
+    discard(d);
+    pass NIL;
+};
+
+// ...and at an argument, which is the same coercion in the other position.
+func:takes = int32(dyn Speak:d) never fails { pass 1i32; };
+
+// expect-error: NITPICK-TYPE-056
+func:erase_arg = int32(Holder:h) never fails {
+    pass (raw takes(h));
+};
+
+// A type that holds NO endpoint erases exactly as it always did — the rule is
+// about the channel, not about `dyn`.
+struct:Plain = { int32:n; };
+impl:Plain:Speak = { func:say = int32(Plain:self) never fails { pass self.n; }; };
+
+func:erase_plain = int32(Plain:p) never fails {
+    dyn Speak:d = p;
+    pass (raw d.say());
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

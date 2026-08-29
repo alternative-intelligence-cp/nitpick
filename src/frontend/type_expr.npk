@@ -2102,6 +2102,18 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
     // fat pointer either way — it is a question about what was implemented, and
     // the impl table is the only thing that can answer it.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
+        // D-215: AN ENDPOINT MAY NOT BE ERASED. This is the last point at
+        // which the concrete type is known, and every rule about a channel's
+        // reclaim is stated on a type — `gives` against a declared return,
+        // the creating scope against the endpoints it owes. Behind a `dyn`
+        // neither can be read, so the endpoint would outlive the scope that
+        // owed it with nothing anywhere able to say so. D-207's reasoning,
+        // completed at the boundary where it stops being checkable.
+        //
+        // `fits` stays a PREDICATE: it answers no, and the mismatch reporters
+        // — which have the span this does not — say why, the way they already
+        // specialise the never-fails-into-may-fail answer.
+        if (raw type_contains_channel(e.types, got, 64i32)) { pass false; }
         bool:ok = raw dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got);
         // A COERCION IS A COMMIT, SO IT IS WHERE THE FAMILY INSTANTIATION IS
         // NOTED (1.0.9b). `fits` is a predicate everywhere else; the one place
@@ -2355,6 +2367,20 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
 // One message for every "this value does not fit there", naming both types in
 // the order the reader wrote them.
 pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
+    // D-215: the ONE reason a `dyn` slot refuses a type that implements its
+    // traits — it carries a channel endpoint, and erasure is where the reclaim
+    // rules stop being readable. Reported here rather than at `fits`, which is
+    // a predicate and has no span; the specialisation is the same shape as the
+    // never-fails one above.
+    if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
+        if (raw type_contains_channel(e.types, got, 64i32)) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_DYN_CHANNEL(),
+                "this type carries a channel endpoint, and coercing it to `dyn` erases that (D-215): a channel's reclaim is owed by the scope that created it, and `gives` is how a function promises one to its caller — both rules read the TYPE, and behind a `dyn` neither can. Keep the endpoint in a concrete type, or hand the `dyn` something that does not hold one",
+                at));
+            pass NIL;
+        }
+    }
+
     // D-163: a may-fail function where a `never fails` one is expected gets its
     // OWN code and message — the shapes agree and only the contract differs, so
     // the generic mismatch would name two types that look almost identical
