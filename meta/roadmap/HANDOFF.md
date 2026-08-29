@@ -8,31 +8,40 @@
 
 ## Where you are
 
-- **1.4.4 IS COMPLETE** (`45c553e`, committed, NOT pushed — the convention
-  is commit per subcycle, push per cycle). Seven subcycles have landed
+- **1.4.5 IS COMPLETE** (`7ff1658`, committed, NOT pushed — the convention
+  is commit per subcycle, push per cycle). Eight subcycles have landed
   since the 1.4.0–1.4.1 stretch, each with a full green harness run and
   its own commit: **1.4.2** (D-201, four commits), **1.4.2b** (D-210,
-  D-211), **1.4.2c** (D-222), **1.4.3** (D-208), **1.4.3b** (D-216), and
+  D-211), **1.4.2c** (D-222), **1.4.3** (D-208), **1.4.3b** (D-216),
   **1.4.4** (D-215 first, then D-207 with a user-ratified D-180
-  amendment).
+  amendment), and **1.4.5** (D-204).
 - The harness is GREEN: 60 suites, 183 real-backend programs (each also
-  through `opt -O2`), fixpoint byte-identical.
-  `python3 bootstrap/harness/harness.py` reproduces it (~25 min; it is
+  through `opt -O2`), fixpoint byte-identical, and a `repro` stage.
+  `python3 bootstrap/harness/harness.py` reproduces it (~28 min; it is
   not hung, check `/tmp/npk-harness-*/`).
 
-## NEXT: 1.4.5 — reproducibility mechanics (D-204)
+## NEXT: 1.4.6 — the builder switch (D-203, D-205)
 
-`meta/roadmap/1.4/1.4.5.md` is the plan: the `npkseed.py` ModuleID fix,
-the `repro` build-twice-cross-cwd stage, and the toolchain pinned in the
-manifest.
+`meta/roadmap/1.4/1.4.6.md` is the plan. This is the cycle's hinge: the
+committed `bootstrap/seed/stage1.ll` becomes the builder, `npkrt.ll`
+re-homes to `runtime/`, and D-205's normative rule changes meaning —
+`src/` stops being bounded by subset 1 and becomes bounded by what the
+SNAPSHOT can compile.
 
-**Read 1.4.4's execution record first anyway.** It carries three things a
-1.4.5 executor needs and would otherwise rediscover: the D-151 leak check
-runs only on `exit 0` (a test reporting success as 42 measures NOTHING —
-that is how a shared-arena leak test passed against a build with the drop
-disabled); the return seam is now two halves, `fnem_ret_agg` then
-`fnem_ret_done`, with the unwind between them; and every scope exit emits
-join → defers → drops → that scope's channel reclaims.
+**1.4.5 left two hooks it will need.** The `repro` stage already asserts
+that `bootstrap/seed/stage1.ll` matches a fresh emission, guarded on the
+file existing — creating that file arms the assertion, and the STAMP
+sha256 half is still owed. And the harness's toolchain flags now come from
+`nitpick.toml`, so a switch that changes how anything is assembled changes
+the manifest, not fifteen call sites.
+
+**Read 1.4.4's execution record too.** It carries three things you would
+otherwise rediscover: the D-151 leak check runs only on `exit 0` (a test
+reporting success as 42 measures NOTHING — that is how a shared-arena leak
+test passed against a build with the drop disabled); the return seam is
+two halves, `fnem_ret_agg` then `fnem_ret_done`, with the unwind between
+them; and every scope exit emits join → defers → drops → that scope's
+channel reclaims.
 
 **Owed, and named so it does not evaporate**: all three of
 `chan_elem_ok`'s refusals in `ir_types.npk` — a `dyn` element, a borrow
@@ -63,6 +72,11 @@ implementing the reported fix:
 - D-207 asked for a second list head per scope. The list is a LIFO stack,
   so a saved MARK does the same job with one pointer and leaves
   `emit_spawn` untouched — the goal was right, the mechanism was not.
+- D-204 said `npkseed.py` embedded its argv path in the ModuleID. It
+  emitted `"?"`: `_path` is the Node base's LOCATION attribute and a
+  module node never gets one, while the file path sits in a `path` FIELD
+  one character away. Reproducible by accident — and the accident was
+  worth converting into a decision, which is the shape of most of these.
 
 The pattern: **a rule believed in force because a document says so.**
 Making a dormant rule apply is how six live defects surfaced across these
@@ -140,7 +154,7 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.5.md` end to end, then 1.4.4's execution record
-for the three carry-overs above. Re-verify every anchor before editing
+Read `meta/roadmap/1.4/1.4.6.md` end to end, then 1.4.5's and 1.4.4's
+execution records for the carry-overs above. Re-verify every anchor before editing
 (lines drift); an anchor says what to look for, not a blind offset.
 Announce the item you are on; commit per the file's acceptance section.
