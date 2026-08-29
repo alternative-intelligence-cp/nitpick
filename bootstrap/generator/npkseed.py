@@ -62,7 +62,20 @@ def main(argv):
         return 1
 
     try:
-        ir = emit.emit_module(prog, ck, module_id=mods[0]._path)
+        # THE MODULE ID IS A CONSTANT, DELIBERATELY (D-204, 1.4.5), and it is
+        # the SAME constant the harness passes -- one spelling, so the two
+        # entry points into this emitter cannot produce different text for the
+        # same input.
+        #
+        # It was `mods[0]._path`, which reads as "the file we were handed" and
+        # is not: `Module` is built as `S.Module(items, path)`, so the file
+        # path lands in its `path` FIELD, while `_path` is the Node base's
+        # LOCATION attribute and `_at()` is never called on a module node. It
+        # therefore evaluated to the class default `"?"` on every invocation --
+        # reproducible by accident, one character away from leaking the argv
+        # path into the emitted IR the moment somebody "fixed" the typo. Made
+        # explicit rather than left as a trap.
+        ir = emit.emit_module(prog, ck, module_id="test")
     except emit.EmitError as e:
         print("EMIT  %s" % e)
         return 1

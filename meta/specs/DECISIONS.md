@@ -14317,6 +14317,46 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
    `stage1.ll` matches a fresh fixpoint emission and its STAMP sha256 —
    the snapshot cannot silently rot.
 
+> **LANDED at 1.4.5 (2026-08-29), with two departures from the mechanics
+> above, both toward less trust in documents.**
+>
+> **The flags are pinned AND READ.** Point 1 has `[toolchain]` record the
+> flag sets; every `llc`/`opt`/`ld.lld` invocation is now BUILT from those
+> lists (fifteen call sites, one authority) rather than restating them
+> beside a table that describes them. A stated flag nothing consumes is the
+> next stale document, and this project has been bitten by that class often
+> enough — §26 of TYPE_REFERENCE promising a `fixed` rule enforced nowhere;
+> `check_runtime_sigs_agree`'s derived-inner leg found dead on the day it
+> was fixed. A fourth key, `llc-opt-flags`, names the 1.3.8 instrument's
+> `-O2` leg separately from the build's, because a check is not a build.
+> The version probe asks `llc`, `opt` and `ld.lld` themselves rather than
+> `llvm-config`, which ships in a `-dev` package the build does not
+> otherwise need: the version that matters is the one that will run.
+>
+> **Point 2's diagnosis was wrong, and the fix still landed.** `npkseed.py`
+> never embedded its argv path. `Module` is built as
+> `S.Module(items, path)`, so the path lands in the node's `path` FIELD
+> while `_path` is the `Node` base's LOCATION attribute, never set on a
+> module node — so `mods[0]._path` evaluated to the class default `"?"` on
+> every invocation. Reproducible **by accident**, and one character from the
+> opposite: a reader fixing the apparent typo to `.path` would have leaked
+> the argv path into the IR. The constant is now explicit and is the same
+> one the harness passes.
+>
+> **Measured before the stage was written**, seed-built compiler over
+> `src/main.npk` (15,292,234 bytes): a second run from the same directory
+> and a third from a different one both produced IDENTICAL bytes, so H1
+> (ASLR / hash iteration order — the class with no controlling flag) and H9
+> (build-path leakage — not hypothetical here, since D-179's site tables
+> embed source paths) are both clean today. The stage costs one extra
+> emission (~3 min) against a ~28-minute run. The fixpoint cannot
+> substitute for it: that compares two DIFFERENT binaries, so
+> byte-identical there means they agree, not that either is deterministic.
+>
+> `selfcheck.py` holds the pin's FAILURE path — a mismatched version, an
+> absent pin, and the real toolchain passing — because a check only ever
+> seen to pass is a check nobody has tested.
+
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-13 — the rule obeyed by discipline since 0.9, whose switch cycle

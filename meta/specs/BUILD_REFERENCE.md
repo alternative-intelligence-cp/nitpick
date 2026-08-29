@@ -39,6 +39,13 @@ entry     = "src/lib.npk"
 output    = "build/libnlibc"
 opt-level = 2
 
+[toolchain]                      # D-204; landed 1.4.5
+llvm          = "20.1.2"
+llc-flags     = ["-O0", "-filetype=obj", "-relocation-model=static"]
+llc-opt-flags = ["-O2", "-filetype=obj", "-relocation-model=static"]
+opt-flags     = ["-O2", "-S"]
+lld-flags     = ["-static"]
+
 [dependencies]
 nfs = { path = "../nfs", version = "0.3.1" }
 
@@ -51,6 +58,20 @@ domain = "interval"
 
 - **`[project]` is identity, `[build]` is settings.** `npkg`'s split is adopted;
   `entry` does not live in `[project]`.
+- **`[toolchain]` is an INPUT, not a setting** (D-204) — §5 says why. The
+  version is an EXACT PATCH RELEASE: a minor-version pin is insufficient for
+  byte-identity, because a patch release may change instruction selection or
+  section ordering, so an update is a breaking change that regenerates every
+  expected hash. The flag lists are pinned for the same reason and are READ by
+  the thing that runs them rather than restated there — a stated flag nothing
+  consumes is a document that goes stale in silence. `llc-opt-flags` is the
+  optimised re-run every program goes through as a check (1.3.8), kept separate
+  from the build's own `llc-flags` because it is an instrument. Two keys are
+  deliberately absent: `-mcpu` (the emitted IR carries `target triple` and no
+  `-mcpu` is passed, so llc uses the triple's generic CPU; an explicit
+  `-mcpu=x86-64` is the fix if cross-machine divergence is ever observed,
+  applied everywhere at once) and `--build-id`, whose `uuid` form injects
+  entropy by design.
 - **`[verify]` belongs in the manifest**, not on the command line. The flags a
   project must be verified under are a property of the project, not of whoever
   typed the command. `npkc-native`'s existing `[nikos]` table established this and

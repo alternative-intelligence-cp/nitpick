@@ -69,6 +69,31 @@ import emit        # noqa: E402
 
 RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
 
+# --- the pinned toolchain (D-204, 1.4.5) -------------------------------------
+#
+# THE MANIFEST IS THE AUTHORITY, not this file. `nitpick.toml`'s `[toolchain]`
+# records the LLVM version and the exact flag sets, and every `llc`/`opt`/
+# `ld.lld` invocation below is BUILT from these lists — the same shape
+# BUILTIN_REFERENCE's marked regions have had since 1.4.2, for the same reason:
+# a table nothing consumes is a document that goes stale silently, and this
+# project has been bitten by that class often enough to stop writing them.
+#
+# The version is checked once per run, where the tools are first needed. R-4's
+# directive is that a patch release is a breaking change for byte-identity, so
+# the comparison is exact and the failure is loud.
+def _load_manifest():
+    with open(os.path.join(ROOT, "nitpick.toml"), "rb") as fh:
+        return tomllib.load(fh)
+
+
+MANIFEST = _load_manifest()
+_TC = MANIFEST.get("toolchain", {})
+LLVM_PIN = _TC.get("llvm", "")
+LLC_FLAGS = list(_TC.get("llc-flags", []))
+LLC_OPT_FLAGS = list(_TC.get("llc-opt-flags", []))
+OPT_FLAGS = list(_TC.get("opt-flags", []))
+LLD_FLAGS = list(_TC.get("lld-flags", []))
+
 # Files that are imported by another test rather than run on their own.
 # `use "x.npk".*` names the dependency, so this is derived, not configured.
 USE_RE = re.compile(r'use\s+"([^"]+)"')
@@ -235,7 +260,7 @@ def check_positive(name, group, exp, tmp, tools):
     base = os.path.join(tmp, name.replace("/", "_"))
     with open(base + ".ll", "w", encoding="utf-8") as fh:
         fh.write(out.ir)
-    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+    r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -244,7 +269,7 @@ def check_positive(name, group, exp, tmp, tools):
     fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
     if fails:
         return fails
-    r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
@@ -1544,12 +1569,12 @@ def build_tool(tmp, tools, source, name):
     base = os.path.join(tmp, name)
     with open(base + ".ll", "w", encoding="utf-8") as fh:
         fh.write(out.ir)
-    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+    r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         return "LLC %s" % r.stderr.strip()[:160]
-    r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return "LINK %s" % r.stderr.strip()[:160]
@@ -1906,7 +1931,7 @@ def emit_and_link(binary, path, name, base, tmp):
     hoist = check_allocas_hoisted(ir_text, name)
     if hoist:
         return hoist
-    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+    r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -1916,7 +1941,7 @@ def emit_and_link(binary, path, name, base, tmp):
     fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
     if fails:
         return fails
-    r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
@@ -1981,14 +2006,13 @@ def check_optimised_program(name, exp, base, tmp, run):
                 "cannot run, and skipping it silently is how an optimiser "
                 "defect ships (install LLVM's opt, CLAUDE.md lists the "
                 "symlink set)" % name]
-    r = subprocess.run(["opt", "-O2", "-S", base + ".ll", "-o", base + ".opt.ll"],
+    r = subprocess.run(["opt"] + OPT_FLAGS + [base + ".ll", "-o", base + ".opt.ll"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         first = next((l for l in r.stderr.splitlines() if l.strip()), r.stderr)
         return ["%s: opt -O2 rejected the emitted IR: %s"
                 % (name, first.strip()[:160])]
-    r = subprocess.run(["llc", "-O2", "-filetype=obj", "-relocation-model=static",
-                        base + ".opt.ll", "-o", base + ".opt.o"],
+    r = subprocess.run(["llc"] + LLC_OPT_FLAGS + [base + ".opt.ll", "-o", base + ".opt.o"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
@@ -1998,7 +2022,7 @@ def check_optimised_program(name, exp, base, tmp, run):
                                   name + " (opt -O2)")
     if fails:
         return fails
-    r = subprocess.run(["ld.lld", "-static", "-o", base + ".opt", base + ".opt.o",
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base + ".opt", base + ".opt.o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
         return ["%s: optimised link failed: %s" % (name, r.stderr.strip()[:140])]
@@ -2025,12 +2049,92 @@ def check_optimised_program(name, exp, base, tmp, run):
     return []
 
 
+def first_difference(a, b):
+    """Where two byte strings diverge, in the terms a reproducibility failure
+    needs (D-204, 1.4.5): the offset, and enough context to recognise it.
+
+    A diff of two 40 MB IR files is not evidence anybody reads. The offset plus
+    the two bytes is what identifies the class -- a path fragment, a pointer
+    printed as a value, a reordered symbol -- and the length difference is
+    usually the giveaway when the divergence is structural rather than local.
+    """
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    if i == n and len(a) == len(b):
+        return "identical"
+    lo = max(0, i - 40)
+    ctx = a[lo:i].decode("utf-8", "replace").replace("\n", "\\n")
+    ga = a[i:i + 30].decode("utf-8", "replace").replace("\n", "\\n")
+    gb = b[i:i + 30].decode("utf-8", "replace").replace("\n", "\\n")
+    return ("first differs at byte %d of %d/%d, after %r: %r vs %r"
+            % (i, len(a), len(b), ctx, ga, gb))
+
+
+# --- the toolchain pin, checked (D-204, 1.4.5) -------------------------------
+
+_VER_RE = {
+    # `llc --version` / `opt --version`: "Ubuntu LLVM version 20.1.2"
+    "llc": re.compile(r"LLVM version\s+(\d+\.\d+\.\d+)"),
+    "opt": re.compile(r"LLVM version\s+(\d+\.\d+\.\d+)"),
+    # `ld.lld --version`: "Ubuntu LLD 20.1.2 (compatible with GNU linkers)"
+    "ld.lld": re.compile(r"LLD\s+(\d+\.\d+\.\d+)"),
+}
+
+
+def check_toolchain_pin():
+    """Every tool that touches the artifact is the pinned version (D-204).
+
+    `llvm-config` is NOT used: it ships in a -dev package the build does not
+    otherwise need, and asking a tool we already require for its own version is
+    both fewer dependencies and a more honest question -- the version that
+    matters is the one that will run, not the one a sibling binary reports.
+
+    A patch release counts. R-4's finding is that pinning to a minor version is
+    insufficient for strict byte-identity, so 20.1.2 and 20.1.3 are different
+    toolchains and the run says so rather than producing output that cannot be
+    reproduced. `opt` is optional-by-absence elsewhere (the -O2 leg says so
+    loudly), so it is only checked when present.
+    """
+    if not LLVM_PIN:
+        return ["nitpick.toml has no [toolchain] llvm pin -- D-204 makes the "
+                "toolchain a build INPUT, and an unpinned input is not one"]
+    fails = []
+    for tool in ("llc", "opt", "ld.lld"):
+        if not shutil.which(tool):
+            if tool == "opt":
+                continue      # the -O2 leg reports its own absence
+            fails.append("%s is not on PATH" % tool)
+            continue
+        try:
+            r = subprocess.run([tool, "--version"], capture_output=True,
+                               text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            fails.append("%s --version failed: %s" % (tool, e))
+            continue
+        m = _VER_RE[tool].search(r.stdout)
+        if not m:
+            fails.append("%s --version did not report a version this can read: "
+                         "%r" % (tool, r.stdout.strip()[:120]))
+            continue
+        if m.group(1) != LLVM_PIN:
+            fails.append("%s is %s but nitpick.toml pins %s -- the toolchain is "
+                         "a BUILD INPUT (D-204), and a patch release is enough "
+                         "to change instruction selection or section ordering. "
+                         "Install the pinned version, or update the pin AND "
+                         "regenerate every expected hash in the same change"
+                         % (tool, m.group(1), LLVM_PIN))
+    return fails
+
+
 # --- driver ------------------------------------------------------------------
 
 def load_targets():
-    with open(os.path.join(ROOT, "nitpick.toml"), "rb") as fh:
-        manifest = tomllib.load(fh)
-    return manifest.get("test", [])
+    # ONE read of the manifest, at import (D-204, 1.4.5): the toolchain pin
+    # needs it before any test runs, and two readers of one file is two
+    # chances to disagree about it.
+    return MANIFEST.get("test", [])
 
 
 USAGE = """usage: python3 bootstrap/harness/harness.py [--only SUBSTR]...
@@ -2101,7 +2205,7 @@ def main(argv):
     tools = shutil.which("llc") and shutil.which("ld.lld")
     tmp = tempfile.mkdtemp(prefix="npk-harness-")
     if tools:
-        r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+        r = subprocess.run(["llc"] + LLC_FLAGS + [
                             RUNTIME_LL, "-o", os.path.join(tmp, "npkrt.o")],
                            capture_output=True, text=True)
         if r.returncode != 0:
@@ -2157,6 +2261,12 @@ def main(argv):
         # tests/grammar/ is NEVER compiled and never run. It exists only to be
         # parsed, which is what lets it use the whole language rather than
         # subset 1.
+        # THE TOOLCHAIN FIRST (D-204, 1.4.5). It gates everything below that
+        # assembles or links, and a version mismatch explains a byte-difference
+        # that would otherwise look like a compiler defect -- so it is worth
+        # knowing before twenty minutes of evidence gets collected under the
+        # wrong tools.
+        failures += check_toolchain_pin()
         failures += check_kinds_reachable()
         failures += check_kinds_typed()
         failures += check_kinds_lowered_or_refused()
@@ -2492,16 +2602,14 @@ def main(argv):
                 if rm:
                     rexp = int(rm.group(1))
                 rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
-                r = subprocess.run(["llc", "-O0", "-filetype=obj",
-                                    "-relocation-model=static", rp,
-                                    "-o", rbase + ".o"],
+                r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
                                    capture_output=True, text=True)
                 if r.returncode != 0:
                     failures.append("%s: llc failed: %s"
                                     % (os.path.relpath(rp, ROOT),
                                        r.stderr.strip()[:120]))
                     continue
-                r = subprocess.run(["ld.lld", "-static", "-o", rbase,
+                r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
                                     rbase + ".o", os.path.join(tmp, "npkrt.o")],
                                    capture_output=True, text=True)
                 if r.returncode != 0:
@@ -2565,9 +2673,7 @@ def main(argv):
                 if hoist:
                     failures += hoist
                     ok = False
-                rr = subprocess.run(["llc", "-O0", "-filetype=obj",
-                                     "-relocation-model=static",
-                                     s1 + ".ll", "-o", s1 + ".o"],
+                rr = subprocess.run(["llc"] + LLC_FLAGS + [s1 + ".ll", "-o", s1 + ".o"],
                                     capture_output=True, text=True)
                 if rr.returncode != 0:
                     first = next((l for l in rr.stderr.splitlines()
@@ -2587,7 +2693,7 @@ def main(argv):
                     failures += check_zero_dependency(
                         os.path.join(tmp, "npkrt.o"),
                         {"main", "npk_failsafe"}, "npkrt.o")
-                    rr = subprocess.run(["ld.lld", "-static", "-o", s1,
+                    rr = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", s1,
                                          s1 + ".o", os.path.join(tmp, "npkrt.o")],
                                         capture_output=True, text=True)
                     if rr.returncode != 0:
@@ -2617,6 +2723,102 @@ def main(argv):
                 if ok:
                     print("  %-11s stage 1 rebuilt itself byte-identically"
                           % ("selfhost",))
+
+                # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
+                #
+                # The fixpoint above already proves a great deal, but not
+                # this: it compares TWO DIFFERENT BINARIES (the seed-built
+                # compiler and stage 1), so "byte-identical" there means
+                # they agree, not that either one is deterministic. Two
+                # hazard classes hide in that gap, and R-4 names both:
+                #
+                #   H1  run-to-run variation from ASLR and hash iteration
+                #       order -- the class with NO controlling flag, where
+                #       testing is the only guard.
+                #   H9  the build PATH leaking into the artifact. The
+                #       compiler embeds source paths for real (D-179's
+                #       origin-chain site tables), so this is not a
+                #       hypothetical for us.
+                #
+                # The check: run the SAME binary again on the SAME absolute
+                # inputs from a DIFFERENT working directory, and require the
+                # same bytes. A difference is one of the two, and the
+                # message says how to tell them apart.
+                if ok:
+                    rdir = os.path.join(tmp, "repro-cwd")
+                    os.makedirs(rdir, exist_ok=True)
+                    rr = subprocess.run(
+                        [ec, os.path.join(ROOT, "src", "main.npk")],
+                        capture_output=True, timeout=600, cwd=rdir)
+                    rok = True
+                    if rr.returncode != 0:
+                        failures.append(
+                            "repro: the compiler failed when run from a "
+                            "different working directory (rc=%d) -- its "
+                            "output cannot depend on where it was invoked "
+                            "from: %s"
+                            % (rr.returncode,
+                               rr.stderr.decode("utf-8", "replace")[:300]))
+                        rok = False
+                    elif rr.stdout != stage1_ir:
+                        failures.append(
+                            "repro: THE EMISSION IS NOT REPRODUCIBLE -- the "
+                            "same compiler on the same absolute inputs "
+                            "emitted different bytes from a different "
+                            "working directory (%s). Either the cwd leaked "
+                            "into the artifact (D-204's H9; the site tables "
+                            "are the place to look) or the run itself is "
+                            "nondeterministic (H1: hash iteration order, an "
+                            "address used as a value). Re-run twice from the "
+                            "SAME directory to tell which"
+                            % first_difference(stage1_ir, rr.stdout))
+                        rok = False
+                    # AND `llc` ITSELF IS DETERMINISTIC on our input: the
+                    # same .ll assembled twice must give the same object.
+                    # This is H1 on the backend side, where we have no
+                    # source to inspect and only the output can answer.
+                    s1r = s1 + ".repro.o"
+                    rr = subprocess.run(["llc"] + LLC_FLAGS
+                                        + [s1 + ".ll", "-o", s1r],
+                                        capture_output=True, text=True)
+                    if rr.returncode != 0:
+                        failures.append("repro: llc failed on the second "
+                                        "assembly: %s"
+                                        % rr.stderr.strip()[:160])
+                        rok = False
+                    else:
+                        with open(s1 + ".o", "rb") as fh:
+                            o1 = fh.read()
+                        with open(s1r, "rb") as fh:
+                            o2 = fh.read()
+                        if o1 != o2:
+                            failures.append(
+                                "repro: llc is not deterministic on this "
+                                "input -- the same .ll assembled twice gave "
+                                "different objects (%s). The pinned "
+                                "toolchain is the first thing to check"
+                                % first_difference(o1, o2))
+                            rok = False
+                    # THE COMMITTED SNAPSHOT CANNOT SILENTLY ROT (D-203).
+                    # Guarded on existence so this stage runs green before
+                    # 1.4.6 puts the file there.
+                    snap = os.path.join(ROOT, "bootstrap", "seed", "stage1.ll")
+                    if os.path.exists(snap):
+                        with open(snap, "rb") as fh:
+                            snap_ir = fh.read()
+                        if snap_ir != stage1_ir:
+                            failures.append(
+                                "repro: bootstrap/seed/stage1.ll no longer "
+                                "matches what the compiler emits (%s) -- the "
+                                "committed bootstrap IR is a SNAPSHOT of this "
+                                "emission (D-203), and a stale one is a "
+                                "bootstrap that builds a different compiler "
+                                "than the tree describes"
+                                % first_difference(snap_ir, stage1_ir))
+                            rok = False
+                    if rok:
+                        print("  %-11s emission cwd-independent, llc "
+                              "deterministic" % ("repro",))
 
             # And whole programs that must be ACCEPTED, in full silence.
             #

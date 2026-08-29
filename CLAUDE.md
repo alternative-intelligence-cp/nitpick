@@ -401,7 +401,27 @@ CHILD_CLEARTID word with `FUTEX_PRIVATE_FLAG`; the kernel's wake from
 word was cleared promptly, the wake went nowhere, the wait ran to its
 timeout, and the reload then reported success — right answer, five seconds
 late, every time. One token; `mutex_basic` 5.00s → 0.12s, and the mandatory
-deadline can once again tell "finished" from "stuck". Next: 1.4.5.
+deadline can once again tell "finished" from "stuck".
+**1.4.5 (D-204) is COMPLETE**: the toolchain is a pinned build INPUT —
+`nitpick.toml`'s `[toolchain]` carries the exact patch release (20.1.2, not
+a minor pin: a patch release can change instruction selection) and the four
+flag sets, and every `llc`/`opt`/`ld.lld` invocation is BUILT from those
+lists, fifteen call sites and one authority, because a stated flag nothing
+consumes is the next stale document. `check_toolchain_pin` asks the tools
+themselves (not `llvm-config`, which is a -dev package the build does not
+need) and refuses a mismatch loudly; `selfcheck.py` holds its FAILURE path.
+A new **`repro` stage** runs the same compiler on the same absolute inputs
+from a DIFFERENT working directory and requires the same bytes, then
+assembles the compiler's own IR twice and compares the objects — the two
+hazard classes the fixpoint cannot see, since IT compares two different
+binaries (agreement, not determinism): H1, ASLR and hash-iteration order,
+which has no controlling flag and can only be tested, and H9, the build
+path leaking into the artifact, which is not hypothetical here because
+D-179's site tables embed source paths. Both are clean, measured. Found:
+`npkseed.py` never did embed its argv path — `Module` puts the path in a
+`path` FIELD while `_path` is the location attribute nothing sets on a
+module node, so the ModuleID was `"?"` by accident, one character from the
+opposite; it is an explicit constant now. Next: 1.4.6.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

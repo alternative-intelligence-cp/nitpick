@@ -13,6 +13,41 @@ output    = "build/npkc"
 # built. Raised once there is something worth optimising.
 opt-level = 0
 
+# THE TOOLCHAIN IS A BUILD INPUT (D-204), so it is pinned here as DATA rather
+# than described in prose somewhere. "The same inputs produce a byte-identical
+# output" is only a claim you can check if the tools count as inputs.
+#
+# EXACT PATCH RELEASE, not a minor version. The R-4 reproducibility research is
+# blunt about it: pinning to a minor version is insufficient for strict
+# byte-identity, because a patch release may change instruction selection or
+# section ordering. Any update — patch included — is a breaking change that
+# regenerates every expected hash, and the harness refuses a mismatch loudly
+# rather than producing output nobody can reproduce.
+#
+# THE FLAGS ARE PINNED TOO, AND THE HARNESS READS THEM FROM HERE. A table
+# stating flags that nothing checks is the next stale document; these are the
+# lists every `llc`/`opt`/`ld.lld` invocation is actually built from, so the
+# manifest and the pipeline cannot drift. `llc-opt-flags` is the 1.3.8
+# instrument's leg (every program re-run through `opt -O2` + `llc -O2`), kept
+# separate because it is a CHECK, not the build.
+#
+# NOT PINNED, deliberately:
+#   -mcpu — the emitted .ll carries `target triple` and we pass no `-mcpu`, so
+#     llc uses the triple's generic CPU. R-4 recommends an explicit `-mcpu`
+#     when build hosts vary; pinning a specific microarchitecture would change
+#     today's byte-identical output, so it is a recorded question rather than a
+#     change. If cross-machine divergence is ever observed, `-mcpu=x86-64` (the
+#     generic tune) is the fix, applied everywhere at once with hashes
+#     regenerated.
+#   --build-id — we pass none. The `uuid` form injects entropy by design and is
+#     the one spelling never to use here.
+[toolchain]
+llvm          = "20.1.2"
+llc-flags     = ["-O0", "-filetype=obj", "-relocation-model=static"]
+llc-opt-flags = ["-O2", "-filetype=obj", "-relocation-model=static"]
+opt-flags     = ["-O2", "-S"]
+lld-flags     = ["-static"]
+
 # Empty, and empty for a long while. The compiler depends on nothing until
 # `nlibc` exists in cycle 0.8. Anything added here is a zero-dependency decision
 # and needs to be argued as one.

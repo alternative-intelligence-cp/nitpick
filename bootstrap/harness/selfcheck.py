@@ -12,8 +12,9 @@ against cases where it MUST report a failure:
   - a negative test with no expectation at all
   - a positive test that exits with the wrong code
   - a rejection file that fails at PARSE time rather than in the backend
+  - a toolchain that is not the pinned version, and no pin at all (D-204)
 
-and one case where it must NOT: a correct expectation.
+and two where it must NOT: a correct expectation, and the real toolchain.
 
 The last of the failing cases is the one this project cares about most. It is the
 executable form of D-085's rule -- the parser never restricts, the backend does --
@@ -85,8 +86,8 @@ def main():
     tools = shutil.which("llc") and shutil.which("ld.lld")
     if tools:
         import subprocess
-        subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
-                        harness.RUNTIME_LL, "-o", os.path.join(tmp, "npkrt.o")],
+        subprocess.run(["llc"] + harness.LLC_FLAGS
+                       + [harness.RUNTIME_LL, "-o", os.path.join(tmp, "npkrt.o")],
                        capture_output=True)
 
     print("harness self-check")
@@ -107,6 +108,41 @@ def main():
                 print("      the harness accepted this; it should have rejected it")
             else:
                 print("      the harness rejected this: %s" % fails[0])
+
+    # THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
+    # value is its failure path, and a check that has only ever been seen to
+    # PASS is a check nobody has tested -- the same reasoning that put every
+    # case above in this file. Driven by moving the pin rather than the
+    # toolchain, which is the only half of the comparison this can move.
+    real = harness.LLVM_PIN
+    try:
+        harness.LLVM_PIN = real + ".999" if real else "0.0.0"
+        mismatch = harness.check_toolchain_pin()
+        harness.LLVM_PIN = ""
+        unpinned = harness.check_toolchain_pin()
+    finally:
+        harness.LLVM_PIN = real
+    for name, fails, why in (
+            ("toolchain-mismatch", mismatch,
+             "a toolchain that is not the pinned version must fail"),
+            ("toolchain-unpinned", unpinned,
+             "no [toolchain] pin at all must fail")):
+        ok = bool(fails)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      check_toolchain_pin accepted it; it should not have")
+    still_ok = harness.check_toolchain_pin()
+    if still_ok:
+        bad += 1
+        print("  %-26s %-4s  %s" % ("toolchain-restored", "BAD",
+                                    "the real toolchain must pass: %s"
+                                    % still_ok[0]))
+    else:
+        print("  %-26s %-4s  %s" % ("toolchain-restored", "ok",
+                                    "the pinned toolchain that is installed "
+                                    "must pass"))
 
     shutil.rmtree(tmp, ignore_errors=True)
     if bad:
