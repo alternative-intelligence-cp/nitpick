@@ -1376,6 +1376,32 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         pass NIL;
     }
 
+    // A `shared_arena`'s DROP IS ITS TEARDOWN (D-154/D-207, 1.4.4). The
+    // value is one pointer to the runtime structure, so the drop is the
+    // null-checked release the guard's already is — and it NULLS THE SLOT
+    // after, which is what makes an explicit `.destroy()` earlier in the
+    // scope and this call at its exit add up to exactly one teardown.
+    // (`npk_sarena_destroy` frees the structure itself, so unlike
+    // `npk_arena_destroy` it cannot be idempotent on its own; the emitter's
+    // `.destroy()` clears the binding's drop flag for the straight-line
+    // case, and this null is the belt for a conditional one.) There is no
+    // element walk: D-154's contract is write-once, read-only slots, so an
+    // owning element would need the deep-view family D-183 records as owed
+    // and `alloc` refuses one at the checker.
+    if (k == (raw TY_SHARED_ARENA())) {
+        drop irw_raw(w, "  %c = load ptr, ptr %v");
+        drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
+        drop irw_raw(w, "  br i1 %dead, label %done, label %live");
+        drop irw_raw(w, "live:");
+        drop irw_raw(w, "  call void @npk_sarena_destroy(ptr %c)");
+        drop irw_raw(w, "  store ptr null, ptr %v");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
     // A GUARD'S DROP IS THE RELEASE (D-056, 1.1.11) — the first drop in the
     // language that frees no memory: the closing brace of the critical
     // section lowers to exactly this call, which is what cycle 1.2 existed

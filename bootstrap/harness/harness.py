@@ -665,9 +665,6 @@ DROPS_DEFAULT_OK = {
                     "reclaimed by the creating function's exit (D-183 1.2.5) "
                     "-- a creation-site finalizer after the join, not a value "
                     "drop, because endpoints are copyable non-owners",
-    "TY_SHARED_ARENA": "a pointer into SHARED storage (D-154): teardown "
-                    "needs the per-scope join machinery -- D-207, landing "
-                    "at 1.4.4, which removes this row and adds the drop",
     "TY_ANY":       "unsized; never a value at this rung",
     "TY_TRAIT":     "a bound, not a value",
     "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",
@@ -852,9 +849,6 @@ WALKER_DEFAULT_OK = {
         "TY_FRAC": _NOT_REGISTERED, "TY_COMPLEX": _NOT_REGISTERED,
         "TY_CHANNEL": ("reclaimed by the creating scope's finalizer "
                        "(D-183 1.2.5), never by value drop"),
-        "TY_SHARED_ARENA": ("type_drops excuses it until D-207's per-scope "
-                            "joins land (1.4.4); the drop arm is owed in "
-                            "the same change that un-excuses it there"),
     },
 }
 

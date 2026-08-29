@@ -111,8 +111,29 @@ pub struct:FnEmitter = {
     // popped together, and "defers first, then drops, innermost scope first"
     // is a property of one loop rather than an ordering anybody maintains.
     wild int32->:dlmarks;
+    // THE SAME MARK SHAPE, THREE MORE TIMES (D-207, 1.4.4). A scope owns more
+    // than its locals now, and every one of these is "what this scope added",
+    // read the same way: the value at push, against the value at exit.
+    //   `dcfmarks` — the CHANNEL STASHES it opened (D-183's creation-site
+    //     finalizers, re-homed from the function to the scope). Without the
+    //     truncation at pop, a later SIBLING block at the same depth would
+    //     reclaim the earlier one's stash: the stash list is function-long,
+    //     the window is not.
+    //   `dspawns`  — the count of spawns emitted, so a scope's exit can tell
+    //     whether it needs a join at all. Restored at pop, so a spawn in a
+    //     DEEPER scope (already joined at that scope's exit) does not make
+    //     this one emit a join it cannot use.
+    //   `djmarks`  — the slot holding `join_head` as it stood at scope entry.
+    //     The join list is a LIFO stack, so a scope's children are exactly
+    //     the ones pushed since it was entered, and the exit joins down to
+    //     this mark. One pointer per scope instead of one list head per
+    //     scope, and `emit_spawn` never has to know which scope it is in.
+    wild int32->:dcfmarks;
+    wild int32->:dspawns;
+    wild string->:djmarks;
     int32:dfcount;
     int32:dfcap;
+    int32:spawn_count;
 
     // THE LOOP STACK: continue target, break target, and the DEFER DEPTH at
     // entry. The depth is what closes the seed's recorded gap — its own comment
@@ -156,6 +177,10 @@ pub struct:FnEmitter = {
     // they dominate every resume segment.
     bool:is_async;
     bool:is_gives;                 // D-183 1.2.6: this fn's creations register no reclaim
+    // The built return aggregate, held between the two halves of the return
+    // seam (D-207, 1.4.4) — a synchronous function's `ret` is emitted after
+    // its unwind, and the value it returns was built before it.
+    string:exit_agg;
     string:frame_ty;
     string:resume_sym;
     string:state_gep;
@@ -230,7 +255,11 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         terminated: false,
         dstmts: ds =>! wild int32->, dcount: 0i32, dcap: 16i32,
         dframes: df =>! wild int32->, dfcount: 0i32, dfcap: 16i32,
+        spawn_count: 0i32,
         dlmarks: (alloc(16i64 * 4i64)) =>! wild int32->,
+        dcfmarks: (alloc(16i64 * 4i64)) =>! wild int32->,
+        dspawns: (alloc(16i64 * 4i64)) =>! wild int32->,
+        djmarks: (alloc(16i64 * #size_of<string>())) =>! wild string->,
         loop_heads: lh =>! wild string->, loop_dones: ld =>! wild string->,
         loop_depths: lp =>! wild int32->,
         loop_labels: (alloc(8i64 * 4i64)) =>! wild int32->,
@@ -245,7 +274,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         pick_seqs: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_depths: (alloc(8i64 * 4i64)) =>! wild int32->,
         pick_count: 0i32, pick_cap: 8i32, pick_seq: 0i32,
-        is_async: false, frame_ty: "", resume_sym: "",
+        is_async: false, exit_agg: "", frame_ty: "", resume_sym: "",
         state_gep: "", windup_gep: "", result_gep: "", join_gep: "",
         awaitee_gep: "",
         seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
@@ -309,6 +338,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.terminated = false;
     fe.dcount = 0i32;
     fe.dfcount = 0i32;
+    fe.spawn_count = 0i32;
     fe.loop_count = 0i32;
     fe.is_async = false;
     fe.is_gives = false;
@@ -723,23 +753,40 @@ pub func:fnem_seg_index = int32(FnEmitter->:fe) never fails {
     pass (fe.seg_count - 1i32);
 };
 
-// THE ONE RETURN SEAM (D-177). Every function exit hands its fully-built
-// return value here: a synchronous function `ret`s it; a coroutine stores it
-// into the frame's result slot — owned by the frame that computes it — and
-// returns DONE. The suspend return (`ret i8 1`) never comes through here:
-// suspension is not scope exit, runs no defers, and returns no value.
+// THE ONE RETURN SEAM (D-177), IN TWO HALVES SINCE D-207. Every function exit
+// hands its fully-built return value to `fnem_ret_agg`, runs its unwind, and
+// then calls `fnem_ret_done`. The suspend return (`ret i8 1`) never comes
+// through here: suspension is not scope exit, runs no defers, and returns no
+// value.
+//
+// WHY THE HALVES. Until 1.4.4 a coroutine stored its result and branched to
+// one `%npk.join` block emitted at close, which is what forced the join to
+// run LAST — after every scope's drops, including the sync primitives a
+// spawned child borrows. D-207 puts the join at each scope's exit instead,
+// inside the unwind, and the arbitration it performs ("the first child error
+// stands as the function's own — unless the function already failed") reads
+// the frame's result slot. So the store has to happen BEFORE the unwind and
+// the `ret` after it. D-136 is untouched: the value is still EVALUATED before
+// the defers, which is the rule that decision states; only its store moved.
 pub func:fnem_ret_agg = NIL(FnEmitter->:fe, string:value) never fails {
     if (!fe.is_async) {
-        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", value));
+        // A synchronous function has no result slot and cannot spawn, so its
+        // aggregate simply waits — an SSA value defined in a block that
+        // dominates every block the unwind goes on to emit.
+        fe.exit_agg = string_concat(value, "");
         pass NIL;
     }
-    // Store the result, then THE JOIN (D-177 stage E): every exit — normal
-    // or error, after its defers — drives the spawned children before the
-    // frame answers DONE. The join block is emitted once at close; a
-    // function that never spawned walks an empty list.
     drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", value,
                       string_concat(", ptr ", fe.result_gep)));
-    drop irw_line(fe.w, "br label %npk.join");
+    pass NIL;
+};
+
+pub func:fnem_ret_done = NIL(FnEmitter->:fe) never fails {
+    if (!fe.is_async) {
+        drop irw_line(fe.w, raw cat4("ret ", fe.ret_ll, " ", fe.exit_agg));
+        pass NIL;
+    }
+    drop irw_line(fe.w, "ret i8 0");
     pass NIL;
 };
 
@@ -924,20 +971,71 @@ pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) never fails {
         fe.dframes = m =>! wild int32->;
         wild int8->:m2 = ralloc(fe.dlmarks =>! wild int8->, (nc =>! int64) * 4i64);
         fe.dlmarks = m2 =>! wild int32->;
+        fe.dcfmarks = (ralloc(fe.dcfmarks =>! wild int8->,
+                              (nc =>! int64) * 4i64)) =>! wild int32->;
+        fe.dspawns = (ralloc(fe.dspawns =>! wild int8->,
+                             (nc =>! int64) * 4i64)) =>! wild int32->;
+        fe.djmarks = (ralloc(fe.djmarks =>! wild int8->,
+                             (nc => int64) * #size_of<string>())) =>! wild string->;
         fe.dfcap = nc;
     }
     fe.dframes[fe.dfcount => int64] = fe.dcount;
     fe.dlmarks[fe.dfcount => int64] = fe.lcount;
+    fe.dcfmarks[fe.dfcount => int64] = fe.chfin_count;
+    fe.dspawns[fe.dfcount => int64] = fe.spawn_count;
+    fe.djmarks[fe.dfcount => int64] = "";
     fe.dfcount = fe.dfcount + 1i32;
     pass NIL;
 };
 
 // Dropping the frame drops its entries with it — the same truncation the locals
 // use, for the same reason: what a block registered stops existing when it does.
+// The channel stashes and the spawn count truncate for the same reason (D-207).
 pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) never fails {
     fe.dfcount = fe.dfcount - 1i32;
     fe.dcount = fe.dframes[fe.dfcount => int64];
+    fe.chfin_count = fe.dcfmarks[fe.dfcount => int64];
+    fe.spawn_count = fe.dspawns[fe.dfcount => int64];
     pass NIL;
+};
+
+// This scope's CHANNEL STASHES — the window `fnem_chfin_add` filled between
+// its push and here (D-207, 1.4.4). The `hi` is the live top for the
+// innermost scope, exactly as the locals window works.
+pub func:fnem_scope_cfmark = int32(FnEmitter->:fe, int32:f) never fails {
+    pass fe.dcfmarks[f => int64];
+};
+pub func:fnem_scope_cfhi = int32(FnEmitter->:fe, int32:f) never fails {
+    if (f == (fe.dfcount - 1i32)) { pass fe.chfin_count; }
+    pass fe.dcfmarks[(f + 1i32) => int64];
+};
+
+// DID THIS SCOPE SPAWN? A spawn in a deeper scope was joined at that scope's
+// exit and restored the count on the way out, so this answers about frame `f`
+// itself. Emission order is what makes the question answerable at all: within
+// one entry of a frame, execution reaches a point having run only that
+// frame's statements textually before it — a loop body is a DEEPER frame, and
+// `continue` runs that frame's exit before the back edge — so a child on
+// frame `f`'s segment at this exit was spawned textually before it.
+pub func:fnem_scope_spawned = bool(FnEmitter->:fe, int32:f) never fails {
+    pass (fe.spawn_count > fe.dspawns[f => int64]);
+};
+pub func:fnem_note_spawn = NIL(FnEmitter->:fe) never fails {
+    fe.spawn_count = fe.spawn_count + 1i32;
+    pass NIL;
+};
+
+// The slot holding `join_head` as it stood at this scope's entry. "" in a
+// synchronous function, which cannot spawn (the checker refuses `drop f(…)`
+// on an `async` callee outside an `async` body), and "" for the frame of a
+// block whose mark slot the pre-scan did not reserve.
+pub func:fnem_set_jmark = NIL(FnEmitter->:fe, move string:slot) never fails {
+    fe.djmarks[(fe.dfcount - 1i32) => int64] = move(slot);
+    pass NIL;
+};
+pub func:fnem_scope_jmark = string(FnEmitter->:fe, int32:f) never fails {
+    pass (string_from_bytes(fe.djmarks[f => int64].ptr,
+                            fe.djmarks[f => int64].len));
 };
 
 pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) never fails {
@@ -1227,180 +1325,19 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         } else {
             drop fnem_ret_agg(fe, "zeroinitializer");
         }
+        // No unwind runs between the two halves here: a body that falls off
+        // its end already had its own block's exit walked by `emit_block`,
+        // joins and drops included (D-207).
+        drop fnem_ret_done(fe);
     }
     if (fe.is_async) {
-        // THE JOIN (D-177 stage E, executorless): pop each child off the
-        // join list, drive it to DONE (nothing can legally suspend before
-        // 1.1.5's executor exists — a SUSPENDED child is the same defect a
-        // bad resume state is), read its `{ i32 }` error slot through the
-        // generic header, free it, and let the FIRST child error stand as
-        // the function's own — unless the function already failed, in which
-        // case its error wins and later ones are kept out the same way. In
-        // `async main` there is no Result to relay into: a child error
-        // routes through `failsafe`, the uncaught-error path (D-013).
-        string:hdr = raw fnem_hdr_ty();
-        drop irw_label(fe.w, "npk.join");
-        string:jh = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat4(jh, " = load ptr, ptr ", fe.join_gep, ""));
-        string:jn = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jn, " = icmp eq ptr ",
-                          string_concat(jh, ", null")));
-        drop irw_line(fe.w, raw cat3("br i1 ", jn,
-                          ", label %npk.jend, label %npk.jbody"));
-        drop irw_label(fe.w, "npk.jbody");
-        // THE CHILD RUNS UNDER THE JOIN DEADLINE (D-062/D-083): the executor
-        // pumps every runnable task until THIS child completes, or the
-        // deadline fixed where the executor was created expires. Expiry is
-        // not a wait-longer: it sets every unfinished child's wind-up word
-        // (the cooperative model — the task learns at its next resume and
-        // runs its own `defer`s), grants the grace pump, and a child still
-        // unfinished after that is a defect, not a slow computation.
-        string:jnow = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jnow, " = call i64 @npk_mono_now()", ""));
-        string:jspan = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jspan, " = call i64 @npk_join_deadline()", ""));
-        string:jdl = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jdl, " = add i64 ", jnow, ", ", jspan));
-        // A THREAD CHILD IS JOINED ON ITS TID WORD (D-181); a task child is
-        // joined by pumping this executor. Same list, same deadline, same
-        // wind-up — one join, two waits, chosen by a slot that means one
-        // thing.
-        string:jtg = raw fnem_slot_gep(fe, raw fnem_hdr_ty(), jh, 9i32);
-        string:jtls = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat4(jtls, " = load ptr, ptr ", jtg, ""));
-        string:jisth = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jisth, " = icmp ne ptr ",
-                          string_concat(jtls, ", null")));
-        drop irw_line(fe.w, raw cat3("br i1 ", jisth,
-                          ", label %npk.jthread, label %npk.jtask"));
-        drop irw_label(fe.w, "npk.jthread");
-        string:jtrc = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jtrc, " = call i32 @npk_thread_join(ptr ",
-                          jtls, ", i64 ", string_concat(jdl, ")")));
-        drop irw_line(fe.w, "br label %npk.jwaited");
-        drop irw_label(fe.w, "npk.jtask");
-        string:jrc0 = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc0, " = call i32 @npk_run_until(ptr ",
-                          jh, ", i64 ", string_concat(jdl, ")")));
-        drop irw_line(fe.w, "br label %npk.jwaited");
-        drop irw_label(fe.w, "npk.jwaited");
-        string:jrc = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc, " = phi i32 [ ", jtrc,
-                          ", %npk.jthread ], [ ",
-                          raw cat3(jrc0, ", %npk.jtask ]", "")));
-        string:jok = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jok, " = icmp eq i32 ",
-                          string_concat(jrc, ", 0")));
-        drop irw_line(fe.w, raw cat3("br i1 ", jok,
-                          ", label %npk.jgot, label %npk.jwind"));
-        drop irw_label(fe.w, "npk.jwind");
-        drop irw_line(fe.w, raw cat3("call void @npk_windup_all(ptr ", jh, ")"));
-        string:jgnow = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jgnow, " = call i64 @npk_mono_now()", ""));
-        string:jgspan = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jgspan, " = call i64 @npk_windup_grace()", ""));
-        string:jgdl = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jgdl, " = add i64 ", jgnow, ", ", jgspan));
-        // THE GRACE WAIT FORKS LIKE THE FIRST ONE (1.2.4b): a THREAD child
-        // unwinds on its own executor, and pumping THIS one while it does
-        // found nothing ready, nothing sleeping, and work outstanding — the
-        // deadlock trap, from the first test to ever drive a wind-up. The
-        // tid futex is the wait that means "that thread", and `jisth` above
-        // already knows which child this is.
-        drop irw_line(fe.w, raw cat3("br i1 ", jisth,
-                          ", label %npk.jwthread, label %npk.jwtask"));
-        drop irw_label(fe.w, "npk.jwthread");
-        string:jrc2t = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc2t, " = call i32 @npk_thread_join(ptr ",
-                          jtls, ", i64 ", string_concat(jgdl, ")")));
-        drop irw_line(fe.w, "br label %npk.jwjoined");
-        drop irw_label(fe.w, "npk.jwtask");
-        string:jrc2k = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc2k, " = call i32 @npk_run_until(ptr ",
-                          jh, ", i64 ", string_concat(jgdl, ")")));
-        drop irw_line(fe.w, "br label %npk.jwjoined");
-        drop irw_label(fe.w, "npk.jwjoined");
-        string:jrc2 = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jrc2, " = phi i32 [ ", jrc2t,
-                          ", %npk.jwthread ], [ ",
-                          raw cat3(jrc2k, ", %npk.jwtask ]", "")));
-        string:jok2 = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jok2, " = icmp eq i32 ",
-                          string_concat(jrc2, ", 0")));
-        drop irw_line(fe.w, raw cat3("br i1 ", jok2,
-                          ", label %npk.jgot, label %npk.jexpire"));
-        drop irw_label(fe.w, "npk.jexpire");
-        // A child that outlived its mandatory deadline AND its wind-up grace.
-        // `DeadlineExceeded` (D-176/D-179) — the trap channel of the one
-        // value that is also a catchable `Result` error.
-        drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          int_to_string(fe.fn_site => int64), ")"));
-        drop irw_line(fe.w, "call void @npk_trap(i32 -4107)");
-        drop irw_line(fe.w, "unreachable");
-        drop irw_label(fe.w, "npk.jgot");
-        string:jeg = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jeg, " = getelementptr ", hdr, ", ptr ",
-                          string_concat(jh, ", i32 0, i32 3, i32 0")));
-        string:jerr2 = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat4(jerr2, " = load i32, ptr ", jeg, ""));
-        string:jsg = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat5(jsg, " = getelementptr ", hdr, ", ptr ",
-                          string_concat(jh, ", i32 0, i32 5")));
-        string:jsib = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat4(jsib, " = load ptr, ptr ", jsg, ""));
-        drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", jh, ")"));
-        drop irw_line(fe.w, raw cat4("store ptr ", jsib, ", ptr ",
-                          fe.join_gep));
-        string:jbad = raw irw_temp(fe.w);
-        drop irw_line(fe.w, raw cat3(jbad, " = icmp ne i32 ",
-                          string_concat(jerr2, ", 0")));
-        drop irw_line(fe.w, raw cat3("br i1 ", jbad,
-                          ", label %npk.jerr, label %npk.join"));
-        drop irw_label(fe.w, "npk.jerr");
-        if (fe.bare) {
-            drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                              int_to_string(fe.fn_site => int64), ")"));
-            string:jmf = raw irw_temp(fe.w);
-            drop irw_line(fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
-                              string_concat(jerr2, ")")));
-            drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", jmf, ")"));
-            drop irw_line(fe.w, "unreachable");
-        } else {
-            string:jcur = raw irw_temp(fe.w);
-            drop irw_line(fe.w, raw cat5(jcur, " = load ", fe.ret_ll,
-                              ", ptr ", fe.result_gep));
-            string:jslot = ", 1";
-            if (fe.ret_nil) { jslot = ", 0"; }
-            string:jce = raw irw_temp(fe.w);
-            drop irw_line(fe.w, raw cat5(jce, " = extractvalue ", fe.ret_ll,
-                              " ", string_concat(jcur, jslot)));
-            string:jown = raw irw_temp(fe.w);
-            drop irw_line(fe.w, raw cat3(jown, " = icmp ne i32 ",
-                              string_concat(jce, ", 0")));
-            drop irw_line(fe.w, raw cat3("br i1 ", jown,
-                              ", label %npk.join, label %npk.jset"));
-            drop irw_label(fe.w, "npk.jset");
-            drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                              int_to_string(fe.fn_site => int64), ")"));
-            string:jna = raw irw_temp(fe.w);
-            drop irw_line(fe.w, raw cat5(jna, " = insertvalue ", fe.ret_ll,
-                              " zeroinitializer, i32 ",
-                              string_concat(jerr2, jslot)));
-            drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", jna,
-                              string_concat(", ptr ", fe.result_gep)));
-            drop irw_line(fe.w, "br label %npk.join");
-        }
-        drop irw_label(fe.w, "npk.jend");
-        // CHANNEL RECLAIMS (D-183, 1.2.5), after the join: every task that
-        // could hold an endpoint has completed, so moving the generation
-        // strands nobody mid-drain — an ESCAPED handle used later answers
-        // StaleHandle, which is the guarantee, not a casualty.
-        int32:cfi = 0i32;
-        while (cfi < fe.chfin_count) {
-            drop fnem_chfin_reclaim(fe, cfi);
-            cfi = cfi + 1i32;
-        }
-        drop irw_line(fe.w, "ret i8 0");
+        // `%npk.join` USED TO LIVE HERE (D-177 stage E). One block, emitted
+        // once, that every exit branched to — which is exactly what made the
+        // join run after every scope's drops, including the sync primitives a
+        // spawned child borrows. D-207 moved it into the unwind
+        // (`emit_scope_join`, ir_stmt), where it is emitted per scope exit
+        // like defers and drops already are, and the channel reclaims moved
+        // with it.
 
         // A RESUME STATE NOBODY ASSIGNED IS A DEFECT, not a branch: the state
         // word is written only by this function's own suspensions, so the

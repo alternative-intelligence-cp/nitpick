@@ -360,7 +360,48 @@ while the callee had no type) and the instrument defect that
 `check_runtime_sigs_agree`'s derived-inner cross-check had NEVER RUN — it
 read the wrapped flag out of a leaked loop variable. Three of step 3's
 four defects were caught by the compiler checking ITSELF, none by a test.
-Next: 1.4.2b (D-210 overflow traps, D-211 const/fixed module state).
+**1.4.2b** (D-210 overflow traps on plain ints, D-211 `fixed`-only module
+state), **1.4.2c** (D-222 — `const` retired), **1.4.3** (D-208: the move
+analysis learns about PARAMETERS, which is where the hole actually was — 26
+findings in `src/`, including a live double free), and **1.4.3b** (D-216: the
+consuming `pick (move(v))`) followed. **1.4.4 (D-207) is COMPLETE**:
+`join_head` is per SCOPE — by a MARK, since the list is already a LIFO stack,
+so a scope's exit joins until the head is back where its entry left it (one
+pointer per scope, frame-resident at role 41 in a coroutine because a scope
+spans suspensions). The order at every scope exit is now **join → defers →
+drops → that scope's channel reclaims**, innermost first; D-183 ran the joins
+LAST, which put a spawned child's borrowed `Mutex` behind the mutex's own
+drop, and `type_drops`' "by the join discipline nobody can still hold it"
+comment was a claim the lowering did not keep. `%npk.join` — one block every
+exit branched to, and the reason the join ran last — is gone: the return seam
+stores the result BEFORE the unwind and returns after it, so the first-child-
+error arbitration reads the same slot it always did (D-136 untouched — the
+value is still EVALUATED before the defers). Lifted: `channel()` inside a
+LOOP (per-iteration reclaim; `chan_loop.npk` proves it by the first
+iteration's endpoint answering `StaleHandle` seven reclaims later) and
+`shared_arena` teardown (`TY_SHARED_ARENA` drops for real and left two
+walker excuse tables). Riders: `exit` runs joins and defers and NO reclaims
+(the drain runs generated drop bodies — the walk D-183's amendment keeps off
+the controlled-shutdown path), and `.destroy()` on either arena kind clears
+the binding's drop flag, the same mechanism `move` uses. The `dyn`-element
+channel refusal is PERMANENT by D-207 and its rung now says so. Owning made
+`shared_arena` MOVE-ONLY (TYPE-046 keys on `type_drops`), so a borrow became
+the only way to share one — and **D-180 was amended (user-ratified) to make
+`shared_arena<T>->` the fifth sanctioned spawn crossing**: its hazard test is
+"a mutation the holder cannot see", and a shared arena has no mutation at all
+(D-154 writes a slot once, before its handle escapes, and never again), while
+the joined-before-freed order this cycle built is what bounds the borrow.
+Two finds, neither by a test of the thing that broke: the **D-151 leak check
+runs only on `exit 0`** — a program reporting success as 42 checks nothing,
+which is how the first `shared_arena_drop.npk` passed against a build with
+the drop disabled — and **every thread join had been sleeping its entire
+five-second deadline since 1.1.9**. `npk_thread_join` waited on the
+CHILD_CLEARTID word with `FUTEX_PRIVATE_FLAG`; the kernel's wake from
+`mm_release` is a SHARED wake, which a private waiter never receives, so the
+word was cleared promptly, the wake went nowhere, the wait ran to its
+timeout, and the reload then reported success — right answer, five seconds
+late, every time. One token; `mutex_basic` 5.00s → 0.12s, and the mandatory
+deadline can once again tell "finished" from "stuck". Next: 1.4.5.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

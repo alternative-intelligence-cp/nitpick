@@ -1574,6 +1574,27 @@ entry:
 
 ; THE JOIN: wait on the CHILD_CLEARTID word until the kernel zeroes it, under
 ; the deadline. Returns 0 when the thread exited, 1 when the deadline passed.
+;
+; THE WAIT IS NOT PRIVATE, AND THAT IS THE WHOLE POINT (found at 1.4.4). It
+; was `FUTEX_WAIT_BITSET | FUTEX_PRIVATE_FLAG` (op 137) from 1.1.9 until then,
+; and every thread join in the ecosystem slept its ENTIRE deadline -- five
+; seconds -- before succeeding. The kernel clears this word at thread exit and
+; wakes it from `mm_release`, and that wake is a SHARED futex wake; a private
+; waiter hashes to a different key and never receives it. So the word was
+; zeroed promptly, the wake went nowhere, the wait ran to its absolute timeout,
+; and the loop then reloaded the word, saw zero and reported success. Correct
+; answer, five seconds late, every time -- which is why nothing ever failed and
+; nothing ever pointed at it. glibc's `lll_wait_tid` is non-private for exactly
+; this reason.
+;
+; It is not only speed. D-062 makes the join deadline MANDATORY so that a stuck
+; task is caught, and a join that consumes the whole deadline on every success
+; makes "finished" and "stuck" indistinguishable for its full length -- the
+; measurement the deadline exists to make was being thrown away. Measured
+; before and after on the same machine: `mutex_basic` 5.00s -> 0.12s,
+; `thread_spawn_join` 5.00s -> 0.12s, `join_order` 5.00s -> 0.06s. The
+; programs that still take seconds are the ones that mean to: `windup_drop`
+; drives a real wind-up (deadline + grace), `sync_prims` waits a real 2s.
 define i32 @npk_thread_join(ptr %tls, i64 %dl) {
 entry:
   %tp = getelementptr %npk.tls, ptr %tls, i32 0, i32 4
@@ -1599,7 +1620,7 @@ wait:
   %tsi = ptrtoint ptr %ts to i64
   %wp = ptrtoint ptr %tp to i64
   %te = zext i32 %t to i64
-  %fr = call i64 @npk_sys6(i64 202, i64 %wp, i64 137, i64 %te, i64 %tsi,
+  %fr = call i64 @npk_sys6(i64 202, i64 %wp, i64 9, i64 %te, i64 %tsi,
                            i64 0, i64 -1)
   br label %loop
 done:

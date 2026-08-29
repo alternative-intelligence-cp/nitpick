@@ -708,6 +708,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                      raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
                 pass (raw emit_arena_method(x, id, n, amrecv));
             }
+            // A BORROWED SHARED ARENA (D-154/D-207, 1.4.4): the sanctioned
+            // spawn crossing arrives here, since a worker holds
+            // `shared_arena<T>->` and `.` peels one level like any access.
+            if ((raw type_kind(x.fe.ctx.types,
+                     raw type_elem(x.fe.ctx.types, amrecv)))
+                    == (raw TY_SHARED_ARENA())) {
+                pass (raw emit_sarena_method(x, id, n, amrecv));
+            }
         }
         pass (raw emit_method_call(x, id, n));
     }
@@ -4452,6 +4460,9 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     // the join is not what makes it run.
     drop irw_line(x.fe.w, raw cat3("call void @npk_rq_push(ptr ",
                       cfv.ref, ")"));
+    // AND THE SCOPE KNOWS IT SPAWNED (D-207, 1.4.4): the enclosing scope's
+    // exit is what joins this child, and this is how it learns it has one.
+    drop fnem_note_spawn(x.fe);
     pass (raw iv("i32", "0", 0i32));
 };
 
@@ -4519,6 +4530,7 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     drop irw_line(x.fe.w, raw cat4("store ptr ", oldh, ", ptr ", sg2));
     drop irw_line(x.fe.w, raw cat5("store ptr ", cfv.ref, ", ptr ",
                       x.fe.join_gep, ""));
+    drop fnem_note_spawn(x.fe);
     pass (raw iv("i32", "0", 0i32));
 };
 
@@ -5212,11 +5224,12 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop irw_line(x.fe.w, raw cat3(wgp, " = inttoptr i64 ",
                       string_concat(wga, " to ptr")));
     drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", wgp, ""));
-    IrVal:wd = raw run_all_defers(x);
-    if (!(raw iv_is_ok(wd))) { pass wd; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, at)) => int64), ")"));
     drop fnem_ret_fail(x.fe, "-4107");
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
     drop s_start(x, go);
     drop s_br(x, head);
@@ -5268,11 +5281,12 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop irw_line(x.fe.w, raw cat3(wgp2, " = inttoptr i64 ",
                       string_concat(wga2, " to ptr")));
     drop irw_line(x.fe.w, raw cat3("store ptr null, ptr ", wgp2, ""));
-    IrVal:wd2 = raw run_all_defers(x);
-    if (!(raw iv_is_ok(wd2))) { pass wd2; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, at)) => int64), ")"));
     drop fnem_ret_fail(x.fe, "-4107");
+    IrVal:wd2 = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd2))) { pass wd2; }
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
     drop s_start(x, go2);
     drop s_br(x, head);
@@ -5429,11 +5443,12 @@ func:emit_barrier_arrive = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop irw_line(x.fe.w, raw cat4(wmg, " = load i64, ptr ", gslot, ""));
     drop irw_line(x.fe.w, raw cat5("call void @npk_barrier_cancel(ptr ", wcp,
                       ", i64 ", wmg, ", ptr %fr)"));
-    IrVal:wd = raw run_all_defers(x);
-    if (!(raw iv_is_ok(wd))) { pass wd; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, at)) => int64), ")"));
     drop fnem_ret_fail(x.fe, "-4107");
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
     drop s_start(x, go);
     drop s_br(x, head);
@@ -5550,11 +5565,12 @@ func:emit_lock_acquire = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       string_concat(", label %", go)));
     x.fe.terminated = true;
     drop s_start(x, wu);
-    IrVal:wd = raw run_all_defers(x);
-    if (!(raw iv_is_ok(wd))) { pass wd; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, at)) => int64), ")"));
     drop fnem_ret_fail(x.fe, "-4107");
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
     drop s_start(x, go);
     drop s_br(x, head);
@@ -5719,11 +5735,12 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                               string_concat("(ptr ", slot), ")"));
         }
     }
-    IrVal:wd = raw run_all_defers(x);
-    if (!(raw iv_is_ok(wd))) { pass wd; }
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, at)) => int64), ")"));
     drop fnem_ret_fail(x.fe, "-4107");
+    IrVal:wd = raw run_all_defers(x);
+    if (!(raw iv_is_ok(wd))) { pass wd; }
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
     drop s_start(x, go);
     drop s_br(x, head);
@@ -6688,15 +6705,18 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         int32:celem = raw type_elem(x.fe.ctx.types, cht);
         int64:ccap = (raw type_chan_cap(x.fe.ctx.types, cht)) => int64;
         int64:cesz = raw type_size(x.fe.ctx.types, celem);
-        // THE CREATING FUNCTION OWNS THE RECLAIM (D-182/D-183, 1.2.5):
-        // endpoints are copyable non-owners, so nothing about the VALUE can
-        // say when the channel's life ends — the CREATION SITE can, and
-        // does: the packed handle is stashed beside the frame, and the
-        // function's exit — after its defers, drops and child joins — hands
-        // the slot back, which moves the generation and makes StaleHandle
-        // reachable. Inside a LOOP the one stash would hold only the last
-        // iteration's handle and the rest would leak their slots; that needs
-        // per-scope join machinery, and it refuses by name until it exists.
+        // THE CREATING SCOPE OWNS THE RECLAIM (D-182/D-183 1.2.5, re-homed
+        // from the function to the scope by D-207 at 1.4.4): endpoints are
+        // copyable non-owners, so nothing about the VALUE can say when the
+        // channel's life ends — the CREATION SITE can, and does: the packed
+        // handle is stashed beside the frame, and the enclosing scope's exit
+        // — after its join, its defers and its drops — hands the slot back,
+        // which moves the generation and makes StaleHandle reachable.
+        // A `channel()` INSIDE A LOOP works because of that re-homing: the
+        // body's scope exits once per iteration, so each iteration's handle
+        // is reclaimed before the next one overwrites the stash. Until 1.4.4
+        // the one stash held only the last iteration's handle and every
+        // other slot leaked, so the creation refused by name (C-22).
         // A FACTORY HANDS ITS CHANNELS OUT (D-183, 1.2.5): a function whose
         // RETURN TYPE carries a channel — `pool_create` returning the pool
         // that holds one — cannot be its reclaimer, and nothing else can be
@@ -6711,13 +6731,6 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         // that does not say it — so a non-`gives` creator here always owns
         // its reclaim.
         bool:cfinal = !x.fe.is_gives;
-        if (cfinal) {
-            if (x.fe.loop_count > 0i32) {
-                pass (raw iv_rung(
-                    "a `channel()` inside a loop — one stash per creation SITE reclaims only the last iteration's channel, and per-iteration reclaim needs per-scope join machinery",
-                    "per-scope join machinery (C-22)", n.span));
-            }
-        }
         string:hr = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(hr, " = call i64 @npk_ch_open(i64 ",
                           int_to_string(ccap), ", i64 ",
@@ -6875,12 +6888,13 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(", label %", iogo)));
         x.fe.terminated = true;
         drop s_start(x, iowu);
-        IrVal:iowd = raw run_all_defers(x);
-        if (!(raw iv_is_ok(iowd))) { pass iowd; }
         drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                           int_to_string((raw x_site(x, n.span)) => int64),
                           ")"));
         drop fnem_ret_fail(x.fe, "-4107");
+        IrVal:iowd = raw run_all_defers(x);
+        if (!(raw iv_is_ok(iowd))) { pass iowd; }
+        drop fnem_ret_done(x.fe);
         x.fe.terminated = true;
         drop s_start(x, iogo);
         pass (raw iv_nil());
@@ -6921,12 +6935,13 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(", label %", go_l2)));
         x.fe.terminated = true;
         drop s_start(x, wu_l2);
-        IrVal:wud = raw run_all_defers(x);
-        if (!(raw iv_is_ok(wud))) { pass wud; }
         drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                           int_to_string((raw x_site(x, n.span)) => int64),
                           ")"));
         drop fnem_ret_fail(x.fe, "-4107");
+        IrVal:wud = raw run_all_defers(x);
+        if (!(raw iv_is_ok(wud))) { pass wud; }
+        drop fnem_ret_done(x.fe);
         x.fe.terminated = true;
         drop s_start(x, go_l2);
         pass (raw iv("i32", "0", 0i32));
@@ -7285,9 +7300,10 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                       int_to_string((raw x_site(x, n.span)) => int64), ")"));
     // EVERY frame runs — relay exits the whole function, so its error path owes
     // the same cleanup a `fail` here would owe.
+    drop fnem_ret_fail(x.fe, code);
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
-    drop fnem_ret_fail(x.fe, code);
+    drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
 
     drop s_start(x, ok_l);
@@ -7401,6 +7417,13 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop arena_drop_live(x, ap, elem);
         drop irw_line(x.fe.w, raw cat3("call void @npk_arena_destroy(ptr ",
                           ap, ")"));
+        // `destroy` CONSUMES (D-152) — the move analysis has invalidated the
+        // binding since 0.5, so the emitter's half is the same flag clear
+        // `move` makes (D-207, 1.4.4). Until then the scope-exit drop ran
+        // anyway and leant on `npk_arena_destroy` being idempotent; one
+        // mechanism for "this binding no longer owns it" is better than two,
+        // and `shared_arena`'s teardown cannot be idempotent on its own.
+        drop clear_root_flag(x, raw expr_operand(n));
         pass (raw iv("i32", "0", 0i32));
     }
 
@@ -7546,14 +7569,26 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     IrVal:sav = raw emit_expr(x, raw expr_operand(n));
     if (!(raw iv_is_ok(sav))) { pass sav; }
     string:sa = move(sav.ref);
-    string:st = raw arena_stride_text(x, recv_tid);
-    int32:elem = (raw tt_get(x.fe.ctx.types, recv_tid)).a;
+    // A BORROWED RECEIVER IS ONE LOAD AWAY (D-098's one-level peel, the shape
+    // the condvar and the mutex already use): the value of a
+    // `shared_arena<T>->` is the address of the OWNER's slot, and the runtime
+    // structure's pointer is what lives in it.
+    int32:sat = recv_tid;
+    if ((raw type_kind(x.fe.ctx.types, recv_tid)) == (raw TY_POINTER())) {
+        sat = raw type_elem(x.fe.ctx.types, recv_tid);
+        string:sald = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat4(sald, " = load ptr, ptr ", sa, ""));
+        sa = move(sald);
+    }
+    string:st = raw arena_stride_text(x, sat);
+    int32:elem = (raw tt_get(x.fe.ctx.types, sat)).a;
     string:m = raw intern_get(x.fe.ctx.interns, n.payload =>! int32);
     int32:start = raw expr_list_start(n);
 
     if (raw string_eq(m, "destroy")) {
         drop irw_line(x.fe.w, raw cat3("call void @npk_sarena_destroy(ptr ",
                           sa, ")"));
+        drop clear_root_flag(x, raw expr_operand(n));
         pass (raw iv("i32", "0", 0i32));
     }
 

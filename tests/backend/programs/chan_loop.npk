@@ -1,0 +1,63 @@
+// expect-exit: 42
+// stress: 40
+//
+// A `channel()` INSIDE A LOOP (D-207, 1.4.4). Until per-scope joins landed
+// this refused by name: the creation site's stash is one slot, so a
+// function-exit reclaim would hand back only the LAST iteration's channel
+// and every earlier slot would leak. Reclaim is the SCOPE's now — the loop
+// body's exit joins that iteration's tasks, drops its locals and hands its
+// channels back — so each iteration's slot is free before the next
+// iteration overwrites the stash.
+//
+// The proof is not that the loop runs: it is that an endpoint kept from the
+// FIRST iteration answers `StaleHandle` afterwards. That is the generation
+// moving, which only a real reclaim does, and it happened while the loop was
+// still going rather than at `main`'s exit.
+mod:chan_loop;
+error:E9;
+
+async func:main = int32(cstring[]:_~argv) {
+    // A channel of main's own, immediately overwritten — `seen` needs a
+    // value before the loop can assign it one (an endpoint is a copyable
+    // non-owner, D-182, so this is an ordinary assignment).
+    Channel<int32, 2i32, 4i64>:seen = channel() ?! Unreachable;
+    bool:have = false;
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    while (i < 8i32) {
+        Channel<int32, 2i32, 4i64>:c = channel() ?! Unreachable;
+        await c.send(i, raw duration_ms(50i64)) ?! E9;
+        int32:g = await c.recv(raw duration_ms(50i64)) ?! E9;
+        sum = sum + g;
+        if (!have) {
+            seen = c;
+            have = true;
+        }
+        i = i + 1i32;
+    }
+    if (sum != 28i32) { exit 10i32; }
+
+    // The first iteration's endpoint, seven reclaims later.
+    Result<NIL>:st = await seen.send(1i32, raw duration_ms(50i64));
+    if (!st.is_error)          { exit 11i32; }
+    if (st.err != StaleHandle) { exit 12i32; }
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 90i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

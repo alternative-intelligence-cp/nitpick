@@ -564,7 +564,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // not a pointer, which is what lets it cross a spawn.
     if (k == (raw TY_CHANNEL()))  {
         if (!(raw chan_elem_ok(c, raw type_elem(c.types, id), 8i32))) {
-            pass (raw ll_rung("per-scope join machinery (C-22) for `dyn` elements — everything else that refuses here carries a BORROW: a `T->`, a slice, or a struct holding one names storage that stays behind on the sender's frame, and no move can carry a borrowed target across a task boundary. Owning elements — strings, owning aggregates — ride since D-183's 1.2.5b: the send's `move` transfers the body with its ownership, and the receiver's drop frees it"));
+            pass (raw ll_rung("a `dyn` channel element, refused PERMANENTLY (D-207) — everything else that refuses here carries a BORROW: a `T->`, a slice, or a struct holding one names storage that stays behind on the sender's frame, and no move can carry a borrowed target across a task boundary. An erased value hides that question rather than answering it: BORROW-004 cannot be asked of a `dyn`, and no join ordering cures a type-level invisibility, which is why D-207 settled this one as NOT GOING IN rather than as waiting. Owning elements — strings, owning aggregates — ride since D-183's 1.2.5b: the send's `move` transfers the body with its ownership, and the receiver's drop frees it"));
         }
         pass (raw ll_ok("{ i32, i32 }"));
     }

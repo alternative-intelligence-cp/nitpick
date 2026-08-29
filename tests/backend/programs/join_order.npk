@@ -1,0 +1,62 @@
+// expect-exit: 42
+// stress: 40
+//
+// JOINED BEFORE FREED, AT THE SCOPE THAT SPAWNED (D-207, 1.4.4). The mutex
+// and the two threads that borrow it live in the same inner block. That
+// block's exit must JOIN the threads and only then DROP the mutex — whose
+// drop frees the very cell they acquire through. Until 1.4.4 the join was
+// one block at the end of the function that every exit branched to, so the
+// order at a scope exit was drops-then-join and `type_drops`' own comment
+// ("by the join discipline nobody can still hold it at the owner's exit")
+// was a claim the lowering did not keep.
+//
+// The assertion is TIMING, not just survival. Each worker sleeps 60ms before
+// it reports; the recv after the block allows 5ms. That only succeeds if the
+// block's exit waited for both — a scope exit that merely dropped the mutex
+// and sailed on would leave main asking for a message nobody had sent yet,
+// and `// stress: 40` is what makes the answer mean something.
+mod:join_order;
+error:E9;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:worker = NIL(Mutex<int32, 3i32>->:m,
+                               Channel<int32, 4i32, 4i64>:done) joins JOIN_2S {
+    await sleep(raw duration_ms(60i64)) ?| NIL;
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    g.value = g.value + 1i32;
+    int32:seen = g.value;
+    await done.send(seen, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 4i32, 4i64>:done = channel() ?! Unreachable;
+    {
+        Mutex<int32, 3i32>:m = mutex(0i32) ?! Unreachable;
+        drop worker(@m, done);
+        drop worker(@m, done);
+        // No wait here. The closing brace IS the wait — and then the drop.
+    }
+    int32:a = await done.recv(raw duration_ms(5i64)) ?! E9;
+    int32:b = await done.recv(raw duration_ms(5i64)) ?! E9;
+    // one worker saw 1 and the other 2, in whichever order the lock granted
+    if ((a + b) != 3i32) { exit 10i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 90i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

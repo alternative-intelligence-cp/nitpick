@@ -70,6 +70,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_param(@f2, ny, i32t, false));
     drop fnem_open(@f2);
     drop fnem_ret_pass(@f2, "7");
+    drop fnem_ret_done(@f2);
     drop fnem_close(@f2, true);
     if (!(raw string_eq(raw irw_text(@w2),
         "define { i32, i32 } @npk_add(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = insertvalue { i32, i32 } undef, i32 7, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 22i32; }
@@ -92,6 +93,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_begin(@f3, "tick", 0i32, types.t_nil));
     drop fnem_open(@f3);
     drop fnem_ret_pass(@f3, "");
+    drop fnem_ret_done(@f3);
     drop fnem_close(@f3, true);
     if (!(raw string_eq(raw irw_text(@w3),
         "define { i32 } @npk_tick() {\nentry:\n  ret { i32 } { i32 0 }\n}\n\n"))) { exit 30i32; }
@@ -102,6 +104,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_begin(@f4, "halt", 0i32, types.t_nil));
     drop fnem_open(@f4);
     drop fnem_ret_fail(@f4, "9");
+    drop fnem_ret_done(@f4);
     drop fnem_close(@f4, true);
     if (!(raw string_eq(raw irw_text(@w4),
         "define { i32 } @npk_halt() {\nentry:\n  %t0 = insertvalue { i32 } undef, i32 9, 0\n  ret { i32 } %t0\n}\n\n"))) { exit 31i32; }
@@ -116,6 +119,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_begin(@f5, "read", 0i32, types.t_string));
     drop fnem_open(@f5);
     drop fnem_ret_fail(@f5, "3");
+    drop fnem_ret_done(@f5);
     drop fnem_close(@f5, true);
     if (!(raw string_eq(raw irw_text(@w5),
         "define { { ptr, i64, i64 }, i32 } @npk_read() {\nentry:\n  %t0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } zeroinitializer, 0\n  %t1 = insertvalue { { ptr, i64, i64 }, i32 } %t0, i32 3, 1\n  ret { { ptr, i64, i64 }, i32 } %t1\n}\n\n"))) { exit 32i32; }
@@ -171,6 +175,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_param(@f9, ny, i32t, false));
     drop fnem_open(@f9);
     drop fnem_ret_pass(@f9, "7");
+    drop fnem_ret_done(@f9);
     drop fnem_close(@f9, true);
     string:both = string_concat(raw irw_text(@w1), raw irw_text(@w2));
     if (!(raw string_eq(raw irw_text(@w9), both)))       { exit 60i32; }
@@ -183,6 +188,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_param(@fa, ny, i32t, false));
     drop fnem_open(@fa);
     drop fnem_ret_pass(@fa, "7");
+    drop fnem_ret_done(@fa);
     drop fnem_close(@fa, true);
     if (!(raw string_eq(raw irw_text(@wa), raw irw_text(@w2)))) { exit 61i32; }
 

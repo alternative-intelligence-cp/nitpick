@@ -1589,6 +1589,26 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
                 if (apk == (raw TY_RWLOCK()))  { sanctioned = true; }
                 if (apk == (raw TY_CONDVAR())) { sanctioned = true; }
                 if (apk == (raw TY_BARRIER())) { sanctioned = true; }
+                // A `shared_arena<T>->` IS THE FIFTH (D-154/D-207, 1.4.4),
+                // and it meets this rule's stated test more plainly than the
+                // locks do: the hazard named above is a MUTATION the holder
+                // cannot see, and a shared arena has no mutation at all —
+                // D-154's contract is that a slot is written once, at
+                // `alloc(v)`, before its handle can escape, and is immutable
+                // afterwards. There is no `put`, no `free`, no `reset`; the
+                // method set is alloc/get/destroy precisely so that reading
+                // one concurrently needs no synchronisation. `alloc`'s own
+                // bookkeeping is the runtime's atomic bump.
+                //
+                // WHY IT COULD NOT BE SANCTIONED BEFORE 1.4.4. It did not
+                // need to be: the type owned nothing, so it crossed as a
+                // copyable pointer VALUE. Giving it a drop (D-207) made it
+                // move-only, and a borrow became the only way to share one —
+                // which is sound exactly because the same decision made a
+                // scope exit JOIN before it drops. The borrow dies after
+                // every task that could hold it, which is the guarantee the
+                // four locks above ride.
+                if (apk == (raw TY_SHARED_ARENA())) { sanctioned = true; }
                 if (sanctioned) {
                     i = i + 1i32;
                     continue;

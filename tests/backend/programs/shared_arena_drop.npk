@@ -1,0 +1,86 @@
+// expect-exit: 0
+//
+// A `shared_arena<T>` IS RELEASED BY ITS SCOPE (D-154/D-207, 1.4.4). It was
+// the one owning type with no drop, excused on the grounds that its value is
+// a pointer into storage other threads read — so releasing it needs a scope
+// exit that has already JOINED. Per-scope joins are that exit, and this is
+// the drop they unblocked.
+//
+// EVERY CASE HERE IS OBSERVABLE, which is why the arena was worth choosing
+// as the proof: `npk_sarena_make` allocates in the WILD role, so a missed
+// release is a `WildLeak` at the D-151 exit check (exit 97), and a doubled
+// one is a free of a freed block — `HeapBadRequest` (exit 95). Both are
+// louder than a wrong answer.
+//
+//   `implicit`    — no `destroy` anywhere; the scope exit is the only
+//                   release there is.
+//   `explicit`    — `destroy` and then a scope exit: `destroy` consumes
+//                   (D-152), so the emitter clears the binding's drop flag
+//                   and the exit frees nothing twice.
+//   `conditional` — `destroy` on ONE path. The drop flag is a runtime byte
+//                   precisely so the other path still releases.
+//
+// `main` ends with `exit`, which runs no drops (D-183 as amended) — so every
+// arena here is released inside a called function's scope, not by main's. It
+// exits ZERO on success for the same reason: D-151 scopes the leak check to a
+// SUCCESSFUL exit ("code 0, exactly as CONTROL_REFERENCE 4.6 scopes it"), so
+// a test that reported success as 42 would be checking nothing at all — a
+// misreading worth stating, since every other program here says 42.
+mod:shared_arena_drop;
+error:E9;
+
+func:implicit = int64(int64:n) never fails {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    int64:i = 0i64;
+    int64:acc = 0i64;
+    while (i < n) {
+        Handle<int64>:h = s.alloc(i);
+        acc = acc + (s.get(h) ?! E9);
+        i = i + 1i64;
+    }
+    pass acc;
+};
+
+func:explicit = int64() never fails {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    Handle<int64>:h = s.alloc(11i64);
+    int64:v = s.get(h) ?! E9;
+    s.destroy();
+    pass v;
+};
+
+func:conditional = int64(bool:kill) never fails {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    Handle<int64>:h = s.alloc(13i64);
+    int64:v = s.get(h) ?! E9;
+    if (kill) { s.destroy(); }
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 100 slots across several geometric chunks, so the release walks a real
+    // chunk list rather than one block.
+    if ((raw implicit(100i64)) != 4950i64) { exit 10i32; }
+    if ((raw implicit(1i64)) != 0i64)      { exit 11i32; }
+    if ((raw explicit()) != 11i64)         { exit 12i32; }
+    if ((raw conditional(true)) != 13i64)  { exit 13i32; }
+    if ((raw conditional(false)) != 13i64) { exit 14i32; }
+    // and again, so a slot handed back wrong would collide with a live one
+    if ((raw implicit(64i64)) != 2016i64)  { exit 15i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 90i32; },
+        (StaleHandle)      { exit 92i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};

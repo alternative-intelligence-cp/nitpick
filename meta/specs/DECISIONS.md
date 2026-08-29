@@ -12253,11 +12253,37 @@ constants — a large mechanical sweep with proven tooling, and a readability
 gain: the compiler's own trap conventions (`?! 9tbb32`, `?! 25tbb32`…)
 finally get names.
 
-## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED**
+## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
 C-8, settled at 1.1.8's close, on evidence that did not exist when the
 question was raised: D-177's crossing-locals analysis is now built, and it
 decides the thing the rule was guessing at.
+
+> **AMENDED at 1.4.4 (2026-08-29), user-ratified: `shared_arena<T>->` joins
+> `Mutex`, `RwLock`, `CondVar` and `Barrier` as a sanctioned spawn crossing.**
+>
+> The exemption below is keyed on the TYPE, and its test is that the hazard —
+> "a mutation the holder cannot see, at a suspension point it did not choose"
+> — cannot arise. A shared arena meets that test more plainly than the four
+> locks do, because it has no mutation at all: D-154's contract is that a slot
+> is written ONCE, at `alloc(v)`, before its handle can escape, and is
+> immutable afterwards. There is no `put`, no `free`, no `reset` — the method
+> set is alloc/get/destroy precisely so that reading one concurrently needs no
+> synchronisation, and `alloc`'s own bookkeeping is the runtime's atomic bump.
+>
+> **Why the question only arose now.** Until D-207 gave `shared_arena<T>` a
+> drop it owned nothing, so it crossed a spawn as a copyable pointer VALUE and
+> needed no exemption. Owning made it move-only (TYPE-046 keys on
+> `type_drops`), and a borrow became the only way to share one. That is sound
+> because the same decision made a scope exit JOIN before it drops: the borrow
+> dies after every task that could hold it, which is the guarantee the four
+> locks already ride. Landing the drop without this would have left a type
+> whose name and whose decision both say "shared" and which could not be
+> shared with anything.
+>
+> `shared_arena_spawn.npk` is the case: two threads allocating concurrently
+> through one borrowed arena, joined at the block's exit and released after,
+> exiting ZERO so D-151's leak check is armed.
 
 ### What the blanket rule was protecting against
 
@@ -14366,6 +14392,46 @@ channel element's erased content can hide a borrow, and no join ordering
 cures type-level invisibility — BORROW-004's spawn-crossing question
 cannot be asked of an erased value. A decision that it is not going in,
 not a deferral.
+
+> **LANDED at 1.4.4 (2026-08-29).** The mechanism is a MARK, not a second
+> list: the join list is already a LIFO stack, so a scope's children are the
+> ones pushed since it was entered, and its exit joins until the head is back
+> at the value saved at entry. One pointer per scope, `emit_spawn` untouched,
+> and the function's own scope falls out as the mark that is null. The mark is
+> frame-resident in a coroutine (role 41 on the block's statement index) for
+> the reason drop flags are: a scope spans suspensions and an alloca dies
+> between resumes.
+>
+> **The order this settles, against D-183's:** joins, then defers, then drops,
+> then that scope's channel reclaims — innermost scope first. D-183's text
+> reclaims "after its defers, drops and child joins", and that put a spawned
+> child's borrowed `Mutex` BEHIND the mutex's own drop; `type_drops`' comment
+> that "by the join discipline nobody can still hold it at the owner's exit"
+> was a claim the lowering did not keep. Joins go in front of the defers as
+> well as the drops, because a defer body is user code over the same bindings
+> a live child can still reach: a scope's exit ends its concurrency before it
+> runs any cleanup. `join_order.npk` regresses it — with inner-scope joins
+> gated off it fails on the timing, not merely on luck.
+>
+> `%npk.join` is gone. It was one block every exit branched to, which is what
+> forced the join to run last; the return seam now stores the result BEFORE
+> the unwind and returns after it, so the arbitration ("the first child error
+> stands as the function's own unless the function already failed") reads the
+> same slot it always did. D-136 is untouched — the value is still evaluated
+> before the defers; only its store moved.
+>
+> **Two riders, both narrowings that follow this decision's own reasoning:**
+> `exit` runs joins and defers and no reclaims (the drain runs generated drop
+> bodies, which is the walk D-183's amendment keeps off the controlled-shutdown
+> path); and `.destroy()` on either arena kind now clears the binding's drop
+> flag, which is the same mechanism `move` uses, replacing plain arenas'
+> reliance on `npk_arena_destroy` being idempotent — `npk_sarena_destroy`
+> frees the structure itself and cannot be.
+>
+> `shared_arena<T>` becoming an owner makes it MOVE-ONLY (TYPE-046 keys on
+> `type_drops`), which forecloses handing one to a worker by value. Raised as
+> a follow-on question rather than decided here; see
+> `meta/roadmap/1.4/1.4.4.md`.
 
 ## D-208 — loop-carried moved-from states — **SETTLED (1.4.0 batch, user-ratified)**
 

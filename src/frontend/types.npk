@@ -388,12 +388,13 @@ pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
 // the regime explicit); a SLICE (a borrow, D-070); a `Handle<T>` and a channel
 // endpoint (indices, not owners — D-152/D-182).
 //
-// `arena<T>`, `shared_arena<T>` and `Channel<T, …>` answer NO *for now* and
-// must answer YES at 1.2.5, which is where slab release and channel-slot
-// reclamation land. That is written down rather than left implicit because
-// the channel one is load-bearing: reclaiming a slot is what moves its
-// generation, and until it does, D-182's `StaleHandle` cannot be provoked
-// from source at all.
+// `arena<T>` and `shared_arena<T>` DO own — 1.2.5c gave the first one a drop
+// and D-207 the second (1.4.4), once per-scope joins made "released after the
+// tasks that could still read it" a thing a scope exit can guarantee. A
+// `Channel<T, …>` still answers NO and always will: an endpoint is an index,
+// so no VALUE says when the channel's life ends. Its reclaim is the creating
+// SCOPE's finalizer instead, which is what moves the generation and makes
+// D-182's `StaleHandle` reachable from source at all.
 pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     if (id <= 0i32) { pass false; }
@@ -442,10 +443,15 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // AN ARENA OWNS ITS SLABS (D-003/D-183, 1.2.5c): the binding's scope
     // exit destroys them — dropping any still-live owning elements first —
     // which is what lets arenas replace a collector WITHOUT the manual
-    // `destroy` being the only reclaimer. `shared_arena` stays out: its
-    // value is a pointer into shared storage whose teardown needs the
-    // per-scope join machinery (OPEN_DECISIONS C-22).
+    // `destroy` being the only reclaimer.
     if (k == (raw TY_ARENA()))    { pass true; }
+    // A `shared_arena` OWNS ITS CHUNKS TOO (D-154/D-207, 1.4.4). It was
+    // excused until then for one reason: its value is a pointer into storage
+    // OTHER THREADS read, so releasing it at the owner's scope exit is only
+    // sound if that exit has already joined the tasks that could still be
+    // reading — which is exactly what per-scope joins buy. Joined before
+    // freed, in that order, at every scope exit.
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
     // AN OwnedFd OWNS ITS DESCRIPTOR (D-185, 1.1.12b): the drop closes it.
     if (k == (raw TY_OWNEDFD()))  { pass true; }
     // A `simd` VALUE IS LANES OF PLAIN SCALARS (D-194) — nothing to drop,

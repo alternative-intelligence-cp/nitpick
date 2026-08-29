@@ -1,0 +1,74 @@
+// expect-exit: 0
+// stress: 40
+//
+// A `shared_arena<T>` IS SHARED WITH WORKERS BY BORROW (D-154/D-207, 1.4.4) —
+// the fifth sanctioned spawn crossing (D-180). The type owns its chunks now,
+// so it is move-only, and a borrow is the only way to hand one to a worker.
+// That is sound for the reason the four locks are: this scope's exit JOINS
+// before it drops, so the borrow dies after every task that could hold it.
+//
+// D-180's stated hazard is "a mutation the holder cannot see, at a suspension
+// point it did not choose". A shared arena has NO mutation to miss: a slot is
+// written once, at `alloc(v)`, before its handle can escape, and is immutable
+// after — there is no `put`, no `free`, no `reset`, which is the whole D-154
+// contract. Both workers `alloc` concurrently; the runtime's atomic bump is
+// what makes two writers safe, and `// stress: 40` is what makes that claim
+// mean something.
+//
+// It exits ZERO on purpose: D-151's leak check runs only on a successful
+// exit, and the arena's chunks are WILD-role, so a release that did not
+// happen would be reported here rather than passing quietly.
+mod:shared_arena_spawn;
+error:E9;
+fixed Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
+
+thread async func:filler = NIL(shared_arena<int64>->:s,
+                               Channel<int64, 4i32, 4i64>:done,
+                               int64:base) joins JOIN_2S {
+    int64:i = 0i64;
+    int64:last = 0i64;
+    while (i < 50i64) {
+        Handle<int64>:h = s.alloc(base + i);
+        last = s.get(h) ?! E9;
+        if (last != (base + i)) { !!! E9; }
+        i = i + 1i64;
+    }
+    await done.send(last, raw duration_ms(500i64)) ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int64, 4i32, 4i64>:done = channel() ?! Unreachable;
+    {
+        shared_arena<int64>:s = shared_arena_make(8i64);
+        // The arena's own first slot, so the owner and the workers write the
+        // same storage from three directions.
+        Handle<int64>:h0 = s.alloc(1000i64);
+        if ((s.get(h0) ?! E9) != 1000i64) { exit 10i32; }
+        drop filler(@s, done, 2000i64);
+        drop filler(@s, done, 5000i64);
+        // The closing brace joins both workers and only then releases the
+        // arena they were reading.
+    }
+    int64:a = await done.recv(raw duration_ms(5i64)) ?! E9;
+    int64:b = await done.recv(raw duration_ms(5i64)) ?! E9;
+    if ((a + b) != 7098i64) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (IntOverflow)      { exit 90i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (DeadlineExceeded) { exit 94i32; },
+        (HeapBadRequest)   { exit 95i32; },
+        (HeapOom)          { exit 95i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 96i32; },
+        (WildLeak)         { exit 97i32; },
+        (*)                { exit 98i32; }
+    }
+    exit 99i32;
+};
