@@ -18,7 +18,49 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > floor, imported like any other module. The first draft of the generator
 > scavenged every code-shaped token in the file, so `close(2)` in a sentence
 > about POSIX became a "builtin" nobody could call; the markers are the fix
-> that cannot un-fix itself.
+> that cannot un-fix itself. **One row per builtin, and nothing but rows**: the
+> generator reads the marked regions' TABLE ROWS alone and hard-fails if a name
+> it must know has none.
+>
+> `<!-- rtsyms:begin -->` … `<!-- rtsyms:end -->` (§2d) is the OTHER region, and
+> a deliberately different one: the symbols the emitter calls that are not
+> builtins and never resolve as names. They feed `ir_runtime.npk` only.
+
+> **The Signature column is machine-read (D-201, 1.4.2).** Every row inside a
+> marked region carries a signature in ONE syntax, and `gen_tables.py` hard-fails
+> on a row it cannot parse — the checker types builtin calls from what it emits,
+> so an unreadable row is a builtin nobody can call correctly rather than a
+> cosmetic slip.
+>
+> ```
+> signature ::= params "→" type
+> params    ::= "(" [ param { "," param } ] ")" | param
+> param     ::= [ "move" ] type [ ":" name ]
+> ```
+>
+> The arrow is U+2192 and separates the parameters from the return; `->` inside a
+> type is the pointer suffix. A memory qualifier (`wild`, `wildx`, `stack`) is
+> DOCUMENTATION here, exactly as it is in source — qualifiers are not part of a
+> type (`parse_type.npk`) — so `wild any->` and `any->` intern identically. The
+> return states the LANGUAGE type: `Result<T>` appears exactly when the Fails
+> column says the builtin may fail, and never on a `never fails` row, whose type
+> is the bare value (D-201 §4). The generator refuses a row where the two columns
+> disagree.
+>
+> **The `**ABI:**` note** closes a row's description where the SYMBOL departs from
+> the language signature. Its whole vocabulary, values backticked:
+>
+> | Token | Meaning |
+> |---|---|
+> | `inline` | there is no floor symbol — the builtin lowers inline (`own_fd` is a no-op cast; `string_is_empty` is a length compare against zero) |
+> | ``sym=`@memcpy` `` | the symbol is not `@npk_<name>` |
+> | ``ret=`{ ptr, ptr, i64, i64, i64 }` `` | the LLVM return is not the one derived from the signature |
+> | ``args=`ptr, i32, i64` `` | the LLVM arguments are not the ones derived from the signature |
+> | `envelope` | a `never fails` builtin whose symbol still answers `{ T, i32 }`; the emitter extracts the value half at the call (D-201 §4) |
+>
+> Everything not noted is DERIVED, and `check_runtime_sigs_agree` diffs the
+> result against `bootstrap/runtime/npkrt.ll`'s own defines on every harness run —
+> so a wrong derivation and a wrong note fail the same way, loudly.
 
 <!-- builtins:begin -->
 
@@ -30,13 +72,13 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 | Built-in | Signature | Description | Fails |
 |---|---|---|---|
 | `alloc` | `int64:size → wild int8->` | Allocates `size` uninitialized bytes, 16-aligned. `alloc(0)` is a real, unique, freeable block (D-150). Triggers failsafe on OOM. | **never fails** (traps on misuse) |
-| `aalloc` | `int64:size, int64:align → wild int8->` | Allocates with the requested power-of-two alignment (0.10.0); `align <= 16` is the ordinary path. | **never fails** (traps on misuse) |
+| `aalloc` | `(int64:size, int64:align) → wild int8->` | Allocates with the requested power-of-two alignment (0.10.0); `align <= 16` is the ordinary path. | **never fails** (traps on misuse) |
 | `calloc` | `(int64:count, int64:size) → wild int8->` | Allocates `count*size` zero-initialized bytes. Prefer this over `alloc` + `memset`. | **never fails** (traps on misuse) |
 | `ralloc` | `(wild any->:ptr, int64:new_size) → wild int8->` | Resizes an allocation; grows in place where the class or mapping allows, else allocates, copies (bounded by the OLD size), and frees. The old pointer is invalid after calling. `ralloc(NULL, n)` is a fresh allocation; `ralloc(p, 0)` traps (`-4104`, D-150) — freeing is spelled `dalloc`. | **never fails** (traps on misuse) |
-| `dalloc` | `wild any->:ptr → void` | Deallocates a pointer, really (0.10.0): the slot is recycled. `dalloc(NULL)` **traps** (`-4102`, D-150) — `alloc` never returns null, so a null here is a state the author did not intend; there is no C-style free(NULL) cleanup idiom to serve. Double-free and foreign pointers trap deterministically. | **never fails** (traps on misuse) |
-| `mcpy` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **NO overlap allowed**. Maps to `llvm.memcpy`. | **never fails** (traps on misuse) |
-| `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. | **never fails** (traps on misuse) |
-| `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. | **never fails** (traps on misuse) |
+| `dalloc` | `wild any->:ptr → NIL` | Deallocates a pointer, really (0.10.0): the slot is recycled. `dalloc(NULL)` **traps** (`-4102`, D-150) — `alloc` never returns null, so a null here is a state the author did not intend; there is no C-style free(NULL) cleanup idiom to serve. Double-free and foreign pointers trap deterministically. | **never fails** (traps on misuse) |
+| `mcpy` | `(wild any->:dst, wild any->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **NO overlap allowed**. Maps to `llvm.memcpy`. **ABI:** sym=`@memcpy` | **never fails** (traps on misuse) |
+| `mmov` | `(wild any->:dst, wild any->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. **ABI:** sym=`@memmove` | **never fails** (traps on misuse) |
+| `memset` | `(wild any->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. **ABI:** sym=`@memset` args=`ptr, i32, i64` | **never fails** (traps on misuse) |
 
 ### Arenas, wild tracking, and W^X memory
 
@@ -47,11 +89,11 @@ executable at once).
 
 | Built-in | Signature | Description | Fails |
 |---|---|---|---|
-| `arena_make` | `int64:cap → arena<T>` | A bump/slab arena for `T`, its element stride taken from the annotation the call is given (D-152) — type-directed, so the element type is never written as an argument. | **never fails** (traps on misuse) |
-| `shared_arena_make` | `int64:cap → shared_arena<T>` | The atomically-shared arena (D-154), likewise type-directed. | **never fails** (traps on misuse) |
-| `atomic_from_ptr` | `wild T-> → atomic<T>` | Aliases existing memory AS an atomic (D-033), rather than allocating storage (which `atomic<T>:x;` does) — spelled `atomic_from_ptr::<T>`: the element type comes from the **turbofish** (D-064's expression-position type-argument syntax; D-187). **`wild`-context only** (D-187): it fabricates an atomic view over an address the type system did not allocate, exactly as privileged as the `#wild_ptr` that produced the address. **Fused-only**: legal solely as an atomic method's receiver — load through `atomic_from_ptr::<int64>` directly — where the emitter dispatches through the pointer itself; a declaration or assignment storing the result is refused (TYPE-007), which makes "aliased atomics are never stored" structural rather than a discipline. | **never fails** (traps on misuse) |
+| `arena_make` | `int64:cap → arena<T>` | A bump/slab arena for `T`, its element stride taken from the annotation the call is given (D-152) — type-directed, so the element type is never written as an argument. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** sym=`@npk_arena_make` ret=`{ ptr, ptr, i64, i64, i64 }` args=`i64, i64` | **never fails** (traps on misuse) |
+| `shared_arena_make` | `int64:cap → shared_arena<T>` | The atomically-shared arena (D-154), likewise type-directed. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** sym=`@npk_sarena_make` ret=`ptr` args=`i64, i64` | **never fails** (traps on misuse) |
+| `atomic_from_ptr` | `wild T-> → atomic<T>` | Aliases existing memory AS an atomic (D-033), rather than allocating storage (which `atomic<T>:x;` does) — spelled `atomic_from_ptr::<T>`: the element type comes from the **turbofish** (D-064's expression-position type-argument syntax; D-187). **`wild`-context only** (D-187): it fabricates an atomic view over an address the type system did not allocate, exactly as privileged as the `#wild_ptr` that produced the address. **Fused-only**: legal solely as an atomic method's receiver — load through `atomic_from_ptr::<int64>` directly — where the emitter dispatches through the pointer itself; a declaration or assignment storing the result is refused (TYPE-007), which makes "aliased atomics are never stored" structural rather than a discipline. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | **never fails** (traps on misuse) |
 | `wild_live_count` | `() → int64` | How many `wild` allocations are live — what the controlled `exit` checks so a leak traps rather than passing silently (D-062). | **never fails** (traps on misuse) |
-| `driver_clone_exec` | `wild int8->:blk → int64` | Spawn a DRIVER process (D-149 over D-055, 1.1.13a): claim a registry slot, clone with SIGCHLD and CLONE_PIDFD, and in the child run the fixed allocation-free sequence — PDEATHSIG, the recorded-parent check, NO_NEW_PRIVS, the dup3 shuffle onto 0/1/2/3, execve — nothing else. `blk` is the nine-word param block the caller prepares PRE-clone (path, argv, envp, the three child-bound fds all ≥ 4, the recorded parent pid; slots 7/8 come back holding the registry slot and the pidfd). Returns the child pid; the registry entry is published BEFORE the clone and the kernel writes the pidfd INTO the slot, so a live child always has a killable entry. `lib/nbridge.npk`'s `spawn_driver` is the surface; calling this directly is nlibc-tier `wild` business. | may fail (a full registry is EAGAIN; the kernel's own clone failures ride through) |
+| `driver_clone_exec` | `wild any->:blk → Result<int64>` | Spawn a DRIVER process (D-149 over D-055, 1.1.13a): claim a registry slot, clone with SIGCHLD and CLONE_PIDFD, and in the child run the fixed allocation-free sequence — PDEATHSIG, the recorded-parent check, NO_NEW_PRIVS, the dup3 shuffle onto 0/1/2/3, execve — nothing else. `blk` is the nine-word param block the caller prepares PRE-clone (path, argv, envp, the three child-bound fds all ≥ 4, the recorded parent pid; slots 7/8 come back holding the registry slot and the pidfd). Returns the child pid; the registry entry is published BEFORE the clone and the kernel writes the pidfd INTO the slot, so a live child always has a killable entry. `lib/nbridge.npk`'s `spawn_driver` is the surface; calling this directly is nlibc-tier `wild` business. | may fail (a full registry is EAGAIN; the kernel's own clone failures ride through) |
 | `driver_retire` | `int64:slot → NIL` | Retire a driver-registry slot — teardown's LAST step (v3 §4.2), after the process is dead and reaped. Retiring a slot that is not active is the registry's double-free and traps (`-4102`), exactly as the allocator treats a foreign pointer. | **never fails** (traps on misuse) |
 | `wild_release_all` | `() → NIL` | Releases every live `wild` allocation at once; the cleanup `failsafe` may run before exiting positive (D-151). | **never fails** (traps on misuse) |
 | `wildx_alloc` | `int64:size → wildx int8->` | Allocates writable-not-executable pages for the JIT to fill. | **never fails** (traps on misuse) |
@@ -133,37 +175,37 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 
 | Built-in | Signature | Notes | Fails |
 |---|---|---|---|
-| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (~1,760 call sites at 1.4.0); also comptime-folds. | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) |
-| `int_to_string` | `int64 → Result<string>` | Decimal rendering. | **never fails** (audited at 1.1.1: one return, error always 0; OOM traps) |
+| `string_concat` | `(string, string) → string` | The one string operation the compiler is built out of (~1,800 call sites in `src/` at 1.4.2); also comptime-folds. **ABI:** envelope | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) |
+| `int_to_string` | `int64 → string` | Decimal rendering. **ABI:** envelope | **never fails** (audited at 1.1.1: one return, error always 0; OOM traps) |
 | `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open — **an OWNED COPY** (D-186): a view here made `x = string_slice(x, …)` a silent use-after-free. An empty slice allocates nothing. `string_bytes`/`string_from_bytes` are the explicit view primitives. | `Result` — may fail |
-| `string_bytes` | `string → uint8[]` | **The string→slice bridge** (D-185, 1.1.12c): the bytes as a borrowed VIEW — same pointer, same length, no copy. The slice is a borrow (D-070), so everything that stops a borrow escaping stops this one. | **never fails** |
-| `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. | **never fails** (traps on misuse) |
+| `string_bytes` | `string → uint8[]` | **The string→slice bridge** (D-185, 1.1.12c): the bytes as a borrowed VIEW — same pointer, same length, no copy. The slice is a borrow (D-070), so everything that stops a borrow escaping stops this one. **ABI:** inline | **never fails** |
+| `string_from_bytes` | `(wild any->:ptr, int64:len) → string` | Wraps existing bytes; never fails. | **never fails** (traps on misuse) |
 | `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). | `Result` — may fail |
 | `read_file` | `cstring → Result<string>` | Whole file. | `Result` — may fail |
 | `read_stdin` | `() → Result<string>` | Whole stream. | `Result` — may fail |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. | **never fails** (traps on misuse) |
 | `mono_now` | `() → int64` | `CLOCK_MONOTONIC` nanoseconds since an arbitrary epoch (D-176) — the deadline substrate's one clock. The impossible-failure branch traps (D-061). | **never fails** (traps on misuse) |
-| `buffer_new` | `int64 → buffer` | **The owning byte cell's constructor** (D-200/TYPE §23, 1.3.7): `n` zeroed bytes with `len == cap == n`; `n <= 0` is the empty non-owning buffer, not an error. The bytes are reached through `.ptr` (reads index, writes go through `#ptr_add`), and the cell drops at scope exit exactly as a string does — `cap == 0` is the same ownership bit. Allocation failure traps (D-150). | **never fails** (traps on OOM) |
-| `channel` | `() → Result<Channel<T, LEVEL, CAP>>` | **The channel constructor** (D-072/D-182): reads its element, lock level and capacity from the ANNOTATION, exactly as `arena_make()` reads its element — the parameters live in the type, so the call takes none. Allocates, so it returns a `Result`. | may fail (OOM) |
-| `mutex` | `() → Result<Mutex<T, LEVEL>>` | **The mutex constructor** (D-056, 1.1.11): reads its element and lock level from the ANNOTATION, exactly as `channel()` does. The element moves in if it owns. Allocates the immortal cell, so it returns a `Result`. | may fail (OOM) |
-| `rwlock` | `() → Result<RwLock<T, LEVEL>>` | **The reader-writer lock constructor** (D-056, 1.1.11b): as `mutex()`, one writer or many readers. | may fail (OOM) |
-| `condvar` | `() → Result<CondVar<LEVEL>>` | **The condition-variable constructor** (D-056, 1.1.11b): no element — it pairs with a `Mutex` at each `timedwait`. | may fail (OOM) |
-| `barrier` | `() → Result<Barrier<N, LEVEL>>` | **The barrier constructor** (D-056, 1.1.11b): N arrivals per generation, read from the annotation. | may fail (OOM) |
-| `suspend_until` | `(int64) → NIL` | **The suspension primitive** (D-071, 1.1.8): parks the TASK until an absolute monotonic timepoint and lets the executor run something else. Lowers INLINE — the park request goes to the executor, the state word advances, and the machine returns SUSPENDED — so it is legal only inside an `async` function. Everything that blocks in the language is built from it, which is what makes "blocking is always task suspension" true rather than aspirational. | **never fails** |
-| `suspend_io` | `(int32, int32, int64) → NIL` | **The I/O suspension primitive** (B-3a, 1.1.12a): registers `(fd, epoll-events)` one-shot in the executor's reactor and parks the task until readiness or the absolute deadline — the caller re-tries its syscall to learn which. Lowers INLINE like `suspend_until`; `io_ready` in the prelude is its `Result`-shaped face. | **never fails** |
-| `io_unwatch` | `(int32) → NIL` | **Removes a descriptor from the executor's reactor** (B-3a, 1.1.12a): `io_ready` defers it so the registration lives exactly as long as the wait — a one-shot left armed past its frame would fire into freed memory. Removing an unwatched descriptor is a no-op, not an error. | **never fails** |
-| `io_watch` | `(int32, int32) → NIL` | **The registration half of `suspend_io`, alone** (1.1.13b): arms `(fd, epoll-events)` one-shot with the CURRENT task as payload and does NOT park — so a task can watch several descriptors and park once, through the one `suspend_io` that follows (the Bridge's dispatch watches ctrl, pidfd and stderr this way). No deadline parameter: a registration carries none — the deadline belongs to the park. Every watched descriptor still owes its `io_unwatch` on every exit, exactly as `io_ready` defers it. `io_ready2` in the prelude is the two-descriptor `Result`-shaped face. | **never fails** |
-| `own_fd` | `fd → OwnedFd` | **Takes ownership of a descriptor** (D-185, 1.1.12b): from here the value's scope closes it — the generated drop is the close, which is what IO_REFERENCE §6's "there is no `close` in the surface" lowers to. Move-only like every owner. | **never fails** |
-| `release_fd` | `move OwnedFd → fd` | **The inverse** (D-185): consumes the owner and returns the bare number, so a caller that must observe close's verdict can say `close(release_fd(move o))` — the move defuses the drop, so no double close is spellable. | **never fails** |
+| `buffer_new` | `int64 → buffer` | **The owning byte cell's constructor** (D-200/TYPE §23, 1.3.7): `n` zeroed bytes with `len == cap == n`; `n <= 0` is the empty non-owning buffer, not an error. The bytes are reached through `.ptr` (reads index, writes go through `#ptr_add`), and the cell drops at scope exit exactly as a string does — `cap == 0` is the same ownership bit. Allocation failure traps (D-150). **ABI:** envelope | **never fails** (traps on OOM) |
+| `channel` | `() → Result<Channel<T, LEVEL, CAP>>` | **The channel constructor** (D-072/D-182): reads its element, lock level and capacity from the ANNOTATION, exactly as `arena_make()` reads its element — the parameters live in the type, so the call takes none. Allocates, so it returns a `Result`. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | may fail (OOM) |
+| `mutex` | `T:initial → Result<Mutex<T, LEVEL>>` | **The mutex constructor** (D-056, 1.1.11): reads its element and lock level from the ANNOTATION, exactly as `channel()` does. The element moves in if it owns. Allocates the immortal cell, so it returns a `Result`. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | may fail (OOM) |
+| `rwlock` | `T:initial → Result<RwLock<T, LEVEL>>` | **The reader-writer lock constructor** (D-056, 1.1.11b): as `mutex()`, one writer or many readers. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | may fail (OOM) |
+| `condvar` | `() → Result<CondVar<LEVEL>>` | **The condition-variable constructor** (D-056, 1.1.11b): no element — it pairs with a `Mutex` at each `timedwait`. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | may fail (OOM) |
+| `barrier` | `() → Result<Barrier<N, LEVEL>>` | **The barrier constructor** (D-056, 1.1.11b): N arrivals per generation, read from the annotation. **SPECIAL** — typed by a bespoke `type_call` arm. **ABI:** inline | may fail (OOM) |
+| `suspend_until` | `int64:deadline → NIL` | **The suspension primitive** (D-071, 1.1.8): parks the TASK until an absolute monotonic timepoint and lets the executor run something else. Lowers INLINE — the park request goes to the executor, the state word advances, and the machine returns SUSPENDED — so it is legal only inside an `async` function. Everything that blocks in the language is built from it, which is what makes "blocking is always task suspension" true rather than aspirational. **ABI:** inline | **never fails** |
+| `suspend_io` | `(int32:fd, int32:events, int64:deadline) → NIL` | **The I/O suspension primitive** (B-3a, 1.1.12a): registers `(fd, epoll-events)` one-shot in the executor's reactor and parks the task until readiness or the absolute deadline — the caller re-tries its syscall to learn which. Lowers INLINE like `suspend_until`; `io_ready` in the prelude is its `Result`-shaped face. **ABI:** inline | **never fails** |
+| `io_unwatch` | `int32:fd → NIL` | **Removes a descriptor from the executor's reactor** (B-3a, 1.1.12a): `io_ready` defers it so the registration lives exactly as long as the wait — a one-shot left armed past its frame would fire into freed memory. Removing an unwatched descriptor is a no-op, not an error. **ABI:** inline | **never fails** |
+| `io_watch` | `(int32:fd, int32:events) → NIL` | **The registration half of `suspend_io`, alone** (1.1.13b): arms `(fd, epoll-events)` one-shot with the CURRENT task as payload and does NOT park — so a task can watch several descriptors and park once, through the one `suspend_io` that follows (the Bridge's dispatch watches ctrl, pidfd and stderr this way). No deadline parameter: a registration carries none — the deadline belongs to the park. Every watched descriptor still owes its `io_unwatch` on every exit, exactly as `io_ready` defers it. `io_ready2` in the prelude is the two-descriptor `Result`-shaped face. **ABI:** inline | **never fails** |
+| `own_fd` | `fd → OwnedFd` | **Takes ownership of a descriptor** (D-185, 1.1.12b): from here the value's scope closes it — the generated drop is the close, which is what IO_REFERENCE §6's "there is no `close` in the surface" lowers to. Move-only like every owner. **ABI:** inline | **never fails** |
+| `release_fd` | `move OwnedFd → fd` | **The inverse** (D-185): consumes the owner and returns the bare number, so a caller that must observe close's verdict can say `close(release_fd(move o))` — the move defuses the drop, so no double close is spellable. **ABI:** inline | **never fails** |
 | `chain_depth` | `() → int32` | How many sites the in-flight error's origin chain has passed (D-179, 1.1.6) — the depth keeps counting past the eight the ring keeps. | **never fails** |
-| `chain_site` | `(int32) → int32` | The i-th kept site id, oldest first; 0 outside the kept range (D-179). | **never fails** |
-| `site_line` | `(int32) → int32` | The source line a site id names, from the per-program table; 0 for the runtime's reserved site 0 (D-179). | **never fails** |
-| `site_path` | `(int32) → string` | The source path a site id names; empty for site 0 (D-179). | **never fails** |
+| `chain_site` | `int32:i → int32` | The i-th kept site id, oldest first; 0 outside the kept range (D-179). | **never fails** |
+| `site_line` | `int32:site → int32` | The source line a site id names, from the per-program table; 0 for the runtime's reserved site 0 (D-179). **ABI:** inline | **never fails** |
+| `site_path` | `int32:site → string` | The source path a site id names; empty for site 0 (D-179). **ABI:** inline | **never fails** |
 | `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. | `Result` — may fail |
 | `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. | `Result` — may fail |
 | `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. | `Result` — may fail |
-| `read` | `(fd, ptr, int64:cap) → Result<int64>` | ONE kernel read; bytes delivered. Zero asked is zero delivered; end-of-input is the error code E_EOF, never a zero in the value channel (D-075). | `Result` — may fail |
-| `write` | `(fd, ptr, int64:len) → Result<int64>` | ONE kernel write; bytes taken, short counts included — the write-all loop is the library's. Replaced 0.8.3's write_raw (D-141). | `Result` — may fail |
+| `read` | `(fd, wild any->:ptr, int64:cap) → Result<int64>` | ONE kernel read; bytes delivered. Zero asked is zero delivered; end-of-input is the error code E_EOF, never a zero in the value channel (D-075). | `Result` — may fail |
+| `write` | `(fd, wild any->:ptr, int64:len) → Result<int64>` | ONE kernel write; bytes taken, short counts included — the write-all loop is the library's. Replaced 0.8.3's write_raw (D-141). | `Result` — may fail |
 
 Error slots across the floor carry the kernel's own negative codes, exactly as
 the syscall returned them (ENOENT is −2). Conditions the floor detects itself
@@ -184,18 +226,53 @@ The three string names the compiler EVALUATES during `comptime` folding
 | Built-in | Signature | Notes | Fails |
 |---|---|---|---|
 | `string_equals` | `(string, string) → bool` | Folds at comptime; `nlibc` provides the runtime body. | **never fails** (traps on misuse) |
-| `string_byte_length` | `string → int64` | Folds at comptime. | **never fails** (traps on misuse) |
-| `string_is_empty` | `string → bool` | Folds at comptime. | **never fails** (traps on misuse) |
+| `string_byte_length` | `string → int64` | Folds at comptime. **ABI:** inline | **never fails** (traps on misuse) |
+| `string_is_empty` | `string → bool` | Folds at comptime. **ABI:** inline | **never fails** (traps on misuse) |
 
 (`string_concat` also folds, and is already floor.)
+
+<!-- builtins:end -->
+
+## 2d. Runtime symbols the emitter calls directly
+
+Not builtins, and deliberately so: no program names them, the resolver admits
+none of them, and they have no language signature to state. They are the
+symbols the LOWERING reaches for — an arena's element accessors (the `arena<T>`
+methods lower to these), the shared arena's, and the controlled `exit` — so the
+only fact about them worth recording is their ABI, and `ir_runtime.npk`'s table
+needs it for the declare block every emitted module opens with.
+
+<!-- rtsyms:begin -->
+
+| Key | Symbol | Returns | Arguments |
+|---|---|---|---|
+| `arena_alloc` | `@npk_arena_alloc` | `{ i64, i32 }` | `ptr, i64` |
+| `arena_at` | `@npk_arena_at` | `ptr` | `ptr, i64, i64, i32` |
+| `arena_free` | `@npk_arena_free` | `i32` | `ptr, i64, i64, i32` |
+| `arena_reset` | `@npk_arena_reset` | `void` | `ptr, i64` |
+| `arena_destroy` | `@npk_arena_destroy` | `void` | `ptr` |
+| `sarena_bump` | `@npk_sarena_bump` | `i64` | `ptr, i64` |
+| `sarena_slot` | `@npk_sarena_slot` | `ptr` | `ptr, i64, i64` |
+| `sarena_destroy` | `@npk_sarena_destroy` | `void` | `ptr` |
+| `exit` | `@npk_exit` | `void` | `i32` |
+
+<!-- rtsyms:end -->
+
+`arena_alloc`'s `{ i64, i32 }` is a `Handle<T>`, NOT a `Result` (0.10.2) — the
+two shapes coincide, which is why the wrapped bit is stored rather than sniffed
+out of the return text.
+
+---
+
+<!-- builtins:begin -->
 
 ## 3. Syscalls
 
 Direct access to operating system syscalls. 
 
-| Built-in | Return | Description | Fails |
+| Built-in | Signature | Description | Fails |
 |---|---|---|---|
-| `sys(CONST, ..*int64[])` | `Result<int64>` | The only syscall form. Reaches any OS syscall; returns `tbb32` error codes (negative for system errors). | `Result` — may fail |
+| `sys` | `(int64:NR, ..*int64[]) → Result<int64>` | **SPECIAL** — the only syscall form, and the language's one variadic builtin. Reaches any OS syscall; the kernel's own negative returns land in the error slot (D-141). **ABI:** inline | `Result` — may fail |
 
 > ### The contract is CHECKED (D-192, the 1.1 interlude)
 >

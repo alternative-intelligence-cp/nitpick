@@ -1184,11 +1184,19 @@ def check_runtime_sigs_agree():
         name, body = m.group(1), m.group(2)
         strs = re.findall(r'"((?:[^"\\]|\\.)*)"', body)
         argc = re.search(r"(\d+)i32", body)
-        entries[name] = (strs, int(argc.group(1)))
+        # THE WRAPPED FLAG IS PARSED PER ENTRY. It used to be read below, out of
+        # `body` -- which by then held whichever entry this loop happened to
+        # parse LAST, so every row was told the last row's answer and the
+        # derived-inner cross-check underneath has never once run (1.4.2). The
+        # flag is the third argument, and reading it by splitting on commas found
+        # the middle of `{ i32, i32 }` instead, which is the other half of why.
+        wm = re.search(r'",\s*(true|false),\s*"', body)
+        entries[name] = (strs, int(argc.group(1)),
+                         wm is not None and wm.group(1) == "true")
     if not entries:
         return ["check_runtime_sigs_agree parsed no entries out of "
                 "src/backend/ir/ir_runtime.npk -- the check has stopped checking"]
-    for name, (strs, argc) in sorted(entries.items()):
+    for name, (strs, argc, wrapped) in sorted(entries.items()):
         sym, ret, inner = strs[0], strs[1], strs[2]
         args = [a for a in strs[3:3 + argc]]
         d = defs.get(sym.lstrip("@"))
@@ -1206,7 +1214,6 @@ def check_runtime_sigs_agree():
         # is { i64, i32 } and is not one (0.10.2) -- so the derived-inner
         # cross-check applies to entries that CLAIM the wrapper, where a wrong
         # inner silently mis-extracts at every call site.
-        wrapped = "true" in body.split(",")[2]
         if wrapped and (ret.startswith("{ {") or (ret.startswith("{") and ret.endswith("i32 }"))):
             want_inner = ret[1:].rsplit(",", 1)[0].strip() if ret != "{ i32 }" else ""
             if inner != want_inner:

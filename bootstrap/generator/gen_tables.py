@@ -99,6 +99,393 @@ PUNCT_NAMES = {"(": "LParen", ")": "RParen", "{": "LBrace", "}": "RBrace",
                ":": "Colon", ";": "Semi", "`": "Backtick"}
 
 
+# --- THE BUILTIN REFERENCE'S ROWS, PARSED (D-201, 1.4.2) ----------------------
+#
+# One row per builtin, and the row is the whole authority. Before this the same
+# fact lived in four places -- the reference, `builtins.npk`'s name list, the
+# checker's thirteen bespoke arms, and the emitter's `rt_sig` -- and nothing
+# diffed them, so `read`'s parameter was documented as the untyped word `ptr` and
+# the emitter's coercion was signedness-blind because no one had written the type
+# down anywhere a compiler could read it.
+#
+# STRICT BY CONSTRUCTION: a row this cannot parse is a hard failure, not a
+# skipped entry. A silently skipped builtin is one the checker types as UNKNOWN,
+# which is exactly the state D-201 exists to end.
+
+SPECIALS = {
+    # Variadic: the syscall number and up to six register arguments (D-048).
+    "sys",
+    # Element from the TURBOFISH, not from an argument (D-187).
+    "atomic_from_ptr",
+    # The seven annotation-directed constructors: element, lock level, capacity
+    # and party count all live in the TYPE the call is given (D-072/D-152/D-056).
+    "arena_make", "shared_arena_make", "channel", "mutex", "rwlock", "condvar",
+    "barrier",
+}
+
+# The one place a language type becomes an LLVM type. Small and closed on
+# purpose -- the floor is the floor -- and every derivation it feeds is diffed
+# against `npkrt.ll`'s own defines by `check_runtime_sigs_agree` on every run.
+LL_OF = {
+    "NIL": "void", "bool": "i8",
+    "int8": "i8", "int16": "i16", "int32": "i32", "int64": "i64",
+    "uint8": "i8", "uint16": "i16", "uint32": "i32", "uint64": "i64",
+    "string": "{ ptr, i64, i64 }", "cstring": "{ ptr, i64 }",
+    "buffer": "{ ptr, i64, i64 }",
+    # The five kernel identifiers are one register-width number each (D-042).
+    "fd": "i32", "pid": "i32", "tid": "i32", "uid": "i32", "gid": "i32",
+    # An OwnedFd IS the descriptor -- the ownership is the compiler's bookkeeping,
+    # not a field (D-185).
+    "OwnedFd": "i32",
+}
+
+QUALIFIERS = ("wild ", "wildx ", "stack ", "const ", "fixed ")
+
+
+class Param(object):
+    __slots__ = ("type", "name", "move")
+
+    def __init__(self, type, name, move):
+        self.type, self.name, self.move = type, name, move
+
+
+class Row(object):
+    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi")
+
+    def __init__(self, name, params, ret, never_fails, special, abi):
+        self.name, self.params, self.ret = name, params, ret
+        self.never_fails, self.special, self.abi = never_fails, special, abi
+
+
+# `->` IS AN ATOM, NOT A CLOSING BRACKET. The pointer suffix ends in `>`, so a
+# naive depth counter reads `wild any->:ptr` as closing a generic that was never
+# opened and every later depth test is off by one -- which is how the first run
+# of this parser reported `any->:ptr` as a type with no LLVM shape.
+def depth_steps(text):
+    """Yield (index, char, depth-before-this-char), skipping `->` pairs."""
+    depth, i = 0, 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "-" and text[i + 1:i + 2] == ">":
+            yield i, "-", depth
+            yield i + 1, ">", depth
+            i += 2
+            continue
+        if ch in "<([":
+            yield i, ch, depth
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+            yield i, ch, depth
+        else:
+            yield i, ch, depth
+        i += 1
+
+
+def split_top(text):
+    """Comma-split at nesting depth zero: `Mutex<T, LEVEL>` is one type."""
+    out, cur = [], ""
+    for _, ch, depth in depth_steps(text):
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur.strip())
+    return out
+
+
+def parse_param(text, where):
+    move = False
+    t = text.strip()
+    if t.startswith("move "):
+        move, t = True, t[5:].strip()
+    # `int64:size` -- the name is documentation. A `:` inside a type is not a
+    # thing the language has, so the LAST colon at depth zero is the divider.
+    name, cut = "", -1
+    for i, ch, depth in depth_steps(t):
+        if ch == ":" and depth == 0:
+            cut = i
+    if cut >= 0:
+        name = t[cut + 1:].strip()
+        t = t[:cut].strip()
+        if not re.match(r'^\w+$', name):
+            raise SystemExit("BUILTIN_REFERENCE.md: %s has an unreadable "
+                             "parameter name %r" % (where, name))
+    if not t:
+        raise SystemExit("BUILTIN_REFERENCE.md: %s has an empty parameter type"
+                         % where)
+    return Param(t, name, move)
+
+
+def parse_signature(sig, where):
+    if sig.count("→") != 1:
+        raise SystemExit("BUILTIN_REFERENCE.md: %s's signature needs exactly one "
+                         "U+2192 return arrow: %r" % (where, sig))
+    lhs, ret = [p.strip() for p in sig.split("→")]
+    if not ret:
+        raise SystemExit("BUILTIN_REFERENCE.md: %s has no return type" % where)
+    if lhs.startswith("(") and lhs.endswith(")"):
+        inner = lhs[1:-1].strip()
+        params = [parse_param(p, where) for p in split_top(inner)] if inner else []
+    elif lhs:
+        params = [parse_param(lhs, where)]
+    else:
+        raise SystemExit("BUILTIN_REFERENCE.md: %s has no parameter list -- write "
+                         "`()` for none" % where)
+    return params, ret
+
+
+ABI_KEYS = ("sym", "ret", "args")
+
+
+def parse_abi(cell, where):
+    """The `**ABI:**` note: `inline`, `envelope`, and the three backticked keys."""
+    if "**ABI:**" not in cell:
+        return {}
+    note = cell.split("**ABI:**", 1)[1].strip()
+    abi = {}
+    for m in re.finditer(r'(\w+)=`([^`]*)`|\b(inline|envelope)\b', note):
+        if m.group(3):
+            abi[m.group(3)] = True
+            continue
+        if m.group(1) not in ABI_KEYS:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's ABI note uses the unknown "
+                             "key `%s`" % (where, m.group(1)))
+        abi[m.group(1)] = m.group(2)
+    if not abi:
+        raise SystemExit("BUILTIN_REFERENCE.md: %s carries an ABI note this cannot "
+                         "read: %r" % (where, note))
+    return abi
+
+
+def builtin_rows(path):
+    src = open(path, encoding="utf-8").read()
+    marked = "\n".join(re.findall(
+        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", src, re.S))
+    rows = {}
+    for line in marked.split("\n"):
+        m = re.match(r'^\|\s*`(\w+)`\s*\|', line)
+        if not m:
+            continue
+        name = m.group(1)
+        where = "`%s`" % name
+        cells = line.split("|")
+        if len(cells) != 6:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's row has %d cells, not the "
+                             "four of `| name | signature | notes | fails |`"
+                             % (where, len(cells) - 2))
+        sig = cells[2].strip()
+        if not (sig.startswith("`") and sig.endswith("`")):
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's Signature cell is not one "
+                             "backticked signature: %r" % (where, sig))
+        params, ret = parse_signature(sig[1:-1].strip(), where)
+        fails = cells[4]
+        never = "never fails" in fails
+        if not never and "may fail" not in fails:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's Fails column says neither "
+                             "`never fails` nor `may fail`" % where)
+        # THE TWO COLUMNS ARE CHECKED AGAINST EACH OTHER. `Result<T>` in the
+        # signature and "may fail" in the Fails column are the same fact stated
+        # twice, and D-201 makes the first one load-bearing: a never-fails
+        # builtin's call types as the BARE value, so a stray `Result<...>` here
+        # would wrap ~1,700 sites that cannot fail.
+        wrapped = ret.startswith("Result<")
+        if wrapped != (not never):
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's signature returns %s and "
+                             "its Fails column says %s -- one of the two is wrong"
+                             % (where, ret, "never fails" if never else "may fail"))
+        if wrapped:
+            ret = ret[len("Result<"):-1].strip()
+        special = name in SPECIALS
+        if ("**SPECIAL**" in cells[3]) != special:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s is %smarked **SPECIAL** in "
+                             "the reference and %sin the generator's list"
+                             % (where, "" if not special else "not ",
+                                "" if special else "not "))
+        if name in rows:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s has two rows" % where)
+        rows[name] = Row(name, params, ret, never, special,
+                         parse_abi(cells[3], where))
+    missing = sorted(SPECIALS - set(rows))
+    if missing:
+        raise SystemExit("the generator's SPECIALS names builtins the reference "
+                         "does not: %s" % ", ".join(missing))
+
+    # The emitter-only symbols: no language signature exists, so the ABI is all
+    # there is to state (BUILTIN_REFERENCE section 2d).
+    rt = []
+    for region in re.findall(r"<!-- rtsyms:begin -->(.*?)<!-- rtsyms:end -->",
+                             src, re.S):
+        for line in region.split("\n"):
+            m = re.match(r'^\|\s*`(\w+)`\s*\|\s*`(@\w+)`\s*\|\s*`([^`]+)`\s*\|'
+                         r'\s*`([^`]*)`\s*\|\s*$', line)
+            if line.strip().startswith("|") and not m:
+                if not re.match(r'^\|\s*(Key|-+)', line.strip()):
+                    raise SystemExit("BUILTIN_REFERENCE.md section 2d: this row is "
+                                     "unreadable: %r" % line)
+                continue
+            if m:
+                args = [a.strip() for a in m.group(4).split(",") if a.strip()]
+                rt.append((m.group(1), m.group(2), m.group(3), False, "", args))
+    if not rt:
+        raise SystemExit("BUILTIN_REFERENCE.md: section 2d's rtsyms region is "
+                         "empty -- the emitter would declare no arena accessors")
+    return rows, rt
+
+
+def ll_of(t, where):
+    """A language type's LLVM shape. Qualifiers are documentation (parse_type)."""
+    for q in QUALIFIERS:
+        if t.startswith(q):
+            t = t[len(q):].strip()
+    if t.endswith("->"):
+        return "ptr"
+    if t in LL_OF:
+        return LL_OF[t]
+    raise SystemExit("BUILTIN_REFERENCE.md: %s's type `%s` has no LLVM shape -- "
+                     "add it to gen_tables.LL_OF, or write an `ABI:` note"
+                     % (where, t))
+
+
+def runtime_entries(rows, rtsyms):
+    """name -> (symbol, llvm return, wrapped, inner, [llvm args]), sorted.
+
+    Derived from the language signature, with the reference's `ABI:` notes
+    overriding where the symbol departs. A builtin marked `inline` has no floor
+    symbol at all -- `own_fd` is a no-op, `string_is_empty` is a compare -- and
+    contributes nothing here.
+    """
+    out = {}
+    for name in sorted(rows):
+        r = rows[name]
+        if r.abi.get("inline"):
+            continue
+        where = "`%s`" % name
+        sym = r.abi.get("sym", "@npk_" + name)
+        wrapped = (not r.never_fails) or bool(r.abi.get("envelope"))
+        if "ret" in r.abi:
+            ret, inner = r.abi["ret"], ""
+        else:
+            succ = ll_of(r.ret, where)
+            if not wrapped:
+                ret, inner = succ, ""
+            elif succ == "void":
+                ret, inner = "{ i32 }", ""
+            else:
+                ret, inner = "{ %s, i32 }" % succ, succ
+        if "args" in r.abi:
+            args = [a.strip() for a in r.abi["args"].split(",") if a.strip()]
+        else:
+            args = [ll_of(p.type, where) for p in r.params]
+        if len(args) > 4:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s takes %d arguments and "
+                             "RtSig carries four" % (where, len(args)))
+        out[name] = (sym, ret, wrapped, inner, args)
+    for name, sym, ret, wrapped, inner, args in rtsyms:
+        if name in out:
+            raise SystemExit("BUILTIN_REFERENCE.md: `%s` is both a builtin and a "
+                             "section 2d runtime symbol" % name)
+        out[name] = (sym, ret, wrapped, inner, args)
+    return out
+
+
+def write_runtime(rows, rtsyms):
+    ents = runtime_entries(rows, rtsyms)
+    names = sorted(ents)
+    o = ['// The runtime floor\'s signatures, as the emitter must declare and call them.',
+         "//",
+         "// GENERATED by bootstrap/generator/gen_tables.py from",
+         "// meta/specs/BUILTIN_REFERENCE.md -- the builtin rows' signatures with their",
+         "// `ABI:` notes applied, plus section 2d's emitter-only symbols.",
+         "//",
+         "// THIS WAS THE THIRD HAND-WRITTEN COPY OF ONE FACT until D-201 (1.4.2).",
+         "// `bootstrap/runtime/npkrt.ll` DEFINES these functions; the seed's `RUNTIME`",
+         "// table declares them for stage 1; this table declares them for stage 2 --",
+         "// and the reference documented them for a reader with nothing diffing it.",
+         "// The reference is now the source of this file, and",
+         "// `check_runtime_sigs_agree` parses the defines out of `npkrt.ll` and compares",
+         "// what is left on every full run. The runtime's own header records what a",
+         "// disagreement does: \"declaring a runtime symbol as returning a bare string",
+         "// while the checker types it as Result<string> is exactly the kind of silent",
+         "// disagreement that produces IR llc rejects -- and it did.\"",
+         "//",
+         "// `wrapped` AND `inner` ARE STORED, NOT DERIVED HERE. Whether a return is a",
+         "// `Result` decides whether `raw` extracts or passes through, and sniffing it",
+         "// out of the type text (\"does it end in `, i32 }`\") would make `cstring`'s",
+         "// `{ ptr, i64 }` one brace away from a wrong answer -- and `arena_alloc`'s",
+         "// `Handle<T>` wears a Result's shape without being one.",
+         "",
+         "mod:ir_runtime;",
+         "",
+         'use "../../frontend/intern.npk".*;',
+         "",
+         "pub struct:RtSig = {",
+         "    bool:found;",
+         '    string:sym;       // "@npk_alloc"',
+         '    string:ret;       // the FULL return as npkrt.ll defines it; "void" for none',
+         "    bool:wrapped;     // the return is a Result and `raw`/`relay` must extract",
+         '    string:inner;     // the value half when wrapped; "" when Result<NIL>',
+         "    int32:argc;",
+         "    string:a0;",
+         "    string:a1;",
+         "    string:a2;",
+         "    string:a3;",
+         "};",
+         "",
+         "func:rt = RtSig(move string:sym, move string:ret, bool:wrapped, move string:inner,",
+         "                int32:argc, move string:a0, move string:a1, move string:a2,",
+         "                move string:a3) never fails {",
+         "    RtSig:s = RtSig{ found: true, sym: move(sym), ret: move(ret), wrapped: wrapped,",
+         "                     inner: move(inner), argc: argc, a0: move(a0), a1: move(a1),",
+         "                     a2: move(a2), a3: move(a3) };",
+         "    pass s;",
+         "};",
+         "",
+         "// The floor, one entry per symbol `npkrt.ll` defines for programs. `npk_start`",
+         "// is the entry shim and not callable; `npk_exit` is here because `exit` lowers",
+         "// to it (0.7.6), argc 1, void.",
+         "pub func:rt_sig = RtSig(string:name) never fails {"]
+    for n in names:
+        sym, ret, wrapped, inner, args = ents[n]
+        a = list(args) + ["", "", "", ""]
+        o.append('    if (raw string_eq(name, "%s")) {' % n)
+        o.append('        pass (raw rt("%s", "%s", %s, "%s", %di32,'
+                 % (sym, ret, "true" if wrapped else "false", inner, len(args)))
+        o.append('                     "%s", "%s", "%s", "%s"));'
+                 % (a[0], a[1], a[2], a[3]))
+        o.append("    }")
+    o.append('    RtSig:none = RtSig{ found: false, sym: "", ret: "", wrapped: false,')
+    o.append('                        inner: "", argc: 0i32, a0: "", a1: "", a2: "", a3: "" };')
+    o.append("    pass none;")
+    o.append("};")
+    o.append("")
+    o.append("// The floor, ITERABLE AND IN ONE FIXED ORDER -- the declare block of every")
+    o.append("// emitted module walks this, so the order is part of D-078's byte-determinism.")
+    o.append("pub func:rt_count = int32() never fails { pass %di32; };" % len(names))
+    o.append("")
+    o.append("pub func:rt_name_at = string(int32:i) never fails {")
+    for i, n in enumerate(names[:-1]):
+        o.append('    if (i == %di32) { pass "%s"; }' % (i, n))
+    o.append('    pass "%s";' % names[-1])
+    o.append("};")
+    o.append("")
+    o.append("// Cloned, not passed through (D-183): `s` is lent, and this runs a handful of")
+    o.append("// times per runtime symbol while the declare block is written -- cold.")
+    o.append("pub func:rt_arg = string(RtSig:s, int32:i) never fails {")
+    o.append('    if (i == 0i32) { pass (raw string_concat(s.a0, "")); }')
+    o.append('    if (i == 1i32) { pass (raw string_concat(s.a1, "")); }')
+    o.append('    if (i == 2i32) { pass (raw string_concat(s.a2, "")); }')
+    o.append('    pass (raw string_concat(s.a3, ""));')
+    o.append("};")
+    path = os.path.join(ROOT, "src", "backend", "ir", "ir_runtime.npk")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(o) + "\n")
+    print("runtime floor: %d symbols (%d builtins, %d emitter-only)"
+          % (len(names), len(names) - len(rtsyms), len(rtsyms)))
+
+
 def terminals(spec, header):
     m = re.search(r'^%s\s*::=(.*?)(?=\n\n|\n[A-Z][A-Za-z]*\s*::=|\n```)' % header,
                   spec, re.S | re.M)
@@ -683,40 +1070,30 @@ pub func:is_keyword = bool(string:text) {
     # Generated rather than hand-listed for the same reason the token table is.
     # A name added to the reference and not to the compiler is a builtin nobody
     # can call; a name here and not in the reference is one nobody can look up.
-    br = open(os.path.join(ROOT, "meta", "specs", "BUILTIN_REFERENCE.md"),
-              encoding="utf-8").read()
-    # ONLY the marked regions define builtins (0.8.4). The first draft
-    # scavenged every code-shaped token in the whole file, so `close(2)` in a
-    # sentence about POSIX became a "builtin", and the entire nlibc API rode in
-    # as compiler magic nobody could lower.
-    br = "\n".join(re.findall(
-        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", br, re.S))
-    names = []
-    for m in re.finditer(r'^\|\s*`(\w+)`\s*\|', br, re.M):
-        if m.group(1) not in names:
-            names.append(m.group(1))
-    for m in re.finditer(r'^\*\s+`(\w+)\(', br, re.M):
-        if m.group(1) not in names:
-            names.append(m.group(1))
-    for m in re.finditer(r'`(\w+)\([^`]*\)`', br):
-        if m.group(1) not in names:
-            names.append(m.group(1))
-    # `#`-prefixed forms are BuiltinExpr and never reach name resolution.
-    names = [n for n in names if not n.startswith("_")]
-    names.sort()
+    #
+    # SINCE 1.4.2 (D-201) the same rows carry the SIGNATURE, and the checker types
+    # every regular builtin call from what this emits. One row per builtin, and
+    # the row is the whole authority: the name list, the never-fails licence, the
+    # parameter and return types, and the symbol ABI the emitter declares all come
+    # out of it, so no two of them can drift apart.
+    rows, rtsyms = builtin_rows(os.path.join(ROOT, "meta", "specs",
+                                             "BUILTIN_REFERENCE.md"))
+    names = sorted(rows)
 
-    bl = ["// Bare-name builtins.",
+    bl = ["// Bare-name builtins, and their signatures.",
           "//",
           "// GENERATED by bootstrap/generator/gen_tables.py from",
           "// meta/specs/BUILTIN_REFERENCE.md.",
           "//",
           "// These are ordinary calls the compiler happens to provide -- they take",
-          "// arguments, return Result<T>, and obey the same rules as any function",
-          "// (AST_REFERENCE 3.3). The `#` sigil marks the OTHER kind, the ones the",
-          "// compiler must treat specially.",
+          "// arguments, obey the same rules as any function (AST_REFERENCE 3.3), and",
+          "// since D-201 they are TYPED like one: a `never fails` builtin's call has",
+          "// the bare value's type, a may-fail builtin's a `Result<T>`. The `#` sigil",
+          "// marks the OTHER kind, the ones the compiler must treat specially.",
           "//",
-          "// The resolver needs this list because a bare-name builtin is declared in no",
-          "// module. Without it every `alloc` in every program resolves to nothing.",
+          "// The resolver needs the name list because a bare-name builtin is declared",
+          "// in no module. Without it every `alloc` in every program resolves to",
+          "// nothing.",
           "",
           # `string_eq` lives in intern.npk. The seed's one-namespace hid the
           # missing import for six cycles; the first self-check run (0.8.0)
@@ -733,24 +1110,85 @@ pub func:is_keyword = bool(string:text) {
     # THIS, generated from the reference's own Fails column, which was filled by
     # reading each builtin's floor signature (a `{ T, i32 }` return is may-fail;
     # a plain value or void is not -- traps are not Result errors, D-150).
-    nf = []
-    for m in re.finditer(r'^\|\s*`(\w+)[`(][^\n]*\|\s*([^|]*)\|\s*$', br, re.M):
-        if "never fails" in m.group(2) and m.group(1) not in nf:
-            nf.append(m.group(1))
-    nf.sort()
-    missing = [n for n in names if n not in nf
-               and not re.search(r'^\|\s*`%s[`(][^\n]*may fail' % n, br, re.M)]
-    if missing:
-        raise SystemExit("BUILTIN_REFERENCE.md Fails column missing for: %s"
-                         % ", ".join(missing))
+    nf = [n for n in names if rows[n].never_fails]
     bl.append("")
     bl.append("// Which bare-name builtins are `never fails` (D-163) -- the reference's")
     bl.append("// Fails column, generated. The licence reads this where a declared")
-    bl.append("// function's contract window would be read.")
+    bl.append("// function's contract window would be read, and since D-201 it also")
+    bl.append("// decides the CALL'S TYPE: bare value here, `Result<T>` otherwise.")
     bl.append("pub func:builtin_never_fails = bool(string:name) {")
     for n in nf:
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
+    bl.append("};")
+    # THE NINE IRREGULARS (D-201.3). `sys` is variadic, `atomic_from_ptr` reads
+    # its element from a turbofish, and the seven annotation-directed
+    # constructors read theirs from the type the call is given -- none of which a
+    # signature can state. They keep their bespoke `type_call` arms; this is what
+    # tells the regular path to leave them alone, and what makes "a builtin with
+    # neither a signature nor a special arm" a generation failure rather than a
+    # silent UNKNOWN.
+    bl.append("")
+    bl.append("// The irregulars (D-201): typed by a bespoke `type_call` arm, because no")
+    bl.append("// signature can state what they do -- `sys` is variadic, `atomic_from_ptr`")
+    bl.append("// reads its element from a turbofish, and the seven constructors read")
+    bl.append("// theirs from the annotation the call is given.")
+    bl.append("pub func:builtin_sig_special = bool(string:name) {")
+    for n in names:
+        if rows[n].special:
+            bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
+    bl.append("")
+    bl.append("// How many parameters a regular builtin takes. A special's answer is 0 and")
+    bl.append("// means nothing -- ask `builtin_sig_special` first.")
+    bl.append("pub func:builtin_sig_count = int32(string:name) {")
+    for n in names:
+        if not rows[n].special and rows[n].params:
+            bl.append('    if (raw string_eq(name, "%s")) { pass %di32; }'
+                      % (n, len(rows[n].params)))
+    bl.append("    pass 0i32;")
+    bl.append("};")
+    bl.append("")
+    bl.append("// The i-th parameter's TYPE TEXT, for the checker's resolver to intern.")
+    bl.append("// The memory qualifier rides along as documentation exactly as it does in")
+    bl.append("// source -- qualifiers are not part of a type (parse_type.npk).")
+    bl.append("pub func:builtin_sig_param = string(string:name, int32:i) {")
+    for n in names:
+        if rows[n].special or not rows[n].params:
+            continue
+        bl.append('    if (raw string_eq(name, "%s")) {' % n)
+        for i, p in enumerate(rows[n].params):
+            bl.append('        if (i == %di32) { pass "%s"; }' % (i, p.type))
+        bl.append("    }")
+    bl.append('    pass "";')
+    bl.append("};")
+    bl.append("")
+    bl.append("// Which parameters CONSUME (D-183). `release_fd` is the whole list: it")
+    bl.append("// takes the owner apart, so the caller may not still hold it.")
+    bl.append("pub func:builtin_sig_param_move = bool(string:name, int32:i) {")
+    for n in names:
+        if rows[n].special:
+            continue
+        mv = [i for i, p in enumerate(rows[n].params) if p.move]
+        if not mv:
+            continue
+        bl.append('    if (raw string_eq(name, "%s")) {' % n)
+        for i in mv:
+            bl.append('        if (i == %di32) { pass true; }' % i)
+        bl.append("    }")
+    bl.append("    pass false;")
+    bl.append("};")
+    bl.append("")
+    bl.append("// The SUCCESS type's text. A may-fail builtin's call types as")
+    bl.append("// `Result<this>`; a never-fails one's as this, bare (D-201 §4).")
+    bl.append("pub func:builtin_sig_ret = string(string:name) {")
+    for n in names:
+        if rows[n].special:
+            continue
+        bl.append('    if (raw string_eq(name, "%s")) { pass "%s"; }'
+                  % (n, rows[n].ret))
+    bl.append('    pass "";')
     bl.append("};")
     # THE `#`-SIGIL BUILTINS, which are a different list and a different question.
     # A bare-name builtin is looked up because it is declared in no module; a
@@ -761,6 +1199,10 @@ pub func:is_keyword = bool(string:text) {
     # Scraped from the "Macro | Return | Description" table ALONE. The section
     # opens with a table of syntactic FORMS -- `#name<T>(...)` versus `#[name]` --
     # and reading that one too made `name` a builtin.
+    br = open(os.path.join(ROOT, "meta", "specs", "BUILTIN_REFERENCE.md"),
+              encoding="utf-8").read()
+    br = "\n".join(re.findall(
+        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", br, re.S))
     hsec = br.split("| Macro | Return | Description |", 1)
     hnames = []
     if len(hsec) == 2:
@@ -781,7 +1223,12 @@ pub func:is_keyword = bool(string:text) {
     bl.append("    pass false;")
     bl.append("};")
     write("builtins.npk", "\n".join(bl) + "\n")
-    print("builtins: %d bare, %d hash" % (len(names), len(hnames)))
+    print("builtins: %d bare (%d never-fails, %d special), %d hash"
+          % (len(names), len(nf), sum(1 for n in names if rows[n].special),
+             len(hnames)))
+
+    # --- ir_runtime.npk -------------------------------------------------------
+    write_runtime(rows, rtsyms)
 
     # --- prelude_source.npk ---------------------------------------------------
     # THE PRELUDE IS NITPICK SOURCE, and the compiler carries it as a string.
