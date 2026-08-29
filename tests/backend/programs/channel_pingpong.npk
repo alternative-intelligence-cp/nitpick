@@ -30,7 +30,7 @@ async func:main = int32(cstring[]:_~argv) {
     Channel<int32, 3i32, 1i64>:a = channel() ?! Unreachable;
     Channel<int32, 4i32, 1i64>:b = channel() ?! Unreachable;
     drop worker(a, b);
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     int32:n = 0i32;
     int32:last = 0i32;
     while (n < 500i32) {
@@ -40,7 +40,7 @@ async func:main = int32(cstring[]:_~argv) {
         last = r.value;
         n = n + 1i32;
     }
-    int64:t1 = raw mono_now();
+    int64:t1 = mono_now();
     if (last != 500i32)               { exit 72i32; }   // 499 + 1
     if ((t1 - t0) > 250000000i64)     { exit 73i32; }   // poll-shaped, not event-shaped
     exit 42i32;

@@ -151,8 +151,8 @@ pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) never fails {
     // 40-odd call sites, at the cost of rebuilding one small struct.
     pass (raw diag_make_view(
         list.items[i].severity,
-        raw string_from_bytes(list.items[i].code.ptr, list.items[i].code.len),
-        raw string_from_bytes(list.items[i].message.ptr, list.items[i].message.len),
+        string_from_bytes(list.items[i].code.ptr, list.items[i].code.len),
+        string_from_bytes(list.items[i].message.ptr, list.items[i].message.len),
         list.items[i].span));
 };
 
@@ -339,27 +339,27 @@ pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) never fails {
     string:m = "";
     if (d.severity == 0i32) { m = "note "; }
     if (d.severity == 1i32) { m = "warning "; }
-    m = raw string_concat(m, d.code);
-    m = raw string_concat(m, " ");
+    m = string_concat(m, d.code);
+    m = string_concat(m, " ");
     if (d.span.file < 0i32) {
-        m = raw string_concat(m, "<no span>");
+        m = string_concat(m, "<no span>");
     } else {
         // A FILE THE MANAGER DOES NOT HOLD is rendered, not lost: the same rule
         // as `<no span>`, for the same reason. (Spelled out rather than with
         // `?`, which the seed that still builds this file cannot lower.)
         Result<string>:pr = srcmgr_path(sm, d.span.file);
         if (pr.is_error) {
-            m = raw string_concat(m, "<unknown file>");
+            m = string_concat(m, "<unknown file>");
         } else {
-            m = raw string_concat(m, pr.value);
+            m = string_concat(m, pr.value);
         }
-        m = raw string_concat(m, ":");
-        m = raw string_concat(m, raw int_to_string(d.span.line => int64));
-        m = raw string_concat(m, ":");
-        m = raw string_concat(m, raw int_to_string(d.span.col => int64));
+        m = string_concat(m, ":");
+        m = string_concat(m, int_to_string(d.span.line => int64));
+        m = string_concat(m, ":");
+        m = string_concat(m, int_to_string(d.span.col => int64));
     }
-    m = raw string_concat(m, ": ");
-    m = raw string_concat(m, d.message);
+    m = string_concat(m, ": ");
+    m = string_concat(m, d.message);
     pass m;
 };
 

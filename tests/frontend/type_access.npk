@@ -58,10 +58,10 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) never fails {
     // `NULL`. `NULL` is valid only where a pointer is expected (TYPE_REFERENCE
     // §27), so a `NULL`-initialised slice is itself an error and every case built
     // on one would have been measuring that instead of what it meant to.
-    string:pre = raw string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) never fails { pass 1i32; }; func:add2 = int32(int32:a, int32:b) never fails { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) never fails { pass 1i32; }; ", decls);
-    string:head = raw string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
-    string:with_body = raw string_concat(head, body);
-    string:src = raw string_concat(with_body, " pass NIL; };");
+    string:pre = string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) never fails { pass 1i32; }; func:add2 = int32(int32:a, int32:b) never fails { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) never fails { pass 1i32; }; ", decls);
+    string:head = string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
+    string:with_body = string_concat(head, body);
+    string:src = string_concat(with_body, " pass NIL; };");
     pass (raw run_module(src, "f", it));
 };
 
@@ -650,7 +650,7 @@ func:main = int32(cstring[]:_~argv) {
     InternTable:ct = raw intern_init();
     int32:pad = raw intern_count(@ct);
     while (pad < 87i32) {
-        drop intern_add(@ct, raw string_concat("pad", raw int_to_string(pad => int64)));
+        drop intern_add(@ct, string_concat("pad", int_to_string(pad => int64)));
         pad = raw intern_count(@ct);
     }
     // `Zzz` is the first identifier in the source, so it interns at 87. Before the
@@ -740,9 +740,9 @@ func:main = int32(cstring[]:_~argv) {
                     "", @it);
     if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

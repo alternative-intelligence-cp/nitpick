@@ -188,7 +188,7 @@ pub struct:CtrlPair = { int64:ours; int64:child; };
 
 pub func:ctrl_socketpair = CtrlPair() {
     wild int8->:sv = alloc(8i64);
-    defer { drop dalloc(sv); }
+    defer { dalloc(sv); }
     int64:fl = (raw SOCK_STREAM()) | ((raw SOCK_CLOEXEC()) | (raw SOCK_NONBLOCK()));
     Result<int64>:rsp = sys(raw SYS_SOCKETPAIR(), raw AF_UNIX(), fl, 0i64, sv);
     if (rsp.is_error) { fail EDriverSpawn; }
@@ -204,7 +204,7 @@ pub func:ctrl_socketpair = CtrlPair() {
 // OUR read end is flipped NONBLOCK so the drain is readiness-driven.
 pub func:stderr_pipe = CtrlPair() {
     wild int8->:pv = alloc(8i64);
-    defer { drop dalloc(pv); }
+    defer { dalloc(pv); }
     Result<int64>:rpp = sys(raw SYS_PIPE2(), pv, raw O_CLOEXEC());
     if (rpp.is_error) { fail EDriverSpawn; }
     int64:rd = (<-(#ptr_add<int32>(pv, 0i64))) => int64;
@@ -262,7 +262,7 @@ struct:CMsg = {
 // (v3 §4.2, poc test 4). Returns the byte count the kernel accepted.
 pub func:send_fd = int64(int64:sock, int64:passfd, wild int8->:payload, int64:len) {
     wild int8->:mb = calloc(1i64, 96i64);
-    defer { drop dalloc(mb); }
+    defer { dalloc(mb); }
     wild MsgHdr->:mh = mb =>! wild MsgHdr->;
     wild IoVec->:iv = (#ptr_add<int8>(mb, 56i64)) =>! wild IoVec->;
     iv.base = payload;
@@ -291,7 +291,7 @@ pub struct:RecvFd = { int64:n; int64:rfd; };
 
 pub func:recv_fd = RecvFd(int64:sock, wild int8->:buf, int64:cap) {
     wild int8->:mb = calloc(1i64, 96i64);
-    defer { drop dalloc(mb); }
+    defer { dalloc(mb); }
     wild MsgHdr->:mh = mb =>! wild MsgHdr->;
     wild IoVec->:iv = (#ptr_add<int8>(mb, 56i64)) =>! wild IoVec->;
     iv.base = buf;
@@ -385,7 +385,7 @@ async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_
             if (r.err == IoEof)       { fail EDriverFault; }
             if (!retry) { fail r.err; }
             if (r.err == WouldBlock) {
-                int64:rem = give_up - (raw mono_now());
+                int64:rem = give_up - (mono_now());
                 if (rem <= 0i64) { fail EDriverDeadline; }
                 Result<NIL>:w = await io_ready(sock =>! int32, 1i32,
                                                raw duration_ns(rem));
@@ -410,7 +410,7 @@ async func:read_exact = NIL(int64:sock, wild int8->:buf, int64:need, int64:give_
 // reference drivers accept it.
 pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap,
                                      int64:iface_hash, Duration:within) {
-    int64:give_up = (raw mono_now()) + within.ns;
+    int64:give_up = (mono_now()) + within.ns;
     if (ring_cap <= 0i64)                          { fail EDriverSpawn; }
     if ((ring_cap & (ring_cap - 1i64)) != 0i64)    { fail EDriverSpawn; }
     if ((256i64 + (ring_cap * 32i64)) > shm_size)  { fail EDriverSpawn; }
@@ -459,7 +459,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
     // 4. the param block — everything the child reads, written pre-clone.
     cstring:cpath = relay to_cstring(driver.text);
     wild int8->:bb = calloc(1i64, 96i64);
-    defer { drop dalloc(bb); }
+    defer { dalloc(bb); }
     wild SpawnBlk->:blk = bb =>! wild SpawnBlk->;
     blk.path = cpath.ptr;
     blk.argv = #ptr_add<int64>(bb, 9i64) =>! wild int8->;
@@ -491,7 +491,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
     // 7. the handshake: INIT_REQ { version, shm_size } with the sealed
     //    memfd riding SCM_RIGHTS, then INIT_ACK under the deadline.
     wild int8->:pkt = calloc(1i64, 32i64);
-    defer { drop dalloc(pkt); }
+    defer { dalloc(pkt); }
     // header: opcode INIT_REQ (0x0001), flags 0, length 20 — one LE word.
     // Payload: version u32, shm_size u64, iface_hash u64 — the u64s as u32
     // halves so no store straddles its own alignment.
@@ -526,10 +526,10 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
         wild int8->:si = alloc(128i64);
         Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pidfd, si, raw WEXITED(), 0i64);
         if (w.is_error) { }
-        drop dalloc(si);
+        dalloc(si);
         drop spawn_scrap(@shm, ct.ours, 0i64 - 1i64, ep.ours, 0i64 - 1i64, 0i64 - 1i64);
         Result<NIL>:cp = close((pidfd =>! int32) =>! fd);  if (cp.is_error) { }
-        drop driver_retire(slot);
+        driver_retire(slot);
         fail EDriverSpawn;
     }
 
@@ -591,14 +591,14 @@ pub func:bridge_reap = NIL(Bridge->:b) never fails {
     wild int8->:si = alloc(128i64);
     Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd, si, raw WEXITED(), 0i64);
     if (w.is_error) { }
-    drop dalloc(si);
+    dalloc(si);
     wild int8->:sb = b.shm.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
     if (um.is_error) { }
     Result<NIL>:cm = close(b.shm.memfd);
     if (cm.is_error) { }
-    drop dalloc(b.errbuf);
-    drop driver_retire(b.reg_slot);
+    dalloc(b.errbuf);
+    driver_retire(b.reg_slot);
     pass NIL;
 };
 
@@ -630,7 +630,7 @@ func:bridge_child_dead = bool(Bridge->:b) never fails {
         if (spid != 0i64) { dead = true; }
     }
     if (w.is_error) { dead = true; }   // ECHILD: already reaped — dead either way
-    drop dalloc(si);
+    dalloc(si);
     pass dead;
 };
 
@@ -659,7 +659,7 @@ func:bridge_drain_stderr = NIL(Bridge->:b) never fails {
             b.err_w = b.err_w + n;
         }
     }
-    drop dalloc(tmp);
+    dalloc(tmp);
     pass NIL;
 };
 
@@ -680,7 +680,7 @@ pub func:bridge_stderr_tail = string(Bridge->:b) {
         pass (relay string_slice(s1, 0i64, first));   // the view, copied out
     }
     string:s2 = string_from_bytes(b.errbuf =>! wild uint8->, len - first);
-    pass (relay string_concat(s1, s2));               // concat allocates owned
+    pass (string_concat(s1, s2));               // concat allocates owned
 };
 
 // Watch two descriptors, park on a third — the dispatch wait's shape (ctrl
@@ -688,13 +688,13 @@ pub func:bridge_stderr_tail = string(Bridge->:b) {
 // exactly as long as the wait, io_ready's discipline; a resume before the
 // deadline says only that SOMETHING signalled — the caller re-tries.
 async func:wait3 = NIL(int32:fda, int32:fdb, int32:park_fd, int64:io_abs) {
-    defer { drop io_unwatch(fda); }
-    defer { drop io_unwatch(fdb); }
-    defer { drop io_unwatch(park_fd); }
-    drop io_watch(fda, 1i32);
-    drop io_watch(fdb, 1i32);
-    drop suspend_io(park_fd, 1i32, io_abs);
-    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    defer { io_unwatch(fda); }
+    defer { io_unwatch(fdb); }
+    defer { io_unwatch(park_fd); }
+    io_watch(fda, 1i32);
+    io_watch(fdb, 1i32);
+    suspend_io(park_fd, 1i32, io_abs);
+    if ((mono_now()) >= io_abs) { fail DeadlineExceeded; }
     pass NIL;
 };
 
@@ -718,7 +718,7 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
                                 Duration:within) {
     if (b.closed)   { fail EBridgePoisoned; }
     if (b.poisoned) { fail EBridgePoisoned; }
-    int64:give_up = (raw mono_now()) + within.ns;
+    int64:give_up = (mono_now()) + within.ns;
     drop bridge_drain_stderr(b);
 
     int64:myseq = b.next_seq;
@@ -755,7 +755,7 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
 
     // EXEC_NOTIFY { seq, kernel_id } — 16 bytes on the control plane.
     wild int8->:pkt = alloc(24i64);
-    defer { drop dalloc(pkt); }
+    defer { dalloc(pkt); }
     <-(#ptr_add<int64>(pkt, 0i64)) = 2i64 | (8i64 << 32i64);
     <-(#ptr_add<int32>(pkt, 2i64)) = seq32 =>! int32;
     <-(#ptr_add<int32>(pkt, 3i64)) = kernel_id =>! int32;
@@ -796,7 +796,7 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
                     drop bridge_drain_stderr(b);
                     fail EDriverFault;
                 }
-                if ((raw mono_now()) >= give_up) {
+                if ((mono_now()) >= give_up) {
                     drop bridge_kill(b);
                     b.poisoned = true;
                     fail EDriverDeadline;
@@ -835,7 +835,7 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
 async func:close_wait_dead = bool(Bridge->:b, int64:give_up) {
     while (true) {
         if (raw bridge_child_dead(b)) { pass true; }
-        int64:rem = give_up - (raw mono_now());
+        int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { pass false; }
         Result<NIL>:w = await io_ready((b.pidfd.value) =>! int32, 1i32,
                                        raw duration_ns(rem));
@@ -869,7 +869,7 @@ pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
     <-(#ptr_add<int64>(pkt, 0i64)) = 255i64;
     Result<int64>:sn = send_fd((b.ctrl.value => int64), 0i64 - 1i64, pkt, 8i64);
     if (sn.is_error) { }
-    drop dalloc(pkt);
+    dalloc(pkt);
     Result<int64>:sd = sys(raw SYS_SHUTDOWN(), (b.ctrl.value => int64), raw SHUT_WR());
     if (sd.is_error) { }
     // A rung is over when the child is DEAD or its budget is spent — never
@@ -877,7 +877,7 @@ pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
     // signalled, and treating it as proof of death once sent this close
     // into a 28-second blocking waitid on a live driver (a stale spurious
     // wake — re-check, always; the retry discipline is the contract).
-    int64:r1_end = (raw mono_now()) + half;
+    int64:r1_end = (mono_now()) + half;
     Result<bool>:d1 = await close_wait_dead(b, r1_end);
     bool:dead = false;
     if (!d1.is_error) { dead = d1.value; }
@@ -887,7 +887,7 @@ pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
         int64:pfd = (b.pidfd.value) => int64;
         Result<int64>:kt = sys(raw SYS_PIDFD_SEND_SIGNAL(), pfd, raw SIGTERM(), 0i64, 0i64);
         if (kt.is_error) { }
-        int64:r2_end = (raw mono_now()) + quarter;
+        int64:r2_end = (mono_now()) + quarter;
         Result<bool>:d2 = await close_wait_dead(b, r2_end);
         if (!d2.is_error) { dead = d2.value; }
     }
@@ -904,14 +904,14 @@ pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
     int64:pfd2 = (b.pidfd.value) => int64;
     Result<int64>:wr = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd2, si, raw WEXITED(), 0i64);
     if (wr.is_error) { }
-    drop dalloc(si);
+    dalloc(si);
     drop bridge_drain_stderr(b);   // the post-mortem gulp: pipes outlive writers
     wild int8->:sb = b.shm.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
     if (um.is_error) { }
     Result<NIL>:cm = close(b.shm.memfd);
     if (cm.is_error) { }
-    drop dalloc(b.errbuf);
-    drop driver_retire(b.reg_slot);
+    dalloc(b.errbuf);
+    driver_retire(b.reg_slot);
     pass NIL;
 };

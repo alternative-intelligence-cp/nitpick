@@ -144,10 +144,10 @@ pub func:p_expect = bool(Parser->:p, TokenKind:k) never fails {
     // riddle: the token carries a kind, not the text it was scanned from.
     string:want = raw token_kind_name(k);
     string:got = raw token_kind_name(raw p_kind(p));
-    string:m1 = raw string_concat("expected `", want);
-    string:m2 = raw string_concat(m1, "`, found `");
-    string:m3 = raw string_concat(m2, got);
-    string:m4 = raw string_concat(m3, "`");
+    string:m1 = string_concat("expected `", want);
+    string:m2 = string_concat(m1, "`, found `");
+    string:m3 = string_concat(m2, got);
+    string:m4 = string_concat(m3, "`");
     drop p_error(p, raw PARSE_EXPECTED(), move(m4));
     pass false;
 };

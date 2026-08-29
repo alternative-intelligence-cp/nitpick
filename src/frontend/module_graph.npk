@@ -137,10 +137,10 @@ pub func:graph_find = int32(ModuleGraph->:g, int32:file) never fails {
 // arrives", and the first caller that had not was a test.
 pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never fails {
     string:path = raw path_normalise(raw_path);
-    Result<int32>:loaded = srcmgr_load(@g.sm, raw string_concat(path, ""));
+    Result<int32>:loaded = srcmgr_load(@g.sm, string_concat(path, ""));
     if (loaded.is_error) {
-        string:m1 = raw string_concat("cannot read `", path);
-        string:m2 = raw string_concat(m1, "`");
+        string:m1 = string_concat("cannot read `", path);
+        string:m2 = string_concat(m1, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_NO_SUCH_FILE(), move(m2), from));
         pass (0i32 - 1i32);
@@ -286,8 +286,8 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) neve
                         at = raw symbol_span(@g.ast, @g.tab, clash);
                     }
                     string:nm = raw intern_get(g.interns, s.name);
-                    string:m1 = raw string_concat("`", nm);
-                    string:m2 = raw string_concat(m1,
+                    string:m1 = string_concat("`", nm);
+                    string:m2 = string_concat(m1,
                         "` is declared by the prelude, so a program cannot declare it: a local one would silently take over, and `#[derive]` would then generate an implementation of a trait the compiler knows nothing about");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_DUPLICATE(), move(m2), at));
@@ -393,9 +393,9 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
     string:dir = raw path_dirname(from);
 
     string:flat = raw path_normalise(
-        raw path_join(dir, raw string_concat(name, ".npk")));
+        raw path_join(dir, string_concat(name, ".npk")));
     string:nested = raw path_normalise(
-        raw path_join(dir, raw string_concat(name, "/mod.npk")));
+        raw path_join(dir, string_concat(name, "/mod.npk")));
 
     // A path with an interior NUL names no file (D-049), so the probe's
     // answer for one is FALSE — not an error to propagate. The only way a NUL
@@ -410,11 +410,11 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
 
     if (has_flat) {
         if (has_nested) {
-            string:m1 = raw string_concat("module `", name);
-            string:m2 = raw string_concat(m1, "` is supplied by both ");
-            string:m3 = raw string_concat(m2, flat);
-            string:m4 = raw string_concat(m3, " and ");
-            string:m5 = raw string_concat(m4, nested);
+            string:m1 = string_concat("module `", name);
+            string:m2 = string_concat(m1, "` is supplied by both ");
+            string:m3 = string_concat(m2, flat);
+            string:m4 = string_concat(m3, " and ");
+            string:m5 = string_concat(m4, nested);
             drop diaglist_push(g.diags,
                 raw diag_error(raw RESOLVE_AMBIGUOUS(), move(m5), d.span));
             pass NIL;
@@ -427,11 +427,11 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
         pass NIL;
     }
 
-    string:n1 = raw string_concat("cannot find module `", name);
-    string:n2 = raw string_concat(n1, "`: neither ");
-    string:n3 = raw string_concat(n2, flat);
-    string:n4 = raw string_concat(n3, " nor ");
-    string:n5 = raw string_concat(n4, nested);
+    string:n1 = string_concat("cannot find module `", name);
+    string:n2 = string_concat(n1, "`: neither ");
+    string:n3 = string_concat(n2, flat);
+    string:n4 = string_concat(n3, " nor ");
+    string:n5 = string_concat(n4, nested);
     // THE COMMONEST WAY HERE IS A FILE WHOSE HEADER DOES NOT MATCH ITS NAME
     // (1.0.8; CLAUDE.md lists it as a trap that cost a cycle) — and a header is
     // the file's first item. The message names that reading rather than
@@ -439,9 +439,9 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
     if (first_item) {
         string:base = raw path_basename(from);
         if (!(raw string_eq(name, base))) {
-            string:h1 = raw string_concat(n5, "; if this line is the file's own header, note that this file is `");
-            string:h2 = raw string_concat(h1, base);
-            n5 = raw string_concat(h2, ".npk` and a file's module name must match its basename");
+            string:h1 = string_concat(n5, "; if this line is the file's own header, note that this file is `");
+            string:h2 = string_concat(h1, base);
+            n5 = string_concat(h2, ".npk` and a file's module name must match its basename");
         }
     }
     drop diaglist_push(g.diags,
@@ -592,8 +592,8 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) never fails {
                 int32:name = raw decl_name(d);
                 if (raw struct_reaches_self(g, e.scope, name, name, 64i32)) {
                     string:nm = raw intern_get(g.interns, name);
-                    string:m1 = raw string_concat("`", nm);
-                    string:m2 = raw string_concat(m1,
+                    string:m1 = string_concat("`", nm);
+                    string:m2 = string_concat(m1,
                         "` contains itself, so its size cannot be computed; a `->` breaks the cycle because a pointer is one word whatever it points at");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
@@ -674,10 +674,10 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) never fai
                 DeclNode:b = raw ast_decl(@g.ast, raw item_member(@g.ast, d, j));
                 if ((raw decl_name(b)) == anode) {
                     string:nm = raw intern_get(g.interns, anode);
-                    string:m1 = raw string_concat("`", nm);
-                    string:m2 = raw string_concat(m1, "` is declared twice as a ");
-                    string:m3 = raw string_concat(m2, what);
-                    string:m4 = raw string_concat(m3,
+                    string:m1 = string_concat("`", nm);
+                    string:m2 = string_concat(m1, "` is declared twice as a ");
+                    string:m3 = string_concat(m2, what);
+                    string:m4 = string_concat(m3,
                         " of this type; the second is unreachable, because a lookup by name finds the first and gets no say in which was meant");
                     drop diaglist_push(g.diags,
                         raw diag_error(raw RESOLVE_DUPLICATE(), move(m4), b.span));
@@ -833,10 +833,10 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
 
     if (sym == 0i32) {
         if (!report) { pass NIL; }
-        string:m1 = raw string_concat("`", target);
-        string:m2 = raw string_concat(m1, "` has no `");
-        string:m3 = raw string_concat(m2, nm);
-        string:m4 = raw string_concat(m3, "`");
+        string:m1 = string_concat("`", target);
+        string:m2 = string_concat(m1, "` has no `");
+        string:m3 = string_concat(m2, nm);
+        string:m4 = string_concat(m3, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_NO_SUCH_NAME(), move(m4), at));
         pass NIL;
@@ -845,10 +845,10 @@ func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
     Symbol:s = raw symtab_get(@g.tab, sym);
     if (!(raw symbol_is_exported(s))) {
         if (!report) { pass NIL; }
-        string:p1 = raw string_concat("`", nm);
-        string:p2 = raw string_concat(p1, "` is private to `");
-        string:p3 = raw string_concat(p2, target);
-        string:p4 = raw string_concat(p3, "`");
+        string:p1 = string_concat("`", nm);
+        string:p2 = string_concat(p1, "` is private to `");
+        string:p3 = string_concat(p2, target);
+        string:p4 = string_concat(p3, "`");
         drop diaglist_push(g.diags,
             raw diag_error(raw RESOLVE_PRIVATE(), move(p4), at));
         drop diaglist_push(g.diags,
@@ -883,7 +883,7 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                 if (bound == 0i32) {
                     if (report) {
                     string:nm = raw intern_get(g.interns, s.name);
-                    string:m1 = raw string_concat("`", nm);
+                    string:m1 = string_concat("`", nm);
                     // WHICH CLASH (1.0.8). `symtab_bind_import` declines for any
                     // earlier binding, and an earlier IMPORT is one: with two
                     // wildcard imports exporting one name, this said "declared
@@ -917,25 +917,25 @@ func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
                         }
                     }
                     if (prior_import) { if (!err_pair) {
-                        string:i2 = raw string_concat(m1,
+                        string:i2 = string_concat(m1,
                             "` is exported by an earlier import and also by `");
-                        string:i3 = raw string_concat(i2, target);
+                        string:i3 = string_concat(i2, target);
                         drop diaglist_push(g.diags,
                             raw diag_warning(raw RESOLVE_SHADOWED(),
-                                raw string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
+                                string_concat(i3, "`; the earlier import is bound — import one of them by name to say which"),
                                 at));
                     } } else { if (!err_pair) {
-                    string:m2 = raw string_concat(m1,
+                    string:m2 = string_concat(m1,
                         "` is declared in this file and also exported by `");
-                    string:m3 = raw string_concat(m2, target);
-                    string:m4 = raw string_concat(m3,
+                    string:m3 = string_concat(m2, target);
+                    string:m4 = string_concat(m3,
                         "`; the local declaration wins");
                     drop diaglist_push(g.diags,
                         raw diag_warning(raw RESOLVE_SHADOWED(), move(m4), at));
                     if (clash != 0i32) {
                         drop diaglist_push(g.diags,
                             raw diag_note(raw RESOLVE_SHADOWED(),
-                                raw string_concat(m1, "` is declared here"),
+                                string_concat(m1, "` is declared here"),
                                 raw symbol_span(@g.ast, @g.tab, clash)));
                     }
                     } }
@@ -961,13 +961,13 @@ func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
     if (bound == 0i32) {
         if (!report) { pass NIL; }
         string:nm = raw intern_get(g.interns, name);
-        string:m1 = raw string_concat("`", nm);
+        string:m1 = string_concat("`", nm);
         // DECLARED, OR IMPORTED EARLIER — two different fixes (1.0.8).
         int32:clash = raw scope_lookup_local(@g.tab, scope, name);
-        string:m2 = raw string_concat(m1, "` is already declared in this module");
+        string:m2 = string_concat(m1, "` is already declared in this module");
         if (clash != 0i32) {
             if (raw symbol_is_imported(raw symtab_get(@g.tab, clash))) {
-                m2 = raw string_concat(m1, "` is already imported into this module by an earlier `use`");
+                m2 = string_concat(m1, "` is already imported into this module by an earlier `use`");
             }
         }
         drop diaglist_push(g.diags,

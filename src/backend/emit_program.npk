@@ -45,22 +45,22 @@ func:refuse = NIL(DiagList->:diags, IrVal:v) never fails {
         // A RUNG NAMES A CYCLE ("1.5") OR A ROW ("a later cycle (G-2)"); the
         // sentence reads differently for each (1.0.8 — the row form rendered
         // "enabled by cycle a later cycle (G-2)").
-        string:m1 = raw string_concat(v.what,
+        string:m1 = string_concat(v.what,
             " is not supported at this backend rung; enabled by cycle ");
         if (v.rung.len > 0i64) {
             if (v.rung.ptr[0i64] < 48u8) {
-                m1 = raw string_concat(v.what,
+                m1 = string_concat(v.what,
                     " is not supported at this backend rung; owned by ");
             } else {
                 if (v.rung.ptr[0i64] > 57u8) {
-                    m1 = raw string_concat(v.what,
+                    m1 = string_concat(v.what,
                         " is not supported at this backend rung; owned by ");
                 }
             }
         }
         drop diaglist_push(diags,
             raw diag_error(raw RUNG_UNSUPPORTED(),
-                           raw string_concat(m1, v.rung), v.at));
+                           string_concat(m1, v.rung), v.at));
         pass NIL;
     }
     // EVERY `iv_broken` ARRIVES HERE, not only an unclassified kind — a
@@ -274,7 +274,7 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // widening sound: any retained word can drop the value.
     string:entries = "ptr null";
     if (raw type_drops(x.fe.ctx.types, self_ty, 64i32)) {
-        entries = raw string_concat("ptr ",
+        entries = string_concat("ptr ",
                       raw drop_fn_sym(x.fe.ctx, self_ty));
     }
     int32:slots = 1i32;
@@ -291,8 +291,8 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                 string:amn = raw method_symbol_name(x.fe.ctx.types, x.interns,
                                  self_ty, trait_ty,
                                  raw intern_get(x.interns, raw decl_name(tm)));
-                entries = raw string_concat(entries, ", ");
-                entries = raw string_concat(entries, raw string_concat("ptr ",
+                entries = string_concat(entries, ", ");
+                entries = string_concat(entries, string_concat("ptr ",
                               raw resume_fn_sym(x.fe.ctx, item.index, amn)));
                 slots = slots + 1i32;
             }
@@ -300,9 +300,9 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                 string:thunk = raw emit_thunk(x, item, td, tm, self_ty, trait_ty,
                                                 sll, vtn);
                 if (thunk.len == 0i64) { pass NIL; }
-                entries = raw string_concat(entries, ", ");
-                entries = raw string_concat(entries,
-                              raw string_concat("ptr ", thunk));
+                entries = string_concat(entries, ", ");
+                entries = string_concat(entries,
+                              string_concat("ptr ", thunk));
                 slots = slots + 1i32;
             }
         }
@@ -321,7 +321,7 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                                  self_ty, trait_ty,
                                  raw intern_get(x.interns, raw decl_name(tm)));
                 string:sfr = raw frame_ty_sym(x.fe.ctx, item.index, smn);
-                entries = raw string_concat(entries, ", ");
+                entries = string_concat(entries, ", ");
                 entries = raw cat3(entries, "ptr ",
                               raw frame_size_sym(sfr));
                 slots = slots + 1i32;
@@ -330,13 +330,13 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         k = k + 1i32;
     }
 
-    string:g1 = raw string_concat(
+    string:g1 = string_concat(
                     raw mangled_fn_sym(x.fe.ctx, item.index, vtn),
                     " = internal constant [");
-    string:g2 = raw string_concat(g1, raw int_to_string(slots => int64));
-    string:g3 = raw string_concat(g2, " x ptr] [");
-    drop irw_raw(x.fe.w, raw string_concat(g3,
-                     raw string_concat(entries, "]")));
+    string:g2 = string_concat(g1, int_to_string(slots => int64));
+    string:g3 = string_concat(g2, " x ptr] [");
+    drop irw_raw(x.fe.w, string_concat(g3,
+                     string_concat(entries, "]")));
     drop irw_blank(x.fe.w);
     pass NIL;
 };
@@ -384,7 +384,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
         if (p0n.kind == TypeKind.TypePointerType) { recv_ptr = true; }
     }
     string:params = "ptr %d";
-    string:args = raw string_concat(sll.text, " %r0");
+    string:args = string_concat(sll.text, " %r0");
     if (recv_ptr) { args = "ptr %d"; }
     int32:pc = raw fn_param_count(x.ast, tm);
     int32:i = 1i32;
@@ -393,10 +393,10 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
         int32:pt = raw resolve_type(x.tr, raw param_type(pd), home);
         LlType:pll = raw ll_type(x.fe.ctx, pt);
         if (!(raw ll_is_ok(pll))) { x.tr.enclosing = saved_tb; pass ""; }
-        string:an = raw string_concat("%a", raw int_to_string(i => int64));
-        params = raw string_concat(params,
+        string:an = string_concat("%a", int_to_string(i => int64));
+        params = string_concat(params,
                      raw cat4(", ", pll.text, " ", an));
-        args = raw string_concat(args,
+        args = string_concat(args,
                    raw cat4(", ", pll.text, " ", an));
         i = i + 1i32;
     }
@@ -404,7 +404,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     x.tr.enclosing = saved_tb;
 
     string:sym = raw mangled_fn_sym(x.fe.ctx, item.index,
-                     raw string_concat(vtn, raw string_concat(".", mname)));
+                     string_concat(vtn, string_concat(".", mname)));
     string:real = raw mangled_fn_sym(x.fe.ctx, item.index,
                       raw method_symbol_name(x.fe.ctx.types, x.interns,
                           self_ty, trait_ty, mname));
@@ -420,7 +420,7 @@ func:emit_thunk = string(ExprEmitter->:x, DeclId:item, DeclNode:td,
     drop irw_line(x.fe.w, raw cat5(rv, " = call ", rll.text, " ",
                              raw cat4(real, "(", args, ")")));
     drop irw_line(x.fe.w, raw cat3("ret ", rll.text,
-                             raw string_concat(" ", rv)));
+                             string_concat(" ", rv)));
     drop irw_raw(x.fe.w, "}");
     drop irw_blank(x.fe.w);
     pass sym;
@@ -775,10 +775,10 @@ func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
 // `vt.<Type>.<Trait>` — D-156 names the table; the thunks append their method.
 func:vtable_stem_of = string(LlCtx->:c, InternTable->:interns, int32:self_ty,
                              int32:trait_ty) never fails {
-    string:v1 = raw string_concat("vt.",
+    string:v1 = string_concat("vt.",
                     raw type_display(c.types, interns, self_ty));
-    pass (raw string_concat(v1,
-              raw string_concat(".",
+    pass (string_concat(v1,
+              string_concat(".",
                   raw type_display(c.types, interns, trait_ty))));
 };
 
@@ -801,7 +801,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
             string:nm = raw intern_get(g.interns, raw decl_name(d));
-            string:nc = raw string_concat(cname, raw string_concat(".", nm));
+            string:nc = string_concat(cname, string_concat(".", nm));
             drop modmap_members(g, map, d, move(nc));
         } else {
             map[item.index => int64] = cid;
@@ -847,8 +847,8 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
         string:args = "";
         int32:a = 0i32;
         while (a < sig.argc) {
-            if (a > 0i32) { args = raw string_concat(args, ", "); }
-            args = raw string_concat(args, raw rt_arg(sig, a));
+            if (a > 0i32) { args = string_concat(args, ", "); }
+            args = string_concat(args, raw rt_arg(sig, a));
             a = a + 1i32;
         }
         drop irw_raw(w, raw cat5("declare ", sig.ret, " ", sig.sym,
@@ -924,7 +924,7 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // walk a heterogeneous child list: resume through slot 0, windup slot 2,
     // error slot 3, sibling slot 5, all at fixed offsets. Declared
     // unconditionally, like the runtime block it rides with.
-    drop irw_raw(w, raw string_concat("%\"npk.frame.hdr\" = type ",
+    drop irw_raw(w, string_concat("%\"npk.frame.hdr\" = type ",
                       "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr }"));
     // `sys` calls the six-register trampoline directly (0.9.7).
     drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
@@ -1289,7 +1289,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     // observable, and ascending is the cheaper induction.
     if (k == (raw TY_ARRAY())) {
         int32:el = raw type_elem(c.types, dty);
-        string:n = raw int_to_string((raw type_array_count(c.types, dty)) => int64);
+        string:n = int_to_string((raw type_array_count(c.types, dty)) => int64);
         drop irw_raw(w, "  br label %loop");
         drop irw_raw(w, "loop:");
         drop irw_raw(w, "  %i = phi i64 [ 0, %entry ], [ %ni, %body ]");
@@ -1317,7 +1317,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     if (k == (raw TY_ARENA())) {
         int32:ael = (raw tt_get(c.types, dty)).a;
         if (raw type_drops(c.types, ael, 64i32)) {
-            string:astr = raw int_to_string(raw type_size(c.types, ael));
+            string:astr = int_to_string(raw type_size(c.types, ael));
             drop irw_raw(w, raw cat3("  %slab = load ptr, ptr %v", "", ""));
             drop irw_raw(w, "  %sdead = icmp eq ptr %slab, null");
             drop irw_raw(w, "  br i1 %sdead, label %done, label %walkp");
@@ -1543,10 +1543,10 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                 }
                 if (owns) {
                     string:a1 = raw cat5(" i32 ",
-                                    raw int_to_string((raw variant_tag_of(ast, vm, vi)) => int64),
+                                    int_to_string((raw variant_tag_of(ast, vm, vi)) => int64),
                                     ", label %var",
-                                    raw int_to_string(vi => int64), "");
-                    arms = raw string_concat(arms, a1);
+                                    int_to_string(vi => int64), "");
+                    arms = string_concat(arms, a1);
                     have_arm = true;
                 }
             }
@@ -1585,9 +1585,9 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                 }
                 if (owns2) {
                     drop irw_raw(w, raw cat3("var",
-                                      raw int_to_string(vi => int64), ":"));
+                                      int_to_string(vi => int64), ":"));
                     drop irw_raw(w, raw cat5("  %pa",
-                                      raw int_to_string(vi => int64),
+                                      int_to_string(vi => int64),
                                       " = getelementptr ", t.text,
                                       ", ptr %v, i32 0, i32 1"));
                     int32:rj = pc2;
@@ -1599,21 +1599,21 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                         if (rs.ok) {
                             if (raw type_drops(c.types, rs.type_id, 64i32)) {
                                 string:pp = raw cat3("%pa",
-                                                raw int_to_string(vi => int64), "");
+                                                int_to_string(vi => int64), "");
                                 if (rs.offset != 0i64) {
                                     string:pn = raw cat5("%p",
-                                                    raw int_to_string(vi => int64),
+                                                    int_to_string(vi => int64),
                                                     "_",
-                                                    raw int_to_string(rj => int64), "");
+                                                    int_to_string(rj => int64), "");
                                     drop irw_raw(w, raw cat5("  ", pn,
                                                       " = getelementptr i8, ptr ",
                                                       pp,
-                                                      raw string_concat(", i64 ",
-                                                          raw int_to_string(rs.offset))));
+                                                      string_concat(", i64 ",
+                                                          int_to_string(rs.offset))));
                                     pp = raw cat5("%p",
-                                             raw int_to_string(vi => int64),
+                                             int_to_string(vi => int64),
                                              "_",
-                                             raw int_to_string(rj => int64), "");
+                                             int_to_string(rj => int64), "");
                                 }
                                 drop irw_raw(w, raw cat5("  call void ",
                                                   raw drop_fn_sym(c, rs.type_id),
@@ -1669,13 +1669,13 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                         int32:ft = 0i32;
                         if (bfi.found) { ft = bfi.type_id; }
                         if (raw type_drops(c.types, ft, 64i32)) {
-                            string:g = raw cat5("  %f", raw int_to_string(fi => int64),
+                            string:g = raw cat5("  %f", int_to_string(fi => int64),
                                           " = getelementptr ", t.text, "");
                             drop irw_raw(w, raw cat5(g, ", ptr %v, i32 0, i32 ",
-                                              raw int_to_string(fi => int64), "", ""));
+                                              int_to_string(fi => int64), "", ""));
                             drop irw_raw(w, raw cat5("  call void ",
                                               raw drop_fn_sym(c, ft), "(ptr %f",
-                                              raw int_to_string(fi => int64), ")"));
+                                              int_to_string(fi => int64), ")"));
                         }
                         q = raw item_member_count(ast, d);
                     } else {
@@ -1756,17 +1756,17 @@ func:fninst_is_template = bool(Ast->:ast, LlCtx->:c, FnInstance:inst) never fail
 // and quotes (D-156). Interned, because a symbol is a name.
 func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
     DeclNode:d = raw ast_decl(ast, DeclId{ index: inst.decl });
-    string:m = raw string_concat(
+    string:m = string_concat(
                    raw intern_get(c.interns, raw decl_name(d)), "<");
     int32:i = 0i32;
     while (i < inst.args_count) {
-        if (i > 0i32) { m = raw string_concat(m, ", "); }
-        m = raw string_concat(m,
+        if (i > 0i32) { m = string_concat(m, ", "); }
+        m = string_concat(m,
                 raw type_display(c.types, c.interns,
                     raw ast_id_at(ast, inst.args_start, i)));
         i = i + 1i32;
     }
-    pass (raw intern_add(c.interns, raw string_concat(m, ">")));
+    pass (raw intern_add(c.interns, string_concat(m, ">")));
 };
 
 // THE SITE TABLES (D-179, 1.1.6): what the origin chain's ids mean. One line
@@ -1784,11 +1784,11 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
         string:enc = "";
         int64:bj = 0i64;
         while (bj < sp2.len) {
-            enc = raw string_concat(enc, raw esc_byte(sp2.ptr[bj] => uint8));
+            enc = string_concat(enc, raw esc_byte(sp2.ptr[bj] => uint8));
             bj = bj + 1i64;
         }
-        drop irw_raw(w, raw cat5("@npk.sitep.", raw int_to_string((i + 1i32) => int64),
-                          " = internal constant [", raw int_to_string(sp2.len),
+        drop irw_raw(w, raw cat5("@npk.sitep.", int_to_string((i + 1i32) => int64),
+                          " = internal constant [", int_to_string(sp2.len),
                           raw cat3(" x i8] c\"", enc, "\"")));
         i = i + 1i32;
     }
@@ -1797,26 +1797,26 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     i = 0i32;
     while (i < n) {
         ls = raw cat3(ls, ", i32 ",
-                 raw int_to_string(w.site_lines[i => int64] => int64));
+                 int_to_string(w.site_lines[i => int64] => int64));
         i = i + 1i32;
     }
     drop irw_raw(w, raw cat5("@npk.site.lines = internal constant [",
-                      raw int_to_string((n + 1i32) => int64), " x i32] [", ls, "]"));
+                      int_to_string((n + 1i32) => int64), " x i32] [", ls, "]"));
     // the path header table: { ptr, i64 } pairs (pointer, byte length)
     string:ps = "{ ptr, i64 } { ptr null, i64 0 }";
     i = 0i32;
     while (i < n) {
         string->:sp3 = $$i w.site_paths[i => int64];
         ps = raw cat5(ps, ", { ptr, i64 } { ptr @npk.sitep.",
-                 raw int_to_string((i + 1i32) => int64),
-                 ", i64 ", raw string_concat(raw int_to_string(sp3.len), " }"));
+                 int_to_string((i + 1i32) => int64),
+                 ", i64 ", string_concat(int_to_string(sp3.len), " }"));
         i = i + 1i32;
     }
     drop irw_raw(w, raw cat5("@npk.site.paths = internal constant [",
-                      raw int_to_string((n + 1i32) => int64), " x { ptr, i64 }] [",
+                      int_to_string((n + 1i32) => int64), " x { ptr, i64 }] [",
                       ps, "]"));
     // the lookups
-    string:cnt = raw int_to_string((n + 1i32) => int64);
+    string:cnt = int_to_string((n + 1i32) => int64);
     drop irw_raw(w, "define internal i32 @npk_site_line(i32 %i) {");
     drop irw_raw(w, "entry:");
     drop irw_raw(w, raw cat3("  %ok = icmp ult i32 %i, ", cnt, ""));

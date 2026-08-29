@@ -20,8 +20,8 @@
 func:d065_example = NIL() never fails {
     wild int8->:raw_mem = alloc(100i64);
     wild int8->:taken = move(raw_mem);
-    drop dalloc(raw_mem);
-    drop dalloc(taken);
+    dalloc(raw_mem);
+    dalloc(taken);
     pass NIL;
 };
 
@@ -35,8 +35,8 @@ func:moved_on_one_branch = NIL(bool:c) never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:q = NULL;
     if (c) { q = move(p); }
-    drop dalloc(p);
-    drop dalloc(q);
+    dalloc(p);
+    dalloc(q);
     pass NIL;
 };
 
@@ -47,7 +47,7 @@ func:moved_in_a_loop = NIL(bool:c) never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:q = NULL;
     while (c) { q = move(p); }
-    drop dalloc(q);
+    dalloc(q);
     pass NIL;
 };
 
@@ -56,15 +56,15 @@ func:moved_in_a_loop = NIL(bool:c) never fails {
 // expect-error: NITPICK-MOVE-002
 func:double_free = NIL() never fails {
     wild int8->:p = alloc(8i64);
-    drop dalloc(p);
-    drop dalloc(p);
+    dalloc(p);
+    dalloc(p);
     pass NIL;
 };
 
 // expect-error: NITPICK-MOVE-002
 func:use_after_free = NIL() never fails {
     wild int8->:p = alloc(8i64);
-    drop dalloc(p);
+    dalloc(p);
     p[0i64] = 1i8;
     pass NIL;
 };
@@ -76,8 +76,8 @@ func:use_after_free = NIL() never fails {
 func:use_after_ralloc = NIL() never fails {
     wild int8->:p = alloc(8i64);
     wild int8->:bigger = ralloc(p, 16i64);
-    drop dalloc(p);
-    drop dalloc(bigger);
+    dalloc(p);
+    dalloc(bigger);
     pass NIL;
 };
 

@@ -21,7 +21,7 @@ func:read_text = string(Msg:m) never fails {
     pick (m) {
         // `s` is the arm's binding of the payload the enum still owns, so the
         // way out is an explicit copy (D-183) — `move` would hollow the enum.
-        (Msg.Text(s)) { out = raw string_concat(s, ""); },
+        (Msg.Text(s)) { out = string_concat(s, ""); },
         (*) { out = "wrong-arm"; }
     }
     pass out;

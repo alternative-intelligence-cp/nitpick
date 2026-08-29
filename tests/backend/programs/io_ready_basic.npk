@@ -23,7 +23,7 @@ thread async func:late_writer = NIL(int64:wfd) joins JOIN_2S {
     // S-3a typed `sys` (`Result<int64>`, D-048): the wake write's error can no
     // longer be silently discarded — a failed wake now fails the test loudly.
     discard(sys(1i64, wfd, b, 1i64) ?! EPipe);
-    drop dalloc(b);
+    dalloc(b);
     pass NIL;
 };
 
@@ -47,8 +47,8 @@ async func:main = int32(cstring[]:_~argv) {
     int64:n = sys(0i64, rfd => int64, rb, 8i64) ?! ERead;
     if (n != 1i64)                     { exit 13i32; }
     if ((<-rb) != 55i8)                { exit 14i32; }
-    drop dalloc(rb);
-    drop dalloc(fds);
+    dalloc(rb);
+    dalloc(fds);
     exit 42i32;
 };
 

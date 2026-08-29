@@ -35,7 +35,6 @@ use "./expr_types.npk".*;
 use "./type_expr.npk".*;
 use "./type_access.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
-use "./builtins.npk".*;     // is_builtin_name (D-163 rule 6)
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
 //
@@ -202,24 +201,12 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                 s.span));
             pass NIL;
         }
-        // A BARE BUILTIN CALL types as unknown (no signature in the checker),
-        // so the Result test below cannot see it — but the closed list is by
-        // SHAPE: every call takes a keyword. `drop dalloc(p);` is the spelling.
-        if (xn.kind == ExprKind.ExprCallExpr) {
-            ExprNode:xcal = raw ast_expr(e.ast, raw expr_callee(xn));
-            if (xcal.kind == ExprKind.ExprIdentifierExpr) {
-                if (xcal.a == 0i32) {
-                    if (raw is_builtin_name(raw intern_get(e.interns,
-                                                xcal.payload =>! int32))) {
-                        discard(raw type_of_expr(e, xid));
-                        discard(raw te_error(e, raw TYPE_RESULT_DISCARDED(),
-                            "a bare call discards its outcome (D-163): run a builtin for effect with `drop`",
-                            s.span));
-                        pass NIL;
-                    }
-                }
-            }
-        }
+        // (A BARE BUILTIN CALL used to be caught HERE, by shape, because it
+        // typed as unknown and the Result test below could not see it. Since
+        // D-201 it has a real type and the general rules answer: a may-fail
+        // builtin's statement is a discarded `Result`, a never-fails one
+        // returning a value is a discarded value, and one returning nothing is
+        // a statement — `dalloc(p);`, which is what it reads as. 1.4.2.)
         int32:xt = raw type_of_expr(e, xid);
         if (xt == 0i32) { pass NIL; }
         if (raw type_is_invalid(e.types, xt)) { pass NIL; }
@@ -455,10 +442,10 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
         }
     }
     if (elem == 0i32) {
-        string:n1 = raw string_concat("`",
+        string:n1 = string_concat("`",
                         raw type_display(e.types, e.interns, it));
         discard(raw te_error(e, raw TYPE_NOT_ITERABLE(),
-            raw string_concat(n1,
+            string_concat(n1,
                 "` is not iterable: `for` takes a range, a slice, an array, or a type implementing `Iterator` (D-023, D-166); `loop`/`till` count"),
             s.span));
         pass NIL;
@@ -470,11 +457,11 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // EQUAL, NOT `fits`: a typed binding is the element, with no wrap and no
     // widening — the same rule every other typed binding has (D-092).
     if (bt != elem) {
-        string:b1 = raw string_concat("a `for` binding's type is the element type: this iterable yields `",
+        string:b1 = string_concat("a `for` binding's type is the element type: this iterable yields `",
                         raw type_display(e.types, e.interns, elem));
-        string:b2 = raw string_concat(b1, "` and the binding declares `");
-        string:b3 = raw string_concat(b2, raw type_display(e.types, e.interns, bt));
-        discard(raw te_error(e, raw TYPE_MISMATCH(), raw string_concat(b3, "`"), bd.span));
+        string:b2 = string_concat(b1, "` and the binding declares `");
+        string:b3 = string_concat(b2, raw type_display(e.types, e.interns, bt));
+        discard(raw te_error(e, raw TYPE_MISMATCH(), string_concat(b3, "`"), bd.span));
     }
     pass NIL;
 };
@@ -634,14 +621,14 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                                                 want, got);
                 if (dres != 0i32) {
                     if (dres != want) {
-                        string:c1 = raw string_concat(
+                        string:c1 = string_concat(
                             "this compound assignment changes the unit: the result is `",
                             raw type_display(e.types, e.interns, dres));
-                        string:c2 = raw string_concat(c1, "` and the slot holds `");
-                        string:c3 = raw string_concat(c2,
+                        string:c2 = string_concat(c1, "` and the slot holds `");
+                        string:c3 = string_concat(c2,
                             raw type_display(e.types, e.interns, want));
                         drop diaglist_push(e.diags, raw diag_error(raw TYPE_DIM_MISMATCH(),
-                            raw string_concat(c3, "` (D-196)"), s.span));
+                            string_concat(c3, "` (D-196)"), s.span));
                     }
                 }
                 pass NIL;

@@ -15,7 +15,7 @@ error:E19;
 
 func:risky = int32(int32:x) never fails {
     wild int8->:buf = alloc(16i64);
-    defer { drop dalloc(buf); }        // must NOT run on the trap path below
+    defer { dalloc(buf); }        // must NOT run on the trap path below
 
     if (x < 0i32) {
         !!! E19;
@@ -26,7 +26,7 @@ func:risky = int32(int32:x) never fails {
 
 func:main = int32(cstring[]:_~argv) {
     int32:v = raw risky(0i32 - 1i32);
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

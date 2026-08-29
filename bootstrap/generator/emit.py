@@ -60,14 +60,24 @@ RUNTIME_ARGS = {
 }
 
 
+# THE SYMBOL ANSWERS IN THE ENVELOPE, THE CALL IS THE BARE VALUE (D-201,
+# 1.4.2). Three never-fails builtins are built that way -- the floor's ABI did
+# not change when the typing did -- so the declared LLVM return keeps its
+# wrapper here while `check.BUILTINS` reports the language type without one, and
+# the call site below extracts. `BUILTIN_REFERENCE.md` marks the same three
+# `ABI: envelope`, and `check_runtime_sigs_agree` diffs both against npkrt.ll.
+ENVELOPE = {"buffer_new", "string_concat", "int_to_string"}
+
+
 def _runtime():
     out = {}
     for name, args in RUNTIME_ARGS.items():
         ret_ty, wrapped = check.BUILTINS[name]
-        if ret_ty == T.NIL and not wrapped:
+        at_symbol = wrapped or name in ENVELOPE
+        if ret_ty == T.NIL and not at_symbol:
             ret = "void"
         else:
-            ret = T.llvm(T.ResultT(ret_ty) if wrapped else ret_ty)
+            ret = T.llvm(T.ResultT(ret_ty) if at_symbol else ret_ty)
         out[name] = ("@npk_" + name, ret, args)
     return out
 
@@ -1001,6 +1011,15 @@ class Emitter:
             r = self.tmp()
             self.w("%s = call %s %s(%s)" % (r, ret, s, ", ".join(args)))
             npk = self.ty(e)
+            if name in ENVELOPE:
+                # The checker typed this call as the bare value; the symbol
+                # handed back `{ T, i32 }`. Handing the envelope out under the
+                # bare type stores three words into a slot sized for the value
+                # -- the defect 1.3.7 found at `buffer_new`, generalised here.
+                inner = T.llvm(check.BUILTINS[name][0])
+                v = self.tmp()
+                self.w("%s = extractvalue %s %s, 0" % (v, ret, r))
+                return Val(inner, v, npk)
             return Val(ret, r, npk)
 
         fn = self.p.funcs.get(name)

@@ -240,10 +240,10 @@ func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) never f
     if (vt == 0i32) { pass 0i32; }
     if (raw type_is_invalid(r.types, vt)) { pass 0i32; }
     if ((raw type_kind(r.types, vt)) == (raw TY_SLICE())) { pass vt; }
-    string:m1 = raw string_concat("a variadic parameter collects into a slice, so it is written `..*T[]`, and this is `",
+    string:m1 = string_concat("a variadic parameter collects into a slice, so it is written `..*T[]`, and this is `",
                                     raw type_display(r.types, r.interns, vt));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_UNKNOWN(),
-        raw string_concat(m1, "`"), at));
+        string_concat(m1, "`"), at));
     pass 0i32;
 };
 

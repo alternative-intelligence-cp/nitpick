@@ -14,7 +14,7 @@ func:f64bits = flt64(uint64:w) never fails {
     <-ip = w;
     wild flt64->:fp = b =>! wild flt64->;
     flt64:v = <-fp;
-    drop dalloc(b);
+    dalloc(b);
     pass v;
 };
 func:f32bits = flt32(uint32:w) never fails {
@@ -23,16 +23,16 @@ func:f32bits = flt32(uint32:w) never fails {
     <-ip = w;
     wild flt32->:fp = b =>! wild flt32->;
     flt32:v = <-fp;
-    drop dalloc(b);
+    dalloc(b);
     pass v;
 };
 func:ck64 = bool(uint64:w, string:want) never fails {
     flt64:v = raw f64bits(w);
-    pass (raw string_equals(`&{ v }`, want));
+    pass (string_equals(`&{ v }`, want));
 };
 func:ck32 = bool(uint32:w, string:want) never fails {
     flt32:v = raw f32bits(w);
-    pass (raw string_equals(`&{ v }`, want));
+    pass (string_equals(`&{ v }`, want));
 };
 func:main = int32(cstring[]:_~argv) {
     if (!(raw ck64(4602678819172646912u64, "0.5"))) { exit 50i32; }

@@ -72,7 +72,7 @@ func:main = int32(cstring[]:argv) {
         exit 2i32;
     }
     cstring:arg = argv[1i64];
-    string:root = raw string_from_bytes(arg.ptr, arg.len);
+    string:root = string_from_bytes(arg.ptr, arg.len);
 
     // `-o out.ll` — the one flag. Parsed positionally rather than by a scanner,
     // because one flag does not justify one; the day there are two, this becomes
@@ -80,10 +80,10 @@ func:main = int32(cstring[]:argv) {
     string:out_path = "";
     if (argv.len >= 4i64) {
         cstring:flag = argv[2i64];
-        string:flag_s = raw string_from_bytes(flag.ptr, flag.len);
+        string:flag_s = string_from_bytes(flag.ptr, flag.len);
         if (raw string_eq(flag_s, "-o")) {
             cstring:op = argv[3i64];
-            out_path = raw string_from_bytes(op.ptr, op.len);
+            out_path = string_from_bytes(op.ptr, op.len);
         }
     }
 
@@ -93,7 +93,7 @@ func:main = int32(cstring[]:argv) {
     int64:ai = 1i64;
     while (ai < argv.len) {
         cstring:a = argv[ai];
-        if (raw string_eq(raw string_from_bytes(a.ptr, a.len),
+        if (raw string_eq(string_from_bytes(a.ptr, a.len),
                           "--extra-picky=no-wildx")) {
             no_wildx = true;
         }
@@ -162,7 +162,7 @@ func:main = int32(cstring[]:argv) {
             nio_line(@ew, "npkc: cannot write the output file") ?| NIL;
             exit 2i32;
         }
-        drop wild_release_all();
+        wild_release_all();
         exit 0i32;
     }
     // The IR is BYTES already carrying its `\n`s — the byte path, not a text
@@ -174,7 +174,7 @@ func:main = int32(cstring[]:argv) {
         nio_line(@ew, "npkc: cannot write the IR to stdout") ?| NIL;
         exit 2i32;
     }
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

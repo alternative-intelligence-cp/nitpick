@@ -74,7 +74,7 @@ async func:wr_exact = NIL(wild int8->:buf, int64:need) {
 
 async func:main = int32(cstring[]:_~argv) {
     wild int8->:buf = alloc(64i64);
-    defer { drop dalloc(buf); }
+    defer { dalloc(buf); }
 
     // INIT_REQ (28 bytes) with the memfd riding SCM_RIGHTS — recvmsg after
     // readiness, so the NONBLOCK socket cannot EAGAIN the one receive that
@@ -100,7 +100,7 @@ async func:main = int32(cstring[]:_~argv) {
     wild int8->:st = calloc(1i64, 144i64);
     Result<int64>:fs = sys(raw SYS_FSTAT(), rv.rfd, st);
     int64:stsz = <-(#ptr_add<int64>(st, 6i64));
-    drop dalloc(st);
+    dalloc(st);
     if (fs.is_error)   { exit 6i32; }
     if (stsz != shsz)  { exit 6i32; }
 

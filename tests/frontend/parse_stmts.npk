@@ -236,10 +236,10 @@ func:main = int32(cstring[]:_~argv) {
     // --- exits, traps, and the rest -------------------------------------------
     // `raw`, not `relay`: `relay` is illegal in `main`, which returns a bare
     // `int32` and leaves through `exit`, so there is no Result to relay into.
-    string:src1 = raw string_concat(
+    string:src1 = string_concat(
         "{ pass; pass 1i32; fail 3i32; return r; exit 0i32; !!! 9i32; ",
         "defer { f(); } discard(g()); prove(a); assert_static(b); ");
-    string:src = raw string_concat(src1, "continue; give 4i32; fall two; }");
+    string:src = string_concat(src1, "continue; give 4i32; fall two; }");
     TokenList:kl = raw lex_all(0i32, src, @it, @ld);
     Ast:al = raw ast_init();
     DiagList:gl = raw diaglist_init();
@@ -296,9 +296,9 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw p_parse_stmt(@po));
     if (raw diaglist_count(@go) == 0i64)                 { exit 102i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

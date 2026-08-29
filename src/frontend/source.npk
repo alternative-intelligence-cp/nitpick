@@ -114,7 +114,7 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
         fail FileUnknown;
     }
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (raw string_from_bytes(m.files[file => int64].path.ptr, m.files[file => int64].path.len));
+    pass (string_from_bytes(m.files[file => int64].path.ptr, m.files[file => int64].path.len));
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
@@ -128,7 +128,7 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     // owns every source body for the process's life, and a caller's flagged
     // Result local dropping a cap-carrying copy freed the file out from under
     // the interns, the spans, and the lexer itself.
-    pass (raw string_from_bytes(m.files[file => int64].text.ptr,
+    pass (string_from_bytes(m.files[file => int64].text.ptr,
                                 m.files[file => int64].text.len));
 };
 
@@ -172,5 +172,5 @@ pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails 
 pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
     Result<string>:r = srcmgr_text(m, file);
     if (r.is_error) { !!! FileUnknown; }
-    pass (raw string_from_bytes(r.value.ptr, r.value.len));
+    pass (string_from_bytes(r.value.ptr, r.value.len));
 };

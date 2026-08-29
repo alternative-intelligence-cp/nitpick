@@ -32,8 +32,8 @@ func:build = NIL(IrWriter->:w) never fails {
     drop irw_begin_function(w);
     string:a = raw irw_temp(w);
     string:b = raw irw_temp(w);
-    drop irw_line(w, raw string_concat(a, " = alloca i32"));
-    drop irw_line(w, raw string_concat(b, " = load i32, ptr %0"));
+    drop irw_line(w, string_concat(a, " = alloca i32"));
+    drop irw_line(w, string_concat(b, " = load i32, ptr %0"));
     drop irw_label(w, raw irw_new_label(w, "bb"));
     drop irw_line(w, "ret i32 0");
     drop irw_raw(w, "}");
@@ -89,9 +89,9 @@ func:main = int32(cstring[]:_~argv) {
     // And it definitely grew: the buffer starts at 4096.
     if ((raw irw_length(@big)) <= 4096i64)                         { exit 41i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

@@ -32,7 +32,11 @@ func:all_forms = int32(func int32(int32) never fails:fp, dyn Loud:l, Dog:d) neve
     int32:b2 = raw d.bark();                // inherent method (UFCS shape)
     int32:c = raw l.speak();                // dyn — the TRAIT declares it
     int32:e = raw fp(2i32);                 // function pointer of marked type
-    int64:g = raw string_byte_length("xy"); // never-fails builtin
+    // (A never-fails BUILTIN was the seventh licensed form until 1.4.2.
+    // D-201 types its call as the bare value, so there is no envelope for
+    // `raw` to remove and the keyword is refused there like anywhere else;
+    // `tests/types/rejection/builtin_args.npk` asserts the refusal.)
+    int64:g = string_byte_length("xy"); // no keyword: no envelope
     int32:h = raw nf_id::<int32>(3i32);     // generic instantiation
     drop nf_effect(4i32);                   // the void call
     pass a + b + b2 + c + e + (g =>! int32) + h;

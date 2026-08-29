@@ -84,9 +84,13 @@ BUILTINS = {
     "calloc":        (T.Ptr(T.Prim("int8")), False),
     "ralloc":        (T.Ptr(T.Prim("int8")), False),
     "dalloc":        (T.NIL, False),
-    "buffer_new":    (T.STRING, True),
-    "string_concat": (T.STRING, True),
-    "int_to_string": (T.STRING, True),
+    # THE THREE ENVELOPE-RETURNING NEVER-FAILS BUILTINS (D-201, 1.4.2). Their
+    # symbols still answer `{ T, i32 }` -- the floor's ABI is untouched -- but
+    # the CALL is the bare value, so nothing here unwraps and the emitter takes
+    # the value half at the site. `emit.ENVELOPE` names the same three.
+    "buffer_new":    (T.STRING, False),
+    "string_concat": (T.STRING, False),
+    "int_to_string": (T.STRING, False),
     # The fd quartet (D-141): one syscall each, Result-wrapped, E_EOF for
     # end-of-input. `open` returns the fd TYPE, not a number (D-042).
     "open":          (T.Prim("fd"), True),
@@ -386,6 +390,16 @@ class Checker:
             e = st.expr
             keyworded = (isinstance(e, S.ResultUnary) and e.op in ("drop", "relay")) \
                 or isinstance(e, (S.Emphatic, S.SafeUnwrap))
+            # A NEVER-FAILS BUILTIN RETURNING NOTHING IS A STATEMENT (D-201,
+            # 1.4.2). `drop` removes an envelope on the strength of a contract,
+            # and after P-3 a builtin's call has no envelope to remove: the
+            # spelling is `dalloc(p);`, exactly as it reads. The real checker
+            # reaches the same answer through the general rules -- its type is
+            # `NIL`, so nothing is discarded -- rather than through a name list.
+            if isinstance(e, S.Call) and isinstance(e.callee, S.Ident):
+                b = BUILTINS.get(e.callee.name)
+                if b is not None and b == (T.NIL, False):
+                    keyworded = True
             if not keyworded:
                 if isinstance(e, S.ResultUnary) and e.op == "raw":
                     raise CheckError("`raw f()` in statement position discards "

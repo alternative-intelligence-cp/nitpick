@@ -32,7 +32,7 @@ async func:tick = int32(int32:v) {
 
 // An owning local crossing the await and used after it.
 async func:crossed = int32() {
-    string:s = relay string_concat("abcde", "");
+    string:s = string_concat("abcde", "");
     int32:r = relay await tick(10i32);
     pass (r + (s.len =>! int32));            // 11 + 5
 };
@@ -40,7 +40,7 @@ async func:crossed = int32() {
 // The WIDENING case: `s`'s last mention is before the await, but its scope
 // closes after — the drop at the closing brace is a use the text never shows.
 async func:widened = int32() {
-    string:s = relay string_concat("xy", "");
+    string:s = string_concat("xy", "");
     int32:k = (s.len =>! int32);             // last mention, before the await
     int32:r = relay await tick(k);           // 3
     pass r;
@@ -64,7 +64,7 @@ async func:hands_on = int32(move string:t) {
 // true branch `s` moves into a consuming coroutine (flag cleared, no drop at
 // exit); on the false branch it stays owned and drops at the closing brace.
 async func:cond_move = int32(bool:b) {
-    string:s = relay string_concat("pq", "");
+    string:s = string_concat("pq", "");
     int32:pre = 0i32;
     if (b) { pre = relay await takes(move(s)); }
     int32:r = relay await tick(pre);
@@ -76,7 +76,7 @@ async func:looped = int32() {
     int32:acc = 0i32;
     int32:i = 0i32;
     while (i < 50i32) {
-        string:s = relay string_concat("abc", "");
+        string:s = string_concat("abc", "");
         int32:r = relay await tick(s.len =>! int32);   // 4
         acc = acc + r;
         i = i + 1i32;
@@ -87,7 +87,7 @@ async func:looped = int32() {
 // A `dyn` cell crossing an await: the fat pointer is frame-resident and the
 // cell it owns drops at completion.
 async func:dynned = int32() {
-    Loud:l = Loud{ name: relay string_concat("nm", ""), v: 6i32 };
+    Loud:l = Loud{ name: string_concat("nm", ""), v: 6i32 };
     dyn Speaks:d = move(l);
     int32:r = relay await tick(0i32);         // 1
     pass r + (d.say() ?! E9);                 // 1 + 6

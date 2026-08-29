@@ -413,14 +413,14 @@ func:arg_satisfies = bool(ImplTable->:impls, BoundTable->:bounds,
 func:bound_unmet = NIL(TypeResolver->:r, int32:arg, int32:need, DeclId:gpid,
                        DeclNode:owner, Span:at) never fails {
     DeclNode:gp = raw ast_decl(r.ast, gpid);
-    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, arg));
-    string:m2 = raw string_concat(m1, "` does not implement `");
-    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, need));
-    string:m4 = raw string_concat(m3, "`, which `");
-    string:m5 = raw string_concat(m4, raw intern_get(r.interns, raw decl_name(owner)));
-    string:m6 = raw string_concat(m5, "`'s parameter `");
-    string:m7 = raw string_concat(m6, raw intern_get(r.interns, raw decl_name(gp)));
+    string:m1 = string_concat("`", raw type_display(r.types, r.interns, arg));
+    string:m2 = string_concat(m1, "` does not implement `");
+    string:m3 = string_concat(m2, raw type_display(r.types, r.interns, need));
+    string:m4 = string_concat(m3, "`, which `");
+    string:m5 = string_concat(m4, raw intern_get(r.interns, raw decl_name(owner)));
+    string:m6 = string_concat(m5, "`'s parameter `");
+    string:m7 = string_concat(m6, raw intern_get(r.interns, raw decl_name(gp)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_BOUND_UNMET(),
-        raw string_concat(m7, "` requires"), at));
+        string_concat(m7, "` requires"), at));
     pass NIL;
 };

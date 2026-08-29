@@ -12,8 +12,8 @@ func:main = int32(cstring[]:_~argv) {
     wild int64->:cell = buf =>! wild int64->;
     atomic<int64>:stored = atomic_from_ptr::<int64>(cell);
     stored = atomic_from_ptr::<int64>(cell);
-    drop dalloc(buf);
-    drop wild_release_all();
+    dalloc(buf);
+    wild_release_all();
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

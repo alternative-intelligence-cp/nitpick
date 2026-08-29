@@ -35,7 +35,7 @@ func:keeps_what_it_borrowed = NIL(Box->:b, string:text) never fails {
 // cannot be is silent.
 // expect-error: NITPICK-TYPE-046
 func:copies_an_owner = int32() {
-    string:built = relay string_concat("ab", "cd");
+    string:built = string_concat("ab", "cd");
     string:second = built;
     pass ((built.len + second.len) =>! int32);
 };
@@ -62,7 +62,7 @@ func:copies_a_dyn = int32() never fails {
 // expect-error: NITPICK-TYPE-046
 async func:sends_a_copy = NIL() {
     Channel<string, 1i32, 8i64>:ch = channel() ?! Unreachable;
-    string:s = relay string_concat("a", "b");
+    string:s = string_concat("a", "b");
     await ch.send(s, raw duration_ms(1i64)) ?! Unreachable;
     pass NIL;
 };

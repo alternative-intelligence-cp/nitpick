@@ -34,10 +34,10 @@ async func:looper = int32(int32:n) {
 };
 
 async func:main = int32(cstring[]:_~argv) {
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     int32:a = await chain(0i32) ?| 0i32;      // 2, two 10ms parks
     int32:b = await looper(3i32) ?| 0i32;     // 6, three 5ms parks
-    int64:dt = (raw mono_now()) - t0;
+    int64:dt = (mono_now()) - t0;
     if (dt < 30000000i64) { exit 11i32; }     // every park really parked
     exit (a * 10i32) + b + 16i32;             // 20 + 6 + 16 = 42
 };

@@ -178,9 +178,9 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         if (bt == 0i32) { pass NIL; }
         if (raw type_is_invalid(r.types, bt)) { pass NIL; }
         if ((raw type_kind(r.types, bt)) != (raw TY_TRAIT())) {
-            string:n1 = raw string_concat("`", raw type_display(r.types, r.interns, bt));
+            string:n1 = string_concat("`", raw type_display(r.types, r.interns, bt));
             drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                raw string_concat(n1, "` is not a trait, so it cannot be the trait a blanket impl provides"),
+                string_concat(n1, "` is not a trait, so it cannot be the trait a blanket impl provides"),
                 d.span));
             pass NIL;
         }
@@ -216,15 +216,15 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
             if (!(raw type_is_invalid(r.types, as_trait))) {
                 if ((raw type_kind(r.types, as_trait)) == (raw TY_TRAIT())) {
                     r.generics = isaved;
-                    string:o1 = raw string_concat("`",
+                    string:o1 = string_concat("`",
                         raw type_display(r.types, r.interns, as_trait));
-                    string:o2 = raw string_concat(o1,
+                    string:o2 = string_concat(o1,
                         "` is a trait where an impl's target belongs; a blanket impl names its parameter as the target now (D-171) — write `impl:<T: Bound>:T:");
-                    string:o3 = raw string_concat(o2,
+                    string:o3 = string_concat(o2,
                         raw type_display(r.types, r.interns, as_trait));
                     drop diaglist_push(r.diags,
                         raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                            raw string_concat(o3, "`"), d.span));
+                            string_concat(o3, "`"), d.span));
                     pass NIL;
                 }
             }
@@ -259,8 +259,8 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // well-formed and means nothing; saying which segment is wrong is the whole
     // value of the diagnostic, since the two are one character apart.
     if ((raw type_kind(r.types, trait_id)) != (raw TY_TRAIT())) {
-        string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, trait_id));
-        string:m2 = raw string_concat(m1,
+        string:m1 = string_concat("`", raw type_display(r.types, r.interns, trait_id));
+        string:m2 = string_concat(m1,
             "` is not a trait, so it cannot be implemented; in `impl:Type:Trait` the type comes first (D-031)");
         drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), move(m2), d.span));
         pass NIL;
@@ -378,20 +378,20 @@ func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) n
         }
     }
 
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, second.trait_id));
-    string:m2 = raw string_concat(m1, "` is already implemented for `");
-    string:m3 = raw string_concat(m2,
+    string:m2 = string_concat(m1, "` is already implemented for `");
+    string:m3 = string_concat(m2,
                     raw type_display(r.types, r.interns, first.target));
-    string:m4 = raw string_concat(m3, "` at line ");
-    string:m5 = raw string_concat(m4,
-                    raw int_to_string(first_d.span.line => int64));
-    string:m6 = raw string_concat(m5, ", which ");
-    string:m7 = raw string_concat(m6, fr);
-    string:m8 = raw string_concat(m7, "; this impl ");
-    string:m9 = raw string_concat(m8, sr);
+    string:m4 = string_concat(m3, "` at line ");
+    string:m5 = string_concat(m4,
+                    int_to_string(first_d.span.line => int64));
+    string:m6 = string_concat(m5, ", which ");
+    string:m7 = string_concat(m6, fr);
+    string:m8 = string_concat(m7, "; this impl ");
+    string:m9 = string_concat(m8, sr);
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
-        raw string_concat(m9,
+        string_concat(m9,
             " — with no specialization there is no rule to choose by (D-064 §7), so the two overlap rather than one winning"),
         second_d.span));
     pass NIL;
@@ -406,12 +406,12 @@ func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
     DeclId:sid = DeclId{ index: second.decl };
     DeclNode:second_d = raw ast_decl(r.ast, sid);
 
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, second.trait_id));
-    string:m2 = raw string_concat(m1, "` already has a blanket impl at line ");
-    string:m3 = raw string_concat(m2, raw int_to_string(first_d.span.line => int64));
+    string:m2 = string_concat(m1, "` already has a blanket impl at line ");
+    string:m3 = string_concat(m2, int_to_string(first_d.span.line => int64));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
-        raw string_concat(m3,
+        string_concat(m3,
             "; a blanket impl applies to every type satisfying its bound, and nothing stops a type satisfying both bounds — with no specialization there is no rule to choose by (D-064)"),
         second_d.span));
     pass NIL;
@@ -426,13 +426,13 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
     DeclId:sid = DeclId{ index: second.decl };
     DeclNode:second_d = raw ast_decl(r.ast, sid);
 
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, second.trait_id));
-    string:m2 = raw string_concat(m1, "` is already implemented for `");
-    string:m3 = raw string_concat(m2,
+    string:m2 = string_concat(m1, "` is already implemented for `");
+    string:m3 = string_concat(m2,
                     raw type_display(r.types, r.interns, second.target));
-    string:m4 = raw string_concat(m3, "` at line ");
-    string:m5 = raw string_concat(m4, raw int_to_string(first_d.span.line => int64));
+    string:m4 = string_concat(m3, "` at line ");
+    string:m5 = string_concat(m4, int_to_string(first_d.span.line => int64));
 
     // ONE OF THE TWO MAY HAVE BEEN GENERATED, and saying so is the difference
     // between a useful sentence and one that sends the reader looking for an `impl`
@@ -446,7 +446,7 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
         tail = "; `#[derive]` generated one of them, and a trait has at most one implementation per type — remove the derive, or the impl";
     }
     drop diaglist_push(r.diags,
-        raw diag_error(raw TYPE_COHERENCE(), raw string_concat(m5, tail),
+        raw diag_error(raw TYPE_COHERENCE(), string_concat(m5, tail),
                        second_d.span));
     pass NIL;
 };
@@ -671,11 +671,11 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
 };
 
 func:bound_not_trait = NIL(TypeResolver->:r, DeclNode:g, int32:bound_id) never fails {
-    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, bound_id));
-    string:m2 = raw string_concat(m1, "` is not a trait, so it cannot bound `");
-    string:m3 = raw string_concat(m2, raw intern_get(r.interns, raw decl_name(g)));
+    string:m1 = string_concat("`", raw type_display(r.types, r.interns, bound_id));
+    string:m2 = string_concat(m1, "` is not a trait, so it cannot bound `");
+    string:m3 = string_concat(m2, raw intern_get(r.interns, raw decl_name(g)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-        raw string_concat(m3,
+        string_concat(m3,
             "`; a bound names the traits the parameter must implement, and a parameter binds to exactly one type rather than to types resembling one"),
         g.span));
     pass NIL;
@@ -1243,24 +1243,24 @@ func:trait_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind
 
 func:missing_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:idl, DeclNode:m,
                          string:what) never fails {
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, e.trait_id));
-    string:m2 = raw string_concat(m1, "` requires ");
-    string:m3 = raw string_concat(m2, what);
-    string:m4 = raw string_concat(m3, " `");
-    string:m5 = raw string_concat(m4, raw intern_get(r.interns, raw decl_name(m)));
+    string:m2 = string_concat(m1, "` requires ");
+    string:m3 = string_concat(m2, what);
+    string:m4 = string_concat(m3, " `");
+    string:m5 = string_concat(m4, raw intern_get(r.interns, raw decl_name(m)));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        raw string_concat(m5, "`, and this impl does not supply it"), idl.span));
+        string_concat(m5, "`, and this impl does not supply it"), idl.span));
     pass NIL;
 };
 
 func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) never fails {
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw intern_get(r.interns, raw decl_name(m)));
-    string:m2 = raw string_concat(m1, "` is not ");
-    string:m3 = raw string_concat(m2, raw a_or_an(what));
-    string:m4 = raw string_concat(m3, " of `");
-    string:m5 = raw string_concat(m4,
+    string:m2 = string_concat(m1, "` is not ");
+    string:m3 = string_concat(m2, raw a_or_an(what));
+    string:m4 = string_concat(m3, " of `");
+    string:m5 = string_concat(m4,
                     raw type_display(r.types, r.interns, e.trait_id));
     // A METHOD WITH NO TRAIT BEHIND IT belongs in an inherent block; an
     // ASSOCIATED TYPE with none belongs nowhere — it is declared in the trait
@@ -1272,7 +1272,7 @@ func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) n
         tail = "`; an associated type is declared in the trait (`assoc:Item;`) and bound in its impls, and this trait declares no such name";
     }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        raw string_concat(m5, tail), m.span));
+        string_concat(m5, tail), m.span));
     pass NIL;
 };
 
@@ -1352,11 +1352,11 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     // contract is compared here, by name.
     if (raw func_never_fails(r.types, want)) {
         if (!(raw func_never_fails(r.types, got))) {
-            string:nf1 = raw string_concat("`",
+            string:nf1 = string_concat("`",
                 raw intern_get(r.interns, raw decl_name(f)));
             drop diaglist_push(r.diags,
                 raw diag_error(raw TYPE_NEVER_FAILS_IMPL(),
-                    raw string_concat(nf1,
+                    string_concat(nf1,
                         "` drops the `never fails` its trait declares (D-163); the impl must keep the contract"),
                     im.span));
             pass NIL;
@@ -1373,23 +1373,23 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     bool:t_async = raw decl_has(tf, raw DECL_ASYNC());
     bool:i_async = raw decl_has(f, raw DECL_ASYNC());
     if (t_async != i_async) {
-        string:as1 = raw string_concat("`",
+        string:as1 = string_concat("`",
             raw intern_get(r.interns, raw decl_name(f)));
         string:as2 = "` and its trait declaration disagree about `async` (1.1.12b): the caller's call form follows the trait's word, so the impl must keep it";
         drop diaglist_push(r.diags,
             raw diag_error(raw TYPE_ASYNC_IMPL(),
-                raw string_concat(as1, as2), im.span));
+                string_concat(as1, as2), im.span));
         pass NIL;
     }
     SigCtx:sc = SigCtx{ target: e.target, impl_decl: e.decl, scope: scope };
     if (raw same_signature(r, want, got, sc)) { pass NIL; }
 
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw intern_get(r.interns, raw decl_name(f)));
-    string:m2 = raw string_concat(m1, "` does not have the signature `");
-    string:m3 = raw string_concat(m2,
+    string:m2 = string_concat(m1, "` does not have the signature `");
+    string:m3 = string_concat(m2,
                     raw type_display(r.types, r.interns, e.trait_id));
-    string:m4 = raw string_concat(m3, "` declares for it");
+    string:m4 = string_concat(m3, "` declares for it");
     drop diaglist_push(r.diags,
         raw diag_error(raw TYPE_IMPL_INCOMPLETE(), move(m4), im.span));
     pass NIL;
@@ -1823,11 +1823,11 @@ func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
 };
 
 func:super_not_trait = NIL(TypeResolver->:r, int32:trait_id, int32:sup, Span:at) never fails {
-    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, sup));
-    string:m2 = raw string_concat(m1, "` is not a trait, so `");
-    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, trait_id));
+    string:m1 = string_concat("`", raw type_display(r.types, r.interns, sup));
+    string:m2 = string_concat(m1, "` is not a trait, so `");
+    string:m3 = string_concat(m2, raw type_display(r.types, r.interns, trait_id));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
-        raw string_concat(m3, "` cannot require it; a supertrait clause names traits"),
+        string_concat(m3, "` cannot require it; a supertrait clause names traits"),
         at));
     pass NIL;
 };
@@ -1835,13 +1835,13 @@ func:super_not_trait = NIL(TypeResolver->:r, int32:trait_id, int32:sup, Span:at)
 func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:sup) never fails {
     DeclId:iid = DeclId{ index: e.decl };
     DeclNode:idl = raw ast_decl(r.ast, iid);
-    string:m1 = raw string_concat("`", raw type_display(r.types, r.interns, trait_id));
-    string:m2 = raw string_concat(m1, "` requires `");
-    string:m3 = raw string_concat(m2, raw type_display(r.types, r.interns, sup));
-    string:m4 = raw string_concat(m3, "`, and `");
-    string:m5 = raw string_concat(m4, raw type_display(r.types, r.interns, e.target));
+    string:m1 = string_concat("`", raw type_display(r.types, r.interns, trait_id));
+    string:m2 = string_concat(m1, "` requires `");
+    string:m3 = string_concat(m2, raw type_display(r.types, r.interns, sup));
+    string:m4 = string_concat(m3, "`, and `");
+    string:m5 = string_concat(m4, raw type_display(r.types, r.interns, e.target));
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        raw string_concat(m5, "` does not implement it"), idl.span));
+        string_concat(m5, "` does not implement it"), idl.span));
     pass NIL;
 };
 
@@ -1962,18 +1962,18 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never
 // `dup_within` too, which runs on EVERY impl, trait impls included.
 func:dup_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:first,
                      DeclNode:second, bool:across) never fails {
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw intern_get(r.interns, raw decl_name(second)));
-    string:m2 = raw string_concat(m1, "` is already a method of `");
-    string:m3 = raw string_concat(m2,
+    string:m2 = string_concat(m1, "` is already a method of `");
+    string:m3 = string_concat(m2,
                     raw type_display(r.types, r.interns, e.target));
-    string:m4 = raw string_concat(m3, "`, declared at line ");
-    string:m5 = raw string_concat(m4, raw int_to_string(first.span.line => int64));
+    string:m4 = string_concat(m3, "`, declared at line ");
+    string:m5 = string_concat(m4, int_to_string(first.span.line => int64));
     string:tail = "; a name may be declared once in an impl block";
     if (across) {
         tail = "; two inherent blocks are one namespace, so a name may be declared in only one of them";
     }
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
-        raw string_concat(m5, tail), second.span));
+        string_concat(m5, tail), second.span));
     pass NIL;
 };

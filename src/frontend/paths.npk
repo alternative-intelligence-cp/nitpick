@@ -73,11 +73,11 @@ pub func:path_basename = string(string:p) never fails {
 
 pub func:path_join = string(string:dir, string:rest) never fails {
     // cloned, not passed through: the parameter is lent (D-183)
-    if (dir.len == 0i64) { pass (raw string_concat(rest, "")); }
-    if (rest.len == 0i64) { pass (raw string_concat(dir, "")); }
-    if (raw path_is_absolute(rest)) { pass (raw string_concat(rest, "")); }
-    string:withslash = raw string_concat(dir, "/");
-    pass (raw string_concat(withslash, rest));
+    if (dir.len == 0i64) { pass (string_concat(rest, "")); }
+    if (rest.len == 0i64) { pass (string_concat(dir, "")); }
+    if (raw path_is_absolute(rest)) { pass (string_concat(rest, "")); }
+    string:withslash = string_concat(dir, "/");
+    pass (string_concat(withslash, rest));
 };
 
 // Collapse `.` and `..` segments and duplicate slashes.
@@ -91,7 +91,7 @@ pub func:path_join = string(string:dir, string:rest) never fails {
 // it to fold into, and dropping it would silently change which file is meant.
 pub func:path_normalise = string(string:p) never fails {
     // cloned, not passed through: the parameter is lent (D-183)
-    if (p.len == 0i64) { pass (raw string_concat(p, "")); }
+    if (p.len == 0i64) { pass (string_concat(p, "")); }
 
     bool:absolute = raw path_is_absolute(p);
     wild int8->:buf = alloc(p.len + 2i64);
@@ -182,9 +182,9 @@ pub func:path_normalise = string(string:p) never fails {
     // Drop the trailing separator the loop always appends.
     if (out > 0i64) { out = out - 1i64; }
 
-    string:body = raw string_from_bytes(buf, out);
+    string:body = string_from_bytes(buf, out);
     if (absolute) {
-        pass (raw string_concat("/", body));
+        pass (string_concat("/", body));
     }
     if (out == 0i64) {
         // Everything cancelled: `a/..` is the current directory.

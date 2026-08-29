@@ -695,7 +695,7 @@ func:main = int32(cstring[]:_~argv) {
         @it);
     if (raw errs(@k11) != 0i64)                                 { exit 124i32; }
 
-    drop wild_release_all();
+    wild_release_all();
     pass 0i32;
 };
 
@@ -707,16 +707,16 @@ func:nested_generic = string(int32:depth) never fails {
     string:s = "struct:C<T> = { T:v; }; func:f = NIL() never fails { ";
     int32:i = 0i32;
     while (i < depth) {
-        s = raw string_concat(s, "C< ");
+        s = string_concat(s, "C< ");
         i = i + 1i32;
     }
-    s = raw string_concat(s, "int32");
+    s = string_concat(s, "int32");
     int32:j = 0i32;
     while (j < depth) {
-        s = raw string_concat(s, " >");
+        s = string_concat(s, " >");
         j = j + 1i32;
     }
-    pass (raw string_concat(s, ":x; pass NIL; };"));
+    pass (string_concat(s, ":x; pass NIL; };"));
 };
 
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the

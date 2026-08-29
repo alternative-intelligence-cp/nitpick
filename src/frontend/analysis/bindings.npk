@@ -1416,18 +1416,18 @@ func:check_nodrop_quals = NIL(Assign->:x, int32:q, Span:at,
     // on a managed binding is.
     if (!is_param) {
         if ((q & (raw QUAL_MOVE())) != 0i32) {
-            string:mm = raw string_concat("`move` states that a caller transferred ownership into this binding, and ", what);
+            string:mm = string_concat("`move` states that a caller transferred ownership into this binding, and ", what);
             drop assign_err(x, raw MOVE_QUAL_NOT_PARAM(),
-                raw string_concat(mm, " has no caller — only a parameter does"),
+                string_concat(mm, " has no caller — only a parameter does"),
                 at);
         }
     }
     if ((q & (raw QUAL_NODROP())) == 0i32) { pass NIL; }
     int32:manual = (raw QUAL_WILD()) | (raw QUAL_WILDX());
     if ((q & manual) != 0i32) { pass NIL; }
-    string:m1 = raw string_concat("`nodrop` suppresses the drop of a manual allocation, and ", what);
+    string:m1 = string_concat("`nodrop` suppresses the drop of a manual allocation, and ", what);
     drop assign_err(x, raw MOVE_NODROP_MANAGED(),
-        raw string_concat(m1, " that is not `wild` or `wildx` has none to suppress"),
+        string_concat(m1, " that is not `wild` or `wildx` has none to suppress"),
         at);
     pass NIL;
 };

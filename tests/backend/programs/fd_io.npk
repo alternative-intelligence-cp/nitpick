@@ -40,7 +40,7 @@ func:main = int32(cstring[]:_~argv) {
     Result<int64>:got = read(src, buf, 64i64);
     if (got.is_error)                                 { exit 16i32; }
     if (got.value != body.len)                        { exit 17i32; }
-    string:back = raw string_from_bytes(buf, got.value);
+    string:back = string_from_bytes(buf, got.value);
     if (!(string_equals(back, body)))                 { exit 18i32; }
 
     // The stream is exhausted: E_EOF, as a code, with its value pinned.
@@ -56,9 +56,9 @@ func:main = int32(cstring[]:_~argv) {
     Result<NIL>:c2 = close(src);
     if (c2.is_error)                                  { exit 23i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

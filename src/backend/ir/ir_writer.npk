@@ -248,13 +248,13 @@ pub func:irw_label = NIL(IrWriter->:w, string:name) never fails {
 // future lowering must maintain into a rule nobody has to remember. The seed uses
 // `%tN` for the same reason.
 pub func:irw_temp = string(IrWriter->:w) never fails {
-    string:t = raw string_concat("%t", raw int_to_string(w.next_temp => int64));
+    string:t = string_concat("%t", int_to_string(w.next_temp => int64));
     w.next_temp = w.next_temp + 1i32;
     pass t;
 };
 
 pub func:irw_new_label = string(IrWriter->:w, string:stem) never fails {
-    string:l = raw string_concat(stem, raw int_to_string(w.next_label => int64));
+    string:l = string_concat(stem, int_to_string(w.next_label => int64));
     w.next_label = w.next_label + 1i32;
     pass l;
 };
@@ -292,7 +292,7 @@ pub func:irw_clean_since_mark = bool(IrWriter->:w) never fails {
 // would be two compilers emitting calls to two different symbols.
 pub func:ir_symbol = string(string:name) never fails {
     if (raw string_eq(name, "main")) { pass "@main"; }
-    pass (raw string_concat("@npk_", name));
+    pass (string_concat("@npk_", name));
 };
 
 // --- building a line --------------------------------------------------------------
@@ -303,15 +303,15 @@ pub func:ir_symbol = string(string:name) never fails {
 // definition to it, and two copies of a helper is one more than the truth needs.
 
 pub func:cat3 = string(string:a, string:b, string:c) never fails {
-    pass (raw string_concat(raw string_concat(a, b), c));
+    pass (string_concat(string_concat(a, b), c));
 };
 
 pub func:cat4 = string(string:a, string:b, string:c, string:d) never fails {
-    pass (raw string_concat(raw cat3(a, b, c), d));
+    pass (string_concat(raw cat3(a, b, c), d));
 };
 
 pub func:cat5 = string(string:a, string:b, string:c, string:d, string:e) never fails {
-    pass (raw string_concat(raw cat4(a, b, c, d), e));
+    pass (string_concat(raw cat4(a, b, c, d), e));
 };
 
 // --- reading it back --------------------------------------------------------------
@@ -331,14 +331,14 @@ pub func:irw_text = string(IrWriter->:w) never fails {
     // (a unit test emitting expressions and checking the text) must assemble
     // the view: `out`, then the hoisted allocas, then the body. Outside a
     // function both are empty of anything current and `out` holds it all.
-    string:t = raw string_from_bytes(w.out.buf, w.out.len);
-    t = raw string_concat(t, raw string_from_bytes(w.types.buf, w.types.len));
-    t = raw string_concat(t, raw string_from_bytes(w.tail.buf, w.tail.len));
+    string:t = string_from_bytes(w.out.buf, w.out.len);
+    t = string_concat(t, string_from_bytes(w.types.buf, w.types.len));
+    t = string_concat(t, string_from_bytes(w.tail.buf, w.tail.len));
     if (w.in_fn) {
-        t = raw string_concat(t,
-                raw string_from_bytes(w.allocas.buf, w.allocas.len));
-        t = raw string_concat(t,
-                raw string_from_bytes(w.body.buf, w.body.len));
+        t = string_concat(t,
+                string_from_bytes(w.allocas.buf, w.allocas.len));
+        t = string_concat(t,
+                string_from_bytes(w.body.buf, w.body.len));
     }
     pass t;
 };

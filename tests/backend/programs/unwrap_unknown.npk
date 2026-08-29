@@ -19,12 +19,12 @@ func:main = int32(cstring[]:_~argv) {
     cstring:missing = to_cstring("/nonexistent/npk_unwrap_unknown_probe") ?! EPath;
     // The error path takes the default...
     string:s = read_file(missing) ?| "fallback";
-    if (!(raw string_equals(s, "fallback"))) { exit 11i32; }
+    if (!(string_equals(s, "fallback"))) { exit 11i32; }
     // ...and the value path keeps the value: write a file, read it back.
     cstring:path = to_cstring(".internal/unwrap_unknown.tmp") ?! EPath;
     write_file(path, "payload") ?| NIL;
     string:back = read_file(path) ?| "";
-    if (!(raw string_equals(back, "payload"))) { exit 12i32; }
+    if (!(string_equals(back, "payload"))) { exit 12i32; }
     exit 42i32;
 };
 

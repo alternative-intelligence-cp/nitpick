@@ -21,10 +21,10 @@ thread async func:slow = NIL(int32:_~v) joins JOIN_5S {
     pass NIL;
 };
 async func:main = int32(cstring[]:_~argv) {
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     drop slow(1i32);
     await sleep(raw duration_ms(20i64)) ?| NIL;    // main finishes first
-    int64:mid = (raw mono_now()) - t0;
+    int64:mid = (mono_now()) - t0;
     if (mid > 90000000i64) { exit 11i32; }         // main was NOT blocked
     exit 42i32;                                     // scope exit must JOIN
 };

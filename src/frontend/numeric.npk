@@ -372,7 +372,7 @@ func:tfpq_decimal = string(wild uint64->:limbs) never fails {
             rem = t % 10u64;
             i = i - 1i64;
         }
-        acc = raw string_concat(raw int_to_string(rem =>! int64), acc);
+        acc = string_concat(int_to_string(rem =>! int64), acc);
     }
     pass acc;
 };
@@ -421,13 +421,13 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
 
     // --- the exponent moves the point ---
     if (ex > 350i64) {
-        drop dalloc(ints);
-        drop dalloc(frs);
+        dalloc(ints);
+        dalloc(frs);
         pass "";
     }
     if (ex < (0i64 - 350i64)) {
-        drop dalloc(ints);
-        drop dalloc(frs);
+        dalloc(ints);
+        dalloc(frs);
         pass "0";
     }
     while (ex > 0i64) {
@@ -522,17 +522,17 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
             if (up) { drop tfpq_add1(limbs); }
         }
     }
-    drop dalloc(ints);
-    drop dalloc(frs);
+    dalloc(ints);
+    dalloc(frs);
     if (over) {
-        drop dalloc(limbs);
+        dalloc(limbs);
         pass "";
     }
     if (!(raw tfpq_in_range(limbs, bits))) {
-        drop dalloc(limbs);
+        dalloc(limbs);
         pass "";
     }
     string:out = raw tfpq_decimal(limbs);
-    drop dalloc(limbs);
+    dalloc(limbs);
     pass out;
 };

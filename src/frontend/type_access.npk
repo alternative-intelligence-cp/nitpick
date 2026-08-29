@@ -64,9 +64,9 @@ pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) never fails {
     if ((raw type_kind(e.types, t)) != (raw TY_POINTER())) { pass t; }
     int32:inner = raw type_elem(e.types, t);
     if ((raw type_kind(e.types, inner)) == (raw TY_POINTER())) {
-        string:m1 = raw string_concat("`.` dereferences one level, and this is `",
+        string:m1 = string_concat("`.` dereferences one level, and this is `",
                                         raw type_display(e.types, e.interns, t));
-        string:m2 = raw string_concat(m1,
+        string:m2 = string_concat(m1,
             "`; write `<-` for the outer one so the indirection is visible");
         discard(raw te_error(e, raw TYPE_MISMATCH(), move(m2), at));
         pass 0i32;
@@ -109,9 +109,9 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) ne
     bool:optional = false;
     if (safe_nav) {
         if ((raw type_kind(e.types, base)) != (raw TY_OPTIONAL())) {
-            string:m1 = raw string_concat("`?.` needs an `Optional`, and this is `",
+            string:m1 = string_concat("`?.` needs an `Optional`, and this is `",
                                             raw type_display(e.types, e.interns, base));
-            string:m2 = raw string_concat(m1, "`; `.` is the plain access");
+            string:m2 = string_concat(m1, "`; `.` is the plain access");
             pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
         }
         base = raw type_elem(e.types, base);
@@ -187,12 +187,12 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
         if (s.inner == 0i32) { pass (raw ns_no()); }
         int32:m = raw scope_lookup_local(e.tab, s.inner, name);
         if (m == 0i32) {
-            string:m1 = raw string_concat("module `",
+            string:m1 = string_concat("module `",
                                             raw intern_get(e.interns, s.name));
-            string:m2 = raw string_concat(m1, "` has no member `");
-            string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
+            string:m2 = string_concat(m1, "` has no member `");
+            string:m3 = string_concat(m2, raw intern_get(e.interns, name));
             discard(raw te_error(e, raw TYPE_NO_METHOD(),
-                          raw string_concat(m3, "`"), n.span));
+                          string_concat(m3, "`"), n.span));
             pass (raw ns_yes(0i32));
         }
         Symbol:ms = raw symtab_get(e.tab, m);
@@ -236,8 +236,8 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
     // be wrong. Neither is in the prototype's source surface either.
     if (k == (raw TY_OPTIONAL())) {
         string:f = raw intern_get(e.interns, name);
-        string:g1 = raw string_concat("an `Optional` has no member `", f);
-        string:g2 = raw string_concat(g1,
+        string:g1 = string_concat("an `Optional` has no member `", f);
+        string:g2 = string_concat(g1,
             "`; `?? d` takes the value or a default, `?.` reaches through it, and `== NIL` asks whether it holds anything");
         pass (raw te_error(e, raw TYPE_MISMATCH(), move(g2), at));
     }
@@ -367,14 +367,14 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never f
 // the mismatch code, so a filter on "no such member" found the method cases
 // and not the field ones. An enum's missing variant says "variant".
 func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never fails {
-    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, base));
-    string:m2 = raw string_concat(m1, "` has no member `");
+    string:m1 = string_concat("`", raw type_display(e.types, e.interns, base));
+    string:m2 = string_concat(m1, "` has no member `");
     if ((raw type_kind(e.types, base)) == (raw TY_ENUM())) {
-        m2 = raw string_concat(m1, "` has no variant `");
+        m2 = string_concat(m1, "` has no variant `");
     }
-    string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
+    string:m3 = string_concat(m2, raw intern_get(e.interns, name));
     pass (raw te_error(e, raw TYPE_NO_METHOD(),
-                         raw string_concat(m3, "`"), at));
+                         string_concat(m3, "`"), at));
 };
 
 // --- indexing --------------------------------------------------------------------------
@@ -406,20 +406,20 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
                 pass (raw tt_slice(e.types, raw type_elem(e.types, base)));
             }
             if (bk == (raw TY_SLICE())) { pass base; }
-            string:r1 = raw string_concat("`",
+            string:r1 = string_concat("`",
                             raw type_display(e.types, e.interns, base));
             pass (raw te_error(e, raw TYPE_MISMATCH(),
-                      raw string_concat(r1, "` cannot be ranged"), n.span));
+                      string_concat(r1, "` cannot be ranged"), n.span));
         }
     }
 
     if (idx != 0i32) {
         if (!(raw type_is_invalid(e.types, idx))) {
             if (!(raw type_is_integer(e.types, idx))) {
-                string:m1 = raw string_concat("an index must be an integer, and this is `",
+                string:m1 = string_concat("an index must be an integer, and this is `",
                                                 raw type_display(e.types, e.interns, idx));
                 discard(raw te_error(e, raw TYPE_MISMATCH(),
-                              raw string_concat(m1, "`"), n.span));
+                              string_concat(m1, "`"), n.span));
             }
         }
     }
@@ -435,8 +435,8 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
     // constant.
     if (k == (raw TY_SIMD()))    { pass (raw type_elem(e.types, base)); }
 
-    string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, base));
-    string:m2 = raw string_concat(m1, "` cannot be indexed");
+    string:m1 = string_concat("`", raw type_display(e.types, e.interns, base));
+    string:m2 = string_concat(m1, "` cannot be indexed");
     pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
 };
 
@@ -514,14 +514,14 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         i = i + 1i32;
     }
     if (mdecl == 0i32) {
-        string:q1 = raw string_concat("`",
+        string:q1 = string_concat("`",
                         raw type_display(e.types, e.interns, recv));
-        string:q2 = raw string_concat(q1, "` does not implement `");
-        string:q3 = raw string_concat(q2, raw type_display(e.types, e.interns, trait_ty));
-        string:q4 = raw string_concat(q3, "`, or that trait has no method `");
-        string:q5 = raw string_concat(q4, raw intern_get(e.interns, mname));
+        string:q2 = string_concat(q1, "` does not implement `");
+        string:q3 = string_concat(q2, raw type_display(e.types, e.interns, trait_ty));
+        string:q4 = string_concat(q3, "`, or that trait has no method `");
+        string:q5 = string_concat(q4, raw intern_get(e.interns, mname));
         pass (raw te_error(e, raw TYPE_NO_METHOD(),
-                  raw string_concat(q5, "`"), n.span));
+                  string_concat(q5, "`"), n.span));
     }
 
     TypeResolver:r = raw etyper_resolver(e);
@@ -888,11 +888,11 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 }
                 if (!sok) {
                     ExprNode:sbn = raw ast_expr(e.ast, sa);
-                    string:sm1 = raw string_concat(
+                    string:sm1 = string_concat(
                         "an argument to `sys` must fit a kernel register — integer-family, a kernel identifier (`fd`, `pid`, …), or a pointer whose address becomes the register (1.1.12a); this is `",
                         raw type_display(e.types, e.interns, sat));
                     discard(raw te_error(e, raw TYPE_MISMATCH(),
-                        raw string_concat(sm1, "`"), sbn.span));
+                        string_concat(sm1, "`"), sbn.span));
                 }
                 sai = sai + 1i32;
             }
@@ -940,8 +940,8 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
     if (!(raw type_is_func(e.types, callee))) {
         drop type_args_only(e, start, count);
-        string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, callee));
-        string:m2 = raw string_concat(m1, "` is not a function");
+        string:m1 = string_concat("`", raw type_display(e.types, e.interns, callee));
+        string:m2 = string_concat(m1, "` is not a function");
         pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
     }
     // THE SIGNATURE TRAVELS ON THE CALL (1.0.6e): whatever `check_args` measures
@@ -970,10 +970,10 @@ func:type_variant_ctor = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
     ExprNode:cnode = raw ast_expr(e.ast, raw expr_callee(n));
     if (cnode.kind != ExprKind.ExprMemberAccessExpr) {
         drop type_args_only(e, start, count);
-        string:m1 = raw string_concat("`",
+        string:m1 = string_concat("`",
                         raw type_display(e.types, e.interns, enum_ty));
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-                  raw string_concat(m1, "` is not a function"), n.span));
+                  string_concat(m1, "` is not a function"), n.span));
     }
     pass (raw type_ctor_named(e, n, enum_ty, cnode.payload =>! int32,
                                 start, count));
@@ -1004,11 +1004,11 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
                              DeclNode:v, int32:start, int32:count) never fails {
     int32:want = raw variant_payload_count(v);
     if (count != want) {
-        string:m1 = raw string_concat("this variant carries ",
-                        raw int_to_string(want => int64));
-        string:m2 = raw string_concat(m1, " payload value(s) and this passes ");
+        string:m1 = string_concat("this variant carries ",
+                        int_to_string(want => int64));
+        string:m2 = string_concat(m1, " payload value(s) and this passes ");
         discard(raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(m2, raw int_to_string(count => int64)), n.span));
+            string_concat(m2, int_to_string(count => int64)), n.span));
         drop type_args_only(e, start, count);
         pass enum_ty;
     }
@@ -1100,11 +1100,11 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                                DeclNode:d, IdSpan:gp, int32:generic_ft,
                                int32:gcount, int32:start, int32:count) never fails {
     if (gcount > gp.count) {
-        string:m1 = raw string_concat("this call supplies ",
-                                        raw int_to_string(gcount => int64));
-        string:m2 = raw string_concat(m1, " type argument(s) and the function takes ");
+        string:m1 = string_concat("this call supplies ",
+                                        int_to_string(gcount => int64));
+        string:m2 = string_concat(m1, " type argument(s) and the function takes ");
         discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(m2, raw int_to_string(gp.count => int64)), n.span));
+            string_concat(m2, int_to_string(gp.count => int64)), n.span));
     }
 
     // THE SOLUTION SET IS A WINDOW, one slot per parameter, zero for unsolved.
@@ -1313,13 +1313,13 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
             ok = false;
             DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, i) };
             DeclNode:gpn = raw ast_decl(e.ast, gpid);
-            string:m1 = raw string_concat("`",
+            string:m1 = string_concat("`",
                             raw intern_get(e.interns, raw decl_name(gpn)));
-            string:m2 = raw string_concat(m1, "` cannot be inferred from this call to `");
-            string:m3 = raw string_concat(m2,
+            string:m2 = string_concat(m1, "` cannot be inferred from this call to `");
+            string:m3 = string_concat(m2,
                             raw intern_get(e.interns, raw decl_name(d)));
             discard(raw te_error(e, raw TYPE_CANNOT_INFER(),
-                raw string_concat(m3,
+                string_concat(m3,
                     "`; write it with the turbofish, which is the only expression-position form for an explicit type argument (D-064)"),
                 at));
         }
@@ -1455,12 +1455,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     MethodFind:found = raw find_method(e.impls, e.bounds, e.types, e.ast,
                                          e.interns, recv, name, e.self_trait);
     if (found.ambiguous) {
-        string:a1 = raw string_concat("`", raw intern_get(e.interns, name));
-        string:a2 = raw string_concat(a1, "` comes from both `");
-        string:a3 = raw string_concat(a2,
+        string:a1 = string_concat("`", raw intern_get(e.interns, name));
+        string:a2 = string_concat(a1, "` comes from both `");
+        string:a3 = string_concat(a2,
                         raw type_display(e.types, e.interns, found.owner));
-        string:a4 = raw string_concat(a3, "` and `");
-        string:a5 = raw string_concat(a4,
+        string:a4 = string_concat(a3, "` and `");
+        string:a5 = string_concat(a4,
                         raw type_display(e.types, e.interns, found.other));
         // NAME THE ONE YOU MEAN (D-172, 1.0.9b). D-102 promised "the
         // free-function form, which UFCS guarantees is available" — and no such
@@ -1469,18 +1469,18 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
         // advice names it — one form per trait, built from the two names already
         // in this message — rather than telling the author to give a method up.
         string:mname = raw intern_get(e.interns, name);
-        string:q1 = raw string_concat(a5, "`; name the one you mean — `");
-        string:q2 = raw string_concat(q1,
+        string:q1 = string_concat(a5, "`; name the one you mean — `");
+        string:q2 = string_concat(q1,
                         raw type_display(e.types, e.interns, found.owner));
-        string:q3 = raw string_concat(q2,
-                        raw string_concat(".", mname));
-        string:q4 = raw string_concat(q3, "(recv, …)` or `");
-        string:q5 = raw string_concat(q4,
+        string:q3 = string_concat(q2,
+                        string_concat(".", mname));
+        string:q4 = string_concat(q3, "(recv, …)` or `");
+        string:q5 = string_concat(q4,
                         raw type_display(e.types, e.interns, found.other));
-        string:q6 = raw string_concat(q5,
-                        raw string_concat(".", mname));
+        string:q6 = string_concat(q5,
+                        string_concat(".", mname));
         pass (raw te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
-            raw string_concat(q6, "(recv, …)` (D-172), or implement only one of the traits on this type"),
+            string_concat(q6, "(recv, …)` (D-172), or implement only one of the traits on this type"),
             n.span));
     }
     if (found.found) { did_index = found.decl; }
@@ -1524,12 +1524,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             // AND FOR A PARAMETER IT NAMES THE BOUNDS, because the fix is one of
             // two things and the reader has to be told which: either the call is
             // wrong, or the bound list is missing the trait that declares it.
-            string:m1 = raw string_concat("`", raw type_display(e.types, e.interns, recv));
-            string:m2 = raw string_concat(m1, "` has no method `");
-            string:m3 = raw string_concat(m2, raw intern_get(e.interns, name));
-            string:m4 = raw string_concat(m3, "`");
+            string:m1 = string_concat("`", raw type_display(e.types, e.interns, recv));
+            string:m2 = string_concat(m1, "` has no method `");
+            string:m3 = string_concat(m2, raw intern_get(e.interns, name));
+            string:m4 = string_concat(m3, "`");
             if (opaque_recv) {
-                m4 = raw string_concat(m4, raw bounds_note(e, recv));
+                m4 = string_concat(m4, raw bounds_note(e, recv));
             }
             pass (raw te_error(e, raw TYPE_NO_METHOD(), move(m4), n.span));
         }
@@ -1568,8 +1568,8 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     DeclId:did = DeclId{ index: did_index };
     DeclNode:d = raw ast_decl(e.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) {
-        string:m1 = raw string_concat("`", raw intern_get(e.interns, name));
-        string:m2 = raw string_concat(m1, "` is not a function");
+        string:m1 = string_concat("`", raw intern_get(e.interns, name));
+        string:m2 = string_concat(m1, "` is not a function");
         pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
     }
     TypeResolver:r = raw etyper_resolver(e);
@@ -1648,8 +1648,8 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     // whose first parameter is a different type is a method of that type instead,
     // which the arity/type check below says plainly.
     if ((raw type_param_count_of(e.types, ft)) == 0i32) {
-        string:m1 = raw string_concat("`", raw intern_get(e.interns, name));
-        string:m2 = raw string_concat(m1,
+        string:m1 = string_concat("`", raw intern_get(e.interns, name));
+        string:m2 = string_concat(m1,
             "` takes no parameters, so it cannot be called as a method");
         pass (raw te_error(e, raw TYPE_MISMATCH(), move(m2), n.span));
     }
@@ -1727,20 +1727,20 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
     bool:arity_ok = (count == total);
     if (variadic) { arity_ok = (count >= fixed_count); }
     if (!arity_ok) {
-        string:m1 = raw string_concat("this call passes ",
-                                        raw int_to_string(count => int64));
-        string:m2 = raw string_concat(m1, " argument(s) and the function takes ");
+        string:m1 = string_concat("this call passes ",
+                                        int_to_string(count => int64));
+        string:m2 = string_concat(m1, " argument(s) and the function takes ");
         if (variadic) {
-            m2 = raw string_concat(m2, "at least ");
-            m2 = raw string_concat(m2, raw int_to_string(fixed_count => int64));
+            m2 = string_concat(m2, "at least ");
+            m2 = string_concat(m2, int_to_string(fixed_count => int64));
         } else {
-            m2 = raw string_concat(m2, raw int_to_string(total => int64));
+            m2 = string_concat(m2, int_to_string(total => int64));
         }
         // ON A METHOD CALL THE RECEIVER FILLED ONE PARAMETER (1.0.8): `p.f(1)`
         // against `f(Point:a, int32:b, int32:c)` said "takes 2" to a reader
         // who counts three, so the count says what it excludes.
         if (skip > 0i32) {
-            m2 = raw string_concat(m2, " after the receiver");
+            m2 = string_concat(m2, " after the receiver");
         }
         discard(raw te_error(e, raw TYPE_MISMATCH(), move(m2), at));
     }
@@ -1901,11 +1901,11 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // arguments" makes the reader count the parameters, which the compiler
     // just did.
     if (count != want) {
-        string:c1 = raw string_concat("`", name);
-        string:c2 = raw string_concat(c1, "` takes ");
-        c2 = raw string_concat(c2, raw int_to_string(want => int64));
-        c2 = raw string_concat(c2, " argument(s) and this call passes ");
-        c2 = raw string_concat(c2, raw int_to_string(count => int64));
+        string:c1 = string_concat("`", name);
+        string:c2 = string_concat(c1, "` takes ");
+        c2 = string_concat(c2, int_to_string(want => int64));
+        c2 = string_concat(c2, " argument(s) and this call passes ");
+        c2 = string_concat(c2, int_to_string(count => int64));
         discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(), move(c2), n.span));
     }
     int32:i = 0i32;
@@ -2134,10 +2134,10 @@ pub func:is_spread = bool(ExprTyper->:e, ExprId:id) never fails {
 func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
                                  int32:i, int32:fixed_count, int32:count, Span:at) never fails {
     if (!variadic) {
-        string:m1 = raw string_concat("`..^` expands a collection into a variadic parameter, and `",
+        string:m1 = string_concat("`..^` expands a collection into a variadic parameter, and `",
                                         raw type_display(e.types, e.interns, ft));
         discard(raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
+            string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
             at));
         pass NIL;
     }
@@ -2195,13 +2195,13 @@ func:bounds_note = string(ExprTyper->:e, int32:param) never fails {
     string:m = "; its bounds are `";
     int32:i = 0i32;
     while (i < b.count) {
-        if (i > 0i32) { m = raw string_concat(m, " & "); }
-        m = raw string_concat(m,
+        if (i > 0i32) { m = string_concat(m, " & "); }
+        m = string_concat(m,
                 raw type_display(e.types, e.interns,
                                    raw ast_id_at(e.ast, b.start, i)));
         i = i + 1i32;
     }
-    pass (raw string_concat(m,
+    pass (string_concat(m,
         "`, and a generic body may use only what its bounds declare (D-064)"));
 };
 
@@ -2223,12 +2223,12 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
             }
         }
     }
-    string:m1 = raw string_concat("expected `",
+    string:m1 = string_concat("expected `",
                                     raw type_display(e.types, e.interns, want));
-    string:m2 = raw string_concat(m1, "`, found `");
-    string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, got));
+    string:m2 = string_concat(m1, "`, found `");
+    string:m3 = string_concat(m2, raw type_display(e.types, e.interns, got));
     discard(raw te_error(e, raw TYPE_MISMATCH(),
-                  raw string_concat(m3, "`"), at));
+                  string_concat(m3, "`"), at));
     pass NIL;
 };
 
@@ -2333,15 +2333,15 @@ func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
     if (is_send || is_recv) {
         if (n_id.index != e.await_operand) {
             pass (raw te_error(e, raw TYPE_AWAIT_RULES(),
-                raw string_concat(raw string_concat("`", m),
+                string_concat(string_concat("`", m),
                     "` is `async` and runs only under `await` (D-072/D-177): written bare it suspends where nothing says so, and the operation does not happen at all"),
                 n.span));
         }
     }
     if ((!is_send) && (!is_recv)) {
-        string:c1 = raw string_concat("a channel has no operation `", m);
+        string:c1 = string_concat("a channel has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(c1, "`: the set is `send`, `recv` and `close` (D-072) — `try_send`/`try_recv` do not exist because a zero deadline says \"do not wait\" in the same call"),
+            string_concat(c1, "`: the set is `send`, `recv` and `close` (D-072) — `try_send`/`try_recv` do not exist because a zero deadline says \"do not wait\" in the same call"),
             n.span));
     }
     int32:want_args = 1i32;
@@ -2405,9 +2405,9 @@ func:type_mutex_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:rec
     string:m = raw intern_get(e.interns, name);
     int32:elem = raw type_elem(e.types, recv);
     if (!(raw string_eq(m, "acquire"))) {
-        string:c1 = raw string_concat("a mutex has no operation `", m);
+        string:c1 = string_concat("a mutex has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(c1, "`: the set is `acquire` alone (D-056) — the guard's scope releases, and a zero deadline is \"do not wait\""),
+            string_concat(c1, "`: the set is `acquire` alone (D-056) — the guard's scope releases, and a zero deadline is \"do not wait\""),
             n.span));
     }
     if (n_id.index != e.await_operand) {
@@ -2449,9 +2449,9 @@ func:type_rwlock_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:re
     bool:is_rd = raw string_eq(m, "read");
     bool:is_wr = raw string_eq(m, "write");
     if ((!is_rd) && (!is_wr)) {
-        string:c1 = raw string_concat("an rwlock has no operation `", m);
+        string:c1 = string_concat("an rwlock has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(c1, "`: the set is `read` and `write` (D-056) — the guards' scopes release"),
+            string_concat(c1, "`: the set is `read` and `write` (D-056) — the guards' scopes release"),
             n.span));
     }
     if (n_id.index != e.await_operand) {
@@ -2509,9 +2509,9 @@ func:type_condvar_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
         pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
     }
     if (!(raw string_eq(m, "timedwait"))) {
-        string:c1 = raw string_concat("a condvar has no operation `", m);
+        string:c1 = string_concat("a condvar has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(c1, "`: the set is `timedwait`, `signal` and `broadcast` (D-056) — `wait` without a deadline does not exist"),
+            string_concat(c1, "`: the set is `timedwait`, `signal` and `broadcast` (D-056) — `wait` without a deadline does not exist"),
             n.span));
     }
     if (n_id.index != e.await_operand) {
@@ -2561,9 +2561,9 @@ func:type_barrier_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
                                  int32:name, int32:start, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
     if (!(raw string_eq(m, "arrive"))) {
-        string:c1 = raw string_concat("a barrier has no operation `", m);
+        string:c1 = string_concat("a barrier has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(c1, "`: the set is `arrive` alone (D-056)"),
+            string_concat(c1, "`: the set is `arrive` alone (D-056)"),
             n.span));
     }
     if (n_id.index != e.await_operand) {
@@ -2608,13 +2608,13 @@ func:type_tern_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     string:wantname = "trit";
     if (tbase == 9i32) { wantname = "nit"; }
     if (!(raw string_eq(m, wantname))) {
-        string:t1 = raw string_concat("`", raw type_display(e.types, e.interns, recv));
-        string:t2 = raw string_concat(t1, "` has no method `");
-        string:t3 = raw string_concat(t2, m);
-        string:t4 = raw string_concat(t3, "`: its digits extract with `.");
-        string:t5 = raw string_concat(t4, wantname);
+        string:t1 = string_concat("`", raw type_display(e.types, e.interns, recv));
+        string:t2 = string_concat(t1, "` has no method `");
+        string:t3 = string_concat(t2, m);
+        string:t4 = string_concat(t3, "`: its digits extract with `.");
+        string:t5 = string_concat(t4, wantname);
         pass (raw te_error(e, raw TYPE_TERN_RULES(),
-            raw string_concat(t5, "(i)` and count with `.len` (D-197)"),
+            string_concat(t5, "(i)` and count with `.len` (D-197)"),
             n.span));
     }
     if (count != 1i32) {
@@ -2651,9 +2651,9 @@ func:type_complex_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     if (raw string_eq(m, "abs2")) { known = true; }
     if (raw string_eq(m, "abs"))  { known = true; }
     if (!known) {
-        string:u1 = raw string_concat("a complex has no method `", m);
+        string:u1 = string_concat("a complex has no method `", m);
         pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
-            raw string_concat(u1, "`: the set is `re`, `im`, `conj`, `abs2`, and `abs` on float elements (D-199)"),
+            string_concat(u1, "`: the set is `re`, `im`, `conj`, `abs2`, and `abs` on float elements (D-199)"),
             n.span));
     }
     if (count != 0i32) {
@@ -2679,9 +2679,9 @@ func:type_tfp_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     if (raw string_eq(m, "floor")) { known = true; }
     if (raw string_eq(m, "trunc")) { known = true; }
     if (!known) {
-        string:u1 = raw string_concat("`tfp` has no method `", m);
+        string:u1 = string_concat("`tfp` has no method `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(u1, "`: the set is exactly `floor` and `trunc` (D-195)"),
+            string_concat(u1, "`: the set is exactly `floor` and `trunc` (D-195)"),
             n.span));
     }
     if (count != 0i32) {
@@ -2709,9 +2709,9 @@ func:type_simd_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     if (raw string_eq(m, "all")) { known = true; boolonly = true; }
     if (raw string_eq(m, "any")) { known = true; boolonly = true; }
     if (!known) {
-        string:u1 = raw string_concat("`simd<T, N>` has no method `", m);
+        string:u1 = string_concat("`simd<T, N>` has no method `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(u1, "`: the set is exactly `sum`, `min`, `max` on numeric lanes and `all`, `any` on `bool` lanes (D-194)"),
+            string_concat(u1, "`: the set is exactly `sum`, `min`, `max` on numeric lanes and `all`, `any` on `bool` lanes (D-194)"),
             n.span));
     }
     if (count != 0i32) {
@@ -2765,9 +2765,9 @@ func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     if (raw string_eq(m, "fetch_sub"))        { known = true; want_args = 1i32; }
     if (raw string_eq(m, "compare_exchange")) { known = true; want_args = 2i32; }
     if (!known) {
-        string:u1 = raw string_concat("`atomic<T>` has no operation `", m);
+        string:u1 = string_concat("`atomic<T>` has no operation `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
-            raw string_concat(u1, "`: the set is exactly `load`, `store`, `swap`, `fetch_add`, `fetch_sub` and `compare_exchange`, all sequentially consistent (D-016) — a suffixed weak ordering is refused rather than offered"),
+            string_concat(u1, "`: the set is exactly `load`, `store`, `swap`, `fetch_add`, `fetch_sub` and `compare_exchange`, all sequentially consistent (D-016) — a suffixed weak ordering is refused rather than offered"),
             n.span));
     }
     if (count != want_args) {
@@ -2866,9 +2866,9 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         }
         pass (e.types.t_nil);
     }
-    string:m1 = raw string_concat("`", m);
+    string:m1 = string_concat("`", m);
     pass (raw te_error(e, raw TYPE_MISMATCH(),
-        raw string_concat(m1,
+        string_concat(m1,
             "` is not an arena operation; the set is alloc, get, put, free, reset, destroy (D-017, D-152)"),
         n.span));
 };
@@ -2937,9 +2937,9 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         }
         pass (e.types.t_nil);
     }
-    string:m1 = raw string_concat("`", m);
+    string:m1 = string_concat("`", m);
     pass (raw te_error(e, raw TYPE_MISMATCH(),
-        raw string_concat(m1,
+        string_concat(m1,
             "` is not a shared-arena operation; the set is alloc, get, destroy — no `free`, no `reset`, no `put`: slots are never reused or rewritten while the arena is live, which is the whole concurrency contract (D-017, D-154)"),
         n.span));
 };

@@ -18,7 +18,7 @@ const Duration:JOIN_2S = Duration{ ns: 2000000000i64 };
 thread async func:producer = NIL(Channel<string, 3i32, 8i64>:ch) joins JOIN_2S {
     int32:i = 0i32;
     while (i < 50i32) {
-        string:s = relay string_concat("abc", "de");
+        string:s = string_concat("abc", "de");
         await ch.send(move(s), raw duration_ms(500i64)) ?! E9;
         i = i + 1i32;
     }
@@ -30,7 +30,7 @@ async func:fills = int32() {
     Channel<string, 4i32, 8i64>:full = channel() ?! Unreachable;
     int32:j = 0i32;
     while (j < 4i32) {
-        string:b = relay string_concat("xyzw", "");
+        string:b = string_concat("xyzw", "");
         await full.send(move(b), raw duration_ms(50i64)) ?! E9;
         j = j + 1i32;
     }

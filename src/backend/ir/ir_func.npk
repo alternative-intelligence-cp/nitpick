@@ -328,20 +328,20 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     if (fe.bare) {
         LlType:vt = raw ll_type(fe.ctx, ret_type);
         if (vt.state != (raw LL_OK())) { pass vt; }
-        fe.ret_ll = raw string_concat(vt.text, "");
-        fe.val_ll = raw string_concat(vt.text, "");
+        fe.ret_ll = string_concat(vt.text, "");
+        fe.val_ll = string_concat(vt.text, "");
         fe.val_zero = raw ll_zero(vt);
         pass vt;
     }
 
     LlType:rt = raw ll_wrap_result(fe.ctx, ret_type);
     if (rt.state != (raw LL_OK())) { pass rt; }
-    fe.ret_ll = raw string_concat(rt.text, "");
+    fe.ret_ll = string_concat(rt.text, "");
     fe.val_ll = "";
     fe.val_zero = "";
     if (!fe.ret_nil) {
         LlType:vt = raw ll_type(fe.ctx, ret_type);
-        fe.val_ll = raw string_concat(vt.text, "");
+        fe.val_ll = string_concat(vt.text, "");
         fe.val_zero = raw ll_zero(vt);
     }
     pass rt;
@@ -356,7 +356,7 @@ pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id,
     if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
     fe.pnames[fe.pcount => int64] = name;
     fe.ptypes[fe.pcount => int64] = type_id;
-    fe.plls[fe.pcount => int64] = raw string_concat(t.text, "");
+    fe.plls[fe.pcount => int64] = string_concat(t.text, "");
     int32:mv = 0i32;
     if (is_move) { mv = 1i32; }
     fe.pmoves[fe.pcount => int64] = mv;
@@ -382,9 +382,9 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     string:params = "";
     int32:i = 0i32;
     while (i < fe.pcount) {
-        if (i > 0i32) { params = raw string_concat(params, ", "); }
+        if (i > 0i32) { params = string_concat(params, ", "); }
         params = raw cat3(params, fe.plls[i => int64], " %a");
-        params = raw string_concat(params, raw int_to_string(i => int64));
+        params = string_concat(params, int_to_string(i => int64));
         i = i + 1i32;
     }
     drop irw_raw(fe.w, raw cat5("define ", fe.ret_ll, " ", fe.sym,
@@ -396,14 +396,14 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
 
     i = 0i32;
     while (i < fe.pcount) {
-        string:arg = raw string_concat("%a", raw int_to_string(i => int64));
+        string:arg = string_concat("%a", int_to_string(i => int64));
         string:slot = raw irw_temp(fe.w);
         // READ IN PLACE, NOT COPIED (D-183): `irw_alloca` and `cat5` LEND
         // their arguments, so handing them the element directly transfers
         // nothing and needs no local to own.
         drop irw_alloca(fe.w, slot, fe.plls[i => int64]);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " ", arg,
-                                       raw string_concat(", ptr ", slot)));
+                                       string_concat(", ptr ", slot)));
         drop fnem_bind(fe, fe.pnames[i => int64], move(slot), fe.ptypes[i => int64]);
         // A `move` PARAMETER IS THIS FUNCTION'S TO DROP (D-183, 1.2.3): the
         // caller transferred ownership in, so unless the body moves it onward
@@ -476,12 +476,12 @@ pub func:fnem_cross_find = int32(FnEmitter->:fe, int32:stmt_index,
 
 pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (raw string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
+    pass (string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
 };
 
 // The flag slot's GEP for a crossing entry — "" when the entry has none.
 pub func:fnem_cross_fgep = string(FnEmitter->:fe, int32:idx) never fails {
-    pass (raw string_from_bytes(fe.cross_fgeps[idx => int64].ptr, fe.cross_fgeps[idx => int64].len));
+    pass (string_from_bytes(fe.cross_fgeps[idx => int64].ptr, fe.cross_fgeps[idx => int64].len));
 };
 
 // One channel-open stash slot (D-183, 1.2.5). `elem` is the element's tid
@@ -503,7 +503,7 @@ pub func:fnem_chfin_add = NIL(FnEmitter->:fe, move string:slot,
     pass NIL;
 };
 pub func:fnem_chfin_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (raw string_from_bytes(fe.chfins[i => int64].ptr, fe.chfins[i => int64].len));
+    pass (string_from_bytes(fe.chfins[i => int64].ptr, fe.chfins[i => int64].len));
 };
 pub func:fnem_chfin_elem = int32(FnEmitter->:fe, int32:i) never fails {
     pass (fe.chfin_elems[i => int64]);
@@ -533,34 +533,34 @@ pub func:fnem_chfin_reclaim = NIL(FnEmitter->:fe, int32:i) never fails {
             drop irw_label(fe.w, dh);
             string:trc = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat5(trc, " = call i32 @npk_ch_try_recv(i64 ",
-                              chv, ", ptr ", raw string_concat(tmp, ")")));
+                              chv, ", ptr ", string_concat(tmp, ")")));
             string:got = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat3(got, " = icmp eq i32 ",
-                              raw string_concat(trc, ", 0")));
+                              string_concat(trc, ", 0")));
             drop irw_line(fe.w, raw cat5("br i1 ", got, ", label %", dd,
-                              raw string_concat(", label %", dz)));
+                              string_concat(", label %", dz)));
             drop irw_label(fe.w, dd);
             drop irw_line(fe.w, raw cat4("call void ",
                               raw drop_fn_sym(fe.ctx, el),
-                              raw string_concat("(ptr ", tmp), ")"));
+                              string_concat("(ptr ", tmp), ")"));
             drop irw_line(fe.w, raw cat3("br label %", dh, ""));
             drop irw_label(fe.w, dz);
         }
     }
     string:crc = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat3(crc, " = call i32 @npk_ch_reclaim(i64 ",
-                      raw string_concat(chv, ")")));
+                      string_concat(chv, ")")));
     pass NIL;
 };
 
 // `@"npk.fsz.<name>"` from `%"npk.frame.<name>"` — the frame-size global's
 // symbol, derived so both sides spell it identically.
 pub func:frame_size_sym = string(string:frame_ty) never fails {
-    if (frame_ty.len < 12i64) { pass (raw string_concat("@\"npk.fsz.bad", "\"")); }
+    if (frame_ty.len < 12i64) { pass (string_concat("@\"npk.fsz.bad", "\"")); }
     Result<string>:inner = string_slice(frame_ty, 12i64, frame_ty.len - 1i64);
-    if (inner.is_error) { pass (raw string_concat("@\"npk.fsz.bad", "\"")); }
-    string:s1 = raw string_concat("@\"npk.fsz.", inner.value);
-    pass (raw string_concat(s1, "\""));
+    if (inner.is_error) { pass (string_concat("@\"npk.fsz.bad", "\"")); }
+    string:s1 = string_concat("@\"npk.fsz.", inner.value);
+    pass (string_concat(s1, "\""));
 };
 
 // --- the coroutine's open (D-177, 1.1.4) --------------------------------------------
@@ -585,8 +585,8 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // deadline. `owner` is the executor the task is pinned to (D-032), which
     // the waker needs and could not otherwise find: `thread_tls` is non-null
     // only on a THREAD's root task, so it answers a different question.
-    string:slots = raw string_concat("ptr, i32, i32, ", fe.ret_ll);
-    slots = raw string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
+    string:slots = string_concat("ptr, i32, i32, ", fe.ret_ll);
+    slots = string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
     int32:i = 0i32;
     while (i < fe.pcount) {
         slots = raw cat3(slots, ", ", fe.plls[i => int64]);
@@ -607,7 +607,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     while (i < fe.pcount) {
         if (fe.pmoves[i => int64] != 0i32) {
             if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
-                slots = raw string_concat(slots, ", i8");
+                slots = string_concat(slots, ", i8");
             }
         }
         i = i + 1i32;
@@ -616,7 +616,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     while (i < fe.cross_count) {
         if (fe.cross_roles[i => int64] == 0i32) {
             if (raw type_drops(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
-                slots = raw string_concat(slots, ", i8");
+                slots = string_concat(slots, ", i8");
             }
         }
         i = i + 1i32;
@@ -699,7 +699,7 @@ pub func:fnem_frame_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
     string:r = raw irw_temp(fe.w);
     drop irw_entry(fe.w, raw cat5(r, " = getelementptr ", frame_ty,
                       raw cat3(", ptr ", fr, ", i32 0, i32 "),
-                      raw int_to_string(slot => int64)));
+                      int_to_string(slot => int64)));
     pass r;
 };
 
@@ -714,7 +714,7 @@ pub func:fnem_new_seg = string(FnEmitter->:fe) never fails {
         fe.seg_cap = ncap =>! int32;
     }
     string:lb = raw irw_new_label(fe.w, "seg");
-    fe.seg_labels[fe.seg_count => int64] = raw string_concat(lb, "");
+    fe.seg_labels[fe.seg_count => int64] = string_concat(lb, "");
     fe.seg_count = fe.seg_count + 1i32;
     pass lb;
 };
@@ -738,7 +738,7 @@ pub func:fnem_ret_agg = NIL(FnEmitter->:fe, string:value) never fails {
     // frame answers DONE. The join block is emitted once at close; a
     // function that never spawned walks an empty list.
     drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", value,
-                      raw string_concat(", ptr ", fe.result_gep)));
+                      string_concat(", ptr ", fe.result_gep)));
     drop irw_line(fe.w, "br label %npk.join");
     pass NIL;
 };
@@ -759,7 +759,7 @@ pub func:fnem_slot_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
     string:r = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(r, " = getelementptr ", frame_ty,
                       raw cat3(", ptr ", fr, ", i32 0, i32 "),
-                      raw int_to_string(slot => int64)));
+                      int_to_string(slot => int64)));
     pass r;
 };
 
@@ -821,9 +821,9 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     string:params = "";
     int32:i = 0i32;
     while (i < fe.pcount) {
-        if (i > 0i32) { params = raw string_concat(params, ", "); }
+        if (i > 0i32) { params = string_concat(params, ", "); }
         params = raw cat3(params, fe.plls[i => int64], " %a");
-        params = raw string_concat(params, raw int_to_string(i => int64));
+        params = string_concat(params, int_to_string(i => int64));
         i = i + 1i32;
     }
     drop irw_begin_function(fe.w);
@@ -837,8 +837,8 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     while (i < fe.pcount) {
         string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 12i32 + i);
         drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
-                          raw int_to_string(i => int64),
-                          raw string_concat(", ptr ", ag)));
+                          int_to_string(i => int64),
+                          string_concat(", ptr ", ag)));
         i = i + 1i32;
     }
     // THE ROOT TASK, RUN BY THE EXECUTOR (D-071, 1.1.8): enqueue main and
@@ -856,7 +856,7 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     string:rg = raw fnem_slot_gep(fe, fe.frame_ty, fr, 3i32);
     string:code = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(code, " = load ", fe.ret_ll, ", ptr ",
-                      raw string_concat(rg, "")));
+                      string_concat(rg, "")));
     drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", fr, ")"));
     drop irw_line(fe.w, raw cat4("ret i32 ", code, "", ""));
     drop irw_raw(fe.w, "}");
@@ -885,7 +885,7 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
 pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) never fails {
     string:slot = raw irw_temp(fe.w);
     drop irw_alloca(fe.w, slot, ll);
-    drop fnem_bind(fe, name, raw string_concat(slot, ""), type_id);
+    drop fnem_bind(fe, name, string_concat(slot, ""), type_id);
     pass slot;
 };
 
@@ -975,7 +975,7 @@ pub func:fnem_scope_lhi = int32(FnEmitter->:fe, int32:f) never fails {
     pass fe.dlmarks[(f + 1i32) => int64];
 };
 pub func:fnem_local_slot_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (raw string_from_bytes(fe.lslots[i => int64].ptr, fe.lslots[i => int64].len));
+    pass (string_from_bytes(fe.lslots[i => int64].ptr, fe.lslots[i => int64].len));
 };
 pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.ltypes[i => int64];
@@ -1104,13 +1104,13 @@ pub func:fnem_pick_pop = NIL(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_pick_done = string(FnEmitter->:fe) never fails {
-    pass (raw string_from_bytes(fe.pick_dones[(fe.pick_count - 1i32) => int64].ptr, fe.pick_dones[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_dones[(fe.pick_count - 1i32) => int64].ptr, fe.pick_dones[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_slot = string(FnEmitter->:fe) never fails {
-    pass (raw string_from_bytes(fe.pick_slots[(fe.pick_count - 1i32) => int64].ptr, fe.pick_slots[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_slots[(fe.pick_count - 1i32) => int64].ptr, fe.pick_slots[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_ll = string(FnEmitter->:fe) never fails {
-    pass (raw string_from_bytes(fe.pick_lls[(fe.pick_count - 1i32) => int64].ptr, fe.pick_lls[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_lls[(fe.pick_count - 1i32) => int64].ptr, fe.pick_lls[(fe.pick_count - 1i32) => int64].len));
 };
 pub func:fnem_pick_tid = int32(FnEmitter->:fe) never fails {
     pass fe.pick_tids[(fe.pick_count - 1i32) => int64];
@@ -1133,10 +1133,10 @@ pub func:fnem_next_pick_seq = int32(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_loop_head_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (raw string_from_bytes(fe.loop_heads[i => int64].ptr, fe.loop_heads[i => int64].len));
+    pass (string_from_bytes(fe.loop_heads[i => int64].ptr, fe.loop_heads[i => int64].len));
 };
 pub func:fnem_loop_done_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (raw string_from_bytes(fe.loop_dones[i => int64].ptr, fe.loop_dones[i => int64].len));
+    pass (string_from_bytes(fe.loop_dones[i => int64].ptr, fe.loop_dones[i => int64].len));
 };
 pub func:fnem_loop_depth_at = int32(FnEmitter->:fe, int32:i) never fails {
     pass fe.loop_depths[i => int64];
@@ -1148,10 +1148,10 @@ pub func:fnem_loop_pop = NIL(FnEmitter->:fe) never fails {
 };
 
 pub func:fnem_loop_head = string(FnEmitter->:fe) never fails {
-    pass (raw string_from_bytes(fe.loop_heads[(fe.loop_count - 1i32) => int64].ptr, fe.loop_heads[(fe.loop_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.loop_heads[(fe.loop_count - 1i32) => int64].ptr, fe.loop_heads[(fe.loop_count - 1i32) => int64].len));
 };
 pub func:fnem_loop_done = string(FnEmitter->:fe) never fails {
-    pass (raw string_from_bytes(fe.loop_dones[(fe.loop_count - 1i32) => int64].ptr, fe.loop_dones[(fe.loop_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.loop_dones[(fe.loop_count - 1i32) => int64].ptr, fe.loop_dones[(fe.loop_count - 1i32) => int64].len));
 };
 pub func:fnem_loop_depth = int32(FnEmitter->:fe) never fails {
     pass fe.loop_depths[(fe.loop_count - 1i32) => int64];
@@ -1178,7 +1178,7 @@ pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) never fails {
                                    raw cat4(fe.val_ll, " ", value, ", 0")));
     string:b = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
-                                   " ", raw string_concat(a, ", i32 0, 1")));
+                                   " ", string_concat(a, ", i32 0, 1")));
     drop fnem_ret_agg(fe, b);
     pass NIL;
 };
@@ -1198,7 +1198,7 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
         string:a = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
                                        " undef, i32 ",
-                                       raw string_concat(code, ", 0")));
+                                       string_concat(code, ", 0")));
         drop fnem_ret_agg(fe, a);
         pass NIL;
     }
@@ -1240,7 +1240,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat4(jh, " = load ptr, ptr ", fe.join_gep, ""));
         string:jn = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jn, " = icmp eq ptr ",
-                          raw string_concat(jh, ", null")));
+                          string_concat(jh, ", null")));
         drop irw_line(fe.w, raw cat3("br i1 ", jn,
                           ", label %npk.jend, label %npk.jbody"));
         drop irw_label(fe.w, "npk.jbody");
@@ -1266,18 +1266,18 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat4(jtls, " = load ptr, ptr ", jtg, ""));
         string:jisth = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jisth, " = icmp ne ptr ",
-                          raw string_concat(jtls, ", null")));
+                          string_concat(jtls, ", null")));
         drop irw_line(fe.w, raw cat3("br i1 ", jisth,
                           ", label %npk.jthread, label %npk.jtask"));
         drop irw_label(fe.w, "npk.jthread");
         string:jtrc = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jtrc, " = call i32 @npk_thread_join(ptr ",
-                          jtls, ", i64 ", raw string_concat(jdl, ")")));
+                          jtls, ", i64 ", string_concat(jdl, ")")));
         drop irw_line(fe.w, "br label %npk.jwaited");
         drop irw_label(fe.w, "npk.jtask");
         string:jrc0 = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jrc0, " = call i32 @npk_run_until(ptr ",
-                          jh, ", i64 ", raw string_concat(jdl, ")")));
+                          jh, ", i64 ", string_concat(jdl, ")")));
         drop irw_line(fe.w, "br label %npk.jwaited");
         drop irw_label(fe.w, "npk.jwaited");
         string:jrc = raw irw_temp(fe.w);
@@ -1286,7 +1286,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
                           raw cat3(jrc0, ", %npk.jtask ]", "")));
         string:jok = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jok, " = icmp eq i32 ",
-                          raw string_concat(jrc, ", 0")));
+                          string_concat(jrc, ", 0")));
         drop irw_line(fe.w, raw cat3("br i1 ", jok,
                           ", label %npk.jgot, label %npk.jwind"));
         drop irw_label(fe.w, "npk.jwind");
@@ -1308,12 +1308,12 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_label(fe.w, "npk.jwthread");
         string:jrc2t = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jrc2t, " = call i32 @npk_thread_join(ptr ",
-                          jtls, ", i64 ", raw string_concat(jgdl, ")")));
+                          jtls, ", i64 ", string_concat(jgdl, ")")));
         drop irw_line(fe.w, "br label %npk.jwjoined");
         drop irw_label(fe.w, "npk.jwtask");
         string:jrc2k = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jrc2k, " = call i32 @npk_run_until(ptr ",
-                          jh, ", i64 ", raw string_concat(jgdl, ")")));
+                          jh, ", i64 ", string_concat(jgdl, ")")));
         drop irw_line(fe.w, "br label %npk.jwjoined");
         drop irw_label(fe.w, "npk.jwjoined");
         string:jrc2 = raw irw_temp(fe.w);
@@ -1322,7 +1322,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
                           raw cat3(jrc2k, ", %npk.jwtask ]", "")));
         string:jok2 = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jok2, " = icmp eq i32 ",
-                          raw string_concat(jrc2, ", 0")));
+                          string_concat(jrc2, ", 0")));
         drop irw_line(fe.w, raw cat3("br i1 ", jok2,
                           ", label %npk.jgot, label %npk.jexpire"));
         drop irw_label(fe.w, "npk.jexpire");
@@ -1330,18 +1330,18 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         // `DeadlineExceeded` (D-176/D-179) — the trap channel of the one
         // value that is also a catchable `Result` error.
         drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          raw int_to_string(fe.fn_site => int64), ")"));
+                          int_to_string(fe.fn_site => int64), ")"));
         drop irw_line(fe.w, "call void @npk_trap(i32 -4107)");
         drop irw_line(fe.w, "unreachable");
         drop irw_label(fe.w, "npk.jgot");
         string:jeg = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jeg, " = getelementptr ", hdr, ", ptr ",
-                          raw string_concat(jh, ", i32 0, i32 3, i32 0")));
+                          string_concat(jh, ", i32 0, i32 3, i32 0")));
         string:jerr2 = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat4(jerr2, " = load i32, ptr ", jeg, ""));
         string:jsg = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(jsg, " = getelementptr ", hdr, ", ptr ",
-                          raw string_concat(jh, ", i32 0, i32 5")));
+                          string_concat(jh, ", i32 0, i32 5")));
         string:jsib = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat4(jsib, " = load ptr, ptr ", jsg, ""));
         drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", jh, ")"));
@@ -1349,16 +1349,16 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
                           fe.join_gep));
         string:jbad = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(jbad, " = icmp ne i32 ",
-                          raw string_concat(jerr2, ", 0")));
+                          string_concat(jerr2, ", 0")));
         drop irw_line(fe.w, raw cat3("br i1 ", jbad,
                           ", label %npk.jerr, label %npk.join"));
         drop irw_label(fe.w, "npk.jerr");
         if (fe.bare) {
             drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                              raw int_to_string(fe.fn_site => int64), ")"));
+                              int_to_string(fe.fn_site => int64), ")"));
             string:jmf = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat3(jmf, " = call i32 @npk_failsafe(i32 ",
-                              raw string_concat(jerr2, ")")));
+                              string_concat(jerr2, ")")));
             drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", jmf, ")"));
             drop irw_line(fe.w, "unreachable");
         } else {
@@ -1369,21 +1369,21 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
             if (fe.ret_nil) { jslot = ", 0"; }
             string:jce = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat5(jce, " = extractvalue ", fe.ret_ll,
-                              " ", raw string_concat(jcur, jslot)));
+                              " ", string_concat(jcur, jslot)));
             string:jown = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat3(jown, " = icmp ne i32 ",
-                              raw string_concat(jce, ", 0")));
+                              string_concat(jce, ", 0")));
             drop irw_line(fe.w, raw cat3("br i1 ", jown,
                               ", label %npk.join, label %npk.jset"));
             drop irw_label(fe.w, "npk.jset");
             drop irw_line(fe.w, raw cat3("call void @npk_chain_push(i32 ",
-                              raw int_to_string(fe.fn_site => int64), ")"));
+                              int_to_string(fe.fn_site => int64), ")"));
             string:jna = raw irw_temp(fe.w);
             drop irw_line(fe.w, raw cat5(jna, " = insertvalue ", fe.ret_ll,
                               " zeroinitializer, i32 ",
-                              raw string_concat(jerr2, jslot)));
+                              string_concat(jerr2, jslot)));
             drop irw_line(fe.w, raw cat5("store ", fe.ret_ll, " ", jna,
-                              raw string_concat(", ptr ", fe.result_gep)));
+                              string_concat(", ptr ", fe.result_gep)));
             drop irw_line(fe.w, "br label %npk.join");
         }
         drop irw_label(fe.w, "npk.jend");
@@ -1404,7 +1404,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         // `#unreachable()` lowers to.
         drop irw_label(fe.w, "coro.bad");
         drop irw_line(fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          raw int_to_string(fe.fn_site => int64), ")"));
+                          int_to_string(fe.fn_site => int64), ")"));
         string:bt = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat3(bt, " = call i32 @npk_failsafe(i32 ",
                           "-4102)"));
@@ -1418,7 +1418,7 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         string:cases = "";
         int32:k = 0i32;
         while (k < fe.seg_count) {
-            cases = raw cat5(cases, " i32 ", raw int_to_string(k => int64),
+            cases = raw cat5(cases, " i32 ", int_to_string(k => int64),
                              ", label %", fe.seg_labels[k => int64]);
             k = k + 1i32;
         }

@@ -16,9 +16,9 @@ async func:main = int32(cstring[]:_~argv) {
     Channel<int32, 3i32, 1i64>:ch = channel() ?! Unreachable;
 
     // EMPTY: the receiver is the one that waits.
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     Result<int32>:r = await ch.recv(raw duration_ms(40i64));
-    int64:t1 = raw mono_now();
+    int64:t1 = mono_now();
     if (!r.is_error)                     { exit 11i32; }
     if (r.err != DeadlineExceeded)       { exit 12i32; }
     if ((t1 - t0) < 35000000i64)         { exit 13i32; }   // it really waited
@@ -27,9 +27,9 @@ async func:main = int32(cstring[]:_~argv) {
     // FULL: the sender is the one that waits. Capacity is 1, and nothing
     // is receiving.
     await ch.send(42i32, raw duration_ms(50i64)) ?! Sent;
-    int64:t2 = raw mono_now();
+    int64:t2 = mono_now();
     Result<NIL>:s = await ch.send(7i32, raw duration_ms(40i64));
-    int64:t3 = raw mono_now();
+    int64:t3 = mono_now();
     if (!s.is_error)                     { exit 21i32; }
     if (s.err != DeadlineExceeded)       { exit 22i32; }
     if ((t3 - t2) < 35000000i64)         { exit 23i32; }

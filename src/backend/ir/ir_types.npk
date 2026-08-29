@@ -172,8 +172,8 @@ pub func:drop_fn_sym = string(LlCtx->:c, int32:dty) never fails {
         c.drop_types[c.drop_count => int64] = dty;
         c.drop_count = c.drop_count + 1i32;
     }
-    pass (raw string_concat("@\"npk.drop.",
-              raw string_concat(raw int_to_string(dty => int64), "\"")));
+    pass (string_concat("@\"npk.drop.",
+              string_concat(int_to_string(dty => int64), "\"")));
 };
 
 pub func:drop_type_count = int32(LlCtx->:c) never fails { pass c.drop_count; };
@@ -260,13 +260,13 @@ pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never
     if (raw string_eq(name, "failsafe")) { pass "@npk_failsafe"; }
     string:canon = raw mod_canonical(c, decl_index);
     if (canon.len == 0i64) {
-        pass (raw string_concat("@npk_", name));
+        pass (string_concat("@npk_", name));
     }
-    string:body = raw string_concat("npk.",
-                      raw string_concat(canon,
-                          raw string_concat(".", name)));
-    pass (raw string_concat("@\"",
-              raw string_concat(body, "\"")));
+    string:body = string_concat("npk.",
+                      string_concat(canon,
+                          string_concat(".", name)));
+    pass (string_concat("@\"",
+              string_concat(body, "\"")));
 };
 
 // THE COROUTINE'S TWO DERIVED NAMES (D-177, 1.1.4), built from the same
@@ -277,23 +277,23 @@ func:coro_body_name = string(LlCtx->:c, int32:decl_index, string:stem,
                              string:name) never fails {
     string:canon = raw mod_canonical(c, decl_index);
     if (canon.len == 0i64) {
-        pass (raw string_concat(stem, name));
+        pass (string_concat(stem, name));
     }
-    pass (raw string_concat(stem,
-              raw string_concat(canon,
-                  raw string_concat(".", name))));
+    pass (string_concat(stem,
+              string_concat(canon,
+                  string_concat(".", name))));
 };
 
 pub func:resume_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
     string:body = raw coro_body_name(c, decl_index, "npk.resume.", name);
-    pass (raw string_concat("@\"",
-              raw string_concat(body, "\"")));
+    pass (string_concat("@\"",
+              string_concat(body, "\"")));
 };
 
 pub func:frame_ty_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
     string:body = raw coro_body_name(c, decl_index, "npk.frame.", name);
-    pass (raw string_concat("%\"",
-              raw string_concat(body, "\"")));
+    pass (string_concat("%\"",
+              string_concat(body, "\"")));
 };
 
 // `%"npk.<module>.<Name>"` for a named aggregate. No name exceptions -- no
@@ -302,13 +302,13 @@ pub func:frame_ty_sym = string(LlCtx->:c, int32:decl_index, string:name) never f
 pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) never fails {
     string:canon = raw mod_canonical(c, decl_index);
     if (canon.len == 0i64) {
-        pass (raw string_concat("%", name));
+        pass (string_concat("%", name));
     }
-    string:body = raw string_concat("npk.",
-                      raw string_concat(canon,
-                          raw string_concat(".", name)));
-    pass (raw string_concat("%\"",
-              raw string_concat(body, "\"")));
+    string:body = string_concat("npk.",
+                      string_concat(canon,
+                          string_concat(".", name)));
+    pass (string_concat("%\"",
+              string_concat(body, "\"")));
 };
 
 // WHAT A GENERIC PARAMETER STANDS FOR IN THE SPECIALIZATION BEING EMITTED, or
@@ -545,8 +545,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
         int32:selk = raw type_kind(c.types, sel);
         string:sset = "";
         if (selk == (raw TY_INT())) {
-            sset = raw string_concat("i",
-                       raw int_to_string((raw type_int_bits(c.types, sel)) => int64));
+            sset = string_concat("i",
+                       int_to_string((raw type_int_bits(c.types, sel)) => int64));
         }
         if (selk == (raw TY_FLOAT())) {
             if ((raw type_int_bits(c.types, sel)) == 32i32) { sset = "float"; }
@@ -554,11 +554,11 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
         }
         if (selk == (raw TY_BOOL())) { sset = "i8"; }
         if (sset.len == 0i64) { pass (raw ll_broken()); }
-        string:sv1 = raw string_concat("<",
-                         raw int_to_string(((raw tt_get(c.types, id)).b) => int64));
-        string:sv2 = raw string_concat(sv1, " x ");
-        string:sv3 = raw string_concat(sv2, sset);
-        pass (raw ll_ok(raw string_concat(sv3, ">")));
+        string:sv1 = string_concat("<",
+                         int_to_string(((raw tt_get(c.types, id)).b) => int64));
+        string:sv2 = string_concat(sv1, " x ");
+        string:sv3 = string_concat(sv2, sset);
+        pass (raw ll_ok(string_concat(sv3, ">")));
     }
     // D-182: a channel ENDPOINT is a handle — an index and a generation —
     // not a pointer, which is what lets it cross a spawn.
@@ -633,22 +633,22 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_COMPLEX())) {
         LlType:cel = raw ll_type(c, raw type_elem(c.types, id));
         if (!(raw ll_is_ok(cel))) { pass cel; }
-        string:cp = raw string_concat("{ ", cel.text);
-        cp = raw string_concat(cp, ", ");
-        cp = raw string_concat(cp, cel.text);
-        pass (raw ll_ok(raw string_concat(cp, " }")));
+        string:cp = string_concat("{ ", cel.text);
+        cp = string_concat(cp, ", ");
+        cp = string_concat(cp, cel.text);
+        pass (raw ll_ok(string_concat(cp, " }")));
     }
     // A frac is the component triple (D-198): `{ iN, iN, iN }` — the denom's
     // unsignedness is a fact about its OPERATIONS, not its bits.
     if (k == (raw TY_FRAC())) {
         int32:frb = raw type_int_bits(c.types, id);
-        string:fone = raw string_concat("i", raw int_to_string(frb => int64));
-        string:f2 = raw string_concat("{ ", fone);
-        f2 = raw string_concat(f2, ", ");
-        f2 = raw string_concat(f2, fone);
-        f2 = raw string_concat(f2, ", ");
-        f2 = raw string_concat(f2, fone);
-        pass (raw ll_ok(raw string_concat(f2, " }")));
+        string:fone = string_concat("i", int_to_string(frb => int64));
+        string:f2 = string_concat("{ ", fone);
+        f2 = string_concat(f2, ", ");
+        f2 = string_concat(f2, fone);
+        f2 = string_concat(f2, ", ");
+        f2 = string_concat(f2, fone);
+        pass (raw ll_ok(string_concat(f2, " }")));
     }
 
     // `flt32`/`flt64` compute; `flt128` is STORAGE ONLY (D-143) — it lowers
@@ -677,8 +677,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_OPTIONAL())) {
         LlType:oel = raw ll_type(c, raw type_elem(c.types, id));
         if (oel.state != (raw LL_OK())) { pass oel; }
-        pass (raw ll_ok(raw string_concat("{ i8, ",
-                            raw string_concat(oel.text, " }"))));
+        pass (raw ll_ok(string_concat("{ i8, ",
+                            string_concat(oel.text, " }"))));
     }
 
     // A TRAIT IS NOT A VALUE TYPE. `dyn Trait` is; the bare trait names a
@@ -705,10 +705,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
         string:dt = "{ ptr";
         int32:bi = 0i32;
         while (bi < nb) {
-            dt = raw string_concat(dt, ", ptr");
+            dt = string_concat(dt, ", ptr");
             bi = bi + 1i32;
         }
-        pass (raw ll_ok(raw string_concat(dt, " }")));
+        pass (raw ll_ok(string_concat(dt, " }")));
     }
 
     // `Self` IS SUBSTITUTED BEFORE IT IS LOWERED: a trait default is emitted
@@ -755,10 +755,10 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_RANGE())) {
         LlType:rel = raw ll_type(c, raw type_elem(c.types, id));
         if (rel.state != (raw LL_OK())) { pass rel; }
-        string:ra = raw string_concat("{ ", rel.text);
-        ra = raw string_concat(ra, ", ");
-        ra = raw string_concat(ra, rel.text);
-        ra = raw string_concat(ra, " }");
+        string:ra = string_concat("{ ", rel.text);
+        ra = string_concat(ra, ", ");
+        ra = string_concat(ra, rel.text);
+        ra = string_concat(ra, " }");
         pass (raw ll_ok(move(ra)));
     }
 
@@ -845,11 +845,11 @@ func:ll_int_bits = LlType(int32:bits) never fails {
 func:ll_array = LlType(LlCtx->:c, int32:id) never fails {
     LlType:el = raw ll_type(c, raw type_elem(c.types, id));
     if (el.state != (raw LL_OK())) { pass el; }
-    string:a = raw string_concat("[",
-                   raw int_to_string((raw type_array_count(c.types, id)) => int64));
-    string:b = raw string_concat(a, " x ");
-    string:d = raw string_concat(b, el.text);
-    pass (raw ll_ok(raw string_concat(d, "]")));
+    string:a = string_concat("[",
+                   int_to_string((raw type_array_count(c.types, id)) => int64));
+    string:b = string_concat(a, " x ");
+    string:d = string_concat(b, el.text);
+    pass (raw ll_ok(string_concat(d, "]")));
 };
 
 // `{T, i32}` (D-069) — NO `is_error` FIELD, because `.is_error` is derived as
@@ -871,8 +871,8 @@ pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) never fails {
     }
     LlType:it = raw ll_type(c, inner);
     if (it.state != (raw LL_OK())) { pass it; }
-    string:a = raw string_concat("{ ", it.text);
-    pass (raw ll_ok(raw string_concat(a, ", i32 }")));
+    string:a = string_concat("{ ", it.text);
+    pass (raw ll_ok(string_concat(a, ", i32 }")));
 };
 
 // A NAMED AGGREGATE PRINTS AS `%Name`, and its body is emitted once at module
@@ -959,8 +959,8 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
                 r.generics = saved;
                 pass ll;
             }
-            if (n > 0i32) { body = raw string_concat(body, ", "); }
-            body = raw string_concat(body, ll.text);
+            if (n > 0i32) { body = string_concat(body, ", "); }
+            body = string_concat(body, ll.text);
             n = n + 1i32;
         }
         i = i + 1i32;
@@ -968,8 +968,8 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
     r.generics = saved;
     if (n == 0i32) { body = "i8"; }
 
-    string:a = raw string_concat("{ ", body);
-    pass (raw ll_ok(raw string_concat(a, " }")));
+    string:a = string_concat("{ ", body);
+    pass (raw ll_ok(string_concat(a, " }")));
 };
 
 // THE PAYLOAD SLOT (0.9.2): `{ i32, [N x iK] }`, DERIVED from the layout the
@@ -1014,11 +1014,11 @@ pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) never fails {
     if (!(raw enum_has_payload(c.ast, c.types, id))) { pass (raw ll_broken()); }
     EnumSlot:sl = raw enum_payload_slot(c, id);
     if (!sl.ok) { pass (raw ll_broken()); }
-    string:a = raw string_concat("{ i32, [",
-                   raw int_to_string(sl.count));
-    string:b = raw string_concat(a, " x i");
-    string:d2 = raw string_concat(b, raw int_to_string(sl.kbits => int64));
-    pass (raw ll_ok(raw string_concat(d2, "] }")));
+    string:a = string_concat("{ i32, [",
+                   int_to_string(sl.count));
+    string:b = string_concat(a, " x i");
+    string:d2 = string_concat(b, int_to_string(sl.kbits => int64));
+    pass (raw ll_ok(string_concat(d2, "] }")));
 };
 
 // The ERR sentinel per tbb width, as decimal text (D-008: the most negative

@@ -27,14 +27,14 @@ async func:sender = NIL(Channel<int32, 3i32, 0i64>:ch) {
 };
 async func:main = int32(cstring[]:_~argv) {
     Channel<int32, 3i32, 0i64>:ch = channel() ?! Unreachable;
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     drop sender(ch);
 
     // SENDER FIRST: it is parked in `send` while this sleeps.
     await sleep(raw duration_ms(60i64)) ?| NIL;
     Result<int32>:a = await ch.recv(raw duration_ms(2000i64));
     if (a.is_error) { exit 11i32; }
-    int64:t1 = raw mono_now();
+    int64:t1 = mono_now();
     if ((t1 - t0) < 55000000i64) { exit 12i32; }   // the sender did wait
 
     // RECEIVER FIRST: this blocks before the second send is reached.

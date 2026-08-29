@@ -40,7 +40,7 @@ pub func:nio_normalize = string(string:s) {
     // caller of THIS function's caller then freed out from under everyone.
     // The unchanged case pays one copy; ownership that varies by path is the
     // kind of context-dependence the blueprint philosophy refuses anyway.
-    if (!seen_cr) { pass (relay string_concat(s, "")); }
+    if (!seen_cr) { pass (string_concat(s, "")); }
 
     // The result is never longer than the input: `\r\n` shrinks, `\r` maps 1:1.
     wild int8->:out = alloc(s.len);
@@ -64,8 +64,8 @@ pub func:nio_normalize = string(string:s) {
     // makes an owner, and the scratch is freed here — it was a wild alloc
     // that leaked before, which D-151's exit check reported the moment drops
     // stopped masking it.
-    string:owned = relay string_concat(raw string_from_bytes(out, o), "");
-    drop dalloc(out =>! wild int8->);
+    string:owned = string_concat(string_from_bytes(out, o), "");
+    dalloc(out =>! wild int8->);
     pass owned;
 };
 
@@ -216,7 +216,7 @@ pub func:nio_end = NIL(NioW->:w) {
     // D-151's exit check the moment they stopped. Freed after the flush, on
     // BOTH paths, before the close whose error must still carry.
     if (w.cap > 0i64) {
-        drop dalloc(w.buf =>! wild int8->);
+        dalloc(w.buf =>! wild int8->);
         w.buf = NULL;
         w.cap = 0i64;
         w.len = 0i64;

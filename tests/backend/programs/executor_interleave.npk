@@ -25,9 +25,9 @@ async func:parent = int32(int32:_~v) {
     pass 7i32;
 };
 async func:main = int32(cstring[]:_~argv) {
-    int64:t0 = raw mono_now();
+    int64:t0 = mono_now();
     int32:r = await parent(0i32) ?| 0i32;
-    int64:dt = (raw mono_now()) - t0;
+    int64:dt = (mono_now()) - t0;
     if (r != 7i32)         { exit 11i32; }
     if (dt < 28000000i64)  { exit 12i32; }   // the parent's own sleep happened
     if (dt > 55000000i64)  { exit 13i32; }   // but NOT 30+30 serialised

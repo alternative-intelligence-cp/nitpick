@@ -754,25 +754,25 @@ pub func:dim_unit_text = string(int64:vec) never fails {
             if (axi == 6i32) { nm = "Candela"; }
             int32:mag = e;
             if (mag < 0i32) { mag = 0i32 - mag; }
-            string:part = raw string_concat(nm, "");
+            string:part = string_concat(nm, "");
             if (mag > 1i32) {
-                string:p1 = raw string_concat(part, "^");
-                part = raw string_concat(p1, raw int_to_string(mag => int64));
+                string:p1 = string_concat(part, "^");
+                part = string_concat(p1, int_to_string(mag => int64));
             }
             if (e > 0i32) {
-                if (num.len != 0i64) { num = raw string_concat(num, "*"); }
-                num = raw string_concat(num, part);
+                if (num.len != 0i64) { num = string_concat(num, "*"); }
+                num = string_concat(num, part);
             } else {
-                if (den.len != 0i64) { den = raw string_concat(den, "*"); }
-                den = raw string_concat(den, part);
+                if (den.len != 0i64) { den = string_concat(den, "*"); }
+                den = string_concat(den, part);
             }
         }
         axi = axi + 1i32;
     }
     if (num.len == 0i64) { num = "1"; }
     if (den.len == 0i64) { pass num; }
-    string:j = raw string_concat(num, "/");
-    pass (raw string_concat(j, den));
+    string:j = string_concat(num, "/");
+    pass (string_concat(j, den));
 };
 
 // Record one `unit:` declaration's evaluated vector. Re-recording the same
@@ -1121,12 +1121,12 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
     string:spelled = "dyn ";
     int32:j = 0i32;
     while (j < count) {
-        if (j > 0i32) { spelled = raw string_concat(spelled, " & "); }
+        if (j > 0i32) { spelled = string_concat(spelled, " & "); }
         int32:tn = raw type_name(t, raw ast_id_at(ast, start, j));
         if (raw intern_is_none(tn)) {
-            spelled = raw string_concat(spelled, "<trait>");
+            spelled = string_concat(spelled, "<trait>");
         } else {
-            spelled = raw string_concat(spelled, raw intern_get(interns, tn));
+            spelled = string_concat(spelled, raw intern_get(interns, tn));
         }
         j = j + 1i32;
     }

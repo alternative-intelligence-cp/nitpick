@@ -80,8 +80,8 @@ func:moved_in_a_pick_arm = NIL(int32:n) never fails {
         (0i32) { q = move(p); },
         (*) { }
     }
-    drop dalloc(p);
-    drop dalloc(q);
+    dalloc(p);
+    dalloc(q);
     pass NIL;
 };
 
@@ -90,8 +90,8 @@ func:moved_in_a_pick_arm = NIL(int32:n) never fails {
 // expect-error: NITPICK-MOVE-002
 func:freed_in_a_defer = NIL() never fails {
     wild int8->:p = alloc(8i64);
-    drop dalloc(p);
-    defer { drop dalloc(p); }
+    dalloc(p);
+    defer { dalloc(p); }
     pass NIL;
 };
 

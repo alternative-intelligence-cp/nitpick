@@ -28,7 +28,7 @@ async func:main = int32(cstring[]:_~argv) {
     wild int32->:fdi = fds =>! wild int32->;
     int32:rfd = fdi[0i64];
     int32:wfd = fdi[1i64];
-    drop dalloc(fds);
+    dalloc(fds);
 
     ByteReader:r = ByteReader{ src: own_fd(rfd =>! fd) };
     drop late_writer(wfd => int64);

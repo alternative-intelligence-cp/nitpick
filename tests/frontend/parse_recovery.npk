@@ -53,10 +53,10 @@ func:main = int32(cstring[]:_~argv) {
     // Each function is broken in a different way and the good one between them
     // must survive. If recovery stopped early this reports fewer; if it cascaded
     // it reports more.
-    string:e1 = raw string_concat(
+    string:e1 = string_concat(
         "func:a = int32() { int32:x = ; exit 0i32; };\n",
         "func:b = int32() { exit 0i32; };\n");
-    string:three = raw string_concat(e1,
+    string:three = string_concat(e1,
         "func:c = int32() { int32:y 5i32; exit 0i32; };\nfunc:d = int32() { int32:z = ; };\n");
     int64:n3 = raw parse_module_text(three, @it);
     if (n3 != 3i64)                                           { exit 11i32; }
@@ -179,15 +179,15 @@ func:main = int32(cstring[]:_~argv) {
     string:many = "func:a = int32() { int32:x = ; };";
     int64:i = 0i64;
     while (i < 8i64) {
-        many = raw string_concat(many, "func:b = int32() { int32:y = ; };");
+        many = string_concat(many, "func:b = int32() { int32:y = ; };");
         i = i + 1i64;
     }
     int64:capped = raw parse_module_text(many, @it);
     if (capped > 256i64)                                      { exit 40i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

@@ -89,13 +89,13 @@ pub trait:Iterator = {
 // remaining scalars — the characters (UTF-8), the `tbb` widths (ERR), the kernel
 // identifiers, `uint64` (its high bit) and the floats (a correct float->decimal
 // in the floor) — arrive with their own careful conversions.
-impl:int8:ToString   = { func:to_string = string(int8:self) never fails   { pass (raw int_to_string(self => int64)); }; };
-impl:int16:ToString  = { func:to_string = string(int16:self) never fails  { pass (raw int_to_string(self => int64)); }; };
-impl:int32:ToString  = { func:to_string = string(int32:self) never fails  { pass (raw int_to_string(self => int64)); }; };
-impl:int64:ToString  = { func:to_string = string(int64:self) never fails  { pass (raw int_to_string(self)); }; };
-impl:uint8:ToString  = { func:to_string = string(uint8:self) never fails  { pass (raw int_to_string(self => int64)); }; };
-impl:uint16:ToString = { func:to_string = string(uint16:self) never fails { pass (raw int_to_string(self => int64)); }; };
-impl:uint32:ToString = { func:to_string = string(uint32:self) never fails { pass (raw int_to_string(self => int64)); }; };
+impl:int8:ToString   = { func:to_string = string(int8:self) never fails   { pass (int_to_string(self => int64)); }; };
+impl:int16:ToString  = { func:to_string = string(int16:self) never fails  { pass (int_to_string(self => int64)); }; };
+impl:int32:ToString  = { func:to_string = string(int32:self) never fails  { pass (int_to_string(self => int64)); }; };
+impl:int64:ToString  = { func:to_string = string(int64:self) never fails  { pass (int_to_string(self)); }; };
+impl:uint8:ToString  = { func:to_string = string(uint8:self) never fails  { pass (int_to_string(self => int64)); }; };
+impl:uint16:ToString = { func:to_string = string(uint16:self) never fails { pass (int_to_string(self => int64)); }; };
+impl:uint32:ToString = { func:to_string = string(uint32:self) never fails { pass (int_to_string(self => int64)); }; };
 impl:bool:ToString   = { func:to_string = string(bool:self) never fails   { if (self) { pass "true"; } pass "false"; }; };
 
 impl:uint64:ToString = { func:to_string = string(uint64:self) never fails { pass (raw uint_to_decimal(self)); }; };
@@ -103,26 +103,26 @@ impl:uint64:ToString = { func:to_string = string(uint64:self) never fails { pass
 // THE `tbb` WIDTHS RENDER `ERR` OR THE NUMBER (D-008, D-168). ERR is the taint,
 // shown as itself; everything else is the value, read through the checked cast
 // the `is_err` guard makes safe.
-impl:tbb8:ToString  = { func:to_string = string(tbb8:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:tbb16:ToString = { func:to_string = string(tbb16:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:tbb32:ToString = { func:to_string = string(tbb32:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:tbb64:ToString = { func:to_string = string(tbb64:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:tbb8:ToString  = { func:to_string = string(tbb8:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:tbb16:ToString = { func:to_string = string(tbb16:self) never fails { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:tbb32:ToString = { func:to_string = string(tbb32:self) never fails { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:tbb64:ToString = { func:to_string = string(tbb64:self) never fails { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
 
 // THE TERNARY FAMILY RENDERS THE SAME WAY (D-197, D-168): the VALUE is a
 // number and shows as one; the balanced digit string is what `.trit(i)` /
 // `.nit(i)` are for.
-impl:trit:ToString  = { func:to_string = string(trit:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:tryte:ToString = { func:to_string = string(tryte:self) never fails { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:nit:ToString   = { func:to_string = string(nit:self) never fails   { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
-impl:nyte:ToString  = { func:to_string = string(nyte:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (raw int_to_string(self => int64)); }; };
+impl:trit:ToString  = { func:to_string = string(trit:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:tryte:ToString = { func:to_string = string(tryte:self) never fails { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:nit:ToString   = { func:to_string = string(nit:self) never fails   { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
+impl:nyte:ToString  = { func:to_string = string(nyte:self) never fails  { if (is_err(self)) { pass "ERR"; } pass (int_to_string(self => int64)); }; };
 
 // THE KERNEL IDENTIFIERS RENDER THEIR NUMBER (D-042, D-168): a handle's value is
 // readable even though a handle is not forgeable.
-impl:fd:ToString  = { func:to_string = string(fd:self) never fails  { pass (raw int_to_string(self => int64)); }; };
-impl:pid:ToString = { func:to_string = string(pid:self) never fails { pass (raw int_to_string(self => int64)); }; };
-impl:tid:ToString = { func:to_string = string(tid:self) never fails { pass (raw int_to_string(self => int64)); }; };
-impl:uid:ToString = { func:to_string = string(uid:self) never fails { pass (raw int_to_string(self => int64)); }; };
-impl:gid:ToString = { func:to_string = string(gid:self) never fails { pass (raw int_to_string(self => int64)); }; };
+impl:fd:ToString  = { func:to_string = string(fd:self) never fails  { pass (int_to_string(self => int64)); }; };
+impl:pid:ToString = { func:to_string = string(pid:self) never fails { pass (int_to_string(self => int64)); }; };
+impl:tid:ToString = { func:to_string = string(tid:self) never fails { pass (int_to_string(self => int64)); }; };
+impl:uid:ToString = { func:to_string = string(uid:self) never fails { pass (int_to_string(self => int64)); }; };
+impl:gid:ToString = { func:to_string = string(gid:self) never fails { pass (int_to_string(self => int64)); }; };
 
 // UNSIGNED DECIMAL (D-168), for `uint64`, whose high half the floor's signed
 // `int_to_string` renders as a negative. Unsigned division here is the language's
@@ -148,7 +148,7 @@ pub func:uint_to_decimal = string(uint64:v) never fails {
     uint64:n = v;
     while (n > 0u64) {
         string:d = raw digit_char(n % 10u64);
-        acc = raw string_concat(d, acc);
+        acc = string_concat(d, acc);
         n = n / 10u64;
     }
     pass acc;
@@ -189,9 +189,9 @@ pub func:codepoint_to_string = string(uint32:cp) never fails {
         b[3i64] = (128u32 | (c & 63u32)) =>! int8;
         len = 4i64;
     }
-    string:v = raw string_from_bytes(b, len);
+    string:v = string_from_bytes(b, len);
     string:owned = string_slice(v, 0i64, len) ?| "";
-    drop dalloc(b);
+    dalloc(b);
     pass owned;
 };
 
@@ -243,11 +243,11 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
     string:neg = "";
     if (sgn == 1u64) { neg = "-"; }
     if (biased == exp_mask) {
-        if (frac == 0u64) { pass (raw string_concat(neg, "inf")); }
+        if (frac == 0u64) { pass (string_concat(neg, "inf")); }
         pass "nan";
     }
     if ((biased == 0u64) && (frac == 0u64)) {
-        pass (raw string_concat(neg, "0.0"));
+        pass (string_concat(neg, "0.0"));
     }
     // Decode: value = f × 2^e. A normal carries the implicit bit and
     // e = biased - bias - mant_bits; a subnormal is the bare fraction at
@@ -368,9 +368,9 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
         dn = 1i64;
         k = k + 1i32;
     }
-    string:dview = raw string_from_bytes(db, dn);
+    string:dview = string_from_bytes(db, dn);
     string:digits = string_slice(dview, 0i64, dn) ?| "";
-    drop dalloc(db);
+    dalloc(db);
     // Compose. value = 0.digits × 10^k; E is the scientific exponent.
     int32:big_e = k - 1i32;
     string:out = "";
@@ -379,45 +379,45 @@ pub func:flt_bits_shortest = string(uint64:bits, uint64:mant_bits,
             out = "0.";
             int32:z = 0i32 - k;
             while (z > 0i32) {
-                out = raw string_concat(out, "0");
+                out = string_concat(out, "0");
                 z = z - 1i32;
             }
-            out = raw string_concat(out, digits);
+            out = string_concat(out, digits);
         }
         if ((k > 0i32) && ((k => int64) < dn)) {
             string:hd = string_slice(digits, 0i64, k => int64) ?| "";
             string:tl = string_slice(digits, k => int64, dn) ?| "";
-            out = raw string_concat(hd, ".");
-            out = raw string_concat(out, tl);
+            out = string_concat(hd, ".");
+            out = string_concat(out, tl);
         }
         if ((k > 0i32) && ((k => int64) >= dn)) {
-            out = raw string_concat(out, digits);
+            out = string_concat(out, digits);
             int64:z2 = (k => int64) - dn;
             while (z2 > 0i64) {
-                out = raw string_concat(out, "0");
+                out = string_concat(out, "0");
                 z2 = z2 - 1i64;
             }
-            out = raw string_concat(out, ".0");
+            out = string_concat(out, ".0");
         }
     } else {
         string:fs = string_slice(digits, 0i64, 1i64) ?| "";
-        out = raw string_concat(out, fs);
+        out = string_concat(out, fs);
         if (dn > 1i64) {
             string:rs = string_slice(digits, 1i64, dn) ?| "";
-            out = raw string_concat(out, ".");
-            out = raw string_concat(out, rs);
+            out = string_concat(out, ".");
+            out = string_concat(out, rs);
         }
-        out = raw string_concat(out, "e");
+        out = string_concat(out, "e");
         int32:ea = big_e;
         if (big_e < 0i32) {
-            out = raw string_concat(out, "-");
+            out = string_concat(out, "-");
             ea = 0i32 - big_e;
         }
-        if (big_e >= 0i32) { out = raw string_concat(out, "+"); }
-        if (ea < 10i32) { out = raw string_concat(out, "0"); }
-        out = raw string_concat(out, raw int_to_string(ea => int64));
+        if (big_e >= 0i32) { out = string_concat(out, "+"); }
+        if (ea < 10i32) { out = string_concat(out, "0"); }
+        out = string_concat(out, int_to_string(ea => int64));
     }
-    pass (raw string_concat(neg, out));
+    pass (string_concat(neg, out));
 };
 
 // THE FLOATS RENDER SHORTEST-ROUND-TRIP (§6b). The bits travel through a
@@ -430,7 +430,7 @@ impl:flt64:ToString = { func:to_string = string(flt64:self) never fails {
     <-fp = self;
     wild uint64->:ip = b =>! wild uint64->;
     uint64:w = <-ip;
-    drop dalloc(b);
+    dalloc(b);
     pass (raw flt_bits_shortest(w, 52u64, 11u64));
 }; };
 impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
@@ -439,7 +439,7 @@ impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
     <-fp = self;
     wild uint32->:ip = b =>! wild uint32->;
     uint32:w = <-ip;
-    drop dalloc(b);
+    dalloc(b);
     pass (raw flt_bits_shortest(w => uint64, 23u64, 8u64));
 }; };
 
@@ -486,7 +486,7 @@ impl:tbb64:Hash = { func:hash = uint64(tbb64:self) never fails { if (is_err(self
 // copy, and the result carries `cap = n`, so the clone owns its body and drops
 // it independently of the original.
 impl:string:Clone = { func:clone = string(string:self) {
-    pass (relay string_concat(self, ""));
+    pass (string_concat(self, ""));
 }; };
 
 // A string HASHES ITS BYTES (D-123) -- FNV-1a is over bytes, and self.ptr[i] walks
@@ -552,7 +552,7 @@ pub error:IoEof = 4096i32;             // end of input (the io floor's marker, d
 // deadline is ABSOLUTE and monotonic by the time the kernel sees it — the
 // span is converted once, here, at suspension entry (D-176 rule 2).
 pub async func:sleep = NIL(Duration:within) {
-    drop suspend_until((raw mono_now()) + within.ns);
+    suspend_until((mono_now()) + within.ns);
     pass NIL;
 };
 
@@ -564,13 +564,13 @@ pub async func:sleep = NIL(Duration:within) {
 // still would block (stolen by a sibling, a spurious wake), call this
 // again. The stream types are loops around exactly that.
 pub async func:io_ready = NIL(int32:iofd, int32:events, Duration:within) {
-    int64:io_abs = (raw mono_now()) + within.ns;
+    int64:io_abs = (mono_now()) + within.ns;
     // The registration lives exactly as long as the wait: a one-shot left
     // armed past this frame would fire into freed memory. Every exit --
     // readiness, deadline, wind-up -- runs this.
-    defer { drop io_unwatch(iofd); }
-    drop suspend_io(iofd, events, io_abs);
-    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    defer { io_unwatch(iofd); }
+    suspend_io(iofd, events, io_abs);
+    if ((mono_now()) >= io_abs) { fail DeadlineExceeded; }
     pass NIL;
 };
 
@@ -583,12 +583,12 @@ pub async func:io_ready = NIL(int32:iofd, int32:events, Duration:within) {
 // deadline says only that SOMETHING was signalled -- the caller re-tries
 // its syscalls to learn what, exactly io_ready's contract.
 pub async func:io_ready2 = NIL(int32:fda, int32:eva, int32:fdb, int32:evb, Duration:within) {
-    int64:io_abs = (raw mono_now()) + within.ns;
-    defer { drop io_unwatch(fda); }
-    defer { drop io_unwatch(fdb); }
-    drop io_watch(fda, eva);
-    drop suspend_io(fdb, evb, io_abs);
-    if ((raw mono_now()) >= io_abs) { fail DeadlineExceeded; }
+    int64:io_abs = (mono_now()) + within.ns;
+    defer { io_unwatch(fda); }
+    defer { io_unwatch(fdb); }
+    io_watch(fda, eva);
+    suspend_io(fdb, evb, io_abs);
+    if ((mono_now()) >= io_abs) { fail DeadlineExceeded; }
     pass NIL;
 };
 
@@ -645,8 +645,8 @@ pub func:path_parse = Path(string:s) {
                         depth = depth - 1i64;
                     }
                     if (!(string_equals(sgt, ".."))) {
-                        out = relay string_concat(out, "/");
-                        out = relay string_concat(out, sgt);
+                        out = string_concat(out, "/");
+                        out = string_concat(out, sgt);
                         depth = depth + 1i64;
                     }
                 }
@@ -656,7 +656,7 @@ pub func:path_parse = Path(string:s) {
         i = i + 1i64;
     }
     if (out.len == 0i64) {
-        string:root = relay string_concat("/", "");
+        string:root = string_concat("/", "");
         pass Path{ text: move(root) };
     }
     pass Path{ text: move(out) };
@@ -711,7 +711,7 @@ pub func:byte_writer_create = ByteWriter(Path:p, Duration:_~within) {
 // verbatim (`fail r.err`, the 05_result rule).
 impl:ByteReader:Reader = {
     async func:read = int64(ByteReader->:self, uint8[]:dest, Duration:within) {
-        int64:give_up = (raw mono_now()) + within.ns;
+        int64:give_up = (mono_now()) + within.ns;
         while (true) {
             Result<int64>:r = read(self.src.value, dest.ptr, dest.len);
             if (!r.is_error) { pass r.value; }
@@ -720,7 +720,7 @@ impl:ByteReader:Reader = {
             if (r.err == Interrupted) { retry = true; }
             if (!retry) { fail r.err; }
             if (r.err == WouldBlock) {
-                int64:rem = give_up - (raw mono_now());
+                int64:rem = give_up - (mono_now());
                 if (rem <= 0i64) { fail DeadlineExceeded; }
                 Result<NIL>:w = await io_ready((self.src.value) =>! int32, 1i32,
                                                raw duration_ns(rem));
@@ -732,7 +732,7 @@ impl:ByteReader:Reader = {
 
 impl:ByteWriter:Writer = {
     async func:write = int64(ByteWriter->:self, fixed uint8[]:wsrc, Duration:within) {
-        int64:give_up = (raw mono_now()) + within.ns;
+        int64:give_up = (mono_now()) + within.ns;
         while (true) {
             Result<int64>:r = write(self.sink.value, wsrc.ptr, wsrc.len);
             if (!r.is_error) { pass r.value; }
@@ -741,7 +741,7 @@ impl:ByteWriter:Writer = {
             if (r.err == Interrupted) { retry = true; }
             if (!retry) { fail r.err; }
             if (r.err == WouldBlock) {
-                int64:rem = give_up - (raw mono_now());
+                int64:rem = give_up - (mono_now());
                 if (rem <= 0i64) { fail DeadlineExceeded; }
                 Result<NIL>:w = await io_ready((self.sink.value) =>! int32, 4i32,
                                                raw duration_ns(rem));
@@ -803,10 +803,10 @@ pub func:line_buf_writer<BW: Writer> = LineBufWriter<BW>(move BW:inner) never fa
 // may be partial per call (POSIX's shape); a wrapper that translated a
 // buffer and delivered half of it would tear a line, so the wrappers loop.
 async func:tw_write_all<W: Writer> = NIL(W->:sink, string:s, Duration:within) {
-    int64:give_up = (raw mono_now()) + within.ns;
+    int64:give_up = (mono_now()) + within.ns;
     int64:done = 0i64;
     while (done < s.len) {
-        int64:rem = give_up - (raw mono_now());
+        int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { fail DeadlineExceeded; }
         string:sview = relay string_slice(s, done, s.len);
         uint8[]:bytes = string_bytes(sview);
@@ -835,14 +835,14 @@ pub async func:text_write_str<W: Writer> = NIL(TextWriter<W>->:tw, string:s, Dur
     while (i < s.len) {
         if (s.ptr[i] == 10u8) {
             string:part = relay string_slice(s, seg, i);
-            out = relay string_concat(out, part);
-            out = relay string_concat(out, "\r\n");
+            out = string_concat(out, part);
+            out = string_concat(out, "\r\n");
             seg = i + 1i64;
         }
         i = i + 1i64;
     }
     string:tail = relay string_slice(s, seg, s.len);
-    out = relay string_concat(out, tail);
+    out = string_concat(out, tail);
     relay await tw_write_all(@(tw.inner), out, within);
     pass NIL;
 };
@@ -872,7 +872,7 @@ pub async func:text_flush<W: Writer> = NIL(TextWriter<W>->:tw, Duration:within) 
 // included. End of input: a final unterminated line is still a line;
 // `IoEof` only when nothing remains at all.
 pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:within) {
-    int64:give_up = (raw mono_now()) + within.ns;
+    int64:give_up = (mono_now()) + within.ns;
     while (true) {
         // a pending `\r` saw its `\n` arrive: consume the second half
         if (tr.pend_cr) {
@@ -913,10 +913,10 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
         // refill: drop consumed bytes, then ask the inner reader
         tr.acc = relay string_slice(tr.acc, tr.pos, tr.acc.len);
         tr.pos = 0i64;
-        int64:rem = give_up - (raw mono_now());
+        int64:rem = give_up - (mono_now());
         if (rem <= 0i64) { fail DeadlineExceeded; }
         wild int8->:cbuf = alloc(512i64);
-        defer { drop dalloc(cbuf); }
+        defer { dalloc(cbuf); }
         uint8[]:cslice = #wild_slice<uint8>(cbuf =>! wild uint8->, 512i64);
         Result<int64>:got = await tr.inner.read(cslice, raw duration_ns(rem));
         if (got.is_error) {
@@ -924,8 +924,8 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
             if (got.err != IoEof) { fail got.err; }
         }
         if (!got.is_error) {
-            string:fresh = raw string_from_bytes(cbuf, got.value);
-            tr.acc = relay string_concat(tr.acc, fresh);
+            string:fresh = string_from_bytes(cbuf, got.value);
+            tr.acc = string_concat(tr.acc, fresh);
         }
     }
 };
@@ -938,8 +938,8 @@ pub async func:text_read_line<R: Reader> = string(TextReader<R>->:tr, Duration:w
 // exit (drops are generated, never user hooks) — finish lines or flush.
 impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
     async func:write = int64(LineBufWriter<BW>->:self, fixed uint8[]:wsrc, Duration:within) {
-        string:added = raw string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
-        self.pend = relay string_concat(self.pend, added);
+        string:added = string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
+        self.pend = string_concat(self.pend, added);
         int64:nl = 0i64 - 1i64;
         int64:i = 0i64;
         while (i < self.pend.len) {
@@ -955,7 +955,7 @@ impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
     };
     async func:flush = NIL(LineBufWriter<BW>->:self, Duration:within) {
         if (self.pend.len > 0i64) {
-            string:all = relay string_concat(self.pend, "");
+            string:all = string_concat(self.pend, "");
             self.pend = "";
             relay await tw_write_all(@(self.inner), all, within);
         }
@@ -970,7 +970,7 @@ impl:<BW: Writer>:LineBufWriter<BW>:Writer = {
 // bytes read as text.
 impl:<W: Writer>:TextWriter<W>:Writer = {
     async func:write = int64(TextWriter<W>->:self, fixed uint8[]:wsrc, Duration:within) {
-        string:s = raw string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
+        string:s = string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
         relay await text_write_str(self, s, within);
         pass wsrc.len;
     };
@@ -1025,7 +1025,7 @@ pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
     while (n != 0u256) {
         uint256:q = n / 10u256;
         uint256:r = n - (q * 10u256);
-        ip = raw string_concat(raw digit_char((r =>! uint64)), ip);
+        ip = string_concat(raw digit_char((r =>! uint64)), ip);
         n = q;
     }
     string:fp = "";
@@ -1038,7 +1038,7 @@ pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
             uint256:t = f * 10u256;
             uint256:d = t >> (fbits => uint256);
             f = t & mask;
-            fp = raw string_concat(fp, raw digit_char((d =>! uint64)));
+            fp = string_concat(fp, raw digit_char((d =>! uint64)));
             emitted = emitted + 1i64;
             if (d != 0u256) { lastnz = emitted; }
         }
@@ -1051,9 +1051,9 @@ pub func:tfp_render = string(bool:neg, uint256:ipart, uint256:frac,
     }
     string:out = "";
     if (neg) { out = "-"; }
-    out = raw string_concat(out, ip);
-    out = raw string_concat(out, ".");
-    pass (raw string_concat(out, fp));
+    out = string_concat(out, ip);
+    out = string_concat(out, ".");
+    pass (string_concat(out, fp));
 };
 
 impl:tfp32:ToString = { func:to_string = string(tfp32:self) never fails {
@@ -1063,7 +1063,7 @@ impl:tfp32:ToString = { func:to_string = string(tfp32:self) never fails {
     <-tp = self;
     wild int32->:ip2 = b =>! wild int32->;
     int32:rawv = <-ip2;
-    drop dalloc(b);
+    dalloc(b);
     bool:neg = false;
     if (rawv < 0i32) { neg = true; rawv = 0i32 - rawv; }
     uint256:mag = (rawv =>! uint32) => uint256;
@@ -1076,7 +1076,7 @@ impl:tfp64:ToString = { func:to_string = string(tfp64:self) never fails {
     <-tp = self;
     wild int64->:ip2 = b =>! wild int64->;
     int64:rawv = <-ip2;
-    drop dalloc(b);
+    dalloc(b);
     bool:neg = false;
     if (rawv < 0i64) { neg = true; rawv = 0i64 - rawv; }
     uint256:mag = (rawv =>! uint64) => uint256;
@@ -1089,7 +1089,7 @@ impl:tfp128:ToString = { func:to_string = string(tfp128:self) never fails {
     <-tp = self;
     wild int128->:ip2 = b =>! wild int128->;
     int128:rawv = <-ip2;
-    drop dalloc(b);
+    dalloc(b);
     bool:neg = false;
     if (rawv < 0i128) { neg = true; rawv = 0i128 - rawv; }
     uint256:mag = (rawv =>! uint128) => uint256;
@@ -1103,7 +1103,7 @@ impl:tfp256:ToString = { func:to_string = string(tfp256:self) never fails {
     <-tp = self;
     wild int256->:ip2 = b =>! wild int256->;
     int256:rawv = <-ip2;
-    drop dalloc(b);
+    dalloc(b);
     bool:neg = false;
     if (rawv < 0i256) { neg = true; rawv = 0i256 - rawv; }
     uint256:mag = rawv =>! uint256;
@@ -1296,47 +1296,47 @@ pub func:npk_frac_cmp = int32(int256:aw, int256:an, int256:ad,
 // is 0. The members are the read-only component views (1.3.5).
 impl:frac8:ToString = { func:to_string = string(frac8:self) never fails {
     if (is_err(self)) { pass "ERR"; }
-    if (self.num == 0i8) { pass (raw int_to_string(self.whole => int64)); }
+    if (self.num == 0i8) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
     if (self.whole != 0i8) {
-        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+        head = string_concat(int_to_string(self.whole => int64), " ");
     }
-    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
-    pass (raw string_concat(head,
-              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    pass (string_concat(head,
+              string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
 impl:frac16:ToString = { func:to_string = string(frac16:self) never fails {
     if (is_err(self)) { pass "ERR"; }
-    if (self.num == 0i16) { pass (raw int_to_string(self.whole => int64)); }
+    if (self.num == 0i16) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
     if (self.whole != 0i16) {
-        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+        head = string_concat(int_to_string(self.whole => int64), " ");
     }
-    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
-    pass (raw string_concat(head,
-              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    pass (string_concat(head,
+              string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
 impl:frac32:ToString = { func:to_string = string(frac32:self) never fails {
     if (is_err(self)) { pass "ERR"; }
-    if (self.num == 0i32) { pass (raw int_to_string(self.whole => int64)); }
+    if (self.num == 0i32) { pass (int_to_string(self.whole => int64)); }
     string:head = "";
     if (self.whole != 0i32) {
-        head = raw string_concat(raw int_to_string(self.whole => int64), " ");
+        head = string_concat(int_to_string(self.whole => int64), " ");
     }
-    string:fr = raw string_concat(raw int_to_string(self.num => int64), "/");
-    pass (raw string_concat(head,
-              raw string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
+    string:fr = string_concat(int_to_string(self.num => int64), "/");
+    pass (string_concat(head,
+              string_concat(fr, raw uint_to_decimal(self.denom => uint64))));
 }; };
 impl:frac64:ToString = { func:to_string = string(frac64:self) never fails {
     if (is_err(self)) { pass "ERR"; }
-    if (self.num == 0i64) { pass (raw int_to_string(self.whole)); }
+    if (self.num == 0i64) { pass (int_to_string(self.whole)); }
     string:head = "";
     if (self.whole != 0i64) {
-        head = raw string_concat(raw int_to_string(self.whole), " ");
+        head = string_concat(int_to_string(self.whole), " ");
     }
-    string:fr = raw string_concat(raw int_to_string(self.num), "/");
-    pass (raw string_concat(head,
-              raw string_concat(fr, raw uint_to_decimal(self.denom))));
+    string:fr = string_concat(int_to_string(self.num), "/");
+    pass (string_concat(head,
+              string_concat(fr, raw uint_to_decimal(self.denom))));
 }; };
 
 // THE COMPLEX CORES (D-199, 1.3.6): per element type, in Nitpick — the tfp
@@ -1540,29 +1540,29 @@ impl:complex<flt32>:ToString = { func:to_string = string(complex<flt32>:self) ne
     flt32:im2 = self.im();
     string:sign = "+";
     if (im2 < 0.0f32) { sign = "-"; im2 = 0.0f32 - im2; }
-    string:h = raw string_concat(`&{self.re()}`, sign);
-    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+    string:h = string_concat(`&{self.re()}`, sign);
+    pass (string_concat(h, string_concat(`&{im2}`, "i")));
 }; };
 impl:complex<flt64>:ToString = { func:to_string = string(complex<flt64>:self) never fails {
     flt64:im2 = self.im();
     string:sign = "+";
     if (im2 < 0.0f64) { sign = "-"; im2 = 0.0f64 - im2; }
-    string:h = raw string_concat(`&{self.re()}`, sign);
-    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+    string:h = string_concat(`&{self.re()}`, sign);
+    pass (string_concat(h, string_concat(`&{im2}`, "i")));
 }; };
 impl:complex<tfp32>:ToString = { func:to_string = string(complex<tfp32>:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     tfp32:im2 = self.im();
     string:sign = "+";
     if (im2 < 0.0tfp32) { sign = "-"; im2 = 0.0tfp32 - im2; }
-    string:h = raw string_concat(`&{self.re()}`, sign);
-    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+    string:h = string_concat(`&{self.re()}`, sign);
+    pass (string_concat(h, string_concat(`&{im2}`, "i")));
 }; };
 impl:complex<tfp64>:ToString = { func:to_string = string(complex<tfp64>:self) never fails {
     if (is_err(self)) { pass "ERR"; }
     tfp64:im2 = self.im();
     string:sign = "+";
     if (im2 < 0.0tfp64) { sign = "-"; im2 = 0.0tfp64 - im2; }
-    string:h = raw string_concat(`&{self.re()}`, sign);
-    pass (raw string_concat(h, raw string_concat(`&{im2}`, "i")));
+    string:h = string_concat(`&{self.re()}`, sign);
+    pass (string_concat(h, string_concat(`&{im2}`, "i")));
 }; };

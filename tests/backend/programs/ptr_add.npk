@@ -19,8 +19,8 @@ func:main = int32(cstring[]:_~argv) {
     wild int8->:b24 = #ptr_add<int8>(buf, 24i64);
     wild int64->:fourth = b24 =>! wild int64->;
     if ((<-fourth) != 300i64) { exit 12i32; }
-    drop dalloc(buf);
-    drop wild_release_all();
+    dalloc(buf);
+    wild_release_all();
     exit 42i32;
 };
 func:failsafe = int32(Error:e) {

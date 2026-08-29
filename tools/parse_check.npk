@@ -49,7 +49,7 @@ func:main = int32(cstring[]:argv) {
     // argv arrives as `cstring` -- kernel-supplied and NUL-terminated (D-089).
     // The source manager works in `string`, so the path converts once, here.
     cstring:arg = argv[1i64];
-    string:path = raw string_from_bytes(arg.ptr, arg.len);
+    string:path = string_from_bytes(arg.ptr, arg.len);
 
     SourceManager:sm = raw srcmgr_init();
     // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,
@@ -101,7 +101,7 @@ func:main = int32(cstring[]:argv) {
     if (n != 0i64) {
         exit 1i32;
     }
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

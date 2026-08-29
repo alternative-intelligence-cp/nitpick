@@ -44,15 +44,15 @@ func:main = int32(cstring[]:_~argv) {
 
     // The §1 memory trio through the floor's own definitions.
     wild int8->:a = alloc(8i64);
-    discard(raw memset(a, 7i64, 8i64));
+    discard(memset(a, 7i64, 8i64));
     if (a[3i64] != 7i8)                                      { exit 28i32; }
     wild int8->:b = alloc(8i64);
-    discard(raw mcpy(b, a, 8i64));
+    discard(mcpy(b, a, 8i64));
     if (b[7i64] != 7i8)                                      { exit 29i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

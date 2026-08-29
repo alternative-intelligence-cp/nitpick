@@ -14,9 +14,9 @@ mod:windup_drop;
 const Duration:JOIN_300MS = Duration{ ns: 300000000i64 };
 
 thread async func:sleepy = NIL(int32:_~v) joins JOIN_300MS {
-    string:early = relay string_concat("abcdef", "");
+    string:early = string_concat("abcdef", "");
     await sleep(raw duration_ms(20i64)) ?| NIL;      // `early` crosses here
-    string:late = relay string_concat("xyz", "");
+    string:late = string_concat("xyz", "");
     await sleep(raw duration_ms(10000i64)) ?| NIL;   // wound up during this
     discard((early.len + late.len) =>! int32);       // never reached
     pass NIL;

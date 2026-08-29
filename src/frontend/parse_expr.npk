@@ -990,11 +990,11 @@ func:p_result_literal = ExprId(Parser->:p, Span:sp) never fails {
                     // as a third field and D-069 made it derived, so somebody
                     // writing it learned it somewhere real and needs to be told
                     // what replaced it -- not merely that the name is unknown.
-                    string:m1 = raw string_concat("`", text);
-                    string:m2 = raw string_concat(m1,
+                    string:m1 = string_concat("`", text);
+                    string:m2 = string_concat(m1,
                         "` is not a field of `Result{…}`, which has `value` and `error`");
                     if (raw string_eq(text, "is_error")) {
-                        m2 = raw string_concat(m2,
+                        m2 = string_concat(m2,
                             "; `.is_error` is derived from `error` and is read, never written (D-069)");
                     }
                     drop p_error_at(p, raw PARSE_WRAPPER_FIELD(), move(m2), field.span);

@@ -216,9 +216,9 @@ func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name,
 // audit found it pointing at `<comptime int32:LEVEL>` for a `LEVEL:x` written
 // lines away).
 func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn, Span:at) never fails {
-    string:m1 = raw string_concat("`", raw intern_get(r.interns, raw decl_name(pn)));
+    string:m1 = string_concat("`", raw intern_get(r.interns, raw decl_name(pn)));
     pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
-        raw string_concat(m1,
+        string_concat(m1,
             "` is a `comptime` value parameter, not a type; it supplies a constant, and `comptime` is the marker that says which of the two a parameter is (D-064)"),
         at));
 };
@@ -372,28 +372,28 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) never
             i = i + 1i32;
         }
         if (other != 0i32) {
-            string:a1 = raw string_concat("`",
+            string:a1 = string_concat("`",
                             raw intern_get(r.interns, name));
-            string:a2 = raw string_concat(a1, "` is declared by both `");
-            string:a3 = raw string_concat(a2,
+            string:a2 = string_concat(a1, "` is declared by both `");
+            string:a3 = string_concat(a2,
                             raw type_display(r.types, r.interns, owner));
-            string:a4 = raw string_concat(a3, "` and `");
-            string:a5 = raw string_concat(a4,
+            string:a4 = string_concat(a3, "` and `");
+            string:a5 = string_concat(a4,
                             raw type_display(r.types, r.interns, other));
             // NO TRAIT-QUALIFIED PROJECTION EXISTS (D-164 gives `T.Item` and
             // nothing else), so the advice names what can be written (1.0.8).
             pass (raw ty_error(r, raw TYPE_AMBIGUOUS_METHOD(),
-                raw string_concat(a5,
+                string_concat(a5,
                     "`; there is no rule to choose by, and no spelling names the trait — bound the parameter by only the trait whose associated type is meant, or split the two traits across two parameters"),
                 n.span));
         }
         if (found != 0i32) { pass found; }
-        string:u1 = raw string_concat("`",
+        string:u1 = string_concat("`",
                         raw type_display(r.types, r.interns, base));
-        string:u2 = raw string_concat(u1, "` has no associated type `");
-        string:u3 = raw string_concat(u2, raw intern_get(r.interns, name));
+        string:u2 = string_concat(u1, "` has no associated type `");
+        string:u3 = string_concat(u2, raw intern_get(r.interns, name));
         pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-            raw string_concat(u3, "`; none of its bounds declares one"), n.span));
+            string_concat(u3, "`; none of its bounds declares one"), n.span));
     }
 
     // A PROJECTION FROM A CONCRETE TYPE cannot be answered HERE (1.0.8): the
@@ -401,12 +401,12 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) never
     // not hold (D-164 — `type_subst` normalises `Counter.Item` where the table
     // is in hand). This said "`Counter` has no associated type `Item`" about an
     // impl that exists; it says what it knows now.
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, base));
-    string:m2 = raw string_concat(m1, ".");
-    string:m3 = raw string_concat(m2, raw intern_get(r.interns, name));
+    string:m2 = string_concat(m1, ".");
+    string:m3 = string_concat(m2, raw intern_get(r.interns, name));
     pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-        raw string_concat(m3, "` projects from a concrete type, which this position cannot resolve; write the bound type itself, or project from a bounded parameter (`T.Item`)"),
+        string_concat(m3, "` projects from a concrete type, which this position cannot resolve; write the bound type itself, or project from a bounded parameter (`T.Item`)"),
         n.span));
 };
 
@@ -506,8 +506,8 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     int32:sym = raw scope_lookup(r.tab, scope, name);
     if (sym == 0i32) {
         string:text = raw intern_get(r.interns, name);
-        string:m1 = raw string_concat("there is no type named `", text);
-        string:m2 = raw string_concat(m1, "`");
+        string:m1 = string_concat("there is no type named `", text);
+        string:m2 = string_concat(m1, "`");
         pass (raw ty_error(r, raw TYPE_UNKNOWN(), move(m2), n.span));
     }
 
@@ -530,13 +530,13 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     if (dnode.kind == DeclKind.DeclTraitDecl) {
         if (!r.trait_ok) {
             string:tn = raw intern_get(r.interns, name);
-            string:t1 = raw string_concat("`", tn);
-            string:t2 = raw string_concat(t1, "` is a trait, not a value type; `dyn ");
-            string:t3 = raw string_concat(t2, tn);
-            string:t4 = raw string_concat(t3, "` is the type of a value that implements it, and `T: ");
-            string:t5 = raw string_concat(t4, tn);
+            string:t1 = string_concat("`", tn);
+            string:t2 = string_concat(t1, "` is a trait, not a value type; `dyn ");
+            string:t3 = string_concat(t2, tn);
+            string:t4 = string_concat(t3, "` is the type of a value that implements it, and `T: ");
+            string:t5 = string_concat(t4, tn);
             pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
-                raw string_concat(t5, "` bounds a parameter by it"), n.span));
+                string_concat(t5, "` bounds a parameter by it"), n.span));
         }
         pass (raw resolve_aggregate(r, n, name, d, dnode, scope, raw TY_TRAIT()));
     }
@@ -548,13 +548,13 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // send the reader hunting for a missing declaration that is right there;
     // "`helper` is a function, not a type" ends the search immediately.
     string:text = raw intern_get(r.interns, name);
-    string:k1 = raw string_concat("`", text);
+    string:k1 = string_concat("`", text);
     // AN `opaque struct` IS A TYPE WITH NO VALUE TYPE BEHIND IT YET (D-066,
     // D-149): said as the refusal it is, rather than "is an opaque type, not a
     // type" — a sentence that contradicts itself (1.0.8).
     if (dnode.kind == DeclKind.DeclOpaqueDecl) {
         pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
-            raw string_concat(k1, "` is an `opaque struct`: a layout this program cannot see (D-066), and no rung gives it a value type yet — that arrives with the driver interface (D-149, cycle 1.1)"),
+            string_concat(k1, "` is an `opaque struct`: a layout this program cannot see (D-066), and no rung gives it a value type yet — that arrives with the driver interface (D-149, cycle 1.1)"),
             n.span));
     }
     // A UNIT IS NOT A TYPE (D-196, 1.3.3): it names an exponent vector, and
@@ -562,12 +562,12 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // refusal so the fix is in the message.
     if (dnode.kind == DeclKind.DeclUnitDecl) {
         pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(),
-            raw string_concat(k1, "` is a unit: it names a vector for `dim256<U>`, and `dim256<` is the one place it may be written"),
+            string_concat(k1, "` is a unit: it names a vector for `dim256<U>`, and `dim256<` is the one place it may be written"),
             n.span));
     }
-    string:k2 = raw string_concat(k1, "` is ");
-    string:k3 = raw string_concat(k2, raw decl_kind_article(dnode));
-    string:k4 = raw string_concat(k3, ", not a type");
+    string:k2 = string_concat(k1, "` is ");
+    string:k3 = string_concat(k2, raw decl_kind_article(dnode));
+    string:k4 = string_concat(k3, ", not a type");
     pass (raw ty_error(r, raw TYPE_NOT_A_TYPE(), move(k4), n.span));
 };
 
@@ -620,7 +620,7 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
         // here is printed — `A -> B -> A` is the shape that says "this recurses".
         string:chain = raw depth_chain(r, name);
         pass (raw ty_error(r, raw TYPE_GENERIC_DEPTH(),
-            raw string_concat(
+            string_concat(
                 "generic instantiation is nested more than 64 deep, which is the cap (D-064); the expansion is refused rather than truncated, because a type resolved to a different depth than the one written is a different type. The instantiation stack: ",
                 chain),
             n.span));
@@ -655,13 +655,13 @@ func:depth_chain = string(TypeResolver->:r, int32:name) never fails {
     string:out = "";
     int32:i = 0i32;
     while (i < r.depth) {
-        if (i > 0i32) { out = raw string_concat(out, " -> "); }
-        out = raw string_concat(out,
+        if (i > 0i32) { out = string_concat(out, " -> "); }
+        out = string_concat(out,
                   raw intern_get(r.interns, r.inst_chain[i => int64]));
         i = i + 1i32;
     }
-    if (r.depth > 0i32) { out = raw string_concat(out, " -> "); }
-    pass (raw string_concat(out, raw intern_get(r.interns, name)));
+    if (r.depth > 0i32) { out = string_concat(out, " -> "); }
+    pass (string_concat(out, raw intern_get(r.interns, name)));
 };
 
 func:GENERIC_DEPTH = int32() never fails { pass 64i32; };
@@ -819,7 +819,7 @@ func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
             ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
                                     type_id: e.vals[i => int64].type_id,
                                     num: e.vals[i => int64].num,
-                                    text: raw string_from_bytes(
+                                    text: string_from_bytes(
                                         e.vals[i => int64].text.ptr,
                                         e.vals[i => int64].text.len) };
             pass cv;
@@ -1393,7 +1393,7 @@ func:fold_string_builtin = ConstVal(TypeResolver->:r, ExprNode:e, string:name,
         ConstVal:b = raw fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 1i32) }, scope, fuel);
         if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
         if (b.kind != (raw CV_STRING())) { pass (raw cv_none()); }
-        pass (raw cv_str(r.types.t_string, raw string_concat(a.text, b.text)));
+        pass (raw cv_str(r.types.t_string, string_concat(a.text, b.text)));
     }
     if (raw string_eq(name, "string_equals")) {
         if (argc != 2i32) { pass (raw cv_none()); }
@@ -1480,15 +1480,15 @@ pub func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:
 
 func:arg_kind_error = int32(TypeResolver->:r, DeclNode:gpn, Span:at,
                             bool:wants_value) never fails {
-    string:m1 = raw string_concat("`", raw intern_get(r.interns, raw decl_name(gpn)));
+    string:m1 = string_concat("`", raw intern_get(r.interns, raw decl_name(gpn)));
     if (wants_value) {
         pass (raw ty_error(r, raw TYPE_GENERIC_KIND(),
-            raw string_concat(m1,
+            string_concat(m1,
                 "` is declared `comptime`, so this position supplies a compile-time value, not a type"),
             at));
     }
     pass (raw ty_error(r, raw TYPE_GENERIC_KIND(),
-        raw string_concat(m1,
+        string_concat(m1,
             "` is a type parameter, so this position supplies a type; a value belongs to a parameter declared `comptime`"),
         at));
 };
@@ -1524,16 +1524,16 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
     if (cv.type_id != 0i32) {
         int32:got = cv.type_id;
         if (got != want) {
-            string:m1 = raw string_concat("this `comptime` argument is `",
+            string:m1 = string_concat("this `comptime` argument is `",
                             raw type_display(r.types, r.interns, got));
-            string:m2 = raw string_concat(m1, "` and `");
-            string:m3 = raw string_concat(m2,
+            string:m2 = string_concat(m1, "` and `");
+            string:m3 = string_concat(m2,
                             raw intern_get(r.interns, raw decl_name(gpn)));
-            string:m4 = raw string_concat(m3, "` is declared `");
-            string:m5 = raw string_concat(m4,
+            string:m4 = string_concat(m3, "` is declared `");
+            string:m5 = string_concat(m4,
                             raw type_display(r.types, r.interns, want));
             pass (raw ty_error(r, raw TYPE_MISMATCH(),
-                raw string_concat(m5, "`"), v.span));
+                string_concat(m5, "`"), v.span));
         }
     }
 
@@ -1543,7 +1543,7 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
     // them different types that behave identically, which is the shape D-090's
     // interning exists to prevent.
     pass (raw tt_comptime(r.types, want,
-                          raw intern_add(r.interns, raw int_to_string(cv.num))));
+                          raw intern_add(r.interns, int_to_string(cv.num))));
 };
 
 // `Container<int32>` — THE SOURCE SPELLING, which is the most reversible mangling
@@ -1555,16 +1555,16 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
 // name — so every diagnostic about an instantiation says which one without
 // anything extra being written.
 pub func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) never fails {
-    string:m = raw string_concat(raw intern_get(r.interns, name), "<");
+    string:m = string_concat(raw intern_get(r.interns, name), "<");
     int32:i = 0i32;
     while (i < w.count) {
-        if (i > 0i32) { m = raw string_concat(m, ", "); }
-        m = raw string_concat(m,
+        if (i > 0i32) { m = string_concat(m, ", "); }
+        m = string_concat(m,
                 raw type_display(r.types, r.interns,
                                    raw ast_id_at(r.ast, w.start, i)));
         i = i + 1i32;
     }
-    pass (raw string_concat(m, ">"));
+    pass (string_concat(m, ">"));
 };
 
 // BOTH COUNTS ARE NAMED, and the direction is named too. "wrong number of type
@@ -1573,18 +1573,18 @@ pub func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) never 
 // case, so the message says plainly that the type is generic.
 func:arity_error = int32(TypeResolver->:r, TypeNode:n, int32:name,
                          int32:want, int32:given) never fails {
-    string:m1 = raw string_concat("`", raw intern_get(r.interns, name));
+    string:m1 = string_concat("`", raw intern_get(r.interns, name));
     if (want == 0i32) {
         pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(m1, "` is not generic, so it takes no type arguments"),
+            string_concat(m1, "` is not generic, so it takes no type arguments"),
             n.span));
     }
-    string:m2 = raw string_concat(m1, "` takes ");
-    string:m3 = raw string_concat(m2, raw int_to_string(want => int64));
-    string:m4 = raw string_concat(m3, " type argument(s) and this supplies ");
-    string:m5 = raw string_concat(m4, raw int_to_string(given => int64));
+    string:m2 = string_concat(m1, "` takes ");
+    string:m3 = string_concat(m2, int_to_string(want => int64));
+    string:m4 = string_concat(m3, " type argument(s) and this supplies ");
+    string:m5 = string_concat(m4, int_to_string(given => int64));
     if (given == 0i32) {
-        m5 = raw string_concat(m5,
+        m5 = string_concat(m5,
             "; a generic type is written with its arguments — `Container<int32>`, never bare `Container`");
     }
     pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(), move(m5), n.span));
@@ -1650,18 +1650,18 @@ func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
     TypeNode:an = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast,
                       raw type_args_start(n), i) });
     if (an.kind != TypeKind.TypeComptimeArg) {
-        string:c1 = raw string_concat("`Channel`'s ", what);
+        string:c1 = string_concat("`Channel`'s ", what);
         discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(c1,
+            string_concat(c1,
                 " is a constant, not a type: it is part of the channel's identity, and one decided at runtime is the `mode` field D-072 removed"),
             n.span));
         pass 0i32;
     }
     ConstVal:cv = raw fold_const(r, ExprId{ index: an.a }, scope);
     if (cv.kind == (raw CV_NONE())) {
-        string:c2 = raw string_concat("`Channel`'s ", what);
+        string:c2 = string_concat("`Channel`'s ", what);
         discard(raw ty_error(r, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(c2,
+            string_concat(c2,
                 " must fold to a constant at compile time (D-072): the level the lock analysis reasons about, and the capacity that monomorphizes the behaviour"),
             n.span));
         pass 0i32;
@@ -1710,9 +1710,9 @@ pub func:dim_unit_of_name = DimVecAnswer(Ast->:ast, TypeTable->:types,
     DimVecAnswer:no = DimVecAnswer{ found: false, vec: 0i64 };
     int32:sym = raw scope_lookup(tab, scope, name);
     if (sym == 0i32) {
-        string:m1 = raw string_concat("there is no unit named `", txt);
+        string:m1 = string_concat("there is no unit named `", txt);
         drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
-            raw string_concat(m1, "`: a unit is one of the seven SI base names or a `unit:` declaration in scope"),
+            string_concat(m1, "`: a unit is one of the seven SI base names or a `unit:` declaration in scope"),
             at));
         pass no;
     }
@@ -1720,9 +1720,9 @@ pub func:dim_unit_of_name = DimVecAnswer(Ast->:ast, TypeTable->:types,
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = raw ast_decl(ast, did);
     if (d.kind != DeclKind.DeclUnitDecl) {
-        string:m2 = raw string_concat("`", txt);
+        string:m2 = string_concat("`", txt);
         drop diaglist_push(diags, raw diag_error(raw TYPE_UNIT_RULES(),
-            raw string_concat(m2, "` is not a unit: `dim256<U>` takes one of the seven SI base names or a `unit:` declaration"),
+            string_concat(m2, "` is not a unit: `dim256<U>` takes one of the seven SI base names or a `unit:` declaration"),
             at));
         pass no;
     }
@@ -1930,10 +1930,10 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         }
         if (vk == (raw TY_BOOL())) { vok = true; }
         if (!vok) {
-            string:v1 = raw string_concat("`simd<",
+            string:v1 = string_concat("`simd<",
                             raw type_display(r.types, r.interns, vel));
             pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-                raw string_concat(v1, ", …>` is not one of the vector element types (D-194): the integer widths 8..64, `flt32`/`flt64`, or `bool` — the twisted and ternary families' per-lane sticky ERR erases the hardware-vector win, and a sub-byte lane has no memory layout"),
+                string_concat(v1, ", …>` is not one of the vector element types (D-194): the integer widths 8..64, `flt32`/`flt64`, or `bool` — the twisted and ternary families' per-lane sticky ERR erases the hardware-vector win, and a sub-byte lane has no memory layout"),
                 n.span));
         }
         TypeNode:vn = raw ast_type(r.ast, TypeId{ index: raw ast_id_at(r.ast,
@@ -1986,10 +1986,10 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
             if ((cb2 == 32i32) || (cb2 == 64i32)) { cok = true; }
         }
         if (!cok) {
-            string:c1 = raw string_concat("`complex<",
+            string:c1 = string_concat("`complex<",
                             raw type_display(r.types, r.interns, cel));
             pass (raw ty_error(r, raw TYPE_COMPLEX_RULES(),
-                raw string_concat(c1, ", …>` is not one of the ratified element types (D-199): `flt32`, `flt64`, `tfp32`, `tfp64`"),
+                string_concat(c1, ", …>` is not one of the ratified element types (D-199): `flt32`, `flt64`, `tfp32`, `tfp64`"),
                 n.span));
         }
         pass (raw tt_complex(r.types, cel));
@@ -2022,10 +2022,10 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     }
     if (count != 1i32) {
         // AN ARITY MISTAKE CARRIES THE ARITY CODE and names the type (1.0.8).
-        string:g1 = raw string_concat("`",
+        string:g1 = string_concat("`",
                         raw token_kind_name(as_kind));
         pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
-            raw string_concat(g1, "` takes exactly one type argument"), n.span));
+            string_concat(g1, "` takes exactly one type argument"), n.span));
     }
     TypeId:arg = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), 0i32) };
     int32:inner = raw resolve_type(r, arg, scope);
@@ -2072,10 +2072,10 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         if (ak == (raw TY_POINTER())) { ok = true; }
         if (ak == (raw TY_KERNEL()))  { ok = true; }
         if (!ok) {
-            string:a1 = raw string_concat("`atomic<",
+            string:a1 = string_concat("`atomic<",
                             raw type_display(r.types, r.interns, inner));
             pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-                raw string_concat(a1, ">` is not one of the atomic types (D-182): the integer widths up to 64, `bool`, a pointer, or a kernel identifier — a float's read-modify-write is a CAS loop to write visibly, an aggregate is a lock-free promise this is not, and a `tbb`'s sticky ERR has no read-modify-write meaning"),
+                string_concat(a1, ">` is not one of the atomic types (D-182): the integer widths up to 64, `bool`, a pointer, or a kernel identifier — a float's read-modify-write is a CAS loop to write visibly, an aggregate is a lock-free promise this is not, and a `tbb`'s sticky ERR has no read-modify-write meaning"),
                 n.span));
         }
         pass (raw tt_atomic(r.types, inner,
@@ -2583,10 +2583,10 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
             if (sc.found) {
                 bad = true;
                 if (report) {
-                    string:sw1 = raw string_concat("mentions `Self` in parameter `",
+                    string:sw1 = string_concat("mentions `Self` in parameter `",
                                      raw intern_get(r.interns, raw decl_name(pdecl)));
                     drop not_object_safe(r, trait_id, mname,
-                        raw string_concat(sw1,
+                        string_concat(sw1,
                             "`, and only the receiver may — behind a vtable the concrete type is erased, so the value would be read at the wrong layout"),
                         at);
                 }
@@ -2643,9 +2643,9 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
             // looking for a keyword that is not there (1.0.8).
             string:what = "a type parameter";
             if (raw generic_is_value(gn)) { what = "a `comptime` value parameter"; }
-            string:w1 = raw string_concat("has ", what);
+            string:w1 = string_concat("has ", what);
             drop not_object_safe(r, trait_id, mname,
-                raw string_concat(w1,
+                string_concat(w1,
                     ", which monomorphizes into one body per argument, and a vtable slot is one address"),
                 at);
         }
@@ -2658,10 +2658,10 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
 // exhaustion), because a safety check that fails OPEN on the one input it could
 // not read is worse than one that refuses something legal.
 func:self_scan_defect = NIL(TypeResolver->:r, string:mname, Span:at) never fails {
-    string:d1 = raw string_concat(
+    string:d1 = string_concat(
         "object safety ran out of fuel walking the types of method `", mname);
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_INTERNAL(),
-        raw string_concat(d1,
+        string_concat(d1,
             "`; the trait is refused to stay safe, but this is a defect in the compiler rather than a fault in this program"),
         at));
     pass NIL;
@@ -2669,12 +2669,12 @@ func:self_scan_defect = NIL(TypeResolver->:r, string:mname, Span:at) never fails
 
 func:not_object_safe = NIL(TypeResolver->:r, int32:trait_id, string:mname,
                            string:why, Span:at) never fails {
-    string:m1 = raw string_concat("`",
+    string:m1 = string_concat("`",
                     raw type_display(r.types, r.interns, trait_id));
-    string:m2 = raw string_concat(m1, "` cannot be used as `dyn`: method `");
-    string:m3 = raw string_concat(m2, mname);
-    string:m4 = raw string_concat(m3, "` ");
+    string:m2 = string_concat(m1, "` cannot be used as `dyn`: method `");
+    string:m3 = string_concat(m2, mname);
+    string:m4 = string_concat(m3, "` ");
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_OBJECT_SAFE(),
-        raw string_concat(m4, why), at));
+        string_concat(m4, why), at));
     pass NIL;
 };

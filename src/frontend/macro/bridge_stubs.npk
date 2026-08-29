@@ -148,11 +148,11 @@ func:bs_ident_ok = bool(string:s) never fails {
 // --- text assembly ------------------------------------------------------------
 
 func:bs_cat = string(move string:a, string:b) never fails {
-    pass (raw string_concat(a, b));
+    pass (string_concat(a, b));
 };
 
 func:bs_num = string(int64:v) never fails {
-    pass (raw int_to_string(v));
+    pass (int_to_string(v));
 };
 
 // The generated `pass` for the hash constant: a u64 emitted as two positive
@@ -242,7 +242,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     } }
 
     // classify the middles, and build the canonical spelling as we go
-    string:canon = raw bs_cat(raw string_concat(name, ""), "=");
+    string:canon = raw bs_cat(string_concat(name, ""), "=");
     canon = raw bs_cat(move(canon), raw bs_spell(rcls));
     canon = raw bs_cat(move(canon), "(");
     string:sig = "";
@@ -270,7 +270,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     // --- the stub text --------------------------------------------------------
     // Parameters are renamed p1..pN — the stub is a fresh declaration and the
     // caller never sees the block's own spellings.
-    string:t = raw bs_cat("pub async func:", raw string_concat(name, ""));
+    string:t = raw bs_cat("pub async func:", string_concat(name, ""));
     t = raw bs_cat(move(t), " = ");
     t = raw bs_cat(move(t), raw bs_spell(rcls));
     t = raw bs_cat(move(t), "(Bridge->:b");
@@ -311,7 +311,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
             t = raw bs_cat(move(t), raw bs_num(slot => int64));
             t = raw bs_cat(move(t), "i64)) = ");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), " => int64;\n");
             slot = slot + 1i32;
         }
@@ -319,7 +319,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
             t = raw bs_cat(move(t), raw bs_num(slot => int64));
             t = raw bs_cat(move(t), "i64)) = ");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), ";\n");
             slot = slot + 1i32;
         }
@@ -330,7 +330,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), "    <-(#ptr_add<int64>(bulk, ");
             t = raw bs_cat(move(t), raw bs_num((slot + 1i32) => int64));
             t = raw bs_cat(move(t), "i64)) = ");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), ".len;\n");
             // the byte copy — proven constructs only (a bounds-checked
             // element loop), no builtin the tree has not exercised
@@ -339,11 +339,11 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), " = 0i64;\n    while (ci");
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), " < ");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), ".len) {\n        <-(#ptr_add<int8>(bulk, aoff + ci");
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), ")) = (");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), "[ci");
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), "]) =>! int8;\n        ci");
@@ -351,7 +351,7 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
             t = raw bs_cat(move(t), " = ci");
             t = raw bs_cat(move(t), raw bs_num(mm => int64));
             t = raw bs_cat(move(t), " + 1i64;\n    }\n    aoff = aoff + ");
-            t = raw bs_cat(move(t), raw string_concat(pn, ""));
+            t = raw bs_cat(move(t), string_concat(pn, ""));
             t = raw bs_cat(move(t), ".len;\n");
             slot = slot + 2i32;
         }
@@ -451,7 +451,7 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
                 }
                 if (allok) {
                     string:hf = raw bs_cat("pub func:",
-                                    raw string_concat(lib, ""));
+                                    string_concat(lib, ""));
                     hf = raw bs_cat(move(hf),
                         "_iface_hash = int64() never fails { pass ");
                     hf = raw bs_cat(move(hf), raw bs_hash_expr(h));
@@ -467,9 +467,9 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     // THE GENERATED TEXT IS A MODULE, PARSED LIKE ANY OTHER — the derive
     // splice, verbatim: its members are appended to the real module's
     // member window, marked, before collection binds a single name.
-    string:path = raw string_concat("<bridge-",
-                      raw string_concat(raw int_to_string(index => int64), ">"));
-    string:full = raw string_concat("mod:derived;\n", src);
+    string:path = string_concat("<bridge-",
+                      string_concat(int_to_string(index => int64), ">"));
+    string:full = string_concat("mod:derived;\n", src);
     int32:file = raw srcmgr_add(@g.sm, move(path), move(full));
     string:dtext = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, dtext, g.interns, g.diags);

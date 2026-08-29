@@ -146,7 +146,7 @@ func:main = int32(cstring[]:_~argv) {
     // They are declared in no module (AST_REFERENCE 3.3), so a resolver without
     // the generated list would report every one of them.
     Run:rf = raw run(
-        "func:f = int32() { wild int8->:p = alloc(8i64); string:s = raw string_concat(\"a\", \"b\"); dalloc(p); pass 0i32; };",
+        "func:f = int32() { wild int8->:p = alloc(8i64); string:s = string_concat(\"a\", \"b\"); dalloc(p); pass 0i32; };",
         @it);
     if (raw errors(@rf) != 0i64)                          { exit 50i32; }
     if (!(raw is_builtin_name("alloc")))                  { exit 51i32; }
@@ -226,9 +226,9 @@ func:main = int32(cstring[]:_~argv) {
     if (raw diaglist_count(@ad) != 0i64)                  { exit 100i32; }
     if ((raw resolve_audit(@ag.ast, @ag.tab, @it)) != 0i32) { exit 101i32; }
 
-    drop wild_release_all();
+    wild_release_all();
 
-    drop wild_release_all();
+    wild_release_all();
     exit 0i32;
 };
 

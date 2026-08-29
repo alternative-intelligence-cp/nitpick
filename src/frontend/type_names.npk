@@ -103,13 +103,13 @@ pub func:method_symbol_name = string(TypeTable->:tyt, InternTable->:interns,
                                      int32:self_ty, int32:trait_ty,
                                      string:name) never fails {
     // cloned, not passed through: the parameter is lent (D-183)
-    if (self_ty == 0i32) { pass (raw string_concat(name, "")); }
+    if (self_ty == 0i32) { pass (string_concat(name, "")); }
     string:q = raw type_display(tyt, interns, self_ty);
     if (trait_ty != 0i32) {
-        q = raw string_concat(q,
-                raw string_concat(":", raw type_display(tyt, interns, trait_ty)));
+        q = string_concat(q,
+                string_concat(":", raw type_display(tyt, interns, trait_ty)));
     }
-    pass (raw string_concat(q, raw string_concat(".", name)));
+    pass (string_concat(q, string_concat(".", name)));
 };
 
 pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) never fails {
@@ -125,65 +125,65 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     // cannot answer for it — found at 1.4.1 by the walkers-total instrument.
     if (k == (raw TY_OWNEDFD())) { pass "OwnedFd"; }
     if (k == (raw TY_CHANNEL())) {
-        string:c1 = raw string_concat("Channel<",
+        string:c1 = string_concat("Channel<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(c1, ", …>"));
+        pass (string_concat(c1, ", …>"));
     }
     if (k == (raw TY_MUTEX())) {
-        string:m1 = raw string_concat("Mutex<",
+        string:m1 = string_concat("Mutex<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(m1, ", …>"));
+        pass (string_concat(m1, ", …>"));
     }
     if (k == (raw TY_GUARD())) {
-        string:g1 = raw string_concat("Guard<",
+        string:g1 = string_concat("Guard<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(g1, ">"));
+        pass (string_concat(g1, ">"));
     }
     if (k == (raw TY_RWLOCK())) {
-        string:r1 = raw string_concat("RwLock<",
+        string:r1 = string_concat("RwLock<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(r1, ", …>"));
+        pass (string_concat(r1, ", …>"));
     }
     if (k == (raw TY_RGUARD())) {
-        string:r2 = raw string_concat("RGuard<",
+        string:r2 = string_concat("RGuard<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(r2, ">"));
+        pass (string_concat(r2, ">"));
     }
     if (k == (raw TY_CONDVAR())) { pass "CondVar<…>"; }
     if (k == (raw TY_BARRIER())) { pass "Barrier<…>"; }
     if (k == (raw TY_ATOMIC())) {
-        string:a1 = raw string_concat("atomic<",
+        string:a1 = string_concat("atomic<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(a1, ">"));
+        pass (string_concat(a1, ">"));
     }
     if (k == (raw TY_SIMD())) {
-        string:s1 = raw string_concat("simd<",
+        string:s1 = string_concat("simd<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        string:s2 = raw string_concat(s1, ", ");
-        string:s3 = raw string_concat(s2,
-                        raw int_to_string(((raw tt_get(tyt, t)).b) => int64));
-        pass (raw string_concat(s3, ">"));
+        string:s2 = string_concat(s1, ", ");
+        string:s3 = string_concat(s2,
+                        int_to_string(((raw tt_get(tyt, t)).b) => int64));
+        pass (string_concat(s3, ">"));
     }
     if (k == (raw TY_ANY()))     { pass "any"; }
     if (k == (raw TY_CHAR())) {
-        pass (raw string_concat("char",
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat("char",
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_TBB())) {
-        pass (raw string_concat("tbb",
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat("tbb",
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_TFP())) {
-        pass (raw string_concat("tfp",
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat("tfp",
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     // `dim256<…>` renders its vector in BASE-PRODUCT form (D-196, 1.3.3) —
     // never a guessed derived name: `Hertz` and `Becquerels` are one vector,
     // and a diagnostic that picked one would be inventing intent.
     if (k == (raw TY_DIM())) {
-        string:dv = raw string_concat("dim256<",
+        string:dv = string_concat("dim256<",
                         raw dim_unit_text(raw type_dim_vec(tyt, t)));
-        pass (raw string_concat(dv, ">"));
+        pass (string_concat(dv, ">"));
     }
     // The ternary/nonary four, named from the (base, digits) pair (D-197).
     if (k == (raw TY_TERN())) {
@@ -195,13 +195,13 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
         pass "nyte";
     }
     if (k == (raw TY_FRAC())) {
-        pass (raw string_concat("frac",
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat("frac",
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_COMPLEX())) {
-        string:ce = raw string_concat("complex<",
+        string:ce = string_concat("complex<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(ce, ">"));
+        pass (string_concat(ce, ">"));
     }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
@@ -214,65 +214,65 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_INT())) {
         string:base = "int";
         if (!(raw type_is_signed(tyt, t))) { base = "uint"; }
-        pass (raw string_concat(base,
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat(base,
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_FLOAT())) {
-        pass (raw string_concat("flt",
-                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
+        pass (string_concat("flt",
+                  int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_POINTER())) {
-        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
+        pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
     }
     if (k == (raw TY_SLICE())) {
-        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
+        pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (raw string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "?"));
+        pass (string_concat(raw type_display(tyt, interns, raw type_elem(tyt, t)), "?"));
     }
     if (k == (raw TY_RESULT())) {
-        string:r1 = raw string_concat("Result<",
+        string:r1 = string_concat("Result<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(r1, ">"));
+        pass (string_concat(r1, ">"));
     }
     // THE REST OF THE ONE-OPERAND KINDS (1.0.8). Each printed `<type>` — so
     // "`<type>` and `<type>` are different types" was the whole of a refusal
     // between two `Handle`s, and `arr.nope` on an array reported "`<type>` has
     // no member `nope`". Every kind that carries an operand spells it.
     if (k == (raw TY_ARRAY())) {
-        string:a1 = raw string_concat(
+        string:a1 = string_concat(
                         raw type_display(tyt, interns, raw type_elem(tyt, t)), "[");
-        string:a2 = raw string_concat(a1,
-                        raw int_to_string((raw type_array_count(tyt, t)) => int64));
-        pass (raw string_concat(a2, "]"));
+        string:a2 = string_concat(a1,
+                        int_to_string((raw type_array_count(tyt, t)) => int64));
+        pass (string_concat(a2, "]"));
     }
     if (k == (raw TY_HANDLE())) {
-        string:h1 = raw string_concat("Handle<",
+        string:h1 = string_concat("Handle<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(h1, ">"));
+        pass (string_concat(h1, ">"));
     }
     if (k == (raw TY_ARENA())) {
-        string:n1 = raw string_concat("arena<",
+        string:n1 = string_concat("arena<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(n1, ">"));
+        pass (string_concat(n1, ">"));
     }
     if (k == (raw TY_SHARED_ARENA())) {
-        string:s1 = raw string_concat("shared_arena<",
+        string:s1 = string_concat("shared_arena<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        pass (raw string_concat(s1, ">"));
+        pass (string_concat(s1, ">"));
     }
     // A RANGE IS `{ T, T }` (D-093), spelled as the value that makes one.
     if (k == (raw TY_RANGE())) {
-        string:g1 = raw string_concat(
+        string:g1 = string_concat(
                         raw type_display(tyt, interns, raw type_elem(tyt, t)), "..");
-        pass (raw string_concat(g1,
+        pass (string_concat(g1,
                   raw type_display(tyt, interns, raw type_elem(tyt, t))));
     }
     // A PROJECTION IS SPELLED AS ONE (D-164): `T.Item`.
     if (k == (raw TY_ASSOC())) {
-        string:p1 = raw string_concat(
+        string:p1 = string_concat(
                         raw type_display(tyt, interns, raw type_assoc_base(tyt, t)), ".");
-        pass (raw string_concat(p1,
+        pass (string_concat(p1,
                   raw intern_get(interns, raw type_assoc_name(tyt, t))));
     }
     // A FUNCTION PRINTS ITS RETURN AND ITS SHAPE, not `<type>`. `type_elem` on a
@@ -280,17 +280,17 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     // place a reader looks — a diagnostic saying "`func Result<int64>(…)` is not
     // a function" would have been the only clue that the variadic kind existed.
     if (k == (raw TY_FUNC())) {
-        string:f1 = raw string_concat("func ",
+        string:f1 = string_concat("func ",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        string:f2 = raw string_concat(f1, "(…)");
-        if (raw func_never_fails(tyt, t)) { pass (raw string_concat(f2, " never fails")); }
+        string:f2 = string_concat(f1, "(…)");
+        if (raw func_never_fails(tyt, t)) { pass (string_concat(f2, " never fails")); }
         pass f2;
     }
     if (k == (raw TY_FUNC_VARIADIC())) {
-        string:f1 = raw string_concat("func ",
+        string:f1 = string_concat("func ",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
-        string:f2 = raw string_concat(f1, "(…, ..*T[])");
-        if (raw func_never_fails(tyt, t)) { pass (raw string_concat(f2, " never fails")); }
+        string:f2 = string_concat(f1, "(…, ..*T[])");
+        if (raw func_never_fails(tyt, t)) { pass (string_concat(f2, " never fails")); }
         pass f2;
     }
     // `Self` HAS NO NAME TO CARRY, so without this it printed `<type>` — and it

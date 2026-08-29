@@ -41,7 +41,7 @@ pub struct:Lexer = {
 // holds it, the Lexer's own drop skips it, and the manager stays the one
 // owner for the process's life.
 pub func:lexer_init = Lexer(int32:file, string:text) never fails {
-    Lexer:lx = Lexer{ text: raw string_from_bytes(text.ptr, text.len), file: file, pos: 0i64, line: 1i32, col: 1i32,
+    Lexer:lx = Lexer{ text: string_from_bytes(text.ptr, text.len), file: file, pos: 0i64, line: 1i32, col: 1i32,
                       in_template: false, interp_depth: 0i32, brace_depth: 0i32,
                       interp_brace: [] };
     pass lx;
@@ -503,7 +503,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                     // again later, and the source form is what the const
                     // evaluator needs to get it right the first time.
                     pass (raw token_numeric(TokenKind.FloatLit, fsp,
-                              (raw intern_add(interns, raw string_concat(ftext, ""))) => int64,
+                              (raw intern_add(interns, string_concat(ftext, ""))) => int64,
                               raw num_float_width(ftext)));
                 }
             }

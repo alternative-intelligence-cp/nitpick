@@ -559,14 +559,14 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
             DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: want });
             string:wq = "";
             if (x.rquals[i2 => int64] != 0i32) {
-                wq = raw string_concat(
+                wq = string_concat(
                          raw intern_get(x.interns, x.rquals[i2 => int64]), ".");
             }
-            string:m1 = raw string_concat(
-                raw string_concat("`failsafe` does not name `", wq),
+            string:m1 = string_concat(
+                string_concat("`failsafe` does not name `", wq),
                 raw intern_get(x.interns, raw decl_name(wd)));
             drop diaglist_push(x.diags, raw diag_error(raw REACH_UNNAMED(),
-                raw string_concat(m1,
+                string_concat(m1,
                     "`, which can reach it (D-179): add the arm — `(*)` counts for nothing here, so a new failure mode is always acknowledged before the program compiles again"),
                 pn.span));
         }

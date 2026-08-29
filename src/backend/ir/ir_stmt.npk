@@ -56,7 +56,7 @@ use "./ir_expr.npk".*;
 // label resets the flag because a new block is live by construction.
 pub func:s_br = NIL(ExprEmitter->:x, string:label) never fails {
     if (!x.fe.terminated) {
-        drop irw_line(x.fe.w, raw string_concat("br label %", label));
+        drop irw_line(x.fe.w, string_concat("br label %", label));
         x.fe.terminated = true;
     }
     pass NIL;
@@ -166,16 +166,16 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
     drop irw_line(x.fe.w, raw cat4(lf, " = load i8, ptr ", <-fl, ""));
     string:lb = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(lb, " = icmp ne i8 ",
-                      raw string_concat(lf, ", 0")));
+                      string_concat(lf, ", 0")));
     string:dl = raw irw_new_label(x.fe.w, "drop.go");
     string:nl = raw irw_new_label(x.fe.w, "drop.done");
     drop irw_line(x.fe.w, raw cat5("br i1 ", lb, ", label %", dl,
-                      raw string_concat(", label %", nl)));
+                      string_concat(", label %", nl)));
     drop s_start(x, dl);
     drop irw_line(x.fe.w, raw cat3("call void ",
                       raw drop_fn_sym(x.fe.ctx, raw fnem_local_type_at(x.fe, i)),
-                      raw string_concat(
-                          raw string_concat("(ptr ",
+                      string_concat(
+                          string_concat("(ptr ",
                               raw fnem_local_slot_at(x.fe, i)), ")")));
     drop s_br(x, nl);
     drop s_start(x, nl);
@@ -370,9 +370,9 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         v = raw emit_fit(x, dty, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
-                          raw string_concat(", ptr ", slot)));
+                          string_concat(", ptr ", slot)));
     }
-    drop fnem_bind(x.fe, raw stmt_name(s), raw string_concat(slot, ""), dty);
+    drop fnem_bind(x.fe, raw stmt_name(s), string_concat(slot, ""), dty);
     // THE DROP FLAG (D-183, 1.2.3; frame-resident half at 1.2.4b): one bit
     // beside every OWNING local, live when the binding holds a value, cleared
     // by `move` and by `pass`, tested at the scope-exit drop. An
@@ -489,28 +489,28 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             if (tgt_drops_old) {
                 drop irw_line(x.fe.w, raw cat4("call void ",
                                   raw drop_fn_sym(x.fe.ctx, place.type_id),
-                                  raw string_concat("(ptr ", place.addr), ")"));
+                                  string_concat("(ptr ", place.addr), ")"));
             }
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
                 int32:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
                 if (tli >= 0i32) {
                     string->:tfl = raw fnem_local_flag_at(x.fe, tli);
                     if (tfl.len > 0i64) {
-                        aflag = raw string_concat(<-tfl, "");
+                        aflag = string_concat(<-tfl, "");
                         string:of = raw irw_temp(x.fe.w);
                         drop irw_line(x.fe.w, raw cat4(of, " = load i8, ptr ",
                                           aflag, ""));
                         string:ob = raw irw_temp(x.fe.w);
                         drop irw_line(x.fe.w, raw cat3(ob, " = icmp ne i8 ",
-                                          raw string_concat(of, ", 0")));
+                                          string_concat(of, ", 0")));
                         string:dl = raw irw_new_label(x.fe.w, "old.drop");
                         string:kl = raw irw_new_label(x.fe.w, "old.kept");
                         drop irw_line(x.fe.w, raw cat5("br i1 ", ob, ", label %",
-                                          dl, raw string_concat(", label %", kl)));
+                                          dl, string_concat(", label %", kl)));
                         drop s_start(x, dl);
                         drop irw_line(x.fe.w, raw cat4("call void ",
                                           raw drop_fn_sym(x.fe.ctx, place.type_id),
-                                          raw string_concat("(ptr ", place.addr), ")"));
+                                          string_concat("(ptr ", place.addr), ")"));
                         drop s_br(x, kl);
                         drop s_start(x, kl);
                     }
@@ -518,7 +518,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             }
         }
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
-                          raw string_concat(", ptr ", place.addr)));
+                          string_concat(", ptr ", place.addr)));
         if (aflag.len > 0i64) {
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", aflag, ""));
         }
@@ -540,13 +540,13 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                                      place.addr));
     IrVal:v = raw emit_expr(x, raw stmt_assigned(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    IrVal:lhsv = raw iv(raw string_concat(ll.text, ""),
-                        raw string_concat(cur, ""), place.type_id);
+    IrVal:lhsv = raw iv(string_concat(ll.text, ""),
+                        string_concat(cur, ""), place.type_id);
     IrVal:res = raw emit_arith_value(x, raw compound_op(op), place.type_id,
                                      lhsv, v, place.type_id, s.span);
     if (!(raw iv_is_ok(res))) { pass res; }
     drop irw_line(x.fe.w, raw cat5("store ", res.ll, " ", res.ref,
-                      raw string_concat(", ptr ", place.addr)));
+                      string_concat(", ptr ", place.addr)));
     pass (raw iv_nil());
 };
 
@@ -555,14 +555,14 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     string:then_l = raw irw_new_label(x.fe.w, "if.then");
     string:done_l = raw irw_new_label(x.fe.w, "if.done");
-    string:else_l = raw string_concat(done_l, "");
+    string:else_l = string_concat(done_l, "");
     bool:has_else = !(raw stmt_is_none(raw stmt_else(s)));
     if (has_else) { else_l = raw irw_new_label(x.fe.w, "if.else"); }
 
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", then_l,
-                      raw string_concat(", label %", else_l)));
+                      string_concat(", label %", else_l)));
     x.fe.terminated = true;
 
     drop s_start(x, then_l);
@@ -584,10 +584,10 @@ func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // sign-extend.
 func:loop_i64 = string(ExprEmitter->:x, IrVal:v) never fails {
     // cloned, not passed through: the parameter is lent (D-183)
-    if (raw string_eq(v.ll, "i64")) { pass (raw string_concat(v.ref, "")); }
+    if (raw string_eq(v.ll, "i64")) { pass (string_concat(v.ref, "")); }
     string:w = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(w, " = sext ", v.ll, " ",
-                      raw string_concat(v.ref, " to i64")));
+                      string_concat(v.ref, " to i64")));
     pass w;
 };
 
@@ -620,11 +620,11 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 
     string:bad = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(bad, " = icmp sle i64 ",
-                      raw string_concat(pv, ", 0")));
+                      string_concat(pv, ", 0")));
     string:trap_l = raw irw_new_label(x.fe.w, "ct.step");
     string:go_l = raw irw_new_label(x.fe.w, "ct.go");
     drop irw_line(x.fe.w, raw cat5("br i1 ", bad, ", label %", trap_l,
-                      raw string_concat(", label %", go_l)));
+                      string_concat(", label %", go_l)));
     drop irw_label(x.fe.w, trap_l);
     drop irw_line(x.fe.w, "call void @npk_trap(i32 -4101)");
     drop irw_line(x.fe.w, "unreachable");
@@ -646,7 +646,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     drop irw_line(x.fe.w, raw cat5(asc0, " = icmp slt i64 ", sv, ", ", lv));
     string:ascb = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(ascb, " = zext i1 ",
-                      raw string_concat(asc0, " to i8")));
+                      string_concat(asc0, " to i8")));
     string:asc_s = raw loop_slot(x, sid, 6i32, "i8");
     if (asc_s.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop loop_stash(x, asc_s, "i8", ascb);
@@ -663,7 +663,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:ascw = raw loop_reread(x, asc_s, "i8");
     string:asch = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(asch, " = trunc i8 ",
-                      raw string_concat(ascw, " to i1")));
+                      string_concat(ascw, " to i1")));
     string:up = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(up, " = icmp slt i64 ", cur, ", ", lvh));
     string:down = raw irw_temp(x.fe.w);
@@ -672,12 +672,12 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     drop irw_line(x.fe.w, raw cat5(cond, " = select i1 ", asch, ", ",
                       raw cat5("i1 ", up, ", i1 ", down, "")));
     drop irw_line(x.fe.w, raw cat5("br i1 ", cond, ", label %", body_l,
-                      raw string_concat(", label %", done_l)));
+                      string_concat(", label %", done_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
     // `continue` re-enters at the INCREMENT, or the counter would never move.
-    drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), raw string_concat(slot, ""));
+    drop fnem_loop_push(x.fe, string_concat(incr_l, ""), string_concat(done_l, ""), raw stmt_label(s), string_concat(slot, ""));
     IrVal:b = raw emit_block(x, raw stmt_counted_body(s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -689,7 +689,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:ascw2 = raw loop_reread(x, asc_s, "i8");
     string:asci = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(asci, " = trunc i8 ",
-                      raw string_concat(ascw2, " to i1")));
+                      string_concat(ascw2, " to i1")));
     string:nup = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(nup, " = add i64 ", c2, ", ", pvi));
     string:ndown = raw irw_temp(x.fe.w);
@@ -728,12 +728,12 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
-                      raw string_concat(", label %", junc_l)));
+                      string_concat(", label %", junc_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
     drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag, ""));
-    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(junc_l, ""), raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, string_concat(head_l, ""), string_concat(junc_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_when_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -744,9 +744,9 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     drop irw_line(x.fe.w, raw cat5(ran, " = load i8, ptr ", flag, "", ""));
     string:rb = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(rb, " = icmp ne i8 ",
-                      raw string_concat(ran, ", 0")));
+                      string_concat(ran, ", 0")));
     drop irw_line(x.fe.w, raw cat5("br i1 ", rb, ", label %", then_l,
-                      raw string_concat(", label %", end_l)));
+                      string_concat(", label %", end_l)));
     x.fe.terminated = true;
 
     drop s_start(x, then_l);
@@ -788,16 +788,16 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         if (!(raw iv_is_ok(rv))) { pass rv; }
         string:lo = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(lo, " = extractvalue ", rv.ll, " ",
-                          raw string_concat(rv.ref, ", 0")));
+                          string_concat(rv.ref, ", 0")));
         string:hi0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(hi0, " = extractvalue ", rv.ll, " ",
-                          raw string_concat(rv.ref, ", 1")));
+                          string_concat(rv.ref, ", 1")));
         string:hi_s = raw loop_slot(x, sid, 2i32, bll.text);
         if (hi_s.len == 0i64) { pass (raw iv_broken(s.span)); }
         drop loop_stash(x, hi_s, bll.text, hi0);
         string:slot = raw for_bind_slot(x, sid, bind, btid, bll);
         drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", lo,
-                          raw string_concat(", ptr ", slot)));
+                          string_concat(", ptr ", slot)));
         string:head_l = raw irw_new_label(x.fe.w, "fr.head");
         string:body_l = raw irw_new_label(x.fe.w, "fr.body");
         string:incr_l = raw irw_new_label(x.fe.w, "fr.incr");
@@ -806,16 +806,16 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         drop s_start(x, head_l);
         string:cur = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cur, " = load ", bll.text, ", ptr ",
-                          raw string_concat(slot, "")));
+                          string_concat(slot, "")));
         string:hih = raw loop_reread(x, hi_s, bll.text);
         string:cnd = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cnd, " = icmp slt ", bll.text, " ",
                           raw cat3(cur, ", ", hih)));
         drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
-                          raw string_concat(", label %", done_l)));
+                          string_concat(", label %", done_l)));
         x.fe.terminated = true;
         drop s_start(x, body_l);
-        drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
+        drop fnem_loop_push(x.fe, string_concat(incr_l, ""), string_concat(done_l, ""), raw stmt_label(s), "");
         IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
         drop fnem_loop_pop(x.fe);
         if (!(raw iv_is_ok(b))) { pass b; }
@@ -823,12 +823,12 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         drop s_start(x, incr_l);
         string:c2 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(c2, " = load ", bll.text, ", ptr ",
-                          raw string_concat(slot, "")));
+                          string_concat(slot, "")));
         string:nx = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(nx, " = add ", bll.text, " ",
-                          raw string_concat(c2, ", 1")));
+                          string_concat(c2, ", 1")));
         drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", nx,
-                          raw string_concat(", ptr ", slot)));
+                          string_concat(", ptr ", slot)));
         drop s_br(x, head_l);
         drop s_start(x, done_l);
         pass (raw iv_nil());
@@ -860,7 +860,7 @@ func:for_bind_slot = string(ExprEmitter->:x, StmtId:sid, DeclNode:bind,
         int32:ci = raw fnem_cross_find(x.fe, sid.index, 4i32);
         if (ci >= 0i32) {
             string:g = raw fnem_cross_gep(x.fe, ci);
-            drop fnem_bind(x.fe, raw decl_name(bind), raw string_concat(g, ""), btid);
+            drop fnem_bind(x.fe, raw decl_name(bind), string_concat(g, ""), btid);
             pass g;
         }
     }
@@ -969,23 +969,23 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                       raw cat5(sym, "(ptr ", recvh, ")", "")));
     string:opt = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(opt, " = extractvalue ", ret_ll.text, " ",
-                      raw string_concat(r, ", 0")));
+                      string_concat(r, ", 0")));
     string:tag = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", opt_ll.text, " ",
-                      raw string_concat(opt, ", 0")));
+                      string_concat(opt, ", 0")));
     string:empty = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(empty, " = icmp eq i8 ",
-                      raw string_concat(tag, ", 0")));
+                      string_concat(tag, ", 0")));
     drop irw_line(x.fe.w, raw cat5("br i1 ", empty, ", label %", done_l,
-                      raw string_concat(", label %", body_l)));
+                      string_concat(", label %", body_l)));
     x.fe.terminated = true;
     drop s_start(x, body_l);
     string:val = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(val, " = extractvalue ", opt_ll.text, " ",
-                      raw string_concat(opt, ", 1")));
+                      string_concat(opt, ", 1")));
     drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", val,
-                      raw string_concat(", ptr ", slot)));
-    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
+                      string_concat(", ptr ", slot)));
+    drop fnem_loop_push(x.fe, string_concat(head_l, ""), string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -1005,18 +1005,18 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
         PlaceVal:pv2 = raw addr_of(x, iter);
         if (pv2.state != (raw LL_OK())) { pass (raw iv_from_place(move(pv2))); }
         base = move(pv2.addr);
-        len = raw int_to_string(
+        len = int_to_string(
             (raw type_array_count(x.fe.ctx.types, itid)) => int64);
     } else {
         IrVal:sv = raw emit_expr(x, iter);
         if (!(raw iv_is_ok(sv))) { pass sv; }
         string:d = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(d, " = extractvalue ", sv.ll, " ",
-                          raw string_concat(sv.ref, ", 0")));
+                          string_concat(sv.ref, ", 0")));
         base = move(d);
         string:l2 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(l2, " = extractvalue ", sv.ll, " ",
-                          raw string_concat(sv.ref, ", 1")));
+                          string_concat(sv.ref, ", 1")));
         len = move(l2);
     }
     // Base and length persist across iterations — slots, not SSA (D2).
@@ -1042,7 +1042,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:cnd = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cnd, " = icmp ult i64 ", cur, ", ", lenh));
     drop irw_line(x.fe.w, raw cat5("br i1 ", cnd, ", label %", body_l,
-                      raw string_concat(", label %", done_l)));
+                      string_concat(", label %", done_l)));
     x.fe.terminated = true;
     drop s_start(x, body_l);
     string:baseh = raw loop_reread(x, base_s, "ptr");
@@ -1058,10 +1058,10 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     }
     string:ev = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(ev, " = load ", bll.text, ", ptr ",
-                      raw string_concat(ep, "")));
+                      string_concat(ep, "")));
     drop irw_line(x.fe.w, raw cat5("store ", bll.text, " ", ev,
-                      raw string_concat(", ptr ", slot)));
-    drop fnem_loop_push(x.fe, raw string_concat(incr_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
+                      string_concat(", ptr ", slot)));
+    drop fnem_loop_push(x.fe, string_concat(incr_l, ""), string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_stmt(x, raw stmt_for_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -1071,7 +1071,7 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     drop irw_line(x.fe.w, raw cat5(c3, " = load i64, ptr ", idx, "", ""));
     string:n3 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(n3, " = add i64 ",
-                      raw string_concat(c3, ", 1")));
+                      string_concat(c3, ", 1")));
     drop irw_line(x.fe.w, raw cat5("store i64 ", n3, ", ptr ", idx, ""));
     drop s_br(x, head_l);
     drop s_start(x, done_l);
@@ -1094,11 +1094,11 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
-                      raw string_concat(", label %", done_l)));
+                      string_concat(", label %", done_l)));
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
-    drop fnem_loop_push(x.fe, raw string_concat(head_l, ""), raw string_concat(done_l, ""), raw stmt_label(s), "");
+    drop fnem_loop_push(x.fe, string_concat(head_l, ""), string_concat(done_l, ""), raw stmt_label(s), "");
     IrVal:b = raw emit_block(x, raw stmt_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -1158,7 +1158,7 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(d))) { pass d; }
     // THE ORIGIN (D-179): a fresh failure restarts the chain here.
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                      raw int_to_string((raw x_site(x, s.span)) => int64), ")"));
+                      int_to_string((raw x_site(x, s.span)) => int64), ")"));
     drop fnem_ret_fail(x.fe, v.ref);
     x.fe.terminated = true;
     pass (raw iv_nil());
@@ -1187,10 +1187,10 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(v))) { pass v; }
     // `!!!` is an ORIGIN: the chain restarts at this site (D-179).
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                      raw int_to_string((raw x_site(x, s.span)) => int64), ")"));
+                      int_to_string((raw x_site(x, s.span)) => int64), ")"));
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(r, " = call i32 @npk_failsafe(i32 ",
-                      raw string_concat(v.ref, ")")));
+                      string_concat(v.ref, ")")));
     drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", r, ")"));
     drop irw_line(x.fe.w, "unreachable");
     x.fe.terminated = true;
@@ -1220,14 +1220,14 @@ func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // "pk<seq>.arm<i>" — DERIVED arm-body labels, so `fall label;` computes its
 // target from the pick frame's seq and the arm list instead of a stored table.
 pub func:pk_label = string(int32:seq, int32:i) never fails {
-    string:a = raw string_concat("pk", raw int_to_string(seq => int64));
-    string:b = raw string_concat(a, ".arm");
-    pass (raw string_concat(b, raw int_to_string(i => int64)));
+    string:a = string_concat("pk", int_to_string(seq => int64));
+    string:b = string_concat(a, ".arm");
+    pass (string_concat(b, int_to_string(i => int64)));
 };
 
 func:pk_named = string(int32:seq, string:stem) never fails {
-    string:a = raw string_concat("pk", raw int_to_string(seq => int64));
-    pass (raw string_concat(a, stem));
+    string:a = string_concat("pk", int_to_string(seq => int64));
+    pass (string_concat(a, stem));
 };
 
 // The integer constant an arm matches, as text — or a refusal.
@@ -1262,7 +1262,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
                     h = raw pat_err_fnv(raw intern_get(x.interns,
                             raw pat_enum_segment(x.ast, pn, 1i32)), h);
                     int32:pcode = ((h & 1073741822u64) =>! int32) + 1i32;
-                    pass (raw iv("", raw int_to_string(pcode => int64), 0i32));
+                    pass (raw iv("", int_to_string(pcode => int64), 0i32));
                 }
             }
             pass (raw iv_broken(at));
@@ -1271,14 +1271,14 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
     if (pn.kind == PatKind.PatValue) {
         ExprNode:vn = raw ast_expr(x.ast, raw pat_value(pn));
         if (vn.kind == ExprKind.ExprIntLiteral) {
-            pass (raw iv("", raw int_to_string(vn.payload), 0i32));
+            pass (raw iv("", int_to_string(vn.payload), 0i32));
         }
         if (vn.kind == ExprKind.ExprBoolLiteral) {
             if (vn.payload == 1i64) { pass (raw iv("", "1", 0i32)); }
             pass (raw iv("", "0", 0i32));
         }
         if (vn.kind == ExprKind.ExprCharLiteral) {
-            pass (raw iv("", raw int_to_string(vn.payload), 0i32));
+            pass (raw iv("", int_to_string(vn.payload), 0i32));
         }
         // A DECLARED ERROR CONSTANT is a compile-time integer too (D-179):
         // its assigned code, from the slot resolve wrote.
@@ -1288,7 +1288,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
                 if (pes.origin_kind == (raw SYM_DECL())) {
                     DeclNode:ped = raw ast_decl(x.ast, DeclId{ index: pes.origin });
                     if (ped.kind == DeclKind.DeclErrorDecl) {
-                        pass (raw iv("", raw int_to_string(ped.c => int64), 0i32));
+                        pass (raw iv("", int_to_string(ped.c => int64), 0i32));
                     }
                 }
             }
@@ -1297,7 +1297,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         if (vn.kind == ExprKind.ExprMemberAccessExpr) {
             VariantInfo:vi = raw variant_info(x, sel_tid, vn.payload =>! int32);
             if (vi.found) {
-                pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
+                pass (raw iv("", int_to_string(vi.tag => int64), 0i32));
             }
         }
         // Every literal kind a pattern can legally hold has an arm above;
@@ -1310,7 +1310,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         VariantInfo:vi = raw variant_info(x, sel_tid,
                              raw pat_enum_segment(x.ast, pn, segs - 1i32));
         if (!vi.found) { pass (raw iv_broken(at)); }
-        pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
+        pass (raw iv("", int_to_string(vi.tag => int64), 0i32));
     }
     // A range pattern routes to the CHAIN dispatch before this runs (0.9.7);
     // reaching it here is a hole in the routing, not in the program.
@@ -1358,12 +1358,12 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             string:fv = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fv, " = extractvalue ", sel.ll, " ",
                               raw cat3(sel.ref, ", ",
-                                  raw int_to_string(fi.index => int64))));
+                                  int_to_string(fi.index => int64))));
             string:fslot = raw pick_bind_slot(x, arm_idx, si, fname,
                                               fi.type_id, fll.text);
             if (fslot.len == 0i64) { pass (raw iv_broken(at)); }
             drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
-                              raw string_concat(", ptr ", fslot)));
+                              string_concat(", ptr ", fslot)));
             si = si + 1i32;
         }
         pass (raw iv_nil());
@@ -1393,18 +1393,18 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         string:tmp = raw irw_temp(x.fe.w);
         drop irw_alloca(x.fe.w, tmp, sel.ll);
         drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
-                          raw string_concat(", ptr ", tmp)));
+                          string_concat(", ptr ", tmp)));
         string:pp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", sel.ll,
-                          ", ptr ", raw string_concat(tmp, ", i32 0, i32 1")));
+                          ", ptr ", string_concat(tmp, ", i32 0, i32 1")));
         string:val = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(val, " = load ", pll.text, ", ptr ",
-                          raw string_concat(pp, "")));
+                          string_concat(pp, "")));
         string:slot = raw pick_bind_slot(x, arm_idx, 0i32,
                           raw pat_enum_bind(x.ast, pn, 0i32), pty, pll.text);
         if (slot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", pll.text, " ", val,
-                          raw string_concat(", ptr ", slot)));
+                          string_concat(", ptr ", slot)));
         pass (raw iv_nil());
     }
 
@@ -1416,7 +1416,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     string:mtmp = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, mtmp, sel.ll);
     drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
-                      raw string_concat(", ptr ", mtmp)));
+                      string_concat(", ptr ", mtmp)));
     int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
     int32:bc = raw pat_enum_bind_count(x.ast, pn);
     int32:bi = 0i32;
@@ -1429,23 +1429,23 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         }
         string:bbase = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(bbase, " = getelementptr ", sel.ll,
-                          ", ptr ", raw string_concat(mtmp, ", i32 0, i32 1")));
-        string:bpp = raw string_concat(bbase, "");
+                          ", ptr ", string_concat(mtmp, ", i32 0, i32 1")));
+        string:bpp = string_concat(bbase, "");
         if (bs.offset != 0i64) {
             string:bpp2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(bpp2, " = getelementptr i8, ptr ",
-                              bbase, ", i64 ", raw int_to_string(bs.offset)));
+                              bbase, ", i64 ", int_to_string(bs.offset)));
             bpp = move(bpp2);
         }
         string:bval = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
-                          raw string_concat(bpp, "")));
+                          string_concat(bpp, "")));
         string:bslot = raw pick_bind_slot(x, arm_idx, bi,
                           raw pat_enum_bind(x.ast, pn, bi), bs.type_id,
                           bpll.text);
         if (bslot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
-                          raw string_concat(", ptr ", bslot)));
+                          string_concat(", ptr ", bslot)));
         bi = bi + 1i32;
     }
     pass (raw iv_nil());
@@ -1464,7 +1464,7 @@ func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
     drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
-                      raw string_concat(", ptr ", slot)));
+                      string_concat(", ptr ", slot)));
     drop s_br(x, raw fnem_pick_done(x.fe));
     pass (raw iv_nil());
 };
@@ -1499,13 +1499,13 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 
     // The discriminant: a payload-carrying enum's tag lives in slot 0; a plain
     // enum, a bool, a char or an integer IS its own discriminant.
-    string:disc = raw string_concat(sel.ref, "");
-    string:disc_ll = raw string_concat(sel.ll, "");
+    string:disc = string_concat(sel.ref, "");
+    string:disc_ll = string_concat(sel.ll, "");
     if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_ENUM())) {
         if (raw enum_has_payload(x.ast, x.fe.ctx.types, sel_tid)) {
             string:tag = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(tag, " = extractvalue ", sel.ll,
-                              " ", raw string_concat(sel.ref, ", 0")));
+                              " ", string_concat(sel.ref, ", 0")));
             disc = move(tag);
             disc_ll = "i32";
         }
@@ -1546,22 +1546,22 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     wild int8->:lm = alloc((count => int64) * #size_of<string>());
     wild string->:labels = lm =>! wild string->;
     string:cases = "";
-    string:default_l = raw string_concat(done_l, "");
+    string:default_l = string_concat(done_l, "");
     int32:i = 0i32;
     while (i < count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                           raw pick_arm_start(s), i));
         string:arm_l = raw pk_label(seq, i);
-        labels[i => int64] = raw string_concat(arm_l, "");
+        labels[i => int64] = string_concat(arm_l, "");
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         if (pn.kind == PatKind.PatWildcard) {
-            default_l = raw string_concat(arm_l, "");
+            default_l = string_concat(arm_l, "");
         } else {
             IrVal:c = raw pattern_const(x, pn, sel_tid, arm.span);
             if (!(raw iv_is_ok(c))) { pass c; }
-            if (cases.len > 0i64) { cases = raw string_concat(cases, " "); }
+            if (cases.len > 0i64) { cases = string_concat(cases, " "); }
             cases = raw cat5(cases, disc_ll, " ", c.ref,
-                               raw string_concat(", label %", arm_l));
+                               string_concat(", label %", arm_l));
         }
         i = i + 1i32;
     }
@@ -1572,7 +1572,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
     // The frame is what `fall` (and, in the expression form, `give`) resolve
     // against.
-    drop fnem_pick_push(x.fe, raw string_concat(done_l, ""), "", "", 0i32, raw pick_arm_start(s), count,
+    drop fnem_pick_push(x.fe, string_concat(done_l, ""), "", "", 0i32, raw pick_arm_start(s), count,
                         seq);
     i = 0i32;
     while (i < count) {
@@ -1605,7 +1605,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                                  move string:give_ll, int32:give_tid) never fails {
     int32:seq = raw fnem_next_pick_seq(x.fe);
     string:done_l = raw pk_named(seq, ".done");
-    drop fnem_pick_push(x.fe, raw string_concat(done_l, ""), move(give_slot), move(give_ll), give_tid, start, count,
+    drop fnem_pick_push(x.fe, string_concat(done_l, ""), move(give_slot), move(give_ll), give_tid, start, count,
                         seq);
 
     bool:sel_signed = true;
@@ -1624,12 +1624,12 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         string:test_l = raw pk_named(seq,
-                            raw string_concat(".t", raw int_to_string(i => int64)));
+                            string_concat(".t", int_to_string(i => int64)));
         string:body_l = raw pk_label(seq, i);
         string:next_l = raw pk_named(seq, ".none");
         if ((i + 1i32) < count) {
             next_l = raw pk_named(seq,
-                         raw string_concat(".t", raw int_to_string((i + 1i32) => int64)));
+                         string_concat(".t", int_to_string((i + 1i32) => int64)));
         }
         drop s_start(x, test_l);
         int32:mark = raw fnem_mark(x.fe);
@@ -1658,7 +1658,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                                   raw cat3(disc_ll, " ", lit.ref), ")"));
                 string:eb = raw irw_temp(x.fe.w);
                 drop irw_line(x.fe.w, raw cat3(eb, " = icmp ne i8 ",
-                                  raw string_concat(eqv, ", 0")));
+                                  string_concat(eqv, ", 0")));
                 hit = move(eb);
             }
         }
@@ -1675,8 +1675,8 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                         pass (raw iv_broken(arm.span));
                     }
                 }
-                IrVal:plo = raw iv(move(disc_ll), raw int_to_string(lon.payload), 0i32);
-                IrVal:phi = raw iv(move(disc_ll), raw int_to_string(hin.payload), 0i32);
+                IrVal:plo = raw iv(move(disc_ll), int_to_string(lon.payload), 0i32);
+                IrVal:phi = raw iv(move(disc_ll), int_to_string(hin.payload), 0i32);
                 string:gep2 = "uge";
                 string:lep = "ult";
                 string:lip = "ule";
@@ -1710,17 +1710,17 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                 drop s_br(x, body_l);
             } else {
                 drop irw_line(x.fe.w, raw cat5("br i1 ", hit, ", label %",
-                                  body_l, raw string_concat(", label %", next_l)));
+                                  body_l, string_concat(", label %", next_l)));
                 x.fe.terminated = true;
             }
         } else {
             string:prep_l = raw pk_named(seq,
-                                raw string_concat(".g", raw int_to_string(i => int64)));
+                                string_concat(".g", int_to_string(i => int64)));
             if (raw string_eq(hit, "true")) {
                 drop s_br(x, prep_l);
             } else {
                 drop irw_line(x.fe.w, raw cat5("br i1 ", hit, ", label %",
-                                  prep_l, raw string_concat(", label %", next_l)));
+                                  prep_l, string_concat(", label %", next_l)));
                 x.fe.terminated = true;
             }
             drop s_start(x, prep_l);
@@ -1734,7 +1734,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
             x.fe.guard_depth = x.fe.guard_depth - 1i32;
             if (!(raw iv_is_ok(gc))) { pass gc; }
             drop irw_line(x.fe.w, raw cat5("br i1 ", gc.ref, ", label %",
-                              body_l, raw string_concat(", label %", next_l)));
+                              body_l, string_concat(", label %", next_l)));
             x.fe.terminated = true;
         }
 
@@ -1844,7 +1844,7 @@ func:loop_slot = string(ExprEmitter->:x, StmtId:sid, int32:role,
 func:loop_stash = NIL(ExprEmitter->:x, string:slot, string:ll,
                       string:value) never fails {
     drop irw_line(x.fe.w, raw cat5("store ", ll, " ", value,
-                      raw string_concat(", ptr ", slot)));
+                      string_concat(", ptr ", slot)));
     pass NIL;
 };
 
@@ -1865,7 +1865,7 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
         int32:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
         if (ci < 0i32) { pass ""; }
         string:g = raw fnem_cross_gep(x.fe, ci);
-        drop fnem_bind(x.fe, name, raw string_concat(g, ""), bind_tid);
+        drop fnem_bind(x.fe, name, string_concat(g, ""), bind_tid);
         pass g;
     }
     pass (raw fnem_local(x.fe, name, bind_tid, ll));
@@ -1917,7 +1917,7 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                     LlType:vell = raw ll_type(x.fe.ctx, velem);
                     if (raw ll_is_ok(vell)) {
                         drop fnem_cross_add(x.fe, sid.index, 30i32, 0i32,
-                            raw cat5("[", raw int_to_string(vtrail => int64),
+                            raw cat5("[", int_to_string(vtrail => int64),
                                      " x ", vell.text, "]"));
                     }
                 } }
@@ -2346,7 +2346,7 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
         if (!(raw ll_is_ok(fbll))) {
             pass (raw iv_from_ll_at(x, fbll, fbtid, s.span));
         }
-        drop fnem_cross_add(x.fe, sid.index, 4i32, fbtid, raw string_concat(fbll.text, ""));
+        drop fnem_cross_add(x.fe, sid.index, 4i32, fbtid, string_concat(fbll.text, ""));
         IrVal:rfi = raw scan_expr(x, fiter, fuel - 1i32);
         if (!(raw iv_is_ok(rfi))) { pass rfi; }
         if (fik == (raw TY_RANGE())) {
