@@ -1,0 +1,27 @@
+// expect-exit: 70
+//
+// D-210, the UNSIGNED half: `uintN` has no negative side to wrap into, so its
+// overflow is the 255→0 shape exactly — the one the Therac's counter took.
+// The intrinsic family is `uadd`/`usub`/`umul`, chosen by the operand's
+// signedness, and the trap is the same controlled shutdown.
+mod:overflow_unsigned;
+
+func:bump = uint8(uint8:a, uint8:b) never fails { pass a + b; };
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw bump(200u8, 55u8)) != 255u8) { exit 11i32; }
+    uint8:over = raw bump(255u8, 1u8);
+    exit (over =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 70i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

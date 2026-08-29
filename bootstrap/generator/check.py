@@ -124,7 +124,8 @@ class Program:
             "OutOfBounds": -4099, "TbbErr": -4100, "BadStep": -4101,
             "Unreachable": -4102, "HeapOom": -4103, "HeapBadRequest": -4104,
             "WildLeak": -4105, "StaleHandle": -4106, "DeadlineExceeded": -4107,
-            "ChannelClosed": -4108,
+            "ChannelClosed": -4108, "DriverLeak": -4109,
+            "IntOverflow": -4110,
         }
         self.modules = []
         self.result_types = []   # every Result<T> instantiated, in first-seen order

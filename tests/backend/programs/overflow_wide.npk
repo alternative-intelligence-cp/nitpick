@@ -1,0 +1,29 @@
+// expect-exit: 70
+//
+// D-210 AT A WIDTH THE HARDWARE DOES NOT HAVE. The with-overflow intrinsics
+// are legal at every integer width and llc legalizes them the same way it
+// legalizes the arithmetic itself — which is the reason the guard is an
+// intrinsic rather than a hand-rolled sign test: an unusual width is exactly
+// where a hand-rolled test would be wrong and nobody would notice.
+mod:overflow_wide;
+
+func:sq = int128(int128:v) never fails { pass v * v; };
+
+func:main = int32(cstring[]:_~argv) {
+    int128:big = raw sq(9223372036854775807i128);   // ~8.5e37, inside i128
+    if (big <= 0i128) { exit 11i32; }
+    int128:huge = raw sq(big);                      // ~7.2e75, nowhere near
+    exit (huge =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 70i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

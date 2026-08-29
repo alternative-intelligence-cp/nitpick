@@ -1,0 +1,48 @@
+// expect-exit: 70
+//
+// D-210 (1.4.2b): THE DEFAULT INTEGER IS THE CHECKED ONE. `intN`/`uintN`
+// `+ - *` trap on overflow through the D-142 route, so a wrap that would have
+// produced 255→0 becomes a CONTROLLED shutdown naming `IntOverflow` instead of
+// a number nobody wrote. `tbb` remains the saturate-to-ERR family; bit
+// operations are bit operations and are unchanged.
+//
+// The exit is failsafe's, and it is 70 rather than a small number because the
+// arm has to be distinguishable from every ordinary refusal in this file.
+mod:overflow_trap;
+
+func:add_at_max = int32(int32:a, int32:b) never fails { pass a + b; };
+
+func:main = int32(cstring[]:_~argv) {
+    // ...the boundary itself does NOT trap: INT_MAX is a value, and arithmetic
+    // that lands exactly on it is arithmetic that fits.
+    int32:hi = 2147483646i32;
+    if ((raw add_at_max(hi, 1i32)) != 2147483647i32) { exit 11i32; }
+    // ...nor does an unsigned sum that fits.
+    uint8:u = 200u8;
+    if ((u + 55u8) != 255u8) { exit 12i32; }
+    // ...nor a multiplication in range.
+    if ((100000i64 * 100000i64) != 10000000000i64) { exit 13i32; }
+    // ...nor the wide path, whose outermost values are CONSTRUCTED rather than
+    // spelled (D-148 caps a literal at the 64-bit envelope) — which is also
+    // the only way to reach an i128 boundary at all.
+    int128:big = 9223372036854775807i128 * 9223372036854775807i128;
+    if ((big + 1i128) <= big) { exit 14i32; }
+
+    // AND THE STEP PAST IT TRAPS. One more than INT_MAX has no int32, and the
+    // program stops through `failsafe` rather than carrying a wrong number
+    // forward.
+    int32:over = raw add_at_max(2147483647i32, 1i32);
+    exit over;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 70i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -2660,6 +2660,12 @@ ok:
 ;   -4097  DIV_BY_ZERO       integer / or % with a zero divisor (D-007)
 ;   -4098  INT_MIN_OVERFLOW  INT_MIN / -1 or INT_MIN % -1 (no defined value;
 ;                            D-008 refused inventing one, so it traps)
+;   -4110  INT_OVERFLOW      a plain-integer + - * overflowed its width (D-210,
+;                            1.4.2b). The DEFAULT integer is the checked one:
+;                            wrapping was the Therac-255->0 shape sitting under
+;                            the type nobody has to opt into. `tbb` remains the
+;                            saturate-to-ERR family; bit operations are
+;                            unchanged, being bit operations
 ;   -4099  OUT_OF_BOUNDS     a slice/array index past the end, or a range view
 ;                            that does not fit its source (D-070; 0.9.2)
 ;   -4100  TBB_ERR           an ERR value reached a bare comparison or a

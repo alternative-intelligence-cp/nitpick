@@ -59,6 +59,7 @@ pub struct:Reach = {
 
     // The conditional system machinery, observed during the walk.
     bool:saw_div;
+    bool:saw_ovf;
     bool:saw_index;
     bool:saw_tbb;
     bool:saw_counted;
@@ -81,7 +82,8 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      rdecls: a =>! wild int32->,
                      rquals: aq =>! wild int32->,
                      cur_module: 0i32, rcount: 0i32, rcap: 32i32,
-                     saw_div: false, saw_index: false, saw_tbb: false,
+                     saw_div: false, saw_ovf: false, saw_index: false,
+                     saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
                      failsafe_decl: 0i32, prelude_scope: 0i32 };
     pass x;
@@ -220,6 +222,16 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
             if (ak2 == (raw TY_COMPLEX())) { adiv = false; }
         }
         if (adiv) { x.saw_div = true; }
+        // ...and a compound `+=`/`-=`/`*=` IS the same arithmetic (1.3.3), so
+        // it arms D-210's identity exactly as the expression form does.
+        bool:aovf = (aop == TokenKind.OpPlusAssign);
+        if (aop == TokenKind.OpMinusAssign) { aovf = true; }
+        if (aop == TokenKind.OpStarAssign)  { aovf = true; }
+        if (aovf) {
+            if ((raw type_kind(x.types, raw exprtypes_get(x.ets, raw stmt_target(s))))
+                    != (raw TY_INT())) { aovf = false; }
+        }
+        if (aovf) { x.saw_ovf = true; }
         drop reach_expr(x, raw stmt_target(s), fuel - 1i32);
         drop reach_expr(x, raw stmt_assigned(s), fuel - 1i32);
         pass NIL;
@@ -356,6 +368,22 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
             if (dk2 == (raw TY_COMPLEX())) { divlike = false; }
         }
         if (divlike) { x.saw_div = true; }
+        // D-210 (1.4.2b): plain-integer `+ - *` TRAP on overflow, so the
+        // identity is reachable wherever one appears. Only the plain family:
+        // `tbb`/`tfp`/`dim` saturate to ERR, `tern` bounds to ERR, `frac` and
+        // `complex` carry their own, floats are IEEE-total, and `simd` rides
+        // its element's rule — arming IntOverflow for any of them would demand
+        // an arm nothing can enter, which is the same reasoning the division
+        // suppression above is written from.
+        bool:ovflike = false;
+        if (op == TokenKind.OpPlus)  { ovflike = true; }
+        if (op == TokenKind.OpMinus) { ovflike = true; }
+        if (op == TokenKind.OpStar)  { ovflike = true; }
+        if (ovflike) {
+            if ((raw type_kind(x.types, raw exprtypes_get(x.ets, id)))
+                    != (raw TY_INT())) { ovflike = false; }
+        }
+        if (ovflike) { x.saw_ovf = true; }
     }
     if (n.kind == ExprKind.ExprIndexExpr) { x.saw_index = true; }
     int32:ntid = raw exprtypes_get(x.ets, id);
@@ -483,6 +511,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     drop reach_add_system(x, "WildLeak");
     if (x.saw_div)      { drop reach_add_system(x, "DivByZero");
                           drop reach_add_system(x, "DivOverflow"); }
+    if (x.saw_ovf)      { drop reach_add_system(x, "IntOverflow"); }
     if (x.saw_index)    { drop reach_add_system(x, "OutOfBounds"); }
     if (x.saw_tbb)      { drop reach_add_system(x, "TbbErr"); }
     if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }

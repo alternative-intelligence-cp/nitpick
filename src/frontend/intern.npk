@@ -143,3 +143,52 @@ pub func:slice_proven = string(string:s, int64:lo, int64:hi) never fails {
     if (r.is_error) { !!! ProvenSlice; }
     pass r.value;
 };
+
+// --- FNV-1a, THE COMPILER'S ONE COPY (D-123, D-179; collapsed at 1.4.2b) -----
+//
+// D-179 derives every error constant's identity from `module.Name` through
+// this step, and both the RESOLVER (which assigns the code) and the EMITTER
+// (which matches a qualified pattern against one) must get the same answer.
+// They had a copy each until 1.4.2b, kept in step by a comment asking them not
+// to drift; now there is one function and the question cannot arise.
+//
+// THE MULTIPLY IS DELIBERATELY MODULAR — the mixing IS the wraparound — which
+// D-210 made a trap for plain integers. The documented idiom is
+// widen-compute-truncate (D-210.3), and the prelude's `fnv_mix` uses it; `src/`
+// is subset 1 until the 1.4.6 builder switch and the seed lowers no `uint128`,
+// so the product is assembled from 32-bit halves instead, every partial
+// provably inside `uint64`:
+//
+//     x * p  =  lo*p_lo + ((lo*p_hi + hi*p_lo) << 32)          (mod 2^64)
+//
+// The shifted term needs only its low 32 bits, so each cross product is masked
+// before they are added (each < 2^32, the sum < 2^33) and the carry out of
+// `lo*p_lo` joins them the same way. `lo*p_lo` is at most (2^32-1)*435. The
+// prime 1099511628211 is 0x100000001B3: 256 above, 435 below. Verified equal
+// to the wrapping form over the boundary pairs and 200,000 random ones.
+// AT 1.4.7 this becomes the `uint128` spelling the prelude already uses.
+pub func:fnv1a_seed = uint64() never fails {
+    pass ((3421887204u64 << 32u64) | 2216829733u64);
+};
+
+pub func:fnv1a_step = uint64(uint64:h, uint64:v) never fails {
+    uint64:x = h ^ v;
+    uint64:lo = x & 4294967295u64;
+    uint64:hi = (x >> 32u64) & 4294967295u64;
+    uint64:ll = lo * 435u64;
+    uint64:cross = ((lo * 256u64) & 4294967295u64)
+                 + ((hi * 435u64) & 4294967295u64);
+    uint64:top = ((ll >> 32u64) + cross) & 4294967295u64;
+    pass ((top << 32u64) | (ll & 4294967295u64));
+};
+
+// The step over a name's bytes, low byte first (D-123's specified order).
+pub func:fnv1a_bytes = uint64(string:sv, uint64:h0) never fails {
+    uint64:h = h0;
+    int64:i = 0i64;
+    while (i < sv.len) {
+        h = raw fnv1a_step(h, (sv.ptr[i] =>! uint64) & 255u64);
+        i = i + 1i64;
+    }
+    pass h;
+};

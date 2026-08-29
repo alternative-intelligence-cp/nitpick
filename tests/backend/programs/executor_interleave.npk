@@ -35,6 +35,7 @@ async func:main = int32(cstring[]:_~argv) {
 };
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (IntOverflow) { exit 91i32; },
         (Never)            { exit 90i32; },
         (Unreachable)      { exit 91i32; },
         (HeapOom)          { exit 92i32; },

@@ -448,7 +448,17 @@ impl:flt32:ToString = { func:to_string = string(flt32:self) never fails {
 // The offset basis (0xcbf29ce484222325) is past the 64-bit literal envelope, so it
 // is built from its two words; the prime fits.
 pub func:fnv_offset = uint64() never fails { pass ((3421887204u64 << 32u64) | 2216829733u64); };
-pub func:fnv_mix = uint64(uint64:h, uint64:v) never fails { pass ((h ^ v) * 1099511628211u64); };
+// FNV's multiply is DELIBERATELY MODULAR — the mixing IS the wraparound — so
+// since D-210 it is spelled the way deliberate modularity is spelled: widen,
+// compute, truncate, with `=>!` carrying the acknowledged loss (D-210.3). The
+// product of a 64-bit word and the prime needs 104 bits, which `uint128` has.
+// All THREE copies of this step (here, `resolve.err_fnv_step`, and
+// `ir_stmt.pat_err_fnv`) must agree to the bit — D-179's error identity is
+// derived from it on both sides of the compiler — so all three are spelled
+// identically.
+pub func:fnv_mix = uint64(uint64:h, uint64:v) never fails {
+    pass ((((h ^ v) => uint128) * 1099511628211u128) =>! uint64);
+};
 
 // A SCALAR HASHES ITS VALUE (D-123); a derived struct hash combines its fields
 // the same way, so the whole is FNV-1a over the parts.
@@ -540,6 +550,7 @@ pub error:WildLeak = 4105i32;          // a `wild` allocation outlived exit 0 (D
 pub error:StaleHandle = 4106i32;       // an arena handle outlived its slot's generation (D-152)
 pub error:DeadlineExceeded = 4107i32;  // time ran out (D-176): the Result error AND the join's trap
 pub error:ChannelClosed = 4108i32;     // a `send` to, or a drained `recv` from, a closed channel (D-072/D-182)
+pub error:IntOverflow = 4110i32;      // plain-integer `+ - *` overflowed (D-210) — the DEFAULT integer is the checked one
 pub error:DriverLeak = 4109i32;        // exit 0 with a driver still registered (D-188) — a clean exit never abandons a supervised process
 pub error:IoEof = 4096i32;             // end of input (the io floor's marker, distinct from every errno)
 

@@ -2445,12 +2445,29 @@ def main(argv):
             # conformance/nf_twin/ differ only in their `never fails` clauses
             # and must emit byte-identical IR -- the contract is a checked
             # claim, never a codegen hint.
+            #
+            # COMPILED AT THE SAME PATH, one after the other. Their own file
+            # names are part of the emission -- D-179's site table records the
+            # path a trap was stamped at -- so from 1.4.2b, when D-210's
+            # overflow guard gave these twins their first stamped site, the
+            # `with/` and `without/` directory names were the whole diff and
+            # the check reported that `never fails` had changed the IR. It had
+            # not; the fixture's own layout had. Copying each twin to one path
+            # keeps the comparison about the clause and nothing else, without
+            # eliding anything from the text.
             twa = os.path.join(ROOT, "tests", "conformance", "nf_twin",
                                "with", "nf_inert.npk")
             twb = os.path.join(ROOT, "tests", "conformance", "nf_twin",
                                "without", "nf_inert.npk")
-            ra = subprocess.run([ec, twa], capture_output=True, text=True)
-            rb = subprocess.run([ec, twb], capture_output=True, text=True)
+            twdir = os.path.join(tmp, "nf_twin")
+            os.makedirs(twdir, exist_ok=True)
+            twone = os.path.join(twdir, "nf_inert.npk")
+            shutil.copyfile(twa, twone)
+            ra = subprocess.run([ec, twone], capture_output=True, text=True,
+                                cwd=ROOT)
+            shutil.copyfile(twb, twone)
+            rb = subprocess.run([ec, twone], capture_output=True, text=True,
+                                cwd=ROOT)
             if ra.returncode != 0 or rb.returncode != 0:
                 failures.append("nf_twin: a twin failed to emit "
                                 "(with=%d, without=%d)"

@@ -928,15 +928,28 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
                       "{ ptr, i32, i32, { i32 }, ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr }"));
     // `sys` calls the six-register trampoline directly (0.9.7).
     drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
-    // The overflow intrinsics tbb multiplication rides (0.9.5). Declared for
-    // every tbb width unconditionally — the declare block is a fixed constant,
-    // and an unused declare costs nothing.
-    drop irw_raw(w, "declare { i8, i1 } @llvm.smul.with.overflow.i8(i8, i8)");
-    drop irw_raw(w, "declare { i16, i1 } @llvm.smul.with.overflow.i16(i16, i16)");
-    drop irw_raw(w, "declare { i32, i1 } @llvm.smul.with.overflow.i32(i32, i32)");
-    drop irw_raw(w, "declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)");
-    drop irw_raw(w, "declare { i128, i1 } @llvm.smul.with.overflow.i128(i128, i128)");
-    drop irw_raw(w, "declare { i256, i1 } @llvm.smul.with.overflow.i256(i256, i256)");
+    // THE OVERFLOW INTRINSICS, for every integer width and all six families.
+    // `tbb` multiplication rode `smul` alone from 0.9.5; D-210 (1.4.2b) made
+    // the DEFAULT integer's `+ - *` checked too, so every width the language
+    // has needs `{s,u}{add,sub,mul}`. Declared unconditionally — the declare
+    // block is a fixed constant of every module this compiler emits, and an
+    // unused declare costs nothing. llc 20.1.2 legalizes all of them, i1
+    // through i4096, at -O0 and -O2 alike (verified before the guard was
+    // written; the opt-O2 leg re-proves it on every run).
+    int32:owi = 0i32;
+    while (owi < (raw int_width_count())) {
+        int32:owf = 0i32;
+        while (owf < (raw ovf_family_count())) {
+            string:owh = raw cat5("declare { ", raw int_width_at(owi),
+                              ", i1 } @", raw ovf_intrinsic_name(owf,
+                                  raw int_width_at(owi)), "(");
+            string:owa = raw cat3(raw int_width_at(owi), ", ",
+                              raw int_width_at(owi));
+            drop irw_raw(w, string_concat(owh, string_concat(owa, ")")));
+            owf = owf + 1i32;
+        }
+        owi = owi + 1i32;
+    }
     // `.abs()` on float-element complex (D-199, 1.3.6) — the sqrt is an
     // instruction on this target, which is exactly why it is float-only.
     drop irw_raw(w, "declare float @llvm.sqrt.f32(float)");

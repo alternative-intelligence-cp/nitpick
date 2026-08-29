@@ -50,14 +50,40 @@ br i1 %cond, label %then, label %else
 | `int64` | `i64` | 8 bytes | 8 |
 
 **Behaviors:**
-- Arithmetic: `+`, `-`, `*`, `/`, `%` — **overflow and underflow wrap**, per standard two's complement. They are *defined* behaviour, not undefined, and are routinely what is wanted (hashing, checksums, PRNGs, modular arithmetic).
-  - Lowers to plain `add`/`sub`/`mul iN` — no overflow check, no trap.
-  - **If overflow should be an error, use `tbb` instead** (D-037). The two families complement each other and the choice is made at the declaration, visibly.
-  - **Divide/modulo by zero still traps to `failsafe`** — unlike overflow, it has no defined result, and Nitpick does not invent one (D-007). On `tbb` it yields ERR.
+- Arithmetic: `+`, `-`, `*` — **overflow TRAPS** (D-210, 1.4.2b), through the
+  D-142 route to `failsafe` with `IntOverflow` (−4110). The default integer is
+  the checked one.
+  - Lowers through `llvm.{s,u}{add,sub,mul}.with.overflow.iN`, the overflow bit
+    branching to the trap. Signedness picks the family; the intrinsics are legal
+    and legalized at every width the language has, `int1` through `int4096`.
+  - **Unary `-` is `0 - x`** and so traps on the most negative value, whose
+    negation has no representation — the `INT_MIN / -1` precedent exactly.
+  - **`x += y` traps identically**: both spellings route through one arithmetic
+    core (1.3.3), so the guard is inherited rather than written twice.
+  - **Bit operations are unchanged** — `&`, `|`, `^`, `~`, `<<`, `>>` are bit
+    operations, not arithmetic, and have nothing to overflow.
+  - **`/` and `%` by zero still trap** (D-007), and signed `/` adds the
+    `INT_MIN / -1` case. On `tbb` both yield ERR.
+- **Deliberate modular arithmetic has no dedicated spelling** (D-210.3, a
+  decision rather than an oversight). The idiom is widen–compute–truncate over
+  the native wide integers, with `=>!` at the narrowing carrying the
+  acknowledged loss:
+  ```nitpick
+  uint32:mixed = ((h => uint64) * 2654435761u64) =>! uint32;
+  ```
+  If a hot-path consumer emerges, an operator spelling is a question for the
+  language's author (D-143's consumer-first rule).
+- **`tbb` remains the saturate-to-ERR family** (D-037's split survives; only
+  the default changed sides): where overflow is a VALUE the program inspects
+  rather than a fault that stops it, `tbb` is still the type to declare.
 
-> A previous revision specified checked arithmetic here — `llvm.sadd.with.overflow.iN`
-> with a failsafe trap on overflow. **Struck** (D-037): it would make ordinary
-> correct code unrunnable and would leave no way to express wrapping at all.
+> An earlier revision of this section specified wrapping here, and recorded a
+> still earlier one that had specified checked arithmetic and struck it (D-037:
+> "it would make ordinary correct code unrunnable and would leave no way to
+> express wrapping at all"). D-210 reversed that on the coverage audit's
+> evidence: silent wraparound under the type nobody has to opt into is the
+> Therac 255→0 shape, correct code does not overflow, and wrapping is still
+> expressible — explicitly, at the width where it is meant.
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
 - Casting: explicit only (`x => int64`, `y =>! int32`)
@@ -65,8 +91,11 @@ br i1 %cond, label %then, label %else
 
 **LLVM IR pattern:**
 ```llvm
-; int32:result = a + b;      — wraps on overflow, no check
-%val = add i32 %a, %b
+; int32:result = a + b;      — traps on overflow (D-210)
+%p = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %a, i32 %b)
+%val = extractvalue { i32, i1 } %p, 0
+%ovf = extractvalue { i32, i1 } %p, 1
+br i1 %ovf, label %ovf.trap, label %ovf.ok
 
 ; int32:q = a / b;           — divide-by-zero still traps
 %is_zero = icmp eq i32 %b, 0
@@ -75,8 +104,8 @@ do_div:
   %q = sdiv i32 %a, %b
 ```
 
-*(The overflow-checked form using `llvm.sadd.with.overflow.i32` belongs to `tbb`,
-not to `int` — see §6.)*
+*(`tbb` uses the same intrinsics and does something else with the bit: it
+saturates to ERR rather than trapping — see §6.)*
 
 ### 1.3 Unsigned Integers
 
@@ -92,7 +121,9 @@ not to `int` — see §6.)*
   - Division/modulo use `udiv`/`urem` instead of `sdiv`/`srem`
   - Comparisons use `ult`/`ugt`/`ule`/`uge` instead of `slt`/`sgt`/`sle`/`sge`
   - Right shift uses `lshr` (logical) instead of `ashr` (arithmetic)
-  - Overflow wraps, as with signed types — no check, no trap (D-037). Use `tbb` where overflow should be an error.
+  - Overflow TRAPS, as with signed types (D-210) — through `uadd`/`usub`/`umul`
+    rather than the signed families. An unsigned type has no negative side to
+    wrap into, so its overflow is the 255→0 shape exactly.
 - Literal suffixes: `42u32`, `0FFhexu8`
 
 > **Note:** `uint8` and `char8` share the same LLVM IR type (`i8`) but are **semantically distinct**. The type checker enforces different operation sets. See §2 for char types.

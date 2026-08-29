@@ -225,7 +225,7 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_ret_pass(@f1, v1.ref);
     drop fnem_close(@f1, true);
     if (!(raw string_eq(raw irw_text(@w1),
-        "define { i32, i32 } @npk_calc(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = load i32, ptr %t1\n  %t4 = add i32 %t2, %t3\n  %t5 = mul i32 %t4, 3\n  %t6 = insertvalue { i32, i32 } undef, i32 %t5, 0\n  %t7 = insertvalue { i32, i32 } %t6, i32 0, 1\n  ret { i32, i32 } %t7\n}\n\n"))) { exit 11i32; }
+        "define { i32, i32 } @npk_calc(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = load i32, ptr %t1\n  %t4 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %t2, i32 %t3)\n  %t5 = extractvalue { i32, i1 } %t4, 0\n  %t6 = extractvalue { i32, i1 } %t4, 1\n  br i1 %t6, label %ovf.trap0, label %ovf.ok1\novf.trap0:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok1:\n  %t7 = call { i32, i1 } @llvm.smul.with.overflow.i32(i32 %t5, i32 3)\n  %t8 = extractvalue { i32, i1 } %t7, 0\n  %t9 = extractvalue { i32, i1 } %t7, 1\n  br i1 %t9, label %ovf.trap2, label %ovf.ok3\novf.trap2:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok3:\n  %t10 = insertvalue { i32, i32 } undef, i32 %t8, 0\n  %t11 = insertvalue { i32, i32 } %t10, i32 0, 1\n  ret { i32, i32 } %t11\n}\n\n"))) { exit 11i32; }
 
     // --- COMPARISON SIGNEDNESS IS THE OPERAND'S: char8 ult, int32 slt ---------
     IrWriter:w2 = raw irw_to_buffer();
@@ -284,7 +284,7 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw emit_expr(@x5, neg));
     discard(raw emit_expr(@x5, not_b));
     if (!(raw string_eq(raw irw_text(@w5),
-        "define { i32, i32 } @npk_unary(i32 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i8\n  store i32 %a0, ptr %t0\n  store i8 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = sub i32 0, %t2\n  %t4 = load i8, ptr %t1\n  %t5 = icmp ne i8 %t4, 0\n  %t6 = xor i1 %t5, true\n  %t7 = zext i1 %t6 to i8\n"))) { exit 50i32; }
+        "define { i32, i32 } @npk_unary(i32 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i8\n  store i32 %a0, ptr %t0\n  store i8 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t4 = call { i32, i1 } @llvm.ssub.with.overflow.i32(i32 0, i32 %t2)\n  %t5 = extractvalue { i32, i1 } %t4, 0\n  %t6 = extractvalue { i32, i1 } %t4, 1\n  br i1 %t6, label %ovf.trap0, label %ovf.ok1\novf.trap0:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok1:\n  %t7 = load i8, ptr %t1\n  %t8 = icmp ne i8 %t7, 0\n  %t9 = xor i1 %t8, true\n  %t10 = zext i1 %t9 to i8\n"))) { exit 50i32; }
 
     // --- CALLS: the floor by its table, a user function by its symbol ---------
     //

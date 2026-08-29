@@ -560,33 +560,16 @@ func:resolve_contract = NIL(Resolver->:r, VerifyId:id, int32:scope) never fails 
 // FNV-1a of `module.Name`, truncated to a positive int32 (never 0, never
 // negative: the system domain owns the negatives). Derived, not counted, so
 // any compiler that can hash bytes numbers identically.
-// FNV-1a, restated here rather than imported: the prelude's `fnv_offset`/
-// `fnv_mix` serve USER derived hashes and reach programs through prelude
-// injection — which the seed does not perform on the compiler's own source.
-// D-123 specifies the combiner precisely so two spellings cannot drift.
-func:err_fnv_seed = uint64() never fails {
-    pass ((3421887204u64 << 32u64) | 2216829733u64);
-};
-
-func:err_fnv_step = uint64(uint64:h, uint64:v) never fails {
-    pass ((h ^ v) * 1099511628211u64);
-};
-
-func:err_fnv_str = uint64(string:sv, uint64:h0) never fails {
-    uint64:h = h0;
-    int64:i = 0i64;
-    while (i < sv.len) {
-        h = raw err_fnv_step(h, (sv.ptr[i] =>! uint64) & 255u64);
-        i = i + 1i64;
-    }
-    pass h;
-};
-
+// THE CODE IS THE HASH (D-179): a user error constant's identity is FNV-1a
+// over `module.Name`, so nothing has to be assigned, coordinated or looked up
+// across a module graph. The step itself lives in `intern.npk` — one copy for
+// the whole compiler since 1.4.2b, because the emitter derives the same value
+// when it matches a qualified pattern and the two used to be separate.
 func:error_code_of = int32(Resolver->:r, int32:mod_name, int32:decl_nm) never fails {
-    uint64:h = raw err_fnv_str(raw intern_get(r.interns, mod_name),
-                               raw err_fnv_seed());
-    h = raw err_fnv_step(h, 46u64);
-    h = raw err_fnv_str(raw intern_get(r.interns, decl_nm), h);
+    uint64:h = raw fnv1a_bytes(raw intern_get(r.interns, mod_name),
+                               raw fnv1a_seed());
+    h = raw fnv1a_step(h, 46u64);
+    h = raw fnv1a_bytes(raw intern_get(r.interns, decl_nm), h);
     pass (((h & 1073741822u64) =>! int32) + 1i32);
 };
 

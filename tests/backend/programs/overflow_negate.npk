@@ -1,0 +1,32 @@
+// expect-exit: 70
+//
+// D-210: unary negation rides `0 - x`, so INT_MIN negated overflows and traps
+// — the DivOverflow precedent (`INT_MIN / -1` has traped since 0.9.3 for the
+// same reason: the value has no representation, and D-008 refused inventing
+// one). INT_MIN is CONSTRUCTED rather than spelled: D-148 caps a literal at
+// the 64-bit envelope, and the outermost value of any width is arithmetic.
+mod:overflow_negate;
+
+// THE OPERATOR, not the `0 - x` it lowers to: the point is that the
+// spelling a program actually uses reaches the same guard.
+func:neg = int32(int32:v) never fails { pass -v; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:most = raw neg(2147483647i32);
+    if (most != (0i32 - 2147483647i32)) { exit 11i32; }
+    int32:least = most - 1i32;          // INT_MIN, one step past the negation
+    int32:back = raw neg(least);
+    exit back;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 70i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
