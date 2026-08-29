@@ -1133,8 +1133,17 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         string:pslot = raw irw_temp(x.fe.w);
         drop irw_alloca(x.fe.w, pslot, pll2.text);
+        // A pick EXPRESSION consumes when its selector is `move(v)`, exactly
+        // as the statement form does (D-216).
+        bool:pcons = false;
+        if (!(raw expr_is_none(raw expr_lhs(n)))) {
+            if ((raw ast_expr(x.ast, raw expr_lhs(n))).kind == ExprKind.ExprMoveExpr) {
+                pcons = true;
+            }
+        }
         IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
-                        n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid);
+                        n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid,
+                        pcons);
         if (!(raw iv_is_ok(pc2))) { pass pc2; }
         string:pout = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pout, " = load ", pll2.text, ", ptr ",

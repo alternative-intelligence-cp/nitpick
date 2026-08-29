@@ -204,3 +204,23 @@ func:mvok_permute = NIL(MvOkSink->:a, MvOkSink->:b) never fails {
 func:mvok_read_often = int64(MvOkSink->:s) never fails {
     pass s.cap + s.cap + s.cap;
 };
+
+// --- THE CONSUMING PICK IS THE WAY AN OWNING PAYLOAD COMES OUT (D-216) ------
+enum:MvokRes = { Note(string); Blank; };
+
+func:mvok_consume = int64(move MvokRes:r) never fails {
+    pick (move(r)) {
+        (MvokRes.Note(s)) { pass s.len; },   // `s` OWNS it; drops at arm exit
+        (MvokRes.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+// ...and a LENDING pick that binds nothing is unchanged: `_` takes no copy.
+func:mvok_lend_tag = int64(MvokRes:r) never fails {
+    pick (r) {
+        (MvokRes.Note(_)) { pass 1i64; },
+        (MvokRes.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};

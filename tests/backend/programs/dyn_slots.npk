@@ -119,9 +119,12 @@ func:main = int32(cstring[]:_~argv) {
     };
     if ((g.say() ?! E9) != 5i32) { exit 23i32; }
 
-    // a variant's payload
+    // A VARIANT'S PAYLOAD, CONSUMED (D-216, 1.4.3b). A `dyn` owns the heap
+    // cell its coercion allocated, so binding one in a LENDING arm is a second
+    // owner of that cell; `pick (move(sl))` hands it to the arm, which drops it
+    // through the vtable's slot 0 at the arm's exit.
     Slot:sl = Slot.Held(c);
-    pick (sl) {
+    pick (move(sl)) {
         (Slot.Held(inner)) { if ((inner.say() ?! E9) != 5i32) { exit 24i32; } },
         (Slot.Empty) { exit 25i32; }
     }

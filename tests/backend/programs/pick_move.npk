@@ -1,0 +1,78 @@
+// expect-exit: 42
+//
+// THE CONSUMING PICK (D-216, 1.4.3b): `pick (move(v))` takes the value apart
+// and hands the payload to the matched arm, which owns it and drops it at the
+// arm's exit. Before this an owning payload was write-only — a lending pick's
+// binding is a COPY that aliases the enum's body, which 1.4.3b's probe caught
+// reading 0xAA poison after the enum dropped.
+mod:pick_move;
+error:E9;
+
+enum:Res = { Note(string); Blank; };
+
+func:build = Res(int32:n) never fails {
+    if (n > 0i32) { pass Res.Note(string_concat("payloadX", "")); }
+    pass Res.Blank;
+};
+
+// The payload comes OUT, and it is the arm's to keep for as long as the arm
+// lives. Read inside the arm: the bytes must be the payload's, not poison.
+func:consumed = int64() never fails {
+    Res:r = raw build(1i32);
+    pick (move(r)) {
+        (Res.Note(s)) {
+            if (s.len != 8i64)        { pass 0i64 - 1i64; }
+            if (s.ptr[0i64] != 112u8) { pass 0i64 - 2i64; }   // 'p', not 0xAA
+            pass s.len;
+        },
+        (Res.Blank) { pass 0i64; }
+    }
+    pass 0i64 - 3i64;
+};
+
+// The variant that carries nothing still consumes cleanly.
+func:consumed_blank = int64() never fails {
+    Res:r = raw build(0i32);
+    pick (move(r)) {
+        (Res.Note(s)) { pass s.len; },
+        (Res.Blank)   { pass 77i64; }
+    }
+    pass 0i64 - 4i64;
+};
+
+// An arm that binds NOTHING still consumed the value: the payload has to be
+// freed by the arm, because `move` cleared the enum's own drop flag.
+func:consumed_unbound = int64() never fails {
+    Res:r = raw build(1i32);
+    pick (move(r)) {
+        (Res.Blank) { pass 5i64; },
+        (*)         { pass 6i64; }
+    }
+    pass 0i64 - 5i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:a = raw consumed();
+    if (a != 8i64)  { exit (10i32 + ((0i64 - a) =>! int32)); }
+    int64:b = raw consumed_blank();
+    if (b != 77i64) { exit 20i32; }
+    int64:c = raw consumed_unbound();
+    if (c != 6i64)  { exit 30i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero)      { exit 89i32; },
+        (DivOverflow)    { exit 90i32; },
+        (E9)             { exit 88i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

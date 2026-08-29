@@ -327,12 +327,37 @@ pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     pass NIL;
 };
 
+// A VARIANT CONSTRUCTOR IS NOT A PLACE. `Msg.Quit` BUILDS a value, and its
+// "root" is the enum's NAME — which `expr_is_place` sees as an identifier and
+// therefore as a place, having no symbol table to ask. Latent until 1.4.3b:
+// this rule only runs when `type_drops` is true, an enum's drop flag is
+// MEMOISED by the layout pass, and nothing had asked for an owning enum's
+// layout by the time a declaration like `Msg:q = Msg.Quit;` was checked. The
+// consuming pick asks, and the misclassification surfaced at once — as
+// "copying it here would leave two owners" on a temporary that has no second
+// name, which is what the message's own last clause says is fine.
+func:expr_is_variant_ctor = bool(ExprTyper->:e, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    ExprId:b = raw expr_operand(n);
+    if (raw expr_is_none(b)) { pass false; }
+    ExprNode:bn = raw ast_expr(e.ast, b);
+    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (bn.a == 0i32) { pass false; }
+    Symbol:vs = raw symtab_get(e.tab, bn.a);
+    if (vs.origin_kind != (raw SYM_DECL())) { pass false; }
+    pass ((raw ast_decl(e.ast, DeclId{ index: vs.origin })).kind
+              == DeclKind.DeclEnumDecl);
+};
+
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
     if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
+    if (raw expr_is_variant_ctor(e, id)) { pass NIL; }
     string:m1 = string_concat("`",
                     raw type_display(e.types, e.interns, ty));
     // AN ERROR SINCE THE SWEEP CLOSED (1.2.2): it landed reporting, measured

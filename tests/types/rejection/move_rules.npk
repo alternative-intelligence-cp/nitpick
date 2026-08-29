@@ -95,3 +95,34 @@ async func:writes_through_a_read = NIL(RwLock<int32, 3i32>->:r) {
     g.value = 4i32;
     pass NIL;
 };
+
+// --- THE CONSUMING PICK, AND WHAT IT REPLACES (D-216, 1.4.3b) ---------------
+//
+// A lending pick's arm binding is a COPY of the payload — the emitter stores
+// the whole `{ptr, len, cap}` — so it is a second owner of one body that
+// outlives the enum whenever it escapes. An executed probe read the
+// allocator's 0xAA poison through one. D-216 recorded this as already refused
+// by TYPE-046; it was not, because the move-only rule fires on reading a
+// PLACE and a pattern binding is not one.
+
+enum:MrRes = { Note(string); Blank; };
+
+// expect-error: NITPICK-TYPE-046
+func:mr_lending_bind = int64(MrRes:r) never fails {
+    pick (r) {
+        (MrRes.Note(s)) { pass s.len; },
+        (MrRes.Blank)   { pass 0i64; }
+    }
+    pass 0i64;
+};
+
+// `move` on a selector that owns nothing is the same meaningless move it is
+// anywhere else.
+// expect-error: NITPICK-TYPE-046
+func:mr_consume_nonowner = int32(int32:v) never fails {
+    pick (move(v)) {
+        (0i32) { pass 1i32; },
+        (*)    { pass 2i32; }
+    }
+    pass 0i32;
+};

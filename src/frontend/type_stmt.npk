@@ -138,7 +138,37 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                 pass NIL;
             }
         }
+        // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
+        // apart, so its arms may bind owning payloads — that is the whole
+        // point of the form. `move(v)` already parses as a selector
+        // expression; nothing in the grammar changed.
+        bool:consuming = false;
+        ExprId:selid = raw pick_selector(s);
+        if (!(raw expr_is_none(selid))) {
+            if ((raw ast_expr(e.ast, selid)).kind == ExprKind.ExprMoveExpr) {
+                consuming = true;
+            }
+        }
+        // ...and `move` on a selector that owns NOTHING is the same meaningless
+        // move it is anywhere else.
+        if (consuming) {
+            if (selt != 0i32) {
+                // THE DROP FLAG IS MEMOISED BY THE LAYOUT PASS, and an enum's
+                // is 0 until something asks for its layout — so the question
+                // has to make sure it has been computed before reading the
+                // answer, or every consuming pick is told its selector owns
+                // nothing.
+                TypeResolver:lr = raw etyper_resolver(e);
+                drop ensure_layout(@lr, selt, e.scope, 64i32);
+                if (!(raw type_drops(e.types, selt, 64i32))) {
+                    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
+                        "`pick (move(v))` consumes a value that OWNS something (D-216); this selector's type owns nothing, so there is nothing to transfer — select on it directly",
+                        s.span));
+                }
+            }
+        }
         drop type_pick_bindings(e, s, selt);
+        drop check_pick_owning_binds(e, s, selt, consuming);
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
     }
@@ -287,6 +317,78 @@ pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) never 
     while (i < count) {
         StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         drop check_stmt(e, x);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// AN ARM MAY NOT BIND AN OWNING PAYLOAD UNLESS THE PICK CONSUMES (D-216).
+//
+// The binding is a COPY of the payload — the emitter stores the whole
+// `{ptr, len, cap}`, cap included — so it is a second owner of one body. It
+// was never dropped, which is the only reason it was not a double free; what
+// it WAS, and what an executed probe confirmed at 1.4.3b, is a live
+// use-after-free: the arm's binding outlives the enum whenever it escapes, and
+// reading it afterwards reads the allocator's 0xAA poison.
+//
+// D-216 recorded this as already refused by TYPE-046. It was not: the
+// move-only rule fires on reading an owning PLACE in a value position, and a
+// pattern binding is not a read of a place. The rule is stated here, where the
+// binding is made.
+//
+// `pick (move(v))` is the way to bind one, and the message says so — a refusal
+// with no legal alternative is a wall, not a rule.
+func:check_pick_owning_binds = NIL(ExprTyper->:e, StmtNode:s, int32:selt,
+                                   bool:consuming) never fails {
+    if (consuming) { pass NIL; }
+    if (selt == 0i32) { pass NIL; }
+    int32:i = 0i32;
+    while (i < (raw pick_arm_count(s))) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast,
+                                          raw pick_arm_start(s), i));
+        PatId:pid3 = raw arm_pattern(arm);
+        if (!(raw pat_is_none(pid3))) {
+            PatNode:pn3 = raw ast_pat(e.ast, pid3);
+            // The binding-type window the pick's own `type_pick_bindings`
+            // just recorded on the pattern (1.0.9c), read the way `type_ident`
+            // reads it back.
+            int32:bw = pn3.payload =>! int32;
+            int32:bn = 0i32;
+            if (pn3.kind == PatKind.PatEnumDestructure) {
+                bn = raw pat_enum_bind_count(e.ast, pn3);
+            }
+            if (pn3.kind == PatKind.PatStructDestructure) {
+                bn = raw pat_bind_count(pn3);
+            }
+            int32:b = 0i32;
+            while (b < bn) {
+                int32:bt = raw ast_id_at(e.ast, bw, b);
+                // `_` BINDS NOTHING, so it takes no copy and owns nothing —
+                // `(Res.Note(_))` is the spelling for "this variant, whatever
+                // it carries", and it stays legal in a lending pick.
+                int32:bnm = 0i32;
+                if (pn3.kind == PatKind.PatEnumDestructure) {
+                    bnm = raw pat_enum_bind(e.ast, pn3, b);
+                }
+                if (pn3.kind == PatKind.PatStructDestructure) {
+                    bnm = raw ast_id_at(e.ast, raw pat_bind_start(pn3), b);
+                }
+                if (bnm != 0i32) {
+                    if (raw string_eq(raw intern_get(e.interns, bnm), "_")) {
+                        bt = 0i32;
+                    }
+                }
+                if (bt != 0i32) {
+                    if (raw type_drops(e.types, bt, 64i32)) {
+                        drop diaglist_push(e.diags, raw diag_error(
+                            raw TYPE_MOVE_REQUIRED(),
+                            "this arm binds a payload whose type OWNS heap storage, and the binding is a COPY of it (D-183): two owners of one body, and the binding outlives the value it was taken from. Consume the value instead — `pick (move(v))` (D-216) hands the payload to the arm, which then owns and drops it — or bind nothing and read what you need through the selector",
+                            arm.span));
+                    }
+                }
+                b = b + 1i32;
+            }
+        }
         i = i + 1i32;
     }
     pass NIL;

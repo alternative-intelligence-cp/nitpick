@@ -14540,6 +14540,40 @@ grammar change — `move(v)` already parses as a selector expression;
 the work is checker + move-analysis + emitter. Lands at 1.4.3b, beside
 the loop-carried move analysis it interacts with.
 
+> **LANDED at 1.4.3b (2026-08-29), and the premise above is CORRECTED.** This
+> decision says TYPE-046 "correctly refuses a `pick` arm binding an owning
+> payload". **It did not.** The move-only rule fires on reading an owning
+> PLACE in a value position, and a pattern binding is not a read of a place —
+> so the lending bind was accepted, and what it produced was a live
+> USE-AFTER-FREE, not merely a missing feature. An executed probe returned an
+> arm's binding out of its function and read `0xAA`, the allocator's free
+> poison, through it: the binding is a bitwise copy carrying `cap`, so it is a
+> second owner that aliases the enum's body and outlives it whenever it
+> escapes. It was never dropped, which is the only reason it was not also a
+> double free.
+>
+> Both halves therefore landed together, as they had to — refusing the bind
+> without the consuming form would have left correct code no spelling at all:
+> (1) a non-consuming arm binding an owning payload now refuses, naming
+> `pick (move(v))` in the message; (2) the consuming form works, and needed
+> less than expected — `move(v)` as a selector already cleared the enum's drop
+> flag through the ordinary move path, so only the arm side was missing.
+>
+> Also found, and fixed: **a payload-less variant constructor was classified as
+> a PLACE.** `Msg.Quit` builds a value, but `expr_is_place` walks to its root,
+> finds the enum's NAME, and sees an identifier. Latent because this rule only
+> runs when `type_drops` is true and an owning enum's drop flag is memoised by
+> the layout pass — nothing had asked for one by the time such a declaration
+> was checked. The consuming pick asks, and it surfaced at once.
+>
+> A consequence worth recording rather than discovering later: **an owning
+> payload cannot be read through a LENDING pick at all.** There is no accessor
+> for a variant's payload without binding it, so a getter over a borrowed enum
+> must now consume — `enum_payloads.npk`'s `read_text` became
+> `move Msg:m`. That is the D-183 open ("a getter over a container of owning
+> values has no correct spelling yet") reappearing for enums; the deep-view
+> accessor family D-183 records is what answers it.
+
 ## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
 
 A decision, not a deferral-by-silence: Astrée IS the

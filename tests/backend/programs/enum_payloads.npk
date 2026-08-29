@@ -16,11 +16,15 @@ enum:Msg = {
     Tiny(int8);
 };
 
-func:read_text = string(Msg:m) never fails {
+// THE PAYLOAD COMES OUT BY CONSUMING (D-216, 1.4.3b). This read the payload
+// through a LENDING arm binding until then, with a comment noting that the
+// binding aliases what the enum still owns and that `move` "would hollow the
+// enum" — hollowing it is precisely the point, and the alias was a
+// use-after-free waiting for the binding to outlive the value. The caller
+// hands the value over; the arm owns the payload and drops it.
+func:read_text = string(move Msg:m) never fails {
     string:out = "";
-    pick (m) {
-        // `s` is the arm's binding of the payload the enum still owns, so the
-        // way out is an explicit copy (D-183) — `move` would hollow the enum.
+    pick (move(m)) {
         (Msg.Text(s)) { out = string_concat(s, ""); },
         (*) { out = "wrong-arm"; }
     }
@@ -39,7 +43,10 @@ func:read_point = int32(Msg:m) never fails {
 func:main = int32(cstring[]:_~argv) {
     // A whole string through a variant, and back out intact.
     Msg:t = Msg.Text("carried whole");
-    string:back = raw read_text(t);
+    // The tag is read BEFORE the value is handed over: `read_text` consumes it
+    // (D-216), so `t` is moved-from afterwards and the move analysis says so.
+    if ((t =>! int32) != 1i32)                        { exit 13i32; }
+    string:back = raw read_text(move(t));
     if (!(string_equals(back, "carried whole")))     { exit 10i32; }
 
     // A struct payload: two fields, read through the bound name.
@@ -58,7 +65,6 @@ func:main = int32(cstring[]:_~argv) {
 
     // D-140 holds for the general shape: the tag is slot 0, whatever the
     // payload slot's geometry became.
-    if ((t =>! int32) != 1i32)                        { exit 13i32; }
     if ((pm =>! int32) != 2i32)                       { exit 14i32; }
     Msg:q = Msg.Quit;
     if ((q =>! int32) != 0i32)                        { exit 15i32; }
