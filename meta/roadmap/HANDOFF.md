@@ -8,31 +8,41 @@
 
 ## Where you are
 
-- HEAD is `ad965fc`, pushed. Since the 1.4.0–1.4.1 stretch, SIX subcycles
-  landed, each with a full green harness run and its own commit:
-  **1.4.2** (D-201, four commits: the generated builtin signature table),
-  **1.4.2b** (D-210 overflow traps, D-211 module state), **1.4.2c**
-  (D-222 — `const` retired), **1.4.3** (D-208), **1.4.3b** (D-216), and
-  **1.4.4 item 6** (D-215).
-- The harness is GREEN: 60 suites, 179 real-backend programs (each also
+- **1.4.4 IS COMPLETE** (`45c553e`, committed, NOT pushed — the convention
+  is commit per subcycle, push per cycle). Seven subcycles have landed
+  since the 1.4.0–1.4.1 stretch, each with a full green harness run and
+  its own commit: **1.4.2** (D-201, four commits), **1.4.2b** (D-210,
+  D-211), **1.4.2c** (D-222), **1.4.3** (D-208), **1.4.3b** (D-216), and
+  **1.4.4** (D-215 first, then D-207 with a user-ratified D-180
+  amendment).
+- The harness is GREEN: 60 suites, 183 real-backend programs (each also
   through `opt -O2`), fixpoint byte-identical.
-  `python3 bootstrap/harness/harness.py` reproduces it (~25–35 min; it is
+  `python3 bootstrap/harness/harness.py` reproduces it (~25 min; it is
   not hung, check `/tmp/npk-harness-*/`).
 
-## NEXT: 1.4.4 items 1–5 — the per-scope join machinery
+## NEXT: 1.4.5 — reproducibility mechanics (D-204)
 
-`meta/roadmap/1.4/1.4.4.md` is the plan; its **Execution record** carries
-every anchor measured on 2026-08-29 (frame layout, spawn link, join drive,
-scope extents, chfin reclaim, the C-22 rung to lift, the dyn rung that
-STAYS, the three harness excuse rows) so you do not re-derive them.
+`meta/roadmap/1.4/1.4.5.md` is the plan: the `npkseed.py` ModuleID fix,
+the `repro` build-twice-cross-cwd stage, and the toolchain pinned in the
+manifest.
 
-Item 6 (D-215) is done. Items 1–5 are the deep half — frame layout, scope
-exit across four exit kinds, channel reclaim re-homed, `TY_SHARED_ARENA`
-gaining a drop — and they were deliberately left for a fresh session. Read
-the record's ordering note before writing any emission, and give the
-concurrency tests `// stress: 40`.
+**Read 1.4.4's execution record first anyway.** It carries three things a
+1.4.5 executor needs and would otherwise rediscover: the D-151 leak check
+runs only on `exit 0` (a test reporting success as 42 measures NOTHING —
+that is how a shared-arena leak test passed against a build with the drop
+disabled); the return seam is now two halves, `fnem_ret_agg` then
+`fnem_ret_done`, with the unwind between them; and every scope exit emits
+join → defers → drops → that scope's channel reclaims.
 
-## What today's six subcycles should change about how you read a plan
+**Owed, and named so it does not evaporate**: all three of
+`chan_elem_ok`'s refusals in `ir_types.npk` — a `dyn` element, a borrow
+element, an `OwnedFd` element — are PERMANENT language rules reporting as
+`NITPICK-RUNG-001`, out of a suite whose README says its contents graduate
+to `tests/conformance/` as each rung lands. These never will. The fix is
+D-215's shape: a TYPE code with a span, refused in the checker, cases
+moving to `tests/types/rejection/`. Schedule it.
+
+## What the 1.4 subcycles should change about how you read a plan
 
 **Every plan file whose diagnosis could be tested was wrong about the
 diagnosis, while right about the goal.** Test the reported symptom before
@@ -50,9 +60,16 @@ implementing the reported fix:
 - §26 of TYPE_REFERENCE promised `fixed` on struct fields was enforced. It
   was enforced nowhere.
 
+- D-207 asked for a second list head per scope. The list is a LIFO stack,
+  so a saved MARK does the same job with one pointer and leaves
+  `emit_spawn` untouched — the goal was right, the mechanism was not.
+
 The pattern: **a rule believed in force because a document says so.**
-Making a dormant rule apply is how four live defects surfaced today,
-including two memory-safety holes. Expect the same from items 1–5.
+Making a dormant rule apply is how six live defects surfaced across these
+subcycles, including two memory-safety holes and — at 1.4.4 — a five-second
+sleep on EVERY thread join since 1.1.9, hidden because the answer it
+eventually returned was correct. Measure the symptom. A number that lands
+exactly on a configured timeout is never a coincidence.
 
 ## The rules that bite (each has already cost a debugging cycle)
 
@@ -123,7 +140,7 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.4.md` end to end — the plan AND its execution
-record — then start on items 1–5. Re-verify each anchor before editing
-(lines drift); the anchor says what to look for, not a blind offset.
+Read `meta/roadmap/1.4/1.4.5.md` end to end, then 1.4.4's execution record
+for the three carry-overs above. Re-verify every anchor before editing
+(lines drift); an anchor says what to look for, not a blind offset.
 Announce the item you are on; commit per the file's acceptance section.
