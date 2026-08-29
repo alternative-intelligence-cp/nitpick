@@ -1486,8 +1486,7 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     if (k == (raw TY_CSTRING())) { pass true; }
     if (k == (raw TY_ANY()))     { pass true; }
     // A GUARD borrows its mutex's cell — it may not outrun the mutex, and a
-    // task boundary is exactly where it would. A MUTEX owns its cell like a
-    // string owns its body: it transfers whole.
+    // task boundary is exactly where it would.
     if (k == (raw TY_GUARD()))   { pass true; }
     if (k == (raw TY_RGUARD()))  { pass true; }
     // An OwnedFd — and so every stream holding one — is SCOPE-BOUND (D-185,
@@ -1499,10 +1498,37 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     // A buffer owns its body like a string owns its (D-200/§23): it
     // transfers whole under `move` — stated per the B-7 walker discipline.
     if (k == (raw TY_BUFFER()))  { pass false; }
-    if (k == (raw TY_MUTEX()))   { pass false; }
-    if (k == (raw TY_RWLOCK()))  { pass false; }
+    // A MUTEX OWNS ITS CELL, AND THE CELL HOLDS THE ELEMENT (1.4.1): the
+    // cell transfers whole like a string's body — but a borrow-carrying
+    // ELEMENT makes every crossing of the mutex carry that borrow, so the
+    // element answers, not the wrapper. Until the walkers-total instrument's
+    // first run these four said flat `false`, written when every element in
+    // sight was a scalar — under which `Mutex<int32[]>` crossed a spawn with
+    // a frame view inside its cell and nothing anywhere could see it.
+    if (k == (raw TY_MUTEX()))   {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RWLOCK()))  {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    // A CondVar and a Barrier carry only constants (LEVEL, N) — no element.
     if (k == (raw TY_CONDVAR())) { pass false; }
     if (k == (raw TY_BARRIER())) { pass false; }
+    // The other owned containers answer from their element the same way:
+    // an arena's slabs hold element bytes, an atomic IS its element's
+    // storage. A `Handle` and a channel ENDPOINT are indices, not addresses
+    // (D-152, D-182) — stated per the B-7 walker discipline.
+    if (k == (raw TY_ARENA()))   {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_SHARED_ARENA())) {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_ATOMIC()))  {
+        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_HANDLE()))  { pass false; }
+    if (k == (raw TY_CHANNEL())) { pass false; }
     if (k == (raw TY_ARRAY()))   {
         pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
     }
@@ -1522,12 +1548,55 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
 // (D-183, 1.2.5)? The reclaim machinery asks it of RETURN types: a function
 // whose return carries a channel is a FACTORY — its creations are handed to
 // the caller by type, so the creation site registers no reclaim. Pointees are
-// NOT contained: a pointer in the value does not put the handle in the copy.
+// NOT contained: a BORROWED pointee stays where it is, so a pointer in the
+// value does not put the handle in the copy. An OWNED cell is different
+// (1.4.1): a mutex or an arena OWNS its storage, ownership transfers with
+// the value, and the element inside is genuinely handed off — so the owned
+// containers answer from their element. Until the walkers-total
+// instrument's first run they fell to the default `false`, which let a
+// `Mutex<Channel<…>>` return launder an endpoint past the `gives` rule —
+// with the truthful answer, the `gives` demand fires and the SHAPE rule
+// then refuses it (a channel behind a nesting level the caller's stash
+// cannot name), which is the correct end state.
 pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     if (id <= 0i32) { pass false; }
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_CHANNEL()))  { pass true; }
+    if (k == (raw TY_POINTER()))  { pass false; }
+    if (k == (raw TY_SLICE()))    { pass false; }
+    if (k == (raw TY_MUTEX()))    {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RWLOCK()))   {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_GUARD()))    {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_RGUARD()))   {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_ARENA()))    {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_SHARED_ARENA())) {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    if (k == (raw TY_ATOMIC()))   {
+        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+    }
+    // A `dyn`'s erased content COULD hold an endpoint, and this walker
+    // cannot see it — the same type-level invisibility D-207 refused for
+    // channel elements. Answering `true` here would demand `gives` of every
+    // dyn-returning creator, a claim about channels most such returns do
+    // not carry; the residual laundering path (an endpoint-holding concrete
+    // coerced to `dyn` and returned from its channel's creator) ends in a
+    // deterministic runtime `StaleHandle` via the slot generations, never
+    // in a dangling address. Whether the COERCION should refuse
+    // channel-carrying concretes — D-207's reasoning completed — is raised
+    // with the user at 1.4.1.
+    if (k == (raw TY_DYN()))      { pass false; }
     if (k == (raw TY_ARRAY()))    {
         pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
     }

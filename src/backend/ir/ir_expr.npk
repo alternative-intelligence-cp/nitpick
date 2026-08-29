@@ -8462,16 +8462,22 @@ pub struct:PayloadSlot = {
     int32:type_id;
 };
 
-pub func:variant_payload_slot = PayloadSlot(ExprEmitter->:x, int32:enum_tid,
-                                            int32:vname, int32:j) never fails {
+// THE CORE, receiver-free (1.4.1): the drop-body generator needs the same
+// offsets construction and `pick` binding read, and it runs outside any
+// `ExprEmitter` — so the walk lives here once and the emitter-context form
+// below delegates. Three consumers, one layout rule, no drift.
+pub func:variant_payload_slot_at = PayloadSlot(TypeResolver->:tr, TypeTable->:types,
+                                               Ast->:ast, SymbolTable->:tab,
+                                               int32:scope, int32:enum_tid,
+                                               int32:vname, int32:j) never fails {
     PayloadSlot:bad = PayloadSlot{ ok: false, offset: 0i64, type_id: 0i32 };
-    if ((raw type_kind(x.fe.ctx.types, enum_tid)) != (raw TY_ENUM())) { pass bad; }
-    DeclId:did = DeclId{ index: raw type_decl(x.fe.ctx.types, enum_tid) };
-    int32:phome = raw symtab_home_scope(x.tab, did.index, x.scope);
-    DeclNode:d = raw ast_decl(x.ast, did);
+    if ((raw type_kind(types, enum_tid)) != (raw TY_ENUM())) { pass bad; }
+    DeclId:did = DeclId{ index: raw type_decl(types, enum_tid) };
+    int32:phome = raw symtab_home_scope(tab, did.index, scope);
+    DeclNode:d = raw ast_decl(ast, did);
     int32:i = 0i32;
-    while (i < (raw item_member_count(x.ast, d))) {
-        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
+    while (i < (raw item_member_count(ast, d))) {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
                 int32:pc = raw variant_payload_count(m);
@@ -8480,15 +8486,15 @@ pub func:variant_payload_slot = PayloadSlot(ExprEmitter->:x, int32:enum_tid,
                 int64:off = 0i64;
                 int32:k = 0i32;
                 while (k <= j) {
-                    int32:pt = raw resolve_type(x.tr,
-                                   TypeId{ index: raw ast_id_at(x.ast, pstart, k) },
+                    int32:pt = raw resolve_type(tr,
+                                   TypeId{ index: raw ast_id_at(ast, pstart, k) },
                                    phome);
-                    off = raw align_up(off, raw type_align(x.fe.ctx.types, pt));
+                    off = raw align_up(off, raw type_align(types, pt));
                     if (k == j) {
                         pass (PayloadSlot{ ok: true, offset: off,
                                           type_id: pt });
                     }
-                    off = off + (raw type_size(x.fe.ctx.types, pt));
+                    off = off + (raw type_size(types, pt));
                     k = k + 1i32;
                 }
             }
@@ -8496,6 +8502,29 @@ pub func:variant_payload_slot = PayloadSlot(ExprEmitter->:x, int32:enum_tid,
         i = i + 1i32;
     }
     pass bad;
+};
+
+pub func:variant_payload_slot = PayloadSlot(ExprEmitter->:x, int32:enum_tid,
+                                            int32:vname, int32:j) never fails {
+    pass (raw variant_payload_slot_at(x.tr, x.fe.ctx.types, x.ast, x.tab,
+                                      x.scope, enum_tid, vname, j));
+};
+
+// The tag rule in ONE place (1.4.1): the DECLARED integer literal where one is
+// given, the POSITION otherwise. `variant_info` has carried the rule since the
+// seed; the enum drop body's switch now reads the same function, so the
+// constructor, the `pick`, and the drop cannot disagree about which value a
+// variant's tag is.
+pub func:variant_tag_of = int32(Ast->:ast, DeclNode:m, int32:position) never fails {
+    int32:tag = position;
+    ExprId:ve = raw variant_value(m);
+    if (!(raw expr_is_none(ve))) {
+        ExprNode:vn = raw ast_expr(ast, ve);
+        if (vn.kind == ExprKind.ExprIntLiteral) {
+            tag = vn.payload =>! int32;
+        }
+    }
+    pass tag;
 };
 
 pub func:variant_info = VariantInfo(ExprEmitter->:x, int32:enum_tid, int32:name) never fails {
@@ -8509,14 +8538,7 @@ pub func:variant_info = VariantInfo(ExprEmitter->:x, int32:enum_tid, int32:name)
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == name) {
-                int32:tag = i;
-                ExprId:ve = raw variant_value(m);
-                if (!(raw expr_is_none(ve))) {
-                    ExprNode:vn = raw ast_expr(x.ast, ve);
-                    if (vn.kind == ExprKind.ExprIntLiteral) {
-                        tag = vn.payload =>! int32;
-                    }
-                }
+                int32:tag = raw variant_tag_of(x.ast, m, i);
                 TypeId:pt = raw type_none();
                 if ((raw variant_payload_count(m)) > 0i32) {
                     pt = TypeId{ index: raw ast_id_at(x.ast,

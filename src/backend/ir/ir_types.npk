@@ -345,7 +345,10 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
     }
     if (k == (raw TY_STRUCT())) { pass (raw args_mention_param(t, ast, id, fuel)); }
     if (k == (raw TY_ENUM()))   { pass (raw args_mention_param(t, ast, id, fuel)); }
-    if (k == (raw TY_FUNC())) {
+    // BOTH function kinds (1.4.1 — the variadic kind was invisible here, the
+    // walkers-total instrument's find; `type_is_func` is the predicate
+    // `type_subst` has always used for the same pair).
+    if (raw type_is_func(t, id)) {
         if (raw type_mentions_param(t, ast, (raw tt_get(t, id)).a, fuel - 1i32)) {
             pass true;
         }

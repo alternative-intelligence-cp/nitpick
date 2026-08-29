@@ -103,6 +103,16 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                            raw type_size(r.types, el),
                            raw type_align(r.types, el)));
     }
+    // A range rebuilds around its element like an array does (1.4.1 — the
+    // walkers-total instrument found the asymmetry: `type_mentions_param`
+    // counts a range's element, so leaving it unrebuilt here handed the
+    // emitter an unsubstituted parameter to lower).
+    if (k == (raw TY_RANGE())) {
+        int32:rel = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        pass (raw tt_range(r.types, rel,
+                           raw type_size(r.types, rel),
+                           raw type_align(r.types, rel)));
+    }
     if (k == (raw TY_OPTIONAL())) {
         int32:inner = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
         pass (raw tt_optional(r.types, inner,

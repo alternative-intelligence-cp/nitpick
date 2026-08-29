@@ -1506,6 +1506,132 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         pass NIL;
     }
 
+    // AN ENUM DROPS ITS LIVE VARIANT'S OWNING PAYLOADS (1.4.1) — a tag
+    // switch to the one variant that is live, then that variant's owning
+    // payloads in REVERSE payload order, the struct rule applied to the
+    // variant. The walkers-total instrument's FIRST RUN found this arm
+    // missing: the silent `ret void` default below stood in for it, so an
+    // enum owning a string leaked its body at every scope exit since 1.2 —
+    // green throughout, because a managed-heap leak shows up in no counter a
+    // program can read. Tags come from `variant_tag_of` and offsets from
+    // `variant_payload_slot_at` — the SAME functions construction and `pick`
+    // binding read — so the three sites cannot drift.
+    if (k == (raw TY_ENUM())) {
+        DeclId:edid = DeclId{ index: raw type_decl(c.types, dty) };
+        DeclNode:ed = raw ast_decl(ast, edid);
+        int32:ehome = raw symtab_home_scope(tab, edid.index, 0i32);
+        // Pass 1: the switch's arm list — only variants owning something.
+        string:arms = "";
+        bool:have_arm = false;
+        int32:vi = 0i32;
+        while (vi < (raw item_member_count(ast, ed))) {
+            DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
+            if (vm.kind == DeclKind.DeclEnumVariant) {
+                bool:owns = false;
+                int32:pc = raw variant_payload_count(vm);
+                int32:pj = 0i32;
+                while (pj < pc) {
+                    PayloadSlot:ps = raw variant_payload_slot_at(tr, c.types,
+                                         ast, tab, ehome, dty,
+                                         raw decl_name(vm), pj);
+                    if (ps.ok) {
+                        if (raw type_drops(c.types, ps.type_id, 64i32)) {
+                            owns = true;
+                        }
+                    }
+                    pj = pj + 1i32;
+                }
+                if (owns) {
+                    string:a1 = raw cat5(" i32 ",
+                                    raw int_to_string((raw variant_tag_of(ast, vm, vi)) => int64),
+                                    ", label %var",
+                                    raw int_to_string(vi => int64), "");
+                    arms = raw string_concat(arms, a1);
+                    have_arm = true;
+                }
+            }
+            vi = vi + 1i32;
+        }
+        if (!have_arm) {
+            // Registered, but no variant owns anything this walk can see —
+            // nothing to release, and an empty body is the CORRECT body.
+            drop irw_raw(w, "  ret void");
+            drop irw_raw(w, "}");
+            pass NIL;
+        }
+        drop irw_raw(w, raw cat4("  %tp = getelementptr ", t.text,
+                          ", ptr %v, i32 0, i32 0", ""));
+        drop irw_raw(w, "  %tag = load i32, ptr %tp");
+        drop irw_raw(w, raw cat4("  switch i32 %tag, label %done [", arms,
+                          " ]", ""));
+        // Pass 2: one block per owning variant.
+        vi = 0i32;
+        while (vi < (raw item_member_count(ast, ed))) {
+            DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
+            if (vm.kind == DeclKind.DeclEnumVariant) {
+                bool:owns2 = false;
+                int32:pc2 = raw variant_payload_count(vm);
+                int32:q = 0i32;
+                while (q < pc2) {
+                    PayloadSlot:qs = raw variant_payload_slot_at(tr, c.types,
+                                         ast, tab, ehome, dty,
+                                         raw decl_name(vm), q);
+                    if (qs.ok) {
+                        if (raw type_drops(c.types, qs.type_id, 64i32)) {
+                            owns2 = true;
+                        }
+                    }
+                    q = q + 1i32;
+                }
+                if (owns2) {
+                    drop irw_raw(w, raw cat3("var",
+                                      raw int_to_string(vi => int64), ":"));
+                    drop irw_raw(w, raw cat5("  %pa",
+                                      raw int_to_string(vi => int64),
+                                      " = getelementptr ", t.text,
+                                      ", ptr %v, i32 0, i32 1"));
+                    int32:rj = pc2;
+                    while (rj > 0i32) {
+                        rj = rj - 1i32;
+                        PayloadSlot:rs = raw variant_payload_slot_at(tr, c.types,
+                                             ast, tab, ehome, dty,
+                                             raw decl_name(vm), rj);
+                        if (rs.ok) {
+                            if (raw type_drops(c.types, rs.type_id, 64i32)) {
+                                string:pp = raw cat3("%pa",
+                                                raw int_to_string(vi => int64), "");
+                                if (rs.offset != 0i64) {
+                                    string:pn = raw cat5("%p",
+                                                    raw int_to_string(vi => int64),
+                                                    "_",
+                                                    raw int_to_string(rj => int64), "");
+                                    drop irw_raw(w, raw cat5("  ", pn,
+                                                      " = getelementptr i8, ptr ",
+                                                      pp,
+                                                      raw string_concat(", i64 ",
+                                                          raw int_to_string(rs.offset))));
+                                    pp = raw cat5("%p",
+                                             raw int_to_string(vi => int64),
+                                             "_",
+                                             raw int_to_string(rj => int64), "");
+                                }
+                                drop irw_raw(w, raw cat5("  call void ",
+                                                  raw drop_fn_sym(c, rs.type_id),
+                                                  "(ptr ", pp, ")"));
+                            }
+                        }
+                    }
+                    drop irw_raw(w, "  br label %done");
+                }
+            }
+            vi = vi + 1i32;
+        }
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
     // A STRUCT DROPS ITS FIELDS IN REVERSE DECLARATION ORDER (D-183), and
     // only the ones that own something.
     if (k == (raw TY_STRUCT())) {
@@ -1567,7 +1693,20 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     }
 
     // Anything else registered is a defect: `type_drops` said it owns
-    // something and this does not know how to release it.
+    // something and this does not know how to release it. SAY SO (1.4.1) —
+    // until the walkers-total instrument's first run, this default emitted a
+    // VALID EMPTY BODY, which is a silent leak wearing a completed compile;
+    // the missing TY_ENUM arm above hid behind it for two cycles. The body
+    // still closes so the IR stays well-formed behind the failing build.
+    Span:dsp = raw span_make(0i32, 0i32, 0i32, 0i32, 0i32);
+    int32:ddecl = raw type_decl(c.types, dty);
+    if (ddecl > 0i32) {
+        dsp = (raw ast_decl(ast, DeclId{ index: ddecl })).span;
+    }
+    drop diaglist_push(diags,
+        raw diag_error(raw EMIT_INTERNAL(),
+            "a drop body was requested for a type kind this generator has no arm for -- `type_drops` claims the type owns something, so an empty body would be a silent leak; a defect in the compiler rather than in this program",
+            dsp));
     drop irw_raw(w, "  ret void");
     drop irw_raw(w, "}");
     pass NIL;

@@ -701,6 +701,30 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
     if (k == (raw TY_NIL()))     { pass false; }
+    // Stated at 1.4.1, when the walkers-total instrument found them falling
+    // to the conservative tail: a float is a scalar, an OwnedFd is a
+    // descriptor NUMBER (D-185), and a function value is a code address —
+    // none can point into a frame, and "conservatively yes" here is the
+    // over-refusal the HANDLE/CHANNEL comment below records refusing real
+    // programs over.
+    if (k == (raw TY_FLOAT()))   { pass false; }
+    if (k == (raw TY_OWNEDFD())) { pass false; }
+    if (k == (raw TY_FUNC()))    { pass false; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
+    // A range is two values of its element type (D-093).
+    if (k == (raw TY_RANGE())) {
+        pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+    }
+    // The sync primitives are each ONE POINTER to their cell (D-056) — the
+    // same explicit answer `field_holds_ptr` has always given them — and a
+    // `dyn` carries its data pointer by construction (D-159).
+    if (k == (raw TY_MUTEX()))   { pass true; }
+    if (k == (raw TY_GUARD()))   { pass true; }
+    if (k == (raw TY_RWLOCK()))  { pass true; }
+    if (k == (raw TY_RGUARD()))  { pass true; }
+    if (k == (raw TY_CONDVAR())) { pass true; }
+    if (k == (raw TY_BARRIER())) { pass true; }
+    if (k == (raw TY_DYN()))     { pass true; }
     if (k == (raw TY_ARRAY())) {
         pass (raw type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
     }

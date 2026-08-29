@@ -624,18 +624,21 @@ def _sites_by_function(pattern, paths, definition):
     return found
 
 
-# EVERY TYPE KIND HAS AN ANSWER ABOUT OWNERSHIP (1.2.0). `type_drops` decides
-# whether a value of a type owns anything that must be released at scope exit
-# (D-183), and a kind it does not name falls to its default of "owns nothing" —
-# which is a leak if the kind actually owns something, and a silent one, since
-# nothing fails when a drop is simply not emitted.
+# EVERY TYPE KIND HAS AN ANSWER FROM EVERY TYPE WALKER (B-7, 1.4.1). A new
+# type kind places an obligation on every function that branches per kind, and
+# a walker written before the kind falls to its default silently — five of
+# 1.1.10-D's seven defects were exactly that (`type_subst` made a generic
+# taking a channel uninstantiable; `type_mentions_param` let a channel open
+# with a zero-byte element; `field_holds_ptr` called every endpoint-holding
+# struct pointer-bearing), and none was found by a test of the feature that
+# broke. `check_drops_total` (1.2.0) was the shape applied to ONE walker;
+# this is the companion B-7 asked for: every named walker below must mention
+# every TY_* kind, or its excuse table must state why the default is correct
+# for that kind. An excuse is a claim reviewed once and diffed forever.
 #
-# This is the B-7 shape (a new type kind meeting a walker written before it),
-# applied where it is now load-bearing. Five of 1.1.10-D's seven defects were
-# that pattern; the difference here is that the failure mode is not a crash but
-# storage that is never freed.
-#
-# A kind may be absent from `type_drops` only by appearing below WITH A REASON.
+# `type_drops` (1.2.0): decides whether a value owns anything released at
+# scope exit (D-183). A kind it does not name defaults to "owns nothing" —
+# a silent leak if wrong, since nothing fails when a drop is not emitted.
 DROPS_DEFAULT_OK = {
     "TY_INVALID":   "resolution already failed; nothing was built to own anything",
     "TY_NIL":       "no value, no storage",
@@ -653,7 +656,8 @@ DROPS_DEFAULT_OK = {
                     "-- a creation-site finalizer after the join, not a value "
                     "drop, because endpoints are copyable non-owners",
     "TY_SHARED_ARENA": "a pointer into SHARED storage (D-154): teardown "
-                    "needs the per-scope join machinery, OPEN_DECISIONS C-22",
+                    "needs the per-scope join machinery -- D-207, landing "
+                    "at 1.4.4, which removes this row and adds the drop",
     "TY_ANY":       "unsized; never a value at this rung",
     "TY_TRAIT":     "a bound, not a value",
     "TY_FUNC":      "a code address", "TY_FUNC_VARIADIC": "a code address",
@@ -665,34 +669,217 @@ DROPS_DEFAULT_OK = {
 }
 
 
-def check_drops_total():
-    """`type_drops` names every type kind, or DROPS_DEFAULT_OK states why not."""
+# Shared reasons, so a rule stated once is cited rather than restated.
+_SCALAR = "plain bits, no address and no handle inside"
+_TIER = "a 1.3-tier value: carrier bits or plain components (D-194..D-199)"
+_META_CLOSED = ("reaches the walker's STATED conservative tail -- generics "
+                "and unresolved kinds answer the closed side")
+_LEAF_SUBST = "no type operand: its own substitution (the stated tail)"
+_NOT_REGISTERED = ("never registered: `type_drops` answers false, and the "
+                   "default now fails LOUD if that ever changes (1.4.1)")
+
+# The walkers under the B-7 obligation, each with its excuse table. A walker
+# belongs here when a kind it fails to consider produces a SILENTLY WRONG
+# default (a leak, a wrong verdict, a wrong layout) rather than a loud one;
+# a loud default (ll_broken, an internal-defect trap) still earns a row,
+# because the excuse table is where "this kind is deliberately unanswered"
+# becomes a reviewed claim instead of an accident. The tables were filled at
+# 1.4.1 by READING each walker against each kind -- the first run's 195
+# findings classified one by one; the fixes that pass produced are in
+# types.npk, escape.npk, type_layout.npk, type_names.npk, type_generic.npk,
+# ir_types.npk and emit_program.npk (the TY_ENUM drop arm, a silent leak
+# live since 1.2).
+WALKER_DEFAULT_OK = {
+    # what a value of the kind owes at scope exit (see DROPS_DEFAULT_OK above)
+    ("type_drops", "src/frontend/types.npk"): DROPS_DEFAULT_OK,
+    # whether a type can carry a borrow across a boundary (D-004/D-070)
+    ("type_contains_borrow", "src/frontend/types.npk"): {
+        "TY_INVALID": "resolution already failed and already said so",
+        "TY_NIL": _SCALAR, "TY_BOOL": _SCALAR, "TY_INT": _SCALAR,
+        "TY_CHAR": _SCALAR, "TY_FLOAT": _SCALAR, "TY_TBB": _SCALAR,
+        "TY_KERNEL": _SCALAR, "TY_ERROR": "a code word (D-179)",
+        "TY_SIMD": _TIER, "TY_TFP": _TIER, "TY_DIM": _TIER,
+        "TY_TERN": _TIER, "TY_FRAC": _TIER, "TY_COMPLEX": _TIER,
+        "TY_RANGE": "two values of an integer element (D-093)",
+        "TY_TRAIT": "a bound, not a value",
+        "TY_FUNC": "a code address never dangles",
+        "TY_FUNC_VARIADIC": "a code address never dangles",
+        "TY_COMPTIME": "a compile-time argument, never a runtime value",
+        "TY_SELF": ("resolves at impl binding (D-157) before crossing rules "
+                    "ask; the channel-element admission runs at emission, "
+                    "post-substitution"),
+        "TY_PARAM": ("the borrow admissions run POST-SUBSTITUTION: the "
+                     "channel-element rule at emission (ir_types), the "
+                     "layout bits per concrete instance"),
+        "TY_ASSOC": "a projection; resolves to its bound type first",
+    },
+    # whether a type carries a channel endpoint (D-183's gives/factory rules)
+    ("type_contains_channel", "src/frontend/types.npk"): {
+        "TY_INVALID": "resolution already failed and already said so",
+        "TY_NIL": _SCALAR, "TY_BOOL": _SCALAR, "TY_INT": _SCALAR,
+        "TY_CHAR": _SCALAR, "TY_FLOAT": _SCALAR, "TY_TBB": _SCALAR,
+        "TY_KERNEL": _SCALAR, "TY_ERROR": "a code word (D-179)",
+        "TY_STRING": "a byte cell; no handle inside",
+        "TY_CSTRING": "a byte cell; no handle inside",
+        "TY_BUFFER": "a byte cell; no handle inside (D-200)",
+        "TY_ANY": "unsized; never a value at this rung",
+        "TY_OWNEDFD": "a descriptor number (D-185)",
+        "TY_HANDLE": ("an index (D-152); reaching the element takes the "
+                      "arena, and the ARENA answers from its element"),
+        "TY_SIMD": _TIER, "TY_TFP": _TIER, "TY_DIM": _TIER,
+        "TY_TERN": _TIER, "TY_FRAC": _TIER, "TY_COMPLEX": _TIER,
+        "TY_RANGE": "two values of an integer element (D-093)",
+        "TY_TRAIT": "a bound, not a value",
+        "TY_FUNC": "a code address carries nothing",
+        "TY_FUNC_VARIADIC": "a code address carries nothing",
+        "TY_COMPTIME": "a compile-time argument, never a runtime value",
+        "TY_SELF": "resolves at impl binding (D-157) before the gives rule asks",
+        "TY_PARAM": ("the gives rule's own text defers generic templates; "
+                     "an instantiation is checked with the parameter bound"),
+        "TY_ASSOC": "a projection; resolves to its bound type first",
+        "TY_CONDVAR": "carries only constants (LEVEL) -- no element",
+        "TY_BARRIER": "carries only constants (N, LEVEL) -- no element",
+    },
+    # the escape analysis's pointer question (what can point into a frame)
+    ("type_holds_pointer", "src/frontend/analysis/escape.npk"): {
+        "TY_INVALID": _META_CLOSED, "TY_TRAIT": _META_CLOSED,
+        "TY_SELF": _META_CLOSED, "TY_PARAM": _META_CLOSED,
+        "TY_ASSOC": _META_CLOSED, "TY_COMPTIME": _META_CLOSED,
+    },
+    # struct-layout's pointer-bearing question (0.5's escape rules feed on it)
+    ("field_holds_ptr", "src/frontend/type_layout.npk"): {
+        "TY_STRING": "the stated tail's `true` IS the answer: a body address",
+        "TY_CSTRING": "the stated tail's `true` IS the answer: an address",
+        "TY_BUFFER": "the stated tail's `true` IS the answer (D-200)",
+        "TY_ANY": "the stated tail's `true` IS the answer",
+        "TY_POINTER": "the stated tail's `true` IS the answer",
+        "TY_SLICE": "the stated tail's `true` IS the answer (D-070)",
+        "TY_ARENA": "the stated tail's `true` IS the answer: slab pointers",
+        "TY_SHARED_ARENA": "the stated tail's `true` IS the answer (D-154)",
+        "TY_DYN": "the stated tail's `true` IS the answer: the data pointer",
+        "TY_INVALID": _META_CLOSED, "TY_TRAIT": _META_CLOSED,
+        "TY_SELF": _META_CLOSED, "TY_PARAM": _META_CLOSED,
+        "TY_ASSOC": _META_CLOSED, "TY_COMPTIME": _META_CLOSED,
+        "TY_FUNC": ("a code address; rides the conservative tail -- a "
+                    "fn-typed field has no consumer to justify the precise "
+                    "answer yet"),
+        "TY_FUNC_VARIADIC": "as TY_FUNC",
+    },
+    # generic substitution -- an unnamed kind passes through unsubstituted
+    ("type_subst", "src/frontend/type_generic.npk"): {
+        "TY_INVALID": _LEAF_SUBST, "TY_NIL": _LEAF_SUBST,
+        "TY_BOOL": _LEAF_SUBST, "TY_INT": _LEAF_SUBST,
+        "TY_CHAR": _LEAF_SUBST, "TY_FLOAT": _LEAF_SUBST,
+        "TY_TBB": _LEAF_SUBST, "TY_KERNEL": _LEAF_SUBST,
+        "TY_STRING": _LEAF_SUBST, "TY_CSTRING": _LEAF_SUBST,
+        "TY_ANY": _LEAF_SUBST, "TY_ERROR": _LEAF_SUBST,
+        "TY_OWNEDFD": _LEAF_SUBST, "TY_BUFFER": _LEAF_SUBST,
+        "TY_TFP": _LEAF_SUBST, "TY_DIM": _LEAF_SUBST,
+        "TY_TERN": _LEAF_SUBST, "TY_FRAC": _LEAF_SUBST,
+        "TY_COMPLEX": _LEAF_SUBST, "TY_COMPTIME": _LEAF_SUBST,
+        "TY_SELF": "resolves at impl binding (D-157), not here",
+        "TY_CONDVAR": "carries only constants (LEVEL) -- the stated comment",
+        "TY_BARRIER": "carries only constants (N, LEVEL) -- the stated comment",
+        "TY_FUNC": ("handled via `type_is_func` -> `subst_func`; the "
+                    "predicate hides the constant from the mention scan"),
+        "TY_FUNC_VARIADIC": "as TY_FUNC, via `type_is_func`",
+    },
+    # does a type mention a generic parameter -- an unnamed kind says "no",
+    # which is how a channel once opened with a zero-byte element (1.1.10-D)
+    ("type_mentions_param", "src/backend/ir/ir_types.npk"): {
+        "TY_INVALID": "no operand", "TY_NIL": "no operand",
+        "TY_BOOL": "no operand", "TY_INT": "no operand",
+        "TY_CHAR": "no operand", "TY_FLOAT": "no operand",
+        "TY_TBB": "no operand", "TY_KERNEL": "no operand",
+        "TY_STRING": "no operand", "TY_CSTRING": "no operand",
+        "TY_ANY": "no operand", "TY_ERROR": "no operand",
+        "TY_OWNEDFD": "no operand", "TY_BUFFER": "no operand",
+        "TY_TFP": "no operand", "TY_DIM": "no operand",
+        "TY_TERN": "no operand", "TY_FRAC": "no operand",
+        "TY_COMPLEX": "no operand",
+        "TY_SELF": "resolves at impl binding (D-157), never a parameter",
+        "TY_COMPTIME": ("a comptime argument's value-type is never a "
+                        "parameter (the language has no comptime generic "
+                        "parameters)"),
+        "TY_CONDVAR": "carries only constants (LEVEL)",
+        "TY_BARRIER": "carries only constants (N, LEVEL)",
+        "TY_FUNC": ("handled via `type_is_func` (1.4.1); the predicate "
+                    "hides the constant from the mention scan"),
+        "TY_FUNC_VARIADIC": "as TY_FUNC, via `type_is_func` (1.4.1)",
+    },
+    # the emitter's type lowering -- the LLVM text every store trusts.
+    # Fully total: every kind is named in the body. An empty table is the
+    # assertion that this stays so.
+    ("ll_type", "src/backend/ir/ir_types.npk"): {},
+    # the diagnostic renderer -- a missing kind prints something unhelpful
+    # at the exact moment a human needs the type named
+    ("type_display", "src/frontend/type_names.npk"): {
+        "TY_STRUCT": "the named-type tail renders the declaration's name",
+        "TY_ENUM": "the named-type tail renders the declaration's name",
+        "TY_TRAIT": "the named-type tail renders the declaration's name",
+        "TY_DYN": "the named-type tail renders `dyn` over the trait window",
+        "TY_PARAM": "the named-type tail renders the parameter's name",
+        "TY_COMPTIME": ("carries its value-rendering AS its name; the "
+                        "named-type tail prints it (the stated comment)"),
+    },
+    # the generated `@"npk.drop.<tid>"` bodies -- the backend half of
+    # `type_drops`' claim: a kind the frontend says owns something must
+    # have a body the backend can emit
+    ("emit_one_drop", "src/backend/emit_program.npk"): {
+        "TY_INVALID": _NOT_REGISTERED, "TY_NIL": _NOT_REGISTERED,
+        "TY_BOOL": _NOT_REGISTERED, "TY_INT": _NOT_REGISTERED,
+        "TY_CHAR": _NOT_REGISTERED, "TY_FLOAT": _NOT_REGISTERED,
+        "TY_TBB": _NOT_REGISTERED, "TY_KERNEL": _NOT_REGISTERED,
+        "TY_CSTRING": _NOT_REGISTERED, "TY_ANY": _NOT_REGISTERED,
+        "TY_POINTER": _NOT_REGISTERED, "TY_SLICE": _NOT_REGISTERED,
+        "TY_TRAIT": _NOT_REGISTERED, "TY_FUNC": _NOT_REGISTERED,
+        "TY_SELF": _NOT_REGISTERED, "TY_PARAM": _NOT_REGISTERED,
+        "TY_RANGE": _NOT_REGISTERED, "TY_FUNC_VARIADIC": _NOT_REGISTERED,
+        "TY_COMPTIME": _NOT_REGISTERED, "TY_HANDLE": _NOT_REGISTERED,
+        "TY_ASSOC": _NOT_REGISTERED, "TY_ERROR": _NOT_REGISTERED,
+        "TY_SIMD": _NOT_REGISTERED, "TY_TFP": _NOT_REGISTERED,
+        "TY_DIM": _NOT_REGISTERED, "TY_TERN": _NOT_REGISTERED,
+        "TY_FRAC": _NOT_REGISTERED, "TY_COMPLEX": _NOT_REGISTERED,
+        "TY_CHANNEL": ("reclaimed by the creating scope's finalizer "
+                       "(D-183 1.2.5), never by value drop"),
+        "TY_SHARED_ARENA": ("type_drops excuses it until D-207's per-scope "
+                            "joins land (1.4.4); the drop arm is owed in "
+                            "the same change that un-excuses it there"),
+    },
+}
+
+
+def check_type_walkers_total():
+    """Every TY_* kind is named by each walker, or excused with a reason (B-7)."""
     fails = []
     with open(os.path.join(ROOT, "src", "frontend", "types.npk"),
               encoding="utf-8") as fh:
-        src = fh.read()
-    kinds = re.findall(r"pub func:(TY_[A-Z_]+) = int32", src)
-    m = re.search(r"^pub func:type_drops = .*?^\};", src, re.M | re.S)
-    if not m:
-        return ["drops-total: `type_drops` not found in src/frontend/types.npk"]
-    body = "\n".join(l for l in m.group(0).split("\n")
-                     if not l.lstrip().startswith("//"))
-    named = set(re.findall(r"TY_[A-Z_]+", body))
-    for k in kinds:
-        if k in named or k in DROPS_DEFAULT_OK:
+        kinds = re.findall(r"pub func:(TY_[A-Z_]+) = int32", fh.read())
+    for (fn, rel), excused in WALKER_DEFAULT_OK.items():
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            src = fh.read()
+        m = re.search(r"^(?:pub )?func:%s = .*?^\};" % re.escape(fn),
+                      src, re.M | re.S)
+        if not m:
+            fails.append("walkers-total: `%s` not found in %s" % (fn, rel))
             continue
-        fails.append("drops-total: `type_drops` does not name %s and "
-                     "DROPS_DEFAULT_OK gives no reason -- a kind that owns "
-                     "something and is not named leaks silently, because "
-                     "nothing fails when a drop is simply not emitted" % k)
-    for k in sorted(DROPS_DEFAULT_OK):
-        if k not in kinds:
-            fails.append("drops-total: DROPS_DEFAULT_OK names %s, which is no "
-                         "longer a type kind" % k)
-        elif k in named:
-            fails.append("drops-total: %s is both named by `type_drops` and "
-                         "excused in DROPS_DEFAULT_OK -- one of the two is "
-                         "stale" % k)
+        body = "\n".join(l for l in m.group(0).split("\n")
+                         if not l.lstrip().startswith("//"))
+        named = set(re.findall(r"TY_[A-Z_]+", body))
+        for k in kinds:
+            if k in named or k in excused:
+                continue
+            fails.append("walkers-total: `%s` (%s) does not name %s and its "
+                         "excuse table gives no reason -- an unconsidered kind "
+                         "takes the walker's default silently, which is the "
+                         "1.1.10-D defect class" % (fn, rel, k))
+        for k in sorted(excused):
+            if k not in kinds:
+                fails.append("walkers-total: `%s`'s excuse table names %s, "
+                             "which is no longer a type kind" % (fn, k))
+            elif k in named:
+                fails.append("walkers-total: %s is both named by `%s` and "
+                             "excused -- one of the two is stale" % (k, fn))
     return fails
 
 
@@ -1925,11 +2112,28 @@ def main(argv):
         failures += check_no_kind_literals()
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
-        failures += check_drops_total()
+        failures += check_type_walkers_total()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
+
+        # The two standalone instruments that were wired to NOTHING until
+        # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check
+        # (BUILD_REFERENCE §7.1 -- a suite that only agrees with what it is
+        # handed is worse than no suite) and the token-table-vs-grammar diff.
+        # Run as subprocesses so each stays independently runnable; output
+        # surfaces only on failure.
+        for script, what in (("spec_coverage.py", "spec-coverage"),
+                             ("selfcheck.py", "harness-selfcheck")):
+            r = subprocess.run(
+                [sys.executable, os.path.join(ROOT, "bootstrap", "harness",
+                                              script)],
+                capture_output=True, text=True, cwd=ROOT)
+            if r.returncode != 0:
+                failures.append("%s: %s exited %d:\n%s"
+                                % (what, script, r.returncode,
+                                   (r.stdout + r.stderr).strip()))
 
         # REPORTED, never failing (0.9.1): stale-decision candidates need a
         # human eye -- but silence would be the lint not existing, so the count
@@ -2280,6 +2484,15 @@ def main(argv):
                     stage1_ir.decode("utf-8", "replace"), "stage1.ll")
                 if dupes:
                     failures += dupes
+                    ok = False
+                # D-173's defect was the SEED-BUILT npkc segfaulting on a
+                # large input -- yet until 1.4.1 the alloca-hoisting pin ran
+                # only on the little per-program emissions, never on the one
+                # module big enough to overflow: the compiler's own.
+                hoist = check_allocas_hoisted(
+                    stage1_ir.decode("utf-8", "replace"), "stage1.ll")
+                if hoist:
+                    failures += hoist
                     ok = False
                 rr = subprocess.run(["llc", "-O0", "-filetype=obj",
                                      "-relocation-model=static",

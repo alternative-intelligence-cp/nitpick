@@ -1,0 +1,68 @@
+// expect-exit: 42
+//
+// THE ENUM DROP ARM (1.4.1). The walkers-total instrument's FIRST RUN found
+// `emit_one_drop` had no TY_ENUM arm — the silent `ret void` default stood
+// in for it, so an enum owning a payload leaked it at every scope exit
+// since 1.2, green throughout because a managed-heap leak shows up in no
+// counter a program can read. The proof here is overwrite_owned's
+// mechanism: an OwnedFd's drop closes its descriptor, so 2000 enum drops
+// survive only if the LIVE variant's payload is released each time —
+// without the arm, EMFILE arrives near 1024 and the `open` fails. The
+// multi-payload variant pins the offset walk (its string sits past the
+// int32, so a wrong offset is a free of garbage and HeapBadRequest, not a
+// pass), and the struct field proves the struct arm reaches the enum body.
+mod:enum_drop;
+error:E9;
+
+enum:Res = { Fd(OwnedFd); Pair(int32, string); Note(string); Quiet; };
+struct:Wrap = { Res:inner; int32:n; };
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+
+    // 2000 descriptor-owning enum drops: the leak that motivated the arm.
+    int32:i = 0i32;
+    while (i < 2000i32) {
+        {
+            fd:fi = open(devnull, 0i64, 0i64) ?! E9;
+            Res:r = Res.Fd(own_fd(fi));
+        }
+        i = i + 1i32;
+    }
+
+    // The multi-payload variant: the string is at a non-zero offset in the
+    // payload area, so this loop is the OFFSET proof — a wrong one frees a
+    // garbage pointer and the allocator traps.
+    int32:j = 0i32;
+    while (j < 200i32) {
+        {
+            Res:p = Res.Pair(7i32, string_slice("abcdefgh", 1i64, 7i64) ?! E9);
+        }
+        j = j + 1i32;
+    }
+
+    // The single-string variant on its own.
+    {
+        Res:nv = Res.Note(string_slice("xyzw", 0i64, 3i64) ?! E9);
+    }
+
+    // An enum behind a struct field: the struct arm calls the enum body.
+    {
+        fd:fs = open(devnull, 0i64, 0i64) ?! E9;
+        Wrap:w = Wrap{ inner: Res.Fd(own_fd(fs)), n: 5i32 };
+    }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

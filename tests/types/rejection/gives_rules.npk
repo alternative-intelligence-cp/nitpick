@@ -41,3 +41,26 @@ func:rescopes = Channel<int32, 2i32, 8i64>() never fails gives {
     Channel<int32, 2i32, 8i64>:c = raw real_factory();
     pass c;
 };
+
+// A channel inside an OWNED CELL is still handed off (1.4.1): a mutex owns
+// its cell, the cell holds the endpoint, and returning the mutex hands both
+// out. `type_contains_channel` answers through owned containers since the
+// walkers-total instrument's first run — before it, this shape laundered
+// the endpoint past the rule and the creation leaked with a stale handle
+// waiting at the caller. (Saying `gives` would then refuse on SHAPE: a
+// channel behind a nesting level the caller's stash cannot name.)
+// expect-error: NITPICK-TYPE-007
+func:mutex_laundered = Mutex<Channel<int32, 2i32, 8i64>, 3i32>() never fails {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    Mutex<Channel<int32, 2i32, 8i64>, 3i32>:m = mutex(c) ?! Unreachable;
+    pass m;
+};
+
+// The same rule through an arena: the slabs are owned storage, and the
+// arena's elements ride out with the value.
+// expect-error: NITPICK-TYPE-007
+func:arena_laundered = arena<Channel<int32, 2i32, 8i64>>() never fails {
+    Channel<int32, 2i32, 8i64>:c = channel() ?! Unreachable;
+    arena<Channel<int32, 2i32, 8i64>>:a = arena_make(4i64);
+    pass a;
+};

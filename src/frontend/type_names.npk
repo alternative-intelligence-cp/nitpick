@@ -121,6 +121,9 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
     if (k == (raw TY_BUFFER()))  { pass "buffer"; }
     if (k == (raw TY_NIL()))     { pass "NIL"; }
     if (k == (raw TY_ERROR()))   { pass "Error"; }
+    // Interned as a nameless singleton (D-185), so the named-type tail
+    // cannot answer for it — found at 1.4.1 by the walkers-total instrument.
+    if (k == (raw TY_OWNEDFD())) { pass "OwnedFd"; }
     if (k == (raw TY_CHANNEL())) {
         string:c1 = raw string_concat("Channel<",
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));

@@ -211,6 +211,14 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     if (k == (raw TY_KERNEL()))  { pass false; }
     if (k == (raw TY_ENUM()))    { pass false; }
     if (k == (raw TY_NIL()))     { pass false; }
+    // Stated at 1.4.1 (the walkers-total instrument found them reaching the
+    // conservative tail): a float is a scalar, an OwnedFd is a descriptor
+    // NUMBER (D-185), and a range is two values of its element type (D-093)
+    // — the tail's "yes" for these is the exact over-refusal the
+    // HANDLE/CHANNEL comment below records.
+    if (k == (raw TY_FLOAT()))   { pass false; }
+    if (k == (raw TY_OWNEDFD())) { pass false; }
+    if (k == (raw TY_RANGE()))   { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     if (k == (raw TY_ARRAY()))   { pass (raw field_holds_ptr(r, raw type_elem(r.types, t))); }
     // A HANDLE AND A CHANNEL ENDPOINT ARE INDICES, NOT ADDRESSES (D-152,
     // D-182) — which is the whole reason both exist in those shapes. Reaching
