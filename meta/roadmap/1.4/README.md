@@ -110,8 +110,10 @@ numbers and are superseded by these.
 | 1.4.0 | **Cycle open** — the decision batch ratified; the renumbering/staleness doc sweep (this file, SUBSET_1 §4 + :266, the C-10 spec texts, C-17's stale floor count, BUILTIN_REFERENCE's stale site count, `nitpick.toml`'s "1.3" note) | ratification |
 | 1.4.1 | **The instruments** — B-7's `check_type_kinds_total`; wire `selfcheck.py` + `spec_coverage.py` into the run; `check_allocas_hoisted` on stage 1; fix whatever their first runs find | 1.4.0 |
 | 1.4.2 | **P-3** — the generated signature table, builtin calls typed for real, the emitter's parallel authority retired, the tree-wide re-spell under the transitional rule | D-201 |
+| 1.4.2b | **The audit repairs** — plain-int overflow TRAPS (D-210, the Therac class off the default type) and module bindings `const`/`fixed`-only (D-211, the spellable global race closed) | D-210, D-211 |
 | 1.4.3 | **S-2** — loop-carried moved-from states in the 0.5 move analysis (the read-before-assign fixed point extended, not a new walk) | D-208 |
-| 1.4.4 | **C-22** — per-scope join machinery; channel-in-loop and `shared_arena` drops lifted; the `dyn`-element refusal made permanent | D-207 |
+| 1.4.3b | **The consuming `pick`** — `pick (move(v))`, ownership into the matched arm; owning enum payloads stop being write-only (D-216) | D-216, 1.4.3 |
+| 1.4.4 | **C-22** — per-scope join machinery; channel-in-loop and `shared_arena` drops lifted; the `dyn`-element refusal permanent; PLUS D-215's coercion refusal (a channel-carrying concrete may not erase to `dyn`) | D-207, D-215 |
 | 1.4.5 | **Reproducibility mechanics** — `npkseed.py` ModuleID fix, the `repro` build-twice-cross-cwd stage, the toolchain pinned in the manifest | D-204 |
 | 1.4.6 | **The switch** — the fixpoint IR committed as `bootstrap/seed/stage1.ll` with its STAMP, the harness builds from it, the seed retires (its two coupled instruments re-based), npkrt.ll re-homed, LAYOUT amended | D-203, D-205 |
 | 1.4.7 | **Adoption** — `src/` adopts per D-209's ratified scope (generic collections, `dyn Writer` diagnostics per D-075, the checked-scope list); the fixpoint re-closed under the new builder | D-209, 1.4.6 |

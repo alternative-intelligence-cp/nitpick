@@ -317,10 +317,24 @@ story never happened), `npkg` + `npk_spawn` + the closed-world link
 (D-207), loop-carried moved-from states (D-208), and the adoption scope
 (D-209 — generic collections and `dyn Writer` diagnostics in; mass
 `&{ }` re-spell, pipeline async, and `src/` macros OUT by decision). The
-user's bug/vuln-statistics research (§6c) began the same day — briefs in
-`meta/roadmap/RESEARCH_BRIEFS.md`. Next: 1.4.1 (the instruments — B-7's
-walker-totality check, `selfcheck.py`/`spec_coverage.py` wired in,
-alloca-hoisting on stage 1).
+user's bug/vuln-statistics research (§6c) ran the same day: eight
+deep-research reports live in `meta/roadmap/research/` with
+decision-grade digests in `research/digests/`, the coverage
+audit in `research/COVERAGE_AUDIT.md` **ratified whole as D-210…D-221**
+(overflow TRAPS on plain ints, `const`/`fixed`-only module state, the
+consuming `pick (move(v))`, the dyn coercion refusal for
+channel-carrying concretes, the nfs safety riders, the schedule-
+exploration harness, NIKOS struck from 1.5, and the whole 1.5
+verification architecture recorded early — new subcycles 1.4.2b and
+1.4.3b scheduled), and the research-informed plans landed — cycle 1.5's
+README carries the full proposed verification architecture (solver
+determinism profile, encodings, obligation catalogue), 1.6's the Astrée
+preparation handbook and C-19 question list, and 1.4.2–1.4.8 each have
+execution-grade subcycle files written for a fresh executor to follow
+without asking. Next: 1.4.1 lands (the instruments — B-7's
+walkers-total check found and fixed the missing TY_ENUM drop arm, a
+silent payload leak live since 1.2, plus the contains-walker
+laundering holes), then 1.4.2 (P-3) per its file.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind

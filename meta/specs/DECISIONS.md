@@ -14364,3 +14364,192 @@ new code); async in the sequential pipeline; macro/`comptime` adoption in
 `src/`. Standing rule: any adoption step that changes EMITTED IR (not
 just source spelling) is its own commit with the fixpoint and the full
 program suite between it and the next.
+
+## D-210 — plain-integer overflow TRAPS — **SETTLED (coverage-audit batch, user-ratified)**
+
+Closes the audit's G-1 (`research/COVERAGE_AUDIT.md`), its biggest
+finding: `intN`/`uintN` `+ - *` emitted bare wrapping `add/sub/mul` —
+the Therac-255→0 shape as the DEFAULT integer's behavior, while the
+checked family (`tbb`, saturate-to-ERR) required opting in.
+
+1. **Default integer `+ - *` trap on overflow**: lowered through the
+   `llvm.{s,u}{add,sub,mul}.with.overflow` intrinsics with the overflow
+   bit branching to the D-142 trap route — a new code in the D-141 space
+   (`INT_OVERFLOW`), REACH-armed like DivByZero. Unary negation rides
+   `0 - x` and so traps on `INT_MIN` (the DivOverflow precedent).
+   Shifts and bitwise ops are BIT operations and are unchanged.
+2. **`tbb` stays the saturating-ERR family; `tfp` unchanged** — the
+   by-type split survives, but the DEFAULT is now the safe side.
+3. **Deliberate modular arithmetic has NO dedicated spelling** (a
+   decision, not an oversight): the idiom is widen-compute-truncate
+   (`=>!` at the narrowing, the acknowledged loss) over the native wide
+   integers. If a hot-path consumer emerges, an operator-spelling
+   question goes to the user then (D-143's consumer-first rule; operator
+   design is the user's domain).
+4. **1.5 proves the traps away**: overflow obligations join the D-218
+   catalogue; a discharged obligation elides its guard per D-219's
+   manifest discipline (`llvm.assume`, never `nsw`/`nuw` — D-218.9).
+   "Panics are better than corruptions, but verification is best" —
+   the r1 §6.2 row, both halves adopted.
+
+Lands at 1.4.2b with a `src/`/`lib/`/`tests/` sweep expecting few or no
+deliberate-wrap sites (audit at implementation; the prelude's hash
+mixers ride `tbb`/wide arithmetic already).
+
+## D-211 — module bindings are `const`/`fixed` only — **SETTLED (coverage-audit batch, user-ratified)**
+
+Closes G-7, the audit's second code-verified finding: a PLAIN module
+binding lowered to a mutable LLVM global (D-165 constrained its
+INITIALIZER, never its mutation), and nothing in the crossing rules
+governed a spawned task writing one — a spellable data race, and the
+Toyota-globals shape (r7 case 8). **A plain (reassignable) module-level
+binding now refuses** (its own TYPE code, "module state is `const` or
+`fixed`; mutable process state lives in `main`'s scope and flows
+explicitly"); `const` and `fixed` module bindings are unchanged. The
+implementation's first step audits `src/`'s own usage (the compiler is
+the largest program; if npkc needs no mutable global, the language
+doesn't either). Lands at 1.4.2b beside D-210.
+
+## D-212 — the deterministic schedule-exploration harness — **SETTLED (coverage-audit batch, user-ratified)**
+
+Closes G-5 on the r6 evidence (95/4/0 exploration/random/stress on the
+Raft corpus; defects surviving 7-day stress; PCT's 1/(n·k^(d−1)) floor
+vs stress's ~0% for deep interleavings — digest:
+`research/digests/r6-digest.md`). Build the minimal harness of the r6
+recipe as cycle 1.5's 1.5.7: a mocked-primitive build of the runtime
+(npkc owns every primitive the mock layer intercepts — futex park,
+eventfd wake, channel CAS, waker state; no third-party boundary), a
+centralized PCT-seeded scheduler stepping one synchronization operation
+at a time, a virtualized reactor (synthetic EPOLLIN), and seed-replay
+of any discovered schedule. Complements — never replaces — `// stress:`
+(which demonstrably catches the shallow class). The companion verdict
+(r6): formal models target the PRIMITIVES (waker/park-unpark/one
+channel), never the whole executor; BPOR-style preemption bounds if a
+model spins.
+
+## D-213 — the file-safety riders in `lib/nfs.npk` — **SETTLED (coverage-audit batch, user-ratified)**
+
+Closes G-2/G-3/G-4 as riders on D-206's 1.4.8: **path containment** —
+`open_beneath` over `openat2(RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS)` as
+the default opening API where a path is not a compile-time constant,
+plus lexical `path_canon`; **restrictive creation defaults** — 0600
+files / 0700 directories, widening an explicit argument; **at-family
+operations** so check-then-use never spans a path re-resolution
+(the TOCTOU file half). Library-owned, `fail`-based, the ntensor
+bounds precedent.
+
+## D-214 — the audit's decided-outs — **SETTLED (coverage-audit batch, user-ratified)**
+
+Recorded so the omissions are decisions, not silences (G-8/G-9/G-10):
+**hard-coded-credential linting** is not a language mechanism
+(noise-prone, application-domain; revisit as an optional `npkg` lint
+post-1.5 if wanted). **Constant-time/side-channel discipline** is out
+until a crypto surface exists — and is hereby a GATING requirement for
+any future crypto library work (the 19.4% side-channel share in crypto
+libraries stands as the reason; that work will need language support
+decided then, not discovered then). **General taint tracking** beyond
+D-007's Result-taint and the Bridge's [UNTRUSTED] boundary is out —
+`limit` + contracts (1.5) deliver the checkable version of the same
+intent; revisit only on a demonstrated post-1.5 residue.
+
+## D-215 — `dyn` coercion refuses a channel-carrying concrete — **SETTLED (user-ratified; S-4)**
+
+D-207's reasoning completed at the erasure boundary, where the concrete
+type is still known: coercing a concrete whose type
+`type_contains_channel` answers true for into ANY `dyn` refuses (its
+own TYPE code, message citing the gives/reclaim rules an erased
+endpoint would evade). `contains_channel(DYN)` stays `false` — with
+this refusal, an endpoint-holding `dyn` cannot exist, and the walker's
+answer becomes exact rather than a documented residual. Lands at 1.4.4
+with D-207; the types.npk DYN comment updates to cite this decision.
+
+## D-216 — the consuming `pick` — **SETTLED (user-ratified; S-5)**
+
+An owning enum payload was write-only (TYPE-046 rightly refuses the
+copy a binding arm would take; no move form existed in patterns). The
+form: **`pick (move(v)) { … }`** — the selector consumed, ownership
+transferring into the matched arm: bound payloads become OWNED locals
+(dropping at the arm's scope exit like any owner); unbound payloads of
+the matched variant drop at the match; `v` is moved-from after the
+pick on every path (the S-2/D-208 analysis sees it); the enum's own
+drop does not run — the pick took it apart. A non-`move` pick over an
+owning enum still refuses at the binding arm exactly as today (lending
+picks of owning enums remain legal where no arm binds a payload). No
+grammar change — `move(v)` already parses as a selector expression;
+the work is checker + move-analysis + emitter. Lands at 1.4.3b, beside
+the loop-carried move analysis it interacts with.
+
+## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
+
+A decision, not a deferral-by-silence: Astrée IS the
+abstract-interpretation evidence for the one-shot 1.6 trial; an
+in-house IKOS fork before then duplicates that evidence class while
+consuming pre-trial time — the scarcest resource. The manifest's
+`[verify.nikos]` table remains and the tooling refuses it BY NAME
+(rung style) until a post-1.6 cycle picks it up; the verification
+stack's long-term shape (the user's toolchain: Z3, NIKOS, ESBMC,
+Frama-C, K, Astrée) is unchanged — only the ORDER moved: nothing
+lands between the fixpoint re-close and the trial that the trial does
+not need.
+
+## D-218 — the SMT emitter and invocation architecture — **SETTLED (user-ratified early for the 1.5 handoff; C-17)**
+
+The full normative text lives in `meta/roadmap/1.5/README.md` (the
+proposed batch, ratified whole); the record here is the numbered
+skeleton: (1) Z3 only, exact version SHA-256-pinned, spawned over
+SMT-LIB2 text; (2) the determinism profile — `smt.random_seed=0`,
+`sat.random_seed=0`, wall-clock timeout DISABLED, `rlimit` the sole
+budget, all in the manifest, verdicts machine-independent; (3) one
+fresh solver process per function, push/pop only inside; (4) integers
+partitioned — unbounded Int + range axioms for arithmetic, QF_BV for
+bitwise with explicit crossing casts; `tbb`/`tfp` as scaled Int with
+ERR-sentinel rows, never FP theory; (5) floats two-tier — Z3 QF_FP for
+tier-1 obligations, Real-interval abstraction for heavy non-linear,
+the manifest recording which tier discharged what, undischarged =
+retained runtime guard; (6) ownership-trusting memory encoding — no
+global heap; slices as (value, integer length) with arithmetic bounds
+obligations, **Seq theory decided OUT** (determinism); (7) the
+obligation catalogue — overflow (D-210), div/INT_MIN, bounds, cast
+range, exhaustiveness, contracts, `limit`, termination AND
+stack-depth/recursion (the audit's G-6 row), twisted-ERR exits, the
+D-014 failsafe postcondition — every carried obligation or the
+manifest has holes; (8) obligation identity = content hash of
+canonical SMT text + module-qualified symbol + kind (cross-build
+stable); `:named` tags for model/unsat-core mapping back to spans;
+(9) elision via `llvm.assume`, **never `nsw`/`nuw`** (poison is a
+refinement hazard, r8 Lesson 1); (10) the emitter's `undef` seeds
+become `poison` and a harness grep enforces the ban thereafter;
+(11) the TCB statement — verified middle-end plus validated floor,
+`llc`/`ld.lld` named trusted, the floor's volatile bottom enumerated
+in `meta/specs/TCB.md` (r8 Lesson 2).
+
+## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
+
+Elision is a property of the VERIFIED BUILD recorded in the manifest —
+never a flag; `--smt-opt` is struck. The artifact Astrée reads is the
+verified build with its elision manifest beside it. An undischarged
+obligation retains its runtime guard; the binary differs only with the
+manifest saying so, and D-218.2 makes the verdicts themselves
+machine-independent — D-039's timeout-dependent-binary hazard is
+impossible by construction.
+
+## D-220 — `limit<Rules>` placement, typing, subsumption — **SETTLED (user-ratified early; C-15)**
+
+Checks inject at the three write points (initialization, every
+assignment, parameter entry — callee-side, caller discharge is an
+elision like any other). `limit<R>` rule names RESOLVE (a typo
+refuses); `Rules` bodies TYPE (`$` = subject's type, clauses `bool`).
+Subsumption is a Z3 implication obligation. The runtime residue traps
+through D-142's route with its own code.
+
+## D-221 — contract runtime semantics — **SETTLED (user-ratified early; C-16)**
+
+A contract violation is a program-invalid state: the violation channel
+is the TRAP route (distinct D-141-space codes for requires/ensures/
+invariant), reaching `failsafe` — never a `Result`. In `ensures`,
+`result` denotes the SUCCESS value (type T); `old(expr)` is admitted
+for COPYABLE values only (entry snapshot), refused for owning types by
+name. Contract expressions admit calls only to `never fails` PURE
+functions (no allocation, no I/O, no suspension). D-014's injected
+`ensures result > 0` on `failsafe` and the non-empty-body check are
+implemented at 1.5.3.
