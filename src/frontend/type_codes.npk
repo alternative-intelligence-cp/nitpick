@@ -263,3 +263,12 @@ pub func:TYPE_COMPLEX_RULES = string() never fails { pass "NITPICK-TYPE-053"; };
 // the draft that handed `write_file` a `string` where it wants a `cstring`
 // compiled, ran, and swallowed the kernel's refusal.
 pub func:TYPE_BUILTIN_ARGS = string() never fails { pass "NITPICK-TYPE-054"; };
+
+// 1.4.2b (D-211): a module-level binding that is neither `const` nor `fixed`.
+// A plain one lowered to a MUTABLE LLVM global and nothing in the crossing
+// rules governed a spawned task writing it — a data race that was spellable
+// in three words, and the shape r7's Toyota case 8 is about. D-165 constrained
+// a module binding's INITIALISER and left its mutation open on purpose,
+// noting the question for the concurrency cycle so it could not be forgotten;
+// this is the answer.
+pub func:TYPE_GLOBAL_MUTABLE = string() never fails { pass "NITPICK-TYPE-055"; };

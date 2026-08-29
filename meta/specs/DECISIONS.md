@@ -11598,7 +11598,8 @@ D-010's objection, one level up — and it is the one thing a verifier cannot
 read off the declaration.
 
 **Lowering.** `const T:name = v;` → `@"npk.<module>.name" = constant <T> <v>`;
-`fixed` and plain bindings → `global`. The symbol follows D-156's scheme. A
+`fixed` → `global` (and, since D-211, a plain binding does not exist to lower).
+The symbol follows D-156's scheme. A
 string constant is a constant `{ptr, len, cap}` whose `ptr` names a private
 constant byte array, as a string literal in a function already does.
 
@@ -11606,6 +11607,13 @@ constant byte array, as a string literal in a function already does.
 global today (the accept suite has one) and this decision does not change
 that; what a thread may do with one is 1.1's concurrency decision set
 (C-7…C-9), already scheduled, and it is noted here so it cannot be forgotten.
+
+> **ANSWERED by D-211** (2026-08-29, landed 1.4.2b): a plain module-level
+> binding now REFUSES (`NITPICK-TYPE-055`) — module state is `const` or
+> `fixed`, and mutable process state lives in `main`'s scope. The paragraph
+> above is why the question was left open and where to find it; the coverage
+> audit's G-7 is what closed it. `const` and `fixed` module bindings, and the
+> lowering described below, are unchanged.
 
 **Considered and rejected:** a lazily-initialised global (a function call on
 first read) — a hidden call on a read, the context-dependent behaviour the

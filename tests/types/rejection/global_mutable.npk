@@ -1,0 +1,43 @@
+// D-211 (1.4.2b): MODULE STATE IS `const` OR `fixed`, AND NOTHING ELSE.
+//
+// A plain module-level binding lowered to a mutable LLVM global, and nothing
+// in the crossing rules governed a spawned task writing one — process state
+// that changes, reachable from everywhere, ordered by nothing. D-165 settled
+// what a module binding's INITIALISER may be and deliberately left its
+// mutation open, noting the question for the concurrency cycle so it could
+// not be forgotten; this is the answer.
+//
+// The evidence the restriction costs nothing: the compiler is the largest
+// program in this ecosystem and declares no module binding at all — zero in
+// `src/`, `lib/` and `tools/`, measured when the rule landed.
+mod:global_mutable;
+
+// `const` is a value that never changes...
+const int32:LIMIT = 40i32;
+
+// ...and `fixed` is one assigned exactly once, which the definite-assignment
+// rules already police. Both are accepted, and this file's point is that the
+// THIRD spelling is not.
+fixed int32:started = 0i32;
+
+// expect-error: NITPICK-TYPE-055
+int32:mutable_counter = 0i32;
+
+// The qualifier has to be one of the two: `stack` on module state is not a
+// regime question, it is the same missing acknowledgement.
+// expect-error: NITPICK-TYPE-055
+stack int32:scoped_global = 1i32;
+
+// ...and `pub` changes nothing, which is the point — exporting mutable state
+// is the shape that makes it reachable from another module entirely.
+// expect-error: NITPICK-TYPE-055
+pub bool:ready = false;
+
+func:reads = int32() never fails {
+    if (ready) { pass LIMIT + started; }
+    pass mutable_counter + scoped_global;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
