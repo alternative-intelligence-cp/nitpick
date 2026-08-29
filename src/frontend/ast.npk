@@ -261,7 +261,7 @@ func:ast_grow_exprs = NIL(Ast->:ast) never fails {
     // that must stay the same length are two arrays that will not, if growing
     // them is two decisions.
     ast.expr_flags = ralloc(ast.expr_flags =>! wild int8->,
-                            (nc => int64) * #size_of<int32>()) => wild int32->;
+                            (nc => int64) * #size_of<int32>()) =>! wild int32->;
     ast.expr_cap = nc;
     pass NIL;
 };
@@ -504,7 +504,7 @@ func:ast_grow_stmts = NIL(Ast->:ast) never fails {
                                 (nc => int64) * #size_of<StmtNode>());
     ast.stmts = bigger =>! wild StmtNode->;
     ast.stmt_flags = ralloc(ast.stmt_flags =>! wild int8->,
-                            (nc => int64) * #size_of<int32>()) => wild int32->;
+                            (nc => int64) * #size_of<int32>()) =>! wild int32->;
     ast.stmt_cap = nc;
     pass NIL;
 };

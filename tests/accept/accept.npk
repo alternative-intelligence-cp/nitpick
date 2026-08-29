@@ -11,7 +11,7 @@ error:MpCat;
 func:mp_consume = int32(move string:s) never fails { pass (s.len =>! int32); };
 func:mp_read = int32(string:s) never fails { pass (s.len =>! int32); };
 func:mp_use = int32() {
-    string:built = string_concat("ab", "cd") ?! MpCat;
+    string:built = string_concat("ab", "cd");
     int32:a = mp_read(built) ?! MpCat;      // borrowed: no `move`, still usable
     int32:b = mp_read("literal") ?! MpCat;  // a literal, which cannot be borrowed
     int32:c = mp_consume(move(built)) ?! MpCat;

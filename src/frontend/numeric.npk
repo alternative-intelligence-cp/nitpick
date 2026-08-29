@@ -380,8 +380,8 @@ func:tfpq_decimal = string(wild uint64->:limbs) never fails {
 pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     int32:frac_bits = bits / 2i32;
     // --- parse: integer digits, fraction digits, exponent; stop at a suffix ---
-    wild uint8->:ints = alloc(text.len + 408i64);
-    wild uint8->:frs = alloc(text.len + 408i64);
+    wild uint8->:ints = alloc(text.len + 408i64) =>! wild uint8->;
+    wild uint8->:frs = alloc(text.len + 408i64) =>! wild uint8->;
     int64:ni = 0i64;
     int64:nf = 0i64;
     int64:ex = 0i64;
@@ -456,7 +456,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     }
 
     // --- integer digits into limbs; overflow past the top limb refuses ---
-    wild uint64->:limbs = alloc(80i64);
+    wild uint64->:limbs = alloc(80i64) =>! wild uint64->;
     int64:li = 0i64;
     while (li < 10i64) { limbs[li] = 0u64; li = li + 1i64; }
     bool:over = false;

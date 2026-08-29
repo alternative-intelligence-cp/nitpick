@@ -238,7 +238,7 @@ pub func:te_error = int32(ExprTyper->:e, move string:code, move string:message, 
 // it. So reading a PLACE whose type owns something, in a value position, has
 // to say `move`.
 //
-// A TEMPORARY NEEDS NOTHING. `string:s = string_concat(a, b) ?! E;` has no
+// A TEMPORARY NEEDS NOTHING. `string:s = string_concat(a, b);` has no
 // second name to invalidate — the value was built for this slot and nobody
 // else can reach it. That is why the test is `expr_is_place` rather than a
 // test on the type alone, and it is what keeps the rule from turning every
@@ -1593,12 +1593,40 @@ func:unwrap_callee_is_async = bool(ExprTyper->:e, ExprNode:opn, ExprId:opid) nev
     pass (raw decl_has(dn, raw DECL_ASYNC()));
 };
 
+// TRANSITIONAL (D-201 §7a, 1.4.2 step 1 only): is this operand a call to a
+// bare-name builtin whose contract says it cannot fail? Those type as the bare
+// value from step 1 onward, while the tree still spells them `raw`/`drop`.
+func:operand_is_never_fails_builtin_call = bool(ExprTyper->:e,
+                                                ExprId:oid) never fails {
+    if (raw expr_is_none(oid)) { pass false; }
+    ExprNode:ocall = raw ast_expr(e.ast, oid);
+    if (ocall.kind != ExprKind.ExprCallExpr) { pass false; }
+    ExprNode:cal = raw ast_expr(e.ast, raw expr_callee(ocall));
+    if (cal.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cal.a != 0i32) { pass false; }
+    if (!(raw is_builtin_name(raw intern_get(e.interns,
+                                  cal.payload =>! int32)))) { pass false; }
+    pass (raw builtin_never_fails(raw intern_get(e.interns,
+                                      cal.payload =>! int32)));
+};
+
 func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) never fails {
     int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
 
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
+        // THE TRANSITIONAL RULE (D-201 §7a) — 1.4.2 STEP 1 ONLY, deleted at
+        // step 3. A never-fails builtin's call now types as the BARE value,
+        // and the tree still spells ~2,000 of them `raw f(…)` and
+        // `drop f(…);`. Taking the keyword as the identity for exactly that
+        // shape is what lets the typing land as its own commit and the
+        // tree-wide re-spell follow as another, with the fixpoint green at
+        // each; at step 3 the ordinary refusal below applies to a builtin
+        // like it applies to everything else.
+        if (raw operand_is_never_fails_builtin_call(e, raw expr_operand(n))) {
+            pass t;
+        }
         string:m1 = raw string_concat("`", op);
         string:m2 = raw string_concat(m1, "` needs a `Result`, and this is `");
         string:m3 = raw string_concat(m2, raw type_display(e.types, e.interns, t));
@@ -3108,6 +3136,16 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                 if (dt != 0i32) {
                     if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
                         if ((raw type_elem(e.types, dt)) == e.types.t_nil) { d_ok_nil = true; }
+                    }
+                    // TRANSITIONAL (D-201 §7a, step 1 only): a never-fails
+                    // builtin returning nothing now types as a BARE `NIL`,
+                    // where this rule used to see the UNKNOWN the name list
+                    // below stood in for. Step 2 sheds the `drop` at these
+                    // sites and step 3 deletes both halves.
+                    if (dt == e.types.t_nil) {
+                        if (raw operand_is_never_fails_builtin_call(e, dopid)) {
+                            d_ok_nil = true;
+                        }
                     }
                 }
                 if (dt == 0i32) {

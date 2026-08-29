@@ -97,9 +97,9 @@ executable at once).
 | `driver_retire` | `int64:slot → NIL` | Retire a driver-registry slot — teardown's LAST step (v3 §4.2), after the process is dead and reaped. Retiring a slot that is not active is the registry's double-free and traps (`-4102`), exactly as the allocator treats a foreign pointer. | **never fails** (traps on misuse) |
 | `wild_release_all` | `() → NIL` | Releases every live `wild` allocation at once; the cleanup `failsafe` may run before exiting positive (D-151). | **never fails** (traps on misuse) |
 | `wildx_alloc` | `int64:size → wildx int8->` | Allocates writable-not-executable pages for the JIT to fill. | **never fails** (traps on misuse) |
-| `wildx_seal` | `wildx int8->:ptr → NIL` | Flips the pages to executable-not-writable — the one W^X transition, never the reverse. | **never fails** (traps on misuse) |
-| `wildx_call` | `(wildx int8->:ptr, int64:arg) → int64` | Calls into sealed executable memory. | **never fails** (traps on misuse) |
-| `wildx_free` | `wildx int8->:ptr → NIL` | Releases W^X pages. | **never fails** (traps on misuse) |
+| `wildx_seal` | `wildx any->:ptr → NIL` | Flips the pages to executable-not-writable — the one W^X transition, never the reverse. | **never fails** (traps on misuse) |
+| `wildx_call` | `(wildx any->:ptr, int64:arg) → int64` | Calls into sealed executable memory. | **never fails** (traps on misuse) |
+| `wildx_free` | `wildx any->:ptr → NIL` | Releases W^X pages. | **never fails** (traps on misuse) |
 
 <!-- builtins:end -->
 

@@ -32,6 +32,7 @@ use "./type_expr.npk".*;
 use "./expr_types.npk".*;
 use "./type_trait.npk".*;
 use "./type_generic.npk".*;
+use "./builtins.npk".*;   // the generated signature table (D-201)
 
 // --- the dispatcher ----------------------------------------------------------------------
 //
@@ -710,30 +711,6 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 "`barrier()` needs a `Barrier<N, LEVEL>` annotation to read its party count and level from (D-056)",
                 n.span));
         }
-        // `own_fd(f)` — the descriptor becomes OWNED: from here its scope
-        // closes it (D-185, 1.1.12b). `release_fd(move o)` is the inverse,
-        // for a caller that must observe close's verdict through the floor.
-        // `string_bytes(s)` — the string→slice bridge (D-185, 1.1.12c): the
-        // bytes as a borrowed view. A slice is a borrow (D-070); the borrow
-        // rules own everything after this.
-        if (raw callee_is_builtin_named(e, n, "string_bytes")) {
-            if (count != 1i32) {
-                pass (raw te_error(e, raw TYPE_MISMATCH(),
-                    "`string_bytes` takes exactly one argument, the string to view (D-185)",
-                    n.span));
-            }
-            int32:sbt = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
-            if (sbt != 0i32) {
-                if (!(raw type_is_invalid(e.types, sbt))) {
-                    if (!((raw type_kind(e.types, sbt)) == (raw TY_STRING()))) {
-                        pass (raw te_error(e, raw TYPE_MISMATCH(),
-                            "`string_bytes` views a `string`'s bytes (D-185)",
-                            n.span));
-                    }
-                }
-            }
-            pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
-        }
         // `atomic_from_ptr::<T>(p)` — alias the pointee AS an atomic (D-033),
         // element from the TURBOFISH (D-187 option A). FUSED ONLY: legal
         // solely as the receiver of an atomic method, never stored (a stored
@@ -767,67 +744,6 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             }
             pass (raw tt_atomic(e.types, afel,
                       raw type_size(e.types, afel), raw type_align(e.types, afel)));
-        }
-        // `buffer_new(n)` (D-200/TYPE §23, 1.3.7): the owning byte cell —
-        // `n` zeroed bytes, `len == cap == n`. The count is `int64` BY
-        // DECLARATION, not adoption: the floor call takes i64, and a
-        // signature-less callee adopts nothing (the `sys` rule).
-        if (raw callee_is_builtin_named(e, n, "buffer_new")) {
-            if (count != 1i32) {
-                pass (raw te_error(e, raw TYPE_MISMATCH(),
-                    "`buffer_new` takes exactly one argument, the byte count (D-200)",
-                    n.span));
-            }
-            int32:bft = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
-            if (bft != 0i32) {
-                if (!(raw type_is_invalid(e.types, bft))) {
-                    if (bft != (raw tt_int(e.types, 64i32, true))) {
-                        pass (raw te_error(e, raw TYPE_MISMATCH(),
-                            "`buffer_new` takes the byte count as `int64` (D-200)",
-                            n.span));
-                    }
-                }
-            }
-            pass (raw tt_buffer(e.types));
-        }
-        if (raw callee_is_builtin_named(e, n, "own_fd")) {
-            if (count != 1i32) {
-                pass (raw te_error(e, raw TYPE_MISMATCH(),
-                    "`own_fd` takes exactly one argument, the descriptor to own (D-185)",
-                    n.span));
-            }
-            int32:oft = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
-            if (oft != 0i32) {
-                if (!(raw type_is_invalid(e.types, oft))) {
-                    if (!((raw type_kind(e.types, oft)) == (raw TY_KERNEL()))) {
-                        pass (raw te_error(e, raw TYPE_MISMATCH(),
-                            "`own_fd` owns a descriptor: its argument is the kernel `fd` type (D-185)",
-                            n.span));
-                    }
-                }
-            }
-            pass (raw tt_ownedfd(e.types));
-        }
-        if (raw callee_is_builtin_named(e, n, "release_fd")) {
-            if (count != 1i32) {
-                pass (raw te_error(e, raw TYPE_MISMATCH(),
-                    "`release_fd` takes exactly one argument, the owner being released (D-185)",
-                    n.span));
-            }
-            int32:rft = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
-            if (rft != 0i32) {
-                if (!(raw type_is_invalid(e.types, rft))) {
-                    if (!((raw type_kind(e.types, rft)) == (raw TY_OWNEDFD()))) {
-                        pass (raw te_error(e, raw TYPE_MISMATCH(),
-                            "`release_fd` releases an `OwnedFd`; closing responsibility returns to the caller (D-185)",
-                            n.span));
-                    }
-                    drop require_move_if_owning(e,
-                        ExprId{ index: raw ast_id_at(e.ast, start, 0i32) },
-                        rft, n.span);
-                }
-            }
-            pass (raw tt_kernel(e.types, raw KERNEL_FD()));
         }
         if (raw callee_is_builtin_named(e, n, "mutex")) {
             int32:mwant = raw expected_value(e);
@@ -983,9 +899,30 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             pass (raw tt_result(e.types, raw tt_int(e.types, 64i32, true),
                                 8i64, 8i32));
         }
-        // A bare-name builtin has no signature yet. Its arguments are still
-        // typed, so a mistake inside one is not hidden by the callee being
-        // unknown.
+        // EVERY OTHER BARE-NAME BUILTIN IS TYPED FROM THE GENERATED SIGNATURE
+        // TABLE (D-201, 1.4.2). Until P-3 this line was `pass 0i32` — "a
+        // bare-name builtin has no signature yet" — and 41 of the 54 builtins
+        // took it, so an argument of the wrong shape reached llc or the kernel
+        // instead of the checker. The draft that handed `write_file` a `string`
+        // where it wants a `cstring` compiled, ran, and swallowed the kernel's
+        // refusal; nothing in the compiler was in a position to say so.
+        if ((raw callee_builtin_name(e, n)).len > 0i64) {
+            // A SPECIAL WITH NO ARM ABOVE cannot be typed here — being marked
+            // special IS the statement that no signature says what it does.
+            // Reaching this line means the generator's list and the arms above
+            // disagree, which is this compiler's defect and is reported as one.
+            if (raw builtin_sig_special(raw callee_builtin_name(e, n))) {
+                drop type_args_only(e, start, count);
+                pass (raw te_error(e, raw TYPE_BUILTIN_ARGS(),
+                    "this builtin is marked SPECIAL in the generated signature table and has no bespoke typing arm — the generator's list and `type_call` disagree (D-201)",
+                    n.span));
+            }
+            pass (raw type_builtin_regular(e, id, n,
+                      raw callee_builtin_name(e, n), start, count));
+        }
+        // NOT A BUILTIN: an identifier that resolved to nothing, which
+        // resolution has already reported. Its arguments are still typed, so a
+        // mistake inside one is not hidden by the callee being unknown.
         drop type_args_only(e, start, count);
         pass 0i32;
     }
@@ -1874,6 +1811,158 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
     // and the wrap happens here, once, the same place the arguments were held
     // to the same one rule.
     int32:succ = raw type_elem(e.types, ft);
+    pass (raw tt_result(e.types, succ, raw type_size(e.types, succ),
+                        raw type_align(e.types, succ)));
+};
+
+// --- the regular builtin path (D-201, 1.4.2) ------------------------------------------
+
+// The callee's bare-builtin name, or "" when the callee is not one. Rebuilt per
+// use rather than bound once: a `string` is an owner, and a binding read twice
+// in a value position is a copy of one (D-183) — the interning is a table read.
+func:callee_builtin_name = string(ExprTyper->:e, ExprNode:n) never fails {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass ""; }
+    ExprNode:cnode = raw ast_expr(e.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass ""; }
+    if (cnode.a != 0i32) { pass ""; }
+    if (!(raw is_builtin_name(raw intern_get(e.interns,
+                                  raw expr_name(cnode) =>! int32)))) { pass ""; }
+    pass (raw intern_get(e.interns, raw expr_name(cnode) =>! int32));
+};
+
+// THE SIGNATURE TABLE'S TYPE TEXTS, INTERNED.
+//
+// A FLAT TABLE RATHER THAN A PARSER. The texts are GENERATED into
+// `builtins.npk` from BUILTIN_REFERENCE.md's rows, so the set is closed and
+// small — and a text this does not have is a builtin nobody could type, which
+// is a generation failure rather than a program's mistake. The harness's
+// `check_builtin_sig_texts` diffs the two lists on every run, so a new
+// builtin whose type is new fails at BUILD time instead of at its first call.
+//
+// A MEMORY QUALIFIER IS DOCUMENTATION here, exactly as it is in source:
+// qualifiers are not part of a type (parse_type.npk), so `wild any->` and
+// `any->` name the same interned id.
+func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
+    if (raw string_eq(t, "int32"))   { pass (raw tt_int(e.types, 32i32, true)); }
+    if (raw string_eq(t, "int64"))   { pass (raw tt_int(e.types, 64i32, true)); }
+    if (raw string_eq(t, "bool"))    { pass (e.types.t_bool); }
+    if (raw string_eq(t, "NIL"))     { pass (e.types.t_nil); }
+    if (raw string_eq(t, "string"))  { pass (e.types.t_string); }
+    if (raw string_eq(t, "cstring")) { pass (e.types.t_cstring); }
+    if (raw string_eq(t, "buffer"))  { pass (raw tt_buffer(e.types)); }
+    if (raw string_eq(t, "fd"))      { pass (raw tt_kernel(e.types, raw KERNEL_FD())); }
+    if (raw string_eq(t, "OwnedFd")) { pass (raw tt_ownedfd(e.types)); }
+    if (raw string_eq(t, "uint8[]")) {
+        pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
+    }
+    if (raw string_eq(t, "wild any->")) {
+        pass (raw tt_pointer(e.types, e.types.t_any));
+    }
+    if (raw string_eq(t, "wildx any->")) {
+        pass (raw tt_pointer(e.types, e.types.t_any));
+    }
+    if (raw string_eq(t, "wild int8->")) {
+        pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, true)));
+    }
+    if (raw string_eq(t, "wildx int8->")) {
+        pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, true)));
+    }
+    pass 0i32;
+};
+
+// A FLOOR ADDRESS TAKES ANY POINTER. `wild any->` is the reference's own
+// spelling for the memory primitives' operand — `ralloc` and `dalloc` have
+// carried it since the allocator was written, and 1.4.2 gives `mcpy`, `mmov`,
+// `memset`, `read`, `write` and `string_from_bytes` the same one: the floor
+// takes an ADDRESS and a byte count, and what the bytes are a pointer TO is
+// not its business. The prelude's `read(self.src.value, dest.ptr, dest.len)`
+// hands it a `uint8->` and nbridge's hands it an `int8->`, both correctly.
+// Everywhere else the ordinary `fits` rule applies, unchanged.
+func:builtin_arg_fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
+    if ((raw type_kind(e.types, want)) == (raw TY_POINTER())) {
+        if ((raw type_elem(e.types, want)) == (e.types.t_any)) {
+            pass ((raw type_kind(e.types, got)) == (raw TY_POINTER()));
+        }
+    }
+    pass (raw fits(e, want, got));
+};
+
+// ARITY, PER-ARGUMENT FIT, `move` WHERE THE SIGNATURE CONSUMES, SPREAD REFUSED
+// — `check_args`'s rules over the generated table rather than over a declared
+// function's window. `check_args` itself cannot serve: it reads a func TYPE and
+// wraps its answer in `Result` unconditionally, and a never-fails builtin's
+// call is the BARE value (D-201 §4).
+func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
+                                  string:name, int32:start,
+                                  int32:count) never fails {
+    int32:want = raw builtin_sig_count(name);
+    // BOTH COUNTS ARE NAMED, as `check_args` names them: "wrong number of
+    // arguments" makes the reader count the parameters, which the compiler
+    // just did.
+    if (count != want) {
+        string:c1 = raw string_concat("`", name);
+        string:c2 = raw string_concat(c1, "` takes ");
+        c2 = raw string_concat(c2, raw int_to_string(want => int64));
+        c2 = raw string_concat(c2, " argument(s) and this call passes ");
+        c2 = raw string_concat(c2, raw int_to_string(count => int64));
+        discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(), move(c2), n.span));
+    }
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
+        // `..^` NEEDS A VARIADIC TAIL TO EXPAND INTO, and a builtin's
+        // arguments are fixed registers (1.1.13-close): the same refusal
+        // `type_args_only` carried, kept where the arguments are now checked.
+        if (raw is_spread(e, a)) {
+            ExprNode:sn = raw ast_expr(e.ast, a);
+            discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(),
+                "`..^` expands a collection into a variadic parameter, and a builtin's arguments are fixed — pass the elements yourself",
+                sn.span));
+        }
+        int32:pt = 0i32;
+        if (i < want) {
+            pt = raw builtin_text_type(e, raw builtin_sig_param(name, i));
+        }
+        // THE PARAMETER IS THE EXPECTATION, so an unsuffixed literal reads its
+        // width from the signature exactly as it does in any other call slot
+        // (D-092). Before this the OUTER expectation reached a builtin's
+        // arguments — `wild int8->:p = alloc(8)` offered a POINTER as the
+        // context for the byte count.
+        int32:saved = e.expected;
+        e.expected = pt;
+        int32:got = raw type_of_expr(e, a);
+        e.expected = saved;
+        if (pt != 0i32) {
+            if (got != 0i32) {
+                if (!(raw type_is_invalid(e.types, got))) {
+                    // THE ARGUMENT'S SPAN, NOT THE CALL'S — it points at the
+                    // thing that is wrong, and it keeps two bad arguments two
+                    // diagnostics rather than one deduplicated away.
+                    if (!(raw builtin_arg_fits(e, pt, got))) {
+                        drop te_mismatch_at(e, pt, got, raw arg_span(e, a, n.span));
+                    }
+                    if (raw builtin_sig_param_move(name, i)) {
+                        drop require_move_if_owning(e, a, got,
+                            raw arg_span(e, a, n.span));
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    int32:succ = raw builtin_text_type(e, raw builtin_sig_ret(name));
+    if (succ == 0i32) {
+        pass (raw te_error(e, raw TYPE_BUILTIN_ARGS(),
+            "this builtin's return type text is one the checker's resolver does not have — the generated table and `builtin_text_type` disagree (D-201)",
+            n.span));
+    }
+    // THE TYPING RULE (D-201 §4): a `never fails` builtin's call IS the bare
+    // value — the type system states the truth the contract already proves —
+    // and a may-fail one's is `Result<T>` like every other call. The floor's
+    // ABI is untouched: the symbol still answers in the envelope and the
+    // emitter extracts the value half at the site.
+    if (raw builtin_never_fails(name)) { pass succ; }
     pass (raw tt_result(e.types, succ, raw type_size(e.types, succ),
                         raw type_align(e.types, succ)));
 };

@@ -129,7 +129,7 @@ func:main = int32(cstring[]:_~argv) {
 // seal, execute only after it, freed exactly once. The state machine that
 // refuses the out-of-order forms must accept this one.
 func:wildx_correct_lifecycle = NIL() never fails {
-    wildx uint8->:page = wildx_alloc(16i64);
+    wildx uint8->:page = wildx_alloc(16i64) =>! wildx uint8->;
     page[0i64] = 195u8;
     drop wildx_seal(page);
     int64:r = wildx_call(page, 0i64);

@@ -600,6 +600,16 @@ SLOT_SITE_PAIRS = {
     # insertelement (D-194, 1.3.1) -- an inline arm, so the enclosing
     # emitter function is the partner, the type_safe_unwrap precedent.
     "type_vector_ctor":    {"emit_expr_kind"},
+    # A BUILTIN'S ARGUMENT SLOTS (D-201, 1.4.2). `call_builtin` is where a
+    # builtin's arguments are built, and it is already the partner for the
+    # annotation-directed constructors' elements. Nothing is BUILT for a regular
+    # builtin's argument, and nothing can be: the parameter types come from
+    # `builtin_text_type`'s closed table, which has no `dyn` and no `Optional`
+    # arm -- the two things `fits` admits that a value's own type does not say --
+    # and `check_builtin_sig_texts` fails the build if a signature row uses a
+    # text that table does not have. The pairing is written anyway, so the day
+    # such a type does appear in a signature the slot has an owner.
+    "builtin_arg_fits":    {"call_builtin"},
 }
 
 
@@ -1145,6 +1155,48 @@ def _npkrt_defines():
             tys.append(a.rsplit(" %", 1)[0] if " %" in a else a)
         out[name] = (ret.replace("noreturn", "").strip(), tys)
     return out
+
+
+def check_builtin_sig_texts():
+    """Every type text the generated signature table hands the checker is one the
+    checker's resolver actually has, and no arm of the resolver is dead.
+
+    D-201 (1.4.2) made BUILTIN_REFERENCE.md's Signature column load-bearing:
+    `builtins.npk` carries the parameter and return types as TEXT and
+    `builtin_text_type` in `type_access.npk` interns them. The generator cannot
+    check the second half -- it has no idea what the compiler can resolve -- so
+    without this a builtin added with a type nobody taught the resolver would
+    generate cleanly, build cleanly, and refuse at its first CALL SITE with
+    "the generated table and `builtin_text_type` disagree". This turns that into
+    a build failure, which is where it belongs, and it fails the other way too:
+    an arm for a text no builtin uses is a row nothing checks.
+    """
+    fails = []
+    bl = open(os.path.join(ROOT, "src", "frontend", "builtins.npk"),
+              encoding="utf-8").read()
+    used = set()
+    for fn in ("builtin_sig_param", "builtin_sig_ret"):
+        m = re.search(r'pub func:%s = [^{]*\{(.*?)\n\};' % fn, bl, re.S)
+        if m is None:
+            return ["check_builtin_sig_texts found no `%s` in builtins.npk -- "
+                    "the check has stopped checking" % fn]
+        used |= {t for t in re.findall(r'pass "([^"]*)";', m.group(1)) if t}
+    acc = open(os.path.join(ROOT, "src", "frontend", "type_access.npk"),
+               encoding="utf-8").read()
+    m = re.search(r'func:builtin_text_type = [^{]*\{(.*?)\n\};', acc, re.S)
+    if m is None:
+        return ["check_builtin_sig_texts found no `builtin_text_type` in "
+                "type_access.npk -- the check has stopped checking"]
+    known = set(re.findall(r'string_eq\(t, "([^"]*)"\)', m.group(1)))
+    for t in sorted(used - known):
+        fails.append("the generated signature table uses the type text `%s` and "
+                     "`builtin_text_type` cannot intern it -- every builtin "
+                     "written with it would refuse at its first call site" % t)
+    for t in sorted(known - used):
+        fails.append("`builtin_text_type` interns the type text `%s` and no "
+                     "builtin row uses it -- a dead arm in a table that has to "
+                     "stay honest" % t)
+    return fails
 
 
 def check_runtime_sigs_agree():
@@ -2124,6 +2176,7 @@ def main(argv):
         failures += check_rung_names_open_cycle()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
+        failures += check_builtin_sig_texts()
 
         # The two standalone instruments that were wired to NOTHING until
         # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check

@@ -1,0 +1,74 @@
+// THE BUILTIN SURFACE IS TYPED (D-201, P-3, 1.4.2). Every bare-name builtin
+// that is not one of the nine irregulars is checked against the signature
+// BUILTIN_REFERENCE.md's marked regions carry — arity, per-argument fit, the
+// `move` a consuming parameter demands, and the spread a fixed register list
+// has nowhere to put. Before this, 41 of the 54 builtins typed as UNKNOWN
+// ("no signature yet"), so an argument of the wrong shape reached llc or the
+// kernel: the draft that handed `write_file` a `string` where it wants a
+// `cstring` compiled, ran, and swallowed the kernel's refusal.
+mod:builtin_args;
+
+// Too many arguments. Both counts are named, as they are for a user call.
+// expect-error: NITPICK-TYPE-054
+func:arity_over = NIL() never fails {
+    wild int8->:p = alloc(8i64, 16i64);
+    discard(p);
+    pass NIL;
+};
+
+// Too few. `wildx_call` takes the sealed page and one argument.
+// expect-error: NITPICK-TYPE-054
+func:arity_under = NIL() never fails {
+    wildx int8->:page = wildx_alloc(64i64);
+    int64:r = wildx_call(page);
+    discard(r);
+    pass NIL;
+};
+
+// `..^` EXPANDS INTO A VARIADIC TAIL, and a builtin's arguments are fixed
+// registers. `sys` is the language's one variadic builtin and it refuses this
+// too — the collection would have to become registers at the trampoline.
+// expect-error: NITPICK-TYPE-054
+func:spread_into_builtin = NIL() never fails {
+    int64[1]:sizes = [8i64];
+    wild int8->:p = alloc(..^sizes);
+    discard(p);
+    pass NIL;
+};
+
+// THE `write_file` LESSON, now a compile-time refusal: the floor's path
+// parameter is a `cstring` (a NUL-terminated copy, D-049), and a `string` is
+// not one. This is the shape that compiled, ran, and lost the kernel's error.
+// expect-error: NITPICK-TYPE-007
+func:string_where_cstring = NIL() {
+    Result<NIL>:w = write_file("/tmp/npk_builtin_args_probe", "payload");
+    if (w.is_error) { }
+    pass NIL;
+};
+
+// A NARROWER INTEGER IS NOT THE PARAMETER'S TYPE. The floor takes `int64` and
+// the widening is written `=> int64` — the emitter's old coercion loop widened
+// silently, and it did so with `zext`, so a negative `int32` became an enormous
+// positive `int64` (the exact class D-192 closed for `sys`).
+// expect-error: NITPICK-TYPE-007
+func:narrow_int = NIL() never fails {
+    int32:n = 8i32;
+    wild int8->:p = alloc(n);
+    discard(p);
+    pass NIL;
+};
+
+// A CONSUMING PARAMETER DEMANDS `move`. `release_fd` takes the owner apart, so
+// the caller may not still hold it (D-185); the signature says `move OwnedFd`
+// and the checker reads it from there.
+// expect-error: NITPICK-TYPE-046
+func:release_without_move = NIL() never fails {
+    OwnedFd:o = own_fd(3i32 =>! fd);
+    fd:back = release_fd(o);
+    discard(back);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

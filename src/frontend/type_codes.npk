@@ -253,3 +253,13 @@ pub func:TYPE_FRAC_RULES = string() never fails { pass "NITPICK-TYPE-052"; };
 // consumer — the shuffle refusal's rule), a `pick` selector, or a cast (a
 // complex is built with `complex(re, im)` and read with `.re()`/`.im()`).
 pub func:TYPE_COMPLEX_RULES = string() never fails { pass "NITPICK-TYPE-053"; };
+
+// 1.4.2 (D-201): a BUILTIN'S OWN CALL RULES — a bare-name builtin called with
+// the wrong number of arguments, a `..^` spread into its fixed registers, or a
+// name the generated signature table and `type_call`'s special arms disagree
+// about. A wrong ARGUMENT TYPE rides TYPE-002 like every other slot: one rule
+// for every call, which is the whole point of typing these from a table.
+// Before P-3 the surface typed UNKNOWN and these reached llc or the kernel —
+// the draft that handed `write_file` a `string` where it wants a `cstring`
+// compiled, ran, and swallowed the kernel's refusal.
+pub func:TYPE_BUILTIN_ARGS = string() never fails { pass "NITPICK-TYPE-054"; };

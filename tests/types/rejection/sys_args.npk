@@ -36,14 +36,11 @@ func:struct_arg = NIL() never fails {
     pass NIL;
 };
 
-// A bare-name builtin call has no signature the checker can see — its value
-// may not be register-shaped, so it is refused here: bind it first.
-// expect-error: NITPICK-TYPE-007
-func:unknown_arg = NIL() never fails {
-    Result<int64>:r = sys(39i64, raw string_byte_length("x"));
-    if (r.is_error) { }
-    pass NIL;
-};
+// (The case that used to sit here — a nested bare-name builtin call, refused
+// because the checker could not see its shape — RETIRED at 1.4.2. Every
+// builtin has a signature now (D-201), so `sys(39i64, string_byte_length(s))`
+// passes a typed `int64` and is accepted; `tests/accept/builtin_sigs.npk`
+// asserts that it is.)
 
 // Wider than a register: one argument is one register, and `int128` is two.
 // expect-error: NITPICK-TYPE-007

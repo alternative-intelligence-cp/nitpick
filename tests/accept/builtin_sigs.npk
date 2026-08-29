@@ -1,0 +1,50 @@
+// THE POSITIVE HALF OF D-201 (P-3, 1.4.2). The rejection suites establish that
+// the builtin signature table refuses; this establishes that it refuses only
+// what it should, which no number of negative cases can show.
+mod:builtin_sigs;
+
+error:BsPath;
+
+// A `never fails` builtin's call IS the bare value (D-201 §4) — no envelope, so
+// no keyword removing one. The seven surfaces settled this way across 1.1–1.3
+// (`own_fd`, `buffer_new`, `string_bytes`, …) are now the whole floor's rule.
+func:bare_values = int64() never fails {
+    string:joined = string_concat("ab", "cd");
+    string:shown = int_to_string(42i64);
+    int64:n = string_byte_length(joined) + string_byte_length(shown);
+    buffer:b = buffer_new(16i64);
+    uint8[]:view = string_bytes(joined);
+    pass n + b.len + view.len;
+};
+
+// A MAY-FAIL builtin still carries its envelope and still needs a keyword.
+func:wrapped_values = int32() {
+    cstring:p = to_cstring("/nonexistent/npk_builtin_sigs_probe") ?! BsPath;
+    string:got = read_file(p) ?| "";
+    pass (got.len =>! int32);
+};
+
+// A NESTED never-fails builtin call is a TYPED argument now — the refusal that
+// stood here until 1.4.2 ("bind it to a typed name first") was about a shape
+// the checker could not see, and it can see this one.
+func:nested_builtin_arg = NIL() never fails {
+    Result<int64>:r = sys(39i64, string_byte_length("x"));
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// THE FLOOR TAKES AN ADDRESS. `mcpy`'s operands are `wild any->` — the byte
+// count says how much, and what the bytes are a pointer TO is not the floor's
+// business. Both pointer spellings in the tree reach it: the allocator's own
+// `int8->` and a string's `uint8->`.
+func:addresses = NIL() never fails {
+    wild int8->:dst = alloc(8i64);
+    string:src = string_concat("abcdefgh", "");
+    discard(mcpy(dst, src.ptr, 8i64));
+    drop dalloc(dst);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

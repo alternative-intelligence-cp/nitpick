@@ -17,7 +17,7 @@ func:seal_after_free = NIL() never fails {
 func:write_after_seal = NIL() never fails {
     // a sealed page is executable; writing it would make a region W and X at
     // once — the invariant wildx exists to prevent
-    wildx uint8->:page = wildx_alloc(64i64);
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->;
     page[0i64] = 72u8;
     drop wildx_seal(page);
     page[0i64] = 99u8;
@@ -28,7 +28,7 @@ func:write_after_seal = NIL() never fails {
 // expect-error: NITPICK-WILDX-002
 func:exec_before_seal = NIL() never fails {
     // calling code on a writable page — the state the seal exists to close
-    wildx uint8->:page = wildx_alloc(64i64);
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->;
     page[0i64] = 195u8;
     int64:r = wildx_call(page, 5i64);
     discard(r);

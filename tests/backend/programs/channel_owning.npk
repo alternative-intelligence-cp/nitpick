@@ -55,11 +55,11 @@ async func:main = int32(cstring[]:_~argv) {
     // moved string is dropped by the operation, the rule a failing callee
     // already applies to its `move` parameters. The allocator referees.
     Channel<string, 4i32, 2i64>:tight = channel() ?! Unreachable;
-    string:a1 = string_concat("one", "") ?! E9;
-    string:a2 = string_concat("two", "") ?! E9;
+    string:a1 = string_concat("one", "");
+    string:a2 = string_concat("two", "");
     await tight.send(move(a1), raw duration_ms(50i64)) ?! E9;
     await tight.send(move(a2), raw duration_ms(50i64)) ?! E9;
-    string:a3 = string_concat("three", "") ?! E9;
+    string:a3 = string_concat("three", "");
     Result<NIL>:rf = await tight.send(move(a3), raw duration_ms(0i64));
     if (!rf.is_error)                     { exit 12i32; }
     if (rf.err != DeadlineExceeded)       { exit 13i32; }
