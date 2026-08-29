@@ -1593,40 +1593,12 @@ func:unwrap_callee_is_async = bool(ExprTyper->:e, ExprNode:opn, ExprId:opid) nev
     pass (raw decl_has(dn, raw DECL_ASYNC()));
 };
 
-// TRANSITIONAL (D-201 §7a, 1.4.2 step 1 only): is this operand a call to a
-// bare-name builtin whose contract says it cannot fail? Those type as the bare
-// value from step 1 onward, while the tree still spells them `raw`/`drop`.
-func:operand_is_never_fails_builtin_call = bool(ExprTyper->:e,
-                                                ExprId:oid) never fails {
-    if (raw expr_is_none(oid)) { pass false; }
-    ExprNode:ocall = raw ast_expr(e.ast, oid);
-    if (ocall.kind != ExprKind.ExprCallExpr) { pass false; }
-    ExprNode:cal = raw ast_expr(e.ast, raw expr_callee(ocall));
-    if (cal.kind != ExprKind.ExprIdentifierExpr) { pass false; }
-    if (cal.a != 0i32) { pass false; }
-    if (!(raw is_builtin_name(raw intern_get(e.interns,
-                                  cal.payload =>! int32)))) { pass false; }
-    pass (raw builtin_never_fails(raw intern_get(e.interns,
-                                      cal.payload =>! int32)));
-};
-
 func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) never fails {
     int32:t = raw type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
 
     if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        // THE TRANSITIONAL RULE (D-201 §7a) — 1.4.2 STEP 1 ONLY, deleted at
-        // step 3. A never-fails builtin's call now types as the BARE value,
-        // and the tree still spells ~2,000 of them `raw f(…)` and
-        // `drop f(…);`. Taking the keyword as the identity for exactly that
-        // shape is what lets the typing land as its own commit and the
-        // tree-wide re-spell follow as another, with the fixpoint green at
-        // each; at step 3 the ordinary refusal below applies to a builtin
-        // like it applies to everything else.
-        if (raw operand_is_never_fails_builtin_call(e, raw expr_operand(n))) {
-            pass t;
-        }
         string:m1 = string_concat("`", op);
         string:m2 = string_concat(m1, "` needs a `Result`, and this is `");
         string:m3 = string_concat(m2, raw type_display(e.types, e.interns, t));
@@ -3137,42 +3109,13 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                     if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
                         if ((raw type_elem(e.types, dt)) == e.types.t_nil) { d_ok_nil = true; }
                     }
-                    // TRANSITIONAL (D-201 §7a, step 1 only): a never-fails
-                    // builtin returning nothing now types as a BARE `NIL`,
-                    // where this rule used to see the UNKNOWN the name list
-                    // below stood in for. Step 2 sheds the `drop` at these
-                    // sites and step 3 deletes both halves.
-                    if (dt == e.types.t_nil) {
-                        if (raw operand_is_never_fails_builtin_call(e, dopid)) {
-                            d_ok_nil = true;
-                        }
-                    }
                 }
-                if (dt == 0i32) {
-                    if (dopn.kind == ExprKind.ExprCallExpr) {
-                        ExprNode:dcal = raw ast_expr(e.ast, raw expr_callee(dopn));
-                        if (dcal.kind == ExprKind.ExprIdentifierExpr) {
-                            if (dcal.a == 0i32) {
-                                string:dbn = raw intern_get(e.interns, dcal.payload =>! int32);
-                                if (raw string_eq(dbn, "dalloc"))           { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "wild_release_all")) { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "wildx_seal"))       { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "wildx_free"))       { d_ok_nil = true; }
-                                // The suspension primitive is a void call
-                                // too (D-071, 1.1.8): it parks the task and
-                                // yields nothing when it resumes.
-                                if (raw string_eq(dbn, "suspend_until"))    { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "suspend_io"))       { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "io_unwatch"))       { d_ok_nil = true; }
-                                if (raw string_eq(dbn, "io_watch"))         { d_ok_nil = true; }
-                                // The registry retire is void at the floor
-                                // too (1.1.13a): teardown's last step yields
-                                // nothing to keep.
-                                if (raw string_eq(dbn, "driver_retire"))    { d_ok_nil = true; }
-                            }
-                        }
-                    }
-                }
+                // (The nine NIL-returning builtins were listed BY NAME here
+                // until 1.4.2, because a builtin's call typed as UNKNOWN and
+                // the Result test above could not see it. D-201 gave them
+                // signatures, so `drop dalloc(p);` no longer has an envelope
+                // to remove and is refused by `type_unwrap` before this — the
+                // spelling is `dalloc(p);`.)
                 if (!d_ok_nil) {
                     discard(raw te_error(e, raw TYPE_RAW_UNLICENSED(),
                         "`drop` discards a VALUE here (D-163 rule 4): a value deliberately unused is `discard(raw f());` — two words, two claims, both checked",

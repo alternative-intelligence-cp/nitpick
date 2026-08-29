@@ -837,9 +837,11 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         // before this rule those reached the trampoline and died as INVALID
         // IR at llc (the 1.1-interlude S-3a row: a never-fails call written
         // without `raw` types as `Result<int64>`, and `sext { i64, i32 } to
-        // i64` is not an instruction). An UNKNOWN argument — a nested
-        // bare-name builtin call, whose value shape only the emitter would
-        // see — is refused the same way: bind it to a typed name first.
+        // i64` is not an instruction). A NESTED BUILTIN CALL used to be
+        // refused here too, for having no shape the checker could see; since
+        // D-201 it has one, and `sys(NR, string_byte_length(s))` is an
+        // ordinary typed argument. What is left unresolved here is an
+        // argument an earlier diagnostic already named.
         if (raw callee_is_builtin_named(e, n, "sys")) {
             // `sys` RETURNS `Result<int64>` BY CONTRACT (D-048) — the kernel's
             // register mapped into the D-141 convention. Recording the type
@@ -882,7 +884,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                 if (sat == 0i32) {
                     ExprNode:sun = raw ast_expr(e.ast, sa);
                     discard(raw te_error(e, raw TYPE_MISMATCH(),
-                        "this argument's type is not resolved here — a bare-name builtin call has no signature the checker can see, and its value may not be register-shaped; bind the result to a typed name and pass that name",
+                        "this argument's type is not resolved here, so nothing can say whether it fits a kernel register; an earlier diagnostic names the cause",
                         sun.span));
                     sok = true;
                 }

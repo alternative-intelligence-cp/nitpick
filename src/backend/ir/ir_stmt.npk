@@ -154,7 +154,9 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
     // recycling pattern, so a guilty configuration proves only that SOME
     // still-referenced body was freed SOMEWHERE. The real defect was
     // `result_ll_value_half` passing a `slice_proven` VIEW of a lent ll out
-    // to become a longer-lived IrVal's `.ll` (see ir_expr). The quarantine
+    // to become a longer-lived IrVal's `.ll` (the function itself retired at
+    // 1.4.2 with the UNKNOWN typing that needed it; the lesson is recorded
+    // where it stood, in ir_expr). The quarantine
     // allocator (`@npk_quarantine` in npkrt.ll) is what actually isolated
     // it: free poisons and never reuses, so the one stale read produced
     // seventeen 0xAA bytes at a deterministic line and the concat tripwire

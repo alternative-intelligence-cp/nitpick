@@ -1,0 +1,44 @@
+// expect-exit: 42
+//
+// THE TWO UNWRAP FORMS OVER A MAY-FAIL BUILTIN. Both derive their slot from
+// the operand's RECORDED type, and both are exercised over an AGGREGATE value
+// half deliberately -- `read_file`'s value is a `string`, three words wide --
+// because neither is a scalars-only trick:
+//   - `?|` visits the DEFAULT even when the lhs went wrong (it used to bail
+//     first, and the emitter then met a literal with no recorded type);
+//   - `?!` over `Result<NIL>` reads slot 0, there being no value channel.
+//
+// It was `unwrap_unknown.npk` until 1.4.2, and it tested the opposite thing:
+// a bare-name builtin recorded NO type, so both forms derived their slot from
+// the operand's own LLVM text instead. D-201 gave every builtin a signature,
+// that derivation is gone, and what is left is the regression for the typed
+// path -- the same programs, now proving the recorded type carries them.
+mod:unwrap_forms;
+error:EPath;
+
+func:main = int32(cstring[]:_~argv) {
+    // (`to_cstring`'s value half is an aggregate too — `?!` drives it through
+    // the other unwrap form.)
+    cstring:missing = to_cstring("/nonexistent/npk_unwrap_forms_probe") ?! EPath;
+    // The error path takes the default...
+    string:s = read_file(missing) ?| "fallback";
+    if (!(string_equals(s, "fallback"))) { exit 11i32; }
+    // ...and the value path keeps the value: write a file, read it back.
+    cstring:path = to_cstring(".internal/unwrap_forms.tmp") ?! EPath;
+    write_file(path, "payload") ?| NIL;
+    string:back = read_file(path) ?| "";
+    if (!(string_equals(back, "payload"))) { exit 12i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (EPath)          { exit 94i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 97i32; },
+        (WildLeak)       { exit 98i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

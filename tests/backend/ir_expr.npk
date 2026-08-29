@@ -161,7 +161,6 @@ func:main = int32(cstring[]:_~argv) {
     ExprId:sixty4 = raw lit(@ast, 64i64);
     ExprId:alloc_name = raw ident(@ast, 0i32, n_alloc);
     ExprId:alloc_call = raw call1(@ast, alloc_name, sixty4);
-    ExprId:raw_alloc = raw unwrap_raw(@ast, alloc_call);
 
     ExprId:seven = raw lit(@ast, 7i64);
     ExprId:f_name = raw ident(@ast, fsym, n_f);
@@ -289,14 +288,15 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- CALLS: the floor by its table, a user function by its symbol ---------
     //
-    // `alloc` returns a BARE `ptr` — `raw` over it passes through, no extract.
-    // `f` returns `{ i32, i32 }` — `raw` extracts the value half.
+    // `alloc` cannot fail, so its call IS the pointer (D-201 §4): no keyword,
+    // no envelope, no extract. `f` returns `{ i32, i32 }` — `raw` extracts the
+    // value half, which is what the keyword is for.
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
     ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
     discard(raw fnem_begin(@f6, "calls", 0i32, i32t));
     drop fnem_open(@f6);
-    IrVal:va2 = raw emit_expr(@x6, raw_alloc);
+    IrVal:va2 = raw emit_expr(@x6, alloc_call);
     if (!(raw iv_is_ok(va2)))                                { exit 60i32; }
     if (!(raw string_eq(va2.ll, "ptr")))                     { exit 61i32; }
     IrVal:vf = raw emit_expr(@x6, raw_f);

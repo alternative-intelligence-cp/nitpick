@@ -8,6 +8,8 @@
 // `cstring` compiled, ran, and swallowed the kernel's refusal.
 mod:builtin_args;
 
+error:BaPath;
+
 // Too many arguments. Both counts are named, as they are for a user call.
 // expect-error: NITPICK-TYPE-054
 func:arity_over = NIL() never fails {
@@ -66,6 +68,36 @@ func:release_without_move = NIL() never fails {
     OwnedFd:o = own_fd(3i32 =>! fd);
     fd:back = release_fd(o);
     discard(back);
+    pass NIL;
+};
+
+// `raw` REMOVES AN ENVELOPE, and a never-fails builtin's call has none
+// (D-201 §4). The keyword is refused here for the same reason it is refused
+// over any other non-`Result` — one rule, no builtin exception. The
+// transitional acceptance that carried the tree between 1.4.2's steps is gone.
+// expect-error: NITPICK-TYPE-007
+func:raw_over_builtin = NIL() never fails {
+    int64:n = raw string_byte_length("xy");
+    discard(n);
+    pass NIL;
+};
+
+// ...and `drop` is the same claim about a `Result<NIL>`. `dalloc(p);` is the
+// spelling: there is nothing to discard.
+// expect-error: NITPICK-TYPE-007
+func:drop_over_builtin = NIL() never fails {
+    wild int8->:p = alloc(8i64);
+    drop dalloc(p);
+    pass NIL;
+};
+
+// A MAY-FAIL builtin still carries its envelope, so a statement that ignores
+// one is refused exactly as a user call's would be.
+// expect-error: NITPICK-TYPE-039
+func:discarded_result = NIL() {
+    cstring:p = to_cstring("/tmp/npk_builtin_args_probe2") ?! BaPath;
+    close(3i32 =>! fd);
+    discard(p);
     pass NIL;
 };
 
