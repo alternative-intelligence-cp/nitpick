@@ -1667,8 +1667,16 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                         pass (raw iv_broken(arm.span));
                     }
                 }
-                IrVal:plo = raw iv(move(disc_ll), int_to_string(lon.payload), 0i32);
-                IrVal:phi = raw iv(move(disc_ll), int_to_string(hin.payload), 0i32);
+                // CLONED, NOT MOVED — twice. `iv` OWNS the `ll` it is given
+                // (`move string:ll`), so moving `disc_ll` into both of these
+                // gave one string body two owners and two drops: a double free,
+                // live here since the chain was written and invisible until
+                // 1.4.3 taught the move analysis about parameters. `disc_ll` is
+                // read again below, too, which the same hole hid.
+                IrVal:plo = raw iv(string_concat(disc_ll, ""),
+                                   int_to_string(lon.payload), 0i32);
+                IrVal:phi = raw iv(string_concat(disc_ll, ""),
+                                   int_to_string(hin.payload), 0i32);
                 string:gep2 = "uge";
                 string:lep = "ult";
                 string:lip = "ule";

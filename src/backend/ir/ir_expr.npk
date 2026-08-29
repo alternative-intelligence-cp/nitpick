@@ -8321,14 +8321,29 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
     pass NIL;
 };
 
+// TWO FIELDS OF ONE ROOT CANNOT BOTH MOVE (D-065) — the binding-granular
+// analysis invalidates the whole `p` at the first, which `invalidate_place`
+// states as the accepted cost of not tracking partial validity. The bodies are
+// distinct and moving both would be sound; one is cloned to say so in a
+// spelling the analysis can follow. (Both moved silently until 1.4.3: `p` is a
+// parameter, and parameters were not tracked.)
+// ...and the SPAN is taken before the move for the same reason: the move
+// invalidates the whole binding, so every later read of it — even of a plain
+// non-owning field — is a read of something the analysis has been told is gone.
 pub func:iv_from_place = IrVal(move PlaceVal:p) never fails {
-    if (p.state == (raw LL_RUNG())) { pass (raw iv_rung(move(p.what), move(p.rung), p.at)); }
-    pass (raw iv_broken(p.at));
+    Span:pat = p.at;
+    if (p.state == (raw LL_RUNG())) {
+        pass (raw iv_rung(string_concat(p.what, ""), move(p.rung), pat));
+    }
+    pass (raw iv_broken(pat));
 };
 
 func:pv_from_iv = PlaceVal(move IrVal:v) never fails {
-    if (v.state == (raw LL_RUNG())) { pass (raw pv_rung(move(v.what), move(v.rung), v.at)); }
-    pass (raw pv_broken(v.at));
+    Span:vat = v.at;
+    if (v.state == (raw LL_RUNG())) {
+        pass (raw pv_rung(string_concat(v.what, ""), move(v.rung), vat));
+    }
+    pass (raw pv_broken(vat));
 };
 
 // The field index inside a builtin aggregate, or -1. One table for the three

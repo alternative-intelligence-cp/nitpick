@@ -14380,6 +14380,36 @@ expected to find latent instances of the `modmap_members` class; they are
 repairs, not regressions. Lands at 1.4.3, before the adoption sweep
 enlarges the code the analysis must be right about.
 
+> **LANDED at 1.4.3 (2026-08-29), and the diagnosis above is CORRECTED.** The
+> moved-from analysis is not straight-line and has not been since 0.5.3:
+> `assign_loop_body` walks a body twice and `state_absorb_may` unions `moved`
+> and `freed` between the passes, which IS the loop-header merge this decision
+> asks for. Measured before any change, it already refused a `move` in a
+> `while`, a `till`, a counted `for` and a nested loop, and already accepted
+> reassign-then-move-again and a binding declared inside the loop.
+>
+> **The real hole was that PARAMETERS were not tracked at all.**
+> `binding_slot` answered −1 for any symbol that was not a statement and every
+> rule does nothing on −1, so a `move` parameter moved twice, a pointer
+> parameter freed twice, and a read after either were accepted **with no loop
+> involved**. That also explains this decision's own evidence better than it
+> did: `modmap_members` moved `canon`, a `move` PARAMETER, so it type-checked
+> because the parameter was invisible, not because the analysis was
+> straight-line — the loop was incidental.
+>
+> The goal is unchanged and was met: no undetected double move. The first run
+> over `src/` found 26, including a live DOUBLE FREE in `emit_pick_chain` (one
+> string body handed to two owning `IrVal`s on consecutive lines) and the
+> container-element move in `fnem_iter_slot` that D-183 records as open.
+>
+> One narrowing, user-approved rather than assumed: `invalidate_place` now
+> stops when a place reaches its root through a POINTER, because a binding
+> holding a pointer does not own the pointee and drops already walk past one
+> (D-183). Without it the coarse root-invalidation — tolerable only while
+> parameters, which are mostly pointers, were invisible — stopped the compiler's
+> own correct code from building in four places, with no spelling that could
+> clear the state. Details in `meta/roadmap/1.4/1.4.3.md`.
+
 ## D-209 — the adoption scope — **SETTLED (1.4.0 batch, user-ratified)**
 
 What `src/` adopts at 1.4.7, as a list rather than an ambition. **In**:

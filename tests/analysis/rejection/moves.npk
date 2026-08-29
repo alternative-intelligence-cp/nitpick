@@ -143,3 +143,139 @@ struct:MoveField = { move int32:f; };
 
 // expect-error: NITPICK-MOVE-004
 move fixed int32:move_global = 1i32;
+// --- A PARAMETER IS A BINDING (1.4.3) ---------------------------------------
+//
+// None of these was refused until 1.4.3. `binding_slot` answered −1 for
+// anything whose symbol was not a STATEMENT, every rule here quietly does
+// nothing on −1, and the state vector had no room for a parameter anyway — so
+// a `move` parameter moved twice, a pointer parameter freed twice, and a read
+// after either were all accepted, with no loop involved. That is the
+// double-free class D-065 and D-119 exist to close; `modmap_members` is the
+// instance that reached `npk_small_free`'s bitmap at run time.
+
+func:mv_eat = int32(move string:s) never fails { pass (s.len =>! int32); };
+
+// The straight-line double move of a `move` parameter.
+// expect-error: NITPICK-MOVE-001
+func:mv_param_twice = int32(move string:canon) never fails {
+    int32:a = raw mv_eat(move(canon));
+    int32:b = raw mv_eat(move(canon));
+    pass a + b;
+};
+
+// ...and the loop-carried one: the `modmap_members` shape exactly, one binding
+// moved once per iteration, which is N moves of one body and N drops.
+// expect-error: NITPICK-MOVE-001
+func:mv_param_carried = int32(move string:canon, int32:n) never fails {
+    int32:t = 0i32;
+    int32:i = 0i32;
+    while (i < n) {
+        t = t + (raw mv_eat(move(canon)));
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+// A pointer parameter freed twice...
+// expect-error: NITPICK-MOVE-002
+func:mv_param_free_twice = NIL(wild int8->:p) never fails {
+    dalloc(p);
+    dalloc(p);
+    pass NIL;
+};
+
+// ...and read after being freed.
+// expect-error: NITPICK-MOVE-002
+func:mv_param_use_after_free = int8(wild int8->:p) never fails {
+    dalloc(p);
+    pass p[0i64];
+};
+
+// --- ...AND THE LOOP-CARRIED RULE, WHICH ALREADY HELD -----------------------
+//
+// S-2 reported the moved-from analysis as straight-line. It is not, and has not
+// been since 0.5.3: `assign_loop_body` walks a body twice and `state_absorb_may`
+// unions `moved` between the passes, which is exactly D-208's rule. These pin it
+// at every loop form, because a rule nothing tests is a rule that can be
+// deleted by accident.
+
+struct:MvHolder = { wild int8->:buf; int64:n; };
+
+// Moved in a `while` body, never reassigned.
+// expect-error: NITPICK-MOVE-001
+func:mv_while = int32(int32:n) never fails {
+    string:s = string_concat("a", "b");
+    int32:t = 0i32;
+    int32:i = 0i32;
+    while (i < n) {
+        t = t + (raw mv_eat(move(s)));
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+// Reassigned on ONE arm only, so the other path reaches the back edge moved.
+// expect-error: NITPICK-MOVE-001
+func:mv_one_arm = int32(int32:n) never fails {
+    string:s = string_concat("a", "b");
+    int32:t = 0i32;
+    int32:i = 0i32;
+    while (i < n) {
+        t = t + (raw mv_eat(move(s)));
+        if (i > 2i32) { s = string_concat("c", "d"); }
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+// NESTED: the reassignment sits in the OUTER loop, so the inner loop's second
+// iteration moves what its first one took.
+// expect-error: NITPICK-MOVE-001
+func:mv_nested = int32(int32:n) never fails {
+    string:s = string_concat("a", "b");
+    int32:t = 0i32;
+    int32:i = 0i32;
+    while (i < n) {
+        int32:j = 0i32;
+        while (j < n) {
+            t = t + (raw mv_eat(move(s)));
+            j = j + 1i32;
+        }
+        s = string_concat("c", "d");
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+// A `till` loop is a loop.
+// expect-error: NITPICK-MOVE-001
+func:mv_till = int32(int32:n) never fails {
+    string:s = string_concat("a", "b");
+    int32:t = 0i32;
+    int32:i = 0i32;
+    till (i >= n) {
+        t = t + (raw mv_eat(move(s)));
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+// ...and so is a counted `for`.
+// expect-error: NITPICK-MOVE-001
+func:mv_for = int32() never fails {
+    string:s = string_concat("a", "b");
+    int32:t = 0i32;
+    for (int64:i in 0i64..3i64) {
+        t = t + (raw mv_eat(move(s)));
+    }
+    pass t;
+};
+
+// A FREE THROUGH A FIELD invalidates the whole binding when the binding OWNS
+// the aggregate — `invalidate_place`'s documented trade, unchanged.
+// expect-error: NITPICK-MOVE-002
+func:mv_owned_field = int64() never fails {
+    MvHolder:h = MvHolder{ buf: alloc(8i64), n: 0i64 };
+    dalloc(h.buf);
+    pass h.n;
+};

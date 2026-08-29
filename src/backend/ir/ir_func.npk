@@ -1049,12 +1049,16 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
     int32:i = fe.loop_count;
     while (i > 0i32) {
         i = i - 1i32;
-        // A GETTER OVER A CONTAINER OF OWNING VALUES has no correct spelling
-        // yet (D-183, open): returning a borrow is refused by D-004 rule 2,
-        // and returning a value copies one the container still owns. Left as
-        // the copy it always was; the move-only rule flags it, and the rule
-        // is gated until this is answered.
-        string:it = move(fe.loop_iters[i => int64]);
+        // A GETTER OVER A CONTAINER OF OWNING VALUES: returning a BORROW is
+        // refused by D-004 rule 2 and the deep-view accessor family D-183
+        // records is not built, so the correct spelling available today is the
+        // one that allocates. It was `move(fe.loop_iters[i])` until 1.4.3 —
+        // which does not empty a container ELEMENT (there is no drop flag on
+        // one), so the caller and the container held one body between them and
+        // whichever dropped first freed it. The move analysis said so as soon
+        // as it could see `fe`, a parameter. Cold: one call per `$` in a
+        // counted loop.
+        string:it = string_concat(fe.loop_iters[i => int64], "");
         if (it.len > 0i64) { pass it; }
     }
     pass "";

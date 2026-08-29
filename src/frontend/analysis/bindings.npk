@@ -452,11 +452,34 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         StmtId:body = raw fn_body(x.ast, d);
         if (raw stmt_is_none(body)) { pass NIL; }
 
-        // A FRESH STATE PER FUNCTION, and nothing is assigned in it. Parameters
-        // are assigned by the caller and are never `SYM_STMT`, so they are not in
-        // this table at all — which is the right answer rather than a convenient
-        // one: a parameter is assigned before the body starts, always.
-        AssignState:st = raw state_new(raw ast_stmt_count(x.ast));
+        // A FRESH STATE PER FUNCTION. The slot space is STATEMENTS THEN
+        // DECLARATIONS: a local's slot is its `VarDeclStmt` index, a
+        // parameter's is `stmt_count` plus its decl index.
+        //
+        // PARAMETERS WERE ABSENT FROM THIS TABLE UNTIL 1.4.3, under a comment
+        // that read "parameters are assigned by the caller … which is the right
+        // answer rather than a convenient one". That is true of DEFINITE
+        // ASSIGNMENT and false of the other three vectors this state carries.
+        // A `move` parameter moved twice, a pointer parameter freed twice, and
+        // a read after either were all accepted — with no loop involved — for
+        // as long as the analysis has existed, because `binding_slot` answered
+        // −1 for anything that was not a statement and every rule quietly does
+        // nothing on −1. That is the double-free class D-065 and D-119 exist to
+        // close, and `modmap_members` is the instance that reached a runtime
+        // bitmap check (the S-2 finding, whose stated diagnosis — a
+        // straight-line analysis missing a LOOP — was the wrong half: the loop
+        // machinery has been right since 0.5.3 and the parameter was invisible).
+        AssignState:st = raw state_new((raw ast_stmt_count(x.ast))
+                                       + (raw ast_decl_count(x.ast)));
+        // ...and a parameter IS assigned before the body starts, always, which
+        // is the half the old comment had right. Marked here so a read of one
+        // is not suddenly a read of the unassigned.
+        int32:ps = 0i32;
+        while (ps < (raw fn_param_count(x.ast, d))) {
+            drop state_mark(st, (raw ast_stmt_count(x.ast))
+                                + (raw fn_param(x.ast, d, ps)).index);
+            ps = ps + 1i32;
+        }
         drop assign_stmt(x, st, body, raw ASSIGN_DEPTH());
         pass NIL;
     }
@@ -1266,30 +1289,38 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     if (n.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, n.a);
 
-    // ONLY A LOCAL CAN BE UNASSIGNED. A parameter is written by the caller, a
-    // global by its initialiser, and a `pick` or `for` binding by the construct
-    // that introduced it — none of them has a path on which nothing wrote.
-    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:rs = raw symbol_slot(x, s);
+    if (rs < 0i32) { pass NIL; }
 
     // MOVED OR FREED IS REPORTED FIRST, because it is the more specific answer to
     // the same question. A binding that was moved out of is not assigned either —
     // `state_mark` clears both and nothing sets `must` back — so reporting
     // "not assigned" here would be true, useless, and would send the reader
     // looking for a missing initialiser instead of at the `move` above it.
-    if (raw state_freed(st, s.origin)) {
+    //
+    // BOTH APPLY TO A PARAMETER. The bail above used to read "only a local can
+    // be unassigned … a parameter is written by the caller", which is true of
+    // the sentence at the bottom of this function and of nothing else in it —
+    // so a parameter moved twice, or freed twice, or read after either, was
+    // accepted (1.4.3).
+    if (raw state_freed(st, rs)) {
         drop assign_err(x, raw MOVE_USE_AFTER_FREE(),
             "this binding was freed and is invalid; a freed pointer is not a value that may be held and not inspected (D-065)",
             n.span);
         pass NIL;
     }
-    if (raw state_moved(st, s.origin)) {
+    if (raw state_moved(st, rs)) {
         drop assign_err(x, raw MOVE_USE_AFTER(),
             "this binding was moved out of and is invalid until it is assigned again (D-065)",
             n.span);
         pass NIL;
     }
 
-    if (raw state_must(st, s.origin))      { pass NIL; }
+    // ...and ONLY A LOCAL CAN BE UNASSIGNED: a parameter is written by the
+    // caller, a global by its initialiser, and a `pick` or `for` binding by the
+    // construct that introduced it. None has a path on which nothing wrote.
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    if (raw state_must(st, rs))            { pass NIL; }
 
     drop assign_err(x, raw ASSIGN_UNASSIGNED(),
         "this binding is not assigned on every path that reaches here, and Nitpick has no default value to read (D-010)",
@@ -1319,9 +1350,7 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
         pass NIL;
     }
     if (rn.a == 0i32) { pass NIL; }
-    Symbol:s = raw symtab_get(x.tab, rn.a);
-    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    drop state_mark(st, s.origin);
+    drop state_mark(st, raw symbol_slot(x, raw symtab_get(x.tab, rn.a)));
     pass NIL;
 };
 
@@ -1409,22 +1438,61 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) never fails {
 // the same complexity D-004 chose second-class borrows to avoid — and the
 // conservative answer refuses code that is fine rather than accepting code that is
 // not.
+// DOES THIS PLACE REACH ITS ROOT THROUGH A POINTER?
+//
+// `place_root` walks member accesses and indexes down to the binding
+// underneath, which is what the BORROW analysis wants of it. OWNERSHIP is a
+// different question with a different answer: a binding that holds a POINTER
+// does not own what the pointer addresses. "Drops walk PAST a pointer — a
+// pointer is not an owner" is the rule the whole drop machinery is built on
+// (D-183; `DiagList`'s own header states it), so freeing `out.buf` where `out`
+// is a `Sink->` says nothing whatever about `out`.
+//
+// THIS MATTERED LITTLE UNTIL PARAMETERS WERE TRACKED (1.4.3) and then mattered
+// everywhere at once, which is itself the evidence: most parameters that reach
+// a field are pointers, so the coarse rule was tolerable only while the
+// bindings it was coarse about were invisible. Without this the compiler's own
+// correct code stops building in four places.
+//
+// What it gives up is real and was never held: through a pointer this analysis
+// says nothing, because an alias could free the pointee anywhere and a
+// binding-granular walk would not see it either. Saying nothing is the honest
+// answer; 1.5's verifier is what reasons about pointees.
+func:place_crosses_pointer = bool(Assign->:x, ExprId:place) never fails {
+    ExprId:cur = place;
+    int32:left = raw BORROW_FUEL();
+    while (left > 0i32) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        ExprId:base = ExprId{ index: 0i32 };
+        if (n.kind == ExprKind.ExprMemberAccessExpr) { base = raw expr_operand(n); }
+        if (n.kind == ExprKind.ExprIndexExpr)        { base = raw expr_lhs(n); }
+        if (raw expr_is_none(base)) { pass false; }
+        if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, base)))
+                == (raw TY_POINTER())) { pass true; }
+        cur = base;
+        left = left - 1i32;
+    }
+    pass false;
+};
+
 func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed) never fails {
     if (raw expr_is_none(place)) { pass NIL; }
+    if (raw place_crosses_pointer(x, place)) { pass NIL; }
     PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
     if (r.exhausted)            { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
-    Symbol:s = raw symtab_get(x.tab, rn.a);
-    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:ms = raw symbol_slot(x, raw symtab_get(x.tab, rn.a));
+    if (ms < 0i32) { pass NIL; }
 
     if (freed) {
-        drop state_mark_freed(st, s.origin);
+        drop state_mark_freed(st, ms);
         pass NIL;
     }
-    drop state_mark_moved(st, s.origin);
+    drop state_mark_moved(st, ms);
     pass NIL;
 };
 
@@ -1568,9 +1636,28 @@ func:binding_slot = int32(Assign->:x, ExprId:place) never fails {
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (0i32 - 1i32); }
     if (rn.a == 0i32) { pass (0i32 - 1i32); }
-    Symbol:s = raw symtab_get(x.tab, rn.a);
-    if (s.origin_kind != (raw SYM_STMT())) { pass (0i32 - 1i32); }
-    pass s.origin;
+    pass (raw symbol_slot(x, raw symtab_get(x.tab, rn.a)));
+};
+
+// THE SLOT A SYMBOL OCCUPIES, or −1 for one this analysis does not track.
+//
+// A LOCAL'S SLOT IS ITS STATEMENT; A PARAMETER'S IS ITS DECLARATION, above the
+// statement space. Every rule here used to resolve this inline as
+// `s.origin_kind != SYM_STMT → give up`, in four places, and each of those
+// four quietly excluded parameters from a rule that should always have covered
+// them (1.4.3). One resolver now, so a fifth rule cannot make the same mistake
+// a fifth time.
+pub func:symbol_slot = int32(Assign->:x, Symbol:s) never fails {
+    if (s.origin_kind == (raw SYM_STMT())) { pass s.origin; }
+    // A parameter's symbol is a `SYM_DECL` like a function's or a struct's, so
+    // the kind alone does not identify one — the DECLARATION's kind does.
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: s.origin });
+        if (pd.kind == DeclKind.DeclParamDecl) {
+            pass ((raw ast_stmt_count(x.ast)) + s.origin);
+        }
+    }
+    pass (0i32 - 1i32);
 };
 
 // READING `.value` OFF A `Result` THAT NOTHING HAS CHECKED.
