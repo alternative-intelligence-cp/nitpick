@@ -59,7 +59,7 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 > | `envelope` | a `never fails` builtin whose symbol still answers `{ T, i32 }`; the emitter extracts the value half at the call (D-201 §4) |
 >
 > Everything not noted is DERIVED, and `check_runtime_sigs_agree` diffs the
-> result against `bootstrap/runtime/npkrt.ll`'s own defines on every harness run —
+> result against `runtime/npkrt.ll`'s own defines on every harness run —
 > so a wrong derivation and a wrong note fail the same way, loudly.
 
 <!-- builtins:begin -->
@@ -165,7 +165,7 @@ These are fast compiler intrinsics for interacting with the `string` type.
 
 ## 2b. The Runtime Floor (bootstrap tier)
 
-The functions `bootstrap/runtime/npkrt.ll` defines and every backend rung can
+The functions `runtime/npkrt.ll` defines and every backend rung can
 call — the set the compiler itself is written against until `nlibc` (cycle 0.8)
 grows the library tier above it. They are ordinary bare-name builtins: declared in
 no module, resolved by the compiler, callable everywhere. Three copies of this

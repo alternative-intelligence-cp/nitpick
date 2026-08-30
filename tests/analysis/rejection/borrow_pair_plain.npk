@@ -1,0 +1,29 @@
+// expect-error: NITPICK-BORROW-001
+//
+// THE COUNTERWEIGHT to `tests/accept/borrow_pair_wild.npk` (D-223): the same
+// shape, one word different, and it must still refuse.
+//
+// Two borrows of locals passed together, then one of them copied out in a
+// returned struct. In the accept case every pointer slot the destinations
+// carry is `wild`, so BORROW-011 already forbids a borrow reaching one and
+// nothing is a destination. Here `Box`'s slot is PLAIN, so `touch` can store
+// `@b`'s interior — or `@b` itself — into it, and `Pair{ b: b, … }` copies it
+// out of the frame.
+//
+// This is what stops the D-223 repair from being a blanket relaxation: the
+// difference between the two files is `wild`, and it decides the verdict.
+
+struct:Box  = { int32->:p; int32:n; };
+struct:Pair = { Box:b; int32:k; };
+
+func:touch = NIL(Box->:bp, Pair->:op) never fails {
+    pass NIL;
+};
+
+func:make = Pair() never fails {
+    Box:b = Box{ p: NULL, n: 1i32 };
+    Pair:tmp = Pair{ b: b, k: 0i32 };
+    drop touch(@b, @tmp);
+    Pair:out = Pair{ b: b, k: 7i32 };
+    pass out;
+};

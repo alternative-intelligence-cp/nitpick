@@ -409,3 +409,22 @@ pub func:is_hash_builtin = bool(string:name) never fails {
     if (raw string_eq(name, "wild_slice")) { pass true; }
     pass false;
 };
+
+// Every builtin whose REFERENCE ROW declares a `wild` (or `wildx`) return —
+// the whitelist D-223's BORROW-011 consults. Both tables feed it: a bare
+// builtin's Signature column and a `#`-sigil one's Return column, because a
+// SPECIAL builtin is generic in `T` and has no concrete signature row, and
+// the two pointer-returning specials are where wild pointers come FROM.
+pub func:builtin_returns_wild = bool(string:name) never fails {
+    if (raw string_eq(name, "aalloc")) { pass true; }
+    if (raw string_eq(name, "alloc")) { pass true; }
+    if (raw string_eq(name, "calloc")) { pass true; }
+    if (raw string_eq(name, "mcpy")) { pass true; }
+    if (raw string_eq(name, "memset")) { pass true; }
+    if (raw string_eq(name, "mmov")) { pass true; }
+    if (raw string_eq(name, "ptr_add")) { pass true; }
+    if (raw string_eq(name, "ralloc")) { pass true; }
+    if (raw string_eq(name, "wild_ptr")) { pass true; }
+    if (raw string_eq(name, "wildx_alloc")) { pass true; }
+    pass false;
+};

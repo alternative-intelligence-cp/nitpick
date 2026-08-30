@@ -85,6 +85,26 @@ pub func:BORROW_UNTRACKED = string() never fails  { pass "NITPICK-BORROW-009"; }
 // wording" cycle 0.4 kept paying for.
 pub func:BORROW_UNSETTLED = string() never fails  { pass "NITPICK-BORROW-010"; };
 
+// A BORROW MAY NOT BE STORED INTO A `wild` SLOT (D-223, 1.4.6).
+//
+// A wild slot holds MANUALLY MANAGED memory. A frame address is not manual
+// memory: `dalloc` on one frees a stack address, and the 0xAA free-poisoning
+// and `@npk_quarantine` instruments both assume the heap. The rule closes a
+// hole that existed because QUALIFIERS ARE NOT PART OF THE TYPE
+// (`parse_type.npk`): `wild int32->` and `int32->` are one type id, so a frame
+// address entered a wild slot with no cast, no `raw` and no `=>!` — which is
+// how the rule-B refusal this decision came from turned out to be SOUND, and
+// how two accepted programs were putting frame addresses in memory that
+// outlives the frame.
+//
+// CLASSIFICATION IS SYNTACTIC AND FAILS CLOSED. Wild provenance is an
+// `=>! wild …->` cast, a read of a `QUAL_WILD` place, a builtin whose
+// signature returns wild, or `NULL`. A borrow refuses. Anything else — a plain
+// pointer parameter, a plain-slot read — is provenance-UNKNOWN and refuses
+// too, `=>! wild T->` being the acknowledgment (D-019) where the store is
+// genuinely meant.
+pub func:BORROW_WILD_STORE = string() never fails { pass "NITPICK-BORROW-011"; };
+
 // --- D-010: definite assignment (0.5.2) ---------------------------------------
 //
 // D-010 chose "no implicit default" over poisoning every scalar with `ERR`, on the

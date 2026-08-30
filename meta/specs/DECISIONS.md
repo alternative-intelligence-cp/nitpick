@@ -164,7 +164,7 @@ Deferred until D-004 lands, since both touch the same sections:
 
 ---
 
-## D-004 — Escape rule for `@local` — **SETTLED**
+## D-004 — Escape rule for `@local` — **SETTLED; rule 3 amended by D-223 (a borrow never enters a `wild`-qualified slot)**
 
 **Recommendation: borrows are second-class. A borrow may be passed *down* the
 call stack but may never travel *up* — not returned, not stored into anything
@@ -8365,7 +8365,7 @@ Each has the same shape and each will have the same bug if written as one pass.
 
 ---
 
-## D-117 — A borrow does not need a second-class parameter; the caller tracks what comes back
+## D-117 — A borrow does not need a second-class parameter; the caller tracks what comes back — **rule B's connection model amended by D-223 (derivation-aware `can_connect`; the one-borrow exemption keys on self-connectability)**
 
 **Settled in cycle 0.5.1**, and it settles it the opposite way to the
 recommendation that was made first. What decided it was checking the
@@ -10025,7 +10025,7 @@ the func type's return slot is the SUCCESS type, spelled exactly as a
 declaration spells it, with every call — named or indirect — typing as
 `Result<success>` by one wrap in one place.
 
-## D-146 — The borrow discipline's four repairs — **SETTLED**
+## D-146 — The borrow discipline's four repairs — **SETTLED; F-1's matcher amended by D-223 (exact-type `dest_can_hold` becomes derivation-aware `can_connect`)**
 
 Cycle 0.9.8, landing the audit's confirmed soundness holes (deep dive F-1,
 F-2, F-4, F-6 — probes in `meta/roadmap/audit-0.8-close/probes/`, each now a
@@ -14298,6 +14298,30 @@ Closes C-11, and settles D-015's open "later" row. Three parts:
    forces a C rendering of the floor, that reopens in 1.5 with the real
    constraint on the table — recorded so the interaction is not lost.
 
+> **LANDED at 1.4.6 (2026-08-29).** The first snapshot was taken from
+> `2347a8e`: 15,292,234 bytes, sha256 `b4df9fe3081065f7ebe3d35840c621d65fc3b46f80f7f8aee548b86ff4ed94b6`.
+> It was verified BEFORE any build path changed — that file alone, through
+> `llc` and `ld.lld` with no Python anywhere, produced a compiler that
+> re-emitted the whole compiler byte-identically. `runtime/npkrt.ll` re-homed
+> with its header rewritten, and `bootstrap/seed/README.md` carries the refresh
+> ritual as commands, since the whole point is that no script is required.
+>
+> **One phrase in part 1 needed reading against its own next sentence.** "npkc,
+> which rebuilds itself from `src/` and must close the fixpoint against the
+> committed text" is true AT A REFRESH and cannot be true between refreshes —
+> the same paragraph says the snapshot is "pinned, not tracking … never
+> per-commit". A harness check demanding byte-equality with the committed text
+> on every run would make a refresh mandatory on every commit that changes any
+> IR, which is the opposite of pinned. So the continuous checks are the two
+> that hold between refreshes: **the snapshot still BUILDS `src/`** (`run()`'s
+> first act, before any suite, reported as D-205's rule being broken when it
+> fails) and **the snapshot matches its STAMP** (sha256 and byte count, so a
+> file edited without restamping fails).
+>
+> Byte-equality is the refresh ritual's step 3, where it belongs and where
+> README.md marks it as not optional: a snapshot that compiles the compiler but
+> whose output does not rebuild itself works exactly once.
+
 ## D-204 — byte-reproducibility defined and checked — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-12. D-078's claim becomes three checked facts (mechanics at
@@ -14356,6 +14380,13 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > `selfcheck.py` holds the pin's FAILURE path — a mismatched version, an
 > absent pin, and the real toolchain passing — because a check only ever
 > seen to pass is a check nobody has tested.
+>
+> **Bullet 3's second half is CORRECTED at 1.4.6.** "After 1.4.6 it also
+> asserts the committed `stage1.ll` matches a fresh fixpoint emission"
+> contradicts D-205's cycle-close refresh cadence and D-203's own "pinned, not
+> tracking"; what the stage asserts instead is the snapshot's STAMP integrity,
+> with "can the snapshot still build `src/`" as the continuous anti-rot check.
+> The reasoning is under D-203's landing note.
 
 ## D-205 — the builder rule and the switch — **SETTLED (1.4.0 batch, user-ratified)**
 
@@ -14379,6 +14410,28 @@ D-209's scope. The seed's retirement is the switch itself: after 1.4.6 it
 is never the builder again; `check_ll_types_agree` retires WITH it (its
 question — do the two emitters agree — ends when there is one emitter),
 and `check_runtime_sigs_agree` drops to the two-way diff D-201 sharpened.
+
+> **LANDED at 1.4.6 (2026-08-29).** Both instruments retired as written. Three
+> things went further than this text, and the third is the one that mattered:
+>
+> - `compile_files` — the seed's compile path — is gone, and so are the five
+>   generator imports (`diag`, `lex`, `parse`, `check`, `emit`) at the top of
+>   the harness. The seed is not merely unused as a builder; it is not on the
+>   import path, which is the version of "retired" that cannot quietly return.
+> - The `rungs` STAGE retired. `tests/rejection/` was checked twice — as a
+>   `[[test]] negative` target against the seed's rungs, and in a stage against
+>   the real compiler's — a split that existed only because the seed was the
+>   builder. Post-switch both ask one binary the same question.
+> - **The `[[test]]` suites moved to the compiler under test, and this decision
+>   does not say to.** The plan attributed it here; the actual reason is
+>   D-209's: `tests/frontend/` and `tests/backend/` `use` `src/` modules
+>   directly, so the moment `src/` adopts a construct outside subset 1 at
+>   1.4.7, the seed cannot compile their imports and 37 tests fail for a reason
+>   unrelated to what they test. The move is required by the NEXT subcycle.
+>
+> D-205's rule is mechanical now rather than a matter of discipline: the
+> snapshot builds `src/` as the harness's first act, so a construct the builder
+> cannot compile fails before a single test runs, naming the file.
 
 ## D-206 — `npkg`: build/test, the spawn primitive, the closed-world link — **SETTLED (1.4.0 batch, user-ratified)**
 
@@ -14821,4 +14874,94 @@ accepted. There were four `QUAL_FIXED` reads in the entire frontend and none
 looked at fields. Now checked in `bindings.npk` beside the other immutability
 rules, sharing `NITPICK-ASSIGN-002`. Its sibling — `const` on a LOCAL, accepted
 and meaning nothing — is closed by the retirement itself.
+
+## D-223 — A borrow never enters a `wild` slot, and rule B becomes one derivation-aware predicate — **SETTLED (user decision, 2026-08-29)**
+
+Raised by 1.4.6's suite migration. Moving the compiler's own unit tests off
+the seed put four of them under `NITPICK-BORROW-001`: helpers that pass
+`@`-borrows of their locals together (`parser_init(@toks, @ast, @pd, it)`),
+then return the engines by value in a result struct. The stop question was
+"over-refusal?" — and the investigation answered NO, then found the real
+defects on the other side of the fence. Three probes against the live
+checker decided it (reproduced in `meta/roadmap/1.4/1.4.6.md`'s execution
+record; each becomes a suite case at landing):
+
+- **The refusal is sound.** The connection rule B fears is CONSTRUCTIBLE in
+  fully checked code: a callee takes an interior borrow of one pointer
+  parameter (param-rooted, so 0.8.1's exemption leaves the local unmarked)
+  and stores it through the other into a `wild int32->:p` field — legal,
+  because **qualifiers are not part of the type** (`parse_type.npk:14`):
+  `wild int32->` IS `int32->`, so a frame address enters a wild slot with
+  no cast and no opt-out. `probe_launder`: accepted, exit 0.
+- **The one-borrow exemption is false for self-connectable types.** "With
+  nothing else passed in, there is no second borrow to store" — the borrow
+  itself is the second borrow. `wire(@n)` doing `p.next = p;`, then
+  `pass n;`: accepted, and the returned copy's `.next` dangles into the
+  dead frame. `probe_self`: exit 0.
+- **F-1's matcher misses derived interior borrows.** `dest_can_hold`
+  matches the borrow's exact pointee type, so `Cell{ int32->:slot }` beside
+  `@pt` (a `Point` of two int32s) counts as no destination — and the callee
+  plants `@(q.a)` into caller-owned memory. `probe_derive`: exit 0.
+
+Two ACCEPTED programs put a frame address in memory that outlives the
+frame. The analysis was strict where the compiler's own test idiom lives
+and permissive where the danger lives.
+
+**The decision:**
+
+1. **A borrow may not be stored into a `wild`-qualified place** —
+   `NITPICK-BORROW-011`, enforced at rule 3's store sites (assignment,
+   declaration initialiser, struct-literal field value), where the slot's
+   declaration and its `QUAL_WILD` bit are visible. A wild slot holds
+   manually-managed memory; a frame address is not manual memory — `dalloc`
+   on one frees a stack address, and the 0xAA poison and quarantine
+   instruments assume heap. The one door stays D-019's: `=>! wild T->`, the
+   explicit surrender of tracking. Classification is syntactic and fails
+   closed: wild-provenance is an `=>! wild …->` cast, a read of a
+   `QUAL_WILD` place, a builtin whose signature returns wild, or `NULL`; a
+   borrow (`@…`, or a binding the holds-table marks) refuses; anything else
+   — a plain pointer parameter or plain-slot read — is provenance-unknown
+   and refuses, the `=>!` being the acknowledgment where the store is truly
+   meant.
+2. **Rule B unifies on `can_connect(dest_pointee, src)`**: does
+   `dest_pointee` transitively contain a NON-wild pointer slot whose
+   pointee is `src` itself **or any type reachable inside `src`** (interior
+   places — fields, elements; `any->` matches everything; fuel-bounded,
+   failing closed on generics and unknowns). Wild slots are excluded
+   because point 1 closes them. One predicate replaces three mechanisms:
+   the count-based `borrowed >= 2` arm, `dest_can_hold`'s exact-type match,
+   and `escape_connect`'s blanket `carries_pointer` filter.
+3. **The pair arm marks a local-rooted borrow argument iff `can_connect`
+   holds against some co-source — including itself.** The one-borrow
+   exemption becomes "exempt iff not self-connectable", which closes
+   `probe_self` while `tt_intern(@t, k)` … `pass t` keeps compiling:
+   TypeTable's pointer slots are all wild. The parameter-rooted-destination
+   arm keeps its outright refusal (`NITPICK-BORROW-002`), now
+   derivation-aware, which closes `probe_derive`.
+4. **Amendments**: D-004 rule 3 gains the wild clause; D-117's rule B and
+   D-146's F-1 are superseded in MECHANISM (the caller-side
+   worst-case-callee model they built stands). The two `escape.npk`
+   diagnostics citing them update their citations.
+
+**Why both sides survive, checked against the actual types.** Every engine
+table's pointer slots are wild by convention — Ast, SymbolTable, DiagList
+(whose own comment states it: "Every other table in this compiler is wild
+storage behind a pointer"), TokenList, InternTable — so none is a
+destination, no `run()` local marks, and the four migrated tests pass **as
+written**. Context structs (Parser, Escape, Resolver, …) keep plain slots
+and REMAIN destinations: `BORROW-002` keeps refusing capture-shaped sites,
+which are read per site, never annotated past.
+
+**Landing order (inside 1.4.6).** The fix, `BORROW-011`, and the rejection
+cases land as their own commit BEFORE the migration commit — the three
+probes become rejection cases plus a pair-with-plain-slots case that still
+refuses; the migration's minimal reproducer becomes an ACCEPT case. The
+selfhost stage is then the audit of `src/`: any site storing a borrow into
+a wild slot refuses by name (expected none; one that appears is either a
+real hazard or spells its `=>!`). The suite migration finishes on top with
+the four files untouched.
+
+**Declined:** restructuring the four helpers around the over-broad blanket
+and fixing the two holes separately — strictly more total work for a weaker
+analysis in between, and the no-deferral rule bars the "separately".
 

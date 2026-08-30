@@ -1,0 +1,28 @@
+// expect-error: NITPICK-BORROW-002
+//
+// D-223 makes F-1's destination match DERIVATION-AWARE. `dest_can_hold`
+// compared the borrow's EXACT pointee type, so `Cell { int32->:slot }` beside
+// `@pt` — a `Point` of two `int32`s — counted as no destination: no slot in a
+// Cell holds a `Point->`. But the callee does not have to store the borrow it
+// was handed; it can take an INTERIOR borrow of it, `@(q.a)`, whose type is
+// `int32->` and which the Cell holds perfectly well. That plants a frame
+// address in caller-owned memory that outlives the frame.
+//
+// Accepted before D-223, verified live. `can_connect` now asks whether the
+// destination holds a non-wild pointer slot whose pointee is the source type
+// OR ANY TYPE REACHABLE INSIDE IT.
+
+struct:Cell  = { int32->:slot; };
+struct:Point = { int32:a; int32:b; };
+
+func:stash = NIL(Cell->:c, Point->:q) never fails {
+    int32->:t = @(q.a);
+    c.slot = t;
+    pass NIL;
+};
+
+func:user = NIL(Cell->:c) never fails {
+    Point:pt = Point{ a: 1i32, b: 2i32 };
+    drop stash(c, @pt);
+    pass NIL;
+};

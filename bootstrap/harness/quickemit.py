@@ -39,7 +39,7 @@ OUT = os.path.join(ROOT, ".internal", "quickemit")
 
 def newest_source():
     newest = 0.0
-    for base in ("src", "lib", "bootstrap/generator", "bootstrap/runtime"):
+    for base in ("src", "lib", "runtime"):
         for dirpath, _, names in os.walk(os.path.join(ROOT, base)):
             for n in names:
                 if n.endswith((".npk", ".py", ".ll")):
@@ -57,12 +57,21 @@ def build():
     # The runtime object follows the same rule as the compiler: rebuilt when
     # anything under the watched trees (npkrt.ll included) is newer than it.
     if not os.path.exists(rt) or os.path.getmtime(rt) < fresh:
-        r = subprocess.run(["llc", "-O0", "-filetype=obj",
-                            "-relocation-model=static",
-                            harness.RUNTIME_LL, "-o", rt],
+        r = subprocess.run(["llc"] + harness.LLC_FLAGS + [harness.RUNTIME_LL, "-o", rt],
                            capture_output=True, text=True)
         if r.returncode != 0:
             return "runtime: %s" % r.stderr.strip()[:400]
+    # THE BUILDER IS THE COMMITTED SNAPSHOT (D-203/D-205, 1.4.6). Cached in
+    # the same .internal/ home as everything else here, and rebuilt only when
+    # the snapshot itself changes -- llc over 15 MB of IR is not free, and a
+    # snapshot only moves at a refresh.
+    b = os.path.join(OUT, "builder")
+    if (not os.path.exists(b)
+            or os.path.getmtime(b) < os.path.getmtime(harness.SNAPSHOT_LL)):
+        made = harness.build_builder(OUT)
+        if not os.path.exists(str(made)):
+            return made
+    harness.BUILDER = b
     return harness.build_tool(OUT, True, harness.EMIT_CHECK, "npkc")
 
 

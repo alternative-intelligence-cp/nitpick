@@ -46,8 +46,23 @@ use "./bridge_codes.npk".*;
 func:bs_fnv_seed = uint64() never fails {
     pass ((3421887204u64 << 32u64) | 2216829733u64);
 };
+// FNV'S MULTIPLY IS A DELIBERATE WRAPAROUND, and it must SAY so (D-210).
+//
+// This was a plain `uint64` multiply, and it overflowed on the first byte it
+// ever hashed. It never fired because the PYTHON SEED emitted no overflow
+// checks: `src/`'s own arithmetic went unchecked for as long as the seed built
+// it, so D-210's 1.4.2b sweep — which found and fixed `intern.npk`'s FNV —
+// could not see this second one. The 1.4.6 switch put the snapshot in the
+// seed's place, the checks appeared in `src/` for the first time, and the two
+// `extern` programs trapped inside the compiler.
+//
+// The spelling is the prelude's: widen, multiply where it cannot overflow,
+// and narrow with `=>!` to state the truncation. `intern.npk` carries the
+// hand-decomposed form with a comment saying it becomes this one — that was
+// written when `src/` was bounded by what the SEED could compile, and since
+// the switch it is bounded by the snapshot, which has `uint128`.
 func:bs_fnv_step = uint64(uint64:h, uint64:v) never fails {
-    pass ((h ^ v) * 1099511628211u64);
+    pass ((((h ^ v) => uint128) * 1099511628211u128) =>! uint64);
 };
 func:bs_fnv_str = uint64(string:sv, uint64:h0) never fails {
     uint64:h = h0;

@@ -1,0 +1,26 @@
+// expect-error: NITPICK-BORROW-001
+//
+// D-223 closes rule B's SINGLE-BORROW EXEMPTION, which was false for a
+// self-connectable type. The old reasoning was "with nothing else passed in,
+// there is no second borrow to store" — and the borrow itself is the second
+// borrow. `wire(@n)` stores `p` into `p.next`, so the returned COPY of `n`
+// carries an address of the frame that just died.
+//
+// Accepted before D-223, verified live. The exemption is now "exempt iff not
+// self-connectable": `can_connect(T, T)` is asked with the borrow as its own
+// co-source. `tt_intern(@t, k)` … `pass t` keeps compiling, because
+// TypeTable's pointer slots are all `wild` and a wild slot is not a
+// destination — BORROW-011 refuses the store into one outright.
+
+struct:Node = { Node->:next; int32:v; };
+
+func:wire = NIL(Node->:p) never fails {
+    p.next = p;
+    pass NIL;
+};
+
+func:make = Node() never fails {
+    Node:n = Node{ next: NULL, v: 1i32 };
+    drop wire(@n);
+    pass n;
+};

@@ -1,0 +1,49 @@
+// D-223's ACCEPT case, and the shape the 1.4.6 suite migration stopped on.
+//
+// Two borrows of locals passed to one callee, then one of them copied out in a
+// returned struct. The old rule B refused this on a COUNT — `borrowed >= 2` —
+// which is why four of the compiler's own unit tests could not move off the
+// Python seed: `parser_init(@toks, @ast, @pd, it)` is exactly this shape, and
+// so is `collect_module(@tab, @ast, @diags, …)`.
+//
+// It is safe, and the reason is a fact about the types rather than about the
+// call: every pointer slot the destinations carry is `wild`, and since D-223 a
+// borrow cannot be stored in a wild slot at all (BORROW-011). There is nowhere
+// for `@b` to be put, so nothing marks, and the copy `Pair{ b: b, … }` carries
+// only the same heap pointer it always did.
+//
+// `tests/analysis/rejection/borrow_pair_plain.npk` is this file with `wild`
+// removed, and it refuses. The difference between accepted and refused is that
+// one word, which is the point.
+
+struct:Box  = { wild int32->:p; int32:n; };
+struct:Pair = { Box:b; int32:k; };
+
+func:touch = NIL(Box->:bp, Pair->:op) never fails {
+    pass NIL;
+};
+
+func:make = Pair() never fails {
+    Box:b = Box{ p: NULL, n: 1i32 };
+    Pair:tmp = Pair{ b: b, k: 0i32 };
+    drop touch(@b, @tmp);
+    Pair:out = Pair{ b: b, k: 7i32 };
+    pass out;
+};
+
+// AND THE COMPILER'S OWN IDIOM, which is what this decision was really about:
+// engine tables borrowed together, then returned by value in a result struct.
+struct:Engine = { wild int32->:items; int32:count; };
+struct:Ctx    = { Engine->:e; int32:n; };
+struct:Run    = { Engine:a; Engine:b; };
+
+func:wire = Ctx(Engine->:x, Engine->:y) never fails {
+    pass Ctx{ e: x, n: 0i32 };
+};
+
+func:run = Run() never fails {
+    Engine:ea = Engine{ items: NULL, count: 0i32 };
+    Engine:eb = Engine{ items: NULL, count: 0i32 };
+    Ctx:c = raw wire(@ea, @eb);
+    pass Run{ a: ea, b: eb };
+};

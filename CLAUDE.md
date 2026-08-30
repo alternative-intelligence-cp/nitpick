@@ -473,7 +473,7 @@ python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 
 It compiles each suite with the **throwaway Python seed** in
 `bootstrap/generator/` (D-085 — a generator, never a dependency of the artifact),
-links against `bootstrap/runtime/npkrt.ll` via `llc` and `ld.lld`, runs the
+links against `runtime/npkrt.ll` via `llc` and `ld.lld`, runs the
 result, and compares the exit code. It also feeds every source through the **real**
 parser (`tools/parse_check.npk`) and re-checks that every AST node kind is
 reachable.
@@ -561,7 +561,12 @@ src/          # THE COMPILER — Nitpick source only; nothing else belongs here
   frontend/   #   built once, in full (analysis/, macro/)
   backend/    #   grown rung by rung (ir/, layout/)
   driver/     #   manifest, module graph, subprocess invocation
-bootstrap/    # THROWAWAY seed + generator (D-085) — never in an artifact
+bootstrap/    # seed/ — THE COMMITTED SNAPSHOT: stage1.ll + STAMP + README (D-203).
+              #   This is what builds src/ since 1.4.6; read seed/README.md
+              #   before touching it. generator/ made the FIRST one and builds
+              #   nothing now; harness/ runs until `npkg` parity (D-206).
+runtime/      # npkrt.ll — the runtime FLOOR, hand-written LLVM IR, PERMANENT
+              #   (D-203). In every artifact; re-homed out of bootstrap/ at 1.4.6
 tools/        # check/resolve_check/parse_check — the real frontend, for the harness
 tests/        # FOUR rejection suites, named by the stage that refuses:
               #   modules/rejection/ (loader), types/rejection/ (type checker),

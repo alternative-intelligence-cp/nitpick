@@ -32,52 +32,70 @@ sys.path.insert(0, HERE)
 
 import harness      # noqa: E402
 
-FAILSAFE = "func:failsafe = int32(tbb32:err) { exit 1i32; };\n"
+# EVERY CASE IS A COMPLETE PROGRAM NOW (1.4.6). Until the switch these ran
+# through the Python seed, which accepted a bare `failsafe` and refused
+# anything outside subset 1 -- so `trait:T = { };` was a convenient RUNG-001.
+# The cases run through the compiler under test now, which supports traits,
+# checks failsafe's coverage (D-179) and demands a `main`. The rung the
+# negative cases lean on is `limit<Rules>`, one of the eight the real backend
+# still refuses; it is a rung rather than a type error on purpose, because the
+# property under test is D-085's -- the parser reads it, the backend refuses
+# it.
+FAILSAFE = """func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};
+"""
+MAIN_OK = "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n"
+# The refused construct, at line 2 of whatever it is spliced into.
+RUNG = """func:build = int32(int32:seed) {
+    limit<r_pos> int32:x = seed;
+    pass x;
+};
+"""
 
 CASES = [
     # (name, kind, source, must_fail, why)
-    ("correct-expectation", "negative", """
-// expect-error: NITPICK-RUNG-001
-trait:T = { };
-""" + FAILSAFE, False, "a correct expectation must pass"),
+    ("correct-expectation", "negative",
+     "// expect-error: NITPICK-RUNG-001\n" + RUNG + MAIN_OK + FAILSAFE,
+     False, "a correct expectation must pass"),
 
-    ("wrong-code", "negative", """
-// expect-error: NITPICK-CHECK-001
-trait:T = { };
-""" + FAILSAFE, True, "expecting the wrong code must fail"),
+    ("wrong-code", "negative",
+     "// expect-error: NITPICK-CHECK-001\n" + RUNG + MAIN_OK + FAILSAFE,
+     True, "expecting the wrong code must fail"),
 
-    ("compiles-anyway", "negative", """
-// expect-error: NITPICK-RUNG-001
-func:main = int32() { exit 0i32; };
-""" + FAILSAFE, True, "a negative test that compiles must fail"),
+    ("compiles-anyway", "negative",
+     "// expect-error: NITPICK-RUNG-001\n" + MAIN_OK + FAILSAFE,
+     True, "a negative test that compiles must fail"),
 
-    ("no-expectation", "negative", """
-struct:Bad = { nosuchtype:x; };
-""" + FAILSAFE, True, "a negative test with no expect-error must fail"),
+    ("no-expectation", "negative", RUNG + MAIN_OK + FAILSAFE,
+     True, "a negative test with no expect-error must fail"),
 
-    ("wrong-line", "negative", """
-// expect-error: NITPICK-RUNG-001
-// expect-error-at: 99:1
-trait:T = { };
-""" + FAILSAFE, True, "expecting the wrong line must fail"),
+    ("wrong-line", "negative",
+     "// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n"
+     + RUNG + MAIN_OK + FAILSAFE,
+     True, "expecting the wrong line must fail"),
 
-    ("wrong-exit", "positive", """
-// expect-exit: 3
-func:main = int32() { exit 0i32; };
-""" + FAILSAFE, True, "a positive test exiting with the wrong code must fail"),
+    ("wrong-exit", "positive",
+     "// expect-exit: 3\n" + MAIN_OK + FAILSAFE,
+     True, "a positive test exiting with the wrong code must fail"),
 
-    ("right-exit", "positive", """
-func:main = int32() { exit 0i32; };
-""" + FAILSAFE, False, "a positive test exiting as expected must pass"),
+    ("right-exit", "positive", MAIN_OK + FAILSAFE,
+     False, "a positive test exiting as expected must pass"),
 
-    # The one that guards D-085. A file that is meant to reach the backend but
-    # trips the PARSER instead must be reported, not quietly accepted as "it
-    # failed, close enough".
-    ("parse-error-not-backend", "negative", """
-// expect-error: NITPICK-RUNG-001
-// expect-no-parse-error
-func:main = int32() { this is not nitpick };
-""" + FAILSAFE, True, "a parse error where a backend rejection was expected must fail"),
+    # The one that guards D-085. A file meant to reach the backend but tripping
+    # the PARSER instead must be reported, not quietly accepted as "it failed,
+    # close enough".
+    ("parse-error-not-backend", "negative",
+     "// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\n"
+     "func:main = int32() { this is not nitpick };\n" + FAILSAFE,
+     True, "a parse error where a backend rejection was expected must fail"),
 ]
 
 
@@ -89,6 +107,16 @@ def main():
         subprocess.run(["llc"] + harness.LLC_FLAGS
                        + [harness.RUNTIME_LL, "-o", os.path.join(tmp, "npkrt.o")],
                        capture_output=True)
+        # THE COMMITTED SNAPSHOT IS THE COMPILER HERE (1.4.6), not a fresh
+        # build of `src/`. These cases ask whether the HARNESS reports
+        # failures, not whether today's compiler is right about anything, so
+        # the snapshot is both sufficient and ~3 minutes cheaper than
+        # rebuilding the compiler to ask a question about the runner.
+        harness.BUILDER = harness.build_builder(tmp)
+        if not os.path.exists(str(harness.BUILDER)):
+            print("selfcheck: no builder (%s)" % harness.BUILDER)
+            return 1
+        harness.COMPILER = harness.BUILDER
 
     print("harness self-check")
     bad = 0
@@ -97,7 +125,7 @@ def main():
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(src)
         exp = harness.read_expectations(path)
-        fails = harness.KINDS[kind](name, [path], exp, tmp, tools)
+        fails = harness.KINDS[kind](name, path, exp, tmp, tools)
         did_fail = bool(fails)
         ok = (did_fail == must_fail)
         if not ok:

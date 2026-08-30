@@ -44,6 +44,8 @@ use "../parse_expr.npk".*;
 use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
+use "../parser.npk".*;      // QUAL_WILD / QUAL_WILDX (D-223)
+use "../builtins.npk".*;    // builtin_returns_wild (D-223)
 use "../types.npk".*;
 use "../resolve_type.npk".*;
 use "../type_layout.npk".*;
@@ -287,6 +289,11 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     // though the expression `p` is just a name.
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = raw stmt_decl_init(x.ast, s);
+        // A `wild` DECLARATION IS A STORE SITE (D-223): `wild int32->:p = @x;`
+        // puts a frame address where the manual regime expects heap.
+        if (((raw stmt_quals(x.ast, s)) & (raw QUAL_WILD())) != 0i32) {
+            drop check_wild_store_decl(x, init, s.span);
+        }
         if (!(raw expr_is_none(init))) {
             if (raw verdict_borrowy(x, init,
                     raw escape_expr(x, init, raw ESCAPE_DEPTH()))) {
@@ -598,9 +605,208 @@ func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
     pass (x.holds[sy.origin => int64]);
 };
 
+// --- D-223: a borrow never enters a `wild` slot (BORROW-011, 1.4.6) ---------
+//
+// QUALIFIERS ARE NOT PART OF THE TYPE (`parse_type.npk`'s second header fact):
+// `wild int32->` and `int32->` are one type id, so until this rule a frame
+// address entered a wild slot with no cast, no `raw` and no `=>!`. That is the
+// laundering path that made rule B's refusal SOUND rather than over-broad, and
+// it is closed here rather than by making rule B stricter, because the store is
+// where the mistake actually is.
+//
+// WILD PROVENANCE IS A WHITELIST, not a borrow blacklist: `=>! wild …->`, a
+// read of a `QUAL_WILD` place, a builtin whose signature hands back wild
+// storage, or `NULL`. Everything else — a plain pointer parameter, a plain-slot
+// read, a call this walk cannot see through — is provenance-UNKNOWN and
+// refuses. Fails closed by construction, and the door where the store is truly
+// meant is D-019's `=>! wild T->`.
+func:wild_provenance = bool(Escape->:x, ExprId:id, int32:d) never fails {
+    if (raw expr_is_none(id)) { pass true; }        // nothing stored
+    if (d <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+
+    // `v =>! wild T->` — the explicit surrender of tracking (D-019).
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
+        if (((raw expr_cast_quals(n)) & (raw QUAL_WILD())) != 0i32) { pass true; }
+        if (((raw expr_cast_quals(n)) & (raw QUAL_WILDX())) != 0i32) { pass true; }
+        pass false;
+    }
+    // NULL is no address at all, so it cannot be a frame address (D-006).
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
+    // A builtin that HANDS BACK wild storage is the origin of every legitimate
+    // wild pointer: `alloc`, `ralloc`, `aalloc`, the wildx family. Read off the
+    // one signature table (D-201) rather than a name list here.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:cal = raw expr_callee(n);
+        if (!(raw expr_is_none(cal))) {
+            ExprNode:cn = raw ast_expr(x.ast, cal);
+            if (cn.kind == ExprKind.ExprIdentifierExpr) {
+                // A BARE BUILTIN: the generated signature table carries the
+                // qualifier in its return text.
+                if (cn.a == 0i32) {
+                    if (raw builtin_returns_wild(raw intern_get(x.tr.interns,
+                            cn.payload =>! int32))) { pass true; }
+                }
+                // A USER FUNCTION DECLARING A WILD RETURN. `func:grow =
+                // wild int32->(…)` states its result is unmanaged storage as
+                // plainly as a builtin's signature does — D-002's own example
+                // is `func:malloc = wild any->(int64:size)`, and the language
+                // has recorded it since 0.4 as `DECL_RET_WILD` on the
+                // declaration, because qualifiers are not part of the type.
+                // Restricting wild provenance to BUILTINS would refuse every
+                // allocator written in Nitpick and push an `=>!` onto each of
+                // its call sites, which is how an opt-out becomes a habit.
+                if (cn.a != 0i32) {
+                    Symbol:cs = raw symtab_get(x.tab, cn.a);
+                    if (cs.origin_kind == (raw SYM_DECL())) {
+                        DeclNode:cd = raw ast_decl(x.ast,
+                                          DeclId{ index: cs.origin });
+                        if (cd.kind == DeclKind.DeclFunctionDecl) {
+                            if (raw decl_has(cd, raw DECL_RET_WILD())) { pass true; }
+                            if (raw decl_has(cd, raw DECL_RET_WILDX())) { pass true; }
+                        }
+                    }
+                }
+            }
+        }
+        pass false;
+    }
+    // THE SIGIL FORM `#name<T>(…)` IS A BUILTIN TOO. `ExprBuiltinExpr` is a
+    // separate node kind from `ExprCallExpr`, and a whitelist that checked
+    // only the latter refused every `#ptr_add<T>(p, i)` in the tree —
+    // pointer arithmetic on wild storage, which is the one thing the manual
+    // regime is FOR.
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw builtin_returns_wild(raw intern_get(x.tr.interns,
+                  n.payload =>! int32)));
+    }
+    // A READ OF A WILD PLACE keeps its provenance: `fe.dframes` is wild
+    // storage, and moving it to another wild slot moves wild storage.
+    if (n.kind == ExprKind.ExprIdentifierExpr)   { pass (raw place_is_wild(x, id)); }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass (raw place_is_wild(x, id)); }
+    if (n.kind == ExprKind.ExprIndexExpr)        { pass (raw place_is_wild(x, id)); }
+    // `move(p)` and `$$i p` pass the operand's provenance through unchanged.
+    if (n.kind == ExprKind.ExprMoveExpr)   { pass (raw wild_provenance(x, raw expr_operand(n), d - 1i32)); }
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (raw wild_provenance(x, raw expr_operand(n), d - 1i32)); }
+    if (n.kind == ExprKind.ExprRelayExpr)  { pass (raw wild_provenance(x, raw expr_operand(n), d - 1i32)); }
+    pass false;
+};
+
+// Is this place a `wild`-qualified slot? A local's qualifier rides its
+// declaration, a field's rides the field decl — the two spellings the store
+// sites can see.
+func:place_is_wild = bool(Escape->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        pass (raw place_is_wild(x, raw expr_lhs(n)));
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:sy = raw symtab_get(x.tab, n.a);
+        if (sy.origin_kind == (raw SYM_STMT())) {
+            StmtNode:ds = raw ast_stmt(x.ast, StmtId{ index: sy.origin });
+            if (ds.kind != StmtKind.StmtVarDeclStmt) { pass false; }
+            pass (((raw stmt_quals(x.ast, ds)) & (raw QUAL_WILD())) != 0i32);
+        }
+        // A `wild`-QUALIFIED PARAMETER IS A WILD PLACE TOO. Found by the D-223
+        // audit itself, in `llctx_set_impls(LlCtx->:c, wild ImplTable->:t, …)`
+        // storing `t` into a wild field: wild provenance arrives through a
+        // parameter as readily as through a local, and reading only the
+        // declaring STATEMENT missed every one of them.
+        if (sy.origin_kind == (raw SYM_DECL())) {
+            DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: sy.origin });
+            if (pd.kind == DeclKind.DeclParamDecl) {
+                pass (((raw param_quals(pd)) & (raw QUAL_WILD())) != 0i32);
+            }
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:base = raw exprtypes_get(x.etypes, raw expr_operand(n));
+        if (base == 0i32) { pass false; }
+        if ((raw type_kind(x.types, base)) == (raw TY_POINTER())) {
+            base = raw type_elem(x.types, base);
+        }
+        if ((raw type_kind(x.types, base)) != (raw TY_STRUCT())) { pass false; }
+        DeclId:did = DeclId{ index: raw type_decl(x.types, base) };
+        DeclNode:sd = raw ast_decl(x.ast, did);
+        int32:want = n.payload =>! int32;
+        int32:i = 0i32;
+        while (i < (raw item_member_count(x.ast, sd))) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, i));
+            if (m.kind == DeclKind.DeclFieldDecl) {
+                if ((raw decl_name(m)) == want) {
+                    pass (((raw field_quals(m)) & (raw QUAL_WILD())) != 0i32);
+                }
+            }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+// Is the named field of this struct type `wild`-qualified? The literal's
+// window carries field NAMES as intern indices, so the lookup is by name
+// rather than through a place expression.
+func:field_named_is_wild = bool(Escape->:x, int32:sty, int32:fname) never fails {
+    if (sty == 0i32) { pass false; }
+    if ((raw type_kind(x.types, sty)) != (raw TY_STRUCT())) { pass false; }
+    DeclId:did = DeclId{ index: raw type_decl(x.types, sty) };
+    DeclNode:sd = raw ast_decl(x.ast, did);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(x.ast, sd))) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, sd, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            if ((raw decl_name(m)) == fname) {
+                pass (((raw field_quals(m)) & (raw QUAL_WILD())) != 0i32);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// The declaration form of the store check: there is no destination EXPRESSION
+// to inspect — the slot is the binding being declared, and its `wild` came from
+// the statement's qualifiers, which the caller has already read.
+func:check_wild_store_decl = NIL(Escape->:x, ExprId:val, Span:at) never fails {
+    if (raw expr_is_none(val)) { pass NIL; }
+    int32:vt = raw exprtypes_get(x.etypes, val);
+    if (vt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, vt)) != (raw TY_POINTER())) { pass NIL; }
+    if (raw wild_provenance(x, val, raw ESCAPE_DEPTH())) { pass NIL; }
+    drop escape_err(x, raw BORROW_WILD_STORE(),
+        "a borrow cannot initialise a `wild` binding (D-223): wild memory is manually managed, and a frame address is not manual memory — `dalloc` on one frees a stack address. Qualifiers are not part of the type, so nothing else here would have said so. Initialise from wild storage, or write `=>! wild T->` to state that you accept the surrender of tracking (D-019)",
+        at);
+    pass NIL;
+};
+
+// The store check itself: a wild destination demands wild provenance.
+func:check_wild_store = NIL(Escape->:x, ExprId:dest, ExprId:val,
+                            Span:at) never fails {
+    if (raw expr_is_none(val)) { pass NIL; }
+    if (!(raw place_is_wild(x, dest))) { pass NIL; }
+    int32:vt = raw exprtypes_get(x.etypes, val);
+    if (vt == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, vt)) != (raw TY_POINTER())) { pass NIL; }
+    if (raw wild_provenance(x, val, raw ESCAPE_DEPTH())) { pass NIL; }
+    drop escape_err(x, raw BORROW_WILD_STORE(),
+        "a borrow cannot be stored in a `wild` slot (D-223): wild memory is manually managed, and a frame address is not manual memory — `dalloc` on one frees a stack address. Qualifiers are not part of the type, so nothing else here would have said so. Store wild storage, or write `=>! wild T->` to state that you accept the surrender of tracking (D-019)",
+        at);
+    pass NIL;
+};
+
 func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
+
+    // D-223, BEFORE the borrow-store rules below: those ask whether the VALUE
+    // is a borrow the analysis has marked, and the laundering shape this closes
+    // is one where it is not (a param-rooted interior borrow, unmarked by the
+    // 0.8.1 exemption). The destination's qualifier is what decides here.
+    drop check_wild_store(x, tgt, val, s.span);
 
     // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
     // an index expression that no rule about the assignment itself would catch.
@@ -902,9 +1108,17 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         bool:found = false;
         int32:cnt = raw expr_list_count(n);
+        // THE LITERAL IS A STORE SITE TOO (D-223): `Box{ p: @x }` puts a frame
+        // address in a wild slot exactly as `b.p = @x` does, and the field's
+        // qualifier is readable right here. The window alternates NAME, VALUE.
+        int32:lit_ty = raw exprtypes_get(x.etypes, id);
         int32:i = 1i32;
         while (i < cnt) {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            int32:fname = raw ast_id_at(x.ast, raw expr_list_start(n), i - 1i32);
+            if (raw field_named_is_wild(x, lit_ty, fname)) {
+                drop check_wild_store_decl(x, v, n.span);
+            }
             if (raw escape_expr(x, v, d)) { found = true; }
             i = i + 2i32;
         }
@@ -1021,11 +1235,22 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     int32:local_borrows = 0i32;
     // The pointee types of the LOCAL-rooted borrows in this call — a handful
     // at most; a destination matters only if it can hold one of exactly these.
-    wild int32->:lb_tys = (alloc(8i64 * 4i64)) =>! wild int32->;
+    // SIZED TO THE CALL, not to a guess (1.4.6). This was a fixed EIGHT
+    // entries with `local_borrows < 8` on the way in and a fail-closed
+    // `i >= 8 -> true` on the way out — so any call with nine or more
+    // local-rooted borrows made EVERY pointer argument a destination, by
+    // overflow rather than by connection. The compiler's own
+    // `etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst,
+    // @fninsts, @ets)` passes nine, which is how this surfaced: three tests
+    // refused at `it`, whose only pointer slot is `wild string->` and which
+    // can therefore hold no borrow at all. The count is known here — one
+    // receiver plus `count` arguments — so there is nothing to cap.
+    int32:lb_cap = count + 1i32;
+    wild int32->:lb_tys = (alloc((lb_cap => int64) * 4i64)) =>! wild int32->;
     if (raw escape_arg(x, recv, depth)) {
         borrowed = borrowed + 1i32;
         if (raw arg_root_is_local(x, recv)) {
-            if (local_borrows < 8i32) {
+            if (local_borrows < lb_cap) {
                 lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, recv);
             }
             local_borrows = local_borrows + 1i32;
@@ -1037,7 +1262,7 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
         if (raw escape_arg(x, a, depth)) {
             borrowed = borrowed + 1i32;
             if (raw arg_root_is_local(x, a)) {
-                if (local_borrows < 8i32) {
+                if (local_borrows < lb_cap) {
                     lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, a);
                 }
                 local_borrows = local_borrows + 1i32;
@@ -1063,8 +1288,13 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     // `borrowed >= 2` exemption). One borrow plus one destination is enough.
     // `tt_intern(@t, k)` — one borrow, scalars otherwise — still passes: the
     // borrow itself is not counted as its own destination.
+    // ONE PREDICATE DECIDES (D-223). The `borrowed >= 2` arm is gone: it was a
+    // COUNT standing in for a connection, and it refused the compiler's own
+    // `parser_init(@toks, @ast, @pd, it)` shape — three borrows of engine
+    // tables whose pointer slots are all wild, so none can hold another. What
+    // remains is the question that was always meant: is there a destination
+    // among the arguments that could actually receive one of these borrows?
     bool:rule_b = false;
-    if (borrowed >= 2i32) { rule_b = true; }
     if (local_borrows >= 1i32) {
         if (dests >= 1i32) { rule_b = true; }
     }
@@ -1132,7 +1362,7 @@ func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
     if (d.kind != DeclKind.DeclParamDecl) { pass NIL; }
     ExprNode:anode2 = raw ast_expr(x.ast, a);
     drop escape_err(x, raw BORROW_STORED(),
-        "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-117 rule B, as repaired by D-146 F-1)",
+        "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-117 rule B, repaired by D-146 F-1 and unified on one derivation-aware predicate by D-223)",
         anode2.span);
     pass NIL;
 };
@@ -1231,78 +1461,139 @@ func:arg_pointee_ty = int32(Escape->:x, ExprId:a) never fails {
 func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
                              int32:lbn) never fails {
     if (raw expr_is_none(a)) { pass false; }
-    if (raw escape_yields(x, a)) { pass false; }
+    // THE BORROW IS ITS OWN CO-SOURCE (D-223, closing hole 1). This used to
+    // return false for any argument that IS a borrow — "with nothing else
+    // passed in, there is no second borrow to store" — and the borrow itself
+    // is the second borrow: `wire(@n)` doing `p.next = p;` was accepted, and
+    // the returned copy's `.next` pointed into the dead frame. A
+    // self-connectable type is now its own destination; `tt_intern(@t, k)`
+    // keeps compiling because TypeTable's pointer slots are all wild.
     int32:t = raw exprtypes_get(x.etypes, a);
     if (t == 0i32) { pass false; }
     if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
     int32:pointee = raw type_elem(x.types, t);
     int32:i = 0i32;
     while (i < lbn) {
-        if (i >= 8i32) { pass true; }
-        if (raw dest_can_hold(x, pointee, lb_tys[i => int64],
-                                raw CARRY_FUEL())) { pass true; }
+        if (raw can_connect(x, pointee, lb_tys[i => int64],
+                              raw CARRY_FUEL())) { pass true; }
         i = i + 1i32;
     }
     pass false;
 };
 
-// Can a value of type `holder` transitively contain a `target->` slot? Struct
-// fields resolve through the checker's own resolver, in the struct's home
-// scope (D-137).
-func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) never fails {
-    if (fuel <= 0i32) { pass true; }
-    if (holder == 0i32) { pass false; }
-    // Target 0 is a VALUE-held borrow (rule A's conservative marking — a
-    // struct carrying heap strings, say): it has no frame pointee to dangle,
-    // so it does not drive the param-destination refusal. Rule A still owns
-    // its return-escape.
-    if (target == 0i32) { pass false; }
-    int32:k = raw type_kind(x.types, holder);
-    if (k == (raw TY_POINTER())) {
-        int32:el = raw type_elem(x.types, holder);
-        if (el == target) { pass true; }
-        if ((raw type_kind(x.types, el)) == (raw TY_ANY())) { pass true; }
-        pass (raw dest_can_hold(x, el, target, fuel - 1i32));
-    }
-    if (k == (raw TY_SLICE())) {
-        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
-                                  fuel - 1i32));
-    }
-    if (k == (raw TY_ARRAY())) {
-        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
-                                  fuel - 1i32));
-    }
-    if (k == (raw TY_ARENA())) {
-        // `put` stores an element; the slab can hold whatever T can
-        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
-                                  fuel - 1i32));
-    }
-    if (k == (raw TY_SHARED_ARENA())) {
-        // `alloc(v)` stores an element likewise
-        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
-                                  fuel - 1i32));
-    }
-    if (k == (raw TY_HANDLE())) { pass false; }
-    if (k == (raw TY_RESULT())) {
-        pass (raw dest_can_hold(x, raw type_elem(x.types, holder), target,
-                                  fuel - 1i32));
-    }
+// Is `t` the type `src` itself, or a type reachable at an INTERIOR PLACE of
+// `src` — a field, an element, transitively (D-223)?
+//
+// This is the half `dest_can_hold` was missing. A callee handed `@pt` (a
+// `Point` of two `int32`s) can take `@(q.a)` and store THAT: the borrow it
+// plants is an `int32->`, not a `Point->`, so an exact-type match saw no
+// destination and `probe_derive` was accepted while planting a frame address
+// in caller-owned memory.
+func:type_reachable_in = bool(Escape->:x, int32:t, int32:src,
+                              int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }          // fail closed
+    if (t == 0i32) { pass false; }
+    if (src == 0i32) { pass false; }
+    if (t == src) { pass true; }
+    int32:k = raw type_kind(x.types, src);
+    if (k == (raw TY_ARRAY()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    if (k == (raw TY_SLICE()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    if (k == (raw TY_ARENA()))    { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
+    if (k == (raw TY_SHARED_ARENA())) { pass (raw type_reachable_in(x, t, raw type_elem(x.types, src), fuel - 1i32)); }
     if (k == (raw TY_STRUCT())) {
-        // The layout's pointer-presence bit prunes the walk outright.
-        if (!(raw type_holds_pointer(x.types, holder, fuel))) { pass false; }
-        DeclId:did = DeclId{ index: raw type_decl(x.types, holder) };
+        // THE DECL INDEX IS CHECKED BEFORE IT IS USED. `ast_decl` traps
+        // `BoundsId` on an out-of-range one, and not every interned TY_STRUCT
+        // carries a decl this Ast holds — the `extern` path SYNTHESIZES source
+        // and splices it (D-190), so a type can reach here whose declaration
+        // is not a node in the tree being walked. `dest_can_hold` never met
+        // this because `type_holds_pointer` pruned every struct without a
+        // pointer before it reached the decl; this walk asks about ANY field,
+        // so it has no such prune and must check.
+        int32:sdi = raw type_decl(x.types, src);
+        if (sdi < 0i32) { pass false; }
+        if (sdi >= (raw ast_decl_count(x.ast))) { pass false; }
+        DeclId:did = DeclId{ index: sdi };
         DeclNode:d = raw ast_decl(x.ast, did);
         int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
         int32:i = 0i32;
         while (i < (raw item_member_count(x.ast, d))) {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
             if (m.kind == DeclKind.DeclFieldDecl) {
-                // THROUGH THE LAYOUT WALK, NEVER A RAW RE-RESOLVE (1.1.12c):
-                // the raw form resolved the TEMPLATE's field node with no
-                // generic binding — see gives_shape_ok, the same repair.
-                FieldInfo:fi = raw struct_field(x.tr, holder, raw decl_name(m), home);
+                FieldInfo:fi = raw struct_field(x.tr, src, raw decl_name(m), home);
                 if (fi.found) {
-                    if (raw dest_can_hold(x, fi.type_id, target, fuel - 1i32)) { pass true; }
+                    if (raw type_reachable_in(x, t, fi.type_id, fuel - 1i32)) { pass true; }
+                }
+            }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+// CAN A BORROW OF `src` END UP INSIDE `dest_pointee` (D-223)?
+//
+// One predicate, replacing three mechanisms that each got half of it: the
+// count-based `borrowed >= 2` arm (over-broad — it refused the compiler's own
+// `parser_init(@toks, @ast, @pd, it)` idiom), `dest_can_hold`'s exact-type
+// match (under-sound — it missed derived interior borrows), and
+// `escape_connect`'s blanket `carries_pointer` filter.
+//
+// A slot counts only if it is a NON-`wild` pointer. Wild slots are excluded
+// because BORROW-011 closes them outright: a borrow cannot be stored in one at
+// all, so a wild slot is not a place a borrow can end up. That exclusion is
+// what lets the engine tables — Ast, SymbolTable, DiagList, TokenList,
+// InternTable, every one of whose pointer slots is wild by convention — stop
+// being destinations, which is why the four migrated tests compile as written.
+// Context structs (Parser, Resolver, Escape…) keep plain slots and remain
+// destinations, so the capture-shaped sites still refuse.
+func:can_connect = bool(Escape->:x, int32:holder, int32:src,
+                        int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }          // fail closed
+    if (holder == 0i32) { pass false; }
+    // Target 0 is a VALUE-held borrow (rule A's conservative marking): no frame
+    // pointee to dangle, so it drives no destination refusal.
+    if (src == 0i32) { pass false; }
+    int32:k = raw type_kind(x.types, holder);
+    if (k == (raw TY_POINTER())) {
+        int32:el = raw type_elem(x.types, holder);
+        // `any->` erases the type and so matches every borrow.
+        if ((raw type_kind(x.types, el)) == (raw TY_ANY())) { pass true; }
+        if (raw type_reachable_in(x, el, src, fuel - 1i32)) { pass true; }
+        pass (raw can_connect(x, el, src, fuel - 1i32));
+    }
+    if (k == (raw TY_SLICE()))    { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_ARRAY()))    { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_ARENA()))    { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_SHARED_ARENA())) { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
+    if (k == (raw TY_HANDLE())) { pass false; }
+    if (k == (raw TY_STRUCT())) {
+        // The layout's pointer-presence bit prunes the walk outright.
+        if (!(raw type_holds_pointer(x.types, holder, fuel))) { pass false; }
+        int32:hdi = raw type_decl(x.types, holder);
+        if (hdi < 0i32) { pass false; }
+        if (hdi >= (raw ast_decl_count(x.ast))) { pass false; }
+        DeclId:did = DeclId{ index: hdi };
+        DeclNode:d = raw ast_decl(x.ast, did);
+        int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+        int32:i = 0i32;
+        while (i < (raw item_member_count(x.ast, d))) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
+            if (m.kind == DeclKind.DeclFieldDecl) {
+                // A `wild` FIELD IS NOT A DESTINATION (D-223): BORROW-011
+                // refuses the store into it, so no borrow reaches it.
+                if (((raw field_quals(m)) & (raw QUAL_WILD())) == 0i32) {
+                    // THROUGH THE LAYOUT WALK, NEVER A RAW RE-RESOLVE
+                    // (1.1.12c): the raw form resolved the TEMPLATE's field
+                    // node with no generic binding.
+                    FieldInfo:fi = raw struct_field(x.tr, holder, raw decl_name(m), home);
+                    if (fi.found) {
+                        if (raw can_connect(x, fi.type_id, src, fuel - 1i32)) { pass true; }
+                    }
                 }
             }
             i = i + 1i32;
@@ -1327,13 +1618,14 @@ func:escape_connect = NIL(Escape->:x, ExprId:a) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
     if (!(raw escape_yields(x, a))) { pass NIL; }
 
-    // WHAT IT POINTS AT DECIDES. A callee can only store a pointer through this
-    // argument if the pointee has somewhere to put one — `int32->` has not, which
-    // is what keeps `sum_through(@x, @y)` ordinary code.
+    // WHAT IT POINTS AT DECIDES — and since D-223 the CALLER decided it. The
+    // blanket `carries_pointer` filter that stood here answered "could this
+    // pointee hold ANY pointer", which is the same over-broad shape the
+    // `borrowed >= 2` arm had: a wild slot holds a pointer and can never hold a
+    // borrow. The pair arm now marks only the arguments `can_connect` picked
+    // out, so this walks what it is given.
     int32:aty = raw exprtypes_get(x.etypes, a);
     if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { pass NIL; }
-    if (!(raw carries_pointer(x, raw type_elem(x.types, aty),
-                                raw CARRY_FUEL()))) { pass NIL; }
 
     // `@place` — the binding under the place is what may now hold a borrow, and it
     // can be named.

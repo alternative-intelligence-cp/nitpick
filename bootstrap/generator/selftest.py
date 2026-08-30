@@ -51,7 +51,7 @@ def _compile(group):
     return emit.emit_module(prog, ck, module_id="selftest")
 
 
-RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
+RUNTIME_LL = os.path.join(ROOT, "runtime", "npkrt.ll")
 
 
 def _expected_exit(path):

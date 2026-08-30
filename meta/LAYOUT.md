@@ -83,7 +83,15 @@ D-015's "later" row), and it re-homes to top-level `runtime/` at 1.4.6. Nothing
 that remains in `bootstrap/` is the compiler and nothing in it is ever in an
 artifact — which is why it stays outside `src/`.
 
-`bootstrap/runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, the
+> **The switch happened at 1.4.6 and the map above is now past tense in two
+> places.** `runtime/npkrt.ll` has re-homed — it is `runtime/`, top level, with
+> `runtime/tests/` beside it, because nothing in it was ever bootstrap material
+> and its address said otherwise for fifteen cycles. And `bootstrap/seed/`
+> holds a real `stage1.ll` (15,292,234 bytes) plus its `STAMP` and a `README.md`
+> carrying the refresh ritual: the Python generator built that first snapshot
+> and has built nothing since. The harness imports none of it any more.
+
+`runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, the
 allocator, the `memcpy`/`memset` symbols LLVM emits calls to, threads, the
 executor's parking, and the driver registry. Hand-written LLVM IR was what
 D-015 specified for the first rung; D-203 made it the permanent form.

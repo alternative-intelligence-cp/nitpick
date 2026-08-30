@@ -1,9 +1,16 @@
-; The Nitpick bootstrap runtime floor.
+; The Nitpick runtime floor.
 ;
-; THROWAWAY, alongside the seed (D-085). Hand-written LLVM IR, which is what
-; D-015 specifies for the first rung: runtime symbols start as hand-written IR
-; and are replaced at a later rung. Real allocation and real I/O arrive with
-; nlibc in cycle 0.8.
+; PERMANENT, and hand-written LLVM IR ON PURPOSE (D-203). This file said
+; THROWAWAY "alongside the seed" for fifteen cycles, and D-015's first-rung
+; story -- runtime symbols start as hand-written IR and are replaced at a later
+; rung -- described a replacement that is not coming. What this project is
+; removing is the C and C++ layer; LLVM was never the enemy. This is linked
+; into every artifact including the one that ships, it is inside the D-015 TCB,
+; and reviewed IR is the form a verifier reads.
+;
+; It re-homed from `bootstrap/runtime/` to `runtime/` at the 1.4.6 switch, for
+; the same reason: nothing in here was ever bootstrap material, and its address
+; had been saying otherwise since cycle 0.
 ;
 ; Freestanding: no libc, no crt. `_start` is provided here, and every kernel
 ; call is a raw syscall.

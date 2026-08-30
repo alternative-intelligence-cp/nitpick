@@ -401,10 +401,11 @@ def write_runtime(rows, rtsyms):
          "// `ABI:` notes applied, plus section 2d's emitter-only symbols.",
          "//",
          "// THIS WAS THE THIRD HAND-WRITTEN COPY OF ONE FACT until D-201 (1.4.2).",
-         "// `bootstrap/runtime/npkrt.ll` DEFINES these functions; the seed's `RUNTIME`",
-         "// table declares them for stage 1; this table declares them for stage 2 --",
+         "// `runtime/npkrt.ll` DEFINES these functions; the seed\'s `RUNTIME` table",
+         "// declared them for stage 1; this table declares them for the compiler --",
          "// and the reference documented them for a reader with nothing diffing it.",
-         "// The reference is now the source of this file, and",
+         "// The seed\'s copy went with the seed at the 1.4.6 switch (D-205), so the",
+         "// diff is two-way now. The reference is the source of this file, and",
          "// `check_runtime_sigs_agree` parses the defines out of `npkrt.ll` and compares",
          "// what is left on every full run. The runtime's own header records what a",
          "// disagreement does: \"declaring a runtime symbol as returning a bare string",
@@ -1219,6 +1220,33 @@ pub func:is_keyword = bool(string:text) {
     bl.append("// somewhere it means nothing.")
     bl.append("pub func:is_hash_builtin = bool(string:name) {")
     for n in hnames:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
+
+    # DOES THIS BUILTIN HAND BACK `wild` STORAGE (D-223)? The escape analysis
+    # asks, because a borrow may not be stored in a wild slot and the whitelist
+    # of things that legitimately may is exactly "what the reference says
+    # returns wild". Generated over BOTH tables: `builtin_sig_ret` cannot serve
+    # alone, because a SPECIAL builtin is generic in `T` and carries no
+    # concrete return row -- and `#ptr_add<T>` and `#wild_ptr<T>`, the two
+    # pointer-returning specials, are precisely where wild pointers come from.
+    hret = {}
+    if len(hsec) == 2:
+        for m in re.finditer(r'^\|\s*`#(\w+)[^|]*\|\s*`([^`]*)`',
+                             hsec[1].split("\n---", 1)[0], re.M):
+            hret[m.group(1)] = m.group(2).strip()
+    wild_names = sorted(
+        {n for n in names if rows[n].ret.startswith(("wild ", "wildx "))}
+        | {n for n, r in hret.items() if r.startswith(("wild ", "wildx "))})
+    bl.append("")
+    bl.append("// Every builtin whose REFERENCE ROW declares a `wild` (or `wildx`) return —")
+    bl.append("// the whitelist D-223's BORROW-011 consults. Both tables feed it: a bare")
+    bl.append("// builtin's Signature column and a `#`-sigil one's Return column, because a")
+    bl.append("// SPECIAL builtin is generic in `T` and has no concrete signature row, and")
+    bl.append("// the two pointer-returning specials are where wild pointers come FROM.")
+    bl.append("pub func:builtin_returns_wild = bool(string:name) {")
+    for n in wild_names:
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")

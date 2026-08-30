@@ -1,0 +1,45 @@
+// expect-error: NITPICK-BORROW-011
+// expect-error: NITPICK-BORROW-011
+// expect-error: NITPICK-BORROW-011
+// expect-error: NITPICK-BORROW-001
+//
+// D-223: A BORROW MAY NOT BE STORED IN A `wild` SLOT.
+//
+// This is the laundering path that made the rule-B refusal 1.4.6 stopped on
+// SOUND rather than over-broad. QUALIFIERS ARE NOT PART OF THE TYPE
+// (`parse_type.npk`'s second header fact): `wild int32->` and `int32->` are one
+// type id, so before this rule a frame address entered a wild slot with no
+// cast, no `raw` and no `=>!` — and `dalloc` on it would free a stack address,
+// with the 0xAA poison and quarantine instruments both assuming heap.
+//
+// The first function is the probe that decided D-223: an interior borrow of one
+// PARAMETER (param-rooted, so 0.8.1's exemption leaves `t` unmarked and no
+// borrow rule fires on it) stored through the other into a wild field. Only the
+// destination's qualifier can catch this one.
+//
+// All three store sites D-223 names appear: assignment, declaration, and a
+// struct-literal field value. The last one draws a rule-2 refusal as well, and
+// that is correct rather than noise: building the struct is one mistake and
+// returning it is another, and D-223's rule is the one that fires FIRST — at
+// the store, where the mistake actually is.
+
+struct:Box  = { wild int32->:p; int32:n; };
+struct:Pair = { Box:b; int32:k; };
+
+func:launder = NIL(Box->:bp, Pair->:op) never fails {
+    int32->:t = @(op.k);
+    bp.p = t;                       // assignment into a wild field
+    pass NIL;
+};
+
+func:decl_form = NIL() never fails {
+    int32:local = 1i32;
+    wild int32->:w = @local;        // declaration of a wild binding
+    pass NIL;
+};
+
+func:literal_form = Box() never fails {
+    int32:local = 2i32;
+    Box:b = Box{ p: @local, n: 0i32 };   // struct-literal field value
+    pass b;
+};

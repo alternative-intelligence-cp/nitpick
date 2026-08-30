@@ -78,7 +78,13 @@ pub func:shm_create_sealed = Shm(int64:size) {
     // unwrap-or-TRAP: right in a test's main, wrong in this tier — the
     // first EPIPE schedule proved it by taking the whole process down.)
     int64:cf = raw MFD_CLOEXEC() | raw MFD_ALLOW_SEALING();
-    wild uint8->:np = name.ptr;
+    // NOT `wild` (D-223). A string's bytes belong to the STRING — its drop frees
+    // them — so a binding that points at them is an ordinary pointer, not a
+    // claim of manual ownership. `wild` here said "this storage is mine to
+    // free", which was never true, and BORROW-011 is what asked the question.
+    // The pointer exists only to reach the syscall boundary, where an address
+    // becomes a number (1.1.12a).
+    uint8->:np = name.ptr;
     Result<int64>:rmfd = sys(raw SYS_MEMFD_CREATE(), np, cf);
     if (rmfd.is_error) { fail EShmCreate; }
     int64:mfd = rmfd.value;
@@ -219,7 +225,13 @@ pub func:stderr_pipe = CtrlPair() {
 // interpreted — v3 §10; a captured-stdout variant is a later flag).
 pub func:open_devnull = int64() {
     cstring:dn = relay to_cstring("/dev/null");
-    wild uint8->:dp = dn.ptr;
+    // NOT `wild` (D-223). A string's bytes belong to the STRING — its drop frees
+    // them — so a binding that points at them is an ordinary pointer, not a
+    // claim of manual ownership. `wild` here said "this storage is mine to
+    // free", which was never true, and BORROW-011 is what asked the question.
+    // The pointer exists only to reach the syscall boundary, where an address
+    // becomes a number (1.1.12a).
+    uint8->:dp = dn.ptr;
     int64:ofl = (raw O_RDWR()) | (raw O_CLOEXEC());
     Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
     if (rf.is_error) { fail EDriverSpawn; }
@@ -461,14 +473,21 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
     wild int8->:bb = calloc(1i64, 96i64);
     defer { dalloc(bb); }
     wild SpawnBlk->:blk = bb =>! wild SpawnBlk->;
-    blk.path = cpath.ptr;
+    // `=>!` IS THE CLAIM BEING MADE (D-223/D-019). `cpath` owns these bytes —
+    // they are not wild memory, and nobody frees them through `blk` — but a
+    // SpawnBlk slot is a raw machine word the allocation-free child reads after
+    // the clone, so a non-wild address genuinely goes into a wild slot here.
+    // The cast states that surrender of tracking at the one place it happens,
+    // which is what the door is for; the address outlives the clone because
+    // `cpath` lives to this function's exit.
+    blk.path = cpath.ptr =>! wild uint8->;
     blk.argv = #ptr_add<int64>(bb, 9i64) =>! wild int8->;
     blk.envp = #ptr_add<int64>(bb, 11i64) =>! wild int8->;
     blk.fd_null = devnull;
     blk.fd_stderr = ep.child;
     blk.fd_ctrl = ct.child;
     blk.parent_pid = mypid;
-    blk.av0 = cpath.ptr;
+    blk.av0 = cpath.ptr =>! wild uint8->;   // argv[0], the same address
 
     // 5. the clone — the registry entry is published BEFORE the child
     //    exists, and the kernel writes the pidfd INTO the slot (npkrt).

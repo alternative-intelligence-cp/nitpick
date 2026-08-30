@@ -59,15 +59,54 @@ import tomllib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, os.path.join(ROOT, "bootstrap", "generator"))
+# THE GENERATOR IS NOT IMPORTED ANY MORE (D-205, 1.4.6). Five modules were
+# pulled in here -- diag, lex, parse, check, emit -- because the seed WAS the
+# harness's compiler. It is not, and importing a retired builder just to keep
+# `sys.path` interesting is how a dependency survives its own retirement.
+# `bootstrap/generator/` still runs, on purpose, as the tool that made the
+# first snapshot and as the audit path for pre-switch history; nothing the
+# harness does reaches it.
 
-import diag        # noqa: E402
-import lex         # noqa: E402
-import parse       # noqa: E402
-import check       # noqa: E402
-import emit        # noqa: E402
+RUNTIME_LL = os.path.join(ROOT, "runtime", "npkrt.ll")
 
-RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
+# --- THE SWITCH (D-203/D-205, 1.4.6) -----------------------------------------
+#
+# `bootstrap/seed/stage1.ll` is the compiler, in IR, committed. It is what
+# builds `src/` now; the Python generator built the FIRST one and never builds
+# again. Two module-level handles, and the difference between them matters:
+#
+#   BUILDER   llc + ld.lld over the committed snapshot. A compiler as old as
+#             the last snapshot refresh. Its ONE job is compiling `src/` and
+#             `tools/` into the compiler under test.
+#   COMPILER  what the BUILDER just built out of the CURRENT tree. Everything
+#             a test asserts is asserted against this one, because a test that
+#             passed against the snapshot would be testing last month's
+#             compiler and reporting on today's.
+#
+# Both are set once per run, before any suite, and stay None when llc/ld.lld
+# are missing (the same tools-absent path the suites already take).
+SNAPSHOT_LL = os.path.join(ROOT, "bootstrap", "seed", "stage1.ll")
+BUILDER = None
+COMPILER = None
+
+
+def build_builder(tmp):
+    """The committed snapshot, made runnable. Returns a path or an error."""
+    if not os.path.exists(SNAPSHOT_LL):
+        return ("bootstrap/seed/stage1.ll is missing -- it IS the bootstrap "
+                "(D-203): without it nothing here can build `src/`. "
+                "bootstrap/seed/README.md has the refresh ritual")
+    b = os.path.join(tmp, "builder")
+    r = subprocess.run(["llc"] + LLC_FLAGS + [SNAPSHOT_LL, "-o", b + ".o"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return "llc rejected the committed snapshot: %s" % r.stderr.strip()[:200]
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", b, b + ".o",
+                                                 os.path.join(tmp, "npkrt.o")],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return "the snapshot did not link: %s" % r.stderr.strip()[:200]
+    return b
 
 # --- the pinned toolchain (D-204, 1.4.5) -------------------------------------
 #
@@ -178,32 +217,14 @@ def read_expectations(path):
 
 # --- compilation -------------------------------------------------------------
 
-class Outcome:
-    def __init__(self):
-        self.diags = []
-        self.ir = None
-
-
-def compile_files(paths):
-    """Run the seed over a file group, collecting diagnostics rather than
-    raising. The seed stops at the first error -- it has no recovery, which is
-    a deliberate scope limit (0.0.2), so at most one diagnostic appears."""
-    out = Outcome()
-    mods = []
-    for p in paths:
-        try:
-            with open(p, "r", encoding="utf-8") as fh:
-                mods.append(parse.parse_source(fh.read(), os.path.relpath(p, ROOT)))
-        except diag.NpkError as e:
-            out.diags.append(e.diag)
-            return out
-    try:
-        ck = check.Checker()
-        prog = ck.check(mods)
-        out.ir = emit.emit_module(prog, ck, module_id="test")
-    except diag.NpkError as e:
-        out.diags.append(e.diag)
-    return out
+# `compile_files` -- THE SEED'S COMPILE PATH -- RETIRED AT 1.4.6 (D-205).
+#
+# It ran the Python seed over a file group and collected diagnostics. Every
+# caller now goes through the compiler under test instead: the seed is not a
+# builder any more, and a suite gated on it would be asserting about a tool
+# that builds nothing. `bootstrap/generator/` survives as what produced the
+# FIRST snapshot and as the audit path for pre-switch history; it is simply
+# not in any path the harness takes.
 
 
 def group_for(path, all_paths=None):
@@ -251,28 +272,30 @@ def imported_by_others(paths):
 
 # --- checking a single test --------------------------------------------------
 
-def check_positive(name, group, exp, tmp, tools):
-    out = compile_files(group)
-    if out.diags:
-        return ["%s: expected to compile, got %s" % (name, out.diags[0])]
-    if not tools:
+def check_positive(name, entry, exp, tmp, tools):
+    """Compiles, links, runs, exits as expected -- WITH THE COMPILER UNDER TEST.
+
+    Until 1.4.6 this ran the Python seed. Two reasons it could not stay there,
+    and the second is the one that forced the change now:
+
+      - The seed retires as a builder at the switch (D-205), and a suite that
+        gates on a retired tool is asserting about something that no longer
+        builds anything.
+      - `tests/frontend/` and `tests/backend/` IMPORT `src/` modules. The
+        moment `src/` adopts a construct outside subset 1 -- which D-205
+        permits from 1.4.6 and D-209 schedules for 1.4.7 -- the seed cannot
+        compile those imports and 37 tests break for a reason that has nothing
+        to do with what they test.
+
+    So the entry file goes to the real compiler, which resolves its own
+    imports. `group_for` survives for `imported_by_others` alone.
+    """
+    if not tools or not COMPILER:
         return []
     base = os.path.join(tmp, name.replace("/", "_"))
-    with open(base + ".ll", "w", encoding="utf-8") as fh:
-        fh.write(out.ir)
-    r = subprocess.run(["llc"] + LLC_FLAGS + [
-                        base + ".ll", "-o", base + ".o"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
-        return ["%s: llc rejected the emitted IR: %s" % (name, first.strip()[:140])]
-    fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
+    fails = emit_and_link(COMPILER, entry, name, base, tmp)
     if fails:
         return fails
-    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o",
-                        os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
-    if r.returncode != 0:
-        return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
     # A `// stress: N` marker runs it N times and requires the SAME answer
     # every time. These binaries take milliseconds, so a concurrency test
     # earning its keep costs about a second.
@@ -294,53 +317,41 @@ def check_positive(name, group, exp, tmp, tools):
     return []
 
 
-def check_negative(name, group, exp, tmp, tools):
-    out = compile_files(group)
-    fails = []
+def check_negative(name, entry, exp, tmp, tools):
+    """A correct program the BACKEND must refuse with NITPICK-RUNG-001 (D-085).
 
+    THE PARSER NEVER RESTRICTS; THE BACKEND DOES. The file must pass the whole
+    frontend -- parse, resolve, type-check, analyse -- and be refused by
+    EMISSION, naming the construct and the rung. A file that fails earlier is a
+    test of the wrong stage and reports as one.
+
+    This asserted against the SEED's rungs until 1.4.6, and separately against
+    the real compiler's in a `rungs` stage further down. Post-switch those were
+    the same question asked twice with one of them aimed at a retired tool, so
+    the stage is gone and the suite is here, where nitpick.toml declares it.
+    """
     if not exp.errors:
         return ["%s: negative test declares no `// expect-error:` -- a test that "
                 "only asserts 'it failed somehow' stops noticing when it starts "
                 "failing for a different reason" % name]
-
-    if not out.diags:
-        return ["%s: expected %s, but it compiled cleanly"
-                % (name, exp.errors[0][0])]
-
-    if exp.no_parse_error:
-        bad = [d for d in out.diags if d.phase in ("lex", "parse")]
-        if bad:
-            fails.append("%s: PARSE error %s -- the parser must never restrict; "
-                         "capability rejection belongs in the backend (D-085)"
-                         % (name, bad[0]))
-
-    got_codes = sorted(d.code for d in out.diags)
-    want_codes = sorted(c for c, _, _ in exp.errors)
-    if got_codes != want_codes:
-        fails.append("%s: expected %s, got %s" % (name, want_codes, got_codes))
-        return fails
-
-    for code, line, col in exp.errors:
-        if line is None:
-            continue
-        hit = [d for d in out.diags if d.code == code]
-        for d in hit:
-            if d.line != line or (col is not None and d.col != col):
-                fails.append("%s: %s at %d:%d, expected %d:%s"
-                             % (name, code, d.line, d.col, line, col or "*"))
-    return fails
+    if not tools or not COMPILER:
+        return []
+    return check_backend_rejection(COMPILER, entry, name, exp)
 
 
-def check_diagnostic(name, group, exp, tmp, tools):
+def check_diagnostic(name, entry, exp, tmp, tools):
     """Compiles, but must emit exactly the expected warnings.
 
-    The seed emits no warnings, so nothing exercises this kind yet. It is
-    defined rather than deferred so the harness shape is fixed before cycle 0.1
-    starts producing warnings.
+    Nothing emits warnings yet, so no target uses this kind. It is defined
+    rather than deferred so the harness shape is fixed before the first one
+    arrives.
     """
-    out = compile_files(group)
-    if out.diags:
-        return ["%s: expected to compile, got %s" % (name, out.diags[0])]
+    if not tools or not COMPILER:
+        return []
+    base = os.path.join(tmp, name.replace("/", "_"))
+    fails = emit_and_link(COMPILER, entry, name, base, tmp)
+    if fails:
+        return fails
     if exp.errors:
         return ["%s: expected warnings %s, none emitted"
                 % (name, [c for c, _, _ in exp.errors])]
@@ -1056,82 +1067,21 @@ def check_rung_names_open_cycle():
     return fails
 
 
-def check_ll_types_agree():
-    """The two emitters must lower a type to the SAME LLVM text.
-
-    `bootstrap/generator/ntypes.py` answers this for the compiler that builds
-    stage 1, and `src/backend/ir/ir_types.npk` answers it for stage 1 itself. Their
-    IR meets at every runtime symbol and every aggregate that crosses between them,
-    and `llc` rejects a caller whose struct disagrees with the callee's by one
-    field -- which is how the runtime's header records the mismatch being caught
-    the first time.
-
-    So the two are DIFFED rather than trusted. `tests/backend/ir_types.npk` pins
-    the real compiler's answer as a string on each `ll_is` line, with a `// ll:`
-    marker naming the shape; this reads the pair off that ONE line and asks the
-    seed the same question. Both halves on one line is deliberate: a marker on the
-    line above could stop describing the assertion beneath it and nothing would
-    say so.
-    """
-    sys.path.insert(0, os.path.join(ROOT, "bootstrap", "generator"))
-    import ntypes as T
-
-    # The seed decides per compilation which enums carry a payload, because
-    # `llvm()` has no other way to know. The fixture's two are stated here.
-    T.reset_enums()
-    T.ENUM_HAS_PAYLOAD["Flat"] = False
-    T.ENUM_HAS_PAYLOAD["Tagged"] = True
-
-    shapes = {
-        "int8": T.Prim("int8"), "int16": T.Prim("int16"),
-        "int32": T.Prim("int32"), "int64": T.Prim("int64"),
-        "uint8": T.Prim("uint8"), "uint32": T.Prim("uint32"),
-        "bool": T.BOOL, "char8": T.CHAR8, "tbb32": T.TBB32,
-        "string": T.STRING, "cstring": T.CSTRING, "NIL": T.NIL,
-        "int32->": T.Ptr(T.I32), "int32[]": T.Slice(T.I32),
-        "int32[4]": T.Array(T.I32, 4),
-        "Result<int32>": T.ResultT(T.I32),
-        "Result<NIL>": T.ResultT(T.NIL),
-        "Result<string>": T.ResultT(T.STRING),
-        "Pair": T.Named("Pair"), "Flat": T.Named("Flat"),
-        "Tagged": T.Named("Tagged"),
-    }
-
-    path = os.path.join(ROOT, "tests", "backend", "ir_types.npk")
-    fails, seen = [], set()
-    with open(path, encoding="utf-8") as fh:
-        for i, line in enumerate(fh, 1):
-            m = re.search(r"//\s*ll:\s*(\S+)\s*$", line)
-            if not m:
-                continue
-            shape = m.group(1)
-            texts = re.findall(r'"((?:[^"\\]|\\.)*)"', line)
-            if len(texts) != 1:
-                fails.append("tests/backend/ir_types.npk:%d carries a `// ll:` "
-                             "marker and %d string literals -- the marker names "
-                             "the shape whose text is pinned ON THAT LINE, so "
-                             "exactly one is what makes the pair readable"
-                             % (i, len(texts)))
-                continue
-            if shape not in shapes:
-                fails.append("tests/backend/ir_types.npk:%d pins the shape `%s`, "
-                             "which `check_ll_types_agree` cannot build for the "
-                             "seed -- add it to `shapes` so the two answers are "
-                             "actually compared" % (i, shape))
-                continue
-            seen.add(shape)
-            want = T.llvm(shapes[shape])
-            if texts[0] != want:
-                fails.append("`%s` lowers to `%s` in src/backend/ir/ir_types.npk "
-                             "and to `%s` in bootstrap/generator/ntypes.py -- the "
-                             "seed builds stage 1 and stage 1 builds stage 2, so "
-                             "their IR has to agree or the link does not"
-                             % (shape, texts[0], want))
-    for shape in sorted(set(shapes) - seen):
-        fails.append("`%s` is in `check_ll_types_agree`'s table and no `// ll:` "
-                     "line pins it -- an entry nothing compares is an entry that "
-                     "stopped being a check" % shape)
-    return fails
+# `check_ll_types_agree` RETIRED AT 1.4.6 (D-205, which names it).
+#
+# It diffed two emitters -- `bootstrap/generator/ntypes.py`, which lowered
+# types for the compiler that built stage 1, against `src/backend/ir/
+# ir_types.npk`, which lowers them for stage 1 itself -- because their IR met
+# at every runtime symbol and a one-field disagreement is a call through a
+# wrong aggregate rather than a loud error. The switch removed the first
+# emitter from every build path, so the question has one answer and nothing to
+# compare it against.
+#
+# What it was really protecting is NOT lost: `tests/backend/ir_types.npk` still
+# pins the real compiler's lowering as a string on every `ll_is` line (fifteen
+# of them added for the 1.3 tier alone), and `check_runtime_sigs_agree` still
+# holds every aggregate that crosses the runtime boundary. The retired half is
+# the half that asked a retired tool.
 
 
 def _npkrt_defines():
@@ -1219,31 +1169,24 @@ def check_builtin_sig_texts():
 
 
 def check_runtime_sigs_agree():
-    """npkrt.ll, the seed's RUNTIME table, and src/backend/ir/ir_runtime.npk must
-    state the SAME signature for every runtime symbol.
+    """npkrt.ll and src/backend/ir/ir_runtime.npk must state the SAME signature
+    for every runtime symbol.
 
-    Three copies of one fact, and none removable: the runtime DEFINES, the seed
-    declares for stage 1, the compiler declares for stage 2. npkrt.ll's own
-    header records what a disagreement does -- IR llc rejects -- and a size
-    disagreement is worse, because a call through a wrong aggregate type
-    corrupts the callee's view of memory instead of failing.
+    Two copies of one fact, and neither removable: the runtime DEFINES, the
+    compiler declares. npkrt.ll's own header records what a disagreement does
+    -- llc rejects the IR -- and a size disagreement is worse, because a call
+    through a wrong aggregate type corrupts the callee's view of memory
+    instead of failing.
+
+    IT WAS A THREE-WAY DIFF until 1.4.6 (D-205 says it drops to two). The third
+    copy was the Python seed's `RUNTIME` table, which declared the floor for
+    the stage-1 it built; the switch means it builds nothing, so its table
+    describes no compiler. The remaining pair is the sharper one anyway, since
+    1.4.2 made BUILTIN_REFERENCE generate `ir_runtime.npk` -- the spec is in
+    this loop now, and the seed never was.
     """
     fails = []
     defs = _npkrt_defines()
-
-    # --- the seed against the runtime ------------------------------------
-    for name, (sym, ret, args) in sorted(emit.RUNTIME.items()):
-        d = defs.get("npk_" + name)
-        if d is None:
-            fails.append("seed RUNTIME declares `%s` and npkrt.ll does not define "
-                         "@npk_%s" % (name, name))
-            continue
-        if d[0] != ret:
-            fails.append("`%s` returns `%s` in npkrt.ll and `%s` in the seed's "
-                         "RUNTIME table" % (name, d[0], ret))
-        if d[1] != args:
-            fails.append("`%s` takes %s in npkrt.ll and %s in the seed's RUNTIME "
-                         "table" % (name, d[1], args))
 
     # --- the compiler against the runtime --------------------------------
     rtsrc = open(os.path.join(ROOT, "src", "backend", "ir", "ir_runtime.npk"),
@@ -1291,18 +1234,14 @@ def check_runtime_sigs_agree():
                 fails.append("`%s`'s wrapped inner is `%s` in ir_runtime.npk and "
                              "`%s` derived from its return" % (name, inner, want_inner))
 
-    # --- every seed entry has a compiler entry, and back -------------------
-    seed_names = set(emit.RUNTIME) | {"exit"}
-    comp_names = set(entries)
-    for name in sorted(seed_names - comp_names):
-        fails.append("`%s` is in the seed's RUNTIME floor and not in "
-                     "ir_runtime.npk -- stage 2 could not compile a program the "
-                     "seed compiles" % name)
-    for name in sorted(comp_names - seed_names):
-        # The compiler's floor may EXCEED the seed's (0.8.4): the seed only ever
-        # compiles sources that call the shared subset, while npkc serves whole
-        # programs. A compiler-only entry is fine exactly when the runtime
-        # defines its symbol -- anything else is a call into nothing.
+    # --- every compiler entry points at something --------------------------
+    #
+    # The seed-vs-compiler reconciliation that stood here went with the seed's
+    # table (1.4.6). What survives is the half that was ever load-bearing: a
+    # floor entry naming a symbol the runtime does not define is a call into
+    # nothing, and llc will not catch it -- the declaration makes it look fine
+    # until the link.
+    for name in sorted(entries):
         sym = entries[name][0][0].lstrip("@")
         if sym not in defs:
             fails.append("`%s` is in ir_runtime.npk and npkrt.ll does not define "
@@ -1560,15 +1499,32 @@ def check_codes_tested():
 # --- the real FRONTEND, on real programs --------------------------------------
 
 def build_tool(tmp, tools, source, name):
-    """Compile a tool under tools/ and return its path, or an error string."""
+    """Compile a tool under `tools/` or `src/` and return its path.
+
+    THE BUILDER IS THE COMMITTED SNAPSHOT (D-203/D-205, 1.4.6). This used to
+    run the Python seed over the source and its transitive imports, which is
+    why `group_for` existed: the seed has no module loader. The snapshot is a
+    real compiler and resolves its own imports, so it gets the ENTRY file and
+    nothing else.
+
+    That is also what makes D-205's rule enforceable rather than aspirational.
+    While the seed was the builder, `src/` had to stay inside subset 1 and the
+    only thing holding it there was discipline. Now the constraint is
+    mechanical: a construct the snapshot cannot compile fails here, in the
+    first thing the harness does, naming the file.
+    """
     if not tools:
         return None
-    out = compile_files(group_for(source))
-    if out.diags:
-        return "DIAG %s" % out.diags[0]
+    if not BUILDER or not os.path.exists(str(BUILDER)):
+        return "no builder: %s" % BUILDER
     base = os.path.join(tmp, name)
-    with open(base + ".ll", "w", encoding="utf-8") as fh:
-        fh.write(out.ir)
+    try:
+        r = subprocess.run([BUILDER, source, "-o", base + ".ll"],
+                           capture_output=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return "the snapshot did not terminate compiling %s" % source
+    if r.returncode != 0:
+        return "DIAG %s" % r.stderr.decode("utf-8", "replace").strip()[:400]
     r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -1912,8 +1868,15 @@ def emit_and_link(binary, path, name, base, tmp):
     fixture is held to every check a program is -- symbol uniqueness, hoisted
     allocas, the zero-dependency scan.
     """
+    # THE TIMEOUT IS CALIBRATED FOR WHAT THIS NOW COMPILES (1.4.6). It was 30
+    # seconds, which was generous for `tests/backend/programs/` -- standalone
+    # programs that compile in about 40 ms. The switch pointed the conformance,
+    # frontend and backend suites here too, and those `use` the compiler's own
+    # modules: `tests/frontend/resolve.npk` takes 11.6 s on an idle machine,
+    # which is comfortably inside 30 until the machine is not idle. 300 still
+    # catches a hang and stops being a measurement of load.
     try:
-        r = subprocess.run([binary, path], capture_output=True, timeout=30)
+        r = subprocess.run([binary, path], capture_output=True, timeout=300)
     except subprocess.TimeoutExpired:
         return ["%s: emit_check did not terminate" % name]
     if r.returncode == 3:
@@ -2211,6 +2174,24 @@ def main(argv):
         if r.returncode != 0:
             print("runtime floor did not compile: %s" % r.stderr.strip()[:200])
             return 1
+        # THE BUILDER, THEN THE COMPILER UNDER TEST (D-203/D-205, 1.4.6).
+        # Before any suite, because everything below asserts against the
+        # compiler this pair produces -- and because a snapshot that cannot
+        # build the current `src/` is D-205's rule being broken, which should
+        # be the first thing the run says rather than the last.
+        global BUILDER, COMPILER
+        BUILDER = build_builder(tmp)
+        if not os.path.exists(str(BUILDER)):
+            print("the committed builder is unusable: %s" % BUILDER)
+            return 1
+        COMPILER = build_tool(tmp, tools, EMIT_CHECK, "npkc")
+        if not COMPILER or not os.path.exists(str(COMPILER)):
+            print("the snapshot could not build src/main.npk -- D-205: `src/` "
+                  "may not use a construct its builder cannot compile. "
+                  "Refresh the snapshot first (bootstrap/seed/README.md): %s"
+                  % COMPILER)
+            return 1
+        print("  %-11s snapshot -> builder -> npkc (D-205)" % "builder")
 
     total = 0
     available = 0
@@ -2231,7 +2212,7 @@ def main(argv):
             total += 1
             name = os.path.relpath(p, ROOT)
             exp = read_expectations(p)
-            failures += KINDS[kind](name, group_for(p, paths), exp, tmp, tools)
+            failures += KINDS[kind](name, p, exp, tmp, tools)
         all_sources += paths
         print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
 
@@ -2278,7 +2259,6 @@ def main(argv):
         failures += check_type_walkers_total()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
-        failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
         failures += check_builtin_sig_texts()
 
@@ -2455,391 +2435,412 @@ def main(argv):
 
         # --- the REAL BACKEND (0.7.7) ------------------------------------------
         #
-        # `tests/rejection/` asserts against THIS COMPILER's rungs now, which is
-        # what D-085 promised the day the suite was written: its files must pass
-        # the whole frontend and be refused by EMISSION with NITPICK-RUNG-001.
-        # Until this tool existed the suite could only test the seed's rungs.
-        ec = build_tool(tmp, tools, EMIT_CHECK, "npkc")
-        if isinstance(ec, str) and not os.path.exists(ec):
-            failures.append("src/main.npk (npkc) did not build: %s" % ec)
-        elif ec:
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "rejection",
-                                                   "*.npk"))):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += check_backend_rejection(ec, p, os.path.relpath(p, ROOT), exp)
-                n += 1
-            print("  %-11s %2d backend-rejection test(s)" % ("rungs", n))
+        # A `rungs` STAGE STOOD HERE and has retired (1.4.6). It walked
+        # `tests/rejection/` with the real compiler because, while the seed was
+        # the builder, the `[[test]] rejection` target could only test the
+        # SEED's rungs -- two runs of one suite against two tools. The switch
+        # made the seed a non-builder, `check_negative` moved to the compiler
+        # under test, and the two collapsed into the one nitpick.toml declares.
+        ec = COMPILER
 
-            # Whole programs COMPILED BY THE REAL BACKEND, linked against the
-            # runtime, and RUN. A byte-pin proves the text is stable; only
-            # execution proves the text means what the source said.
-            #
-            # THE CONFORMANCE SUITE IS IN THIS SWEEP, which is the cycle's goal
-            # sentence made a test: subset 1 compiles and runs under THIS
-            # compiler, with the same expectations the seed meets. A file another
-            # one imports is a fixture here exactly as it is for the seed.
-            # HELPER BINARIES A TEST SPAWNS (1.1.13a): everything under
-            # tests/backend/fixtures/ is built by the same real-backend
-            # pipeline -- and held to the same checks -- but never run by the
-            # harness itself. A test names one in `// argv:` by its uppercased
-            # stem (MOCK_DRIVER), and receives the built binary's absolute
-            # path in its own argv; `Path` refuses relative paths by design,
-            # so the path travels through argv rather than being spelled in
-            # the source. Built into .internal/ so the path is stable across
-            # runs (a spawned child outlives no test, but a stable home keeps
-            # failures reproducible by hand).
-            fixture_map = {}
-            fixdir = os.path.join(ROOT, ".internal", "fixtures")
-            fixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                     "fixtures", "*.npk")))
-            cfixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                      "fixtures", "*.c")))
-            if fixtures or cfixtures:
-                os.makedirs(fixdir, exist_ok=True)
-            for p in fixtures:
-                stem = os.path.basename(p)[:-4]
-                fbase = os.path.join(fixdir, stem)
-                fails = emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp)
-                if fails:
-                    failures += fails
-                    continue
-                fixture_map[stem.upper()] = fbase
-            # C fixtures -- the conformance suite's reference DRIVERS
-            # (1.1.13c), built with the system C compiler. TEST TOOLING,
-            # NEVER IN THE ARTIFACT: the same standing as valgrind and this
-            # harness itself -- the zero-dependency rule governs what ships,
-            # and a driver is outside the TCB by definition (D-149). The
-            # protocol is the contract; sdk/npkdrv.h is its C rendering.
-            for p in cfixtures:
-                stem = os.path.basename(p)[:-2]
-                fbase = os.path.join(fixdir, stem)
-                r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
-                                   capture_output=True, text=True)
-                if r.returncode != 0:
-                    failures.append("%s: cc failed: %s"
-                                    % (os.path.relpath(p, ROOT),
-                                       r.stderr.strip()[:160]))
-                    continue
-                fixture_map[stem.upper()] = fbase
+        # Whole programs COMPILED BY THE REAL BACKEND, linked against the
+        # runtime, and RUN. A byte-pin proves the text is stable; only
+        # execution proves the text means what the source said.
+        #
+        # THE CONFORMANCE SUITE IS IN THIS SWEEP, which is the cycle's goal
+        # sentence made a test: subset 1 compiles and runs under THIS
+        # compiler, with the same expectations the seed meets. A file another
+        # one imports is a fixture here exactly as it is for the seed.
+        # HELPER BINARIES A TEST SPAWNS (1.1.13a): everything under
+        # tests/backend/fixtures/ is built by the same real-backend
+        # pipeline -- and held to the same checks -- but never run by the
+        # harness itself. A test names one in `// argv:` by its uppercased
+        # stem (MOCK_DRIVER), and receives the built binary's absolute
+        # path in its own argv; `Path` refuses relative paths by design,
+        # so the path travels through argv rather than being spelled in
+        # the source. Built into .internal/ so the path is stable across
+        # runs (a spawned child outlives no test, but a stable home keeps
+        # failures reproducible by hand).
+        fixture_map = {}
+        fixdir = os.path.join(ROOT, ".internal", "fixtures")
+        fixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                 "fixtures", "*.npk")))
+        cfixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                  "fixtures", "*.c")))
+        if fixtures or cfixtures:
+            os.makedirs(fixdir, exist_ok=True)
+        for p in fixtures:
+            stem = os.path.basename(p)[:-4]
+            fbase = os.path.join(fixdir, stem)
+            fails = emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp)
+            if fails:
+                failures += fails
+                continue
+            fixture_map[stem.upper()] = fbase
+        # C fixtures -- the conformance suite's reference DRIVERS
+        # (1.1.13c), built with the system C compiler. TEST TOOLING,
+        # NEVER IN THE ARTIFACT: the same standing as valgrind and this
+        # harness itself -- the zero-dependency rule governs what ships,
+        # and a driver is outside the TCB by definition (D-149). The
+        # protocol is the contract; sdk/npkdrv.h is its C rendering.
+        for p in cfixtures:
+            stem = os.path.basename(p)[:-2]
+            fbase = os.path.join(fixdir, stem)
+            r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                failures.append("%s: cc failed: %s"
+                                % (os.path.relpath(p, ROOT),
+                                   r.stderr.strip()[:160]))
+                continue
+            fixture_map[stem.upper()] = fbase
 
-            progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                  "programs", "*.npk")))
-            # A program's imported halves are fixtures, not standalone programs
-            # (they have no `main`) -- filter them out, the same rule the
-            # conformance sweep already applies. same_name_a/b (D-162, 1.0.1)
-            # are the first multi-file programs and the first to need it.
-            progs = [p for p in progs if p not in imported_by_others(progs)]
-            conf = sorted(glob.glob(os.path.join(ROOT, "tests", "conformance",
-                                                 "*.npk")))
-            conf = [p for p in conf if p not in imported_by_others(conf)]
-            n = 0
-            for p in progs + conf:
-                exp = read_expectations(p)
-                failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
-                                                  exp, tmp, fixture_map)
-                n += 1
-            print("  %-11s %2d real-backend program(s)" % ("programs", n))
-            print("  %-11s every program re-run through opt -O2 + llc -O2, "
-                  "same exit required" % "opt-O2")
+        progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                              "programs", "*.npk")))
+        # A program's imported halves are fixtures, not standalone programs
+        # (they have no `main`) -- filter them out, the same rule the
+        # conformance sweep already applies. same_name_a/b (D-162, 1.0.1)
+        # are the first multi-file programs and the first to need it.
+        progs = [p for p in progs if p not in imported_by_others(progs)]
+        conf = sorted(glob.glob(os.path.join(ROOT, "tests", "conformance",
+                                             "*.npk")))
+        conf = [p for p in conf if p not in imported_by_others(conf)]
+        n = 0
+        for p in progs + conf:
+            exp = read_expectations(p)
+            failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
+                                              exp, tmp, fixture_map)
+            n += 1
+        print("  %-11s %2d real-backend program(s)" % ("programs", n))
+        print("  %-11s every program re-run through opt -O2 + llc -O2, "
+              "same exit required" % "opt-O2")
 
-            # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
-            # conformance/nf_twin/ differ only in their `never fails` clauses
-            # and must emit byte-identical IR -- the contract is a checked
-            # claim, never a codegen hint.
-            #
-            # COMPILED AT THE SAME PATH, one after the other. Their own file
-            # names are part of the emission -- D-179's site table records the
-            # path a trap was stamped at -- so from 1.4.2b, when D-210's
-            # overflow guard gave these twins their first stamped site, the
-            # `with/` and `without/` directory names were the whole diff and
-            # the check reported that `never fails` had changed the IR. It had
-            # not; the fixture's own layout had. Copying each twin to one path
-            # keeps the comparison about the clause and nothing else, without
-            # eliding anything from the text.
-            twa = os.path.join(ROOT, "tests", "conformance", "nf_twin",
-                               "with", "nf_inert.npk")
-            twb = os.path.join(ROOT, "tests", "conformance", "nf_twin",
-                               "without", "nf_inert.npk")
-            twdir = os.path.join(tmp, "nf_twin")
-            os.makedirs(twdir, exist_ok=True)
-            twone = os.path.join(twdir, "nf_inert.npk")
-            shutil.copyfile(twa, twone)
-            ra = subprocess.run([ec, twone], capture_output=True, text=True,
-                                cwd=ROOT)
-            shutil.copyfile(twb, twone)
-            rb = subprocess.run([ec, twone], capture_output=True, text=True,
-                                cwd=ROOT)
-            if ra.returncode != 0 or rb.returncode != 0:
-                failures.append("nf_twin: a twin failed to emit "
-                                "(with=%d, without=%d)"
-                                % (ra.returncode, rb.returncode))
-            elif ra.stdout != rb.stdout:
-                failures.append("nf_twin: `never fails` changed the emitted "
-                                "IR -- D-163 is a checked claim, not a "
-                                "codegen hint")
-            else:
-                print("  %-11s the `never fails` twins emit byte-identical IR"
-                      % "nf-inert")
+        # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
+        # conformance/nf_twin/ differ only in their `never fails` clauses
+        # and must emit byte-identical IR -- the contract is a checked
+        # claim, never a codegen hint.
+        #
+        # COMPILED AT THE SAME PATH, one after the other. Their own file
+        # names are part of the emission -- D-179's site table records the
+        # path a trap was stamped at -- so from 1.4.2b, when D-210's
+        # overflow guard gave these twins their first stamped site, the
+        # `with/` and `without/` directory names were the whole diff and
+        # the check reported that `never fails` had changed the IR. It had
+        # not; the fixture's own layout had. Copying each twin to one path
+        # keeps the comparison about the clause and nothing else, without
+        # eliding anything from the text.
+        twa = os.path.join(ROOT, "tests", "conformance", "nf_twin",
+                           "with", "nf_inert.npk")
+        twb = os.path.join(ROOT, "tests", "conformance", "nf_twin",
+                           "without", "nf_inert.npk")
+        twdir = os.path.join(tmp, "nf_twin")
+        os.makedirs(twdir, exist_ok=True)
+        twone = os.path.join(twdir, "nf_inert.npk")
+        shutil.copyfile(twa, twone)
+        ra = subprocess.run([ec, twone], capture_output=True, text=True,
+                            cwd=ROOT)
+        shutil.copyfile(twb, twone)
+        rb = subprocess.run([ec, twone], capture_output=True, text=True,
+                            cwd=ROOT)
+        if ra.returncode != 0 or rb.returncode != 0:
+            failures.append("nf_twin: a twin failed to emit "
+                            "(with=%d, without=%d)"
+                            % (ra.returncode, rb.returncode))
+        elif ra.stdout != rb.stdout:
+            failures.append("nf_twin: `never fails` changed the emitted "
+                            "IR -- D-163 is a checked claim, not a "
+                            "codegen hint")
+        else:
+            print("  %-11s the `never fails` twins emit byte-identical IR"
+                  % "nf-inert")
 
-            # --- RUNTIME-FLOOR UNIT TESTS (0.10.3) --------------------------
-            #
-            # Hand-written .ll drivers for runtime families with NO surface
-            # syntax (the frame allocator is 1.1's coroutine machinery's, not a
-            # program's). Each defines main + npk_failsafe, links against the
-            # same npkrt.o everything else does, runs, and asserts an exit
-            # code -- the same execution standard the program suite holds.
-            rtests = sorted(glob.glob(os.path.join(ROOT, "bootstrap", "runtime",
-                                                   "tests", "*.ll")))
-            rn = 0
-            for rp in rtests:
-                rexp = 0
-                with open(rp, encoding="utf-8") as fh:
-                    rhead = fh.read(400)
-                rm = re.search(r"expect-exit:\s*(\d+)", rhead)
-                if rm:
-                    rexp = int(rm.group(1))
-                rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
-                r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
-                                   capture_output=True, text=True)
-                if r.returncode != 0:
-                    failures.append("%s: llc failed: %s"
-                                    % (os.path.relpath(rp, ROOT),
-                                       r.stderr.strip()[:120]))
-                    continue
-                r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
-                                    rbase + ".o", os.path.join(tmp, "npkrt.o")],
-                                   capture_output=True, text=True)
-                if r.returncode != 0:
-                    failures.append("%s: link failed: %s"
-                                    % (os.path.relpath(rp, ROOT),
-                                       r.stderr.strip()[:120]))
-                    continue
-                r = subprocess.run([rbase], capture_output=True)
-                if r.returncode != rexp:
-                    failures.append("%s: exited %d, expected %d"
-                                    % (os.path.relpath(rp, ROOT),
-                                       r.returncode, rexp))
-                rn += 1
-            if rn:
-                print("  %-11s %2d runtime-floor test(s)" % ("runtime", rn))
+        # --- RUNTIME-FLOOR UNIT TESTS (0.10.3) --------------------------
+        #
+        # Hand-written .ll drivers for runtime families with NO surface
+        # syntax (the frame allocator is 1.1's coroutine machinery's, not a
+        # program's). Each defines main + npk_failsafe, links against the
+        # same npkrt.o everything else does, runs, and asserts an exit
+        # code -- the same execution standard the program suite holds.
+        rtests = sorted(glob.glob(os.path.join(ROOT, "runtime",
+                                               "tests", "*.ll")))
+        rn = 0
+        for rp in rtests:
+            rexp = 0
+            with open(rp, encoding="utf-8") as fh:
+                rhead = fh.read(400)
+            rm = re.search(r"expect-exit:\s*(\d+)", rhead)
+            if rm:
+                rexp = int(rm.group(1))
+            rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
+            r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                failures.append("%s: llc failed: %s"
+                                % (os.path.relpath(rp, ROOT),
+                                   r.stderr.strip()[:120]))
+                continue
+            r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
+                                rbase + ".o", os.path.join(tmp, "npkrt.o")],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                failures.append("%s: link failed: %s"
+                                % (os.path.relpath(rp, ROOT),
+                                   r.stderr.strip()[:120]))
+                continue
+            r = subprocess.run([rbase], capture_output=True)
+            if r.returncode != rexp:
+                failures.append("%s: exited %d, expected %d"
+                                % (os.path.relpath(rp, ROOT),
+                                   r.returncode, rexp))
+            rn += 1
+        if rn:
+            print("  %-11s %2d runtime-floor test(s)" % ("runtime", rn))
 
-            # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
-            #
-            # npkc compiles ITSELF: the whole compiler graph through its own
-            # frontend, its own analyses, and its own emitter. The emitted IR is
-            # assembled and linked into STAGE 1 -- a compiler with no seed in it
-            # -- and stage 1 emits the compiler again. The two emissions must be
-            # BYTE-IDENTICAL (D-078/D-202): the self-hosting fixpoint (cycle
-            # 1.4; "1.2" under the numbering when this first closed at 0.8.1),
-            # run as a standing instrument from that day. A drift here is
-            # either nondeterminism or a semantic divergence between what the
-            # seed built and what the compiler builds -- both are stop-the-line.
-            # Stage 1 is emitted THROUGH `-o` — the flag's standing coverage is
-            # its most important consumer — and stage 2 through stdout, so both
-            # delivery paths are exercised and then compared byte-for-byte.
-            s1 = os.path.join(tmp, "stage1")
-            r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk"),
-                                "-o", s1 + ".ll"],
-                               capture_output=True, timeout=600)
-            if r.returncode != 0 or not os.path.exists(s1 + ".ll"):
-                got = r.stderr.decode("utf-8", "replace").strip()[:400]
-                failures.append("npkc cannot compile ITSELF (via -o): %s" % got)
-                print("  %-11s self-check FAILED" % ("selfhost",))
-            elif r.stdout:
-                failures.append("npkc -o wrote the IR to a file AND to stdout -- "
-                                "one delivery, not two")
-                print("  %-11s self-check FAILED" % ("selfhost",))
-            else:
-                with open(s1 + ".ll", "rb") as fh:
-                    stage1_ir = fh.read()
-                ok = True
-                # THE COMPILER'S OWN OUTPUT IS THE BIGGEST MODULE IT EMITS, so
-                # it is the one where a duplicate symbol is hardest to read off
-                # an llc error. Checked here first, in the compiler's terms.
-                dupes = check_symbols_unique(
-                    stage1_ir.decode("utf-8", "replace"), "stage1.ll")
-                if dupes:
-                    failures += dupes
-                    ok = False
-                # D-173's defect was the SEED-BUILT npkc segfaulting on a
-                # large input -- yet until 1.4.1 the alloca-hoisting pin ran
-                # only on the little per-program emissions, never on the one
-                # module big enough to overflow: the compiler's own.
-                hoist = check_allocas_hoisted(
-                    stage1_ir.decode("utf-8", "replace"), "stage1.ll")
-                if hoist:
-                    failures += hoist
-                    ok = False
-                rr = subprocess.run(["llc"] + LLC_FLAGS + [s1 + ".ll", "-o", s1 + ".o"],
+        # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
+        #
+        # npkc compiles ITSELF: the whole compiler graph through its own
+        # frontend, its own analyses, and its own emitter. The emitted IR is
+        # assembled and linked into STAGE 1 -- a compiler with no seed in it
+        # -- and stage 1 emits the compiler again. The two emissions must be
+        # BYTE-IDENTICAL (D-078/D-202): the self-hosting fixpoint (cycle
+        # 1.4; "1.2" under the numbering when this first closed at 0.8.1),
+        # run as a standing instrument from that day. A drift here is
+        # either nondeterminism or a semantic divergence between what the
+        # seed built and what the compiler builds -- both are stop-the-line.
+        # Stage 1 is emitted THROUGH `-o` — the flag's standing coverage is
+        # its most important consumer — and stage 2 through stdout, so both
+        # delivery paths are exercised and then compared byte-for-byte.
+        s1 = os.path.join(tmp, "stage1")
+        r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk"),
+                            "-o", s1 + ".ll"],
+                           capture_output=True, timeout=600)
+        if r.returncode != 0 or not os.path.exists(s1 + ".ll"):
+            got = r.stderr.decode("utf-8", "replace").strip()[:400]
+            failures.append("npkc cannot compile ITSELF (via -o): %s" % got)
+            print("  %-11s self-check FAILED" % ("selfhost",))
+        elif r.stdout:
+            failures.append("npkc -o wrote the IR to a file AND to stdout -- "
+                            "one delivery, not two")
+            print("  %-11s self-check FAILED" % ("selfhost",))
+        else:
+            with open(s1 + ".ll", "rb") as fh:
+                stage1_ir = fh.read()
+            ok = True
+            # THE COMPILER'S OWN OUTPUT IS THE BIGGEST MODULE IT EMITS, so
+            # it is the one where a duplicate symbol is hardest to read off
+            # an llc error. Checked here first, in the compiler's terms.
+            dupes = check_symbols_unique(
+                stage1_ir.decode("utf-8", "replace"), "stage1.ll")
+            if dupes:
+                failures += dupes
+                ok = False
+            # D-173's defect was the SEED-BUILT npkc segfaulting on a
+            # large input -- yet until 1.4.1 the alloca-hoisting pin ran
+            # only on the little per-program emissions, never on the one
+            # module big enough to overflow: the compiler's own.
+            hoist = check_allocas_hoisted(
+                stage1_ir.decode("utf-8", "replace"), "stage1.ll")
+            if hoist:
+                failures += hoist
+                ok = False
+            rr = subprocess.run(["llc"] + LLC_FLAGS + [s1 + ".ll", "-o", s1 + ".o"],
+                                capture_output=True, text=True)
+            if rr.returncode != 0:
+                first = next((l for l in rr.stderr.splitlines()
+                              if "error" in l), rr.stderr)
+                failures.append("llc rejected the SELF-EMITTED compiler: %s"
+                                % first.strip()[:160])
+                ok = False
+            if ok:
+                failures += check_zero_dependency(
+                    s1 + ".o", runtime_allowlist(), "stage1.o")
+                # The runtime itself may need exactly TWO symbols: `main`
+                # and `npk_failsafe` -- the program's entry and its
+                # controlled-shutdown handler (D-013 makes failsafe
+                # mandatory, D-142 routes runtime traps through it).
+                # Anything else in npkrt's undefined set means the runtime
+                # is not the floor -- it is standing on something.
+                failures += check_zero_dependency(
+                    os.path.join(tmp, "npkrt.o"),
+                    {"main", "npk_failsafe"}, "npkrt.o")
+                rr = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", s1,
+                                     s1 + ".o", os.path.join(tmp, "npkrt.o")],
                                     capture_output=True, text=True)
                 if rr.returncode != 0:
-                    first = next((l for l in rr.stderr.splitlines()
-                                  if "error" in l), rr.stderr)
-                    failures.append("llc rejected the SELF-EMITTED compiler: %s"
-                                    % first.strip()[:160])
+                    failures.append("stage 1 failed to link: %s"
+                                    % rr.stderr.strip()[:160])
                     ok = False
-                if ok:
-                    failures += check_zero_dependency(
-                        s1 + ".o", runtime_allowlist(), "stage1.o")
-                    # The runtime itself may need exactly TWO symbols: `main`
-                    # and `npk_failsafe` -- the program's entry and its
-                    # controlled-shutdown handler (D-013 makes failsafe
-                    # mandatory, D-142 routes runtime traps through it).
-                    # Anything else in npkrt's undefined set means the runtime
-                    # is not the floor -- it is standing on something.
-                    failures += check_zero_dependency(
-                        os.path.join(tmp, "npkrt.o"),
-                        {"main", "npk_failsafe"}, "npkrt.o")
-                    rr = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", s1,
-                                         s1 + ".o", os.path.join(tmp, "npkrt.o")],
-                                        capture_output=True, text=True)
-                    if rr.returncode != 0:
-                        failures.append("stage 1 failed to link: %s"
-                                        % rr.stderr.strip()[:160])
-                        ok = False
-                if ok:
-                    rr = subprocess.run([s1, os.path.join(ROOT, "src", "main.npk")],
-                                        capture_output=True, timeout=600)
-                    if rr.returncode != 0:
-                        # THE RETURNCODE IS PART OF THE EVIDENCE: a negative one
-                        # is a signal (-11 SIGSEGV), and an empty stderr with a
-                        # positive code is a trap that reached failsafe. The
-                        # binary is kept for the autopsy.
-                        import shutil as _sh
-                        _sh.copy(s1, os.path.join(ROOT, ".internal", "s1.failed"))
-                        failures.append("STAGE 1 cannot compile the compiler: rc=%d %s"
-                                        % (rr.returncode,
-                                           rr.stderr.decode("utf-8", "replace")[:300]))
-                        ok = False
-                    elif rr.stdout != stage1_ir:
-                        failures.append("THE FIXPOINT DRIFTED: stage 1's emission "
-                                        "of the compiler differs from the "
-                                        "seed-built compiler's -- nondeterminism "
-                                        "or a semantic divergence (D-078)")
-                        ok = False
-                if ok:
-                    print("  %-11s stage 1 rebuilt itself byte-identically"
-                          % ("selfhost",))
+            if ok:
+                rr = subprocess.run([s1, os.path.join(ROOT, "src", "main.npk")],
+                                    capture_output=True, timeout=600)
+                if rr.returncode != 0:
+                    # THE RETURNCODE IS PART OF THE EVIDENCE: a negative one
+                    # is a signal (-11 SIGSEGV), and an empty stderr with a
+                    # positive code is a trap that reached failsafe. The
+                    # binary is kept for the autopsy.
+                    import shutil as _sh
+                    _sh.copy(s1, os.path.join(ROOT, ".internal", "s1.failed"))
+                    failures.append("STAGE 1 cannot compile the compiler: rc=%d %s"
+                                    % (rr.returncode,
+                                       rr.stderr.decode("utf-8", "replace")[:300]))
+                    ok = False
+                elif rr.stdout != stage1_ir:
+                    failures.append("THE FIXPOINT DRIFTED: stage 1's emission "
+                                    "of the compiler differs from the "
+                                    "seed-built compiler's -- nondeterminism "
+                                    "or a semantic divergence (D-078)")
+                    ok = False
+            if ok:
+                print("  %-11s stage 1 rebuilt itself byte-identically"
+                      % ("selfhost",))
 
-                # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
-                #
-                # The fixpoint above already proves a great deal, but not
-                # this: it compares TWO DIFFERENT BINARIES (the seed-built
-                # compiler and stage 1), so "byte-identical" there means
-                # they agree, not that either one is deterministic. Two
-                # hazard classes hide in that gap, and R-4 names both:
-                #
-                #   H1  run-to-run variation from ASLR and hash iteration
-                #       order -- the class with NO controlling flag, where
-                #       testing is the only guard.
-                #   H9  the build PATH leaking into the artifact. The
-                #       compiler embeds source paths for real (D-179's
-                #       origin-chain site tables), so this is not a
-                #       hypothetical for us.
-                #
-                # The check: run the SAME binary again on the SAME absolute
-                # inputs from a DIFFERENT working directory, and require the
-                # same bytes. A difference is one of the two, and the
-                # message says how to tell them apart.
-                if ok:
-                    rdir = os.path.join(tmp, "repro-cwd")
-                    os.makedirs(rdir, exist_ok=True)
-                    rr = subprocess.run(
-                        [ec, os.path.join(ROOT, "src", "main.npk")],
-                        capture_output=True, timeout=600, cwd=rdir)
-                    rok = True
-                    if rr.returncode != 0:
+            # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
+            #
+            # The fixpoint above already proves a great deal, but not
+            # this: it compares TWO DIFFERENT BINARIES (the seed-built
+            # compiler and stage 1), so "byte-identical" there means
+            # they agree, not that either one is deterministic. Two
+            # hazard classes hide in that gap, and R-4 names both:
+            #
+            #   H1  run-to-run variation from ASLR and hash iteration
+            #       order -- the class with NO controlling flag, where
+            #       testing is the only guard.
+            #   H9  the build PATH leaking into the artifact. The
+            #       compiler embeds source paths for real (D-179's
+            #       origin-chain site tables), so this is not a
+            #       hypothetical for us.
+            #
+            # The check: run the SAME binary again on the SAME absolute
+            # inputs from a DIFFERENT working directory, and require the
+            # same bytes. A difference is one of the two, and the
+            # message says how to tell them apart.
+            if ok:
+                rdir = os.path.join(tmp, "repro-cwd")
+                os.makedirs(rdir, exist_ok=True)
+                rr = subprocess.run(
+                    [ec, os.path.join(ROOT, "src", "main.npk")],
+                    capture_output=True, timeout=600, cwd=rdir)
+                rok = True
+                if rr.returncode != 0:
+                    failures.append(
+                        "repro: the compiler failed when run from a "
+                        "different working directory (rc=%d) -- its "
+                        "output cannot depend on where it was invoked "
+                        "from: %s"
+                        % (rr.returncode,
+                           rr.stderr.decode("utf-8", "replace")[:300]))
+                    rok = False
+                elif rr.stdout != stage1_ir:
+                    failures.append(
+                        "repro: THE EMISSION IS NOT REPRODUCIBLE -- the "
+                        "same compiler on the same absolute inputs "
+                        "emitted different bytes from a different "
+                        "working directory (%s). Either the cwd leaked "
+                        "into the artifact (D-204's H9; the site tables "
+                        "are the place to look) or the run itself is "
+                        "nondeterministic (H1: hash iteration order, an "
+                        "address used as a value). Re-run twice from the "
+                        "SAME directory to tell which"
+                        % first_difference(stage1_ir, rr.stdout))
+                    rok = False
+                # AND `llc` ITSELF IS DETERMINISTIC on our input: the
+                # same .ll assembled twice must give the same object.
+                # This is H1 on the backend side, where we have no
+                # source to inspect and only the output can answer.
+                s1r = s1 + ".repro.o"
+                rr = subprocess.run(["llc"] + LLC_FLAGS
+                                    + [s1 + ".ll", "-o", s1r],
+                                    capture_output=True, text=True)
+                if rr.returncode != 0:
+                    failures.append("repro: llc failed on the second "
+                                    "assembly: %s"
+                                    % rr.stderr.strip()[:160])
+                    rok = False
+                else:
+                    with open(s1 + ".o", "rb") as fh:
+                        o1 = fh.read()
+                    with open(s1r, "rb") as fh:
+                        o2 = fh.read()
+                    if o1 != o2:
                         failures.append(
-                            "repro: the compiler failed when run from a "
-                            "different working directory (rc=%d) -- its "
-                            "output cannot depend on where it was invoked "
-                            "from: %s"
-                            % (rr.returncode,
-                               rr.stderr.decode("utf-8", "replace")[:300]))
+                            "repro: llc is not deterministic on this "
+                            "input -- the same .ll assembled twice gave "
+                            "different objects (%s). The pinned "
+                            "toolchain is the first thing to check"
+                            % first_difference(o1, o2))
                         rok = False
-                    elif rr.stdout != stage1_ir:
+                # THE COMMITTED SNAPSHOT CANNOT SILENTLY ROT (D-203) -- and
+                # what "rot" means here needed correcting at 1.4.6.
+                #
+                # This was written at 1.4.5 to assert that stage1.ll is
+                # byte-identical to the CURRENT emission. That check
+                # contradicts D-205: the snapshot refreshes at CYCLE CLOSES,
+                # so between refreshes it is legitimately older than `src/`,
+                # and demanding byte-equality every run would make a refresh
+                # mandatory on every commit that changes any IR. D-202 says
+                # the same thing from the other side -- the fixpoint compares
+                # two emissions from CURRENT-source compilers precisely so a
+                # stale builder is tolerated.
+                #
+                # The anti-rot property that IS checked, on every run and
+                # before anything else, is that the snapshot still BUILDS
+                # `src/`: that is run()'s first act now, and a snapshot too
+                # old to compile the tree fails there, by name. What remains
+                # for here is integrity of the PAIR -- a snapshot edited
+                # without restamping, or a STAMP describing a different file.
+                snap = os.path.join(ROOT, "bootstrap", "seed", "stage1.ll")
+                stamp = os.path.join(ROOT, "bootstrap", "seed", "STAMP")
+                if os.path.exists(snap) and os.path.exists(stamp):
+                    import hashlib
+                    with open(snap, "rb") as fh:
+                        snap_ir = fh.read()
+                    got = hashlib.sha256(snap_ir).hexdigest()
+                    txt = open(stamp, encoding="utf-8").read()
+                    m = re.search(r"sha256:\s*([0-9a-f]{64})", txt)
+                    mb = re.search(r"bytes:\s*(\d+)", txt)
+                    if not m:
                         failures.append(
-                            "repro: THE EMISSION IS NOT REPRODUCIBLE -- the "
-                            "same compiler on the same absolute inputs "
-                            "emitted different bytes from a different "
-                            "working directory (%s). Either the cwd leaked "
-                            "into the artifact (D-204's H9; the site tables "
-                            "are the place to look) or the run itself is "
-                            "nondeterministic (H1: hash iteration order, an "
-                            "address used as a value). Re-run twice from the "
-                            "SAME directory to tell which"
-                            % first_difference(stage1_ir, rr.stdout))
+                            "repro: bootstrap/seed/STAMP carries no sha256 -- "
+                            "the stamp IS the snapshot's integrity claim "
+                            "(D-203)")
                         rok = False
-                    # AND `llc` ITSELF IS DETERMINISTIC on our input: the
-                    # same .ll assembled twice must give the same object.
-                    # This is H1 on the backend side, where we have no
-                    # source to inspect and only the output can answer.
-                    s1r = s1 + ".repro.o"
-                    rr = subprocess.run(["llc"] + LLC_FLAGS
-                                        + [s1 + ".ll", "-o", s1r],
-                                        capture_output=True, text=True)
-                    if rr.returncode != 0:
-                        failures.append("repro: llc failed on the second "
-                                        "assembly: %s"
-                                        % rr.stderr.strip()[:160])
+                    elif m.group(1) != got:
+                        failures.append(
+                            "repro: bootstrap/seed/stage1.ll does not match its "
+                            "STAMP (%s on disk, %s stamped) -- it was changed "
+                            "without being restamped, and the stamp is what "
+                            "anyone auditing this build has to go on"
+                            % (got[:16], m.group(1)[:16]))
                         rok = False
-                    else:
-                        with open(s1 + ".o", "rb") as fh:
-                            o1 = fh.read()
-                        with open(s1r, "rb") as fh:
-                            o2 = fh.read()
-                        if o1 != o2:
-                            failures.append(
-                                "repro: llc is not deterministic on this "
-                                "input -- the same .ll assembled twice gave "
-                                "different objects (%s). The pinned "
-                                "toolchain is the first thing to check"
-                                % first_difference(o1, o2))
-                            rok = False
-                    # THE COMMITTED SNAPSHOT CANNOT SILENTLY ROT (D-203).
-                    # Guarded on existence so this stage runs green before
-                    # 1.4.6 puts the file there.
-                    snap = os.path.join(ROOT, "bootstrap", "seed", "stage1.ll")
-                    if os.path.exists(snap):
-                        with open(snap, "rb") as fh:
-                            snap_ir = fh.read()
-                        if snap_ir != stage1_ir:
-                            failures.append(
-                                "repro: bootstrap/seed/stage1.ll no longer "
-                                "matches what the compiler emits (%s) -- the "
-                                "committed bootstrap IR is a SNAPSHOT of this "
-                                "emission (D-203), and a stale one is a "
-                                "bootstrap that builds a different compiler "
-                                "than the tree describes"
-                                % first_difference(snap_ir, stage1_ir))
-                            rok = False
-                    if rok:
-                        print("  %-11s emission cwd-independent, llc "
-                              "deterministic" % ("repro",))
+                    if mb and int(mb.group(1)) != len(snap_ir):
+                        failures.append(
+                            "repro: STAMP says %s bytes and stage1.ll is %d"
+                            % (mb.group(1), len(snap_ir)))
+                        rok = False
+                if rok:
+                    print("  %-11s emission cwd-independent, llc "
+                          "deterministic" % ("repro",))
 
-            # And whole programs that must be ACCEPTED, in full silence.
-            #
-            # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
-            # REFUSES EVERYTHING. Every negative test above passes trivially for an
-            # analysis that answers "violation" to every question, and cycle 0.5's
-            # analyses are deliberately conservative -- they fail closed on fuel
-            # exhaustion, on an unclassified node, on anything undecidable -- so
-            # over-refusal is the failure mode they are most likely to have.
-            #
-            # ONE SUITE, NOT ONE PER STAGE. Silence has no stage: a program the
-            # whole frontend accepts is accepted by every part of it, so splitting
-            # this the way the rejections are split would be four directories
-            # asserting the same thing.
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "accept",
-                                                   "**", "*.npk"),
-                                      recursive=True)):
-                failures += check_type_accept(tc, p, os.path.relpath(p, ROOT))
-                n += 1
-            print("  %-11s %2d acceptance test(s)" % ("accept", n))
+        # And whole programs that must be ACCEPTED, in full silence.
+        #
+        # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
+        # REFUSES EVERYTHING. Every negative test above passes trivially for an
+        # analysis that answers "violation" to every question, and cycle 0.5's
+        # analyses are deliberately conservative -- they fail closed on fuel
+        # exhaustion, on an unclassified node, on anything undecidable -- so
+        # over-refusal is the failure mode they are most likely to have.
+        #
+        # ONE SUITE, NOT ONE PER STAGE. Silence has no stage: a program the
+        # whole frontend accepts is accepted by every part of it, so splitting
+        # this the way the rejections are split would be four directories
+        # asserting the same thing.
+        n = 0
+        for p in sorted(glob.glob(os.path.join(ROOT, "tests", "accept",
+                                               "**", "*.npk"),
+                                  recursive=True)):
+            failures += check_type_accept(tc, p, os.path.relpath(p, ROOT))
+            n += 1
+        print("  %-11s %2d acceptance test(s)" % ("accept", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 
