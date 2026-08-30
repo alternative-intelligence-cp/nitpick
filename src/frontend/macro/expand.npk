@@ -32,6 +32,7 @@ use "../source_location.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
 use "../intern.npk".*;
+use "../list.npk".*;
 use "../diagnostics.npk".*;
 use "../token_kind.npk".*;
 use "../parse_expr.npk".*;
@@ -111,27 +112,15 @@ pub struct:MacroSite = {
 };
 
 pub struct:SiteTable = {
-    wild MacroSite->:items;
-    int32:count;
-    int32:cap;
+    List<MacroSite>:v;
 };
 
 pub func:sitetable_init = SiteTable() never fails {
-    wild int8->:mem = alloc(16i64 * #size_of<MacroSite>());
-    SiteTable:t = SiteTable{ items: mem =>! wild MacroSite->, count: 0i32, cap: 16i32 };
-    pass t;
+    pass SiteTable{ v: raw list_init::<MacroSite>(16i64) };
 };
 
 func:sitetable_add = NIL(SiteTable->:t, MacroSite:e) never fails {
-    if (t.count >= t.cap) {
-        int32:nc = t.cap * 2i32;
-        wild int8->:mem = ralloc(t.items =>! wild int8->,
-                                 (nc => int64) * #size_of<MacroSite>());
-        t.items = mem =>! wild MacroSite->;
-        t.cap = nc;
-    }
-    t.items[t.count => int64] = e;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, e);
     pass NIL;
 };
 
@@ -1631,9 +1620,9 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
     int64:i = 0i64;
     while (i < n) {
         Diagnostic:g = raw diaglist_at(d, i);
-        int32:s = 0i32;
-        while (s < x.sites.count) {
-            MacroSite:e = x.sites.items[s => int64];
+        int64:s = 0i64;
+        while (s < x.sites.v.count) {
+            MacroSite:e = x.sites.v.items[s];
             bool:inside = (g.span.file == e.file);
             if (inside) { inside = (g.span.line >= e.lo); }
             if (inside) { inside = (g.span.line <= e.hi); }
@@ -1651,7 +1640,7 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
                         " lies in a macro body that this invocation expanded"),
                     e.site));
             }
-            s = s + 1i32;
+            s = s + 1i64;
         }
         i = i + 1i64;
     }
