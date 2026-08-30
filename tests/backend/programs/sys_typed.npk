@@ -36,7 +36,13 @@ func:main = int32(cstring[]:_~argv) {
     // zero-extended it is 2 GiB past the start of an empty file, which
     // lseek allows and reports back.
     cstring:nm = to_cstring("npk_sys_typed") ?! EStr;
-    wild uint8->:np = nm.ptr;
+    // NOT `wild` (D-223). A string's bytes belong to the STRING — its drop frees
+    // them — so a binding that points at them is an ordinary pointer, not a
+    // claim of manual ownership. `wild` here said "this storage is mine to
+    // free", which was never true, and BORROW-011 is what asked the question.
+    // The pointer exists only to reach the syscall boundary, where an address
+    // becomes a number (1.1.12a).
+    uint8->:np = nm.ptr;
     int64:mfd = sys(319i64, np, 1i64) ?! EMemfd;
     uint32:off = 2147483648u32;
     int64:at = sys(8i64, mfd, off, 0i64) ?! ESeek;

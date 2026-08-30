@@ -32,9 +32,23 @@ func:find_symbol_anywhere = int32(ModuleGraph->:g, int32:name) never fails {
     pass 0i32;
 };
 
-func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags) never fails {
-    RootList:roots = raw rootlist_init();
-    ModuleGraph:g = raw graph_init(it, diags, @roots, "");
+// THE ROOT LIST IS THE CALLER'S (D-004 rule 2, and a real defect until 1.4.6).
+//
+// This held `RootList:roots` as a LOCAL, put `@roots` into the graph, and
+// returned the graph — so every ModuleGraph it handed back carried a pointer
+// into a frame that had already died. The Python seed compiled it for fifteen
+// cycles; the real compiler refuses it, correctly, the moment the suite moved
+// off the seed.
+//
+// `src/driver/pipeline.npk` shows the shape that is right: it holds
+// `RootList:roots` as a FIELD and writes `f.g = graph_init(@f.it, @f.diags,
+// @f.roots, "")` — a pointer into X, held inside X, dying with X, which is the
+// self-wiring 0.8.1 permits. The test's equivalent is to let the CALLER own the
+// list, so the borrow is parameter-rooted here and outlives this frame by
+// construction.
+func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags,
+                        RootList->:roots) never fails {
+    ModuleGraph:g = raw graph_init(it, diags, roots, "");
     discard(raw graph_load_all(@g, root));
     drop graph_collect_all(@g);
     pass g;
@@ -49,7 +63,8 @@ func:main = int32(cstring[]:_~argv) {
     // else, so there is no point at which a module's declarations are wanted and
     // missing.
     DiagList:d1 = raw diaglist_init();
-    ModuleGraph:g1 = raw load("tests/modules/graph/root.npk", @it, @d1);
+    RootList:r1 = raw rootlist_init();
+    ModuleGraph:g1 = raw load("tests/modules/graph/root.npk", @it, @d1, @r1);
     if (raw diaglist_count(@d1) != 0i64)                 { exit 10i32; }
 
     // root, alpha, beta, nested/mod -- four, each loaded ONCE despite alpha and
@@ -76,7 +91,8 @@ func:main = int32(cstring[]:_~argv) {
     // Entering at `beta` discovers the modules in a different order, so the file
     // ids and symbol ids differ. What must NOT differ is which names exist.
     DiagList:d2 = raw diaglist_init();
-    ModuleGraph:g2 = raw load("tests/modules/graph/beta.npk", @it, @d2);
+    RootList:r2 = raw rootlist_init();
+    ModuleGraph:g2 = raw load("tests/modules/graph/beta.npk", @it, @d2, @r2);
     if (raw diaglist_count(@d2) != 0i64)                 { exit 20i32; }
     // beta reaches alpha, and alpha reaches beta -- but not root, which nothing
     // imports. Two modules, and the cycle still terminates.
@@ -88,7 +104,8 @@ func:main = int32(cstring[]:_~argv) {
     // count matches -- so the answer does not depend on which member of a cycle
     // the loader happened to start from.
     DiagList:d3 = raw diaglist_init();
-    ModuleGraph:g3 = raw load("tests/modules/graph/alpha.npk", @it, @d3);
+    RootList:r3 = raw rootlist_init();
+    ModuleGraph:g3 = raw load("tests/modules/graph/alpha.npk", @it, @d3, @r3);
     if (raw diaglist_count(@d3) != 0i64)                 { exit 24i32; }
     if (raw graph_count(@g3) != 2i32)                    { exit 25i32; }
     if ((raw symtab_count(@g3.tab)) != (raw symtab_count(@g2.tab))) { exit 26i32; }
@@ -109,7 +126,8 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- a missing file is reported, not ignored ---------------------------------
     DiagList:d5 = raw diaglist_init();
-    ModuleGraph:g5 = raw load("tests/modules/graph/nothere.npk", @it, @d5);
+    RootList:r5 = raw rootlist_init();
+    ModuleGraph:g5 = raw load("tests/modules/graph/nothere.npk", @it, @d5, @r5);
     if (raw diaglist_count(@d5) == 0i64)                 { exit 40i32; }
     if (!(raw string_eq((raw diaglist_at(@d5, 0i64)).code,
                         raw RESOLVE_NO_SUCH_FILE())))    { exit 41i32; }
@@ -119,7 +137,8 @@ func:main = int32(cstring[]:_~argv) {
     // whatever it points at (D-038) -- so `OkA`/`OkB` in the same file are fine
     // and only `Cyc`/`Two` are reported.
     DiagList:d6 = raw diaglist_init();
-    ModuleGraph:g6 = raw load("tests/modules/cycle_struct.npk", @it, @d6);
+    RootList:r6 = raw rootlist_init();
+    ModuleGraph:g6 = raw load("tests/modules/cycle_struct.npk", @it, @d6, @r6);
     if (raw diaglist_count(@d6) != 0i64)                 { exit 50i32; }
     drop graph_check_struct_cycles(@g6);
     // Both members of the by-value cycle are named; neither pointer-broken one is.
@@ -142,6 +161,7 @@ func:failsafe = int32(Error:e) {
     // (D-179) — the doctrine applied to ourselves. Exit 3 for
     // each: a defect in the COMPILER, never the input's error.
     pick (e) {
+        (IntOverflow) { exit 3i32; },
         (DeadlineExceeded) { exit 3i32; },
         (DivByZero) { exit 3i32; },
         (DivOverflow) { exit 3i32; },

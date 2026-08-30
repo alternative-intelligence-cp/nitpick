@@ -88,12 +88,12 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(err.code, raw RESOLVE_DUPLICATE()))) { exit 21i32; }
     if (err.span.line != 2i32)                              { exit 22i32; }
     Diagnostic:note = raw diaglist_at(@b2.diags, 1i64);
-    if (note.severity != ((Severity.Note => int32)))        { exit 23i32; }
+    if (note.severity != ((Severity.Note =>! int32)))        { exit 23i32; }
     if (note.span.line != 1i32)                             { exit 24i32; }
     // The error is on the SECOND declaration and the note on the first, so the
     // reader is taken to the line they just wrote and then shown what it clashes
     // with -- not the other way round.
-    if (err.severity != ((Severity.Error => int32)))        { exit 25i32; }
+    if (err.severity != ((Severity.Error =>! int32)))        { exit 25i32; }
 
     // --- a nested `mod` is its own scope ---------------------------------------------
     Built:b3 = raw collect(
@@ -173,6 +173,29 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

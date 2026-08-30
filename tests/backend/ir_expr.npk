@@ -45,12 +45,12 @@ func:lit = ExprId(Ast->:ast, int64:value) never fails {
 
 func:bin = ExprId(Ast->:ast, TokenKind:op, ExprId:l, ExprId:r) never fails {
     pass (raw ast_add_expr(ast, ExprKind.ExprBinaryExpr, raw span_none(),
-                             l.index, r.index, 0i32, ((op => int32) => int64)));
+                             l.index, r.index, 0i32, ((op =>! int32) => int64)));
 };
 
 func:un = ExprId(Ast->:ast, TokenKind:op, ExprId:o) never fails {
     pass (raw ast_add_expr(ast, ExprKind.ExprUnaryExpr, raw span_none(),
-                             o.index, 0i32, 0i32, ((op => int32) => int64)));
+                             o.index, 0i32, 0i32, ((op =>! int32) => int64)));
 };
 
 func:ident = ExprId(Ast->:ast, int32:sym, int32:name) never fails {
@@ -356,4 +356,32 @@ func:main = int32(cstring[]:_~argv) {
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the
 // program's `failsafe`, so every executable must define one — D-013 was always
 // the rule; the linker now enforces it mechanically.
-func:failsafe = int32(Error:err) { exit (100i32 + (err =>! int32)); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (type_trait.BoundsImpl) { exit 1i32; },
+        (type_trait.BoundsBound) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

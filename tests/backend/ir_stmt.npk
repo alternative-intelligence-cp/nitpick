@@ -87,7 +87,7 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
     drop resolve_module(@rs, mod_id, scope);
 
     TypeTable:types = raw typetable_init();
-    ExprTypes:ets = raw exprtypes_for(@ast);
+    ExprTypes:ets = raw exprtypes_init(raw ast_expr_count(@ast));
     InstanceTable:inst = raw insttable_init();
     TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     ImplTable:im = raw impltable_init();
@@ -104,7 +104,7 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
-            int32:name = d.payload => int32;
+            int32:name = d.payload =>! int32;
             FnSig:sg = raw fn_signature(@tr, item, name, scope);
             e.fn_success = sg.success;
             e.fn_terminal = sg.terminal;
@@ -120,12 +120,19 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
 };
 
 // Emit the i-th function declaration into a fresh writer and hand back its text.
-func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st) never fails {
+// THE WRITER IS THE CALLER'S (D-004 rule A). `irw_text` hands back storage it
+// OWNS -- it assembles the three sinks with `string_concat` -- but rule A works
+// on a modular worst-case-callee model and cannot know that: a function handed
+// `@w` could return a VIEW of `w`, and `string_from_bytes` is exactly that
+// primitive. Rule A counts BORROW EXPRESSIONS, so threading the writer in as a
+// pointer removes the `@` at the read and the question with it. The caller
+// still gets a fresh writer per emission, which is what the comparisons need.
+func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st,
+                      IrWriter->:w) never fails {
     TypeResolver:tr = raw tyres_init(@f.ast, @f.types, @f.tab, it, @f.diags,
                                      @f.inst);
-    IrWriter:w = raw irw_to_buffer();
-    LlCtx:c = raw llctx_init(@f.ast, @f.types, @it);
-    FnEmitter:fe = raw fnem_init(@w, @c);
+    LlCtx:c = raw llctx_init(@f.ast, @f.types, it);
+    FnEmitter:fe = raw fnem_init(w, @c);
     FnInstTable:fninsts = raw fninst_init();
     SourceManager:sm = raw srcmgr_init();
     ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @sm, @tr, @fninsts,
@@ -134,7 +141,7 @@ func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st) neve
     DeclId:item = raw item_member(@f.ast, mn, index);
     IrVal:r = raw emit_function(@x, item);
     if (!(raw iv_is_ok(r))) { pass ""; }
-    pass (raw irw_text(@w));
+    pass (raw irw_text(w));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -147,12 +154,14 @@ func:main = int32(cstring[]:_~argv) {
     StrTable:st = raw strtab_init();
 
     // --- locals, assignment, compound assignment, pass ------------------------
-    string:t0 = raw emitted(@f, @it, 0i32, @st);
+    IrWriter:w0 = raw irw_to_buffer();
+    string:t0 = raw emitted(@f, @it, 0i32, @st, @w0);
     if (!(raw string_eq(t0,
         "define { i32, i32 } @npk_step(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  %t2 = load i32, ptr %t0\n  store i32 %t2, ptr %t1\n  %t3 = load i32, ptr %t1\n  %t4 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %t3, i32 1)\n  %t5 = extractvalue { i32, i1 } %t4, 0\n  %t6 = extractvalue { i32, i1 } %t4, 1\n  br i1 %t6, label %ovf.trap0, label %ovf.ok1\novf.trap0:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok1:\n  store i32 %t5, ptr %t1\n  %t7 = load i32, ptr %t1\n  %t8 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %t7, i32 2)\n  %t9 = extractvalue { i32, i1 } %t8, 0\n  %t10 = extractvalue { i32, i1 } %t8, 1\n  br i1 %t10, label %ovf.trap2, label %ovf.ok3\novf.trap2:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok3:\n  store i32 %t9, ptr %t1\n  %t11 = load i32, ptr %t1\n  %t12 = insertvalue { i32, i32 } undef, i32 %t11, 0\n  %t13 = insertvalue { i32, i32 } %t12, i32 0, 1\n  ret { i32, i32 } %t13\n}\n\n"))) { exit 10i32; }
 
     // --- while, if, break — and the loop's shape ------------------------------
-    string:t1 = raw emitted(@f, @it, 1i32, @st);
+    IrWriter:w1 = raw irw_to_buffer();
+    string:t1 = raw emitted(@f, @it, 1i32, @st, @w1);
     if (!(raw string_eq(t1,
         "define { i32, i32 } @npk_count(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 0, ptr %t1\n  br label %wh.head0\nwh.head0:\n  %t2 = load i32, ptr %t1\n  %t3 = load i32, ptr %t0\n  %t4 = icmp slt i32 %t2, %t3\n  %t5 = zext i1 %t4 to i8\n  %t6 = icmp ne i8 %t5, 0\n  br i1 %t6, label %wh.body1, label %wh.done2\nwh.body1:\n  %t7 = load i32, ptr %t1\n  %t8 = icmp eq i32 %t7, 3\n  %t9 = zext i1 %t8 to i8\n  %t10 = icmp ne i8 %t9, 0\n  br i1 %t10, label %if.then3, label %if.done4\nif.then3:\n  br label %wh.done2\nif.done4:\n  %t11 = load i32, ptr %t1\n  %t12 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %t11, i32 1)\n  %t13 = extractvalue { i32, i1 } %t12, 0\n  %t14 = extractvalue { i32, i1 } %t12, 1\n  br i1 %t14, label %ovf.trap5, label %ovf.ok6\novf.trap5:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok6:\n  store i32 %t13, ptr %t1\n  br label %wh.head0\nwh.done2:\n  %t15 = load i32, ptr %t1\n  %t16 = insertvalue { i32, i32 } undef, i32 %t15, 0\n  %t17 = insertvalue { i32, i32 } %t16, i32 0, 1\n  ret { i32, i32 } %t17\n}\n\n"))) { exit 11i32; }
 
@@ -164,17 +173,20 @@ func:main = int32(cstring[]:_~argv) {
     // the `ret` comes after it, because a coroutine's per-scope joins
     // arbitrate against a result slot that has to be written by then. What a
     // caller sees is unchanged; `%t3` is built from `%t1` either way.
-    string:t2 = raw emitted(@f, @it, 2i32, @st);
+    IrWriter:w2 = raw irw_to_buffer();
+    string:t2 = raw emitted(@f, @it, 2i32, @st, @w2);
     if (!(raw string_eq(t2,
         "define { i32, i32 } @npk_cleanup() {\nentry:\n  %t0 = alloca i32\n  store i32 0, ptr %t0\n  %t1 = load i32, ptr %t0\n  %t2 = insertvalue { i32, i32 } undef, i32 %t1, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  %t4 = load i32, ptr %t0\n  %t5 = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %t4, i32 9)\n  %t6 = extractvalue { i32, i1 } %t5, 0\n  %t7 = extractvalue { i32, i1 } %t5, 1\n  br i1 %t7, label %ovf.trap0, label %ovf.ok1\novf.trap0:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4110)\n  unreachable\novf.ok1:\n  store i32 %t6, ptr %t0\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 12i32; }
 
     // --- relay: extract, branch, run defers, fail with the SAME code ----------
-    string:t3 = raw emitted(@f, @it, 3i32, @st);
+    IrWriter:w3 = raw irw_to_buffer();
+    string:t3 = raw emitted(@f, @it, 3i32, @st, @w3);
     if (!(raw string_eq(t3,
         "define { i32, i32 } @npk_pipe(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  %t2 = load i32, ptr %t0\n  %t3 = call { i32, i32 } @npk_step(i32 %t2)\n  %t4 = extractvalue { i32, i32 } %t3, 0\n  %t5 = extractvalue { i32, i32 } %t3, 1\n  %t6 = icmp ne i32 %t5, 0\n  br i1 %t6, label %relay.err0, label %relay.ok1\nrelay.err0:\n  call void @npk_chain_push(i32 1)\n  %t7 = insertvalue { i32, i32 } undef, i32 0, 0\n  %t8 = insertvalue { i32, i32 } %t7, i32 %t5, 1\n  ret { i32, i32 } %t8\nrelay.ok1:\n  store i32 %t4, ptr %t1\n  %t9 = load i32, ptr %t1\n  %t10 = insertvalue { i32, i32 } undef, i32 %t9, 0\n  %t11 = insertvalue { i32, i32 } %t10, i32 0, 1\n  ret { i32, i32 } %t11\n}\n\n"))) { exit 13i32; }
 
     // --- main is bare, takes the argv slice, and `exit` is a plain ret --------
-    string:t4 = raw emitted(@f, @it, 4i32, @st);
+    IrWriter:w4 = raw irw_to_buffer();
+    string:t4 = raw emitted(@f, @it, 4i32, @st, @w4);
     if (!(raw string_eq(t4,
         "define i32 @main({ ptr, i64 } %a0) {\nentry:\n  %t0 = alloca { ptr, i64 }\n  store { ptr, i64 } %a0, ptr %t0\n  ret i32 0\n}\n\n"))) { exit 14i32; }
 
@@ -187,4 +199,32 @@ func:main = int32(cstring[]:_~argv) {
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the
 // program's `failsafe`, so every executable must define one — D-013 was always
 // the rule; the linker now enforces it mechanically.
-func:failsafe = int32(Error:_~err) { exit 1i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (type_trait.BoundsImpl) { exit 1i32; },
+        (type_trait.BoundsBound) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

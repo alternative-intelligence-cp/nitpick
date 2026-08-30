@@ -146,10 +146,13 @@ func:main = int32(cstring[]:_~argv) {
 
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (types.BoundsId) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
         (BoundsId) { exit 1i32; },
         (BoundsIndex) { exit 1i32; },
-        (BoundsScratch) { exit 1i32; },
-        (BoundsWindow) { exit 1i32; },
         (DeadlineExceeded) { exit 1i32; },
         (DivByZero) { exit 1i32; },
         (DivOverflow) { exit 1i32; },

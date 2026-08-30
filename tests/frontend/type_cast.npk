@@ -80,7 +80,17 @@ func:errs = int64(Cx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Cx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+// AN EXPLICIT COPY, not a view of the list (D-004 rule A). `diaglist_at` takes
+// a borrow and hands back a `Diagnostic`, which carries a string — so the
+// CALL's result is borrow-derived, and returning a field of it directly is
+// refused. Reading it into a local first (parameter-rooted, so it taints
+// nothing) and copying the code out is the honest spelling: what leaves this
+// function is storage it owns, which is what the `string` return already
+// claimed. The Python seed ran no such rule.
+func:code0 = string(Cx->:x) never fails {
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (string_concat(d.code, ""));
+};
 
 // A shorthand for the two halves of the same pair: `=>` must refuse it and `=>!`
 // must accept it. Asserting both is the point — a rule that refused everything
@@ -294,17 +304,24 @@ func:main = int32(cstring[]:_~argv) {
 
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (intern.BoundsId) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
         (BoundsBound) { exit 1i32; },
         (BoundsId) { exit 1i32; },
         (BoundsImpl) { exit 1i32; },
         (BoundsIndex) { exit 1i32; },
-        (BoundsOffset) { exit 1i32; },
         (BoundsScratch) { exit 1i32; },
         (BoundsWindow) { exit 1i32; },
         (DeadlineExceeded) { exit 1i32; },
         (DivByZero) { exit 1i32; },
         (DivOverflow) { exit 1i32; },
-        (FileUnknown) { exit 1i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
         (OutOfBounds) { exit 1i32; },

@@ -89,7 +89,7 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
-            int32:name = d.payload => int32;
+            int32:name = d.payload =>! int32;
             FnSig:sg = raw fn_signature(@tr, item, name, scope);
             e.fn_success = sg.success;
             e.fn_terminal = sg.terminal;
@@ -132,197 +132,251 @@ func:errs = int64(Fx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
-func:code0 = string(Fx->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+// AN EXPLICIT COPY, not a view of the list (D-004 rule A). `diaglist_at` takes
+// a borrow and hands back a `Diagnostic`, which carries a string — so the
+// CALL's result is borrow-derived, and returning a field of it directly is
+// refused. Reading it into a local first (parameter-rooted, so it taints
+// nothing) and copying the code out is the honest spelling: what leaves this
+// function is storage it owns, which is what the `string` return already
+// claimed. The Python seed ran no such rule.
+func:code0 = string(Fx->:x) never fails {
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (string_concat(d.code, ""));
+};
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
 
     // --- A DECLARATION'S INITIALISER MUST MATCH ITS ANNOTATION ---------------
-    Fx:v1 = raw fx("func:f = NIL() { int32:x = 1i32; pass NIL; };", @it);
-    if (raw errs(@v1) != 0i64)                                 { exit 10i32; }
+    {
+        Fx:v1 = raw fx("func:f = NIL() { int32:x = 1i32; pass NIL; };", @it);
+        if (raw errs(@v1) != 0i64)                                 { exit 10i32; }
 
-    Fx:v2 = raw fx("func:f = NIL() { int32:x = true; pass NIL; };", @it);
-    if (raw errs(@v2) != 1i64)                                 { exit 11i32; }
-    if (!(raw string_eq(raw code0(@v2), raw TYPE_MISMATCH())))  { exit 12i32; }
+        Fx:v2 = raw fx("func:f = NIL() { int32:x = true; pass NIL; };", @it);
+        if (raw errs(@v2) != 1i64)                                 { exit 11i32; }
+        if (!(raw string_eq(raw code0(@v2), raw TYPE_MISMATCH())))  { exit 12i32; }
 
-    // `int8:n = 10;` WORKS, and for exactly one reason: the annotation is the
-    // context the unsuffixed literal reads. Nothing is inferred — the type was
-    // written down. This is the `literal-suffixes` boundary: the default takes
-    // the width from a context that states it, and `--extra-picky` would require
-    // the suffix written anyway.
-    Fx:v3 = raw fx("func:f = NIL() { int8:n = 10; pass NIL; };", @it);
-    if (raw errs(@v3) != 0i64)                                 { exit 13i32; }
+        // `int8:n = 10;` WORKS, and for exactly one reason: the annotation is the
+        // context the unsuffixed literal reads. Nothing is inferred — the type was
+        // written down. This is the `literal-suffixes` boundary: the default takes
+        // the width from a context that states it, and `--extra-picky` would require
+        // the suffix written anyway.
+        Fx:v3 = raw fx("func:f = NIL() { int8:n = 10; pass NIL; };", @it);
+        if (raw errs(@v3) != 0i64)                                 { exit 13i32; }
 
-    // …and there is no implicit widening, so the message says to write the cast.
-    Fx:v4 = raw fx("func:f = NIL() { int64:n = 1i32; pass NIL; };", @it);
-    if (raw errs(@v4) != 1i64)                                 { exit 14i32; }
+        // …and there is no implicit widening, so the message says to write the cast.
+        Fx:v4 = raw fx("func:f = NIL() { int64:n = 1i32; pass NIL; };", @it);
+        if (raw errs(@v4) != 1i64)                                 { exit 14i32; }
 
-    // AN IDENTIFIER HAS ITS DECLARATION'S TYPE, which is what makes every rule
-    // above reach past a single expression.
-    Fx:v5 = raw fx("func:f = NIL() { int32:a = 1i32; int32:b = a; pass NIL; };", @it);
-    if (raw errs(@v5) != 0i64)                                 { exit 15i32; }
-    Fx:v6 = raw fx("func:f = NIL() { int32:a = 1i32; bool:b = a; pass NIL; };", @it);
-    if (raw errs(@v6) != 1i64)                                 { exit 16i32; }
+        // AN IDENTIFIER HAS ITS DECLARATION'S TYPE, which is what makes every rule
+        // above reach past a single expression.
+        Fx:v5 = raw fx("func:f = NIL() { int32:a = 1i32; int32:b = a; pass NIL; };", @it);
+        if (raw errs(@v5) != 0i64)                                 { exit 15i32; }
+        Fx:v6 = raw fx("func:f = NIL() { int32:a = 1i32; bool:b = a; pass NIL; };", @it);
+        if (raw errs(@v6) != 1i64)                                 { exit 16i32; }
 
-    // A PARAMETER TOO — and a DISCARDED one cannot be read (D-089). `_~` says
-    // the parameter is deliberately unused, so a later use is either a mistake or
-    // a stale annotation, and both are worth hearing about.
-    Fx:v7 = raw fx("func:f = NIL(int32:p) { int32:q = p; pass NIL; };", @it);
-    if (raw errs(@v7) != 0i64)                                 { exit 17i32; }
-    Fx:v8 = raw fx("func:f = NIL(int32:_~p) { int32:q = p; pass NIL; };", @it);
-    if (raw errs(@v8) != 1i64)                                 { exit 18i32; }
+        // A PARAMETER TOO — and a DISCARDED one cannot be read (D-089). `_~` says
+        // the parameter is deliberately unused, so a later use is either a mistake or
+        // a stale annotation, and both are worth hearing about.
+        Fx:v7 = raw fx("func:f = NIL(int32:p) { int32:q = p; pass NIL; };", @it);
+        if (raw errs(@v7) != 0i64)                                 { exit 17i32; }
+        Fx:v8 = raw fx("func:f = NIL(int32:_~p) { int32:q = p; pass NIL; };", @it);
+        if (raw errs(@v8) != 1i64)                                 { exit 18i32; }
+    }
 
     // --- `pass` IS CHECKED AGAINST THE SUCCESS TYPE --------------------------
     // Not against `Result<T>`: `pass v` desugars to `return Result{value: v, …}`,
     // so `v` is what goes in the value field.
-    Fx:p1 = raw fx("func:f = int32() { pass 1i32; };", @it);
-    if (raw errs(@p1) != 0i64)                                 { exit 20i32; }
+    {
+        Fx:p1 = raw fx("func:f = int32() { pass 1i32; };", @it);
+        if (raw errs(@p1) != 0i64)                                 { exit 20i32; }
 
-    Fx:p2 = raw fx("func:f = int32() { pass true; };", @it);
-    if (raw errs(@p2) != 1i64)                                 { exit 21i32; }
+        Fx:p2 = raw fx("func:f = int32() { pass true; };", @it);
+        if (raw errs(@p2) != 1i64)                                 { exit 21i32; }
 
-    // `pass NIL;` is the common case, since void functions do not exist.
-    Fx:p3 = raw fx("func:f = NIL() { pass NIL; };", @it);
-    if (raw errs(@p3) != 0i64)                                 { exit 22i32; }
+        // `pass NIL;` is the common case, since void functions do not exist.
+        Fx:p3 = raw fx("func:f = NIL() { pass NIL; };", @it);
+        if (raw errs(@p3) != 0i64)                                 { exit 22i32; }
+    }
 
     // --- `fail` TAKES A `tbb32` ----------------------------------------------
     // The same type `Result.err` holds and the same one `failsafe` receives.
-    Fx:f1 = raw fx("error:E5; func:f = int32() { fail E5; };", @it);
-    if (raw errs(@f1) != 0i64)                                 { exit 30i32; }
+    {
+        Fx:f1 = raw fx("error:E5; func:f = int32() { fail E5; };", @it);
+        if (raw errs(@f1) != 0i64)                                 { exit 30i32; }
 
-    Fx:f2 = raw fx("func:f = int32() { fail 5i32; };", @it);
-    if (raw errs(@f2) != 1i64)                                 { exit 31i32; }
+        Fx:f2 = raw fx("func:f = int32() { fail 5i32; };", @it);
+        if (raw errs(@f2) != 1i64)                                 { exit 31i32; }
 
-    // `fail` IN A TERMINAL FUNCTION IS REFUSED, for the reason `relay` is: there
-    // is no `Result` to fail into, and an error leaving the program's last frame
-    // has nowhere to go.
-    Fx:f3 = raw fx("error:E5; func:main = int32(cstring[]:a) { fail E5; };", @it);
-    if (raw errs(@f3) != 1i64)                                 { exit 32i32; }
-    if (!(raw string_eq(raw code0(@f3), raw TYPE_RESULT_RETURN()))) { exit 33i32; }
+        // `fail` IN A TERMINAL FUNCTION IS REFUSED, for the reason `relay` is: there
+        // is no `Result` to fail into, and an error leaving the program's last frame
+        // has nowhere to go.
+        Fx:f3 = raw fx("error:E5; func:main = int32(cstring[]:a) { fail E5; };", @it);
+        if (raw errs(@f3) != 1i64)                                 { exit 32i32; }
+        if (!(raw string_eq(raw code0(@f3), raw TYPE_RESULT_RETURN()))) { exit 33i32; }
+    }
 
     // --- `return` TAKES A `Result{…}` LITERAL AND NOTHING ELSE ---------------
     // The restriction is what keeps `pass` and `fail` honest: they are sugar over
     // this form, so it has to be the only other way in.
-    Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32 }; };", @it);
-    if (raw errs(@r1) != 0i64)                                 { exit 40i32; }
+    {
+        Fx:r1 = raw fx("func:f = int32() { return Result{value: 1i32 }; };", @it);
+        if (raw errs(@r1) != 0i64)                                 { exit 40i32; }
 
-    Fx:r2 = raw fx("func:f = int32() { return 1i32; };", @it);
-    if (raw errs(@r2) != 1i64)                                 { exit 41i32; }
-    if (!(raw string_eq(raw code0(@r2), raw TYPE_RESULT_RETURN()))) { exit 42i32; }
+        Fx:r2 = raw fx("func:f = int32() { return 1i32; };", @it);
+        if (raw errs(@r2) != 1i64)                                 { exit 41i32; }
+        if (!(raw string_eq(raw code0(@r2), raw TYPE_RESULT_RETURN()))) { exit 42i32; }
 
-    // …and the literal is still checked: the value is the success type.
-    Fx:r3 = raw fx("func:f = int32() { return Result{value: true }; };", @it);
-    if (raw errs(@r3) != 1i64)                                 { exit 43i32; }
+        // …and the literal is still checked: the value is the success type.
+        Fx:r3 = raw fx("func:f = int32() { return Result{value: true }; };", @it);
+        if (raw errs(@r3) != 1i64)                                 { exit 43i32; }
+    }
 
     // --- EVERY CONDITION IS A STRICT `bool` ----------------------------------
     // There is no truthiness. A condition is where a mistyped value would
     // otherwise steer a decision, which is the one place it must not.
-    Fx:c1 = raw fx("func:f = NIL() { if (true) { pass NIL; } pass NIL; };", @it);
-    if (raw errs(@c1) != 0i64)                                 { exit 50i32; }
+    {
+        Fx:c1 = raw fx("func:f = NIL() { if (true) { pass NIL; } pass NIL; };", @it);
+        if (raw errs(@c1) != 0i64)                                 { exit 50i32; }
 
-    Fx:c2 = raw fx("func:f = NIL() { if (1i32) { pass NIL; } pass NIL; };", @it);
-    if (raw errs(@c2) != 1i64)                                 { exit 51i32; }
+        Fx:c2 = raw fx("func:f = NIL() { if (1i32) { pass NIL; } pass NIL; };", @it);
+        if (raw errs(@c2) != 1i64)                                 { exit 51i32; }
 
-    Fx:c3 = raw fx("func:f = NIL() { while (1i32) { pass NIL; } pass NIL; };", @it);
-    if (raw errs(@c3) != 1i64)                                 { exit 52i32; }
+        Fx:c3 = raw fx("func:f = NIL() { while (1i32) { pass NIL; } pass NIL; };", @it);
+        if (raw errs(@c3) != 1i64)                                 { exit 52i32; }
 
-    // A pointer is not a condition either.
-    Fx:c4 = raw fx("func:f = NIL(int32->:p) { if (p) { pass NIL; } pass NIL; };", @it);
-    if (raw errs(@c4) != 1i64)                                 { exit 53i32; }
+        // A pointer is not a condition either.
+        Fx:c4 = raw fx("func:f = NIL(int32->:p) { if (p) { pass NIL; } pass NIL; };", @it);
+        if (raw errs(@c4) != 1i64)                                 { exit 53i32; }
+    }
 
     // --- `exit` IS LEGAL ONLY IN `main` AND `failsafe` -----------------------
     // Anywhere else it would stop the program past every caller's error handling
     // and every pending `defer` — the uncontrolled shutdown the language exists
     // to make impossible.
-    Fx:e1 = raw fx("func:main = int32(cstring[]:a) { exit 0i32; };", @it);
-    if (raw errs(@e1) != 0i64)                                 { exit 60i32; }
+    {
+        Fx:e1 = raw fx("func:main = int32(cstring[]:a) { exit 0i32; };", @it);
+        if (raw errs(@e1) != 0i64)                                 { exit 60i32; }
 
-    Fx:e2 = raw fx("func:failsafe = int32(Error:e) { exit 1i32; };", @it);
-    if (raw errs(@e2) != 0i64)                                 { exit 61i32; }
+        Fx:e2 = raw fx("func:failsafe = int32(Error:e) { exit 1i32; };", @it);
+        if (raw errs(@e2) != 0i64)                                 { exit 61i32; }
 
-    Fx:e3 = raw fx("func:f = int32() { exit 0i32; };", @it);
-    if (raw errs(@e3) != 1i64)                                 { exit 62i32; }
-    if (!(raw string_eq(raw code0(@e3), raw TYPE_RESULT_RETURN()))) { exit 63i32; }
+        Fx:e3 = raw fx("func:f = int32() { exit 0i32; };", @it);
+        if (raw errs(@e3) != 1i64)                                 { exit 62i32; }
+        if (!(raw string_eq(raw code0(@e3), raw TYPE_RESULT_RETURN()))) { exit 63i32; }
+    }
 
     // --- THE WALK IS TOTAL --------------------------------------------------
     // The mechanical half of the check, and the counterpart to `expr_shape`'s
     // table and `resolve_audit`. It caught nothing when it was written because
     // the walk had just been completed; it exists so that the NEXT statement kind
     // cannot arrive unvisited, which is exactly how sixteen of them did.
-    int32:k = 1i32;
-    while (k <= (raw STMT_KIND_MAX())) {
-        if (!(raw stmt_is_classified(k => StmtKind)))          { exit 70i32; }
-        k = k + 1i32;
+    {
+        int32:k = 1i32;
+        while (k <= (raw STMT_KIND_MAX())) {
+            if (!(raw stmt_is_classified(k =>! StmtKind)))          { exit 70i32; }
+            k = k + 1i32;
+        }
+        if (raw stmt_is_classified(StmtKind.StmtNone))             { exit 71i32; }
     }
-    if (raw stmt_is_classified(StmtKind.StmtNone))             { exit 71i32; }
 
     // --- A NESTED BLOCK IS CHECKED ------------------------------------------
     // Every kind that CONTAINS statements returned quietly before this, so an
     // `if` had its condition checked and its body ignored. The test suite could
     // not see it: the harness put every case at the top level of a function body
     // and said so in a comment.
-    Fx:n1 = raw fx("func:f = NIL() { if (true) { int32:x = true; } pass NIL; };", @it);
-    if (raw errs(@n1) != 1i64)                                 { exit 72i32; }
-    Fx:n2 = raw fx("func:f = NIL() { if (true) { pass NIL; } else { int32:x = true; } pass NIL; };", @it);
-    if (raw errs(@n2) != 1i64)                                 { exit 73i32; }
-    Fx:n3 = raw fx("func:f = NIL() { while (true) { int32:x = true; } pass NIL; };", @it);
-    if (raw errs(@n3) != 1i64)                                 { exit 74i32; }
-    Fx:n4 = raw fx("func:f = NIL() { { int32:x = true; } pass NIL; };", @it);
-    if (raw errs(@n4) != 1i64)                                 { exit 75i32; }
-    Fx:n5 = raw fx("func:f = NIL() { defer { int32:x = true; } pass NIL; };", @it);
-    if (raw errs(@n5) != 1i64)                                 { exit 76i32; }
-    // …and TWO DEEP, so the recursion is real rather than one level of unrolling.
-    Fx:n6 = raw fx("func:f = NIL() { if (true) { while (true) { int32:x = true; } } pass NIL; };", @it);
-    if (raw errs(@n6) != 1i64)                                 { exit 77i32; }
+    {
+        Fx:n1 = raw fx("func:f = NIL() { if (true) { int32:x = true; } pass NIL; };", @it);
+        if (raw errs(@n1) != 1i64)                                 { exit 72i32; }
+        Fx:n2 = raw fx("func:f = NIL() { if (true) { pass NIL; } else { int32:x = true; } pass NIL; };", @it);
+        if (raw errs(@n2) != 1i64)                                 { exit 73i32; }
+        Fx:n3 = raw fx("func:f = NIL() { while (true) { int32:x = true; } pass NIL; };", @it);
+        if (raw errs(@n3) != 1i64)                                 { exit 74i32; }
+        Fx:n4 = raw fx("func:f = NIL() { { int32:x = true; } pass NIL; };", @it);
+        if (raw errs(@n4) != 1i64)                                 { exit 75i32; }
+        Fx:n5 = raw fx("func:f = NIL() { defer { int32:x = true; } pass NIL; };", @it);
+        if (raw errs(@n5) != 1i64)                                 { exit 76i32; }
+        // …and TWO DEEP, so the recursion is real rather than one level of unrolling.
+        Fx:n6 = raw fx("func:f = NIL() { if (true) { while (true) { int32:x = true; } } pass NIL; };", @it);
+        if (raw errs(@n6) != 1i64)                                 { exit 77i32; }
+    }
 
     // --- ASSIGNMENT ---------------------------------------------------------
     // Parsed since 0.2, resolved since 0.3, and never type-checked.
-    Fx:a1 = raw fx("func:f = NIL() { int32:x = 1i32; x = 2i32; pass NIL; };", @it);
-    if (raw errs(@a1) != 0i64)                                 { exit 80i32; }
-    Fx:a2 = raw fx("func:f = NIL() { int32:x = 1i32; x = true; pass NIL; };", @it);
-    if (raw errs(@a2) != 1i64)                                 { exit 81i32; }
-    if (!(raw string_eq(raw code0(@a2), raw TYPE_MISMATCH())))  { exit 82i32; }
-    // The target's type is the context, so an unsuffixed literal reads it.
-    Fx:a3 = raw fx("func:f = NIL() { int8:x = 1i8; x = 10; pass NIL; };", @it);
-    if (raw errs(@a3) != 0i64)                                 { exit 83i32; }
-    // …and there is still no implicit widening.
-    Fx:a4 = raw fx("func:f = NIL() { int64:x = 1i64; x = 1i32; pass NIL; };", @it);
-    if (raw errs(@a4) != 1i64)                                 { exit 84i32; }
-    // AN `Optional` TARGET TAKES A BARE VALUE, the same rule a declaration uses
-    // (D-099). A call that differed from an initialiser would be one more thing
-    // to remember, and so would an assignment.
-    Fx:a5 = raw fx("func:f = NIL() { int32?:x = NIL; x = 5i32; pass NIL; };", @it);
-    if (raw errs(@a5) != 0i64)                                 { exit 85i32; }
-    Fx:a6 = raw fx("func:f = NIL() { int32?:x = 5i32; x = NIL; pass NIL; };", @it);
-    if (raw errs(@a6) != 0i64)                                 { exit 86i32; }
+    {
+        Fx:a1 = raw fx("func:f = NIL() { int32:x = 1i32; x = 2i32; pass NIL; };", @it);
+        if (raw errs(@a1) != 0i64)                                 { exit 80i32; }
+        Fx:a2 = raw fx("func:f = NIL() { int32:x = 1i32; x = true; pass NIL; };", @it);
+        if (raw errs(@a2) != 1i64)                                 { exit 81i32; }
+        if (!(raw string_eq(raw code0(@a2), raw TYPE_MISMATCH())))  { exit 82i32; }
+        // The target's type is the context, so an unsuffixed literal reads it.
+        Fx:a3 = raw fx("func:f = NIL() { int8:x = 1i8; x = 10; pass NIL; };", @it);
+        if (raw errs(@a3) != 0i64)                                 { exit 83i32; }
+        // …and there is still no implicit widening.
+        Fx:a4 = raw fx("func:f = NIL() { int64:x = 1i64; x = 1i32; pass NIL; };", @it);
+        if (raw errs(@a4) != 1i64)                                 { exit 84i32; }
+        // AN `Optional` TARGET TAKES A BARE VALUE, the same rule a declaration uses
+        // (D-099). A call that differed from an initialiser would be one more thing
+        // to remember, and so would an assignment.
+        Fx:a5 = raw fx("func:f = NIL() { int32?:x = NIL; x = 5i32; pass NIL; };", @it);
+        if (raw errs(@a5) != 0i64)                                 { exit 85i32; }
+        Fx:a6 = raw fx("func:f = NIL() { int32?:x = 5i32; x = NIL; pass NIL; };", @it);
+        if (raw errs(@a6) != 0i64)                                 { exit 86i32; }
 
-    // ONLY STORAGE CAN BE ASSIGNED TO. The usual cause is a comparison written
-    // with one `=`, so the message names `==` rather than saying "not assignable".
-    Fx:a7 = raw fx("func:f = NIL() { 5i32 = 1i32; pass NIL; };", @it);
-    if (raw errs(@a7) != 1i64)                                 { exit 87i32; }
-    Fx:a8 = raw fx("func:f = NIL() { int32:x = 1i32; int32->:p = @x; <-p = 2i32; pass NIL; };", @it);
-    if (raw errs(@a8) != 0i64)                                 { exit 88i32; }
+        // ONLY STORAGE CAN BE ASSIGNED TO. The usual cause is a comparison written
+        // with one `=`, so the message names `==` rather than saying "not assignable".
+        Fx:a7 = raw fx("func:f = NIL() { 5i32 = 1i32; pass NIL; };", @it);
+        if (raw errs(@a7) != 1i64)                                 { exit 87i32; }
+        Fx:a8 = raw fx("func:f = NIL() { int32:x = 1i32; int32->:p = @x; <-p = 2i32; pass NIL; };", @it);
+        if (raw errs(@a8) != 0i64)                                 { exit 88i32; }
 
-    // `x op= v` IS `x = x op v`, so it answers to the operator's own rule.
-    Fx:c1 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i32; pass NIL; };", @it);
-    if (raw errs(@c1) != 0i64)                                 { exit 90i32; }
-    Fx:c2 = raw fx("func:f = NIL() { bool:b = true; b += 1i32; pass NIL; };", @it);
-    if (raw errs(@c2) != 1i64)                                 { exit 91i32; }
-    if (!(raw string_eq(raw code0(@c2), raw TYPE_NOT_NUMERIC()))) { exit 92i32; }
-    // A BITWISE COMPOUND ANSWERS TO THE BITWISE RULE, which is narrower —
-    // integers only, where arithmetic also admits floats.
-    Fx:c3 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x &= 2.0f64; pass NIL; };", @it);
-    if (raw errs(@c3) != 1i64)                                 { exit 93i32; }
-    Fx:c4 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x += 2.0f64; pass NIL; };", @it);
-    if (raw errs(@c4) != 0i64)                                 { exit 94i32; }
-    // …and the two sides still have to be the same type.
-    Fx:c5 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i64; pass NIL; };", @it);
-    if (raw errs(@c5) != 1i64)                                 { exit 95i32; }
+        // `x op= v` IS `x = x op v`, so it answers to the operator's own rule.
+        Fx:c1 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i32; pass NIL; };", @it);
+        if (raw errs(@c1) != 0i64)                                 { exit 90i32; }
+        Fx:c2 = raw fx("func:f = NIL() { bool:b = true; b += 1i32; pass NIL; };", @it);
+        if (raw errs(@c2) != 1i64)                                 { exit 91i32; }
+        if (!(raw string_eq(raw code0(@c2), raw TYPE_NOT_NUMERIC()))) { exit 92i32; }
+        // A BITWISE COMPOUND ANSWERS TO THE BITWISE RULE, which is narrower —
+        // integers only, where arithmetic also admits floats.
+        Fx:c3 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x &= 2.0f64; pass NIL; };", @it);
+        if (raw errs(@c3) != 1i64)                                 { exit 93i32; }
+        Fx:c4 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x += 2.0f64; pass NIL; };", @it);
+        if (raw errs(@c4) != 0i64)                                 { exit 94i32; }
+        // …and the two sides still have to be the same type.
+        Fx:c5 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i64; pass NIL; };", @it);
+        if (raw errs(@c5) != 1i64)                                 { exit 95i32; }
 
-    wild_release_all();
-    exit 0i32;
+        wild_release_all();
+        exit 0i32;
+    }
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (type_trait.BoundsImpl) { exit 1i32; },
+        (type_trait.BoundsBound) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

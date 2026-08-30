@@ -15,7 +15,7 @@ func:kind_at = TokenKind(TokenList->:ts, int64:i) never fails {
 
 func:text_at = string(TokenList->:ts, InternTable->:it, int64:i) never fails {
     Token:t = raw tokenlist_at(ts, i);
-    pass (raw intern_get(it, t.payload => int32));
+    pass (raw intern_get(it, t.payload =>! int32));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -27,14 +27,14 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw kind_at(@s1, 0i64)) != TokenKind.StringLit)      { exit 10i32; }
     string:v1 = raw text_at(@s1, @it, 0i64);
     if (v1.len != 3i64)                                       { exit 11i32; }
-    if (v1.ptr[1i64] != 10i8)                                 { exit 12i32; }  // real LF
+    if (v1.ptr[1i64] != 10u8)                                 { exit 12i32; }  // real LF
 
     // \x and \u{...}
     TokenList:s2 = raw lex_all(0i32, "\"\\x41\\u{42}\"", @it, @dg);
     string:v2 = raw text_at(@s2, @it, 0i64);
     if (v2.len != 2i64)                                       { exit 13i32; }
-    if (v2.ptr[0i64] != 65i8)                                 { exit 14i32; }  // A
-    if (v2.ptr[1i64] != 66i8)                                 { exit 15i32; }  // B
+    if (v2.ptr[0i64] != 65u8)                                 { exit 14i32; }  // A
+    if (v2.ptr[1i64] != 66u8)                                 { exit 15i32; }  // B
 
     // A multi-byte code point becomes UTF-8, because that is what the program
     // will actually hold.
@@ -48,7 +48,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw kind_at(@s4, 0i64)) != TokenKind.RawStringLit)   { exit 20i32; }
     string:v4 = raw text_at(@s4, @it, 0i64);
     if (v4.len != 4i64)                                       { exit 21i32; }  // a \ n b
-    if (v4.ptr[1i64] != 92i8)                                 { exit 22i32; }  // backslash survives
+    if (v4.ptr[1i64] != 92u8)                                 { exit 22i32; }  // backslash survives
 
     // --- block strings ------------------------------------------------------
     TokenList:s5 = raw lex_all(0i32, "\"\"\"one\ntwo\"\"\"", @it, @dg);
@@ -120,6 +120,28 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

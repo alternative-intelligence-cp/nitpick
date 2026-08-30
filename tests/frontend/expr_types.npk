@@ -69,7 +69,7 @@ func:ex = Ex(string:src, InternTable->:it) never fails {
 
     // SIZED AFTER PARSING, so it covers every expression the parser built. Sizing
     // it before would make it short by exactly the expressions the test is about.
-    ExprTypes:ets = raw exprtypes_for(@ast);
+    ExprTypes:ets = raw exprtypes_init(raw ast_expr_count(@ast));
     FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
                                   @inst, @fninsts, @ets);
@@ -289,17 +289,24 @@ func:main = int32(cstring[]:_~argv) {
 // the rule; the linker now enforces it mechanically.
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (intern.BoundsId) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
         (BoundsBound) { exit 1i32; },
         (BoundsId) { exit 1i32; },
         (BoundsImpl) { exit 1i32; },
         (BoundsIndex) { exit 1i32; },
-        (BoundsOffset) { exit 1i32; },
         (BoundsScratch) { exit 1i32; },
         (BoundsWindow) { exit 1i32; },
         (DeadlineExceeded) { exit 1i32; },
         (DivByZero) { exit 1i32; },
         (DivOverflow) { exit 1i32; },
-        (FileUnknown) { exit 1i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
         (OutOfBounds) { exit 1i32; },

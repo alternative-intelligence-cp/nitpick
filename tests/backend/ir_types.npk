@@ -89,8 +89,8 @@ func:lx = Lx(string:src, InternTable->:it) never fails {
 // A NAMED TYPE, INTERNED THE WAY ITS DECLARATION SAYS. The kind is read off the
 // declaration rather than passed in: a caller-supplied flag would let a struct be
 // interned as an enum, which would be a wrong LAYOUT rather than a wrong lookup.
-func:named = int32(Lx->:x, InternTable->:it, string:name) never fails {
-    int32:sym = raw scope_lookup(@x.tab, x.scope, raw intern_add(it, name));
+func:named = int32(Lx->:x, InternTable->:it, move string:name) never fails {
+    int32:sym = raw scope_lookup(@x.tab, x.scope, raw intern_add(it, move(name)));
     if (sym == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(@x.tab, sym);
     DeclId:d = DeclId{ index: s.origin };
@@ -346,6 +346,13 @@ func:main = int32(cstring[]:_~argv) {
 // the rule; the linker now enforces it mechanically.
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (intern.BoundsId) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
         (BoundsBound) { exit 1i32; },
         (BoundsId) { exit 1i32; },
         (BoundsImpl) { exit 1i32; },

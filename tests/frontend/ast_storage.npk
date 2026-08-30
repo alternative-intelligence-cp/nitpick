@@ -43,8 +43,8 @@ func:main = int32(cstring[]:_~argv) {
     // indices do it for free, which is the reason for the design.
     int32:i = 0i32;
     while (i < 1000i32) {
-        drop ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
-                          0i32, 0i32, 0i32, i => int64);
+        discard(raw ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
+                                 0i32, 0i32, 0i32, i => int64));
         i = i + 1i32;
     }
     if (raw ast_expr_count(@ast) != 1004i32)             { exit 30i32; }
@@ -101,7 +101,12 @@ func:main = int32(cstring[]:_~argv) {
     // `resolve_audit` (0.3.5), applied to a third list that could drift.
     int32:k = 1i32;
     while (k <= (raw EXPR_KIND_MAX())) {
-        if ((raw expr_shape(k => ExprKind)) == (raw EXPR_SHAPE_NONE())) {
+        // `=>!` BECAUSE MANUFACTURING THE TAG IS THE POINT (Q2/D-223): this walk
+        // exists to enumerate every kind NUMBER and prove each one has a shape,
+        // so the conversion from a counter to a kind is the thing under test,
+        // not an accident. The checked `=>` is refused correctly — nothing
+        // proves `k` names a variant, which is exactly what the loop is asking.
+        if ((raw expr_shape(k =>! ExprKind)) == (raw EXPR_SHAPE_NONE())) {
             // The kind number is the exit code, so the failure names which one.
             exit (100i32 + k);
         }
@@ -111,7 +116,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and the check is one that has been SEEN TO FAIL. Kind 0 is `ExprNone`,
     // which is deliberately absent from the table, so this asserts the loop above
     // would have caught a missing entry rather than passing vacuously.
-    if ((raw expr_shape(0i32 => ExprKind)) != (raw EXPR_SHAPE_NONE())) { exit 60i32; }
+    if ((raw expr_shape(0i32 =>! ExprKind)) != (raw EXPR_SHAPE_NONE())) { exit 60i32; }
 
     // A literal is a LEAF and has no children in any slot. The one assertion
     // that, had it existed, would have caught the bug directly.
@@ -128,19 +133,24 @@ func:main = int32(cstring[]:_~argv) {
     // --- a numeric literal keeps its width, and nothing else does -------------
     // The width has a FIELD rather than a spare slot (D-094), so the invariant
     // that `a`, `b` and `c` are node references holds for every kind.
-    Span:lsp = raw span_none();
-    ExprId:lit = raw ast_add_expr_w(@ast, ExprKind.ExprIntLiteral, lsp,
-                                    0i32, 0i32, 0i32, 42i64, NumWidth.WI32);
-    ExprNode:ln = raw ast_expr(@ast, lit);
-    if (ln.width != NumWidth.WI32)                       { exit 70i32; }
-    if (ln.payload != 42i64)                             { exit 71i32; }
-    if (ln.a != 0i32)                                    { exit 72i32; }
+    // (Q3/D-223: a BLOCK, so this section's `lit` is its own binding rather
+    // than a redeclaration of the one 110 lines up. Sibling `{ }` sections are
+    // disjoint scopes — not even shadowing — so nothing here changed meaning.)
+    {
+        Span:lsp = raw span_none();
+        ExprId:lit = raw ast_add_expr_w(@ast, ExprKind.ExprIntLiteral, lsp,
+                                        0i32, 0i32, 0i32, 42i64, NumWidth.WI32);
+        ExprNode:ln = raw ast_expr(@ast, lit);
+        if (ln.width != NumWidth.WI32)                       { exit 70i32; }
+        if (ln.payload != 42i64)                             { exit 71i32; }
+        if (ln.a != 0i32)                                    { exit 72i32; }
 
-    // A node built the ordinary way carries no width at all, so a walker cannot
-    // mistake a leftover value for one.
-    ExprId:plain = raw ast_add_expr(@ast, ExprKind.ExprBinaryExpr, lsp,
-                                    lit.index, lit.index, 0i32, 0i64);
-    if ((raw ast_expr(@ast, plain)).width != NumWidth.WNone) { exit 73i32; }
+        // A node built the ordinary way carries no width at all, so a walker cannot
+        // mistake a leftover value for one.
+        ExprId:plain = raw ast_add_expr(@ast, ExprKind.ExprBinaryExpr, lsp,
+                                        lit.index, lit.index, 0i32, 0i64);
+        if ((raw ast_expr(@ast, plain)).width != NumWidth.WNone) { exit 73i32; }
+    }
 
     wild_release_all();
 
@@ -148,6 +158,27 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+// D-179 COMPUTES THIS SET; the arms are not a guess. `(*)` may stand beneath
+// the names but never in for them, which is why a bare `exit 1i32;` body is
+// refused: it claims to handle everything while naming nothing.
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

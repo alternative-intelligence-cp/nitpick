@@ -71,10 +71,10 @@ func:lx = Lx(string:src, InternTable->:it) never fails {
 };
 
 // The interned type of a named struct in the fixture's source.
-func:named = int32(Lx->:x, InternTable->:it, string:name) never fails {
+func:named = int32(Lx->:x, InternTable->:it, move string:name) never fails {
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
-    int32:sym = raw scope_lookup(@x.tab, x.scope, raw intern_add(it, name));
+    int32:sym = raw scope_lookup(@x.tab, x.scope, raw intern_add(it, move(name)));
     if (sym == 0i32) { pass 0i32; }
     Symbol:s = raw symtab_get(@x.tab, sym);
     DeclId:d = DeclId{ index: s.origin };
@@ -89,10 +89,10 @@ func:named = int32(Lx->:x, InternTable->:it, string:name) never fails {
     pass t;
 };
 
-func:field_of = FieldInfo(Lx->:x, InternTable->:it, int32:t, string:name) never fails {
+func:field_of = FieldInfo(Lx->:x, InternTable->:it, int32:t, move string:name) never fails {
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
-    pass (raw struct_field(@r, t, raw intern_add(it, name), x.scope));
+    pass (raw struct_field(@r, t, raw intern_add(it, move(name)), x.scope));
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -211,15 +211,21 @@ func:main = int32(cstring[]:_~argv) {
 // the rule; the linker now enforces it mechanically.
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (intern.BoundsId) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
         (BoundsId) { exit 1i32; },
         (BoundsIndex) { exit 1i32; },
-        (BoundsOffset) { exit 1i32; },
         (BoundsScratch) { exit 1i32; },
         (BoundsWindow) { exit 1i32; },
         (DeadlineExceeded) { exit 1i32; },
         (DivByZero) { exit 1i32; },
         (DivOverflow) { exit 1i32; },
-        (FileUnknown) { exit 1i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
         (OutOfBounds) { exit 1i32; },

@@ -2,6 +2,7 @@
 
 use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/num_width.npk".*;
 use "../../src/frontend/token.npk".*;
 
 func:main = int32(cstring[]:_~argv) {
@@ -16,9 +17,9 @@ func:main = int32(cstring[]:_~argv) {
     Token:eof = raw token_make(TokenKind.Eof, sp, 0i64);
     if (!(raw token_is_eof(eof)))             { exit 13i32; }
 
-    Token:num = raw token_numeric(TokenKind.IntLit, sp, 42i64, 3i32);
+    Token:num = raw token_numeric(TokenKind.IntLit, sp, 42i64, NumWidth.WU4);
     if (num.payload != 42i64)                 { exit 14i32; }
-    if (num.width != 3i32)                    { exit 15i32; }
+    if (num.width != NumWidth.WU4)                    { exit 15i32; }
 
     // A payload-less enum is a plain i32 (TYPE_REFERENCE 9.3), so distinct
     // variants must hold distinct values -- the generated table is dense and
@@ -72,6 +73,25 @@ func:steady = int32(int32:v) never fails {
     pass v + 1i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

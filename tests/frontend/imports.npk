@@ -17,19 +17,28 @@ struct:Loaded = {
     int32:scope;      // the ROOT module's scope
 };
 
-func:load = Loaded(string:root, InternTable->:it, DiagList->:diags) never fails {
-    RootList:roots = raw rootlist_init();
-    ModuleGraph:g = raw graph_init(it, diags, @roots, "");
+// THE ROOT LIST IS THE CALLER'S — the same real defect `module_graph.npk` had,
+// in a second file. `roots` was a LOCAL, `@roots` went into the graph, and the
+// graph was returned inside `Loaded`, so every result carried a pointer into a
+// frame that had already died. `src/driver/pipeline.npk` holds its RootList as
+// a FIELD for exactly this reason. Letting the caller own it makes the borrow
+// parameter-rooted, which outlives this frame by construction.
+func:load = Loaded(string:root, InternTable->:it, DiagList->:diags,
+                   RootList->:roots) never fails {
+    ModuleGraph:g = raw graph_init(it, diags, roots, "");
     discard(raw graph_load_all(@g, root));
     drop graph_collect_all(@g);
     drop graph_apply_imports(@g);
     ModuleEntry:e = raw graph_at(@g, 0i32);
-    Loaded:l = Loaded{ g: g, scope: e.scope };
+    // `move(g)` — a ModuleGraph owns its storage, so copying it into the
+    // literal would leave two owners and one double free (D-183). `g` is dead
+    // after this line, which is Q2's "second use dead" reading.
+    Loaded:l = Loaded{ g: move(g), scope: e.scope };
     pass l;
 };
 
-func:has = bool(Loaded->:l, string:name, InternTable->:it) never fails {
-    int32:n = raw intern_add(it, name);
+func:has = bool(Loaded->:l, move string:name, InternTable->:it) never fails {
+    int32:n = raw intern_add(it, move(name));
     pass ((raw scope_lookup(@l.g.tab, l.scope, n)) != 0i32);
 };
 
@@ -38,7 +47,8 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- a wildcard brings in the `pub` symbols and only those ----------------
     DiagList:d1 = raw diaglist_init();
-    Loaded:l1 = raw load("tests/modules/vis/middle.npk", @it, @d1);
+    RootList:r1 = raw rootlist_init();
+    Loaded:l1 = raw load("tests/modules/vis/middle.npk", @it, @d1, @r1);
     if (!(raw has(@l1, "shared", @it)))               { exit 10i32; }
     if (!(raw has(@l1, "Shared", @it)))               { exit 11i32; }
     // `hidden` is private to lib.npk and invisible here. Private means "this
@@ -54,7 +64,8 @@ func:main = int32(cstring[]:_~argv) {
     // with a plain `use`, which keeps a module's surface its own rather than the
     // transitive closure of everything its dependencies happened to import.
     DiagList:d2 = raw diaglist_init();
-    Loaded:l2 = raw load("tests/modules/vis/user.npk", @it, @d2);
+    RootList:r2 = raw rootlist_init();
+    Loaded:l2 = raw load("tests/modules/vis/user.npk", @it, @d2, @r2);
     if (!(raw has(@l2, "middle_own", @it)))           { exit 20i32; }
     if (!(raw has(@l2, "relayed", @it)))              { exit 21i32; }
     if (raw has(@l2, "shared", @it))                  { exit 22i32; }
@@ -65,21 +76,23 @@ func:main = int32(cstring[]:_~argv) {
     // Not "not found". Those are different mistakes: one means check the
     // spelling, the other means the owning module has to decide to share it.
     DiagList:d3 = raw diaglist_init();
-    Loaded:l3 = raw load("tests/modules/vis/private_import.npk", @it, @d3);
+    RootList:r3 = raw rootlist_init();
+    Loaded:l3 = raw load("tests/modules/vis/private_import.npk", @it, @d3, @r3);
     if (raw diaglist_count(@d3) != 2i64)              { exit 30i32; }
     if (!(raw string_eq((raw diaglist_at(@d3, 0i64)).code, raw RESOLVE_PRIVATE()))) {
         exit 31i32;
     }
     // …and a note points at where it was declared, so the reader can go and
     // decide whether it should be `pub`.
-    if ((raw diaglist_at(@d3, 1i64)).severity != ((Severity.Note => int32))) {
+    if ((raw diaglist_at(@d3, 1i64)).severity != ((Severity.Note =>! int32))) {
         exit 32i32;
     }
     if (raw has(@l3, "hidden", @it))                  { exit 33i32; }
 
     // --- a named import of a MISSING symbol names the module ------------------------
     DiagList:d4 = raw diaglist_init();
-    Loaded:l4 = raw load("tests/modules/vis/missing_import.npk", @it, @d4);
+    RootList:r4 = raw rootlist_init();
+    Loaded:l4 = raw load("tests/modules/vis/missing_import.npk", @it, @d4, @r4);
     if (raw diaglist_count(@d4) != 1i64)              { exit 40i32; }
     if (!(raw string_eq((raw diaglist_at(@d4, 0i64)).code, raw RESOLVE_NO_SUCH_NAME()))) {
         exit 41i32;
@@ -90,17 +103,18 @@ func:main = int32(cstring[]:_~argv) {
     // a dependency exports this week -- and the collision gets a warning, because
     // a bare name two things could plausibly mean is worth a word.
     DiagList:d5 = raw diaglist_init();
-    Loaded:l5 = raw load("tests/modules/vis/shadow.npk", @it, @d5);
+    RootList:r5 = raw rootlist_init();
+    Loaded:l5 = raw load("tests/modules/vis/shadow.npk", @it, @d5, @r5);
     // THE WARNING AND ITS NOTE (1.0.8): the warning sits at the `use`, and the
     // note says where the local declaration it describes actually is — the
     // message used to claim "declared here" about the import line.
     if (raw diaglist_count(@d5) != 2i64)              { exit 50i32; }
     Diagnostic:w = raw diaglist_at(@d5, 0i64);
     if (!(raw string_eq(w.code, raw RESOLVE_SHADOWED())) ) { exit 51i32; }
-    if (w.severity != ((Severity.Warning => int32)))  { exit 52i32; }
+    if (w.severity != ((Severity.Warning =>! int32)))  { exit 52i32; }
     Diagnostic:wn = raw diaglist_at(@d5, 1i64);
     if (!(raw string_eq(wn.code, raw RESOLVE_SHADOWED())) ) { exit 56i32; }
-    if (wn.severity != ((Severity.Note => int32)))    { exit 57i32; }
+    if (wn.severity != ((Severity.Note =>! int32)))    { exit 57i32; }
     // The local declaration is what `shared` means here, so the symbol is NOT an
     // import.
     int32:shared_n = raw intern_add(@it, "shared");
@@ -113,7 +127,8 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- `as` binds the MODULE ---------------------------------------------------------
     DiagList:d6 = raw diaglist_init();
-    Loaded:l6 = raw load("tests/modules/vis/aliased.npk", @it, @d6);
+    RootList:r6 = raw rootlist_init();
+    Loaded:l6 = raw load("tests/modules/vis/aliased.npk", @it, @d6, @r6);
     if (raw diaglist_count(@d6) != 0i64)              { exit 60i32; }
     if (!(raw has(@l6, "lib", @it)))                  { exit 61i32; }
     // The alias binds the module, NOT its contents: `shared` is reached through
@@ -145,6 +160,32 @@ func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (resolve_path.BoundsIndex) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (module_graph.BoundsIndex) { exit 1i32; },
+        (module_graph.ProvenSlice) { exit 1i32; },
+        (token.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

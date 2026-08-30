@@ -113,7 +113,7 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) never fails {
         DeclId:item = raw item_member(@ast, mn, i);
         DeclNode:d = raw ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
-            int32:name = d.payload => int32;
+            int32:name = d.payload =>! int32;
             if (raw string_eq(raw intern_get(it, name), want)) {
                 FnSig:sg = raw fn_signature(@tr, item, name, scope);
                 e.fn_success = sg.success;
@@ -158,7 +158,17 @@ func:errs = int64(Ax->:x) never fails {
 // The first diagnostic's CODE. Asserted on where a case is about which rule was
 // broken rather than about how many were -- object safety is three rules and the
 // whole point is that they are told apart.
-func:code0a = string(Ax->:x) never fails { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+// AN EXPLICIT COPY, not a view of the list (D-004 rule A). `diaglist_at` takes
+// a borrow and hands back a `Diagnostic`, which carries a string — so the
+// CALL's result is borrow-derived, and returning a field of it directly is
+// refused. Reading it into a local first (parameter-rooted, so it taints
+// nothing) and copying the code out is the honest spelling: what leaves this
+// function is storage it owns, which is what the `string` return already
+// claimed. The Python seed ran no such rule.
+func:code0a = string(Ax->:x) never fails {
+    Diagnostic:d = raw diaglist_at(@x.diags, 0i64);
+    pass (string_concat(d.code, ""));
+};
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
@@ -167,284 +177,318 @@ func:main = int32(cstring[]:_~argv) {
     // 0.4.1 interned a named type from its declaration and left the size at zero.
     // A `Result<Point>` built from that would be four bytes where it should be
     // twelve, and nothing downstream would have said so.
-    TypeTable:t0 = raw typetable_init();
-    int32:i32t = raw tt_int(@t0, 32i32, true);
-    int32:i8t = raw tt_int(@t0, 8i32, true);
-    if ((raw align_up(0i64, 4i32)) != 0i64)                    { exit 10i32; }
-    if ((raw align_up(1i64, 4i32)) != 4i64)                    { exit 11i32; }
-    if ((raw align_up(4i64, 4i32)) != 4i64)                    { exit 12i32; }
-    if ((raw align_up(5i64, 8i32)) != 8i64)                    { exit 13i32; }
-    // Alignment of 1 never pads, and the guard matters because `% 1` is a
-    // division the layout would otherwise perform on every byte-sized field.
-    if ((raw align_up(7i64, 1i32)) != 7i64)                    { exit 14i32; }
+    {
+        TypeTable:t0 = raw typetable_init();
+        int32:i32t = raw tt_int(@t0, 32i32, true);
+        int32:i8t = raw tt_int(@t0, 8i32, true);
+        if ((raw align_up(0i64, 4i32)) != 0i64)                    { exit 10i32; }
+        if ((raw align_up(1i64, 4i32)) != 4i64)                    { exit 11i32; }
+        if ((raw align_up(4i64, 4i32)) != 4i64)                    { exit 12i32; }
+        if ((raw align_up(5i64, 8i32)) != 8i64)                    { exit 13i32; }
+        // Alignment of 1 never pads, and the guard matters because `% 1` is a
+        // division the layout would otherwise perform on every byte-sized field.
+        if ((raw align_up(7i64, 1i32)) != 7i64)                    { exit 14i32; }
+    }
 
     // --- `.` REACHES A FIELD --------------------------------------------------
-    Ax:m1 = raw ax("int32:v = pt.x;", @it);
-    if (raw errs(@m1) != 0i64)                                 { exit 20i32; }
+    {
+        Ax:m1 = raw ax("int32:v = pt.x;", @it);
+        if (raw errs(@m1) != 0i64)                                 { exit 20i32; }
 
-    // The field's TYPE is checked, not just its existence.
-    Ax:m2 = raw ax("bool:v = pt.x;", @it);
-    if (raw errs(@m2) != 1i64)                                 { exit 21i32; }
+        // The field's TYPE is checked, not just its existence.
+        Ax:m2 = raw ax("bool:v = pt.x;", @it);
+        if (raw errs(@m2) != 1i64)                                 { exit 21i32; }
 
-    // A MISSING MEMBER NAMES THE TYPE it was sought on. "no member `z`" would
-    // leave the reader working out which of a chain's types was being asked.
-    Ax:m3 = raw ax("int32:v = pt.z;", @it);
-    if (raw errs(@m3) != 1i64)                                 { exit 22i32; }
+        // A MISSING MEMBER NAMES THE TYPE it was sought on. "no member `z`" would
+        // leave the reader working out which of a chain's types was being asked.
+        Ax:m3 = raw ax("int32:v = pt.z;", @it);
+        if (raw errs(@m3) != 1i64)                                 { exit 22i32; }
 
-    // Chained through an embedded field (D-006).
-    Ax:m4 = raw ax("int32:v = wr.p.x;", @it);
-    if (raw errs(@m4) != 0i64)                                 { exit 23i32; }
+        // Chained through an embedded field (D-006).
+        Ax:m4 = raw ax("int32:v = wr.p.x;", @it);
+        if (raw errs(@m4) != 0i64)                                 { exit 23i32; }
+    }
 
     // --- AUTO-DEREFERENCE IS ONE LEVEL (D-098) --------------------------------
     // `.` is the only member operator and it dereferences once. A rule that
     // peeled until it found a struct would make the number of indirections
     // invisible at the use site.
-    Ax:d1 = raw ax("int32:v = pp.x;", @it);
-    if (raw errs(@d1) != 0i64)                                 { exit 30i32; }
+    {
+        Ax:d1 = raw ax("int32:v = pp.x;", @it);
+        if (raw errs(@d1) != 0i64)                                 { exit 30i32; }
 
-    // TWO LEVELS IS AN ERROR that says to write the dereference.
-    Ax:d2 = raw ax("int32:v = ppp.x;", @it);
-    if (raw errs(@d2) != 1i64)                                 { exit 31i32; }
+        // TWO LEVELS IS AN ERROR that says to write the dereference.
+        Ax:d2 = raw ax("int32:v = ppp.x;", @it);
+        if (raw errs(@d2) != 1i64)                                 { exit 31i32; }
 
-    // …and writing it works, because `<-` brings the value back one level.
-    Ax:d3 = raw ax("int32:v = (<-ppp).x;", @it);
-    if (raw errs(@d3) != 0i64)                                 { exit 32i32; }
+        // …and writing it works, because `<-` brings the value back one level.
+        Ax:d3 = raw ax("int32:v = (<-ppp).x;", @it);
+        if (raw errs(@d3) != 0i64)                                 { exit 32i32; }
 
-    // An `any->` has no members: it is type-erased, so there is nothing to reach.
-    Ax:d4 = raw ax("int32:v = ap.x;", @it);
-    if (raw errs(@d4) != 1i64)                                 { exit 33i32; }
+        // An `any->` has no members: it is type-erased, so there is nothing to reach.
+        Ax:d4 = raw ax("int32:v = ap.x;", @it);
+        if (raw errs(@d4) != 1i64)                                 { exit 33i32; }
+    }
 
     // --- AN ENUM VARIANT AND A MODULE MEMBER ARE THE SAME NODE ---------------
     // Told apart HERE, by what the base resolved to — exactly what 0.3.5 left.
-    Ax:v1 = raw ax("Net:n = Net.Connect;", @it);
-    if (raw errs(@v1) != 0i64)                                 { exit 40i32; }
+    {
+        Ax:v1 = raw ax("Net:n = Net.Connect;", @it);
+        if (raw errs(@v1) != 0i64)                                 { exit 40i32; }
 
-    // A variant's type is the ENUM, not a type of its own — which is what stops a
-    // signature from naming one arm.
-    Ax:v2 = raw ax("Point:n = Net.Connect;", @it);
-    if (raw errs(@v2) != 1i64)                                 { exit 41i32; }
+        // A variant's type is the ENUM, not a type of its own — which is what stops a
+        // signature from naming one arm.
+        Ax:v2 = raw ax("Point:n = Net.Connect;", @it);
+        if (raw errs(@v2) != 1i64)                                 { exit 41i32; }
 
-    Ax:v3 = raw ax("Net:n = Net.Nonexistent;", @it);
-    if (raw errs(@v3) != 1i64)                                 { exit 42i32; }
+        Ax:v3 = raw ax("Net:n = Net.Nonexistent;", @it);
+        if (raw errs(@v3) != 1i64)                                 { exit 42i32; }
+    }
 
     // --- A SLICE CARRIES ITS LENGTH, A POINTER DOES NOT (D-038/D-070) --------
     // The whole reason the two are different types.
-    Ax:s1 = raw ax("int64:n = sl.len;", @it);
-    if (raw errs(@s1) != 0i64)                                 { exit 50i32; }
-    Ax:s2 = raw ax("int64:n = ip.len;", @it);
-    if (raw errs(@s2) != 1i64)                                 { exit 51i32; }
+    {
+        Ax:s1 = raw ax("int64:n = sl.len;", @it);
+        if (raw errs(@s1) != 0i64)                                 { exit 50i32; }
+        Ax:s2 = raw ax("int64:n = ip.len;", @it);
+        if (raw errs(@s2) != 1i64)                                 { exit 51i32; }
+    }
 
     // --- INDEXING -------------------------------------------------------------
-    Ax:x1 = raw ax("int32:v = ar[0i64];", @it);
-    if (raw errs(@x1) != 0i64)                                 { exit 60i32; }
-    Ax:x2 = raw ax("int32:v = sl[0i64];", @it);
-    if (raw errs(@x2) != 0i64)                                 { exit 61i32; }
-    // A pointer indexes and carries no length, so it cannot be bounds-checked —
-    // which is why slices exist and why a function should take one.
-    Ax:x3 = raw ax("int32:v = ip[0i64];", @it);
-    if (raw errs(@x3) != 0i64)                                 { exit 62i32; }
+    {
+        Ax:x1 = raw ax("int32:v = ar[0i64];", @it);
+        if (raw errs(@x1) != 0i64)                                 { exit 60i32; }
+        Ax:x2 = raw ax("int32:v = sl[0i64];", @it);
+        if (raw errs(@x2) != 0i64)                                 { exit 61i32; }
+        // A pointer indexes and carries no length, so it cannot be bounds-checked —
+        // which is why slices exist and why a function should take one.
+        Ax:x3 = raw ax("int32:v = ip[0i64];", @it);
+        if (raw errs(@x3) != 0i64)                                 { exit 62i32; }
 
-    // An index is an INTEGER, and a `bool` is not one.
-    Ax:x4 = raw ax("int32:v = sl[true];", @it);
-    if (raw errs(@x4) != 1i64)                                 { exit 63i32; }
-    // …and a struct cannot be indexed at all.
-    Ax:x5 = raw ax("int32:v = pt[0i64];", @it);
-    if (raw errs(@x5) != 1i64)                                 { exit 64i32; }
+        // An index is an INTEGER, and a `bool` is not one.
+        Ax:x4 = raw ax("int32:v = sl[true];", @it);
+        if (raw errs(@x4) != 1i64)                                 { exit 63i32; }
+        // …and a struct cannot be indexed at all.
+        Ax:x5 = raw ax("int32:v = pt[0i64];", @it);
+        if (raw errs(@x5) != 1i64)                                 { exit 64i32; }
+    }
 
     // --- CALLS: ARITY AND ARGUMENT TYPES -------------------------------------
     // A call yields the function's RESULT, so it needs unwrapping — which is the
     // D-013 discipline showing up at every call site, on purpose.
-    Ax:c1 = raw ax("int32:v = raw add2(1i32, 2i32);", @it);
-    if (raw errs(@c1) != 0i64)                                 { exit 70i32; }
+    {
+        Ax:c1 = raw ax("int32:v = raw add2(1i32, 2i32);", @it);
+        if (raw errs(@c1) != 0i64)                                 { exit 70i32; }
 
-    // BOTH COUNTS ARE NAMED in the message; making the reader count the
-    // parameters is the one thing the compiler already did.
-    Ax:c2 = raw ax("int32:v = raw add2(1i32);", @it);
-    if (raw errs(@c2) != 1i64)                                 { exit 71i32; }
-    Ax:c3 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
-    if (raw errs(@c3) != 1i64)                                 { exit 72i32; }
+        // BOTH COUNTS ARE NAMED in the message; making the reader count the
+        // parameters is the one thing the compiler already did.
+        Ax:c2 = raw ax("int32:v = raw add2(1i32);", @it);
+        if (raw errs(@c2) != 1i64)                                 { exit 71i32; }
+        Ax:c3 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
+        if (raw errs(@c3) != 1i64)                                 { exit 72i32; }
 
-    Ax:c4 = raw ax("int32:v = raw add2(1i32, true);", @it);
-    if (raw errs(@c4) != 1i64)                                 { exit 73i32; }
+        Ax:c4 = raw ax("int32:v = raw add2(1i32, true);", @it);
+        if (raw errs(@c4) != 1i64)                                 { exit 73i32; }
 
-    // Calling something that is not a function.
-    // two since the flip: not-a-function, and the licence (TYPE-042).
-    Ax:c5 = raw ax("int32:v = raw pt(1i32);", @it);
-    if (raw errs(@c5) != 2i64)                                 { exit 74i32; }
+        // Calling something that is not a function.
+        // two since the flip: not-a-function, and the licence (TYPE-042).
+        Ax:c5 = raw ax("int32:v = raw pt(1i32);", @it);
+        if (raw errs(@c5) != 2i64)                                 { exit 74i32; }
 
-    // A call's result is a `Result`, so using it unwrapped is caught.
-    Ax:c6 = raw ax("int32:v = add2(1i32, 2i32);", @it);
-    if (raw errs(@c6) != 1i64)                                 { exit 75i32; }
+        // A call's result is a `Result`, so using it unwrapped is caught.
+        Ax:c6 = raw ax("int32:v = add2(1i32, 2i32);", @it);
+        if (raw errs(@c6) != 1i64)                                 { exit 75i32; }
+    }
 
     // --- UFCS (D-006) ---------------------------------------------------------
     // `p.magnitude()` resolves to the free function with `p` as its first
     // argument. The receiver is already apart from the callee in the AST, which
     // is what makes this a lookup rather than a rewrite.
-    Ax:u1 = raw ax("int32:v = raw pt.magnitude();", @it);
-    if (raw errs(@u1) != 0i64)                                 { exit 80i32; }
+    {
+        Ax:u1 = raw ax("int32:v = raw pt.magnitude();", @it);
+        if (raw errs(@u1) != 0i64)                                 { exit 80i32; }
 
-    // A METHOD THAT DOES NOT EXIST NAMES THE TYPE it was sought on. "unknown
-    // function `nope`" would send the reader looking for a free function when
-    // what they wrote was a method call.
-    // two since the flip: no-method, and the unresolved callee is unlicensed.
-    Ax:u2 = raw ax("int32:v = raw pt.nope();", @it);
-    if (raw errs(@u2) != 2i64)                                 { exit 81i32; }
+        // A METHOD THAT DOES NOT EXIST NAMES THE TYPE it was sought on. "unknown
+        // function `nope`" would send the reader looking for a free function when
+        // what they wrote was a method call.
+        // two since the flip: no-method, and the unresolved callee is unlicensed.
+        Ax:u2 = raw ax("int32:v = raw pt.nope();", @it);
+        if (raw errs(@u2) != 2i64)                                 { exit 81i32; }
 
-    // The receiver is checked as the first parameter, so a method of another type
-    // is refused rather than silently accepted.
-    Ax:u3 = raw ax("int32:v = raw num.magnitude();", @it);
-    if (raw errs(@u3) != 1i64)                                 { exit 82i32; }
+        // The receiver is checked as the first parameter, so a method of another type
+        // is refused rather than silently accepted.
+        Ax:u3 = raw ax("int32:v = raw num.magnitude();", @it);
+        if (raw errs(@u3) != 1i64)                                 { exit 82i32; }
 
-    // …and it auto-dereferences one level like plain access does.
-    Ax:u4 = raw ax("int32:v = raw pp.magnitude();", @it);
-    if (raw errs(@u4) != 0i64)                                 { exit 83i32; }
+        // …and it auto-dereferences one level like plain access does.
+        Ax:u4 = raw ax("int32:v = raw pp.magnitude();", @it);
+        if (raw errs(@u4) != 0i64)                                 { exit 83i32; }
+    }
 
     // --- AN `Optional` IS BUILT BY WRITING THE VALUE (D-099) ------------------
     // There is no constructor. `NIL` is "no value" as `NULL` is "no pointer", and
     // a bare `T` in an `Optional<T>` slot is the one holding a value — which is
     // how the prototype's own `test_nil_optional.npk` is written throughout.
-    Ax:o1 = raw ax("Optional<int32>:o = 1i32;", @it);
-    if (raw errs(@o1) != 0i64)                                 { exit 90i32; }
-    Ax:o2 = raw ax("int32?:o = NIL;", @it);
-    if (raw errs(@o2) != 0i64)                                 { exit 91i32; }
+    {
+        Ax:o1 = raw ax("Optional<int32>:o = 1i32;", @it);
+        if (raw errs(@o1) != 0i64)                                 { exit 90i32; }
+        Ax:o2 = raw ax("int32?:o = NIL;", @it);
+        if (raw errs(@o2) != 0i64)                                 { exit 91i32; }
 
-    // BOTH SPELLINGS ARE ONE TYPE, so the rules cannot be stepped around by
-    // choosing the other annotation.
-    Ax:o3 = raw ax("Optional<int32>:o = NIL;", @it);
-    if (raw errs(@o3) != 0i64)                                 { exit 92i32; }
-    Ax:o4 = raw ax("int32?:o = 1i32;", @it);
-    if (raw errs(@o4) != 0i64)                                 { exit 93i32; }
+        // BOTH SPELLINGS ARE ONE TYPE, so the rules cannot be stepped around by
+        // choosing the other annotation.
+        Ax:o3 = raw ax("Optional<int32>:o = NIL;", @it);
+        if (raw errs(@o3) != 0i64)                                 { exit 92i32; }
+        Ax:o4 = raw ax("int32?:o = 1i32;", @it);
+        if (raw errs(@o4) != 0i64)                                 { exit 93i32; }
 
-    // The value is still checked against `T` — the wrap is the ONLY thing added.
-    Ax:o5 = raw ax("Optional<int32>:o = true;", @it);
-    if (raw errs(@o5) != 1i64)                                 { exit 94i32; }
+        // The value is still checked against `T` — the wrap is the ONLY thing added.
+        Ax:o5 = raw ax("Optional<int32>:o = true;", @it);
+        if (raw errs(@o5) != 1i64)                                 { exit 94i32; }
 
-    // AN UNSUFFIXED LITERAL READS ITS WIDTH THROUGH THE WRAPPER. Asking the
-    // `Optional` for a width would report "no width suffix" about a slot that
-    // plainly names one.
-    Ax:o6 = raw ax("int32?:o = 10;", @it);
-    if (raw errs(@o6) != 0i64)                                 { exit 95i32; }
+        // AN UNSUFFIXED LITERAL READS ITS WIDTH THROUGH THE WRAPPER. Asking the
+        // `Optional` for a width would report "no width suffix" about a slot that
+        // plainly names one.
+        Ax:o6 = raw ax("int32?:o = 10;", @it);
+        if (raw errs(@o6) != 0i64)                                 { exit 95i32; }
+    }
 
     // --- `NIL` IS THE TEST, AND IT READS BOTH WAYS ROUND ---------------------
-    Ax:e1 = raw ax("bool:b = (oi == NIL);", @it);
-    if (raw errs(@e1) != 0i64)                                 { exit 96i32; }
-    // The order used to matter: the left operand was typed with no context, so
-    // `NIL == oi` reported the sentinel as homeless while `oi == NIL` worked.
-    Ax:e2 = raw ax("bool:b = (NIL == oi);", @it);
-    if (raw errs(@e2) != 0i64)                                 { exit 97i32; }
-    // `NULL` had the same defect and is fixed by the same list.
-    Ax:e3 = raw ax("bool:b = (NULL == ip);", @it);
-    if (raw errs(@e3) != 0i64)                                 { exit 98i32; }
+    {
+        Ax:e1 = raw ax("bool:b = (oi == NIL);", @it);
+        if (raw errs(@e1) != 0i64)                                 { exit 96i32; }
+        // The order used to matter: the left operand was typed with no context, so
+        // `NIL == oi` reported the sentinel as homeless while `oi == NIL` worked.
+        Ax:e2 = raw ax("bool:b = (NIL == oi);", @it);
+        if (raw errs(@e2) != 0i64)                                 { exit 97i32; }
+        // `NULL` had the same defect and is fixed by the same list.
+        Ax:e3 = raw ax("bool:b = (NULL == ip);", @it);
+        if (raw errs(@e3) != 0i64)                                 { exit 98i32; }
 
-    // `NIL` WITH NO `Optional` IN SIGHT IS STILL THE UNIT VALUE — unlike `NULL`,
-    // it has a type of its own to fall back to, and `pass NIL;` is the most
-    // common statement in the language.
-    Ax:e4 = raw ax("NIL:u = NIL;", @it);
-    if (raw errs(@e4) != 0i64)                                 { exit 99i32; }
+        // `NIL` WITH NO `Optional` IN SIGHT IS STILL THE UNIT VALUE — unlike `NULL`,
+        // it has a type of its own to fall back to, and `pass NIL;` is the most
+        // common statement in the language.
+        Ax:e4 = raw ax("NIL:u = NIL;", @it);
+        if (raw errs(@e4) != 0i64)                                 { exit 99i32; }
+    }
 
     // --- AN `Optional` HAS NO READABLE MEMBERS -------------------------------
     // `.has_value` duplicates `== NIL`, and `.value` is the unchecked read the
     // wrapper exists to prevent. A draft added both; neither is in the prototype.
-    Ax:m6 = raw ax("bool:b = oi.has_value;", @it);
-    if (raw errs(@m6) != 1i64)                                 { exit 100i32; }
-    Ax:m7 = raw ax("int32:v = oi.value;", @it);
-    if (raw errs(@m7) != 1i64)                                 { exit 101i32; }
+    {
+        Ax:m6 = raw ax("bool:b = oi.has_value;", @it);
+        if (raw errs(@m6) != 1i64)                                 { exit 100i32; }
+        Ax:m7 = raw ax("int32:v = oi.value;", @it);
+        if (raw errs(@m7) != 1i64)                                 { exit 101i32; }
+    }
 
     // --- `??` UNWRAPS AN `Optional`, AND ONLY AN `Optional` ------------------
-    Ax:q1 = raw ax("int32:v = oi ?? 0i32;", @it);
-    if (raw errs(@q1) != 0i64)                                 { exit 102i32; }
-    // The default must be the inner type.
-    Ax:q2 = raw ax("int32:v = oi ?? true;", @it);
-    if (raw errs(@q2) != 1i64)                                 { exit 103i32; }
-    // A POINTER IS REFUSED. The prototype's checker accepted one and dereferenced
-    // it; the behaviour never ran, and a `??` that reads through a pointer hides
-    // the read that `<-` exists to show.
-    Ax:q3 = raw ax("int32:v = ip ?? 0i32;", @it);
-    if (raw errs(@q3) != 1i64)                                 { exit 104i32; }
+    {
+        Ax:q1 = raw ax("int32:v = oi ?? 0i32;", @it);
+        if (raw errs(@q1) != 0i64)                                 { exit 102i32; }
+        // The default must be the inner type.
+        Ax:q2 = raw ax("int32:v = oi ?? true;", @it);
+        if (raw errs(@q2) != 1i64)                                 { exit 103i32; }
+        // A POINTER IS REFUSED. The prototype's checker accepted one and dereferenced
+        // it; the behaviour never ran, and a `??` that reads through a pointer hides
+        // the read that `<-` exists to show.
+        Ax:q3 = raw ax("int32:v = ip ?? 0i32;", @it);
+        if (raw errs(@q3) != 1i64)                                 { exit 104i32; }
+    }
 
     // --- `?.` SHORT-CIRCUITS AND THE ABSENCE SURVIVES ------------------------
     // Its result is an `Optional<U>`, not a `U`. If the absence did not survive
     // the access, `?.` would be `.` with two extra characters.
-    Ax:n1 = raw ax("Optional<int32>:v = op?.x;", @it);
-    if (raw errs(@n1) != 0i64)                                 { exit 110i32; }
-    Ax:n2 = raw ax("int32:v = op?.x;", @it);
-    if (raw errs(@n2) != 1i64)                                 { exit 111i32; }
-    // `?.` on something that is not an `Optional` says which operator was meant.
-    Ax:n3 = raw ax("Optional<int32>:v = pt?.x;", @it);
-    if (raw errs(@n3) != 1i64)                                 { exit 112i32; }
+    {
+        Ax:n1 = raw ax("Optional<int32>:v = op?.x;", @it);
+        if (raw errs(@n1) != 0i64)                                 { exit 110i32; }
+        Ax:n2 = raw ax("int32:v = op?.x;", @it);
+        if (raw errs(@n2) != 1i64)                                 { exit 111i32; }
+        // `?.` on something that is not an `Optional` says which operator was meant.
+        Ax:n3 = raw ax("Optional<int32>:v = pt?.x;", @it);
+        if (raw errs(@n3) != 1i64)                                 { exit 112i32; }
+    }
 
     // --- THE TWO INNER TYPES THAT ARE REFUSED --------------------------------
     // `NIL?` would be empty in two ways with no way to tell them apart, and
     // `T??` has an inner absence nothing can set.
-    Ax:b1 = raw ax("NIL?:o = NIL;", @it);
-    if (raw errs(@b1) != 1i64)                                 { exit 113i32; }
-    // THE POSTFIX FORM CANNOT EVEN BE LEXED: `??` is one token, so `int32??`
-    // reads as `int32` followed by the null-coalesce operator and never reaches
-    // the type resolver. Which leaves the generic spelling as the only way in,
-    // and it is refused there.
-    Ax:b3 = raw ax("Optional<Optional<int32>>:o = NIL;", @it);
-    if (raw errs(@b3) != 1i64)                                 { exit 115i32; }
-    // …and `?.` FLATTENS rather than manufacturing the type behind the rule's
-    // back. `wo` is an `Optional<Wrap>` whose `p` field is a `Point`; `oow` holds
-    // an `Optional<int32>` field, so reaching it through `?.` stays one deep.
-    Ax:b4 = raw ax("Optional<int32>:v = ow?.oi;", @it);
-    if (raw errs(@b4) != 0i64)                                 { exit 116i32; }
+    {
+        Ax:b1 = raw ax("NIL?:o = NIL;", @it);
+        if (raw errs(@b1) != 1i64)                                 { exit 113i32; }
+        // THE POSTFIX FORM CANNOT EVEN BE LEXED: `??` is one token, so `int32??`
+        // reads as `int32` followed by the null-coalesce operator and never reaches
+        // the type resolver. Which leaves the generic spelling as the only way in,
+        // and it is refused there.
+        Ax:b3 = raw ax("Optional<Optional<int32>>:o = NIL;", @it);
+        if (raw errs(@b3) != 1i64)                                 { exit 115i32; }
+        // …and `?.` FLATTENS rather than manufacturing the type behind the rule's
+        // back. `wo` is an `Optional<Wrap>` whose `p` field is a `Point`; `oow` holds
+        // an `Optional<int32>` field, so reaching it through `?.` stays one deep.
+        Ax:b4 = raw ax("Optional<int32>:v = ow?.oi;", @it);
+        if (raw errs(@b4) != 0i64)                                 { exit 116i32; }
+    }
 
     // --- VARIADIC CALLS (D-100) ----------------------------------------------
     // `vsum` is `int32(int32:first, ..*int64[]:rest)`. Until now `fn_type` built
     // a plain `TY_FUNC` from the fixed parameters and dropped the spec, so every
     // one of these checked as a one-parameter function: the zero-extra case
     // passed by accident and every other case was refused for the wrong reason.
-    Ax:v1 = raw ax("int32:v = raw vsum(1i32);", @it);
-    if (raw errs(@v1) != 0i64)                                 { exit 120i32; }
-    Ax:v2 = raw ax("int32:v = raw vsum(1i32, 2i64);", @it);
-    if (raw errs(@v2) != 0i64)                                 { exit 121i32; }
-    Ax:v3 = raw ax("int32:v = raw vsum(1i32, 2i64, 3i64, 4i64);", @it);
-    if (raw errs(@v3) != 0i64)                                 { exit 122i32; }
+    {
+        Ax:v1 = raw ax("int32:v = raw vsum(1i32);", @it);
+        if (raw errs(@v1) != 0i64)                                 { exit 120i32; }
+        Ax:v2 = raw ax("int32:v = raw vsum(1i32, 2i64);", @it);
+        if (raw errs(@v2) != 0i64)                                 { exit 121i32; }
+        Ax:v3 = raw ax("int32:v = raw vsum(1i32, 2i64, 3i64, 4i64);", @it);
+        if (raw errs(@v3) != 0i64)                                 { exit 122i32; }
 
-    // THE FIXED PARAMETERS ARE STILL FIXED — the tail does not swallow them.
-    Ax:v4 = raw ax("int32:v = raw vsum();", @it);
-    if (raw errs(@v4) != 1i64)                                 { exit 123i32; }
-    Ax:v5 = raw ax("int32:v = raw vsum(true);", @it);
-    if (raw errs(@v5) != 1i64)                                 { exit 124i32; }
+        // THE FIXED PARAMETERS ARE STILL FIXED — the tail does not swallow them.
+        Ax:v4 = raw ax("int32:v = raw vsum();", @it);
+        if (raw errs(@v4) != 1i64)                                 { exit 123i32; }
+        Ax:v5 = raw ax("int32:v = raw vsum(true);", @it);
+        if (raw errs(@v5) != 1i64)                                 { exit 124i32; }
 
-    // …AND EVERY TRAILING ARGUMENT IS CHECKED AGAINST THE ELEMENT, not the slice.
-    // `..*int64[]` collects `int64`s, so an `int32` in the tail is refused — one
-    // diagnostic per bad argument, and the second one is not masked by the first.
-    Ax:v6 = raw ax("int32:v = raw vsum(1i32, 2i32);", @it);
-    if (raw errs(@v6) != 1i64)                                 { exit 125i32; }
-    Ax:v7 = raw ax("int32:v = raw vsum(1i32, 2i32, 3i32);", @it);
-    if (raw errs(@v7) != 2i64)                                 { exit 126i32; }
+        // …AND EVERY TRAILING ARGUMENT IS CHECKED AGAINST THE ELEMENT, not the slice.
+        // `..*int64[]` collects `int64`s, so an `int32` in the tail is refused — one
+        // diagnostic per bad argument, and the second one is not masked by the first.
+        Ax:v6 = raw ax("int32:v = raw vsum(1i32, 2i32);", @it);
+        if (raw errs(@v6) != 1i64)                                 { exit 125i32; }
+        Ax:v7 = raw ax("int32:v = raw vsum(1i32, 2i32, 3i32);", @it);
+        if (raw errs(@v7) != 2i64)                                 { exit 126i32; }
 
-    // A FIXED FUNCTION IS UNCHANGED. `add2` takes exactly two.
-    Ax:v8 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
-    if (raw errs(@v8) != 1i64)                                 { exit 127i32; }
+        // A FIXED FUNCTION IS UNCHANGED. `add2` takes exactly two.
+        Ax:v8 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
+        if (raw errs(@v8) != 1i64)                                 { exit 127i32; }
+    }
 
     // --- `..^` EXPANDS INTO THE TAIL AND NOWHERE ELSE (D-026) ----------------
     // Its type is the COLLECTOR, not the element: it supplies the whole slice.
-    Ax:s1 = raw ax("int32:v = raw vsum(1i32, ..^i64s);", @it);
-    if (raw errs(@s1) != 0i64)                                 { exit 130i32; }
-    // An element where a collection belongs, and a collection where an element
-    // belongs, are both refused.
-    Ax:s2 = raw ax("int32:v = raw vsum(1i32, ..^2i64);", @it);
-    if (raw errs(@s2) != 1i64)                                 { exit 131i32; }
-    Ax:s3 = raw ax("int32:v = raw vsum(1i32, i64s);", @it);
-    if (raw errs(@s3) != 1i64)                                 { exit 132i32; }
-    // A FUNCTION THAT COLLECTS NOTHING HAS NO TAIL TO EXPAND INTO.
-    Ax:s4 = raw ax("int32:v = raw add2(1i32, ..^i64s);", @it);
-    if (raw errs(@s4) != 2i64)                                 { exit 133i32; }
-    // AN EXPANSION FILLING A FIXED PARAMETER is refused where it sits.
-    Ax:s5 = raw ax("int32:v = raw vsum(..^i64s);", @it);
-    if (raw errs(@s5) != 2i64)                                 { exit 134i32; }
-    // NOTHING MAY FOLLOW ONE — an argument after an expansion has no position.
-    Ax:s6 = raw ax("int32:v = raw vsum(1i32, ..^i64s, 9i64);", @it);
-    if (raw errs(@s6) != 1i64)                                 { exit 135i32; }
+    {
+        Ax:s1 = raw ax("int32:v = raw vsum(1i32, ..^i64s);", @it);
+        if (raw errs(@s1) != 0i64)                                 { exit 130i32; }
+        // An element where a collection belongs, and a collection where an element
+        // belongs, are both refused.
+        Ax:s2 = raw ax("int32:v = raw vsum(1i32, ..^2i64);", @it);
+        if (raw errs(@s2) != 1i64)                                 { exit 131i32; }
+        Ax:s3 = raw ax("int32:v = raw vsum(1i32, i64s);", @it);
+        if (raw errs(@s3) != 1i64)                                 { exit 132i32; }
+        // A FUNCTION THAT COLLECTS NOTHING HAS NO TAIL TO EXPAND INTO.
+        Ax:s4 = raw ax("int32:v = raw add2(1i32, ..^i64s);", @it);
+        if (raw errs(@s4) != 2i64)                                 { exit 133i32; }
+        // AN EXPANSION FILLING A FIXED PARAMETER is refused where it sits.
+        Ax:s5 = raw ax("int32:v = raw vsum(..^i64s);", @it);
+        if (raw errs(@s5) != 2i64)                                 { exit 134i32; }
+        // NOTHING MAY FOLLOW ONE — an argument after an expansion has no position.
+        Ax:s6 = raw ax("int32:v = raw vsum(1i32, ..^i64s, 9i64);", @it);
+        if (raw errs(@s6) != 1i64)                                 { exit 135i32; }
+    }
 
     // --- `..*T[]` AND NOT `..*T` ---------------------------------------------
     // Without the brackets there is no slice to bind and no element to recover.
-    Ax:s7 = raw axd("func:bad = int32(..*int64:rest) never fails { pass 1i32; };",
-                    "int32:v = raw bad(1i64);", @it);
-    if (raw errs(@s7) != 1i64)                                 { exit 136i32; }
+    {
+        Ax:s7 = raw axd("func:bad = int32(..*int64:rest) never fails { pass 1i32; };",
+                        "int32:v = raw bad(1i64);", @it);
+        if (raw errs(@s7) != 1i64)                                 { exit 136i32; }
+    }
 
     // --- A METHOD DECLARED IN AN `impl` IS REACHABLE (D-102) ------------------
     // Until 0.4.6 it was not. `impl` declares nothing at module scope, and
@@ -452,189 +496,203 @@ func:main = int32(cstring[]:_~argv) {
     // module-level free functions, and a method written where the spec puts it
     // was invisible. The 0.4.5 UFCS tests passed because their fixture declared
     // `magnitude` at module scope, which is the one form the spec does not use.
-    Ax:i1 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
-                    "int32:v = raw pt.scaled(2i32);", @it);
-    if (raw errs(@i1) != 0i64)                                 { exit 140i32; }
-    // Its ARGUMENTS are checked, so the lookup produced a real signature rather
-    // than something that merely stopped the "no method" diagnostic.
-    Ax:i2 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
-                    "int32:v = raw pt.scaled(true);", @it);
-    if (raw errs(@i2) != 1i64)                                 { exit 141i32; }
-    Ax:i3 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
-                    "int32:v = raw pt.scaled();", @it);
-    if (raw errs(@i3) != 1i64)                                 { exit 142i32; }
-    // A method on ANOTHER type is not found on this one.
-    Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) never fails { pass 1i32; }; };",
-                    "int32:v = raw pt.only_wrap();", @it);
-    // two since the flip: no-method, and the unresolved callee is unlicensed.
-    if (raw errs(@i4) != 2i64)                                 { exit 143i32; }
+    {
+        Ax:i1 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
+                        "int32:v = raw pt.scaled(2i32);", @it);
+        if (raw errs(@i1) != 0i64)                                 { exit 140i32; }
+        // Its ARGUMENTS are checked, so the lookup produced a real signature rather
+        // than something that merely stopped the "no method" diagnostic.
+        Ax:i2 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
+                        "int32:v = raw pt.scaled(true);", @it);
+        if (raw errs(@i2) != 1i64)                                 { exit 141i32; }
+        Ax:i3 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) never fails { pass 1i32; }; };",
+                        "int32:v = raw pt.scaled();", @it);
+        if (raw errs(@i3) != 1i64)                                 { exit 142i32; }
+        // A method on ANOTHER type is not found on this one.
+        Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) never fails { pass 1i32; }; };",
+                        "int32:v = raw pt.only_wrap();", @it);
+        // two since the flip: no-method, and the unresolved callee is unlicensed.
+        if (raw errs(@i4) != 2i64)                                 { exit 143i32; }
 
-    // A TRAIT IMPL'S METHOD IS REACHED THE SAME WAY. Nothing about the call site
-    // says which impl a method came from, and nothing should.
-    Ax:i5 = raw axd("trait:Sized2 = { func:area = int32(Self:self) never fails; }; impl:Point:Sized2 = { func:area = int32(Point:self) never fails { pass 1i32; }; };",
-                    "int32:v = raw pt.area();", @it);
-    if (raw errs(@i5) != 0i64)                                 { exit 144i32; }
+        // A TRAIT IMPL'S METHOD IS REACHED THE SAME WAY. Nothing about the call site
+        // says which impl a method came from, and nothing should.
+        Ax:i5 = raw axd("trait:Sized2 = { func:area = int32(Self:self) never fails; }; impl:Point:Sized2 = { func:area = int32(Point:self) never fails { pass 1i32; }; };",
+                        "int32:v = raw pt.area();", @it);
+        if (raw errs(@i5) != 0i64)                                 { exit 144i32; }
 
-    // A FREE FUNCTION IS STILL A METHOD (D-006). The impl table is the first
-    // place to look, not the only one.
-    Ax:i6 = raw ax("int32:v = raw pt.magnitude();", @it);
-    if (raw errs(@i6) != 0i64)                                 { exit 145i32; }
+        // A FREE FUNCTION IS STILL A METHOD (D-006). The impl table is the first
+        // place to look, not the only one.
+        Ax:i6 = raw ax("int32:v = raw pt.magnitude();", @it);
+        if (raw errs(@i6) != 0i64)                                 { exit 145i32; }
 
-    // TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS, and picking either would be a
-    // silent choice between two things somebody wrote on purpose.
-    Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; impl:Point:Ta = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
-                    "int32:v = raw pt.tag();", @it);
-    // two since the flip: ambiguous, and an unresolvable callee is unlicensed.
-    if (raw errs(@i7) != 2i64)                                 { exit 146i32; }
+        // TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS, and picking either would be a
+        // silent choice between two things somebody wrote on purpose.
+        Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; impl:Point:Ta = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
+                        "int32:v = raw pt.tag();", @it);
+        // two since the flip: ambiguous, and an unresolvable callee is unlicensed.
+        if (raw errs(@i7) != 2i64)                                 { exit 146i32; }
 
-    // …and an INHERENT METHOD OUTRANKS a trait one, which is the same rule
-    // TRAITS_REFERENCE 2.6 states for blanket impls: concrete wins.
-    Ax:i8 = raw axd("trait:Tc = { func:tag = int32(Self:self) never fails; }; impl:Point:Tc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
-                    "int32:v = raw pt.tag();", @it);
-    if (raw errs(@i8) != 0i64)                                 { exit 147i32; }
+        // …and an INHERENT METHOD OUTRANKS a trait one, which is the same rule
+        // TRAITS_REFERENCE 2.6 states for blanket impls: concrete wins.
+        Ax:i8 = raw axd("trait:Tc = { func:tag = int32(Self:self) never fails; }; impl:Point:Tc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
+                        "int32:v = raw pt.tag();", @it);
+        if (raw errs(@i8) != 0i64)                                 { exit 147i32; }
+    }
 
     // --- COHERENCE (TRAITS_REFERENCE 4.1) ------------------------------------
     // AT MOST ONE implementation of a trait for a type. There is no rule the
     // compiler could pick by that would not be a silent choice between two things
     // somebody wrote on purpose.
-    Ax:h1 = raw axd("trait:Td = { func:tag = int32(Self:self) never fails; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@h1) != 1i64)                                 { exit 150i32; }
+    {
+        Ax:h1 = raw axd("trait:Td = { func:tag = int32(Self:self) never fails; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Td = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@h1) != 1i64)                                 { exit 150i32; }
 
-    // The SAME TRAIT on a DIFFERENT TYPE is the ordinary case and is fine.
-    Ax:h2 = raw axd("trait:Te = { func:tag = int32(Self:self) never fails; }; impl:Point:Te = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap:Te = { func:tag = int32(Wrap:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@h2) != 0i64)                                 { exit 151i32; }
+        // The SAME TRAIT on a DIFFERENT TYPE is the ordinary case and is fine.
+        Ax:h2 = raw axd("trait:Te = { func:tag = int32(Self:self) never fails; }; impl:Point:Te = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap:Te = { func:tag = int32(Wrap:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@h2) != 0i64)                                 { exit 151i32; }
 
-    // TWO INHERENT IMPLS ARE NOT A COHERENCE ERROR. Splitting a type's methods
-    // across two blocks is a formatting choice; what would be wrong is the same
-    // METHOD twice, which is a duplicate-name question and not this one.
-    Ax:h3 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:two = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@h3) != 0i64)                                 { exit 152i32; }
+        // TWO INHERENT IMPLS ARE NOT A COHERENCE ERROR. Splitting a type's methods
+        // across two blocks is a formatting choice; what would be wrong is the same
+        // METHOD twice, which is a duplicate-name question and not this one.
+        Ax:h3 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:two = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@h3) != 0i64)                                 { exit 152i32; }
 
-    // THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE. A struct name resolves
-    // there perfectly well and means nothing, so the diagnostic says which
-    // segment is wrong — the two are one character apart.
-    Ax:h4 = raw axd("impl:Point:Wrap = { };", "", @it);
-    if (raw errs(@h4) != 1i64)                                 { exit 153i32; }
+        // THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE. A struct name resolves
+        // there perfectly well and means nothing, so the diagnostic says which
+        // segment is wrong — the two are one character apart.
+        Ax:h4 = raw axd("impl:Point:Wrap = { };", "", @it);
+        if (raw errs(@h4) != 1i64)                                 { exit 153i32; }
+    }
 
     // --- AN IMPL SUPPLIES WHAT THE TRAIT REQUIRES (D-103) --------------------
     // A trait method with no body is REQUIRED; the absence is real rather than a
     // flag, which is what lets the two be told apart without one.
-    Ax:c1 = raw axd("trait:Tf = { func:one = int32(Self:self) never fails; }; impl:Point:Tf = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@c1) != 0i64)                                 { exit 160i32; }
-    Ax:c2 = raw axd("trait:Tg = { func:one = int32(Self:self) never fails; }; impl:Point:Tg = { };",
-                    "", @it);
-    if (raw errs(@c2) != 1i64)                                 { exit 161i32; }
+    {
+        Ax:c1 = raw axd("trait:Tf = { func:one = int32(Self:self) never fails; }; impl:Point:Tf = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@c1) != 0i64)                                 { exit 160i32; }
+        Ax:c2 = raw axd("trait:Tg = { func:one = int32(Self:self) never fails; }; impl:Point:Tg = { };",
+                        "", @it);
+        if (raw errs(@c2) != 1i64)                                 { exit 161i32; }
 
-    // A DEFAULT BODY MAKES IT OPTIONAL (2.1), and an impl may still override.
-    Ax:c3 = raw axd("trait:Th = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Th = { };",
-                    "", @it);
-    if (raw errs(@c3) != 0i64)                                 { exit 162i32; }
-    Ax:c4 = raw axd("trait:Ti = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Ti = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@c4) != 0i64)                                 { exit 163i32; }
+        // A DEFAULT BODY MAKES IT OPTIONAL (2.1), and an impl may still override.
+        Ax:c3 = raw axd("trait:Th = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Th = { };",
+                        "", @it);
+        if (raw errs(@c3) != 0i64)                                 { exit 162i32; }
+        Ax:c4 = raw axd("trait:Ti = { func:one = int32(Self:self) never fails { pass 0i32; }; }; impl:Point:Ti = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@c4) != 0i64)                                 { exit 163i32; }
 
-    // …AND MAY NOT ADD ONE THE TRAIT NEVER DECLARED. An inherent impl is where a
-    // method with no trait behind it belongs, and it is one line away, so the
-    // diagnostic points there rather than merely refusing.
-    Ax:c5 = raw axd("trait:Tj = { func:one = int32(Self:self) never fails; }; impl:Point:Tj = { func:one = int32(Point:self) never fails { pass 1i32; }; func:extra = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@c5) != 1i64)                                 { exit 164i32; }
+        // …AND MAY NOT ADD ONE THE TRAIT NEVER DECLARED. An inherent impl is where a
+        // method with no trait behind it belongs, and it is one line away, so the
+        // diagnostic points there rather than merely refusing.
+        Ax:c5 = raw axd("trait:Tj = { func:one = int32(Self:self) never fails; }; impl:Point:Tj = { func:one = int32(Point:self) never fails { pass 1i32; }; func:extra = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@c5) != 1i64)                                 { exit 164i32; }
+    }
 
     // --- THE SIGNATURE HAS TO MATCH, WITH `Self` SUBSTITUTED -----------------
     // The case that would otherwise pass: every method the trait asked for, and
     // none of them interchangeable. A `dyn` caller would dispatch through a slot
     // typed one way into a body typed another.
-    Ax:c6 = raw axd("trait:Tk = { func:one = flt64(Self:self) never fails; }; impl:Point:Tk = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@c6) != 1i64)                                 { exit 165i32; }
-    Ax:c7 = raw axd("trait:Tl = { func:one = int32(Self:self, int32:k) never fails; }; impl:Point:Tl = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@c7) != 1i64)                                 { exit 166i32; }
-    // `Self` IN A PARAMETER RESOLVES TO THE TARGET, so this matches rather than
-    // reporting `Self` against `Point` as two different types.
-    Ax:c8 = raw axd("trait:Tm = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tm = { func:eq = bool(Point:self, Point:other) never fails { pass true; }; };",
-                    "", @it);
-    if (raw errs(@c8) != 0i64)                                 { exit 167i32; }
-    // …and a parameter that is NOT the target is still refused.
-    Ax:c9 = raw axd("trait:Tn = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tn = { func:eq = bool(Point:self, Wrap:other) never fails { pass true; }; };",
-                    "", @it);
-    if (raw errs(@c9) != 1i64)                                 { exit 168i32; }
+    {
+        Ax:c6 = raw axd("trait:Tk = { func:one = flt64(Self:self) never fails; }; impl:Point:Tk = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@c6) != 1i64)                                 { exit 165i32; }
+        Ax:c7 = raw axd("trait:Tl = { func:one = int32(Self:self, int32:k) never fails; }; impl:Point:Tl = { func:one = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@c7) != 1i64)                                 { exit 166i32; }
+        // `Self` IN A PARAMETER RESOLVES TO THE TARGET, so this matches rather than
+        // reporting `Self` against `Point` as two different types.
+        Ax:c8 = raw axd("trait:Tm = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tm = { func:eq = bool(Point:self, Point:other) never fails { pass true; }; };",
+                        "", @it);
+        if (raw errs(@c8) != 0i64)                                 { exit 167i32; }
+        // …and a parameter that is NOT the target is still refused.
+        Ax:c9 = raw axd("trait:Tn = { func:eq = bool(Self:self, Self:other) never fails; }; impl:Point:Tn = { func:eq = bool(Point:self, Wrap:other) never fails { pass true; }; };",
+                        "", @it);
+        if (raw errs(@c9) != 1i64)                                 { exit 168i32; }
+    }
 
     // --- `assoc` TYPES (2.3) -------------------------------------------------
     // Declared in the trait, bound in the impl. `assoc:Item;` is required;
     // `assoc:Error = string;` carries a default and is inherited if omitted.
-    Ax:a1 = raw axd("trait:To = { assoc:Item; }; impl:Point:To = { assoc:Item = int32; };",
-                    "", @it);
-    if (raw errs(@a1) != 0i64)                                 { exit 170i32; }
-    Ax:a2 = raw axd("trait:Tp = { assoc:Item; }; impl:Point:Tp = { };", "", @it);
-    if (raw errs(@a2) != 1i64)                                 { exit 171i32; }
-    Ax:a3 = raw axd("trait:Tq = { assoc:Item = int32; }; impl:Point:Tq = { };", "", @it);
-    if (raw errs(@a3) != 0i64)                                 { exit 172i32; }
-    // A BINDING THE TRAIT NEVER DECLARED is refused, the same as a method.
-    Ax:a4 = raw axd("trait:Tr = { assoc:Item; }; impl:Point:Tr = { assoc:Item = int32; assoc:Other = int32; };",
-                    "", @it);
-    if (raw errs(@a4) != 1i64)                                 { exit 173i32; }
+    {
+        Ax:a1 = raw axd("trait:To = { assoc:Item; }; impl:Point:To = { assoc:Item = int32; };",
+                        "", @it);
+        if (raw errs(@a1) != 0i64)                                 { exit 170i32; }
+        Ax:a2 = raw axd("trait:Tp = { assoc:Item; }; impl:Point:Tp = { };", "", @it);
+        if (raw errs(@a2) != 1i64)                                 { exit 171i32; }
+        Ax:a3 = raw axd("trait:Tq = { assoc:Item = int32; }; impl:Point:Tq = { };", "", @it);
+        if (raw errs(@a3) != 0i64)                                 { exit 172i32; }
+        // A BINDING THE TRAIT NEVER DECLARED is refused, the same as a method.
+        Ax:a4 = raw axd("trait:Tr = { assoc:Item; }; impl:Point:Tr = { assoc:Item = int32; assoc:Other = int32; };",
+                        "", @it);
+        if (raw errs(@a4) != 1i64)                                 { exit 173i32; }
+    }
 
     // --- `Self` IS VALID ONLY INSIDE A TRAIT OR IMPL BODY --------------------
-    Ax:z1 = raw axd("func:loose = int32(Self:self) never fails { pass 1i32; };",
-                    "int32:v = raw loose(1i32);", @it);
-    if (raw errs(@z1) != 1i64)                                 { exit 174i32; }
+    {
+        Ax:z1 = raw axd("func:loose = int32(Self:self) never fails { pass 1i32; };",
+                        "int32:v = raw loose(1i32);", @it);
+        if (raw errs(@z1) != 1i64)                                 { exit 174i32; }
+    }
 
     // --- OBJECT SAFETY, AND WHICH RULE BROKE (4.2) ---------------------------
     // Three rules, three messages. "Trait is not object safe" sends the reader to
     // re-derive the list; naming the method and the reason does not.
-    Ax:o1 = raw axd("trait:Ok1 = { func:draw = int32(Self:self) never fails; }; impl:Point:Ok1 = { func:draw = int32(Point:self) never fails { pass 1i32; }; };",
-                    "dyn Ok1:d = pt;", @it);
-    if (raw errs(@o1) != 0i64)                                 { exit 180i32; }
+    {
+        Ax:o1 = raw axd("trait:Ok1 = { func:draw = int32(Self:self) never fails; }; impl:Point:Ok1 = { func:draw = int32(Point:self) never fails { pass 1i32; }; };",
+                        "dyn Ok1:d = pt;", @it);
+        if (raw errs(@o1) != 0i64)                                 { exit 180i32; }
 
-    // 1. A METHOD WITH NO `self` has no receiver to dispatch on.
-    Ax:o2 = raw axd("trait:Bad1 = { func:make = int32(); };",
-                    "dyn Bad1:d;", @it);
-    if (raw errs(@o2) != 1i64)                                 { exit 181i32; }
-    if (!(raw string_eq(raw code0a(@o2), raw TYPE_NOT_OBJECT_SAFE()))) { exit 182i32; }
+        // 1. A METHOD WITH NO `self` has no receiver to dispatch on.
+        Ax:o2 = raw axd("trait:Bad1 = { func:make = int32(); };",
+                        "dyn Bad1:d;", @it);
+        if (raw errs(@o2) != 1i64)                                 { exit 181i32; }
+        if (!(raw string_eq(raw code0a(@o2), raw TYPE_NOT_OBJECT_SAFE()))) { exit 182i32; }
 
-    // …and `self` must be FIRST, because UFCS binds the receiver to parameter
-    // zero. The prototype accepted it anywhere in the list; here that would be
-    // dispatched with the receiver in the wrong position.
-    //
-    // ONE ERROR, NOT TWO, and the count is the assertion (1.0.5). D-157's walk
-    // refuses `Self` outside the receiver, and `Self:self` HERE is outside it —
-    // so the extended rule 2 fired alongside rule 1 and said "mentions `Self` in
-    // parameter `self`, and only the receiver may", of a parameter that is named
-    // `self`. One mistake, reported twice, the second time misdescribed. With no
-    // receiver at all the phrase "nowhere but the receiver" has no referent, so
-    // the parameter scan is skipped once rule 1 has fired; the trait is refused
-    // either way, so only a line of noise is lost.
-    Ax:o3 = raw axd("trait:Bad2 = { func:draw = int32(int32:k, Self:self); };",
-                    "dyn Bad2:d;", @it);
-    if (raw errs(@o3) != 1i64)                                 { exit 183i32; }
+        // …and `self` must be FIRST, because UFCS binds the receiver to parameter
+        // zero. The prototype accepted it anywhere in the list; here that would be
+        // dispatched with the receiver in the wrong position.
+        //
+        // ONE ERROR, NOT TWO, and the count is the assertion (1.0.5). D-157's walk
+        // refuses `Self` outside the receiver, and `Self:self` HERE is outside it —
+        // so the extended rule 2 fired alongside rule 1 and said "mentions `Self` in
+        // parameter `self`, and only the receiver may", of a parameter that is named
+        // `self`. One mistake, reported twice, the second time misdescribed. With no
+        // receiver at all the phrase "nowhere but the receiver" has no referent, so
+        // the parameter scan is skipped once rule 1 has fired; the trait is refused
+        // either way, so only a line of noise is lost.
+        Ax:o3 = raw axd("trait:Bad2 = { func:draw = int32(int32:k, Self:self); };",
+                        "dyn Bad2:d;", @it);
+        if (raw errs(@o3) != 1i64)                                 { exit 183i32; }
 
-    // 2. RETURNING `Self` — its size is unknown once the concrete type is erased.
-    Ax:o4 = raw axd("trait:Bad3 = { func:clone = Self(Self:self) never fails; };",
-                    "dyn Bad3:d;", @it);
-    if (raw errs(@o4) != 1i64)                                 { exit 184i32; }
+        // 2. RETURNING `Self` — its size is unknown once the concrete type is erased.
+        Ax:o4 = raw axd("trait:Bad3 = { func:clone = Self(Self:self) never fails; };",
+                        "dyn Bad3:d;", @it);
+        if (raw errs(@o4) != 1i64)                                 { exit 184i32; }
 
-    // 3. A COMPTIME PARAMETER monomorphizes into one body per argument, and a
-    // vtable slot is one address.
-    Ax:o5 = raw axd("trait:Bad4 = { func:draw<T> = int32(Self:self); };",
-                    "dyn Bad4:d;", @it);
-    if (raw errs(@o5) != 1i64)                                 { exit 185i32; }
+        // 3. A COMPTIME PARAMETER monomorphizes into one body per argument, and a
+        // vtable slot is one address.
+        Ax:o5 = raw axd("trait:Bad4 = { func:draw<T> = int32(Self:self); };",
+                        "dyn Bad4:d;", @it);
+        if (raw errs(@o5) != 1i64)                                 { exit 185i32; }
 
-    // `dyn A & B` CHECKS BOTH (5.3). A widening to `dyn A` would otherwise pass
-    // through a vtable that could not have been built.
-    Ax:o6 = raw axd("trait:Ok2 = { func:a = int32(Self:self) never fails; }; trait:Bad5 = { func:make = int32(); };",
-                    "dyn Ok2 & Bad5:d;", @it);
-    if (raw errs(@o6) != 1i64)                                 { exit 186i32; }
+        // `dyn A & B` CHECKS BOTH (5.3). A widening to `dyn A` would otherwise pass
+        // through a vtable that could not have been built.
+        Ax:o6 = raw axd("trait:Ok2 = { func:a = int32(Self:self) never fails; }; trait:Bad5 = { func:make = int32(); };",
+                        "dyn Ok2 & Bad5:d;", @it);
+        if (raw errs(@o6) != 1i64)                                 { exit 186i32; }
 
-    // A NON-OBJECT-SAFE TRAIT IS STILL A PERFECTLY GOOD TRAIT. Only `dyn` is
-    // refused — static dispatch has the concrete type and needs no vtable.
-    Ax:o7 = raw axd("trait:Bad6 = { func:make = int32(); }; impl:Point:Bad6 = { func:make = int32() never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@o7) != 0i64)                                 { exit 187i32; }
+        // A NON-OBJECT-SAFE TRAIT IS STILL A PERFECTLY GOOD TRAIT. Only `dyn` is
+        // refused — static dispatch has the concrete type and needs no vtable.
+        Ax:o7 = raw axd("trait:Bad6 = { func:make = int32(); }; impl:Point:Bad6 = { func:make = int32() never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@o7) != 0i64)                                 { exit 187i32; }
+    }
 
     // --- A TYPE NAME IS NOT A TOKEN KIND (D-104) -----------------------------
     // `resolve_named` asked `builtin_type_spec` about EVERY payload, on the
@@ -647,49 +705,53 @@ func:main = int32(cstring[]:_~argv) {
     // THE INDEX IS FORCED RATHER THAN HOPED FOR. A fresh intern table is padded
     // so the next new identifier lands on exactly 87 — `KwInt32` — which is what
     // makes this a regression test rather than a coincidence that held once.
-    InternTable:ct = raw intern_init();
-    int32:pad = raw intern_count(@ct);
-    while (pad < 87i32) {
-        drop intern_add(@ct, string_concat("pad", int_to_string(pad => int64)));
-        pad = raw intern_count(@ct);
-    }
-    // `Zzz` is the first identifier in the source, so it interns at 87. Before the
-    // fix it resolved to `int32`, and `int32:k = v;` therefore typechecked —
-    // silently, against a struct.
-    Ax:cz = raw run_module("struct:Zzz = { int32:x; }; func:g = NIL(Zzz:v) { int32:k = v; pass NIL; };",
-                           "g", @ct);
-    if (raw errs(@cz) != 1i64)                                 { exit 190i32; }
+    {
+        InternTable:ct = raw intern_init();
+        int32:pad = raw intern_count(@ct);
+        while (pad < 87i32) {
+            discard(raw intern_add(@ct, string_concat("pad", int_to_string(pad => int64))));
+            pad = raw intern_count(@ct);
+        }
+        // `Zzz` is the first identifier in the source, so it interns at 87. Before the
+        // fix it resolved to `int32`, and `int32:k = v;` therefore typechecked —
+        // silently, against a struct.
+        Ax:cz = raw run_module("struct:Zzz = { int32:x; }; func:g = NIL(Zzz:v) { int32:k = v; pass NIL; };",
+                               "g", @ct);
+        if (raw errs(@cz) != 1i64)                                 { exit 190i32; }
 
-    // …and the keyword itself still resolves, which is the half that has to keep
-    // working: `int32` is a payload of 87 too, and the node is what tells them
-    // apart now.
-    Ax:cy = raw run_module("func:g = NIL(int32:v) { int32:k = v; pass NIL; };",
-                           "g", @ct);
-    if (raw errs(@cy) != 0i64)                                 { exit 191i32; }
+        // …and the keyword itself still resolves, which is the half that has to keep
+        // working: `int32` is a payload of 87 too, and the node is what tells them
+        // apart now.
+        Ax:cy = raw run_module("func:g = NIL(int32:v) { int32:k = v; pass NIL; };",
+                               "g", @ct);
+        if (raw errs(@cy) != 0i64)                                 { exit 191i32; }
+    }
 
     // --- SUPERTRAITS ARE ENFORCED, AND TRANSITIVELY (2.2) --------------------
     // They parsed and were stored from cycle 0.2 and nothing read them, so a type
     // could implement a trait while satisfying none of what it was declared to
     // build on — which is the whole content of the feature.
-    Ax:t1 = raw axd("trait:S1 = { func:a = int32(Self:self) never fails; }; trait:S2 = S1 & { func:b = int32(Self:self) never fails; }; impl:Point:S1 = { func:a = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S2 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@t1) != 0i64)                                 { exit 200i32; }
-    // …and without the supertrait's impl it is refused, naming both.
-    Ax:t2 = raw axd("trait:S3 = { func:a = int32(Self:self) never fails; }; trait:S4 = S3 & { func:b = int32(Self:self) never fails; }; impl:Point:S4 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@t2) != 1i64)                                 { exit 201i32; }
+    {
+        Ax:t1 = raw axd("trait:S1 = { func:a = int32(Self:self) never fails; }; trait:S2 = S1 & { func:b = int32(Self:self) never fails; }; impl:Point:S1 = { func:a = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S2 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@t1) != 0i64)                                 { exit 200i32; }
+        // …and without the supertrait's impl it is refused, naming both.
+        Ax:t2 = raw axd("trait:S3 = { func:a = int32(Self:self) never fails; }; trait:S4 = S3 & { func:b = int32(Self:self) never fails; }; impl:Point:S4 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@t2) != 1i64)                                 { exit 201i32; }
 
-    // TRANSITIVE: `S7` requires `S6` requires `S5`, so implementing `S7` needs
-    // all three and the missing one is named wherever it sits in the chain.
-    Ax:t3 = raw axd("trait:S5 = { func:a = int32(Self:self) never fails; }; trait:S6 = S5 & { func:b = int32(Self:self) never fails; }; trait:S7 = S6 & { func:c = int32(Self:self) never fails; }; impl:Point:S6 = { func:b = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S7 = { func:c = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@t3) != 2i64)                                 { exit 202i32; }
+        // TRANSITIVE: `S7` requires `S6` requires `S5`, so implementing `S7` needs
+        // all three and the missing one is named wherever it sits in the chain.
+        Ax:t3 = raw axd("trait:S5 = { func:a = int32(Self:self) never fails; }; trait:S6 = S5 & { func:b = int32(Self:self) never fails; }; trait:S7 = S6 & { func:c = int32(Self:self) never fails; }; impl:Point:S6 = { func:b = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:S7 = { func:c = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@t3) != 2i64)                                 { exit 202i32; }
 
-    // A SUPERTRAIT CLAUSE NAMES TRAITS. A struct resolves there perfectly well
-    // and means nothing.
-    Ax:t4 = raw axd("trait:S8 = Wrap & { func:b = int32(Self:self) never fails; }; impl:Point:S8 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@t4) != 1i64)                                 { exit 203i32; }
+        // A SUPERTRAIT CLAUSE NAMES TRAITS. A struct resolves there perfectly well
+        // and means nothing.
+        Ax:t4 = raw axd("trait:S8 = Wrap & { func:b = int32(Self:self) never fails; }; impl:Point:S8 = { func:b = int32(Point:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@t4) != 1i64)                                 { exit 203i32; }
+    }
 
     // --- BLANKET IMPLS PARSE (D-105) -----------------------------------------
     // `impl:<T: Printable>:Loggable` answered "expected a type" — this position
@@ -698,54 +760,84 @@ func:main = int32(cstring[]:_~argv) {
     // construct no rung can lower yet gets a BACKEND diagnostic, never a parse
     // error. Bound satisfaction and monomorphization are 0.4.7's; this asserts it
     // parses and is recorded, which is what lets 0.4.7 find them.
-    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
-                    "", @it);
-    if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
+    {
+        Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
+                        "", @it);
+        if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
+    }
 
     // --- ONE METHOD PER NAME (D-106) -----------------------------------------
     // Two inherent blocks are legal and are ONE namespace, so the same name in
     // both is a method nothing could ever call — `find_method` returned the first
     // and the second was unreachable, with nothing saying so.
-    Ax:d1 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:one = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d1) != 1i64)                                 { exit 220i32; }
+    {
+        Ax:d1 = raw axd("impl:Point = { func:one = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:one = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d1) != 1i64)                                 { exit 220i32; }
 
-    // …and inside ONE block a repeat is wrong whichever kind of block it is.
-    Ax:d2 = raw axd("impl:Point = { func:two = int32(Point:self) never fails { pass 1i32; }; func:two = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d2) != 1i64)                                 { exit 221i32; }
+        // …and inside ONE block a repeat is wrong whichever kind of block it is.
+        Ax:d2 = raw axd("impl:Point = { func:two = int32(Point:self) never fails { pass 1i32; }; func:two = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d2) != 1i64)                                 { exit 221i32; }
 
-    // DIFFERENT NAMES ACROSS TWO BLOCKS is the case that has to stay legal —
-    // splitting a type's methods is a formatting choice, not a coherence
-    // question.
-    Ax:d3 = raw axd("impl:Point = { func:three = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:four = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d3) != 0i64)                                 { exit 222i32; }
+        // DIFFERENT NAMES ACROSS TWO BLOCKS is the case that has to stay legal —
+        // splitting a type's methods is a formatting choice, not a coherence
+        // question.
+        Ax:d3 = raw axd("impl:Point = { func:three = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:four = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d3) != 0i64)                                 { exit 222i32; }
 
-    // TWO TRAITS MAY EACH SUPPLY ONE NAME. The trait qualifies it, and D-102
-    // already reports the ambiguity at the CALL, where the reader can act on it —
-    // refusing the declarations would refuse two traits that never meet.
-    Ax:d4 = raw axd("trait:Ua = { func:tag = int32(Self:self) never fails; }; trait:Ub = { func:tag = int32(Self:self) never fails; }; impl:Point:Ua = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Ub = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d4) != 0i64)                                 { exit 223i32; }
+        // TWO TRAITS MAY EACH SUPPLY ONE NAME. The trait qualifies it, and D-102
+        // already reports the ambiguity at the CALL, where the reader can act on it —
+        // refusing the declarations would refuse two traits that never meet.
+        Ax:d4 = raw axd("trait:Ua = { func:tag = int32(Self:self) never fails; }; trait:Ub = { func:tag = int32(Self:self) never fails; }; impl:Point:Ua = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Ub = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d4) != 0i64)                                 { exit 223i32; }
 
-    // …and an inherent method alongside a trait one is still fine: inherent wins
-    // at the call (D-102) rather than colliding at the declaration.
-    Ax:d5 = raw axd("trait:Uc = { func:tag = int32(Self:self) never fails; }; impl:Point:Uc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d5) != 0i64)                                 { exit 224i32; }
+        // …and an inherent method alongside a trait one is still fine: inherent wins
+        // at the call (D-102) rather than colliding at the declaration.
+        Ax:d5 = raw axd("trait:Uc = { func:tag = int32(Self:self) never fails; }; impl:Point:Uc = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d5) != 0i64)                                 { exit 224i32; }
 
-    // The same name on DIFFERENT TYPES is not a duplicate at all.
-    Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) never fails { pass 2i32; }; };",
-                    "", @it);
-    if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
+        // The same name on DIFFERENT TYPES is not a duplicate at all.
+        Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) never fails { pass 2i32; }; };",
+                        "", @it);
+        if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
 
-    wild_release_all();
+        wild_release_all();
 
-    wild_release_all();
-    exit 0i32;
+        wild_release_all();
+        exit 0i32;
+    }
 };
 
-func:failsafe = int32(Error:_~err) {
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (token.BoundsId) { exit 1i32; },
+        (intern.BoundsId) { exit 1i32; },
+        (intern.ProvenSlice) { exit 1i32; },
+        (ast.BoundsId) { exit 1i32; },
+        (ast.BoundsScratch) { exit 1i32; },
+        (ast.BoundsWindow) { exit 1i32; },
+        (diagnostics.BoundsId) { exit 1i32; },
+        (symbols.BoundsId) { exit 1i32; },
+        (types.BoundsId) { exit 1i32; },
+        (types.BoundsIndex) { exit 1i32; },
+        (type_trait.BoundsImpl) { exit 1i32; },
+        (type_trait.BoundsBound) { exit 1i32; },
+        (expr_types.BoundsId) { exit 1i32; },
+        (source.FileUnknown) { exit 1i32; },
+        (source.BoundsOffset) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
     exit 1i32;
 };

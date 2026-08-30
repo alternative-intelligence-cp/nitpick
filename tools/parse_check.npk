@@ -54,7 +54,12 @@ func:main = int32(cstring[]:argv) {
     SourceManager:sm = raw srcmgr_init();
     // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,
     // so there is no Result to relay into.
-    Result<int32>:loaded = srcmgr_load(@sm, path);
+    // `move` — `srcmgr_load` takes the path as a `move string` (the manager
+    // keeps it for the process's life), `path` is dead after this line, and
+    // the seed never checked the transfer. D-183's move-only rule is the real
+    // compiler's, and `tools/` meets it for the first time at the 1.4.6 switch
+    // exactly as `tests/` does.
+    Result<int32>:loaded = srcmgr_load(@sm, move(path));
     if (loaded.is_error) {
         // An `Error` is an identity, not a number (D-179) — say WHICH of the
         // two identities the loader can hand back, and no more.
