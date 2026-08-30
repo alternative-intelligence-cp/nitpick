@@ -14,12 +14,21 @@
   committed and green** (`RootList`, `Sink`, `StrTable`, `SiteTable`,
   `InternTable`, `SourceManager`, `ModuleGraph`, `BoundTable`, `ImplTable`),
   each with its own full harness run and a byte-identical fixpoint.
-- **STEP 2 IS PAUSED AT FAMILY 10 ON A USE-AFTER-FREE IN THE COMPILER.** It is
-  pre-existing, not caused by the migration — a layout change is what exposed
-  it. Read `meta/roadmap/1.4/1.4.7.md`, section "STOP-THE-LINE", before
-  touching anything in `src/`. The trigger is committed UNAPPLIED as
-  `1.4.7-family10-trigger.patch`, and the analysis request sent out is
-  `1.4.7-escalation.md`.
+- **THE FAMILY-10 STOP-THE-LINE IS RESOLVED — it was never a use-after-free,
+  and family 10 is LANDED and harness-green (`ok 60`, fixpoint byte-identical).**
+  The defect was `convert_family.py` itself: its step-4 guard deletion ran
+  unscoped and unboundaried, so family 10's `inst_grow\(t\)` matched inside
+  `fninst_record`'s `drop fninst_grow(t);` and stripped a live guard from a
+  table it was not converting; the un-grown table's push then overflowed its
+  768-byte block into the neighbouring slot's header. Read 1.4.7.md,
+  "RESOLVED" — the gdb evidence, the four measurements re-explained, the tool
+  fix with its regression test, and two new owed items (the `ident_holds`
+  belt direction, and `check_instantiations` running before the escape walk
+  can record). The corrected conversion is in `src/frontend/types.npk` at
+  HEAD (fc609a6 swept it in while its message still described the old
+  theory — trust RESOLVED, not that message or this file's earlier text).
+  `1.4.7-family10-trigger.patch` stays as the committed reproduction;
+  `1.4.7-escalation.md` is answered.
 - **1.4.7 step 1 (`dyn Writer` diagnostics) is BLOCKED ON A USER DECISION**,
   unrelated to the above: what `exit` means inside an async body. Three options
   with a recommendation are in 1.4.7.md. Do not improvise a fourth.
@@ -27,7 +36,10 @@
 ## Two things not to rediscover
 
 - **`meta/roadmap/1.4/convert_family.py`** does the mechanical conversion, with
-  the six ways a site hides from a text search closed by construction. Rehearse
+  the SEVEN ways a site hides from a text search closed by construction — the
+  seventh (the tool editing a site it does not own) is the one that caused the
+  STOP-THE-LINE, and the fixed tool now scopes and boundaries its guard
+  deletion and refuses a deleted guard without its converted push. Rehearse
   with `dry=True` first; it refuses to write an incomplete conversion. The
   remaining families' parameters are in 1.4.7.md.
 - **Text search has been wrong about "who touches this representation" six

@@ -4,8 +4,8 @@ NOT part of the build and not a dependency of anything -- a migration tool,
 committed because twelve more families need it and it was written in a scratch
 directory that does not survive its session.
 
-Each of the six ways a site can hide from a text search cost a build or an
-assertion to find, and each is closed here by construction:
+Each of the seven ways a site can hide from a text search cost a build, an
+assertion, or a STOP-THE-LINE to find, and each is closed here by construction:
 
   1. output truncated by `head`         -> the leftover assertion reads all of it
   2. access through the FIELD name      -> the rewrite is scoped by BINDING
@@ -13,6 +13,10 @@ assertion to find, and each is closed here by construction:
   4. a struct LITERAL                   -> asserted after the rewrite
   5. a field read from ANOTHER FILE     -> src/, tools/ and tests/ are scanned
   6. the binding is a LOCAL, not a param-> the binding test reads the whole block
+  7. the tool EDITING a site it does    -> the guard deletion is scoped and
+     not own (the reverse direction --     boundaried like every other rewrite,
+     family 10 stripped fninst_record's    and deletions must pair 1:1 with
+     guard; 1.4.7.md "RESOLVED")           converted pushes
 
 Usage, one family at a time, each followed by `quickemit` and then a FULL
 harness run before its own commit:
@@ -29,9 +33,11 @@ it at a git worktree instead of the main tree. Pass `id_error` ONLY where the
 table hands its count out as an int32 id, and prefer an error the module
 already declares (a new one makes every reachable `failsafe` grow an arm).
 
-STILL UNCONVERTED when this was committed: InstanceTable (BLOCKED -- see
-1.4.7.md "STOP-THE-LINE"), FnInstTable, TokenList, and the ten parallel-array
-families. Parameters for the first three are in 1.4.7.md.
+STILL UNCONVERTED: FnInstTable, TokenList, and the ten parallel-array
+families (InstanceTable landed with the STOP-THE-LINE resolution -- the
+"use-after-free" was THIS TOOL deleting fninst_record's guard through the
+unscoped, unboundaried step-4 pattern; fixed here, regression-tested against
+the pre-conversion types.npk). Parameters for the first two are in 1.4.7.md.
 """
 import os, re, sys
 
@@ -137,13 +143,36 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
                  f"    if (n > 2147483647i64) {{ !!! {id_error}; }}\n"
                  f"    pass (n =>! int32);\n}};\n")
     s = s[:m.start()] + guard + s[m.end():]
-    assert re.search(rf"\b{growfn}\b", s) is None or True
 
     # 4. the push: the guard-and-grow goes, the store and the increment become
-    #    one `list_push`.
-    pat = re.compile(rf"    if \({var}\.count >= {var}\.cap\) \{{[^}}]*?{growfn}\({var}\);\s*\}}\n", re.S)
-    s, n = pat.subn("", s)
+    #    one `list_push`. SCOPED, AND THE GROW NAME IS BOUNDARIED -- this
+    #    deletion is the one rewrite that ran unscoped on the whole file, and
+    #    it is the seventh way to miss a site AND the entire STOP-THE-LINE:
+    #    family 10's `inst_grow\(t\)` matched INSIDE `fninst_record`'s
+    #    `drop fninst_grow(t);` ("fninst_grow" ends in "inst_grow"; same file,
+    #    same receiver name), so the tool stripped a live guard from a table it
+    #    was not converting, and the un-grown table's push overflowed its block
+    #    (see 1.4.7.md, "RESOLVED"). Three fixes, each sufficient alone: the
+    #    deletion runs under the same binding test as every other rewrite, the
+    #    name cannot match inside a longer one (`\b` -- `_` is a word char, so
+    #    `\binst_grow` cannot start inside `fninst_grow`), and every deleted
+    #    guard must pair with a converted push (asserted after step 4's store
+    #    rewrite below).
+    pat = re.compile(rf"    if \({var}\.count >= {var}\.cap\) \{{[^}}]*?\b{growfn}\({var}\);\s*\}}\n", re.S)
+    deleted = [0]
+    def _guard_del(block):
+        block, k = pat.subn("", block)
+        deleted[0] += k
+        return block
+    s, _ = _scoped(s, struct, var, _guard_del)
+    n = deleted[0]
     assert n >= 1, f"{path}: no guard-and-grow call site found for {growfn}"
+    # the definition went in step 3 and the call sites just above; a surviving
+    # WORD-boundary reference means the conversion missed one (a substring
+    # inside a longer name -- `fninst_grow` after converting `inst_grow` -- is
+    # another family's function and is fine).
+    assert not re.search(rf"\b{growfn}\b", s), \
+        f"{path}: {growfn} still referenced after conversion"
     # SCOPED, like every other rewrite below: two families in one file can share
     # a receiver name, and this pattern is generic enough to match the wrong
     # one. `ImplTable` and `BoundTable` in type_trait.npk both bind `t`, and an
@@ -166,6 +195,13 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
     s, _ = _scoped(s, struct, var, _push)
     n2 = counted[0]
     assert n2 >= 1, f"{path}: no store+increment found for {var}"
+    # Every deleted guard pairs with a converted push in the same family. The
+    # collateral deletion reported itself in the return string of the family-10
+    # run -- "2 guard site(s), 1 push site(s)" -- and nothing refused the
+    # mismatch. Now something does.
+    assert n == n2, (f"{path}: {n} guard deletion(s) vs {n2} push conversion(s)"
+                     f" -- a deleted guard without its converted push means the"
+                     f" tool edited a site it does not own")
 
     # 5. the count accessors narrow through the guard
     if id_error and count_fns:
