@@ -37,22 +37,21 @@ plan's phrasing are recorded there (the sink passes BY VALUE, a move-only
 boundary).
 
 **But every SUCCESSFUL compile then segfaulted**, after writing complete,
-well-formed output. The entry shim allocates the root coroutine frame with
-`@npk_alloc` — the WILD entry — and all four drivers call `wild_release_all()`
-immediately before exiting, so an `async main` frees its own frame and stores
-the exit code into unmapped memory. Latent since async existed; nothing had
-ever combined the two.
+well-formed output. `exit` in an `async main` is NOT process exit — it stores
+the code into the coroutine frame's result slot and returns through the entry
+shim, which frees the frame and only then lets `npk_exit` run. All four
+drivers call `wild_release_all()` immediately before exiting, and that unmaps
+the whole heap — **both regimes** — so the store into the frame faults. Latent
+since async existed; nothing had ever combined the two.
 
-**The one question that must be answered before the fix.** The likely repair
-is the managed pool for the root frame (the shim already `npk_dalloc`s it, and
-D-034 puts frames in the executor's arena on exactly that reasoning). What did
-not add up: an `async main` reaching `exit 0` should leave its own frame in
-the wild-live set for D-151's leak check to catch — yet
-`shared_arena_spawn.npk` is an async main that exits 0 and PASSES. Settle
-which of those two things is not what it appears to be; the answer changes
-whether the fix is in the shim, in `npk_exit`, or in the leak check's
-accounting. **Do not guess it — this is the fifth plan-diagnosis in this cycle
-that a five-minute measurement contradicted.**
+**This is decision-shaped and is waiting on the user.** `exit` means one thing
+in a sync `main` and another in an async one, which is the blueprint
+philosophy's own failure mode, and 1.4.7's execution record puts three options
+(move the root frame off the releasable heap / make `exit` mean process exit
+everywhere / refuse `wild_release_all()` in an async body) with a
+recommendation. **Do not improvise a fourth.** The record also names the
+plausible-looking wrong answer — allocating the root frame from the managed
+pool — so nobody spends a cycle on it: the release frees managed blocks too.
 
 Steps 2 (generic collections, one FAMILY per commit) and 3 (form upgrades) do
 not depend on step 1 and can proceed first if the frame question stalls.
