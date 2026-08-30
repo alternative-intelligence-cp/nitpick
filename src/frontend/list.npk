@@ -1,0 +1,84 @@
+// THE ONE GROWABLE ARRAY (D-209, 1.4.7).
+//
+// `src/` grew 44 hand-written doubling sites over 89 growable arrays, each
+// one the same four lines — double the capacity, `ralloc` the block,
+// reinterpret the bytes back to the element type, store the new capacity —
+// and each one carrying its own `=>!`. That cast is the reason this module
+// exists rather than being a tidiness exercise: 1.4.2 found FIVE latent
+// unchecked pointer reinterpretations in exactly this shape, invisible for as
+// long as the callee had no type to check them against. Ninety of them
+// hand-written is ninety chances to get one wrong; one of them, generic over
+// the element type, is checked once.
+//
+// The shape is `generic_list.npk`'s, which 1.0.7 wrote to prove precisely this
+// conversion ahead of time — a `wild T->` block, a count and a capacity, grown
+// by doubling through `#size_of<T>()`.
+//
+// WILD, DELIBERATELY. The compiler allocates arena-style and frees almost
+// nothing individually; every family this replaces was already `wild`, and
+// making the storage managed here would change when the compiler's own tables
+// die, which is a different decision from this one. The regime is unchanged by
+// design.
+//
+// `int64` COUNT AND CAPACITY, uniformly. The families being replaced disagreed
+// — `TokenList` and `Sink` counted in `int64`, the other eight in `int32` —
+// and one collection type answering "how many" two ways is the thing the
+// blueprint philosophy exists to prevent. `int64` is the safe side of that
+// choice as well: under D-210 a doubling that overflows TRAPS, and at 64 bits
+// the doubling cannot reach the trap.
+//
+// STORAGE ONLY. There is no generic `list_at` returning `T`, because for an
+// owning `T` that is a copy and copies of owning values are refused
+// (TYPE-046). Reading an element is the family's business — `RootList` hands
+// back a deep view, others read a scalar directly through `l.items[i]` — and a
+// generic accessor could only serve one of those. What is generic here is the
+// part that was identical everywhere and dangerous nowhere else.
+
+// The block is `wild`, so nothing here allocates a managed body and nothing
+// here drops. `alloc`/`ralloc` trap on exhaustion (HeapOom -> failsafe), which
+// is why every function below is honestly `never fails`.
+
+pub struct:List<T> = {
+    wild T->:items;
+    int64:count;
+    int64:cap;
+};
+
+// A capacity of zero would make the doubling in `list_reserve` a no-op
+// forever, so the floor is one. Callers asking for a specific starting size
+// still get it.
+pub func:list_init<T> = List<T>(int64:cap) never fails {
+    int64:n = cap;
+    if (n < 1i64) { n = 1i64; }
+    wild int8->:mem = alloc(n * #size_of<T>());
+    pass List{ items: mem =>! wild T->, count: 0i64, cap: n };
+};
+
+// Room for `need` MORE elements beyond the current count. The count is a
+// parameter rather than a fixed one because the families that append in bulk
+// need it — `Sink` grows by however many bytes the write is — and a
+// one-element `reserve` would silently under-allocate for them. It is also
+// why this doubles in a LOOP: one doubling of a capacity-8 list does not hold
+// a bulk append of ten thousand, and the version that only doubled once would
+// have been correct for exactly the families that never exercised it.
+pub func:list_reserve<T> = NIL(List<T>->:l, int64:need) never fails {
+    int64:want = l.count + need;
+    if (want <= l.cap) { pass NIL; }
+    int64:nc = l.cap;
+    while (nc < want) { nc = nc * 2i64; }
+    wild int8->:bigger = ralloc(l.items =>! wild int8->, nc * #size_of<T>());
+    l.items = bigger =>! wild T->;
+    l.cap = nc;
+    pass NIL;
+};
+
+// `move T:v` — the parameter is consuming (D-208), which is what an OWNING
+// element needs and what a scalar one is indifferent to. Both instantiations
+// are exercised: `List<Root>` carries two strings per element, `List<int32>`
+// carries no ownership at all.
+pub func:list_push<T> = NIL(List<T>->:l, move T:v) never fails {
+    drop list_reserve(l, 1i64);
+    l.items[l.count] = move(v);
+    l.count = l.count + 1i64;
+    pass NIL;
+};

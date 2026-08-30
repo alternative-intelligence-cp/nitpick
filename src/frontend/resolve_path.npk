@@ -32,6 +32,7 @@ use "./intern.npk".*;
 use "./diagnostics.npk".*;
 use "./resolve_codes.npk".*;
 use "./paths.npk".*;
+use "./list.npk".*;
 
 // A dependency root: the name a `use` path starts with, and where it lives.
 pub struct:Root = {
@@ -39,53 +40,39 @@ pub struct:Root = {
     string:dir;     // "../nfs/src"  -- already the src/ subdirectory
 };
 
+// THE ROOT LIST (1.4.7): storage is `List<Root>`, so the doubling and the
+// `=>!` that used to live here are the generic's, checked once. What stays is
+// what was always this file's own — where a root's `/src` is appended, and the
+// deep view a caller gets back.
 pub struct:RootList = {
-    wild Root->:items;
-    int32:count;
-    int32:cap;
+    List<Root>:v;
 };
 
 pub func:rootlist_init = RootList() never fails {
-    int64:n = 8i64;
-    wild int8->:mem = alloc(n * #size_of<Root>());
-    RootList:r = RootList{ items: mem =>! wild Root->, count: 0i32, cap: 8i32 };
-    pass r;
-};
-
-func:rootlist_grow = NIL(RootList->:l) never fails {
-    int32:nc = l.cap * 2i32;
-    wild int8->:bigger = ralloc(l.items =>! wild int8->,
-                                (nc => int64) * #size_of<Root>());
-    l.items = bigger =>! wild Root->;
-    l.cap = nc;
-    pass NIL;
+    pass RootList{ v: raw list_init::<Root>(8i64) };
 };
 
 // A dependency declared at `../nfs` roots at `../nfs/src` (BUILD_REFERENCE §3),
 // so the `/src` is appended HERE rather than at every use site.
 pub func:rootlist_add = NIL(RootList->:l, move string:name, move string:dir) never fails {
-    if (l.count >= l.cap) {
-        drop rootlist_grow(l);
-    }
     Root:r = Root{ name: move(name), dir: raw path_join(dir, "src") };
-    l.items[l.count => int64] = move(r);
-    l.count = l.count + 1i32;
+    drop list_push(@l.v, move(r));
     pass NIL;
 };
 
-pub func:rootlist_count = int32(RootList->:l) never fails { pass l.count; };
-pub func:rootlist_at = Root(RootList->:l, int32:i) never fails {
-    if (i < 0i32) { !!! BoundsIndex; }
-    if (i >= l.count) { !!! BoundsIndex; }
+pub func:rootlist_count = int64(RootList->:l) never fails { pass l.v.count; };
+pub func:rootlist_at = Root(RootList->:l, int64:i) never fails {
+    if (i < 0i64) { !!! BoundsIndex; }
+    if (i >= l.v.count) { !!! BoundsIndex; }
     // A DEEP-VIEWED COPY (D-183): the container keeps ownership, and every
     // string field in the returned value is a cap-0 view — so a caller's
     // flagged local dropping it frees nothing. By-value ergonomics for the
     // 40-odd call sites, at the cost of rebuilding one small struct.
     Root:r = Root{
-        name: string_from_bytes(l.items[i => int64].name.ptr,
-                                    l.items[i => int64].name.len),
-        dir: string_from_bytes(l.items[i => int64].dir.ptr,
-                                   l.items[i => int64].dir.len) };
+        name: string_from_bytes(l.v.items[i].name.ptr,
+                                    l.v.items[i].name.len),
+        dir: string_from_bytes(l.v.items[i].dir.ptr,
+                                   l.v.items[i].dir.len) };
     pass r;
 };
 
@@ -159,7 +146,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
                                path: "", second: "" };
     int32:found = 0i32;
 
-    int32:i = 0i32;
+    int64:i = 0i64;
     while (i < (raw rootlist_count(roots))) {
         Root:root = raw rootlist_at(roots, i);
         string:candidate = raw path_normalise(raw path_join(root.dir, target));
@@ -176,7 +163,7 @@ func:resolve_in_roots = Resolution(string:target, RootList->:roots, string:stdli
             }
             found = found + 1i32;
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
 
     // The standard library is a root like any other, probed last but with no
