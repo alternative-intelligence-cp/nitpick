@@ -64,43 +64,36 @@ pub struct:ImplEntry = {
 };
 
 pub struct:ImplTable = {
-    wild ImplEntry->:items;
-    int32:count;
-    int32:cap;
+    List<ImplEntry>:v;
 };
 
 pub func:impltable_init = ImplTable() never fails {
-    int64:n = 16i64;
-    wild int8->:mem = alloc(n * #size_of<ImplEntry>());
-    ImplTable:t = ImplTable{ items: mem =>! wild ImplEntry->,
-                             count: 0i32, cap: 16i32 };
-    pass t;
+    pass ImplTable{ v: raw list_init::<ImplEntry>(16i64) };
 };
 
-func:impl_grow = NIL(ImplTable->:t) never fails {
-    int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (nc => int64) * #size_of<ImplEntry>());
-    t.items = bigger =>! wild ImplEntry->;
-    t.cap = nc;
-    pass NIL;
+// An index into this table is int32 BY DESIGN -- that is what every
+// caller holds -- so the list's int64 count narrows to become one. The
+// narrowing is GUARDED rather than spelled `=>!`: a silent truncation
+// would give two entries the same index, and `BoundsImpl` is already
+// this module's declared defect, so no `failsafe` grows an arm.
+func:impltable_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsImpl; }
+    pass (n =>! int32);
 };
 
-pub func:impl_count = int32(ImplTable->:t) never fails { pass t.count; };
+pub func:impl_count = int32(ImplTable->:t) never fails { pass (raw impltable_id(t.v.count)); };
 
 pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsImpl; }
-    if (i >= t.count) { !!! BoundsImpl; }
-    pass (t.items[i => int64]);
+    if ((i => int64) >= t.v.count) { !!! BoundsImpl; }
+    pass (t.v.items[i => int64]);
 };
 
 func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
                      bool:blanket, int32:scope) never fails {
-    if (t.count >= t.cap) { drop impl_grow(t); }
     ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl,
                              blanket: blanket, scope: scope };
-    t.items[t.count => int64] = e;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, e);
     pass NIL;
 };
 
@@ -293,11 +286,11 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
 // the point, and §2.6 already says the concrete one wins.
 pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:a = raw impl_at(t, i);
         if (a.trait_id != 0i32) {
             int32:j = i + 1i32;
-            while (j < t.count) {
+            while ((j => int64) < t.v.count) {
                 ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == a.trait_id) {
                     if (a.blanket) {
@@ -906,7 +899,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
 
     MethodFind:best = raw method_none();
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         // A FAMILY IMPL MATCHES ANY INSTANCE OF ITS TARGET (1.0.4b).
         // `impl:<T>:Box<T>:Sized2` has target `Box<T>`; a call on `Box<int32>`
@@ -994,7 +987,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     // one name is the same ambiguity two concrete trait impls would be.
     if (!best.found) {
         int32:j = 0i32;
-        while (j < t.count) {
+        while ((j => int64) < t.v.count) {
             ImplEntry:e = raw impl_at(t, j);
             if (e.blanket) {
                 if (raw blanket_applies(t, bt, ast, types, e, target,
@@ -1133,7 +1126,7 @@ func:assoc_required = bool(DeclNode:m) never fails {
 // has an answer.
 pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop check_one_impl_complete(r, e, e.scope);
@@ -1551,7 +1544,7 @@ pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
     if (base == 0i32)     { pass 0i32; }
     if (trait_decl == 0i32) { pass 0i32; }
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.target == base) {
@@ -1633,7 +1626,7 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     if (fuel <= 0i32) { pass false; }
 
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.trait_id == trait_id) {
@@ -1668,7 +1661,7 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     }
 
     int32:j = 0i32;
-    while (j < t.count) {
+    while ((j => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, j);
         if (e.blanket) {
             if (e.trait_id == trait_id) {
@@ -1771,7 +1764,7 @@ func:SUPER_FUEL = int32() never fails { pass 64i32; };
 pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
                                  TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.trait_id != 0i32) {
             drop require_supers(t, bt, r, e, e.trait_id, e.scope,
@@ -1859,7 +1852,7 @@ func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:su
 // Inside ONE block a repeat is always wrong, whichever kind of block it is.
 pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:a = raw impl_at(t, i);
         // INSIDE ONE BLOCK A REPEAT IS ALWAYS WRONG, and a blanket impl's block is
         // a block. It was skipped along with everything else that read a target.
@@ -1869,7 +1862,7 @@ pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) never fa
         // inherent (it must name a trait), so it does not reach this.
         if (a.trait_id == 0i32) {
             int32:j = i + 1i32;
-            while (j < t.count) {
+            while ((j => int64) < t.v.count) {
                 ImplEntry:b = raw impl_at(t, j);
                 if (b.trait_id == 0i32) {
                     if (b.target == a.target) {

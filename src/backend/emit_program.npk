@@ -1773,7 +1773,7 @@ func:emit_late_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // The scope an impl was collected in (its module's), or 0.
 func:impl_scope_of = int32(ImplTable->:t, int32:impl_decl) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         ImplEntry:e = raw impl_at(t, i);
         if (e.decl == impl_decl) { pass e.scope; }
         i = i + 1i32;
