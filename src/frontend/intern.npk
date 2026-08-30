@@ -14,10 +14,10 @@
 error:BoundsId;
 error:ProvenSlice;
 
+use "./list.npk".*;
+
 pub struct:InternTable = {
-    wild string->:items;
-    int32:count;
-    int32:cap;
+    List<string>:v;
 };
 
 // Written here rather than added to the runtime floor: it is ordinary Nitpick
@@ -61,13 +61,7 @@ pub func:name_lt = bool(string:a, string:b) never fails {
 };
 
 pub func:intern_init = InternTable() never fails {
-    int64:n = 64i64;
-    wild int8->:raw_mem = alloc(n * #size_of<string>());
-    InternTable:t = InternTable{
-        items: raw_mem =>! wild string->,
-        count: 0i32,
-        cap: 64i32
-    };
+    InternTable:t = InternTable{ v: raw list_init::<string>(64i64) };
     // INDEX 0 IS RESERVED for the empty string, the same convention the AST node
     // arrays use for their NONE node -- and for the same reason. An AST node
     // records an optional name as an intern index, and without a reserved zero
@@ -83,13 +77,15 @@ pub func:intern_init = InternTable() never fails {
 pub func:intern_none = int32() never fails { pass 0i32; };
 pub func:intern_is_none = bool(int32:i) never fails { pass (i == 0i32); };
 
-func:intern_grow = NIL(InternTable->:t) never fails {
-    int32:newcap = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (newcap => int64) * #size_of<string>());
-    t.items = bigger =>! wild string->;
-    t.cap = newcap;
-    pass NIL;
+// AN INTERN ID IS int32 BY AST DESIGN — every node stores a name as an int32
+// index — so the table's int64 count has to narrow to become one. The
+// narrowing is GUARDED rather than spelled `=>!`: a silent truncation would
+// alias two different names to one id, which is the single failure this table
+// exists to make impossible, and a table of more than 2^31 names is a defect
+// long before it is a capacity.
+func:intern_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsId; }
+    pass (n =>! int32);
 };
 
 // Interning the same text twice yields the same index. That is the whole point:
@@ -101,19 +97,15 @@ func:intern_grow = NIL(InternTable->:t) never fails {
 // dropped at this function's exit like any owned local. That is correct: the
 // caller gave it up, and the table already has an equal one.
 pub func:intern_add = int32(InternTable->:t, move string:text) never fails {
-    int32:i = 0i32;
-    while (i < t.count) {
-        if (raw string_eq(t.items[i => int64], text)) {
-            pass i;
+    int64:i = 0i64;
+    while (i < t.v.count) {
+        if (raw string_eq(t.v.items[i], text)) {
+            pass (raw intern_id(i));
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
-    if (t.count >= t.cap) {
-        drop intern_grow(t);
-    }
-    t.items[t.count => int64] = move(text);
-    int32:index = t.count;
-    t.count = t.count + 1i32;
+    int32:index = raw intern_id(t.v.count);
+    drop list_push(@t.v, move(text));
     pass index;
 };
 
@@ -121,15 +113,15 @@ pub func:intern_get = string(InternTable->:t, int32:index) never fails {
     if (index < 0i32) {
         !!! BoundsId;
     }
-    if (index >= t.count) {
+    if ((index => int64) >= t.v.count) {
         !!! BoundsId;
     }
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (string_from_bytes(t.items[index => int64].ptr, t.items[index => int64].len));
+    pass (string_from_bytes(t.v.items[index => int64].ptr, t.v.items[index => int64].len));
 };
 
 pub func:intern_count = int32(InternTable->:t) never fails {
-    pass t.count;
+    pass (raw intern_id(t.v.count));
 };
 
 // A BOUNDS-PROVEN SLICE (D-163, 1.1.1). The caller has already established
