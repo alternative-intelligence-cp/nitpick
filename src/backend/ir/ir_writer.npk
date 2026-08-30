@@ -331,14 +331,12 @@ pub func:irw_text = string(IrWriter->:w) never fails {
     // (a unit test emitting expressions and checking the text) must assemble
     // the view: `out`, then the hoisted allocas, then the body. Outside a
     // function both are empty of anything current and `out` holds it all.
-    string:t = string_from_bytes(w.out.buf, w.out.len);
-    t = string_concat(t, string_from_bytes(w.types.buf, w.types.len));
-    t = string_concat(t, string_from_bytes(w.tail.buf, w.tail.len));
+    string:t = raw sink_view(@w.out);
+    t = string_concat(t, raw sink_view(@w.types));
+    t = string_concat(t, raw sink_view(@w.tail));
     if (w.in_fn) {
-        t = string_concat(t,
-                string_from_bytes(w.allocas.buf, w.allocas.len));
-        t = string_concat(t,
-                string_from_bytes(w.body.buf, w.body.len));
+        t = string_concat(t, raw sink_view(@w.allocas));
+        t = string_concat(t, raw sink_view(@w.body));
     }
     pass t;
 };

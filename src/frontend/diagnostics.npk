@@ -16,6 +16,7 @@ use "./source_location.npk".*;
 // than a cycle — which matters here, because the seed emits in dependency order
 // and 0.4.6 found a back edge making it emit a caller before its callee.
 use "./intern.npk".*;
+use "./list.npk".*;
 use "./source.npk".*;   // srcmgr_path, for the one renderer (1.0.8)
 
 pub enum:Severity = {
@@ -230,9 +231,7 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
 // ---------------------------------------------------------------------------
 
 pub struct:Sink = {
-    wild int8->:buf;
-    int64:len;
-    int64:cap;
+    List<int8>:v;
 };
 
 // A BUFFER SINK GROWS. It did not, and dropped whatever did not fit — which is a
@@ -248,47 +247,50 @@ pub struct:Sink = {
 // The bound stays where it belongs: on the DIAGNOSTIC LIST, which is what the fixed
 // cap was protecting. One buffer mechanism, and the thing that needs a limit keeps
 // its own.
+//
+// 1.4.7: the growth is `List<int8>`'s. A sink is the family that made
+// `list_reserve` take a COUNT — it appends however many bytes the write is,
+// not one — and the only one of the twelve that never carried a `=>!` of its
+// own, because its elements were already the allocator's `int8`.
 pub func:sink_to_buffer = Sink(int64:cap) never fails {
     int64:n = cap;
     if (n < 64i64) { n = 64i64; }
-    wild int8->:b = alloc(n);
-    Sink:s = Sink{ buf: b, len: 0i64, cap: n };
-    pass s;
-};
-
-func:sink_grow = NIL(Sink->:out, int64:need) never fails {
-    int64:n = out.cap;
-    while (n < need) { n = n * 2i64; }
-    out.buf = ralloc(out.buf, n);
-    out.cap = n;
-    pass NIL;
+    pass Sink{ v: raw list_init::<int8>(n) };
 };
 
 pub func:sink_write = NIL(Sink->:out, string:text) never fails {
-    if ((out.len + text.len) > out.cap) {
-        drop sink_grow(out, out.len + text.len);
-    }
+    drop list_reserve(@out.v, text.len);
     int64:i = 0i64;
     while (i < text.len) {
-        out.buf[out.len] = text.ptr[i] =>! int8;
-        out.len = out.len + 1i64;
+        out.v.items[out.v.count] = text.ptr[i] =>! int8;
+        out.v.count = out.v.count + 1i64;
         i = i + 1i64;
     }
     pass NIL;
 };
 
 pub func:sink_length = int64(Sink->:out) never fails {
-    pass out.len;
+    pass out.v.count;
+};
+
+// The sink's bytes as a VIEW. `string_from_bytes` is the explicit view
+// primitive (D-186): the result is a cap-0 string owning nothing, so the sink
+// keeps its buffer and the caller's local drops nothing at scope exit. This
+// exists so the IR writer can assemble its mid-function text without knowing
+// how a sink stores bytes — it reached into `.buf`/`.len` at five sites until
+// 1.4.7 moved the storage.
+pub func:sink_view = string(Sink->:out) never fails {
+    pass string_from_bytes(out.v.items, out.v.count);
 };
 
 pub func:sink_byte_at = uint8(Sink->:out, int64:i) never fails {
-    pass (out.buf[i] =>! uint8);
+    pass (out.v.items[i] =>! uint8);
 };
 
 // Empty a sink for reuse; the buffer is kept (1.0.8 gave the IR writer a
 // second sink per function, and it is reset at each function's start).
 pub func:sink_reset = NIL(Sink->:out) never fails {
-    out.len = 0i64;
+    out.v.count = 0i64;
     pass NIL;
 };
 
@@ -296,13 +298,11 @@ pub func:sink_reset = NIL(Sink->:out) never fails {
 // hoisted allocas and its body into the module stream at the function's close
 // (1.0.9a).
 pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
-    if ((dst.len + src.len) > dst.cap) {
-        drop sink_grow(dst, dst.len + src.len);
-    }
+    drop list_reserve(@dst.v, src.v.count);
     int64:i = 0i64;
-    while (i < src.len) {
-        dst.buf[dst.len] = src.buf[i];
-        dst.len = dst.len + 1i64;
+    while (i < src.v.count) {
+        dst.v.items[dst.v.count] = src.v.items[i];
+        dst.v.count = dst.v.count + 1i64;
         i = i + 1i64;
     }
     pass NIL;
