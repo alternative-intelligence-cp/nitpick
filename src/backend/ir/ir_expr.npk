@@ -33,6 +33,7 @@ mod:ir_expr;
 use "../../frontend/source_location.npk".*;
 use "../../frontend/source.npk".*;
 use "../../frontend/intern.npk".*;
+use "../../frontend/list.npk".*;
 use "../../frontend/num_width.npk".*;
 use "../../frontend/numeric.npk".*;   // tfp_q_decimal (D-195, 1.3.2)
 use "../../frontend/token_kind.npk".*;
@@ -134,29 +135,19 @@ pub func:iv_from_ll_at = IrVal(ExprEmitter->:x, LlType:t, int32:type_id, Span:at
 // is global too, exactly the seed's `@.str.N`.
 
 pub struct:StrTable = {
-    wild string->:items;
-    int32:count;
-    int32:cap;
+    List<string>:v;
 };
 
 pub func:strtab_init = StrTable() never fails {
-    wild int8->:m = alloc(16i64 * #size_of<string>());
-    StrTable:t = StrTable{ items: m =>! wild string->, count: 0i32, cap: 16i32 };
-    pass t;
+    pass StrTable{ v: raw list_init::<string>(16i64) };
 };
 
 pub func:strtab_add = string(StrTable->:t, move string:data) never fails {
-    if (t.count >= t.cap) {
-        int32:nc = t.cap * 2i32;
-        wild int8->:m = ralloc(t.items =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        t.items = m =>! wild string->;
-        t.cap = nc;
-    }
-    t.items[t.count => int64] = move(data);
-    string:name = string_concat("@.str.",
-                      int_to_string(t.count => int64));
-    t.count = t.count + 1i32;
+    // THE NAME IS THE INDEX the string lands at, so it is read BEFORE the
+    // push: `list_push` advances the count, and reading it after would name
+    // every constant one past itself.
+    string:name = string_concat("@.str.", int_to_string(t.v.count));
+    drop list_push(@t.v, move(data));
     pass name;
 };
 
@@ -192,22 +183,22 @@ pub func:esc_byte = string(uint8:b) never fails {
 // The whole table, as module-level constants. Called by the driver once the
 // bodies are emitted, which is why the table and the writer are separate things.
 pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) never fails {
-    int32:i = 0i32;
-    while (i < t.count) {
-        string->:data = $$i t.items[i => int64];
+    int64:i = 0i64;
+    while (i < t.v.count) {
+        string->:data = $$i t.v.items[i];
         string:enc = "";
         int64:j = 0i64;
         while (j < data.len) {
             enc = string_concat(enc, raw esc_byte(data.ptr[j] => uint8));
             j = j + 1i64;
         }
-        string:h1 = string_concat("@.str.", int_to_string(i => int64));
+        string:h1 = string_concat("@.str.", int_to_string(i));
         string:h2 = string_concat(h1, " = private unnamed_addr constant [");
         string:h3 = string_concat(h2, int_to_string(data.len));
         string:h4 = string_concat(h3, " x i8] c\"");
         string:h5 = string_concat(h4, enc);
         drop irw_raw(w, string_concat(h5, "\""));
-        i = i + 1i32;
+        i = i + 1i64;
     }
     pass NIL;
 };
