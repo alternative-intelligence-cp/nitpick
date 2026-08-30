@@ -8,19 +8,50 @@
 
 ## Where you are
 
-- **1.4.5 IS COMPLETE** (`7ff1658`, committed, NOT pushed — the convention
-  is commit per subcycle, push per cycle). Eight subcycles have landed
-  since the 1.4.0–1.4.1 stretch, each with a full green harness run and
-  its own commit: **1.4.2** (D-201, four commits), **1.4.2b** (D-210,
-  D-211), **1.4.2c** (D-222), **1.4.3** (D-208), **1.4.3b** (D-216),
-  **1.4.4** (D-215 first, then D-207 with a user-ratified D-180
-  amendment), and **1.4.5** (D-204).
+- **1.4.6 IS COMPLETE — THE SWITCH HAS HAPPENED** (`900109b` + `44d54a6`,
+  committed, NOT yet pushed; 1.4.6's acceptance asks for a push and the
+  user has not been asked yet). `bootstrap/seed/stage1.ll` builds `src/`
+  now; the Python seed builds nothing and is off the harness's import
+  path. Ten subcycles since the 1.4.0–1.4.1 stretch: **1.4.2** (D-201),
+  **1.4.2b** (D-210, D-211), **1.4.2c** (D-222), **1.4.3** (D-208),
+  **1.4.3b** (D-216), **1.4.4** (D-215, D-207, a D-180 amendment),
+  **1.4.5** (D-204), **1.4.6** (D-203, D-205, D-223) and **1.4.6b** (the
+  40-file migration).
 - The harness is GREEN: 60 suites, 183 real-backend programs (each also
-  through `opt -O2`), fixpoint byte-identical, and a `repro` stage.
-  `python3 bootstrap/harness/harness.py` reproduces it (~28 min; it is
-  not hung, check `/tmp/npk-harness-*/`).
+  through `opt -O2`), fixpoint byte-identical, `repro`, and the builder
+  line. `python3 bootstrap/harness/harness.py` reproduces it (~48 min now
+  — the snapshot build and the migrated suites both cost; it is not hung,
+  check `/tmp/npk-harness-*/`).
 
-## NEXT: 1.4.6 — the builder switch (D-203, D-205)
+## NEXT: 1.4.7 — adoption (D-209)
+
+`meta/roadmap/1.4/1.4.7.md` is the plan: `src/` adopts generic collections
+and `dyn Writer` diagnostics, and the fixpoint re-closes under the new
+builder.
+
+**What the switch changed about this subcycle's rules.** D-205's constraint
+is now MECHANICAL rather than a matter of discipline: the snapshot builds
+`src/` as the harness's first act, so a construct the snapshot cannot
+compile fails before a single test runs, naming the file. A feature enters
+`src/` only after a snapshot that understands it — implement, refresh the
+snapshot (`bootstrap/seed/README.md` has the ritual), THEN use it. Getting
+that backwards produces a tree that cannot build itself from a clean
+checkout.
+
+**And read 1.4.6's execution record before you start**, because the switch
+found that `src/`'s own arithmetic had never been overflow-checked — the
+seed emitted no D-210 checks, so every deliberate-wrap site inside the
+compiler went unchecked for as long as the seed built it. One was live
+(`bs_fnv_step`, trapping the compiler on `extern` programs). Adoption
+touches a great deal of `src/`, and it is now held to rules it has never
+been held to before. Expect more of that class, not less.
+
+**Owed, and named**: `intern.npk`'s hand-decomposed FNV can become the
+one-line `uint128` spelling now that the builder supports it — its own
+comment schedules that for 1.4.7. It is correct as it stands, so this is
+simplification, not repair.
+
+## RETIRED: 1.4.6 — the builder switch (D-203, D-205)
 
 `meta/roadmap/1.4/1.4.6.md` is the plan. This is the cycle's hinge: the
 committed `bootstrap/seed/stage1.ll` becomes the builder, `npkrt.ll`
@@ -72,6 +103,11 @@ implementing the reported fix:
 - D-207 asked for a second list head per scope. The list is a LIFO stack,
   so a saved MARK does the same job with one pointer and leaves
   `emit_spawn` untouched — the goal was right, the mechanism was not.
+- D-223's own landing note predicted four tests would pass unmodified. Two
+  did; one was a REAL DANGLING POINTER and one hit a different rule. And
+  the three sites the note expected the analysis to keep refusing were
+  refused by a fixed-size BUFFER OVERFLOWING, not by the analysis — a
+  ratified decision's own predictions are worth testing too.
 - D-204 said `npkseed.py` embedded its argv path in the ModuleID. It
   emitted `"?"`: `_path` is the Node base's LOCATION attribute and a
   module node never gets one, while the file path sits in a `path` FIELD
@@ -154,7 +190,7 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.6.md` end to end, then 1.4.5's and 1.4.4's
-execution records for the carry-overs above. Re-verify every anchor before editing
+Read `meta/roadmap/1.4/1.4.7.md` end to end, then 1.4.6's execution record
+— it is long, and the long part is what the switch exposed. Re-verify every anchor before editing
 (lines drift); an anchor says what to look for, not a blind offset.
 Announce the item you are on; commit per the file's acceptance section.
