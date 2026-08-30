@@ -26,6 +26,7 @@
 error:BoundsBound;
 error:BoundsImpl;
 
+use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -480,43 +481,36 @@ pub struct:BoundEntry = {
 };
 
 pub struct:BoundTable = {
-    wild BoundEntry->:items;
-    int32:count;
-    int32:cap;
+    List<BoundEntry>:v;
 };
 
 pub func:boundtable_init = BoundTable() never fails {
-    int64:n = 16i64;
-    wild int8->:mem = alloc(n * #size_of<BoundEntry>());
-    BoundTable:t = BoundTable{ items: mem =>! wild BoundEntry->,
-                               count: 0i32, cap: 16i32 };
-    pass t;
+    pass BoundTable{ v: raw list_init::<BoundEntry>(16i64) };
 };
 
-func:bound_grow = NIL(BoundTable->:t) never fails {
-    int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (nc => int64) * #size_of<BoundEntry>());
-    t.items = bigger =>! wild BoundEntry->;
-    t.cap = nc;
-    pass NIL;
+// An index into this table is int32 BY DESIGN -- that is what every
+// caller holds -- so the list's int64 count narrows to become one. The
+// narrowing is GUARDED rather than spelled `=>!`: a silent truncation
+// would give two entries the same index, and `BoundsBound` is already
+// this module's declared defect, so no `failsafe` grows an arm.
+func:boundtable_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsBound; }
+    pass (n =>! int32);
 };
 
-pub func:bound_count = int32(BoundTable->:t) never fails { pass t.count; };
+pub func:bound_count = int32(BoundTable->:t) never fails { pass (raw boundtable_id(t.v.count)); };
 
 pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsBound; }
-    if (i >= t.count) { !!! BoundsBound; }
-    pass (t.items[i => int64]);
+    if ((i => int64) >= t.v.count) { !!! BoundsBound; }
+    pass (t.v.items[i => int64]);
 };
 
 func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
                       int32:value_type) never fails {
-    if (t.count >= t.cap) { drop bound_grow(t); }
     BoundEntry:e = BoundEntry{ param: param, start: start, count: count,
                                value_type: value_type };
-    t.items[t.count => int64] = e;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, e);
     pass NIL;
 };
 
@@ -526,7 +520,7 @@ func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
 // telling apart.
 pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
+    while ((i => int64) < t.v.count) {
         BoundEntry:e = raw bound_at(t, i);
         if (e.param == param) { pass e; }
         i = i + 1i32;
