@@ -8,26 +8,54 @@
 
 ## Where you are
 
-- **1.4.6 IS COMPLETE — THE SWITCH HAS HAPPENED** (`900109b` + `44d54a6`,
-  committed, NOT yet pushed; 1.4.6's acceptance asks for a push and the
-  user has not been asked yet). `bootstrap/seed/stage1.ll` builds `src/`
-  now; the Python seed builds nothing and is off the harness's import
-  path. Ten subcycles since the 1.4.0–1.4.1 stretch: **1.4.2** (D-201),
+- **1.4.6 IS COMPLETE AND PUSHED — THE SWITCH HAS HAPPENED**
+  (`499bebf..2ee4a2f` on `main`). `bootstrap/seed/stage1.ll` builds `src/`
+  now; the Python seed builds nothing and is off the harness's import path.
+  Ten subcycles since the 1.4.0–1.4.1 stretch: **1.4.2** (D-201),
   **1.4.2b** (D-210, D-211), **1.4.2c** (D-222), **1.4.3** (D-208),
   **1.4.3b** (D-216), **1.4.4** (D-215, D-207, a D-180 amendment),
   **1.4.5** (D-204), **1.4.6** (D-203, D-205, D-223) and **1.4.6b** (the
   40-file migration).
-- The harness is GREEN: 60 suites, 183 real-backend programs (each also
-  through `opt -O2`), fixpoint byte-identical, `repro`, and the builder
+- **1.4.7 step 1 was attempted and REVERTED** (`1278f73`) — see below. The
+  tree stands at the pushed 1.4.6 state plus that one documentation commit.
+- The harness is GREEN there: 60 suites, 183 real-backend programs (each
+  also through `opt -O2`), fixpoint byte-identical, `repro`, and the builder
   line. `python3 bootstrap/harness/harness.py` reproduces it (~48 min now
   — the snapshot build and the migrated suites both cost; it is not hung,
   check `/tmp/npk-harness-*/`).
 
-## NEXT: 1.4.7 — adoption (D-209)
+## NEXT: 1.4.7 — adoption (D-209), blocked at step 1 on ONE question
 
-`meta/roadmap/1.4/1.4.7.md` is the plan: `src/` adopts generic collections
-and `dyn Writer` diagnostics, and the fixpoint re-closes under the new
-builder.
+`meta/roadmap/1.4/1.4.7.md` is the plan, and it now carries an execution
+record for step 1 — **read that first**. The short version:
+
+**`dyn Writer` diagnostics work.** The erasure was validated by probe before
+the compiler was touched, and the built compiler rendered all ten of
+`borrows.npk`'s diagnostics through the erased sink. Three corrections to the
+plan's phrasing are recorded there (the sink passes BY VALUE, a move-only
+`dyn` cannot be reused across calls, and async reaches only to the reporting
+boundary).
+
+**But every SUCCESSFUL compile then segfaulted**, after writing complete,
+well-formed output. The entry shim allocates the root coroutine frame with
+`@npk_alloc` — the WILD entry — and all four drivers call `wild_release_all()`
+immediately before exiting, so an `async main` frees its own frame and stores
+the exit code into unmapped memory. Latent since async existed; nothing had
+ever combined the two.
+
+**The one question that must be answered before the fix.** The likely repair
+is the managed pool for the root frame (the shim already `npk_dalloc`s it, and
+D-034 puts frames in the executor's arena on exactly that reasoning). What did
+not add up: an `async main` reaching `exit 0` should leave its own frame in
+the wild-live set for D-151's leak check to catch — yet
+`shared_arena_spawn.npk` is an async main that exits 0 and PASSES. Settle
+which of those two things is not what it appears to be; the answer changes
+whether the fix is in the shim, in `npk_exit`, or in the leak check's
+accounting. **Do not guess it — this is the fifth plan-diagnosis in this cycle
+that a five-minute measurement contradicted.**
+
+Steps 2 (generic collections, one FAMILY per commit) and 3 (form upgrades) do
+not depend on step 1 and can proceed first if the frame question stalls.
 
 **What the switch changed about this subcycle's rules.** D-205's constraint
 is now MECHANICAL rather than a matter of discipline: the snapshot builds
@@ -108,6 +136,10 @@ implementing the reported fix:
   the three sites the note expected the analysis to keep refusing were
   refused by a fixed-size BUFFER OVERFLOWING, not by the analysis — a
   ratified decision's own predictions are worth testing too.
+- D-209's step 1 said "the drivers construct `std_err()`'s writer once".
+  A `dyn` is move-only and a trait receiver is `Self->`, so the sink passes
+  by value and CANNOT be constructed once — the three report sites each
+  build their own. Right about the adoption, wrong about the mechanism.
 - D-204 said `npkseed.py` embedded its argv path in the ModuleID. It
   emitted `"?"`: `_path` is the Node base's LOCATION attribute and a
   module node never gets one, while the file path sits in a `path` FIELD
@@ -143,9 +175,13 @@ exactly on a configured timeout is never a coincidence.
   excuse WITH A TRUE REASON — never to silence it.
 - **Never rewrite `done/` archives or settled DECISIONS text** —
   annotate with dated notes (the D-085/D-202 pattern).
-- **The seed still builds `src/` until 1.4.6** — src/ stays subset-1
-  until the switch; 1.4.2's Step 2 is the one place the seed itself is
-  edited (its file says exactly how).
+- **The snapshot builds `src/` now** — a construct it cannot compile fails
+  before any test runs. Refresh it (`bootstrap/seed/README.md`) at the
+  PREVIOUS commit when a step genuinely needs a new feature.
+- **`src/`'s own code is checked like everyone else's since the switch** —
+  overflow traps, the escape analysis, move-only owners. A trap inside the
+  compiler is a `src/` bug, not a test bug; `gdb -ex "break npk_trap" -ex
+  run -ex bt` names it in one shot and beat two rounds of my reasoning.
 
 ## What you must NOT do
 
@@ -190,7 +226,8 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.7.md` end to end, then 1.4.6's execution record
-— it is long, and the long part is what the switch exposed. Re-verify every anchor before editing
+Read `meta/roadmap/1.4/1.4.7.md` end to end — INCLUDING its execution
+record, which is where step 1 stopped and why — then 1.4.6's, which is long,
+and the long part is what the switch exposed. Re-verify every anchor before editing
 (lines drift); an anchor says what to look for, not a blind offset.
 Announce the item you are on; commit per the file's acceptance section.
