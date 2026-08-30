@@ -11,59 +11,52 @@
 // is unforgeable and no import rides along. `Bounds*` are the D-061-family
 // index guards; the rest are named for the invariant they hold.
 error:BoundsOffset;
+error:BoundsIndex;
 error:FileUnknown;
 
 use "./source_location.npk".*;
 use "./intern.npk".*;
+use "./list.npk".*;
 
 pub struct:SourceFile = {
     string:path;      // as given on the command line or resolved from a `use`
     string:text;      // the whole file; the lexer works over these bytes
 };
 
-// Growable over alloc/ralloc. Subset 1 has no generics, so every container is
-// hand-written -- the cost SUBSET_1 accepted deliberately, to keep
-// monomorphization out of the least-audited artifact in the chain.
+// Storage is `List<SourceFile>` (1.4.7). It was hand-written because subset 1
+// had no generics -- "the cost SUBSET_1 accepted deliberately, to keep
+// monomorphization out of the least-audited artifact in the chain" -- and that
+// constraint expired when the seed was retired at 1.4.6.
 pub struct:SourceManager = {
-    wild SourceFile->:files;
-    int32:count;
-    int32:cap;
+    List<SourceFile>:v;
 };
 
 pub func:srcmgr_init = SourceManager() never fails {
-    int64:n = 8i64;
-    wild int8->:raw_mem = alloc(n * #size_of<SourceFile>());
-    SourceManager:m = SourceManager{
-        files: raw_mem =>! wild SourceFile->,
-        count: 0i32,
-        cap: 8i32
-    };
-    pass m;
+    pass SourceManager{ v: raw list_init::<SourceFile>(8i64) };
 };
 
-func:srcmgr_grow = NIL(SourceManager->:m) never fails {
-    int32:newcap = m.cap * 2i32;
-    wild int8->:bigger = ralloc(m.files =>! wild int8->,
-                                (newcap => int64) * #size_of<SourceFile>());
-    m.files = bigger =>! wild SourceFile->;
-    m.cap = newcap;
-    pass NIL;
+// A FILE ID IS int32 BY DESIGN -- it is what a `Span` carries, in every AST
+// node -- so the list's int64 count has to narrow to become one. The narrowing
+// is GUARDED rather than spelled `=>!`, because a silent truncation would hand
+// two different files the same id, and "the same path must never produce two
+// file ids" is the invariant this module states as load-bearing. Before 1.4.7
+// the int32 counter got this for free: under D-210 its increment TRAPPED. The
+// guard is what keeps that property once the count is wide.
+func:srcmgr_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsIndex; }
+    pass (n =>! int32);
 };
 
 // Returns the file index, which is what a Span carries.
 pub func:srcmgr_add = int32(SourceManager->:m, move string:path, move string:text) never fails {
-    if (m.count >= m.cap) {
-        drop srcmgr_grow(m);
-    }
     SourceFile:f = SourceFile{ path: move(path), text: move(text) };
-    m.files[m.count => int64] = move(f);
-    int32:index = m.count;
-    m.count = m.count + 1i32;
+    int32:index = raw srcmgr_id(m.v.count);
+    drop list_push(@m.v, move(f));
     pass index;
 };
 
 pub func:srcmgr_count = int32(SourceManager->:m) never fails {
-    pass m.count;
+    pass (raw srcmgr_id(m.v.count));
 };
 
 // --- loading by path -----------------------------------------------------------
@@ -80,12 +73,12 @@ pub func:srcmgr_count = int32(SourceManager->:m) never fails {
 // prevents it, and 0.3.2 adds the normalisation that makes it reliable --
 // `./a/../b.npk` and `b.npk` must arrive here as the same text.
 pub func:srcmgr_find = int32(SourceManager->:m, string:path) never fails {
-    int32:i = 0i32;
-    while (i < m.count) {
-        if (raw string_eq(m.files[i => int64].path, path)) {
-            pass i;
+    int64:i = 0i64;
+    while (i < m.v.count) {
+        if (raw string_eq(m.v.items[i].path, path)) {
+            pass (raw srcmgr_id(i));
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
     pass (0i32 - 1i32);
 };
@@ -110,26 +103,26 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
         fail FileUnknown;
     }
-    if (file >= m.count) {
+    if ((file => int64) >= m.v.count) {
         fail FileUnknown;
     }
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (string_from_bytes(m.files[file => int64].path.ptr, m.files[file => int64].path.len));
+    pass (string_from_bytes(m.v.items[file => int64].path.ptr, m.v.items[file => int64].path.len));
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
         fail FileUnknown;
     }
-    if (file >= m.count) {
+    if ((file => int64) >= m.v.count) {
         fail FileUnknown;
     }
     // A VIEW (cap 0), never a copy of the owning header (D-183): the manager
     // owns every source body for the process's life, and a caller's flagged
     // Result local dropping a cap-carrying copy freed the file out from under
     // the interns, the spans, and the lexer itself.
-    pass (string_from_bytes(m.files[file => int64].text.ptr,
-                                m.files[file => int64].text.len));
+    pass (string_from_bytes(m.v.items[file => int64].text.ptr,
+                                m.v.items[file => int64].text.len));
 };
 
 // Byte access, because the lexer works in bytes: the source is UTF-8 and a
