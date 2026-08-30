@@ -33,6 +33,7 @@
 error:BoundsId;
 error:BoundsIndex;
 
+use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./ast.npk".*;
@@ -1313,34 +1314,29 @@ pub struct:Instance = {
 };
 
 pub struct:InstanceTable = {
-    wild Instance->:items;
-    int32:count;
-    int32:cap;
+    List<Instance>:v;
 };
 
 pub func:insttable_init = InstanceTable() never fails {
-    int64:n = 16i64;
-    wild int8->:mem = alloc(n * #size_of<Instance>());
-    InstanceTable:t = InstanceTable{ items: mem =>! wild Instance->,
-                                     count: 0i32, cap: 16i32 };
-    pass t;
+    pass InstanceTable{ v: raw list_init::<Instance>(16i64) };
 };
 
-func:inst_grow = NIL(InstanceTable->:t) never fails {
-    int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (nc => int64) * #size_of<Instance>());
-    t.items = bigger =>! wild Instance->;
-    t.cap = nc;
-    pass NIL;
+// An index into this table is int32 BY DESIGN -- that is what every
+// caller holds -- so the list's int64 count narrows to become one. The
+// narrowing is GUARDED rather than spelled `=>!`: a silent truncation
+// would give two entries the same index, and `BoundsIndex` is already
+// this module's declared defect, so no `failsafe` grows an arm.
+func:instancetable_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsIndex; }
+    pass (n =>! int32);
 };
 
-pub func:inst_count = int32(InstanceTable->:t) never fails { pass t.count; };
+pub func:inst_count = int32(InstanceTable->:t) never fails { pass (raw instancetable_id(t.v.count)); };
 
 pub func:inst_at = Instance(InstanceTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
-    if (i >= t.count) { !!! BoundsIndex; }
-    pass (t.items[i => int64]);
+    if ((i => int64) >= t.v.count) { !!! BoundsIndex; }
+    pass (t.v.items[i => int64]);
 };
 
 // --- generic FUNCTION instantiations (1.0.2b) -------------------------------
@@ -1457,14 +1453,12 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
 
 pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
-        if ((t.items[i => int64]).type_id == type_id) { pass NIL; }
+    while ((i => int64) < t.v.count) {
+        if ((t.v.items[i => int64]).type_id == type_id) { pass NIL; }
         i = i + 1i32;
     }
-    if (t.count >= t.cap) { drop inst_grow(t); }
     Instance:e = Instance{ type_id: type_id, at: at };
-    t.items[t.count => int64] = e;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, e);
     pass NIL;
 };
 

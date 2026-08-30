@@ -8,75 +8,46 @@
 
 ## Where you are
 
-- **1.4.6 IS COMPLETE AND PUSHED — THE SWITCH HAS HAPPENED**
-  (`499bebf..2ee4a2f` on `main`). `bootstrap/seed/stage1.ll` builds `src/`
-  now; the Python seed builds nothing and is off the harness's import path.
-  Ten subcycles since the 1.4.0–1.4.1 stretch: **1.4.2** (D-201),
-  **1.4.2b** (D-210, D-211), **1.4.2c** (D-222), **1.4.3** (D-208),
-  **1.4.3b** (D-216), **1.4.4** (D-215, D-207, a D-180 amendment),
-  **1.4.5** (D-204), **1.4.6** (D-203, D-205, D-223) and **1.4.6b** (the
-  40-file migration).
-- **1.4.7 step 1 was attempted and REVERTED** (`1278f73`) — see below. The
-  tree stands at the pushed 1.4.6 state plus that one documentation commit.
-- The harness is GREEN there: 60 suites, 183 real-backend programs (each
-  also through `opt -O2`), fixpoint byte-identical, `repro`, and the builder
-  line. `python3 bootstrap/harness/harness.py` reproduces it (~48 min now
-  — the snapshot build and the migrated suites both cost; it is not hung,
-  check `/tmp/npk-harness-*/`).
+- **1.4.6 IS COMPLETE AND PUSHED** (`499bebf..2ee4a2f`). The committed snapshot
+  builds `src/`; the Python seed builds nothing.
+- **1.4.7 step 2 is UNDERWAY: nine of twelve single-array families are
+  committed and green** (`RootList`, `Sink`, `StrTable`, `SiteTable`,
+  `InternTable`, `SourceManager`, `ModuleGraph`, `BoundTable`, `ImplTable`),
+  each with its own full harness run and a byte-identical fixpoint.
+- **STEP 2 IS PAUSED AT FAMILY 10 ON A USE-AFTER-FREE IN THE COMPILER.** It is
+  pre-existing, not caused by the migration — a layout change is what exposed
+  it. Read `meta/roadmap/1.4/1.4.7.md`, section "STOP-THE-LINE", before
+  touching anything in `src/`. The trigger is committed UNAPPLIED as
+  `1.4.7-family10-trigger.patch`, and the analysis request sent out is
+  `1.4.7-escalation.md`.
+- **1.4.7 step 1 (`dyn Writer` diagnostics) is BLOCKED ON A USER DECISION**,
+  unrelated to the above: what `exit` means inside an async body. Three options
+  with a recommendation are in 1.4.7.md. Do not improvise a fourth.
 
-## NEXT: 1.4.7 — adoption (D-209), blocked at step 1 on ONE question
+## Two things not to rediscover
 
-`meta/roadmap/1.4/1.4.7.md` is the plan, and it now carries an execution
-record for step 1 — **read that first**. The short version:
+- **`meta/roadmap/1.4/convert_family.py`** does the mechanical conversion, with
+  the six ways a site hides from a text search closed by construction. Rehearse
+  with `dry=True` first; it refuses to write an incomplete conversion. The
+  remaining families' parameters are in 1.4.7.md.
+- **Text search has been wrong about "who touches this representation" six
+  times in this step; the compiler has been wrong zero times.** Apply,
+  `quickemit` (NOT `quickcheck` — it builds only the frontend), then the full
+  harness. Skipping the `quickemit` step is what let one broken family reach a
+  harness run.
 
-**`dyn Writer` diagnostics work.** The erasure was validated by probe before
-the compiler was touched, and the built compiler rendered all ten of
-`borrows.npk`'s diagnostics through the erased sink. Three corrections to the
-plan's phrasing are recorded there (the sink passes BY VALUE, a move-only
-`dyn` cannot be reused across calls, and async reaches only to the reporting
-boundary).
+## Running harnesses in parallel (proven, and it earned its keep)
 
-**But every SUCCESSFUL compile then segfaulted**, after writing complete,
-well-formed output. `exit` in an `async main` is NOT process exit — it stores
-the code into the coroutine frame's result slot and returns through the entry
-shim, which frees the frame and only then lets `npk_exit` run. All four
-drivers call `wild_release_all()` immediately before exiting, and that unmaps
-the whole heap — **both regimes** — so the store into the frame faults. Latent
-since async existed; nothing had ever combined the two.
-
-**This is decision-shaped and is waiting on the user.** `exit` means one thing
-in a sync `main` and another in an async one, which is the blueprint
-philosophy's own failure mode, and 1.4.7's execution record puts three options
-(move the root frame off the releasable heap / make `exit` mean process exit
-everywhere / refuse `wild_release_all()` in an async body) with a
-recommendation. **Do not improvise a fourth.** The record also names the
-plausible-looking wrong answer — allocating the root frame from the managed
-pool — so nobody spends a cycle on it: the release frees managed blocks too.
-
-Steps 2 (generic collections, one FAMILY per commit) and 3 (form upgrades) do
-not depend on step 1 and can proceed first if the frame question stalls.
-
-**What the switch changed about this subcycle's rules.** D-205's constraint
-is now MECHANICAL rather than a matter of discipline: the snapshot builds
-`src/` as the harness's first act, so a construct the snapshot cannot
-compile fails before a single test runs, naming the file. A feature enters
-`src/` only after a snapshot that understands it — implement, refresh the
-snapshot (`bootstrap/seed/README.md` has the ritual), THEN use it. Getting
-that backwards produces a tree that cannot build itself from a clean
-checkout.
-
-**And read 1.4.6's execution record before you start**, because the switch
-found that `src/`'s own arithmetic had never been overflow-checked — the
-seed emitted no D-210 checks, so every deliberate-wrap site inside the
-compiler went unchecked for as long as the seed built it. One was live
-(`bs_fnv_step`, trapping the compiler on `extern` programs). Adoption
-touches a great deal of `src/`, and it is now held to rules it has never
-been held to before. Expect more of that class, not less.
-
-**Owed, and named**: `intern.npk`'s hand-decomposed FNV can become the
-one-line `uint128` spelling now that the builder supports it — its own
-comment schedules that for 1.4.7. It is correct as it stands, so this is
-simplification, not repair.
+The harness is fully serial and costs ~1.3 cores but ~9.5 GB, so on this
+48-core / 157 GB machine MEMORY bounds concurrency to roughly a dozen runs, not
+CPU. Convert family N in the main tree; in a worktree apply N then N+1 as a
+CUMULATIVE PREFIX and run both harnesses at once. Each run then validates
+exactly the tree state that will be committed, so no rigor is given up — verify
+the prefix with `diff` before trusting it. This is how the use-after-free was
+separated from a green family 9 in one wall-clock window. Watch for spurious
+DEADLINE failures (`channel_deadline`, `driver_deadline`, `executor_sleep`, the
+five-second thread joins); none appeared at 2 concurrent, and one would be a
+stop sign rather than noise.
 
 ## RETIRED: 1.4.6 — the builder switch (D-203, D-205)
 
