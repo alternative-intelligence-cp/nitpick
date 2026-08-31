@@ -1,8 +1,9 @@
 # Orchestration — one agent directing many, after the core language
 
 > **PROPOSED, not settled.** Written 2026-08-30 during the 1.4.7 family-10
-> stand-down, at the user's request. Next free decision number is **D-224**
-> (last settled: D-223). The questions this document cannot answer itself are
+> stand-down, at the user's request. Next free decision number is **D-225**
+> (D-224 went the same day to `exit`-means-process-exit). The questions
+> this document cannot answer itself are
 > in §8; everything else is a recommendation with the measurement or the
 > incident behind it. Nothing here authorises spawning an agent — that is the
 > user's call, per task, as always.
@@ -179,7 +180,7 @@ and the parallel-array ten are `src/` work and stay serial by R2.
 
 The rules above are recommendations with evidence. These are decisions:
 
-1. **Does this become a decision (D-224) with a lettered handle in
+1. **Does this become a decision (D-225) with a lettered handle in
    `OPEN_DECISIONS.md`, or does it stay an architecture document beside the
    1.5 and 1.6 READMEs?** Recommendation: a decision, because R2, R5 and R6
    constrain future sessions' behaviour and a document nobody is bound by is

@@ -1,0 +1,41 @@
+// expect-exit: 0
+// stress: 40
+//
+// `exit` MEANS PROCESS EXIT IN EVERY BODY (D-224). This is the program that
+// had no equivalent before 1.4.7 step 1, which is why the hole stayed latent:
+// an ASYNC `main` that calls `wild_release_all()` and then exits 0.
+//
+// Before D-224 the async seam stored the exit code into the coroutine frame's
+// result slot, returned through the resume, and left the entry shim to load
+// that slot and free the frame -- three heap accesses after `exit`, on a heap
+// the previous statement had just unmapped. It segfaulted storing the code.
+//
+// Two things are being asserted at once, and both need `exit 0` specifically:
+// that the exit survives the release at all, and that D-151's leak check --
+// which runs ONLY on a successful exit -- still sees an empty <wild-live> set
+// now that the root frame is allocated MANAGED (D-224 section 2) rather than
+// wild-tracked. A test reporting success as any other code would measure
+// neither.
+mod:async_exit_release;
+
+async func:main = int32(cstring[]:_~argv) {
+    wild int8->:mem = alloc(64i64);
+    mem[0i64] = 7i8;
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    discard((mem[0i64] => int32) + 0i32);
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 92i32; },
+        (IntOverflow)    { exit 96i32; },
+        (HeapBadRequest) { exit 93i32; },
+        (HeapOom)        { exit 94i32; },
+        (OutOfBounds)    { exit 95i32; },
+        (Unreachable)    { exit 96i32; },
+        (WildLeak)       { exit 97i32; },
+        (*)              { exit 98i32; }
+    }
+};

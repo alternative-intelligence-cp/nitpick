@@ -14965,3 +14965,91 @@ the four files untouched.
 and fixing the two holes separately — strictly more total work for a weaker
 analysis in between, and the no-deferral rule bars the "separately".
 
+
+---
+
+## D-224 — `exit` means process exit in every body, async included — **SETTLED (user decision, 2026-08-30)**
+
+Raised by 1.4.7 step 1. Routing the diagnostic renderers through `dyn Writer`
+makes `report` async (every `Writer` operation is async by D-075, which D-071
+requires), so `main` awaits it and becomes a coroutine — and `exit` then meant
+something different from what it means in a synchronous `main`.
+
+**The two lowerings.** In a sync `main`, `exit N` is `ret N`, and `_start`
+(`runtime/npkrt.ll:143`) calls `@npk_exit(%rc)` immediately after — nothing
+runs in between. In an `async main` the same spelling stores the code into the
+frame's result slot, returns from the RESUME function, and the entry shim
+(`fnem_emit_main_shim`) then loads the slot, `npk_dalloc`s the frame, and
+returns the code for `_start` to exit with. Three heap accesses AFTER the
+`exit` statement has notionally executed.
+
+That window is not theoretical. `src/main.npk:165` calls `wild_release_all()`
+immediately before `exit 0i32`, and that release unmaps every chunk — its own
+contract is *"after it, only exit; anything still pointing into the heap points
+at unmapped pages."* True for a sync `main`, false for an async one: the
+coroutine frame is IN the heap just unmapped, and the compiler segfaulted
+storing the exit code into it, after writing complete and correct output.
+
+**Why it is a decision and not a repair.** The program is specified to have
+exactly two exit paths, both controlled (D-013/D-014, and the safety case
+behind them). An async `main`'s exit was a THIRD shape — return through a shim
+that later exits — and the fault lived precisely in the gap. One spelling
+meaning two things by context is also the blueprint philosophy's own failure
+mode.
+
+**The decision:**
+
+1. **`exit` lowers to `@npk_exit` directly in an async body**, after the exit
+   defers, followed by `unreachable`. The operand is evaluated first, so D-136
+   is untouched (the value is computed before the defers run), and D-014 is
+   untouched (a trap still runs no defers). `emit_trap` has emitted exactly
+   this shape since 0.10.1; `emit_exit` now matches it in an async body and
+   keeps the plain `ret` in a sync one, where `ret` already IS the exit.
+2. **The root task's frame moves to the managed allocation entry.** It was
+   `@npk_alloc`, which is the WILD-TRACKED entry (`npk_alloc_impl(n, 1)`), so
+   it counts toward D-151's `<wild-live>` set — and every `async main` in the
+   suite passed the `exit 0` leak check only because the shim freed the frame
+   before `npk_exit` ran. Under (1) the shim's exit path no longer runs, so a
+   tracked frame would trap −4105 on a successful exit. It cannot be freed at
+   the `exit` instead: `wild_release_all()` may legally precede `exit`, and a
+   `dalloc` after it touches unmapped pages — the original defect, moved. So
+   the frame becomes `@npk_alloc_managed`, which is correct on its own terms:
+   the root frame is runtime scaffolding the shim allocates and the program
+   never sees, the same class as argv and string bodies, and it should not
+   have been in the program's leak accounting in the first place. The shim
+   still `dalloc`s it on the ordinary return path; `dalloc` takes a managed
+   body back like any other.
+
+D-013 is unchanged — `exit` remains legal only in `main` and `failsafe`, which
+is why the root frame is the ONLY coroutine frame an `exit` can execute on.
+`failsafe` already exits through `@npk_exit` directly (`emit_trap`).
+
+**Declined:**
+
+- **A — move the root frame off the releasable heap into a dedicated mapping.**
+  It fixes the segfault and preserves both existing contracts, but leaves
+  `exit` meaning two different things at the lowering level; the third exit
+  path survives, and the next construct to reach into that window finds it
+  open.
+
+  **Annotation, 2026-08-30, same day: the subsumption claim below was WRONG,
+  and the measurement is what said so.** The original text read *"(1) subsumes
+  it: with no post-`exit` frame access, where the frame lives stops
+  mattering."* There IS post-`exit` frame access. `exit` runs the scope-exit
+  sequence — join → defers → drops → reclaims (D-207) — and in a coroutine the
+  join mark is FRAME-RESIDENT (role 41, because a scope spans suspensions), so
+  the very first thing after `wild_release_all()` is `load ptr, ptr %t6` off
+  the frame, followed by the `jn.head` scan. `async_exit_release.npk` still
+  took SIGSEGV inside the resume with (1) and (2) applied, and `info proc
+  mappings` showed no heap mapped at all. **A and B are complementary, not
+  alternatives**: B fixes what `exit` MEANS, A is what lets the code between
+  `wild_release_all()` and `@npk_exit` run at all. A is therefore ADOPTED
+  alongside B, and (2) above is superseded by it — a frame outside the
+  allocator's chunks is in no leak accounting to begin with. The mechanism is
+  recorded in 1.4.7.md; the decision that `exit` means process exit is
+  unchanged.
+- **C — refuse `wild_release_all()` in an async body**, spanned, D-215's shape.
+  Honest about the incompatibility, but it leaves an async driver with no leak
+  amnesty and so blocks the adoption behind making `src/` free what it
+  allocates. That work is worth wanting for its own sake and is NOT what
+  defines `exit`; it stays available as a separate item.

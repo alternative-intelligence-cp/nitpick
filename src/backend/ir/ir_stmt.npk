@@ -1451,10 +1451,25 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
-    // `exit` is legal only in `main` and `failsafe` (D-013), and returning from
-    // either IS process exit — so it lowers to a plain `ret`. In `async main`
-    // the seam stores the code into the frame's result slot and the entry
-    // shim returns it (D-177).
+    // `exit` MEANS PROCESS EXIT IN EVERY BODY (D-224). It is legal only in
+    // `main` and `failsafe` (D-013), so the only coroutine frame one can ever
+    // run on is the root task's. In a SYNC body a plain `ret` already IS
+    // process exit — `_start` calls `@npk_exit` on the returned code with
+    // nothing in between. In an ASYNC body the seam would store the code into
+    // the frame's result slot, return through the resume, and leave the shim to
+    // load that slot and free the frame: three heap accesses AFTER `exit`, on a
+    // heap `wild_release_all()` may legally have unmapped one statement
+    // earlier. So an async body calls `@npk_exit` itself — the shape
+    // `emit_trap` has always used — and the root frame is allocated MANAGED so
+    // the free that no longer happens is not one D-151 is counting (D-224 §2).
+    if (x.fe.is_async) {
+        IrVal:da = raw run_exit_defers(x);
+        if (!(raw iv_is_ok(da))) { pass da; }
+        drop irw_line(x.fe.w, raw cat3("call void @npk_exit(i32 ", v.ref, ")"));
+        drop irw_line(x.fe.w, "unreachable");
+        x.fe.terminated = true;
+        pass (raw iv_nil());
+    }
     drop fnem_ret_agg(x.fe, v.ref);
     IrVal:d = raw run_exit_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }

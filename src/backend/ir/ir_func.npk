@@ -877,8 +877,24 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop irw_raw(fe.w, raw cat3("define i32 @main(", params, ") {"));
     drop irw_label(fe.w, "entry");
     string:fr = raw irw_temp(fe.w);
-    drop irw_line(fe.w, raw cat4(fr, " = call ptr @npk_alloc(",
-                      raw fnem_frame_size_arg(fe.frame_ty), ")"));
+    // THE ROOT FRAME IS A STACK ALLOCA (D-224, as amended the same day). It was
+    // a heap block, and `wild_release_all()` may legally precede `exit` -- that
+    // release unmaps every chunk, so the scope-exit unwind `exit` runs (the
+    // join scan, the defers, the drops -- all frame-resident in a coroutine,
+    // the join mark at role 41 because a scope spans suspensions) was reading
+    // pages that no longer existed. `async_exit_release.npk` took SIGSEGV
+    // inside the resume, one instruction past the release. The stack is the one
+    // mapping the release cannot touch.
+    //
+    // Nothing frees it, and nothing needs to: `@main` outlives every use of the
+    // frame, since `npk_run_until` does not return until the root task
+    // completes -- so the shim's `npk_dalloc` is gone from the `fin` block
+    // below. A frame that was never in the heap is also in no leak accounting,
+    // which is what the superseded managed-allocation attempt was reaching for.
+    // Initialisation is unchanged: `npk_alloc_impl` never zeroed a block (a
+    // reused one carries the 0xAA free poison), so `frame_init` just below is
+    // the only initialisation the frame has ever had.
+    drop irw_line(fe.w, raw cat4(fr, " = alloca ", fe.frame_ty, ""));
     drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
     i = 0i32;
     while (i < fe.pcount) {
@@ -904,7 +920,6 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     string:code = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(code, " = load ", fe.ret_ll, ", ptr ",
                       string_concat(rg, "")));
-    drop irw_line(fe.w, raw cat3("call void @npk_dalloc(ptr ", fr, ")"));
     drop irw_line(fe.w, raw cat4("ret i32 ", code, "", ""));
     drop irw_raw(fe.w, "}");
     drop irw_blank(fe.w);
