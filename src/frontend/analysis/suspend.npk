@@ -45,6 +45,7 @@
 
 mod:suspend;
 
+use "../list.npk".*;
 use "../source_location.npk".*;
 use "../ast_kind.npk".*;
 use "../ast.npk".*;
@@ -74,22 +75,23 @@ pub struct:Suspend = {
 
     // The locals registry, reset per function: binder stmt index, binder
     // position, last-use position.
-    wild int32->:lstmt;
-    wild int64->:ldecl;
-    wild int64->:luse;
-    int32:lcount;
-    int32:lcap;
+    // SoA KEPT, Lists (1.4.7 step 2). The counts of a group move together --
+    // every record pushes all of them -- and the per-function reset below
+    // clears all seven, which is the one place that invariant is easy to
+    // half-do.
+    List<int32>:lstmt;
+    List<int64>:ldecl;
+    List<int64>:luse;
 
     // Suspension points: position, and a window into `lsflat` holding the
     // start position of every loop enclosing the point.
-    wild int64->:spos;
-    wild int32->:sls;
-    wild int32->:slc;
-    int32:scount;
-    int32:scap;
-    wild int64->:lsflat;
-    int32:fcount;
-    int32:fcap;
+    List<int64>:spos;
+    // `sls` WAS int32 and is now int64: it holds a start index into `lsflat`,
+    // and under the index rule an index follows its count unless an external
+    // contract pins the width. Nothing outside this file reads it.
+    List<int64>:sls;
+    List<int32>:slc;      // a loop DEPTH, not an index -- `ldepth`'s width
+    List<int64>:lsflat;
 
     // The current enclosing-loop stack (start positions), and the walk state.
     wild int64->:lstack;
@@ -109,26 +111,16 @@ pub struct:Suspend = {
 pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
                                 TypeTable->:types, InternTable->:interns,
                                 DiagList->:diags) never fails {
-    wild int8->:a = alloc(64i64 * #size_of<int32>());
-    wild int8->:b = alloc(64i64 * #size_of<int64>());
-    wild int8->:c = alloc(64i64 * #size_of<int64>());
-    wild int8->:d = alloc(32i64 * #size_of<int64>());
-    wild int8->:e = alloc(32i64 * #size_of<int32>());
-    wild int8->:f = alloc(32i64 * #size_of<int32>());
-    wild int8->:g = alloc(64i64 * #size_of<int64>());
     wild int8->:h = alloc(((raw LOOP_STACK_CAP()) => int64) * #size_of<int64>());
     Suspend:x = Suspend{ ast: ast, tab: tab, ets: ets, types: types,
                          interns: interns, diags: diags,
-                         lstmt: a =>! wild int32->,
-                         ldecl: b =>! wild int64->,
-                         luse: c =>! wild int64->,
-                         lcount: 0i32, lcap: 64i32,
-                         spos: d =>! wild int64->,
-                         sls: e =>! wild int32->,
-                         slc: f =>! wild int32->,
-                         scount: 0i32, scap: 32i32,
-                         lsflat: g =>! wild int64->,
-                         fcount: 0i32, fcap: 64i32,
+                         lstmt: raw list_init::<int32>(64i64),
+                         ldecl: raw list_init::<int64>(64i64),
+                         luse: raw list_init::<int64>(64i64),
+                         spos: raw list_init::<int64>(32i64),
+                         sls: raw list_init::<int64>(32i64),
+                         slc: raw list_init::<int32>(32i64),
+                         lsflat: raw list_init::<int64>(64i64),
                          lstack: h =>! wild int64->,
                          ldepth: 0i32, fn_end: 0i64, in_defer: false,
                          cursor: 0i64 };
@@ -160,32 +152,25 @@ func:cur_touch = NIL(Suspend->:x, int64:at) never fails {
     pass NIL;
 };
 
-func:reg_find = int32(Suspend->:x, int32:stmt_index) never fails {
-    int32:i = 0i32;
-    while (i < x.lcount) {
-        if (x.lstmt[i => int64] == stmt_index) { pass i; }
-        i = i + 1i32;
+// int64 BY THE INDEX RULE: the index follows its count, and no external
+// contract pins this one -- every consumer is a local in this file.
+func:reg_find = int64(Suspend->:x, int32:stmt_index) never fails {
+    int64:i = 0i64;
+    while (i < x.lstmt.count) {
+        if (x.lstmt.items[i] == stmt_index) { pass i; }
+        i = i + 1i64;
     }
-    pass 0i32 - 1i32;
+    pass 0i64 - 1i64;
 };
 
-func:reg_add = int32(Suspend->:x, int32:stmt_index, int64:at) never fails {
-    if (x.lcount >= x.lcap) {
-        int64:ncap = (x.lcap => int64) * 2i64;
-        wild int8->:na = ralloc(x.lstmt =>! wild int8->, ncap * #size_of<int32>());
-        wild int8->:nb = ralloc(x.ldecl =>! wild int8->, ncap * #size_of<int64>());
-        wild int8->:nc = ralloc(x.luse =>! wild int8->, ncap * #size_of<int64>());
-        x.lstmt = na =>! wild int32->;
-        x.ldecl = nb =>! wild int64->;
-        x.luse = nc =>! wild int64->;
-        x.lcap = ncap =>! int32;
-    }
+func:reg_add = int64(Suspend->:x, int32:stmt_index, int64:at) never fails {
     drop cur_touch(x, at);
-    x.lstmt[x.lcount => int64] = stmt_index;
-    x.ldecl[x.lcount => int64] = at;
-    x.luse[x.lcount => int64] = at;
-    x.lcount = x.lcount + 1i32;
-    pass (x.lcount - 1i32);
+    int64:idx = x.lstmt.count;
+    // ALL THREE, ALWAYS.
+    drop list_push(@x.lstmt, stmt_index);
+    drop list_push(@x.ldecl, at);
+    drop list_push(@x.luse, at);
+    pass idx;
 };
 
 // One mention of a name. Only a LOCAL registers — a symbol whose origin is a
@@ -202,12 +187,12 @@ func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    int32:idx = raw reg_find(x, s.origin);
-    if (idx < 0i32) {
+    int64:idx = raw reg_find(x, s.origin);
+    if (idx < 0i64) {
         StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
         idx = raw reg_add(x, s.origin, raw pos_of(o.span));
     }
-    if (at > x.luse[idx => int64]) { x.luse[idx => int64] = at; }
+    if (at > x.luse.items[idx]) { x.luse.items[idx] = at; }
     pass NIL;
 };
 
@@ -215,8 +200,8 @@ func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    int32:idx = raw reg_find(x, s.origin);
-    if (idx < 0i32) {
+    int64:idx = raw reg_find(x, s.origin);
+    if (idx < 0i64) {
         StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
         idx = raw reg_add(x, s.origin, raw pos_of(o.span));
     }
@@ -225,41 +210,28 @@ func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     drop cur_touch(x, at);
     int64:pt = at;
     if (x.in_defer) { pt = x.fn_end; }
-    if (pt > x.luse[idx => int64]) { x.luse[idx => int64] = pt; }
+    if (pt > x.luse.items[idx]) { x.luse.items[idx] = pt; }
     pass NIL;
 };
 
 // --- suspension points --------------------------------------------------------------
 
 func:susp_add = NIL(Suspend->:x, int64:at) never fails {
-    if ((x.fcount + x.ldepth) > x.fcap) {
-        int64:ncap = (x.fcap => int64) * 2i64;
-        while (ncap < ((x.fcount + x.ldepth) => int64)) { ncap = ncap * 2i64; }
-        wild int8->:ng = ralloc(x.lsflat =>! wild int8->, ncap * #size_of<int64>());
-        x.lsflat = ng =>! wild int64->;
-        x.fcap = ncap =>! int32;
-    }
-    if (x.scount >= x.scap) {
-        int64:ncap = (x.scap => int64) * 2i64;
-        wild int8->:nd = ralloc(x.spos =>! wild int8->, ncap * #size_of<int64>());
-        wild int8->:ne = ralloc(x.sls =>! wild int8->, ncap * #size_of<int32>());
-        wild int8->:nf = ralloc(x.slc =>! wild int8->, ncap * #size_of<int32>());
-        x.spos = nd =>! wild int64->;
-        x.sls = ne =>! wild int32->;
-        x.slc = nf =>! wild int32->;
-        x.scap = ncap =>! int32;
-    }
     drop cur_touch(x, at);
-    x.spos[x.scount => int64] = at;
-    x.sls[x.scount => int64] = x.fcount;
-    x.slc[x.scount => int64] = x.ldepth;
+    // The window's START is `lsflat`'s length BEFORE this point's loops are
+    // appended, so it is read first. A BULK reserve, like `Sink`'s: the loop
+    // below appends `ldepth` of them, and one doubling need not cover that.
+    int64:flat_start = x.lsflat.count;
+    drop list_reserve(@x.lsflat, x.ldepth => int64);
+    // ALL THREE, ALWAYS.
+    drop list_push(@x.spos, at);
+    drop list_push(@x.sls, flat_start);
+    drop list_push(@x.slc, x.ldepth);
     int32:i = 0i32;
     while (i < x.ldepth) {
-        x.lsflat[x.fcount => int64] = x.lstack[i => int64];
-        x.fcount = x.fcount + 1i32;
+        drop list_push(@x.lsflat, x.lstack[i => int64]);
         i = i + 1i32;
     }
-    x.scount = x.scount + 1i32;
     pass NIL;
 };
 
@@ -285,9 +257,17 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
         if (raw stmt_is_none(body)) { pass NIL; }
         StmtNode:bn = raw ast_stmt(x.ast, body);
 
-        x.lcount = 0i32;
-        x.scount = 0i32;
-        x.fcount = 0i32;
+        // THE RESET CLEARS ALL SEVEN. This is the one place the
+        // counts-move-together invariant can be half-done, so they are listed
+        // rather than folded: a missed line here leaves a previous function's
+        // rows visible to the next one's settle.
+        x.lstmt.count = 0i64;
+        x.ldecl.count = 0i64;
+        x.luse.count = 0i64;
+        x.spos.count = 0i64;
+        x.sls.count = 0i64;
+        x.slc.count = 0i64;
+        x.lsflat.count = 0i64;
         x.ldepth = 0i32;
         // "TO THE FUNCTION'S END" MEANS PAST EVERY SUSPENSION IN THIS
         // SETTLE, and reading it off the body block's SPAN never delivered
@@ -336,27 +316,27 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
 // P, when D < L and U > L: the local was alive when the loop began, so the
 // back edge can put the suspension between two of its moments.
 func:suspend_settle = NIL(Suspend->:x) never fails {
-    int32:i = 0i32;
-    while (i < x.lcount) {
-        int64:dpos = x.ldecl[i => int64];
-        int64:upos = x.luse[i => int64];
+    int64:i = 0i64;
+    while (i < x.lstmt.count) {
+        int64:dpos = x.ldecl.items[i];
+        int64:upos = x.luse.items[i];
         bool:crossed = false;
-        int32:j = 0i32;
-        while (j < x.scount) {
-            int64:p = x.spos[j => int64];
+        int64:j = 0i64;
+        while (j < x.spos.count) {
+            int64:p = x.spos.items[j];
             if (dpos < p) { if (p < upos) { crossed = true; } }
             int32:w = 0i32;
-            while (w < x.slc[j => int64]) {
-                int64:ls = x.lsflat[(x.sls[j => int64] + w) => int64];
+            while (w < x.slc.items[j]) {
+                int64:ls = x.lsflat.items[x.sls.items[j] + (w => int64)];
                 if (dpos < ls) { if (upos > ls) { crossed = true; } }
                 w = w + 1i32;
             }
-            j = j + 1i32;
+            j = j + 1i64;
         }
         if (crossed) {
-            drop exprtypes_mark_crossing(x.ets, x.lstmt[i => int64]);
+            drop exprtypes_mark_crossing(x.ets, x.lstmt.items[i]);
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
     pass NIL;
 };
@@ -397,11 +377,11 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         // AFTER the initialiser: the name binds once the initialiser has run,
         // so a suspension inside it is before this local, not across it — the
         // cursor places the binder past everything the initialiser touched.
-        int32:idx = raw reg_find(x, id.index);
-        if (idx < 0i32) {
+        int64:idx = raw reg_find(x, id.index);
+        if (idx < 0i64) {
             int64:dat = raw pos_end(s.span);
             if (x.cursor >= dat) { dat = x.cursor + 1i64; }
-            int32:ni = raw reg_add(x, id.index, dat);
+            int64:ni = raw reg_add(x, id.index, dat);
             // A DROPPABLE LOCAL IS USED AT ITS SCOPE'S EXIT (D-183, 1.2.4b):
             // the drop reads the value there, so its life runs past its last
             // textual mention. Recorded at the function's end — the same
@@ -410,8 +390,8 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
             // toward MORE crossing. The checker marked which var-decls own;
             // a function with no suspensions never consults any of this.
             if (raw exprtypes_owning_decl(x.ets, id.index)) {
-                if (x.fn_end > x.luse[ni => int64]) {
-                    x.luse[ni => int64] = x.fn_end;
+                if (x.fn_end > x.luse.items[ni]) {
+                    x.luse.items[ni] = x.fn_end;
                 }
             }
         }
