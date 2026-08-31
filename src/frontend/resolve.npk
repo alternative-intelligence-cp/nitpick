@@ -21,6 +21,7 @@
 // and this pass only knows what names EXIST. Guessing across that line is how a
 // resolver ends up half a type checker.
 
+use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./ast_kind.npk".*;
@@ -67,10 +68,11 @@ pub struct:Resolver = {
     // the stage-1/stage-2 fixpoint honest (D-078).
     bool:in_prelude;
     int32:module_name;
-    wild int32->:ecodes;
-    wild int32->:edecls;
-    int32:ecount;
-    int32:ecap;
+    // SoA KEPT, two Lists (1.4.7 step 2). Both counts move together -- every
+    // record pushes both -- which is this pair's invariant now that the shared
+    // `ecount` is gone.
+    List<int32>:ecodes;
+    List<int32>:edecls;
 };
 
 pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
@@ -79,9 +81,8 @@ pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                            module_scope: 0i32, in_ensures: false,
                            caller_scope: 0i32,
                            in_prelude: false, module_name: 0i32,
-                           ecodes: (alloc(16i64 * 4i64)) =>! wild int32->,
-                           edecls: (alloc(16i64 * 4i64)) =>! wild int32->,
-                           ecount: 0i32, ecap: 16i32 };
+                           ecodes: raw list_init::<int32>(16i64),
+                           edecls: raw list_init::<int32>(16i64) };
     pass r;
 };
 
@@ -644,9 +645,9 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         }
         int32:code = raw error_code_of(r, r.module_name, raw decl_name(d));
         int32:ei = 0i32;
-        while (ei < r.ecount) {
-            if (r.ecodes[ei => int64] == code) {
-                if (r.edecls[ei => int64] != id.index) {
+        while ((ei => int64) < r.ecodes.count) {
+            if (r.ecodes.items[ei => int64] == code) {
+                if (r.edecls.items[ei => int64] != id.index) {
                     drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_ERROR_DECL(),
                         "two error constants derive the same code (D-179, an FNV collision): rename one — identity must be unambiguous",
                         d.span));
@@ -655,17 +656,9 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             }
             ei = ei + 1i32;
         }
-        if (r.ecount >= r.ecap) {
-            int64:ncap = (r.ecap => int64) * 2i64;
-            wild int8->:na = ralloc(r.ecodes =>! wild int8->, ncap * 4i64);
-            wild int8->:nb = ralloc(r.edecls =>! wild int8->, ncap * 4i64);
-            r.ecodes = na =>! wild int32->;
-            r.edecls = nb =>! wild int32->;
-            r.ecap = ncap =>! int32;
-        }
-        r.ecodes[r.ecount => int64] = code;
-        r.edecls[r.ecount => int64] = id.index;
-        r.ecount = r.ecount + 1i32;
+        // BOTH, ALWAYS.
+        drop list_push(@r.ecodes, code);
+        drop list_push(@r.edecls, id.index);
         drop ast_set_error_code(r.ast, id, code);
         pass NIL;
     }
