@@ -1,0 +1,101 @@
+// expect-exit: 42
+//
+// DECLARED-UNINITIALISED MANAGED STORAGE HOLDS ITS CANONICAL VACANT VALUE
+// (D-225). Found at 1.4.7 family 11 by a trap the family did not cause:
+// D-186's overwrite-drop is UNCONDITIONAL, so the first assignment over a
+// field of a binding declared without an initialiser dropped whatever bytes
+// the frame last held. Measured then: `ptr=(nil) len=0 cap=7ffff7fe0000` --
+// a stale `cap` read as the ownership bit, `npk_dalloc(NULL)`, trap -4102.
+// With a non-null `ptr` in those bytes it frees an arbitrary address.
+//
+// Three cases, and the second is the one a careless fix breaks:
+//   1  no FALSE drop -- the overwrite over a never-written field must be inert
+//   2  the GENUINE overwrite still drops -- a field written twice releases the
+//      first value, which is the leak D-186 closed and must stay closed
+//   3  `OwnedFd`'s vacant is -1, NOT zero -- a zeroed descriptor slot is fd 0,
+//      and dropping it would close STDIN silently, with no trap: strictly worse
+//      than the defect being fixed
+mod:vacant_init;
+error:E1;
+
+struct:Holder = { string:name; };
+struct:FdHolder = { OwnedFd:fd; };
+
+// The out-parameter idiom `src/main.npk` documents: declared uninitialised and
+// filled through the pointer, which is what puts a never-written owning field
+// in front of the overwrite-drop.
+func:fill = NIL(Holder->:h) never fails {
+    h.name = string_concat("first", "");
+    pass NIL;
+};
+
+// Case 2 lives here: the SECOND write must release the first body.
+func:fill_twice = NIL(Holder->:h) never fails {
+    h.name = string_concat("aaaa", "");
+    h.name = string_concat("bbbb", "");
+    pass NIL;
+};
+
+func:fill_fd = NIL(FdHolder->:f) never fails {
+    f.fd = own_fd((-1i32) =>! fd);   // the vacant descriptor: its drop is a no-op
+    pass NIL;
+};
+
+// CASE 1 LIVES IN A COROUTINE, AND THAT IS THE POINT. A first version of this
+// test declared the holder on the STACK and passed with the fix REMOVED --
+// fresh stack pages are zero, so the "garbage" was benign and the test measured
+// luck. A coroutine frame is heap storage, and a freed block is poisoned 0xAA
+// by the debug instrument, so the SECOND call's frame is deterministically
+// non-zero where the first call's was not. `h` crosses the suspension, so it is
+// frame-resident rather than an alloca.
+//
+// Without D-225 the second call reads cap = 0xAAAAAAAAAAAAAAAA -- non-zero, so
+// "owned" -- and frees 0xAAAAAAAAAAAAAAAA. With it, the slot is vacant.
+async func:step = int64() {
+    Holder:h;
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    drop fill($$m h);
+    pass (h.name.len);
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    // 1. the false drop, twice: the second call reuses the first's poisoned
+    //    frame block, which is what makes this a regression test rather than a
+    //    coin flip.
+    int64:a = await step() ?! E1;
+    if (a != 5i64) { exit 10i32; }
+    int64:b = await step() ?! E1;
+    if (b != 5i64) { exit 11i32; }
+
+    // 2. the genuine overwrite still drops. If a fix had gated the
+    //    overwrite-drop per BINDING on "not yet live" rather than making the
+    //    VALUE vacant, this second write would leak the first body.
+    Holder:g;
+    drop fill_twice($$m g);
+    if (g.name.len != 4i64) { exit 12i32; }
+
+    // 3. stdin survives. A zeroed OwnedFd slot holds descriptor 0; the
+    //    overwrite-drop over it would `npk_ofd_close(0)` and take stdin with
+    //    it -- no trap, no diagnostic, strictly worse than the defect fixed
+    //    here. `dup(0)` answers only while fd 0 is still open.
+    FdHolder:fh;
+    drop fill_fd($$m fh);
+    int64:dupd = sys(32i64, 0i64) ?! E1;
+    discard(sys(3i64, dupd) ?| 0i64);
+
+    exit 42i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E1)               { exit 91i32; },
+        (DeadlineExceeded) { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 94i32; },
+        (IntOverflow)      { exit 96i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (Unreachable)      { exit 97i32; },
+        (WildLeak)         { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+};

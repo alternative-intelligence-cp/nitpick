@@ -1216,6 +1216,7 @@ func:emit_drop_bodies = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     while (i < (raw drop_type_count(c))) {
         int32:dty = raw drop_type_at(c, i);
         drop emit_one_drop(w, c, tr, ast, tab, diags, dty);
+        drop emit_one_vacant(w, c, tr, ast, tab, dty);
         i = i + 1i32;
     }
     pass NIL;
@@ -1751,6 +1752,155 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         raw diag_error(raw EMIT_INTERNAL(),
             "a drop body was requested for a type kind this generator has no arm for -- `type_drops` claims the type owns something, so an empty body would be a silent leak; a defect in the compiler rather than in this program",
             dsp));
+    drop irw_raw(w, "  ret void");
+    drop irw_raw(w, "}");
+    pass NIL;
+};
+
+// THE VACANT BODY (D-225) -- THE FIXUPS ONLY. Its caller stores
+// `zeroinitializer` over the whole slot first, so this writes only what a zero
+// fill gets WRONG.
+//
+// Today that is `OwnedFd` and nothing else. Its drop gates on
+// `icmp slt i32 %f, 0`, so a zeroed slot holds descriptor 0 -- stdin -- and the
+// unconditional overwrite-drop would close it silently, with no trap: strictly
+// worse than the -4102 D-225 was written to fix. Re-biasing the representation
+// so zero were vacant was REJECTED; what must be uniform is the invariant
+// (vacant drops as a no-op), not the bit pattern, and the string trio already
+// spells vacant `cap == 0` where `dyn` spells it null.
+//
+// AN UNHANDLED KIND IS CORRECT HERE, unlike in the drop generator, where it is
+// a reported defect: all-zeroes IS the vacant value for every other kind, so an
+// empty body is the right answer rather than a silent leak.
+func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
+                           Ast->:ast, SymbolTable->:tab,
+                           int32:dty) never fails {
+    LlType:t = raw ll_type(c, dty);
+    if (!(raw ll_is_ok(t))) { pass NIL; }
+    drop irw_raw(w, raw cat4("define internal void ",
+                      raw vacant_fn_sym(c, dty), "(ptr %v) {", ""));
+    drop irw_raw(w, "entry:");
+    int32:k = raw type_kind(c.types, dty);
+
+    if (k == (raw TY_OWNEDFD())) {
+        drop irw_raw(w, "  store i32 -1, ptr %v");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    if (k == (raw TY_ARRAY())) {
+        int32:el = raw type_elem(c.types, dty);
+        if (raw type_drops(c.types, el, 64i32)) {
+            string:n = int_to_string((raw type_array_count(c.types, dty)) => int64);
+            drop irw_raw(w, "  br label %loop");
+            drop irw_raw(w, "loop:");
+            drop irw_raw(w, "  %i = phi i64 [ 0, %entry ], [ %ni, %body ]");
+            drop irw_raw(w, raw cat4("  %at_end = icmp uge i64 %i, ", n, "", ""));
+            drop irw_raw(w, "  br i1 %at_end, label %done, label %body");
+            drop irw_raw(w, "body:");
+            drop irw_raw(w, raw cat5("  %ep = getelementptr ", t.text,
+                              ", ptr %v, i32 0, i64 %i", "", ""));
+            drop irw_raw(w, raw cat4("  call void ", raw vacant_fn_sym(c, el),
+                              "(ptr %ep)", ""));
+            drop irw_raw(w, "  %ni = add i64 %i, 1");
+            drop irw_raw(w, "  br label %loop");
+            drop irw_raw(w, "done:");
+        }
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    // AN ENUM IS FIXED ALONG THE TAG-0 PROJECTION ALONE (D-225). A zeroed enum
+    // reads as tag 0, so only variant 0's payload is live; variant layouts
+    // OVERLAP, and writing -1 through variant 1's descriptor offset can land in
+    // variant 0's `cap` field and turn the vacant value back into a freeable
+    // one. No switch: the tag is known.
+    if (k == (raw TY_ENUM())) {
+        DeclId:edid = DeclId{ index: raw type_decl(c.types, dty) };
+        DeclNode:ed = raw ast_decl(ast, edid);
+        int32:ehome = raw symtab_home_scope(tab, edid.index, 0i32);
+        int32:vi = 0i32;
+        while (vi < (raw item_member_count(ast, ed))) {
+            DeclNode:vm = raw ast_decl(ast, raw item_member(ast, ed, vi));
+            if (vm.kind == DeclKind.DeclEnumVariant) {
+                if ((raw variant_tag_of(ast, vm, vi)) == 0i32) {
+                    int32:pc = raw variant_payload_count(vm);
+                    int32:pj = 0i32;
+                    while (pj < pc) {
+                        PayloadSlot:ps = raw variant_payload_slot_at(tr, c.types,
+                                             ast, tab, ehome, dty,
+                                             raw decl_name(vm), pj);
+                        if (ps.ok) {
+                            if (raw type_drops(c.types, ps.type_id, 64i32)) {
+                                drop irw_raw(w, raw cat5("  %pa",
+                                                  int_to_string(pj => int64),
+                                                  " = getelementptr ", t.text,
+                                                  ", ptr %v, i32 0, i32 1"));
+                                string:pp = raw cat3("%pa",
+                                                int_to_string(pj => int64), "");
+                                if (ps.offset != 0i64) {
+                                    string:pn = raw cat3("%pf",
+                                                    int_to_string(pj => int64), "");
+                                    drop irw_raw(w, raw cat5("  ", pn,
+                                                      " = getelementptr i8, ptr ",
+                                                      pp,
+                                                      string_concat(", i64 ",
+                                                          int_to_string(ps.offset))));
+                                    pp = raw cat3("%pf",
+                                             int_to_string(pj => int64), "");
+                                }
+                                drop irw_raw(w, raw cat5("  call void ",
+                                                  raw vacant_fn_sym(c, ps.type_id),
+                                                  "(ptr ", pp, ")"));
+                            }
+                        }
+                        pj = pj + 1i32;
+                    }
+                }
+            }
+            vi = vi + 1i32;
+        }
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
+    if (k == (raw TY_STRUCT())) {
+        DeclId:did = DeclId{ index: raw type_decl(c.types, dty) };
+        DeclNode:d = raw ast_decl(ast, did);
+        int32:home = raw symtab_home_scope(tab, did.index, 0i32);
+        int32:fi = 0i32;
+        int32:q = 0i32;
+        while (q < (raw item_member_count(ast, d))) {
+            DeclNode:fm = raw ast_decl(ast, raw item_member(ast, d, q));
+            if (fm.kind == DeclKind.DeclFieldDecl) {
+                // THROUGH THE BOUND WALK (1.1.12c), for the same reason the
+                // drop generator does it: a generic instance's field type is
+                // the instance's argument, and a raw re-resolve reports "there
+                // is no type named `W`" against a correct program.
+                FieldInfo:bfi = raw struct_field(tr, dty, raw decl_name(fm), home);
+                int32:ft = 0i32;
+                if (bfi.found) { ft = bfi.type_id; }
+                if (raw type_drops(c.types, ft, 64i32)) {
+                    drop irw_raw(w, raw cat5("  %f", int_to_string(fi => int64),
+                                      " = getelementptr ", t.text,
+                                      raw cat3(", ptr %v, i32 0, i32 ",
+                                          int_to_string(fi => int64), "")));
+                    drop irw_raw(w, raw cat5("  call void ",
+                                      raw vacant_fn_sym(c, ft), "(ptr %f",
+                                      int_to_string(fi => int64), ")"));
+                }
+                fi = fi + 1i32;
+            }
+            q = q + 1i32;
+        }
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
     drop irw_raw(w, "  ret void");
     drop irw_raw(w, "}");
     pass NIL;

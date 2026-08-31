@@ -15053,3 +15053,81 @@ is why the root frame is the ONLY coroutine frame an `exit` can execute on.
   amnesty and so blocks the adoption behind making `src/` free what it
   allocates. That work is worth wanting for its own sake and is NOT what
   defines `exit`; it stays available as a separate item.
+
+---
+
+## D-225 — Declared-uninitialised managed storage holds its canonical vacant value — **SETTLED (user decision, 2026-08-31)**
+
+Found at 1.4.7 step 2, family 11, by a trap the family did not cause.
+
+**The defect.** D-186's fallout made assignment over an owning FIELD drop the
+old value. That drop is emitted UNCONDITIONALLY — compare the two `npk.drop.608`
+call sites in one module: `graph_init`'s is gated on a drop flag
+(`br i1 %t35`), the overwrite has no guard at all. So for a binding declared
+without an initialiser — `Front:f;`, the `$$m` out-parameter idiom `src/main.npk`
+documents in a comment — the "old value" never existed, and the drop reads
+whatever bytes are in the slot. Measured under gdb:
+
+```
+drop.3 on 0x7fffffffd420: ptr=(nil) len=0 cap=7ffff7fe0000
+```
+
+`cap != 0` is the ownership bit, so the string drop took the free branch and
+called `npk_dalloc(NULL)` — heap bad request, trap −4102. Latent since 1.1.12;
+`overwrite_owned.npk` does not catch it because it proves the LEAK fix, on
+initialised fields. Family 11 changed a layout and surfaced it, which is the
+family-10 pattern a second time. **The same shape with non-null garbage in
+`ptr` frees an arbitrary address.**
+
+**The decision.** Every `type_drops`-true kind has a STATED canonical vacant
+value; its generated drop body is a no-op on that value; and a declaration
+without an initialiser WRITES it. This completes a design the drop bodies
+already half-implement and document — the Guard's drop says "Null (a zeroed
+frame slot) releases nothing", `dyn`'s says "Null DATA is a zeroed frame or an
+empty enum arm's payload slot", `shared_arena` calls its null "the belt for a
+conditional one", and the string trio gates on `cap`. The invariant was relied
+upon everywhere and made true nowhere.
+
+**`OwnedFd`'s vacant is −1, not zero, and this is the landmine.** Its gate is
+`icmp slt i32 %f, 0`, and its comment claims "Negative means a zeroed slot" —
+which a zero fill does not produce. A zeroed `OwnedFd` holds descriptor 0, a
+live one: the unconditional overwrite-drop would `npk_ofd_close(0)` and close
+stdin, silently, with no trap. That is strictly worse than the −4102 being
+fixed. So the fill is all-zeroes PLUS −1 stored at every `OwnedFd`-typed slot,
+walked with the layout the drop generator already walks.
+
+Re-biasing the representation so zero is universally vacant (store `fd + 1`)
+was considered and REJECTED: a stored number that lies about the kernel's
+number ripples through the whole 1.1.12b surface and taxes every debugger and
+analyst forever. **What must be uniform is the invariant — vacant drops as a
+no-op — not the bit pattern.** The trio already spells vacant `cap == 0` while
+`dyn` spells it null.
+
+**Enums take fixups only along the tag-0 projection.** Variant layouts overlap,
+so writing −1 through variant 1's descriptor offset can land in variant 0's
+`cap` field and turn a vacant value back into a freeable one.
+
+**`npk_dalloc(NULL)` keeps trapping.** It is what surfaced this defect;
+`free(NULL)` permissiveness is the tempting C habit and would have buried it as
+silence.
+
+**Instrumented, not asserted in prose.** A whole-tree check builds each
+drop-carrying type's vacant value, calls its `npk.drop.<tid>`, and requires no
+effect. The `OwnedFd` comment/gate mismatch is the proof that this has to be
+executable: the claim was written down, believed, and false.
+
+**Declined — A, eliding the overwrite-drop by definite assignment.** Zero
+runtime cost, and wrong as the primary mechanism. Definite assignment is
+three-valued (assigned, unassigned, MAYBE) while the emitter needs two, so a
+conditional partial fill (`Front:f; if c { f.g = x; } f.g = y;`) lands in the
+maybe cell and forces per-FIELD runtime drop flags — a second flag system
+beside the one each value already carries in its representation. This project's
+defect ledger is exactly "two components agreeing by convention until one
+moves" (family 10/11, `fn_end`, the dead `check_runtime_sigs_agree` leg), and
+A's divergence mode is an arbitrary free while B's is a missed initialisation
+at one emitter site, which is auditable. For 1.5 and Astrée, B also leaves no
+undefined bytes in managed metadata at any program point, where A preserves
+them and moves the proof into compiler internals an artifact-level analyser
+cannot see. **A is DEMOTED, not discarded**: once the representation is true,
+eliding a provably-vacant overwrite-drop is a pure optimisation whose
+divergence costs cycles rather than memory. Permitted, not planned.

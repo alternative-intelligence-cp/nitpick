@@ -155,7 +155,12 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
 
 // THE DROP SYMBOL for a type, and the registration that guarantees a body.
 // Idempotent: a type dropped in forty scopes is emitted once.
-pub func:drop_fn_sym = string(LlCtx->:c, int32:dty) never fails {
+// ONE REGISTRATION LIST, TWO BODIES PER ENTRY (D-225). Every registered type
+// gets both a `@"npk.drop.<dty>"` and a `@"npk.vacant.<dty>"`, so a type whose
+// drop exists always has a vacant value that drop is a no-op on -- the pair is
+// the invariant, and splitting the registration is what keeps them from
+// drifting apart.
+func:drop_type_register = NIL(LlCtx->:c, int32:dty) never fails {
     if (c.drop_count >= c.drop_cap) {
         int32:nc = c.drop_cap * 2i32;
         c.drop_types = (ralloc(c.drop_types =>! wild int8->,
@@ -172,7 +177,23 @@ pub func:drop_fn_sym = string(LlCtx->:c, int32:dty) never fails {
         c.drop_types[c.drop_count => int64] = dty;
         c.drop_count = c.drop_count + 1i32;
     }
+    pass NIL;
+};
+
+pub func:drop_fn_sym = string(LlCtx->:c, int32:dty) never fails {
+    drop drop_type_register(c, dty);
     pass (string_concat("@\"npk.drop.",
+              string_concat(int_to_string(dty => int64), "\"")));
+};
+
+// THE CANONICAL VACANT VALUE'S FIXUP BODY (D-225). The call site stores
+// `zeroinitializer` and then calls this, which writes only the slots whose
+// vacant value is NOT all-zeroes -- today `OwnedFd` alone, whose vacant is -1
+// because descriptor 0 is a live one and a zeroed slot would make the drop
+// close stdin, silently and without a trap.
+pub func:vacant_fn_sym = string(LlCtx->:c, int32:dty) never fails {
+    drop drop_type_register(c, dty);
+    pass (string_concat("@\"npk.vacant.",
               string_concat(int_to_string(dty => int64), "\"")));
 };
 

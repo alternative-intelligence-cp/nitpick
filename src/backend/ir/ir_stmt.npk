@@ -648,6 +648,27 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
                           string_concat(", ptr ", slot)));
+    } else {
+        // THE CANONICAL VACANT VALUE (D-225). A declaration with no
+        // initialiser otherwise leaves the slot holding whatever the frame or
+        // the stack last had -- and D-186's overwrite-drop, which is
+        // UNCONDITIONAL, reads those bytes as an ownership bit at the first
+        // assignment. In 1.4.7 a stale `cap` beside a null `ptr` freed NULL and
+        // trapped -4102; the same bytes with a non-null `ptr` free an arbitrary
+        // address. Zero is the vacant value for every kind but `OwnedFd`, whose
+        // -1 the generated vacant body writes -- a zeroed descriptor slot is
+        // fd 0, and dropping it would close stdin with no trap at all.
+        //
+        // This runs per ITERATION for a declaration inside a loop, which is the
+        // point rather than an overhead to shave: the previous iteration's
+        // bytes are exactly the garbage being displaced.
+        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+            drop irw_line(x.fe.w, raw cat5("store ", ll.text,
+                              " zeroinitializer, ptr ", slot, ""));
+            drop irw_line(x.fe.w, raw cat5("call void ",
+                              raw vacant_fn_sym(x.fe.ctx, dty),
+                              "(ptr ", slot, ")"));
+        }
     }
     drop fnem_bind(x.fe, raw stmt_name(s), string_concat(slot, ""), dty);
     // THE DROP FLAG (D-183, 1.2.3; frame-resident half at 1.2.4b): one bit

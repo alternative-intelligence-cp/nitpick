@@ -886,6 +886,77 @@ WALKER_DEFAULT_OK = {
         "TY_CHANNEL": ("reclaimed by the creating scope's finalizer "
                        "(D-183 1.2.5), never by value drop"),
     },
+    # the generated `@"npk.vacant.<tid>"` bodies (D-225) -- the FIXUPS a zero
+    # fill gets wrong. This table is the decision's rider 1 made executable:
+    # every kind that carries a drop must have a STATED canonical vacant value
+    # its drop body is a no-op on, and "all-zeroes" is a claim reviewed here
+    # rather than assumed. The `OwnedFd` comment said "Negative means a zeroed
+    # slot" for two cycles while a zero fill produced descriptor 0 -- prose was
+    # not enough, which is why this row exists.
+    # the generated `@"npk.vacant.<tid>"` bodies (D-225) -- the fixups a zero
+    # fill gets WRONG. This table is the decision's rider made executable: every
+    # kind carrying a drop has a STATED canonical vacant value its drop body is
+    # a no-op on, and "all-zeroes" is a claim reviewed here rather than assumed.
+    # The `OwnedFd` drop comment claimed "Negative means a zeroed slot" for two
+    # cycles while a zero fill produced descriptor 0 -- prose was not enough,
+    # which is the whole reason this row exists.
+    ("emit_one_vacant", "src/backend/emit_program.npk"): {
+        "TY_INVALID": _NOT_REGISTERED,
+        "TY_NIL": _NOT_REGISTERED,
+        "TY_BOOL": _NOT_REGISTERED,
+        "TY_INT": _NOT_REGISTERED,
+        "TY_CHAR": _NOT_REGISTERED,
+        "TY_FLOAT": _NOT_REGISTERED,
+        "TY_TBB": _NOT_REGISTERED,
+        "TY_KERNEL": _NOT_REGISTERED,
+        "TY_STRING": ("`cap == 0` IS the not-mine bit, so a zero fill is literally "
+                     "the unowned value (D-183/D-200)"),
+        "TY_CSTRING": _NOT_REGISTERED,
+        "TY_ANY": _NOT_REGISTERED,
+        "TY_POINTER": _NOT_REGISTERED,
+        "TY_SLICE": _NOT_REGISTERED,
+        "TY_OPTIONAL": _NOT_REGISTERED,
+        "TY_RESULT": _NOT_REGISTERED,
+        "TY_TRAIT": _NOT_REGISTERED,
+        "TY_DYN": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_FUNC": _NOT_REGISTERED,
+        "TY_SELF": _NOT_REGISTERED,
+        "TY_PARAM": _NOT_REGISTERED,
+        "TY_RANGE": _NOT_REGISTERED,
+        "TY_FUNC_VARIADIC": _NOT_REGISTERED,
+        "TY_COMPTIME": _NOT_REGISTERED,
+        "TY_ARENA": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_HANDLE": _NOT_REGISTERED,
+        "TY_SHARED_ARENA": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_ASSOC": _NOT_REGISTERED,
+        "TY_ERROR": _NOT_REGISTERED,
+        "TY_ATOMIC": _NOT_REGISTERED,
+        "TY_MUTEX": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_GUARD": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_RWLOCK": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_RGUARD": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_CONDVAR": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_BARRIER": ("gates on a NULL handle; its own drop comment already "
+                        "names a zeroed slot as the inert case"),
+        "TY_CHANNEL": ("reclaimed by its creating scope's finalizer, never "
+                       "by value drop -- no overwrite-drop to be vacant for"),
+        "TY_SIMD": _NOT_REGISTERED,
+        "TY_TFP": _NOT_REGISTERED,
+        "TY_DIM": _NOT_REGISTERED,
+        "TY_TERN": _NOT_REGISTERED,
+        "TY_FRAC": _NOT_REGISTERED,
+        "TY_COMPLEX": _NOT_REGISTERED,
+        "TY_BUFFER": ("`cap == 0` IS the not-mine bit, so a zero fill is literally "
+                     "the unowned value (D-183/D-200)"),
+    },
 }
 
 
