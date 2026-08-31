@@ -43,14 +43,17 @@ ld.lld -static -o /tmp/builder /tmp/b.o /tmp/npkrt.o
 # 2. the builder compiles the CURRENT compiler
 /tmp/builder src/main.npk -o /tmp/stage1.new.ll
 
-# 3. THE FIXPOINT: what it emitted must rebuild itself, byte for byte
+# 3. THE FIXPOINT: stage2 == stage3, and INSTALL STAGE 2
 llc -O0 -filetype=obj -relocation-model=static /tmp/stage1.new.ll -o /tmp/s2.o
 ld.lld -static -o /tmp/npkc2 /tmp/s2.o /tmp/npkrt.o
 /tmp/npkc2 src/main.npk > /tmp/stage2.ll
-cmp /tmp/stage1.new.ll /tmp/stage2.ll        # MUST be silent
+llc -O0 -filetype=obj -relocation-model=static /tmp/stage2.ll -o /tmp/s3.o
+ld.lld -static -o /tmp/npkc3 /tmp/s3.o /tmp/npkrt.o
+/tmp/npkc3 src/main.npk > /tmp/stage3.ll
+cmp /tmp/stage2.ll /tmp/stage3.ll            # MUST be silent
 
 # 4. install, and stamp what you installed
-cp /tmp/stage1.new.ll bootstrap/seed/stage1.ll
+cp /tmp/stage2.ll bootstrap/seed/stage1.ll
 sha256sum bootstrap/seed/stage1.ll
 git rev-parse HEAD
 ```
@@ -58,6 +61,19 @@ git rev-parse HEAD
 Step 3 is not optional. A snapshot that compiles the compiler but whose output
 does not rebuild itself is a snapshot that works exactly once, and the next
 refresh from it produces something else again.
+
+**It compares stage2 with stage3, not stage1 with stage2, and it installs
+STAGE 2** — corrected at 1.4.7/D-225, where the older spelling failed on a
+correct refresh. Whenever a change alters what the compiler EMITS, stage1.new
+(emitted by the OLD builder) and stage2 (emitted by a compiler that has the
+change) differ BY CONSTRUCTION, and must: the refresh before this one passed
+only because D-224's emission change happened to be inert for npkc's own
+source. Stage1.new is also the wrong file to install — its BODY predates the
+change even though its emitter carries it, so a snapshot built from it still
+has the old behaviour inside, and the `repro` stage would fail against a fresh
+emission on the next run. Stage 2 is the first output that is a fixed point.
+This is D-202's lesson in a second place: the criterion is that the compiler
+AGREES WITH ITSELF, never that two particular artifacts are byte-equal.
 
 Write the sha256 and the commit into `STAMP`. The harness's `repro` stage reads
 `stage1.ll` back and asserts it still matches a fresh emission, so a snapshot
