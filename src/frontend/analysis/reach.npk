@@ -20,6 +20,7 @@
 
 mod:reach;
 
+use "../list.npk".*;
 use "../source_location.npk".*;
 use "../token_kind.npk".*;
 use "../ast_kind.npk".*;
@@ -48,10 +49,11 @@ pub struct:Reach = {
     // The set: declaration indices of reachable error constants, each with
     // the intern of its owning module's name (for the QUALIFIED spelling the
     // refusal prints and an arm may use).
-    wild int32->:rdecls;
-    wild int32->:rquals;
-    int32:rcount;
-    int32:rcap;
+    // SoA KEPT, two Lists (1.4.7 step 2). Both counts move together -- every
+    // record pushes both -- which is this pair's invariant now that the shared
+    // `rcount` is gone.
+    List<int32>:rdecls;
+    List<int32>:rquals;
 
     // The module currently being walked (its basename intern; the pipeline
     // hands it in beside the root).
@@ -75,13 +77,11 @@ pub struct:Reach = {
 pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                             TypeTable->:types, ExprTypes->:ets,
                             DiagList->:diags) never fails {
-    wild int8->:a = alloc(32i64 * 4i64);
-    wild int8->:aq = alloc(32i64 * 4i64);
     Reach:x = Reach{ ast: ast, tab: tab, interns: interns, types: types,
                      ets: ets, diags: diags,
-                     rdecls: a =>! wild int32->,
-                     rquals: aq =>! wild int32->,
-                     cur_module: 0i32, rcount: 0i32, rcap: 32i32,
+                     rdecls: raw list_init::<int32>(32i64),
+                     rquals: raw list_init::<int32>(32i64),
+                     cur_module: 0i32,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
@@ -91,21 +91,13 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
 
 func:reach_add_decl = NIL(Reach->:x, int32:decl_index, int32:qual) never fails {
     int32:i = 0i32;
-    while (i < x.rcount) {
-        if (x.rdecls[i => int64] == decl_index) { pass NIL; }
+    while ((i => int64) < x.rdecls.count) {
+        if (x.rdecls.items[i => int64] == decl_index) { pass NIL; }
         i = i + 1i32;
     }
-    if (x.rcount >= x.rcap) {
-        int64:ncap = (x.rcap => int64) * 2i64;
-        wild int8->:na = ralloc(x.rdecls =>! wild int8->, ncap * 4i64);
-        wild int8->:nq = ralloc(x.rquals =>! wild int8->, ncap * 4i64);
-        x.rdecls = na =>! wild int32->;
-        x.rquals = nq =>! wild int32->;
-        x.rcap = ncap =>! int32;
-    }
-    x.rdecls[x.rcount => int64] = decl_index;
-    x.rquals[x.rcount => int64] = qual;
-    x.rcount = x.rcount + 1i32;
+    // BOTH, ALWAYS.
+    drop list_push(@x.rdecls, decl_index);
+    drop list_push(@x.rquals, qual);
     pass NIL;
 };
 
@@ -545,8 +537,8 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     // The named coverage: every set member appears as a PatValue naming it.
     StmtNode:pn = raw ast_stmt(x.ast, StmtId{ index: pick_at });
     int32:i2 = 0i32;
-    while (i2 < x.rcount) {
-        int32:want = x.rdecls[i2 => int64];
+    while ((i2 => int64) < x.rdecls.count) {
+        int32:want = x.rdecls.items[i2 => int64];
         bool:named = false;
         int32:a2 = 0i32;
         while (a2 < (raw pick_arm_count(pn))) {
@@ -573,7 +565,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
                     if ((raw pat_enum_bind_count(x.ast, pat)) == 0i32) {
                         DeclNode:wd2 = raw ast_decl(x.ast, DeclId{ index: want });
                         if ((raw pat_enum_segment(x.ast, pat, 0i32))
-                                == x.rquals[i2 => int64]) {
+                                == x.rquals.items[i2 => int64]) {
                             if ((raw pat_enum_segment(x.ast, pat, 1i32))
                                     == (raw decl_name(wd2))) {
                                 named = true;
@@ -587,9 +579,9 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
         if (!named) {
             DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: want });
             string:wq = "";
-            if (x.rquals[i2 => int64] != 0i32) {
+            if (x.rquals.items[i2 => int64] != 0i32) {
                 wq = string_concat(
-                         raw intern_get(x.interns, x.rquals[i2 => int64]), ".");
+                         raw intern_get(x.interns, x.rquals.items[i2 => int64]), ".");
             }
             string:m1 = string_concat(
                 string_concat("`failsafe` does not name `", wq),
