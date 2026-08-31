@@ -239,10 +239,11 @@ pub struct:TypeTable = {
     // table's question, the vector lives here because both resolve contexts
     // (the resolve pass and the checker's annotation resolution) reach the
     // TypeTable and nothing else they share survives both.
-    wild int32->:unit_decls;
-    wild int64->:unit_vecs;
-    int32:unit_count;
-    int32:unit_cap;
+    // SoA KEPT, two Lists (1.4.7 step 2). The two counts move together --
+    // every write pushes both -- which is this pair's invariant now that the
+    // shared `unit_count` is gone.
+    List<int32>:unit_decls;
+    List<int64>:unit_vecs;
 };
 
 // --- construction ----------------------------------------------------------------------
@@ -787,24 +788,16 @@ pub func:dim_unit_text = string(int64:vec) never fails {
 // RHS folds the same both times, so last-write is also every-write.
 pub func:tt_unit_put = NIL(TypeTable->:t, int32:decl, int64:vec) never fails {
     int32:i = 0i32;
-    while (i < t.unit_count) {
-        if (t.unit_decls[i => int64] == decl) {
-            t.unit_vecs[i => int64] = vec;
+    while ((i => int64) < t.unit_decls.count) {
+        if (t.unit_decls.items[i => int64] == decl) {
+            t.unit_vecs.items[i => int64] = vec;
             pass NIL;
         }
         i = i + 1i32;
     }
-    if (t.unit_count >= t.unit_cap) {
-        int64:nc = (t.unit_cap => int64) * 2i64;
-        wild int8->:nd = ralloc(t.unit_decls =>! wild int8->, nc * 4i64);
-        wild int8->:nv = ralloc(t.unit_vecs =>! wild int8->, nc * 8i64);
-        t.unit_decls = nd =>! wild int32->;
-        t.unit_vecs = nv =>! wild int64->;
-        t.unit_cap = nc =>! int32;
-    }
-    t.unit_decls[t.unit_count => int64] = decl;
-    t.unit_vecs[t.unit_count => int64] = vec;
-    t.unit_count = t.unit_count + 1i32;
+    // BOTH, ALWAYS.
+    drop list_push(@t.unit_decls, decl);
+    drop list_push(@t.unit_vecs, vec);
     pass NIL;
 };
 
@@ -818,10 +811,10 @@ pub struct:DimVecAnswer = {
 
 pub func:tt_unit_get = DimVecAnswer(TypeTable->:t, int32:decl) never fails {
     int32:i = 0i32;
-    while (i < t.unit_count) {
-        if (t.unit_decls[i => int64] == decl) {
+    while ((i => int64) < t.unit_decls.count) {
+        if (t.unit_decls.items[i => int64] == decl) {
             DimVecAnswer:a = DimVecAnswer{ found: true,
-                                           vec: t.unit_vecs[i => int64] };
+                                           vec: t.unit_vecs.items[i => int64] };
             pass a;
         }
         i = i + 1i32;
@@ -1251,9 +1244,8 @@ pub func:typetable_init = TypeTable() never fails {
         drops: (calloc(n, 4i64)) =>! wild int32->,
         haschan: (calloc(n, 4i64)) =>! wild int32->,
         hasborrow: (calloc(n, 4i64)) =>! wild int32->,
-        unit_decls: (calloc(16i64, 4i64)) =>! wild int32->,
-        unit_vecs: (calloc(16i64, 8i64)) =>! wild int64->,
-        unit_count: 0i32, unit_cap: 16i32
+        unit_decls: raw list_init::<int32>(16i64),
+        unit_vecs: raw list_init::<int64>(16i64)
     };
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this
