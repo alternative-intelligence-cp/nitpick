@@ -30,6 +30,7 @@
 
 mod:ir_types;
 
+use "../../frontend/list.npk".*;
 use "../../frontend/source_location.npk".*;   // span_none, for the late substitution
 use "../../frontend/intern.npk".*;
 use "../../frontend/ast_kind.npk".*;
@@ -119,11 +120,12 @@ pub struct:LlCtx = {
     // Learned by watching exactly that happen.
     wild ImplTable->:impls;
 
-    wild int32->:vt_self;
-    wild int32->:vt_trait;
-    wild int32->:vt_sym;
-    int32:vt_count;
-    int32:vt_cap;
+    // SoA KEPT, three Lists (1.4.7 step 2). All three counts move together --
+    // every record pushes all three -- which is this family's invariant now
+    // that the shared `vt_count` is gone.
+    List<int32>:vt_self;
+    List<int32>:vt_trait;
+    List<int32>:vt_sym;
 
     // THE TYPES A DROP WAS EMITTED FOR (D-183, 1.2.1), recorded on demand at
     // the call sites and emitted as bodies after the module's functions. A
@@ -144,10 +146,9 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      mod_of: NULL, mod_n: 0i32,
                      subst_params_start: 0i32, subst_params_count: 0i32,
                      subst_args_start: 0i32, impls: NULL, tr: NULL,
-                     vt_self: (alloc(vn * #size_of<int32>())) =>! wild int32->,
-                     vt_trait: (alloc(vn * #size_of<int32>())) =>! wild int32->,
-                     vt_sym: (alloc(vn * #size_of<int32>())) =>! wild int32->,
-                     vt_count: 0i32, vt_cap: vn =>! int32,
+                     vt_self: raw list_init::<int32>(vn),
+                     vt_trait: raw list_init::<int32>(vn),
+                     vt_sym: raw list_init::<int32>(vn),
                      drop_types: (alloc(vn * #size_of<int32>())) =>! wild int32->,
                      drop_count: 0i32, drop_cap: vn =>! int32 };
     pass c;
@@ -205,18 +206,10 @@ pub func:drop_type_at = int32(LlCtx->:c, int32:i) never fails {
 // Record one impl's table. Called by the pre-pass; the emitter reads it back
 // when it builds a `dyn`.
 pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) never fails {
-    if (c.vt_count >= c.vt_cap) {
-        int32:nc = c.vt_cap * 2i32;
-        int64:sz = (nc => int64) * #size_of<int32>();
-        c.vt_self = (ralloc(c.vt_self =>! wild int8->, sz)) =>! wild int32->;
-        c.vt_trait = (ralloc(c.vt_trait =>! wild int8->, sz)) =>! wild int32->;
-        c.vt_sym = (ralloc(c.vt_sym =>! wild int8->, sz)) =>! wild int32->;
-        c.vt_cap = nc;
-    }
-    c.vt_self[c.vt_count => int64] = self_ty;
-    c.vt_trait[c.vt_count => int64] = trait_ty;
-    c.vt_sym[c.vt_count => int64] = sym;
-    c.vt_count = c.vt_count + 1i32;
+    // ALL THREE, ALWAYS.
+    drop list_push(@c.vt_self, self_ty);
+    drop list_push(@c.vt_trait, trait_ty);
+    drop list_push(@c.vt_sym, sym);
     pass NIL;
 };
 
@@ -224,10 +217,10 @@ pub func:vtmap_add = NIL(LlCtx->:c, int32:self_ty, int32:trait_ty, int32:sym) ne
 // program-wide (TRAITS_REFERENCE 4.1), so the first match is the only one.
 pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) never fails {
     int32:i = 0i32;
-    while (i < c.vt_count) {
-        if (c.vt_self[i => int64] == self_ty) {
-            if (c.vt_trait[i => int64] == trait_ty) {
-                pass (c.vt_sym[i => int64]);
+    while ((i => int64) < c.vt_self.count) {
+        if (c.vt_self.items[i => int64] == self_ty) {
+            if (c.vt_trait.items[i => int64] == trait_ty) {
+                pass (c.vt_sym.items[i => int64]);
             }
         }
         i = i + 1i32;
