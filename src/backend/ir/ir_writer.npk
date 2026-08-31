@@ -24,6 +24,7 @@
 
 mod:ir_writer;
 
+use "../../frontend/list.npk".*;
 use "../../frontend/intern.npk".*;
 use "../../frontend/diagnostics.npk".*;
 
@@ -89,10 +90,13 @@ pub struct:IrWriter = {
     // in first-registration order, which is emission order — deterministic
     // (D-078). Emitted at the program's tail as two tables and two lookup
     // functions the `site_line`/`site_path` builtins call.
-    wild string->:site_paths;
-    wild int32->:site_lines;
-    int32:site_count;
-    int32:site_cap;
+    // SoA KEPT, two Lists (1.4.7 step 2). Both counts move together -- every
+    // registration pushes both -- which is this pair's invariant now that the
+    // shared `site_count` is gone. The paths are OWNING strings; `List<T>`
+    // holds them behind a `wild T->` exactly as the raw array did, so the drop
+    // discipline is unchanged.
+    List<string>:site_paths;
+    List<int32>:site_lines;
 };
 
 pub func:irw_to_buffer = IrWriter() never fails {
@@ -105,9 +109,8 @@ pub func:irw_to_buffer = IrWriter() never fails {
                            seen_fn: false,
                            next_temp: 0i32, next_label: 0i32,
                            stmt_mark: 0i32, alloca_since: 0i32,
-                           site_paths: (alloc(16i64 * #size_of<string>())) =>! wild string->,
-                           site_lines: (alloc(16i64 * 4i64)) =>! wild int32->,
-                           site_count: 0i32, site_cap: 16i32 };
+                           site_paths: raw list_init::<string>(16i64),
+                           site_lines: raw list_init::<int32>(16i64) };
     pass w;
 };
 
@@ -176,27 +179,24 @@ pub func:irw_entry = NIL(IrWriter->:w, string:text) never fails {
 // One stamp site, registered: its id, minting the row on first sight.
 pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fails {
     int32:i = 0i32;
-    while (i < w.site_count) {
-        if (w.site_lines[i => int64] == line) {
-            if (raw string_eq(w.site_paths[i => int64], path)) {
+    while ((i => int64) < w.site_lines.count) {
+        if (w.site_lines.items[i => int64] == line) {
+            if (raw string_eq(w.site_paths.items[i => int64], path)) {
                 pass (i + 1i32);
             }
         }
         i = i + 1i32;
     }
-    if (w.site_count >= w.site_cap) {
-        int64:ncap = (w.site_cap => int64) * 2i64;
-        wild int8->:na = ralloc(w.site_paths =>! wild int8->,
-                                ncap * #size_of<string>());
-        wild int8->:nb = ralloc(w.site_lines =>! wild int8->, ncap * 4i64);
-        w.site_paths = na =>! wild string->;
-        w.site_lines = nb =>! wild int32->;
-        w.site_cap = ncap =>! int32;
-    }
-    w.site_paths[w.site_count => int64] = move(path);
-    w.site_lines[w.site_count => int64] = line;
-    w.site_count = w.site_count + 1i32;
-    pass w.site_count;
+    // BOTH, ALWAYS.
+    drop list_push(@w.site_paths, move(path));
+    drop list_push(@w.site_lines, line);
+    // THE ID IS `i + 1`, NOT A NARROWED COUNT. After the scan `i` IS the old
+    // count, already an int32, so the new 1-based id needs no cast -- and under
+    // D-210 the `+ 1i32` TRAPS rather than wrapping, which is exactly the
+    // protection the int32 counter gave for free before this conversion
+    // (family 5's note). A guarded narrow off the int64 count would have needed
+    // a new error identity, and this module declares none.
+    pass (i + 1i32);
 };
 
 // --- writing --------------------------------------------------------------------

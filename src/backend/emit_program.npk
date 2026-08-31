@@ -1970,11 +1970,11 @@ func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
 // site 0 and anything out of range. Emitted per program, deterministic in
 // registration order (D-078).
 func:emit_site_tables = NIL(IrWriter->:w) never fails {
-    int32:n = w.site_count;
+    int32:n = (w.site_lines.count) =>! int32;   // bounded by irw_site's own `i + 1i32`
     // the byte constants first
     int32:i = 0i32;
     while (i < n) {
-        string->:sp2 = $$i w.site_paths[i => int64];
+        string->:sp2 = $$i w.site_paths.items[i => int64];
         string:enc = "";
         int64:bj = 0i64;
         while (bj < sp2.len) {
@@ -1991,7 +1991,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     i = 0i32;
     while (i < n) {
         ls = raw cat3(ls, ", i32 ",
-                 int_to_string(w.site_lines[i => int64] => int64));
+                 int_to_string(w.site_lines.items[i => int64] => int64));
         i = i + 1i32;
     }
     drop irw_raw(w, raw cat5("@npk.site.lines = internal constant [",
@@ -2000,7 +2000,7 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     string:ps = "{ ptr, i64 } { ptr null, i64 0 }";
     i = 0i32;
     while (i < n) {
-        string->:sp3 = $$i w.site_paths[i => int64];
+        string->:sp3 = $$i w.site_paths.items[i => int64];
         ps = raw cat5(ps, ", { ptr, i64 } { ptr @npk.sitep.",
                  int_to_string((i + 1i32) => int64),
                  ", i64 ", string_concat(int_to_string(sp3.len), " }"));
