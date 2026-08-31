@@ -13,10 +13,10 @@
 //   3   the COMPILER trapped -- a defect in it, never in the input
 
 use "../src/driver/pipeline.npk".*;
-use "../lib/nio.npk".*;
 use "../src/frontend/source_location.npk".*;
 use "../src/frontend/intern.npk".*;
 use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/diag_writer.npk".*;
 use "../src/frontend/source.npk".*;
 use "../src/frontend/ast_kind.npk".*;    // --raw-report (D-163)
 use "../src/frontend/ast.npk".*;
@@ -34,26 +34,12 @@ use "../src/frontend/token.npk".*;
 use "../src/frontend/type_trait.npk".*;
 use "../src/frontend/types.npk".*;
 
-// EVERY DIAGNOSTIC THROUGH THE ONE RENDERER (1.0.8). This driver defined its
-// own `emit_line` until then — `CODE path:line:col`, the message dropped — and
-// so did three others, no two alike; `diag_line` is the only formatter now and
-// the overflow note reaches the reader too, which it never did from a driver.
-func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) never fails {
-    int64:n = raw diaglist_count(diags);
-    int64:d = 0i64;
-    while (d < n) {
-        nio_line(out, raw diag_line(raw diaglist_at(diags, d), sm)) ?| NIL;
-        d = d + 1i64;
-    }
-    if (diags.overflowed) {
-        nio_line(out, raw diag_overflow_line()) ?| NIL;
-    }
-    pass NIL;
-};
-func:main = int32(cstring[]:argv) {
+// The renderer moved to `diag_report` (diagnostics.npk) at 1.4.7 step 1:
+// ONE erased walk over `dyn Writer` where this file, check, resolve_check
+// and parse_check each kept their own copy of the loop.
+async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        NioW:uw = raw nio_stderr();
-        nio_line(@uw, "usage: check <root.npk>") ?| NIL;
+        await diag_say("usage: check <root.npk>") ?| NIL;
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -63,8 +49,7 @@ func:main = int32(cstring[]:argv) {
     int32:fr = raw front_run($$m f, root);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
-        NioW:ew = raw nio_stderr();
-        drop report(@ew, @f.g.sm, @f.diags);
+        await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
         exit 1i32;
     }
     wild_release_all();

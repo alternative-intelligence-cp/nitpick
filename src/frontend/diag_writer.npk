@@ -1,0 +1,89 @@
+// The DRIVERS' report path — the erased sink, kept OUT of diagnostics.npk.
+//
+// Why its own module: `REACH` is IMPORT-scoped, so an async function anywhere in
+// a module makes `DeadlineExceeded` reachable in every program that imports it —
+// an async body can be CANCELLED, which is also why TYPE-037 refuses
+// `async` + `never fails`. Putting these three functions in diagnostics.npk made
+// twelve of the compiler's OWN unit tests grow a `(DeadlineExceeded)` arm,
+// including `tests/backend/ir_expr.npk`, which does not mention the report path
+// at all. An arm acknowledging something that cannot happen in that program is
+// an acknowledgement worth less than none — the exhaustive `failsafe` (D-179)
+// earns its keep by being TRUE, so the fix is to put the async surface where it
+// belongs rather than to spend the rule's credibility.
+//
+// diagnostics.npk keeps what it always was: the list, the diagnostic, and
+// `diag_line`, the ONE formatter (1.0.8). This file is the one WRITER --
+// hence `diag_writer`, since a module may not share a name with a function
+// it declares and `diag_report` is the walk's own name.
+
+mod:diag_writer;
+
+use "./diagnostics.npk".*;
+use "./source_location.npk".*;
+use "./source.npk".*;
+
+
+// HOW LONG A DIAGNOSTIC WRITE MAY TAKE. The std descriptors stay BLOCKING --
+// the one stated D-071 exception (1.1.12c) -- so this bounds a pathological
+// pipe reader rather than an ordinary write, and it is generous on purpose: a
+// report that gives up is a defect the reader never learns about.
+fixed Duration:DIAG_WITHIN = Duration{ ns: 5000000000i64 };
+
+// THE ONE ERASED DIAGNOSTIC WALK. Five copies of this loop existed -- `report`
+// in src/main.npk, `report` in tools/check.npk, and three inline walks across
+// resolve_check and parse_check -- and the 1.0.8 note further up this file
+// records exactly what letting a second copy exist costs. The sink is
+// `dyn Writer`, so WHICH writer decides where the text lands: the drivers pass
+// stderr, and a capture buffer would be the same call.
+//
+// `dyn Writer` passes BY VALUE, never through a pointer: a trait method's
+// receiver is `Self->`, so the erased call takes the sink's own address
+// (1.1.12d), and `dyn Writer->:sink` fails method lookup outright.
+//
+// BEST-EFFORT BY THE TIME IT PRINTS, deliberately (D-163's reasoned `?|`): a
+// broken stderr cannot be reported on stderr, so each write swallows its own
+// Result rather than inventing a failure nobody can act on.
+// NOT `never fails`, and it cannot be: TYPE-037 refuses the pair, because a
+// suspended task can be CANCELLED and cancellation is an error the contract
+// would be denying (D-163). The best-effort promise this walk actually keeps is
+// per-write -- each `?|` below -- rather than a signature-level one.
+pub async func:diag_report = NIL(dyn Writer:sink, DiagList->:list,
+                                 SourceManager->:sm, Duration:within) {
+    int64:n = raw diaglist_count(list);
+    int64:d = 0i64;
+    while (d < n) {
+        string:ln = string_concat(raw diag_line(raw diaglist_at(list, d), sm),
+                                  "\n");
+        discard(await sink.write(string_bytes(ln), within) ?| 0i64);
+        d = d + 1i64;
+    }
+    if (list.overflowed) {
+        string:ov = string_concat(raw diag_overflow_line(), "\n");
+        discard(await sink.write(string_bytes(ov), within) ?| 0i64);
+    }
+    await sink.flush(within) ?| NIL;
+    pass NIL;
+};
+
+// The drivers' one-line spelling. A `dyn` is MOVE-ONLY, so a by-value sink
+// cannot be reused across calls and there is no "construct stderr once" to be
+// had -- every reporting site is its own early exit, so each builds its own,
+// and the dup it owns is closed by the OwnedFd drop at this function's exit.
+pub async func:diag_report_stderr = NIL(DiagList->:list, SourceManager->:sm) {
+    TextWriter<ByteWriter>:tw = relay std_err();
+    dyn Writer:sink = move(tw);
+    await diag_report(sink, list, sm, DIAG_WITHIN) ?| NIL;
+    pass NIL;
+};
+
+// A driver's own message -- "cannot write the output file" -- through the SAME
+// sink as the diagnostics. Two paths to one stream is the thing the blueprint
+// philosophy rejects, and it is what this file's own 1.0.8 note is about.
+pub async func:diag_say = NIL(string:msg) {
+    TextWriter<ByteWriter>:tw = relay std_err();
+    dyn Writer:sink = move(tw);
+    string:ln = string_concat(msg, "\n");
+    discard(await sink.write(string_bytes(ln), DIAG_WITHIN) ?| 0i64);
+    await sink.flush(DIAG_WITHIN) ?| NIL;
+    pass NIL;
+};

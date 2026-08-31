@@ -33,6 +33,7 @@ use "../src/frontend/ast_kind.npk".*;
 use "../src/frontend/ast.npk".*;
 use "../src/frontend/diag_codes.npk".*;
 use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/diag_writer.npk".*;
 use "../src/frontend/parse_codes.npk".*;
 use "../src/frontend/resolve_codes.npk".*;
 use "../src/frontend/builtins.npk".*;
@@ -44,7 +45,6 @@ use "../src/frontend/parse_decorate.npk".*;
 use "../src/frontend/parse_stmt.npk".*;
 use "../src/frontend/parse_pick.npk".*;
 use "../src/frontend/parse_decl.npk".*;
-use "../lib/nio.npk".*;
 use "../src/frontend/paths.npk".*;
 use "../src/frontend/resolve_path.npk".*;
 use "../src/frontend/symbols.npk".*;
@@ -52,10 +52,9 @@ use "../src/frontend/module_graph.npk".*;
 use "../src/frontend/resolve.npk".*;
 use "../src/frontend/types.npk".*;
 
-func:main = int32(cstring[]:argv) {
+async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        NioW:uw = raw nio_stderr();
-        nio_line(@uw, "usage: resolve_check <root.npk>") ?| NIL;
+        await diag_say("usage: resolve_check <root.npk>") ?| NIL;
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -109,12 +108,7 @@ func:main = int32(cstring[]:argv) {
     }
 
     int64:n = raw diaglist_count(@diags);
-    int64:d = 0i64;
-    NioW:ew = raw nio_stderr();
-    while (d < n) {
-        nio_line(@ew, raw diag_line(raw diaglist_at(@diags, d), @g.sm)) ?| NIL;
-        d = d + 1i64;
-    }
+    await diag_report_stderr(@diags, @g.sm) ?| NIL;
 
     if (n != 0i64) {
         exit 1i32;

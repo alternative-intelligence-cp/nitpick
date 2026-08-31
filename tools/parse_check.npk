@@ -18,7 +18,6 @@
 // the harness asserts on those and never on message text, so messages stay free
 // to improve (0.1.6).
 
-use "../lib/nio.npk".*;
 use "../src/frontend/source_location.npk".*;
 use "../src/frontend/token_kind.npk".*;
 use "../src/frontend/token.npk".*;
@@ -27,6 +26,7 @@ use "../src/frontend/ast_kind.npk".*;
 use "../src/frontend/ast.npk".*;
 use "../src/frontend/diag_codes.npk".*;
 use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/diag_writer.npk".*;
 use "../src/frontend/parse_codes.npk".*;
 use "../src/frontend/lexer.npk".*;
 use "../src/frontend/parser.npk".*;
@@ -39,10 +39,9 @@ use "../src/frontend/parse_decl.npk".*;
 use "../src/frontend/source.npk".*;
 use "../src/frontend/types.npk".*;
 
-func:main = int32(cstring[]:argv) {
+async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        NioW:uw = raw nio_stderr();
-        nio_line(@uw, "usage: parse_check <file.npk>") ?| NIL;
+        await diag_say("usage: parse_check <file.npk>") ?| NIL;
         exit 2i32;
     }
 
@@ -66,9 +65,7 @@ func:main = int32(cstring[]:argv) {
         string:e = "unknown";
         if (loaded.err == FileUnknown) { e = "no such file"; }
         if (loaded.err == IoEof)       { e = "end of input"; }
-        NioW:ew = raw nio_stderr();
-        nio_put(@ew, "cannot read: ") ?| NIL;
-        nio_line(@ew, e) ?| NIL;
+        await diag_say(string_concat("cannot read: ", e)) ?| NIL;
         exit 2i32;
     }
     int32:file = loaded.value;
@@ -88,20 +85,11 @@ func:main = int32(cstring[]:argv) {
     Parser:p = raw parser_init(@toks, @ast, @parsed, @it);
     discard(raw p_parse_module(@p));
 
-    int64:n = 0i64;
-    int64:i = 0i64;
-    NioW:ew = raw nio_stderr();
-    while (i < (raw diaglist_count(@lexed))) {
-        nio_line(@ew, raw diag_line(raw diaglist_at(@lexed, i), @sm)) ?| NIL;
-        n = n + 1i64;
-        i = i + 1i64;
-    }
-    i = 0i64;
-    while (i < (raw diaglist_count(@parsed))) {
-        nio_line(@ew, raw diag_line(raw diaglist_at(@parsed, i), @sm)) ?| NIL;
-        n = n + 1i64;
-        i = i + 1i64;
-    }
+    // The lexer's list and the parser's stay SEPARATE (see above) -- two
+    // reports, not one merged list, so the reader still sees which stage spoke.
+    int64:n = (raw diaglist_count(@lexed)) + (raw diaglist_count(@parsed));
+    await diag_report_stderr(@lexed, @sm) ?| NIL;
+    await diag_report_stderr(@parsed, @sm) ?| NIL;
 
     if (n != 0i64) {
         exit 1i32;
