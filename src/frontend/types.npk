@@ -1380,34 +1380,29 @@ pub struct:FnInstance = {
 };
 
 pub struct:FnInstTable = {
-    wild FnInstance->:items;
-    int32:count;
-    int32:cap;
+    List<FnInstance>:v;
 };
 
 pub func:fninst_init = FnInstTable() never fails {
-    int64:n = 16i64;
-    wild int8->:mem = alloc(n * #size_of<FnInstance>());
-    FnInstTable:t = FnInstTable{ items: mem =>! wild FnInstance->,
-                                 count: 0i32, cap: 16i32 };
-    pass t;
+    pass FnInstTable{ v: raw list_init::<FnInstance>(16i64) };
 };
 
-func:fninst_grow = NIL(FnInstTable->:t) never fails {
-    int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (nc => int64) * #size_of<FnInstance>());
-    t.items = bigger =>! wild FnInstance->;
-    t.cap = nc;
-    pass NIL;
+// An index into this table is int32 BY DESIGN -- that is what every
+// caller holds -- so the list's int64 count narrows to become one. The
+// narrowing is GUARDED rather than spelled `=>!`: a silent truncation
+// would give two entries the same index, and `BoundsIndex` is already
+// this module's declared defect, so no `failsafe` grows an arm.
+func:fninsttable_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsIndex; }
+    pass (n =>! int32);
 };
 
-pub func:fninst_count = int32(FnInstTable->:t) never fails { pass t.count; };
+pub func:fninst_count = int32(FnInstTable->:t) never fails { pass (raw fninsttable_id(t.v.count)); };
 
 pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) never fails {
     if (i < 0i32) { !!! BoundsIndex; }
-    if (i >= t.count) { !!! BoundsIndex; }
-    pass (t.items[i => int64]);
+    if ((i => int64) >= t.v.count) { !!! BoundsIndex; }
+    pass (t.v.items[i => int64]);
 };
 
 // Record one generic-function instantiation, deduped by (decl, arguments).
@@ -1419,8 +1414,8 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
                              int32:params_start, int32:params_count,
                              int32:owner_impl, int32:type_id, Span:at) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
-        FnInstance:e = t.items[i => int64];
+    while ((i => int64) < t.v.count) {
+        FnInstance:e = t.v.items[i => int64];
         if (e.decl == decl) {
             if (e.args_count == args_count) {
                 bool:same = true;
@@ -1439,15 +1434,13 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
         }
         i = i + 1i32;
     }
-    if (t.count >= t.cap) { drop fninst_grow(t); }
     FnInstance:n = FnInstance{ decl: decl, args_start: args_start,
                                args_count: args_count,
                                params_start: params_start,
                                params_count: params_count,
                                owner_impl: owner_impl,
                                type_id: type_id, at: at };
-    t.items[t.count => int64] = n;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, n);
     pass NIL;
 };
 
