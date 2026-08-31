@@ -12,6 +12,7 @@
 // the same reasoning as the AST's reserved NONE nodes and the parser's panic
 // mode, applied one layer up.
 
+use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -760,25 +761,33 @@ pub func:FOLD_DEPTH = int32() never fails { pass 64i32; };
 // `generics` does — it is constant across one evaluation and a nested call needs a
 // frame of its own, so threading it through every folding function would be one
 // more parameter that eight functions have to pass correctly.
+// STRUCT OF ARRAYS, KEPT (1.4.7 step 2). The collapse for a parallel-array
+// table is N separate `List<T>` fields, not one `List` of pairs: the layout
+// does not move, and what goes is the hand-written `ralloc` and the `=>!`
+// reinterpretation beside each array -- the shape 1.4.2 found FIVE latent
+// unchecked pointer reinterpretations in.
+//
+// THE TWO COUNTS MOVE TOGETHER, and that is this family's invariant: every
+// write pushes BOTH, so `names.count == vals.count` always. The shared `count`
+// this replaces made that structural; here it is maintained, and the read paths
+// bound-check against their own list rather than against a count that belongs
+// to neither array in particular.
 pub struct:FoldEnv = {
-    wild int32->:names;
-    wild ConstVal->:vals;
-    int32:count;
-    int32:cap;
+    List<int32>:names;
+    List<ConstVal>:vals;
 };
 
+// The empty environment allocates a one-element pair rather than NULL: `List`
+// has no zero-capacity form BY DESIGN (a doubling from zero is a no-op
+// forever), so one is the floor. It is built exactly once, at resolver init.
 pub func:foldenv_none = FoldEnv() never fails {
-    FoldEnv:e = FoldEnv{ names: NULL, vals: NULL, count: 0i32, cap: 0i32 };
-    pass e;
+    pass FoldEnv{ names: raw list_init::<int32>(1i64),
+                  vals: raw list_init::<ConstVal>(1i64) };
 };
 
 func:foldenv_new = FoldEnv() never fails {
-    int64:n = 16i64;
-    wild int8->:a = alloc(n * #size_of<int32>());
-    wild int8->:b = alloc(n * #size_of<ConstVal>());
-    FoldEnv:e = FoldEnv{ names: a =>! wild int32->, vals: b =>! wild ConstVal->,
-                         count: 0i32, cap: 16i32 };
-    pass e;
+    pass FoldEnv{ names: raw list_init::<int32>(16i64),
+                  vals: raw list_init::<ConstVal>(16i64) };
 };
 
 // LAST BINDING WINS, and it is a REBIND rather than a shadow: a comptime function
@@ -787,41 +796,30 @@ func:foldenv_new = FoldEnv() never fails {
 // same answer more slowly.
 func:foldenv_set = NIL(FoldEnv->:e, int32:name, move ConstVal:v) never fails {
     int32:i = 0i32;
-    while (i < e.count) {
-        if (e.names[i => int64] == name) {
-            e.vals[i => int64] = move(v);
+    while ((i => int64) < e.names.count) {
+        if (e.names.items[i => int64] == name) {
+            e.vals.items[i => int64] = move(v);
             pass NIL;
         }
         i = i + 1i32;
     }
-    if (e.count >= e.cap) {
-        int32:nc = e.cap * 2i32;
-        if (nc < 16i32) { nc = 16i32; }
-        wild int8->:a = ralloc(e.names =>! wild int8->,
-                               (nc => int64) * #size_of<int32>());
-        wild int8->:b = ralloc(e.vals =>! wild int8->,
-                               (nc => int64) * #size_of<ConstVal>());
-        e.names = a =>! wild int32->;
-        e.vals = b =>! wild ConstVal->;
-        e.cap = nc;
-    }
-    e.names[e.count => int64] = name;
-    e.vals[e.count => int64] = move(v);
-    e.count = e.count + 1i32;
+    // BOTH, ALWAYS -- the invariant the struct comment states.
+    drop list_push(@e.names, name);
+    drop list_push(@e.vals, move(v));
     pass NIL;
 };
 
 func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) never fails {
     int32:i = 0i32;
-    while (i < e.count) {
-        if (e.names[i => int64] == name) {
+    while ((i => int64) < e.names.count) {
+        if (e.names.items[i => int64] == name) {
             // Deep-viewed (D-183): the env owns the text; the caller's copy views.
-            ConstVal:cv = ConstVal{ kind: e.vals[i => int64].kind,
-                                    type_id: e.vals[i => int64].type_id,
-                                    num: e.vals[i => int64].num,
+            ConstVal:cv = ConstVal{ kind: e.vals.items[i => int64].kind,
+                                    type_id: e.vals.items[i => int64].type_id,
+                                    num: e.vals.items[i => int64].num,
                                     text: string_from_bytes(
-                                        e.vals[i => int64].text.ptr,
-                                        e.vals[i => int64].text.len) };
+                                        e.vals.items[i => int64].text.ptr,
+                                        e.vals.items[i => int64].text.len) };
             pass cv;
         }
         i = i + 1i32;
@@ -1427,7 +1425,7 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
     // A LOCAL OF THE `comptime func:` BEING EVALUATED SHADOWS EVERYTHING, because
     // it is the innermost thing in scope and because a parameter named after a
     // `const` global is a program somebody may well write.
-    if (r.env.count > 0i32) {
+    if (r.env.names.count > 0i64) {
         ConstVal:local = raw foldenv_get(@r.env, (raw expr_name(e)) =>! int32);
         if (raw cv_folded(local)) { pass local; }
     }
