@@ -88,7 +88,7 @@ def _scoped(s, struct, var, fn):
         if not bind.search(s[a:b]):
             continue
         out.append(s[last:a])
-        out.append(fn(s[a:b]))
+        out.append(fn(s[a:b], header))
         last = b
         touched += 1
     out.append(s[last:])
@@ -97,7 +97,7 @@ def _scoped(s, struct, var, fn):
 
 def convert(path, struct, elem, initcap, initfn, growfn, var,
             id_error=None, count_fns=(), import_line=None, dry=False, root=MAIN,
-            extra_files=None):
+            extra_files=None, reserve_fns=()):
     path = os.path.join(root, path)
     s = open(path, encoding="utf-8").read()
     orig = s
@@ -160,7 +160,22 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
     #    rewrite below).
     pat = re.compile(rf"    if \({var}\.count >= {var}\.cap\) \{{[^}}]*?\b{growfn}\({var}\);\s*\}}\n", re.S)
     deleted = [0]
-    def _guard_del(block):
+    reserved = [0]
+    def _guard_del(block, _hdr=""):
+        # A GUARD EITHER PAIRS WITH AN APPEND OR IS A NAMED RESERVE. Family 12
+        # is where this stopped being hypothetical: `TokenList` has two
+        # legitimate guard-and-grow sites, because `tokenlist_split_shr` grows
+        # and then SHIFTS THE TAIL UP to insert a second `>`, which has no
+        # `items[count] = v; count = count + 1` for the push rewrite to match.
+        # Deleting that guard would leave the shift writing past the end at
+        # `count == cap` -- the family-10 defect, reached from the other side.
+        # So the caller NAMES such functions and the guard becomes an explicit
+        # `list_reserve`, which is what it always meant.
+        if any(re.search(rf"func:{fn}\b", _hdr) for fn in reserve_fns):
+            block, k = pat.subn(
+                f"    drop list_reserve(@{var}.v, 1i64);\n", block)
+            reserved[0] += k
+            return block
         block, k = pat.subn("", block)
         deleted[0] += k
         return block
@@ -188,7 +203,7 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
         out += f"    drop list_push(@{var}.v, {val});\n"
         return out
     counted = [0]
-    def _push(block):
+    def _push(block, _hdr=""):
         block, k = pat2.subn(repl, block)
         counted[0] += k
         return block
@@ -199,13 +214,16 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
     # collateral deletion reported itself in the return string of the family-10
     # run -- "2 guard site(s), 1 push site(s)" -- and nothing refused the
     # mismatch. Now something does.
+    assert reserved[0] == len(reserve_fns), (
+        f"{path}: {reserved[0]} reserve rewrite(s) for {len(reserve_fns)} named "
+        f"function(s) -- a named reserve site whose guard was not found")
     assert n == n2, (f"{path}: {n} guard deletion(s) vs {n2} push conversion(s)"
                      f" -- a deleted guard without its converted push means the"
                      f" tool edited a site it does not own")
 
     # 5. the count accessors narrow through the guard
     if id_error and count_fns:
-        def _cnt(block):
+        def _cnt(block, _hdr=""):
             return block.replace(f"pass {var}.count;",
                                  f"pass (raw {struct.lower()}_id({var}.v.count));")
         s, _ = _scoped(s, struct, var, _cnt)
@@ -213,7 +231,7 @@ def convert(path, struct, elem, initcap, initfn, growfn, var,
     # 6. everything else. THE LOOP COUNTERS STAY int32 where they are indices:
     #    the comparison widens (`=>` is the lossless direction) rather than the
     #    counter narrowing.
-    def _rewrite(block):
+    def _rewrite(block, _hdr=""):
         block = re.sub(rf"\bwhile \((\w+) < {var}\.count\)", rf"while ((\1 => int64) < {var}.v.count)", block)
         block = re.sub(rf"\bif \((\w+) >= {var}\.count\)",   rf"if ((\1 => int64) >= {var}.v.count)", block)
         block = re.sub(rf"\bif \((\w+) < {var}\.count\)",    rf"if ((\1 => int64) < {var}.v.count)", block)

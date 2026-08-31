@@ -8,6 +8,7 @@
 // index guards; the rest are named for the invariant they hold.
 error:BoundsId;
 
+use "./list.npk".*;
 use "./source_location.npk".*;
 use "./token_kind.npk".*;
 use "./num_width.npk".*;
@@ -60,55 +61,37 @@ pub func:token_is_eof = bool(Token:t) never fails {
 // ---------------------------------------------------------------------------
 
 pub struct:TokenList = {
-    wild Token->:items;
-    int64:count;
-    int64:cap;
+    List<Token>:v;
 };
 
 pub func:tokenlist_init = TokenList() never fails {
-    int64:n = 256i64;
-    wild int8->:raw_mem = alloc(n * #size_of<Token>());
-    TokenList:l = TokenList{ items: raw_mem =>! wild Token->, count: 0i64, cap: n };
-    pass l;
-};
-
-pub func:tokenlist_grow = NIL(TokenList->:l) never fails {
-    int64:newcap = l.cap * 2i64;
-    wild int8->:bigger = ralloc(l.items =>! wild int8->,
-                                newcap * #size_of<Token>());
-    l.items = bigger =>! wild Token->;
-    l.cap = newcap;
-    pass NIL;
+    pass TokenList{ v: raw list_init::<Token>(256i64) };
 };
 
 pub func:tokenlist_push = NIL(TokenList->:l, Token:t) never fails {
-    if (l.count >= l.cap) {
-        drop tokenlist_grow(l);
-    }
-    l.items[l.count] = t;
-    l.count = l.count + 1i64;
+    drop list_push(@l.v, t);
     pass NIL;
 };
 
 pub func:tokenlist_count = int64(TokenList->:l) never fails {
-    pass l.count;
+    pass l.v.count;
 };
 
 pub func:tokenlist_at = Token(TokenList->:l, int64:i) never fails {
     if (i < 0i64) {
         !!! BoundsId;
     }
-    if (i >= l.count) {
+    if (i >= l.v.count) {
         !!! BoundsId;
     }
-    pass l.items[i];
+    pass l.v.items[i];
 };
 
 pub func:tokenlist_last = Token(TokenList->:l) never fails {
-    if (l.count == 0i64) {
+    if (l.v.count == 0i64) {
         !!! BoundsId;
     }
-    pass l.items[l.count - 1i64];
+    pass l.v.items[l.v.count - 1i64];
 };
 
 // Split a `>>` at `i` into two `>` tokens.
@@ -126,29 +109,27 @@ pub func:tokenlist_last = Token(TokenList->:l) never fails {
 // type-argument context to two precisely delimited places.
 pub func:tokenlist_split_shr = bool(TokenList->:l, int64:i) never fails {
     if (i < 0i64) { pass false; }
-    if (i >= l.count) { pass false; }
-    if (l.items[i].kind != TokenKind.OpShr) { pass false; }
+    if (i >= l.v.count) { pass false; }
+    if (l.v.items[i].kind != TokenKind.OpShr) { pass false; }
 
-    if (l.count >= l.cap) {
-        drop tokenlist_grow(l);
-    }
+    drop list_reserve(@l.v, 1i64);
 
-    Token:orig = l.items[i];
+    Token:orig = l.v.items[i];
 
     // Shift the tail up by one to make room for the second `>`.
-    int64:j = l.count;
+    int64:j = l.v.count;
     while (j > i) {
-        l.items[j] = l.items[j - 1i64];
+        l.v.items[j] = l.v.items[j - 1i64];
         j = j - 1i64;
     }
-    l.count = l.count + 1i64;
+    l.v.count = l.v.count + 1i64;
 
     // Two one-byte spans, so a diagnostic can point at either half.
     Span:a = raw span_make(orig.span.file, orig.span.offset, orig.span.line,
                            orig.span.col, 1i32);
     Span:b = raw span_make(orig.span.file, orig.span.offset + 1i32,
                            orig.span.line, orig.span.col + 1i32, 1i32);
-    l.items[i] = raw token_make(TokenKind.OpGt, a, 0i64);
-    l.items[i + 1i64] = raw token_make(TokenKind.OpGt, b, 0i64);
+    l.v.items[i] = raw token_make(TokenKind.OpGt, a, 0i64);
+    l.v.items[i + 1i64] = raw token_make(TokenKind.OpGt, b, 0i64);
     pass true;
 };
