@@ -281,8 +281,11 @@ vacant is -1, and a plain memset would have closed stdin silently), so it
 is worth spending when the question is decision-shaped.
 **A NEW FABLE SESSION MUST WORK IN ITS OWN WORKTREE**: on 2026-08-30 two
 sessions shared this tree and one commit swept up the other's in-flight
-edits (`fc609a6` -- its message and its diff still disagree). Spend it well: escalate when (a) a plan step is wrong
-on contact, (b) a miscompile/fixpoint-drift/nondeterminism hunt has
+edits: **`fc609a6`'s message and its diff disagree**, and the commit carries a
+`git note` saying so and pointing at 1.4.7.md's RESOLVED section (`git log`
+shows notes by default; `refs/notes/commits` needs its own push).
+
+Escalate when (a) a plan step is wrong on contact, (b) a miscompile/fixpoint-drift/nondeterminism hunt has
 survived two serious hypotheses, or (c) anything decision-shaped
 appears. BEFORE escalating, write what you found into the subcycle's
 file (symptoms, ruled-out causes, the exact failing command) so the
