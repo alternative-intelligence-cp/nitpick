@@ -235,6 +235,22 @@ pub struct:ExprEmitter = {
     // `tr.self_type` say which. Same substitution shape as 1.0.2b's generic
     // bodies, for the same reason.
     int32:cur_trait;
+
+    // THE IMPL BEING EMITTED, or 0 outside one (1.4.7, D-229 stage 2). The
+    // OTHER half of a method symbol is its MODULE, and D-156 puts a trait
+    // impl's symbols in the IMPL's module -- its vtable row says so, and an
+    // inherited default is "one body per implementing impl". Until 1.4.7 the
+    // module came from whichever DECLARATION's body was being emitted: the
+    // impl's own member for an own method, the TRAIT's member for an inherited
+    // default -- two modules for one impl the moment an impl lives anywhere
+    // but beside its trait. Invisible for as long as every impl in the tree
+    // did (the prelude's impls of prelude traits, and single-file tests). The
+    // first foreign-module impl -- `impl:Sink:Writer` in diag_writer.npk --
+    // found it in one build: a call through a bound in a generic body
+    // qualified the callee by the TRAIT's module and `llc` refused the
+    // undefined symbol. This field is the definition side's authority for
+    // that module; `impl_decl_for` is the call sites' -- one rule, both ends.
+    int32:cur_impl;
 };
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
@@ -245,7 +261,7 @@ pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
                                  interns: interns, strs: strs, sm: sm, tr: tr,
                                  fninsts: fninsts, scope: scope,
-                                 cur_trait: 0i32 };
+                                 cur_trait: 0i32, cur_impl: 0i32 };
     pass x;
 };
 
@@ -1292,7 +1308,9 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
         mi = mi + 1i32;
     }
     if (m_decl == 0i32) { pass (raw iv_broken(at)); }
-    string:sym = raw mangled_fn_sym(x.fe.ctx, m_decl,
+    // QUALIFIED BY THE IMPL (1.4.7; the rule is at `cur_impl`) -- the module
+    // the definition took, wherever the impl sits.
+    string:sym = raw mangled_fn_sym(x.fe.ctx, impl_decl,
                      raw method_symbol_name(x.fe.ctx.types, x.interns, itype,
                          trait_ty, "to_string"));
 
@@ -4354,12 +4372,23 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
 // that refusal is what made D-182's own pool design unbuildable: a
 // `ThreadPool<J, …>` is N worker TASKS generic in the job type, so every one
 // of its spawns is this call.
-func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
-                                int32:cdi, DeclNode:cdecl) never fails {
+pub struct:AsyncCallee = {
+    string:name;    // "" when the callee is generic and no instantiation matches
+    int32:qual;     // the declaration whose MODULE qualifies the symbol (1.4.7)
+};
+
+func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
+                                     int32:cdi, DeclNode:cdecl) never fails {
     // A METHOD'S SYMBOL IS READ, NOT REBUILT (1.0.5b's rule, and the reason
     // two impls in one module may both define `run`): the checker recorded
     // the qualified spelling — `Job:Work.run` — and the frame type and resume
     // symbol are derived from exactly that.
+    //
+    // AND ITS MODULE IS THE IMPL'S (1.4.7, D-229 stage 2; the rule is at
+    // `cur_impl`). `cdi` is the DECLARATION the checker resolved -- the
+    // trait's method for a call through a bound, the trait's default for an
+    // inherited one -- and its module is the trait's, which is the impl's only
+    // while the two share one. Each method path asks the table.
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
         string:mn = raw intern_get(x.interns, raw decl_name(cdecl));
         // SUBSTITUTION OUTRANKS THE RECORDED SYMBOL (1.1.12c). The checker
@@ -4376,7 +4405,16 @@ func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (raw type_mentions_param(x.fe.ctx.types, x.ast, presub_rty, 64i32)) {
             msym = 0i32;
         }
-        if (msym != 0i32) { pass (raw intern_get(x.interns, msym)); }
+        if (msym != 0i32) {
+            int32:crecv = presub_rty;
+            if ((raw type_kind(x.fe.ctx.types, crecv)) == (raw TY_POINTER())) {
+                crecv = raw type_elem(x.fe.ctx.types, crecv);
+            }
+            int32:cq = raw impl_decl_for(x, crecv,
+                           raw exprtypes_callee_trait(x.et, cid));
+            if (cq == 0i32) { cq = cdi; }
+            pass AsyncCallee{ name: raw intern_get(x.interns, msym), qual: cq };
+        }
         // A CALL THROUGH A BOUND NAMES THE SPECIALIZATION'S IMPL (1.0.6b's
         // rule, and the same reasoning): `async func:do_one<J: Work>` calling
         // `job.run()` records no symbol, because at check time the receiver is
@@ -4389,8 +4427,12 @@ func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         int32:rty = raw exprtypes_get(x.et, rid);
         if ((raw type_kind(x.fe.ctx.types, rty)) == (raw TY_SELF())) {
             if (x.tr.self_type != 0i32) {
-                pass (raw method_symbol_name(x.fe.ctx.types, x.interns,
-                          x.tr.self_type, x.cur_trait, mn));
+                int32:sq = cdi;
+                if (x.cur_impl != 0i32) { sq = x.cur_impl; }
+                pass AsyncCallee{ name: raw method_symbol_name(x.fe.ctx.types,
+                                            x.interns, x.tr.self_type,
+                                            x.cur_trait, mn),
+                                  qual: sq };
             }
         }
         if (raw type_mentions_param(x.fe.ctx.types, x.ast, rty, 64i32)) {
@@ -4403,19 +4445,24 @@ func:async_callee_name = string(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
                     conc = raw type_elem(x.fe.ctx.types, conc);
                 }
                 int32:btrait = raw exprtypes_callee_trait(x.et, cid);
-                pass (raw method_symbol_name(x.fe.ctx.types, x.interns,
-                          conc, btrait, mn));
+                int32:bq = raw impl_decl_for(x, conc, btrait);
+                if (bq == 0i32) { bq = cdi; }
+                pass AsyncCallee{ name: raw method_symbol_name(x.fe.ctx.types,
+                                            x.interns, conc, btrait, mn),
+                                  qual: bq };
             }
         }
-        pass "";
+        pass AsyncCallee{ name: "", qual: cdi };
     }
     ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
     Symbol:cs = raw symtab_get(x.tab, cnode.a);
     string:fname = raw intern_get(x.interns, cs.name);
-    if ((raw decl_generic_window(x.ast, cdecl)).count == 0i32) { pass fname; }
+    if ((raw decl_generic_window(x.ast, cdecl)).count == 0i32) {
+        pass AsyncCallee{ name: move(fname), qual: cdi };
+    }
     int32:sn = raw fninst_for_call(x, cdi, cid);
-    if (sn == 0i32) { pass ""; }
-    pass (raw intern_get(x.interns, sn));
+    if (sn == 0i32) { pass AsyncCallee{ name: "", qual: cdi }; }
+    pass AsyncCallee{ name: raw intern_get(x.interns, sn), qual: cdi };
 };
 
 // THE SPAWN (D-058/D-177 stage E): `drop f(…)` on an `async` callee builds
@@ -4427,15 +4474,15 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
                         int32:cdi) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
-    if (fname.len == 0i64) {
+    AsyncCallee:ac = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (ac.name.len == 0i64) {
         // The checker records every instantiation it admits (1.0.2b); a
         // spawn whose specialization is missing is the recorder broken, not
         // a rung (1.1.13-close).
         pass (raw iv_broken(n.span));
     }
-    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
-    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
+    string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
     if (cfv.state != (raw LL_OK())) { pass cfv; }
     string:hdr = raw fnem_hdr_ty();
@@ -4472,12 +4519,12 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
                                int32:cdi) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
-    if (fname.len == 0i64) {
+    AsyncCallee:ac = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (ac.name.len == 0i64) {
         pass (raw iv_broken(n.span));   // same recorder, same promise
     }
-    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
-    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
+    string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
     if (cfv.state != (raw LL_OK())) { pass cfv; }
 
@@ -6063,12 +6110,12 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     }
     ExprNode:cn = raw ast_expr(x.ast, cid);
     DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: cdi });
-    string:fname = raw async_callee_name(x, cid, cn, cdi, cdecl);
-    if (fname.len == 0i64) {
+    AsyncCallee:ac = raw async_callee_name(x, cid, cn, cdi, cdecl);
+    if (ac.name.len == 0i64) {
         pass (raw iv_broken(n.span));   // same recorder, same promise
     }
-    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, cdi, fname);
-    string:crs = raw resume_fn_sym(x.fe.ctx, cdi, fname);
+    string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
+    string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
 
     // The callee's frame, then its arguments — via the same helper the
     // spawn uses. Nothing here can suspend: `await` nests inside no
@@ -8015,11 +8062,26 @@ func:emit_is_trait_qualified = bool(ExprEmitter->:x, ExprNode:n) never fails {
 func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:sym = raw exprtypes_callee_sym(x.et, id);
     string:fname = raw intern_get(x.interns, sym);
-    string:callsym = raw mangled_fn_sym(x.fe.ctx,
-                         raw exprtypes_callee(x.et, id), fname);
     int32:mft = raw exprtypes_callee_ft(x.et, id);
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
+    // QUALIFIED BY THE IMPL, not by the recorded declaration (1.4.7; the rule
+    // is at `cur_impl`): the receiver is argument 0 and the trait is the one
+    // this spelling named.
+    int32:qual = raw exprtypes_callee(x.et, id);
+    if (count > 0i32) {
+        int32:qrecv = raw exprtypes_get(x.et,
+                          ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast, qrecv, 64i32)) {
+            qrecv = raw subst_emitted_type(x.fe.ctx, qrecv);
+        }
+        if ((raw type_kind(x.fe.ctx.types, qrecv)) == (raw TY_POINTER())) {
+            qrecv = raw type_elem(x.fe.ctx.types, qrecv);
+        }
+        int32:qi = raw impl_decl_for(x, qrecv, raw exprtypes_callee_trait(x.et, id));
+        if (qi != 0i32) { qual = qi; }
+    }
+    string:callsym = raw mangled_fn_sym(x.fe.ctx, qual, fname);
     string:args = "";
     int32:i = 0i32;
     while (i < count) {
@@ -8227,7 +8289,27 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     // own name.
     string:fname = raw intern_get(x.interns, raw decl_name(d));
     int32:msym = raw exprtypes_callee_sym(x.et, id);
-    if (msym != 0i32) { fname = raw intern_get(x.interns, msym); }
+    // THE MODULE HALF OF THE SYMBOL IS THE IMPL'S (1.4.7, D-229 stage 2; the
+    // rule is at `cur_impl`). `decl` is the DECLARATION the checker resolved
+    // -- the impl's own member, or the trait's default -- and qualifying by it
+    // named an inherited default under the TRAIT's module, which is the impl's
+    // only while the two share one. Every path below that reaches a method
+    // through a trait asks the table which impl provides it and qualifies by
+    // that; an inherent method's declaration is inside its impl already, and a
+    // free function reached by UFCS keeps its own.
+    int32:qual = decl;
+    if (msym != 0i32) {
+        fname = raw intern_get(x.interns, msym);
+        int32:crecv = raw exprtypes_get(x.et, rid);
+        if (raw type_mentions_param(x.fe.ctx.types, x.ast, crecv, 64i32)) {
+            crecv = raw subst_emitted_type(x.fe.ctx, crecv);
+        }
+        if ((raw type_kind(x.fe.ctx.types, crecv)) == (raw TY_POINTER())) {
+            crecv = raw type_elem(x.fe.ctx.types, crecv);
+        }
+        int32:cq = raw impl_decl_for(x, crecv, raw exprtypes_callee_trait(x.et, id));
+        if (cq != 0i32) { qual = cq; }
+    }
 
     // A `Self` RECEIVER MEANS THE IMPL BEING EMITTED. Inside a trait default,
     // `self.size()` was typed with `Self` opaque, so nothing was recorded — and
@@ -8240,6 +8322,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
             if (x.tr.self_type != 0i32) {
                 fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
                             x.tr.self_type, x.cur_trait, fname);
+                if (x.cur_impl != 0i32) { qual = x.cur_impl; }
             }
         }
 
@@ -8272,10 +8355,16 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
                 fname = raw method_symbol_name(x.fe.ctx.types, x.interns,
                             conc, btrait, fname);
                 drop note_family_instance(x, conc, btrait, raw decl_name(d), n.span);
+                int32:bconc = conc;
+                if ((raw type_kind(x.fe.ctx.types, bconc)) == (raw TY_POINTER())) {
+                    bconc = raw type_elem(x.fe.ctx.types, bconc);
+                }
+                int32:bq = raw impl_decl_for(x, bconc, btrait);
+                if (bq != 0i32) { qual = bq; }
             }
         }
     }
-    string:sym = raw mangled_fn_sym(x.fe.ctx, decl, fname);
+    string:sym = raw mangled_fn_sym(x.fe.ctx, qual, fname);
     // An erased call names the LOADED slot rather than a symbol: behind the
     // vtable there is no one definition to name, which is the whole point.
     if (via_dyn) { sym = move(dyn_fn); }
@@ -8308,6 +8397,51 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
 // exactly as `bind_blanket` binds them on the checking side. Nothing is
 // recorded for a per-instance impl (its block emits its methods) or when no
 // family impl answers (the checker already accepted the call, so one does).
+// THE IMPL THAT PROVIDES A TRAIT'S METHOD FOR A TYPE, by declaration index --
+// or 0 when the table cannot say (1.4.7, D-229 stage 2). A method symbol's
+// module is the IMPL's (D-156; `cur_impl` is the definition side's authority),
+// so a call that reaches a method THROUGH A TRAIT qualifies by the impl the
+// definition was emitted under, whichever module that impl sits in. The match
+// is `find_method`'s: an exact target, or a FAMILY impl whose target shares
+// the concrete type's declaration (D-090). A BLANKET impl of the trait answers
+// only when nothing concrete did, and at most one exists (D-111 refuses two),
+// so it needs no bound check to be the answer.
+func:impl_decl_for = int32(ExprEmitter->:x, int32:target, int32:trait_ty) never fails {
+    if (trait_ty == 0i32) { pass 0i32; }
+    if (x.fe.ctx.impls == NULL) { pass 0i32; }
+    wild ImplTable->:t = x.fe.ctx.impls;
+    int32:tdecl = raw type_decl_of(x.fe.ctx.types, target);
+    int32:i = 0i32;
+    while ((i => int64) < t.v.count) {
+        ImplEntry:e = raw impl_at(t, i);
+        if (!e.blanket) {
+            if (e.trait_id == trait_ty) {
+                if (e.target == target) { pass e.decl; }
+                if (e.target != 0i32) {
+                    if (tdecl != 0i32) {
+                        DeclNode:idn = raw ast_decl(x.ast, DeclId{ index: e.decl });
+                        if ((raw impl_generic_count(x.ast, idn)) > 0i32) {
+                            if ((raw type_decl_of(x.fe.ctx.types, e.target)) == tdecl) {
+                                pass e.decl;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    int32:j = 0i32;
+    while ((j => int64) < t.v.count) {
+        ImplEntry:b = raw impl_at(t, j);
+        if (b.blanket) {
+            if (b.trait_id == trait_ty) { pass b.decl; }
+        }
+        j = j + 1i32;
+    }
+    pass 0i32;
+};
+
 func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
                                 int32:name, Span:at) never fails {
     if (x.fe.ctx.impls == NULL) { pass NIL; }

@@ -1,0 +1,61 @@
+// expect-exit: 0
+//
+// AN IMPL IN A MODULE OTHER THAN ITS TYPE'S OR ITS TRAIT'S (1.4.7, D-229
+// stage 2). Nothing in TRAITS_REFERENCE 4.1 or D-171 restricts where an impl
+// lives -- the impl table is one for the whole program and each entry resolves
+// its names in its own module's scope -- but until 1.4.7 no impl in the tree
+// sat anywhere but beside its trait, and the first to move found that the
+// SYMBOL scheme had never been asked the question: D-156 puts a method's
+// symbol in the IMPL's module; the definition side did so for own methods and
+// NOT for inherited defaults, and three call paths qualified by the trait's
+// module. Each shape below is one of those paths, exercised across the module
+// boundary. `exit 0`, so D-151's leak check runs too.
+mod:impl_foreign;
+error:E9;
+
+use "./impl_foreign_a.npk".*;
+use "./impl_foreign_b.npk".*;
+
+async func:main = int32(cstring[]:_~argv) {
+    Dog:d = Dog{ v: 7i32 };
+    // a concrete receiver: the own method, then the inherited default
+    if ((d.tag() ?! E9) != 7i32)             { exit 10i32; }
+    if ((d.hello() ?! E9) != 107i32)         { exit 11i32; }
+    // through a bound, both again
+    if ((tag_of(d) ?! E9) != 7i32)           { exit 12i32; }
+    if ((hello_of(d) ?! E9) != 107i32)       { exit 13i32; }
+    // the trait-qualified spelling (D-172)
+    if ((Animal.tag(d) ?! E9) != 7i32)       { exit 14i32; }
+    if ((Animal.hello(d) ?! E9) != 107i32)   { exit 15i32; }
+    // erased: the thunk reaches the inherited default's real symbol
+    dyn Animal:a = d;
+    if ((a.hello() ?! E9) != 107i32)         { exit 16i32; }
+    // interpolation resolves the foreign ToString impl (D-168)
+    string:s = `&{d}`;
+    if (s.len != 1i64)                       { exit 17i32; }
+    if (s.ptr[0i64] != 55u8)                 { exit 18i32; }   // '7'
+    // async, through a bound, on a BORROWED receiver read back afterwards --
+    // the capture shape D-229 exists for
+    Cap:c = raw cap_new();
+    await walk(@c, raw duration_ms(500i64)) ?| NIL;
+    if (c.acc.len != 8i64)                   { exit 20i32; }
+    if (c.acc.ptr[0i64] != 111u8)            { exit 21i32; }   // 'o'
+    if (c.acc.ptr[4i64] != 116u8)            { exit 22i32; }   // 't'
+    if (c.acc.ptr[7i64] != 10u8)             { exit 23i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (DeadlineExceeded) { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (HeapOom)          { exit 93i32; },
+        (OutOfBounds)      { exit 94i32; },
+        (Unreachable)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (IntOverflow)      { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

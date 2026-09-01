@@ -1,0 +1,42 @@
+// The IMPLEMENTING half: every impl here is on a type declared in
+// impl_foreign_a.npk, for a trait declared there or in the prelude. These
+// are the tree's first impls on foreign-module types (1.4.7, D-229 stage 2),
+// and the first build of one found the defect impl_foreign.npk pins: a
+// method symbol is qualified by the IMPL's module (D-156), and the call
+// paths qualified it by the trait's -- invisible while every impl in the
+// tree sat beside its trait.
+mod:impl_foreign_b;
+
+use "./impl_foreign_a.npk".*;
+
+impl:Dog:Animal = {
+    func:tag = int32(Dog:self) never fails { pass self.v; };
+    // `hello` is INHERITED: one declaration in module a, its body emitted for
+    // this impl, in THIS module.
+};
+
+impl:Dog:ToString = {
+    func:to_string = string(Dog:self) never fails {
+        pass int_to_string(self.v => int64);
+    };
+};
+
+impl:Cap:Writer = {
+    async func:write = int64(Cap->:self, fixed uint8[]:wsrc, Duration:_~within) {
+        string:added = string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len);
+        self.acc = string_concat(self.acc, added);
+        pass wsrc.len;
+    };
+    async func:flush = NIL(Cap->:self, Duration:_~within) { pass NIL; };
+};
+
+// THROUGH A BOUND: an own method, an inherited default, and an async method
+// on a BORROWED receiver -- the call shapes that named the wrong module.
+pub func:tag_of<T: Animal> = int32(T:x) { pass (relay x.tag()); };
+pub func:hello_of<T: Animal> = int32(T:x) { pass (relay x.hello()); };
+pub async func:walk<W: Writer> = NIL(W->:sink, Duration:within) {
+    discard(await sink.write(string_bytes("one\n"), within) ?| 0i64);
+    discard(await sink.write(string_bytes("two\n"), within) ?| 0i64);
+    await sink.flush(within) ?| NIL;
+    pass NIL;
+};

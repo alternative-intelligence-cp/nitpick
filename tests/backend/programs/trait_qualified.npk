@@ -9,7 +9,14 @@
 mod:trait_qualified;
 error:E9;
 
-trait:Ta = { func:name = int32(Self:self); };
+// `twice` is a DEFAULT (1.4.7): the qualified spelling reached only an impl's
+// OWN methods until then -- an inherited default's signature is `Self:self`,
+// and the call resolved it with `Self` unbound (TYPE-005 at the trait).
+// Inside Ta's own body `self.name()` is Ta's, never Tb's (1.0.4).
+trait:Ta = {
+    func:name = int32(Self:self);
+    func:twice = int32(Self:self) { pass ((relay self.name()) * 2i32); };
+};
 trait:Tb = { func:name = int32(Self:self); };
 
 struct:P = { int32:v; };
@@ -20,7 +27,8 @@ func:main = int32(cstring[]:_~argv) {
     P:p = P{ v: 0i32 };
     int32:a = Ta.name(p) ?! E9;          // 1, through Ta's impl
     int32:b = Tb.name(p) ?! E9;          // 2, through Tb's impl
-    exit a + b + 39i32;                // 42
+    int32:c = Ta.twice(p) ?! E9;         // 2, the inherited default
+    exit a + b + c + 37i32;            // 42
 };
 
 func:failsafe = int32(Error:e) {

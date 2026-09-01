@@ -2877,7 +2877,14 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         succ = raw type_subst(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
     }
 
-    LlType:rt = raw fnem_begin(x.fe, fname, did.index, succ);
+    // THE SYMBOL'S MODULE IS THE IMPL'S FOR A METHOD (1.4.7, D-229 stage 2;
+    // the rule is at `ExprEmitter.cur_impl`): an inherited default's
+    // declaration is the TRAIT's, and qualifying by it put the body in the
+    // trait's module while the vtable's thunk and every call through a bound
+    // named the impl's. A free function qualifies by its own declaration.
+    int32:qual = did.index;
+    if (x.cur_impl != 0i32) { qual = x.cur_impl; }
+    LlType:rt = raw fnem_begin(x.fe, fname, qual, succ);
     if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
     x.fe.is_gives = raw fn_declares_gives(x.ast, d);
     if (fn_async) {
@@ -2885,8 +2892,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // (`fnem_ret_agg`), the frame-resident parameters and the entry
         // switch are all inside fnem; the body emission below is unchanged.
         x.fe.is_async = true;
-        x.fe.frame_ty = raw frame_ty_sym(x.fe.ctx, did.index, fname);
-        x.fe.resume_sym = raw resume_fn_sym(x.fe.ctx, did.index, fname);
+        x.fe.frame_ty = raw frame_ty_sym(x.fe.ctx, qual, fname);
+        x.fe.resume_sym = raw resume_fn_sym(x.fe.ctx, qual, fname);
         // The join's stamp site (D-179): the function itself.
         x.fe.fn_site = raw x_site(x, d.span);
         // The crossing pre-scan (stage D), under the same instantiation

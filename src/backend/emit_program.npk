@@ -174,6 +174,11 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
 
     int32:saved_trait = x.cur_trait;
     x.cur_trait = impl_trait_ty;
+    // AND THE IMPL ITSELF (1.4.7, D-229 stage 2): the MODULE half of every
+    // symbol this block emits -- own methods, inherited defaults, and their
+    // coroutine frames -- is this impl's, wherever its trait lives.
+    int32:saved_impl = x.cur_impl;
+    x.cur_impl = item.index;
 
     int32:i = 0i32;
     while (i < (raw impl_member_count(x.ast, d))) {
@@ -234,6 +239,7 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     }
 
     x.cur_trait = saved_trait;
+    x.cur_impl = saved_impl;
     x.tr.self_type = saved;
     pass NIL;
 };
@@ -502,6 +508,8 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     x.tr.enclosing = g;
     int32:fam_saved_trait = x.cur_trait;
     x.cur_trait = fam_trait_ty;
+    int32:fam_saved_impl = x.cur_impl;
+    x.cur_impl = inst.owner_impl;
     // `Self` is THIS instantiation's target.
     x.tr.self_type = raw type_subst(x.tr,
                          raw resolve_type(x.tr, tgt, home),
@@ -519,6 +527,7 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
                   raw impl_method_sym(x, x.tr.self_type, fam_trait_ty, im));
 
     x.cur_trait = fam_saved_trait;
+    x.cur_impl = fam_saved_impl;
     x.tr.generics = gs;
     x.tr.enclosing = es;
     x.tr.self_type = ss;

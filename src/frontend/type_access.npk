@@ -532,6 +532,12 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         r.enclosing = raw bind_blanket(e, owner_impl, recv);
     }
     r.self_trait = trait_decl;
+    // AND `Self` IS THE RECEIVER (1.4.7): an INHERITED DEFAULT's signature is
+    // the trait's, spelled `Self:self`, and resolving it with `Self` unbound
+    // refused `Trait.default_method(recv)` with TYPE-005 at the TRAIT's
+    // declaration. `recv.method()` binds it (`type_method_call`); the
+    // qualified spelling reached only own methods until its first default.
+    r.self_type = recv;
     int32:ft = raw fn_type(@r, DeclId{ index: mdecl }, mname, e.scope);
 
     // Record what a `recv.method()` call records, so the emitter dispatches to

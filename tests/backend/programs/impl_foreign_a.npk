@@ -1,0 +1,21 @@
+// The DECLARING half of `impl_foreign.npk`: the types and the trait live
+// HERE, their impls in impl_foreign_b.npk, and the program that calls them is
+// impl_foreign.npk. A fixture, not a program (no `main`): the harness runs
+// only the entry.
+mod:impl_foreign_a;
+
+pub struct:Dog = { int32:v; };
+
+// A default that calls back into the impl -- `impl_symbols.npk`'s shape, one
+// module over: this body is emitted once per implementing impl, in the
+// IMPL's module, and `self.tag()` inside it must reach the impl there.
+pub trait:Animal = {
+    func:tag = int32(Self:self);
+    func:hello = int32(Self:self) { pass ((relay self.tag()) + 100i32); };
+};
+
+// An owning capture cell for the async half: `Writer` is the prelude's
+// trait, and this is a struct another module implements it for.
+pub struct:Cap = { string:acc; };
+
+pub func:cap_new = Cap() never fails { pass Cap{ acc: "" }; };
