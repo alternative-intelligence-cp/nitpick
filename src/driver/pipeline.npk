@@ -343,6 +343,9 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
     // earlier would ask the impl table a question while it was still being filled
     // (D-108).
     drop check_instantiations(@f.inst, @f.im, @f.bd, @tr);
+    // What the decide pass has judged. Anything recorded after this point
+    // is swept below, once every pass that can record has run.
+    int32:decided = raw inst_count(@f.inst);
 
     // --- stage 3: analyses ---------------------------------------------------
     //
@@ -492,6 +495,18 @@ pub func:front_run = int32(Front->:f, string:root) never fails {
     // fine for checking, and not fine for what Phase B does with these types. A
     // wrong size does not fail; it corrupts memory later.
     drop finish_layouts(@tr, (raw graph_at(@f.g, 0i32)).scope);
+
+    // THE TAIL, JUDGED. `check_instantiations` above runs where it does because
+    // the impl table is full by then (D-108), but recording is demand-driven and
+    // every pass since -- the analyses, and `finish_layouts` right above --
+    // resolves types and can therefore reach `inst_record`. An instance recorded
+    // after the decide pass would never be bound-checked at all.
+    //
+    // Measured empty today, on the compiler's own source and 237 test files, so
+    // this is a belt rather than a repair; it is here because "nothing currently
+    // records late" is a property of the passes as they are written now, and the
+    // next pass added after this line would inherit the gap silently.
+    drop check_instantiations_from(@f.inst, @f.im, @f.bd, @tr, decided);
 
 
     int64:n = raw diaglist_count(@f.diags);

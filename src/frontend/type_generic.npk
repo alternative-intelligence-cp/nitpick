@@ -317,7 +317,32 @@ func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 
 pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,
                                     BoundTable->:bounds, TypeResolver->:r) never fails {
-    int32:i = 0i32;
+    drop check_instantiations_from(inst, impls, bounds, r, 0i32);
+    pass NIL;
+};
+
+// THE SAME SWEEP, FROM A MARK. Recording an instance is demand-driven -- an
+// annotation, a signature, a field, and any later pass that RESOLVES a type can
+// reach `inst_record` -- while the decide pass runs once, at a point chosen
+// because the impl table is full by then (D-108). Anything recorded after that
+// point would never be judged.
+//
+// Measured before it was built: across the compiler's own source and 237 test
+// files the table does not grow after the decide pass, and the shape the 1.4.7
+// hand-off named -- a bound-violating generic field in a struct no expression
+// touches -- is already caught, because the field's type is resolved during
+// collection rather than by a later walk. So this is a belt over a gap nothing
+// currently falls through.
+//
+// It is a SWEEP rather than an assertion because the sweep is the correct
+// behaviour and the assertion is only the alarm: an unchecked instance wants
+// checking, not reporting. The loop re-reads the count each turn, so an
+// instance recorded BY the sweep is swept too, and it terminates because
+// `inst_record` dedups and the table is finite.
+pub func:check_instantiations_from = NIL(InstanceTable->:inst, ImplTable->:impls,
+                                         BoundTable->:bounds, TypeResolver->:r,
+                                         int32:from) never fails {
+    int32:i = from;
     while (i < (raw inst_count(inst))) {
         Instance:e = raw inst_at(inst, i);
         drop check_one_instance(impls, bounds, r, e);
