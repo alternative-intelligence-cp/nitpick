@@ -27,6 +27,17 @@
 // choice as well: under D-210 a doubling that overflows TRAPS, and at 64 bits
 // the doubling cannot reach the trap.
 //
+// THE INDEX TYPE FOLLOWS THE COUNT (D-226). A family that hands its count out
+// as an `int32` id keeps that width only where an external contract pins it --
+// every AST node storing a name or a node reference as an `int32` is such a
+// contract -- and then the narrow is GUARDED and reuses an error the module
+// already declares. Where the `int32` was only an artifact of the old
+// representation, the index widens with the count and nothing narrows. A newly
+// declared error is the last resort: it is the one option whose cost lands on
+// every `failsafe` in the tree, because REACH-002 is exhaustive over what can
+// reach one. A silent `=>!` is never an answer -- two entities aliasing one id
+// is the failure these tables exist to make impossible.
+
 // STORAGE ONLY. There is no generic `list_at` returning `T`, because for an
 // owning `T` that is a copy and copies of owning values are refused
 // (TYPE-046). Reading an element is the family's business — `RootList` hands

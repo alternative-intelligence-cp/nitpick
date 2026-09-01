@@ -79,9 +79,7 @@ pub struct:MacroEntry = {
 };
 
 pub struct:MacroTable = {
-    wild MacroEntry->:items;
-    int32:count;
-    int32:cap;
+    List<MacroEntry>:v;
 };
 
 // WHERE A MACRO BODY WAS INSTANTIATED, so that a diagnostic landing inside one can
@@ -148,32 +146,13 @@ pub struct:Expander = {
 };
 
 pub func:macrotable_init = MacroTable() never fails {
-    wild int8->:mem = alloc(16i64 * #size_of<MacroEntry>());
-    MacroTable:t = MacroTable{ items: mem =>! wild MacroEntry->,
-                               count: 0i32, cap: 16i32 };
-    pass t;
-};
-
-func:macrotable_grow = NIL(MacroTable->:t) never fails {
-    int32:ncap = t.cap * 2i32;
-    wild int8->:mem = alloc((ncap => int64) * #size_of<MacroEntry>());
-    wild MacroEntry->:dst = mem =>! wild MacroEntry->;
-    int64:i = 0i64;
-    while (i < (t.count => int64)) {
-        dst[i] = t.items[i];
-        i = i + 1i64;
-    }
-    t.items = dst;
-    t.cap = ncap;
-    pass NIL;
+    pass MacroTable{ v: raw list_init::<MacroEntry>(16i64) };
 };
 
 pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl,
                               int32:owner) never fails {
-    if (t.count >= t.cap) { drop macrotable_grow(t); }
     MacroEntry:e = MacroEntry{ name: name, decl: decl, owner: owner };
-    t.items[t.count => int64] = e;
-    t.count = t.count + 1i32;
+    drop list_push(@t.v, e);
     pass NIL;
 };
 
@@ -183,13 +162,13 @@ pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl,
 // is a name declared twice, which the resolver already refuses for every other
 // declaration kind. Nothing here needs to arbitrate.
 pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never fails {
-    int32:i = 0i32;
-    while (i < t.count) {
-        MacroEntry:e = t.items[i => int64];
+    int64:i = 0i64;
+    while (i < t.v.count) {
+        MacroEntry:e = t.v.items[i];
         if (e.name == name) {
             if (e.owner == owner) { pass e.decl; }
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
     pass (0i32 - 1i32);
 };
@@ -199,10 +178,10 @@ pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) never 
 // name nobody declared and a name declared in another module read identically
 // otherwise, and they are unrelated mistakes.
 pub func:macrotable_find_elsewhere = bool(MacroTable->:t, int32:name) never fails {
-    int32:i = 0i32;
-    while (i < t.count) {
-        if ((t.items[i => int64]).name == name) { pass true; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < t.v.count) {
+        if ((t.v.items[i]).name == name) { pass true; }
+        i = i + 1i64;
     }
     pass false;
 };
