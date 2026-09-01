@@ -30,6 +30,7 @@ use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./resolve_codes.npk".*;
 use "./parse_decl.npk".*;
+use "./list.npk".*;
 
 // --- what introduced a name ------------------------------------------------------
 //
@@ -101,8 +102,8 @@ pub struct:Scope = {
 };
 
 pub struct:SymbolTable = {
-    wild Symbol->:syms;    int32:sym_count;   int32:sym_cap;
-    wild Scope->:scopes;   int32:scope_count; int32:scope_cap;
+    List<Symbol>:syms;
+    List<Scope>:scopes;
 
     // WHICH MODULE SCOPE A DECLARATION WAS DECLARED IN, indexed by DeclId (0.8.1).
     //
@@ -115,20 +116,17 @@ pub struct:SymbolTable = {
     // have silently bound the CALLER's type. Found by the first whole-graph
     // self-check; invisible before it because every test's caller happened to
     // import what the callee's types needed.
-    wild int32->:decl_home;
-    int32:home_cap;
+    // A SPARSE MAP, not an append: the count is the high-water mark and the
+    // caller's DeclId is the index. See `symtab_set_home`.
+    List<int32>:decl_home;
 };
 
 pub func:symtab_init = SymbolTable() never fails {
     int64:n = 128i64;
-    wild int8->:s = alloc(n * #size_of<Symbol>());
-    wild int8->:c = alloc(n * #size_of<Scope>());
-
-    wild int8->:h = calloc(256i64, 4i64);
     SymbolTable:t = SymbolTable{
-        syms: s =>! wild Symbol->,   sym_count: 0i32,   sym_cap: 128i32,
-        scopes: c =>! wild Scope->,  scope_count: 0i32, scope_cap: 128i32,
-        decl_home: h =>! wild int32->, home_cap: 256i32
+        syms:   raw list_init::<Symbol>(n),
+        scopes: raw list_init::<Scope>(n),
+        decl_home: raw list_init::<int32>(256i64)
     };
 
     // Index 0 is reserved in BOTH arrays, matching the AST's convention: a zeroed
@@ -136,64 +134,51 @@ pub func:symtab_init = SymbolTable() never fails {
     // was created first.
     Symbol:none = Symbol{ name: 0i32, scope: 0i32, origin_kind: 0i32,
                           origin: 0i32, flags: 0i32, next: 0i32, inner: 0i32 };
-    t.syms[0i64] = none;
-    t.sym_count = 1i32;
+    drop list_push(@t.syms, none);
 
     Scope:root = Scope{ parent: 0i32, kind: 0i32, first: 0i32 };
-    t.scopes[0i64] = root;
-    t.scope_count = 1i32;
+    drop list_push(@t.scopes, root);
 
     pass t;
 };
 
 // --- scopes -------------------------------------------------------------------------
 
-func:symtab_grow_scopes = NIL(SymbolTable->:t) never fails {
-    int32:nc = t.scope_cap * 2i32;
-    wild int8->:bigger = ralloc(t.scopes =>! wild int8->,
-                                (nc => int64) * #size_of<Scope>());
-    t.scopes = bigger =>! wild Scope->;
-    t.scope_cap = nc;
-    pass NIL;
+// A SCOPE ID AND A SYMBOL ID ARE int32 BY CONTRACT (D-226): both are stored in
+// `Scope` and `Symbol` slots and held as int32 locals across resolve.npk and
+// module_graph.npk, so the count's width cannot follow them out. The narrow is
+// guarded and reuses `BoundsId`, which this module already declares -- the
+// middle arm of the rule, and the one that costs no `failsafe` an arm.
+func:symtab_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsId; }
+    pass (n =>! int32);
 };
 
 pub func:scope_open = int32(SymbolTable->:t, int32:parent, int32:kind) never fails {
-    if (t.scope_count >= t.scope_cap) {
-        drop symtab_grow_scopes(t);
-    }
     Scope:s = Scope{ parent: parent, kind: kind, first: 0i32 };
-    t.scopes[t.scope_count => int64] = s;
-    int32:id = t.scope_count;
-    t.scope_count = t.scope_count + 1i32;
+    // READ BEFORE THE PUSH -- `list_push` performs the increment.
+    int32:id = raw symtab_id(t.scopes.count);
+    drop list_push(@t.scopes, s);
     pass id;
 };
 
 pub func:scope_parent = int32(SymbolTable->:t, int32:scope) never fails {
-    pass t.scopes[scope => int64].parent;
+    pass t.scopes.items[scope => int64].parent;
 };
 
 pub func:scope_kind = int32(SymbolTable->:t, int32:scope) never fails {
-    pass t.scopes[scope => int64].kind;
+    pass t.scopes.items[scope => int64].kind;
 };
 
 // --- symbols ------------------------------------------------------------------------
-
-func:symtab_grow_syms = NIL(SymbolTable->:t) never fails {
-    int32:nc = t.sym_cap * 2i32;
-    wild int8->:bigger = ralloc(t.syms =>! wild int8->,
-                                (nc => int64) * #size_of<Symbol>());
-    t.syms = bigger =>! wild Symbol->;
-    t.sym_cap = nc;
-    pass NIL;
-};
 
 // A module's name and the scope it opens, tied together. `math.sqrt` needs to
 // get from one to the other, and a `Scope` records only its parent.
 pub func:symtab_set_inner = NIL(SymbolTable->:t, int32:sym, int32:scope) never fails {
     if (sym == 0i32) { pass NIL; }
-    Symbol:s = t.syms[sym => int64];
+    Symbol:s = t.syms.items[sym => int64];
     s.inner = scope;
-    t.syms[sym => int64] = s;
+    t.syms.items[sym => int64] = s;
     pass NIL;
 };
 
@@ -219,21 +204,18 @@ pub func:nested_module_scope = int32(SymbolTable->:t, DeclNode:d, int32:scope) n
 
 func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) never fails {
     if (decl < 0i32) { pass NIL; }
-    while (decl >= t.home_cap) {
-        int32:nc = t.home_cap * 2i32;
-        wild int8->:m = ralloc(t.decl_home =>! wild int8->, (nc => int64) * 4i64);
-        // The grown tail must read as "no home", and ralloc copies only the old
-        // block — so the new half is zeroed by hand.
-        wild int32->:wide = m =>! wild int32->;
-        int32:z = t.home_cap;
-        while (z < nc) { wide[z => int64] = 0i32; z = z + 1i32; }
-        t.decl_home = wide;
-        t.home_cap = nc;
+    // GROW TO COVER THE INDEX, as a bulk append: reserve the whole span first
+    // (one doubling does not cover a jump), then write "no home" into every
+    // new slot. The zero is explicit now rather than the allocator's.
+    int64:want = (decl => int64) + 1i64;
+    if (t.decl_home.count < want) {
+        drop list_reserve(@t.decl_home, want - t.decl_home.count);
+        while (t.decl_home.count < want) { drop list_push(@t.decl_home, 0i32); }
     }
     // FIRST WRITER WINS. The declaration's own module collects it first; a
     // re-collection round after expansion must not move it.
-    if (t.decl_home[decl => int64] == 0i32) {
-        t.decl_home[decl => int64] = scope;
+    if (t.decl_home.items[decl => int64] == 0i32) {
+        t.decl_home.items[decl => int64] = scope;
     }
     pass NIL;
 };
@@ -243,29 +225,29 @@ func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) never fails
 // collected, in which case the caller's scope is the only one there is.
 pub func:symtab_home_scope = int32(SymbolTable->:t, int32:decl, int32:fallback) never fails {
     if (decl < 0i32) { pass fallback; }
-    if (decl >= t.home_cap) { pass fallback; }
-    int32:h = t.decl_home[decl => int64];
+    if ((decl => int64) >= t.decl_home.count) { pass fallback; }
+    int32:h = t.decl_home.items[decl => int64];
     if (h == 0i32) { pass fallback; }
     pass h;
 };
 
 pub func:symtab_get = Symbol(SymbolTable->:t, int32:id) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.sym_count) { !!! BoundsId; }
-    pass t.syms[id => int64];
+    if ((id => int64) >= t.syms.count) { !!! BoundsId; }
+    pass t.syms.items[id => int64];
 };
 
-pub func:symtab_count = int32(SymbolTable->:t) never fails { pass t.sym_count; };
-pub func:symtab_scope_count = int32(SymbolTable->:t) never fails { pass t.scope_count; };
+pub func:symtab_count = int32(SymbolTable->:t) never fails { pass (raw symtab_id(t.syms.count)); };
+pub func:symtab_scope_count = int32(SymbolTable->:t) never fails { pass (raw symtab_id(t.scopes.count)); };
 
 // Look a name up in ONE scope, without walking outward.
 pub func:scope_lookup_local = int32(SymbolTable->:t, int32:scope, int32:name) never fails {
-    int32:cur = t.scopes[scope => int64].first;
+    int32:cur = t.scopes.items[scope => int64].first;
     while (cur != 0i32) {
-        if (t.syms[cur => int64].name == name) {
+        if (t.syms.items[cur => int64].name == name) {
             pass cur;
         }
-        cur = t.syms[cur => int64].next;
+        cur = t.syms.items[cur => int64].next;
     }
     pass 0i32;
 };
@@ -349,9 +331,6 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
         pass 0i32;
     }
 
-    if (t.sym_count >= t.sym_cap) {
-        drop symtab_grow_syms(t);
-    }
     // A DECLARATION REMEMBERS ITS HOME as a side effect of being declared —
     // collection is the one walk that holds both the DeclId and the scope, so
     // recording here needs no second traversal. Imported bindings do NOT pass
@@ -362,17 +341,16 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     }
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
-                       flags: flags, next: t.scopes[scope => int64].first, inner: 0i32 };
-    t.syms[t.sym_count => int64] = s;
-    int32:id = t.sym_count;
-    t.sym_count = t.sym_count + 1i32;
+                       flags: flags, next: t.scopes.items[scope => int64].first, inner: 0i32 };
+    int32:id = raw symtab_id(t.syms.count);   // BEFORE the push
+    drop list_push(@t.syms, s);
 
     // Push onto the head of the scope's chain. Order within a scope does not
     // matter for lookup, because a duplicate is refused above -- so at most one
     // symbol per name is ever reachable.
-    Scope:sc = t.scopes[scope => int64];
+    Scope:sc = t.scopes.items[scope => int64];
     sc.first = id;
-    t.scopes[scope => int64] = sc;
+    t.scopes.items[scope => int64] = sc;
     pass id;
 };
 
@@ -389,7 +367,7 @@ pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
                                     int32:origin_kind, int32:origin, int32:flags) never fails {
     int32:prior = raw scope_lookup_local(t, scope, name);
     if (prior != 0i32) {
-        Symbol:p = t.syms[prior => int64];
+        Symbol:p = t.syms.items[prior => int64];
         if (p.origin_kind == origin_kind) {
             if (p.origin == origin) {
                 // The same thing, bound again. A re-export chain reaching the
@@ -399,19 +377,15 @@ pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
         }
         pass 0i32;
     }
-    if (t.sym_count >= t.sym_cap) {
-        drop symtab_grow_syms(t);
-    }
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
                        flags: flags | (raw SYM_IMPORTED()),
-                       next: t.scopes[scope => int64].first, inner: 0i32 };
-    t.syms[t.sym_count => int64] = s;
-    int32:id = t.sym_count;
-    t.sym_count = t.sym_count + 1i32;
-    Scope:sc = t.scopes[scope => int64];
+                       next: t.scopes.items[scope => int64].first, inner: 0i32 };
+    int32:id = raw symtab_id(t.syms.count);   // BEFORE the push
+    drop list_push(@t.syms, s);
+    Scope:sc = t.scopes.items[scope => int64];
     sc.first = id;
-    t.scopes[scope => int64] = sc;
+    t.scopes.items[scope => int64] = sc;
     pass id;
 };
 
@@ -426,21 +400,21 @@ pub func:scope_symbol_at = int32(SymbolTable->:t, int32:scope, int32:i) never fa
     if (i < 0i32) { pass 0i32; }
     if (i >= n) { pass 0i32; }
     int32:want = n - 1i32 - i;
-    int32:cur = t.scopes[scope => int64].first;
+    int32:cur = t.scopes.items[scope => int64].first;
     int32:k = 0i32;
     while (cur != 0i32) {
         if (k == want) { pass cur; }
-        cur = t.syms[cur => int64].next;
+        cur = t.syms.items[cur => int64].next;
         k = k + 1i32;
     }
     pass 0i32;
 };
 
 pub func:scope_symbol_count = int32(SymbolTable->:t, int32:scope) never fails {
-    int32:cur = t.scopes[scope => int64].first;
+    int32:cur = t.scopes.items[scope => int64].first;
     int32:n = 0i32;
     while (cur != 0i32) {
-        cur = t.syms[cur => int64].next;
+        cur = t.syms.items[cur => int64].next;
         n = n + 1i32;
     }
     pass n;
