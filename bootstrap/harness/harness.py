@@ -2900,6 +2900,93 @@ def main(argv):
                     print("  %-11s emission cwd-independent, llc "
                           "deterministic" % ("repro",))
 
+            # --- AN UNCOMPUTED LAYOUT FACT IS NEVER READ (D-227) --------
+            #
+            # Layout memoises three facts per struct and enum -- `tt_drops`,
+            # `tt_haschan`, `tt_hasborrow` -- as 0 "not computed", 1 "no",
+            # 2 "yes", and every reader spells the question `== 2i32`. That
+            # makes an ABSENT fact and a FALSE fact the same answer, and the
+            # absent one then answers the permissive way: owns nothing, holds
+            # no channel, holds no borrow. Those decide TYPE-046's move-only
+            # rule, D-215's dyn refusal and D-183's `gives`, so the permissive
+            # answer is a rule not enforced.
+            #
+            # Three defects of that exact shape landed in 1.4.7 -- a tail
+            # `tt_grow` never zeroed, a read that beat the computation, and a
+            # payload-less enum whose bits were never written at all -- and
+            # each was found by FLIPPING the reading and watching what moved.
+            # This is that experiment, kept.
+            #
+            # Build a compiler whose three readers treat 0 as the NON-default
+            # answer, and require its emission of the compiler to be
+            # byte-identical to the real one. Byte-identity is the strong form:
+            # "nothing refused" would miss a 0-bit read whose flipped answer
+            # happens to trip no rule, while a changed byte means some query's
+            # answer moved, which means some query saw a 0.
+            #
+            # It costs a build and an emission. The alternative was a permanent
+            # trap on a 0 read, which needs a new error identity -- whose cost
+            # under D-226 lands on every `failsafe` in the tree -- and turns a
+            # regression into a broken compile rather than a failed stage.
+            if ok:
+                # THE COPY KEEPS THE LAYOUT, because `src/main.npk` imports
+                # `../lib/nio.npk` -- the one import in `src/` that leaves it.
+                # Copying `src/` alone produces a tree whose entry cannot
+                # resolve, and this check's own negative control is what found
+                # that, by failing to build for a reason that had nothing to do
+                # with what it tests.
+                strict = os.path.join(tmp, "strict")
+                shutil.copytree(os.path.join(ROOT, "src"),
+                                os.path.join(strict, "src"))
+                shutil.copytree(os.path.join(ROOT, "lib"),
+                                os.path.join(strict, "lib"))
+                tp = os.path.join(strict, "src", "frontend", "types.npk")
+                txt = open(tp, encoding="utf-8").read()
+                flipped = 0
+                for fn in ("tt_drops", "tt_haschan", "tt_hasborrow"):
+                    old = "(raw %s(t, id)) == 2i32" % fn
+                    flipped += txt.count(old)
+                    txt = txt.replace(old, "(raw %s(t, id)) != 1i32" % fn)
+                if flipped != 6:
+                    failures.append(
+                        "absent-fact: expected 6 memoised-bit readings to "
+                        "flip and found %d -- this check has lost its grip on "
+                        "the source it is about, which makes it a check that "
+                        "passes without testing anything (D-227)" % flipped)
+                else:
+                    with open(tp, "w", encoding="utf-8") as fh:
+                        fh.write(txt)
+                    sb = build_tool(tmp, True,
+                                    os.path.join(strict, "src", "main.npk"),
+                                    "npkc-strict")
+                    if not sb or not os.path.exists(str(sb)):
+                        failures.append("absent-fact: could not build the "
+                                        "flipped compiler: %s" % sb)
+                    else:
+                        rr = subprocess.run(
+                            [sb, os.path.join(ROOT, "src", "main.npk")],
+                            capture_output=True, timeout=600)
+                        if rr.returncode != 0:
+                            failures.append(
+                                "absent-fact: AN UNCOMPUTED LAYOUT FACT IS "
+                                "BEING READ (D-227). The compiler built with "
+                                "\"not computed\" reading as the non-default "
+                                "answer REFUSED its own source (rc=%d), so a "
+                                "query somewhere saw a 0 bit: %s"
+                                % (rr.returncode,
+                                   rr.stderr.decode("utf-8", "replace")[:400]))
+                        elif rr.stdout != stage1_ir:
+                            failures.append(
+                                "absent-fact: AN UNCOMPUTED LAYOUT FACT IS "
+                                "BEING READ (D-227). The flipped compiler "
+                                "emitted different bytes (%s) -- some query's "
+                                "ANSWER changed, which it can only do by "
+                                "reading a 0"
+                                % first_difference(stage1_ir, rr.stdout))
+                        else:
+                            print("  %-11s an uncomputed layout fact is never "
+                                  "read" % ("absent-fact",))
+
         # And whole programs that must be ACCEPTED, in full silence.
         #
         # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
