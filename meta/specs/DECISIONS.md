@@ -15196,3 +15196,105 @@ an engineering rule about representation, not a language rule — nothing in the
 grammar or the type system changes — which is why it is recorded here and
 carried into `src/frontend/list.npk`'s header rather than into a reference
 document.
+
+## D-227 — the query ensures; a memoised layout fact is never read before it is computed — **SETTLED (user decision, 2026-09-01)**
+
+Found at 1.4.7 step 2 while scouting `TypeTable`'s conversion, measured by
+experiment three times, and ratified as "compute on demand" before the shape of
+the fix was known.
+
+**The defect.** Layout's walk memoises three facts per struct and enum —
+`tt_drops`, `tt_haschan`, `tt_hasborrow` — each 0 for "not computed", 1 for
+"computed: no", 2 for "computed: yes". Their readers in `types.npk` all end the
+same way:
+
+```
+if (k == (raw TY_STRUCT()))   { pass ((raw tt_drops(t, id)) == 2i32); }
+if (k == (raw TY_ENUM()))     { pass ((raw tt_drops(t, id)) == 2i32); }
+```
+
+`== 2i32` turns **both** 0 and 1 into false, so an UNCOMPUTED bit is
+indistinguishable from a computed "no" and answers the permissive way:
+"owns nothing", "holds no channel", "holds no borrow".
+
+**That is not a corner.** `finish_layouts` runs at `pipeline.npk:494`; stage 2,
+the type checker, is at 337. Through the whole of checking most of the table has
+no layout at all, and `pipeline.npk`'s own comment says so — calling it "fine
+for checking", which is true of the SIZES that sentence is about and false of
+the three bits that ride the same walk.
+
+**What the permissive answer costs, by rule:**
+
+| query | decides |
+|---|---|
+| `type_drops` | **TYPE-046 move-only**, and whether a scope exit drops at all |
+| `type_contains_channel` | **D-215**'s dyn-coercion refusal, **D-183**'s `gives` |
+| `type_contains_borrow` | borrow containment |
+
+A false "owns nothing" both skips a drop and stops TYPE-046 refusing a COPY of
+an owning value — two owners and one double free, which is the exact hazard
+that rule exists to prevent.
+
+**Measured, not argued.** Filling `haschan`'s never-zeroed tail with the "yes"
+answer made `npkc` refuse to compile ITSELF (two D-215 refusals on
+`TextWriter<ByteWriter>`, a generic instance — interned on demand and
+interleaved with the passes that ask). Making `type_drops` answer "owns" on 0
+made it refuse `LineEnding` under TYPE-046. Both reads land in the window; the
+answers the compiler gave were right because those types genuinely own nothing,
+not because anything checked.
+
+**D-216 diagnosed this hazard correctly at 1.4.3b** — its comment at
+`type_stmt.npk:155` describes it word for word — and fixed it at ONE site,
+which is why `ensure_layout` had exactly one caller outside `type_layout.npk`.
+A rule enforced only where somebody remembered is sampled, not enforced.
+
+**The decision — the query ensures, and the caller does not have to remember.**
+
+1. `type_layout.npk` gains `type_drops`, `type_contains_channel` and
+   `type_contains_borrow` taking a `TypeResolver->` and a scope: they
+   `ensure_layout` and then read. The ensure is TRANSITIVE — it recurses through
+   arrays, optionals and results, and `struct_layout` walks every field — which
+   is what makes delegating to the recorded reader sound.
+2. `types.npk` keeps the readers as `type_drops_recorded`,
+   `type_contains_channel_recorded`, `type_contains_borrow_recorded`. **The
+   UNQUALIFIED name is the correct one**, so a caller who does nothing special
+   gets the right answer, and reading the raw bit becomes an explicit, greppable
+   choice — the same shape as `raw`, `wild` and `=>!`. Two spellings are
+   justified here by a real semantic difference, "what is recorded" against
+   "what is true", not by context.
+3. The 14 checker sites take the ensuring form; the 30 backend sites take
+   `_recorded` because they run after `finish_layouts`; `type_layout.npk`'s own
+   six take it because that file IS the computing pass.
+
+**Two more defects fell out of making the query total, and both were invisible
+before it:**
+
+- **A payload-less enum never had its three bits written at all.**
+  `ensure_layout`'s enum arm set them only inside `if (enum_has_payload(...))`,
+  so such an enum got its SIZE written — which makes the re-entry guard
+  early-out forever — while the bits stayed 0 permanently. The invariant the
+  ensuring query depends on was false for exactly that shape. They are now
+  written for every enum.
+- **Two live TYPE-046 violations in `src/` itself.** With the fix in, `npkc`
+  refuses `ir_expr.npk:4882` and `:7383`, which copied a `PlaceVal` — a struct
+  owning a string through `addr` — into `iv_from_place`'s consuming parameter.
+  The uncomputed bit had been silently disabling the move-only rule there. Both
+  are now `move(...)`, which is what the diagnostic prescribes.
+
+**Instrumented, not asserted in prose** (D-225's rule, applied again). A harness
+stage builds a compiler whose three recorded readers treat 0 as the
+NON-default answer and requires its emission of `src/main.npk` to be
+BYTE-IDENTICAL to the clean one. Byte-identity is stronger than "nothing
+refused": it catches a 0-bit read whose flipped answer happens not to trip a
+rule. Before the fix that build refuses; after it, it is inert.
+
+**Declined — guaranteeing the pass ordering instead** (lay every type out before
+checking). Cleanest to state and hardest to keep: it is a whole-pipeline
+invariant with no instrument watching it, and generic instances are interned on
+demand DURING checking, so a pre-pass cannot cover them — which is the case that
+started this. **Declined — trapping on 0 at a query site.** Right as a belt and
+wrong as the mechanism: it needs a new error identity, whose cost under D-226
+lands on every `failsafe` in the tree, and a false trap breaks a real compile
+where a failing test stage does not. **Declined — treating 0 as "yes".**
+Conservative in the safe direction and refuses legal programs, including the
+compiler's own two sites.

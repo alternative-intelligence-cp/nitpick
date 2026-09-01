@@ -721,6 +721,14 @@ _LEAF_SUBST = "no type operand: its own substitution (the stated tail)"
 _NOT_REGISTERED = ("never registered: `type_drops` answers false, and the "
                    "default now fails LOUD if that ever changes (1.4.1)")
 
+# THE THREE `_recorded` NAMES ARE THE SAME WALKERS (D-227, 1.4.7). They kept
+# their bodies and their excuse tables and gained a suffix: the UNQUALIFIED
+# names now live in type_layout.npk and ensure the memoised bit is computed
+# before delegating here. Only the readers below switch on TY_ kinds, so only
+# they carry a B-7 row -- an ensuring wrapper has no kind switch to be total
+# over. This instrument is what caught the rename, by refusing to find a walker
+# it was told exists, which is the behaviour to preserve rather than relax.
+#
 # The walkers under the B-7 obligation, each with its excuse table. A walker
 # belongs here when a kind it fails to consider produces a SILENTLY WRONG
 # default (a leak, a wrong verdict, a wrong layout) rather than a loud one;
@@ -734,9 +742,9 @@ _NOT_REGISTERED = ("never registered: `type_drops` answers false, and the "
 # live since 1.2).
 WALKER_DEFAULT_OK = {
     # what a value of the kind owes at scope exit (see DROPS_DEFAULT_OK above)
-    ("type_drops", "src/frontend/types.npk"): DROPS_DEFAULT_OK,
+    ("type_drops_recorded", "src/frontend/types.npk"): DROPS_DEFAULT_OK,
     # whether a type can carry a borrow across a boundary (D-004/D-070)
-    ("type_contains_borrow", "src/frontend/types.npk"): {
+    ("type_contains_borrow_recorded", "src/frontend/types.npk"): {
         "TY_INVALID": "resolution already failed and already said so",
         "TY_NIL": _SCALAR, "TY_BOOL": _SCALAR, "TY_INT": _SCALAR,
         "TY_CHAR": _SCALAR, "TY_FLOAT": _SCALAR, "TY_TBB": _SCALAR,
@@ -757,7 +765,7 @@ WALKER_DEFAULT_OK = {
         "TY_ASSOC": "a projection; resolves to its bound type first",
     },
     # whether a type carries a channel endpoint (D-183's gives/factory rules)
-    ("type_contains_channel", "src/frontend/types.npk"): {
+    ("type_contains_channel_recorded", "src/frontend/types.npk"): {
         "TY_INVALID": "resolution already failed and already said so",
         "TY_NIL": _SCALAR, "TY_BOOL": _SCALAR, "TY_INT": _SCALAR,
         "TY_CHAR": _SCALAR, "TY_FLOAT": _SCALAR, "TY_TBB": _SCALAR,

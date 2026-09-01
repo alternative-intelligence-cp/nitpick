@@ -662,7 +662,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         // This runs per ITERATION for a declaration inside a loop, which is the
         // point rather than an overhead to shave: the previous iteration's
         // bytes are exactly the garbage being displaced.
-        if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+        if (raw type_drops_recorded(x.fe.ctx.types, dty, 64i32)) {
             drop irw_line(x.fe.w, raw cat5("store ", ll.text,
                               " zeroinitializer, ptr ", slot, ""));
             drop irw_line(x.fe.w, raw cat5("call void ",
@@ -680,7 +680,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     // a non-framed local in a coroutine is one the widened suspend walk
     // proved suspension-free to the function's end, so its alloca flag and
     // every read of it sit inside one resume call.
-    if (raw type_drops(x.fe.ctx.types, dty, 64i32)) {
+    if (raw type_drops_recorded(x.fe.ctx.types, dty, 64i32)) {
         string:seed = "store i8 0, ptr ";
         if (!(raw expr_is_none(init))) { seed = "store i8 1, ptr "; }
         if (ffl.len > 0i64) {
@@ -770,7 +770,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             ExprNode:tgt = raw ast_expr(x.ast, raw stmt_target(s));
             bool:tgt_drops_old = false;
             if (tgt.kind == ExprKind.ExprMemberAccessExpr) {
-                if (raw type_drops(x.fe.ctx.types, place.type_id, 64i32)) {
+                if (raw type_drops_recorded(x.fe.ctx.types, place.type_id, 64i32)) {
                     // through a pointer receiver or a plain place alike: the
                     // field belongs to the struct, and the struct's owner is
                     // exactly who is overwriting it.
@@ -778,7 +778,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                 }
             }
             if (tgt.kind == ExprKind.ExprIndexExpr) {
-                if (raw type_drops(x.fe.ctx.types, place.type_id, 64i32)) {
+                if (raw type_drops_recorded(x.fe.ctx.types, place.type_id, 64i32)) {
                     int32:ibase = raw exprtypes_get(x.et, raw expr_operand(tgt));
                     int32:ibk = raw type_kind(x.fe.ctx.types, ibase);
                     if (ibk == (raw TY_ARRAY())) { tgt_drops_old = true; }
@@ -1680,7 +1680,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             if ((raw pat_bind_count(pn)) > 0i32) { binds = true; }
         }
         if (!binds) {
-            if (raw type_drops(x.fe.ctx.types, sel_tid, 64i32)) {
+            if (raw type_drops_recorded(x.fe.ctx.types, sel_tid, 64i32)) {
                 string:cds = raw irw_temp(x.fe.w);
                 drop irw_alloca(x.fe.w, cds, sel.ll);
                 drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
@@ -2248,7 +2248,7 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
     // selector's own flag was cleared by `move`: exactly one owner, and this
     // is it.
     if (consuming) {
-        if (raw type_drops(x.fe.ctx.types, bind_tid, 64i32)) {
+        if (raw type_drops_recorded(x.fe.ctx.types, bind_tid, 64i32)) {
             string:bfl = raw irw_temp(x.fe.w);
             drop irw_alloca(x.fe.w, bfl, "i8");
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", bfl, ""));

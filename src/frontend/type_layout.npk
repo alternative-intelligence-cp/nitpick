@@ -171,12 +171,12 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // (D-183, 1.2.0): this is the one place every field's RESOLVED
             // type passes through, and a struct owns something exactly when
             // one of its fields does.
-            if (raw type_drops(r.types, ft, 64i32)) { drops = true; }
+            if (raw type_drops_recorded(r.types, ft, 64i32)) { drops = true; }
             // AND CHANNEL CONTAINMENT (D-183, 1.2.5), same walk, same reason:
             // a function whose return carries a channel is a factory, and
             // the reclaim machinery asks the RETURN type.
-            if (raw type_contains_channel(r.types, ft, 64i32)) { haschan = true; }
-            if (raw type_contains_borrow(r.types, ft, 64i32)) { hasborrow = true; }
+            if (raw type_contains_channel_recorded(r.types, ft, 64i32)) { haschan = true; }
+            if (raw type_contains_borrow_recorded(r.types, ft, 64i32)) { hasborrow = true; }
         }
         i = i + 1i32;
     }
@@ -270,6 +270,58 @@ func:LAYOUT_FUEL = int32() never fails { pass 64i32; };
 // terminates: a pointer is one word whatever it points at (D-038) and a slice is
 // `{ptr, len}` whatever it holds (D-070), so neither needs the pointee's layout —
 // which is exactly why `Node->` breaks a containment cycle and `Node` does not.
+// --- THE THREE MEMOISED-BIT QUERIES, MADE TOTAL (D-227) ---------------------
+//
+// `tt_drops`, `tt_haschan` and `tt_hasborrow` are written by layout's walk and
+// answer 0 for "not computed". Their readers in types.npk compare `== 2i32`
+// for structs and enums, so an uncomputed bit reads as the PERMISSIVE answer:
+// "owns nothing", "holds no channel", "holds no borrow". That is not a corner
+// -- `finish_layouts` runs at pipeline.npk:494 and the type checker at 337, so
+// through the whole of checking most of the table has no layout. pipeline's own
+// comment calls that "fine for checking", which is true of SIZES, which is what
+// that sentence is about, and false of these three bits.
+//
+// Measured rather than argued, twice: filling `haschan`'s ungrown tail with the
+// "yes" answer makes npkc refuse to compile ITSELF (two D-215 refusals on
+// `TextWriter<ByteWriter>`, a generic instance), and making `type_drops` answer
+// "owns" on 0 makes it refuse `LineEnding` under TYPE-046. Both reads land in
+// the window; today's answers are right because those types genuinely own
+// nothing, not because anything checked.
+//
+// THE QUERY ENSURES; THE CALLER DOES NOT HAVE TO REMEMBER. D-216 diagnosed this
+// hazard correctly at 1.4.3b -- its comment at type_stmt.npk:155 describes it
+// exactly -- and fixed it at one site, which is why `ensure_layout` had exactly
+// one caller outside this file. A rule enforced only where somebody remembered
+// is sampled, not enforced.
+//
+// The ensure is TRANSITIVE and that is what makes delegating to the recorded
+// reader sound: `ensure_layout` recurses through arrays, optionals and results,
+// and `struct_layout` walks every field, so by the time the recorded reader
+// recurses on an element the element's bit is computed too.
+//
+// The `_recorded` spellings remain, and reading the raw bit is now an explicit,
+// greppable choice -- the same shape as `raw`, `wild` and `=>!`. The backend
+// takes them because it runs after `finish_layouts`; this file takes them
+// because it IS the computing pass.
+
+pub func:type_drops = bool(TypeResolver->:r, int32:id, int32:scope,
+                           int32:fuel) never fails {
+    drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
+    pass (raw type_drops_recorded(r.types, id, fuel));
+};
+
+pub func:type_contains_channel = bool(TypeResolver->:r, int32:id, int32:scope,
+                                      int32:fuel) never fails {
+    drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
+    pass (raw type_contains_channel_recorded(r.types, id, fuel));
+};
+
+pub func:type_contains_borrow = bool(TypeResolver->:r, int32:id, int32:scope,
+                                     int32:fuel) never fails {
+    drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
+    pass (raw type_contains_borrow_recorded(r.types, id, fuel));
+};
+
 pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
     if (t == 0i32) { pass NIL; }
@@ -342,15 +394,26 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         // uniform `{i32, i64}` word this replaces was the SEED's rung shape;
         // the seed keeps it for what it builds, each compiler self-consistent,
         // and no program is ever compiled by both.)
+        // THE THREE BITS ARE WRITTEN FOR EVERY ENUM, PAYLOAD OR NOT (D-227).
+        // They used to be set inside the has-payload arm below, so a
+        // payload-less enum had its SIZE written -- which makes the re-entry
+        // guard above early-out forever -- while `drops`, `haschan` and
+        // `hasborrow` stayed 0. Nothing noticed because 0 is "not computed"
+        // and the readers compare `== 2i32`, so "not computed" and "computed:
+        // owns nothing" are the same answer for a type whose answer really is
+        // no. Making the query total (D-227) is what exposed it: the ensure
+        // ran, completed, and left the bit absent, so the invariant the query
+        // now depends on -- after ensure_layout the bit is COMPUTED -- was
+        // false for exactly this shape.
+        bool:edrops = false;
+        bool:ehaschan = false;
+        bool:ehasborrow = false;
         if (raw enum_has_payload(r.ast, r.types, t)) {
             DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
             DeclNode:d = raw ast_decl(r.ast, did);
             int32:home = raw symtab_home_scope(r.tab, did.index, scope);
             int64:wsize = 0i64;
             int32:walign = 1i32;
-            bool:edrops = false;
-            bool:ehaschan = false;
-            bool:ehasborrow = false;
             int32:i = 0i32;
             while (i < (raw item_member_count(r.ast, d))) {
                 DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
@@ -382,11 +445,11 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         // payload does. Which variant is live is a runtime
                         // question the drop function answers on the tag; this
                         // is only whether the type needs one at all.
-                        if (raw type_drops(r.types, pt, 64i32)) { edrops = true; }
-                        if (raw type_contains_channel(r.types, pt, 64i32)) {
+                        if (raw type_drops_recorded(r.types, pt, 64i32)) { edrops = true; }
+                        if (raw type_contains_channel_recorded(r.types, pt, 64i32)) {
                             ehaschan = true;
                         }
-                        if (raw type_contains_borrow(r.types, pt, 64i32)) {
+                        if (raw type_contains_borrow_recorded(r.types, pt, 64i32)) {
                             ehasborrow = true;
                         }
                         j = j + 1i32;
@@ -398,10 +461,10 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
             if (wsize > 0i64) {
                 discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
-            drop tt_set_drops(r.types, t, edrops);
-            drop tt_set_haschan(r.types, t, ehaschan);
-            drop tt_set_hasborrow(r.types, t, ehasborrow);
         }
+        drop tt_set_drops(r.types, t, edrops);
+        drop tt_set_haschan(r.types, t, ehaschan);
+        drop tt_set_hasborrow(r.types, t, ehasborrow);
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;

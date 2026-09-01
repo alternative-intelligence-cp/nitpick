@@ -360,7 +360,7 @@ func:gives_stash_one = NIL(ExprEmitter->:x, IrVal->:v, string:path,
     drop irw_line(x.fe.w, raw cat5("store i64 ", h, ", ptr ", cstash, ""));
     int32:cdrop = 0i32;
     int32:cel = raw type_elem(x.fe.ctx.types, chty);
-    if (raw type_drops(x.fe.ctx.types, cel, 64i32)) { cdrop = cel; }
+    if (raw type_drops_recorded(x.fe.ctx.types, cel, 64i32)) { cdrop = cel; }
     drop fnem_chfin_add(x.fe, string_concat(cstash, ""), cdrop);
     pass NIL;
 };
@@ -4879,7 +4879,7 @@ func:emit_atomic_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     }
     if (cell.len == 0i64) {
         PlaceVal:pl = raw addr_of(x, aop);
-        if (pl.state != (raw LL_OK())) { pass (raw iv_from_place(pl)); }
+        if (pl.state != (raw LL_OK())) { pass (raw iv_from_place(move(pl))); }
         cell = string_concat(pl.addr, "");
     }
     int32:elem = raw type_elem(x.fe.ctx.types, recv_tid);
@@ -5720,7 +5720,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     // to its `move` parameters. Reaching this block means the last attempt
     // parked, so the value slot still holds the untransferred element.
     if (is_send) {
-        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+        if (raw type_drops_recorded(x.fe.ctx.types, elem, 64i32)) {
             drop irw_line(x.fe.w, raw cat4("call void ",
                               raw drop_fn_sym(x.fe.ctx, elem),
                               string_concat("(ptr ", slot), ")"));
@@ -5751,7 +5751,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         // (The long-form `Result{value, err}` — both halves filled — is the
         // recorded road to HANDING the element back if a real need arrives;
         // it inverts the taint rule, so it waits for a named design.)
-        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+        if (raw type_drops_recorded(x.fe.ctx.types, elem, 64i32)) {
             string:sfb = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(sfb, " = icmp ne i32 ",
                               string_concat(err, ", 0")));
@@ -6420,7 +6420,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 // counter is an alloca rather than a phi so no predecessor bookkeeping is
 // needed at a method site.
 func:arena_drop_live = NIL(ExprEmitter->:x, string:ap, int32:elem) never fails {
-    if (!(raw type_drops(x.fe.ctx.types, elem, 64i32))) { pass NIL; }
+    if (!(raw type_drops_recorded(x.fe.ctx.types, elem, 64i32))) { pass NIL; }
     string:all = "{ ptr, ptr, i64, i64, i64 }";
     string:slab = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(slab, " = load ptr, ptr ", ap, ""));
@@ -6743,7 +6743,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
             }
             drop irw_line(x.fe.w, raw cat5("store i64 ", hr, ", ptr ", cstash, ""));
             int32:cdrop = 0i32;
-            if (raw type_drops(x.fe.ctx.types, celem, 64i32)) { cdrop = celem; }
+            if (raw type_drops_recorded(x.fe.ctx.types, celem, 64i32)) { cdrop = celem; }
             drop fnem_chfin_add(x.fe, string_concat(cstash, ""), cdrop);
         }
         // the packed word becomes the { i32, i32 } the type lowers to
@@ -7380,7 +7380,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         ap = move(pv2.ref);
     } else {
         PlaceVal:apv = raw addr_of(x, raw expr_operand(n));
-        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(apv)); }
+        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(move(apv))); }
         ap = move(apv.addr);
     }
     string:st = raw arena_stride_text(x, atid);
@@ -7431,7 +7431,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (raw string_eq(m, "free")) {
         // The element's drop runs before the slot retires (D-183, 1.2.5c):
         // `arena_at` re-validates the handle, so a stale free drops nothing.
-        if (raw type_drops(x.fe.ctx.types, elem, 64i32)) {
+        if (raw type_drops_recorded(x.fe.ctx.types, elem, 64i32)) {
             string:fep = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(fep,
                 " = call ptr @npk_arena_at(ptr ", ap,

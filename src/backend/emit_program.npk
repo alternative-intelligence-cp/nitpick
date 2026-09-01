@@ -273,7 +273,7 @@ func:emit_vtable = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // one concrete type carries the same slot 0, which is what keeps D-159's
     // widening sound: any retained word can drop the value.
     string:entries = "ptr null";
-    if (raw type_drops(x.fe.ctx.types, self_ty, 64i32)) {
+    if (raw type_drops_recorded(x.fe.ctx.types, self_ty, 64i32)) {
         entries = string_concat("ptr ",
                       raw drop_fn_sym(x.fe.ctx, self_ty));
     }
@@ -1335,7 +1335,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     // and the drop's call after it frees nothing twice.
     if (k == (raw TY_ARENA())) {
         int32:ael = (raw tt_get(c.types, dty)).a;
-        if (raw type_drops(c.types, ael, 64i32)) {
+        if (raw type_drops_recorded(c.types, ael, 64i32)) {
             string:astr = int_to_string(raw type_size(c.types, ael));
             drop irw_raw(w, raw cat3("  %slab = load ptr, ptr %v", "", ""));
             drop irw_raw(w, "  %sdead = icmp eq ptr %slab, null");
@@ -1444,7 +1444,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
         drop irw_raw(w, "  br i1 %dead, label %done, label %live");
         drop irw_raw(w, "live:");
-        if (raw type_drops(c.types, rwel, 64i32)) {
+        if (raw type_drops_recorded(c.types, rwel, 64i32)) {
             drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 24");
             drop irw_raw(w, raw cat4("  call void ",
                               raw drop_fn_sym(c, rwel), "(ptr %ep)", ""));
@@ -1490,7 +1490,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
         drop irw_raw(w, "  %dead = icmp eq ptr %c, null");
         drop irw_raw(w, "  br i1 %dead, label %done, label %live");
         drop irw_raw(w, "live:");
-        if (raw type_drops(c.types, mel, 64i32)) {
+        if (raw type_drops_recorded(c.types, mel, 64i32)) {
             drop irw_raw(w, "  %ep = getelementptr i8, ptr %c, i64 24");
             drop irw_raw(w, raw cat4("  call void ",
                               raw drop_fn_sym(c, mel), "(ptr %ep)", ""));
@@ -1580,7 +1580,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                          ast, tab, ehome, dty,
                                          raw decl_name(vm), pj);
                     if (ps.ok) {
-                        if (raw type_drops(c.types, ps.type_id, 64i32)) {
+                        if (raw type_drops_recorded(c.types, ps.type_id, 64i32)) {
                             owns = true;
                         }
                     }
@@ -1622,7 +1622,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                          ast, tab, ehome, dty,
                                          raw decl_name(vm), q);
                     if (qs.ok) {
-                        if (raw type_drops(c.types, qs.type_id, 64i32)) {
+                        if (raw type_drops_recorded(c.types, qs.type_id, 64i32)) {
                             owns2 = true;
                         }
                     }
@@ -1642,7 +1642,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                              ast, tab, ehome, dty,
                                              raw decl_name(vm), rj);
                         if (rs.ok) {
-                            if (raw type_drops(c.types, rs.type_id, 64i32)) {
+                            if (raw type_drops_recorded(c.types, rs.type_id, 64i32)) {
                                 string:pp = raw cat3("%pa",
                                                 int_to_string(vi => int64), "");
                                 if (rs.offset != 0i64) {
@@ -1713,7 +1713,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                             raw decl_name(fm), home);
                         int32:ft = 0i32;
                         if (bfi.found) { ft = bfi.type_id; }
-                        if (raw type_drops(c.types, ft, 64i32)) {
+                        if (raw type_drops_recorded(c.types, ft, 64i32)) {
                             string:g = raw cat5("  %f", int_to_string(fi => int64),
                                           " = getelementptr ", t.text, "");
                             drop irw_raw(w, raw cat5(g, ", ptr %v, i32 0, i32 ",
@@ -1791,7 +1791,7 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
 
     if (k == (raw TY_ARRAY())) {
         int32:el = raw type_elem(c.types, dty);
-        if (raw type_drops(c.types, el, 64i32)) {
+        if (raw type_drops_recorded(c.types, el, 64i32)) {
             string:n = int_to_string((raw type_array_count(c.types, dty)) => int64);
             drop irw_raw(w, "  br label %loop");
             drop irw_raw(w, "loop:");
@@ -1833,7 +1833,7 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                              ast, tab, ehome, dty,
                                              raw decl_name(vm), pj);
                         if (ps.ok) {
-                            if (raw type_drops(c.types, ps.type_id, 64i32)) {
+                            if (raw type_drops_recorded(c.types, ps.type_id, 64i32)) {
                                 drop irw_raw(w, raw cat5("  %pa",
                                                   int_to_string(pj => int64),
                                                   " = getelementptr ", t.text,
@@ -1883,7 +1883,7 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                 FieldInfo:bfi = raw struct_field(tr, dty, raw decl_name(fm), home);
                 int32:ft = 0i32;
                 if (bfi.found) { ft = bfi.type_id; }
-                if (raw type_drops(c.types, ft, 64i32)) {
+                if (raw type_drops_recorded(c.types, ft, 64i32)) {
                     drop irw_raw(w, raw cat5("  %f", int_to_string(fi => int64),
                                       " = getelementptr ", t.text,
                                       raw cat3(", ptr %v, i32 0, i32 ",

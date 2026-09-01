@@ -269,7 +269,8 @@ pub func:refuse_pass_of_pointee_owned = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                             Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
-    if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
+    TypeResolver:or = raw etyper_resolver(e);
+    if (!(raw type_drops(@or, ty, e.scope, 64i32))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
     PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
@@ -294,7 +295,8 @@ pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                    Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
-    if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
+    TypeResolver:pr = raw etyper_resolver(e);
+    if (!(raw type_drops(@pr, ty, e.scope, 64i32))) { pass NIL; }
     PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
@@ -355,7 +357,8 @@ pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
-    if (!(raw type_drops(e.types, ty, 64i32))) { pass NIL; }
+    TypeResolver:mr = raw etyper_resolver(e);
+    if (!(raw type_drops(@mr, ty, e.scope, 64i32))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
     if (raw expr_is_variant_ctor(e, id)) { pass NIL; }
     string:m1 = string_concat("`",
@@ -2113,7 +2116,8 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
         // `fits` stays a PREDICATE: it answers no, and the mismatch reporters
         // — which have the span this does not — say why, the way they already
         // specialise the never-fails-into-may-fail answer.
-        if (raw type_contains_channel(e.types, got, 64i32)) { pass false; }
+        TypeResolver:fr = raw etyper_resolver(e);
+        if (raw type_contains_channel(@fr, got, e.scope, 64i32)) { pass false; }
         bool:ok = raw dyn_accepts(e.impls, e.bounds, e.ast, e.types, want, got);
         // A COERCION IS A COMMIT, SO IT IS WHERE THE FAMILY INSTANTIATION IS
         // NOTED (1.0.9b). `fits` is a predicate everywhere else; the one place
@@ -2373,7 +2377,8 @@ pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at)
     // a predicate and has no span; the specialisation is the same shape as the
     // never-fails one above.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
-        if (raw type_contains_channel(e.types, got, 64i32)) {
+        TypeResolver:cr = raw etyper_resolver(e);
+        if (raw type_contains_channel(@cr, got, e.scope, 64i32)) {
             drop diaglist_push(e.diags, raw diag_error(raw TYPE_DYN_CHANNEL(),
                 "this type carries a channel endpoint, and coercing it to `dyn` erases that (D-215): a channel's reclaim is owed by the scope that created it, and `gives` is how a function promises one to its caller — both rules read the TYPE, and behind a `dyn` neither can. Keep the endpoint in a concrete type, or hand the `dyn` something that does not hold one",
                 at));

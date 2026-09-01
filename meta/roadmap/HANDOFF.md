@@ -162,7 +162,7 @@ none is blocking step 2's remaining families.
    driver path never did, and I kept driver behaviour identical rather than
    change output ordering inside a receiver migration. D-204's reproducibility
    argues yes. USER DECISION.
-6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-227** and
+6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-228** and
    unanswered: does it become a numbered decision, who plays orchestrator, what
    width to calibrate at, and is "never work around a compiler defect"
    absolute.

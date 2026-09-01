@@ -640,7 +640,8 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             if (swant != 0i32) {
                 if ((raw type_kind(e.types, swant)) == (raw TY_SHARED_ARENA())) {
                     int32:sael = (raw tt_get(e.types, swant)).a;
-                    if (raw type_drops(e.types, sael, 64i32)) {
+                    TypeResolver:sar = raw etyper_resolver(e);
+                    if (raw type_drops(@sar, sael, e.scope, 64i32)) {
                         pass (raw te_error(e, raw TYPE_MISMATCH(),
                             "this element type OWNS heap storage, and a shared arena's `get` copies bytes — a copy of an owner is two owners; owning elements await the generated deep-view accessors (D-183)",
                             n.span));
@@ -789,7 +790,8 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     // the silent process-lifetime leak the clause exists to
                     // make impossible: nobody's exit would ever reclaim it.
                     if (!e.fn_gives) {
-                        if (raw type_contains_channel(e.types, e.fn_success, 64i32)) {
+                        TypeResolver:gr = raw etyper_resolver(e);
+                        if (raw type_contains_channel(@gr, e.fn_success, e.scope, 64i32)) {
                             pass (raw te_error(e, raw TYPE_MISMATCH(),
                                 "this function RETURNS a channel and CREATES one — say `gives` after the parameter list (D-183): the caller then owns the reclaim. Without it a channel-returning function is a getter, and a creation inside a getter is a channel nobody's exit reclaims",
                                 n.span));
@@ -818,7 +820,8 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     // it exists, refusing the arena at its make is what
                     // keeps the hole unreachable instead of silent.
                     int32:ael = (raw tt_get(e.types, want)).a;
-                    if (raw type_drops(e.types, ael, 64i32)) {
+                    TypeResolver:aer = raw etyper_resolver(e);
+                    if (raw type_drops(@aer, ael, e.scope, 64i32)) {
                         pass (raw te_error(e, raw TYPE_MISMATCH(),
                             "this element type OWNS heap storage, and `get`/`put` copy bytes — a copy of an owner is two owners, and one arena body freed twice; owning elements await the generated deep-view accessors (D-183). An element of scalars, `Handle<T>` links and other non-owning data rides",
                             n.span));
@@ -2214,7 +2217,8 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) nev
     // a predicate and has no span; the specialisation is the same shape as the
     // never-fails one above.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
-        if (raw type_contains_channel(e.types, got, 64i32)) {
+        TypeResolver:dr = raw etyper_resolver(e);
+        if (raw type_contains_channel(@dr, got, e.scope, 64i32)) {
             drop diaglist_push(e.diags, raw diag_error(raw TYPE_DYN_CHANNEL(),
                 "this type carries a channel endpoint, and coercing it to `dyn` erases that (D-215): a channel's reclaim is owed by the scope that created it, and `gives` is how a function promises one to its caller — both rules read the TYPE, and behind a `dyn` neither can. Keep the endpoint in a concrete type, or hand the `dyn` something that does not hold one",
                 at));

@@ -393,7 +393,7 @@ pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
 // so no VALUE says when the channel's life ends. Its reclaim is the creating
 // SCOPE's finalizer instead, which is what moves the generation and makes
 // D-182's `StaleHandle` reachable from source at all.
-pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+pub func:type_drops_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     if (id <= 0i32) { pass false; }
     int32:k = raw type_kind(t, id);
@@ -402,16 +402,16 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     // one either way.
     if (k == (raw TY_STRING()))   { pass true; }
     if (k == (raw TY_ARRAY()))    {
-        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_drops_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_drops_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RESULT()))   {
-        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_drops_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_ATOMIC()))   {
-        pass (raw type_drops(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_drops_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_STRUCT()))   { pass ((raw tt_drops(t, id)) == 2i32); }
     if (k == (raw TY_ENUM()))     { pass ((raw tt_drops(t, id)) == 2i32); }
@@ -472,7 +472,7 @@ pub func:type_drops = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
 };
 
 // The one OwnedFd type — interned like any scalar singleton; 4 bytes, the
-// kernel's descriptor number, owning (type_drops says so).
+// kernel's descriptor number, owning (type_drops_recorded says so).
 pub func:tt_ownedfd = int32(TypeTable->:t) never fails {
     pass (raw tt_intern(t, raw TY_OWNEDFD(), 0i32, 0i32, 0i32, 4i64, 4i32, 0i32));
 };
@@ -1458,7 +1458,7 @@ pub func:type_kind = int32(TypeTable->:t, int32:id) never fails {
 // owning types ride (their bodies transfer with them), borrows do not.
 // A `dyn` is refused here anyway: its CONCRETE content is erased, so whether
 // a borrow hides behind it is unknowable — fail closed.
-pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     if (id <= 0i32) { pass false; }
     int32:k = raw type_kind(t, id);
@@ -1488,10 +1488,10 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     // sight was a scalar — under which `Mutex<int32[]>` crossed a spawn with
     // a frame view inside its cell and nothing anywhere could see it.
     if (k == (raw TY_MUTEX()))   {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RWLOCK()))  {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     // A CondVar and a Barrier carry only constants (LEVEL, N) — no element.
     if (k == (raw TY_CONDVAR())) { pass false; }
@@ -1501,24 +1501,24 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
     // storage. A `Handle` and a channel ENDPOINT are indices, not addresses
     // (D-152, D-182) — stated per the B-7 walker discipline.
     if (k == (raw TY_ARENA()))   {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_SHARED_ARENA())) {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_ATOMIC()))  {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_HANDLE()))  { pass false; }
     if (k == (raw TY_CHANNEL())) { pass false; }
     if (k == (raw TY_ARRAY()))   {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RESULT()))  {
-        pass (raw type_contains_borrow(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_borrow_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     // Structs and enums answer from layout's walk, like `tt_drops`.
     if (k == (raw TY_STRUCT()))  { pass ((raw tt_hasborrow(t, id)) == 2i32); }
@@ -1540,7 +1540,7 @@ pub func:type_contains_borrow = bool(TypeTable->:t, int32:id, int32:fuel) never 
 // with the truthful answer, the `gives` demand fires and the SHAPE rule
 // then refuses it (a channel behind a nesting level the caller's stash
 // cannot name), which is the correct end state.
-pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+pub func:type_contains_channel_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass true; }
     if (id <= 0i32) { pass false; }
     int32:k = raw type_kind(t, id);
@@ -1548,25 +1548,25 @@ pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never
     if (k == (raw TY_POINTER()))  { pass false; }
     if (k == (raw TY_SLICE()))    { pass false; }
     if (k == (raw TY_MUTEX()))    {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RWLOCK()))   {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_GUARD()))    {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RGUARD()))   {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_ARENA()))    {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_SHARED_ARENA())) {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_ATOMIC()))   {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     // A `dyn` CANNOT HOLD AN ENDPOINT, so `false` here is EXACT rather than
     // the documented approximation it was until 1.4.4. D-215 refuses the
@@ -1576,13 +1576,13 @@ pub func:type_contains_channel = bool(TypeTable->:t, int32:id, int32:fuel) never
     // `StaleHandle` rather than a dangling address.
     if (k == (raw TY_DYN()))      { pass false; }
     if (k == (raw TY_ARRAY()))    {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     if (k == (raw TY_RESULT()))   {
-        pass (raw type_contains_channel(t, raw type_elem(t, id), fuel - 1i32));
+        pass (raw type_contains_channel_recorded(t, raw type_elem(t, id), fuel - 1i32));
     }
     // Structs and enums answer from layout's walk, like `tt_drops` — the
     // one pass that sees every field's resolved type recorded the bit.

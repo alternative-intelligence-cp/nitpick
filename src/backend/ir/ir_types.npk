@@ -497,10 +497,10 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
     if (k == (raw TY_ENUM()))    {
-        pass (!(raw type_contains_borrow(c.types, elem, fuel)));
+        pass (!(raw type_contains_borrow_recorded(c.types, elem, fuel)));
     }
     if (k == (raw TY_STRUCT()))  {
-        pass (!(raw type_contains_borrow(c.types, elem, fuel)));
+        pass (!(raw type_contains_borrow_recorded(c.types, elem, fuel)));
     }
     // AN UNSUBSTITUTED PARAMETER IS NOT AN OWNING TYPE, it is an unknown, and
     // the question is asked again — with an answer — on every specialization.
