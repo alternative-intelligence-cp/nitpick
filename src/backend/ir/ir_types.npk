@@ -135,9 +135,7 @@ pub struct:LlCtx = {
     // a type llc has never seen. Grows while the bodies are emitted, because a
     // struct's drop calls its fields' drops, so the emission loop re-reads the
     // count exactly as the generic-instance loop does.
-    wild int32->:drop_types;
-    int32:drop_count;
-    int32:drop_cap;
+    List<int32>:drop_types;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) never fails {
@@ -149,8 +147,7 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
-                     drop_types: (alloc(vn * #size_of<int32>())) =>! wild int32->,
-                     drop_count: 0i32, drop_cap: vn =>! int32 };
+                     drop_types: raw list_init::<int32>(vn) };
     pass c;
 };
 
@@ -162,21 +159,14 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
 // the invariant, and splitting the registration is what keeps them from
 // drifting apart.
 func:drop_type_register = NIL(LlCtx->:c, int32:dty) never fails {
-    if (c.drop_count >= c.drop_cap) {
-        int32:nc = c.drop_cap * 2i32;
-        c.drop_types = (ralloc(c.drop_types =>! wild int8->,
-                               (nc => int64) * #size_of<int32>())) =>! wild int32->;
-        c.drop_cap = nc;
-    }
     bool:seen = false;
-    int32:i = 0i32;
-    while (i < c.drop_count) {
-        if (c.drop_types[i => int64] == dty) { seen = true; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < c.drop_types.count) {
+        if (c.drop_types.items[i] == dty) { seen = true; }
+        i = i + 1i64;
     }
     if (!seen) {
-        c.drop_types[c.drop_count => int64] = dty;
-        c.drop_count = c.drop_count + 1i32;
+        drop list_push(@c.drop_types, dty);
     }
     pass NIL;
 };
@@ -198,9 +188,9 @@ pub func:vacant_fn_sym = string(LlCtx->:c, int32:dty) never fails {
               string_concat(int_to_string(dty => int64), "\"")));
 };
 
-pub func:drop_type_count = int32(LlCtx->:c) never fails { pass c.drop_count; };
-pub func:drop_type_at = int32(LlCtx->:c, int32:i) never fails {
-    pass (c.drop_types[i => int64]);
+pub func:drop_type_count = int64(LlCtx->:c) never fails { pass c.drop_types.count; };
+pub func:drop_type_at = int32(LlCtx->:c, int64:i) never fails {
+    pass (c.drop_types.items[i]);
 };
 
 // Record one impl's table. Called by the pre-pass; the emitter reads it back

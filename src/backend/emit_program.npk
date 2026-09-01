@@ -1212,12 +1212,12 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
 func:emit_drop_bodies = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                             Ast->:ast, SymbolTable->:tab,
                             DiagList->:diags) never fails {
-    int32:i = 0i32;
+    int64:i = 0i64;
     while (i < (raw drop_type_count(c))) {
         int32:dty = raw drop_type_at(c, i);
         drop emit_one_drop(w, c, tr, ast, tab, diags, dty);
         drop emit_one_vacant(w, c, tr, ast, tab, dty);
-        i = i + 1i32;
+        i = i + 1i64;
     }
     pass NIL;
 };
