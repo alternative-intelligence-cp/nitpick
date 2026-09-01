@@ -22,31 +22,33 @@ below is committed; the tree is clean and nothing is in flight.
 - **D-225 landed mid-step** (`a2f2032` + snapshot `e310185`): declared-
   uninitialised managed storage holds its canonical vacant value. A real
   memory-safety defect, latent since 1.1.12.
-- **STEP 2: all TWELVE single-array families are converted**, and **EIGHT of
-  the ten parallel-array families** — `FoldEnv`, `tt_unit`, `vtmap`, `reach`,
-  the resolver's error table, `irw_site`, `Suspend`, `Ast`. Each committed with
-  its own full harness run.
-- **REMAINING IN STEP 2: SIX families, not two.** The handoff said "TypeTable's
-  five and FnEmitter's seven" and that was a counting error — re-measured at
-  the midpoint, four more families still grow by hand, three of them named in
-  the step-2 grower enumeration but given no row in either landing list
-  (`SymbolTable`'s three, `ExprTypes`' two, `LlCtx.drop_types`), and one
-  (`MacroTable`) never counted at all, because the enumeration keyed on
-  `ralloc` and it `alloc`s-and-copies. That is the EIGHTH way a site hides —
-  the first where the search's PREDICATE was wrong rather than its scope, and
-  the first the compiler cannot catch, since an unstarted conversion breaks
-  nothing. **User-decided 2026-08-31: all four land inside step 2.** Full
-  account and the ordering are in 1.4.7.md's "The step-2 enumeration was short
-  by four families".
-- **Order, smallest external surface first**: `MacroTable` ·
-  `LlCtx.drop_types` · `ExprTypes` · `SymbolTable` · `TypeTable` ·
-  `FnEmitter`. The two wide ones last; `fnem_pick_push` grows eight arrays in
-  lockstep and `ir_func.npk` has 36 `ralloc` sites. Two shape questions come
-  first, deliberately: `ExprTypes` narrows a doubled `int64` capacity with a
-  bare `=>!` (twice), and **`symtab_set_home` is not an append** — it is an
-  index-addressed sparse map that grows until the caller's index fits and
-  hand-zeroes the tail, a shape neither `list_reserve` nor `list_push` has.
-  Then step 3 (form upgrades), which has not been started.
+- **STEP 2 IS COMPLETE.** All twelve single-array families, all ten
+  parallel-array families, AND the four the enumeration had missed
+  (`MacroTable`, `LlCtx.drop_types`, `ExprTypes`, `SymbolTable` — see 1.4.7.md's
+  "The step-2 enumeration was short by four families"). Every one committed with
+  its own full harness run. The hand-rolled doubling site is gone from `src/`:
+  the `items[count] =` push idiom now exists ONLY in `list.npk`, one line below
+  its reserve, which is the 1.5 obligation this step was meant to buy and which
+  a whole-tree check can now pin.
+- **REMAINING: step 3 (form upgrades), not started** — hand-rolled index loops
+  to `for`/`till` where the loop is a plain iteration, match-shaped unwraps to
+  `?.`/`?|` where the shape IS the operator. File by file, and a form changes
+  only where the current spelling is longer AND less clear.
+- **AND DEFECT B, which outranks step 3 on safety.** A memoised layout bit read
+  before it is computed answers the PERMISSIVE default: `type_drops` (TYPE-046
+  move-only, and whether a scope exit drops at all), `type_contains_channel`
+  (D-215, D-183's `gives`) and `type_contains_borrow` all end
+  `== 2i32` for structs and enums, and `tt_haschan`/`tt_drops` answer 0 for
+  "not computed". `finish_layouts` runs at pipeline.npk:494 while the type
+  checker is at 337, so through all of checking most of the table has no
+  layout — pipeline.npk's own comment calls that "fine for checking", which is
+  true of SIZES and false of these three bits. Measured, twice, by poisoning:
+  the read really does land in the window. The user ratified COMPUTE ON DEMAND;
+  the fix is scoped to 14 checker sites, all of which already have an
+  `ExprTyper` in scope, and `type_expr`/`type_stmt`/`type_access` already import
+  `type_layout.npk` while it imports none of them, so there is no cycle. One
+  question is open for the user: whether the unqualified names become the
+  ensuring ones with `_recorded` as the explicit opt-out.
 
 ## The decisions settled this cycle, and where they are
 

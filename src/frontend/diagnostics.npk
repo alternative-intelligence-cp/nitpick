@@ -262,8 +262,7 @@ pub func:sink_write = NIL(Sink->:out, string:text) never fails {
     drop list_reserve(@out.v, text.len);
     int64:i = 0i64;
     while (i < text.len) {
-        out.v.items[out.v.count] = text.ptr[i] =>! int8;
-        out.v.count = out.v.count + 1i64;
+        drop list_push(@out.v, text.ptr[i] =>! int8);
         i = i + 1i64;
     }
     pass NIL;
@@ -301,8 +300,7 @@ pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
     drop list_reserve(@dst.v, src.v.count);
     int64:i = 0i64;
     while (i < src.v.count) {
-        dst.v.items[dst.v.count] = src.v.items[i];
-        dst.v.count = dst.v.count + 1i64;
+        drop list_push(@dst.v, src.v.items[i]);
         i = i + 1i64;
     }
     pass NIL;
