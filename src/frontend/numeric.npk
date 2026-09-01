@@ -292,12 +292,10 @@ pub func:num_scan = NumScan(string:run) never fails {
 
 func:tfpq_mul10_add = uint64(wild uint64->:limbs, uint64:d) never fails {
     uint64:carry = d;
-    int64:i = 0i64;
-    while (i < 10i64) {
+    for (int64:i in 0i64...10i64) {
         uint64:t = (limbs[i] * 10u64) + carry;
         limbs[i] = t & 4294967295u64;
         carry = t >> 32u64;
-        i = i + 1i64;
     }
     pass carry;
 };
@@ -352,10 +350,8 @@ func:tfpq_in_range = bool(wild uint64->:limbs, int32:bits) never fails {
 };
 
 func:tfpq_is_zero = bool(wild uint64->:limbs) never fails {
-    int64:i = 0i64;
-    while (i < 10i64) {
+    for (int64:i in 0i64...10i64) {
         if (limbs[i] != 0u64) { pass false; }
-        i = i + 1i64;
     }
     pass true;
 };
@@ -460,10 +456,8 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     int64:li = 0i64;
     while (li < 10i64) { limbs[li] = 0u64; li = li + 1i64; }
     bool:over = false;
-    int64:k = 0i64;
-    while (k < ni) {
+    for (int64:k in 0i64...ni) {
         if ((raw tfpq_mul10_add(limbs, (ints[k]) => uint64)) != 0u64) { over = true; }
-        k = k + 1i64;
     }
     // --- shift by F, then the fraction's bits ---
     if (!over) {
@@ -479,8 +473,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
     }
     if (!over) {
         drop tfpq_shl(limbs, frac_bits);
-        int32:b = 0i32;
-        while (b < frac_bits) {
+        for (int32:b in 0i32...frac_bits) {
             // ×2 over the decimal fraction, right to left; the carry OUT is
             // the next bit below the point, most significant first.
             uint64:carry = 0u64;
@@ -496,7 +489,6 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
                 int64:pos = ((frac_bits - 1i32 - b) => int64);
                 limbs[pos / 32i64] = limbs[pos / 32i64] | (1u64 << ((pos % 32i64) =>! uint64));
             }
-            b = b + 1i32;
         }
         // --- rounding: one more doubled bit, sticky over what remains ---
         uint64:rcarry = 0u64;
@@ -509,10 +501,8 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
             j4 = j4 - 1i64;
         }
         bool:sticky = false;
-        int64:j5 = 0i64;
-        while (j5 < nf) {
+        for (int64:j5 in 0i64...nf) {
             if (frs[j5] != 0u8) { sticky = true; }
-            j5 = j5 + 1i64;
         }
         if (rcarry != 0u64) {
             bool:up = sticky;

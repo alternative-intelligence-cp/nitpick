@@ -134,10 +134,8 @@ pub func:reach_module = NIL(Reach->:x, DeclId:mod_id, int32:mod_name) never fail
     x.cur_module = mod_name;
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop reach_decl(x, raw item_member(x.ast, m, i));
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -157,19 +155,15 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
     }
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop reach_decl(x, raw impl_member(x.ast, d, j));
-            j = j + 1i32;
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop reach_decl(x, raw item_member(x.ast, d, k));
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -317,10 +311,8 @@ func:reach_operand_expr = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
 
 func:reach_counted = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop reach_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
-        i = i + 1i32;
     }
     drop reach_stmt(x, raw stmt_counted_body(s), fuel - 1i32);
     pass NIL;
@@ -482,11 +474,9 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
 
 func:reach_expr_window = NIL(Reach->:x, int32:start, int32:count,
                              int32:fuel) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
                         fuel - 1i32);
-        i = i + 1i32;
     }
     pass NIL;
 };

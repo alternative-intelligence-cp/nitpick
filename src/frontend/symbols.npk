@@ -433,11 +433,9 @@ pub func:collect_module = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     int32:scope = raw scope_open(t, parent_scope, raw SCOPE_MODULE());
 
     int32:n = raw item_member_count(ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:item = raw item_member(ast, m, i);
         drop collect_decl(t, ast, diags, item, scope);
-        i = i + 1i32;
     }
     pass scope;
 };

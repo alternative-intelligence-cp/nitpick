@@ -107,8 +107,7 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
                              int32:scope) never fails {
     DeclNode:m = raw ast_decl(r.ast, mod_id);
     int32:n = raw item_member_count(r.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(r.ast, m, i);
         DeclNode:d = raw ast_decl(r.ast, id);
         if (d.kind == DeclKind.DeclImplDecl) {
@@ -127,7 +126,6 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
                 drop collect_impls(t, r, id, inner);
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -586,10 +584,8 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
     if (fuel <= 0i32) { pass NIL; }
 
     int32:have = (raw ast_scratch_mark(r.ast)) - mark;
-    int32:i = 0i32;
-    while (i < have) {
+    for (int32:i in 0i32...have) {
         if ((raw ast_scratch_at(r.ast, mark, i)) == trait_id) { pass NIL; }
-        i = i + 1i32;
     }
     drop ast_scratch_push(r.ast, trait_id);
 
@@ -599,8 +595,7 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
     DeclNode:td = raw ast_decl(r.ast, did);
 
     int32:n = raw item_extra_count(r.ast, td);
-    int32:j = 0i32;
-    while (j < n) {
+    for (int32:j in 0i32...n) {
         int32:sup = raw resolve_trait_type(r, raw item_extra(r.ast, td, j), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
@@ -613,7 +608,6 @@ func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
                 }
             }
         }
-        j = j + 1i32;
     }
     pass NIL;
 };
@@ -634,8 +628,7 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
 
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:n = raw generic_bound_count(g);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         // NOT `tid` — that is one of the five kernel identifier types (D-042),
         // and a type name is not an identifier.
         TypeId:bid = TypeId{ index: raw ast_id_at(r.ast,
@@ -650,7 +643,6 @@ func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
                 }
             }
         }
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
     drop bound_push(t, gp.index, w.start, w.count, 0i32);
@@ -677,8 +669,7 @@ pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
                               int32:scope) never fails {
     DeclNode:m = raw ast_decl(r.ast, mod_id);
     int32:n = raw item_member_count(r.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(r.ast, m, i);
         drop collect_decl_bounds(t, r, id, scope);
 
@@ -693,7 +684,6 @@ pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
                 drop collect_bounds(t, r, id, inner);
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -714,10 +704,8 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
 
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:n = raw impl_generic_count(r.ast, d);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             drop collect_param_bounds(t, r, raw impl_generic(r.ast, d, i), scope);
-            i = i + 1i32;
         }
         // A METHOD MAY BE GENERIC ON ITS OWN ACCOUNT. `impl:Point = { func:map<U:
         // Printable> = … };` declares `U` inside a block whose own generic list is
@@ -745,10 +733,8 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
     if (d.kind == DeclKind.DeclTraitDecl) {
         drop collect_item_bounds(t, r, d, scope);
         int32:mn = raw item_member_count(r.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop collect_decl_bounds(t, r, raw item_member(r.ast, d, j), scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
@@ -758,10 +744,8 @@ func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
 func:collect_item_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclNode:d,
                                int32:scope) never fails {
     int32:n = raw item_generic_count(r.ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop collect_param_bounds(t, r, raw item_generic(r.ast, d, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1020,8 +1004,7 @@ func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
     int32:n = raw type_dyn_count(types, target);
     int32:start = raw type_dyn_start(types, target);
     MethodFind:best = raw method_none();
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:tr = raw ast_id_at(ast, start, i);
         int32:td = raw type_decl_of(types, tr);
         if (td != 0i32) {
@@ -1044,7 +1027,6 @@ func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass best;
 };
@@ -1060,8 +1042,7 @@ pub func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
     if (tdecl == 0i32) { pass 0i32; }
     DeclNode:td = raw ast_decl(ast, DeclId{ index: tdecl });
     int32:n = raw item_member_count(ast, td);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:mid = raw item_member(ast, td, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -1071,7 +1052,6 @@ pub func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass 0i32;
 };
@@ -1082,14 +1062,12 @@ pub func:impl_method_named = int32(Ast->:ast, InternTable->:interns,
     DeclId:id = DeclId{ index: decl };
     DeclNode:d = raw ast_decl(ast, id);
     int32:n = raw impl_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:mid = raw impl_member(ast, d, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
-        i = i + 1i32;
     }
     pass 0i32;
 };
@@ -1144,8 +1122,7 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
 
     // --- everything the trait requires is supplied --------------------------------
     int32:tn = raw item_member_count(r.ast, td);
-    int32:i = 0i32;
-    while (i < tn) {
+    for (int32:i in 0i32...tn) {
         DeclId:mid = raw item_member(r.ast, td, i);
         DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -1164,7 +1141,6 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
                 }
             }
         }
-        i = i + 1i32;
     }
 
     // --- and nothing the trait did not declare ------------------------------------
@@ -1173,8 +1149,7 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
     // with no trait behind it belongs (2.4), and it is one line away -- so the
     // diagnostic points there rather than merely refusing.
     int32:inn = raw impl_member_count(r.ast, idl);
-    int32:j = 0i32;
-    while (j < inn) {
+    for (int32:j in 0i32...inn) {
         DeclId:mid = raw impl_member(r.ast, idl, j);
         DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -1192,7 +1167,6 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
                 drop extra_error(r, e, m, "associated type");
             }
         }
-        j = j + 1i32;
     }
     pass NIL;
 };
@@ -1202,28 +1176,24 @@ func:check_one_impl_complete = NIL(TypeResolver->:r, ImplEntry:e, int32:scope) n
 // the name alone would let one stand in for the other.
 func:impl_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) never fails {
     int32:n = raw impl_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:mid = raw impl_member(ast, d, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == kind) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
-        i = i + 1i32;
     }
     pass 0i32;
 };
 
 func:trait_member_named = int32(Ast->:ast, DeclNode:d, int32:name, DeclKind:kind) never fails {
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:mid = raw item_member(ast, d, i);
         DeclNode:m = raw ast_decl(ast, mid);
         if (m.kind == kind) {
             if ((raw decl_name(m)) == name) { pass (mid.index); }
         }
-        i = i + 1i32;
     }
     pass 0i32;
 };
@@ -1444,12 +1414,10 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, SigCtx:sc) n
     }
     int32:n = raw type_param_count_of(r.types, want);
     if (n != (raw type_param_count_of(r.types, got))) { pass false; }
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:a = raw type_param_at_of(r.ast, r.types, want, i);
         int32:b = raw type_param_at_of(r.ast, r.types, got, i);
         if (!(raw same_after_self(r, a, b, sc))) { pass false; }
-        i = i + 1i32;
     }
     pass true;
 };
@@ -1713,8 +1681,7 @@ pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
     int32:start = raw type_dyn_start(types, want);
     bool:from_dyn = ((raw type_kind(types, got)) == (raw TY_DYN()));
 
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:need = raw ast_id_at(ast, start, i);
         if (from_dyn) {
             if (!(raw dyn_carries(ast, types, got, need))) { pass false; }
@@ -1722,7 +1689,6 @@ pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
             if (!(raw type_implements(t, bt, ast, types, got, need,
                                         raw IMPL_FUEL()))) { pass false; }
         }
-        i = i + 1i32;
     }
     pass true;
 };
@@ -1730,10 +1696,8 @@ pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
 func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) never fails {
     int32:n = raw type_dyn_count(types, d);
     int32:start = raw type_dyn_start(types, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         if ((raw ast_id_at(ast, start, i)) == trait_id) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -1784,8 +1748,7 @@ func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
     DeclNode:td = raw ast_decl(r.ast, did);
 
     int32:n = raw item_extra_count(r.ast, td);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:sup = raw resolve_trait_type(r, raw item_extra(r.ast, td, i), scope);
         if (sup != 0i32) {
             if (!(raw type_is_invalid(r.types, sup))) {
@@ -1804,7 +1767,6 @@ func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1881,8 +1843,7 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) never fails {
     DeclId:iid = DeclId{ index: e.decl };
     DeclNode:d = raw ast_decl(r.ast, iid);
     int32:n = raw impl_member_count(r.ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:aid = raw impl_member(r.ast, d, i);
         DeclNode:am = raw ast_decl(r.ast, aid);
         if (am.kind == DeclKind.DeclFunctionDecl) {
@@ -1911,7 +1872,6 @@ func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) never fails {
                 j = j + 1i32;
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1923,8 +1883,7 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never
     DeclNode:second_block = raw ast_decl(r.ast, sid);
 
     int32:n = raw impl_member_count(r.ast, first_block);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:aid = raw impl_member(r.ast, first_block, i);
         DeclNode:am = raw ast_decl(r.ast, aid);
         if (am.kind == DeclKind.DeclFunctionDecl) {
@@ -1936,7 +1895,6 @@ func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) never
                 drop dup_error(r, first, am, om, true);
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };

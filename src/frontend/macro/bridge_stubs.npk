@@ -434,8 +434,7 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     DeclNode:m = raw ast_decl(@g.ast, mod_id);
     int32:mc = raw item_member_count(@g.ast, m);
     string:src = "";
-    int32:i = 0i32;
-    while (i < mc) {
+    for (int32:i in 0i32...mc) {
         DeclId:member = raw item_member(@g.ast, m, i);
         DeclNode:d = raw ast_decl(@g.ast, member);
         if (d.kind == DeclKind.DeclExternBlock) {
@@ -475,7 +474,6 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
                 }
             }
         }
-        i = i + 1i32;
     }
     if (src.len == 0i64) { pass NIL; }
 
@@ -504,32 +502,22 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     drop ast_scratch_push(@g.ast, mc2 + added);
     drop ast_scratch_push(@g.ast, ac);
     drop ast_scratch_push(@g.ast, ec);
-    int32:q = 0i32;
-    while (q < gc) {
+    for (int32:q in 0i32...gc) {
         drop ast_scratch_push(@g.ast, (raw item_generic(@g.ast, m2, q)).index);
-        q = q + 1i32;
     }
-    int32:j = 0i32;
-    while (j < mc2) {
+    for (int32:j in 0i32...mc2) {
         drop ast_scratch_push(@g.ast, (raw item_member(@g.ast, m2, j)).index);
-        j = j + 1i32;
     }
-    int32:k2 = 0i32;
-    while (k2 < added) {
+    for (int32:k2 in 0i32...added) {
         DeclId:genid = raw item_member(@g.ast, gm, k2);
         drop ast_or_decl_flags(@g.ast, genid, raw DECL_DERIVED());
         drop ast_scratch_push(@g.ast, genid.index);
-        k2 = k2 + 1i32;
     }
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(@g.ast, (raw item_attr(@g.ast, m2, a2)).index);
-        a2 = a2 + 1i32;
     }
-    int32:e2 = 0i32;
-    while (e2 < ec) {
+    for (int32:e2 in 0i32...ec) {
         drop ast_scratch_push(@g.ast, (raw item_extra(@g.ast, m2, e2)).index);
-        e2 = e2 + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(@g.ast, mark);
     drop ast_set_decl_window(@g.ast, mod_id, w.start, w.count);

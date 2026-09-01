@@ -867,8 +867,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     "`sys(NR, args…)` carries at most six register arguments after the syscall number — the kernel has six argument registers (D-048)",
                     n.span));
             }
-            int32:sai = 0i32;
-            while (sai < count) {
+            for (int32:sai in 0i32...count) {
                 ExprId:sa = ExprId{ index: raw ast_id_at(e.ast, start, sai) };
                 if (raw is_spread(e, sa)) {
                     ExprNode:ssn = raw ast_expr(e.ast, sa);
@@ -905,7 +904,6 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     discard(raw te_error(e, raw TYPE_MISMATCH(),
                         string_concat(sm1, "`"), sbn.span));
                 }
-                sai = sai + 1i32;
             }
             pass (raw tt_result(e.types, raw tt_int(e.types, 64i32, true),
                                 8i64, 8i32));
@@ -1028,8 +1026,7 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
     // means what it meant where it was written (0.8.1).
     int32:home = raw symtab_home_scope(e.tab, raw type_decl(e.types, enum_ty),
                                        e.scope);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         int32:pt = raw resolve_type(@r,
                        TypeId{ index: raw ast_id_at(e.ast,
                                    raw variant_payload_start(v), i) },
@@ -1054,7 +1051,6 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
                     ExprId{ index: raw ast_id_at(e.ast, start, i) }, at, n.span);
             }
         }
-        i = i + 1i32;
     }
     pass enum_ty;
 };
@@ -1130,15 +1126,13 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     }
 
     int32:gstart = raw expr_list_start(n);
-    int32:j = 0i32;
-    while (j < gcount) {
+    for (int32:j in 0i32...gcount) {
         if (j < gp.count) {
             TypeId:a = TypeId{ index: raw ast_id_at(e.ast, gstart, j) };
             DeclId:gpid = DeclId{ index: raw ast_id_at(e.ast, gp.start, j) };
             drop ast_scratch_set(e.ast, mark, j,
                 raw resolve_one_arg(@r, a, gpid, e.scope));
         }
-        j = j + 1i32;
     }
 
     drop infer_from_args(e, @r, n, gp, generic_ft, mark, start, count);
@@ -1210,8 +1204,7 @@ func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
                            int32:start, int32:count) never fails {
     if (!(raw type_is_func(e.types, generic_ft))) { pass NIL; }
     int32:np = raw type_param_count_of(e.types, generic_ft);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         if (i < np) {
             ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
             if (!(raw takes_type_from_context(e, a))) {
@@ -1225,7 +1218,6 @@ func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1284,12 +1276,10 @@ func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
         // NOT `as` — a keyword, and a keyword is not an identifier.
         int32:ds = raw type_args_start_of(e.types, declared);
         int32:actual_start = raw type_args_start_of(e.types, actual);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             drop unify_into(e, raw ast_id_at(e.ast, ds, i),
                             raw ast_id_at(e.ast, actual_start, i),
                             gp, mark, fuel - 1i32);
-            i = i + 1i32;
         }
     }
     pass NIL;
@@ -1756,8 +1746,7 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         discard(raw te_error(e, raw TYPE_MISMATCH(), move(m2), at));
     }
 
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
 
         // `..^coll` EXPANDS A COLLECTION INTO THE VARIADIC TAIL, so it is the one
@@ -1815,7 +1804,6 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                 }
             }
         }
-        i = i + 1i32;
     }
     // THE CALL'S TYPE IS `Result<success>` (D-069), for a named callee and a
     // function value alike — the func TYPE stores the success slot (0.9.6),
@@ -1919,8 +1907,7 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         c2 = string_concat(c2, int_to_string(count => int64));
         discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(), move(c2), n.span));
     }
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         // `..^` NEEDS A VARIADIC TAIL TO EXPAND INTO, and a builtin's
         // arguments are fixed registers (1.1.13-close): the same refusal
@@ -1960,7 +1947,6 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                 }
             }
         }
-        i = i + 1i32;
     }
     int32:succ = raw builtin_text_type(e, raw builtin_sig_ret(name));
     if (succ == 0i32) {
@@ -2010,10 +1996,8 @@ func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) nev
     } else {
         int32:rargs = raw type_args_start_of(e.types, recv);
         int32:rn = raw type_args_count_of(e.types, recv);
-        int32:i = 0i32;
-        while (i < rn) {
+        for (int32:i in 0i32...rn) {
             drop ast_scratch_push(e.ast, raw ast_id_at(e.ast, rargs, i));
-            i = i + 1i32;
         }
     }
 
@@ -2112,14 +2096,12 @@ pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
     if ((raw type_kind(e.types, got)) == (raw TY_PARAM())) { pass NIL; }
     int32:tn = raw type_dyn_count(e.types, want_dyn);
     int32:ts = raw type_dyn_start(e.types, want_dyn);
-    int32:i = 0i32;
-    while (i < tn) {
+    for (int32:i in 0i32...tn) {
         int32:tr_id = raw ast_id_at(e.ast, ts, i);
         int32:impl_decl = raw find_family_impl_for(e, got, tr_id);
         if (impl_decl != 0i32) {
             drop record_family_impl_methods(e, impl_decl, got, tr_id);
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -2169,8 +2151,7 @@ func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
 // Type the arguments and nothing else, for a callee with no signature to check
 // against. A mistake inside an argument is still worth reporting.
 func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         // `..^` NEEDS A VARIADIC TAIL TO EXPAND INTO (1.1.13-close): a
         // builtin's registers and an unknown callee's arguments have none,
@@ -2183,7 +2164,6 @@ func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
                 sn.span));
         }
         discard(raw type_of_expr(e, a));
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -2801,8 +2781,7 @@ func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
             "an atomic operation takes only its values — the ordering is not a parameter, because every high-level atomic method is SeqCst (D-016)",
             n.span));
     }
-    int32:vi = 0i32;
-    while (vi < count) {
+    for (int32:vi in 0i32...count) {
         int32:saved = e.expected;
         e.expected = elem;
         int32:at = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, vi) });
@@ -2814,7 +2793,6 @@ func:type_atomic_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                 }
             }
         }
-        vi = vi + 1i32;
     }
     if ((raw string_eq(m, "fetch_add")) || (raw string_eq(m, "fetch_sub"))) {
         if ((raw type_kind(e.types, elem)) != (raw TY_INT())) {

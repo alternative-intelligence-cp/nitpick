@@ -356,8 +356,7 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) never
                            DeclId{ index: raw type_decl_of(r.types, base) });
         int32:bstart = raw generic_bound_start(pdn);
         int32:bcount = raw generic_bound_count(pdn);
-        int32:i = 0i32;
-        while (i < bcount) {
+        for (int32:i in 0i32...bcount) {
             TypeId:bt = TypeId{ index: raw ast_id_at(r.ast, bstart, i) };
             int32:btrait = raw resolve_trait_type(r, bt, scope);
             int32:tdecl = raw type_decl_of(r.types, btrait);
@@ -370,7 +369,6 @@ func:resolve_projection = int32(TypeResolver->:r, TypeNode:n, int32:scope) never
                     }
                 }
             }
-            i = i + 1i32;
         }
         if (other != 0i32) {
             string:a1 = string_concat("`",
@@ -632,12 +630,10 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
     }
     r.depth = r.depth + 1i32;
     int32:mark = raw ast_scratch_mark(r.ast);
-    int32:i = 0i32;
-    while (i < given) {
+    for (int32:i in 0i32...given) {
         TypeId:a = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), i) };
         DeclId:gpid = DeclId{ index: raw ast_id_at(r.ast, gp.start, i) };
         drop ast_scratch_push(r.ast, raw resolve_one_arg(r, a, gpid, scope));
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
     r.depth = r.depth - 1i32;
@@ -1164,14 +1160,12 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
     // only once they all have values. Building it first and folding into it would
     // let an argument see a parameter it is being passed to.
     FoldEnv:frame = raw foldenv_new();
-    int32:i = 0i32;
-    while (i < pc) {
+    for (int32:i in 0i32...pc) {
         ExprId:arg = ExprId{ index: raw ast_id_at(r.ast, (raw expr_list_start(e)) + gc, i) };
         ConstVal:av = raw fold_expr(r, arg, scope, fuel - 1i32);
         if (!(raw cv_folded(av))) { pass (raw cv_none()); }
         DeclNode:pn = raw ast_decl(r.ast, raw fn_param(r.ast, fndecl, i));
         drop foldenv_set(@frame, raw decl_name(pn), move(av));
-        i = i + 1i32;
     }
 
     if (r.fold_depth >= (raw FOLD_DEPTH())) {
@@ -2417,13 +2411,11 @@ func:type_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
 
 func:window_mentions_self = SelfScan(Ast->:ast, int32:trait_decl,
                                      int32:start, int32:count, int32:fuel) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         TypeId:c = TypeId{ index: raw ast_id_at(ast, start, i) };
         SelfScan:s = raw type_mentions_self(ast, trait_decl, c, fuel - 1i32);
         if (s.found) { pass s; }
         if (s.assoc_type) { pass s; }
-        i = i + 1i32;
     }
     pass (raw scan_clear());
 };
@@ -2457,8 +2449,7 @@ func:object_safety = bool(TypeResolver->:r, int32:trait_id, Span:at,
 
     bool:bad = false;
     int32:n = raw item_member_count(r.ast, td);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:mid = raw item_member(r.ast, td, i);
         DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
@@ -2466,7 +2457,6 @@ func:object_safety = bool(TypeResolver->:r, int32:trait_id, Span:at,
                 bad = true;
             }
         }
-        i = i + 1i32;
     }
     pass bad;
 };
@@ -2553,8 +2543,7 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
     // about what the method gives back.
     int32:pcount = 0i32;
     if (has_self) { pcount = raw fn_param_count(r.ast, m); }
-    int32:pidx = 0i32;
-    while (pidx < pcount) {
+    for (int32:pidx in 0i32...pcount) {
         DeclNode:pdecl = raw ast_decl(r.ast, raw fn_param(r.ast, m, pidx));
         TypeId:ptype = raw param_type(pdecl);
 
@@ -2602,7 +2591,6 @@ func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
                 if (report) { drop self_scan_defect(r, mname, at); }
             }
         }
-        pidx = pidx + 1i32;
     }
 
     SelfScan:rsc = raw type_mentions_self(r.ast, tdecl,

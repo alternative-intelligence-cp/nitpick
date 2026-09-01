@@ -358,12 +358,10 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
         }
         int32:ps = (raw tt_get(t, id)).b;
         int32:pc = (raw tt_get(t, id)).c;
-        int32:i = 0i32;
-        while (i < pc) {
+        for (int32:i in 0i32...pc) {
             if (raw type_mentions_param(t, ast, raw ast_id_at(ast, ps, i), fuel - 1i32)) {
                 pass true;
             }
-            i = i + 1i32;
         }
         pass false;
     }
@@ -404,12 +402,10 @@ pub func:type_mentions_param = bool(TypeTable->:t, Ast->:ast, int32:id,
 func:args_mention_param = bool(TypeTable->:t, Ast->:ast, int32:id, int32:fuel) never fails {
     int32:n = raw type_args_count_of(t, id);
     int32:start = raw type_args_start_of(t, id);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         if (raw type_mentions_param(t, ast, raw ast_id_at(ast, start, i), fuel - 1i32)) {
             pass true;
         }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -707,10 +703,8 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_DYN())) {
         int32:nb = raw type_dyn_count(c.types, id);
         string:dt = "{ ptr";
-        int32:bi = 0i32;
-        while (bi < nb) {
+        for (int32:bi in 0i32...nb) {
             dt = string_concat(dt, ", ptr");
-            bi = bi + 1i32;
         }
         pass (raw ll_ok(string_concat(dt, " }")));
     }

@@ -2008,8 +2008,7 @@ func:type_template = int32(ExprTyper->:e, ExprNode:n) never fails {
     }
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:itmid = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         int32:pt = raw type_of_expr(e, itmid);
         if (pt != 0i32) {
@@ -2032,7 +2031,6 @@ func:type_template = int32(ExprTyper->:e, ExprNode:n) never fails {
                 }
             }
         }
-        i = i + 1i32;
     }
     pass (e.types.t_string);
 };
@@ -2444,10 +2442,8 @@ func:type_complex_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
         if ((raw type_kind(e.types, want)) == (raw TY_COMPLEX())) { directed = true; }
     }
     if (!directed) {
-        int32:i0 = 0i32;
-        while (i0 < cnt) {
+        for (int32:i0 in 0i32...cnt) {
             discard(raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i0) }));
-            i0 = i0 + 1i32;
         }
         pass (raw te_error(e, raw TYPE_UNKNOWN(),
             "`complex(…)` needs a `complex<T>` annotation to read its element from (D-199) — the element lives in the type",
@@ -2459,8 +2455,7 @@ func:type_complex_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
             n.span));
     }
     int32:celem = raw type_elem(e.types, want);
-    int32:ci = 0i32;
-    while (ci < 2i32) {
+    for (int32:ci in 0i32...2i32) {
         ExprId:aid = ExprId{ index: raw ast_id_at(e.ast, start, ci) };
         int32:saved = e.expected;
         e.expected = celem;
@@ -2479,7 +2474,6 @@ func:type_complex_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
                 }
             }
         }
-        ci = ci + 1i32;
     }
     pass want;
 };
@@ -2500,10 +2494,8 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
     if (!directed) {
         // The components are still typed, so a mistake inside one is
         // reported rather than hidden behind the missing annotation.
-        int32:i0 = 0i32;
-        while (i0 < cnt) {
+        for (int32:i0 in 0i32...cnt) {
             discard(raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i0) }));
-            i0 = i0 + 1i32;
         }
         pass (raw te_error(e, raw TYPE_UNKNOWN(),
             "`simd(…)` needs a `simd<T, N>` annotation to read its element and lane count from — they live in the type (D-194), which is what makes each instantiation one behaviour",
@@ -2521,8 +2513,7 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
         string:v5 = string_concat(v4, int_to_string(cnt => int64));
         pass (raw te_error(e, raw TYPE_MISMATCH(), move(v5), n.span));
     }
-    int32:i = 0i32;
-    while (i < cnt) {
+    for (int32:i in 0i32...cnt) {
         ExprId:aid = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         int32:saved = e.expected;
         e.expected = velem;
@@ -2536,7 +2527,6 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
                 }
             }
         }
-        i = i + 1i32;
     }
     pass want;
 };
@@ -2563,8 +2553,7 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:want = raw expected_value(e);
     int32:result = want;
 
-    int32:i = 0i32;
-    while (i < cnt) {
+    for (int32:i in 0i32...cnt) {
         StmtId:arm = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         StmtNode:a = raw ast_stmt(e.ast, arm);
         discard(raw type_of_expr(e, raw arm_guard(a)));
@@ -2574,7 +2563,6 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
         // instead of it.
         drop check_stmt(e, raw arm_body(a));
         result = raw arm_give_type(e, raw arm_body(a), result, n.span);
-        i = i + 1i32;
     }
 
     if (result == 0i32) {
@@ -2598,8 +2586,7 @@ func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) nev
     int32:n = raw stmt_list_count(b);
     int32:start = raw stmt_list_start(b);
     int32:cur = sofar;
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         StmtNode:st = raw ast_stmt(e.ast,
                           StmtId{ index: raw ast_id_at(e.ast, start, i) });
         if (st.kind == StmtKind.StmtGiveStmt) {
@@ -2625,7 +2612,6 @@ func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) nev
                 }
             }
         }
-        i = i + 1i32;
     }
     pass cur;
 };
@@ -2673,8 +2659,7 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     // mistake inside one is reported rather than waiting for the first to settle
     // the question.
     int32:elem = want_elem;
-    int32:i = 0i32;
-    while (i < cnt) {
+    for (int32:i in 0i32...cnt) {
         ExprId:v = ExprId{ index: raw ast_id_at(e.ast, start, i) };
         int32:saved = e.expected;
         e.expected = elem;
@@ -2697,7 +2682,6 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
                 }
             }
         }
-        i = i + 1i32;
     }
 
     if (elem == 0i32) {
@@ -2772,8 +2756,7 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:start = raw expr_list_start(n);
     int32:cnt = raw expr_list_count(n);
     int32:mark = raw ast_scratch_mark(e.ast);
-    int32:i = 0i32;
-    while (i < cnt) {
+    for (int32:i in 0i32...cnt) {
         TypeId:trait_ty = TypeId{ index: raw ast_id_at(e.ast, start, i) };
         // A `dyn` CAST'S OPERANDS ARE TRAITS (D-172's door): resolved where a
         // trait is wanted, so a bare trait name is not the "not a value type"
@@ -2799,7 +2782,6 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) never fails {
                 }
             }
         }
-        i = i + 1i32;
     }
     // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
     // `dyn B & A` are one interned type with one layout.
@@ -2953,8 +2935,7 @@ func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
     DeclNode:d = raw ast_decl(e.ast, DeclId{ index: decl });
 
     int32:nm = raw item_member_count(e.ast, d);
-    int32:k = 0i32;
-    while (k < nm) {
+    for (int32:k in 0i32...nm) {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, k));
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:fname = raw decl_name(m);
@@ -2975,7 +2956,6 @@ func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
                     n.span));
             }
         }
-        k = k + 1i32;
     }
     pass NIL;
 };

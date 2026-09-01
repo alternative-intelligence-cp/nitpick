@@ -109,10 +109,8 @@ pub func:pat_binding_index = int32(Ast->:ast, PatNode:p, int32:name) never fails
     if (p.kind == PatKind.PatStructDestructure) {
         int32:bc = raw pat_bind_count(p);
         int32:bs = raw pat_bind_start(p);
-        int32:i = 0i32;
-        while (i < bc) {
+        for (int32:i in 0i32...bc) {
             if ((raw ast_id_at(ast, bs, i)) == name) { pass i; }
-            i = i + 1i32;
         }
         pass (0i32 - 1i32);
     }
@@ -367,12 +365,10 @@ pub func:p_parse_pick_expr = ExprId(Parser->:p) never fails {
 // (D-059), and the checker asks it -- one scan, one answer, rather than every
 // consumer re-deriving it.
 pub func:pick_arms_give = bool(Ast->:ast, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
         StmtNode:body = raw ast_stmt(ast, raw arm_body(arm));
         if (raw block_gives(ast, body)) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };

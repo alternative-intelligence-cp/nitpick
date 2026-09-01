@@ -273,11 +273,9 @@ pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) never fails {
     if ((raw type_args_count(tn)) > 0i32) { pass false; }
     if (raw type_name_is_builtin(tn)) { pass false; }
     int64:nm = raw type_name_index(tn);
-    int32:i = 0i32;
-    while (i < gc) {
+    for (int32:i in 0i32...gc) {
         DeclNode:gpn = raw ast_decl(ast, raw impl_generic(ast, d, i));
         if ((raw decl_name(gpn)) == (nm =>! int32)) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };

@@ -429,8 +429,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                     // is why multi-payload construction was a rung.
                     int32:pc = raw variant_payload_count(m);
                     int64:vsize = 0i64;
-                    int32:j = 0i32;
-                    while (j < pc) {
+                    for (int32:j in 0i32...pc) {
                         int32:pt = raw resolve_type(r,
                                        TypeId{ index: raw ast_id_at(r.ast,
                                                    raw variant_payload_start(m), j) },
@@ -452,7 +451,6 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         if (raw type_contains_borrow_recorded(r.types, pt, 64i32)) {
                             ehasborrow = true;
                         }
-                        j = j + 1i32;
                     }
                     if (vsize > wsize) { wsize = vsize; }
                 }

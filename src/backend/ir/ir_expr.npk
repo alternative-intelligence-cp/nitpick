@@ -1084,8 +1084,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             if (!(raw iv_is_ok(vsv))) { pass vsv; }
             vone = string_concat(vsv.ref, "");
         }
-        int32:vi = 0i32;
-        while (vi < vlanes) {
+        for (int32:vi in 0i32...vlanes) {
             string:vref = string_concat(vone, "");
             if (vcnt != 1i32) {
                 IrVal:vav = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, vi) });
@@ -1100,7 +1099,6 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
                                   raw cat4(vref, ", i64 ",
                                       int_to_string(vi => int64), ""))));
             vcur = move(vtp);
-            vi = vi + 1i32;
         }
         pass (raw iv(string_concat(vll.text, ""), move(vcur), vt));
     }
@@ -1218,8 +1216,7 @@ func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:count = raw expr_list_count(n);
     string:acc = "";
     bool:have = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:item = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         int32:itype = raw exprtypes_get(x.et, item);
         string:sref = "";
@@ -1247,7 +1244,6 @@ func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                 string_concat(cc, ", 0")));
             acc = move(cv);
         }
-        i = i + 1i32;
     }
     if (!have) {
         // An empty template is the empty string.
@@ -4120,12 +4116,10 @@ func:fn_types_same = bool(ExprEmitter->:x, int32:a, int32:b) never fails {
     }
     int32:sa = raw type_param_start_of(x.fe.ctx.types, a);
     int32:sb = raw type_param_start_of(x.fe.ctx.types, b);
-    int32:k = 0i32;
-    while (k < pc) {
+    for (int32:k in 0i32...pc) {
         if ((raw ast_id_at(x.ast, sa, k)) != (raw ast_id_at(x.ast, sb, k))) {
             pass false;
         }
-        k = k + 1i32;
     }
     pass true;
 };
@@ -4150,8 +4144,7 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
     int32:ifitn = count;
     if (iva) { ifitn = (raw type_param_count_of(x.fe.ctx.types, ift)) - 1i32; }
     string:args = "";
-    int32:i = 0i32;
-    while (i < ifitn) {
+    for (int32:i in 0i32...ifitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -4159,7 +4152,6 @@ func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fa
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
-        i = i + 1i32;
     }
     if (iva) {
         IrVal:tv = raw emit_va_tail_sync(x, ift, start, count, ifitn, n.span);
@@ -4338,8 +4330,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     if (fva) {
         ffitn = ((raw type_param_count_of(x.fe.ctx.types, cft)) - 1i32) - base;
     }
-    int32:i = 0i32;
-    while (i < ffitn) {
+    for (int32:i in 0i32...ffitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -4348,7 +4339,6 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + base + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           string_concat(", ptr ", ag)));
-        i = i + 1i32;
     }
     if (fva) {
         IrVal:tv = raw emit_va_tail_frame(x, cft, start, count, ffitn, at);
@@ -4688,11 +4678,9 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
             if (!(raw ll_is_ok(gel))) { pass (raw iv_broken(n.span)); }
             // The all-minus-one splat, spelled out: N elements is at most 64.
             string:mo = "<";
-            int32:mi = 0i32;
-            while (mi < lanes) {
+            for (int32:mi in 0i32...lanes) {
                 if (mi > 0i32) { mo = string_concat(mo, ", "); }
                 mo = raw cat3(mo, gel.text, " -1");
-                mi = mi + 1i32;
             }
             mo = string_concat(mo, ">");
             string:ngv = raw irw_temp(x.fe.w);
@@ -5919,13 +5907,11 @@ func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     int32:cft = raw exprtypes_callee_ft(x.et, cid);
     int32:dstart = raw expr_list_start(cn);
     int32:dcount = raw expr_list_count(cn);
-    int32:pi = 0i32;
-    while (pi < dcount) {
+    for (int32:pi in 0i32...dcount) {
         int32:pw = raw call_param_want(x, cft, 1i32 + pi);
         LlType:pll = raw ll_type(x.fe.ctx, raw subst_emitted_param(x.fe.ctx, pw));
         if (!(raw ll_is_ok(pll))) { pass (raw iv_from_ll_at(x, pll, pw, at)); }
         dslots = raw cat3(dslots, ", ", pll.text);
-        pi = pi + 1i32;
     }
     drop irw_frame_type(x.fe.w, raw cat4(dfr, " = type { ", dslots, " }"));
 
@@ -5959,8 +5945,7 @@ func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     // the receiver is parameter 0: the data pointer itself (`Self->`)
     string:h12 = raw fnem_slot_gep(x.fe, dfr, fr, 12i32);
     drop irw_line(x.fe.w, raw cat5("store ptr ", dat, ", ptr ", h12, ""));
-    int32:ai = 0i32;
-    while (ai < dcount) {
+    for (int32:ai in 0i32...dcount) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, dstart, ai) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -5969,7 +5954,6 @@ func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         string:ag = raw fnem_slot_gep(x.fe, dfr, fr, 13i32 + ai);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
                           string_concat(", ptr ", ag)));
-        ai = ai + 1i32;
     }
 
     // from here the standard drive, with the resume re-read from slot 0
@@ -6392,8 +6376,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int32:cfitn = count;
     if (cva) { cfitn = (raw type_param_count_of(x.fe.ctx.types, cft)) - 1i32; }
     string:args = "";
-    int32:i = 0i32;
-    while (i < cfitn) {
+    for (int32:i in 0i32...cfitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -6401,7 +6384,6 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (av.state != (raw LL_OK())) { pass av; }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
-        i = i + 1i32;
     }
     if (cva) {
         IrVal:tv = raw emit_va_tail_sync(x, cft, start, count, cfitn, n.span);
@@ -7191,8 +7173,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // closed for `sys` (a negative `int32` widened into an enormous positive
     // `int64`, silently, at every narrow argument the floor was ever given).
     string:args = "";
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
@@ -7235,7 +7216,6 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, ll, string_concat(" ", ref));
-        i = i + 1i32;
     }
 
     if (raw string_eq(sig.ret, "void")) {
@@ -7898,8 +7878,7 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
 
     int32:n = raw type_dyn_count(x.fe.ctx.types, dyn_ty);
     int32:start = raw type_dyn_start(x.fe.ctx.types, dyn_ty);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:tt = raw ast_id_at(x.ast, start, i);
         // THE SOURCE TYPE IS READ THROUGH THE BINDING (1.0.6e): inside a
         // specialization a `T:x` bound to a `dyn` slot carries `T`, and the
@@ -7923,7 +7902,6 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
                           raw cat3(raw intern_get(x.interns, sym), ", ",
                               int_to_string((i + 1i32) => int64))));
         cur = move(nx);
-        i = i + 1i32;
     }
     pass (raw iv(move(dll.text), move(cur), dyn_ty));
 };
@@ -7950,17 +7928,14 @@ pub func:emit_dyn_widen = IrVal(ExprEmitter->:x, int32:dst_ty, IrVal:v,
     int32:sn = raw type_dyn_count(x.fe.ctx.types, v.type_id);
     int32:ss = raw type_dyn_start(x.fe.ctx.types, v.type_id);
 
-    int32:i = 0i32;
-    while (i < dn) {
+    for (int32:i in 0i32...dn) {
         int32:want = raw ast_id_at(x.ast, ds, i);
         // WHICH WORD OF THE SOURCE HOLDS IT. The destination's traits are a
         // subset of the source's — `dyn_accepts` refused the reverse, which
         // would be inventing a vtable that was never built.
         int32:from = 0i32;
-        int32:j = 0i32;
-        while (j < sn) {
+        for (int32:j in 0i32...sn) {
             if ((raw ast_id_at(x.ast, ss, j)) == want) { from = j + 1i32; }
-            j = j + 1i32;
         }
         if (from == 0i32) { pass (raw iv_broken(at)); }
 
@@ -7974,7 +7949,6 @@ pub func:emit_dyn_widen = IrVal(ExprEmitter->:x, int32:dst_ty, IrVal:v,
                           raw cat3(w, ", ",
                               int_to_string((i + 1i32) => int64))));
         cur = move(nx);
-        i = i + 1i32;
     }
     pass (raw iv(move(dll.text), move(cur), dst_ty));
 };
@@ -7998,8 +7972,7 @@ struct:DynSlot = {
 func:dyn_slot_of = DynSlot(ExprEmitter->:x, int32:dyn_ty, int32:decl) never fails {
     int32:n = raw type_dyn_count(x.fe.ctx.types, dyn_ty);
     int32:start = raw type_dyn_start(x.fe.ctx.types, dyn_ty);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:tt = raw ast_id_at(x.ast, start, i);
         int32:tdecl = raw type_decl_of(x.fe.ctx.types, tt);
         if (tdecl != 0i32) {
@@ -8020,7 +7993,6 @@ func:dyn_slot_of = DynSlot(ExprEmitter->:x, int32:dyn_ty, int32:decl) never fail
                 k = k + 1i32;
             }
         }
-        i = i + 1i32;
     }
     DynSlot:miss = DynSlot{ found: false, word: 0i32, slot: 0i32 };
     pass miss;
@@ -8083,15 +8055,13 @@ func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
     }
     string:callsym = raw mangled_fn_sym(x.fe.ctx, qual, fname);
     string:args = "";
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         IrVal:av = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) });
         if (!(raw iv_is_ok(av))) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, mft, i), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
-        i = i + 1i32;
     }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
@@ -8139,8 +8109,7 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     int32:fcfitn = count;
     if (fcva) { fcfitn = (raw type_param_count_of(x.fe.ctx.types, ift)) - 1i32; }
     string:args = "";
-    int32:i = 0i32;
-    while (i < fcfitn) {
+    for (int32:i in 0i32...fcfitn) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
@@ -8148,7 +8117,6 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         if (!(raw iv_is_ok(av))) { pass av; }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
-        i = i + 1i32;
     }
     if (fcva) {
         IrVal:tv = raw emit_va_tail_sync(x, ift, start, count, fcfitn, n.span);
@@ -8269,8 +8237,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     // THE RECEIVER FILLED PARAMETER 0, so argument `i` is fit to parameter
     // `i + 1` (1.0.6e) — the same `skip` the checker's `check_args` applies.
     int32:mft = raw exprtypes_callee_ft(x.et, id);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:aid = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
@@ -8278,7 +8245,6 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         if (!(raw iv_is_ok(av))) { pass av; }
         args = string_concat(args, ", ");
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
-        i = i + 1i32;
     }
 
     // THE SYMBOL IS READ, NOT REBUILT (1.0.5b). A method's symbol carries its
@@ -8469,11 +8435,9 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
                             int32:mark = raw ast_scratch_mark(x.ast);
                             int32:rargs = raw type_args_start_of(x.fe.ctx.types, conc);
                             int32:rn = raw type_args_count_of(x.fe.ctx.types, conc);
-                            int32:k = 0i32;
-                            while (k < rn) {
+                            for (int32:k in 0i32...rn) {
                                 drop ast_scratch_push(x.ast,
                                     raw ast_id_at(x.ast, rargs, k));
-                                k = k + 1i32;
                             }
                             IdSpan:aw = raw ast_scratch_commit(x.ast, mark);
                             drop fninst_record(x.fninsts, x.ast, mdecl, aw.start,
@@ -8952,8 +8916,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
     // payload path does. `variant_payload_slot` computes offset and type the
     // same way the layout sized the area and the binding will read it.
     if (count > 1i32) {
-        int32:ci = 0i32;
-        while (ci < count) {
+        for (int32:ci in 0i32...count) {
             PayloadSlot:pslot = raw variant_payload_slot(x, etid, vname, ci);
             if (!pslot.ok) { pass (raw iv_broken(at)); }
             ExprId:cad = ExprId{ index: raw ast_id_at(x.ast, start, ci) };
@@ -8977,7 +8940,6 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
             }
             drop irw_line(x.fe.w, raw cat5("store ", cav.ll, " ", cav.ref,
                               string_concat(", ptr ", cpp)));
-            ci = ci + 1i32;
         }
     }
 
@@ -9479,14 +9441,12 @@ func:emit_global_array_const = string(ExprEmitter->:x, ExprId:eid,
     if (!(raw ll_is_ok(ell))) { pass ""; }
     int32:count = raw expr_list_count(n);
     string:out = "[ ";
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:vid = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
         string:ec = raw emit_global_const(x, vid);
         if (ec.len == 0i64) { pass ""; }
         if (i > 0i32) { out = string_concat(out, ", "); }
         out = raw cat3(out, ell.text, string_concat(" ", ec));
-        i = i + 1i32;
     }
     pass (string_concat(out, " ]"));
 };

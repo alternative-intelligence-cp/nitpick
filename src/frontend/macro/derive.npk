@@ -110,14 +110,12 @@ pub func:read_derives = DeriveSet(Ast->:ast, InternTable->:interns,
                                   DiagList->:diags, DeclNode:d, int32:attr_count,
                                   bool:is_type) never fails {
     DeriveSet:want = raw deriveset_none();
-    int32:a = 0i32;
-    while (a < attr_count) {
+    for (int32:a in 0i32...attr_count) {
         DeclNode:at = raw ast_decl(ast, raw item_attr(ast, d, a));
         string:aname = raw intern_get(interns, raw attr_name(at));
         if (raw string_eq(aname, "derive")) {
             drop read_one_derive(ast, interns, diags, at, @want, is_type);
         }
-        a = a + 1i32;
     }
     pass want;
 };
@@ -218,13 +216,11 @@ func:dv_field_is_simd = bool(Ast->:ast, DeclNode:m) never fails {
 
 func:dv_has_simd_field = bool(Ast->:ast, DeclNode:d) never fails {
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             if (raw dv_field_is_simd(ast, m)) { pass true; }
         }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -244,8 +240,7 @@ func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     s = string_concat(s, ":other) {\n");
 
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
@@ -266,7 +261,6 @@ func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
                 s = string_concat(s, ") { pass false; }\n");
             }
         }
-        i = i + 1i32;
     }
     pass (string_concat(s, "pass true; }; };\n"));
 };
@@ -294,8 +288,7 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     s = string_concat(s, ":other) {\n");
 
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
@@ -310,7 +303,6 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             s = string_concat(s, f);
             s = string_concat(s, ") { pass Ordering.Greater; }\n");
         }
-        i = i + 1i32;
     }
     pass (string_concat(s, "pass Ordering.Equal; }; };\n"));
 };
@@ -357,8 +349,7 @@ func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     s = string_concat(s, ":self) {\n");
     s = string_concat(s, "uint64:h = raw fnv_offset();\n");
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
@@ -366,7 +357,6 @@ func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             s = string_concat(s, f);
             s = string_concat(s, ".hash());\n");
         }
-        i = i + 1i32;
     }
     pass (string_concat(s, "pass h; }; };\n"));
 };
@@ -416,8 +406,7 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
@@ -428,7 +417,6 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             s = string_concat(s, f);
             s = string_concat(s, "}");
         }
-        i = i + 1i32;
     }
     pass (string_concat(s, " }`; }; };\n"));
 };
@@ -470,8 +458,7 @@ func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     s = string_concat(s, ":self) {\npick (self) {\n");
 
     int32:n = raw item_member_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             string:v = raw intern_get(interns, raw decl_name(m));
@@ -489,7 +476,6 @@ func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             if (i < (n - 1i32)) { s = string_concat(s, ","); }
             s = string_concat(s, "\n");
         }
-        i = i + 1i32;
     }
     pass (string_concat(s, "}\n}; };\n"));
 };
@@ -550,37 +536,27 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     drop ast_scratch_push(@g.ast, ac);
     drop ast_scratch_push(@g.ast, ec);
 
-    int32:q = 0i32;
-    while (q < gc) {
+    for (int32:q in 0i32...gc) {
         drop ast_scratch_push(@g.ast, (raw item_generic(@g.ast, m, q)).index);
-        q = q + 1i32;
     }
-    int32:j = 0i32;
-    while (j < mc) {
+    for (int32:j in 0i32...mc) {
         drop ast_scratch_push(@g.ast, (raw item_member(@g.ast, m, j)).index);
-        j = j + 1i32;
     }
     // THE GENERATED IMPLS GO LAST. Order among members does not decide anything —
     // collection is two-phase (D-086) — and appending keeps every index the user's
     // own declarations already had.
-    int32:k = 0i32;
-    while (k < added) {
+    for (int32:k in 0i32...added) {
         DeclId:genid = raw item_member(@g.ast, gm, k);
         // MARKED AS DERIVED, so a diagnostic about it can say so rather than
         // sending the reader to look for an `impl` they never wrote.
         drop ast_or_decl_flags(@g.ast, genid, raw DECL_DERIVED());
         drop ast_scratch_push(@g.ast, genid.index);
-        k = k + 1i32;
     }
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(@g.ast, (raw item_attr(@g.ast, m, a2)).index);
-        a2 = a2 + 1i32;
     }
-    int32:e2 = 0i32;
-    while (e2 < ec) {
+    for (int32:e2 in 0i32...ec) {
         drop ast_scratch_push(@g.ast, (raw item_extra(@g.ast, m, e2)).index);
-        e2 = e2 + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(@g.ast, mark);
     drop ast_set_decl_window(@g.ast, mod_id, w.start, w.count);
@@ -595,8 +571,7 @@ func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
     DeclNode:m = raw ast_decl(ast, mod_id);
     string:out = "";
     int32:n = raw item_member_count(ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(ast, m, i);
         DeclNode:d = raw ast_decl(ast, id);
         bool:is_struct = (d.kind == DeclKind.DeclStructDecl);
@@ -609,7 +584,6 @@ func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                           raw derive_one(ast, interns, diags, d, want, is_enum));
             }
         }
-        i = i + 1i32;
     }
     pass out;
 };
@@ -729,8 +703,7 @@ pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
                              DeclId:mod_id) never fails {
     DeclNode:m = raw ast_decl(ast, mod_id);
     int32:n = raw item_member_count(ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(ast, m, i);
         DeclNode:d = raw ast_decl(ast, id);
 
@@ -761,7 +734,6 @@ pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 drop derive_on_function(ast, interns, diags, d);
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -772,8 +744,7 @@ func:discard_set = NIL(DeriveSet:_~s) never fails { pass NIL; };
 func:derive_on_function = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
                               DeclNode:d) never fails {
     int32:n = raw fn_attr_count(ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:at = raw ast_decl(ast, raw fn_attr(ast, d, i));
         string:aname = raw intern_get(interns, raw attr_name(at));
         if (raw string_eq(aname, "derive")) {
@@ -781,7 +752,6 @@ func:derive_on_function = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags
                 "`#[derive]` generates an implementation from a type's shape — its fields, or its variants — so it belongs on a `struct` or an `enum` and there is nothing here to generate from",
                 at.span));
         }
-        i = i + 1i32;
     }
     pass NIL;
 };

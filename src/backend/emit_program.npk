@@ -743,8 +743,7 @@ func:build_vtmap = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c) never fail
 func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
                          DeclNode:mn, int32:scope) never fails {
     int32:k = raw item_member_count(@g.ast, mn);
-    int32:i = 0i32;
-    while (i < k) {
+    for (int32:i in 0i32...k) {
         DeclId:item = raw item_member(@g.ast, mn, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
@@ -776,7 +775,6 @@ func:vtmap_members = NIL(ModuleGraph->:g, TypeResolver->:tr, LlCtx->:c,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -804,8 +802,7 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
     int32:cid = raw intern_add(g.interns, move(canon));
     string:cname = raw intern_get(g.interns, cid);
     int32:k = raw item_member_count(@g.ast, mn);
-    int32:i = 0i32;
-    while (i < k) {
+    for (int32:i in 0i32...k) {
         DeclId:item = raw item_member(@g.ast, mn, i);
         DeclNode:d = raw ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
@@ -841,7 +838,6 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1583,8 +1579,7 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
             if (vm.kind == DeclKind.DeclEnumVariant) {
                 bool:owns = false;
                 int32:pc = raw variant_payload_count(vm);
-                int32:pj = 0i32;
-                while (pj < pc) {
+                for (int32:pj in 0i32...pc) {
                     PayloadSlot:ps = raw variant_payload_slot_at(tr, c.types,
                                          ast, tab, ehome, dty,
                                          raw decl_name(vm), pj);
@@ -1593,7 +1588,6 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                             owns = true;
                         }
                     }
-                    pj = pj + 1i32;
                 }
                 if (owns) {
                     string:a1 = raw cat5(" i32 ",
@@ -1836,8 +1830,7 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
             if (vm.kind == DeclKind.DeclEnumVariant) {
                 if ((raw variant_tag_of(ast, vm, vi)) == 0i32) {
                     int32:pc = raw variant_payload_count(vm);
-                    int32:pj = 0i32;
-                    while (pj < pc) {
+                    for (int32:pj in 0i32...pc) {
                         PayloadSlot:ps = raw variant_payload_slot_at(tr, c.types,
                                              ast, tab, ehome, dty,
                                              raw decl_name(vm), pj);
@@ -1865,7 +1858,6 @@ func:emit_one_vacant = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
                                                   "(ptr ", pp, ")"));
                             }
                         }
-                        pj = pj + 1i32;
                     }
                 }
             }

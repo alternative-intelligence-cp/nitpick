@@ -308,11 +308,9 @@ func:resolve_expr_inner = NIL(Resolver->:r, ExprId:id, int32:scope) never fails 
 };
 
 func:resolve_expr_window = NIL(Resolver->:r, int32:start, int32:count, int32:scope) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:x = ExprId{ index: raw ast_id_at(r.ast, start, i) };
         drop resolve_expr(r, x, scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -436,10 +434,8 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
 
 func:resolve_counted = NIL(Resolver->:r, StmtNode:s, int32:scope) never fails {
     int32:n = raw stmt_counted_argc(r.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop resolve_expr(r, raw stmt_counted_arg(r.ast, s, i), scope);
-        i = i + 1i32;
     }
     // `$` is the counter and is its own node kind (IterationVarExpr), not an
     // identifier -- so it needs no symbol and cannot be shadowed.
@@ -450,11 +446,9 @@ func:resolve_counted = NIL(Resolver->:r, StmtNode:s, int32:scope) never fails {
 };
 
 func:resolve_stmt_window = NIL(Resolver->:r, int32:start, int32:count, int32:scope) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:x = StmtId{ index: raw ast_id_at(r.ast, start, i) };
         drop resolve_stmt(r, x, scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -462,8 +456,7 @@ func:resolve_stmt_window = NIL(Resolver->:r, int32:start, int32:count, int32:sco
 // --- `pick` arms -------------------------------------------------------------------------
 
 func:resolve_arms = NIL(Resolver->:r, int32:start, int32:count, int32:scope) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:armId = raw pick_arm_at(r.ast, start, i);
         StmtNode:arm = raw ast_stmt(r.ast, armId);
 
@@ -473,7 +466,6 @@ func:resolve_arms = NIL(Resolver->:r, int32:start, int32:count, int32:scope) nev
         // The guard sees the pattern's bindings: `(Pair(a, b)) where (a > b)`.
         drop resolve_expr(r, raw arm_guard(arm), inner);
         drop resolve_stmt(r, raw arm_body(arm), inner);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -502,12 +494,10 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         int32:n = raw pat_enum_bind_count(r.ast, p);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             int32:nm = raw pat_enum_bind(r.ast, p, i);
             discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
                                 raw SYM_PAT(), id.index, 0i32));
-            i = i + 1i32;
         }
         pass NIL;
     }
@@ -517,12 +507,10 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
 
 func:bind_pattern_names = NIL(Resolver->:r, PatId:id, int32:start,
                               int32:count, int32:scope) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         int32:nm = raw ast_id_at(r.ast, start, i);
         discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
                             raw SYM_PAT(), id.index, 0i32));
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -760,10 +748,8 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             }
         }
         int32:n = raw impl_member_count(r.ast, d);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             drop resolve_decl(r, raw impl_member(r.ast, d, i), inner);
-            i = i + 1i32;
         }
         pass NIL;
     }
@@ -779,10 +765,8 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
 
 func:resolve_members = NIL(Resolver->:r, DeclNode:d, int32:scope) never fails {
     int32:n = raw item_member_count(r.ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop resolve_decl(r, raw item_member(r.ast, d, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -893,12 +877,10 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) neve
         // the false self-reference D-165's aggregate globals hit, 1.0.9d).
         if (e.kind == ExprKind.ExprStructLiteralExpr) {
             int32:spairs = (raw expr_list_count(e)) / 2i32;
-            int32:sli = 0i32;
-            while (sli < spairs) {
+            for (int32:sli in 0i32...spairs) {
                 ExprId:sv = ExprId{ index: raw ast_id_at(r.ast,
                                 raw expr_list_start(e), (sli * 2i32) + 1i32) };
                 if (raw init_reaches(r, sv, target, fuel - 1i32)) { pass true; }
-                sli = sli + 1i32;
             }
             pass false;
         }
@@ -939,11 +921,9 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) neve
 
 func:init_reaches_window = bool(Resolver->:r, int32:start, int32:count,
                                 int32:target, int32:fuel) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:x = ExprId{ index: raw ast_id_at(r.ast, start, i) };
         if (raw init_reaches(r, x, target, fuel - 1i32)) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -955,8 +935,7 @@ func:init_reaches_window = bool(Resolver->:r, int32:start, int32:count,
 pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(r.ast, mod_id);
     int32:n = raw item_member_count(r.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:item = raw item_member(r.ast, m, i);
         DeclNode:d = raw ast_decl(r.ast, item);
         if (d.kind == DeclKind.DeclGlobalDecl) {
@@ -972,7 +951,6 @@ pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) nev
                 }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };

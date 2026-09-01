@@ -166,10 +166,8 @@ pub func:path_normalise = string(string:p) never fails {
         } else {
             starts[nseg] = out;
             nseg = nseg + 1i64;
-            int64:k = 0i64;
-            while (k < seg_len) {
+            for (int64:k in 0i64...seg_len) {
                 buf[out + k] = p.ptr[seg_start + k] =>! int8;
-                k = k + 1i64;
             }
             out = out + seg_len;
             buf[out] = (raw SLASH()) =>! int8;

@@ -312,11 +312,9 @@ pub func:stmt_is_classified = bool(StmtKind:k) never fails {
 };
 
 pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         drop check_stmt(e, x);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -359,8 +357,7 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, StmtNode:s, int32:selt,
             if (pn3.kind == PatKind.PatStructDestructure) {
                 bn = raw pat_bind_count(pn3);
             }
-            int32:b = 0i32;
-            while (b < bn) {
+            for (int32:b in 0i32...bn) {
                 int32:bt = raw ast_id_at(e.ast, bw, b);
                 // `_` BINDS NOTHING, so it takes no copy and owns nothing —
                 // `(Res.Note(_))` is the spelling for "this variant, whatever
@@ -386,7 +383,6 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, StmtNode:s, int32:selt,
                             arm.span));
                     }
                 }
-                b = b + 1i32;
             }
         }
         i = i + 1i32;
@@ -446,8 +442,7 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
                 int32:mark = raw ast_scratch_mark(e.ast);
-                int32:j = 0i32;
-                while (j < bc) {
+                for (int32:j in 0i32...bc) {
                     int32:pt = 0i32;
                     if (j < (raw variant_payload_count(m))) {
                         pt = raw resolve_type(@r,
@@ -456,7 +451,6 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
                             home);
                     }
                     drop ast_scratch_push(e.ast, pt);
-                    j = j + 1i32;
                 }
                 IdSpan:w = raw ast_scratch_commit(e.ast, mark);
                 drop ast_set_pat_payload(e.ast, pid2, w.start => int64);
@@ -479,14 +473,12 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     int32:bstart = raw pat_bind_start(pn);
     TypeResolver:r = raw etyper_resolver(e);
     int32:mark = raw ast_scratch_mark(e.ast);
-    int32:j = 0i32;
-    while (j < bc) {
+    for (int32:j in 0i32...bc) {
         int32:fname = raw ast_id_at(e.ast, bstart, j);
         FieldInfo:fi = raw struct_field(@r, selt, fname, e.scope);
         int32:ft = 0i32;
         if (fi.found) { ft = fi.type_id; }
         drop ast_scratch_push(e.ast, ft);
-        j = j + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(e.ast, mark);
     drop ast_set_pat_payload(e.ast, pid2, w.start => int64);
@@ -494,10 +486,8 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
 };
 
 func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         drop check_stmt(e, raw pick_arm_at(e.ast, start, i));
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -570,10 +560,8 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
 func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
     int32:n = raw stmt_counted_argc(e.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         discard(raw type_of_expr(e, raw stmt_counted_arg(e.ast, s, i)));
-        i = i + 1i32;
     }
     e.counted_depth = e.counted_depth + 1i32;
     drop check_stmt(e, raw stmt_counted_body(s));
@@ -1043,10 +1031,8 @@ func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
 pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(e.ast, mod_id);
     int32:n = raw item_member_count(e.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop check_decl(e, raw item_member(e.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1092,10 +1078,8 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             pass NIL;
         }
         int32:mn2 = raw item_member_count(e.ast, d);
-        int32:q = 0i32;
-        while (q < mn2) {
+        for (int32:q in 0i32...mn2) {
             drop check_decl(e, raw item_member(e.ast, d, q), inner);
-            q = q + 1i32;
         }
         pass NIL;
     }
@@ -1115,14 +1099,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         e.self_type = raw impl_self_type(e, d, scope);
 
         int32:mn = raw impl_member_count(e.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             DeclId:mid = raw impl_member(e.ast, d, j);
             DeclNode:mm = raw ast_decl(e.ast, mid);
             if (mm.kind == DeclKind.DeclFunctionDecl) {
                 drop check_function(e, mid, scope);
             }
-            j = j + 1i32;
         }
 
         e.enclosing = saved_enc;
@@ -1153,14 +1135,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         e.self_trait = id.index;
 
         int32:tn = raw item_member_count(e.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             DeclId:tmid = raw item_member(e.ast, d, k);
             DeclNode:tm = raw ast_decl(e.ast, tmid);
             if (tm.kind == DeclKind.DeclFunctionDecl) {
                 drop check_function(e, tmid, scope);
             }
-            k = k + 1i32;
         }
 
         e.enclosing = saved_enc;
@@ -1258,12 +1238,10 @@ func:is_const_initialiser = bool(ExprTyper->:e, ExprId:eid) never fails {
     }
     if (n.kind == ExprKind.ExprArrayLiteralExpr) {
         int32:c = raw expr_list_count(n);
-        int32:i = 0i32;
-        while (i < c) {
+        for (int32:i in 0i32...c) {
             ExprId:vid = ExprId{ index: raw ast_id_at(e.ast,
                              raw expr_list_start(n), i) };
             if (!(raw is_const_initialiser(e, vid))) { pass false; }
-            i = i + 1i32;
         }
         pass true;
     }
@@ -1309,8 +1287,7 @@ func:gives_shape_ok = bool(ExprTyper->:e, int32:t) never fails {
     TypeResolver:sr = raw etyper_resolver(e);
     int32:home = raw symtab_home_scope(e.tab, sdecl, e.scope);
     int32:nm = raw item_member_count(e.ast, sd);
-    int32:kk = 0i32;
-    while (kk < nm) {
+    for (int32:kk in 0i32...nm) {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, sd, kk));
         if (m.kind == DeclKind.DeclFieldDecl) {
             // THROUGH THE LAYOUT WALK, NEVER A RAW RE-RESOLVE (1.1.12c). The
@@ -1326,7 +1303,6 @@ func:gives_shape_ok = bool(ExprTyper->:e, int32:t) never fails {
                 if (raw type_contains_channel(@sr, ft, e.scope, 64i32)) { pass false; }
             }
         }
-        kk = kk + 1i32;
     }
     pass true;
 };

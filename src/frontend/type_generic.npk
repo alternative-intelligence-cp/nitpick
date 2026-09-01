@@ -280,11 +280,9 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:start = raw type_param_start_of(r.types, t);
 
     int32:mark = raw ast_scratch_mark(r.ast);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop ast_scratch_push(r.ast,
             raw type_subst(r, raw ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
 
@@ -302,11 +300,9 @@ func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     int32:n = raw type_dyn_count(r.types, t);
     int32:start = raw type_dyn_start(r.types, t);
     int32:mark = raw ast_scratch_mark(r.ast);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop ast_scratch_push(r.ast,
             raw type_subst(r, raw ast_id_at(r.ast, start, i), g, at, fuel - 1i32, impls));
-        i = i + 1i32;
     }
     // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
     // `dyn B & A` are one interned type with one layout.
@@ -362,8 +358,7 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
     int32:astart = raw type_args_start_of(r.types, e.type_id);
     int32:acount = raw type_args_count_of(r.types, e.type_id);
 
-    int32:i = 0i32;
-    while (i < acount) {
+    for (int32:i in 0i32...acount) {
         // ARITY WAS ALREADY DECIDED at the annotation, where the counts are, so a
         // short window here means that error was already reported and this stops
         // rather than reading past the parameter list to say it again.
@@ -373,7 +368,6 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
                                   raw ast_id_at(r.ast, astart, i),
                                   gpid, dnode, e.at);
         }
-        i = i + 1i32;
     }
     pass NIL;
 };

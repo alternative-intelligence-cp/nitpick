@@ -1697,8 +1697,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     if (pn.kind == PatKind.PatStructDestructure) {
         int32:sbc = raw pat_bind_count(pn);
         int32:sbs = raw pat_bind_start(pn);
-        int32:si = 0i32;
-        while (si < sbc) {
+        for (int32:si in 0i32...sbc) {
             int32:fname = raw ast_id_at(x.ast, sbs, si);
             FieldInfo:fi = raw struct_field(x.tr, sel_tid, fname, x.scope);
             if (!fi.found) { pass (raw iv_broken(at)); }
@@ -1715,7 +1714,6 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             if (fslot.len == 0i64) { pass (raw iv_broken(at)); }
             drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
                               string_concat(", ptr ", fslot)));
-            si = si + 1i32;
         }
         pass (raw iv_nil());
     }
@@ -1771,8 +1769,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                       string_concat(", ptr ", mtmp)));
     int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
     int32:bc = raw pat_enum_bind_count(x.ast, pn);
-    int32:bi = 0i32;
-    while (bi < bc) {
+    for (int32:bi in 0i32...bc) {
         PayloadSlot:bs = raw variant_payload_slot(x, sel_tid, vn2, bi);
         if (!bs.ok) { pass (raw iv_broken(at)); }
         LlType:bpll = raw ll_type(x.fe.ctx, bs.type_id);
@@ -1798,7 +1795,6 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
         if (bslot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
                           string_concat(", ptr ", bslot)));
-        bi = bi + 1i32;
     }
     pass (raw iv_nil());
 };
@@ -1829,8 +1825,7 @@ func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     int32:start = raw fnem_pick_start(x.fe);
     int32:count = raw fnem_pick_count_of(x.fe);
     int32:seq = raw fnem_pick_seq_of(x.fe);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         if ((raw arm_label(arm)) == want) {
             IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
@@ -1838,7 +1833,6 @@ func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             drop s_br(x, raw pk_label(seq, i));
             pass (raw iv_nil());
         }
-        i = i + 1i32;
     }
     pass (raw iv_broken(s.span));
 };
@@ -1874,14 +1868,12 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_STRUCT())) {
         chain = true;
     }
-    int32:ci2 = 0i32;
-    while (ci2 < count) {
+    for (int32:ci2 in 0i32...count) {
         StmtNode:carm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                            raw pick_arm_start(s), ci2));
         if (!(raw expr_is_none(raw arm_guard(carm)))) { chain = true; }
         PatNode:cpn = raw ast_pat(x.ast, raw arm_pattern(carm));
         if (cpn.kind == PatKind.PatRange) { chain = true; }
-        ci2 = ci2 + 1i32;
     }
     if (chain) {
         pass (raw emit_pick_chain(x, sel, sel_tid, disc, move(disc_ll),
@@ -1973,8 +1965,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 
     string:first_t = raw pk_named(seq, ".t0");
     drop s_br(x, first_t);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:armid = raw pick_arm_at(x.ast, start, i);
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
@@ -2113,7 +2104,6 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         if (!(raw iv_is_ok(b))) { pass b; }
         drop fnem_release(x.fe, mark);
         drop s_br(x, done_l);
-        i = i + 1i32;
     }
     drop s_start(x, raw pk_named(seq, ".none"));
     drop irw_line(x.fe.w, "unreachable");
@@ -2406,8 +2396,7 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                         grt = raw type_elem(x.fe.ctx.types, grt);
                     }
                     int32:gn = raw gives_chan_count(x, grt);
-                    int32:gi = 0i32;
-                    while (gi < gn) {
+                    for (int32:gi in 0i32...gn) {
                         int32:k2 = 0i32;
                         while ((raw fnem_cross_find(x.fe, sid.index,
                                                     30i32 + k2)) >= 0i64) {
@@ -2415,7 +2404,6 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                         }
                         drop fnem_cross_add(x.fe, sid.index, 30i32 + k2,
                                             0i32, "i64");
-                        gi = gi + 1i32;
                     }
                 }
             }
@@ -2476,16 +2464,14 @@ func:scan_counted_slots = NIL(ExprEmitter->:x, StmtId:sid) never fails {
 // this mirror and the emitter is loud.
 func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                            int32:arm_count) never fails {
-    int32:i = 0i32;
-    while (i < arm_count) {
+    for (int32:i in 0i32...arm_count) {
         StmtId:armid = raw pick_arm_at(x.ast, arm_start, i);
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         if (pn.kind == PatKind.PatStructDestructure) {
             int32:sbc = raw pat_bind_count(pn);
             int32:sbs = raw pat_bind_start(pn);
-            int32:si = 0i32;
-            while (si < sbc) {
+            for (int32:si in 0i32...sbc) {
                 FieldInfo:fi = raw struct_field(x.tr, sel_tid,
                                    raw ast_id_at(x.ast, sbs, si), x.scope);
                 if (fi.found) {
@@ -2495,7 +2481,6 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                                             fi.type_id, move(fll.text));
                     }
                 }
-                si = si + 1i32;
             }
         }
         if (pn.kind == PatKind.PatEnumDestructure) {
@@ -2517,8 +2502,7 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                     } else {
                         int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
                         int32:bc = raw pat_enum_bind_count(x.ast, pn);
-                        int32:bi = 0i32;
-                        while (bi < bc) {
+                        for (int32:bi in 0i32...bc) {
                             PayloadSlot:bs = raw variant_payload_slot(x, sel_tid,
                                                  vn2, bi);
                             if (bs.ok) {
@@ -2528,13 +2512,11 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                                         7i32 + bi, bs.type_id, move(bpll.text));
                                 }
                             }
-                            bi = bi + 1i32;
                         }
                     }
                 } }
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -2614,12 +2596,10 @@ func:scan_expr = IrVal(ExprEmitter->:x, ExprId:id, int32:fuel) never fails {
 
 func:scan_expr_window = IrVal(ExprEmitter->:x, int32:start, int32:count,
                               int32:fuel) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         IrVal:r = raw scan_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
                                 fuel - 1i32);
         if (!(raw iv_is_ok(r))) { pass r; }
-        i = i + 1i32;
     }
     pass (raw iv_nil());
 };
@@ -2819,11 +2799,9 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
 // A counted loop's bound expressions, scanned for hidden value-picks.
 func:scan_counted_args = IrVal(ExprEmitter->:x, StmtNode:s, int32:fuel) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         IrVal:r = raw scan_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
         if (!(raw iv_is_ok(r))) { pass r; }
-        i = i + 1i32;
     }
     pass (raw iv_nil());
 };

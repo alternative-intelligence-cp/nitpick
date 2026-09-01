@@ -439,8 +439,7 @@ func:clone_struct_literal = ExprId(Expander->:x, ExprNode:n, int32:fuel) never f
     int32:start = raw expr_list_start(n);
     int32:cnt = raw expr_list_count(n);
     int32:mark = raw ast_scratch_mark(x.ast);
-    int32:i = 0i32;
-    while (i < cnt) {
+    for (int32:i in 0i32...cnt) {
         if ((i % 2i32) == 0i32) {
             drop ast_scratch_push(x.ast, raw ast_id_at(x.ast, start, i));
         } else {
@@ -448,7 +447,6 @@ func:clone_struct_literal = ExprId(Expander->:x, ExprNode:n, int32:fuel) never f
             ExprId:c = raw clone_expr(x, v, fuel);
             drop ast_scratch_push(x.ast, c.index);
         }
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_expr(x.ast, n.kind, n.span, n.a, w.start, w.count, n.payload));
@@ -456,12 +454,10 @@ func:clone_struct_literal = ExprId(Expander->:x, ExprNode:n, int32:fuel) never f
 
 func:clone_expr_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fuel) never fails {
     int32:mark = raw ast_scratch_mark(x.ast);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         ExprId:c = raw clone_expr(x, e, fuel);
         drop ast_scratch_push(x.ast, c.index);
-        i = i + 1i32;
     }
     pass (raw ast_scratch_commit(x.ast, mark));
 };
@@ -503,10 +499,8 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         drop ast_scratch_push(x.ast, (raw stmt_decl_limit(x.ast, s)).index);
         int32:ac = raw stmt_decl_attr_count(x.ast, s);
         drop ast_scratch_push(x.ast, ac);
-        int32:i = 0i32;
-        while (i < ac) {
+        for (int32:i in 0i32...ac) {
             drop ast_scratch_push(x.ast, (raw stmt_decl_attr(x.ast, s, i)).index);
-            i = i + 1i32;
         }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, w.start, w.count, s.payload));
@@ -618,11 +612,9 @@ func:clone_counted = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fails {
     int32:mark = raw ast_scratch_mark(x.ast);
     drop ast_scratch_push(x.ast, (raw stmt_counted_invariant(x.ast, s)).index);
     drop ast_scratch_push(x.ast, argc);
-    int32:i = 0i32;
-    while (i < argc) {
+    for (int32:i in 0i32...argc) {
         ExprId:a = raw clone_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel);
         drop ast_scratch_push(x.ast, a.index);
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_stmt(x.ast, s.kind, s.span, b.index, w.start, w.count, s.payload));
@@ -630,12 +622,10 @@ func:clone_counted = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fails {
 
 func:clone_stmt_window = IdSpan(Expander->:x, int32:start, int32:count, int32:fuel) never fails {
     int32:mark = raw ast_scratch_mark(x.ast);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:st = StmtId{ index: raw ast_id_at(x.ast, start, i) };
         StmtId:c = raw clone_stmt(x, st, fuel);
         drop ast_scratch_push(x.ast, c.index);
-        i = i + 1i32;
     }
     pass (raw ast_scratch_commit(x.ast, mark));
 };
@@ -765,21 +755,15 @@ func:clone_impl = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, gc);
 
-    int32:g = 0i32;
-    while (g < gc) {
+    for (int32:g in 0i32...gc) {
         drop ast_scratch_push(x.ast, (raw impl_generic(x.ast, d, g)).index);
-        g = g + 1i32;
     }
-    int32:m = 0i32;
-    while (m < mc) {
+    for (int32:m in 0i32...mc) {
         DeclId:c = raw clone_decl(x, raw impl_member(x.ast, d, m), fuel);
         drop ast_scratch_push(x.ast, c.index);
-        m = m + 1i32;
     }
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(x.ast, (raw impl_attr(x.ast, d, a2)).index);
-        a2 = a2 + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
@@ -801,26 +785,18 @@ func:clone_item = DeclId(Expander->:x, DeclNode:d, int32:fuel) never fails {
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, ec);
 
-    int32:i = 0i32;
-    while (i < gc) {
+    for (int32:i in 0i32...gc) {
         drop ast_scratch_push(x.ast, (raw item_generic(x.ast, d, i)).index);
-        i = i + 1i32;
     }
-    int32:m = 0i32;
-    while (m < mc) {
+    for (int32:m in 0i32...mc) {
         DeclId:c = raw clone_decl(x, raw item_member(x.ast, d, m), fuel);
         drop ast_scratch_push(x.ast, c.index);
-        m = m + 1i32;
     }
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(x.ast, (raw item_attr(x.ast, d, a2)).index);
-        a2 = a2 + 1i32;
     }
-    int32:e2 = 0i32;
-    while (e2 < ec) {
+    for (int32:e2 in 0i32...ec) {
         drop ast_scratch_push(x.ast, (raw item_extra(x.ast, d, e2)).index);
-        e2 = e2 + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
@@ -942,10 +918,8 @@ func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) never fails {
 };
 
 func:blank_window = NIL(Expander->:x, int32:start, int32:count, int32:fuel) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         drop blank_tree(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, fuel);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1029,12 +1003,10 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 
     int32:bcount = raw macro_body_count(x.ast, md);
     int32:mark = raw ast_scratch_mark(x.ast);
-    int32:i = 0i32;
-    while (i < bcount) {
+    for (int32:i in 0i32...bcount) {
         StmtId:cs = raw clone_stmt(x, StmtId{ index: raw macro_body_at(x.ast, md, i) },
                                      raw CLONE_FUEL());
         drop ast_scratch_push(x.ast, cs.index);
-        i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
 
@@ -1128,24 +1100,20 @@ func:expand_in_expr = bool(Expander->:x, ExprId:id) never fails {
 
 func:expand_in_window = bool(Expander->:x, int32:start, int32:count) never fails {
     bool:hit = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         if (raw expand_in_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) })) {
             hit = true;
         }
-        i = i + 1i32;
     }
     pass hit;
 };
 
 func:expand_in_stmt_window = bool(Expander->:x, int32:start, int32:count) never fails {
     bool:hit = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         if (raw expand_in_stmt(x, StmtId{ index: raw ast_id_at(x.ast, start, i) })) {
             hit = true;
         }
-        i = i + 1i32;
     }
     pass hit;
 };
@@ -1259,10 +1227,8 @@ func:expand_in_stmt = bool(Expander->:x, StmtId:id) never fails {
 func:expand_in_counted = bool(Expander->:x, StmtNode:s) never fails {
     bool:hit = false;
     int32:argc = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < argc) {
+    for (int32:i in 0i32...argc) {
         if (raw expand_in_expr(x, raw stmt_counted_arg(x.ast, s, i))) { hit = true; }
-        i = i + 1i32;
     }
     if (raw expand_in_stmt(x, raw stmt_counted_body(s))) { hit = true; }
     pass hit;
@@ -1315,11 +1281,9 @@ func:expand_in_decl = bool(Expander->:x, DeclId:id) never fails {
     if (d.kind == DeclKind.DeclExternBlock) {
         bool:hit = false;
         int32:n = raw decl_win_count(d);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             if (raw expand_in_decl(x, DeclId{ index: raw ast_id_at(x.ast,
                                      raw decl_win_start(d), i) })) { hit = true; }
-            i = i + 1i32;
         }
         pass hit;
     }
@@ -1341,19 +1305,15 @@ func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) never fails 
     int32:ec = raw item_extra_count(x.ast, d);
 
     bool:found = false;
-    int32:scan = 0i32;
-    while (scan < mc) {
+    for (int32:scan in 0i32...mc) {
         DeclNode:sm = raw ast_decl(x.ast, raw item_member(x.ast, d, scan));
         if (sm.kind == DeclKind.DeclMacroSplice) { found = true; }
-        scan = scan + 1i32;
     }
     if (!found) {
         // Still descend: a method body may hold an invocation of its own.
         bool:hit = false;
-        int32:k = 0i32;
-        while (k < mc) {
+        for (int32:k in 0i32...mc) {
             if (raw expand_in_decl(x, raw item_member(x.ast, d, k))) { hit = true; }
-            k = k + 1i32;
         }
         pass hit;
     }
@@ -1364,15 +1324,12 @@ func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) never fails 
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, ec);
 
-    int32:g = 0i32;
-    while (g < gc) {
+    for (int32:g in 0i32...gc) {
         drop ast_scratch_push(x.ast, (raw item_generic(x.ast, d, g)).index);
-        g = g + 1i32;
     }
 
     int32:emitted = 0i32;
-    int32:i = 0i32;
-    while (i < mc) {
+    for (int32:i in 0i32...mc) {
         DeclId:mid = raw item_member(x.ast, d, i);
         DeclNode:mn = raw ast_decl(x.ast, mid);
         if (mn.kind == DeclKind.DeclMacroSplice) {
@@ -1381,18 +1338,13 @@ func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) never fails 
             drop ast_scratch_push(x.ast, mid.index);
             emitted = emitted + 1i32;
         }
-        i = i + 1i32;
     }
 
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(x.ast, (raw item_attr(x.ast, d, a2)).index);
-        a2 = a2 + 1i32;
     }
-    int32:e2 = 0i32;
-    while (e2 < ec) {
+    for (int32:e2 in 0i32...ec) {
         drop ast_scratch_push(x.ast, (raw item_extra(x.ast, d, e2)).index);
-        e2 = e2 + 1i32;
     }
 
     drop ast_scratch_set(x.ast, mark, 1i32, emitted);
@@ -1401,10 +1353,8 @@ func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) never fails 
 
     DeclNode:d2 = raw ast_decl(x.ast, id);
     int32:n2 = raw item_member_count(x.ast, d2);
-    int32:j = 0i32;
-    while (j < n2) {
+    for (int32:j in 0i32...n2) {
         discard(raw expand_in_decl(x, raw item_member(x.ast, d2, j)));
-        j = j + 1i32;
     }
     pass true;
 };
@@ -1416,18 +1366,14 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
     int32:ac = raw impl_attr_count(x.ast, d);
 
     bool:found = false;
-    int32:scan = 0i32;
-    while (scan < mc) {
+    for (int32:scan in 0i32...mc) {
         DeclNode:sm = raw ast_decl(x.ast, raw impl_member(x.ast, d, scan));
         if (sm.kind == DeclKind.DeclMacroSplice) { found = true; }
-        scan = scan + 1i32;
     }
     if (!found) {
         bool:hit = false;
-        int32:k = 0i32;
-        while (k < mc) {
+        for (int32:k in 0i32...mc) {
             if (raw expand_in_decl(x, raw impl_member(x.ast, d, k))) { hit = true; }
-            k = k + 1i32;
         }
         pass hit;
     }
@@ -1439,15 +1385,12 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, gc);
 
-    int32:g = 0i32;
-    while (g < gc) {
+    for (int32:g in 0i32...gc) {
         drop ast_scratch_push(x.ast, (raw impl_generic(x.ast, d, g)).index);
-        g = g + 1i32;
     }
 
     int32:emitted = 0i32;
-    int32:i = 0i32;
-    while (i < mc) {
+    for (int32:i in 0i32...mc) {
         DeclId:mid = raw impl_member(x.ast, d, i);
         DeclNode:mn = raw ast_decl(x.ast, mid);
         if (mn.kind == DeclKind.DeclMacroSplice) {
@@ -1456,13 +1399,10 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
             drop ast_scratch_push(x.ast, mid.index);
             emitted = emitted + 1i32;
         }
-        i = i + 1i32;
     }
 
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(x.ast, (raw impl_attr(x.ast, d, a2)).index);
-        a2 = a2 + 1i32;
     }
 
     drop ast_scratch_set(x.ast, mark, 2i32, emitted);
@@ -1471,10 +1411,8 @@ func:expand_impl_window = bool(Expander->:x, DeclId:id) never fails {
 
     DeclNode:d2 = raw ast_decl(x.ast, id);
     int32:n2 = raw impl_member_count(x.ast, d2);
-    int32:j = 0i32;
-    while (j < n2) {
+    for (int32:j in 0i32...n2) {
         discard(raw expand_in_decl(x, raw impl_member(x.ast, d2, j)));
-        j = j + 1i32;
     }
     pass true;
 };
@@ -1561,8 +1499,7 @@ func:record_site = NIL(Expander->:x, DeclNode:md, Span:site) never fails {
     int32:hi = 0i32;
     bool:first = true;
 
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         int32:idx = raw macro_body_at(x.ast, md, i);
         Span:sp = md.span;
         if (kind == (raw MACRO_BODY_DECLS())) {
@@ -1573,7 +1510,6 @@ func:record_site = NIL(Expander->:x, DeclNode:md, Span:site) never fails {
         if (first) { lo = sp.line; hi = sp.line; file = sp.file; first = false; }
         if (sp.line < lo) { lo = sp.line; }
         if (sp.line > hi) { hi = sp.line; }
-        i = i + 1i32;
     }
 
     // THE CLOSING BRACE IS NOT A MEMBER, so a diagnostic on the body's last line
@@ -1596,8 +1532,7 @@ func:record_site = NIL(Expander->:x, DeclNode:md, Span:site) never fails {
 // list being scanned.
 pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
     int64:n = raw diaglist_count(d);
-    int64:i = 0i64;
-    while (i < n) {
+    for (int64:i in 0i64...n) {
         Diagnostic:g = raw diaglist_at(d, i);
         int64:s = 0i64;
         while (s < x.sites.v.count) {
@@ -1621,7 +1556,6 @@ pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) never fails {
             }
             s = s + 1i64;
         }
-        i = i + 1i64;
     }
     pass NIL;
 };
@@ -1645,8 +1579,7 @@ pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
 pub func:collect_macros = NIL(Expander->:x, DeclId:mod_id) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(x.ast, m, i);
         DeclNode:d = raw ast_decl(x.ast, id);
         if (d.kind == DeclKind.DeclMacroDecl) {
@@ -1655,7 +1588,6 @@ pub func:collect_macros = NIL(Expander->:x, DeclId:mod_id) never fails {
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop collect_macros(x, id);
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1680,11 +1612,9 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
     // NOTHING TO DO IS THE COMMON CASE, and rebuilding a window that did not change
     // would churn the pool on every round of every module.
     bool:found_splice = false;
-    int32:scan = 0i32;
-    while (scan < mc) {
+    for (int32:scan in 0i32...mc) {
         DeclNode:s = raw ast_decl(x.ast, raw item_member(x.ast, m, scan));
         if (s.kind == DeclKind.DeclMacroSplice) { found_splice = true; }
-        scan = scan + 1i32;
     }
     if (!found_splice) {
         // NO SPLICE AMONG THE MEMBERS IS NOT NOTHING TO DO. An invocation also
@@ -1692,8 +1622,7 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
         // walked whether or not the member list itself changed — and a nested
         // module may have a splice of its own.
         bool:nested = false;
-        int32:k = 0i32;
-        while (k < mc) {
+        for (int32:k in 0i32...mc) {
             DeclId:id = raw item_member(x.ast, m, k);
             DeclNode:d = raw ast_decl(x.ast, id);
             if (d.kind == DeclKind.DeclModuleDecl) {
@@ -1701,7 +1630,6 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
             } else {
                 if (raw expand_in_decl(x, id)) { nested = true; }
             }
-            k = k + 1i32;
         }
         pass nested;
     }
@@ -1712,15 +1640,12 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
     drop ast_scratch_push(x.ast, ac);
     drop ast_scratch_push(x.ast, ec);
 
-    int32:g = 0i32;
-    while (g < gc) {
+    for (int32:g in 0i32...gc) {
         drop ast_scratch_push(x.ast, (raw item_generic(x.ast, m, g)).index);
-        g = g + 1i32;
     }
 
     int32:emitted = 0i32;
-    int32:i = 0i32;
-    while (i < mc) {
+    for (int32:i in 0i32...mc) {
         DeclId:id = raw item_member(x.ast, m, i);
         DeclNode:d = raw ast_decl(x.ast, id);
         if (d.kind == DeclKind.DeclMacroSplice) {
@@ -1729,18 +1654,13 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
             drop ast_scratch_push(x.ast, id.index);
             emitted = emitted + 1i32;
         }
-        i = i + 1i32;
     }
 
-    int32:a2 = 0i32;
-    while (a2 < ac) {
+    for (int32:a2 in 0i32...ac) {
         drop ast_scratch_push(x.ast, (raw item_attr(x.ast, m, a2)).index);
-        a2 = a2 + 1i32;
     }
-    int32:e2 = 0i32;
-    while (e2 < ec) {
+    for (int32:e2 in 0i32...ec) {
         drop ast_scratch_push(x.ast, (raw item_extra(x.ast, m, e2)).index);
-        e2 = e2 + 1i32;
     }
 
     drop ast_scratch_set(x.ast, mark, 1i32, emitted);
@@ -1751,8 +1671,7 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
     // node rather than from `m`, whose window is the one just replaced.
     DeclNode:m2 = raw ast_decl(x.ast, mod_id);
     int32:n2 = raw item_member_count(x.ast, m2);
-    int32:j = 0i32;
-    while (j < n2) {
+    for (int32:j in 0i32...n2) {
         DeclId:id2 = raw item_member(x.ast, m2, j);
         DeclNode:d2 = raw ast_decl(x.ast, id2);
         if (d2.kind == DeclKind.DeclModuleDecl) {
@@ -1760,7 +1679,6 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) never fails {
         } else {
             discard(raw expand_in_decl(x, id2));
         }
-        j = j + 1i32;
     }
     pass true;
 };
@@ -1924,8 +1842,7 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
     drop record_site(x, md, d.span);
 
     int32:bcount = raw macro_body_count(x.ast, md);
-    int32:i = 0i32;
-    while (i < bcount) {
+    for (int32:i in 0i32...bcount) {
         if (site == (raw SITE_STRUCT())) {
             DeclId:f = raw splice_field(x, StmtId{ index: raw macro_body_at(x.ast, md, i) });
             drop ast_scratch_push(x.ast, f.index);
@@ -1934,7 +1851,6 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) never fails {
             DeclId:c = raw clone_decl(x, src, raw CLONE_FUEL());
             drop ast_scratch_push(x.ast, c.index);
         }
-        i = i + 1i32;
     }
 
     x.params_start = saved_ps;

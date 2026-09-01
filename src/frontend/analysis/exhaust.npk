@@ -152,12 +152,10 @@ pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
 
     bool:has_wild = false;
     bool:has_err = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         if (raw arm_is_wildcard(x.ast, arm)) { has_wild = true; }
         if (raw arm_is_err(x.ast, arm))      { has_err = true; }
-        i = i + 1i32;
     }
 
     // A TWISTED SELECTOR, WHERE THE WILDCARD DOES NOT ABSORB EVERYTHING.
@@ -196,13 +194,11 @@ pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
     // does. A struct has no listable values and no `==` (D-169), so a
     // destructure (or a wildcard) is the only way a struct `pick` is exhaustive.
     if (kind == (raw TY_STRUCT())) {
-        int32:si = 0i32;
-        while (si < count) {
+        for (int32:si in 0i32...count) {
             StmtNode:sarm = raw ast_stmt(x.ast,
                                 raw pick_arm_at(x.ast, start, si));
             PatNode:spn = raw ast_pat(x.ast, raw arm_pattern(sarm));
             if (spn.kind == PatKind.PatStructDestructure) { pass NIL; }
-            si = si + 1i32;
         }
     }
 
@@ -242,8 +238,7 @@ func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
     int32:missing = 0i32;
     int32:named = 0i32;
 
-    int32:m = 0i32;
-    while (m < members) {
+    for (int32:m in 0i32...members) {
         DeclNode:v = raw ast_decl(x.ast, raw item_member(x.ast, d, m));
         if (v.kind == DeclKind.DeclEnumVariant) {
             int32:vname = raw decl_name(v);
@@ -256,7 +251,6 @@ func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
                 }
             }
         }
-        m = m + 1i32;
     }
 
     if (missing == 0i32) { pass NIL; }
@@ -273,11 +267,9 @@ func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
 };
 
 func:variant_is_covered = bool(Ast->:ast, int32:vname, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
         if ((raw arm_variant(ast, arm)) == vname) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -287,13 +279,11 @@ func:variant_is_covered = bool(Ast->:ast, int32:vname, int32:start, int32:count)
 func:check_bool_coverage = NIL(Exhaust->:x, int32:start, int32:count, Span:at) never fails {
     bool:t = false;
     bool:f = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         int32:which = raw arm_bool(x.ast, arm);
         if (which == 1i32) { t = true; }
         if (which == 2i32) { f = true; }
-        i = i + 1i32;
     }
     if (t) {
         if (f) { pass NIL; }
@@ -319,8 +309,7 @@ func:check_bool_coverage = NIL(Exhaust->:x, int32:start, int32:count, Span:at) n
 
 func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails {
     bool:sealed = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:aid = raw pick_arm_at(x.ast, start, i);
         StmtNode:arm = raw ast_stmt(x.ast, aid);
 
@@ -344,7 +333,6 @@ func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) never fails 
         }
 
         if (raw arm_is_wildcard(x.ast, arm)) { sealed = true; }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -360,8 +348,7 @@ func:path_matched_before = bool(Exhaust->:x, StmtNode:arm, int32:start,
     // one is not provably dead, so guarded arms never participate.
     if (!(raw expr_is_none(raw arm_guard(arm)))) { pass false; }
     PatNode:p = raw ast_pat(x.ast, raw arm_pattern(arm));
-    int32:i = 0i32;
-    while (i < upto) {
+    for (int32:i in 0i32...upto) {
         StmtNode:prev = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         PatNode:q = raw ast_pat(x.ast, raw arm_pattern(prev));
         bool:prev_guarded = (!(raw expr_is_none(raw arm_guard(prev))));
@@ -370,13 +357,11 @@ func:path_matched_before = bool(Exhaust->:x, StmtNode:arm, int32:start,
                 int32:pc = raw pat_enum_segment_count(x.ast, p);
                 if (pc == (raw pat_enum_segment_count(x.ast, q))) {
                     bool:all = true;
-                    int32:k = 0i32;
-                    while (k < pc) {
+                    for (int32:k in 0i32...pc) {
                         if ((raw pat_enum_segment(x.ast, p, k))
                                 != (raw pat_enum_segment(x.ast, q, k))) {
                             all = false;
                         }
-                        k = k + 1i32;
                     }
                     if (all) { pass true; }
                 }
@@ -392,18 +377,15 @@ func:path_matched_before = bool(Exhaust->:x, StmtNode:arm, int32:start,
                 }
             }
         } }
-        i = i + 1i32;
     }
     pass false;
 };
 
 func:variant_matched_before = bool(Exhaust->:x, int32:vname, int32:start,
                                    int32:upto) never fails {
-    int32:i = 0i32;
-    while (i < upto) {
+    for (int32:i in 0i32...upto) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         if ((raw arm_variant(x.ast, arm)) == vname) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -418,10 +400,8 @@ func:variant_matched_before = bool(Exhaust->:x, int32:vname, int32:start,
 pub func:exhaust_module = NIL(Exhaust->:x, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop exhaust_decl(x, raw item_member(x.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -441,19 +421,15 @@ func:exhaust_decl = NIL(Exhaust->:x, DeclId:id, int32:scope) never fails {
     }
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop exhaust_decl(x, raw impl_member(x.ast, d, j), scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop exhaust_decl(x, raw item_member(x.ast, d, k), scope);
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -557,20 +533,16 @@ func:exhaust_stmt = NIL(Exhaust->:x, StmtId:id, int32:depth) never fails {
 };
 
 func:exhaust_arms = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         drop exhaust_stmt(x, raw pick_arm_at(x.ast, start, i), depth);
-        i = i + 1i32;
     }
     pass NIL;
 };
 
 func:exhaust_counted = NIL(Exhaust->:x, StmtNode:s, int32:depth) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop exhaust_expr(x, raw stmt_counted_arg(x.ast, s, i), depth);
-        i = i + 1i32;
     }
     drop exhaust_stmt(x, raw stmt_counted_body(s), depth);
     pass NIL;
@@ -651,11 +623,9 @@ func:exhaust_expr = NIL(Exhaust->:x, ExprId:id, int32:depth) never fails {
 };
 
 func:exhaust_window = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         drop exhaust_expr(x, e, depth);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -680,11 +650,9 @@ func:exhaust_window = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) ne
 // `ERR:` arm silently look like a definite-assignment problem.
 pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes,
                                 ExprId:selector, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
         if (raw arm_is_wildcard(ast, arm)) { pass true; }
-        i = i + 1i32;
     }
 
     int32:ty = raw exprtypes_get(etypes, selector);
@@ -695,15 +663,13 @@ pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes
         if (decl == 0i32) { pass false; }
         DeclNode:d = raw ast_decl(ast, DeclId{ index: decl });
         int32:members = raw item_member_count(ast, d);
-        int32:m = 0i32;
-        while (m < members) {
+        for (int32:m in 0i32...members) {
             DeclNode:v = raw ast_decl(ast, raw item_member(ast, d, m));
             if (v.kind == DeclKind.DeclEnumVariant) {
                 if (!(raw variant_is_covered(ast, raw decl_name(v), start, count))) {
                     pass false;
                 }
             }
-            m = m + 1i32;
         }
         pass true;
     }
@@ -711,13 +677,11 @@ pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes
     if (kind == (raw TY_BOOL())) {
         bool:t = false;
         bool:f = false;
-        int32:j = 0i32;
-        while (j < count) {
+        for (int32:j in 0i32...count) {
             StmtNode:arm2 = raw ast_stmt(ast, raw pick_arm_at(ast, start, j));
             int32:which = raw arm_bool(ast, arm2);
             if (which == 1i32) { t = true; }
             if (which == 2i32) { f = true; }
-            j = j + 1i32;
         }
         if (t) { pass f; }
         pass false;

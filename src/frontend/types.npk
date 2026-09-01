@@ -642,10 +642,8 @@ pub func:tern_digits = int32(int32:base, int32:bits) never fails {
 // most-negative carrier value spare for ERR.
 pub func:tern_bound = int64(int32:base, int32:digits) never fails {
     int64:p = 1i64;
-    int32:i = 0i32;
-    while (i < digits) {
+    for (int32:i in 0i32...digits) {
         p = p * (base => int64);
-        i = i + 1i32;
     }
     pass ((p - 1i64) / 2i64);
 };
@@ -1115,8 +1113,7 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
     if (count < 1i32) { words = 2i32; }
     int64:size = (words => int64) * 8i64;
     string:spelled = "dyn ";
-    int32:j = 0i32;
-    while (j < count) {
+    for (int32:j in 0i32...count) {
         if (j > 0i32) { spelled = string_concat(spelled, " & "); }
         int32:tn = raw type_name(t, raw ast_id_at(ast, start, j));
         if (raw intern_is_none(tn)) {
@@ -1124,7 +1121,6 @@ pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
         } else {
             spelled = string_concat(spelled, raw intern_get(interns, tn));
         }
-        j = j + 1i32;
     }
     pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, size, 8i32,
                         raw intern_add(interns, move(spelled))));

@@ -107,12 +107,10 @@ pub async func:diag_report<W: Writer> = NIL(W->:sink, DiagList->:list,
                                             SourceManager->:sm, Duration:within) {
     drop diaglist_sort(list);
     int64:n = raw diaglist_count(list);
-    int64:d = 0i64;
-    while (d < n) {
+    for (int64:d in 0i64...n) {
         string:ln = string_concat(raw diag_line(raw diaglist_at(list, d), sm),
                                   "\n");
         discard(await sink.write(string_bytes(ln), within) ?| 0i64);
-        d = d + 1i64;
     }
     if (list.overflowed) {
         string:ov = string_concat(raw diag_overflow_line(), "\n");

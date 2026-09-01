@@ -136,15 +136,13 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              count: size =>! int32,
                              cross: raw list_init::<int32>(16i64),
                              odecl: raw list_init::<int32>(16i64) };
-    int64:i = 0i64;
-    while (i < size) {
+    for (int64:i in 0i64...size) {
         t.items[i] = 0i32;
         t.known[i] = false;
         t.callee[i] = 0i32;
         t.callee_sym[i] = 0i32;
         t.callee_trait[i] = 0i32;
         t.callee_ft[i] = 0i32;
-        i = i + 1i64;
     }
     pass t;
 };

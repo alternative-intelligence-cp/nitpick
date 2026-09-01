@@ -133,13 +133,11 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                              bound: m3 =>! wild int32->,
                              has_bound: m4 =>! wild bool->,
                              count: size =>! int32, changed: false };
-    int64:i = 0i64;
-    while (i < size) {
+    for (int64:i in 0i64...size) {
         t.acq_min[i] = raw LOCK_NONE_MIN();
         t.acq_max[i] = raw LOCK_NONE_MAX();
         t.bound[i] = 0i32;
         t.has_bound[i] = false;
-        i = i + 1i64;
     }
 
     Locks:x = Locks{ ast: ast, tab: tab, types: types, etypes: etypes,
@@ -205,8 +203,7 @@ func:no_level = LevelRead() never fails {
 
 func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
     int32:n = raw fn_contract_count(x.ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         VerifyNode:v = raw ast_verify(x.ast, raw fn_contract(x.ast, d, i));
         if ((raw contract_kind(v)) == (raw CONTRACT_ACQUIRES())) {
             ExprId:c = raw contract_cond(v);
@@ -226,7 +223,6 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) never fails {
                                      bounded: raw contract_is_bounded(v) };
             pass r;
         }
-        i = i + 1i32;
     }
     pass (raw no_level());
 };
@@ -356,10 +352,8 @@ pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) never fails {
     x.cur_scope = scope;
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop locks_seed_decl(x, raw item_member(x.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -392,19 +386,15 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
     }
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop locks_seed_decl(x, raw impl_member(x.ast, d, j), scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop locks_seed_decl(x, raw item_member(x.ast, d, k), scope);
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -416,10 +406,8 @@ pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) never fails {
     x.cur_scope = scope;
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop locks_widen_decl(x, raw item_member(x.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -454,21 +442,17 @@ func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) never fails {
         // method may not acquire at all" would become "unless the implementation
         // forgot to say so".
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             DeclId:mid = raw impl_member(x.ast, d, j);
             drop inherit_trait_bound(x, id.index, mid);
             drop locks_widen_decl(x, mid, scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop locks_widen_decl(x, raw item_member(x.ast, d, k), scope);
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -654,10 +638,8 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
 
 func:locks_counted = NIL(Locks->:x, int32:caller, StmtNode:s, int32:held, int32:depth) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop locks_expr(x, caller, raw stmt_counted_arg(x.ast, s, i), held, depth);
-        i = i + 1i32;
     }
     drop locks_stmt(x, caller, raw stmt_counted_body(s), held, depth);
     pass NIL;
@@ -779,11 +761,9 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
 
 func:locks_window = NIL(Locks->:x, int32:caller, int32:start, int32:count,
                         int32:held, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         drop locks_expr(x, caller, e, held, depth);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -911,8 +891,7 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never 
 
     int32:name = raw decl_name(m);
     int32:n = raw item_member_count(x.ast, td);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:tm = raw ast_decl(x.ast, raw item_member(x.ast, td, i));
         if (tm.kind == DeclKind.DeclFunctionDecl) {
             if ((raw decl_name(tm)) == name) {
@@ -926,7 +905,6 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never 
                 pass NIL;
             }
         }
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -939,11 +917,9 @@ func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) never 
 // the identity is already in hand and does not need reconstructing.
 func:impl_trait_of = int32(Locks->:x, int32:impl_decl) never fails {
     int32:n = raw impl_count(x.impls);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         ImplEntry:e = raw impl_at(x.impls, i);
         if (e.decl == impl_decl) { pass e.trait_id; }
-        i = i + 1i32;
     }
     pass 0i32;
 };

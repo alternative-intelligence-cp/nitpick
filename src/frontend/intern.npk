@@ -50,12 +50,10 @@ pub func:string_eq = bool(string:a, string:b) never fails {
 pub func:name_lt = bool(string:a, string:b) never fails {
     int64:n = a.len;
     if (b.len < n) { n = b.len; }
-    int64:i = 0i64;
-    while (i < n) {
+    for (int64:i in 0i64...n) {
         if (a.ptr[i] != b.ptr[i]) {
             pass (a.ptr[i] < b.ptr[i]);
         }
-        i = i + 1i64;
     }
     pass (a.len < b.len);
 };

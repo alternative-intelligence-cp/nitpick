@@ -185,8 +185,7 @@ pub func:state_new = AssignState(int32:n) never fails {
                                  sealed: m6 =>! wild bool->,
                                  sealed_firm: m7 =>! wild bool->,
                                  count: size =>! int32 };
-    int64:i = 0i64;
-    while (i < size) {
+    for (int64:i in 0i64...size) {
         s.must[i] = false;
         s.may[i] = false;
         s.moved[i] = false;
@@ -194,7 +193,6 @@ pub func:state_new = AssignState(int32:n) never fails {
         s.checked[i] = false;
         s.sealed[i] = false;
         s.sealed_firm[i] = false;
-        i = i + 1i64;
     }
     pass s;
 };
@@ -429,10 +427,8 @@ func:assign_err = NIL(Assign->:x, move string:code, move string:msg, Span:sp) ne
 pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop assign_decl(x, raw item_member(x.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -549,20 +545,16 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
 
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop assign_decl(x, raw impl_member(x.ast, d, j), scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
 
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop assign_decl(x, raw item_member(x.ast, d, k), scope);
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -599,11 +591,9 @@ func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) never fails {
 
     if (s.kind == StmtKind.StmtBlockStmt) {
         int32:n = raw stmt_list_count(s);
-        int32:i = 0i32;
-        while (i < n) {
+        for (int32:i in 0i32...n) {
             StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
             if (raw stmt_exits(x, sub, depth - 1i32)) { pass true; }
-            i = i + 1i32;
         }
         pass false;
     }
@@ -786,11 +776,9 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
 
 func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
                               int32:count, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
         drop assign_stmt(x, st, sid, depth);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -835,10 +823,8 @@ func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth
 
 func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop assign_expr(x, st, raw stmt_counted_arg(x.ast, s, i), depth);
-        i = i + 1i32;
     }
     drop assign_loop_body(x, st, raw stmt_counted_body(s), depth);
     pass NIL;
@@ -908,8 +894,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     AssignState:pristine = raw state_copy(st);
     AssignState:mayacc = raw state_copy(st);
 
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:aid = raw pick_arm_at(x.ast, start, i);
         StmtNode:arm = raw ast_stmt(x.ast, aid);
 
@@ -937,7 +922,6 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
                 seen = true;
             }
         }
-        i = i + 1i32;
     }
 
     // Only an exhaustive `pick` with at least one arm that falls through can make
@@ -965,15 +949,13 @@ func:field_declares_fixed = bool(Assign->:x, int32:sty, int32:name) never fails 
     if (sd == 0i32) { pass false; }
     DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sd });
     int32:n = raw item_member_count(x.ast, d);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             if ((raw decl_name(m)) == name) {
                 pass (((raw field_quals(m)) & (raw QUAL_FIXED())) != 0i32);
             }
         }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -1275,11 +1257,9 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
 
 func:assign_expr_window = NIL(Assign->:x, AssignState:st, int32:start,
                               int32:count, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         drop assign_expr(x, st, e, depth);
-        i = i + 1i32;
     }
     pass NIL;
 };

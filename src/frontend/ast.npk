@@ -637,10 +637,8 @@ pub func:ast_scratch_push = NIL(Ast->:ast, int32:value) never fails {
 pub func:ast_scratch_commit = IdSpan(Ast->:ast, int32:mark) never fails {
     int32:n = (raw ast_smark(ast.scratch.count)) - mark;
     int32:start = raw ast_id(ast.ids.count);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop ast_ids_push(ast, ast.scratch.items[(mark + i) => int64]);
-        i = i + 1i32;
     }
     ast.scratch.count = mark => int64;
     IdSpan:sp = IdSpan{ start: start, count: n };

@@ -118,10 +118,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32,
                        reporting: false, changed: false };
-    int64:i = 0i64;
-    while (i < size) {
+    for (int64:i in 0i64...size) {
         x.holds[i] = false;
-        i = i + 1i64;
     }
     pass x;
 };
@@ -191,10 +189,8 @@ func:escape_holds = bool(Escape->:x, int32:stmt_index) never fails {
 pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) never fails {
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         drop escape_decl(x, raw item_member(x.ast, m, i), scope);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -219,20 +215,16 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) never fails {
 
     if (d.kind == DeclKind.DeclImplDecl) {
         int32:mn = raw impl_member_count(x.ast, d);
-        int32:j = 0i32;
-        while (j < mn) {
+        for (int32:j in 0i32...mn) {
             drop escape_decl(x, raw impl_member(x.ast, d, j), scope);
-            j = j + 1i32;
         }
         pass NIL;
     }
 
     if (d.kind == DeclKind.DeclTraitDecl) {
         int32:tn = raw item_member_count(x.ast, d);
-        int32:k = 0i32;
-        while (k < tn) {
+        for (int32:k in 0i32...tn) {
             drop escape_decl(x, raw item_member(x.ast, d, k), scope);
-            k = k + 1i32;
         }
         pass NIL;
     }
@@ -400,21 +392,17 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
 };
 
 func:escape_stmt_window = NIL(Escape->:x, int32:start, int32:count) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
         drop escape_stmt(x, sid);
-        i = i + 1i32;
     }
     pass NIL;
 };
 
 func:escape_counted = NIL(Escape->:x, StmtNode:s) never fails {
     int32:n = raw stmt_counted_argc(x.ast, s);
-    int32:i = 0i32;
-    while (i < n) {
+    for (int32:i in 0i32...n) {
         discard(raw escape_expr(x, raw stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH()));
-        i = i + 1i32;
     }
     drop escape_stmt(x, raw stmt_counted_body(s));
     pass NIL;
@@ -495,11 +483,9 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
         int32:gcount = raw expr_generic_count(n);
         int32:start = (raw expr_list_start(n)) + gcount;
         int32:count = (raw expr_list_count(n)) - gcount;
-        int32:i = 0i32;
-        while (i < count) {
+        for (int32:i in 0i32...count) {
             ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
             if (!(raw borrows_all_rooted_at(x, a, sym, d))) { pass false; }
-            i = i + 1i32;
         }
         pass true;
     }
@@ -551,11 +537,9 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
         int32:gcount = raw expr_generic_count(n);
         int32:start = (raw expr_list_start(n)) + gcount;
         int32:count = (raw expr_list_count(n)) - gcount;
-        int32:i = 0i32;
-        while (i < count) {
+        for (int32:i in 0i32...count) {
             ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
             if (!(raw borrows_only_param_rooted(x, a, d))) { pass false; }
-            i = i + 1i32;
         }
         pass true;
     }
@@ -1332,11 +1316,9 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     }
     if (rule_b) {
         drop escape_connect(x, recv);
-        int32:j = 0i32;
-        while (j < count) {
+        for (int32:j in 0i32...count) {
             ExprId:b = ExprId{ index: raw ast_id_at(x.ast, start, j) };
             drop escape_connect(x, b);
-            j = j + 1i32;
         }
     }
 
@@ -1352,11 +1334,9 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
 func:refuse_param_dests = NIL(Escape->:x, ExprId:recv, int32:start,
                               int32:count, wild int32->:lb_tys, int32:lbn) never fails {
     drop refuse_one_param_dest(x, recv, lb_tys, lbn);
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         drop refuse_one_param_dest(x, a, lb_tys, lbn);
-        i = i + 1i32;
     }
     pass NIL;
 };
@@ -1412,11 +1392,9 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
 // descends every nested statement window — a `give` can sit under an `if`
 // inside an arm — asking `escape_expr` about each operand.
 func:gives_borrowy = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
         if (raw stmt_gives_borrowy(x, raw arm_body(arm), depth)) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -1446,11 +1424,9 @@ func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) never fails 
     if (s.kind == StmtKind.StmtPickStmt) {
         int32:pc = raw pick_arm_count(s);
         int32:ps = raw pick_arm_start(s);
-        int32:i = 0i32;
-        while (i < pc) {
+        for (int32:i in 0i32...pc) {
             StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, ps, i));
             if (raw stmt_gives_borrowy(x, raw arm_body(parm), depth - 1i32)) { pass true; }
-            i = i + 1i32;
         }
         pass false;
     }
@@ -1487,11 +1463,9 @@ func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
     if (t == 0i32) { pass false; }
     if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
     int32:pointee = raw type_elem(x.types, t);
-    int32:i = 0i32;
-    while (i < lbn) {
+    for (int32:i in 0i32...lbn) {
         if (raw can_connect(x, pointee, lb_tys[i => int64],
                               raw CARRY_FUEL())) { pass true; }
-        i = i + 1i32;
     }
     pass false;
 };
@@ -1775,11 +1749,9 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
 
 func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) never fails {
     bool:found = false;
-    int32:i = 0i32;
-    while (i < count) {
+    for (int32:i in 0i32...count) {
         ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         if (raw escape_expr(x, e, depth)) { found = true; }
-        i = i + 1i32;
     }
     pass found;
 };
