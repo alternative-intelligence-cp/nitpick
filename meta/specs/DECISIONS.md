@@ -15298,3 +15298,173 @@ lands on every `failsafe` in the tree, and a false trap breaks a real compile
 where a failing test stage does not. **Declined — treating 0 as "yes".**
 Conservative in the safe direction and refuses legal programs, including the
 compiler's own two sites.
+
+## D-228 — the orchestration rules are normative — **SETTLED (user decision, 2026-09-01)**
+
+`meta/roadmap/ORCHESTRATION.md`'s R1–R9 and its §4 cumulative-prefix
+integration protocol become decision text; the essay stays beside the 1.5 and
+1.6 READMEs as rationale, the split D-218 and `1.5/README.md` already use.
+
+The reason it needs the force only a decision has is this project's own
+most-repeated failure: **a rule believed in force because a document says so**.
+R2 (one writer in `src/`), R5 (a red under parallel load is a stop sign, never
+a retry) and R6 (a parallel agent that finds a compiler defect must not work
+around it) constrain future sessions' behaviour, and a document nobody is bound
+by is the next stale document.
+
+**The three answered sub-questions:**
+
+1. **Fable orchestrates, Opus executes.** It matches the standing split, and
+   R8's role — freeze calls, red triage, record composition, no code — is
+   judgment-dense and output-light, which is the shape the budget favours.
+2. **Calibration is SEQUENCED behind OWED-1**, not run before it. Calibrate at
+   6 on a known-green tree requiring all green including the deadline-bearing
+   set (`channel_deadline`, `driver_deadline`, `executor_sleep`, anything that
+   joins a thread), then 12 only if 6 is clean. Calibrating first would measure
+   against a known unknown: the one red the scheme has ever produced is still
+   undiagnosed, and under R5 a flake and a real concurrency defect are
+   indistinguishable — the worst possible ambiguity for this language.
+3. **R6 is ABSOLUTE**, with a clarifying sentence rather than an exception: it
+   covers the shipped artifact and its gates — `src/`, `runtime/`, `lib/`, the
+   prelude, and the harness's verdict logic. The argument is the record: three
+   timing defects that all looked like flakiness first, and R6's own text that
+   "a workaround buried in library code outlives the bug, is never removed, and
+   is indefensible at verification time". Any named exception is the door the
+   rule exists to close.
+
+## D-229 — the diagnostic walk is generic and borrowing, and prints span-sorted — **SETTLED (user decision, 2026-09-01)**
+
+A mechanism correction to D-209's adoption scope and to D-075's design, on the
+D-208/D-216/D-224 precedent that a ratified decision's own predictions are
+worth testing.
+
+**The defect in the mechanism.** `npkg test`'s capture-and-compare — the thing
+D-075 routed diagnostics through `dyn Writer` *for* — cannot be built on an
+owned `dyn`. A `dyn` coercion MOVES, so a capture buffer handed to the erased
+walk is consumed and cannot be read back. Capture requires the sink to
+reference storage the CALLER retains, and every sanctioned way to reference
+external state from inside an owned `dyn` is now closed: a channel endpoint is
+refused at the coercion (D-215), a borrow inside an erased value is D-207's own
+stated hazard, and a `shared_arena` slot is written once before its handle
+escapes (D-154) so it cannot back an accumulating buffer. **D-075's premise
+predates D-180, D-207 and D-215 and did not survive the language's own
+hardening.**
+
+**The decision.** The walk becomes generic and borrowing —
+`diag_report<W: Writer>(W->:sink, DiagList->, SourceManager->, Duration)`. The
+caller keeps the concrete writer and reads it after the walk returns: the
+drivers pass a borrow of their `TextWriter<ByteWriter>`, and `npkg test` passes
+a borrow of a capture writer. `diaglist_render(Sink->)` retires into the same
+walk, so the second walk OWED-4 recorded goes away rather than being kept.
+
+**What is preserved is the goal that mattered.** The five-copies problem step 1
+solved was source duplication, not instance count — ONE walk in source is what
+`check_one_renderer` pins, and a generic keeps it. The generic is also the
+verification-friendlier shape: monomorphized direct calls instead of a vtable
+indirection, which both Z3 and Astrée prefer.
+
+**AND THE WALK SORTS BY SPAN.** `diaglist_render` already sorted and the driver
+path never has; once the walks unify, one walk has one ordering and the
+question answers itself. The honest argument is NOT D-204: the driver path is
+already deterministic run-to-run. It is that sorting makes output a function of
+the diagnostic SET rather than of pass discovery order, which is what keeps
+1.4.8's capture goldens stable when a future pass reorders — and `diaglist_sort`
+is stable, so cause-before-consequence at one span survives.
+
+**Declined — a borrowing `dyn`** (`dyn Writer->` plus admitting borrow-carrying
+concretes into `dyn`): two new rules, and it parks a borrow where no analysis
+can see it. **Declined — keeping the second walk**: two mechanisms for one job,
+and capture would then test a walk production never runs. **Declined — a
+read-back method on `Writer`**: pollutes the language's I/O surface for a
+harness need.
+
+## D-230 — D-044 implemented: the flag types are real, as one kind — **SETTLED (user decision, 2026-09-01)**
+
+G-1 closed by implementing the settled decision rather than superseding it. Its
+premise holds unchanged: `PROT_READ` where an `oflags` belongs compiles today
+and fails at run time as an unrelated-looking bug — the D-042 error class,
+already eliminated for descriptors — and a user type named `oflags` silently
+shadows a decided builtin that exists nowhere.
+
+**The shape.** ONE type kind, `TY_FLAGS`, with the family in the operand
+window, exactly as `TY_KERNEL` carries five distinct types in one kind with one
+`i32` lowering and compare-only semantics. Members are compiler-known constants
+GENERATED from one marked-region authority (the `gen_tables.py` pattern;
+D-196's "seven SI base names compiler-known, the derived set in the prelude" is
+the precedent). Operations are `| & ~` within a family plus `==`/`!=`; no
+arithmetic and no ordering, because a flag set is not a number; mixing families
+refuses with its own code. The crossings are `flags => int32` outbound, lossless
+and confined to syscall wrappers, and `int32 =>! flags` inbound for the
+read-back direction, the acknowledged-loss spelling. **No new grammar
+anywhere** — seven builtin type names and N typed constants, zero productions,
+which is what makes this cheap before the frontend freeze and expensive after.
+
+**The timeline is what makes it urgent.** 1.4.8's `lib/nfs.npk` grows exactly
+the flag-taking surface these types exist for (D-213's `open_beneath`/`openat2`
+riders), and landing that API typed beats migrating it later. A new type kind
+after "built once, in full" is declared is the token renumbering OPEN_DECISIONS
+§5 exists to prevent. B-7's walker instrument makes the sweep enumerable up
+front, the way 1.3.1 ran it for `TY_SIMD`.
+
+**Declined — supersede with library enums.** Nitpick enums are tagged unions,
+not bitmasks, and there is no operator overloading, so the library spelling is
+`oflags_or(a, b)` — two spellings for `|`, which is a blueprint violation, and
+strictly weaker than what D-044 already settled.
+
+## D-231 — the integer-width set is split: sub-byte struck, the wide ladder pinned — **SETTLED (user decision, 2026-09-01)**
+
+G-2, answered in two halves because the set contains two different questions.
+
+**STRUCK: the sub-byte widths** (`int1/2/4` and their `u1/u2/u4`/`i1/i2/i4`
+suffixes). Measured: zero uses anywhere in `src/`, `lib/`, `tests/` or
+`tools/`, and `tt_int` really does compute size 0 and align 0 for them. There
+is no semantic story left for them to tell — `bool`, `trit` and `nit` already
+OWN the sub-byte meanings, and in this language a type's semantic meaning
+outranks its machine representation. A range-limited byte is what
+`limit<Rules>` delivers in 1.5, so a stored-as-byte `int4` would be a second
+range-limiting mechanism beside it. The suffix table is generated from
+LEXICAL_REFERENCE §6.2, so the strike is a marked-region edit plus a
+regeneration: one authority, cheap now, freeze-priced later.
+
+**PINNED: the wide ladder** (512/1024/2048/4096). It already lowers natively,
+`uint2048` is load-bearing for D-193's Dragon4, and the concern that wide
+division would mint libcalls was measured and does not hold: `udiv i512` and
+`mul i512` through `llc -O2` on the pinned toolchain produce ZERO undefined
+symbols. What is owed is the layout rows TYPE_REFERENCE never had — size =
+bits/8, align = min(bits/8, 16), the 0.9.3 rule `int_align` already
+implements — and one conformance case exercising arithmetic INCLUDING `/` and
+`%` plus a D-210 overflow trap at ≥512 bits, so the pin is executed rather than
+asserted. 4096 stays as headroom above the used 2048: it already lowers, and it
+costs one table row and one test.
+
+## D-232 — the Astrée input format: C-only is the working default, with a named trigger — **SETTLED (user decision, 2026-09-01)**
+
+C-19's external half stays external — the AbsInt contact is the action, and
+asking the question list does not start the 30-day clock. Its internal half is
+decidable now, and this is the decision rule rather than a deferral.
+
+**Adopt C-only as the working default with a NAMED TRIGGER: if no first-party
+answer has arrived by 1.5's midpoint, the C emitter starts anyway.** The
+asymmetry decides it. The research is strong that Astrée ingests C and C++
+source only, but cites no first-party documentation. The cost of wrongly
+assuming C is bounded — emitter work that still yields a second lowering to
+diff the first against, which is evidence in its own right. The cost of wrongly
+assuming IR ingestion is discovering a C-emission requirement inside a
+non-renewable 30 days, which is the disqualifying branch.
+
+**What proceeds now, without waiting:** the C-emitter design note is written
+during the 1.4 close, because it is cheap and it sharpens questions 4–7 for the
+contact. Its shape is already determined by decisions in force — the emitter
+reads the SAME recorded-type and layout authority the IR emitter does (one
+truth, never a second table), the D-150 allocator presents as static pools, the
+D-071 mapping is "each thread's executor loop is the analyzed task root", and
+the stub list is `npkrt`'s enumerable bottom: `sys` trampolines, futex parking,
+clone/execve.
+
+**And the validation instrument is decided with it: differential execution.**
+The emitted C, compiled by an off-the-shelf C compiler on the workbench, must
+reproduce the full program suite's exit codes. That makes the C emitter's
+fidelity measured rather than argued, which is the opt-O2 and absent-fact
+philosophy applied a third time — and it is workbench, not artifact, so the
+zero-dependency rule is untouched (it governs what ships, never the tools that
+check it).

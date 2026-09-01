@@ -1,14 +1,14 @@
 # Orchestration — one agent directing many, after the core language
 
-> **PROPOSED, not settled.** Written 2026-08-30 during the 1.4.7 family-10
-> stand-down, at the user's request. Next free decision number is **D-228**
-> (D-224 and D-225 went to `exit`-means-process-exit and the vacant-value
-> rule; D-226 to the index rule and D-227 to the ensuring layout query). The
-> questions
-> this document cannot answer itself are
-> in §8; everything else is a recommendation with the measurement or the
-> incident behind it. Nothing here authorises spawning an agent — that is the
-> user's call, per task, as always.
+> **RATIFIED as D-228** (user decision, 2026-09-01). R1–R9 and §4's
+> cumulative-prefix protocol are NORMATIVE; this file stays as their rationale,
+> the split D-218 and `1.5/README.md` already use. §8's four questions are
+> answered in the decision: Fable orchestrates and Opus executes, calibration
+> is sequenced behind OWED-1 rather than run before it, and R6 is absolute over
+> the shipped artifact and its gates. Written 2026-08-30 during the 1.4.7
+> family-10 stand-down; everything here carries the measurement or the incident
+> behind it. Nothing here authorises spawning an agent — that is the user's
+> call, per task, as always.
 
 ## 1. What this is, and what it is not
 
@@ -182,11 +182,10 @@ and the parallel-array ten are `src/` work and stay serial by R2.
 
 The rules above are recommendations with evidence. These are decisions:
 
-1. **Does this become a decision (D-228) with a lettered handle in
-   `OPEN_DECISIONS.md`, or does it stay an architecture document beside the
-   1.5 and 1.6 READMEs?** Recommendation: a decision, because R2, R5 and R6
-   constrain future sessions' behaviour and a document nobody is bound by is
-   the next stale document.
+1. ~~Does this become a decision?~~ **ANSWERED — D-228.** R1–R9 and §4 are
+   normative; this file is their rationale. The reason stands as written: R2,
+   R5 and R6 constrain future sessions' behaviour, and a document nobody is
+   bound by is the next stale document.
 2. **Who plays orchestrator — a Fable session, an Opus session, or the
    user?** R8 makes it a real role with real judgement (freeze calls, red
    triage, record composition) and no code output. Recommendation: Fable,

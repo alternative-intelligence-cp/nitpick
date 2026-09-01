@@ -137,43 +137,75 @@ walk's crossing decisions never changed. A harness run would have taken fifty.
 
 ## OWED — open items, none of them lost
 
-Work, in no particular order. Each is real, each was found by measurement, and
-none is blocking step 2's remaining families.
+Ratified 2026-09-01 as **D-228…D-232** after a Fable analysis pass; what
+remains below is execution, not deliberation.
 
-1. **`extern_c_driver.npk` under load** (above) — deadline too tight, or a race
-   load makes reachable? The parallel width stays at 2 until this is answered.
-2. **The `escape.npk` `ident_holds` belt** — line ~605 indexes `holds` where
-   its siblings guard. In-range TODAY by construction (line 604 gates on
-   `SYM_STMT`), but the belt is owed and **must fail CLOSED, which here is
-   `pass true`**, not the siblings' `pass false`: `place_vouchable` inverts the
-   answer, so a false-on-OOB guard would make an unseeable symbol vouchable.
-3. **`check_instantiations` runs BEFORE the escape walk can still record** —
-   `pipeline.npk:345` decides, and the escape walk's deep field walk can record
-   a first-seen instance after that. Reachable shape: a bound-violating generic
-   field type in a struct no checked expression touches. Move the decide pass
-   after the last pass that can record, or sweep the tail and assert the table
-   did not grow.
-4. **`npkg test`'s capture-and-compare is BLOCKED by design, not by effort** —
-   a `dyn` coercion MOVES, so a capture buffer handed to `diag_report` is
-   consumed and cannot be read back. Needs a borrowing Writer, or a capture
-   sink the walk does not own. `diaglist_render(Sink->)` remains a second walk
-   until it is answered. USER-FACING DESIGN QUESTION.
-5. **Should diagnostics print span-sorted?** `diaglist_render` sorts; the
-   driver path never did, and I kept driver behaviour identical rather than
-   change output ordering inside a receiver migration. D-204's reproducibility
-   argues yes. USER DECISION.
-6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-228** and
-   unanswered: does it become a numbered decision, who plays orchestrator, what
-   width to calibrate at, and is "never work around a compiler defect"
-   absolute.
-7. ~~**CLAUDE.md's quickcheck example cites `tests/types/rejection/borrows.npk`,
-   which does not exist**~~ — CLOSED 2026-09-01. Repointed to
-   `tests/analysis/rejection/borrows.npk`; a borrow rule is refused by an
-   analysis, not the type checker, which is why the path was wrong.
-8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** but are
-   PERMANENT language rules, in a suite whose README says its contents graduate
-   as rungs land. These never will. Fix is D-215's shape: a TYPE code with a
-   span, cases moving to `tests/types/rejection/`. (Carried from 1.4.4.)
+1. **`extern_c_driver.npk` under load** — an INVESTIGATION, not a decision, and
+   D-228 sequences the parallel-width calibration behind it. The prior is
+   RACE, not tightness: three harnesses cost ~4 of 48 cores, and five seconds
+   is ~10^3x the actual work, so an expiring deadline means something slept or
+   a wake was lost. Method, cheapest-decisive first: (a) make the test NAME the
+   wrong error — exit 29 collapses every wrong `r4.err` into one number, which
+   is exactly why the two readings cannot be told apart, and per-error exits
+   are a permanent improvement either way; (b) record elapsed time around r4 —
+   ~5.00s means a wait ran its full deadline, well under means a classification
+   race in the triple wait; (c) attribute the side — did the C driver reply?
+   Replied-but-slept-through is a lost wake in the reactor, which is
+   safety-relevant; no reply is a fixture question; (d) reproduce by looping
+   the ONE program under synthetic contention at -O2, not three 50-minute
+   harnesses. If it does prove tightness, raising the deadline is still not the
+   reflex — understand what consumed five seconds first.
+2. ~~The `escape.npk` `ident_holds` belt~~ — **CLOSED 2026-09-01** (`ea2faea`).
+   Fails closed as `pass true`, the opposite of its siblings, because both
+   callers invert the answer.
+3. ~~`check_instantiations` runs before the escape walk can still record~~ —
+   **CLOSED 2026-09-01** (`6ca1ea2`). The diagnosis was wrong (measured: the
+   table never grows after the decide pass, and the named shape is already
+   caught); the goal was right, so the tail is now swept by construction.
+4. ~~`npkg test`'s capture-and-compare is blocked~~ — **DECIDED as D-229**: the
+   walk becomes generic and borrowing, `diaglist_render` retires into it. To
+   implement.
+5. ~~Should diagnostics print span-sorted?~~ — **DECIDED as D-229**: yes, in
+   the one walk. To implement.
+6. ~~ORCHESTRATION.md's four §8 questions~~ — **RATIFIED as D-228.**
+7. ~~CLAUDE.md's quickcheck example~~ — CLOSED 2026-09-01.
+8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** — to
+   implement, and the shape is settled: ONE new code `NITPICK-TYPE-057` ("this
+   type cannot be a channel element"), refused in the CHECKER with the
+   annotation's span, message naming the offending component and its decision
+   (`dyn` -> D-207, a borrow -> D-072/D-183, `OwnedFd` -> D-185). One code
+   because it is one RULE with three ways to fail it — TYPE-054's convention,
+   and codes are diagnostics, not D-179 error identities, so there is no
+   `failsafe` cost either way. **A SHARED HELPER serves both the spelling
+   (`resolve_channel_type`) and the substitution (`type_subst`'s TY_CHANNEL
+   arm)** — user-decided; a rule written twice is a rule that will differ in
+   one of them. `type_subst` carries a `Span:at`, so both sites raise with
+   their own span, and `type_generic.npk` imports `resolve_type.npk` and not
+   the reverse, so the helper lives in the latter. The backend's `chan_elem_ok`
+   stays a fail-closed BELT. Cases move to `tests/types/rejection/`, and the
+   migration ADDS the `dyn`-element case, which has no test today.
+
+### New, from the same ratification batch
+
+- **D-230 — implement D-044's flag types** as one `TY_FLAGS` kind before
+  1.4.8, because that subcycle's `lib/nfs.npk` grows the flag-taking surface.
+- **D-231 — strike the sub-byte integer widths, pin the wide ladder** with
+  layout rows and one executed conformance case.
+- **D-232 — C-only is the working default for Astrée** with a named trigger at
+  1.5's midpoint; the C-emitter design note is written at the 1.4 close, and
+  differential execution is its validation instrument.
+
+### Checked and NOT a defect (2026-09-01)
+
+A borrow-carrying concrete coerced to `dyn` is not refused at the coercion, and
+that is fine: the ESCAPE ANALYSIS catches the hazard through another door.
+Measured with four probes — the coercion compiles, a `dyn` outliving a BLOCK is
+safe because D-191 extends an address-taken local to the function's end, and
+the shape that actually dangles (a `dyn` carrying a borrow to its own frame,
+returned upward) is refused by `NITPICK-BORROW-001` at the coercion itself.
+D-215 needed its own rule because a channel endpoint is a handle the escape
+analysis has no reason to follow; a borrow is precisely what it does follow.
+Recorded because the first three probes each supported the opposite conclusion.
 
 ## RETIRED: 1.4.6 — the builder switch (D-203, D-205)
 
