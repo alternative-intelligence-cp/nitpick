@@ -191,6 +191,15 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
                 list.items[j] = move(prev);
                 j = j - 1i64;
             } else {
+                // PUT IT BACK. `prev` was moved OUT of slot j-1, so leaving on
+                // this branch without returning it drops a Diagnostic's two
+                // owned strings while the slot still points at them -- every
+                // later read of that slot reads freed memory. It was invisible
+                // because this function had one caller (`diaglist_render`,
+                // reached by a single test) until D-229 put the sort on the
+                // driver path, and the corruption then appeared immediately as
+                // garbage bytes in the compiler's own diagnostics.
+                list.items[j - 1i64] = move(prev);
                 j = 0i64 - 1i64;
             }
         }

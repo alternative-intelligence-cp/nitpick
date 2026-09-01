@@ -90,6 +90,41 @@ func:main = int32(cstring[]:_~argv) {
     string:ovf = raw diag_overflow_line();
     if (!(raw string_eq(ovf, "note NITPICK-DIAG-001 <no span>: further diagnostics suppressed"))) { exit 20i32; }
 
+    // --- THE SORT DOES NOT FREE WHAT IT KEEPS (D-229's regression) ---------
+    //
+    // `diaglist_sort`'s early-exit branch moved an entry OUT of its slot and
+    // left without putting it back, so the Diagnostic died at the loop's end
+    // and dropped its two owned strings while the slot still pointed at them.
+    // Every later read of that slot read freed memory.
+    //
+    // The three-diagnostic case above ALREADY took that branch and passed
+    // anyway: nothing reused the freed bodies between the free and the read,
+    // which is the same luck four other defects in this cycle ran on. This
+    // phase removes the luck -- ASCENDING spans make every insertion take the
+    // early exit, and the interleaved allocations give the allocator every
+    // chance to hand a freed body to somebody else before it is read back.
+    DiagList:asc = raw diaglist_init();
+    Sink:aout = raw sink_to_buffer(4096i64);
+    int32:ai = 0i32;
+    while (ai < 12i32) {
+        Span:sp = raw span_point(0i32, ai, ai + 1i32, 1i32);
+        string:msg = string_concat("keepme-", int_to_string(ai => int64));
+        drop diaglist_push(@asc, raw diag_error("NITPICK-019", move(msg), sp));
+        // churn the heap between pushes, so a freed body gets reused
+        discard(string_concat("churn", int_to_string(ai => int64)));
+        ai = ai + 1i32;
+    }
+    if (raw diaglist_count(@asc) != 12i64) { exit 30i32; }
+    drop diaglist_render(@asc, @sm, @aout);
+
+    // EVERY message must have survived the sort intact.
+    int32:aj = 0i32;
+    while (aj < 12i32) {
+        string:want = string_concat("keepme-", int_to_string(aj => int64));
+        if (!(raw sink_has(@aout, want))) { exit 31i32; }
+        aj = aj + 1i32;
+    }
+
     wild_release_all();
     exit 0i32;
 };

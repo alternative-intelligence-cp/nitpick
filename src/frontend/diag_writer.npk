@@ -29,16 +29,35 @@ use "./source.npk".*;
 // report that gives up is a defect the reader never learns about.
 fixed Duration:DIAG_WITHIN = Duration{ ns: 5000000000i64 };
 
-// THE ONE ERASED DIAGNOSTIC WALK. Five copies of this loop existed -- `report`
-// in src/main.npk, `report` in tools/check.npk, and three inline walks across
-// resolve_check and parse_check -- and the 1.0.8 note further up this file
-// records exactly what letting a second copy exist costs. The sink is
-// `dyn Writer`, so WHICH writer decides where the text lands: the drivers pass
-// stderr, and a capture buffer would be the same call.
+// THE ONE DIAGNOSTIC WALK -- GENERIC AND BORROWING (D-229). Five copies of
+// this loop existed -- `report` in src/main.npk, `report` in tools/check.npk,
+// and three inline walks across resolve_check and parse_check -- and the 1.0.8
+// note further up this file records what letting a second copy exist costs.
 //
-// `dyn Writer` passes BY VALUE, never through a pointer: a trait method's
-// receiver is `Self->`, so the erased call takes the sink's own address
-// (1.1.12d), and `dyn Writer->:sink` fails method lookup outright.
+// IT WAS `dyn Writer` UNTIL D-229, AND THE ERASURE HAD TO GO. D-075 routed
+// diagnostics through a trait object so `npkg test` could capture and compare
+// them; a `dyn` coercion MOVES, so the capture buffer is consumed by the call
+// and cannot be read back -- which is precisely what capture must do. Capture
+// needs the sink to reference storage the CALLER retains, and every sanctioned
+// way to reference external state from inside an owned `dyn` is now closed: a
+// channel endpoint is refused at the coercion (D-215), a borrow inside an
+// erased value is D-207's own stated hazard, and a `shared_arena` slot is
+// written once before its handle escapes (D-154). D-075's premise predates all
+// three and did not survive the language's own hardening.
+//
+// A BOUND PARAMETER TAKEN BY POINTER gives back exactly what erasure took: the
+// caller keeps the writer and can read it afterwards. What the erasure was
+// protecting -- ONE walk in source, which `check_one_renderer` pins -- the
+// generic keeps, because the five-copies problem was source duplication and
+// never instance count. It is also the verification-friendlier shape:
+// monomorphized direct calls rather than a vtable indirection.
+//
+// IT SORTS (D-229). `diaglist_render` always did and the driver path never
+// did; one walk has one ordering. The argument is not reproducibility -- the
+// driver path is already deterministic run to run -- it is that sorting makes
+// the output a function of the diagnostic SET rather than of pass discovery
+// order, so 1.4.8's capture goldens survive a future pass reordering. The sort
+// is stable, so cause-before-consequence at one span is preserved.
 //
 // BEST-EFFORT BY THE TIME IT PRINTS, deliberately (D-163's reasoned `?|`): a
 // broken stderr cannot be reported on stderr, so each write swallows its own
@@ -47,8 +66,9 @@ fixed Duration:DIAG_WITHIN = Duration{ ns: 5000000000i64 };
 // suspended task can be CANCELLED and cancellation is an error the contract
 // would be denying (D-163). The best-effort promise this walk actually keeps is
 // per-write -- each `?|` below -- rather than a signature-level one.
-pub async func:diag_report = NIL(dyn Writer:sink, DiagList->:list,
-                                 SourceManager->:sm, Duration:within) {
+pub async func:diag_report<W: Writer> = NIL(W->:sink, DiagList->:list,
+                                            SourceManager->:sm, Duration:within) {
+    drop diaglist_sort(list);
     int64:n = raw diaglist_count(list);
     int64:d = 0i64;
     while (d < n) {
@@ -65,25 +85,25 @@ pub async func:diag_report = NIL(dyn Writer:sink, DiagList->:list,
     pass NIL;
 };
 
-// The drivers' one-line spelling. A `dyn` is MOVE-ONLY, so a by-value sink
-// cannot be reused across calls and there is no "construct stderr once" to be
-// had -- every reporting site is its own early exit, so each builds its own,
-// and the dup it owns is closed by the OwnedFd drop at this function's exit.
+// The drivers' one-line spelling. The sink is BORROWED now, so the "construct
+// stderr once" shape the D-209 note wanted is available again in principle --
+// but each reporting site is still its own early exit, so each builds its own
+// and the dup it owns is closed by the `OwnedFd` drop at this function's exit.
 pub async func:diag_report_stderr = NIL(DiagList->:list, SourceManager->:sm) {
     TextWriter<ByteWriter>:tw = relay std_err();
-    dyn Writer:sink = move(tw);
-    await diag_report(sink, list, sm, DIAG_WITHIN) ?| NIL;
+    await diag_report(@tw, list, sm, DIAG_WITHIN) ?| NIL;
     pass NIL;
 };
 
 // A driver's own message -- "cannot write the output file" -- through the SAME
 // sink as the diagnostics. Two paths to one stream is the thing the blueprint
-// philosophy rejects, and it is what this file's own 1.0.8 note is about.
+// philosophy rejects, and it is what this file's own 1.0.8 note is about. No
+// erasure here either: there was never a reason for one, and D-229 removed the
+// spelling that made it look required.
 pub async func:diag_say = NIL(string:msg) {
     TextWriter<ByteWriter>:tw = relay std_err();
-    dyn Writer:sink = move(tw);
     string:ln = string_concat(msg, "\n");
-    discard(await sink.write(string_bytes(ln), DIAG_WITHIN) ?| 0i64);
-    await sink.flush(DIAG_WITHIN) ?| NIL;
+    discard(await tw.write(string_bytes(ln), DIAG_WITHIN) ?| 0i64);
+    await tw.flush(DIAG_WITHIN) ?| NIL;
     pass NIL;
 };
