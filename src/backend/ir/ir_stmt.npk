@@ -93,14 +93,14 @@ pub func:s_start = NIL(ExprEmitter->:x, string:label) never fails {
 // return seam now stores before the unwind and returns after it. In
 // `async main` there is no Result to relay into: a child error routes through
 // `failsafe`, the uncaught-error path (D-013).
-func:emit_scope_join = IrVal(ExprEmitter->:x, int32:f) never fails {
+func:emit_scope_join = IrVal(ExprEmitter->:x, int64:f) never fails {
     if (!x.fe.is_async) { pass (raw iv_nil()); }
     // THE FUNCTION'S OWN SCOPE ALWAYS JOINS; an inner one joins when a spawn
     // was emitted in it. The gate is sound (see `fnem_scope_spawned`), and
     // the ungated outermost join is the belt that makes a missed inner join
     // a LATE join rather than a lost one: the list is one chain, and frame
     // 0's mark is the head as it stood before the body ran.
-    if (f != 0i32) {
+    if (f != 0i64) {
         if (!(raw fnem_scope_spawned(x.fe, f))) { pass (raw iv_nil()); }
     }
     string:hdr = raw fnem_hdr_ty();
@@ -114,7 +114,7 @@ func:emit_scope_join = IrVal(ExprEmitter->:x, int32:f) never fails {
     // own scope keeps the null fallback, and it is exact there: every frame's
     // `join_head` starts null, which is what the single join block terminated
     // on for its whole life.
-    if (f != 0i32) {
+    if (f != 0i64) {
         if (mk.len == 0i64) { pass (raw iv_broken(raw span_none())); }
     }
     string:mkv = "null";
@@ -307,12 +307,12 @@ func:emit_scope_join = IrVal(ExprEmitter->:x, int32:f) never fails {
 // completed and moving the generation strands nobody mid-drain — an ESCAPED
 // handle used later answers StaleHandle, which is the guarantee, not a
 // casualty.
-func:run_scope_chfins = NIL(ExprEmitter->:x, int32:f) never fails {
-    int32:cfi = raw fnem_scope_cfmark(x.fe, f);
-    int32:cfhi = raw fnem_scope_cfhi(x.fe, f);
+func:run_scope_chfins = NIL(ExprEmitter->:x, int64:f) never fails {
+    int64:cfi = raw fnem_scope_cfmark(x.fe, f);
+    int64:cfhi = raw fnem_scope_cfhi(x.fe, f);
     while (cfi < cfhi) {
         drop fnem_chfin_reclaim(x.fe, cfi);
-        cfi = cfi + 1i32;
+        cfi = cfi + 1i64;
     }
     pass NIL;
 };
@@ -330,17 +330,17 @@ func:run_scope_chfins = NIL(ExprEmitter->:x, int32:f) never fails {
 // because a defer body is user code over the same bindings a live child can
 // still reach: a scope's exit ends its concurrency before it runs any cleanup,
 // which is one rule rather than two.
-pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
-    int32:f = raw fnem_defer_frames(x.fe);
+pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int64:depth) never fails {
+    int64:f = raw fnem_defer_frames(x.fe);
     while (f > depth) {
-        f = f - 1i32;
+        f = f - 1i64;
         IrVal:jr = raw emit_scope_join(x, f);
         if (!(raw iv_is_ok(jr))) { pass jr; }
-        int32:hi = raw fnem_defer_frame_hi(x.fe, f);
-        int32:lo = raw fnem_defer_frame_lo(x.fe, f);
-        int32:i = hi;
+        int64:hi = raw fnem_defer_frame_hi(x.fe, f);
+        int64:lo = raw fnem_defer_frame_lo(x.fe, f);
+        int64:i = hi;
         while (i > lo) {
-            i = i - 1i32;
+            i = i - 1i64;
             StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
@@ -361,7 +361,7 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
     // right for `break`/`continue` (depth > 0) and exactly wrong for the
     // function's own exits. Lent parameters have no flag and are the
     // CALLER's to drop.
-    if (depth == 0i32) {
+    if (depth == 0i64) {
         IrVal:pr = raw run_param_drops(x);
         if (!(raw iv_is_ok(pr))) { pass pr; }
     }
@@ -375,27 +375,27 @@ pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) never fails {
 // storage a container still owns, safe precisely because they never drop.
 // The test is one load and one branch; a moved-out binding's flag is zero, so
 // the drop is skipped exactly where D-065 says the binding no longer owns.
-pub func:run_scope_drops = IrVal(ExprEmitter->:x, int32:f) never fails {
-    int32:lhi = raw fnem_scope_lhi(x.fe, f);
-    int32:llo = raw fnem_scope_lmark(x.fe, f);
-    int32:i = lhi;
+pub func:run_scope_drops = IrVal(ExprEmitter->:x, int64:f) never fails {
+    int64:lhi = raw fnem_scope_lhi(x.fe, f);
+    int64:llo = raw fnem_scope_lmark(x.fe, f);
+    int64:i = lhi;
     while (i > llo) {
-        i = i - 1i32;
+        i = i - 1i64;
         drop emit_one_flagged_drop(x, i);
     }
     pass (raw iv_nil());
 };
 
 pub func:run_param_drops = IrVal(ExprEmitter->:x) never fails {
-    int32:i = x.fe.pcount;
-    while (i > 0i32) {
-        i = i - 1i32;
+    int64:i = x.fe.pnames.count;
+    while (i > 0i64) {
+        i = i - 1i64;
         drop emit_one_flagged_drop(x, i);
     }
     pass (raw iv_nil());
 };
 
-func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
+func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int64:i) never fails {
     // AGGREGATE DROPS WENT LIVE AT 1.2.3e. They were staged for a day behind
     // a TY_STRUCT/TY_ENUM guard here while a one-line corruption in stage 1's
     // output was hunted; a by-tid bisect first blamed the emitter's own
@@ -434,7 +434,7 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int32:i) never fails {
 };
 
 pub func:run_all_defers = IrVal(ExprEmitter->:x) never fails {
-    pass (raw run_defers_down_to(x, 0i32));
+    pass (raw run_defers_down_to(x, 0i64));
 };
 
 // `exit` RUNS DEFERS AND NO DROPS (D-183, amended at 1.2.3). Two reasons, and
@@ -456,16 +456,16 @@ pub func:run_all_defers = IrVal(ExprEmitter->:x) never fails {
 // here preserves the behaviour rather than adding one. The drops are the part
 // that stays skipped.
 pub func:run_exit_defers = IrVal(ExprEmitter->:x) never fails {
-    int32:f = raw fnem_defer_frames(x.fe);
-    while (f > 0i32) {
-        f = f - 1i32;
+    int64:f = raw fnem_defer_frames(x.fe);
+    while (f > 0i64) {
+        f = f - 1i64;
         IrVal:jr = raw emit_scope_join(x, f);
         if (!(raw iv_is_ok(jr))) { pass jr; }
-        int32:hi = raw fnem_defer_frame_hi(x.fe, f);
-        int32:lo = raw fnem_defer_frame_lo(x.fe, f);
-        int32:i = hi;
+        int64:hi = raw fnem_defer_frame_hi(x.fe, f);
+        int64:lo = raw fnem_defer_frame_lo(x.fe, f);
+        int64:i = hi;
         while (i > lo) {
-            i = i - 1i32;
+            i = i - 1i64;
             StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
             IrVal:r = raw emit_stmt(x, body);
             if (!(raw iv_is_ok(r))) { pass r; }
@@ -478,7 +478,7 @@ pub func:run_exit_defers = IrVal(ExprEmitter->:x) never fails {
 
 pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     StmtNode:s = raw ast_stmt(x.ast, sid);
-    int32:mark = raw fnem_mark(x.fe);
+    int64:mark = raw fnem_mark(x.fe);
     drop fnem_defer_frame_push(x.fe);
     // THE SCOPE'S JOIN MARK (D-207, 1.4.4): `join_head` as it stands right
     // now. Its exit joins down to this, which is what makes "the tasks THIS
@@ -487,8 +487,8 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // spans suspensions, and an alloca dies between resumes — and the
     // pre-scan reserved one for every block of an async function, role 41.
     if (x.fe.is_async) {
-        int32:jmi = raw fnem_cross_find(x.fe, sid.index, 41i32);
-        if (jmi >= 0i32) {
+        int64:jmi = raw fnem_cross_find(x.fe, sid.index, 41i32);
+        if (jmi >= 0i64) {
             string:jms = raw fnem_cross_gep(x.fe, jmi);
             string:jh0 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat4(jh0, " = load ptr, ptr ",
@@ -511,7 +511,7 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     // The block's own defers, on its NORMAL end. A terminated block already ran
     // them at whatever exit terminated it.
     if (!x.fe.terminated) {
-        IrVal:r = raw run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i32);
+        IrVal:r = raw run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i64);
         if (!(raw iv_is_ok(r))) { pass r; }
     }
     drop fnem_defer_frame_pop(x.fe);
@@ -614,8 +614,8 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     string:ffl = "";
     if (x.fe.is_async) {
         if (raw exprtypes_crossing(x.et, sid.index)) {
-            int32:cidx = raw fnem_cross_find(x.fe, sid.index, 0i32);
-            if (cidx < 0i32) {
+            int64:cidx = raw fnem_cross_find(x.fe, sid.index, 0i32);
+            if (cidx < 0i64) {
                 // The pre-scan frames every crossing value-pick local (the
                 // probe that retired this rung proved it); a missing slot is
                 // the scan broken, not a rung (1.1.13-close).
@@ -709,8 +709,8 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
-    int32:li = raw fnem_lookup_idx(x.fe, rn.payload =>! int32);
-    if (li < 0i32) { pass NIL; }
+    int64:li = raw fnem_lookup_idx(x.fe, rn.payload =>! int32);
+    if (li < 0i64) { pass NIL; }
     string->:fl = raw fnem_local_flag_at(x.fe, li);
     if (fl.len == 0i64) { pass NIL; }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", <-fl, ""));
@@ -790,8 +790,8 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
                                   string_concat("(ptr ", place.addr), ")"));
             }
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
-                int32:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
-                if (tli >= 0i32) {
+                int64:tli = raw fnem_lookup_idx(x.fe, tgt.payload =>! int32);
+                if (tli >= 0i64) {
                     string->:tfl = raw fnem_local_flag_at(x.fe, tli);
                     if (tfl.len > 0i64) {
                         aflag = string_concat(<-tfl, "");
@@ -1155,8 +1155,8 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 func:for_bind_slot = string(ExprEmitter->:x, StmtId:sid, DeclNode:bind,
                             int32:btid, LlType:bll) never fails {
     if (x.fe.is_async) {
-        int32:ci = raw fnem_cross_find(x.fe, sid.index, 4i32);
-        if (ci >= 0i32) {
+        int64:ci = raw fnem_cross_find(x.fe, sid.index, 4i32);
+        if (ci >= 0i64) {
             string:g = raw fnem_cross_gep(x.fe, ci);
             drop fnem_bind(x.fe, raw decl_name(bind), string_concat(g, ""), btid);
             pass g;
@@ -1412,8 +1412,8 @@ func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) never fails 
     // LABELLED OR NOT, one mechanism (0.9.7): the label picks the loop frame,
     // and the defers of every scope between here and THAT frame run first —
     // exactly the unlabelled rule, aimed further out.
-    int32:frame = raw fnem_loop_find(x.fe, raw stmt_label(s));
-    if (frame < 0i32) { pass (raw iv_broken(s.span)); }
+    int64:frame = raw fnem_loop_find(x.fe, raw stmt_label(s));
+    if (frame < 0i64) { pass (raw iv_broken(s.span)); }
     IrVal:d = raw run_defers_down_to(x, raw fnem_loop_depth_at(x.fe, frame));
     if (!(raw iv_is_ok(d))) { pass d; }
     if (is_break) { drop s_br(x, raw fnem_loop_done_at(x.fe, frame)); }
@@ -1932,7 +1932,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         StmtId:armid = raw pick_arm_at(x.ast, raw pick_arm_start(s), i);
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         drop s_start(x, labels[i => int64]);
-        int32:mark = raw fnem_mark(x.fe);
+        int64:mark = raw fnem_mark(x.fe);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span,
                                     raw pick_is_consuming(x, s));
@@ -1987,7 +1987,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                          string_concat(".t", int_to_string((i + 1i32) => int64)));
         }
         drop s_start(x, test_l);
-        int32:mark = raw fnem_mark(x.fe);
+        int64:mark = raw fnem_mark(x.fe);
 
         // --- the pattern's truth -------------------------------------------
         string:hit = "";
@@ -2194,8 +2194,8 @@ pub func:emit_function_named = IrVal(ExprEmitter->:x, DeclId:did,
 func:loop_slot = string(ExprEmitter->:x, StmtId:sid, int32:role,
                         string:ll) never fails {
     if (x.fe.is_async) {
-        int32:ci = raw fnem_cross_find(x.fe, sid.index, role);
-        if (ci < 0i32) { pass ""; }
+        int64:ci = raw fnem_cross_find(x.fe, sid.index, role);
+        if (ci < 0i64) { pass ""; }
         pass (raw fnem_cross_gep(x.fe, ci));
     }
     string:a = raw irw_temp(x.fe.w);
@@ -2229,8 +2229,8 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
                              bool:consuming) never fails {
     string:slot = "";
     if (x.fe.is_async) {
-        int32:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
-        if (ci < 0i32) { pass ""; }
+        int64:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
+        if (ci < 0i64) { pass ""; }
         slot = raw fnem_cross_gep(x.fe, ci);
         drop fnem_bind(x.fe, name, string_concat(slot, ""), bind_tid);
     } else {
@@ -2375,7 +2375,7 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                                           cbn.payload =>! int32), "channel")) {
                         int32:k = 0i32;
                         while ((raw fnem_cross_find(x.fe, sid.index,
-                                                    30i32 + k)) >= 0i32) {
+                                                    30i32 + k)) >= 0i64) {
                             k = k + 1i32;
                         }
                         drop fnem_cross_add(x.fe, sid.index, 30i32 + k,
@@ -2410,7 +2410,7 @@ func:scan_channel_await = NIL(ExprEmitter->:x, StmtId:sid, ExprId:eid,
                     while (gi < gn) {
                         int32:k2 = 0i32;
                         while ((raw fnem_cross_find(x.fe, sid.index,
-                                                    30i32 + k2)) >= 0i32) {
+                                                    30i32 + k2)) >= 0i64) {
                             k2 = k2 + 1i32;
                         }
                         drop fnem_cross_add(x.fe, sid.index, 30i32 + k2,

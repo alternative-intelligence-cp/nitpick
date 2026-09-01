@@ -80,9 +80,9 @@ func:main = int32(cstring[]:_~argv) {
     // `fnem_lookup` became `fnem_lookup_idx` at 1.2.2: returning the slot
     // COPIED a string the table still owns, and a borrow cannot ride in a
     // struct field (D-004 rule 3) — so the caller reads the table in place.
-    int32:px = raw fnem_lookup_idx(@f2, nx);
-    int32:py = raw fnem_lookup_idx(@f2, ny);
-    if (px < 0i32)                                         { exit 23i32; }
+    int64:px = raw fnem_lookup_idx(@f2, nx);
+    int64:py = raw fnem_lookup_idx(@f2, ny);
+    if (px < 0i64)                                         { exit 23i32; }
     if (!(raw string_eq(raw fnem_local_slot_at(@f2, px), "%t0"))) { exit 24i32; }
     if ((raw fnem_local_type_at(@f2, px)) != i32t)         { exit 25i32; }
     if (!(raw string_eq(raw fnem_local_slot_at(@f2, py), "%t1"))) { exit 26i32; }
@@ -139,17 +139,17 @@ func:main = int32(cstring[]:_~argv) {
     discard(raw fnem_begin(@f7, "shade", 0i32, i32t));
     drop fnem_open(@f7);
     string:outer = raw fnem_local(@f7, nx, i32t, "i32");
-    int32:mark = raw fnem_mark(@f7);
+    int64:mark = raw fnem_mark(@f7);
     string:inner = raw fnem_local(@f7, nx, i64t, "i64");
-    int32:sh = raw fnem_lookup_idx(@f7, nx);
+    int64:sh = raw fnem_lookup_idx(@f7, nx);
     if (!(raw string_eq(raw fnem_local_slot_at(@f7, sh), inner))) { exit 40i32; }
     if ((raw fnem_local_type_at(@f7, sh)) != i64t)         { exit 41i32; }
     drop fnem_release(@f7, mark);
-    int32:back = raw fnem_lookup_idx(@f7, nx);
+    int64:back = raw fnem_lookup_idx(@f7, nx);
     if (!(raw string_eq(raw fnem_local_slot_at(@f7, back), outer))) { exit 42i32; }
     if ((raw fnem_local_type_at(@f7, back)) != i32t)       { exit 43i32; }
     // A name never bound answers -1, not somebody else's slot.
-    if ((raw fnem_lookup_idx(@f7, ny)) >= 0i32)            { exit 44i32; }
+    if ((raw fnem_lookup_idx(@f7, ny)) >= 0i64)            { exit 44i32; }
 
     // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
     IrWriter:w8 = raw irw_to_buffer();

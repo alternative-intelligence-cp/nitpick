@@ -31,6 +31,7 @@ mod:ir_func;
 use "../../frontend/intern.npk".*;
 use "../../frontend/diagnostics.npk".*;
 use "../../frontend/types.npk".*;
+use "../../frontend/list.npk".*;
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 
@@ -59,16 +60,14 @@ pub struct:FnEmitter = {
     string:val_ll;     // `T`'s own text, for insertvalue; "" when T is NIL
     string:val_zero;   // the value slot of a failed Result
 
-    wild int32->:pnames;
-    wild int32->:ptypes;
-    wild string->:plls;
-    int32:pcount;
-    int32:pcap;
+    List<int32>:pnames;
+    List<int32>:ptypes;
+    List<string>:plls;
 
     // The scope stack. Append-only between marks; `fnem_release` truncates.
-    wild int32->:lnames;
-    wild string->:lslots;
-    wild int32->:ltypes;
+    List<int32>:lnames;
+    List<string>:lslots;
+    List<int32>:ltypes;
     // THE DROP FLAG's slot, or "" (D-183, 1.2.3): a one-bit alloca per OWNING
     // binding, set live at initialisation, cleared by `move` and by `pass`
     // (which moves implicitly), and tested at the scope-exit drop — so a
@@ -76,14 +75,12 @@ pub struct:FnEmitter = {
     // one is freed exactly when it still owns. "" means no flag and no drop:
     // pick-arm and loop bindings are BITWISE COPIES of storage a container
     // still owns, and are safe precisely because they are never dropped.
-    wild string->:lflags;
-    int32:lcount;
-    int32:lcap;
+    List<string>:lflags;
 
     // Which parameters are `move` (consuming) — parallel to pnames. A lent
     // parameter is the CALLER's to drop; a `move` one is this function's, at
     // its exit, unless the body moved it onward.
-    wild int32->:pmoves;
+    List<int32>:pmoves;
 
     // --- control-flow state (0.7.6) ------------------------------------------
     //
@@ -100,17 +97,15 @@ pub struct:FnEmitter = {
     // mark/truncate shape as the locals. A frame per block; running a frame
     // walks it BACKWARD, and running "everything" walks the frames backward
     // too: LIFO twice over, which is what a cleanup stack means.
-    wild int32->:dstmts;
-    int32:dcount;
-    int32:dcap;
-    wild int32->:dframes;
+    List<int32>:dstmts;
+    List<int64>:dframes;
 
     // THE LOCALS MARK EACH SCOPE WAS PUSHED AT (D-183, 1.2.1), parallel to
     // `dframes`. A scope's DROPS are its locals above this mark, and they run
     // on the same unwind its defers do — so the two stacks are pushed and
     // popped together, and "defers first, then drops, innermost scope first"
     // is a property of one loop rather than an ordering anybody maintains.
-    wild int32->:dlmarks;
+    List<int64>:dlmarks;
     // THE SAME MARK SHAPE, THREE MORE TIMES (D-207, 1.4.4). A scope owns more
     // than its locals now, and every one of these is "what this scope added",
     // read the same way: the value at push, against the value at exit.
@@ -128,11 +123,9 @@ pub struct:FnEmitter = {
     //     the ones pushed since it was entered, and the exit joins down to
     //     this mark. One pointer per scope instead of one list head per
     //     scope, and `emit_spawn` never has to know which scope it is in.
-    wild int32->:dcfmarks;
-    wild int32->:dspawns;
-    wild string->:djmarks;
-    int32:dfcount;
-    int32:dfcap;
+    List<int64>:dcfmarks;
+    List<int32>:dspawns;
+    List<string>:djmarks;
     int32:spawn_count;
 
     // THE LOOP STACK: continue target, break target, and the DEFER DEPTH at
@@ -140,31 +133,27 @@ pub struct:FnEmitter = {
     // says "defers registered INSIDE the loop body do not run here. That is a
     // gap the real compiler must close" (D-014: scope exit is a normal exit
     // path). `break` runs every frame deeper than the recorded depth first.
-    wild string->:loop_heads;
-    wild string->:loop_dones;
-    wild int32->:loop_depths;
+    List<string>:loop_heads;
+    List<string>:loop_dones;
+    List<int64>:loop_depths;
     // The two 0.9.7 columns: the loop's LABEL (intern index; 0 = unlabelled),
     // and its `$` counter slot ("" for a while/for — `$` belongs to the
     // counted forms, and the innermost counted loop wins).
-    wild int32->:loop_labels;
-    wild string->:loop_iters;
-    int32:loop_count;
-    int32:loop_cap;
+    List<int32>:loop_labels;
+    List<string>:loop_iters;
 
     // THE PICK STACK (0.9.7): the frame `give` and `fall` resolve against.
     // Scalar columns only — arm body labels are DERIVED ("pk<seq>.arm<i>"),
     // so `fall label;` computes its target from the frame's seq and the arm
     // list rather than needing a stored label table.
-    wild string->:pick_dones;
-    wild string->:pick_slots;      // "" for a statement pick
-    wild string->:pick_lls;
-    wild int32->:pick_tids;        // the give slot's TYPE, for `emit_fit` (1.0.6e)
-    wild int32->:pick_starts;
-    wild int32->:pick_counts;
-    wild int32->:pick_seqs;
-    wild int32->:pick_depths;      // defer depth at entry — give/fall unwind to it
-    int32:pick_count;
-    int32:pick_cap;
+    List<string>:pick_dones;
+    List<string>:pick_slots;      // "" for a statement pick
+    List<string>:pick_lls;
+    List<int32>:pick_tids;        // the give slot's TYPE, for `emit_fit` (1.0.6e)
+    List<int32>:pick_starts;
+    List<int32>:pick_counts;
+    List<int32>:pick_seqs;
+    List<int64>:pick_depths;      // defer depth at entry — give/fall unwind to it
     int32:pick_seq;                // per-function label sequence
 
     // --- the coroutine machine (D-177, 1.1.4) --------------------------------
@@ -189,9 +178,7 @@ pub struct:FnEmitter = {
     string:join_gep;
     string:awaitee_gep;
     // Resume segments: seg_labels[K] is the switch target for state K.
-    wild string->:seg_labels;
-    int32:seg_count;
-    int32:seg_cap;
+    List<string>:seg_labels;
     int32:guard_depth;             // inside a `pick` arm's `where` guard (D3 rung)
     // The statement being emitted (D-182): a channel `await` is a suspension
     // inside an EXPRESSION, and its loop state must be frame-resident like
@@ -205,119 +192,76 @@ pub struct:FnEmitter = {
     // type — slot `7 + pcount + j`. The GEPs are cut in the entry block at
     // open, and the declaration site binds the name to its slot instead of
     // an alloca.
-    wild int32->:cross_stmts;
-    wild int32->:cross_roles;
-    wild int32->:cross_types;
-    wild string->:cross_lls;
-    wild string->:cross_geps;
+    List<int32>:cross_stmts;
+    List<int32>:cross_roles;
+    List<int32>:cross_types;
+    List<string>:cross_lls;
+    List<string>:cross_geps;
     // The FLAG slot's GEP for an owning crossing var-decl (D-183, 1.2.4b):
     // "" for every entry that needs none (hidden loop/pick roles, non-owning
     // types). A drop flag is one byte beside the value, and a crossing
     // local's byte must cross with it — an alloca flag dies between resumes.
-    wild string->:cross_fgeps;
+    List<string>:cross_fgeps;
     // CHANNEL RECLAIM STASHES (D-183, 1.2.5): one slot per `channel()` site,
     // holding the packed i64 handle; the creating FUNCTION's exit — after
     // its defers, drops and child joins — loads each and reclaims. An i64
     // alloca in a sync body, a role-30+ frame slot in a coroutine.
-    wild string->:chfins;
-    wild int32->:chfin_elems;      // the element's tid when it OWNS, else 0
-    int32:chfin_count;
-    int32:chfin_cap;
+    List<string>:chfins;
+    List<int32>:chfin_elems;      // the element's tid when it OWNS, else 0
     int32:chopen_ord;              // per-statement channel-open ordinal
-    int32:cross_count;
-    int32:cross_cap;
 };
 
 pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
-    wild int8->:pn = alloc(8i64 * 4i64);
-    wild int8->:pt = alloc(8i64 * 4i64);
-    wild int8->:pl = alloc(8i64 * #size_of<string>());
-    wild int8->:ln = alloc(32i64 * 4i64);
-    wild int8->:ls = alloc(32i64 * #size_of<string>());
-    wild int8->:lt = alloc(32i64 * 4i64);
-    wild int8->:ds = alloc(16i64 * 4i64);
-    wild int8->:df = alloc(16i64 * 4i64);
-    wild int8->:lh = alloc(8i64 * #size_of<string>());
-    wild int8->:ld = alloc(8i64 * #size_of<string>());
-    wild int8->:lp = alloc(8i64 * 4i64);
     FnEmitter:fe = FnEmitter{
         w: w, ctx: ctx,
         sym: "", bare: false, ret_nil: false, ret_type: 0i32,
         is_gives: false,
         ret_ll: "", val_ll: "", val_zero: "",
-        pnames: pn =>! wild int32->, ptypes: pt =>! wild int32->,
-        plls: pl =>! wild string->, pcount: 0i32, pcap: 8i32,
-        lnames: ln =>! wild int32->, lslots: ls =>! wild string->,
-        ltypes: lt =>! wild int32->,
-        lflags: (alloc(32i64 * #size_of<string>())) =>! wild string->,
-        lcount: 0i32, lcap: 32i32,
-        pmoves: (alloc(8i64 * 4i64)) =>! wild int32->,
         terminated: false,
-        dstmts: ds =>! wild int32->, dcount: 0i32, dcap: 16i32,
-        dframes: df =>! wild int32->, dfcount: 0i32, dfcap: 16i32,
         spawn_count: 0i32,
-        dlmarks: (alloc(16i64 * 4i64)) =>! wild int32->,
-        dcfmarks: (alloc(16i64 * 4i64)) =>! wild int32->,
-        dspawns: (alloc(16i64 * 4i64)) =>! wild int32->,
-        djmarks: (alloc(16i64 * #size_of<string>())) =>! wild string->,
-        loop_heads: lh =>! wild string->, loop_dones: ld =>! wild string->,
-        loop_depths: lp =>! wild int32->,
-        loop_labels: (alloc(8i64 * 4i64)) =>! wild int32->,
-        loop_iters: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        loop_count: 0i32, loop_cap: 8i32,
-        pick_dones: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        pick_slots: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        pick_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        pick_tids: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_starts: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_counts: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_seqs: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_depths: (alloc(8i64 * 4i64)) =>! wild int32->,
-        pick_count: 0i32, pick_cap: 8i32, pick_seq: 0i32,
+        pick_seq: 0i32,
         is_async: false, exit_agg: "", frame_ty: "", resume_sym: "",
         state_gep: "", windup_gep: "", result_gep: "", join_gep: "",
         awaitee_gep: "",
-        seg_labels: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        seg_count: 0i32, seg_cap: 8i32, guard_depth: 0i32, fn_site: 0i32,
-        cur_stmt: 0i32,
-        cross_stmts: (alloc(8i64 * 4i64)) =>! wild int32->,
-        cross_roles: (alloc(8i64 * 4i64)) =>! wild int32->,
-        cross_types: (alloc(8i64 * 4i64)) =>! wild int32->,
-        cross_lls: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        cross_geps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        cross_fgeps: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        chfins: (alloc(8i64 * #size_of<string>())) =>! wild string->,
-        chfin_elems: (alloc(8i64 * 4i64)) =>! wild int32->,
-        chfin_count: 0i32, chfin_cap: 8i32, chopen_ord: 0i32,
-        cross_count: 0i32, cross_cap: 8i32
+        guard_depth: 0i32, fn_site: 0i32, cur_stmt: 0i32, chopen_ord: 0i32,
+        pnames: raw list_init::<int32>(8i64),
+        ptypes: raw list_init::<int32>(8i64),
+        plls: raw list_init::<string>(8i64),
+        pmoves: raw list_init::<int32>(8i64),
+        lnames: raw list_init::<int32>(32i64),
+        lslots: raw list_init::<string>(32i64),
+        ltypes: raw list_init::<int32>(32i64),
+        lflags: raw list_init::<string>(32i64),
+        dstmts: raw list_init::<int32>(16i64),
+        dframes: raw list_init::<int64>(16i64),
+        dlmarks: raw list_init::<int64>(16i64),
+        dcfmarks: raw list_init::<int64>(16i64),
+        dspawns: raw list_init::<int32>(16i64),
+        djmarks: raw list_init::<string>(16i64),
+        loop_heads: raw list_init::<string>(8i64),
+        loop_dones: raw list_init::<string>(8i64),
+        loop_depths: raw list_init::<int64>(8i64),
+        loop_labels: raw list_init::<int32>(8i64),
+        loop_iters: raw list_init::<string>(8i64),
+        pick_dones: raw list_init::<string>(8i64),
+        pick_slots: raw list_init::<string>(8i64),
+        pick_lls: raw list_init::<string>(8i64),
+        pick_tids: raw list_init::<int32>(8i64),
+        pick_starts: raw list_init::<int32>(8i64),
+        pick_counts: raw list_init::<int32>(8i64),
+        pick_seqs: raw list_init::<int32>(8i64),
+        pick_depths: raw list_init::<int64>(8i64),
+        seg_labels: raw list_init::<string>(8i64),
+        cross_stmts: raw list_init::<int32>(8i64),
+        cross_roles: raw list_init::<int32>(8i64),
+        cross_types: raw list_init::<int32>(8i64),
+        cross_lls: raw list_init::<string>(8i64),
+        cross_geps: raw list_init::<string>(8i64),
+        cross_fgeps: raw list_init::<string>(8i64),
+        chfins: raw list_init::<string>(8i64),
+        chfin_elems: raw list_init::<int32>(8i64)
     };
     pass fe;
-};
-
-func:fnem_grow_params = NIL(FnEmitter->:fe) never fails {
-    int32:nc = fe.pcap * 2i32;
-    wild int8->:a = ralloc(fe.pnames =>! wild int8->, (nc =>! int64) * 4i64);
-    wild int8->:b = ralloc(fe.ptypes =>! wild int8->, (nc =>! int64) * 4i64);
-    wild int8->:c = ralloc(fe.plls =>! wild int8->, (nc =>! int64) * #size_of<string>());
-    fe.pnames = a =>! wild int32->;
-    fe.ptypes = b =>! wild int32->;
-    fe.plls = c =>! wild string->;
-    fe.pmoves = (ralloc(fe.pmoves =>! wild int8->, (nc =>! int64) * 4i64)) =>! wild int32->;
-    fe.pcap = nc;
-    pass NIL;
-};
-
-func:fnem_grow_locals = NIL(FnEmitter->:fe) never fails {
-    int32:nc = fe.lcap * 2i32;
-    wild int8->:a = ralloc(fe.lnames =>! wild int8->, (nc =>! int64) * 4i64);
-    wild int8->:b = ralloc(fe.lslots =>! wild int8->, (nc =>! int64) * #size_of<string>());
-    fe.lflags = (ralloc(fe.lflags =>! wild int8->, (nc =>! int64) * #size_of<string>())) =>! wild string->;
-    wild int8->:c = ralloc(fe.ltypes =>! wild int8->, (nc =>! int64) * 4i64);
-    fe.lnames = a =>! wild int32->;
-    fe.lslots = b =>! wild string->;
-    fe.ltypes = c =>! wild int32->;
-    fe.lcap = nc;
-    pass NIL;
 };
 
 // --- the signature ----------------------------------------------------------------
@@ -333,23 +277,56 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.bare = raw fn_is_bare(name);
     fe.ret_type = ret_type;
     fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));
-    fe.pcount = 0i32;
-    fe.lcount = 0i32;
+    // EVERY LIST OF EVERY RESET GROUP, LISTED RATHER THAN FOLDED. Each
+    // group's counts move together because one function pushes all of
+    // them, and this reset is the one place that invariant is easy to
+    // half-do -- a missed line leaves the PREVIOUS function's rows
+    // visible to this one. Suspend's per-function reset carries the same
+    // warning for the same reason. The bulk rewrite that produced this
+    // file emitted one line per GROUP, which is precisely the half-done
+    // version the warning is about; the compiler's type error on `0i32`
+    // into an int64 count is what exposed it.
+    //
+    // `picks` is absent DELIBERATELY, as it was before: a pick's push and
+    // pop are balanced inside one function, so its lists return to zero
+    // on their own and a reset here would hide an unbalanced pair.
+    fe.pnames.count = 0i64;
+    fe.ptypes.count = 0i64;
+    fe.plls.count = 0i64;
+    fe.pmoves.count = 0i64;
+    fe.lnames.count = 0i64;
+    fe.lslots.count = 0i64;
+    fe.ltypes.count = 0i64;
+    fe.lflags.count = 0i64;
     fe.terminated = false;
-    fe.dcount = 0i32;
-    fe.dfcount = 0i32;
+    fe.dstmts.count = 0i64;
+    fe.dframes.count = 0i64;
+    fe.dlmarks.count = 0i64;
+    fe.dcfmarks.count = 0i64;
+    fe.dspawns.count = 0i64;
+    fe.djmarks.count = 0i64;
     fe.spawn_count = 0i32;
-    fe.loop_count = 0i32;
+    fe.loop_heads.count = 0i64;
+    fe.loop_dones.count = 0i64;
+    fe.loop_depths.count = 0i64;
+    fe.loop_labels.count = 0i64;
+    fe.loop_iters.count = 0i64;
     fe.is_async = false;
     fe.is_gives = false;
     fe.frame_ty = "";
     fe.resume_sym = "";
-    fe.seg_count = 0i32;
+    fe.seg_labels.count = 0i64;
     fe.guard_depth = 0i32;
     fe.fn_site = 0i32;
     fe.cur_stmt = 0i32;
-    fe.cross_count = 0i32;
-    fe.chfin_count = 0i32;
+    fe.cross_stmts.count = 0i64;
+    fe.cross_roles.count = 0i64;
+    fe.cross_types.count = 0i64;
+    fe.cross_lls.count = 0i64;
+    fe.cross_geps.count = 0i64;
+    fe.cross_fgeps.count = 0i64;
+    fe.chfins.count = 0i64;
+    fe.chfin_elems.count = 0i64;
     fe.chopen_ord = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
@@ -383,14 +360,12 @@ pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id,
                              bool:is_move) never fails {
     LlType:t = raw ll_type(fe.ctx, type_id);
     if (t.state != (raw LL_OK())) { pass t; }
-    if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
-    fe.pnames[fe.pcount => int64] = name;
-    fe.ptypes[fe.pcount => int64] = type_id;
-    fe.plls[fe.pcount => int64] = string_concat(t.text, "");
+    drop list_push(@fe.pnames, name);
+    drop list_push(@fe.ptypes, type_id);
+    drop list_push(@fe.plls, string_concat(t.text, ""));
     int32:mv = 0i32;
     if (is_move) { mv = 1i32; }
-    fe.pmoves[fe.pcount => int64] = mv;
-    fe.pcount = fe.pcount + 1i32;
+    drop list_push(@fe.pmoves, mv);
     pass t;
 };
 
@@ -411,9 +386,9 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     }
     string:params = "";
     int32:i = 0i32;
-    while (i < fe.pcount) {
+    while ((i => int64) < fe.pnames.count) {
         if (i > 0i32) { params = string_concat(params, ", "); }
-        params = raw cat3(params, fe.plls[i => int64], " %a");
+        params = raw cat3(params, fe.plls.items[i => int64], " %a");
         params = string_concat(params, int_to_string(i => int64));
         i = i + 1i32;
     }
@@ -425,24 +400,24 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
     drop irw_open_fn(fe.w);
 
     i = 0i32;
-    while (i < fe.pcount) {
+    while ((i => int64) < fe.pnames.count) {
         string:arg = string_concat("%a", int_to_string(i => int64));
         string:slot = raw irw_temp(fe.w);
         // READ IN PLACE, NOT COPIED (D-183): `irw_alloca` and `cat5` LEND
         // their arguments, so handing them the element directly transfers
         // nothing and needs no local to own.
-        drop irw_alloca(fe.w, slot, fe.plls[i => int64]);
-        drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " ", arg,
+        drop irw_alloca(fe.w, slot, fe.plls.items[i => int64]);
+        drop irw_line(fe.w, raw cat5("store ", fe.plls.items[i => int64], " ", arg,
                                        string_concat(", ptr ", slot)));
-        drop fnem_bind(fe, fe.pnames[i => int64], move(slot), fe.ptypes[i => int64]);
+        drop fnem_bind(fe, fe.pnames.items[i => int64], move(slot), fe.ptypes.items[i => int64]);
         // A `move` PARAMETER IS THIS FUNCTION'S TO DROP (D-183, 1.2.3): the
         // caller transferred ownership in, so unless the body moves it onward
         // the value is released at THIS function's exit. A lent parameter gets
         // no flag and no drop — it is the caller's, and dropping it here would
         // free the caller's binding out from under it. The flag starts LIVE:
         // the caller's transfer is this binding's initialisation.
-        if (fe.pmoves[i => int64] != 0i32) {
-            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+        if (fe.pmoves.items[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
                 string:pfl = raw irw_temp(fe.w);
                 drop irw_alloca(fe.w, pfl, "i8");
                 drop irw_line(fe.w, raw cat3("store i8 1, ptr ", pfl, ""));
@@ -462,56 +437,36 @@ pub func:fnem_open = NIL(FnEmitter->:fe) never fails {
 // the key for the same reason the walk's mark is.
 pub func:fnem_cross_add = NIL(FnEmitter->:fe, int32:stmt_index, int32:role,
                               int32:type_id, move string:ll) never fails {
-    if ((raw fnem_cross_find(fe, stmt_index, role)) >= 0i32) { pass NIL; }
-    if (fe.cross_count >= fe.cross_cap) {
-        int64:ncap = (fe.cross_cap => int64) * 2i64;
-        wild int8->:na = ralloc(fe.cross_stmts =>! wild int8->, ncap * 4i64);
-        wild int8->:nr = ralloc(fe.cross_roles =>! wild int8->, ncap * 4i64);
-        wild int8->:nb = ralloc(fe.cross_types =>! wild int8->, ncap * 4i64);
-        wild int8->:nc = ralloc(fe.cross_lls =>! wild int8->,
-                                ncap * #size_of<string>());
-        wild int8->:nd = ralloc(fe.cross_geps =>! wild int8->,
-                                ncap * #size_of<string>());
-        wild int8->:nf = ralloc(fe.cross_fgeps =>! wild int8->,
-                                ncap * #size_of<string>());
-        fe.cross_stmts = na =>! wild int32->;
-        fe.cross_roles = nr =>! wild int32->;
-        fe.cross_types = nb =>! wild int32->;
-        fe.cross_lls = nc =>! wild string->;
-        fe.cross_geps = nd =>! wild string->;
-        fe.cross_fgeps = nf =>! wild string->;
-        fe.cross_cap = ncap =>! int32;
-    }
-    fe.cross_stmts[fe.cross_count => int64] = stmt_index;
-    fe.cross_roles[fe.cross_count => int64] = role;
-    fe.cross_types[fe.cross_count => int64] = type_id;
-    fe.cross_lls[fe.cross_count => int64] = move(ll);
-    fe.cross_geps[fe.cross_count => int64] = "";
-    fe.cross_fgeps[fe.cross_count => int64] = "";
-    fe.cross_count = fe.cross_count + 1i32;
+    if ((raw fnem_cross_find(fe, stmt_index, role)) >= 0i64) { pass NIL; }
+    drop list_push(@fe.cross_stmts, stmt_index);
+    drop list_push(@fe.cross_roles, role);
+    drop list_push(@fe.cross_types, type_id);
+    drop list_push(@fe.cross_lls, move(ll));
+    drop list_push(@fe.cross_geps, "");
+    drop list_push(@fe.cross_fgeps, "");
     pass NIL;
 };
 
-pub func:fnem_cross_find = int32(FnEmitter->:fe, int32:stmt_index,
+pub func:fnem_cross_find = int64(FnEmitter->:fe, int32:stmt_index,
                                  int32:role) never fails {
-    int32:i = 0i32;
-    while (i < fe.cross_count) {
-        if (fe.cross_stmts[i => int64] == stmt_index) {
-            if (fe.cross_roles[i => int64] == role) { pass i; }
+    int64:i = 0i64;
+    while (i < fe.cross_stmts.count) {
+        if (fe.cross_stmts.items[i] == stmt_index) {
+            if (fe.cross_roles.items[i] == role) { pass i; }
         }
-        i = i + 1i32;
+        i = i + 1i64;
     }
-    pass 0i32 - 1i32;
+    pass 0i64 - 1i64;
 };
 
-pub func:fnem_cross_gep = string(FnEmitter->:fe, int32:idx) never fails {
+pub func:fnem_cross_gep = string(FnEmitter->:fe, int64:idx) never fails {
     // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
-    pass (string_from_bytes(fe.cross_geps[idx => int64].ptr, fe.cross_geps[idx => int64].len));
+    pass (string_from_bytes(fe.cross_geps.items[idx => int64].ptr, fe.cross_geps.items[idx => int64].len));
 };
 
 // The flag slot's GEP for a crossing entry — "" when the entry has none.
-pub func:fnem_cross_fgep = string(FnEmitter->:fe, int32:idx) never fails {
-    pass (string_from_bytes(fe.cross_fgeps[idx => int64].ptr, fe.cross_fgeps[idx => int64].len));
+pub func:fnem_cross_fgep = string(FnEmitter->:fe, int64:idx) never fails {
+    pass (string_from_bytes(fe.cross_fgeps.items[idx => int64].ptr, fe.cross_fgeps.items[idx => int64].len));
 };
 
 // One channel-open stash slot (D-183, 1.2.5). `elem` is the element's tid
@@ -519,24 +474,15 @@ pub func:fnem_cross_fgep = string(FnEmitter->:fe, int32:idx) never fails {
 // buffer still holds before handing the slot back — and 0 otherwise.
 pub func:fnem_chfin_add = NIL(FnEmitter->:fe, move string:slot,
                               int32:elem) never fails {
-    if (fe.chfin_count >= fe.chfin_cap) {
-        int32:nc = fe.chfin_cap * 2i32;
-        fe.chfins = (ralloc(fe.chfins =>! wild int8->,
-                            (nc => int64) * #size_of<string>())) =>! wild string->;
-        fe.chfin_elems = (ralloc(fe.chfin_elems =>! wild int8->,
-                            (nc => int64) * 4i64)) =>! wild int32->;
-        fe.chfin_cap = nc;
-    }
-    fe.chfins[fe.chfin_count => int64] = move(slot);
-    fe.chfin_elems[fe.chfin_count => int64] = elem;
-    fe.chfin_count = fe.chfin_count + 1i32;
+    drop list_push(@fe.chfins, move(slot));
+    drop list_push(@fe.chfin_elems, elem);
     pass NIL;
 };
-pub func:fnem_chfin_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (string_from_bytes(fe.chfins[i => int64].ptr, fe.chfins[i => int64].len));
+pub func:fnem_chfin_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.chfins.items[i => int64].ptr, fe.chfins.items[i => int64].len));
 };
-pub func:fnem_chfin_elem = int32(FnEmitter->:fe, int32:i) never fails {
-    pass (fe.chfin_elems[i => int64]);
+pub func:fnem_chfin_elem = int32(FnEmitter->:fe, int64:i) never fails {
+    pass (fe.chfin_elems.items[i => int64]);
 };
 
 // The drain-then-reclaim for one stash (D-183, 1.2.5b), shared by the sync
@@ -546,7 +492,7 @@ pub func:fnem_chfin_elem = int32(FnEmitter->:fe, int32:i) never fails {
 // into a scratch slot while it answers 0, the generated drop for each, then
 // the slot goes back. A rendezvous ring is empty by construction and the
 // loop exits on its first probe.
-pub func:fnem_chfin_reclaim = NIL(FnEmitter->:fe, int32:i) never fails {
+pub func:fnem_chfin_reclaim = NIL(FnEmitter->:fe, int64:i) never fails {
     string:cst = raw fnem_chfin_at(fe, i);
     string:chv = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat4(chv, " = load i64, ptr ", cst, ""));
@@ -618,13 +564,13 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     string:slots = string_concat("ptr, i32, i32, ", fe.ret_ll);
     slots = string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
     int32:i = 0i32;
-    while (i < fe.pcount) {
-        slots = raw cat3(slots, ", ", fe.plls[i => int64]);
+    while ((i => int64) < fe.pnames.count) {
+        slots = raw cat3(slots, ", ", fe.plls.items[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
-    while (i < fe.cross_count) {
-        slots = raw cat3(slots, ", ", fe.cross_lls[i => int64]);
+    while ((i => int64) < fe.cross_stmts.count) {
+        slots = raw cat3(slots, ", ", fe.cross_lls.items[i => int64]);
         i = i + 1i32;
     }
     // DROP-FLAG SLOTS (D-183, 1.2.4b): one i8 per owning `move` parameter,
@@ -634,18 +580,18 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // local's byte must cross with it, because an alloca dies between
     // `resume` calls exactly like the value slot it guards would have.
     i = 0i32;
-    while (i < fe.pcount) {
-        if (fe.pmoves[i => int64] != 0i32) {
-            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+    while ((i => int64) < fe.pnames.count) {
+        if (fe.pmoves.items[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
                 slots = string_concat(slots, ", i8");
             }
         }
         i = i + 1i32;
     }
     i = 0i32;
-    while (i < fe.cross_count) {
-        if (fe.cross_roles[i => int64] == 0i32) {
-            if (raw type_drops(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
+    while ((i => int64) < fe.cross_stmts.count) {
+        if (fe.cross_roles.items[i => int64] == 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.cross_types.items[i => int64], 64i32)) {
                 slots = string_concat(slots, ", i8");
             }
         }
@@ -664,22 +610,22 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     drop irw_label(fe.w, "entry");
     drop irw_open_fn(fe.w);
 
-    fe.state_gep   = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 1i32);
-    fe.windup_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 2i32);
-    fe.result_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 3i32);
-    fe.join_gep    = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 4i32);
-    fe.awaitee_gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 6i32);
+    fe.state_gep   = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 1i64);
+    fe.windup_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 2i64);
+    fe.result_gep  = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 3i64);
+    fe.join_gep    = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 4i64);
+    fe.awaitee_gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 6i64);
 
     i = 0i32;
-    while (i < fe.pcount) {
-        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i32 + i);
-        drop fnem_bind(fe, fe.pnames[i => int64], move(pg), fe.ptypes[i => int64]);
+    while ((i => int64) < fe.pnames.count) {
+        string:pg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + (i => int64));
+        drop fnem_bind(fe, fe.pnames.items[i => int64], move(pg), fe.ptypes.items[i => int64]);
         i = i + 1i32;
     }
     i = 0i32;
-    while (i < fe.cross_count) {
-        fe.cross_geps[i => int64] =
-            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i32 + fe.pcount + i);
+    while ((i => int64) < fe.cross_stmts.count) {
+        fe.cross_geps.items[i => int64] =
+            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + fe.pnames.count + (i => int64));
         i = i + 1i32;
     }
 
@@ -696,26 +642,26 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // its declaration stores 0 or 1 when it executes, and every path that
     // reads the flag is dominated by the declaration dynamically — a frame
     // reused from the free list carries garbage there only until then.
-    int32:fslot = 12i32 + fe.pcount + fe.cross_count;
+    int64:fslot = 12i64 + fe.pnames.count + fe.cross_stmts.count;
     i = 0i32;
-    while (i < fe.pcount) {
-        if (fe.pmoves[i => int64] != 0i32) {
-            if (raw type_drops(fe.ctx.types, fe.ptypes[i => int64], 64i32)) {
+    while ((i => int64) < fe.pnames.count) {
+        if (fe.pmoves.items[i => int64] != 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
                 string:pfg = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
-                fslot = fslot + 1i32;
+                fslot = fslot + 1i64;
                 drop irw_line(fe.w, raw cat3("store i8 1, ptr ", pfg, ""));
-                drop fnem_flag_at(fe, i, move(pfg));
+                drop fnem_flag_at(fe, (i => int64), move(pfg));
             }
         }
         i = i + 1i32;
     }
     i = 0i32;
-    while (i < fe.cross_count) {
-        if (fe.cross_roles[i => int64] == 0i32) {
-            if (raw type_drops(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
-                fe.cross_fgeps[i => int64] =
+    while ((i => int64) < fe.cross_stmts.count) {
+        if (fe.cross_roles.items[i => int64] == 0i32) {
+            if (raw type_drops(fe.ctx.types, fe.cross_types.items[i => int64], 64i32)) {
+                fe.cross_fgeps.items[i => int64] =
                     raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
-                fslot = fslot + 1i32;
+                fslot = fslot + 1i64;
             }
         }
         i = i + 1i32;
@@ -725,7 +671,7 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
 
 // One GEP into a frame, cut in the ENTRY stream so it dominates every segment.
 pub func:fnem_frame_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
-                                 int32:slot) never fails {
+                                 int64:slot) never fails {
     string:r = raw irw_temp(fe.w);
     drop irw_entry(fe.w, raw cat5(r, " = getelementptr ", frame_ty,
                       raw cat3(", ptr ", fr, ", i32 0, i32 "),
@@ -736,21 +682,13 @@ pub func:fnem_frame_gep = string(FnEmitter->:fe, string:frame_ty, string:fr,
 // A fresh resume state: its number is the label's index. State K's label is
 // the switch target the suspension before it stores.
 pub func:fnem_new_seg = string(FnEmitter->:fe) never fails {
-    if (fe.seg_count >= fe.seg_cap) {
-        int64:ncap = (fe.seg_cap => int64) * 2i64;
-        wild int8->:ns = ralloc(fe.seg_labels =>! wild int8->,
-                                ncap * #size_of<string>());
-        fe.seg_labels = ns =>! wild string->;
-        fe.seg_cap = ncap =>! int32;
-    }
     string:lb = raw irw_new_label(fe.w, "seg");
-    fe.seg_labels[fe.seg_count => int64] = string_concat(lb, "");
-    fe.seg_count = fe.seg_count + 1i32;
+    drop list_push(@fe.seg_labels, string_concat(lb, ""));
     pass lb;
 };
 
-pub func:fnem_seg_index = int32(FnEmitter->:fe) never fails {
-    pass (fe.seg_count - 1i32);
+pub func:fnem_seg_index = int64(FnEmitter->:fe) never fails {
+    pass (fe.seg_labels.count - 1i64);
 };
 
 // THE ONE RETURN SEAM (D-177), IN TWO HALVES SINCE D-207. Every function exit
@@ -867,9 +805,9 @@ pub func:fnem_frame_init = NIL(FnEmitter->:fe, string:frame_ty, string:fr,
 pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     string:params = "";
     int32:i = 0i32;
-    while (i < fe.pcount) {
+    while ((i => int64) < fe.pnames.count) {
         if (i > 0i32) { params = string_concat(params, ", "); }
-        params = raw cat3(params, fe.plls[i => int64], " %a");
+        params = raw cat3(params, fe.plls.items[i => int64], " %a");
         params = string_concat(params, int_to_string(i => int64));
         i = i + 1i32;
     }
@@ -897,9 +835,9 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
     drop irw_line(fe.w, raw cat4(fr, " = alloca ", fe.frame_ty, ""));
     drop fnem_frame_init(fe, fe.frame_ty, fr, fe.resume_sym);
     i = 0i32;
-    while (i < fe.pcount) {
+    while ((i => int64) < fe.pnames.count) {
         string:ag = raw fnem_slot_gep(fe, fe.frame_ty, fr, 12i32 + i);
-        drop irw_line(fe.w, raw cat5("store ", fe.plls[i => int64], " %a",
+        drop irw_line(fe.w, raw cat5("store ", fe.plls.items[i => int64], " %a",
                           int_to_string(i => int64),
                           string_concat(", ptr ", ag)));
         i = i + 1i32;
@@ -929,12 +867,10 @@ pub func:fnem_emit_main_shim = NIL(FnEmitter->:fe) never fails {
 // --- locals -----------------------------------------------------------------------
 
 pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:type_id) never fails {
-    if (fe.lcount >= fe.lcap) { drop fnem_grow_locals(fe); }
-    fe.lnames[fe.lcount => int64] = name;
-    fe.lslots[fe.lcount => int64] = move(slot);
-    fe.ltypes[fe.lcount => int64] = type_id;
-    fe.lflags[fe.lcount => int64] = "";
-    fe.lcount = fe.lcount + 1i32;
+    drop list_push(@fe.lnames, name);
+    drop list_push(@fe.lslots, move(slot));
+    drop list_push(@fe.ltypes, type_id);
+    drop list_push(@fe.lflags, "");
     pass NIL;
 };
 
@@ -959,47 +895,36 @@ pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:l
 // table still owns — a second owner the moment drops exist — and a borrow
 // cannot ride in a struct field (D-004 rule 3). The caller reads
 // `fnem_local_slot_at` / `fnem_local_type_at` in place; -1 is not-found.
-pub func:fnem_lookup_idx = int32(FnEmitter->:fe, int32:name) never fails {
-    int32:i = fe.lcount;
-    while (i > 0i32) {
-        i = i - 1i32;
-        if (fe.lnames[i => int64] == name) { pass i; }
+pub func:fnem_lookup_idx = int64(FnEmitter->:fe, int32:name) never fails {
+    int64:i = fe.lnames.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (fe.lnames.items[i => int64] == name) { pass i; }
     }
-    pass (0i32 - 1i32);
+    pass (0i64 - 1i64);
 };
 
 // Block entry and exit. The mark is the local count; release truncates back to
 // it, so everything a block declared stops resolving the moment it ends.
-pub func:fnem_mark = int32(FnEmitter->:fe) never fails { pass fe.lcount; };
+pub func:fnem_mark = int64(FnEmitter->:fe) never fails { pass fe.lnames.count; };
 
-pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) never fails {
-    fe.lcount = mark;
+pub func:fnem_release = NIL(FnEmitter->:fe, int64:mark) never fails {
+    // ALL FOUR. Listed, for the reason `fnem_begin`'s reset lists its own.
+    fe.lnames.count = mark;
+    fe.lslots.count = mark;
+    fe.ltypes.count = mark;
+    fe.lflags.count = mark;
     pass NIL;
 };
 
 // --- control-flow state (dumb state; the walking lives in ir_stmt) ------------------
 
 pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) never fails {
-    if (fe.dfcount >= fe.dfcap) {
-        int32:nc = fe.dfcap * 2i32;
-        wild int8->:m = ralloc(fe.dframes =>! wild int8->, (nc =>! int64) * 4i64);
-        fe.dframes = m =>! wild int32->;
-        wild int8->:m2 = ralloc(fe.dlmarks =>! wild int8->, (nc =>! int64) * 4i64);
-        fe.dlmarks = m2 =>! wild int32->;
-        fe.dcfmarks = (ralloc(fe.dcfmarks =>! wild int8->,
-                              (nc =>! int64) * 4i64)) =>! wild int32->;
-        fe.dspawns = (ralloc(fe.dspawns =>! wild int8->,
-                             (nc =>! int64) * 4i64)) =>! wild int32->;
-        fe.djmarks = (ralloc(fe.djmarks =>! wild int8->,
-                             (nc => int64) * #size_of<string>())) =>! wild string->;
-        fe.dfcap = nc;
-    }
-    fe.dframes[fe.dfcount => int64] = fe.dcount;
-    fe.dlmarks[fe.dfcount => int64] = fe.lcount;
-    fe.dcfmarks[fe.dfcount => int64] = fe.chfin_count;
-    fe.dspawns[fe.dfcount => int64] = fe.spawn_count;
-    fe.djmarks[fe.dfcount => int64] = "";
-    fe.dfcount = fe.dfcount + 1i32;
+    drop list_push(@fe.dframes, fe.dstmts.count);
+    drop list_push(@fe.dlmarks, fe.lnames.count);
+    drop list_push(@fe.dcfmarks, fe.chfins.count);
+    drop list_push(@fe.dspawns, fe.spawn_count);
+    drop list_push(@fe.djmarks, "");
     pass NIL;
 };
 
@@ -1007,22 +932,33 @@ pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) never fails {
 // use, for the same reason: what a block registered stops existing when it does.
 // The channel stashes and the spawn count truncate for the same reason (D-207).
 pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) never fails {
-    fe.dfcount = fe.dfcount - 1i32;
-    fe.dcount = fe.dframes[fe.dfcount => int64];
-    fe.chfin_count = fe.dcfmarks[fe.dfcount => int64];
-    fe.spawn_count = fe.dspawns[fe.dfcount => int64];
+    // The frame group's five drop together; the windows they name are read
+    // BEFORE the pop, because after it the marks are past the count.
+    int64:top = fe.dframes.count - 1i64;
+    int64:dmark = fe.dframes.items[top];
+    int64:cfmark = fe.dcfmarks.items[top];
+    int32:smark = fe.dspawns.items[top];
+    fe.dframes.count = top;
+    fe.dlmarks.count = top;
+    fe.dcfmarks.count = top;
+    fe.dspawns.count = top;
+    fe.djmarks.count = top;
+    fe.dstmts.count = dmark;
+    fe.chfins.count = cfmark;
+    fe.chfin_elems.count = cfmark;
+    fe.spawn_count = smark;
     pass NIL;
 };
 
 // This scope's CHANNEL STASHES — the window `fnem_chfin_add` filled between
 // its push and here (D-207, 1.4.4). The `hi` is the live top for the
 // innermost scope, exactly as the locals window works.
-pub func:fnem_scope_cfmark = int32(FnEmitter->:fe, int32:f) never fails {
-    pass fe.dcfmarks[f => int64];
+pub func:fnem_scope_cfmark = int64(FnEmitter->:fe, int64:f) never fails {
+    pass fe.dcfmarks.items[f => int64];
 };
-pub func:fnem_scope_cfhi = int32(FnEmitter->:fe, int32:f) never fails {
-    if (f == (fe.dfcount - 1i32)) { pass fe.chfin_count; }
-    pass fe.dcfmarks[(f + 1i32) => int64];
+pub func:fnem_scope_cfhi = int64(FnEmitter->:fe, int64:f) never fails {
+    if (f == (fe.dframes.count - 1i64)) { pass fe.chfins.count; }
+    pass fe.dcfmarks.items[f + 1i64];
 };
 
 // DID THIS SCOPE SPAWN? A spawn in a deeper scope was joined at that scope's
@@ -1032,8 +968,8 @@ pub func:fnem_scope_cfhi = int32(FnEmitter->:fe, int32:f) never fails {
 // frame's statements textually before it — a loop body is a DEEPER frame, and
 // `continue` runs that frame's exit before the back edge — so a child on
 // frame `f`'s segment at this exit was spawned textually before it.
-pub func:fnem_scope_spawned = bool(FnEmitter->:fe, int32:f) never fails {
-    pass (fe.spawn_count > fe.dspawns[f => int64]);
+pub func:fnem_scope_spawned = bool(FnEmitter->:fe, int64:f) never fails {
+    pass (fe.spawn_count > fe.dspawns.items[f => int64]);
 };
 pub func:fnem_note_spawn = NIL(FnEmitter->:fe) never fails {
     fe.spawn_count = fe.spawn_count + 1i32;
@@ -1045,133 +981,108 @@ pub func:fnem_note_spawn = NIL(FnEmitter->:fe) never fails {
 // on an `async` callee outside an `async` body), and "" for the frame of a
 // block whose mark slot the pre-scan did not reserve.
 pub func:fnem_set_jmark = NIL(FnEmitter->:fe, move string:slot) never fails {
-    fe.djmarks[(fe.dfcount - 1i32) => int64] = move(slot);
+    fe.djmarks.items[(fe.dframes.count - 1i64) => int64] = move(slot);
     pass NIL;
 };
-pub func:fnem_scope_jmark = string(FnEmitter->:fe, int32:f) never fails {
-    pass (string_from_bytes(fe.djmarks[f => int64].ptr,
-                            fe.djmarks[f => int64].len));
+pub func:fnem_scope_jmark = string(FnEmitter->:fe, int64:f) never fails {
+    pass (string_from_bytes(fe.djmarks.items[f => int64].ptr,
+                            fe.djmarks.items[f => int64].len));
 };
 
 pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) never fails {
-    if (fe.dcount >= fe.dcap) {
-        int32:nc = fe.dcap * 2i32;
-        wild int8->:m = ralloc(fe.dstmts =>! wild int8->, (nc =>! int64) * 4i64);
-        fe.dstmts = m =>! wild int32->;
-        fe.dcap = nc;
-    }
-    fe.dstmts[fe.dcount => int64] = stmt_index;
-    fe.dcount = fe.dcount + 1i32;
+    drop list_push(@fe.dstmts, stmt_index);
     pass NIL;
 };
 
-pub func:fnem_defer_frames = int32(FnEmitter->:fe) never fails { pass fe.dfcount; };
-pub func:fnem_defer_frame_lo = int32(FnEmitter->:fe, int32:f) never fails {
-    pass fe.dframes[f => int64];
+pub func:fnem_defer_frames = int64(FnEmitter->:fe) never fails { pass fe.dframes.count; };
+pub func:fnem_defer_frame_lo = int64(FnEmitter->:fe, int64:f) never fails {
+    pass fe.dframes.items[f => int64];
 };
-pub func:fnem_defer_frame_hi = int32(FnEmitter->:fe, int32:f) never fails {
-    if (f == (fe.dfcount - 1i32)) { pass fe.dcount; }
-    pass fe.dframes[(f + 1i32) => int64];
+pub func:fnem_defer_frame_hi = int64(FnEmitter->:fe, int64:f) never fails {
+    if (f == (fe.dframes.count - 1i64)) { pass fe.dstmts.count; }
+    pass fe.dframes.items[f + 1i64];
 };
-pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) never fails {
-    pass fe.dstmts[i => int64];
+pub func:fnem_defer_at = int32(FnEmitter->:fe, int64:i) never fails {
+    pass fe.dstmts.items[i => int64];
 };
 
 // A SCOPE'S OWN LOCALS: those bound between its mark and the next scope's, or
 // the live top for the innermost. The drop unwind walks this window backwards,
 // which is reverse declaration order within the scope (D-183).
-pub func:fnem_scope_lmark = int32(FnEmitter->:fe, int32:f) never fails {
-    pass fe.dlmarks[f => int64];
+pub func:fnem_scope_lmark = int64(FnEmitter->:fe, int64:f) never fails {
+    pass fe.dlmarks.items[f => int64];
 };
-pub func:fnem_scope_lhi = int32(FnEmitter->:fe, int32:f) never fails {
-    if (f == (fe.dfcount - 1i32)) { pass fe.lcount; }
-    pass fe.dlmarks[(f + 1i32) => int64];
+pub func:fnem_scope_lhi = int64(FnEmitter->:fe, int64:f) never fails {
+    if (f == (fe.dframes.count - 1i64)) { pass fe.lnames.count; }
+    pass fe.dlmarks.items[f + 1i64];
 };
-pub func:fnem_local_slot_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (string_from_bytes(fe.lslots[i => int64].ptr, fe.lslots[i => int64].len));
+pub func:fnem_local_slot_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.lslots.items[i => int64].ptr, fe.lslots.items[i => int64].len));
 };
-pub func:fnem_local_type_at = int32(FnEmitter->:fe, int32:i) never fails {
-    pass fe.ltypes[i => int64];
+pub func:fnem_local_type_at = int32(FnEmitter->:fe, int64:i) never fails {
+    pass fe.ltypes.items[i => int64];
 };
 
 // Attach a drop flag to the most recent binding (D-183, 1.2.3). Called right
 // after the `fnem_bind`/`fnem_local` that created it, by the two sites that
 // create OWNED bindings: `emit_vardecl`, and the prologue for `move` params.
 pub func:fnem_flag_last = NIL(FnEmitter->:fe, move string:flag) never fails {
-    fe.lflags[(fe.lcount - 1i32) => int64] = move(flag);
+    fe.lflags.items[(fe.lnames.count - 1i64) => int64] = move(flag);
     pass NIL;
 };
 // The by-index form, for a coroutine's `move` parameters (D-183, 1.2.4b):
 // they are the first `pcount` binding entries — bound in order before any
 // body local — and their frame flag GEPs are cut after every bind.
-pub func:fnem_flag_at = NIL(FnEmitter->:fe, int32:i, move string:flag) never fails {
-    fe.lflags[i => int64] = move(flag);
+pub func:fnem_flag_at = NIL(FnEmitter->:fe, int64:i, move string:flag) never fails {
+    fe.lflags.items[i => int64] = move(flag);
     pass NIL;
 };
-pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int32:i) never fails {
-    pass ($$i fe.lflags[i => int64]);
+pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int64:i) never fails {
+    pass ($$i fe.lflags.items[i => int64]);
 };
-pub func:fnem_param_is_move = bool(FnEmitter->:fe, int32:i) never fails {
-    if (i < 0i32) { pass false; }
-    if (i >= fe.pcount) { pass false; }
-    pass (fe.pmoves[i => int64] != 0i32);
+pub func:fnem_param_is_move = bool(FnEmitter->:fe, int64:i) never fails {
+    if (i < 0i64) { pass false; }
+    if (i >= fe.pnames.count) { pass false; }
+    pass (fe.pmoves.items[i => int64] != 0i32);
 };
 
 pub func:fnem_loop_push = NIL(FnEmitter->:fe, move string:head, move string:done,
                               int32:label, move string:iter) never fails {
-    if (fe.loop_count >= fe.loop_cap) {
-        int32:nc = fe.loop_cap * 2i32;
-        wild int8->:a = ralloc(fe.loop_heads =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        wild int8->:b = ralloc(fe.loop_dones =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        wild int8->:c = ralloc(fe.loop_depths =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:d = ralloc(fe.loop_labels =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:e = ralloc(fe.loop_iters =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        fe.loop_heads = a =>! wild string->;
-        fe.loop_dones = b =>! wild string->;
-        fe.loop_depths = c =>! wild int32->;
-        fe.loop_labels = d =>! wild int32->;
-        fe.loop_iters = e =>! wild string->;
-        fe.loop_cap = nc;
-    }
-    fe.loop_heads[fe.loop_count => int64] = move(head);
-    fe.loop_dones[fe.loop_count => int64] = move(done);
-    fe.loop_depths[fe.loop_count => int64] = fe.dfcount;
-    fe.loop_labels[fe.loop_count => int64] = label;
-    fe.loop_iters[fe.loop_count => int64] = move(iter);
-    fe.loop_count = fe.loop_count + 1i32;
+    drop list_push(@fe.loop_heads, move(head));
+    drop list_push(@fe.loop_dones, move(done));
+    drop list_push(@fe.loop_depths, fe.dframes.count);
+    drop list_push(@fe.loop_labels, label);
+    drop list_push(@fe.loop_iters, move(iter));
     pass NIL;
 };
 
 // The stack index a labelled `break`/`continue` targets: the nearest frame
 // carrying the label, or -1. Unlabelled (0) means the top.
-pub func:fnem_loop_find = int32(FnEmitter->:fe, int32:label) never fails {
-    if (label == 0i32) { pass (fe.loop_count - 1i32); }
-    int32:i = fe.loop_count;
-    while (i > 0i32) {
-        i = i - 1i32;
-        if (fe.loop_labels[i => int64] == label) { pass i; }
+pub func:fnem_loop_find = int64(FnEmitter->:fe, int32:label) never fails {
+    if (label == 0i32) { pass (fe.loop_heads.count - 1i64); }
+    int64:i = fe.loop_heads.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (fe.loop_labels.items[i => int64] == label) { pass i; }
     }
-    pass (0i32 - 1i32);
+    pass (0i64 - 1i64);
 };
 
 // The innermost `$` slot — the nearest counted frame; "" when none is open.
 pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
-    int32:i = fe.loop_count;
-    while (i > 0i32) {
-        i = i - 1i32;
+    int64:i = fe.loop_heads.count;
+    while (i > 0i64) {
+        i = i - 1i64;
         // A GETTER OVER A CONTAINER OF OWNING VALUES: returning a BORROW is
         // refused by D-004 rule 2 and the deep-view accessor family D-183
         // records is not built, so the correct spelling available today is the
-        // one that allocates. It was `move(fe.loop_iters[i])` until 1.4.3 —
+        // one that allocates. It was `move(fe.loop_iters.items[i])` until 1.4.3 —
         // which does not empty a container ELEMENT (there is no drop flag on
         // one), so the caller and the container held one body between them and
         // whichever dropped first freed it. The move analysis said so as soon
         // as it could see `fe`, a parameter. Cold: one call per `$` in a
         // counted loop.
-        string:it = string_concat(fe.loop_iters[i => int64], "");
+        string:it = string_concat(fe.loop_iters.items[i => int64], "");
         if (it.len > 0i64) { pass it; }
     }
     pass "";
@@ -1180,98 +1091,87 @@ pub func:fnem_iter_slot = string(FnEmitter->:fe) never fails {
 pub func:fnem_pick_push = NIL(FnEmitter->:fe, move string:done, move string:slot,
                               move string:ll, int32:slot_ty, int32:start,
                               int32:count, int32:seq) never fails {
-    if (fe.pick_count >= fe.pick_cap) {
-        int32:nc = fe.pick_cap * 2i32;
-        wild int8->:a = ralloc(fe.pick_dones =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        wild int8->:b = ralloc(fe.pick_slots =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        wild int8->:c = ralloc(fe.pick_lls =>! wild int8->,
-                               (nc => int64) * #size_of<string>());
-        wild int8->:t = ralloc(fe.pick_tids =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:d = ralloc(fe.pick_starts =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:e = ralloc(fe.pick_counts =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:f = ralloc(fe.pick_seqs =>! wild int8->, (nc =>! int64) * 4i64);
-        wild int8->:g = ralloc(fe.pick_depths =>! wild int8->, (nc =>! int64) * 4i64);
-        fe.pick_dones = a =>! wild string->;
-        fe.pick_slots = b =>! wild string->;
-        fe.pick_lls = c =>! wild string->;
-        fe.pick_tids = t =>! wild int32->;
-        fe.pick_starts = d =>! wild int32->;
-        fe.pick_counts = e =>! wild int32->;
-        fe.pick_seqs = f =>! wild int32->;
-        fe.pick_depths = g =>! wild int32->;
-        fe.pick_cap = nc;
-    }
-    fe.pick_dones[fe.pick_count => int64] = move(done);
-    fe.pick_slots[fe.pick_count => int64] = move(slot);
-    fe.pick_lls[fe.pick_count => int64] = move(ll);
-    fe.pick_tids[fe.pick_count => int64] = slot_ty;
-    fe.pick_starts[fe.pick_count => int64] = start;
-    fe.pick_counts[fe.pick_count => int64] = count;
-    fe.pick_seqs[fe.pick_count => int64] = seq;
-    fe.pick_depths[fe.pick_count => int64] = fe.dfcount;
-    fe.pick_count = fe.pick_count + 1i32;
+    drop list_push(@fe.pick_dones, move(done));
+    drop list_push(@fe.pick_slots, move(slot));
+    drop list_push(@fe.pick_lls, move(ll));
+    drop list_push(@fe.pick_tids, slot_ty);
+    drop list_push(@fe.pick_starts, start);
+    drop list_push(@fe.pick_counts, count);
+    drop list_push(@fe.pick_seqs, seq);
+    drop list_push(@fe.pick_depths, fe.dframes.count);
     pass NIL;
 };
 
 pub func:fnem_pick_pop = NIL(FnEmitter->:fe) never fails {
-    fe.pick_count = fe.pick_count - 1i32;
+    int64:n = fe.pick_dones.count - 1i64;   // ALL EIGHT
+    fe.pick_dones.count = n;
+    fe.pick_slots.count = n;
+    fe.pick_lls.count = n;
+    fe.pick_tids.count = n;
+    fe.pick_starts.count = n;
+    fe.pick_counts.count = n;
+    fe.pick_seqs.count = n;
+    fe.pick_depths.count = n;
     pass NIL;
 };
 
 pub func:fnem_pick_done = string(FnEmitter->:fe) never fails {
-    pass (string_from_bytes(fe.pick_dones[(fe.pick_count - 1i32) => int64].ptr, fe.pick_dones[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_dones.items[(fe.pick_dones.count - 1i64) => int64].ptr, fe.pick_dones.items[(fe.pick_dones.count - 1i64) => int64].len));
 };
 pub func:fnem_pick_slot = string(FnEmitter->:fe) never fails {
-    pass (string_from_bytes(fe.pick_slots[(fe.pick_count - 1i32) => int64].ptr, fe.pick_slots[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_slots.items[(fe.pick_dones.count - 1i64) => int64].ptr, fe.pick_slots.items[(fe.pick_dones.count - 1i64) => int64].len));
 };
 pub func:fnem_pick_ll = string(FnEmitter->:fe) never fails {
-    pass (string_from_bytes(fe.pick_lls[(fe.pick_count - 1i32) => int64].ptr, fe.pick_lls[(fe.pick_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.pick_lls.items[(fe.pick_dones.count - 1i64) => int64].ptr, fe.pick_lls.items[(fe.pick_dones.count - 1i64) => int64].len));
 };
 pub func:fnem_pick_tid = int32(FnEmitter->:fe) never fails {
-    pass fe.pick_tids[(fe.pick_count - 1i32) => int64];
+    pass fe.pick_tids.items[(fe.pick_dones.count - 1i64) => int64];
 };
 pub func:fnem_pick_start = int32(FnEmitter->:fe) never fails {
-    pass fe.pick_starts[(fe.pick_count - 1i32) => int64];
+    pass fe.pick_starts.items[(fe.pick_dones.count - 1i64) => int64];
 };
 pub func:fnem_pick_count_of = int32(FnEmitter->:fe) never fails {
-    pass fe.pick_counts[(fe.pick_count - 1i32) => int64];
+    pass fe.pick_counts.items[(fe.pick_dones.count - 1i64) => int64];
 };
 pub func:fnem_pick_seq_of = int32(FnEmitter->:fe) never fails {
-    pass fe.pick_seqs[(fe.pick_count - 1i32) => int64];
+    pass fe.pick_seqs.items[(fe.pick_dones.count - 1i64) => int64];
 };
-pub func:fnem_pick_depth = int32(FnEmitter->:fe) never fails {
-    pass fe.pick_depths[(fe.pick_count - 1i32) => int64];
+pub func:fnem_pick_depth = int64(FnEmitter->:fe) never fails {
+    pass fe.pick_depths.items[(fe.pick_dones.count - 1i64) => int64];
 };
 pub func:fnem_next_pick_seq = int32(FnEmitter->:fe) never fails {
     fe.pick_seq = fe.pick_seq + 1i32;
     pass fe.pick_seq;
 };
 
-pub func:fnem_loop_head_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (string_from_bytes(fe.loop_heads[i => int64].ptr, fe.loop_heads[i => int64].len));
+pub func:fnem_loop_head_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.loop_heads.items[i => int64].ptr, fe.loop_heads.items[i => int64].len));
 };
-pub func:fnem_loop_done_at = string(FnEmitter->:fe, int32:i) never fails {
-    pass (string_from_bytes(fe.loop_dones[i => int64].ptr, fe.loop_dones[i => int64].len));
+pub func:fnem_loop_done_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.loop_dones.items[i => int64].ptr, fe.loop_dones.items[i => int64].len));
 };
-pub func:fnem_loop_depth_at = int32(FnEmitter->:fe, int32:i) never fails {
-    pass fe.loop_depths[i => int64];
+pub func:fnem_loop_depth_at = int64(FnEmitter->:fe, int64:i) never fails {
+    pass fe.loop_depths.items[i => int64];
 };
 
 pub func:fnem_loop_pop = NIL(FnEmitter->:fe) never fails {
-    fe.loop_count = fe.loop_count - 1i32;
+    int64:n = fe.loop_heads.count - 1i64;   // ALL FIVE
+    fe.loop_heads.count = n;
+    fe.loop_dones.count = n;
+    fe.loop_depths.count = n;
+    fe.loop_labels.count = n;
+    fe.loop_iters.count = n;
     pass NIL;
 };
 
 pub func:fnem_loop_head = string(FnEmitter->:fe) never fails {
-    pass (string_from_bytes(fe.loop_heads[(fe.loop_count - 1i32) => int64].ptr, fe.loop_heads[(fe.loop_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.loop_heads.items[(fe.loop_heads.count - 1i64) => int64].ptr, fe.loop_heads.items[(fe.loop_heads.count - 1i64) => int64].len));
 };
 pub func:fnem_loop_done = string(FnEmitter->:fe) never fails {
-    pass (string_from_bytes(fe.loop_dones[(fe.loop_count - 1i32) => int64].ptr, fe.loop_dones[(fe.loop_count - 1i32) => int64].len));
+    pass (string_from_bytes(fe.loop_dones.items[(fe.loop_heads.count - 1i64) => int64].ptr, fe.loop_dones.items[(fe.loop_heads.count - 1i64) => int64].len));
 };
-pub func:fnem_loop_depth = int32(FnEmitter->:fe) never fails {
-    pass fe.loop_depths[(fe.loop_count - 1i32) => int64];
+pub func:fnem_loop_depth = int64(FnEmitter->:fe) never fails {
+    pass fe.loop_depths.items[(fe.loop_heads.count - 1i64) => int64];
 };
 
 // --- returns ----------------------------------------------------------------------
@@ -1373,9 +1273,9 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_entry(fe.w, raw cat3(st, " = load i32, ptr ", fe.state_gep));
         string:cases = "";
         int32:k = 0i32;
-        while (k < fe.seg_count) {
+        while ((k => int64) < fe.seg_labels.count) {
             cases = raw cat5(cases, " i32 ", int_to_string(k => int64),
-                             ", label %", fe.seg_labels[k => int64]);
+                             ", label %", fe.seg_labels.items[k => int64]);
             k = k + 1i32;
         }
         drop irw_entry(fe.w, raw cat5("switch i32 ", st,

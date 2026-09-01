@@ -348,9 +348,9 @@ func:gives_stash_one = NIL(ExprEmitter->:x, IrVal->:v, string:path,
                       string_concat(lo64, "")));
     string:cstash = "";
     if (x.fe.is_async) {
-        int32:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
+        int64:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
                                         30i32 + x.fe.chopen_ord);
-        if (cfi < 0i32) { pass NIL; }
+        if (cfi < 0i64) { pass NIL; }
         x.fe.chopen_ord = x.fe.chopen_ord + 1i32;
         cstash = raw fnem_cross_gep(x.fe, cfi);
     } else {
@@ -1333,8 +1333,8 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
 };
 
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
-    int32:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
-    if (si < 0i32) {
+    int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
+    if (si < 0i64) {
         // A FUNCTION USED AS A VALUE (0.9.6, D-087): one machine word, the
         // symbol itself — closures are gone (D-018), so there is no
         // environment to capture and nothing to allocate.
@@ -5085,18 +5085,18 @@ func:emit_condvar_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                                int32:cv_tid, Span:at) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
-    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
-    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
-    int32:pi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
-    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
-    int32:mi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 24i32);
-    int32:gi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 25i32);
-    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (di_ < 0i32) { pass (raw iv_broken(at)); }
-    if (pi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
-    if (mi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (gi_ < 0i32) { pass (raw iv_broken(at)); }
+    int64:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int64:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int64:pi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
+    int64:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    int64:mi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 24i32);
+    int64:gi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 25i32);
+    if (hi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (di_ < 0i64) { pass (raw iv_broken(at)); }
+    if (pi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i64) { pass (raw iv_broken(at)); }
+    if (mi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (gi_ < 0i64) { pass (raw iv_broken(at)); }
     string:cvslot = raw fnem_cross_gep(x.fe, hi_);
     string:dslot = raw fnem_cross_gep(x.fe, di_);
     string:pslot = raw fnem_cross_gep(x.fe, pi_);
@@ -5182,7 +5182,7 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       ", ptr ", mp, raw cat3(", i64 ", dab, ", ptr %fr)")));
     drop irw_line(x.fe.w, raw cat3("store i64 1, ptr ", pslot, ""));
     string:sg = raw fnem_new_seg(x.fe);
-    int32:sk = raw fnem_seg_index(x.fe);
+    int64:sk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(sk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -5247,7 +5247,7 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     x.fe.terminated = true;
     drop s_start(x, park2);
     string:sg2 = raw fnem_new_seg(x.fe);
-    int32:sk2 = raw fnem_seg_index(x.fe);
+    int64:sk2 = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(sk2 => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -5327,14 +5327,14 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
 func:emit_barrier_arrive = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                                  int32:ba_tid, Span:at) never fails {
     ExprNode:cn = raw ast_expr(x.ast, cid);
-    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
-    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
-    int32:gi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
-    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
-    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (di_ < 0i32) { pass (raw iv_broken(at)); }
-    if (gi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
+    int64:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int64:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int64:gi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
+    int64:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    if (hi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (di_ < 0i64) { pass (raw iv_broken(at)); }
+    if (gi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i64) { pass (raw iv_broken(at)); }
     string:cslot = raw fnem_cross_gep(x.fe, hi_);
     string:dslot = raw fnem_cross_gep(x.fe, di_);
     string:gslot = raw fnem_cross_gep(x.fe, gi_);
@@ -5405,7 +5405,7 @@ func:emit_barrier_arrive = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     x.fe.terminated = true;
     drop s_start(x, park);
     string:sg = raw fnem_new_seg(x.fe);
-    int32:sk = raw fnem_seg_index(x.fe);
+    int64:sk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(sk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -5473,12 +5473,12 @@ func:emit_lock_acquire = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         lkfn = "@npk_rw_write_wait";
         if (raw string_eq(lkm, "read")) { lkfn = "@npk_rw_read_wait"; }
     }
-    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
-    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
-    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
-    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (di_ < 0i32) { pass (raw iv_broken(at)); }
-    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
+    int64:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int64:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int64:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    if (hi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (di_ < 0i64) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i64) { pass (raw iv_broken(at)); }
     string:cslot = raw fnem_cross_gep(x.fe, hi_);
     string:dslot = raw fnem_cross_gep(x.fe, di_);
     string:eslot = raw fnem_cross_gep(x.fe, ei_);
@@ -5537,7 +5537,7 @@ func:emit_lock_acquire = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
 
     drop s_start(x, park);
     string:sg = raw fnem_new_seg(x.fe);
-    int32:sk = raw fnem_seg_index(x.fe);
+    int64:sk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(sk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -5606,14 +5606,14 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     // loop does not dominate the resume switch's re-entry — the pre-scan
     // reserved these slots on this statement, which D-178 guarantees carries
     // at most one suspension.
-    int32:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
-    int32:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
-    int32:vi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
-    int32:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
-    if (hi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (di_ < 0i32) { pass (raw iv_broken(at)); }
-    if (vi_ < 0i32) { pass (raw iv_broken(at)); }
-    if (ei_ < 0i32) { pass (raw iv_broken(at)); }
+    int64:hi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 20i32);
+    int64:di_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 21i32);
+    int64:vi_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 22i32);
+    int64:ei_ = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 23i32);
+    if (hi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (di_ < 0i64) { pass (raw iv_broken(at)); }
+    if (vi_ < 0i64) { pass (raw iv_broken(at)); }
+    if (ei_ < 0i64) { pass (raw iv_broken(at)); }
     string:hwslot = raw fnem_cross_gep(x.fe, hi_);
     string:dslot = raw fnem_cross_gep(x.fe, di_);
     string:slot = raw fnem_cross_gep(x.fe, vi_);
@@ -5693,7 +5693,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     // with the caller's deadline before returning 1), so this only has to
     // record where to come back to.
     string:sg = raw fnem_new_seg(x.fe);
-    int32:sk = raw fnem_seg_index(x.fe);
+    int64:sk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(sk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -5929,7 +5929,7 @@ func:emit_dyn_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop irw_line(x.fe.w, raw cat4("store ptr ", fr, ", ptr ",
                       x.fe.awaitee_gep));
     string:sg = raw fnem_new_seg(x.fe);
-    int32:kk = raw fnem_seg_index(x.fe);
+    int64:kk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(kk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -6082,7 +6082,7 @@ func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     drop irw_line(x.fe.w, raw cat4("store ptr ", fr, ", ptr ",
                       x.fe.awaitee_gep));
     string:sg = raw fnem_new_seg(x.fe);
-    int32:kk = raw fnem_seg_index(x.fe);
+    int64:kk = raw fnem_seg_index(x.fe);
     drop irw_line(x.fe.w, raw cat5("store i32 ",
                       int_to_string(kk => int64), ", ptr ",
                       x.fe.state_gep, ""));
@@ -6278,8 +6278,8 @@ func:emit_va_tail_frame = IrVal(ExprEmitter->:x, int32:ft, int32:start,
     string:arrty = raw cat5("[",
                        int_to_string((count - fixed_in_call) => int64),
                        " x ", el.text, "]");
-    int32:ci = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 30i32);
-    if (ci < 0i32) { pass (raw iv_broken(at)); }
+    int64:ci = raw fnem_cross_find(x.fe, x.fe.cur_stmt, 30i32);
+    if (ci < 0i64) { pass (raw iv_broken(at)); }
     string:arrp = raw fnem_cross_gep(x.fe, ci);
     pass (raw va_fill(x, elem, arrty, arrp, start, count, fixed_in_call, at));
 };
@@ -6729,12 +6729,12 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:cstash = "";
         if (cfinal) {
             if (x.fe.is_async) {
-                int32:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
+                int64:cfi = raw fnem_cross_find(x.fe, x.fe.cur_stmt,
                                                 30i32 + x.fe.chopen_ord);
                 // A MISS IS A DEFECT, NOT A RUNG: the pre-scan and this
                 // site walk the same tree, and drift between them fails
                 // closed as broken IR.
-                if (cfi < 0i32) { pass (raw iv_broken(n.span)); }
+                if (cfi < 0i64) { pass (raw iv_broken(n.span)); }
                 x.fe.chopen_ord = x.fe.chopen_ord + 1i32;
                 cstash = raw fnem_cross_gep(x.fe, cfi);
             } else {
@@ -6858,7 +6858,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ",
                           ioat.ref, ")"));
         string:iosg = raw fnem_new_seg(x.fe);
-        int32:iok = raw fnem_seg_index(x.fe);
+        int64:iok = raw fnem_seg_index(x.fe);
         drop irw_line(x.fe.w, raw cat5("store i32 ",
                           int_to_string(iok => int64), ", ptr ",
                           x.fe.state_gep, ""));
@@ -6897,7 +6897,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3("call void @npk_park_until(i64 ",
                           pa.ref, ")"));
         string:psg = raw fnem_new_seg(x.fe);
-        int32:pk = raw fnem_seg_index(x.fe);
+        int64:pk = raw fnem_seg_index(x.fe);
         drop irw_line(x.fe.w, raw cat5("store i32 ",
                           int_to_string(pk => int64), ", ptr ",
                           x.fe.state_gep, ""));
@@ -8403,8 +8403,8 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(x.ast, id);
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        int32:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
-        if (si < 0i32) {
+        int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
+        if (si < 0i64) {
             // A MODULE-LEVEL BINDING'S PLACE IS ITS GLOBAL (D-165, 1.0.9d): the
             // address is the D-156 symbol itself, so a global struct's field and
             // a global array's element are read (and a mutable global written)
