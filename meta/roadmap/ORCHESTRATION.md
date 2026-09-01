@@ -9,6 +9,14 @@
 > family-10 stand-down; everything here carries the measurement or the incident
 > behind it. Nothing here authorises spawning an agent — that is the user's
 > call, per task, as always.
+>
+> **D-233 note (2026-09-01)**: where this file says "the Astrée
+> preparation", read "the 1.6 analyzer evidence" — Astrée left the plan the
+> same day this one was ratified. R9's stated basis ("the Astrée trial is a
+> single non-renewable 30 days") is restated by D-233 as proof-invalidation
+> scarcity; R9's rule is unchanged either way — obligations discovered in a
+> branch and never collected are still the cheapest way to lose the
+> campaign.
 
 ## 1. What this is, and what it is not
 

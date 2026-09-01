@@ -1,128 +1,68 @@
-# Cycle 1.6 — Astrée preparation
+# Cycle 1.6 — the LLVM-native analyzer evidence (D-233)
 
-**Phase C, the one that cannot be retried.** A single non-renewable 30-day Astrée
-run. Everything about this cycle is shaped by that fact: the work is preparation so
-thorough that the 30 days are spent analyzing, not discovering that the input format
-was wrong.
+**Phase C.** Abstract interpretation over the emitted IR, translation
+validation of the optimizer, and the assembled evidence package. **This file
+was the Astrée preparation handbook until D-233 (2026-09-01) superseded
+D-232 and moved the evidence to the IR itself** — the old content survives
+in git history and in `../research/digests/r3-digest.md`, and the parts of
+it that transfer are folded into the subcycles below. There is no external
+clock anywhere in this cycle: every engine is open, pinned by commit, built
+on the workbench, and run as a standing instrument.
 
-> Detailed **map**, and deliberately short — most of 1.6's content is *gates that
-> must close earlier*, not subcycles that run here. (This file was internally
-> titled "Cycle 1.5" until the 1.4.0-era doc sweep — the renumbering that made
-> Astrée 1.6 swept the folder, not the body. Its "before 1.4 exits" gate language
-> meant "before self-hosting's successor exits" under the old map and now reads
-> "before 1.5 exits", matching ROADMAP and C-19's row.)
+> The deciding survey is
+> `../research/LLVM_Formal_Verification_Tool_Options.md`; its
+> decision-grade digest with reliability notes is
+> `../research/digests/llvm-tools-digest.md`. Per the r5/r8 rule, never
+> cite the survey's prose without the notes — its most-cited source is an
+> empty citation row, and its SMACK "complete path coverage" claim is
+> wrong for this language (digest note 4).
 
-## What the R-3 research settled and what it could not (1.4-era; full digest: `../research/digests/r3-digest.md`)
+## The three legs (D-233's architecture)
 
-The deep-research pass (r3.md) confirms the working assumption with one
-caveat that keeps C-19 open:
+| Leg | Evidence class | Owner |
+|---|---|---|
+| **A** | Whole-program runtime-error absence — OOB, div-by-zero, null/uninitialized reads — by sound abstract interpretation over OUR emitted IR | The engine 1.6.0's gate names: **Clam/Crab** vs **IKOS** |
+| **B** | Per-obligation proof — overflow, bounds, casts, contracts, `limit`, termination, ERR-exit | **Z3 under D-218** — 1.5's spine, untouched by this cycle |
+| **C** | Optimizer integrity — the pinned `opt -O2` pipeline does not remove a guarantee | **Alive2** beside the opt-O2 harness leg (which stays) |
 
-- **Input is C and C++ source only** — "no native ingestion pathway for
-  LLVM IR, compiled object code, assembly, or binaries" (binary analysis
-  is AbsInt's separate aiT product). C90–C18; the C++ front-end is
-  described as mature through C++17. **Caveat: the report cites no
-  AbsInt first-party documentation** — the claim matches everything
-  known, but first-party confirmation IS the C-19 contact.
-- **The analyzable subset**: no dynamic allocation (static/stack only),
-  no recursion (even bounded is flagged), function pointers fully
-  supported (exhaustive points-to), unions restricted, variadics
-  restricted, forward-only unstructured jumps, everything external
-  stubbed.
-- **The generated-code sections describe OUR situation**: Astrée "was
-  originally conceived, designed, and optimized" for machine-generated
-  synchronous control code, and everything it credits SCADE/TargetLink
-  for — subset-respecting emission, regular naming that maps back to
-  source origins, flat control flow, and mechanically emitted
-  `__ASTREE_volatile_input`/`known_fact` range directives from the
-  generator's data dictionary — **is a property a C-emitting npkc
-  backend can deliberately provide**. The "data dictionary" (physical
-  min/max per external input) corresponds to information the type
-  system, the D-148 literal envelopes, and REACH already hold.
-- **Benchmarks**: A340 132 kLOC → 1h20m, zero false alarms; A380
-  350k–1M LOC → ~6h–overnight per module, zero false alarms. The
-  preparation effort was dominated by ENVIRONMENT analysis (sensor
-  bounds, stubs, packing), not analyzer configuration.
-- **Trial mechanics**: 30-day evaluation, node-locked or floating, with
-  Field Application Engineer support; project setup ingests
-  `compile_commands.json`; qualification kits to DO-178C DAL-A /
-  ISO 26262 ASIL D.
+Depth tools are NAMED ESCALATIONS with entry criteria, not adoptions:
+SeaHorn (CHC/Spacer) if leg A's triage meets invariants its numeric domains
+cannot close — the D-150 chunk-bitmap class is the expected tenant;
+SAW/Crux if the Bridge wire marshaling wants extensional-equality proof
+beyond 1.5.6's Z3 leg. Tool adoption is monotone (a later analyzer adds
+evidence and invalidates none), which is why this sequencing is a decision
+and not a deferral — D-233 states the rule.
 
-## The gate that must close before 1.5 exits (C-19)
-
-The docs assumed Astrée analyzes "monomorphized output"; the research
-confirms it accepts C — so **if AbsInt confirms C-only, a C-emission
-path is Phase-C work that must be scheduled before 1.6**, designed to
-the generated-code playbook above (subset-respecting emission is the
-easy half for us: no dynamic allocation in the analyzed artifact means
-the emitted C models the D-150 allocator explicitly or the analysis
-scopes around it — one of the questions below).
-
-## The AbsInt question list (the C-19 contact; sharpened by R-3's gaps)
-
-1. **Input format, first-party**: confirm no LLVM-IR/assembly path in
-   the CURRENT product and none on the roadmap. (The report's "absolute"
-   claim rests on the 2005 paper and reseller pages.)
-2. **C++ front-end reality**: what C++ subsets analyze well in practice;
-   whether generated C remains the recommended input over generated C++.
-3. **Unions and variadics**: exactly what is admitted today.
-4. **Recursion**: is ANY bounded recursion acceptable, or must all be
-   flattened (bears on emitted runtime code).
-5. **Dynamic allocation policy for a language runtime**: how projects
-   with a real allocator present it — analyzed as static pools, stubbed,
-   or scoped out; what the D-150 slab allocator should look like to the
-   analysis.
-6. **Entry points and the executor**: how an `async main` over a
-   per-thread executor maps to the task model — MultiSSE with a hand
-   -declared task set, or the synchronous `--exec-fn` shape per thread;
-   what of AUTOSAR/OSEK-style config import applies to a non-OSEK
-   runtime.
-7. **Runtime-floor stubbing**: policy for `sys` trampolines, futex
-   parking, clone/execve — the enumerated TCB bottom (r8's Lesson 2).
-8. **The evidence package**: whether the SMT elision manifest and unsat
-   cores are consumable alongside, or parallel evidence only.
-9. **Trial terms**: FAE support scope for a first-time evaluator;
-   whether the 30-day clock can start after a readiness review; license
-   form; extension policy; pricing.
-10. **config-sem grammar and current alarm-classification/triage
-    tooling** (the user manual, which the public research never reaches).
-11. **Preparation-effort norms** for a codebase of npkc's scale (the
-    Airbus effort is described only qualitatively in public sources).
-
-## The preparation checklist (adapted from R-3's "Day-1 Readiness"; work owed to earlier cycles)
-
-- **Sanitization is a code-generation property here, not an audit**: the
-  C emitter (if C-19 confirms) emits no dynamic allocation in analyzed
-  code, no recursion, isolated hardware/syscall boundaries — designed
-  in, per the SCADE observation, not cleaned up after.
-- **The data dictionary is generated**: every external input's physical
-  bounds emitted as `__ASTREE_volatile_input` from the types + declared
-  envelopes; `__ASTREE_known_fact` from proven invariants (the Z3
-  synergy — r5/r8 digest: Z3 prunes Astrée's alarms, Astrée's invariants
-  seed Z3's context).
-- **The stub library** for the runtime floor's quarantined bottom
-  (syscalls, futex, clone/execve), each stub bounded.
-- **Build integration**: `compile_commands.json` emission from `npkg`.
-- **The dry run** (1.6's own subcycle): a full pass on a representative
-  program BEFORE the clock starts; a failed dry run is a schedule input.
-- **Triage doctrine**: Type A alarms first, then Type B burn-down by
-  bound refinement; `--inner-unroll` and packing tuning are on-clock
-  work by design.
-
-## Subcycle shape (to be filled when reached)
+## Subcycle map
 
 | # | Topic | Gated on |
 |---|---|---|
-| 1.6.0 | **The confirmed input path** — whatever C-19 settled (the C-emitter proven end-to-end on a small program, or the direct path if AbsInt surprises) | C-19 |
-| 1.6.1 | **Entry points, stubs, concurrency mapping, the generated data dictionary** — the analysis harness per the question list | C-19 |
-| 1.6.2 | **The dry run** — a full pass on a representative program *before* the 30-day clock | 1.6.0, 1.6.1 |
+| 1.6.0 | **The bring-up gate** — both leg-A candidates built at pinned commits and run against the same three emissions: `dyn_slots.npk` (small; aggregates, `dyn`), `extern_c_driver.npk` (the richest idiom mix — bridge, coroutines, deadlines), and `src/main.npk`'s own emission (scale). Measured per engine: (1) does it INGEST our LLVM-20 opaque-pointer IR at all, and if not, what is the port distance — IKOS sits at LLVM 14 today, across the opaque-pointer break, which is the NIKOS-shaped port; Clam targets 15 with support to 18, and our conservative instruction vocabulary may cross 18→20 textually for free; (2) alarm count and quality on those three programs; (3) wall-clock and memory; (4) determinism controllability — fixed seeds/options, verdicts stable across runs and cwds (the D-204 discipline applied to a new tool). **One engine wins by these measurements; the other is decided out.** Alive2 is built at the 20.1.2-matching commit in the same subcycle and smoke-run on one program's pre/post-opt pair. If the winning engine needs a port, the port is THIS cycle's work and starts here — scoped by the gate's measurements, not assumed. | D-233 |
+| 1.6.1 | **Leg A as a standing stage** — the winning engine wired into the harness beside opt-O2, over every real-backend program's emission; `nitpick.toml` grows the pinned-tool table (commit hash + options, read by the invocation, the D-204 "pinned AND READ" rule); the **alarm ledger** is born: a committed baseline of known alarms with per-alarm dispositions (true-defect / imprecision-accepted / fact-missing), where a NEW alarm on an unchanged tree fails the stage — runs diff, never restart. The emission grows its analyzer-visible facts where triage shows they pay: the D-218.9 `llvm.assume` range rows carrying what the type system, D-148 envelopes and REACH already know (the old data-dictionary idea, landed as IR facts instead of pragmas). The analyzer's model of the npkrt bottom (sys trampolines, futex park, clone/execve) consumes the TCB.md list 1.5.6 wrote — same enumeration, new consumer. | 1.6.0 |
+| 1.6.2 | **Leg C as a standing stage** — Alive2 over the opt-O2 leg's pre/post pairs, per-pass where the whole-module diff is outside its competence; its own ledger with the inter-procedural blind spot (inlining) recorded per program; the exit-code opt-O2 leg RETAINED as the end-to-end net. A refinement failure here is a stop-the-line miscompile finding, the 1.3.8 class with a proof attached. | 1.6.0 |
+| 1.6.3 | **The dry run and the evidence package** — a full analyzer pass over npkc's own emission (its cadence decided here by measured runtime, not assumed into every harness run), then the package assembled: leg-A verdicts + alarm ledger, the D-218 obligation manifest and elision rows, leg-C's ledger, TCB.md's enumerated floor, and the toolchain/tool pins — the verified-middle-end-plus-validated-floor claim (C-17.11) restated over the new evidence set. Escalation criteria for the depth tools evaluated against the ledger ONCE, with the answer recorded either way. Docs synced; cycle to `done/`. | 1.6.1, 1.6.2 |
 
 ## Watch for
 
-- **The clock starts once, and does not stop.** Every setup question
-  answered on the 30-day clock is a day not spent on the analysis the
-  clock is for.
-- **The switch (`meta/SWITCH.md`) waits on 1.6** and inherits the three
-  audit corrections (stale ship-list, unowned prototype-coverage pass,
-  `meta/specs/` completeness) — swept during 1.4/1.5 while both doc sets
-  are live.
-- **Nothing about the switch happens until this cycle is finished.**
+- **Version drift between the two pins.** The LLVM toolchain pin (20.1.2)
+  and each tool's commit pin move independently; a toolchain upgrade
+  re-opens the gate's ingestion question. Any change to either pin is a
+  manifest change with a full run behind it, never a quiet bump.
+- **The alarm ledger is the discipline that makes leg A an instrument.**
+  An analyzer whose alarms are re-triaged from scratch each run decays
+  into noise nobody reads — the ledger's diff-not-restart rule is what
+  the stage's green means. A new alarm on an unchanged tree is a stop
+  sign (the R5 shape, applied to analysis).
+- **Determinism extends to every verdict source.** A verdict is a function
+  of (input, tool build, budget) — D-218.2's law, generalized by D-233.
+  An engine option that trades determinism for speed is refused, not
+  tuned.
+- **The old one-shot anxieties do not transfer, and the scheduling rule
+  does.** Trial attempts stopped being scarce; proof invalidation did not.
+  Everything entering the LANGUAGE still lands before the evidence
+  campaign closes — D-233 restates the standing rule with its new basis.
+- **The switch (`meta/SWITCH.md`) still waits on 1.6** and inherits the
+  three audit corrections (stale ship-list, unowned prototype-coverage
+  pass, `meta/specs/` completeness) — swept during 1.4/1.5 while both doc
+  sets are live. Nothing about the switch happens until this cycle is
+  finished.

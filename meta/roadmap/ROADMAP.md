@@ -318,14 +318,20 @@ the sharpening is bounded work rather than open discovery.
 | **1.3** ✅ | **The exotic numeric tier — DONE** (`done/1.3/`). D-194…D-200 ratified at open, then landed in seven subcycles: `simd<T, N>` (elementwise, ordered reductions, D-007 lane guards), `tfp32..256` (Q-format on native `iN`, the D-144-as-amended ERR discipline both families now share), `dim256<Unit>` (packed SI exponent vectors, `unit:` declarations, the zero vector IS `tfp256`, erased lowering), the ternary/nonary four (balanced values in binary carriers, Kleene `&`/`|`, digit extraction), `frac*` (invariant-normalized exact-or-ERR, the PRELUDE-core architecture — arithmetic a verifier reads as source), `complex<T>` (per-element prelude cores, Smith's division, equality only), and the library tier (`buffer` as the managed owning cell, `#sqrt` the instruction, `lib/nvec.npk`, `lib/ntensor.npk` — rank ≤ 9 inline, `matrix<tryte>` as the ttensor story). Closed at 1.3.8: the tier's lowering pinned in the ir_types fixture, the G-3 rung retired, and the harness grew the **opt-O2 leg** — every real-backend program re-runs through `opt -O2` + `llc -O2` and must answer identically (the prototype's optimiser-removed-guarantee defect class, now a standing instrument). The original row: created at 1.1-close by the user's G-3 decision (D-191) — everything that is going in lands before the fixpoint re-close and the one-shot verified artifact. Map: `done/1.3/`. |
 | **1.4** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.3), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.4/`. |
 | **1.5** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.5/`. |
-| **1.6** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.5 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.6/`. |
+| **1.6** | **The LLVM-native analyzer evidence (D-233)** — the cycle was "Astrée preparation — the single non-renewable 30-day run" until D-233 (2026-09-01) superseded D-232: the evidence moved to the emitted IR itself, and no external clock remains anywhere in Phase C. Abstract interpretation over our own emission (engine — Clam/Crab vs IKOS — chosen at 1.6.0's measured bring-up gate; the loser decided out), Alive2 translation validation beside the opt-O2 leg, the committed alarm ledger, and the assembled evidence package: analyzer verdicts + the D-218 obligation manifest + Alive2's ledger + TCB.md's enumerated floor. Every engine open, pinned by commit, built on the workbench, run as a standing instrument. Map: `1.6/`. |
 
 **1.4 is the milestone that matters.** Everything before it is validated against the
 seed's output; after it, the compiler validates itself.
 
-**1.6 is the one that cannot be retried.** Confirm the accepted input format with
-AbsInt long before the clock starts — promoted from a carried note to a numbered
-gate (C-19) with a cycle deadline.
+~~**1.6 is the one that cannot be retried.**~~ **That sentence retired with
+D-233 (2026-09-01).** Verification stopped being a one-shot event when
+Astrée's 30-day trial left the plan: the analyzers are open, pinned and
+continuous, so ATTEMPTS are no longer scarce. What is still scarce is proof
+invalidation — a language change after the evidence campaign re-opens every
+touched obligation — so the standing rule keeps its force with its basis
+restated: everything entering the LANGUAGE lands before the campaign
+closes; tools may join the campaign whenever they earn it (tool adoption is
+monotone). C-19 is closed; no external contact gates anything.
 
 ---
 

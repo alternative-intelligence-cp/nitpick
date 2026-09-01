@@ -14,6 +14,14 @@ architecture.
 > implementation, not ratification. (This file was titled "Cycle 1.4"
 > until the 1.4-era sweep — two renumberings ago.)
 
+> **D-233 (2026-09-01) superseded D-232: Astrée left the plan**, and with it
+> the C emitter and the AbsInt contact. Every Astrée/C-19 reference below
+> carries a dated annotation rather than a rewrite (the ratified batch's
+> text is settled); the Z3/SMT spine of this cycle — legs, encodings,
+> catalogue and all — is UNTOUCHED by that decision. The
+> abstract-interpretation evidence class now lands in 1.6 as LLVM-native
+> analysis over the emitted IR; the new cycle map is `../1.6/README.md`.
+
 ## The state this cycle starts from
 
 The **surface is built**: grammar, AST, and resolution for contracts, `limit`,
@@ -106,12 +114,23 @@ entries are table-typed from birth.
     **enumerated and documented as the TCB floor**, the seL4 precedent,
     in a `meta/specs/TCB.md` this cycle writes.
 
+    > **[D-233, 2026-09-01]** The evidence-tool list reads "the D-233
+    > analyzer leg + Z3 + the IR-semantics encoding" now: Astrée's seat is
+    > taken by LLVM-native abstract interpretation over the emitted IR,
+    > and the opt-O2 boundary gains Alive2 translation validation beside
+    > the testing leg (1.6.2). The TCB claim itself — verified middle-end
+    > plus validated floor, the enumerated bottom — is unchanged, and
+    > TCB.md gains a second consumer: the leg-A analyzer's model of the
+    > floor reads the same list.
+
 ### C-14 — elision ownership
 
 Elision is a property of the VERIFIED BUILD, recorded in the manifest — never
 a flag. `--smt-opt` is struck; `[verify]` in the manifest governs; the
 artifact Astrée reads is the verified build with its elision manifest beside
-it. A timeout-dependent binary is impossible by construction: verdicts are
+it *(D-233 note, 2026-09-01: read "the leg-A analyzer" for "Astrée" — the
+analyzed artifact is now the emitted IR of that same verified build, and
+the elision-manifest-beside-it rule is unchanged)*. A timeout-dependent binary is impossible by construction: verdicts are
 rlimit-deterministic (C-17.2), and an undischarged obligation RETAINS its
 runtime guard — the binary differs only with the manifest saying so.
 
@@ -153,6 +172,15 @@ prefers NIKOS alive pre-Astrée, the alternative shape is a 1.5.8 spike
 scoped to interval-domain-only over the emitted IR — but the recommendation
 is the clean strike.
 
+> **[D-233, 2026-09-01]** This section's premise — "Astrée IS the
+> abstract-interpretation evidence" — is withdrawn; see D-217's annotation.
+> The strike's effect on THIS cycle stands (nothing lands in 1.5 that the
+> campaign does not need), and the evidence class re-homes to 1.6's leg A,
+> whose bring-up gate weighs IKOS — the fork this section parked as NIKOS —
+> against Clam/Crab, by measurement. The "interval-domain-only spike over
+> the emitted IR" alternative this section declined is, in hindsight, the
+> direction D-233 adopted in full strength.
+
 ## Subcycle map
 
 | # | Topic | Gated on |
@@ -165,14 +193,15 @@ is the clean strike.
 | 1.5.5 | **The aliasing/disjointness analysis** VERIFICATION §2.1 presupposes — the conservative refusal Z3 then relaxes (the 0.5 analyses don't contain it; this cycle creates the error it suppresses) | — |
 | 1.5.6 | **The floor's spec + the executor primitives** — npkrt.ll's verifiable parts specified and Z3-checked where feasible (r8 Lesson 2); the TCB.md residue list finalized; the AtomicWaker-class primitive models (park/unpark, channel slot, waker states — the r6 verdict: model primitives, never the whole executor; BPOR-style bounds if a model spins) | 1.5.0 |
 | 1.5.7 | **The G-5 schedule-exploration harness** — mocked-primitive build of the runtime (we own every primitive), PCT-seeded central scheduler, virtualized reactor (synthetic EPOLLIN), seed-replay; wired as a harness stage beside `// stress:` | G-5 ratified |
-| 1.5.8 | **Overflow obligations (G-1's static leg) + close-out** — prove-or-retain on plain-int arithmetic per G-1's ratified semantics; NIKOS disposition executed; **C-19 answered before this cycle exits** (the AbsInt contact — the question list is in `../1.6/README.md`); docs synced, cycle to done/ | G-1, B-5, C-19 |
+| 1.5.8 | **Overflow obligations (G-1's static leg) + close-out** — prove-or-retain on plain-int arithmetic per G-1's ratified semantics; NIKOS disposition executed per D-217-as-annotated; ~~C-19 answered before this cycle exits (the AbsInt contact)~~ **C-19 CLOSED by D-233** — no external gate remains; 1.6's bring-up gate (its README) is ordinary scheduled work; docs synced, cycle to done/ | G-1, B-5 |
 
 ## Watch for
 
-- **C-19 is a 1.5-exit gate, not a 1.6 discovery.** If AbsInt confirms
-  C-only, the C-emission path gets scheduled BEFORE 1.6 with the
-  generated-code playbook (1.6 README) as its spec — and the recursion
-  question (G-6/Astrée's subset) answered in its design.
+- ~~C-19 is a 1.5-exit gate~~ **C-19 is CLOSED (D-233, 2026-09-01)** — no
+  AbsInt contact, no C-emission path, no external gate on this cycle's
+  exit. What 1.6 now needs from 1.5 is ordinary and internal: TCB.md's
+  enumerated floor (1.5.6) feeds leg A's analyzer model, and the D-218.9
+  `llvm.assume` discipline is the channel leg A's range facts ride.
 - **A verification pass that changes the artifact by the solver's mood is
   the one thing this cycle must not ship** — that is what C-17.2 + C-14
   exist to make impossible; any deviation from the determinism profile is a
