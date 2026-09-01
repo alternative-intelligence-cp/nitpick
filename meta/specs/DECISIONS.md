@@ -10736,6 +10736,32 @@ function type and one over its unmarked twin get distinct symbols, matching
 their distinct interned types. Unmarked function types display exactly as
 before, so every pre-D-163 symbol is unchanged.
 
+> **Annotation, 2026-09-01 (1.4.7, user-ratified): THE `<module>` HALF OF A
+> METHOD SYMBOL IS THE IMPL'S.** The amendment above names the
+> `<Target>:<Trait>` half and never says which module qualifies it. The
+> vtable row already says "in the impl's module", and that is the rule for
+> every method an impl provides — its own members and the trait defaults it
+> inherits, sync bodies and coroutine frames alike — with every call site
+> deriving the module from the impl that answers (`fb22bb6`:
+> `ExprEmitter.cur_impl` on the definition side, `impl_decl_for` at the call
+> sites). Until then the module was that of whichever DECLARATION's body was
+> being emitted — an own member's for an own method, the TRAIT's for an
+> inherited default, the trait's method for a call through a bound — which
+> coincided with the impl's for every impl in the tree, because every impl sat
+> beside its trait. The tree's first foreign-module impl (D-229 stage 2's
+> `impl:Sink:Writer`) failed to assemble in one build. Every pre-existing
+> program emits byte-identical IR under the rule; `impl_foreign.npk` pins it.
+>
+> **And a limit of the scheme, DECIDED rather than deferred (same date, same
+> ratification):** the `<Target>` half is the type's bare display, so two
+> same-named structs from two modules, both implemented for one trait in a
+> THIRD module, render one symbol. Coherence cannot see it (two declarations,
+> D-090) and nothing links it: `llc` refuses the redefinition and the
+> harness's `check_symbols_unique` names it. The scheme stays hash-free and
+> source-derived — the two properties it exists for — and a program that
+> needs both impls writes each beside its own type, where the module halves
+> differ.
+
 ## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
 
 OPEN_DECISIONS C-2, a safety hole: `check_object_safe` inspected only the
