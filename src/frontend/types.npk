@@ -203,9 +203,13 @@ pub struct:Type = {
 };
 
 pub struct:TypeTable = {
-    wild Type->:items;
-    int32:count;
-    int32:cap;
+    // FIVE LISTS, ONE INDEX SPACE (1.4.7 step 2). `items` and the four bit
+    // arrays below are all indexed by type id and all the same length; their
+    // counts move together because `tt_intern` -- the only place an id is
+    // created -- pushes all five. That single push is also what makes "not
+    // computed" true at every slot, which `tt_grow`'s hand-written tail fill
+    // managed for two of the four and not the other two.
+    List<Type>:items;
 
     // The scalars, interned once at startup so the common comparisons need no
     // lookup at all.
@@ -219,7 +223,7 @@ pub struct:TypeTable = {
 
     // The layout-recorded pointer-bearing bits, parallel to `items` — see
     // `tt_set_haspt` for why this is not a `Type` slot.
-    wild int32->:haspt;
+    List<int32>:haspt;
 
     // THE LAYOUT-RECORDED DROP BITS (D-183, 1.2.0), parallel in the same way
     // and for the same reason. Whether a struct or enum OWNS anything is a
@@ -228,11 +232,11 @@ pub struct:TypeTable = {
     // storing it in a `Type` slot would make two structurally identical
     // structs intern as different types. 0 = not computed, 1 = owns nothing,
     // 2 = owns something and must be dropped.
-    wild int32->:drops;
+    List<int32>:drops;
     // Channel containment, same discipline (D-183, 1.2.5).
-    wild int32->:haschan;
+    List<int32>:haschan;
     // Borrow containment (D-183, 1.2.5b): pointers that are NOT owned bodies.
-    wild int32->:hasborrow;
+    List<int32>:hasborrow;
 
     // THE UNIT TABLE (D-196, 1.3.3): each `unit:` declaration's evaluated
     // exponent vector, keyed by DECL index — visibility stays the symbol
@@ -248,35 +252,24 @@ pub struct:TypeTable = {
 
 // --- construction ----------------------------------------------------------------------
 
-func:tt_grow = NIL(TypeTable->:t) never fails {
-    int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items =>! wild int8->,
-                                (nc => int64) * #size_of<Type>());
-    t.items = bigger =>! wild Type->;
-    wild int8->:hp = ralloc(t.haspt =>! wild int8->, (nc => int64) * 4i64);
-    wild int32->:hw = hp =>! wild int32->;
-    wild int8->:dp = ralloc(t.drops =>! wild int8->, (nc => int64) * 4i64);
-    wild int8->:hcp = ralloc(t.haschan =>! wild int8->, (nc => int64) * 4i64);
-    wild int8->:hbp = ralloc(t.hasborrow =>! wild int8->, (nc => int64) * 4i64);
-    wild int32->:dw = dp =>! wild int32->;
-    // The grown tail must read "not computed" — ralloc copies only the old block.
-    int32:z = t.cap;
-    while (z < nc) { hw[z => int64] = 0i32; dw[z => int64] = 0i32; z = z + 1i32; }
-    t.haspt = hw;
-    t.drops = dw;
-    t.haschan = hcp =>! wild int32->;
-    t.hasborrow = hbp =>! wild int32->;
-    t.cap = nc;
-    pass NIL;
+// A TYPE ID IS int32 BY CONTRACT (D-226): `Type`'s own a/b/c slots hold ids,
+// ExprTypes records them, and every `int32` type-id local in the checker and
+// the emitter is one -- so the count's width cannot follow them out. Guarded,
+// reusing `BoundsId`, which this module already declares and raises.
+func:tt_id = int32(int64:n) never fails {
+    if (n > 2147483647i64) { !!! BoundsId; }
+    pass (n =>! int32);
 };
 
 // THE INTERNING. A type already present returns its existing index, which is what
 // makes equality an integer compare everywhere else.
 pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
                            int64:size, int32:align, int32:name) never fails {
+    // The dedup counter KEEPS int32: it already is the id this returns, and
+    // D-210 traps its increment. Only the comparison widens -- `=>`, lossless.
     int32:i = 0i32;
-    while (i < t.count) {
-        Type:e = t.items[i => int64];
+    while ((i => int64) < t.items.count) {
+        Type:e = t.items.items[i => int64];
         if (e.kind == kind) {
             if (e.a == a) {
                 if (e.b == b) {
@@ -290,14 +283,17 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
         }
         i = i + 1i32;
     }
-    if (t.count >= t.cap) {
-        drop tt_grow(t);
-    }
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
-    t.items[t.count => int64] = n;
-    int32:id = t.count;
-    t.count = t.count + 1i32;
+    int32:id = raw tt_id(t.items.count);   // BEFORE the push
+    // ALL FIVE, ALWAYS. The four bit lists get "not computed" explicitly; this
+    // is the invariant `tt_grow`'s tail fill held for haspt and drops and never
+    // held for haschan and hasborrow.
+    drop list_push(@t.items, n);
+    drop list_push(@t.haspt, 0i32);
+    drop list_push(@t.drops, 0i32);
+    drop list_push(@t.haschan, 0i32);
+    drop list_push(@t.hasborrow, 0i32);
     pass id;
 };
 
@@ -328,9 +324,9 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
 // `Token`, `Span`) can no more carry a borrow than an `int32` can.
 pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    t.haspt[id => int64] = 1i32;
-    if (has) { t.haspt[id => int64] = 2i32; }
+    if ((id => int64) >= t.haspt.count) { !!! BoundsId; }
+    t.haspt.items[id => int64] = 1i32;
+    if (has) { t.haspt.items[id => int64] = 2i32; }
     pass NIL;
 };
 
@@ -338,44 +334,44 @@ pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) never fails {
 // once-only discipline `tt_set_haspt` documents.
 pub func:tt_set_drops = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    t.drops[id => int64] = 1i32;
-    if (has) { t.drops[id => int64] = 2i32; }
+    if ((id => int64) >= t.drops.count) { !!! BoundsId; }
+    t.drops.items[id => int64] = 1i32;
+    if (has) { t.drops.items[id => int64] = 2i32; }
     pass NIL;
 };
 
 pub func:tt_drops = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
-    if (id >= t.count) { pass 0i32; }
-    pass (t.drops[id => int64]);
+    if ((id => int64) >= t.drops.count) { pass 0i32; }
+    pass (t.drops.items[id => int64]);
 };
 
 // The channel-containment bit, written once by layout (D-183, 1.2.5).
 pub func:tt_set_haschan = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    t.haschan[id => int64] = 1i32;
-    if (has) { t.haschan[id => int64] = 2i32; }
+    if ((id => int64) >= t.haschan.count) { !!! BoundsId; }
+    t.haschan.items[id => int64] = 1i32;
+    if (has) { t.haschan.items[id => int64] = 2i32; }
     pass NIL;
 };
 pub func:tt_haschan = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
-    if (id >= t.count) { pass 0i32; }
-    pass (t.haschan[id => int64]);
+    if ((id => int64) >= t.haschan.count) { pass 0i32; }
+    pass (t.haschan.items[id => int64]);
 };
 
 // The borrow-containment bit, written once by layout (D-183, 1.2.5b).
 pub func:tt_set_hasborrow = NIL(TypeTable->:t, int32:id, bool:has) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    t.hasborrow[id => int64] = 1i32;
-    if (has) { t.hasborrow[id => int64] = 2i32; }
+    if ((id => int64) >= t.hasborrow.count) { !!! BoundsId; }
+    t.hasborrow.items[id => int64] = 1i32;
+    if (has) { t.hasborrow.items[id => int64] = 2i32; }
     pass NIL;
 };
 pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
-    if (id >= t.count) { pass 0i32; }
-    pass (t.hasborrow[id => int64]);
+    if ((id => int64) >= t.hasborrow.count) { pass 0i32; }
+    pass (t.hasborrow.items[id => int64]);
 };
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
@@ -483,27 +479,27 @@ pub func:tt_ownedfd = int32(TypeTable->:t) never fails {
 
 pub func:tt_haspt = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
-    if (id >= t.count) { pass 0i32; }
-    pass (t.haspt[id => int64]);
+    if ((id => int64) >= t.haspt.count) { pass 0i32; }
+    pass (t.haspt.items[id => int64]);
 };
 
 pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    Type:e = t.items[id => int64];
+    if ((id => int64) >= t.items.count) { !!! BoundsId; }
+    Type:e = t.items.items[id => int64];
     e.size = size;
     e.align = align;
-    t.items[id => int64] = e;
+    t.items.items[id => int64] = e;
     pass NIL;
 };
 
 pub func:tt_get = Type(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { !!! BoundsId; }
-    if (id >= t.count) { !!! BoundsId; }
-    pass t.items[id => int64];
+    if ((id => int64) >= t.items.count) { !!! BoundsId; }
+    pass t.items.items[id => int64];
 };
 
-pub func:tt_count = int32(TypeTable->:t) never fails { pass t.count; };
+pub func:tt_count = int32(TypeTable->:t) never fails { pass (raw tt_id(t.items.count)); };
 
 // --- how an aggregate is laid out ------------------------------------------------------
 //
@@ -1038,8 +1034,8 @@ pub func:tt_instance = int32(TypeTable->:t, Ast->:ast, int32:kind, int32:decl,
                              int32:name, int32:arg_start, int32:arg_count,
                              int64:size, int32:align) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
-        Type:e = t.items[i => int64];
+    while ((i => int64) < t.items.count) {
+        Type:e = t.items.items[i => int64];
         if (e.kind == kind) {
             if (e.a == decl) {
                 if (e.c == arg_count) {
@@ -1095,8 +1091,8 @@ pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) never fails {
 pub func:tt_dyn = int32(TypeTable->:t, Ast->:ast, InternTable->:interns,
                         int32:start, int32:count) never fails {
     int32:i = 0i32;
-    while (i < t.count) {
-        Type:e = t.items[i => int64];
+    while ((i => int64) < t.items.count) {
+        Type:e = t.items.items[i => int64];
         if (e.kind == (raw TY_DYN())) {
             if (e.b == count) {
                 bool:same = true;
@@ -1234,16 +1230,17 @@ pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) never fails {
 
 pub func:typetable_init = TypeTable() never fails {
     int64:n = 64i64;
-    wild int8->:mem = alloc(n * #size_of<Type>());
-    wild int8->:hmem = calloc(n, 4i64);
     TypeTable:t = TypeTable{
-        items: mem =>! wild Type->, count: 0i32, cap: 64i32,
+        items: raw list_init::<Type>(n),
         t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
         t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32, t_error: 0i32,
-        haspt: hmem =>! wild int32->,
-        drops: (calloc(n, 4i64)) =>! wild int32->,
-        haschan: (calloc(n, 4i64)) =>! wild int32->,
-        hasborrow: (calloc(n, 4i64)) =>! wild int32->,
+        // No `calloc` and no tail fill: `tt_intern` writes "not computed" into
+        // all four at every push, so the zero is the program's, not the
+        // allocator's.
+        haspt: raw list_init::<int32>(n),
+        drops: raw list_init::<int32>(n),
+        haschan: raw list_init::<int32>(n),
+        hasborrow: raw list_init::<int32>(n),
         unit_decls: raw list_init::<int32>(16i64),
         unit_vecs: raw list_init::<int64>(16i64)
     };
