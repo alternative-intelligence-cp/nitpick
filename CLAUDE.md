@@ -443,7 +443,13 @@ paths disagreed the moment an impl left its trait's module. **The impl's
 module, on both ends** (D-156 read as its vtable row already said), with
 byte-identical IR for every pre-existing program; `impl_foreign.npk` pins every
 shape, and `Trait.default_method(recv)` — refused even in one file — works.
-Step 3 (form upgrades) has not started.
+**Step 3 is COMPLETE**: 268 counter loops are `for (intN:i in 0iN...b)` —
+`..` is the INCLUSIVE range, `...` the exclusive one — and the 332 that stay
+`while` do so by rule: **a `for` captures its bound at entry and a `while`
+re-reads it**, so a loop bounded by a container's live count stays a `while`
+and the spelling says which (proposed for ratification in 1.4.7.md). Five
+match-shaped unwraps became `?|`/`?!`. What remains of 1.4.7 is OWED-8 and
+OWED-1.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

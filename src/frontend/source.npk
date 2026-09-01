@@ -149,9 +149,7 @@ pub func:srcmgr_length = int64(SourceManager->:m, int32:file) never fails {
 // DATA: `diag_line`, which renders `<unknown file>` for a span synthesised
 // outside the manager rather than failing a diagnostic over it.
 pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails {
-    Result<string>:r = srcmgr_path(m, file);
-    if (r.is_error) { !!! FileUnknown; }
-    pass r.value;
+    pass (srcmgr_path(m, file) ?! FileUnknown);
 };
 
 // A VIEW, NOT A TRANSFER (D-183). The manager owns every source body for the
@@ -163,7 +161,6 @@ pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails 
 // exit — every interned identifier then pointed into freed memory, and the
 // compiler segfaulted lexing its second file.
 pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
-    Result<string>:r = srcmgr_text(m, file);
-    if (r.is_error) { !!! FileUnknown; }
-    pass (string_from_bytes(r.value.ptr, r.value.len));
+    string:t = srcmgr_text(m, file) ?! FileUnknown;
+    pass (string_from_bytes(t.ptr, t.len));
 };

@@ -8,9 +8,9 @@
 
 ## Where you are
 
-**1.4.7 steps 1 and 2 are COMPLETE, D-229 is COMPLETE, and step 3 has not
-started.** Everything below is committed; the tree is clean and nothing is in
-flight.
+**1.4.7 steps 1, 2 and 3 are COMPLETE and D-229 is COMPLETE.** What remains
+of the subcycle is OWED-8 and OWED-1. Everything below is committed; the tree
+is clean and nothing is in flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
   one `diag_report`. It needed **D-224** (`exit` is process exit in every body)
@@ -23,10 +23,15 @@ flight.
   original enumeration had missed, three of them named in its grower list but
   given no landing row and one (`MacroTable`) never counted at all, because the
   enumeration keyed on `ralloc` and that family `alloc`s-and-copies.
-- **STEP 3 (form upgrades) HAS NOT STARTED.** Hand-rolled index loops to
-  `for`/`till` where the loop is a plain iteration, match-shaped unwraps to
-  `?.`/`?|` where the shape IS the operator. File by file, and a form changes
-  only where the current spelling is longer AND less clear.
+- **STEP 3 IS COMPLETE.** 268 of 600 counter loops became
+  `for (intN:i in 0iN...b)` — three dots: `..` is INCLUSIVE, `...` exclusive
+  — and the 332 that stay do so by rule, not by omission. **A `for` captures
+  its bound at entry and a `while` re-reads it**, so a loop bounded by a
+  container's live count stays a `while` (175 of them); the spelling says
+  which. That rule is PROPOSED in 1.4.7.md's step-3 record and wants
+  ratification — D-226's shape, an engineering rule for `src/`. Five
+  match-shaped unwraps became `?|`/`?!`; the other twenty are not operator
+  shapes and the record says why, one by one.
 - **D-229 IS COMPLETE.** Stage 1 (`5d56959`): the walk generic, borrowing and
   span-sorting. Stage 2: `diaglist_render` retired into it through
   `impl:Sink:Writer`, which lives in `diag_writer.npk` beside the walk — NOT
@@ -388,11 +393,10 @@ rule, then the four families the enumeration had missed and the D-227
 neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
 says what to look for, not a blind offset.
 
-Then pick up **step 3** (form upgrades — 465 counter-shaped `while` loops and
-25 match-shaped unwraps measured across `src/`, and a form changes only where
-the current spelling is longer AND less clear), then **OWED-8**, then
-**OWED-1**. Announce the item you are on; commit per the subcycle file's
-acceptance section: one full harness run per commit, no exceptions.
+Then pick up **OWED-8** (`TYPE-057`, shape settled below), then **OWED-1**
+(an investigation with a written method). Announce the item you are on;
+commit per the subcycle file's acceptance section: one full harness run per
+commit, no exceptions.
 
 ## What this cycle proved about how to work here, in one place
 

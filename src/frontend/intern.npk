@@ -129,9 +129,7 @@ pub func:intern_count = int32(InternTable->:t) never fails {
 // no checker type, which the `?!` lowering needs; the Result binding below is
 // the shape the emitter has always lowered.
 pub func:slice_proven = string(string:s, int64:lo, int64:hi) never fails {
-    Result<string>:r = string_slice(s, lo, hi);
-    if (r.is_error) { !!! ProvenSlice; }
-    pass r.value;
+    pass (string_slice(s, lo, hi) ?! ProvenSlice);
 };
 
 // --- FNV-1a, THE COMPILER'S ONE COPY (D-123, D-179; collapsed at 1.4.2b) -----

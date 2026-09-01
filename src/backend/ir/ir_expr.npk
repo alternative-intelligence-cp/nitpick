@@ -7260,9 +7260,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
 // missing path is data for the table ("?"), not a defect — the same posture
 // diag rendering takes for `<unknown file>`.
 pub func:x_site = int32(ExprEmitter->:x, Span:sp) never fails {
-    Result<string>:pr = srcmgr_path(x.sm, sp.file);
-    string:sp_path = "?";
-    if (!pr.is_error) { sp_path = move(pr.value); }
+    string:sp_path = srcmgr_path(x.sm, sp.file) ?| "?";
     pass (raw irw_site(x.fe.w, move(sp_path), sp.line));
 };
 
