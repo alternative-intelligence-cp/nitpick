@@ -598,10 +598,25 @@ func:root_is = bool(Escape->:x, ExprId:id, int32:sym) never fails {
     pass (got == sym);
 };
 
+// THE BELT HERE FAILS CLOSED THE OTHER WAY FROM ITS SIBLINGS, and that is the
+// whole reason it needed writing rather than copying. `escape_mark` and
+// `escape_holds` answer `false` out of range; both of THIS function's callers
+// spell it `!(raw ident_holds(...))`, so its answer is INVERTED on the way out
+// and `false` would mean "vouchable" -- the open direction, for a symbol the
+// analysis cannot see. `true` is "cannot vouch", which is what the
+// `sym_index == 0` arm above already says for the unresolved case.
+//
+// In range today by construction: line above gates on `SYM_STMT`, and a
+// `SYM_STMT` origin is a StmtId.index (resolve.npk) while `holds` is sized to
+// the whole AST's statement count. The belt is here because that is a fact
+// about two files agreeing, which is this project's most-repeated defect
+// shape, and because an out-of-bounds READ is what it costs when they stop.
 func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
     if (sym_index == 0i32) { pass true; }   // unresolved: cannot vouch
     Symbol:sy = raw symtab_get(x.tab, sym_index);
     if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
+    if (sy.origin < 0i32)           { pass true; }   // cannot vouch
+    if (sy.origin >= x.holds_count) { pass true; }   // cannot vouch
     pass (x.holds[sy.origin => int64]);
 };
 
