@@ -14755,6 +14755,15 @@ Frama-C, K, Astrée) is unchanged — only the ORDER moved: nothing
 lands between the fixpoint re-close and the trial that the trial does
 not need.
 
+> **PREMISE WITHDRAWN by D-233 (2026-09-01).** "Astrée IS the
+> abstract-interpretation evidence" no longer holds — Astrée left the plan.
+> The strike's EFFECT on 1.5 stands unchanged (nothing lands there that
+> the evidence campaign does not need), and the abstract-interpretation
+> evidence class re-homes to D-233's leg A in cycle 1.6, whose bring-up
+> gate weighs IKOS — the very fork this decision parked as NIKOS — against
+> Clam/Crab. `[verify.nikos]` keeps refusing by name until that gate names
+> the engine.
+
 ## D-218 — the SMT emitter and invocation architecture — **SETTLED (user-ratified early for the 1.5 handoff; C-17)**
 
 The full normative text lives in `meta/roadmap/1.5/README.md` (the
@@ -15468,3 +15477,125 @@ fidelity measured rather than argued, which is the opt-O2 and absent-fact
 philosophy applied a third time — and it is workbench, not artifact, so the
 zero-dependency rule is untouched (it governs what ships, never the tools that
 check it).
+
+> **SUPERSEDED by D-233 (2026-09-01).** The route this decision hedged — C
+> emission feeding Astrée, with the AbsInt contact and the 1.5-midpoint
+> trigger — is replaced whole: the evidence moves to the emitted IR itself
+> under LLVM-native engines, and the C emitter is struck with the trigger.
+> What survives is the asymmetry test this decision applied; D-233 applies
+> the same test and it now lands on the other side, because the
+> commissioned survey showed the C path's evidence would attach to a
+> sibling artifact rather than the shipped one. Recorded as an annotation,
+> never an edit — settled text is not rewritten (the D-085/D-202 pattern).
+
+## D-233 — the verification evidence moves to the emitted IR: LLVM-native analyzers supersede Astrée; the C emitter is struck — **SETTLED (user decision, 2026-09-01; supersedes D-232)**
+
+Directed by the user on the commissioned survey
+(`meta/roadmap/research/LLVM_Formal_Verification_Tool_Options.md`; the
+decision-grade digest with reliability notes is
+`meta/roadmap/research/digests/llvm-tools-digest.md` — per the r5/r8 rule,
+never cite the report's prose without them). D-232 planned Astrée fed by an
+emitted-C rendering; this decision replaces that route whole.
+
+**Why Astrée exits, in the priority order:**
+
+1. **The evidence attached to the wrong artifact.** Astrée ingests C, so it
+   would have analyzed the AST→C sibling lowering — a rendering that never
+   ships — while the binary comes from the LLVM path. Differential
+   execution could TEST the two lowerings against each other, but the proof
+   itself would have been about the sibling. Every LLVM-native engine
+   analyzes the very IR that becomes the shipped binary; evidence about the
+   artifact beats evidence about a model of it. (The report's stronger
+   IR→C "semantic chasm" claim — poison and undef distortions — does not
+   apply verbatim to D-232's AST→C design; the sibling-artifact objection
+   applies regardless, and decides it.)
+2. **The one-shot economics inverted.** A single non-renewable 30-day trial
+   made verification an all-or-nothing launch, with r3's own literature
+   warning that preparation regularly consumes the clock. Open engines
+   pinned by commit hash make verification a STANDING INSTRUMENT: run
+   continuously, re-run at will, wired into the harness beside opt-O2 —
+   the shape every instrument in this project already has.
+3. **The C emitter is STRUCK — decided out, not deferred.** Its only
+   consumer was Astrée; without one, a second lowering is pure surface. Its
+   differential-execution instrument dies with it; leg C below replaces
+   that evidence with a stronger form (proof-grade translation validation
+   of the real pipeline rather than exit-code agreement of a parallel
+   one). The AbsInt contact and D-232's 1.5-midpoint trigger are struck
+   with it.
+
+**The replacement — three legs, mapped to evidence classes:**
+
+- **Leg A — whole-program runtime-error absence (the Astrée seat):
+  abstract interpretation over our own emitted IR.** The engine is chosen
+  at 1.6.0's MEASURED bring-up gate between two candidates: **Clam/Crab**
+  (Apache-2.0; master targets LLVM 15, support to 18 today; sea-dsa
+  region-based memory — the stronger story for proving D-150's
+  header/payload disjointness) and **IKOS** (NOSA 1.3; LLVM 14 today —
+  adopting it means the port the toolchain plan always called NIKOS). Gate
+  criteria: ingestion of our LLVM-20 emission (or measured port distance),
+  alarm quality on three named real programs, runtime, and determinism
+  controllability. ONE engine wins; the other is decided out — fewer
+  mechanisms. Recorded prediction, for the gate to test rather than trust:
+  Clam is likely first-green (the 18→20 textual-IR gap for our
+  conservative instruction vocabulary is plausibly nil, while 14→20
+  crosses the opaque-pointer break) — measurement decides, not the
+  prediction.
+- **Leg B — per-obligation proof: the D-218 Z3/SMT architecture,
+  UNTOUCHED.** Nothing in this decision moves it; 1.5 proceeds as
+  ratified.
+- **Leg C — optimizer integrity: Alive2 translation validation beside the
+  opt-O2 harness leg.** MIT, tracks LLVM main, so a 20.1-matching commit
+  exists by construction. Scoped honestly: per-pass validation where
+  Alive2 is competent, its stated inter-procedural blind spot (inlining)
+  recorded in the stage's ledger, and the exit-code opt-O2 leg RETAINED as
+  the end-to-end net. This moves the prototype's
+  optimiser-removed-guarantee class from "tested" to "proved where
+  provable, tested everywhere".
+
+**The doctrine extends to every verdict source (D-218.2 generalized).**
+Each engine is pinned by commit hash and built locally on the workbench —
+auditable, which a licensed binary never was, and the zero-dependency rule
+is untouched because it governs the artifact, never the tools that check
+it. Verdicts are recorded in the manifest like solver rows: a verdict is a
+function of (input, tool build, budget), never of machine load. Alarms
+triage into a COMMITTED ALARM LEDGER — baseline plus per-alarm
+dispositions, so runs diff instead of restarting, and a new alarm on an
+unchanged tree is a stop-the-line event, not noise.
+
+**What transfers from the Astrée preparation** (the 1.6 prep was not
+wasted): the data-dictionary idea becomes analyzer-visible range facts in
+the emission itself (the D-218.9 `llvm.assume` rows; an engine-specific
+assertion intrinsic only if the gate's winner wants one); the stubbing
+question becomes the analyzer's model of the enumerated npkrt bottom — the
+same TCB.md list 1.5.6 writes; the dry-run discipline stays (a full pass
+over a representative program before the evidence package is declared);
+and MultiSSE's concurrency seat was never going to fit our runtime — that
+evidence is 1.5.7's schedule-exploration harness and the r6 primitive
+models, unchanged.
+
+**Depth tools are named candidates with entry criteria, not adoptions:**
+SeaHorn (CHC/Spacer) if leg A's triage meets invariants its numeric
+domains cannot close — the D-150 chunk-bitmap class is the expected
+tenant; SAW/Crux if the Bridge wire marshaling wants
+extensional-equality proof beyond 1.5.6's Z3 leg; Heapster and Vellvm
+noted as the theorem-proving horizon. This sequencing is a decision, not a
+deferral, because TOOL ADOPTION IS MONOTONE: a later analyzer adds
+evidence without invalidating any existing proof. That is exactly the
+property a language change does not have — it re-opens every touched
+obligation — so the standing scheduling rule keeps its force with its
+basis restated: **what is scarce is no longer trial attempts; it is proof
+invalidation.** Everything entering the LANGUAGE still lands before the
+evidence campaign; tools may join the campaign whenever they earn it.
+
+**Declined — adopting the report's five-tier table whole.** Five
+heavyweight toolchains at once is breadth-first effort spend against
+overlapping evidence classes (SAW's functional-correctness seat overlaps
+D-218's contracts; SMACK's bounded search adds nothing sound over leg B —
+and the report's "complete path coverage at bound 64" claim is wrong for
+this language, see the digest's reliability note 4). **Declined — keeping
+the C emitter as a second lowering for differential evidence alone**: an
+instrument nobody consumes decays into the next stale document; Alive2
+validates the real pipeline instead. **Declined — waiting for AbsInt's
+answer before moving**: the survey's sibling-artifact objection stands
+whatever AbsInt says about ingestion, so the contact no longer gates
+anything.
