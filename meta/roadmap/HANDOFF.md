@@ -8,68 +8,68 @@
 
 ## Where you are
 
-**1.4.7 steps 1 and 2 are both underway and both green at HEAD.** Everything
+**1.4.7 steps 1 and 2 are COMPLETE and step 3 has not started.** Everything
 below is committed; the tree is clean and nothing is in flight.
 
-- **STEP 1 IS COMPLETE** (`e2a835c`). `dyn Writer` diagnostics: FIVE copies of
-  the diagnostic walk (two `report` functions, three inline loops) became ONE
-  `diag_report(dyn Writer, …)`, all six driver one-liners moved onto the same
-  sink, and all four drivers' `main` are coroutines. The async surface lives in
-  `src/frontend/diag_writer.npk`, NOT in diagnostics.npk — see the REACH note
-  below, it is the interesting decision.
-- **It needed two things first**: **D-224** (`c2db47c`) — `exit` means process
-  exit in every body, async included — and a **snapshot refresh** (`e0871ab`).
-- **D-225 landed mid-step** (`a2f2032` + snapshot `e310185`): declared-
-  uninitialised managed storage holds its canonical vacant value. A real
-  memory-safety defect, latent since 1.1.12.
-- **STEP 2 IS COMPLETE.** All twelve single-array families, all ten
-  parallel-array families, AND the four the enumeration had missed
-  (`MacroTable`, `LlCtx.drop_types`, `ExprTypes`, `SymbolTable` — see 1.4.7.md's
-  "The step-2 enumeration was short by four families"). Every one committed with
-  its own full harness run. The hand-rolled doubling site is gone from `src/`:
-  the `items[count] =` push idiom now exists ONLY in `list.npk`, one line below
-  its reserve, which is the 1.5 obligation this step was meant to buy and which
-  a whole-tree check can now pin.
-- **REMAINING: step 3 (form upgrades), not started** — hand-rolled index loops
-  to `for`/`till` where the loop is a plain iteration, match-shaped unwraps to
+- **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
+  one `diag_report`. It needed **D-224** (`exit` is process exit in every body)
+  and a snapshot refresh first, and **D-225** landed mid-step (declared-
+  uninitialised managed storage holds its canonical vacant value — a real
+  memory-safety defect, latent since 1.1.12).
+- **STEP 2 IS COMPLETE.** Every growable array in `src/` is a `List<T>`;
+  **`ralloc` appears nowhere in `src/` outside `list.npk`**. Twenty-two
+  families — the twelve single-array, the ten parallel-array, and FOUR the
+  original enumeration had missed, three of them named in its grower list but
+  given no landing row and one (`MacroTable`) never counted at all, because the
+  enumeration keyed on `ralloc` and that family `alloc`s-and-copies.
+- **STEP 3 (form upgrades) HAS NOT STARTED.** Hand-rolled index loops to
+  `for`/`till` where the loop is a plain iteration, match-shaped unwraps to
   `?.`/`?|` where the shape IS the operator. File by file, and a form changes
   only where the current spelling is longer AND less clear.
-- **AND DEFECT B, which outranks step 3 on safety.** A memoised layout bit read
-  before it is computed answers the PERMISSIVE default: `type_drops` (TYPE-046
-  move-only, and whether a scope exit drops at all), `type_contains_channel`
-  (D-215, D-183's `gives`) and `type_contains_borrow` all end
-  `== 2i32` for structs and enums, and `tt_haschan`/`tt_drops` answer 0 for
-  "not computed". `finish_layouts` runs at pipeline.npk:494 while the type
-  checker is at 337, so through all of checking most of the table has no
-  layout — pipeline.npk's own comment calls that "fine for checking", which is
-  true of SIZES and false of these three bits. Measured, twice, by poisoning:
-  the read really does land in the window. The user ratified COMPUTE ON DEMAND;
-  the fix is scoped to 14 checker sites, all of which already have an
-  `ExprTyper` in scope, and `type_expr`/`type_stmt`/`type_access` already import
-  `type_layout.npk` while it imports none of them, so there is no cycle. One
-  question is open for the user: whether the unqualified names become the
-  ensuring ones with `_recorded` as the explicit opt-out.
+- **D-229 IS HALF-LANDED, DELIBERATELY.** Stage 1 (the walk generic, borrowing
+  and span-sorting) is committed and green. **Stage 2 is the next unit of
+  work**: retire `diaglist_render(Sink->)` into the same walk via
+  `impl:Sink:Writer`, so the second walk goes away and `npkg test`'s
+  capture-and-compare becomes possible. It was stopped here rather than started
+  and abandoned across a session boundary. It opens with a question worth
+  settling first: **may an impl live in a module other than its type's?**
+  `Sink` is declared in diagnostics.npk and the impl must NOT go there — REACH
+  is import-scoped, and an async impl in that module re-creates the twelve-
+  failsafe problem the diag_writer split solved. `diag_writer.npk` is the
+  intended home.
 
 ## The decisions settled this cycle, and where they are
 
-- **D-224** — `exit` is process exit in every body. The root task's frame is a
-  STACK ALLOCA (not a heap block), and the async arm of `emit_exit` calls
-  `@npk_exit` directly. Its own record notes that "B subsumes A" was WRONG:
-  the scope-exit unwind is frame-resident, so both halves were needed.
-- **D-225** — every `type_drops`-true kind has a stated canonical vacant value,
-  its drop body is a no-op on it, and a declaration without an initialiser
-  writes it. **`OwnedFd`'s vacant is −1, not zero** — a zeroed descriptor slot
-  is fd 0, and dropping it would close stdin silently. Enums are fixed only
-  along the TAG-0 projection. Instrumented in the walkers-total table.
-- **THE INDEX RULE — D-226** (user-ratified 2026-08-31 and numbered the same
-  day at the user's direction: it governs every table the compiler will ever
-  grow, and a cycle file moves to `done/`. Record in `DECISIONS.md`; the
-  working narrative stays in 1.4.7.md): when a table's
-  count becomes `int64`, **the index type FOLLOWS THE COUNT** unless an
-  external contract pins `int32`, and then it is a guarded narrow reusing an
-  error the module ALREADY declares. A newly declared error is the last resort
-  — it is the one option whose cost lands on every `failsafe` in the tree
-  (family 6 paid 38 arms). `Ast` is the contract case; `Suspend` was not.
+All in `meta/specs/DECISIONS.md`. **D-224…D-233.**
+
+- **D-224** `exit` is process exit in every body; the async arm calls
+  `@npk_exit` directly. Its own record notes "B subsumes A" was WRONG.
+- **D-225** every `type_drops`-true kind has a stated canonical vacant value.
+  **`OwnedFd`'s vacant is −1, not zero** — a zeroed descriptor slot is fd 0,
+  and dropping it would close stdin silently.
+- **D-226** the index type FOLLOWS THE COUNT unless an external contract pins
+  `int32`, and then it is a guarded narrow reusing an error the module already
+  declares. Ordering: **no narrow > reuse the module's own error > declare a
+  new one**; the third costs every `failsafe` in the tree an arm.
+- **D-227** a memoised layout fact is never read before it is computed. The
+  QUERY ensures; the caller does not remember. `_recorded` is the explicit,
+  greppable opt-out, and the unqualified name is the safe one.
+- **D-228** ORCHESTRATION's R1–R9 and its cumulative-prefix protocol are
+  normative. Fable orchestrates, Opus executes; width calibration is sequenced
+  BEHIND OWED-1; R6 is absolute.
+- **D-229** the diagnostic walk is generic and borrowing, and prints
+  span-sorted. Stage 1 committed; stage 2 owed (above).
+- **D-230** D-044's flag types get implemented as one `TY_FLAGS` kind, before
+  1.4.8, because that subcycle's `lib/nfs.npk` grows the flag-taking surface.
+- **D-231** the sub-byte integer widths are STRUCK; the wide ladder is pinned
+  with layout rows and one EXECUTED conformance case.
+- **D-232 → superseded by D-233.**
+- **D-233** the verification evidence moves to the emitted IR: LLVM-native
+  analyzers supersede Astrée and the C emitter is struck. Three legs — abstract
+  interpretation over our own IR (engine chosen at 1.6.0's measured gate),
+  the D-218 Z3 spine untouched, and Alive2 translation validation. **1.6 is no
+  longer a one-shot**; what is scarce now is proof invalidation, not trial
+  attempts.
 
 ## Four things this stretch cost that you should not re-learn
 
@@ -93,7 +93,7 @@ below is committed; the tree is clean and nothing is in flight.
   cancelled. That also takes `drop` off the path, since D-163 licenses it by a
   checked `never fails` callee — use `?|`.
 
-## Converting the remaining families
+## Converting a collection family — RETIRED, kept for the method
 
 `meta/roadmap/1.4/convert_family.py` handles SINGLE-array families only; every
 parallel-array family so far was converted BY HAND, which is safe only because
@@ -191,9 +191,12 @@ remains below is execution, not deliberation.
   1.4.8, because that subcycle's `lib/nfs.npk` grows the flag-taking surface.
 - **D-231 — strike the sub-byte integer widths, pin the wide ladder** with
   layout rows and one executed conformance case.
-- **D-232 — C-only is the working default for Astrée** with a named trigger at
-  1.5's midpoint; the C-emitter design note is written at the 1.4 close, and
-  differential execution is its validation instrument.
+- ~~**D-232 — C-only is the working default for Astrée**~~ — **SUPERSEDED the
+  same day by D-233**: the evidence moves to the emitted IR, Astrée exits, and
+  the C emitter is struck. The reason is worth carrying: Astrée ingests C, so
+  it would have analysed an AST→C sibling lowering that never ships, while the
+  binary comes from the LLVM path — evidence about a model rather than about
+  the artifact.
 
 ### Checked and NOT a defect (2026-09-01)
 
@@ -322,7 +325,11 @@ exactly on a configured timeout is never a coincidence.
   spelling, that is an escalation, full stop.
 - **Do not defer**: no "revisit later", no TODO-shaped exits. The
   standing rule (see the pinned memories) is that everything lands
-  before the Astrée trial or is decided out by name.
+  before the EVIDENCE CAMPAIGN closes or is decided out by name — D-233
+  restated the basis (proof invalidation, not a one-shot trial) and the rule
+  survived unchanged. Tools are the exception the decision names: adopting a
+  tool later adds evidence and invalidates none, so SEQUENCING a tool is a
+  decision rather than a deferral.
 - Do not optimise for a small diff; optimise for landing once,
   correctly. Time is not the constraint; correctness is.
 
@@ -353,10 +360,12 @@ the workbench) before building instrumentation.
 ## Where things live
 
 - Plans: `meta/roadmap/1.4/*.md` (this cycle), `1.5/README.md` (the
-  ratified verification architecture), `1.6/README.md` (Astrée prep).
-- Decisions: `meta/specs/DECISIONS.md` (through D-225); the live queue
-  `meta/roadmap/OPEN_DECISIONS.md` (only C-19 remains externally
-  gated).
+  ratified verification architecture), `1.6/README.md` (the analyzer-evidence
+  cycle, rewritten at D-233).
+- Decisions: `meta/specs/DECISIONS.md` (through D-233); the live queue
+  `meta/roadmap/OPEN_DECISIONS.md` — **nothing is externally gated any more**:
+  C-19 was the last, and D-233 closed it by removing the external dependency
+  rather than by answering it.
 - Research: `meta/roadmap/research/` — read the `digests/`, not the
   2MB primaries; the audit is `research/COVERAGE_AUDIT.md`.
 - The auto-memory directory is shared with the planning sessions —
@@ -364,10 +373,46 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.7.md` end to end — it is long now and the
-execution record is most of it, in chronological order: step 1's first
-attempt and revert, step 2's twelve single-array families, the
-STOP-THE-LINE and its RESOLVED section, the D-224 settlement, step 1's
-landing, and the parallel-array families with the index rule. Re-verify every anchor before editing
-(lines drift); an anchor says what to look for, not a blind offset.
-Announce the item you are on; commit per the file's acceptance section.
+**Read `meta/roadmap/1.4/1.4.7.md` end to end.** It is long and the execution
+record is most of it, in chronological order — step 1's attempt and revert, the
+twelve single-array families, the family-10 STOP-THE-LINE and its RESOLVED
+section, D-224, step 1's landing, the parallel-array families and the index
+rule, then the four families the enumeration had missed and the D-227
+neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
+says what to look for, not a blind offset.
+
+Then pick up **D-229 stage 2** (above) or **step 3**, in that order — stage 2
+is a decided change with an open sub-question, step 3 is open-ended polish.
+Announce the item you are on; commit per the subcycle file's acceptance
+section: one full harness run per commit, no exceptions.
+
+## What this cycle proved about how to work here, in one place
+
+Every one of these cost something to learn and each is now load-bearing:
+
+1. **Test the reported symptom before implementing the reported fix.** Every
+   plan file whose diagnosis could be tested was wrong about the diagnosis
+   while right about the goal. 1.4.7 added three more: OWED-3's premise
+   (measured false — the table never grows after the decide pass), OWED-8's
+   "three refusals" (one has no test at all), and D-232's whole route.
+2. **A count that comes out right can still be a wrong edit.** The family-10
+   converter deleted a guard it did not own while its own count read a correct
+   9; only a separate push-preservation assertion caught it. It happened TWICE
+   in this cycle's tooling.
+3. **Silence is not success.** `rg -oh` parses as `-o -h` and `-h` is HELP in
+   ripgrep, so a sweep printed the help banner and its filtered form printed
+   nothing — which reads exactly like "no matches". Ask any "none" that a
+   decision rests on a second way.
+4. **Check an instrument against failure before trusting it.** This repo has
+   shipped a dead assertion (`check_runtime_sigs_agree`'s derived-inner leg).
+   Both instruments added this cycle were negative-controlled, and the control
+   caught a real bug in one of them.
+5. **The compiler is the completeness check, not grep.** Text search has been
+   wrong about "who touches this representation" in eight structurally
+   different ways; the compiler has been wrong zero times. But it cannot catch
+   an UNSTARTED conversion, and it cannot see an asymmetry that type-checks —
+   the counts-move-together break on FnEmitter's pop side was invisible to it.
+6. **"Correct by accident" is the shape to hunt.** Four defects this cycle
+   returned the right answer from an uninitialised, uncomputed, or freed read.
+   Poisoning the value — making the wrong answer wrong — is what exposed every
+   one of them, and is now the `absent-fact` harness stage.

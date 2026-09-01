@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.3 COMPLETE; the exotic tier is real
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) at 1.4.7; steps 1 and 2 complete
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 200 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 233 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -155,7 +155,8 @@ read off a block span that covers only the opening — every address-taken
 local whose last textual use preceded a later suspension sat on the dying
 resume stack). **G-3 settled (the user): the exotic tier is NEW CYCLE 1.3**,
 and Phase C renumbered a second time — self-hosting 1.4, verification 1.5,
-Astrée 1.6. Adopting `dyn Writer` in npkc's own diagnostics is 1.4
+and 1.6 (which was Astrée until **D-233** re-homed the evidence to the emitted
+IR; the cycle numbers are unchanged, its topic is not). Adopting `dyn Writer` in npkc's own diagnostics is 1.4
 material. **The 1.1 interlude closed the self-contained backlog**: `sys` is
 TYPED (D-192 — `Result<int64>` by D-048's contract, register-shaped
 arguments refused by name, zext for unsigned/kernel args, `?|` given `?!`'s
@@ -328,8 +329,9 @@ exploration harness, NIKOS struck from 1.5, and the whole 1.5
 verification architecture recorded early — new subcycles 1.4.2b and
 1.4.3b scheduled), and the research-informed plans landed — cycle 1.5's
 README carries the full proposed verification architecture (solver
-determinism profile, encodings, obligation catalogue), 1.6's the Astrée
-preparation handbook and C-19 question list, and 1.4.2–1.4.8 each have
+determinism profile, encodings, obligation catalogue), 1.6's the
+analyzer-evidence plan (rewritten at **D-233**; it was the Astrée handbook and
+the C-19 question list until the evidence moved to the emitted IR), and 1.4.2–1.4.8 each have
 execution-grade subcycle files written for a fresh executor to follow
 without asking. 1.4.1 landed the instruments (B-7's walkers-total check
 found and fixed the missing TY_ENUM drop arm, a silent payload leak live
@@ -421,7 +423,38 @@ D-179's site tables embed source paths. Both are clean, measured. Found:
 `npkseed.py` never did embed its argv path — `Module` puts the path in a
 `path` FIELD while `_path` is the location attribute nothing sets on a
 module node, so the ModuleID was `"?"` by accident, one character from the
-opposite; it is an explicit constant now. Next: 1.4.6.
+opposite; it is an explicit constant now.
+**1.4.6 (D-203, D-205) is COMPLETE — the builder switched.** The committed
+`bootstrap/seed/stage1.ll` is what builds `src/` now; `npkrt.ll` re-homed to
+`runtime/`; the Python seed builds nothing. D-205's rule changed meaning with
+it: `src/` is no longer bounded by subset 1 but by what the SNAPSHOT can
+compile, so a feature enters `src/` only after a snapshot that understands it.
+**1.4.7 (adoption, D-209) is at step 3.** Step 1: five copies of the
+diagnostic walk became one. Step 2 is COMPLETE — every growable array in `src/`
+is a `List<T>` and `ralloc` appears nowhere outside `list.npk`; twenty-two
+families, four of which the original enumeration had missed because it keyed on
+`ralloc` and one family `alloc`s-and-copies. Step 3 (form upgrades) has not
+started.
+**The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
+every body (D-224); declared-uninitialised managed storage holds its canonical
+vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
+follows the count (D-226); **a memoised layout fact is never read before it is
+computed** (D-227 — the query ensures, the caller does not remember, and
+`_recorded` is the explicit opt-out); the orchestration rules are normative
+(D-228); the diagnostic walk is generic and borrowing and prints span-sorted
+(D-229); D-044's flag types get implemented as one `TY_FLAGS` kind (D-230);
+the sub-byte integer widths are struck and the wide ladder pinned (D-231);
+and **D-233 replaced Astrée with LLVM-native analyzers over our own emitted
+IR**, striking the C emitter (D-232, superseded).
+**Four defects came out of D-227's neighbourhood, none found by a test of the
+thing that broke**: `tt_grow` never zeroed two of its four side arrays (latent
+since 1.2.5); the three memoised bits were read before computation, disabling
+TYPE-046, D-215 and `gives` wherever the window was open; a payload-less enum's
+bits were never written at all; and two live TYPE-046 violations in `src/`
+itself, where a `PlaceVal` owning a string was copied into a consuming
+parameter. All four share one root — **a fact that is ABSENT and a fact that is
+FALSE were spelled the same way**, which is what the new `absent-fact` harness
+stage now makes impossible to reintroduce.
 
 **A concurrency test runs 40 times, not once.** `// stress: N` in a program makes
 the harness require the same exit code every run. Two serious defects hid behind
