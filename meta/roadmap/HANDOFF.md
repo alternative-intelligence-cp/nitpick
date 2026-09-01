@@ -8,58 +8,149 @@
 
 ## Where you are
 
-- **1.4.6 IS COMPLETE AND PUSHED** (`499bebf..2ee4a2f`). The committed snapshot
-  builds `src/`; the Python seed builds nothing.
-- **1.4.7 step 2 is UNDERWAY: nine of twelve single-array families are
-  committed and green** (`RootList`, `Sink`, `StrTable`, `SiteTable`,
-  `InternTable`, `SourceManager`, `ModuleGraph`, `BoundTable`, `ImplTable`),
-  each with its own full harness run and a byte-identical fixpoint.
-- **THE FAMILY-10 STOP-THE-LINE IS RESOLVED — it was never a use-after-free,
-  and family 10 is LANDED and harness-green (`ok 60`, fixpoint byte-identical).**
-  The defect was `convert_family.py` itself: its step-4 guard deletion ran
-  unscoped and unboundaried, so family 10's `inst_grow\(t\)` matched inside
-  `fninst_record`'s `drop fninst_grow(t);` and stripped a live guard from a
-  table it was not converting; the un-grown table's push then overflowed its
-  768-byte block into the neighbouring slot's header. Read 1.4.7.md,
-  "RESOLVED" — the gdb evidence, the four measurements re-explained, the tool
-  fix with its regression test, and two new owed items (the `ident_holds`
-  belt direction, and `check_instantiations` running before the escape walk
-  can record). The corrected conversion is in `src/frontend/types.npk` at
-  HEAD (fc609a6 swept it in while its message still described the old
-  theory — trust RESOLVED, not that message or this file's earlier text).
-  `1.4.7-family10-trigger.patch` stays as the committed reproduction;
-  `1.4.7-escalation.md` is answered.
-- **1.4.7 step 1 (`dyn Writer` diagnostics) is BLOCKED ON A USER DECISION**,
-  unrelated to the above: what `exit` means inside an async body. Three options
-  with a recommendation are in 1.4.7.md. Do not improvise a fourth.
+**1.4.7 steps 1 and 2 are both underway and both green at HEAD.** Everything
+below is committed; the tree is clean and nothing is in flight.
 
-## Two things not to rediscover
+- **STEP 1 IS COMPLETE** (`e2a835c`). `dyn Writer` diagnostics: FIVE copies of
+  the diagnostic walk (two `report` functions, three inline loops) became ONE
+  `diag_report(dyn Writer, …)`, all six driver one-liners moved onto the same
+  sink, and all four drivers' `main` are coroutines. The async surface lives in
+  `src/frontend/diag_writer.npk`, NOT in diagnostics.npk — see the REACH note
+  below, it is the interesting decision.
+- **It needed two things first**: **D-224** (`c2db47c`) — `exit` means process
+  exit in every body, async included — and a **snapshot refresh** (`e0871ab`).
+- **D-225 landed mid-step** (`a2f2032` + snapshot `e310185`): declared-
+  uninitialised managed storage holds its canonical vacant value. A real
+  memory-safety defect, latent since 1.1.12.
+- **STEP 2: all TWELVE single-array families are converted**, and **EIGHT of
+  the ten parallel-array families** — `FoldEnv`, `tt_unit`, `vtmap`, `reach`,
+  the resolver's error table, `irw_site`, `Suspend`, `Ast`. Each committed with
+  its own full harness run.
+- **REMAINING IN STEP 2: `TypeTable`'s five and `FnEmitter`'s seven.** The two
+  wide ones; `fnem_pick_push` grows eight arrays in lockstep and
+  `ir_func.npk` has 36 `ralloc` sites. Then step 3 (form upgrades), which has
+  not been started.
 
-- **`meta/roadmap/1.4/convert_family.py`** does the mechanical conversion, with
-  the SEVEN ways a site hides from a text search closed by construction — the
-  seventh (the tool editing a site it does not own) is the one that caused the
-  STOP-THE-LINE, and the fixed tool now scopes and boundaries its guard
-  deletion and refuses a deleted guard without its converted push. Rehearse
-  with `dry=True` first; it refuses to write an incomplete conversion. The
-  remaining families' parameters are in 1.4.7.md.
-- **Text search has been wrong about "who touches this representation" six
-  times in this step; the compiler has been wrong zero times.** Apply,
-  `quickemit` (NOT `quickcheck` — it builds only the frontend), then the full
-  harness. Skipping the `quickemit` step is what let one broken family reach a
-  harness run.
+## The decisions settled this cycle, and where they are
 
-## Running harnesses in parallel (proven, and it earned its keep)
+- **D-224** — `exit` is process exit in every body. The root task's frame is a
+  STACK ALLOCA (not a heap block), and the async arm of `emit_exit` calls
+  `@npk_exit` directly. Its own record notes that "B subsumes A" was WRONG:
+  the scope-exit unwind is frame-resident, so both halves were needed.
+- **D-225** — every `type_drops`-true kind has a stated canonical vacant value,
+  its drop body is a no-op on it, and a declaration without an initialiser
+  writes it. **`OwnedFd`'s vacant is −1, not zero** — a zeroed descriptor slot
+  is fd 0, and dropping it would close stdin silently. Enums are fixed only
+  along the TAG-0 projection. Instrumented in the walkers-total table.
+- **THE INDEX RULE** (user-ratified, in 1.4.7.md, no D-number): when a table's
+  count becomes `int64`, **the index type FOLLOWS THE COUNT** unless an
+  external contract pins `int32`, and then it is a guarded narrow reusing an
+  error the module ALREADY declares. A newly declared error is the last resort
+  — it is the one option whose cost lands on every `failsafe` in the tree
+  (family 6 paid 38 arms). `Ast` is the contract case; `Suspend` was not.
 
-The harness is fully serial and costs ~1.3 cores but ~9.5 GB, so on this
-48-core / 157 GB machine MEMORY bounds concurrency to roughly a dozen runs, not
-CPU. Convert family N in the main tree; in a worktree apply N then N+1 as a
-CUMULATIVE PREFIX and run both harnesses at once. Each run then validates
-exactly the tree state that will be committed, so no rigor is given up — verify
-the prefix with `diff` before trusting it. This is how the use-after-free was
-separated from a green family 9 in one wall-clock window. Watch for spurious
-DEADLINE failures (`channel_deadline`, `driver_deadline`, `executor_sleep`, the
-five-second thread joins); none appeared at 2 concurrent, and one would be a
-stop sign rather than noise.
+## Four things this stretch cost that you should not re-learn
+
+- **The snapshot refresh procedure in `bootstrap/seed/README.md` WAS WRONG and
+  is now fixed.** It compared stage1.new with stage2 and installed stage1.new.
+  For any change that alters what the compiler EMITS those differ BY
+  CONSTRUCTION, and stage1.new's BODY predates the change. The criterion is
+  **stage2 == stage3, and stage 2 is what gets installed.** D-202's lesson in
+  a second place.
+- **A compiler FIX does not reach the tools until the snapshot carries it.**
+  `build_tool` compiles `tools/` with the SNAPSHOT, not the npkc just built
+  from `src/`. Measured: npkc-built checker rc=0, snapshot-built rc=3, same
+  sources. D-205's rule in its mirror direction.
+- **REACH is IMPORT-scoped.** An async function anywhere in a module makes
+  `DeadlineExceeded` reachable in every program that imports it — twelve of the
+  compiler's own unit tests failed REACH-002 because diagnostics.npk gained
+  async functions. Twelve arms would have acknowledged a failure that cannot
+  occur in those programs; the module split is why `diag_writer.npk` exists.
+  An exhaustive `failsafe` earns its keep by being TRUE.
+- **`async` may not be `never fails`** (TYPE-037): a suspended task can be
+  cancelled. That also takes `drop` off the path, since D-163 licenses it by a
+  checked `never fails` callee — use `?|`.
+
+## Converting the last two families
+
+`meta/roadmap/1.4/convert_family.py` handles SINGLE-array families only; every
+parallel-array family so far was converted BY HAND, which is safe only because
+the compiler enumerates what a sweep misses. The discipline that works:
+
+1. **Sweep `src/`, `tools/` AND `tests/`** — not just the defining file. Two of
+   my eight hand conversions were caught by the compiler for a site in another
+   file (`r.env.count` on FoldEnv; `emit_program.npk` on irw_site).
+2. **Apply, `quickemit`, self-compile (`npkc src/main.npk`), THEN the harness.**
+   The self-compile is the cheap check for the family-10 class — a small test
+   program has too few instantiations to overflow anything.
+3. **Read the id BEFORE the push.** `list_push` performs the increment the old
+   code did explicitly, so an id computed after the push is off by one — it
+   compiles perfectly and corrupts every reference. This nearly shipped in all
+   six of `Ast`'s add functions.
+4. **A bulk append takes `list_reserve` before its loop**, not a push per
+   element with no reserve (`Sink`'s shape; `Suspend`'s `lsflat`).
+5. **N counts must be reset together.** `Suspend`'s per-function reset clears
+   seven; they are listed rather than folded, on purpose.
+
+## Running harnesses in parallel — THE WIDTH IS 2
+
+The harness costs ~1.3 cores but ~9.5 GB, so MEMORY bounds concurrency on this
+48-core / 157 GB machine. Convert family N in the main tree; in a worktree
+apply N then N+1 as a CUMULATIVE PREFIX and run both at once, so each run
+validates exactly the tree state that will be committed — verify with `diff`
+before staging, every time.
+
+**Going to 3-wide produced the migration's only red**, and the width is back at
+2 until it is characterised: `extern_c_driver.npk` gave exit 29 once in 40 runs
+under -O2 while three harnesses shared the machine. **Owed**: is that test's
+5-second deadline simply too tight to be load-independent, or is there a race
+that load makes reachable? ORCHESTRATION §4 asks for a calibration run at the
+intended width first; I skipped it and this is what it would have caught.
+
+**When a red appears, the IR is often the cheap decisive test.** That red's
+signature (correct at -O0, wrong at -O2) is 1.3.8's defect exactly, and the
+conversion under suspicion was the SUSPEND WALK. Emitting the failing program
+from both trees and `cmp`-ing settled it in two minutes: byte-identical, so the
+walk's crossing decisions never changed. A harness run would have taken fifty.
+
+## OWED — open items, none of them lost
+
+Work, in no particular order. Each is real, each was found by measurement, and
+none is blocking step 2's remaining two families.
+
+1. **`extern_c_driver.npk` under load** (above) — deadline too tight, or a race
+   load makes reachable? The parallel width stays at 2 until this is answered.
+2. **The `escape.npk` `ident_holds` belt** — line ~605 indexes `holds` where
+   its siblings guard. In-range TODAY by construction (line 604 gates on
+   `SYM_STMT`), but the belt is owed and **must fail CLOSED, which here is
+   `pass true`**, not the siblings' `pass false`: `place_vouchable` inverts the
+   answer, so a false-on-OOB guard would make an unseeable symbol vouchable.
+3. **`check_instantiations` runs BEFORE the escape walk can still record** —
+   `pipeline.npk:345` decides, and the escape walk's deep field walk can record
+   a first-seen instance after that. Reachable shape: a bound-violating generic
+   field type in a struct no checked expression touches. Move the decide pass
+   after the last pass that can record, or sweep the tail and assert the table
+   did not grow.
+4. **`npkg test`'s capture-and-compare is BLOCKED by design, not by effort** —
+   a `dyn` coercion MOVES, so a capture buffer handed to `diag_report` is
+   consumed and cannot be read back. Needs a borrowing Writer, or a capture
+   sink the walk does not own. `diaglist_render(Sink->)` remains a second walk
+   until it is answered. USER-FACING DESIGN QUESTION.
+5. **Should diagnostics print span-sorted?** `diaglist_render` sorts; the
+   driver path never did, and I kept driver behaviour identical rather than
+   change output ordering inside a receiver migration. D-204's reproducibility
+   argues yes. USER DECISION.
+6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-226** and
+   unanswered: does it become a numbered decision, who plays orchestrator, what
+   width to calibrate at, and is "never work around a compiler defect"
+   absolute.
+7. **CLAUDE.md's quickcheck example cites `tests/types/rejection/borrows.npk`,
+   which does not exist** — the file is `tests/analysis/rejection/borrows.npk`
+   (a borrow rule is refused by an analysis, not the type checker).
+8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** but are
+   PERMANENT language rules, in a suite whose README says its contents graduate
+   as rungs land. These never will. Fix is D-215's shape: a TYPE code with a
+   span, cases moving to `tests/types/rejection/`. (Carried from 1.4.4.)
 
 ## RETIRED: 1.4.6 — the builder switch (D-203, D-205)
 
@@ -182,8 +273,15 @@ exactly on a configured timeout is never a coincidence.
 
 ## Escalation (the user holds a Fable reserve for exactly this)
 
-The user keeps ~12% Fable quota until Wednesday's reset for
-debugging help. Spend it well: escalate when (a) a plan step is wrong
+The user keeps a slice of Fable quota for debugging help (~10% as of
+2026-08-31, resetting Wednesday; a typical escalation costs 1-2%, so
+budget three or four). An escalation this cycle -- the family-10
+STOP-THE-LINE -- caught a landmine an executor had missed (`OwnedFd`'s
+vacant is -1, and a plain memset would have closed stdin silently), so it
+is worth spending when the question is decision-shaped.
+**A NEW FABLE SESSION MUST WORK IN ITS OWN WORKTREE**: on 2026-08-30 two
+sessions shared this tree and one commit swept up the other's in-flight
+edits (`fc609a6` -- its message and its diff still disagree). Spend it well: escalate when (a) a plan step is wrong
 on contact, (b) a miscompile/fixpoint-drift/nondeterminism hunt has
 survived two serious hypotheses, or (c) anything decision-shaped
 appears. BEFORE escalating, write what you found into the subcycle's
@@ -198,7 +296,7 @@ the workbench) before building instrumentation.
 
 - Plans: `meta/roadmap/1.4/*.md` (this cycle), `1.5/README.md` (the
   ratified verification architecture), `1.6/README.md` (Astrée prep).
-- Decisions: `meta/specs/DECISIONS.md` (through D-221); the live queue
+- Decisions: `meta/specs/DECISIONS.md` (through D-225); the live queue
   `meta/roadmap/OPEN_DECISIONS.md` (only C-19 remains externally
   gated).
 - Research: `meta/roadmap/research/` — read the `digests/`, not the
@@ -208,8 +306,10 @@ the workbench) before building instrumentation.
 
 ## First action
 
-Read `meta/roadmap/1.4/1.4.7.md` end to end — INCLUDING its execution
-record, which is where step 1 stopped and why — then 1.4.6's, which is long,
-and the long part is what the switch exposed. Re-verify every anchor before editing
+Read `meta/roadmap/1.4/1.4.7.md` end to end — it is long now and the
+execution record is most of it, in chronological order: step 1's first
+attempt and revert, step 2's twelve single-array families, the
+STOP-THE-LINE and its RESOLVED section, the D-224 settlement, step 1's
+landing, and the parallel-array families with the index rule. Re-verify every anchor before editing
 (lines drift); an anchor says what to look for, not a blind offset.
 Announce the item you are on; commit per the file's acceptance section.
