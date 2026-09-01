@@ -15131,3 +15131,68 @@ them and moves the proof into compiler internals an artifact-level analyser
 cannot see. **A is DEMOTED, not discarded**: once the representation is true,
 eliding a provably-vacant overwrite-drop is a pure optimisation whose
 divergence costs cycles rather than memory. Permitted, not planned.
+
+## D-226 — the index type follows the count — **SETTLED (user decision, 2026-08-31; numbered 2026-08-31)**
+
+Ratified during 1.4.7 step 2 and recorded in the subcycle file; given a number
+here at the user's direction, because a rule that governs every table the
+compiler will ever grow cannot live in a cycle document that moves to `done/`.
+
+**The question.** `List<T>` counts in `int64` (that uniformity is the
+collection's own design note — the families it replaced disagreed, and under
+D-210 a doubling that overflows TRAPS, which at 64 bits it cannot reach). Most
+of those families hand their count out as an `int32` INDEX. So: when the count
+widens, what happens to the index?
+
+**Six families in, the same question had three different answers**, which is
+the blueprint philosophy's own failure mode arriving inside a migration
+undertaken to remove exactly that:
+
+- families 5 and 6 (`InternTable`, `SourceManager`) — a guarded narrow behind
+  a NEWLY DECLARED error; family 6's `source.BoundsIndex` grew **38 `failsafe`
+  arms** across the tree;
+- family 7 (`ModuleGraph`) — a guarded narrow reusing an error the module
+  ALREADY declares, at no cost to any `failsafe`;
+- `irw_site` — no narrow at all, because the dedup scan's loop counter already
+  WAS the index as an `int32`, and D-210 makes its `+ 1i32` trap.
+
+`FnEmitter`'s seven groups — `fnem_pick_push` grows eight arrays in lockstep —
+would have invited a fourth.
+
+**The decision:**
+
+> **The index type FOLLOWS THE COUNT — `int64` — unless an external contract
+> pins `int32`, and then it is a guarded narrow reusing an error the module
+> already declares.**
+
+**The test is whether the `int32` is a real contract or an artifact of the old
+representation.** A contract is a width some other component depends on:
+family 5's intern id is one, because every AST node stores a name as an
+`int32` and the whole table exists to make two names impossible to alias — so
+the narrow must be guarded and must keep its own error identity (D-179:
+borrowing a builtin error erases the module's unforgeable identity). `Ast` is
+the same case and is the family the rule was settled for — every node
+reference is an `int32` by design, so `ast_id` narrows through `BoundsId`,
+already declared there. `reg_add`'s index in `Suspend` is NOT a contract: it
+is an `int32` only because `lcount` was, and three call sites in the same file
+consume it. That family needed no narrowing anywhere.
+
+**A newly declared error is the LAST resort, not the default.** It is the one
+option whose cost lands on every `failsafe` in the tree, because REACH-002 is
+exhaustive over what can reach one — 38 arms for a single file id. Reusing an
+already-declared error (family 7, `Ast`) or removing the narrow entirely
+(`irw_site`, `Suspend`) spends nothing. The ordering is therefore: **no narrow
+> reuse the module's own error > declare a new one**, and the third needs a
+reason the first two could not serve.
+
+**A silent `=>!` is never an answer**, at any position in that ordering. The
+failure it produces is two distinct entities aliasing one id, which is
+precisely the invariant these tables exist to hold; family 5's `int32` counter
+got the property for free only because D-210 trapped its increment, and
+widening the count is what takes that belt away.
+
+**Scope.** The rule governs `src/`'s tables and any table added later. It is
+an engineering rule about representation, not a language rule — nothing in the
+grammar or the type system changes — which is why it is recorded here and
+carried into `src/frontend/list.npk`'s header rather than into a reference
+document.

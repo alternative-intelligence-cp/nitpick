@@ -26,10 +26,27 @@ below is committed; the tree is clean and nothing is in flight.
   the ten parallel-array families** — `FoldEnv`, `tt_unit`, `vtmap`, `reach`,
   the resolver's error table, `irw_site`, `Suspend`, `Ast`. Each committed with
   its own full harness run.
-- **REMAINING IN STEP 2: `TypeTable`'s five and `FnEmitter`'s seven.** The two
-  wide ones; `fnem_pick_push` grows eight arrays in lockstep and
-  `ir_func.npk` has 36 `ralloc` sites. Then step 3 (form upgrades), which has
-  not been started.
+- **REMAINING IN STEP 2: SIX families, not two.** The handoff said "TypeTable's
+  five and FnEmitter's seven" and that was a counting error — re-measured at
+  the midpoint, four more families still grow by hand, three of them named in
+  the step-2 grower enumeration but given no row in either landing list
+  (`SymbolTable`'s three, `ExprTypes`' two, `LlCtx.drop_types`), and one
+  (`MacroTable`) never counted at all, because the enumeration keyed on
+  `ralloc` and it `alloc`s-and-copies. That is the EIGHTH way a site hides —
+  the first where the search's PREDICATE was wrong rather than its scope, and
+  the first the compiler cannot catch, since an unstarted conversion breaks
+  nothing. **User-decided 2026-08-31: all four land inside step 2.** Full
+  account and the ordering are in 1.4.7.md's "The step-2 enumeration was short
+  by four families".
+- **Order, smallest external surface first**: `MacroTable` ·
+  `LlCtx.drop_types` · `ExprTypes` · `SymbolTable` · `TypeTable` ·
+  `FnEmitter`. The two wide ones last; `fnem_pick_push` grows eight arrays in
+  lockstep and `ir_func.npk` has 36 `ralloc` sites. Two shape questions come
+  first, deliberately: `ExprTypes` narrows a doubled `int64` capacity with a
+  bare `=>!` (twice), and **`symtab_set_home` is not an append** — it is an
+  index-addressed sparse map that grows until the caller's index fits and
+  hand-zeroes the tail, a shape neither `list_reserve` nor `list_push` has.
+  Then step 3 (form upgrades), which has not been started.
 
 ## The decisions settled this cycle, and where they are
 
@@ -42,7 +59,10 @@ below is committed; the tree is clean and nothing is in flight.
   writes it. **`OwnedFd`'s vacant is −1, not zero** — a zeroed descriptor slot
   is fd 0, and dropping it would close stdin silently. Enums are fixed only
   along the TAG-0 projection. Instrumented in the walkers-total table.
-- **THE INDEX RULE** (user-ratified, in 1.4.7.md, no D-number): when a table's
+- **THE INDEX RULE — D-226** (user-ratified 2026-08-31 and numbered the same
+  day at the user's direction: it governs every table the compiler will ever
+  grow, and a cycle file moves to `done/`. Record in `DECISIONS.md`; the
+  working narrative stays in 1.4.7.md): when a table's
   count becomes `int64`, **the index type FOLLOWS THE COUNT** unless an
   external contract pins `int32`, and then it is a guarded narrow reusing an
   error the module ALREADY declares. A newly declared error is the last resort
@@ -71,7 +91,7 @@ below is committed; the tree is clean and nothing is in flight.
   cancelled. That also takes `drop` off the path, since D-163 licenses it by a
   checked `never fails` callee — use `?|`.
 
-## Converting the last two families
+## Converting the remaining families
 
 `meta/roadmap/1.4/convert_family.py` handles SINGLE-array families only; every
 parallel-array family so far was converted BY HAND, which is safe only because
@@ -116,7 +136,7 @@ walk's crossing decisions never changed. A harness run would have taken fifty.
 ## OWED — open items, none of them lost
 
 Work, in no particular order. Each is real, each was found by measurement, and
-none is blocking step 2's remaining two families.
+none is blocking step 2's remaining families.
 
 1. **`extern_c_driver.npk` under load** (above) — deadline too tight, or a race
    load makes reachable? The parallel width stays at 2 until this is answered.
@@ -140,7 +160,7 @@ none is blocking step 2's remaining two families.
    driver path never did, and I kept driver behaviour identical rather than
    change output ordering inside a receiver migration. D-204's reproducibility
    argues yes. USER DECISION.
-6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-226** and
+6. **ORCHESTRATION.md's four §8 questions** are proposed as **D-227** and
    unanswered: does it become a numbered decision, who plays orchestrator, what
    width to calibrate at, and is "never work around a compiler defect"
    absolute.
