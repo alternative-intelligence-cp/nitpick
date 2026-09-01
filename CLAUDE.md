@@ -433,8 +433,17 @@ compile, so a feature enters `src/` only after a snapshot that understands it.
 diagnostic walk became one. Step 2 is COMPLETE — every growable array in `src/`
 is a `List<T>` and `ralloc` appears nowhere outside `list.npk`; twenty-two
 families, four of which the original enumeration had missed because it keyed on
-`ralloc` and one family `alloc`s-and-copies. Step 3 (form upgrades) has not
-started.
+`ralloc` and one family `alloc`s-and-copies. **D-229 is COMPLETE**: the walk is
+generic and borrowing, sorts, and is tested through the capture it exists for;
+`impl:Sink:Writer` lives in `diag_writer.npk` beside the walk (REACH is
+import-scoped and the impl is async). It is the tree's FIRST impl on a struct
+declared in another module, and its first build found that the symbol scheme
+had never said which module qualifies a method — definitions and three call
+paths disagreed the moment an impl left its trait's module. **The impl's
+module, on both ends** (D-156 read as its vtable row already said), with
+byte-identical IR for every pre-existing program; `impl_foreign.npk` pins every
+shape, and `Trait.default_method(recv)` — refused even in one file — works.
+Step 3 (form upgrades) has not started.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

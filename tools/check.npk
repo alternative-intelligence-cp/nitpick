@@ -34,9 +34,9 @@ use "../src/frontend/token.npk".*;
 use "../src/frontend/type_trait.npk".*;
 use "../src/frontend/types.npk".*;
 
-// The renderer moved to `diag_report` (diagnostics.npk) at 1.4.7 step 1:
-// ONE erased walk over `dyn Writer` where this file, check, resolve_check
-// and parse_check each kept their own copy of the loop.
+// The renderer moved to `diag_report` (diag_writer.npk) at 1.4.7 step 1:
+// ONE walk -- generic and borrowing since D-229 -- where src/main.npk, this
+// file, resolve_check and parse_check each kept their own copy of the loop.
 async func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
         await diag_say("usage: check <root.npk>") ?| NIL;

@@ -1,4 +1,4 @@
-// The DRIVERS' report path — the erased sink, kept OUT of diagnostics.npk.
+// The DRIVERS' report path — the one walk, kept OUT of diagnostics.npk.
 //
 // Why its own module: `REACH` is IMPORT-scoped, so an async function anywhere in
 // a module makes `DeadlineExceeded` reachable in every program that imports it —
@@ -29,10 +29,45 @@ use "./source.npk".*;
 // report that gives up is a defect the reader never learns about.
 fixed Duration:DIAG_WITHIN = Duration{ ns: 5000000000i64 };
 
+// THE CAPTURE SINK IS A WRITER (D-229 stage 2). `Sink` is diagnostics.npk's
+// byte buffer -- the IR writer's, the tests' -- and this impl is what lets the
+// ONE walk below write into it: production lends the walk a
+// `TextWriter<ByteWriter>` over stderr, a test lends it a `Sink` and reads the
+// bytes back afterwards. That is the capture-and-compare D-075 designed and
+// `npkg test` (1.4.8) will run, through the same code path the drivers use, so
+// a test that passes has tested the walk production runs. It retired
+// `diaglist_render`, the SIXTH copy of the loop, which stage 1 could not fold
+// into an erased sink and this folds into the borrowing one.
+//
+// THE IMPL LIVES HERE, NOT BESIDE ITS TYPE, on purpose. Its methods are async
+// (an impl keeps its trait's `async`, TYPE-048) and REACH is import-scoped, so
+// an async body in diagnostics.npk is the twelve-failsafe problem this file's
+// header records. The language puts no restriction on where an impl lives --
+// the impl table is program-wide and each entry resolves its names in its own
+// module (TRAITS_REFERENCE 4.1, D-171) -- and this is the tree's FIRST impl on
+// a struct declared elsewhere: its first build found the symbol scheme
+// qualifying a method by the trait's module on three call paths and by the
+// impl's on the definition side. D-156 says the impl's; fixed at 1.4.7, and
+// `impl_foreign.npk` pins every shape.
+//
+// `write` appends the bytes as they are: a sink translates nothing, exactly as
+// `ByteWriter` translates nothing. A deadline cannot expire on a memory buffer,
+// so `within` is carried for the trait's shape and unspent, as `ByteWriter`'s
+// `flush` carries its own.
+impl:Sink:Writer = {
+    async func:write = int64(Sink->:self, fixed uint8[]:wsrc, Duration:_~within) {
+        drop sink_write(self, string_from_bytes(wsrc.ptr =>! wild int8->, wsrc.len));
+        pass wsrc.len;
+    };
+    async func:flush = NIL(Sink->:self, Duration:_~within) { pass NIL; };
+};
+
 // THE ONE DIAGNOSTIC WALK -- GENERIC AND BORROWING (D-229). Five copies of
 // this loop existed -- `report` in src/main.npk, `report` in tools/check.npk,
-// and three inline walks across resolve_check and parse_check -- and the 1.0.8
-// note further up this file records what letting a second copy exist costs.
+// and three inline walks across resolve_check and parse_check -- and
+// diagnostics.npk's 1.0.8 note above `diag_line` records what letting a
+// second copy exist costs. A sixth, `diaglist_render` over the tests' capture
+// buffer, outlived stage 1 by one commit and is the impl above now.
 //
 // IT WAS `dyn Writer` UNTIL D-229, AND THE ERASURE HAD TO GO. D-075 routed
 // diagnostics through a trait object so `npkg test` could capture and compare
@@ -57,7 +92,9 @@ fixed Duration:DIAG_WITHIN = Duration{ ns: 5000000000i64 };
 // driver path is already deterministic run to run -- it is that sorting makes
 // the output a function of the diagnostic SET rather than of pass discovery
 // order, so 1.4.8's capture goldens survive a future pass reordering. The sort
-// is stable, so cause-before-consequence at one span is preserved.
+// is stable, so cause-before-consequence at one span is preserved. It sorts
+// HERE and nowhere else: the walk is the only reader that needs the order, and
+// a list sorted twice is a list sorted once, so a caller owes it nothing.
 //
 // BEST-EFFORT BY THE TIME IT PRINTS, deliberately (D-163's reasoned `?|`): a
 // broken stderr cannot be reported on stderr, so each write swallows its own

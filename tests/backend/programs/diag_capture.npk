@@ -1,0 +1,101 @@
+// expect-exit: 0
+//
+// THE ONE DIAGNOSTIC WALK, CAPTURED (D-229 stage 2). `diag_report` is what
+// every driver prints through; here it is LENT a `Sink` instead of stderr and
+// the bytes are read back after it returns -- the capture-and-compare D-075
+// designed, which an owned `dyn` could not do (the coercion moves) and a
+// borrowed writer can. The walk is exercised end to end, exactly as production
+// runs it: the span sort (spanless first), the one formatter's shape per line,
+// the newline per diagnostic, the dedup, and the OVERFLOW arm -- 257 distinct
+// diagnostics, which nothing drove before -- through the `impl:Sink:Writer`
+// that lives beside the walk. `exit 0`, so D-151's leak check runs; and
+// `DeadlineExceeded` is TRUE in this failsafe, where a synchronous test could
+// only pretend to acknowledge it.
+mod:diag_capture;
+
+use "../../../src/frontend/source_location.npk".*;
+use "../../../src/frontend/intern.npk".*;
+use "../../../src/frontend/source.npk".*;
+use "../../../src/frontend/diagnostics.npk".*;
+use "../../../src/frontend/diag_writer.npk".*;
+
+async func:main = int32(cstring[]:_~argv) {
+    SourceManager:sm = raw srcmgr_init();
+    int32:f = raw srcmgr_add(@sm, "a.npk", "func:main = int32(cstring[]:_~argv) { };");
+    if (f != 0i32) { exit 10i32; }
+    Duration:within = raw duration_ms(500i64);
+
+    // --- the shape and the order: pushed OUT of order, a repeat among them --
+    DiagList:list = raw diaglist_init();
+    Span:late  = raw span_point(0i32, 90i32, 9i32, 1i32);
+    Span:early = raw span_point(0i32, 30i32, 3i32, 5i32);
+    drop diaglist_push(@list, raw diag_error("NITPICK-019", "use after move", late));
+    drop diaglist_push(@list, raw diag_warning("NITPICK-040", "await outside async", early));
+    drop diaglist_push(@list, raw diag_note("NITPICK-001", "no span to point at", raw span_none()));
+    drop diaglist_push(@list, raw diag_error("NITPICK-019", "use after move", late));
+
+    Sink:out = raw sink_to_buffer(4096i64);
+    await diag_report(@out, @list, @sm, within) ?| NIL;
+    string:want = string_concat(
+        "note NITPICK-001 <no span>: no span to point at\n",
+        string_concat("warning NITPICK-040 a.npk:3:5: await outside async\n",
+                      "NITPICK-019 a.npk:9:1: use after move\n"));
+    if (!(raw string_eq(raw sink_view(@out), want))) { exit 11i32; }
+
+    // --- the overflow arm: 257 distinct diagnostics, the 257th suppressed ---
+    DiagList:big = raw diaglist_init();
+    int32:i = 0i32;
+    while (i < 257i32) {
+        Span:sp = raw span_point(0i32, i, i + 1i32, 1i32);
+        drop diaglist_push(@big, raw diag_error("NITPICK-019", "x", sp));
+        i = i + 1i32;
+    }
+    if (raw diaglist_count(@big) != 256i64) { exit 12i32; }
+    if (!big.overflowed)                    { exit 13i32; }
+    Sink:out2 = raw sink_to_buffer(4096i64);
+    await diag_report(@out2, @big, @sm, within) ?| NIL;
+    string:got = raw sink_view(@out2);
+    // 256 lines and the note: one newline each
+    int64:nl = 0i64;
+    int64:k = 0i64;
+    while (k < got.len) {
+        if (got.ptr[k] == 10u8) { nl = nl + 1i64; }
+        k = k + 1i64;
+    }
+    if (nl != 257i64) { exit 14i32; }
+    // the lowest span first ...
+    string:head = string_slice(got, 0i64, 25i64) ?| "";
+    if (!(raw string_eq(head, "NITPICK-019 a.npk:1:1: x\n"))) { exit 15i32; }
+    // ... and the note last
+    string:ovf = string_concat(raw diag_overflow_line(), "\n");
+    if (got.len < ovf.len) { exit 16i32; }
+    string:tail = string_slice(got, got.len - ovf.len, got.len) ?| "";
+    if (!(raw string_eq(tail, ovf))) { exit 17i32; }
+
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    // Every defect family this program can die from, NAMED (D-179). The
+    // walk's writer carries a real deadline, so `DeadlineExceeded` is a true
+    // arm here. Exit 3 for each: a defect in the COMPILER's own modules,
+    // never the input's error.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (IntOverflow) { exit 3i32; },
+        (HeapBadRequest) { exit 3i32; },
+        (HeapOom) { exit 3i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 3i32; },
+        (WildLeak) { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (intern.BoundsId) { exit 3i32; },
+        (intern.ProvenSlice) { exit 3i32; },
+        (source.BoundsIndex) { exit 3i32; },
+        (source.BoundsOffset) { exit 3i32; },
+        (source.FileUnknown) { exit 3i32; },
+        (*) { exit 3i32; }
+    }
+    exit 3i32;
+};

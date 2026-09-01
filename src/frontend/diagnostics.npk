@@ -196,9 +196,10 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
                 // owned strings while the slot still points at them -- every
                 // later read of that slot reads freed memory. It was invisible
                 // because this function had one caller (`diaglist_render`,
-                // reached by a single test) until D-229 put the sort on the
-                // driver path, and the corruption then appeared immediately as
-                // garbage bytes in the compiler's own diagnostics.
+                // the tests' walk, since retired into `diag_report`) reached
+                // by a single test, until D-229 put the sort on the driver
+                // path and the corruption appeared immediately as garbage
+                // bytes in the compiler's own diagnostics.
                 list.items[j - 1i64] = move(prev);
                 j = 0i64 - 1i64;
             }
@@ -235,8 +236,11 @@ pub func:diaglist_sort = NIL(DiagList->:list) never fails {
 // mode-field pattern D-072 rejected. The descriptor role belongs to the floor's
 // own write_all and to the text writer above it (lib/nio.npk); what remains
 // here is the CAPTURE BUFFER, the thing D-075 needs from diagnostics: one code
-// path that a test can read back. When traits land (1.0) this becomes one
-// `Writer` impl among several, not a special case.
+// path that a test can read back. IT IS ONE `Writer` IMPL AMONG SEVERAL since
+// 1.4.7 (D-229 stage 2), not a special case -- and the impl lives in
+// diag_writer.npk beside the one walk, not here: its methods are async, and
+// REACH is import-scoped, so an async body in this module would make
+// `DeadlineExceeded` reachable in every program that imports it.
 // ---------------------------------------------------------------------------
 
 pub struct:Sink = {
@@ -339,9 +343,11 @@ pub func:sink_append = NIL(Sink->:dst, Sink->:src) never fails {
 // tools printed `CODE line:col` and dropped both, and the one that kept the
 // message (this file's, reached from one test) dropped the path. Seventy-nine
 // messages had been written and none had reached a reader — which is also
-// why none had been reviewed. The string is built here and WRITTEN by the
-// caller, because the drivers write to a `NioW` and the tests to a `Sink`,
-// and a renderer per sink is how the drift began.
+// why none had been reviewed. The string is built here and WRITTEN by the one
+// walk in diag_writer.npk, through whatever `Writer` it was lent -- the
+// drivers' `TextWriter<ByteWriter>`, the tests' `Sink` -- because a renderer
+// per sink is how the drift began, and a walk per sink (`diaglist_render`,
+// retired at D-229 stage 2) is how it would have begun again.
 pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) never fails {
     string:m = "";
     if (d.severity == 0i32) { m = "note "; }
@@ -370,29 +376,9 @@ pub func:diag_line = string(Diagnostic:d, SourceManager->:sm) never fails {
     pass m;
 };
 
-// The line that says the list was capped — the drivers print it too (1.0.8);
+// The line that says the list was capped — the one walk prints it (1.0.8);
 // before, only the test sink ever mentioned that anything had been dropped.
 pub func:diag_overflow_line = string() never fails {
     pass "note NITPICK-DIAG-001 <no span>: further diagnostics suppressed";
-};
-
-pub func:diag_render = NIL(Diagnostic:d, SourceManager->:sm, Sink->:out) never fails {
-    drop sink_write(out, raw diag_line(d, sm));
-    drop sink_write(out, "\n");
-    pass NIL;
-};
-
-pub func:diaglist_render = NIL(DiagList->:list, SourceManager->:sm, Sink->:out) never fails {
-    drop diaglist_sort(list);
-    int64:i = 0i64;
-    while (i < list.count) {
-        drop diag_render(list.items[i], sm, out);
-        i = i + 1i64;
-    }
-    if (list.overflowed) {
-        drop sink_write(out, raw diag_overflow_line());
-        drop sink_write(out, "\n");
-    }
-    pass NIL;
 };
 

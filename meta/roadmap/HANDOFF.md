@@ -8,8 +8,9 @@
 
 ## Where you are
 
-**1.4.7 steps 1 and 2 are COMPLETE and step 3 has not started.** Everything
-below is committed; the tree is clean and nothing is in flight.
+**1.4.7 steps 1 and 2 are COMPLETE, D-229 is COMPLETE, and step 3 has not
+started.** Everything below is committed; the tree is clean and nothing is in
+flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
   one `diag_report`. It needed **D-224** (`exit` is process exit in every body)
@@ -26,17 +27,22 @@ below is committed; the tree is clean and nothing is in flight.
   `for`/`till` where the loop is a plain iteration, match-shaped unwraps to
   `?.`/`?|` where the shape IS the operator. File by file, and a form changes
   only where the current spelling is longer AND less clear.
-- **D-229 IS HALF-LANDED, DELIBERATELY.** Stage 1 (the walk generic, borrowing
-  and span-sorting) is committed and green. **Stage 2 is the next unit of
-  work**: retire `diaglist_render(Sink->)` into the same walk via
-  `impl:Sink:Writer`, so the second walk goes away and `npkg test`'s
-  capture-and-compare becomes possible. It was stopped here rather than started
-  and abandoned across a session boundary. It opens with a question worth
-  settling first: **may an impl live in a module other than its type's?**
-  `Sink` is declared in diagnostics.npk and the impl must NOT go there — REACH
-  is import-scoped, and an async impl in that module re-creates the twelve-
-  failsafe problem the diag_writer split solved. `diag_writer.npk` is the
-  intended home.
+- **D-229 IS COMPLETE.** Stage 1 (`5d56959`): the walk generic, borrowing and
+  span-sorting. Stage 2: `diaglist_render` retired into it through
+  `impl:Sink:Writer`, which lives in `diag_writer.npk` beside the walk — NOT
+  beside its type, because REACH is import-scoped and the impl's methods are
+  async; the impl's own header says so. The walk is tested through the capture
+  it exists for (`tests/backend/programs/diag_capture.npk`, an async `main`
+  lending it a `Sink`, overflow arm included); the frontend test stays
+  synchronous. Both negative-controlled.
+- **An impl MAY live in any module** — the impl table is program-wide and each
+  entry resolves its names in its own scope (TRAITS_REFERENCE §4.1, D-171) —
+  and the first one to do so found that the SYMBOL SCHEME had never been asked
+  which module qualifies a method: definitions and three call paths disagreed
+  the moment an impl left its trait's module. **Fixed at `fb22bb6`**: the
+  impl's module, on both ends (`ExprEmitter.cur_impl` / `impl_decl_for`),
+  byte-identical IR for every pre-existing program; `impl_foreign.npk` pins
+  every shape. Read 1.4.7.md's record before touching method symbols.
 
 ## The decisions settled this cycle, and where they are
 
@@ -162,11 +168,12 @@ remains below is execution, not deliberation.
    **CLOSED 2026-09-01** (`6ca1ea2`). The diagnosis was wrong (measured: the
    table never grows after the decide pass, and the named shape is already
    caught); the goal was right, so the tail is now swept by construction.
-4. ~~`npkg test`'s capture-and-compare is blocked~~ — **DECIDED as D-229**: the
-   walk becomes generic and borrowing, `diaglist_render` retires into it. To
-   implement.
-5. ~~Should diagnostics print span-sorted?~~ — **DECIDED as D-229**: yes, in
-   the one walk. To implement.
+4. ~~`npkg test`'s capture-and-compare is blocked~~ — **CLOSED 2026-09-01**
+   (D-229 stage 2): the walk is generic and borrowing, `diaglist_render` is
+   gone, and `diag_capture.npk` reads the walk's bytes back through a `Sink`.
+5. ~~Should diagnostics print span-sorted?~~ — **CLOSED 2026-09-01** (D-229
+   stage 1, `5d56959`): yes, in the one walk, and the sort's own use-after-free
+   went with it.
 6. ~~ORCHESTRATION.md's four §8 questions~~ — **RATIFIED as D-228.**
 7. ~~CLAUDE.md's quickcheck example~~ — CLOSED 2026-09-01.
 8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** — to
@@ -381,10 +388,11 @@ rule, then the four families the enumeration had missed and the D-227
 neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
 says what to look for, not a blind offset.
 
-Then pick up **D-229 stage 2** (above) or **step 3**, in that order — stage 2
-is a decided change with an open sub-question, step 3 is open-ended polish.
-Announce the item you are on; commit per the subcycle file's acceptance
-section: one full harness run per commit, no exceptions.
+Then pick up **step 3** (form upgrades — 465 counter-shaped `while` loops and
+25 match-shaped unwraps measured across `src/`, and a form changes only where
+the current spelling is longer AND less clear), then **OWED-8**, then
+**OWED-1**. Announce the item you are on; commit per the subcycle file's
+acceptance section: one full harness run per commit, no exceptions.
 
 ## What this cycle proved about how to work here, in one place
 
