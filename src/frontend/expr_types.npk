@@ -37,6 +37,7 @@ use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./parse_expr.npk".*;
 use "./types.npk".*;
+use "./list.npk".*;
 
 // A TYPE PER EXPRESSION, plus whether one was ever recorded.
 //
@@ -108,16 +109,12 @@ pub struct:ExprTypes = {
     // derivation is a second answer waiting to drift. Keyed by statement index
     // (a different keyspace from the expression arrays above), sparse because
     // crossing locals are few.
-    wild int32->:cross;
-    int32:ccount;
-    int32:ccap;
+    List<int32>:cross;
     // Var-decl statements whose DECLARED type owns something (D-183, 1.2.4b)
     // — recorded by the checker, read by the suspend walk, which extends such
     // a local's life to its scope's exit: the drop is a use the source text
     // does not show. Same shape as `cross` for the same reason.
-    wild int32->:odecl;
-    int32:ocount;
-    int32:ocap;
+    List<int32>:odecl;
 };
 
 pub func:exprtypes_init = ExprTypes(int32:n) never fails {
@@ -130,8 +127,6 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     wild int8->:ctr = alloc(size * #size_of<int32>());
     wild int8->:cft = alloc(size * #size_of<int32>());
 
-    wild int8->:ods = alloc(16i64 * #size_of<int32>());
-    wild int8->:crs = alloc(16i64 * #size_of<int32>());
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
                              callee: cal =>! wild int32->,
@@ -139,10 +134,8 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              callee_trait: ctr =>! wild int32->,
                              callee_ft: cft =>! wild int32->,
                              count: size =>! int32,
-                             cross: crs =>! wild int32->,
-                             ccount: 0i32, ccap: 16i32,
-                             odecl: ods =>! wild int32->,
-                             ocount: 0i32, ocap: 16i32 };
+                             cross: raw list_init::<int32>(16i64),
+                             odecl: raw list_init::<int32>(16i64) };
     int64:i = 0i64;
     while (i < size) {
         t.items[i] = 0i32;
@@ -395,29 +388,22 @@ pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) never fails {
 // Mark one var-decl statement's local as live across a suspension point. Idempotent:
 // a local crossing three awaits is one fact, not three.
 pub func:exprtypes_mark_crossing = NIL(ExprTypes->:t, int32:stmt_index) never fails {
-    int32:i = 0i32;
-    while (i < t.ccount) {
-        if (t.cross[i => int64] == stmt_index) { pass NIL; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < t.cross.count) {
+        if (t.cross.items[i] == stmt_index) { pass NIL; }
+        i = i + 1i64;
     }
-    if (t.ccount >= t.ccap) {
-        int64:ncap = (t.ccap => int64) * 2i64;
-        wild int8->:nm = ralloc(t.cross =>! wild int8->, ncap * #size_of<int32>());
-        t.cross = nm =>! wild int32->;
-        t.ccap = ncap =>! int32;
-    }
-    t.cross[t.ccount => int64] = stmt_index;
-    t.ccount = t.ccount + 1i32;
+    drop list_push(@t.cross, stmt_index);
     pass NIL;
 };
 
 // Does this var-decl statement's local cross a suspension? Read by the emitter
 // at the declaration site.
 pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails {
-    int32:i = 0i32;
-    while (i < t.ccount) {
-        if (t.cross[i => int64] == stmt_index) { pass true; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < t.cross.count) {
+        if (t.cross.items[i] == stmt_index) { pass true; }
+        i = i + 1i64;
     }
     pass false;
 };
@@ -425,19 +411,12 @@ pub func:exprtypes_crossing = bool(ExprTypes->:t, int32:stmt_index) never fails 
 // Mark one var-decl statement as declaring an OWNING local (D-183, 1.2.4b).
 // Idempotent, like the crossing mark above.
 pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never fails {
-    int32:i = 0i32;
-    while (i < t.ocount) {
-        if (t.odecl[i => int64] == stmt_index) { pass NIL; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < t.odecl.count) {
+        if (t.odecl.items[i] == stmt_index) { pass NIL; }
+        i = i + 1i64;
     }
-    if (t.ocount >= t.ocap) {
-        int64:ncap = (t.ocap => int64) * 2i64;
-        wild int8->:nm = ralloc(t.odecl =>! wild int8->, ncap * #size_of<int32>());
-        t.odecl = nm =>! wild int32->;
-        t.ocap = ncap =>! int32;
-    }
-    t.odecl[t.ocount => int64] = stmt_index;
-    t.ocount = t.ocount + 1i32;
+    drop list_push(@t.odecl, stmt_index);
     pass NIL;
 };
 
@@ -445,10 +424,10 @@ pub func:exprtypes_mark_owning_decl = NIL(ExprTypes->:t, int32:stmt_index) never
 // walk, which extends the local's life to the function's end — the drop at
 // scope exit is a use no textual mention shows.
 pub func:exprtypes_owning_decl = bool(ExprTypes->:t, int32:stmt_index) never fails {
-    int32:i = 0i32;
-    while (i < t.ocount) {
-        if (t.odecl[i => int64] == stmt_index) { pass true; }
-        i = i + 1i32;
+    int64:i = 0i64;
+    while (i < t.odecl.count) {
+        if (t.odecl.items[i] == stmt_index) { pass true; }
+        i = i + 1i64;
     }
     pass false;
 };
