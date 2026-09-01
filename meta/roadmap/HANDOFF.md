@@ -164,9 +164,10 @@ none is blocking step 2's remaining families.
    unanswered: does it become a numbered decision, who plays orchestrator, what
    width to calibrate at, and is "never work around a compiler defect"
    absolute.
-7. **CLAUDE.md's quickcheck example cites `tests/types/rejection/borrows.npk`,
-   which does not exist** — the file is `tests/analysis/rejection/borrows.npk`
-   (a borrow rule is refused by an analysis, not the type checker).
+7. ~~**CLAUDE.md's quickcheck example cites `tests/types/rejection/borrows.npk`,
+   which does not exist**~~ — CLOSED 2026-09-01. Repointed to
+   `tests/analysis/rejection/borrows.npk`; a borrow rule is refused by an
+   analysis, not the type checker, which is why the path was wrong.
 8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** but are
    PERMANENT language rules, in a suite whose README says its contents graduate
    as rungs land. These never will. Fix is D-215's shape: a TYPE code with a

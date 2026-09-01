@@ -482,7 +482,7 @@ For the middle of a subcycle, where the question is "does this one rule fire on
 this one file", there is a faster loop that builds the checker once:
 
 ```
-python3 bootstrap/harness/quickcheck.py tests/types/rejection/borrows.npk
+python3 bootstrap/harness/quickcheck.py tests/analysis/rejection/borrows.npk
 ```
 
 And the same loop for the backend — build `npkc` once, then compile, link and
