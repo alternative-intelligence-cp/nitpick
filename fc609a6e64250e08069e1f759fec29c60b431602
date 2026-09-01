@@ -1,0 +1,25 @@
+CORRECTION (added 2026-08-31): this commit's message and its diff disagree, and the diff is right.
+
+The message describes step 2 as paused on a pre-existing use-after-free with
+the family-10 trigger committed unapplied. By the time the commit was made that
+was already false: an escalated analysis session working in the SAME working
+tree had diagnosed the defect and applied the fix, and this commit -- intended
+as a handoff/doc refresh -- swept up that session's uncommitted work.
+
+What the diff actually contains beyond the documentation:
+
+  * src/frontend/types.npk -- the CORRECTED family-10 conversion
+    (InstanceTable -> List<Instance>), with fninst_record's guard intact;
+  * meta/roadmap/1.4/1.4.7.md -- the RESOLVED section, i.e. the answer to the
+    escalation, not the open question the message describes.
+
+THE DEFECT WAS NEVER A USE-AFTER-FREE. It was convert_family.py's step-4 guard
+deletion running unscoped and unboundaried: family 10's `inst_grow(t)` matched
+inside fninst_record's `drop fninst_grow(t);`, stripping a live guard from a
+table it was not converting, and the un-grown table's push then overflowed its
+768-byte block into the neighbouring slot's header. Trust 1.4.7.md's RESOLVED
+section over this message.
+
+Root cause of the mismatch: two sessions sharing one git worktree, so a
+`git add` picked up another session's in-flight edits. The practice adopted
+afterwards is that an escalated session works in its own worktree.
