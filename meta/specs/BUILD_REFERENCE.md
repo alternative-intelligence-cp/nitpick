@@ -393,15 +393,33 @@ Three rules make this worth having rather than decorative:
   *"it did not compile"* stops noticing when a test starts failing for a
   different reason than the one it was written to guard.
 - **Unexpected diagnostics fail a test as surely as missing ones.** A suite that
-  ignores extras stops noticing new problems.
+  ignores extras stops noticing new problems. **Enforced from 1.4.8b (D-237)**,
+  and this is the rule as both runners implement it: on the error channel —
+  findings, with `warning` counted as a finding — the SET of codes a rejection
+  test reports must EQUAL the set its expectations name, and every
+  `expect-error-at` still binds its code to its line and column. A code
+  reported that no expectation names fails the test by name (`reported X,
+  which no expectation names`), as a missing one always has. The note channel
+  keeps its own rule: an expected note must be reported at its place, and an
+  unexpected note is not a finding (`NITPICK-MACRO-009` says where a body was
+  expanded, and every expansion test would otherwise have to name a
+  location). One function per runner (`check_module_rejection`,
+  `check_rejection`), the parity stage proving they agree, and the runner
+  self-check's `unasserted-extra` case proving the rule bites. An extra is
+  resolved one of two ways and never a third: a finding the test MEANS is
+  named with an `expect-error` line beside its construct; an incidental defect
+  in the test's own text is corrected so the file reports only what it tests.
 
-  > **Measured at 1.4.8: neither runner enforces this sentence.** Both match
-  > the expected codes as a SUBSET of what was reported — every expected code
-  > must appear, at its line and column when spelled, extras pass — and notes
-  > are asserted on their own channel. A rule the spec states and nothing
-  > enforces is the dormant-rule pattern; making it strict is **S-9**
-  > (`OPEN_DECISIONS.md` §2e), the user's, and parity is measured on the rule
-  > as implemented until then.
+  > The subset rule this replaced — every expected code must appear, extras
+  > pass — ran from 0.8 to 1.4.8 in the harness and was ported as found into
+  > `npkg`, and the sentence above described nothing either enforced: the
+  > dormant-rule pattern, in the test runner. Measured at 1.4.8 Part D, 17 of
+  > 131 rejection files reported a code nobody asserted — nine from one
+  > `resolve_check` defect (fixed there), and eight resolved at 1.4.8b: two
+  > expectations still spelling the arity code 1.4.2 retired, two `failsafe`s
+  > written before D-210 made `IntOverflow` reachable, a test whose assoc was
+  > named `Error` before D-179 made that the builtin error type, and four
+  > second findings the tests meant and never named.
 
 **`expect-no-parse-error` is the load-bearing one.** It asserts that a file
 reached the *backend* to be rejected, rather than tripping the parser. That is

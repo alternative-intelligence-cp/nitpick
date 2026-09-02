@@ -61,13 +61,16 @@ func:for_may_not_run = int32(int64:n) never fails {
 
 // NO WILDCARD ARM, so nothing proves any arm ran. An `int32` selector cannot be
 // covered by listing, so this needs one — which 0.5.4 reports separately as
-// `NITPICK-PICK-003`, and the two findings agreeing is the point: the same fact
-// about coverage answered once, and consumed by two analyses.
+// `NITPICK-PICK-003` (named below, at the `pick`), and the two findings agreeing
+// is the point: the same fact about coverage answered once, and consumed by two
+// analyses.
 //
 // A `pick` over every variant of an ENUM is exhaustive without a wildcard, and
 // definite assignment recognises that as of 0.5.4. It could not before, and
 // `accept/exhaustiveness.npk` is where that case now passes.
 // expect-error: NITPICK-ASSIGN-001
+// expect-error: NITPICK-PICK-003
+// expect-error-at: 76:5
 func:pick_not_total = int32(int32:n) never fails {
     int32:x;
     pick (n) {

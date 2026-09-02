@@ -6,14 +6,17 @@
 // type obeys), and `#sqrt` is an instruction on floats and nothing else.
 mod:buffer_rules;
 
-// The byte count is one argument, exactly.
-// expect-error: NITPICK-TYPE-007
+// The byte count is one argument, exactly -- the arity rule is the generated
+// builtin table's, `TYPE-054` since 1.4.2 (D-201).
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 14:26
 func:no_args = buffer() never fails {
     buffer:b = buffer_new();
     pass (move(b));
 };
 
-// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-054
+// expect-error-at: 21:26
 func:two_args = buffer() never fails {
     buffer:b = buffer_new(4i64, 4i64);
     pass (move(b));
@@ -22,6 +25,7 @@ func:two_args = buffer() never fails {
 // The count is `int64`, not a narrower integer the call would widen behind
 // the author's back.
 // expect-error: NITPICK-TYPE-007
+// expect-error-at: 30:27
 func:narrow_count = buffer() never fails {
     buffer:b = buffer_new(16i32);
     pass (move(b));
@@ -39,6 +43,7 @@ func:copies_a_buffer = int64() never fails {
 // The square root is an instruction on `flt32`/`flt64` and nothing else —
 // an integer square root would be a silently different function.
 // expect-error: NITPICK-TYPE-007
+// expect-error-at: 48:11
 func:sqrt_int = int32(int32:x) never fails {
     pass (#sqrt(x));
 };
@@ -46,6 +51,7 @@ func:sqrt_int = int32(int32:x) never fails {
 // A tfp is fixed point; D-200 recorded the family's square root as refused
 // for want of a consumer, so the operand rule catches it by name.
 // expect-error: NITPICK-TYPE-007
+// expect-error-at: 56:11
 func:sqrt_tfp = tfp64(tfp64:x) never fails {
     pass (#sqrt(x));
 };
@@ -58,6 +64,7 @@ func:sqrt_typed = flt64(flt64:x) never fails {
 
 // And exactly one value.
 // expect-error: NITPICK-TYPE-007
+// expect-error-at: 69:11
 func:sqrt_two = flt64(flt64:x) never fails {
     pass (#sqrt(x, x));
 };

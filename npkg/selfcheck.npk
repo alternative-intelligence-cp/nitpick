@@ -6,9 +6,10 @@
 // no suite, because it reports green while checking nothing. So the runner
 // is itself tested, against cases where it MUST report a failure -- a
 // negative test expecting the wrong code, one whose program compiles, one
-// with no expectation, a positive test exiting with the wrong code, a
-// negative test expecting the wrong line, a rejection file that fl at
-// PARSE time rather than in the backend -- and two where it must not.
+// with no expectation, a negative test expecting the wrong line, one
+// reporting a second code its expectation does not name (D-237), a positive
+// test exiting with the wrong code, a rejection file that fails at PARSE
+// time rather than in the backend -- and two where it must not.
 // Then the toolchain pin (D-204): a pin that is not the installed version
 // must refuse, no pin must refuse, the real pin must pass -- driven by
 // moving the pin, the only half of the comparison this can move.
@@ -43,7 +44,15 @@ func:RUNG = string() never fails {
     pass "func:build = int32(int32:seed) {\n    limit<r_pos> int32:x = seed;\n    pass x;\n};\n";
 };
 
-func:CASE_COUNT = int64() never fails { pass 8i64; };
+// Two findings from two statements, neither a consequence of the other
+// (D-237): a narrower integer where `buffer_new` takes `int64` (TYPE-007) and
+// a bare may-fail call whose `Result` is discarded (TYPE-039). The case
+// names the first only.
+func:EXTRA = string() never fails {
+    pass "func:noisy = int32() { pass 1i32; };\nfunc:one = buffer() never fails {\n    buffer:b = buffer_new(16i32);\n    pass (move(b));\n};\nfunc:two = NIL() {\n    noisy();\n    pass NIL;\n};\n";
+};
+
+func:CASE_COUNT = int64() never fails { pass 9i64; };
 
 func:case_name = string(int64:i) never fails {
     if (i == 0i64) { pass "correct-expectation"; }
@@ -51,20 +60,21 @@ func:case_name = string(int64:i) never fails {
     if (i == 2i64) { pass "compiles-anyway"; }
     if (i == 3i64) { pass "no-expectation"; }
     if (i == 4i64) { pass "wrong-line"; }
-    if (i == 5i64) { pass "wrong-exit"; }
-    if (i == 6i64) { pass "right-exit"; }
+    if (i == 5i64) { pass "unasserted-extra"; }
+    if (i == 6i64) { pass "wrong-exit"; }
+    if (i == 7i64) { pass "right-exit"; }
     pass "parse-error-not-backend";
 };
 
 func:case_negative = bool(int64:i) never fails {
-    if (i == 5i64) { pass false; }
     if (i == 6i64) { pass false; }
+    if (i == 7i64) { pass false; }
     pass true;
 };
 
 func:case_must_fail = bool(int64:i) never fails {
     if (i == 0i64) { pass false; }
-    if (i == 6i64) { pass false; }
+    if (i == 7i64) { pass false; }
     pass true;
 };
 
@@ -74,8 +84,9 @@ func:case_why = string(int64:i) never fails {
     if (i == 2i64) { pass "a negative test that compiles must fail"; }
     if (i == 3i64) { pass "a negative test with no expect-error must fail"; }
     if (i == 4i64) { pass "expecting the wrong line must fail"; }
-    if (i == 5i64) { pass "a positive test exiting with the wrong code must fail"; }
-    if (i == 6i64) { pass "a positive test exiting as expected must pass"; }
+    if (i == 5i64) { pass "a diagnostic no expectation names must fail"; }
+    if (i == 6i64) { pass "a positive test exiting with the wrong code must fail"; }
+    if (i == 7i64) { pass "a positive test exiting as expected must pass"; }
     pass "a parse error where a backend rejection was expected must fail";
 };
 
@@ -86,8 +97,12 @@ func:case_source = string(int64:i) never fails {
     if (i == 2i64) { pass (string_concat("// expect-error: NITPICK-RUNG-001\n", tail)); }
     if (i == 3i64) { pass (string_concat(raw RUNG(), tail)); }
     if (i == 4i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n", raw RUNG()), tail)); }
-    if (i == 5i64) { pass (string_concat("// expect-exit: 3\n", tail)); }
-    if (i == 6i64) { pass tail; }
+    // A SECOND CODE NOBODY ASSERTED (D-237): the subset rule accepted this
+    // shape from 0.8 to 1.4.8; under set equality it fails, which is what
+    // makes an unasserted extra a finding rather than a noise floor.
+    if (i == 5i64) { pass (string_concat(string_concat("// expect-error: NITPICK-TYPE-007\n", raw EXTRA()), tail)); }
+    if (i == 6i64) { pass (string_concat("// expect-exit: 3\n", tail)); }
+    if (i == 7i64) { pass tail; }
     // The one that guards D-085: a file meant to reach the backend but
     // tripping the PARSER instead must be reported, not accepted as "it
     // failed, close enough".

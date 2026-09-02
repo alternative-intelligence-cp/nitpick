@@ -31,7 +31,7 @@ func:shared_no_free = NIL() never fails {
     shared_arena<int64>:s = shared_arena_make(4i64);
     Handle<int64>:h = s.alloc(5i64);
     Result<NIL>:r = s.free(h);
-    discard(r);
+    if (r.is_error) { }
     s.destroy();
     pass NIL;
 };

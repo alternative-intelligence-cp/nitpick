@@ -1762,6 +1762,26 @@ def check_module_rejection(binary, path, name, exp):
                 fails.append("%s: note %s at %s, expected %d:%s"
                              % (name, code, [(g[1], g[2]) for g in hit], line,
                                 col if col is not None else "*"))
+
+    # EVERY REPORTED FINDING IS EXPECTED (D-237, 1.4.8b). The two loops above
+    # ask whether each expectation was met; this asks the converse -- whether
+    # anything was reported that no expectation names -- and the SET of codes
+    # on the error channel (findings, with `warning` counted as one) must
+    # EQUAL the set the expectations name. BUILD_REFERENCE §7.1 said so from
+    # the day it was written and neither runner enforced it: the subset rule
+    # carried from 0.8 to 1.4.8 let seventeen rejection files report a code
+    # nobody asserted -- nine from one resolve_check defect, two expectations
+    # still spelling a code 1.4.2 retired, two failsafes written before D-210,
+    # and cascades the tests never named. Notes keep their own rule (an
+    # unexpected note is not a finding: MACRO-009 says where a body was
+    # expanded, and every expansion test would otherwise name a location).
+    expected = set(c for c, _, _ in exp.errors)
+    for code in sorted(set(g[0] for g in got)):
+        if code not in expected:
+            fails.append("%s: reported %s, which no expectation names -- an "
+                         "unexpected diagnostic fails a test as surely as a "
+                         "missing one (BUILD_REFERENCE §7.1, D-237)"
+                         % (name, code))
     return fails
 
 

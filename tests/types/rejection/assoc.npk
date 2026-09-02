@@ -4,15 +4,18 @@
 
 trait:Seq = {
     assoc:Item;
-    assoc:Error = int32;          // a DEFAULT, inherited where an impl omits it
+    assoc:Fault = int32;          // a DEFAULT, inherited where an impl omits it
+                                  // (named `Error` until 1.4.8b: D-179 later made
+                                  // `Error` the builtin error type, and the two
+                                  // readings of the word disagreed -- S-11)
     func:next = Item(Self:self);
-    func:last_error = Error(Self:self);
+    func:last_error = Fault(Self:self);
 };
 
 struct:Counter = { int32:n; };
 
 // ACCEPTED, and reported here so the rule is not merely "refuse everything":
-// `Item` binds, `Error` is inherited, and both methods match the trait's
+// `Item` binds, `Fault` is inherited, and both methods match the trait's
 // signature after substitution.
 impl:Counter:Seq = {
     assoc:Item = int32;

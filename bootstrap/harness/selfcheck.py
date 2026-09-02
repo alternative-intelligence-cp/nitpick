@@ -10,6 +10,7 @@ against cases where it MUST report a failure:
   - a negative test expecting the wrong code
   - a negative test whose program compiles cleanly
   - a negative test with no expectation at all
+  - a negative test reporting a second code its expectation does not name (D-237)
   - a positive test that exits with the wrong code
   - a rejection file that fails at PARSE time rather than in the backend
   - a toolchain that is not the pinned version, and no pin at all (D-204)
@@ -59,6 +60,20 @@ RUNG = """func:build = int32(int32:seed) {
     pass x;
 };
 """
+# Two findings from two statements, neither a consequence of the other
+# (D-237): a narrower integer where `buffer_new` takes `int64` (TYPE-007) and
+# a bare may-fail call whose `Result` is discarded (TYPE-039). The case names
+# the first only.
+EXTRA = """func:noisy = int32() { pass 1i32; };
+func:one = buffer() never fails {
+    buffer:b = buffer_new(16i32);
+    pass (move(b));
+};
+func:two = NIL() {
+    noisy();
+    pass NIL;
+};
+"""
 
 CASES = [
     # (name, kind, source, must_fail, why)
@@ -81,6 +96,13 @@ CASES = [
      "// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n"
      + RUNG + MAIN_OK + FAILSAFE,
      True, "expecting the wrong line must fail"),
+
+    # A SECOND CODE NOBODY ASSERTED (D-237, 1.4.8b): the subset rule accepted
+    # this shape from 0.8 to 1.4.8; under set equality it fails, which is what
+    # makes an unasserted extra a finding rather than a noise floor.
+    ("unasserted-extra", "negative",
+     "// expect-error: NITPICK-TYPE-007\n" + EXTRA + MAIN_OK + FAILSAFE,
+     True, "a diagnostic no expectation names must fail"),
 
     ("wrong-exit", "positive",
      "// expect-exit: 3\n" + MAIN_OK + FAILSAFE,

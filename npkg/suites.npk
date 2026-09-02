@@ -318,12 +318,43 @@ func:match_channel = NIL(List<string>->:fl, string:name, List<Expected>:want,
     pass NIL;
 };
 
+// EVERY REPORTED FINDING IS EXPECTED (D-237, 1.4.8b): the converse of
+// `match_channel` -- on the error channel (findings, with `warning` counted as
+// one) the SET of codes reported must EQUAL the set the expectations name, so
+// a code no expectation names fails the test by name, as a missing one always
+// has. Notes keep their own rule (an unexpected note is not a finding). One
+// message per unexpected code, sorted, worded as the harness words it.
+func:unexpected_codes = NIL(List<string>->:fl, string:name, List<Expected>:want,
+                            List<Finding>:got) never fails {
+    List<string>:codes = raw list_init::<string>(4i64);
+    for (int64:g in 0i64...got.count) {
+        if (got.items[g].is_note) { continue; }
+        string:code = string_from_bytes(got.items[g].code.ptr, got.items[g].code.len);
+        bool:named = false;
+        for (int64:i in 0i64...want.count) {
+            if (raw text_eq(string_from_bytes(want.items[i].code.ptr, want.items[i].code.len), code)) {
+                named = true;
+            }
+        }
+        if (!named) { drop strlist_push(@codes, code); }
+    }
+    List<string>:sorted = raw strlist_sorted_unique(codes);
+    for (int64:k in 0i64...sorted.count) {
+        string:m = string_concat(name, ": reported ");
+        m = string_concat(m, raw strlist_view(sorted, k));
+        m = string_concat(m, ", which no expectation names -- an unexpected diagnostic fails a test as surely as a missing one (BUILD_REFERENCE §7.1, D-237)");
+        drop list_push(fl, move(m));
+    }
+    pass NIL;
+};
+
 // --- the verdicts ------------------------------------------------------------------
 
-// A whole program that must be refused, with these codes -- by the loader,
-// the type checker, an analysis, or the backend's rungs, whichever tool
-// `binary` is (the harness's `check_module_rejection`, which every rejection
-// suite shares).
+// A whole program that must be refused, with EXACTLY these codes -- by the
+// loader, the type checker, an analysis, or the backend's rungs, whichever
+// tool `binary` is (the harness's `check_module_rejection`, which every
+// rejection suite shares). Every expected code reported at its place, every
+// reported code expected (D-237).
 pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:path, string:name,
                                               Expect:exp) {
     List<string>:fl = raw list_init::<string>(1i64);
@@ -351,6 +382,7 @@ pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:pat
     List<Finding>:got = raw findings_of(run.x.err);
     drop match_channel(@fl, name, exp.errors, got, false);
     drop match_channel(@fl, name, exp.notes, got, true);
+    drop unexpected_codes(@fl, name, exp.errors, got);
     pass fl;
 };
 
