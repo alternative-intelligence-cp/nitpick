@@ -1,0 +1,105 @@
+// expect-exit: 0
+//
+// THE FILE-SYSTEM SURFACE, END TO END (1.4.8 step 5; D-206 item 2, D-213):
+// a directory made at 0700 through the at-family, two files created BENEATH
+// it at 0600, a listing that comes back sorted with kinds, a contained open
+// that the kernel refuses when the name climbs out (`CrossDevice` — EXDEV is
+// how `openat2` reports a RESOLVE_BENEATH violation), an absolute name
+// refused before the kernel sees it, a rename, and the teardown through the
+// same family. The working directory comes from `sys_cwd` and must be
+// absolute. Exit 0, so D-151's leak check asserts the listing and every
+// name copy were freed.
+mod:fs_basic;
+use "../../../lib/nfs.npk".*;
+use "../../../lib/nio.npk".*;
+use "../../../lib/nsys.npk".*;   // `sys_cwd`
+error:E9;
+
+func:put = NIL(fd:to, string:s) {
+    pass (relay nio_write_all(to, s.ptr =>! wild int8->, s.len));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:cwd = sys_cwd() ?! E9;
+    if (cwd.len == 0i64)       { exit 10i32; }
+    if (cwd.ptr[0i64] != 47u8) { exit 11i32; }
+
+    Path:tmp = path_parse("/tmp") ?! E9;
+    fd:tmpd = dir_open(tmp) ?! E9;
+
+    // A previous run may have left the directory: make it, tolerating EEXIST.
+    Result<NIL>:mk = mkdir_at(tmpd, "npk_fs_basic_dir");
+    if (mk.is_error) { if (mk.err != Exists) { exit 12i32; } }
+    Path:dp = path_canon(tmp, "npk_fs_basic_dir") ?! E9;
+    if (!(string_equals(dp.text, "/tmp/npk_fs_basic_dir"))) { exit 13i32; }
+    fd:d = dir_open(dp) ?! E9;
+
+    // Two files, created beneath the directory at 0600.
+    fd:fa = create_beneath(d, "b.txt", O_WRONLY | O_TRUNC) ?! E9;
+    put(fa, "bee\n") ?! E9;
+    close(fa) ?! E9;
+    fd:fb = create_beneath(d, "a.txt", O_WRONLY | O_TRUNC) ?! E9;
+    put(fb, "ay\n") ?! E9;
+    close(fb) ?! E9;
+    mkdir_at(d, "sub") ?! E9;
+
+    // The listing: sorted by name bytes, kinds read off d_type.
+    Dir:lst = dir_list(dp) ?! E9;
+    if ((raw dir_count(@lst)) != 3i64)                          { exit 20i32; }
+    string:n0 = dir_name(@lst, 0i64) ?! E9;
+    string:n1 = dir_name(@lst, 1i64) ?! E9;
+    string:n2 = dir_name(@lst, 2i64) ?! E9;
+    if (!(string_equals(n0, "a.txt")))                         { exit 21i32; }
+    if (!(string_equals(n1, "b.txt")))                         { exit 22i32; }
+    if (!(string_equals(n2, "sub")))                           { exit 23i32; }
+    if ((dir_kind(@lst, 0i64) ?! E9) != DirKind.File)          { exit 24i32; }
+    if ((dir_kind(@lst, 2i64) ?! E9) != DirKind.Dir)           { exit 25i32; }
+    Result<string>:oob = dir_name(@lst, 3i64);
+    if (!oob.is_error)                                         { exit 26i32; }
+    if (oob.err != EFsIndex)                                   { exit 27i32; }
+    drop dir_free(@lst);
+
+    // Containment: a name that climbs out is refused by the KERNEL, an
+    // absolute name by this module, and a good name opens.
+    Result<fd>:esc = open_beneath(d, "../../etc/passwd", O_RDONLY);
+    if (!esc.is_error)                                         { exit 30i32; }
+    if (esc.err != CrossDevice)                                { exit 31i32; }
+    Result<fd>:abs = open_beneath(d, "/etc/passwd", O_RDONLY);
+    if (!abs.is_error)                                         { exit 32i32; }
+    if (abs.err != EFsPath)                                    { exit 33i32; }
+    fd:ra = open_beneath(d, "a.txt", O_RDONLY) ?! E9;
+    close(ra) ?! E9;
+
+    // A missing name is the kernel's `NotFound`, named.
+    Result<fd>:gone = open_beneath(d, "nothing.txt", O_RDONLY);
+    if (!gone.is_error)                                        { exit 34i32; }
+    if (gone.err != NotFound)                                  { exit 35i32; }
+
+    // Rename beneath the same directory, then tear down through the family.
+    rename_at(d, "b.txt", d, "c.txt") ?! E9;
+    unlink_at(d, "a.txt") ?! E9;
+    unlink_at(d, "c.txt") ?! E9;
+    rmdir_at(d, "sub") ?! E9;
+    close(d) ?! E9;
+    rmdir_at(tmpd, "npk_fs_basic_dir") ?! E9;
+    close(tmpd) ?! E9;
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (BadPath)        { exit 92i32; },
+        (EFsPath)        { exit 93i32; },
+        (EFsIndex)       { exit 94i32; },
+        (EFsRecord)      { exit 95i32; },
+        (IntOverflow)    { exit 87i32; },
+        (OutOfBounds)    { exit 86i32; },
+        (WildLeak)       { exit 88i32; },
+        (Unreachable)    { exit 87i32; },
+        (HeapOom)        { exit 87i32; },
+        (HeapBadRequest) { exit 87i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 90i32;
+};

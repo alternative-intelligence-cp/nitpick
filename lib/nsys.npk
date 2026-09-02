@@ -33,6 +33,7 @@ pub func:SYS_OPENAT = int64() never fails       { pass 257i64; };
 pub func:SYS_PIPE2 = int64() never fails        { pass 293i64; };
 pub func:SYS_MEMFD_CREATE = int64() never fails { pass 319i64; };
 pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
+pub func:SYS_GETCWD = int64() never fails       { pass 79i64; };
 
 // --- the constants those calls take ------------------------------------------
 //
@@ -93,6 +94,22 @@ pub func:madvise_word = int64(Advice:a) never fails {
         (Advice.NoHugePage) { w = 15i64; }
     }
     pass w;
+};
+
+// THE WORKING DIRECTORY, as an owned absolute string (1.4.8): one `getcwd`
+// into a PATH_MAX buffer — the kernel refuses a longer path everywhere else
+// too (ENAMETOOLONG), so growing would only defer the same answer. Here
+// rather than in `nfs` because the compiler's driver needs it for D-236 (the
+// manifest root is found by walking up from the main file, which may be
+// relative) and this module declares no error of its own — importing it
+// costs a `failsafe` nothing, where `nfs`'s three would each cost an arm.
+pub func:sys_cwd = string() {
+    wild int8->:buf = alloc(4097i64);
+    defer { dalloc(buf); }
+    Result<int64>:r = sys(raw SYS_GETCWD(), buf, 4097i64);
+    if (r.is_error) { fail r.err; }
+    // The kernel counts the NUL; the string does not.
+    pass (string_concat(string_from_bytes(buf, r.value - 1i64), ""));
 };
 
 // `waitid`'s siginfo, the fields a reaper reads (byte offsets of the x86_64

@@ -1,0 +1,360 @@
+// nfs — the file-system surface: directories, containment, the at-family
+// (D-206 item 2, D-213's three riders; 1.4.8 step 5), nlibc tier.
+//
+// THREE RULES, EACH A DECISION:
+//   G-2  CONTAINMENT IS ANSWERED BY OPENING, never by a string check
+//        (D-054/D-213): `open_beneath` goes through `openat2` with
+//        RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS, so a `..` or a symlink that
+//        would leave the directory is refused by the KERNEL, at the moment of
+//        resolution, with no window between a check and a use. Lexical
+//        normalisation (`path_parse`, `path_canon`) is for spelling, not for
+//        safety, and this file says so at every place it could be mistaken.
+//   G-3  CREATION IS RESTRICTIVE BY DEFAULT: 0600 for a file, 0700 for a
+//        directory; widening is an EXPLICIT argument (`*_mode`), never a
+//        default anyone forgot to narrow.
+//   G-4  THE AT-FAMILY: every operation on a name takes the DIRECTORY it is
+//        relative to as a descriptor, so a check and the use that follows it
+//        never span a second path resolution — the TOCTOU file half.
+//
+// A directory listing is `getdents64` over an owned buffer, the records
+// parsed here, the names SORTED (BUILD_REFERENCE §5: deterministic ordering
+// everywhere it could vary — the kernel's order is the filesystem's hash
+// order, which differs between machines and even between runs). No floor
+// addition (D-206 item 2).
+//
+// nlibc tier: `wild`-and-`sys` code (D-048). A kernel failure rides through
+// as the kernel's own errno; this module's OWN errors are the three below,
+// each a rule of this module rather than of the kernel.
+
+mod:nfs;
+
+use "./nsys.npk".*;
+
+pub error:EFsPath;     // a name this module refuses before the kernel sees it: absolute where relative was wanted, empty, or an interior NUL (D-049)
+pub error:EFsIndex;    // a listing index outside the listing (the ntensor precedent: library bounds `fail`)
+pub error:EFsRecord;   // a `getdents64` record the parser could not read — the kernel's contract broken, not the caller's
+
+// --- the syscall vocabulary this module adds ------------------------------------
+func:SYS_GETDENTS64 = int64() never fails { pass 217i64; };
+func:SYS_MKDIRAT = int64() never fails    { pass 258i64; };
+func:SYS_UNLINKAT = int64() never fails   { pass 263i64; };
+func:SYS_RENAMEAT2 = int64() never fails  { pass 316i64; };
+func:SYS_OPENAT2 = int64() never fails    { pass 437i64; };
+func:AT_REMOVEDIR = int64() never fails   { pass 512i64; };
+// `openat2`'s resolve word (linux/openat2.h): NO_MAGICLINKS 0x02, BENEATH 0x08.
+// The containment pair is fixed here — a caller never chooses it, which is
+// what makes "the default opening API is contained" a property rather than
+// a habit.
+func:RESOLVE_CONTAINED = int64() never fails { pass 10i64; };
+// The dirent's d_type (linux/dirent.h): DT_DIR 4, DT_REG 8, DT_LNK 10.
+func:DT_DIR = int64() never fails { pass 4i64; };
+func:DT_REG = int64() never fails { pass 8i64; };
+func:DT_LNK = int64() never fails { pass 10i64; };
+
+// --- names --------------------------------------------------------------------------
+//
+// A RELATIVE NAME, checked before the kernel sees it: non-empty, no leading
+// `/` (an absolute name would silently ignore the directory descriptor —
+// exactly the mistake the at-family exists to make unwritable), no interior
+// NUL (D-049). The bytes checked are the bytes handed over — an OWNED copy,
+// freed by the caller after the call.
+func:rel_name = wild int8->(string:s) {
+    if (s.len == 0i64)       { fail EFsPath; }
+    if (s.ptr[0i64] == 47u8) { fail EFsPath; }
+    for (int64:i in 0i64...s.len) {
+        if (s.ptr[i] == 0u8) { fail EFsPath; }
+    }
+    wild int8->:c = alloc(s.len + 1i64);
+    for (int64:j in 0i64...s.len) { c[j] = s.ptr[j] =>! int8; }
+    c[s.len] = 0i8;
+    pass c;
+};
+
+// LEXICAL join-and-normalise of a relative name against a base: the SPELLING
+// of the path a program will show, never its safety (D-054's warning: this
+// does not survive symlinks; containment is `open_beneath`'s). A `..` that
+// climbs above the base is refused by `path_parse`, which is the one
+// normaliser this language has.
+pub func:path_canon = Path(Path:base, string:rel) {
+    if (rel.len == 0i64)       { fail EFsPath; }
+    if (rel.ptr[0i64] == 47u8) { fail EFsPath; }
+    string:joined = string_concat(base.text, "/");
+    joined = string_concat(joined, rel);
+    Result<Path>:p = path_parse(joined);
+    if (p.is_error) { fail EFsPath; }
+    pass p.value;
+};
+
+// --- directories ----------------------------------------------------------------------
+
+// A directory descriptor — the root every at-family operation is relative
+// to. Opened read-only, CLOEXEC, and REFUSED unless it is a directory
+// (`O_DIRECTORY`): a file where a directory was expected is answered here,
+// not at the first `openat2` that would have used it as a root.
+pub func:dir_open = fd(Path:p) {
+    cstring:cp = relay to_cstring(p.text);
+    pass (relay open(cp, (((O_RDONLY | O_DIRECTORY) | O_CLOEXEC) => int32) => int64,
+                     (S_NONE => int32) => int64));
+};
+
+pub enum:DirKind = { File; Dir; Link; Other; };
+
+// A listing: `count` entries, each a name (bytes in the names, NUL-free) and
+// a kind, SORTED by name bytes. Owned storage — `dir_free` releases it — read
+// through the bounds-checked accessors, the library tier's shape.
+pub struct:Dir = {
+    wild int8->: names;    // every name's bytes, back to back
+    int64:       used;
+    int64:       acap;
+    wild int8->: index;    // per entry: int64 offset, int64 length, int64 kind
+    int64:       count;
+    int64:       icap;
+};
+
+func:dir_init = Dir() never fails {
+    pass Dir{ names: alloc(4096i64), used: 0i64, acap: 4096i64,
+              index: alloc(64i64 * 24i64), count: 0i64, icap: 64i64 };
+};
+
+func:dir_push = NIL(Dir->:d, wild int8->:name, int64:len, int64:kind) never fails {
+    if ((d.used + len) > d.acap) {
+        int64:na = d.acap * 2i64;
+        while ((d.used + len) > na) { na = na * 2i64; }
+        d.names = ralloc(d.names, na);
+        d.acap = na;
+    }
+    if (d.count == d.icap) {
+        d.index = ralloc(d.index, d.icap * 48i64);
+        d.icap = d.icap * 2i64;
+    }
+    for (int64:i in 0i64...len) { d.names[d.used + i] = name[i]; }
+    wild int64->:ix = d.index =>! wild int64->;
+    ix[d.count * 3i64] = d.used;
+    ix[(d.count * 3i64) + 1i64] = len;
+    ix[(d.count * 3i64) + 2i64] = kind;
+    d.used = d.used + len;
+    d.count = d.count + 1i64;
+    pass NIL;
+};
+
+// Byte order on two entries' names — what the sort is by, and the ONLY
+// order: no locale, no case folding, the same answer on every machine.
+func:name_less = bool(Dir->:d, int64:a, int64:b) never fails {
+    wild int64->:ix = d.index =>! wild int64->;
+    int64:ao = ix[a * 3i64];
+    int64:al = ix[(a * 3i64) + 1i64];
+    int64:bo = ix[b * 3i64];
+    int64:bl = ix[(b * 3i64) + 1i64];
+    int64:n = al;
+    if (bl < n) { n = bl; }
+    for (int64:i in 0i64...n) {
+        uint8:ca = d.names[ao + i] =>! uint8;
+        uint8:cb = d.names[bo + i] =>! uint8;
+        if (ca < cb) { pass true; }
+        if (ca > cb) { pass false; }
+    }
+    pass (al < bl);
+};
+
+func:swap_entries = NIL(Dir->:d, int64:a, int64:b) never fails {
+    wild int64->:ix = d.index =>! wild int64->;
+    for (int64:k in 0i64...3i64) {
+        int64:t = ix[(a * 3i64) + k];
+        ix[(a * 3i64) + k] = ix[(b * 3i64) + k];
+        ix[(b * 3i64) + k] = t;
+    }
+    pass NIL;
+};
+
+// Insertion sort: a listing is hundreds of names at most, and a sort whose
+// every step is a visible byte compare beats a clever one here.
+func:dir_sort = NIL(Dir->:d) never fails {
+    int64:i = 1i64;
+    while (i < d.count) {
+        int64:j = i;
+        while (j > 0i64) {
+            if (raw name_less(d, j, j - 1i64)) {
+                drop swap_entries(d, j, j - 1i64);
+                j = j - 1i64;
+            } else {
+                j = 0i64;
+            }
+        }
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// List a directory: names and kinds, `.` and `..` omitted, sorted. The
+// descriptor is opened here and closed before returning — a listing holds no
+// kernel resource.
+pub func:dir_list = Dir(Path:p) {
+    fd:df = relay dir_open(p);
+    Dir:d = raw dir_init();
+    wild int8->:buf = alloc(32768i64);
+    bool:more = true;
+    while (more) {
+        Result<int64>:r = sys(raw SYS_GETDENTS64(), df, buf, 32768i64);
+        if (r.is_error) {
+            dalloc(buf);
+            drop dir_free(@d);
+            Result<NIL>:cx = close(df);
+            if (cx.is_error) { }
+            fail r.err;
+        }
+        if (r.value == 0i64) { more = false; }
+        int64:off = 0i64;
+        while (off < r.value) {
+            // linux_dirent64: u64 d_ino @0, s64 d_off @8, u16 d_reclen @16,
+            // u8 d_type @18, char d_name[] @19 (NUL-terminated, padded to reclen).
+            wild int8->:rec = #ptr_add<int8>(buf, off);
+            int64:reclen = (<-(#ptr_add<uint16>(rec, 8i64))) => int64;
+            if (reclen < 20i64) {
+                dalloc(buf);
+                drop dir_free(@d);
+                Result<NIL>:cy = close(df);
+                if (cy.is_error) { }
+                fail EFsRecord;
+            }
+            int64:dtype = (<-(#ptr_add<uint8>(rec, 18i64))) => int64;
+            wild int8->:name = #ptr_add<int8>(rec, 19i64);
+            int64:nlen = 0i64;
+            while (name[nlen] != 0i8) { nlen = nlen + 1i64; }
+            bool:dot = false;
+            if (nlen == 1i64) { if (name[0i64] == 46i8) { dot = true; } }
+            if (nlen == 2i64) {
+                if (name[0i64] == 46i8) { if (name[1i64] == 46i8) { dot = true; } }
+            }
+            if (!dot) {
+                int64:kind = 3i64;
+                if (dtype == (raw DT_REG())) { kind = 0i64; }
+                if (dtype == (raw DT_DIR())) { kind = 1i64; }
+                if (dtype == (raw DT_LNK())) { kind = 2i64; }
+                drop dir_push(@d, name, nlen, kind);
+            }
+            off = off + reclen;
+        }
+    }
+    dalloc(buf);
+    Result<NIL>:c = close(df);
+    if (c.is_error) { drop dir_free(@d); fail c.err; }
+    drop dir_sort(@d);
+    pass d;
+};
+
+pub func:dir_count = int64(Dir->:d) never fails { pass d.count; };
+
+// The i-th name, as an OWNED string (a copy out of the names, so a caller
+// may keep it past `dir_free`).
+pub func:dir_name = string(Dir->:d, int64:i) {
+    if (i < 0i64)       { fail EFsIndex; }
+    if (i >= d.count)   { fail EFsIndex; }
+    wild int64->:ix = d.index =>! wild int64->;
+    int64:off = ix[i * 3i64];
+    int64:len = ix[(i * 3i64) + 1i64];
+    pass (string_concat(string_from_bytes(#ptr_add<int8>(d.names, off), len), ""));
+};
+
+pub func:dir_kind = DirKind(Dir->:d, int64:i) {
+    if (i < 0i64)       { fail EFsIndex; }
+    if (i >= d.count)   { fail EFsIndex; }
+    wild int64->:ix = d.index =>! wild int64->;
+    int64:k = ix[(i * 3i64) + 2i64];
+    if (k == 0i64) { pass DirKind.File; }
+    if (k == 1i64) { pass DirKind.Dir; }
+    if (k == 2i64) { pass DirKind.Link; }
+    pass DirKind.Other;
+};
+
+pub func:dir_free = NIL(Dir->:d) never fails {
+    if (d.acap > 0i64) { dalloc(d.names); d.names = NULL; d.acap = 0i64; d.used = 0i64; }
+    if (d.icap > 0i64) { dalloc(d.index); d.index = NULL; d.icap = 0i64; d.count = 0i64; }
+    pass NIL;
+};
+
+// --- opening, contained (G-2) --------------------------------------------------------
+
+// `openat2(dirfd, name, { flags, mode, resolve }, 24)`: the ONE opener in
+// this module. `resolve` is the containment pair, always. The `open_how`
+// block is three u64 words the kernel reads once.
+func:openat2_contained = fd(fd:dirfd, string:rel, oflags:flags, fmode:mode) {
+    wild int8->:name = relay rel_name(rel);
+    defer { dalloc(name); }
+    wild int8->:how = calloc(3i64, 8i64);
+    defer { dalloc(how); }
+    <-(#ptr_add<int64>(how, 0i64)) = (flags => int32) => int64;
+    <-(#ptr_add<int64>(how, 1i64)) = (mode => int32) => int64;
+    <-(#ptr_add<int64>(how, 2i64)) = raw RESOLVE_CONTAINED();
+    Result<int64>:r = sys(raw SYS_OPENAT2(), dirfd, name, how, 24i64);
+    if (r.is_error) { fail r.err; }
+    pass ((r.value =>! int32) =>! fd);
+};
+
+// Open an EXISTING name beneath `dirfd`, contained: a `..` or a symlink that
+// would resolve outside the directory is refused by the kernel (EXDEV), and
+// a magic link (`/proc/*/fd/*`) is refused whatever it points at. The mode
+// is `S_NONE` because nothing is created here — creation is the pair below,
+// with G-3's defaults.
+pub func:open_beneath = fd(fd:dirfd, string:rel, oflags:flags) {
+    pass (relay openat2_contained(dirfd, rel, flags, S_NONE));
+};
+
+// Create-or-open a FILE beneath `dirfd`, contained, at 0600 (G-3): the
+// caller's flags plus `O_CREAT`, and nothing wider than owner read/write
+// unless `create_beneath_mode` says so explicitly.
+pub func:create_beneath = fd(fd:dirfd, string:rel, oflags:flags) {
+    pass (relay openat2_contained(dirfd, rel, flags | O_CREAT, S_IRUSR | S_IWUSR));
+};
+
+pub func:create_beneath_mode = fd(fd:dirfd, string:rel, oflags:flags, fmode:mode) {
+    pass (relay openat2_contained(dirfd, rel, flags | O_CREAT, mode));
+};
+
+// --- the at-family (G-4) --------------------------------------------------------------
+
+func:mkdirat_raw = NIL(fd:dirfd, string:rel, fmode:mode) {
+    wild int8->:name = relay rel_name(rel);
+    defer { dalloc(name); }
+    Result<int64>:r = sys(raw SYS_MKDIRAT(), dirfd, name, (mode => int32) => int64);
+    if (r.is_error) { fail r.err; }
+    pass NIL;
+};
+
+// A directory beneath `dirfd` at 0700 (G-3); `mkdir_at_mode` widens explicitly.
+pub func:mkdir_at = NIL(fd:dirfd, string:rel) {
+    pass (relay mkdirat_raw(dirfd, rel, S_IRWXU));
+};
+
+pub func:mkdir_at_mode = NIL(fd:dirfd, string:rel, fmode:mode) {
+    pass (relay mkdirat_raw(dirfd, rel, mode));
+};
+
+func:unlinkat_raw = NIL(fd:dirfd, string:rel, int64:flags) {
+    wild int8->:name = relay rel_name(rel);
+    defer { dalloc(name); }
+    Result<int64>:r = sys(raw SYS_UNLINKAT(), dirfd, name, flags);
+    if (r.is_error) { fail r.err; }
+    pass NIL;
+};
+
+// Remove a FILE beneath `dirfd`; `rmdir_at` removes an empty DIRECTORY. Two
+// names for two operations, never a flag a caller can get wrong.
+pub func:unlink_at = NIL(fd:dirfd, string:rel) {
+    pass (relay unlinkat_raw(dirfd, rel, 0i64));
+};
+
+pub func:rmdir_at = NIL(fd:dirfd, string:rel) {
+    pass (relay unlinkat_raw(dirfd, rel, raw AT_REMOVEDIR()));
+};
+
+// Rename beneath two directory descriptors (the same one, usually), atomically
+// replacing what `newrel` names — `renameat2` with no flags.
+pub func:rename_at = NIL(fd:olddir, string:oldrel, fd:newdir, string:newrel) {
+    wild int8->:oname = relay rel_name(oldrel);
+    defer { dalloc(oname); }
+    wild int8->:nname = relay rel_name(newrel);
+    defer { dalloc(nname); }
+    Result<int64>:r = sys(raw SYS_RENAMEAT2(), olddir, oname, newdir, nname, 0i64);
+    if (r.is_error) { fail r.err; }
+    pass NIL;
+};

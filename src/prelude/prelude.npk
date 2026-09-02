@@ -612,6 +612,16 @@ pub async func:io_ready2 = NIL(int32:fda, int32:eva, int32:fdb, int32:evb, Durat
 // the code that needs it.
 pub error:WouldBlock = 11i32;      // EAGAIN — not ready; wait for readiness and retry
 pub error:Interrupted = 4i32;      // EINTR — a signal cut the call; retry immediately
+// THREE MORE, for the file-system surface (1.4.8, `lib/nfs.npk`): the ones a
+// caller DECIDES on rather than reports — a name that is not there, a name
+// that already is, and the kernel's answer when a contained open would
+// have left its directory (`openat2` reports a RESOLVE_BENEATH violation
+// as EXDEV — the containment rider's whole verdict, worth its name). No
+// wrapper `fail`s one BY NAME: the kernel's word rides through, and a
+// caller compares — so naming them costs no `failsafe` an arm.
+pub error:NotFound = 2i32;         // ENOENT
+pub error:Exists = 17i32;          // EEXIST
+pub error:CrossDevice = 18i32;     // EXDEV — and `open_beneath`'s "that name leaves the directory"
 
 // --- the flag families' members (D-044/D-230, 1.4.8) --------------------------
 //
