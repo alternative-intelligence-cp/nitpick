@@ -1,0 +1,60 @@
+// TYPE-057 (1.4.7, OWED-8): A TYPE THAT CANNOT BE A CHANNEL ELEMENT, refused
+// by the CHECKER where the channel is SPELLED and where a generic one is
+// INSTANTIATED. Three permanent rules reported as `NITPICK-RUNG-001` from
+// the backend's admission table until 1.4.7, out of a suite whose contents
+// graduate as rungs land; these never will, so they live here.
+//
+// A BORROW DOES NOT RIDE A CHANNEL (D-072, D-183): a `T->`, a slice, or an
+// aggregate holding one names storage that stays behind on the sender's
+// frame, and no move can carry a borrowed target across a task boundary.
+// Everything whose bytes ARE the value -- scalars, `Handle<T>`, endpoints,
+// owning aggregates -- transfers whole under the send's `move`.
+//
+// A STREAM DOES NOT RIDE A CHANNEL (D-185, IO_REFERENCE §6): an `OwnedFd` is
+// scope-bound -- the scope that owns it closes it -- and a channel's receiver
+// may outlive that scope. A spawn is different: a MOVE into a thread call is
+// bounded by the join (D-062). The wall is the one a Guard hits.
+//
+// A `dyn` DOES NOT RIDE A CHANNEL (D-207): an erased value hides whether it
+// carries a borrow, and the question cannot be asked of it -- settled as NOT
+// GOING IN rather than as waiting.
+mod:channel_elem;
+
+struct:Holder = { int64->:p; int32:tag; };
+struct:Plain = { int64:v; string:s; };
+
+// Each spelling is refused at ITS annotation, naming the rule.
+// expect-error: NITPICK-TYPE-057
+func:borrow_elem = NIL(Channel<int64->, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:slice_elem = NIL(Channel<int64[], 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:fd_elem = NIL(Channel<OwnedFd, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:dyn_elem = NIL(Channel<dyn Writer, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// An aggregate HOLDING a borrow: layout's containment walk answers, ensured
+// before it is read (D-227) -- `Holder` has no layout yet at this line.
+// expect-error: NITPICK-TYPE-057
+func:holder_elem = NIL(Channel<Holder, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// ...and through a wrapper.
+// expect-error: NITPICK-TYPE-057
+func:opt_elem = NIL(Channel<OwnedFd?, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+
+// An owning aggregate RIDES (D-183, 1.2.5b): not refused.
+func:plain_elem = NIL(Channel<Plain, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+
+// THE SUBSTITUTION SITE. The template says nothing -- `T` is an unknown the
+// spelling cannot judge -- and the instantiation with a borrow is refused at
+// the CALL that asked for it.
+func:generic_elem<T> = NIL(Channel<T, 3i32, 2i64>:_~ch, T:_~x) never fails { pass NIL; };
+
+// expect-error: NITPICK-TYPE-057
+// expect-error: NITPICK-TYPE-057
+func:instantiate = NIL(Channel<int64->, 3i32, 2i64>:ch, int64->:p) never fails {
+    drop generic_elem(ch, p);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

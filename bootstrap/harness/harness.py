@@ -757,13 +757,16 @@ WALKER_DEFAULT_OK = {
         "TY_FUNC_VARIADIC": "a code address never dangles",
         "TY_COMPTIME": "a compile-time argument, never a runtime value",
         "TY_SELF": ("resolves at impl binding (D-157) before crossing rules "
-                    "ask; the channel-element admission runs at emission, "
-                    "post-substitution"),
+                    "ask; the channel-element rule (TYPE-057) runs at the "
+                    "spelling and again at substitution"),
         "TY_PARAM": ("the borrow admissions run POST-SUBSTITUTION: the "
-                     "channel-element rule at emission (ir_types), the "
-                     "layout bits per concrete instance"),
+                     "channel-element rule (TYPE-057) at type_subst's channel "
+                     "arm, the layout bits per concrete instance"),
         "TY_ASSOC": "a projection; resolves to its bound type first",
     },
+    # what a channel may carry (TYPE-057, 1.4.7): every kind named in the body,
+    # so a kind added later must be classified rather than admitted by default
+    ("chan_elem_verdict_recorded", "src/frontend/types.npk"): {},
     # whether a type carries a channel endpoint (D-183's gives/factory rules)
     ("type_contains_channel_recorded", "src/frontend/types.npk"): {
         "TY_INVALID": "resolution already failed and already said so",

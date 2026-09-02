@@ -32,6 +32,14 @@ use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
 use "./parser.npk".*;   // QUAL_FIXED, for what may stand in a constant expression
 use "./builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
+// A DECLARED CYCLE with type_layout (1.4.7, OWED-8; legal by D-086, the same
+// shape as type_trait <-> type_access): the channel-element rule (TYPE-057)
+// refuses at the annotation that SPELLS a channel, and an aggregate element's
+// answer is layout's borrow-containment bit -- which must be COMPUTED before
+// it is read (D-227), and layout resolves field annotations through this
+// module. The alternative -- recording every spelling for a judge that runs
+// after layout -- is a second table for one rule.
+use "./type_layout.npk".*;
 
 // WHICH GENERIC PARAMETERS ARE IN SCOPE, AND WHAT THEY STAND FOR.
 //
@@ -1622,12 +1630,10 @@ func:resolve_channel_type = int32(TypeResolver->:r, TypeNode:n, int32:scope,
     int32:elem = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
                      raw type_args_start(n), 0i32) }, scope);
     if (raw type_is_invalid(r.types, elem)) { pass elem; }
-    int32:ek = raw type_kind(r.types, elem);
-    if (ek == (raw TY_SLICE())) {
-        pass (raw ty_error(r, raw TYPE_UNKNOWN(),
-            "a channel's element may not be a slice (D-072): a slice is a borrow (D-070), `send` transfers ownership across a boundary a borrow cannot cross (D-004/D-180) — send an owning type",
-            n.span));
-    }
+    // THE ELEMENT RULE, AT THE SPELLING (TYPE-057). The type is still interned
+    // and returned: the diagnostic is the refusal, and a channel whose element
+    // was refused should not cascade into "unknown type" at every use.
+    drop check_channel_elem(r, elem, scope, n.span);
     int32:lvl = raw channel_const_arg(r, n, 1i32, scope, "the lock level");
     int32:cap = raw channel_const_arg(r, n, 2i32, scope, "the capacity");
     pass (raw tt_channel(r.types, elem, lvl, cap));
@@ -1659,6 +1665,45 @@ func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
         pass 0i32;
     }
     pass (cv.num =>! int32);
+};
+
+// THIS TYPE CANNOT BE A CHANNEL ELEMENT (TYPE-057, 1.4.7 OWED-8). One helper
+// for the two places a channel type comes into being -- the annotation that
+// spells one (`resolve_channel_type`) and the substitution that instantiates
+// a generic one (`type_subst`'s channel arm) -- each raising with its own
+// span. The verdict is the one table in types.npk, ensured through
+// type_layout; this function only says WHICH rule and WHY, naming the
+// decision, so a reader is told what to send instead.
+//
+// Three permanent rules reported as `NITPICK-RUNG-001` from the backend until
+// 1.4.7, out of a suite whose contents graduate as rungs land. The backend's
+// admission table stays as a fail-closed belt for the kinds no decision has
+// settled, which it still refuses as a rung.
+pub func:check_channel_elem = NIL(TypeResolver->:r, int32:elem, int32:scope,
+                                  Span:at) never fails {
+    int32:v = raw chan_elem_verdict(r, elem, scope, 64i32);
+    if (v == (raw CHAN_ELEM_OK())) { pass NIL; }
+    string:m1 = string_concat("`", raw type_display(r.types, r.interns, elem));
+    string:m2 = string_concat(m1, "` cannot be a channel element: ");
+    string:why = "";
+    if (v == (raw CHAN_ELEM_BORROW())) {
+        why = "it is a borrow, and a borrow names storage that stays behind on the sender's frame — no move can carry it across a task boundary (D-072, D-183); send an owning type";
+    }
+    if (v == (raw CHAN_ELEM_DYN())) {
+        why = "an erased value hides whether it carries a borrow, and the question cannot be asked of a `dyn` — refused permanently rather than deferred (D-207); send the concrete type";
+    }
+    if (v == (raw CHAN_ELEM_FD())) {
+        why = "a descriptor is scope-bound — the scope that owns it closes it, and a channel's receiver may outlive that scope (D-185, IO_REFERENCE §6); a spawn's join bounds a MOVE, a channel bounds nothing";
+    }
+    if (v == (raw CHAN_ELEM_GUARD())) {
+        why = "a guard borrows its mutex's cell and may not outrun the mutex, and a task boundary is exactly where it would (D-056, 1.1.11)";
+    }
+    if (v == (raw CHAN_ELEM_HOLDS())) {
+        why = "it holds a borrow, a `dyn`, a `Guard` or an `OwnedFd` — a borrow names storage left on the sender's frame (D-072/D-183), an erased value hides that question (D-207), a guard may not outrun its mutex (D-056), a descriptor is scope-bound (D-185); send a type whose every field transfers whole";
+    }
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_CHANNEL_ELEMENT(),
+        string_concat(m2, why), at));
+    pass NIL;
 };
 
 // --- `dim256<Unit>` and the unit algebra (D-196, 1.3.3) -----------------------

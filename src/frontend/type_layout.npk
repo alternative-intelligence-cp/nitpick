@@ -322,6 +322,16 @@ pub func:type_contains_borrow = bool(TypeResolver->:r, int32:id, int32:scope,
     pass (raw type_contains_borrow_recorded(r.types, id, fuel));
 };
 
+// The channel-element verdict, ENSURED (TYPE-057, 1.4.7): the checker's entry
+// point to the one table in types.npk. An aggregate's answer is layout's
+// `hasborrow` bit, so the layout is computed first -- the query ensures, the
+// caller does not remember (D-227).
+pub func:chan_elem_verdict = int32(TypeResolver->:r, int32:elem, int32:scope,
+                                   int32:fuel) never fails {
+    drop ensure_layout(r, elem, scope, raw LAYOUT_FUEL());
+    pass (raw chan_elem_verdict_recorded(r.types, elem, fuel));
+};
+
 pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel) never fails {
     if (fuel <= 0i32) { pass NIL; }
     if (t == 0i32) { pass NIL; }

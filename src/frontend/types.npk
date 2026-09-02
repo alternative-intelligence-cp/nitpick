@@ -1522,6 +1522,103 @@ pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fue
     pass false;
 };
 
+// --- what a channel may carry (TYPE-057, 1.4.7 OWED-8) --------------------------
+//
+// THE ONE TABLE for "can this type be a channel element", answered over the
+// RECORDED bits: the checker asks through `chan_elem_verdict` in type_layout
+// (which ensures the layout first, D-227) and the backend's belt asks here,
+// after `finish_layouts`. A rule written twice is a rule that will differ in
+// one of them, which is why the backend's `chan_elem_ok` no longer carries the
+// decided classes itself.
+//
+// The verdicts are the DECIDED refusals, each with its decision, and OK for
+// everything else -- including the kinds no decision has settled (a mutex, an
+// atomic, an arena, a simd vector, a function value, ...), which the backend
+// still refuses AS A RUNG, by name. That split is deliberate: a `TYPE` code is
+// a permanent language rule and a rung is "not lowered yet", and this table
+// is not where the second becomes the first.
+pub func:CHAN_ELEM_OK = int32() never fails     { pass 0i32; };
+pub func:CHAN_ELEM_BORROW = int32() never fails { pass 1i32; };  // a `T->`, a slice, a `cstring`, `any` (D-072/D-183)
+pub func:CHAN_ELEM_DYN = int32() never fails    { pass 2i32; };  // erased (D-207)
+pub func:CHAN_ELEM_FD = int32() never fails     { pass 3i32; };  // scope-bound descriptor (D-185)
+pub func:CHAN_ELEM_GUARD = int32() never fails  { pass 4i32; };  // borrows its mutex's cell (D-056, 1.1.11)
+pub func:CHAN_ELEM_HOLDS = int32() never fails  { pass 5i32; };  // an aggregate holding one of the above
+
+pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fuel) never fails {
+    // Out of fuel is FAIL CLOSED: a containment too deep to see is one that
+    // cannot vouch for itself.
+    if (fuel <= 0i32) { pass (raw CHAN_ELEM_HOLDS()); }
+    if (elem <= 0i32) { pass (raw CHAN_ELEM_OK()); }
+    int32:k = raw type_kind(t, elem);
+    // The decided refusals, direct.
+    if (k == (raw TY_POINTER())) { pass (raw CHAN_ELEM_BORROW()); }
+    if (k == (raw TY_SLICE()))   { pass (raw CHAN_ELEM_BORROW()); }
+    if (k == (raw TY_CSTRING())) { pass (raw CHAN_ELEM_BORROW()); }
+    if (k == (raw TY_ANY()))     { pass (raw CHAN_ELEM_BORROW()); }
+    if (k == (raw TY_DYN()))     { pass (raw CHAN_ELEM_DYN()); }
+    if (k == (raw TY_OWNEDFD())) { pass (raw CHAN_ELEM_FD()); }
+    if (k == (raw TY_GUARD()))   { pass (raw CHAN_ELEM_GUARD()); }
+    if (k == (raw TY_RGUARD()))  { pass (raw CHAN_ELEM_GUARD()); }
+    // Wrappers answer from what they wrap.
+    if (k == (raw TY_OPTIONAL())) { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
+    if (k == (raw TY_ARRAY()))    { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
+    // Aggregates answer from layout's walk (`hasborrow` names every kind
+    // above, transitively); which field is not recorded, and the message
+    // says so rather than walking a second time.
+    if (k == (raw TY_STRUCT())) {
+        if (raw type_contains_borrow_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS()); }
+        pass (raw CHAN_ELEM_OK());
+    }
+    if (k == (raw TY_ENUM())) {
+        if (raw type_contains_borrow_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS()); }
+        pass (raw CHAN_ELEM_OK());
+    }
+    // Everything that transfers whole: the scalars and the tier ...
+    if (k == (raw TY_NIL()))     { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_BOOL()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_INT()))     { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_CHAR()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FLOAT()))   { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_TBB()))     { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_TFP()))     { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_DIM()))     { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_TERN()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FRAC()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_COMPLEX())) { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_KERNEL()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_ERROR()))   { pass (raw CHAN_ELEM_OK()); }
+    // ... the owning cells, which cross WITH their ownership (D-183, D-200) ...
+    if (k == (raw TY_STRING()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_BUFFER()))  { pass (raw CHAN_ELEM_OK()); }
+    // ... and the handles, which exist BECAUSE they cross without an address.
+    if (k == (raw TY_HANDLE()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_CHANNEL())) { pass (raw CHAN_ELEM_OK()); }
+    // A parameter is an unknown, asked again -- with an answer -- at every
+    // substitution (`type_subst`'s channel arm); refusing it here would refuse
+    // the template rather than any channel (D-182's pool).
+    if (k == (raw TY_PARAM()))   { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_SELF()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_ASSOC()))   { pass (raw CHAN_ELEM_OK()); }
+    // UNDECIDED kinds: not this table's to refuse. The backend's admission
+    // table refuses them as a rung, by name, until a decision says otherwise.
+    if (k == (raw TY_INVALID()))       { pass (raw CHAN_ELEM_OK()); }   // already reported
+    if (k == (raw TY_TRAIT()))         { pass (raw CHAN_ELEM_OK()); }   // refused as a value type already
+    if (k == (raw TY_FUNC()))          { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_RANGE()))         { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_COMPTIME()))      { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_ARENA()))         { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_SHARED_ARENA()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_ATOMIC()))        { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_MUTEX()))         { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_RWLOCK()))        { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_CONDVAR()))       { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_BARRIER()))       { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_SIMD()))          { pass (raw CHAN_ELEM_OK()); }
+    pass (raw CHAN_ELEM_OK());
+};
+
 // DOES THIS TYPE CARRY A CHANNEL HANDLE anywhere a value copy would carry it
 // (D-183, 1.2.5)? The reclaim machinery asks it of RETURN types: a function
 // whose return carries a channel is a FACTORY — its creations are handed to

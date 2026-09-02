@@ -8,9 +8,9 @@
 
 ## Where you are
 
-**1.4.7 steps 1, 2 and 3 are COMPLETE and D-229 is COMPLETE.** What remains
-of the subcycle is OWED-8 and OWED-1. Everything below is committed; the tree
-is clean and nothing is in flight.
+**1.4.7 steps 1, 2 and 3 are COMPLETE, D-229 is COMPLETE, and OWED-8 is
+CLOSED.** What remains of the subcycle is OWED-1. Everything below is
+committed; the tree is clean and nothing is in flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
   one `diag_report`. It needed **D-224** (`exit` is process exit in every body)
@@ -181,21 +181,15 @@ remains below is execution, not deliberation.
    went with it.
 6. ~~ORCHESTRATION.md's four §8 questions~~ — **RATIFIED as D-228.**
 7. ~~CLAUDE.md's quickcheck example~~ — CLOSED 2026-09-01.
-8. **`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`** — to
-   implement, and the shape is settled: ONE new code `NITPICK-TYPE-057` ("this
-   type cannot be a channel element"), refused in the CHECKER with the
-   annotation's span, message naming the offending component and its decision
-   (`dyn` -> D-207, a borrow -> D-072/D-183, `OwnedFd` -> D-185). One code
-   because it is one RULE with three ways to fail it — TYPE-054's convention,
-   and codes are diagnostics, not D-179 error identities, so there is no
-   `failsafe` cost either way. **A SHARED HELPER serves both the spelling
-   (`resolve_channel_type`) and the substitution (`type_subst`'s TY_CHANNEL
-   arm)** — user-decided; a rule written twice is a rule that will differ in
-   one of them. `type_subst` carries a `Span:at`, so both sites raise with
-   their own span, and `type_generic.npk` imports `resolve_type.npk` and not
-   the reverse, so the helper lives in the latter. The backend's `chan_elem_ok`
-   stays a fail-closed BELT. Cases move to `tests/types/rejection/`, and the
-   migration ADDS the `dyn`-element case, which has no test today.
+8. ~~`chan_elem_ok`'s three refusals report as `NITPICK-RUNG-001`~~ —
+   **CLOSED 2026-09-01** as ratified: `NITPICK-TYPE-057`, one table in
+   types.npk (all 47 kinds named, walkers-total registered), D-227's ensuring
+   entry in type_layout.npk, one helper in resolve_type.npk raising from the
+   spelling and from `type_subst`'s channel arm, the belt kept and the
+   undecided kinds still a rung. One thing the plan did not see: the spelling
+   site reaches layout only through a `use` cycle (type_layout imports
+   resolve_type), declared with its reason at the `use` — legal by D-086, the
+   third such cycle. 1.4.7.md's record has the alternative and why not.
 
 ### New, from the same ratification batch
 
@@ -393,10 +387,9 @@ rule, then the four families the enumeration had missed and the D-227
 neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
 says what to look for, not a blind offset.
 
-Then pick up **OWED-8** (`TYPE-057`, shape settled below), then **OWED-1**
-(an investigation with a written method). Announce the item you are on;
-commit per the subcycle file's acceptance section: one full harness run per
-commit, no exceptions.
+Then pick up **OWED-1** (an investigation with a written method, below).
+Announce the item you are on; commit per the subcycle file's acceptance
+section: one full harness run per commit, no exceptions.
 
 ## What this cycle proved about how to work here, in one place
 

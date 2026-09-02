@@ -281,3 +281,13 @@ pub func:TYPE_GLOBAL_MUTABLE = string() never fails { pass "NITPICK-TYPE-055"; }
 // stale handle into a deterministic `StaleHandle`) but by silently outliving
 // the scope that owed its reclaim. Refused where the concrete is still known.
 pub func:TYPE_DYN_CHANNEL = string() never fails { pass "NITPICK-TYPE-056"; };
+
+// 1.4.7 (OWED-8): a type that CANNOT BE A CHANNEL ELEMENT — a borrow
+// (D-072/D-183), a `dyn` (D-207), an `OwnedFd` (D-185), a `Guard` (D-056), or
+// an aggregate holding one — refused where the channel is SPELLED and where a
+// generic one is INSTANTIATED, through one helper (`check_channel_elem`). One
+// code for one rule with several ways to fail it (TYPE-054's convention); the
+// message names which. Until 1.4.7 these three permanent rules reported as
+// `NITPICK-RUNG-001` from the backend's admission table, out of a suite whose
+// contents are supposed to graduate as rungs land.
+pub func:TYPE_CHANNEL_ELEMENT = string() never fails { pass "NITPICK-TYPE-057"; };

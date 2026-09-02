@@ -16,7 +16,8 @@ type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists*
 `src/main.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
 **172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
-since 1.3.8) and asserts 8 `NITPICK-RUNG-001` rejections on every full run, and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
+since 1.3.8) and asserts 6 `NITPICK-RUNG-001` rejections on every full run (8 until 1.4.7's
+OWED-8 moved the two channel-element cases to the type checker as `TYPE-057`), and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
 
 **Cycle 1.1 (async and concurrency) is underway.** Landed: `never fails` checked
@@ -448,8 +449,10 @@ shape, and `Trait.default_method(recv)` — refused even in one file — works.
 `while` do so by rule: **a `for` captures its bound at entry and a `while`
 re-reads it**, so a loop bounded by a container's live count stays a `while`
 and the spelling says which (proposed for ratification in 1.4.7.md). Five
-match-shaped unwraps became `?|`/`?!`. What remains of 1.4.7 is OWED-8 and
-OWED-1.
+match-shaped unwraps became `?|`/`?!`. **OWED-8 is CLOSED**: a type that
+cannot be a channel element is `NITPICK-TYPE-057`, the checker's refusal at the
+spelling and at the substitution, from one table the backend's belt also reads;
+the undecided kinds stay a rung. What remains of 1.4.7 is OWED-1.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

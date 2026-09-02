@@ -166,8 +166,14 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
                           raw type_size(r.types, sel)));
     }
     if (k == (raw TY_CHANNEL())) {
-        pass (raw tt_channel(r.types,
-                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls),
+        int32:celem = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        // THE ELEMENT RULE, AT THE SUBSTITUTION (TYPE-057): `Channel<J, …>`
+        // in a template is an unknown the spelling could not judge; the
+        // instantiation is where `J` has an answer, and this is the span
+        // that asked for it. Layout re-homes a struct to its declaring
+        // module, so the starting scope is immaterial (0 is the root).
+        drop check_channel_elem(r, celem, 0i32, at);
+        pass (raw tt_channel(r.types, celem,
                   raw type_chan_level(r.types, t),
                   raw type_chan_cap(r.types, t)));
     }
