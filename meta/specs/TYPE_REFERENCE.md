@@ -763,6 +763,100 @@ choices dissolve: the value IS the digit string.
 ---
 
 
+## 8. Flag Types — the bitflag families as types (D-044, D-230; landed 1.4.8)
+
+A kernel flag word is not a number: `PROT_READ` where an `oflags` belongs
+compiles as an `int32` and fails at run time as an unrelated-looking bug — the
+error class D-042 closed for descriptors. D-044 settled that each family is a
+**distinct type**; D-230 implemented it as **one kind, `TY_FLAGS`**, the family
+carried in the type's operand window exactly as `fd`/`pid`/`tid`/`uid`/`gid`
+share `TY_KERNEL`. Every family lowers to `i32`.
+
+**Operations.** `|` combines, `&` tests, `~` complements — within ONE family,
+and the result is that family. `==`/`!=` compare. There is no arithmetic, no
+ordering, no `^` and no shifts (a flag set is a set of named bits, not a word
+to compute with), and two families never meet: `oflags | prot` refuses
+(`NITPICK-TYPE-058`), as does `O_RDONLY | 1i32` — an integer is not a member.
+
+**Crossings.** `flags => int32` is the one outbound conversion — lossless, the
+word the kernel takes, confined to syscall wrappers by being the only one.
+`int32 =>! flags` is the read-back direction and an ASSERTION (the bits belong
+to this family), so it takes the bang. Nothing else enters or leaves, and a
+family never converts to another.
+
+**Members.** The named bits are **prelude constants**, `pub fixed
+oflags:O_RDONLY = 0i32 =>! oflags;` and so on — GENERATED into
+`src/prelude/prelude.npk`'s marked region from the table below by
+`gen_tables.py`, the same generator that emits the family indices
+(`src/frontend/flags_families.npk`) and the builtin-type table. One
+authority; a member added here exists everywhere the prelude is bound, which
+is every module. A derived set is an ordinary module binding: `fixed
+oflags:CREATE_RW = (O_RDWR | O_CREAT) | O_CLOEXEC;` folds (D-165).
+
+**Families.** The four that are bitmasks by nature. D-044 listed seven;
+`whence` is the prelude enum `Whence` (exactly one value per call, never
+OR-ed — a flags type would admit `SEEK_SET | SEEK_END`), and `fcmd`/`advice`
+are enumerations of the same shape, decided with the user's families answer
+(1.4.7b's question). The family INDEX is the type's `a` operand and the order
+of first appearance below; the values are Linux x86_64's.
+
+<!-- flags:begin -->
+
+| Family | Member | Value | Meaning |
+|---|---|---|---|
+| `oflags` | `O_RDONLY` | 0 | open for reading — the empty set, so `f & O_RDONLY == O_RDONLY` always |
+| `oflags` | `O_WRONLY` | 1 | open for writing |
+| `oflags` | `O_RDWR` | 2 | open for both |
+| `oflags` | `O_CREAT` | 64 | create if absent (the `fmode` argument applies) |
+| `oflags` | `O_EXCL` | 128 | with `O_CREAT`: fail if present — the atomic create |
+| `oflags` | `O_NOCTTY` | 256 | never become the controlling terminal |
+| `oflags` | `O_TRUNC` | 512 | truncate to zero on open |
+| `oflags` | `O_APPEND` | 1024 | every write goes to the end |
+| `oflags` | `O_NONBLOCK` | 2048 | non-blocking — the language's default for streams (D-071) |
+| `oflags` | `O_DSYNC` | 4096 | synchronised data writes |
+| `oflags` | `O_DIRECTORY` | 65536 | refuse unless a directory (`dir_list` opens with it) |
+| `oflags` | `O_NOFOLLOW` | 131072 | refuse a symlink at the last component (D-054's containment) |
+| `oflags` | `O_CLOEXEC` | 524288 | close on exec — every descriptor is born with it (v3 §4.3) |
+| `oflags` | `O_SYNC` | 1052672 | synchronised writes, data and metadata |
+| `oflags` | `O_PATH` | 2097152 | a handle to the path, not the file |
+| `prot` | `PROT_NONE` | 0 | no access — the empty set |
+| `prot` | `PROT_READ` | 1 | pages readable |
+| `prot` | `PROT_WRITE` | 2 | pages writable |
+| `prot` | `PROT_EXEC` | 4 | pages executable — W^X (MEMORY_REFERENCE) never grants it with `PROT_WRITE` |
+| `mflags` | `MAP_SHARED` | 1 | writes visible to other mappers |
+| `mflags` | `MAP_PRIVATE` | 2 | copy-on-write |
+| `mflags` | `MAP_FIXED` | 16 | exactly this address, replacing what is there |
+| `mflags` | `MAP_ANONYMOUS` | 32 | no file behind the mapping (D-044 wrote the BSD alias `MAP_ANON`; the kernel's name is this one) |
+| `mflags` | `MAP_NORESERVE` | 16384 | no swap reservation |
+| `mflags` | `MAP_POPULATE` | 32768 | prefault the pages |
+| `mflags` | `MAP_FIXED_NOREPLACE` | 1048576 | exactly this address, refusing if occupied |
+| `fmode` | `S_NONE` | 0 | no permission bits — NITPICK'S name, the kernel has none: what an open without `O_CREAT` passes (the kernel ignores it), and the empty set every `&` test compares against |
+| `fmode` | `S_IXOTH` | 1 | others may execute |
+| `fmode` | `S_IWOTH` | 2 | others may write |
+| `fmode` | `S_IROTH` | 4 | others may read |
+| `fmode` | `S_IRWXO` | 7 | others: all three |
+| `fmode` | `S_IXGRP` | 8 | group may execute |
+| `fmode` | `S_IWGRP` | 16 | group may write |
+| `fmode` | `S_IRGRP` | 32 | group may read |
+| `fmode` | `S_IRWXG` | 56 | group: all three |
+| `fmode` | `S_IXUSR` | 64 | owner may execute |
+| `fmode` | `S_IWUSR` | 128 | owner may write |
+| `fmode` | `S_IRUSR` | 256 | owner may read |
+| `fmode` | `S_IRWXU` | 448 | owner: all three — D-213's 0700 directory default |
+| `fmode` | `S_ISVTX` | 512 | the sticky bit |
+| `fmode` | `S_ISGID` | 1024 | set-group-id |
+| `fmode` | `S_ISUID` | 2048 | set-user-id |
+
+<!-- flags:end -->
+
+The lowering is pinned in `tests/backend/ir_types.npk` (`i32`), the rules in
+`tests/types/rejection/flags_rules.npk`, and the executed semantics — combine,
+test, complement, compound assignment, both crossings, a folded module
+binding, all four families — in `tests/backend/programs/flags_basic.npk`.
+
+---
+
+
 ## 9. Composite Types (Tier 0 layout)
 
 ### 9.1 Structs

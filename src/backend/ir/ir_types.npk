@@ -467,6 +467,7 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     if (k == (raw TY_FRAC()))    { pass true; }
     if (k == (raw TY_COMPLEX())) { pass true; }
     if (k == (raw TY_KERNEL()))  { pass true; }
+    if (k == (raw TY_FLAGS()))   { pass true; }
     if (k == (raw TY_ERROR()))   { pass true; }
     if (k == (raw TY_NIL()))     { pass true; }
     // A SIMD VECTOR IS A PLAIN VALUE and a function value is a code address
@@ -615,6 +616,9 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     // do not add, and the type checker is what holds that line — to LLVM an `fd`
     // and a `pid` are the same thirty-two bits.
     if (k == (raw TY_KERNEL()))   { pass (raw ll_ok("i32")); }
+    // A flag family is one `i32` word (D-044/D-230): the family is the
+    // checker's knowledge, never the machine's.
+    if (k == (raw TY_FLAGS()))    { pass (raw ll_ok("i32")); }
 
     if (k == (raw TY_INT()))      { pass (raw ll_int_bits(raw type_int_bits(c.types, id))); }
 

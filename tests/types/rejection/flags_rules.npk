@@ -1,0 +1,101 @@
+// A flag set's boundary rules (D-044/D-230, 1.4.8). Two families never meet;
+// an integer is not a member; `^` and the shifts do not exist for the kind;
+// there is no arithmetic and no order; `=> int32` is the one way out and
+// `int32 =>! ` the one way back in.
+mod:flags_rules;
+
+// Two families never meet.
+// expect-error: NITPICK-TYPE-058
+func:mixed = NIL() never fails {
+    oflags:a = O_RDONLY | PROT_READ;
+    if (a == O_RDONLY) { }
+    pass NIL;
+};
+
+// An integer is not a member.
+// expect-error: NITPICK-TYPE-058
+func:with_int = NIL() never fails {
+    oflags:d = O_RDONLY | 1i32;
+    if (d == O_RDONLY) { }
+    pass NIL;
+};
+
+// `^` does not exist for the kind.
+// expect-error: NITPICK-TYPE-058
+func:xor_bits = NIL() never fails {
+    oflags:b = O_RDONLY ^ O_WRONLY;
+    if (b == O_RDONLY) { }
+    pass NIL;
+};
+
+// Nor do the shifts.
+// expect-error: NITPICK-TYPE-058
+func:shifted = NIL() never fails {
+    oflags:c = O_CREAT << 1i32;
+    if (c == O_RDONLY) { }
+    pass NIL;
+};
+
+// The compound spelling takes the same rule.
+// expect-error: NITPICK-TYPE-058
+func:compound = NIL() never fails {
+    oflags:j = O_RDONLY;
+    j += O_WRONLY;
+    if (j == O_RDONLY) { }
+    pass NIL;
+};
+
+// No arithmetic: a flag set is not a number.
+// expect-error: NITPICK-TYPE-008
+func:added = NIL() never fails {
+    oflags:e = O_RDONLY + O_WRONLY;
+    if (e == O_RDONLY) { }
+    pass NIL;
+};
+
+// No order.
+// expect-error: NITPICK-TYPE-008
+func:ordered = NIL() never fails {
+    bool:f = O_RDONLY < O_WRONLY;
+    if (f) { }
+    pass NIL;
+};
+
+// Entering takes the bang: a word asserted into its family.
+// expect-error: NITPICK-TYPE-009
+func:unchecked_in = NIL() never fails {
+    oflags:g = 5i32 => oflags;
+    if (g == O_RDONLY) { }
+    pass NIL;
+};
+
+// Leaving reaches `int32` and nothing wider.
+// expect-error: NITPICK-TYPE-032
+func:leaves_wide = NIL() never fails {
+    int64:h = O_RDONLY => int64;
+    if (h == 0i64) { }
+    pass NIL;
+};
+
+// A family never converts to another, bang or no bang.
+// expect-error: NITPICK-TYPE-032
+func:cross_family = NIL() never fails {
+    prot:i = O_RDONLY =>! prot;
+    if (i == PROT_NONE) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};

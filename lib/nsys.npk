@@ -35,25 +35,21 @@ pub func:SYS_MEMFD_CREATE = int64() never fails { pass 319i64; };
 pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
 
 // --- the constants those calls take ------------------------------------------
+//
+// The open flags, the protection bits and the mmap flags are NOT here: since
+// D-230 (1.4.8) they are the prelude's typed constants (`oflags`, `prot`,
+// `mflags`), and a syscall wrapper spells the crossing `=> int32` at the
+// register -- the one place a flag set becomes a number (D-044).
 pub func:MFD_CLOEXEC = int64() never fails       { pass 1i64; };
 pub func:MFD_ALLOW_SEALING = int64() never fails { pass 2i64; };
-pub func:F_ADD_SEALS = int64() never fails       { pass 1033i64; };
 pub func:F_SEAL_SEAL = int64() never fails       { pass 1i64; };
 pub func:F_SEAL_SHRINK = int64() never fails     { pass 2i64; };
 pub func:F_SEAL_GROW = int64() never fails       { pass 4i64; };
-pub func:PROT_READ = int64() never fails         { pass 1i64; };
-pub func:PROT_WRITE = int64() never fails        { pass 2i64; };
-pub func:MAP_SHARED = int64() never fails        { pass 1i64; };
 pub func:AF_UNIX = int64() never fails           { pass 1i64; };
 pub func:SOCK_STREAM = int64() never fails       { pass 1i64; };
 pub func:SOCK_CLOEXEC = int64() never fails      { pass 524288i64; };
 pub func:SOCK_NONBLOCK = int64() never fails     { pass 2048i64; };
-pub func:O_RDWR = int64() never fails            { pass 2i64; };
-pub func:O_CLOEXEC = int64() never fails         { pass 524288i64; };
-pub func:O_NONBLOCK = int64() never fails        { pass 2048i64; };
 pub func:AT_FDCWD = int64() never fails          { pass (0i64 - 100i64); };
-pub func:F_SETFL = int64() never fails           { pass 4i64; };
-pub func:F_DUPFD_CLOEXEC = int64() never fails   { pass 1030i64; };
 pub func:SIGKILL = int64() never fails           { pass 9i64; };
 pub func:SIGTERM = int64() never fails           { pass 15i64; };
 pub func:P_PIDFD = int64() never fails           { pass 3i64; };
@@ -64,6 +60,40 @@ pub func:SHUT_WR = int64() never fails           { pass 1i64; };
 pub func:MSG_NOSIGNAL = int64() never fails      { pass 16384i64; };
 pub func:SOL_SOCKET = int64() never fails        { pass 1i64; };
 pub func:SCM_RIGHTS = int64() never fails        { pass 1i64; };
+
+// A `fcntl` COMMAND'S WORD, from the prelude's enum (D-044/D-230; the
+// families answer): one value per call, mapped here, at the syscall
+// boundary, the way `seek` maps `Whence` -- and nowhere else.
+pub func:fcntl_cmd = int64(Fcmd:c) never fails {
+    int64:w = 0i64;
+    pick (c) {
+        (Fcmd.GetFd)        { w = 1i64; },
+        (Fcmd.SetFd)        { w = 2i64; },
+        (Fcmd.GetFl)        { w = 3i64; },
+        (Fcmd.SetFl)        { w = 4i64; },
+        (Fcmd.DupFdCloexec) { w = 1030i64; },
+        (Fcmd.AddSeals)     { w = 1033i64; },
+        (Fcmd.GetSeals)     { w = 1034i64; }
+    }
+    pass w;
+};
+
+// A `madvise` ADVICE'S WORD, the same shape. No wrapper takes one yet; the
+// spelling is decided, and the first wrapper to advise a mapping maps here.
+pub func:madvise_word = int64(Advice:a) never fails {
+    int64:w = 0i64;
+    pick (a) {
+        (Advice.Normal)     { w = 0i64; },
+        (Advice.Random)     { w = 1i64; },
+        (Advice.Sequential) { w = 2i64; },
+        (Advice.WillNeed)   { w = 3i64; },
+        (Advice.DontNeed)   { w = 4i64; },
+        (Advice.Free)       { w = 8i64; },
+        (Advice.HugePage)   { w = 14i64; },
+        (Advice.NoHugePage) { w = 15i64; }
+    }
+    pass w;
+};
 
 // `waitid`'s siginfo, the fields a reaper reads (byte offsets of the x86_64
 // `siginfo_t`, as int32 indices): `si_code` at byte 8, `si_pid` at 16,
@@ -91,7 +121,7 @@ pub struct:FdPair = { int64:ours; int64:child; };
 // before the spawn.
 pub func:fd_above_std = int64(int64:fdn) {
     if (fdn >= 4i64) { pass fdn; }
-    Result<int64>:rup = sys(raw SYS_FCNTL(), fdn, raw F_DUPFD_CLOEXEC(), 4i64);
+    Result<int64>:rup = sys(raw SYS_FCNTL(), fdn, raw fcntl_cmd(Fcmd.DupFdCloexec), 4i64);
     if (rup.is_error) { fail rup.err; }
     Result<NIL>:c = close((fdn =>! int32) =>! fd);   // the low original
     if (c.is_error) { }                              // best-effort; the dup stands
@@ -106,11 +136,11 @@ pub func:fd_above_std = int64(int64:fdn) {
 pub func:capture_pipe = FdPair() {
     wild int8->:pv = alloc(8i64);
     defer { dalloc(pv); }
-    Result<int64>:rpp = sys(raw SYS_PIPE2(), pv, raw O_CLOEXEC());
+    Result<int64>:rpp = sys(raw SYS_PIPE2(), pv, O_CLOEXEC => int32);
     if (rpp.is_error) { fail rpp.err; }
     int64:rd = (<-(#ptr_add<int32>(pv, 0i64))) => int64;
     int64:wr = (<-(#ptr_add<int32>(pv, 1i64))) => int64;
-    Result<int64>:rfl = sys(raw SYS_FCNTL(), rd, raw F_SETFL(), raw O_NONBLOCK());
+    Result<int64>:rfl = sys(raw SYS_FCNTL(), rd, raw fcntl_cmd(Fcmd.SetFl), O_NONBLOCK => int32);
     if (rfl.is_error) { fail rfl.err; }
     int64:wc = relay fd_above_std(wr);
     pass FdPair{ ours: rd, child: wc };
@@ -126,7 +156,7 @@ pub func:open_devnull = int64() {
     // claim of manual ownership. The pointer exists only to reach the syscall
     // boundary, where an address becomes a number (1.1.12a).
     uint8->:dp = dn.ptr;
-    int64:ofl = (raw O_RDWR()) | (raw O_CLOEXEC());
+    int32:ofl = (O_RDWR | O_CLOEXEC) => int32;
     Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
     if (rf.is_error) { fail rf.err; }
     pass (relay fd_above_std(rf.value));

@@ -37,6 +37,7 @@ use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./ast.npk".*;
+use "./flags_families.npk".*;   // the family indices (generated, D-230)
 
 // --- kinds -------------------------------------------------------------------------
 //
@@ -191,6 +192,11 @@ pub func:TY_COMPLEX = int32() never fails { pass 45i32; };
 // spelling. Typed element access is `#ptr_add` over `.ptr` — the general
 // mechanism, not a per-width verb family.
 pub func:TY_BUFFER = int32() never fails { pass 46i32; };
+// D-044/D-230 (1.4.8): the flag families — ONE kind, `a` = the family index
+// (`flags_families.npk`), exactly as `TY_KERNEL` carries five types in one
+// kind. `| & ~` within a family, `== !=`, no arithmetic, no order; `=> int32`
+// out, `int32 =>! ` in. Lowers to `i32`.
+pub func:TY_FLAGS = int32() never fails { pass 47i32; };
 
 pub struct:Type = {
     int32:kind;
@@ -847,6 +853,12 @@ pub func:KERNEL_GID = int32() never fails { pass 4i32; };
 
 pub func:tt_kernel = int32(TypeTable->:t, int32:which) never fails {
     pass (raw tt_intern(t, raw TY_KERNEL(), which, 0i32, 0i32, 4i64, 4i32, 0i32));
+};
+
+// A flag family (D-044/D-230): the same shape, `which` the family index — one
+// `i32` word, and the family is what the TYPE knows and the machine does not.
+pub func:tt_flags = int32(TypeTable->:t, int32:which) never fails {
+    pass (raw tt_intern(t, raw TY_FLAGS(), which, 0i32, 0i32, 4i64, 4i32, 0i32));
 };
 
 // --- composites ------------------------------------------------------------------------
@@ -1599,6 +1611,7 @@ pub func:type_contains_shared_recorded = bool(TypeTable->:t, int32:id, int32:fue
     if (k == (raw TY_COMPLEX())) { pass false; }
     if (k == (raw TY_SIMD()))    { pass false; }
     if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_FLAGS()))   { pass false; }   // a flag word (D-230)
     if (k == (raw TY_ERROR()))   { pass false; }
     if (k == (raw TY_STRING()))  { pass false; }
     if (k == (raw TY_BUFFER()))  { pass false; }
@@ -1697,6 +1710,7 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     if (k == (raw TY_FRAC()))    { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_COMPLEX())) { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_KERNEL()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FLAGS()))   { pass (raw CHAN_ELEM_OK()); }   // a word (D-230)
     if (k == (raw TY_ERROR()))   { pass (raw CHAN_ELEM_OK()); }
     // ... a simd vector, which is a plain value, and a function value, which
     // is a code address and never dangles (D-235; both a rung until 1.4.7b) ...
@@ -1848,6 +1862,8 @@ pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) never fails {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_TBB()))    { pass true; }
     if (k == (raw TY_KERNEL())) { pass true; }
+    // A flag set compares for identity and never sorts (D-044/D-230).
+    if (k == (raw TY_FLAGS()))  { pass true; }
     pass false;
 };
 

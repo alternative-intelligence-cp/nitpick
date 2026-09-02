@@ -528,7 +528,9 @@ function.
 ### Types the parser must know as builtins
 
 Beyond the scalar families: `fd`, `pid`, `tid`, `uid`, `gid` (D-042); the bitflag
-families `oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence` (D-044);
+families `oflags`, `prot`, `mflags`, `fmode` (D-044, landed as one kind at 1.4.8 —
+D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
+`Advice`, one value per call, by the user's 2026-09-02 families answer);
 `Handle`, `arena`, `shared_arena` (D-017), `atomic`, `Future`, `Optional`,
 `Result`, `simd`, `complex`, `dim256`, `tfp32/64/128/256`.
 

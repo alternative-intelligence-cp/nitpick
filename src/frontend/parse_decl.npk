@@ -92,9 +92,19 @@ func:p_return_quals = int32(Parser->:p) never fails {
     pass q;
 };
 
-pub func:decl_flags = int32(DeclNode:d) never fails { pass d.a; };
+// A GLOBAL KEEPS ITS FLAGS IN THE HIGH HALF OF ITS QUALIFIER SLOT (1.4.8): its
+// `a` is the TYPE, and until 1.4.8 `pub` on a module binding was never stored
+// at all -- `decl_flags` read the type's node index as the flag word, so
+// whether a `pub fixed` binding was exported depended on that index's parity.
+// Found by the prelude's first module bindings (D-230's flag constants), which
+// no importer could see. One accessor answers for every kind, and the two
+// halves of `c` are named by `global_quals`/`global_flags` below.
+pub func:decl_flags = int32(DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclGlobalDecl) { pass ((d.c >> 16i32) & 65535i32); }
+    pass d.a;
+};
 pub func:decl_name = int32(DeclNode:d) never fails  { pass (d.payload =>! int32); };
-pub func:decl_has = bool(DeclNode:d, int32:bit) never fails { pass ((d.a & bit) != 0i32); };
+pub func:decl_has = bool(DeclNode:d, int32:bit) never fails { pass (((raw decl_flags(d)) & bit) != 0i32); };
 pub func:decl_win_start = int32(DeclNode:d) never fails { pass d.b; };
 pub func:decl_win_count = int32(DeclNode:d) never fails { pass d.c; };
 
@@ -508,7 +518,8 @@ pub func:field_quals = int32(DeclNode:d) never fails { pass d.c; };
 pub func:param_quals = int32(DeclNode:d) never fails { pass d.c; };
 pub func:global_type = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_init = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.b }; pass e; };
-pub func:global_quals = int32(DeclNode:d) never fails { pass d.c; };
+pub func:global_quals = int32(DeclNode:d) never fails { pass (d.c & 65535i32); };
+pub func:global_flags = int32(DeclNode:d) never fails { pass ((d.c >> 16i32) & 65535i32); };
 pub func:assoc_default = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:variant_value = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.a }; pass e; };
 pub func:variant_payload_start = int32(DeclNode:d) never fails { pass d.b; };
@@ -1420,8 +1431,11 @@ func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         init = (raw p_parse_expr(p)).index;
     }
     discard(raw p_expect(p, TokenKind.PSemi));
+    // `flags` (the `pub`) rides the high half of the qualifier slot -- `a` is
+    // the type, `b` the initialiser, `payload` the name, and nothing else is
+    // free. Dropped on the floor until 1.4.8 (see `decl_flags`).
     pass (raw ast_add_decl(p.ast, DeclKind.DeclGlobalDecl, sp,
-                             ty.index, init, quals, name.payload));
+                             ty.index, init, quals | (flags << 16i32), name.payload));
 };
 
 // --- shared helpers ----------------------------------------------------------------------------------

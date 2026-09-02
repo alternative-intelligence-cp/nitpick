@@ -15465,6 +15465,24 @@ not bitmasks, and there is no operator overloading, so the library spelling is
 `oflags_or(a, b)` — two spellings for `|`, which is a blueprint violation, and
 strictly weaker than what D-044 already settled.
 
+> **The families answer (user, 2026-09-02) and the landing (1.4.8 step 2).**
+> D-044's seven are not all bitmasks: `whence`, `fcmd` and `advice` are ONE
+> value per call, never OR-ed, and a flags type would admit `F_GETFL |
+> F_SETFL` — the error class D-044 exists to close. So `TY_FLAGS` carries the
+> four true bitmask families (`oflags`, `prot`, `mflags`, `fmode`); `whence`
+> stays the prelude enum `Whence` it already was (1.1.12b); `fcmd` and
+> `advice` are the prelude enums `Fcmd` and `Advice` of the same shape, their
+> kernel words mapped in `lib/nsys.npk` exactly as `seek` maps `Whence`. The
+> members of the four families are GENERATED `fixed` prelude bindings
+> (`pub fixed oflags:O_RDONLY = 0i32 =>! oflags;`) from ONE marked region,
+> TYPE_REFERENCE §8 — read as this decision's "compiler-known constants
+> generated from one marked-region authority": known through the prelude the
+> compiler embeds, with no new resolver category, and a derived set is an
+> ordinary module binding that folds. `^` and the shifts are refused for the
+> kind (a flag set is named bits, not a word to compute with), and the one
+> outbound crossing is `=> int32` exactly. Recorded as an annotation, never
+> an edit (the D-085/D-202 pattern).
+
 ## D-231 — the integer-width set is split: sub-byte struck, the wide ladder pinned — **SETTLED (user decision, 2026-09-01)**
 
 G-2, answered in two halves because the set contains two different questions.

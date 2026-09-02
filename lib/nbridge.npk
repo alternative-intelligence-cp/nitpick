@@ -78,11 +78,12 @@ pub func:shm_create_sealed = Shm(int64:size) {
     if (rtr.is_error) { fail EShmCreate; }
     // fcntl(mfd, F_ADD_SEALS, SHRINK|GROW|SEAL)
     int64:seals = raw F_SEAL_SHRINK() | (raw F_SEAL_GROW() | raw F_SEAL_SEAL());
-    Result<int64>:rsl = sys(raw SYS_FCNTL(), mfd, raw F_ADD_SEALS(), seals);
+    Result<int64>:rsl = sys(raw SYS_FCNTL(), mfd, raw fcntl_cmd(Fcmd.AddSeals), seals);
     if (rsl.is_error) { fail EShmSeal; }
     // mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, mfd, 0)
-    int64:pf = raw PROT_READ() | raw PROT_WRITE();
-    Result<int64>:rm = sys(raw SYS_MMAP(), 0i64, size, pf, raw MAP_SHARED(), mfd, 0i64);
+    // Typed flag sets since D-230 (1.4.8); the register crossing is `=> int32`.
+    int32:pf = (PROT_READ | PROT_WRITE) => int32;
+    Result<int64>:rm = sys(raw SYS_MMAP(), 0i64, size, pf, MAP_SHARED => int32, mfd, 0i64);
     if (rm.is_error) { fail EShmMap; }
     wild int8->:base = #wild_ptr<int8>(rm.value);
     pass Shm{ memfd: (mfd =>! int32) =>! fd, base: base, size: size };

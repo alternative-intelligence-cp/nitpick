@@ -904,6 +904,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
     if (k == (raw TY_COMPLEX())) { pass false; }   // two plain components (D-199)
     if (k == (raw TY_ERROR()))   { pass false; }   // a code word, not an address (D-179)
     if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_FLAGS()))   { pass false; }   // a word (D-230)
     if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
     if (k == (raw TY_NIL()))     { pass false; }
     // Stated at 1.4.1, when the walkers-total instrument found them falling
@@ -1733,6 +1734,7 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) never fails {
     if (k == (raw TY_FRAC()))     { pass false; }
     if (k == (raw TY_COMPLEX()))  { pass false; }
     if (k == (raw TY_KERNEL()))   { pass false; }
+    if (k == (raw TY_FLAGS()))    { pass false; }   // a word (D-230)
 
     // A FUNCTION VALUE IS A CODE ADDRESS AND NOT A DATA ONE. Closures are removed
     // (D-018), so there is no environment pointer beside it and nothing that could

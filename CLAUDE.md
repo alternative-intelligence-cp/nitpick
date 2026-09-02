@@ -623,6 +623,7 @@ parse failure some lines away from the mistake:
 | `Mutex`, `Guard`, `acquire`, `RwLock`, `RGuard`, `CondVar`, `Barrier` | the sync primitives' type keywords (D-056, 1.1.11) — `acquire` interns itself only after a `.` |
 | `unit` | the unit-declaration keyword (D-196, 1.3.3) — `unit:Hertz = 1 / Seconds;`; it reads like the most ordinary local name in any measurement code |
 | `trit`, `nit` | the single-digit ternary/nonary type keywords (D-197, 1.3.4) — like `acquire`/`any`, each interns itself as a NAME only after a `.` (the digit extraction `t.trit(i)`) |
+| `oflags`, `prot`, `mflags`, `fmode` | the four flag-family TYPE keywords (D-044/D-230, 1.4.8) — `prot` and `fmode` in particular read like the most ordinary locals in any file code; their members (`O_RDONLY`, `PROT_READ`, `MAP_SHARED`, `S_IRUSR`, …) are prelude constants, so those names are taken too |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

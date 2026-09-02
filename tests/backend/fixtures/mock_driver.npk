@@ -105,8 +105,8 @@ async func:main = int32(cstring[]:_~argv) {
     if (stsz != shsz)  { exit 6i32; }
 
     // rule 3: map, then validate magic, version, capacity-vs-size.
-    int64:mprot = (raw PROT_READ()) | (raw PROT_WRITE());
-    Result<int64>:mm = sys(raw SYS_MMAP(), 0i64, shsz, mprot, raw MAP_SHARED(), rv.rfd, 0i64);
+    int32:mprot = (PROT_READ | PROT_WRITE) => int32;
+    Result<int64>:mm = sys(raw SYS_MMAP(), 0i64, shsz, mprot, MAP_SHARED => int32, rv.rfd, 0i64);
     if (mm.is_error) { exit 6i32; }
     wild int8->:shm = #wild_ptr<int8>(mm.value);
     if ((<-(#ptr_add<int64>(shm, 0i64))) != (raw NPK_RING_MAGIC())) { exit 6i32; }

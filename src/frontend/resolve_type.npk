@@ -947,6 +947,22 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
         pass (raw cv_int(target, v.num));
     }
 
+    // `int32 =>! oflags` FOLDS (D-230, 1.4.8) — the ONE unchecked cast that
+    // does. A flag constant is a literal asserted into its family (the
+    // read-back crossing's own shape), and a module binding of a flags type
+    // has to be a constant, so the prelude's generated members depend on
+    // this arm. An unchecked cast BETWEEN NUMBERS still does not fold:
+    // "a cast keeps the value" is false for a narrowing, and a folded 300
+    // in an `int8` slot would be exactly the silent wrong constant the folder
+    // exists to refuse.
+    if (e.kind == ExprKind.ExprUncheckedCastExpr) {
+        ConstVal:uv = raw fold_expr(r, raw expr_operand(e), scope, f);
+        if (!(raw cv_is_int(uv))) { pass (raw cv_none()); }
+        int32:utarget = raw resolve_type(r, raw expr_cast_type(e), scope);
+        if ((raw type_kind(r.types, utarget)) != (raw TY_FLAGS())) { pass (raw cv_none()); }
+        pass (raw cv_int(utarget, uv.num));
+    }
+
     if (e.kind == ExprKind.ExprBuiltinExpr) {
         pass (raw fold_builtin(r, e, scope, f));
     }
@@ -2190,6 +2206,8 @@ func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n)
     // D-200/§23 (1.3.7): the managed owning byte cell.
     if (spec.kind == (raw TY_BUFFER())) { pass (raw tt_buffer(r.types)); }
     if (spec.kind == (raw TY_KERNEL())) { pass (raw tt_kernel(r.types, spec.which)); }
+    // D-044/D-230 (1.4.8): a flag family, `which` its index.
+    if (spec.kind == (raw TY_FLAGS()))  { pass (raw tt_flags(r.types, spec.which)); }
     if (spec.kind == (raw TY_BOOL()))   { pass (r.types.t_bool); }
     if (spec.kind == (raw TY_STRING())) { pass (r.types.t_string); }
     if (spec.kind == (raw TY_CSTRING())){ pass (r.types.t_cstring); }

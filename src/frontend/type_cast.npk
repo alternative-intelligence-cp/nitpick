@@ -375,6 +375,29 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // alone; D-095 and the paragraph above license `int32 =>! fd` and nothing
     // else, and a struct asserted into a descriptor is not an opt-out of a
     // check, it is a value with no meaning as one.
+    // --- flag sets (D-044/D-230, 1.4.8) ------------------------------------------
+    //
+    // `oflags => int32` reads the word the kernel takes — lossless, the ONE
+    // outbound crossing, confined to syscall wrappers by being the only one.
+    // `int32 =>! oflags` is the read-back direction and an ASSERTION (the bits
+    // belong to this family), so it takes the bang like `int32 =>! fd`. Two
+    // families never convert to each other, and nothing else enters or leaves.
+    if (fk == (raw TY_FLAGS())) {
+        if (tk == (raw TY_INT())) {
+            if ((raw type_int_bits(tyt, to)) == 32i32) {
+                if (raw type_is_signed(tyt, to)) { pass (raw CAST_OK()); }
+            }
+        }
+        pass (raw CAST_IMPOSSIBLE());
+    }
+    if (tk == (raw TY_FLAGS())) {
+        if (fk == (raw TY_INT())) {
+            if ((raw type_int_bits(tyt, from)) == 32i32) {
+                if (raw type_is_signed(tyt, from)) { pass (raw CAST_LOSSY()); }
+            }
+        }
+        pass (raw CAST_IMPOSSIBLE());
+    }
     if (tk == (raw TY_KERNEL())) {
         if (fk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
         pass (raw CAST_IMPOSSIBLE());
@@ -545,6 +568,7 @@ pub func:cast_is_assertion = bool(TypeTable->:tyt, int32:from, int32:to) never f
     int32:fk = raw type_kind(tyt, from);
     int32:tk = raw type_kind(tyt, to);
     if (tk == (raw TY_KERNEL()))  { pass true; }
+    if (tk == (raw TY_FLAGS()))   { pass true; }   // a word asserted into its family (D-230)
     if (tk == (raw TY_POINTER())) { pass true; }
     if (fk == (raw TY_ENUM()))    { pass true; }
     if (tk == (raw TY_ENUM()))    { pass true; }
@@ -565,6 +589,9 @@ pub func:why_lossy = string(TypeTable->:tyt, int32:from, int32:to) never fails {
     }
     if (tk == (raw TY_KERNEL())) {
         pass "a kernel identifier cannot be manufactured from a number the compiler has not seen the kernel return (D-042)";
+    }
+    if (tk == (raw TY_FLAGS())) {
+        pass "a flag word read back from the kernel is asserted into its family (D-230), and nothing here can check the bits belong to it";
     }
     if (tk == (raw TY_DIM())) {
         pass "this asserts a physical unit onto a bare number (D-196), and nothing here can check the number was measured in it";
@@ -661,6 +688,12 @@ pub func:why_impossible = string(TypeTable->:tyt, int32:from, int32:to) never fa
     }
     if (tk == (raw TY_KERNEL())) {
         pass "only an integer can be asserted into a kernel identifier, and only with `=>!` (D-042, D-095)";
+    }
+    if (fk == (raw TY_FLAGS())) {
+        pass "a flag set converts to `int32` with `=>` and to nothing else (D-044/D-230); two families never convert to each other";
+    }
+    if (tk == (raw TY_FLAGS())) {
+        pass "only an `int32` can be asserted into a flag family, and only with `=>!` (D-044/D-230) — the read-back direction, where the word came from the kernel";
     }
     pass "these types have no values in common";
 };

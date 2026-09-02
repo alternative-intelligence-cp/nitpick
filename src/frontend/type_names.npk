@@ -11,6 +11,7 @@ use "./intern.npk".*;
 use "./ast.npk".*;
 use "./parse_decl.npk".*;   // decl_name, for D-159's canonical bound order
 use "./types.npk".*;
+use "./flags_families.npk".*;   // the family spellings (generated, D-230)
 
 // A type's name, for a message. The whole value of a type error is which type
 // was wrong, so this is never elided.
@@ -203,6 +204,7 @@ pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) 
                         raw type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (string_concat(ce, ">"));
     }
+    if (k == (raw TY_FLAGS())) { pass (raw flags_family_name(raw type_elem(tyt, t))); }
     if (k == (raw TY_KERNEL())) {
         int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }

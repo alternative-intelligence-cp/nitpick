@@ -768,6 +768,15 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
                                            want, got));
             pass NIL;
         }
+        // A FLAG SET on either side (D-044/D-230, 1.4.8): the REAL operator
+        // decides — `&=`/`|=` within one family, nothing else exists for the
+        // kind — and `x op= v` IS `x = x op v`, so it is the expression's rule.
+        bool:flagside = ((raw type_kind(e.types, want)) == (raw TY_FLAGS()));
+        if ((raw type_kind(e.types, got)) == (raw TY_FLAGS())) { flagside = true; }
+        if (flagside) {
+            discard(raw type_flags_op(e, s.span, raw assign_base_op(op), want, got));
+            pass NIL;
+        }
         if (raw is_bitwise_assign(op)) {
             discard(raw type_bitwise(e, s.span, want, got));
         } else {
@@ -793,6 +802,12 @@ func:assign_base_op = TokenKind(TokenKind:op) never fails {
     if (op == TokenKind.OpStarAssign)    { pass TokenKind.OpStar; }
     if (op == TokenKind.OpSlashAssign)   { pass TokenKind.OpSlash; }
     if (op == TokenKind.OpPercentAssign) { pass TokenKind.OpPercent; }
+    // The bitwise five too (1.4.8): a flag set's rule reads the real operator.
+    if (op == TokenKind.OpAmpAssign)     { pass TokenKind.OpAmp; }
+    if (op == TokenKind.OpPipeAssign)    { pass TokenKind.OpPipe; }
+    if (op == TokenKind.OpCaretAssign)   { pass TokenKind.OpCaret; }
+    if (op == TokenKind.OpShlAssign)     { pass TokenKind.OpShl; }
+    if (op == TokenKind.OpShrAssign)     { pass TokenKind.OpShr; }
     pass op;
 };
 

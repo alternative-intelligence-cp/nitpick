@@ -50,6 +50,7 @@ use "../../src/frontend/symbols.npk".*;
 use "../../src/frontend/resolve.npk".*;
 use "../../src/frontend/types.npk".*;
 use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/flags_families.npk".*;
 use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_trait.npk".*;
@@ -146,6 +147,7 @@ func:main = int32(cstring[]:_~argv) {
     int32:ri8  = raw tt_result(@x.types, i8t, 0i64, 1i32);
     int32:rpair = raw tt_result(@x.types, pair, 0i64, 1i32);
     int32:opti = raw tt_optional(@x.types, i32t, 0i64, 1i32);
+    int32:oflt = raw tt_flags(@x.types, raw FLAGS_OFLAGS());
 
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, @it, @x.diags, @inst);
@@ -212,6 +214,9 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw ll_is(@c, art, "[4 x i32]")))             { exit 54i32; }   // ll: int32[4]
     if (!(raw ll_is(@c, rint, "{ i32, i32 }")))         { exit 55i32; }   // ll: Result<int32>
     if (!(raw ll_is(@c, rnil, "{ i32 }")))              { exit 56i32; }   // ll: Result<NIL>
+    // A flag family is one i32 word (D-044/D-230, 1.4.8) -- no `// ll:` marker: the
+    // pin is the real compiler asserting its own text, the tier types' shape.
+    if (!(raw ll_is(@c, oflt, "i32")))                  { exit 61i32; }
     if (!(raw ll_is(@c, rstr, "{ { ptr, i64, i64 }, i32 }"))) { exit 57i32; }   // ll: Result<string>
     if (!(raw ll_is(@c, pair, "%Pair")))                { exit 58i32; }   // ll: Pair
     if (!(raw ll_is(@c, flat, "i32")))                  { exit 59i32; }   // ll: Flat

@@ -613,6 +613,62 @@ pub async func:io_ready2 = NIL(int32:fda, int32:eva, int32:fdb, int32:evb, Durat
 pub error:WouldBlock = 11i32;      // EAGAIN — not ready; wait for readiness and retry
 pub error:Interrupted = 4i32;      // EINTR — a signal cut the call; retry immediately
 
+// --- the flag families' members (D-044/D-230, 1.4.8) --------------------------
+//
+// A KERNEL FLAG WORD IS NOT A NUMBER. `oflags`, `prot`, `mflags` and `fmode`
+// are TYPES (one kind, `TY_FLAGS`, the family in the operand window like
+// `fd`'s); these are their named bits, as `fixed` prelude bindings — a
+// literal asserted into its family, which is exactly the shape the read-back
+// crossing `int32 =>! oflags` has. GENERATED between the two markers by
+// bootstrap/generator/gen_tables.py from TYPE_REFERENCE §8's marked region,
+// the one authority; edit the table there, never these lines. Lowered to an
+// LLVM `constant` each (D-165/D-222), and a derived set is an ordinary module
+// binding that folds: `fixed oflags:CREATE_RW = (O_RDWR | O_CREAT) | O_CLOEXEC;`.
+// --- flags:begin (GENERATED — do not edit between the markers) ---
+pub fixed oflags:O_RDONLY = 0i32 =>! oflags;
+pub fixed oflags:O_WRONLY = 1i32 =>! oflags;
+pub fixed oflags:O_RDWR = 2i32 =>! oflags;
+pub fixed oflags:O_CREAT = 64i32 =>! oflags;
+pub fixed oflags:O_EXCL = 128i32 =>! oflags;
+pub fixed oflags:O_NOCTTY = 256i32 =>! oflags;
+pub fixed oflags:O_TRUNC = 512i32 =>! oflags;
+pub fixed oflags:O_APPEND = 1024i32 =>! oflags;
+pub fixed oflags:O_NONBLOCK = 2048i32 =>! oflags;
+pub fixed oflags:O_DSYNC = 4096i32 =>! oflags;
+pub fixed oflags:O_DIRECTORY = 65536i32 =>! oflags;
+pub fixed oflags:O_NOFOLLOW = 131072i32 =>! oflags;
+pub fixed oflags:O_CLOEXEC = 524288i32 =>! oflags;
+pub fixed oflags:O_SYNC = 1052672i32 =>! oflags;
+pub fixed oflags:O_PATH = 2097152i32 =>! oflags;
+pub fixed prot:PROT_NONE = 0i32 =>! prot;
+pub fixed prot:PROT_READ = 1i32 =>! prot;
+pub fixed prot:PROT_WRITE = 2i32 =>! prot;
+pub fixed prot:PROT_EXEC = 4i32 =>! prot;
+pub fixed mflags:MAP_SHARED = 1i32 =>! mflags;
+pub fixed mflags:MAP_PRIVATE = 2i32 =>! mflags;
+pub fixed mflags:MAP_FIXED = 16i32 =>! mflags;
+pub fixed mflags:MAP_ANONYMOUS = 32i32 =>! mflags;
+pub fixed mflags:MAP_NORESERVE = 16384i32 =>! mflags;
+pub fixed mflags:MAP_POPULATE = 32768i32 =>! mflags;
+pub fixed mflags:MAP_FIXED_NOREPLACE = 1048576i32 =>! mflags;
+pub fixed fmode:S_NONE = 0i32 =>! fmode;
+pub fixed fmode:S_IXOTH = 1i32 =>! fmode;
+pub fixed fmode:S_IWOTH = 2i32 =>! fmode;
+pub fixed fmode:S_IROTH = 4i32 =>! fmode;
+pub fixed fmode:S_IRWXO = 7i32 =>! fmode;
+pub fixed fmode:S_IXGRP = 8i32 =>! fmode;
+pub fixed fmode:S_IWGRP = 16i32 =>! fmode;
+pub fixed fmode:S_IRGRP = 32i32 =>! fmode;
+pub fixed fmode:S_IRWXG = 56i32 =>! fmode;
+pub fixed fmode:S_IXUSR = 64i32 =>! fmode;
+pub fixed fmode:S_IWUSR = 128i32 =>! fmode;
+pub fixed fmode:S_IRUSR = 256i32 =>! fmode;
+pub fixed fmode:S_IRWXU = 448i32 =>! fmode;
+pub fixed fmode:S_ISVTX = 512i32 =>! fmode;
+pub fixed fmode:S_ISGID = 1024i32 =>! fmode;
+pub fixed fmode:S_ISUID = 2048i32 =>! fmode;
+// --- flags:end ---
+
 // A PATH IS PARSED, NOT PASSED AROUND AS A STRING (D-051/D-054): absolute,
 // lexically normalized, no interior NUL. Normalization here is LEXICAL —
 // D-054's warning stands: it does not survive symlinks, and containment
@@ -688,6 +744,15 @@ pub trait:Writer = {
 
 // WHERE A SEEK MEASURES FROM (IO_REFERENCE §7) — an enum, not an integer.
 pub enum:Whence = { Start; Current; End; };
+
+// THE OTHER TWO ENUMERATIONS OF D-044's SEVEN (the user's families answer,
+// 2026-09-02, closing 1.4.7b's question): a `fcntl` command and a `madvise`
+// advice are ONE value per call, never OR-ed -- `F_GETFL | F_SETFL` must not
+// be spellable -- so they are enums of `Whence`'s shape, not flag families.
+// The kernel's numbers are the wrappers' business (`lib/nsys.npk`'s
+// `fcntl_cmd`/`madvise_word`), exactly as `seek` maps `Whence`.
+pub enum:Fcmd = { GetFd; SetFd; GetFl; SetFl; DupFdCloexec; AddSeals; GetSeals; };
+pub enum:Advice = { Normal; Random; Sequential; WillNeed; DontNeed; Free; HugePage; NoHugePage; };
 
 // THE BYTE STREAMS (IO_REFERENCE §3): no translation, ever. The OwnedFd
 // field is the lifetime story — scope exit drops the stream, the struct

@@ -1,0 +1,29 @@
+// expect-exit: 42
+//
+// AN EXPORTED MODULE BINDING IS VISIBLE TO ITS IMPORTER (1.4.8). It never was:
+// a global declaration keeps its type where every other declaration keeps its
+// flags, `pub` on one was never stored, and the export bit was read from the
+// type's node index -- so `pub fixed` bindings crossed a module boundary by
+// parity. Found by the prelude's first module bindings (D-230's flag
+// constants), which no program could see. The private binding stays private
+// (`HIDDEN` is reached through the function that owns it).
+mod:global_export;
+use "./global_export_lib.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    if ((string_byte_length(GNAME)) != 5i64) { exit 91i32; }
+    if ((raw hidden_value()) != 100i32)      { exit 92i32; }
+    exit GX + 39i32;                          // 3 + 39 = 42
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};

@@ -1105,6 +1105,9 @@ pub func:why_not_numeric = string(ExprTyper->:e, int32:t) never fails {
     if (k == (raw TY_KERNEL())) {
         pass "a kernel identifier compares but does not compute (D-042): an `fd` plus one is not an `fd`";
     }
+    if (k == (raw TY_FLAGS())) {
+        pass "a flag set is a set of named bits, not a number (D-044): `|` combines, `&` tests, `~` complements, and `=> int32` reads the word the kernel takes";
+    }
     if (k == (raw TY_POINTER())) {
         pass "pointer stepping is spelled `@p[i]` — the address of the i-th element (0.9.7 collapsed the planned `#ptr_add` into it: one mechanism, one spelling)";
     }
@@ -1265,6 +1268,9 @@ pub func:why_not_ordered = string(ExprTyper->:e, int32:t) never fails {
     if (k == (raw TY_KERNEL())) {
         pass "a kernel identifier is an opaque handle, and the order the kernel handed them out means nothing (D-042); cast if the number is what is meant";
     }
+    if (k == (raw TY_FLAGS())) {
+        pass "a flag set has no order (D-044): its bits are names, and `f < g` asks nothing about them — `&` tests membership";
+    }
     if (k == (raw TY_COMPLEX())) {
         pass "the complex numbers have no total order — mathematics, not policy (D-199); compare `.abs2()` if magnitude is what is meant";
     }
@@ -1332,6 +1338,63 @@ func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) never fails {
         m2 = string_concat(m2, "; `!`, `&&` and `||` are the logical operators");
     }
     pass (raw te_error(e, raw TYPE_NOT_NUMERIC(), move(m2), at));
+};
+
+// The five bitwise operators, as a class — what a flag set on either side
+// of one takes its own rule for.
+pub func:is_bitwise_op = bool(TokenKind:op) never fails {
+    if (op == TokenKind.OpAmp)   { pass true; }
+    if (op == TokenKind.OpPipe)  { pass true; }
+    if (op == TokenKind.OpCaret) { pass true; }
+    if (op == TokenKind.OpShl)   { pass true; }
+    pass (op == TokenKind.OpShr);
+};
+
+// FLAG SETS (D-044/D-230, 1.4.8): `&` and `|` combine and test WITHIN ONE
+// FAMILY and yield it; `~` is the complement (unary, in `type_unary`); `^`
+// and the shifts do not exist for the kind — a flag set is a set of named
+// bits, not a word to compute with — and two families never meet, nor does
+// a family and an integer: `int32 =>! oflags` is how a word the kernel
+// returned becomes a member, spelled where it happens. One code for one
+// rule with several ways to fail it (TYPE-054's convention); the message
+// names which. Called with the PLAIN operator — a compound assignment maps
+// `|=` to `|` first — for either side being the flag set.
+pub func:type_flags_op = int32(ExprTyper->:e, Span:at, TokenKind:op,
+                               int32:lt, int32:rt) never fails {
+    if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
+    int32:ft = lt;
+    if ((raw type_kind(e.types, ft)) != (raw TY_FLAGS())) { ft = rt; }
+    string:fname = raw type_display(e.types, e.interns, ft);
+    bool:andor = (op == TokenKind.OpAmp);
+    if (op == TokenKind.OpPipe) { andor = true; }
+    if (!andor) {
+        string:m1 = string_concat("`", fname);
+        pass (raw te_error(e, raw TYPE_FLAGS_RULES(),
+            string_concat(m1, "` is a set of named bits, not a word to compute with (D-044): `|` combines, `&` tests, `~` complements — `^` and the shifts do not exist for it"),
+            at));
+    }
+    if (lt == rt) { pass lt; }
+    if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
+        if ((raw type_kind(e.types, rt)) == (raw TY_FLAGS())) {
+            string:x1 = string_concat("`", raw type_display(e.types, e.interns, lt));
+            string:x2 = string_concat(x1, "` and `");
+            string:x3 = string_concat(x2, raw type_display(e.types, e.interns, rt));
+            pass (raw te_error(e, raw TYPE_FLAGS_RULES(),
+                string_concat(x3, "` are different flag families (D-044): a bit of one means nothing in the other, and mixing them is the error class the types exist to close"),
+                at));
+        }
+    }
+    int32:ot = rt;
+    if (ot == ft) { ot = lt; }
+    string:y1 = string_concat("`", fname);
+    string:y2 = string_concat(y1, "` combines only with `");
+    string:y3 = string_concat(y2, fname);
+    string:y4 = string_concat(y3, "` (D-044), and this operand is `");
+    string:y5 = string_concat(y4, raw type_display(e.types, e.interns, ot));
+    pass (raw te_error(e, raw TYPE_FLAGS_RULES(),
+        string_concat(y5, "`: an integer is not a member of a family — `int32 =>! ` asserts one in, where the word came from the kernel"),
+        at));
 };
 
 // `++` / `--` are STRUCK at parse (D-174) — the parser refuses them by name
@@ -3432,6 +3495,17 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (op == TokenKind.OpAndAnd) { pass (raw type_logical(e, n, lt, rt)); }
     if (op == TokenKind.OpOrOr)   { pass (raw type_logical(e, n, lt, rt)); }
 
+    // A FLAG SET ON EITHER SIDE OF A BITWISE OPERATOR takes its own rule
+    // (D-044/D-230, 1.4.8) — the OPERATOR decides (`&`/`|` only), so it is
+    // gated here rather than inside `type_bitwise`, which never sees it.
+    if (raw is_bitwise_op(op)) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_FLAGS())) {
+            pass (raw type_flags_op(e, n.span, op, lt, rt));
+        }
+        if ((raw type_kind(e.types, rt)) == (raw TY_FLAGS())) {
+            pass (raw type_flags_op(e, n.span, op, lt, rt));
+        }
+    }
     // THE KLEENE PAIR (D-197): on `trit`/`nit`, `&` is three-valued AND and
     // `|` is OR — the user-ratified spelling, single gates on a ternary
     // target. Everything else on these operators stays the bitwise story.
@@ -3487,6 +3561,8 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
     if (op == TokenKind.OpTilde) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+        // A flag set's complement is the same family (D-044/D-230).
+        if ((raw type_kind(e.types, t)) == (raw TY_FLAGS())) { pass t; }
         if (!(raw type_is_integer(e.types, t))) {
             pass (raw te_bitwise_error(e, n.span, t));
         }

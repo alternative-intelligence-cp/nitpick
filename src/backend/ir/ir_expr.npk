@@ -2356,6 +2356,22 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
     // to fall through to unguarded arithmetic here; since D-201 nothing
     // arithmetic goes untyped, and D-210's guard below is only total if this
     // is (an unguarded `add` is not a thing to leave reachable by accident).
+    // FLAG SETS (D-044/D-230, 1.4.8): `&` and `|` are bit operations on the
+    // `i32` word — nothing to guard (no overflow exists for them) and nothing
+    // else the checker admits for the kind, so anything else arriving here is
+    // the compiler's defect. Both spellings route through here.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FLAGS())) {
+            string:fins = "";
+            if (op == TokenKind.OpAmp)  { fins = "and"; }
+            if (op == TokenKind.OpPipe) { fins = "or"; }
+            if (fins.len == 0i64) { pass (raw iv_broken(at)); }
+            string:fres = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(fres, " = ", fins, " ",
+                              raw cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+            pass (raw iv(string_concat(lhs.ll, ""), move(fres), lhs.type_id));
+        }
+    }
     if ((raw type_kind(x.fe.ctx.types, lt)) != (raw TY_INT())) {
         pass (raw iv_broken(at));
     }
@@ -7111,6 +7127,8 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                         }
                     }
                     if (sak == (raw TY_KERNEL())) { sop = "zext"; }
+                    // A flag word is non-negative by construction (D-230).
+                    if (sak == (raw TY_FLAGS()))  { sop = "zext"; }
                     if (sop.len == 0i64) { pass (raw iv_broken(cnode.span)); }
                     string:sw = raw irw_temp(x.fe.w);
                     drop irw_line(x.fe.w, raw cat5(sw,

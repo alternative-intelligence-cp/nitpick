@@ -1,0 +1,48 @@
+// expect-exit: 0
+//
+// FLAG SETS, EXECUTED (D-044/D-230, 1.4.8): the four bitmask families as
+// TYPES — `|` combines, `&` tests, `~` complements, within one family; both
+// crossings (`=> int32` out, `int32 =>! ` back in); compound assignment
+// through the same rule; and a module binding of a flags type that FOLDS
+// through the prelude's constants (D-165), which is what makes a derived set
+// an ordinary `fixed` binding. The values asserted are Linux x86_64's — the
+// kernel is the oracle for a flag word, and a wrong constant here is a wrong
+// `open` everywhere.
+mod:flags_basic;
+
+fixed oflags:CREATE_RW = (O_RDWR | O_CREAT) | O_CLOEXEC;
+
+func:main = int32(cstring[]:_~argv) {
+    oflags:f = O_RDONLY | O_CLOEXEC;
+    if ((f & O_CLOEXEC) != O_CLOEXEC)  { exit 11i32; }
+    if ((f & O_APPEND) != O_RDONLY)    { exit 12i32; }   // O_RDONLY is the empty set
+    f = f & (~O_CLOEXEC);
+    if (f != O_RDONLY)                 { exit 13i32; }
+    f |= O_APPEND;
+    f &= O_APPEND | O_RDWR;
+    if ((f => int32) != 1024i32)       { exit 14i32; }
+    int32:word = CREATE_RW => int32;
+    if (word != (2i32 | (64i32 | 524288i32))) { exit 15i32; }
+    oflags:back = word =>! oflags;
+    if (back != CREATE_RW)             { exit 16i32; }
+    fmode:m = S_IRUSR | S_IWUSR;
+    if ((m => int32) != 384i32)        { exit 17i32; }
+    prot:p = PROT_READ | PROT_WRITE;
+    if ((p => int32) != 3i32)          { exit 18i32; }
+    mflags:mf = MAP_PRIVATE | MAP_ANONYMOUS;
+    if ((mf => int32) != 34i32)        { exit 19i32; }
+    if (PROT_NONE != (0i32 =>! prot))  { exit 20i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};
