@@ -1954,25 +1954,23 @@ func:expr_is_nil_literal = bool(ExprEmitter->:x, ExprId:e) never fails {
 // because two callers need them: `emit_arith_value` names the one it is about
 // to call, and `emit_runtime_declares` declares all of them.
 //
-// EVERY integer width the language has, as LLVM type text. `int1`/`int2`/
-// `int4` are real widths (LEXICAL_REFERENCE §4's suffix table) and the
-// intrinsics are legal at each — an unusual width is exactly where a
-// hand-rolled overflow test would go wrong, so none is hand-rolled.
-pub func:int_width_count = int32() never fails { pass 13i32; };
+// EVERY integer width the language has, as LLVM type text: the ladder
+// `int8` … `int4096` (LEXICAL_REFERENCE §4's suffix table; the sub-byte
+// widths were STRUCK at D-231). The intrinsics are legal at each — an unusual
+// width is exactly where a hand-rolled overflow test would go wrong, so none
+// is hand-rolled.
+pub func:int_width_count = int32() never fails { pass 10i32; };
 
 pub func:int_width_at = string(int32:i) never fails {
-    if (i == 0i32)  { pass "i1"; }
-    if (i == 1i32)  { pass "i2"; }
-    if (i == 2i32)  { pass "i4"; }
-    if (i == 3i32)  { pass "i8"; }
-    if (i == 4i32)  { pass "i16"; }
-    if (i == 5i32)  { pass "i32"; }
-    if (i == 6i32)  { pass "i64"; }
-    if (i == 7i32)  { pass "i128"; }
-    if (i == 8i32)  { pass "i256"; }
-    if (i == 9i32)  { pass "i512"; }
-    if (i == 10i32) { pass "i1024"; }
-    if (i == 11i32) { pass "i2048"; }
+    if (i == 0i32)  { pass "i8"; }
+    if (i == 1i32)  { pass "i16"; }
+    if (i == 2i32)  { pass "i32"; }
+    if (i == 3i32)  { pass "i64"; }
+    if (i == 4i32)  { pass "i128"; }
+    if (i == 5i32)  { pass "i256"; }
+    if (i == 6i32)  { pass "i512"; }
+    if (i == 7i32)  { pass "i1024"; }
+    if (i == 8i32)  { pass "i2048"; }
     pass "i4096";
 };
 

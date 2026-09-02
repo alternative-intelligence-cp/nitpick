@@ -81,10 +81,10 @@ TypeKeyword         ::= "struct" | "enum" | "assoc" | "opaque" | "error"
                       | "trait" | "impl" | "Self"
                       | "Rules" | "limit" | "fixed" | BuiltinType
 
-BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
+BuiltinType         ::= "int8" | "int16" | "int32"
                       | "int64" | "int128" | "int256" | "int512" | "int1024"
                       | "int2048" | "int4096"
-                      | "uint1" | "uint2" | "uint4" | "uint8" | "uint16"
+                      | "uint8" | "uint16"
                       | "uint32" | "uint64" | "uint128" | "uint256" | "uint512"
                       | "uint1024" | "uint2048" | "uint4096"
                       | "tbb8" | "tbb16" | "tbb32" | "tbb64" | "tbb128" | "tbb256"
@@ -275,9 +275,9 @@ NonaryLiteral  ::= [0-4] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
 FloatLiteral   ::= DecimalLiteral "." DecimalLiteral Exponent? TypeSuffix?
 Exponent       ::= [eE] [+-]? DecimalLiteral
 
-TypeSuffix     ::= "u1" | "u2" | "u4" | "u8" | "u16" | "u32" | "u64" | "u128"
+TypeSuffix     ::= "u8" | "u16" | "u32" | "u64" | "u128"
                  | "u256" | "u512" | "u1024" | "u2048" | "u4096"
-                 | "i1" | "i2" | "i4" | "i8" | "i16" | "i32" | "i64" | "i128"
+                 | "i8" | "i16" | "i32" | "i64" | "i128"
                  | "i256" | "i512" | "i1024" | "i2048" | "i4096"
                  | "tbb8" | "tbb16" | "tbb32" | "tbb64" | "tbb128" | "tbb256"
                  | "f32" | "f64" | "f128"

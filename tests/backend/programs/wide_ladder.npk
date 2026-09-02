@@ -1,0 +1,81 @@
+// expect-exit: 70
+//
+// THE WIDE LADDER, PINNED BY EXECUTION (D-231): `int512`, `uint1024`, `int2048`
+// and `uint4096` lower as the LLVM integers they are (TYPE_REFERENCE's layout
+// rows), and every operation — `*`, `+`, `-`, `/` and `%` included — runs
+// without a libcall: the harness's zero-dependency scan on this program's
+// object, at -O0 and through opt -O2, is the pin. Division at these widths is
+// LLVM's inline expansion; a Newton loop or a limb library would compute a
+// DIFFERENT number, which is why the check is the instruction's own answer.
+//
+// The program ends by overflowing a 512-bit signed add: D-210's trap fires at
+// every width the language has, and `failsafe` reports it as 70.
+mod:wide_ladder;
+
+func:pow2_u1024 = uint1024(int32:n) never fails {
+    uint1024:v = 1u1024;
+    for (int32:i in 0i32...n) { v = v * 2u1024; }
+    pass v;
+};
+func:pow2_i2048 = int2048(int32:n) never fails {
+    int2048:v = 1i2048;
+    for (int32:i in 0i32...n) { v = v * 2i2048; }
+    pass v;
+};
+func:pow2_u4096 = uint4096(int32:n) never fails {
+    uint4096:v = 1u4096;
+    for (int32:i in 0i32...n) { v = v * 2u4096; }
+    pass v;
+};
+func:pow2_i512 = int512(int32:n) never fails {
+    int512:v = 1i512;
+    for (int32:i in 0i32...n) { v = v * 2i512; }
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 1024 bits, unsigned: 2^700 over 2^690 is 1024, with and without a rest.
+    uint1024:p = raw pow2_u1024(700i32);
+    uint1024:q = raw pow2_u1024(690i32);
+    if ((p / q) != 1024u1024)                 { exit 11i32; }
+    if ((p % q) != 0u1024)                    { exit 12i32; }
+    if (((p + 5u1024) / q) != 1024u1024)      { exit 13i32; }
+    if (((p + 5u1024) % q) != 5u1024)         { exit 14i32; }
+    // the division identity, on a number with no structure to it
+    uint1024:x = (p - 12345u1024) * 3u1024 + 7u1024;
+    uint1024:d = 1000000007u1024;
+    if ((((x / d) * d) + (x % d)) != x)       { exit 15i32; }
+
+    // 2048 bits, signed: quotients truncate toward zero, remainders keep the
+    // dividend's sign (TYPE_REFERENCE §1.2).
+    int2048:n = 0i2048 - (raw pow2_i2048(1000i32));
+    int2048:m = raw pow2_i2048(990i32);
+    if ((n / m) != (0i2048 - 1024i2048))      { exit 21i32; }
+    if ((n % m) != 0i2048)                    { exit 22i32; }
+    if (((n - 3i2048) / m) != (0i2048 - 1024i2048)) { exit 23i32; }
+    if (((n - 3i2048) % m) != (0i2048 - 3i2048))    { exit 24i32; }
+
+    // 4096 bits, unsigned: the top of the ladder.
+    uint4096:a = raw pow2_u4096(4000i32);
+    uint4096:b = raw pow2_u4096(3990i32);
+    if ((a / b) != 1024u4096)                 { exit 31i32; }
+    if (((a + 9u4096) % b) != 9u4096)         { exit 32i32; }
+
+    // 512 bits, signed: 2^510 + 2^510 is 2^511, one past the top -- the trap.
+    int512:h = raw pow2_i512(510i32);
+    int512:over = h + h;
+    exit ((over % 7i512) =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 70i32; },
+        (DivByZero)      { exit 71i32; },
+        (DivOverflow)    { exit 72i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 99i32; }
+    }
+};

@@ -55,7 +55,7 @@ br i1 %cond, label %then, label %else
   the checked one.
   - Lowers through `llvm.{s,u}{add,sub,mul}.with.overflow.iN`, the overflow bit
     branching to the trap. Signedness picks the family; the intrinsics are legal
-    and legalized at every width the language has, `int1` through `int4096`.
+    and legalized at every width the language has, `int8` through `int4096`.
   - **Unary `-` is `0 - x`** and so traps on the most negative value, whose
     negation has no representation — the `INT_MIN / -1` precedent exactly.
   - **`x += y` traps identically**: both spellings route through one arithmetic
@@ -64,6 +64,13 @@ br i1 %cond, label %then, label %else
     operations, not arithmetic, and have nothing to overflow.
   - **`/` and `%` by zero still trap** (D-007), and signed `/` adds the
     `INT_MIN / -1` case. On `tbb` both yield ERR.
+  - **There are no sub-byte widths.** `int1`/`int2`/`int4` and their unsigned
+    twins were STRUCK at D-231 (1.4.7b): measured unused everywhere, with no
+    layout, and with their meanings owned elsewhere — `bool`, `trit` and `nit`
+    are the sub-byte types, and a range-limited byte is `limit<Rules>` (1.5).
+    The ladder is `int8` … `int4096`, and `wide_ladder.npk` executes it —
+    arithmetic including `/` and `%` at 1024, 2048 and 4096 bits, and the
+    D-210 trap at 512.
 - **Deliberate modular arithmetic has no dedicated spelling** (D-210.3, a
   decision rather than an oversight). The idiom is widen–compute–truncate over
   the native wide integers, with `=>!` at the narrowing carrying the

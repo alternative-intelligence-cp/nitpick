@@ -8,49 +8,43 @@
 
 pub enum:NumWidth = {
     WNone                = 0i32;   // no suffix written
-    WU1                  = 1i32;   // u1
-    WU2                  = 2i32;   // u2
-    WU4                  = 3i32;   // u4
-    WU8                  = 4i32;   // u8
-    WU16                 = 5i32;   // u16
-    WU32                 = 6i32;   // u32
-    WU64                 = 7i32;   // u64
-    WU128                = 8i32;   // u128
-    WU256                = 9i32;   // u256
-    WU512                = 10i32;   // u512
-    WU1024               = 11i32;   // u1024
-    WU2048               = 12i32;   // u2048
-    WU4096               = 13i32;   // u4096
-    WI1                  = 14i32;   // i1
-    WI2                  = 15i32;   // i2
-    WI4                  = 16i32;   // i4
-    WI8                  = 17i32;   // i8
-    WI16                 = 18i32;   // i16
-    WI32                 = 19i32;   // i32
-    WI64                 = 20i32;   // i64
-    WI128                = 21i32;   // i128
-    WI256                = 22i32;   // i256
-    WI512                = 23i32;   // i512
-    WI1024               = 24i32;   // i1024
-    WI2048               = 25i32;   // i2048
-    WI4096               = 26i32;   // i4096
-    WTbb8                = 27i32;   // tbb8
-    WTbb16               = 28i32;   // tbb16
-    WTbb32               = 29i32;   // tbb32
-    WTbb64               = 30i32;   // tbb64
-    WTbb128              = 31i32;   // tbb128
-    WTbb256              = 32i32;   // tbb256
-    WF32                 = 33i32;   // f32
-    WF64                 = 34i32;   // f64
-    WF128                = 35i32;   // f128
-    WTfp32               = 36i32;   // tfp32
-    WTfp64               = 37i32;   // tfp64
-    WTfp128              = 38i32;   // tfp128
-    WTfp256              = 39i32;   // tfp256
-    WDim256              = 40i32;   // dim256
-    WChar8               = 41i32;   // char8
-    WChar16              = 42i32;   // char16
-    WChar32              = 43i32;   // char32
+    WU8                  = 1i32;   // u8
+    WU16                 = 2i32;   // u16
+    WU32                 = 3i32;   // u32
+    WU64                 = 4i32;   // u64
+    WU128                = 5i32;   // u128
+    WU256                = 6i32;   // u256
+    WU512                = 7i32;   // u512
+    WU1024               = 8i32;   // u1024
+    WU2048               = 9i32;   // u2048
+    WU4096               = 10i32;   // u4096
+    WI8                  = 11i32;   // i8
+    WI16                 = 12i32;   // i16
+    WI32                 = 13i32;   // i32
+    WI64                 = 14i32;   // i64
+    WI128                = 15i32;   // i128
+    WI256                = 16i32;   // i256
+    WI512                = 17i32;   // i512
+    WI1024               = 18i32;   // i1024
+    WI2048               = 19i32;   // i2048
+    WI4096               = 20i32;   // i4096
+    WTbb8                = 21i32;   // tbb8
+    WTbb16               = 22i32;   // tbb16
+    WTbb32               = 23i32;   // tbb32
+    WTbb64               = 24i32;   // tbb64
+    WTbb128              = 25i32;   // tbb128
+    WTbb256              = 26i32;   // tbb256
+    WF32                 = 27i32;   // f32
+    WF64                 = 28i32;   // f64
+    WF128                = 29i32;   // f128
+    WTfp32               = 30i32;   // tfp32
+    WTfp64               = 31i32;   // tfp64
+    WTfp128              = 32i32;   // tfp128
+    WTfp256              = 33i32;   // tfp256
+    WDim256              = 34i32;   // dim256
+    WChar8               = 35i32;   // char8
+    WChar16              = 36i32;   // char16
+    WChar32              = 37i32;   // char32
 };
 
 use "./intern.npk".*;
@@ -59,13 +53,7 @@ use "./types.npk".*;
 pub func:num_width_of = NumWidth(string:text) never fails {
     int64:n = text.len;
     if (n == 2i64) {
-        if (raw string_eq(text, "i1")) { pass NumWidth.WI1; }
-        if (raw string_eq(text, "i2")) { pass NumWidth.WI2; }
-        if (raw string_eq(text, "i4")) { pass NumWidth.WI4; }
         if (raw string_eq(text, "i8")) { pass NumWidth.WI8; }
-        if (raw string_eq(text, "u1")) { pass NumWidth.WU1; }
-        if (raw string_eq(text, "u2")) { pass NumWidth.WU2; }
-        if (raw string_eq(text, "u4")) { pass NumWidth.WU4; }
         if (raw string_eq(text, "u8")) { pass NumWidth.WU8; }
     }
     if (n == 3i64) {
@@ -128,9 +116,6 @@ pub func:num_width_is_float = bool(NumWidth:w) never fails {
 
 // The bits a suffix names, or 0 for none. `42i32` is 32.
 pub func:num_width_bits = int32(NumWidth:w) never fails {
-    if (w == NumWidth.WU1) { pass 1i32; }
-    if (w == NumWidth.WU2) { pass 2i32; }
-    if (w == NumWidth.WU4) { pass 4i32; }
     if (w == NumWidth.WU8) { pass 8i32; }
     if (w == NumWidth.WU16) { pass 16i32; }
     if (w == NumWidth.WU32) { pass 32i32; }
@@ -141,9 +126,6 @@ pub func:num_width_bits = int32(NumWidth:w) never fails {
     if (w == NumWidth.WU1024) { pass 1024i32; }
     if (w == NumWidth.WU2048) { pass 2048i32; }
     if (w == NumWidth.WU4096) { pass 4096i32; }
-    if (w == NumWidth.WI1) { pass 1i32; }
-    if (w == NumWidth.WI2) { pass 2i32; }
-    if (w == NumWidth.WI4) { pass 4i32; }
     if (w == NumWidth.WI8) { pass 8i32; }
     if (w == NumWidth.WI16) { pass 16i32; }
     if (w == NumWidth.WI32) { pass 32i32; }
@@ -177,9 +159,6 @@ pub func:num_width_bits = int32(NumWidth:w) never fails {
 // `i` is signed, `u` is not. A suffix that names neither is not an
 // integer suffix and the caller has already checked that.
 pub func:num_width_signed = bool(NumWidth:w) never fails {
-    if (w == NumWidth.WI1) { pass true; }
-    if (w == NumWidth.WI2) { pass true; }
-    if (w == NumWidth.WI4) { pass true; }
     if (w == NumWidth.WI8) { pass true; }
     if (w == NumWidth.WI16) { pass true; }
     if (w == NumWidth.WI32) { pass true; }
@@ -195,9 +174,6 @@ pub func:num_width_signed = bool(NumWidth:w) never fails {
 
 // An INTEGER suffix specifically -- `i32`/`u32`, not `f64` or `tbb32`.
 pub func:num_width_is_integer = bool(NumWidth:w) never fails {
-    if (w == NumWidth.WU1) { pass true; }
-    if (w == NumWidth.WU2) { pass true; }
-    if (w == NumWidth.WU4) { pass true; }
     if (w == NumWidth.WU8) { pass true; }
     if (w == NumWidth.WU16) { pass true; }
     if (w == NumWidth.WU32) { pass true; }
@@ -208,9 +184,6 @@ pub func:num_width_is_integer = bool(NumWidth:w) never fails {
     if (w == NumWidth.WU1024) { pass true; }
     if (w == NumWidth.WU2048) { pass true; }
     if (w == NumWidth.WU4096) { pass true; }
-    if (w == NumWidth.WI1) { pass true; }
-    if (w == NumWidth.WI2) { pass true; }
-    if (w == NumWidth.WI4) { pass true; }
     if (w == NumWidth.WI8) { pass true; }
     if (w == NumWidth.WI16) { pass true; }
     if (w == NumWidth.WI32) { pass true; }
@@ -231,9 +204,6 @@ pub func:num_width_is_integer = bool(NumWidth:w) never fails {
 // caller names the rung rather than pretending the suffix is absent
 // (D-085).
 pub func:num_width_kind = int32(NumWidth:w) never fails {
-    if (w == NumWidth.WU1) { pass (raw TY_INT()); }
-    if (w == NumWidth.WU2) { pass (raw TY_INT()); }
-    if (w == NumWidth.WU4) { pass (raw TY_INT()); }
     if (w == NumWidth.WU8) { pass (raw TY_INT()); }
     if (w == NumWidth.WU16) { pass (raw TY_INT()); }
     if (w == NumWidth.WU32) { pass (raw TY_INT()); }
@@ -244,9 +214,6 @@ pub func:num_width_kind = int32(NumWidth:w) never fails {
     if (w == NumWidth.WU1024) { pass (raw TY_INT()); }
     if (w == NumWidth.WU2048) { pass (raw TY_INT()); }
     if (w == NumWidth.WU4096) { pass (raw TY_INT()); }
-    if (w == NumWidth.WI1) { pass (raw TY_INT()); }
-    if (w == NumWidth.WI2) { pass (raw TY_INT()); }
-    if (w == NumWidth.WI4) { pass (raw TY_INT()); }
     if (w == NumWidth.WI8) { pass (raw TY_INT()); }
     if (w == NumWidth.WI16) { pass (raw TY_INT()); }
     if (w == NumWidth.WI32) { pass (raw TY_INT()); }

@@ -36,10 +36,14 @@ func:main = int32(cstring[]:_~argv) {
     // about which type refuses. An empty window: the rung answers before the
     // window is read.
     int32:i32t_r = raw tt_int(@types, 32i32, true);
-    // int4: a SUB-BYTE width — no layout exists, and decision G-2 owns
-    // whether it gets one, so it is the stable "no rung lowers this"
-    // exemplar. (This slot held a variadic FUNCTION type until user
-    // variadics landed at 1.1-close, D-191.)
+    // int4: a SUB-BYTE width, which D-231 STRUCK (1.4.7b) -- no source can
+    // spell one any more, so a table entry built directly with 4 bits is a
+    // type nothing lowers, and `ll_int_bits` fails CLOSED on it (LL_BROKEN,
+    // an internal defect, never a rung). That makes it the stable "no type
+    // lowers this" exemplar this fixture needs: a refusal that propagates,
+    // with nothing emitted. (This slot held a variadic FUNCTION type until
+    // user variadics landed at 1.1-close, D-191, and was the G-2 rung until
+    // D-231.)
     int32:f32t = raw tt_int(@types, 4i32, true);
     int32:nx = raw intern_add(@it, "x");
     int32:ny = raw intern_add(@it, "y");
@@ -151,15 +155,15 @@ func:main = int32(cstring[]:_~argv) {
     // A name never bound answers -1, not somebody else's slot.
     if ((raw fnem_lookup_idx(@f7, ny)) >= 0i64)            { exit 44i32; }
 
-    // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
+    // --- A TYPE NOTHING LOWERS PROPAGATES, and the function is not emitted ---
     IrWriter:w8 = raw irw_to_buffer();
     FnEmitter:f8 = raw fnem_init(@w8, @c);
     LlType:bad = raw fnem_begin(@f8, "f", 0i32, f32t);
-    if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
-    if (!(raw string_eq(bad.rung, "a later cycle (G-2)"))) { exit 51i32; }
+    if (bad.state != (raw LL_BROKEN()))                    { exit 50i32; }
+    if (bad.rung.len != 0i64)                              { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
     LlType:badp = raw fnem_param(@f8, nx, f32t, false);
-    if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }
+    if (badp.state != (raw LL_BROKEN()))                   { exit 53i32; }
 
     // --- THE COUNTERS RESET PER FUNCTION: two functions, one writer -----------
     //

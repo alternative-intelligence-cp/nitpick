@@ -847,8 +847,9 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
 // operation at every width here natively: add/mul inline, i128 division via
 // `__divti3`-family libcalls the runtime floor hand-writes, and division at
 // 256 bits and beyond as inline expansion — an executed probe took `udiv
-// i4096` through llc whole. Sub-byte widths (`int1/2/4`) have no layout and
-// wait on decision G-2; they refuse rather than guess.
+// i4096` through llc whole. The sub-byte widths (`int1/2/4`) were STRUCK at
+// D-231 (1.4.7b): a width outside the ladder can no longer be spelled, so a
+// table entry carrying one is a type no source produced, and it fails closed.
 func:ll_int_bits = LlType(int32:bits) never fails {
     if (bits == 8i32)    { pass (raw ll_ok("i8")); }
     if (bits == 16i32)   { pass (raw ll_ok("i16")); }
@@ -860,9 +861,10 @@ func:ll_int_bits = LlType(int32:bits) never fails {
     if (bits == 1024i32) { pass (raw ll_ok("i1024")); }
     if (bits == 2048i32) { pass (raw ll_ok("i2048")); }
     if (bits == 4096i32) { pass (raw ll_ok("i4096")); }
-    // Sub-byte widths (`int1/2/4`): no layout exists, and decision G-2 owns
-    // whether they get one or leave the grammar.
-    pass (raw ll_rung("a later cycle (G-2)"));
+    // A width the ladder does not have cannot be spelled since D-231 struck
+    // the sub-byte widths; reaching here is a type the table was handed
+    // directly, and an internal defect rather than a rung.
+    pass (raw ll_broken());
 };
 
 // `[N x T]` — A VALUE TYPE THAT DOES NOT DECAY. Its element's refusal is its own:

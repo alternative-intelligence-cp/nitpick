@@ -1,0 +1,22 @@
+// THE SUB-BYTE WIDTHS ARE STRUCK (D-231, 1.4.7b): `int1`, `int2`, `int4` and
+// their unsigned twins left the grammar -- measured unused everywhere, with no
+// layout, and with their meanings owned by `bool`, `trit`/`nit` and 1.5's
+// `limit<Rules>`. Each spelling is an ordinary identifier now, so a type
+// annotation names a type that does not exist, and a literal suffix is a
+// suffix the lexer does not know. The ladder is `int8` ... `int4096`
+// (`wide_ladder.npk` executes it).
+mod:widths_struck;
+
+// One refusal per spelling, at the annotation that names it.
+// expect-error: NITPICK-TYPE-001
+func:one = NIL(int4:_~x) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-001
+func:two = NIL(uint2:_~x) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-001
+func:three = NIL(int1[]:_~xs) never fails { pass NIL; };
+// (A struck literal SUFFIX -- `5i4` -- refuses in the lexer, LEX-003, with a
+// parse cascade behind it; it is not a type-suite case.)
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
