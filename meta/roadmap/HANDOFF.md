@@ -36,9 +36,11 @@
 > **1.4.8 IS CLOSED (2026-09-02)**: the concluding harness run on the final
 > tree was green in every stage, 58/58, with the `parity` stage's first
 > result — 902 verdicts agree between the two runners, npkc byte-identical.
-> S-9 and S-10 (`OPEN_DECISIONS.md` §2e) are the user's, each carrying its
-> measurement. **NEXT: 1.4's remaining subcycles per `1.4/README.md`** — and
-> a fresh session for the next one, as the cycle's convention has it.
+> S-9 and S-10 were ratified the same day as **D-237** and **D-238**.
+> **NEXT: 1.4.8b** (`meta/roadmap/1.4/1.4.8b.md`, execution-grade: the eight
+> files resolved as pre-settled, exact matching in both runners with the
+> self-check's new case, then the manifest-declared suites with the parity
+> stage proving the move verdict-identical), then 1.4.9, the close.
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is

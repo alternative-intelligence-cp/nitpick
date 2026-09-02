@@ -15833,3 +15833,72 @@ directories, which a basename-only table could not tell apart, and a
 diagnostic that names `util.npk` without saying which is a worse diagnostic.
 **Declined — an explicit `--root` flag**: a flag nobody passes is the default
 nobody chose, and the manifest already IS the root's declaration.
+
+## D-237 — a rejection test's diagnostics are matched EXACTLY: every reported finding is expected, every expected finding reported — **SETTLED (user decision, 2026-09-02)**
+
+Closes OPEN_DECISIONS S-9, found at 1.4.8 Part D. BUILD_REFERENCE §7.1 has
+said since it was written that "unexpected diagnostics fail a test as surely
+as missing ones", and no runner ever enforced it: the Python harness matched
+expectations as a SUBSET of what was reported from 0.8 on, and `npkg test`
+ported the rule as it found it so parity could be measured. The measurement
+that came with the port: 17 of 131 rejection files reported a code no
+expectation named — nine of them one defect (`tools/resolve_check.npk` never
+told the resolver which module is the prelude, so every module-rejection test
+carried nine stray `NITPICK-RESOLVE-010` findings against the prelude's own
+error declarations; fixed on the spot), the other eight examined one by one:
+two `failsafe`s written before D-210 made `IntOverflow` reachable, a `pick`
+without the wildcard its selector's type requires, two expectations still
+spelling the arity code 1.4.2 retired (`TYPE-007` where `TYPE-054` is
+reported), and three genuine second findings the tests never named. A rule
+the spec states and nothing enforces is the dormant-rule pattern, in the test
+runner this time, and the stale expectations are exactly what it was written
+to catch.
+
+**The decision.** On the error channel — findings, with `warning` counted as a
+finding — the SET of codes a rejection test reports must EQUAL the set its
+expectations name, and every `expect-error-at` still binds its code to its
+line and column. A code reported that no expectation names fails the test by
+name, as a missing one always has. The note channel keeps its own rule: an
+expected note must be reported at its place, an unexpected note is not a
+finding and passes (`NITPICK-MACRO-009` says where a body was expanded, and
+every expansion test would otherwise have to name a location). An extra is
+resolved one of two ways and never a third: a finding the test MEANS is
+named with an `expect-error` line beside its construct; an incidental defect
+in the test's own text is corrected so the file reports only what it tests.
+Both runners change in one step, the parity stage proving they agree, and the
+runner self-check gains the case: a negative test reporting a second code its
+expectations do not name must FAIL. BUILD_REFERENCE §7.1's measured note is
+replaced by the rule as enforced. The eight files' resolutions are
+pre-settled in `meta/roadmap/1.4/1.4.8b.md`.
+
+## D-238 — every suite `npkg test` runs is declared in the manifest, and both runners read the one table — **SETTLED (user decision, 2026-09-02)**
+
+Closes OPEN_DECISIONS S-10, found at 1.4.8 Part D. BUILD_REFERENCE §7.1
+settled `[[test]]` with three kinds and a `path`; the harness then grew the
+real-parser sweep, the five rejection suites, the programs and their
+fixtures, the runtime floor's tests and the acceptance suite as hardcoded
+loops, and `npkg` mirrors them exactly so the parity diff covers the full
+tree. A manifest that declares four of the fourteen suites is a manifest a
+reader cannot trust to say what `npkg test` runs — the stale-document shape
+D-204 refused for flags — and two runners each carrying the same fourteen
+suites in code is two chances to disagree about them.
+
+**The decision.** `[[test]]` grows a `stage` key naming the tool that judges
+the suite and what it must say — `parse` (`tools/parse_check`, accepted with
+no diagnostic), `resolve` (`tools/resolve_check`, refused with the expected
+codes), `check` (`tools/check`, refused with the expected codes), `accept`
+(`tools/check`, accepted in silence), `program` (the compiler: emitted,
+scanned, assembled, linked, run at -O0 and again through `opt -O2`),
+`fixture` (as `program`, built and never run, its name a substitutable
+`// argv:` token), `runtime` (a hand-written `.ll` assembled, linked against
+the floor and run) — with the three existing kinds staying as `kind` under
+the default stage `compile`. `paths` is an array (a single `path` its
+one-element shorthand), `recursive` a flag defaulting to false, and a suite
+runs in manifest order. The membership rules stay with the stage: a
+`resolve`/`check` file with no `expect-error` is a fixture another file
+imports and is skipped; a `compile`/`program` file some other file in its
+suite imports is skipped. Both runners read the one table and each REFUSES a
+stage it does not know, loudly; the hardcoded loops go from both in the same
+step, and the parity stage's verdict lists before and after the move must be
+identical, suite names included — the move is proven to have changed nothing
+before it lands. BUILD_REFERENCE §7.1 carries the schema.

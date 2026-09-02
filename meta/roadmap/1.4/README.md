@@ -118,7 +118,8 @@ numbers and are superseded by these.
 | 1.4.6 | **The switch — DONE** — the fixpoint IR committed as `bootstrap/seed/stage1.ll` with its STAMP, the harness builds from it, the seed retires (its two coupled instruments re-based), npkrt.ll re-homed, LAYOUT amended | D-203, D-205 |
 | 1.4.7 | **Adoption — DONE** — `src/` adopts per D-209's ratified scope (generic collections, `dyn Writer` diagnostics per D-075, the checked-scope list); the fixpoint re-closed under the new builder | D-209, 1.4.6 |
 | 1.4.7b | **The pre-1.4.8 batch** — the close's ratified items (D-234 the loop-bound rule, D-235 every kind decided as a channel element, D-236 manifest-root-relative paths), D-230's `TY_FLAGS`, D-231's strike-and-pin, D-228's width calibration | D-230, D-231, D-234–D-236 |
-| 1.4.8 | **`npkg`** — the spawn primitive and directory listing, `npkg build`/`npkg test`, the closed-world link, parity proven against the harness run-for-run | D-206 |
+| 1.4.8 | **`npkg` — DONE** — the spawn primitive and directory listing, `npkg build`/`npkg test`, the closed-world link, parity proven against the harness run-for-run (a harness stage, on every full run) | D-206 |
+| 1.4.8b | **The post-parity batch** — D-237 exact diagnostic matching in both runners (the eight files resolved first, the self-check's new case), D-238 every suite declared in the manifest and read from one table by both runners, the move proven verdict-identical | D-237, D-238 |
 | 1.4.9 | **Close** — self-hosting declared against D-202's criterion, the snapshot refreshed, docs synced, the cycle to `done/` | all |
 
 ## Watch for
