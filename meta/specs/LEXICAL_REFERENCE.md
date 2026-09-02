@@ -101,6 +101,7 @@ BuiltinType         ::= "int8" | "int16" | "int32"
                       | "Mutex" | "Guard" | "RwLock" | "RGuard"
                       | "CondVar" | "Barrier" | "OwnedFd"
                       | "simd" | "complex" | "array" | "func"
+                      | "range"
                       | "trit" | "tryte" | "nit" | "nyte"
                       | "buffer" | "NIL"
 
@@ -134,6 +135,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `Handle`, `arena`, `shared_arena`, `atomic`, `Future`, `Optional`, `simd`, `complex` added | all specified in `TYPE_REFERENCE.md`; all were missing |
 | **35 `a*` collection keywords removed** | D-041 — `astack`, `alist`, `ahash`, `astringlist` and their operations are not language builtins; collections belong in a library. Returns 35 reserved words to userland and removes the last major `aria` naming artifact from the language surface. |
 | `fd`, `pid`, `tid`, `uid`, `gid` added | D-042 — kernel identifiers are distinct types permitting comparison but not arithmetic. Combined with `Result<T>`, an `fd` is always valid: POSIX's `-1` goes to `Result.err` and is not representable. |
+| `range` added | S-8 → 1.4.8 — D-093 (0.4.2) settled that a range is a value of type `range<T>`, "interned like every other type", and the resolver had no type of that name: the type could be inferred and never written. A builtin generic name like `Result`, one argument, the element an ordered non-float type (the expression's own rule). Measured before adding: no `range` identifier anywhere in `src/`, `lib/`, `tests/` or `tools/`. |
 | `oflags`, `prot`, `mflags`, `fmode` added | D-044/D-230 (1.4.8) — the flag families are TYPES: one kind (`TY_FLAGS`, the family in the operand window like `fd`'s), `\| & ~` within a family and `== !=`, no arithmetic and no order, `=> int32` outbound and `int32 =>! ` inbound, families never convert to each other. The members are generated prelude constants (TYPE_REFERENCE §8's marked region). `whence` stays the prelude enum `Whence`; `fcmd` and `advice` follow the user's families answer. |
 | `assoc` added | D-028 — declares an associated type |
 | **`Type` removed** | D-088 — the namespace construct it named is gone, `mod` having done that job all along and done it better (it can name a *file*, joins the module graph, and is what `use` imports from). A reserved word naming nothing costs a user an identifier and gives a reader a keyword they cannot look up — the same reasoning as D-041's 35 collection keywords and D-074's five. |

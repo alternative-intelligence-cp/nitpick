@@ -6477,6 +6477,17 @@ endpoints. It is interned like every other type (D-090), and `..` and `...`
 produce the *same* type — the bound is a property of the value, not of the type,
 so a function taking a range accepts both spellings.
 
+> **The spelling landed at 1.4.8 (S-8, user-ratified 2026-09-02).** For four
+> cycles this type could only be INFERRED: the resolver had no type named
+> `range`, so `range<int32>:r = …` refused with TYPE-001 and nothing in the
+> tree ever wrote one — the dormant-rule pattern, found by a D-235 probe.
+> `range` is now a builtin generic type keyword beside `Result`, one
+> argument, the element held to the range expression's own rule (ordered,
+> not a float — D-145's discrete successor). A binding of it iterates and
+> passes exactly as the literal does, because the VALUE was always
+> canonical half-open. Measured before adding the keyword: no `range`
+> identifier anywhere in the tree.
+
 The alternative was to give the expression its element type and let `for` and
 `pick` — the only two consumers — check the node kind. That is simpler and
 wrong: it makes

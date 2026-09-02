@@ -112,6 +112,10 @@ func:main = int32(cstring[]:_~argv) {
     if (raw type_is_numeric(@fl.types, fl.result))                { exit 91i32; }
     if (raw type_is_ordered(@fl.types, fl.result))                { exit 92i32; }
     if ((raw type_elem(@fl.types, fl.result)) != (raw FLAGS_OFLAGS())) { exit 93i32; }
+    // `range<int32>` is D-093's type, spellable since 1.4.8 (S-8).
+    Fix:rg = raw ty("", "range<int32>", @it);
+    if ((raw type_kind(@rg.types, rg.result)) != (raw TY_RANGE())) { exit 96i32; }
+    if ((raw type_kind(@rg.types, raw type_elem(@rg.types, rg.result))) != (raw TY_INT())) { exit 97i32; }
     Fix:fm = raw ty("", "fmode", @it);
     if ((raw type_kind(@fm.types, fm.result)) != (raw TY_FLAGS())) { exit 94i32; }
     if ((raw type_elem(@fm.types, fm.result)) != (raw FLAGS_FMODE())) { exit 95i32; }

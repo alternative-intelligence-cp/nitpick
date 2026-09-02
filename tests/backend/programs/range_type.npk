@@ -1,0 +1,37 @@
+// expect-exit: 0
+//
+// `range<T>` IS A TYPE A PROGRAM CAN WRITE (D-093, spellable at 1.4.8 — S-8):
+// a range is a value, bound to a name, passed to a function, iterated from the
+// binding — and both spellings build the SAME value, half-open at
+// construction (`..` stores hi+1), so the consumer never asks which one did.
+mod:range_type;
+
+func:sum = int32(range<int32>:r) never fails {
+    int32:s = 0i32;
+    for (int32:i in r) { s = s + i; }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    range<int32>:incl = 2i32..4i32;      // 2, 3, 4
+    range<int32>:excl = 2i32...4i32;     // 2, 3
+    if ((raw sum(incl)) != 9i32) { exit 11i32; }
+    if ((raw sum(excl)) != 5i32) { exit 12i32; }
+    range<int64>:wide = 0i64...3i64;
+    int64:n = 0i64;
+    for (int64:k in wide) { n = n + 1i64; }
+    if (n != 3i64) { exit 13i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};

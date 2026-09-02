@@ -982,6 +982,8 @@ pub func:is_keyword = bool(string:text) {
                   "Mutex", "Guard", "RwLock", "RGuard", "CondVar", "Barrier",
                   "vec2", "vec3", "vec9", "matrix", "tmatrix", "tensor",
                   "ttensor", "dyn", "func",
+                  # 1.4.8 (S-8): `range<T>` -- D-093's type, spellable at last.
+                  "range",
                   # "buffer" moved to SIMPLE at 1.3.7 -- it is a bare type.
                   # 1.3.3 (D-196): `dim256<Unit>` -- the one builtin whose
                   # argument is a UNIT NAME, not a type; resolve_type owns it.
@@ -1091,7 +1093,9 @@ pub func:is_keyword = bool(string:text) {
                "dim256": "TY_DIM",
                # 1.3.6 (D-199): the complex numbers -- {T, T} over the four
                # ratified element types.
-               "complex": "TY_COMPLEX"}
+               "complex": "TY_COMPLEX",
+               # 1.4.8 (S-8): D-093's `range<T>`.
+               "range": "TY_RANGE"}
     bt.append('')
     bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
     bt.append('//')

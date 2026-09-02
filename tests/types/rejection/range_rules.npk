@@ -1,0 +1,42 @@
+// `range<T>`'s element rule (D-093, D-145; spellable at 1.4.8 — S-8): ordered,
+// with a discrete successor. The same rule the range EXPRESSION applies.
+mod:range_rules;
+
+// A float has no successor.
+// expect-error: NITPICK-TYPE-001
+func:float_elem = NIL() never fails {
+    range<flt64>:r = 0i64...1i64;
+    for (int64:i in r) { }
+    pass NIL;
+};
+
+// A bool has no order.
+// expect-error: NITPICK-TYPE-001
+func:bool_elem = NIL() never fails {
+    range<bool>:r = 0i32...1i32;
+    for (int32:i in r) { }
+    pass NIL;
+};
+
+// One argument, not two.
+// expect-error: NITPICK-TYPE-016
+func:two_args = NIL() never fails {
+    range<int32, int32>:r = 0i32...1i32;
+    for (int32:i in r) { }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};

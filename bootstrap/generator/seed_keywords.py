@@ -119,6 +119,7 @@ KEYWORDS = {
     "prot",
     "prove",
     "pub",
+    "range",
     "raw",
     "relaxed",
     "relay",

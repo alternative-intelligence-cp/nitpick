@@ -1969,6 +1969,32 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     // per-lane sticky-ERR select chains, which erase the hardware-vector
     // win, and `bool` is here because comparisons produce `simd<bool, N>`
     // and their results must be bindable.
+    // `range<T>` (D-093; spellable since 1.4.8, S-8): one argument, and the
+    // element takes the RANGE EXPRESSION's own rule (`type_range_expr`):
+    // ordered, and not a float — a range is half-open over a discrete
+    // successor (D-145). A value of it is `{ T lo, T hi }` however it was
+    // spelled, so a `for` over the binding is the `for` over the literal.
+    if (kind == (raw TY_RANGE())) {
+        if (count != 1i32) {
+            pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
+                "`range<T>` takes one argument: the element type of its two bounds (D-093)",
+                n.span));
+        }
+        int32:rel = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast,
+                        raw type_args_start(n), 0i32) }, scope);
+        if (raw type_is_invalid(r.types, rel)) { pass rel; }
+        bool:rok = raw type_is_ordered(r.types, rel);
+        if ((raw type_kind(r.types, rel)) == (raw TY_FLOAT())) { rok = false; }
+        if (!rok) {
+            string:r1 = string_concat("`range<",
+                            raw type_display(r.types, r.interns, rel));
+            pass (raw ty_error(r, raw TYPE_UNKNOWN(),
+                string_concat(r1, ">` needs an ordered element with a discrete successor (D-093, D-145): the integers, the characters, and the ordered twisted families — never a float"),
+                n.span));
+        }
+        pass (raw tt_range(r.types, rel, raw type_size(r.types, rel),
+                           raw type_align(r.types, rel)));
+    }
     if (kind == (raw TY_SIMD())) {
         if (count != 2i32) {
             pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(),
