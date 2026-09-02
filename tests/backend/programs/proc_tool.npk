@@ -45,7 +45,7 @@ async func:main = int32(cstring[]:argv) {
     // 1. capture, environment, exit status.
     ProcArgs:a1 = args_of(tool.text, "seven") ?! E9;
     Proc:p1 = proc_spawn(tool, @a1, @env) ?! E9;
-    ProcExit:x1 = (await proc_wait(@p1, raw duration_secs(5i64))) ?! E9;
+    ProcExit:x1 = (await proc_wait(move(p1), raw duration_secs(5i64))) ?! E9;
     if (!x1.exited)                                       { exit 11i32; }
     if (x1.status != 7i64)                                { exit 12i32; }
     if (!(string_equals(x1.out, "hello seven\nprobe\n"))) { exit 13i32; }
@@ -56,7 +56,7 @@ async func:main = int32(cstring[]:argv) {
     Path:none = path_parse("/nonexistent/npk_no_such_tool") ?! E9;
     ProcArgs:a2 = args_of(none.text, "x") ?! E9;
     Proc:p2 = proc_spawn(none, @a2, @env) ?! E9;
-    ProcExit:x2 = (await proc_wait(@p2, raw duration_secs(5i64))) ?! E9;
+    ProcExit:x2 = (await proc_wait(move(p2), raw duration_secs(5i64))) ?! E9;
     if (!x2.exited)          { exit 15i32; }
     if (x2.status != 127i64) { exit 16i32; }
     drop args_free(@a2);
@@ -64,7 +64,7 @@ async func:main = int32(cstring[]:argv) {
     // 3. a tool that hangs: killed at the deadline, reaped, retired.
     ProcArgs:a3 = args_of(tool.text, "sleep") ?! E9;
     Proc:p3 = proc_spawn(tool, @a3, @env) ?! E9;
-    Result<ProcExit>:x3 = await proc_wait(@p3, raw duration_ms(200i64));
+    Result<ProcExit>:x3 = await proc_wait(move(p3), raw duration_ms(200i64));
     if (!x3.is_error)             { exit 17i32; }
     if (x3.err != EProcDeadline)  { exit 18i32; }
     drop args_free(@a3);

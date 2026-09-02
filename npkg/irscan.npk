@@ -1,0 +1,192 @@
+// irscan -- the two text scans every emitted module passes before `llc`
+// (1.4.8): no symbol defined twice (D-156), every `alloca` in its entry
+// block (D-173). Ported from the harness's `check_symbols_unique` and
+// `check_allocas_hoisted`, whose regexes are spelled out here as byte
+// walks; the parity stage holds the two to each other.
+//
+//   DEFINE_RE  ^\s*define[^@]*(@(?:"[^"]*"|[\w.$-]+))\s*\(
+//   GLOBAL_RE  ^\s*(@(?:"[^"]*"|[\w.$-]+))\s*=\s*(?!.*\bexternal\b)
+//   ALLOCA     ^%\S+ = alloca
+
+mod:irscan;
+
+use "../src/frontend/list.npk".*;
+use "./text.npk".*;
+use "./strset.npk".*;
+
+func:is_sym_byte = bool(uint8:c) never fails {
+    if ((c >= 97u8) && (c <= 122u8)) { pass true; }
+    if ((c >= 65u8) && (c <= 90u8))  { pass true; }
+    if ((c >= 48u8) && (c <= 57u8))  { pass true; }
+    if (c == 95u8) { pass true; }   // _
+    if (c == 46u8) { pass true; }   // .
+    if (c == 36u8) { pass true; }   // $
+    if (c == 45u8) { pass true; }   // -
+    pass false;
+};
+
+// A symbol starting at the `@` at `at`: the offset just past it, or -1.
+func:sym_end = int64(string:s, int64:at) never fails {
+    int64:i = at + 1i64;
+    if (i >= s.len) { pass (0i64 - 1i64); }
+    if (s.ptr[i] == 34u8) {
+        int64:close = raw text_find_byte(s, 34u8, i + 1i64);
+        if (close < 0i64) { pass (0i64 - 1i64); }
+        pass (close + 1i64);
+    }
+    int64:j = i;
+    while (j < s.len) {
+        if (!(raw is_sym_byte(s.ptr[j]))) { break; }
+        j = j + 1i64;
+    }
+    if (j == i) { pass (0i64 - 1i64); }
+    pass j;
+};
+
+func:skip_ws = int64(string:s, int64:from) never fails {
+    int64:i = from;
+    while (i < s.len) {
+        if (!(raw text_is_ws(s.ptr[i]))) { break; }
+        i = i + 1i64;
+    }
+    pass i;
+};
+
+// DEFINE_RE: the defined symbol, or "" when the line is not a define.
+pub func:ir_define_sym = string(string:line) never fails {
+    int64:i = raw skip_ws(line, 0i64);
+    if (!(raw text_starts_with(raw text_slice(line, i, line.len), "define"))) { pass ""; }
+    int64:at = raw text_find_byte(line, 64u8, i + 6i64);
+    if (at < 0i64) { pass ""; }
+    int64:e = raw sym_end(line, at);
+    if (e < 0i64) { pass ""; }
+    int64:p = raw skip_ws(line, e);
+    if (p >= line.len) { pass ""; }
+    if (line.ptr[p] != 40u8) { pass ""; }
+    pass (raw text_slice(line, at, e));
+};
+
+// `\bexternal\b` anywhere in `rest`.
+func:has_word_external = bool(string:rest) never fails {
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(rest, "external", from);
+        if (p < 0i64) { pass false; }
+        bool:left_ok = true;
+        if (p > 0i64) {
+            uint8:b = rest.ptr[p - 1i64];
+            bool:w = false;
+            if ((b >= 97u8) && (b <= 122u8)) { w = true; }
+            if ((b >= 65u8) && (b <= 90u8))  { w = true; }
+            if ((b >= 48u8) && (b <= 57u8))  { w = true; }
+            if (b == 95u8) { w = true; }
+            if (w) { left_ok = false; }
+        }
+        bool:right_ok = true;
+        int64:after = p + 8i64;
+        if (after < rest.len) {
+            uint8:a = rest.ptr[after];
+            bool:w2 = false;
+            if ((a >= 97u8) && (a <= 122u8)) { w2 = true; }
+            if ((a >= 65u8) && (a <= 90u8))  { w2 = true; }
+            if ((a >= 48u8) && (a <= 57u8))  { w2 = true; }
+            if (a == 95u8) { w2 = true; }
+            if (w2) { right_ok = false; }
+        }
+        if (left_ok && right_ok) { pass true; }
+        from = p + 1i64;
+    }
+    pass false;
+};
+
+// GLOBAL_RE: the defined global's symbol, or "".
+pub func:ir_global_sym = string(string:line) never fails {
+    int64:i = raw skip_ws(line, 0i64);
+    if (i >= line.len) { pass ""; }
+    if (line.ptr[i] != 64u8) { pass ""; }
+    int64:e = raw sym_end(line, i);
+    if (e < 0i64) { pass ""; }
+    int64:p = raw skip_ws(line, e);
+    if (p >= line.len) { pass ""; }
+    if (line.ptr[p] != 61u8) { pass ""; }
+    int64:q = raw skip_ws(line, p + 1i64);
+    if (raw has_word_external(raw text_slice(line, q, line.len))) { pass ""; }
+    pass (raw text_slice(line, i, e));
+};
+
+// No symbol may be DEFINED twice in one emitted module (D-156).
+pub func:ir_symbols_unique = List<string>(string:ir, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    StrSet:seen = raw strset_init(1024i64);
+    List<string>:dupes = raw list_init::<string>(2i64);
+    for (int64:round_no in 0i64...2i64) {
+        for (int64:i in 0i64...lines.count) {
+            string:ln = raw strlist_view(lines, i);
+            string:sym = "";
+            if (round_no == 0i64) { sym = raw ir_define_sym(ln); }
+            else { sym = raw ir_global_sym(ln); }
+            if (sym.len == 0i64) { continue; }
+            if (!(raw strset_add(@seen, sym))) { drop strlist_push(@dupes, sym); }
+        }
+    }
+    drop strset_free(@seen);
+    if (dupes.count == 0i64) { pass fl; }
+    List<string>:sorted = raw strlist_sorted_unique(dupes);
+    string:m = string_concat(name, ": ");
+    m = string_concat(m, raw text_join(sorted, ", "));
+    m = string_concat(m, " defined more than once in one module -- the emitter produced two definitions of one symbol, which is invalid LLVM and means two declarations rendered the same name (D-156)");
+    drop list_push(@fl, move(m));
+    pass fl;
+};
+
+// Every `alloca` is in its function's entry block (D-173).
+pub func:ir_allocas_hoisted = List<string>(string:ir, string:name) never fails {
+    List<string>:bad = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    string:fn = "";
+    bool:have_fn = false;
+    bool:in_entry = false;
+    for (int64:i in 0i64...lines.count) {
+        string:raw_line = raw strlist_view(lines, i);
+        string:line = raw text_trim(raw_line);
+        string:d = raw ir_define_sym(raw_line);
+        if (d.len > 0i64) {
+            fn = raw text_copy(d);
+            have_fn = true;
+            in_entry = false;
+            continue;
+        }
+        if (!have_fn) { continue; }
+        if (raw text_eq(line, "entry:")) { in_entry = true; continue; }
+        if (raw text_ends_with(line, ":")) {
+            if ((raw text_find_byte(line, 32u8, 0i64)) < 0i64) { in_entry = false; continue; }
+        }
+        if (raw text_starts_with(line, "br ")) { in_entry = false; continue; }
+        if (raw text_starts_with(line, "ret ")) { in_entry = false; continue; }
+        if (raw text_eq(line, "unreachable")) { in_entry = false; continue; }
+        // `%\S+ = alloca `
+        if (line.len > 0i64) {
+            if (line.ptr[0i64] == 37u8) {
+                int64:j = 1i64;
+                while (j < line.len) {
+                    if (raw text_is_ws(line.ptr[j])) { break; }
+                    j = j + 1i64;
+                }
+                if (j > 1i64) {
+                    if (raw text_starts_with(raw text_slice(line, j, line.len), " = alloca ")) {
+                        if (!in_entry) {
+                            string:m = string_concat(name, ": `");
+                            m = string_concat(m, line);
+                            m = string_concat(m, "` in `");
+                            m = string_concat(m, fn);
+                            m = string_concat(m, "` is not in the entry block -- an alloca in a loop body overflows the stack over a large input; route it through irw_alloca (D-173)");
+                            drop list_push(@bad, move(m));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pass bad;
+};

@@ -1,0 +1,223 @@
+// toolchain -- finding the tools, checking the pin, running a tool
+// (1.4.8; D-204 "the toolchain is a build INPUT", D-067 "on PATH").
+//
+// A tool is found on `PATH` -- read from `environ()`, the one thing the
+// language consults the environment for (BUILTIN_REFERENCE `environ`) --
+// left to right, the first regular executable file wins, exactly what
+// `shutil.which` does. The pin is checked by asking the tools themselves
+// (`llc --version`, `opt --version`, `ld.lld --version`; not `llvm-config`,
+// a -dev package the build does not otherwise need -- D-204's landing note)
+// and refusing a mismatch loudly: an EXACT PATCH RELEASE, since a patch
+// release can change instruction selection.
+//
+// Every run is a supervised child (`lib/nproc.npk`): both pipes captured,
+// the wait bounded, a deadline killing it. A tool that hangs ends; it does
+// not hang the build. And a deadline is a VERDICT, not an error: the caller
+// sees `timed_out` and reports it as the failure it is.
+
+mod:toolchain;
+
+use "../src/frontend/list.npk".*;
+use "../lib/nproc.npk".*;
+use "../lib/nsys.npk".*;
+use "./text.npk".*;
+
+func:SYS_STAT = int64() never fails   { pass 4i64; };
+func:SYS_ACCESS = int64() never fails { pass 21i64; };
+
+pub struct:Run = {
+    bool:timed_out;   // the deadline passed: the child was killed, reaped, retired
+    ProcExit:x;       // otherwise: the exit (`exited`/`status`/`signal`) and everything it wrote
+};
+
+// A copy of this process's environment, in the block a spawn takes.
+pub func:env_capture = ProcArgs() {
+    ProcArgs:e = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) {
+        Result<NIL>:r = args_push_cstring(@e, mine[i]);
+        if (r.is_error) { drop args_free(@e); fail r.err; }
+    }
+    pass e;
+};
+
+// The value of `KEY` in this process's environment, or "" when unset.
+pub func:env_value = string(string:key) never fails {
+    cstring[]:mine = environ();
+    string:prefix = string_concat(key, "=");
+    for (int64:i in 0i64...mine.len) {
+        string:entry = string_from_bytes(mine[i].ptr, mine[i].len);
+        if (raw text_starts_with(entry, prefix)) {
+            pass (raw text_slice(entry, prefix.len, entry.len));
+        }
+    }
+    pass "";
+};
+
+// A regular file this process may execute -- `os.path.isfile` and
+// `os.access(X_OK)`, which is what `shutil.which` asks.
+func:is_exec_file = bool(string:path) never fails {
+    Result<cstring>:cp = to_cstring(path);
+    if (cp.is_error) { pass false; }
+    wild int8->:st = calloc(1i64, 160i64);
+    defer { dalloc(st); }
+    Result<int64>:rs = sys(raw SYS_STAT(), cp.value.ptr, st);
+    if (rs.is_error) { pass false; }
+    // `struct stat` (x86_64): st_mode is the u32 at byte 24; S_IFMT 0xF000, S_IFREG 0x8000.
+    int64:mode = (<-(#ptr_add<uint32>(st, 6i64))) => int64;
+    if ((mode & 61440i64) != 32768i64) { pass false; }
+    Result<int64>:ra = sys(raw SYS_ACCESS(), cp.value.ptr, 1i64);
+    if (ra.is_error) { pass false; }
+    pass true;
+};
+
+// `shutil.which(name)`: the first `dir/name` on PATH that is an executable
+// regular file, as an absolute path; "" when there is none. An empty PATH
+// element means the working directory, as it does for a shell.
+pub func:which = string(string:name) {
+    string:path_var = raw env_value("PATH");
+    int64:start = 0i64;
+    int64:i = 0i64;
+    while (i <= path_var.len) {
+        bool:at_end = (i == path_var.len);
+        bool:sep = false;
+        if (!at_end) { if (path_var.ptr[i] == 58u8) { sep = true; } }
+        if (at_end || sep) {
+            string:dir = raw text_slice(path_var, start, i);
+            if (dir.len == 0i64) { dir = relay sys_cwd(); }
+            if (!(raw text_starts_with(dir, "/"))) {
+                string:cw = relay sys_cwd();
+                dir = string_concat(string_concat(cw, "/"), dir);
+            }
+            string:cand = string_concat(string_concat(dir, "/"), name);
+            if (raw is_exec_file(cand)) { pass cand; }
+            start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    pass "";
+};
+
+// Run `exe` (absolute) with `args` (its own name is prepended) and `env`,
+// under `within`. A deadline is reported in the verdict; a spawn that fl
+// -- a descriptor, the registry, the clone -- is the error it is.
+// `args` and `env` arrive BY VALUE -- neither owns anything (a list is a
+// wild block, a ProcArgs its own), and a borrow here would taint the Run.
+pub async func:run_argv = Run(string:exe, List<string>:args, ProcArgs:env,
+                              Duration:within) {
+    ProcArgs:a = raw args_init();
+    defer { drop args_free(@a); }
+    Result<NIL>:r0 = args_push(@a, exe);
+    if (r0.is_error) { fail r0.err; }
+    for (int64:i in 0i64...args.count) {
+        Result<NIL>:ri = args_push(@a, raw strlist_view(args, i));
+        if (ri.is_error) { fail ri.err; }
+    }
+    Path:p = relay path_parse(exe);
+    Proc:pr = relay proc_spawn(p, @a, @env);
+    Result<ProcExit>:w = await proc_wait(move(pr), within);
+    if (w.is_error) {
+        if (w.err == EProcDeadline) {
+            pass Run{ timed_out: true,
+                      x: ProcExit{ exited: false, status: 0i64, signal: 0i64, out: "", err: "" } };
+        }
+        fail w.err;
+    }
+    pass Run{ timed_out: false, x: move(w.value) };
+};
+
+// The tools a build needs, resolved once. `opt` and `cc` may be absent ("");
+// the callers say what that means for them.
+pub struct:Tools = {
+    ProcArgs:env;
+    string:llc;
+    string:opt;
+    string:lld;
+    string:cc;
+};
+
+pub func:tools_find = Tools() {
+    ProcArgs:env = relay env_capture();
+    string:llc = relay which("llc");
+    string:opt = relay which("opt");
+    string:lld = relay which("ld.lld");
+    string:cc = relay which("cc");
+    pass Tools{ env: move(env), llc: move(llc), opt: move(opt), lld: move(lld), cc: move(cc) };
+};
+
+// `(\d+\.\d+\.\d+)` right after `marker` (whitespace between), or "".
+func:version_after = string(string:text, string:marker) never fails {
+    int64:p = raw text_index_of(text, marker);
+    if (p < 0i64) { pass ""; }
+    int64:i = p + marker.len;
+    while (i < text.len) {
+        if (!(raw text_is_ws(text.ptr[i]))) { break; }
+        i = i + 1i64;
+    }
+    int64:start = i;
+    int64:dots = 0i64;
+    bool:digit_since_dot = false;
+    while (i < text.len) {
+        uint8:c = text.ptr[i];
+        if (raw text_is_digit(c)) { digit_since_dot = true; i = i + 1i64; continue; }
+        if (c == 46u8) {
+            if (!digit_since_dot) { break; }
+            if (dots == 2i64) { break; }
+            dots = dots + 1i64;
+            digit_since_dot = false;
+            i = i + 1i64;
+            continue;
+        }
+        break;
+    }
+    if (dots != 2i64) { pass ""; }
+    if (!digit_since_dot) { pass ""; }
+    pass (raw text_slice(text, start, i));
+};
+
+// D-204's refusal, message for message the harness's `check_toolchain_pin`:
+// every returned line is a reason the build may not proceed. `opt` absent
+// is not a pin failure here (the optimised leg reports it, by name).
+// The tools arrive as their paths and the environment by value: no borrow
+// reaches this call, so its list may go up to whoever asked.
+pub async func:toolchain_pin_check = List<string>(string:llc, string:opt, string:lld,
+                                                  ProcArgs:env, string:pin) {
+    List<string>:out = raw list_init::<string>(2i64);
+    if (pin.len == 0i64) {
+        drop strlist_push(@out, "nitpick.toml has no [toolchain] llvm pin -- D-204 makes the toolchain a build INPUT, and an unpinned input is not one");
+        pass out;
+    }
+    List<string>:args = raw list_init::<string>(1i64);
+    drop strlist_push(@args, "--version");
+    for (int64:k in 0i64...3i64) {
+        string:name = "llc";
+        string:exe = raw text_copy(llc);
+        string:marker = "LLVM version";
+        if (k == 1i64) { name = "opt"; exe = raw text_copy(opt); }
+        if (k == 2i64) { name = "ld.lld"; exe = raw text_copy(lld); marker = "LLD"; }
+        if (exe.len == 0i64) {
+            if (k == 1i64) { continue; }
+            drop strlist_push(@out, string_concat(name, " is not on PATH"));
+            continue;
+        }
+        Result<Run>:r = await run_argv(exe, args, env, raw duration_secs(30i64));
+        if (r.is_error) { fail r.err; }
+        Run:run = move(r.value);
+        string:got = raw version_after(run.x.out, marker);
+        if (got.len == 0i64) {
+            string:m = string_concat(name, " --version did not report a version this can read: ");
+            m = string_concat(m, raw text_head(run.x.out, 120i64));
+            drop list_push(@out, move(m));
+            continue;
+        }
+        if (!(raw text_eq(got, pin))) {
+            string:m2 = string_concat(name, " is ");
+            m2 = string_concat(m2, got);
+            m2 = string_concat(m2, " but nitpick.toml pins ");
+            m2 = string_concat(m2, pin);
+            m2 = string_concat(m2, " -- the toolchain is a BUILD INPUT (D-204), and a patch release is enough to change instruction selection or section ordering. Install the pinned version, or update the pin AND regenerate every expected hash in the same change");
+            drop list_push(@out, move(m2));
+        }
+    }
+    pass out;
+};

@@ -23,9 +23,22 @@
 > recovery lost nothing, main is byte-identical to the fully-merged `w456`,
 > and a confirmatory harness on committed main followed.
 >
-> **NEXT: Part D — `npkg` itself** (build, test, the closed-world link, the
-> self-check), then the parity stage and the final doc sync. Nothing else in
-> 1.4.8 is started.
+> **Part D LANDED (2026-09-02): `npkg/` exists** — `npkg build` (byte-identical
+> to the harness's compiler), `npkg test` (908 verdicts on its first full run,
+> every suite count the harness's, the §7.1 self-check inside it), the
+> closed-world link with an in-house ELF reader, and the harness's new
+> `parity` stage diffing the two runners' verdicts on every full run. The
+> execution record (decisions on contact, the three finds — S-9, the
+> `resolve_check` prelude defect, the quadratic capture) is the tail of
+> `meta/roadmap/1.4/1.4.8.md`; the questions for the user are **S-9** and
+> **S-10** in `OPEN_DECISIONS.md` §2e.
+>
+> **1.4.8 IS CLOSED (2026-09-02)**: the concluding harness run on the final
+> tree was green in every stage, 58/58, with the `parity` stage's first
+> result — 902 verdicts agree between the two runners, npkc byte-identical.
+> S-9 and S-10 (`OPEN_DECISIONS.md` §2e) are the user's, each carrying its
+> measurement. **NEXT: 1.4's remaining subcycles per `1.4/README.md`** — and
+> a fresh session for the next one, as the cycle's convention has it.
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is

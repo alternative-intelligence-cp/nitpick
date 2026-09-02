@@ -92,6 +92,14 @@ async func:main = int32(cstring[]:argv) {
     while (i < (raw graph_count(@g))) {
         ModuleEntry:e = raw graph_at(@g, i);
         DeclId:mod_id = DeclId{ index: e.root };
+        // WHICH MODULE IS THE PRELUDE, as the pipeline says it (D-179): an
+        // explicit error code is legal there and nowhere else. This tool never
+        // said, so every module-rejection test carried nine stray
+        // NITPICK-RESOLVE-010 findings against the prelude's own declarations
+        // -- invisible for as long as the runners matched expectations as a
+        // subset of what was reported (1.4.8, S-9's measurement found it).
+        r.in_prelude = (i == g.prelude);
+        r.module_name = raw module_basename_intern(@g, e.file, @it);
         drop resolve_module(@r, mod_id, e.scope);
         i = i + 1i32;
     }

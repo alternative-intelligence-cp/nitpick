@@ -1,0 +1,183 @@
+// manifest -- `nitpick.toml` as `npkg` reads it (1.4.8; D-077 for the schema,
+// D-204 for `[toolchain]`, BUILD_REFERENCE §8 for `[[test]]`).
+//
+// READ ONCE, STRICTLY. One schema, every key named: a key the schema does not
+// have refuses the manifest by line, because a setting nobody reads is the
+// next stale document -- and `edition` refuses by name, since one language
+// with no editions is D-077's own decision. The toolchain block is an INPUT:
+// the pin and the four flag lists are what every `llc`/`opt`/`ld.lld`
+// invocation is built from, and a missing list is a build the manifest did
+// not describe.
+
+mod:manifest;
+
+use "../src/frontend/list.npk".*;
+use "./text.npk".*;
+use "./toml.npk".*;
+
+pub struct:TestTarget = { string:name; string:kind; string:path; };
+
+pub struct:Manifest = {
+    string:root;             // the directory holding nitpick.toml, absolute
+    string:entry;            // [build] entry, relative to the root
+    string:output;           // [build] output, relative to the root
+    int64:opt_level;         // [build] opt-level: 0 (no `opt`) or 2 (the pinned -O2 lists)
+    string:llvm;             // [toolchain] llvm, the exact patch release
+    List<string>:llc_flags;
+    List<string>:llc_opt_flags;
+    List<string>:opt_flags;
+    List<string>:lld_flags;
+    List<TestTarget>:tests;  // [[test]] in declaration order
+    bool:ok;
+    string:problem;          // when !ok, the one sentence to print
+};
+
+func:blank = Manifest(string:root) never fails {
+    pass Manifest{ root: raw text_copy(root), entry: "", output: "", opt_level: 0i64, llvm: "",
+                   llc_flags: raw list_init::<string>(4i64),
+                   llc_opt_flags: raw list_init::<string>(4i64),
+                   opt_flags: raw list_init::<string>(4i64),
+                   lld_flags: raw list_init::<string>(4i64),
+                   tests: raw list_init::<TestTarget>(4i64),
+                   ok: true, problem: "" };
+};
+
+func:refuse = Manifest(string:root, string:why) never fails {
+    Manifest:m = raw blank(root);
+    m.ok = false;
+    m.problem = raw text_copy(why);
+    pass m;
+};
+
+// Every (table, key) this manifest schema has. `[dependencies]` takes any
+// key -- each names a dependency -- and nothing else is open.
+func:schema_allows = bool(string:section, string:key) never fails {
+    if (raw text_eq(section, "project")) {
+        if (raw text_eq(key, "name"))        { pass true; }
+        if (raw text_eq(key, "version"))     { pass true; }
+        if (raw text_eq(key, "description")) { pass true; }
+        if (raw text_eq(key, "authors"))     { pass true; }
+        if (raw text_eq(key, "target"))      { pass true; }
+        pass false;
+    }
+    if (raw text_eq(section, "build")) {
+        if (raw text_eq(key, "entry"))     { pass true; }
+        if (raw text_eq(key, "output"))    { pass true; }
+        if (raw text_eq(key, "opt-level")) { pass true; }
+        pass false;
+    }
+    if (raw text_eq(section, "toolchain")) {
+        if (raw text_eq(key, "llvm"))          { pass true; }
+        if (raw text_eq(key, "llc-flags"))     { pass true; }
+        if (raw text_eq(key, "llc-opt-flags")) { pass true; }
+        if (raw text_eq(key, "opt-flags"))     { pass true; }
+        if (raw text_eq(key, "lld-flags"))     { pass true; }
+        pass false;
+    }
+    if (raw text_eq(section, "dependencies")) { pass true; }
+    if (raw text_eq(section, "test")) {
+        if (raw text_eq(key, "name")) { pass true; }
+        if (raw text_eq(key, "kind")) { pass true; }
+        if (raw text_eq(key, "path")) { pass true; }
+        pass false;
+    }
+    if (raw text_eq(section, "verify")) {
+        if (raw text_eq(key, "z3")) { pass true; }
+        pass false;
+    }
+    if (raw text_eq(section, "verify.nikos")) {
+        if (raw text_eq(key, "domain")) { pass true; }
+        pass false;
+    }
+    pass false;
+};
+
+func:need_string = string(TomlDoc:d, string:section, string:key) {
+    pass (relay toml_string(d, section, 0i64 - 1i64, key));
+};
+
+func:need_strings = List<string>(TomlDoc:d, string:section, string:key) {
+    pass (relay toml_strings(d, section, 0i64 - 1i64, key));
+};
+
+pub func:manifest_load = Manifest(string:root, string:text) never fails {
+    TomlDoc:d = raw toml_parse(text);
+    if (!d.ok) {
+        string:w = string_concat("nitpick.toml: line ", int_to_string(d.bad_line));
+        w = string_concat(w, " cannot be read -- the reader takes TOML's tables, `[[array]]` headers, strings, integers, booleans and single-line arrays, and nothing else");
+        pass (raw refuse(root, w));
+    }
+    for (int64:i in 0i64...d.entries.count) {
+        string:sec = string_from_bytes(d.entries.items[i].section.ptr, d.entries.items[i].section.len);
+        string:key = string_from_bytes(d.entries.items[i].key.ptr, d.entries.items[i].key.len);
+        if (raw text_eq(key, "edition")) {
+            string:w1 = string_concat("nitpick.toml: line ", int_to_string(d.entries.items[i].line));
+            w1 = string_concat(w1, ": there is no `edition` key -- one language, no editions (D-077)");
+            pass (raw refuse(root, w1));
+        }
+        if (!(raw schema_allows(sec, key))) {
+            string:w2 = string_concat("nitpick.toml: line ", int_to_string(d.entries.items[i].line));
+            w2 = string_concat(w2, ": `");
+            if (sec.len > 0i64) { w2 = string_concat(w2, sec); w2 = string_concat(w2, "."); }
+            w2 = string_concat(w2, key);
+            w2 = string_concat(w2, "` is not a key this manifest schema has (D-077); a setting nothing reads is a document that goes stale in silence");
+            pass (raw refuse(root, w2));
+        }
+    }
+
+    Manifest:m = raw blank(root);
+    Result<string>:entry = need_string(d, "build", "entry");
+    if (entry.is_error) { pass (raw refuse(root, "nitpick.toml: [build] entry is missing or is not a string")); }
+    m.entry = move(entry.value);
+    Result<string>:output = need_string(d, "build", "output");
+    if (output.is_error) { pass (raw refuse(root, "nitpick.toml: [build] output is missing or is not a string")); }
+    m.output = move(output.value);
+    if (raw toml_has(d, "build", 0i64 - 1i64, "opt-level")) {
+        Result<int64>:lvl = toml_int(d, "build", 0i64 - 1i64, "opt-level");
+        if (lvl.is_error) { pass (raw refuse(root, "nitpick.toml: [build] opt-level is not an integer")); }
+        m.opt_level = lvl.value;
+    }
+    if ((m.opt_level != 0i64) && (m.opt_level != 2i64)) {
+        pass (raw refuse(root, "nitpick.toml: [build] opt-level must be 0 (no `opt`, `llc-flags`) or 2 (`opt-flags` then `llc-opt-flags`) -- those are the two flag sets [toolchain] pins, and a level with no pinned flags is a build nobody can reproduce (D-204)"));
+    }
+
+    Result<string>:llvm = need_string(d, "toolchain", "llvm");
+    if (llvm.is_error) { pass (raw refuse(root, "nitpick.toml has no [toolchain] llvm pin -- D-204 makes the toolchain a build INPUT, and an unpinned input is not one")); }
+    m.llvm = move(llvm.value);
+    Result<List<string>>:f1 = need_strings(d, "toolchain", "llc-flags");
+    if (f1.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] llc-flags is missing or is not an array of strings")); }
+    m.llc_flags = f1.value;
+    Result<List<string>>:f2 = need_strings(d, "toolchain", "llc-opt-flags");
+    if (f2.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] llc-opt-flags is missing or is not an array of strings")); }
+    m.llc_opt_flags = f2.value;
+    Result<List<string>>:f3 = need_strings(d, "toolchain", "opt-flags");
+    if (f3.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] opt-flags is missing or is not an array of strings")); }
+    m.opt_flags = f3.value;
+    Result<List<string>>:f4 = need_strings(d, "toolchain", "lld-flags");
+    if (f4.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] lld-flags is missing or is not an array of strings")); }
+    m.lld_flags = f4.value;
+
+    int64:n = raw toml_array_count(d, "test");
+    for (int64:t in 0i64...n) {
+        Result<string>:name = toml_string(d, "test", t, "name");
+        Result<string>:kind = toml_string(d, "test", t, "kind");
+        Result<string>:path = toml_string(d, "test", t, "path");
+        if (name.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
+        if (kind.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
+        if (path.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
+        bool:known = false;
+        if (raw text_eq(kind.value, "positive"))   { known = true; }
+        if (raw text_eq(kind.value, "negative"))   { known = true; }
+        if (raw text_eq(kind.value, "diagnostic")) { known = true; }
+        if (!known) {
+            string:w3 = string_concat("nitpick.toml: [[test]] `", name.value);
+            w3 = string_concat(w3, "` has kind `");
+            w3 = string_concat(w3, kind.value);
+            w3 = string_concat(w3, "`; the kinds are positive, negative and diagnostic (BUILD_REFERENCE §8)");
+            pass (raw refuse(root, w3));
+        }
+        TestTarget:tt = TestTarget{ name: move(name.value), kind: move(kind.value), path: move(path.value) };
+        drop list_push(@m.tests, move(tt));
+    }
+    pass m;
+};

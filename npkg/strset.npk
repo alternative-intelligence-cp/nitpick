@@ -1,0 +1,87 @@
+// strset -- a set of strings for the verdict scans (1.4.8).
+//
+// The symbol-uniqueness scan asks "seen before?" once per symbol of a
+// fifteen-megabyte module, and the import grouping asks it once per file per
+// test; a list walked linearly answers both in quadratic time. Open
+// addressing over the intern module's FNV-1a (the compiler's one hash),
+// power-of-two capacity, linear probing, grown by doubling before it is
+// half full. Keys are OWNED COPIES in a `List<string>`; the slot table holds
+// key indices (plus one, so zero is "empty") in `wild` storage the set frees.
+
+mod:strset;
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/intern.npk".*;
+use "./text.npk".*;
+
+pub struct:StrSet = {
+    List<string>:keys;
+    wild int8->:slots;    // `cap` int64 words: 0 = empty, otherwise key index + 1
+    int64:cap;            // a power of two
+};
+
+pub func:strset_init = StrSet(int64:want) never fails {
+    int64:cap = 16i64;
+    while (cap < (want * 2i64)) { cap = cap * 2i64; }
+    pass StrSet{ keys: raw list_init::<string>(want + 1i64), slots: calloc(cap, 8i64), cap: cap };
+};
+
+// The slot holding `key`, or the empty slot where it would go.
+func:slot_of = int64(StrSet->:s, string:key) never fails {
+    uint64:h = raw fnv1a_bytes(key, raw fnv1a_seed());
+    uint64:mask = (s.cap - 1i64) =>! uint64;
+    int64:i = (h & mask) =>! int64;
+    wild int64->:sl = s.slots =>! wild int64->;
+    while (true) {
+        int64:v = sl[i];
+        if (v == 0i64) { pass i; }
+        int64:k = v - 1i64;
+        if (raw string_eq(string_from_bytes(s.keys.items[k].ptr, s.keys.items[k].len), key)) {
+            pass i;
+        }
+        i = (((i + 1i64) =>! uint64) & mask) =>! int64;
+    }
+    pass 0i64;
+};
+
+func:strset_grow = NIL(StrSet->:s) never fails {
+    int64:ncap = s.cap * 2i64;
+    dalloc(s.slots);
+    s.slots = calloc(ncap, 8i64);
+    s.cap = ncap;
+    wild int64->:sl = s.slots =>! wild int64->;
+    for (int64:k in 0i64...s.keys.count) {
+        int64:i = raw slot_of(s, string_from_bytes(s.keys.items[k].ptr, s.keys.items[k].len));
+        sl[i] = k + 1i64;
+    }
+    pass NIL;
+};
+
+pub func:strset_has = bool(StrSet:s, string:key) never fails {
+    int64:i = raw slot_of(@s, key);
+    wild int64->:sl = s.slots =>! wild int64->;
+    pass (sl[i] != 0i64);
+};
+
+// True when `key` was NOT already present.
+pub func:strset_add = bool(StrSet->:s, string:key) never fails {
+    if (((s.keys.count + 1i64) * 2i64) > s.cap) { drop strset_grow(s); }
+    int64:i = raw slot_of(s, key);
+    wild int64->:sl = s.slots =>! wild int64->;
+    if (sl[i] != 0i64) { pass false; }
+    drop strlist_push(@s.keys, key);
+    sl[i] = s.keys.count;
+    pass true;
+};
+
+pub func:strset_count = int64(StrSet:s) never fails { pass s.keys.count; };
+
+// The keys in insertion order, as a view list the caller must not outlive.
+pub func:strset_key = string(StrSet:s, int64:i) never fails {
+    pass (raw strlist_view(s.keys, i));
+};
+
+pub func:strset_free = NIL(StrSet->:s) never fails {
+    if (s.cap > 0i64) { dalloc(s.slots); s.slots = NULL; s.cap = 0i64; }
+    pass NIL;
+};

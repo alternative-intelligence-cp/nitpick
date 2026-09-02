@@ -1,0 +1,197 @@
+// elf -- the undefined-symbol scan's reader, and the runtime allowlist
+// (1.4.8; D-011 §3 "enforce it mechanically", D-206 §4 "the closed-world
+// link is law, not a flag").
+//
+// THE OBJECT IS READ DIRECTLY. The harness spawns `llvm-readelf -s` and
+// parses its columns; a fourth LLVM tool outside the `[toolchain]` pin, with
+// a text format nothing checks, is a poor foundation for a rule that is
+// LAW. ELF64's symbol table is thirty lines to walk: the section header
+// table, the one section of type SYMTAB, its string table, and every
+// twenty-four-byte entry whose section index is SHN_UNDEF. The parity stage
+// cross-checks this reader against `llvm-readelf` on every object the
+// Python harness scans, so a disagreement between the two is a diff, never
+// a silent difference in what the law let through.
+//
+// Every field is read through a bounds-checked accessor; a truncated or
+// alien object is `EElf`, a refusal, never a wrong answer. A 64-bit field is
+// read as two halves and refused when the high half is set -- no offset in
+// a relocatable object approaches four gigabytes, and the arithmetic then
+// cannot reach D-210's overflow trap.
+
+mod:elf;
+
+use "../src/frontend/list.npk".*;
+use "./text.npk".*;
+
+pub error:EElf;   // not an ELF64 little-endian object this reader can walk, or a truncated one
+
+func:byte_at = int64(string:s, int64:off) {
+    if (off < 0i64)      { fail EElf; }
+    if (off >= s.len)    { fail EElf; }
+    pass (s.ptr[off] => int64);
+};
+
+func:u16_at = int64(string:s, int64:off) {
+    int64:b0 = relay byte_at(s, off);
+    int64:b1 = relay byte_at(s, off + 1i64);
+    pass (b0 + (b1 * 256i64));
+};
+
+func:u32_at = int64(string:s, int64:off) {
+    int64:lo = relay u16_at(s, off);
+    int64:hi = relay u16_at(s, off + 2i64);
+    pass (lo + (hi * 65536i64));
+};
+
+func:u64_at = int64(string:s, int64:off) {
+    int64:lo = relay u32_at(s, off);
+    int64:hi = relay u32_at(s, off + 4i64);
+    if (hi != 0i64) { fail EElf; }
+    pass lo;
+};
+
+// Every symbol the object needs someone else to provide -- `st_shndx ==
+// SHN_UNDEF` with a name -- in table order. The caller sorts.
+pub func:elf_undefined = List<string>(string:obj_path) {
+    List<string>:out = raw list_init::<string>(8i64);
+    Result<cstring>:cp = to_cstring(obj_path);
+    if (cp.is_error) { fail EElf; }
+    string:s = relay read_file(cp.value);
+    // e_ident: 0x7f 'E' 'L' 'F', ELFCLASS64, ELFDATA2LSB
+    if ((relay byte_at(s, 0i64)) != 127i64) { fail EElf; }
+    if ((relay byte_at(s, 1i64)) != 69i64)  { fail EElf; }
+    if ((relay byte_at(s, 2i64)) != 76i64)  { fail EElf; }
+    if ((relay byte_at(s, 3i64)) != 70i64)  { fail EElf; }
+    if ((relay byte_at(s, 4i64)) != 2i64)   { fail EElf; }
+    if ((relay byte_at(s, 5i64)) != 1i64)   { fail EElf; }
+    int64:shoff = relay u64_at(s, 40i64);
+    int64:shentsize = relay u16_at(s, 58i64);
+    int64:shnum = relay u16_at(s, 60i64);
+    if (shentsize != 64i64) { fail EElf; }
+    if (shnum == 0i64) { fail EElf; }   // the extended-count form: not an object llc emits here
+    int64:symoff = 0i64;
+    int64:symsize = 0i64;
+    int64:strlink = 0i64;
+    bool:found = false;
+    for (int64:i in 0i64...shnum) {
+        int64:base = shoff + (i * 64i64);
+        int64:kind = relay u32_at(s, base + 4i64);
+        if (kind == 2i64) {   // SHT_SYMTAB
+            symoff = relay u64_at(s, base + 24i64);
+            symsize = relay u64_at(s, base + 32i64);
+            strlink = relay u32_at(s, base + 40i64);
+            found = true;
+        }
+    }
+    if (!found) { pass out; }
+    if (strlink >= shnum) { fail EElf; }
+    int64:sbase = shoff + (strlink * 64i64);
+    int64:stroff = relay u64_at(s, sbase + 24i64);
+    int64:strsize = relay u64_at(s, sbase + 32i64);
+    if ((symsize % 24i64) != 0i64) { fail EElf; }
+    int64:n = symsize / 24i64;
+    for (int64:k in 0i64...n) {
+        int64:e = symoff + (k * 24i64);
+        int64:name = relay u32_at(s, e);
+        int64:shndx = relay u16_at(s, e + 6i64);
+        if (shndx != 0i64) { continue; }
+        if (name == 0i64) { continue; }
+        if (name >= strsize) { fail EElf; }
+        int64:at = stroff + name;
+        int64:stop = at;
+        while (true) {
+            if (stop >= (stroff + strsize)) { fail EElf; }
+            if ((relay byte_at(s, stop)) == 0i64) { break; }
+            stop = stop + 1i64;
+        }
+        if (stop > at) {
+            drop strlist_push(@out, raw text_slice(s, at, stop));
+        }
+    }
+    pass out;
+};
+
+// The functions `runtime/npkrt.ll` DEFINES, read off the IR text -- the
+// harness's `_npkrt_defines` shape: `define`, whitespace, an optional
+// `internal`, a return type, whitespace, `@name(` with a `\w+` name (a
+// quoted name does not match, exactly as its `\w+` never did). Plus `main`,
+// the one symbol the RUNTIME may need because the program provides it.
+pub func:runtime_allowlist = List<string>(string:npkrt_ll) {
+    List<string>:out = raw list_init::<string>(200i64);
+    Result<cstring>:cp = to_cstring(npkrt_ll);
+    if (cp.is_error) { fail EElf; }
+    string:s = relay read_file(cp.value);
+    List<string>:lines = raw text_lines(s);
+    for (int64:li in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, li);
+        int64:p = raw text_index_from(ln, "define", 0i64);
+        while (p >= 0i64) {
+            int64:i = p + 6i64;
+            bool:ws = false;
+            if (i < ln.len) { if (raw text_is_ws(ln.ptr[i])) { ws = true; } }
+            if (ws) {
+                while (i < ln.len) {
+                    if (!(raw text_is_ws(ln.ptr[i]))) { break; }
+                    i = i + 1i64;
+                }
+                if (raw text_starts_with(raw text_slice(ln, i, ln.len), "internal")) {
+                    int64:j = i + 8i64;
+                    bool:ws2 = false;
+                    if (j < ln.len) { if (raw text_is_ws(ln.ptr[j])) { ws2 = true; } }
+                    if (ws2) {
+                        while (j < ln.len) {
+                            if (!(raw text_is_ws(ln.ptr[j]))) { break; }
+                            j = j + 1i64;
+                        }
+                        i = j;
+                    }
+                }
+                // `.+?` then `\s+@(\w+)\(`: the first whitespace-run-then-`@`
+                // at or after i + 1 whose name is a word followed by `(`.
+                int64:q = i + 1i64;
+                bool:done = false;
+                while ((q < ln.len) && (!done)) {
+                    if (raw text_is_ws(ln.ptr[q])) {
+                        int64:r = q;
+                        while (r < ln.len) {
+                            if (!(raw text_is_ws(ln.ptr[r]))) { break; }
+                            r = r + 1i64;
+                        }
+                        if (r < ln.len) {
+                            if (ln.ptr[r] == 64u8) {
+                                int64:ns = r + 1i64;
+                                int64:ne = ns;
+                                while (ne < ln.len) {
+                                    uint8:c = ln.ptr[ne];
+                                    bool:w = false;
+                                    if ((c >= 97u8) && (c <= 122u8)) { w = true; }
+                                    if ((c >= 65u8) && (c <= 90u8))  { w = true; }
+                                    if ((c >= 48u8) && (c <= 57u8))  { w = true; }
+                                    if (c == 95u8) { w = true; }
+                                    if (!w) { break; }
+                                    ne = ne + 1i64;
+                                }
+                                if (ne > ns) {
+                                    if (ne < ln.len) {
+                                        if (ln.ptr[ne] == 40u8) {
+                                            drop strlist_push(@out, raw text_slice(ln, ns, ne));
+                                            done = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        q = r;
+                    } else {
+                        q = q + 1i64;
+                    }
+                }
+                p = 0i64 - 1i64;
+            } else {
+                p = raw text_index_from(ln, "define", p + 6i64);
+            }
+        }
+    }
+    drop strlist_push(@out, "main");
+    pass out;
+};

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 and 1.4.7b CLOSED; 1.4.8 (`npkg`, D-206) UNDERWAY
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b and 1.4.8 (`npkg`, D-206) CLOSED — `npkg build`/`npkg test` exist, parity is a harness stage
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 236 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -492,7 +492,7 @@ the environment passed through, a missing tool's 127 as the CHILD's answer,
 and a hung tool killed at a deadline — exiting 0 so D-151/D-188 assert nothing
 leaked. The user settled D-230's families and S-8 on 2026-09-02 (the
 recommendations as written).
-**Steps 2b–6 landed (2026-09-02), validated under D-228's cumulative-prefix protocol after a mid-step-6 UI freeze the recovery lost nothing to.** `range<T>` is spellable (2b, S-8/D-093); the snapshot was refreshed mid-cycle so `src/` and the library it imports may spell the flag families (3); every `open` caller crosses its `oflags`/`fmode` to the floor's word with `=> int32`, `open` itself staying `int64` — the floor is the syscall surface (4); `lib/nfs.npk` is the file-system surface — a sorted listing over `getdents64`, containment answered by OPENING not by string checks, restrictive creation defaults and the at-family (D-213's three riders), with `sys_cwd` and three named errnos in the prelude (5); and **D-236** renders every source path relative to the manifest root the driver finds by walking up from the main file, so the `selfhost` stage's new assertion measures H9 green — zero absolute site rows where 1,479 of 1,637 leaked before (6). Four full harnesses (main plus three cumulative-prefix worktrees) came back 58/58; main is byte-identical to the fully-merged `w456`, and a confirmatory harness on committed main followed. **Remaining in 1.4.8: Part D — `npkg` itself (build, test, the closed-world link, the self-check), then the parity stage and doc sync — not started.**
+**Steps 2b–6 landed (2026-09-02), validated under D-228's cumulative-prefix protocol after a mid-step-6 UI freeze the recovery lost nothing to.** `range<T>` is spellable (2b, S-8/D-093); the snapshot was refreshed mid-cycle so `src/` and the library it imports may spell the flag families (3); every `open` caller crosses its `oflags`/`fmode` to the floor's word with `=> int32`, `open` itself staying `int64` — the floor is the syscall surface (4); `lib/nfs.npk` is the file-system surface — a sorted listing over `getdents64`, containment answered by OPENING not by string checks, restrictive creation defaults and the at-family (D-213's three riders), with `sys_cwd` and three named errnos in the prelude (5); and **D-236** renders every source path relative to the manifest root the driver finds by walking up from the main file, so the `selfhost` stage's new assertion measures H9 green — zero absolute site rows where 1,479 of 1,637 leaked before (6). Four full harnesses (main plus three cumulative-prefix worktrees) came back 58/58; main is byte-identical to the fully-merged `w456`, and a confirmatory harness on committed main followed. **Part D LANDED (2026-09-02): `npkg/` exists** — twelve modules of Nitpick built by the compiler under test, over the compiler's own path code, list and lexer. `npkg build` runs the README's ladder and produces a compiler BYTE-IDENTICAL to the harness's; `npkg test` builds, runs the runner self-check (§7.1, also `--selfcheck` alone), then every suite the harness runs unit for unit — 908 verdicts on the first full run, every suite count the harness's — with `--only`, `--verdicts PATH`, and `update`/`verify` refusing by name. The undefined-symbol scan reads the object's ELF64 symbol table itself (`npkg/elf.npk`) rather than spawning an unpinned `llvm-readelf`; the harness keeps spawning it and the new **`parity` stage** builds `npkg`, runs `npkg test --verdicts` from the manifest root, diffs the two verdict lists unit for unit and byte-compares `build/npkc` — every per-file harness site now records a verdict. Three things the port found: BUILD_REFERENCE §7.1's "unexpected diagnostics fail a test" is a rule NEITHER runner enforces (subset matching since 0.8; 17 of 131 rejection files carry unasserted extras — **S-9**), nine of those seventeen were `tools/resolve_check.npk` never naming the prelude module (fixed), and the tool runner's capture was quadratic (a `string_concat` per 8 KB read; `npkg test`'s first full run spent 17 of 56 minutes in the kernel — `lib/nproc.npk` accumulates linearly now, and `proc_wait` CONSUMES its `Proc`, which D-004's conservative borrow rule required for the captured text to leave the frame). Whether every suite should be a manifest `[[test]]` entry is **S-10**. Both runners run until `meta/SWITCH.md`; the harness remains the run whose result means the suite is green. **The concluding harness run on the final tree: every stage green, 58/58, and the `parity` stage's first result — 902 verdicts agree between the two runners, npkc byte-identical.** 1.4.8 is closed with S-9 and S-10 recorded for the user.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -558,16 +558,35 @@ its holes — none was found by a test.
 ### Building and testing
 
 ```
-python3 bootstrap/harness/harness.py                    # everything, ~20 minutes
+python3 bootstrap/harness/harness.py                    # everything, ~20 minutes + the parity stage's `npkg test`
 python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 ```
 
-It compiles each suite with the **throwaway Python seed** in
-`bootstrap/generator/` (D-085 — a generator, never a dependency of the artifact),
-links against `runtime/npkrt.ll` via `llc` and `ld.lld`, runs the
-result, and compares the exit code. It also feeds every source through the **real**
-parser (`tools/parse_check.npk`) and re-checks that every AST node kind is
-reachable.
+It assembles the committed snapshot (`bootstrap/seed/stage1.ll`) into the
+BUILDER, has the builder compile `src/main.npk` into the compiler under test
+(D-205 — the Python seed in `bootstrap/generator/` retired as a builder at
+1.4.6), compiles each suite with that compiler, links against
+`runtime/npkrt.ll` via `llc` and `ld.lld`, runs the result, and compares the
+exit code. It also feeds every source through the **real** parser
+(`tools/parse_check.npk`) and re-checks that every AST node kind is reachable.
+
+**`npkg` (1.4.8, D-206) is the permanent runner, and it runs beside the
+harness until `meta/SWITCH.md`.** Build it with the compiler under test and
+run it from the tree root — it finds `nitpick.toml` by walking up, builds
+into `build/` (gitignored), and `npkg build` leaves `build/npkc`:
+
+```
+python3 bootstrap/harness/quickemit.py --keep npkg/main.npk   # builds .internal/quickemit/p_main_npk
+.internal/quickemit/p_main_npk build                          # the ladder: floor, builder, src/ -> build/npkc
+.internal/quickemit/p_main_npk test                           # every suite, ~25 minutes; --only SUBSTR to iterate
+.internal/quickemit/p_main_npk test --selfcheck               # the runner self-check alone (§7.1)
+.internal/quickemit/p_main_npk test --verdicts out.txt        # plus one verdict line per unit (the parity diff's input)
+```
+
+The harness's `parity` stage does all of this on every full run and diffs the
+verdicts, so a green harness already says the two runners agree; `npkg test`
+by hand is for iterating on `npkg` itself, and its `--only` skips the sweeps
+exactly as the harness's does.
 
 For the middle of a subcycle, where the question is "does this one rule fire on
 this one file", there is a faster loop that builds the checker once:

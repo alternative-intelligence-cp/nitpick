@@ -227,6 +227,44 @@ def read_expectations(path):
 # not in any path the harness takes.
 
 
+# EVERY UNIT'S VERDICT, recorded beside the failure list (1.4.8, D-206 §5).
+# The failure list says what went wrong; this says what was RUN, pass or
+# fail, as `(suite, name, ok, message)` -- the thing the parity stage diffs
+# against `npkg test --verdicts`, since a runner that silently ran fewer
+# units would otherwise agree with this one on every failure and still be
+# a different suite. Written out by `--verdicts PATH`, one
+# `STATUS<TAB>suite<TAB>name<TAB>message` per line, the same shape npkg writes.
+VERDICTS = []
+
+
+def record_verdict(suite, name, fails):
+    VERDICTS.append((suite, name, not fails, " | ".join(fails)))
+    return fails
+
+
+def verdicts_text():
+    out = []
+    for suite, name, ok, msg in VERDICTS:
+        out.append("%s\t%s\t%s\t%s\n" % ("PASS" if ok else "FAIL", suite, name,
+                                          msg.replace("\n", " ")))
+    return "".join(out)
+
+
+def read_verdicts(text):
+    """The verdict lines as a dict {(suite, name): (ok, message)} -- a repeated
+    unit (the grammar sweep parses some files twice) keeps its FIRST verdict,
+    which is what both runners produce for it."""
+    out = {}
+    for line in text.splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) < 3:
+            continue
+        key = (parts[1], parts[2])
+        if key not in out:
+            out[key] = (parts[0] == "PASS", parts[3] if len(parts) > 3 else "")
+    return out
+
+
 def group_for(path, all_paths=None):
     """A test file plus everything it imports, TRANSITIVELY, in dependency order.
 
@@ -2197,6 +2235,9 @@ USAGE = """usage: python3 bootstrap/harness/harness.py [--only SUBSTR]...
                     is green, and the only kind to commit on
   --only SUBSTR     run only tests whose repo-relative path contains SUBSTR.
                     Repeatable. Skips every whole-suite check, and says so.
+  --verdicts PATH   also write every unit's verdict, one
+                    `STATUS<TAB>suite<TAB>name<TAB>message` per line -- the
+                    list the parity stage diffs against `npkg test --verdicts`
   -h, --help        this"""
 
 
@@ -2205,6 +2246,7 @@ class Options:
         self.only = []
         self.help = False
         self.error = None
+        self.verdicts = None
 
 
 def parse_args(args):
@@ -2231,6 +2273,12 @@ def parse_args(args):
                 o.error = "--only= needs a substring after the `=`"
                 return o
             o.only.append(value)
+        elif a == "--verdicts":
+            i += 1
+            if i >= len(args):
+                o.error = "--verdicts needs a path to write the verdict list to"
+                return o
+            o.verdicts = args[i]
         else:
             o.error = "unknown argument: %s" % a
             return o
@@ -2303,7 +2351,8 @@ def main(argv):
             total += 1
             name = os.path.relpath(p, ROOT)
             exp = read_expectations(p)
-            failures += KINDS[kind](name, p, exp, tmp, tools)
+            failures += record_verdict(t["name"], name,
+                                       KINDS[kind](name, p, exp, tmp, tools))
         all_sources += paths
         print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
 
@@ -2434,11 +2483,15 @@ def main(argv):
             compiler += sorted(glob.glob(os.path.join(ROOT, "tools", "*.npk")))
             compiler += sorted(glob.glob(os.path.join(ROOT, "lib", "**", "*.npk"),
                                          recursive=True))
+            # `npkg/` is source the real parser must read too (1.4.8): the
+            # build tool is built by the compiler under test.
+            compiler += sorted(glob.glob(os.path.join(ROOT, "npkg", "**", "*.npk"),
+                                         recursive=True))
 
             n = 0
             for p in sorted(set(all_sources)) + grammar + sorted(set(compiler)):
                 name = os.path.relpath(p, ROOT)
-                failures += check_parses(pc, p, name)
+                failures += record_verdict("grammar", name, check_parses(pc, p, name))
                 n += 1
             print("  %-11s %2d real-parser check(s)" % ("grammar", n))
 
@@ -2455,7 +2508,8 @@ def main(argv):
                 exp = read_expectations(p)
                 if not exp.errors:
                     continue
-                failures += check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp)
+                failures += record_verdict("modules", os.path.relpath(p, ROOT),
+                                           check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp))
                 n += 1
             print("  %-11s %2d module-rejection test(s)" % ("modules", n))
 
@@ -2472,7 +2526,8 @@ def main(argv):
                 exp = read_expectations(p)
                 if not exp.errors:
                     continue
-                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                failures += record_verdict("types", os.path.relpath(p, ROOT),
+                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
                 n += 1
             print("  %-11s %2d type-rejection test(s)" % ("types", n))
 
@@ -2490,7 +2545,8 @@ def main(argv):
                 exp = read_expectations(p)
                 if not exp.errors:
                     continue
-                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                failures += record_verdict("analysis", os.path.relpath(p, ROOT),
+                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
                 n += 1
             print("  %-11s %2d analysis-rejection test(s)" % ("analysis", n))
 
@@ -2505,7 +2561,8 @@ def main(argv):
                 exp = read_expectations(p)
                 if not exp.errors:
                     continue
-                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                failures += record_verdict("expansion", os.path.relpath(p, ROOT),
+                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
                 n += 1
             print("  %-11s %2d expansion-rejection test(s)" % ("expansion", n))
 
@@ -2520,7 +2577,8 @@ def main(argv):
                 exp = read_expectations(p)
                 if not exp.errors:
                     continue
-                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                failures += record_verdict("derive", os.path.relpath(p, ROOT),
+                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
                 n += 1
             print("  %-11s %2d derive-rejection test(s)" % ("derive", n))
 
@@ -2563,7 +2621,8 @@ def main(argv):
         for p in fixtures:
             stem = os.path.basename(p)[:-4]
             fbase = os.path.join(fixdir, stem)
-            fails = emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp)
+            fails = record_verdict("fixtures", os.path.relpath(p, ROOT),
+                                   emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp))
             if fails:
                 failures += fails
                 continue
@@ -2579,10 +2638,13 @@ def main(argv):
             fbase = os.path.join(fixdir, stem)
             r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
                                capture_output=True, text=True)
+            cfails = []
             if r.returncode != 0:
-                failures.append("%s: cc failed: %s"
-                                % (os.path.relpath(p, ROOT),
-                                   r.stderr.strip()[:160]))
+                cfails = ["%s: cc failed: %s"
+                          % (os.path.relpath(p, ROOT), r.stderr.strip()[:160])]
+            record_verdict("fixtures", os.path.relpath(p, ROOT), cfails)
+            if cfails:
+                failures += cfails
                 continue
             fixture_map[stem.upper()] = fbase
 
@@ -2599,8 +2661,9 @@ def main(argv):
         n = 0
         for p in progs + conf:
             exp = read_expectations(p)
-            failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
-                                              exp, tmp, fixture_map)
+            failures += record_verdict("programs", os.path.relpath(p, ROOT),
+                                       check_emitted_program(ec, p, os.path.relpath(p, ROOT),
+                                                             exp, tmp, fixture_map))
             n += 1
         print("  %-11s %2d real-backend program(s)" % ("programs", n))
         print("  %-11s every program re-run through opt -O2 + llc -O2, "
@@ -2663,26 +2726,27 @@ def main(argv):
             if rm:
                 rexp = int(rm.group(1))
             rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
+            rname = os.path.relpath(rp, ROOT)
             r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
                                capture_output=True, text=True)
             if r.returncode != 0:
-                failures.append("%s: llc failed: %s"
-                                % (os.path.relpath(rp, ROOT),
-                                   r.stderr.strip()[:120]))
+                failures += record_verdict("runtime", rname,
+                                           ["%s: llc failed: %s"
+                                            % (rname, r.stderr.strip()[:120])])
                 continue
             r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
                                 rbase + ".o", os.path.join(tmp, "npkrt.o")],
                                capture_output=True, text=True)
             if r.returncode != 0:
-                failures.append("%s: link failed: %s"
-                                % (os.path.relpath(rp, ROOT),
-                                   r.stderr.strip()[:120]))
+                failures += record_verdict("runtime", rname,
+                                           ["%s: link failed: %s"
+                                            % (rname, r.stderr.strip()[:120])])
                 continue
             r = subprocess.run([rbase], capture_output=True)
+            rfails = []
             if r.returncode != rexp:
-                failures.append("%s: exited %d, expected %d"
-                                % (os.path.relpath(rp, ROOT),
-                                   r.returncode, rexp))
+                rfails = ["%s: exited %d, expected %d" % (rname, r.returncode, rexp)]
+            failures += record_verdict("runtime", rname, rfails)
             rn += 1
         if rn:
             print("  %-11s %2d runtime-floor test(s)" % ("runtime", rn))
@@ -3056,11 +3120,29 @@ def main(argv):
         for p in sorted(glob.glob(os.path.join(ROOT, "tests", "accept",
                                                "**", "*.npk"),
                                   recursive=True)):
-            failures += check_type_accept(tc, p, os.path.relpath(p, ROOT))
+            failures += record_verdict("accept", os.path.relpath(p, ROOT),
+                                       check_type_accept(tc, p, os.path.relpath(p, ROOT)))
             n += 1
         print("  %-11s %2d acceptance test(s)" % ("accept", n))
 
+        # --- PARITY WITH `npkg test` (1.4.8, D-206 §5) --------------------
+        #
+        # SUCCESSION, NOT REPLACEMENT: both runners run over the full tree
+        # and their verdicts are diffed unit for unit -- the same suites, the
+        # same files, the same pass/fail -- and `npkg build`'s compiler must
+        # be the bytes this run built. `npkg` is built by the compiler under
+        # test (it is full Nitpick against the compiler's own modules), runs
+        # from the manifest root exactly as a user would run it, and writes
+        # its verdicts to a file this stage reads back. This stage is what
+        # `meta/SWITCH.md` waits on: the harness retires only once parity has
+        # held through 1.5, never earlier and never with a gap.
+        failures += check_parity(tmp, tools)
+
     shutil.rmtree(tmp, ignore_errors=True)
+
+    if opts.verdicts:
+        with open(opts.verdicts, "w", encoding="utf-8") as fh:
+            fh.write(verdicts_text())
 
     if not tools:
         print("\n  (llc / ld.lld not on PATH -- positive tests were not run)")
@@ -3082,6 +3164,82 @@ def main(argv):
         return 0
     print("\nok  %d test(s) passed" % total)
     return 0
+
+
+def check_parity(tmp, tools):
+    """Both runners over the full tree, verdicts diffed run-for-run, and the
+    artifact byte-compared (1.4.8 acceptance). Every difference is a named
+    failure: a unit one runner has and the other lacks, a unit they judge
+    differently, or a compiler whose bytes differ."""
+    if not tools or not COMPILER:
+        return []
+    npkg_src = os.path.join(ROOT, "npkg", "main.npk")
+    if not os.path.exists(npkg_src):
+        return ["parity: npkg/main.npk is missing -- the build tool is part of the tree (D-206)"]
+    # BUILT BY THE COMPILER UNDER TEST, not the snapshot: npkg is not src/ and
+    # is bound by nothing but what today's compiler can compile.
+    saved = BUILDER
+    fails = []
+    try:
+        globals()["BUILDER"] = COMPILER
+        npkg = build_tool(tmp, tools, npkg_src, "npkg")
+    finally:
+        globals()["BUILDER"] = saved
+    if not npkg or not os.path.exists(str(npkg)):
+        return ["parity: npkg did not build with the compiler under test: %s" % npkg]
+    verdicts = os.path.join(tmp, "npkg.verdicts")
+    try:
+        r = subprocess.run([npkg, "test", "--verdicts", verdicts],
+                           capture_output=True, text=True, timeout=5400, cwd=ROOT)
+    except subprocess.TimeoutExpired:
+        return ["parity: `npkg test` did not terminate in 90 minutes"]
+    if r.returncode == 3:
+        return ["parity: `npkg test` TRAPPED (exit 3) -- a defect in npkg:\n%s"
+                % (r.stdout + r.stderr).strip()[-2000:]]
+    if r.returncode == 2:
+        return ["parity: `npkg test` could not run (exit 2):\n%s"
+                % (r.stdout + r.stderr).strip()[-2000:]]
+    if not os.path.exists(verdicts):
+        return ["parity: `npkg test` wrote no verdict file (exit %d):\n%s"
+                % (r.returncode, (r.stdout + r.stderr).strip()[-2000:])]
+    with open(verdicts, encoding="utf-8") as fh:
+        theirs = read_verdicts(fh.read())
+    ours = read_verdicts(verdicts_text())
+    only_ours = sorted(k for k in ours if k not in theirs)
+    only_theirs = sorted(k for k in theirs if k not in ours)
+    for k in only_ours[:20]:
+        fails.append("parity: the harness ran %s/%s and npkg did not" % k)
+    for k in only_theirs[:20]:
+        fails.append("parity: npkg ran %s/%s and the harness did not" % k)
+    if len(only_ours) > 20 or len(only_theirs) > 20:
+        fails.append("parity: %d unit(s) run by one runner only (first 20 of each listed)"
+                     % (len(only_ours) + len(only_theirs)))
+    differ = 0
+    for k in sorted(ours):
+        if k in theirs and ours[k][0] != theirs[k][0]:
+            differ += 1
+            if differ <= 20:
+                fails.append("parity: %s/%s -- harness %s, npkg %s%s%s"
+                             % (k[0], k[1],
+                                "PASS" if ours[k][0] else "FAIL",
+                                "PASS" if theirs[k][0] else "FAIL",
+                                (": " + ours[k][1][:200]) if ours[k][1] else "",
+                                (" / " + theirs[k][1][:200]) if theirs[k][1] else ""))
+    if differ > 20:
+        fails.append("parity: %d verdict(s) differ (first 20 listed)" % differ)
+    # THE ARTIFACT: `npkg build`'s compiler is this run's compiler, byte for byte.
+    built = os.path.join(ROOT, "build", "npkc")
+    if not os.path.exists(built):
+        fails.append("parity: `npkg test` left no build/npkc behind")
+    else:
+        with open(built, "rb") as fa, open(COMPILER, "rb") as fb:
+            if fa.read() != fb.read():
+                fails.append("parity: build/npkc (npkg's) differs from the harness's npkc -- same inputs, same flags, different bytes (D-204/D-206)")
+    if not fails:
+        agreed = sum(1 for k in ours if k in theirs)
+        print("  %-11s %d verdict(s) agree between the two runners; npkc byte-identical"
+              % ("parity", agreed))
+    return fails
 
 
 def partial_warning(ran, available):

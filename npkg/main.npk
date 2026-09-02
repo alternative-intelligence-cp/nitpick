@@ -1,0 +1,297 @@
+// npkg -- the Nitpick build and test driver (1.4.8, D-206).
+//
+// FULL NITPICK AGAINST THE COMPILER'S OWN MODULES: the path code, the
+// growable list, the lexer that finds a test's imports -- the self-hosting
+// dividend. Built by the compiler under test; runs the ladder BUILD_REFERENCE
+// §4 and `bootstrap/seed/README.md` spell out (the committed snapshot builds
+// `src/`, D-205), links closed-world (D-206 §4, D-011), and runs the test
+// suites the Python harness runs, unit for unit, so parity between the two
+// runners is a diff of verdicts (D-206 §5: succession, not replacement --
+// the harness keeps running suites and instruments until `meta/SWITCH.md`).
+//
+//   npkg build                 the ladder: floor, builder, `[build] entry` -> `[build] output`
+//   npkg test                  build, the runner self-check, every suite
+//   npkg test --only SUBSTR    the `[[test]]` files whose path holds SUBSTR, and nothing else
+//   npkg test --selfcheck      the runner self-check alone (BUILD_REFERENCE §7.1)
+//   npkg test --verdicts PATH  also write one `STATUS<TAB>suite<TAB>name<TAB>message` per unit
+//   npkg update                refused by name: a single-repo world has nothing to resolve
+//   npkg verify                refused by name: the z3 pipeline is cycle 1.5's
+//
+// Exit codes, the contract every tool holds (src/main.npk):
+//
+//   0   clean -- built, or every test passed
+//   1   failures: a build step refused, or tests failed (listed on stdout)
+//   2   the manifest, the lock, the toolchain or the arguments -- nothing ran
+//   3   npkg trapped -- a defect in it, never in the tree
+//
+// The working directory decides which manifest: `nitpick.toml` is found by
+// walking up from it, as the compiler finds the manifest root from its main
+// file (D-236). Everything after that is an absolute path under that root.
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/paths.npk".*;
+use "../lib/nsys.npk".*;
+use "../lib/nproc.npk".*;
+use "../lib/nfs.npk".*;
+use "./text.npk".*;
+use "./toml.npk".*;
+use "./manifest.npk".*;
+use "./elf.npk".*;
+use "./toolchain.npk".*;
+use "./build.npk".*;
+use "./suites.npk".*;
+use "./selfcheck.npk".*;
+
+func:usage = string() never fails {
+    pass "usage: npkg build | npkg test [--only SUBSTR]... [--selfcheck] [--verdicts PATH] | npkg update | npkg verify";
+};
+
+// The directory holding `nitpick.toml`, walking up from the working
+// directory; "" when there is none.
+func:find_root = string() {
+    string:cw = relay sys_cwd();
+    string:probe = raw path_normalise(cw);
+    while (true) {
+        Result<cstring>:cc = to_cstring(raw path_join(probe, "nitpick.toml"));
+        if (!cc.is_error) {
+            if (path_exists(cc.value)) { pass probe; }
+        }
+        if (raw text_eq(probe, "/")) { pass ""; }
+        probe = raw path_dirname(probe);
+    }
+    pass "";
+};
+
+func:partial_warning = string(int64:ran, int64:available) never fails {
+    string:s = string_concat("PARTIAL RUN -- ", int_to_string(ran));
+    s = string_concat(s, " of ");
+    s = string_concat(s, int_to_string(available));
+    s = string_concat(s, " test(s) ran. THE SUITE IS NOT KNOWN GREEN.\n  Not run: ");
+    s = string_concat(s, int_to_string(available - ran));
+    s = string_concat(s, " other test(s), the node-kind reachability check, the\n  real-parser sweep over every source, and the module-rejection\n  suite. Run with no arguments before committing.");
+    pass s;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop say_err(raw usage());
+        exit 2i32;
+    }
+    string:cmd = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    bool:selfcheck = false;
+    List<string>:only = raw list_init::<string>(2i64);
+    string:verdicts_path = "";
+    int64:ai = 2i64;
+    while (ai < argv.len) {
+        string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
+        if (raw text_eq(a, "--selfcheck")) { selfcheck = true; ai = ai + 1i64; continue; }
+        if (raw text_eq(a, "--only")) {
+            if ((ai + 1i64) >= argv.len) { drop say_err("--only needs a substring"); exit 2i32; }
+            drop strlist_push(@only, string_from_bytes(argv[ai + 1i64].ptr, argv[ai + 1i64].len));
+            ai = ai + 2i64;
+            continue;
+        }
+        if (raw text_starts_with(a, "--only=")) {
+            drop strlist_push(@only, raw text_slice(a, 7i64, a.len));
+            ai = ai + 1i64;
+            continue;
+        }
+        if (raw text_eq(a, "--verdicts")) {
+            if ((ai + 1i64) >= argv.len) { drop say_err("--verdicts needs a path"); exit 2i32; }
+            verdicts_path = string_from_bytes(argv[ai + 1i64].ptr, argv[ai + 1i64].len);
+            ai = ai + 2i64;
+            continue;
+        }
+        drop say_err(string_concat("unknown argument: ", a));
+        drop say_err(raw usage());
+        exit 2i32;
+    }
+
+    if (raw text_eq(cmd, "update")) {
+        drop say_err("npkg update: refused -- there is nothing to resolve in a single-repository world; `nitpick.lock` is read by every build and written by nobody until dependencies exist (D-078, D-206)");
+        exit 2i32;
+    }
+    if (raw text_eq(cmd, "verify")) {
+        drop say_err("npkg verify: refused -- the verification pipeline (`[verify]`, z3 over SMT-LIB2, the stage-1/stage-2 comparison) is cycle 1.5's; until it lands there is no verification to run, and a command that pretended otherwise would be a green light nobody earned (D-206)");
+        exit 2i32;
+    }
+    bool:is_build = raw text_eq(cmd, "build");
+    bool:is_test = raw text_eq(cmd, "test");
+    if (!(is_build || is_test)) {
+        drop say_err(raw usage());
+        exit 2i32;
+    }
+
+    // --- the manifest, the lock, the tools, the pin -------------------------------
+    Result<string>:rr = find_root();
+    if (rr.is_error) { drop say_err("npkg: the working directory cannot be read"); exit 2i32; }
+    string:root = move(rr.value);
+    if (root.len == 0i64) {
+        drop say_err("npkg: no nitpick.toml in this directory or any above it");
+        exit 2i32;
+    }
+    Result<cstring>:lockc = to_cstring(raw path_join(root, "nitpick.lock"));
+    if (lockc.is_error) { drop say_err("npkg: the lock path is not a path"); exit 2i32; }
+    if (!(path_exists(lockc.value))) {
+        drop say_err("npkg: nitpick.lock is missing -- a build reads the lock and never writes it; a missing lock is an error, not an invitation to resolve (D-078)");
+        exit 2i32;
+    }
+    Result<string>:mt = read_text(raw path_join(root, "nitpick.toml"));
+    if (mt.is_error) { drop say_err("npkg: nitpick.toml cannot be read"); exit 2i32; }
+    Manifest:m = raw manifest_load(root, mt.value);
+    if (!m.ok) {
+        drop say_err(m.problem);
+        exit 2i32;
+    }
+    Result<Tools>:tr = tools_find();
+    if (tr.is_error) { drop say_err("npkg: the environment cannot be read (PATH, the working directory)"); exit 2i32; }
+    Tools:t = move(tr.value);
+    if ((t.llc.len == 0i64) || (t.lld.len == 0i64)) {
+        drop say_err("npkg: llc and ld.lld must be on PATH -- the toolchain is a build input (D-204), and a build without it is not a build");
+        exit 2i32;
+    }
+    Result<List<string>>:pin = await toolchain_pin_check(string_from_bytes(t.llc.ptr, t.llc.len),
+                                                          string_from_bytes(t.opt.ptr, t.opt.len),
+                                                          string_from_bytes(t.lld.ptr, t.lld.len),
+                                                          t.env, m.llvm);
+    if (pin.is_error) { drop say_err("npkg: the toolchain could not be asked its version"); exit 2i32; }
+    List<string>:pins = pin.value;
+    if (pins.count > 0i64) {
+        for (int64:i in 0i64...pins.count) { drop say_err(raw strlist_view(pins, i)); }
+        exit 2i32;
+    }
+    Ctx:c = raw ctx_init(move(m), move(t));
+
+    // --- the ladder ---------------------------------------------------------------
+    Result<Step>:s0 = await build_floor(@c);
+    if (s0.is_error) { drop say_err("npkg: the runtime floor could not be built (a spawn failed)"); exit 2i32; }
+    if (!s0.value.ok) { drop say_err(s0.value.text); exit 1i32; }
+    Result<Step>:s1 = await build_builder(@c);
+    if (s1.is_error) { drop say_err("npkg: the builder could not be built (a spawn failed)"); exit 2i32; }
+    if (!s1.value.ok) { drop say_err(s1.value.text); exit 1i32; }
+    Result<Step>:s2 = await build_artifact(@c);
+    if (s2.is_error) { drop say_err("npkg: the compiler could not be built (a spawn failed)"); exit 2i32; }
+    if (!s2.value.ok) { drop say_err(s2.value.text); exit 1i32; }
+    drop say(raw stage_text("builder", "snapshot -> builder -> npkc (D-205)"));
+    if (is_build) {
+        drop say(string_concat("\nok  built ", raw rel_to_root(@c, s2.value.text)));
+        wild_release_all();
+        exit 0i32;
+    }
+
+    // --- the tests ----------------------------------------------------------------
+    Result<NIL>:td = ensure_dir(string_from_bytes(c.tdir.ptr, c.tdir.len));
+    if (td.is_error) { drop say_err("npkg: build/test/ could not be created"); exit 2i32; }
+    if (selfcheck) {
+        Result<int64>:bad0 = await selfcheck_run(@c, true);
+        if (bad0.is_error) { drop say_err("npkg: the self-check could not run (a spawn failed)"); exit 2i32; }
+        wild_release_all();
+        if (bad0.value > 0i64) { exit 1i32; }
+        exit 0i32;
+    }
+    bool:filtering = (only.count > 0i64);
+    if (!filtering) {
+        Result<int64>:bad = await selfcheck_run(@c, false);
+        if (bad.is_error) { drop say_err("npkg: the self-check could not run (a spawn failed)"); exit 2i32; }
+        if (bad.value > 0i64) {
+            drop note_failure(@c, string_concat("runner-selfcheck: ", string_concat(int_to_string(bad.value), " case(s) wrong -- the runner cannot be trusted to report failures")));
+        } else {
+            drop say(raw stage_text("selfcheck", "the runner reports failures as well as passes (§7.1)"));
+        }
+    }
+    List<string>:all_sources = raw list_init::<string>(64i64);
+    Result<NIL>:rt = await run_targets(@c, only, @all_sources);
+    if (rt.is_error) { drop say_err("npkg: the test targets could not be run (a spawn or a read failed)"); exit 2i32; }
+    if (filtering && (c.total == 0i64)) {
+        string:names = "";
+        for (int64:o in 0i64...only.count) {
+            if (o > 0i64) { names = string_concat(names, ", "); }
+            names = string_concat(names, "'");
+            names = string_concat(names, raw strlist_view(only, o));
+            names = string_concat(names, "'");
+        }
+        drop say(string_concat(string_concat("\nno test matched ", names), " -- nothing ran"));
+        wild_release_all();
+        exit 2i32;
+    }
+    if (!filtering) {
+        Result<NIL>:g = await run_grammar(@c, all_sources);
+        if (g.is_error) { drop say_err("npkg: the grammar sweep could not run"); exit 2i32; }
+        Result<NIL>:rj = await run_rejections(@c);
+        if (rj.is_error) { drop say_err("npkg: the rejection suites could not run"); exit 2i32; }
+        Result<NIL>:pg = await run_programs(@c);
+        if (pg.is_error) { drop say_err("npkg: the program suite could not run"); exit 2i32; }
+        Result<NIL>:ru = await run_runtime(@c);
+        if (ru.is_error) { drop say_err("npkg: the runtime tests could not run"); exit 2i32; }
+        Result<NIL>:ac = await run_accept(@c);
+        if (ac.is_error) { drop say_err("npkg: the acceptance suite could not run"); exit 2i32; }
+    }
+    if (verdicts_path.len > 0i64) {
+        Result<cstring>:vc = to_cstring(verdicts_path);
+        if (vc.is_error) { drop say_err("npkg: the verdicts path is not a path"); exit 2i32; }
+        Result<NIL>:vw = write_file(vc.value, raw verdicts_text(@c));
+        if (vw.is_error) { drop say_err("npkg: the verdicts file could not be written"); exit 2i32; }
+    }
+    if (c.failures.count > 0i64) {
+        drop say(string_concat(string_concat("\n", int_to_string(c.failures.count)), " failure(s):"));
+        for (int64:f in 0i64...c.failures.count) {
+            drop say(string_concat("  - ", raw strlist_view(c.failures, f)));
+        }
+        if (filtering) { drop say(string_concat("\n", raw partial_warning(c.total, c.available))); }
+        wild_release_all();
+        exit 1i32;
+    }
+    if (filtering) {
+        drop say(string_concat(string_concat("\n", int_to_string(c.total)), " test(s) matched and passed."));
+        drop say(raw partial_warning(c.total, c.available));
+        wild_release_all();
+        exit 0i32;
+    }
+    drop say(string_concat(string_concat("\nok  ", int_to_string(c.total)), " test(s) passed"));
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    // Exit 3 for every family: a defect in NPKG, never in the tree. The
+    // environment's answers -- a missing tool, an unreadable manifest, a
+    // spawn that fl -- are handled above and exit 2 by name.
+    pick (e) {
+        (DeadlineExceeded) { exit 3i32; },
+        (DivByZero)        { exit 3i32; },
+        (DivOverflow)      { exit 3i32; },
+        (HeapBadRequest)   { exit 3i32; },
+        (HeapOom)          { exit 3i32; },
+        (IntOverflow)      { exit 3i32; },
+        (OutOfBounds)      { exit 3i32; },
+        (Unreachable)      { exit 3i32; },
+        (WildLeak)         { exit 3i32; },
+        (DriverLeak)       { exit 3i32; },
+        (BadPath)          { exit 3i32; },
+        (EProcArgs)        { exit 3i32; },
+        (EProcSpawn)       { exit 3i32; },
+        (EProcDeadline)    { exit 3i32; },
+        (EProcWait)        { exit 3i32; },
+        (EFsPath)          { exit 3i32; },
+        (EFsIndex)         { exit 3i32; },
+        (EFsRecord)        { exit 3i32; },
+        (ETextInt)         { exit 3i32; },
+        (ETomlMissing)     { exit 3i32; },
+        (ETomlKind)        { exit 3i32; },
+        (EElf)             { exit 3i32; },
+        (intern.BoundsId)      { exit 3i32; },
+        (intern.ProvenSlice)   { exit 3i32; },
+        (diagnostics.BoundsId) { exit 3i32; },
+        (token.BoundsId)       { exit 3i32; },
+        (source.BoundsIndex)   { exit 3i32; },
+        (source.FileUnknown)   { exit 3i32; },
+        (source.BoundsOffset)  { exit 3i32; },
+        (types.BoundsId)       { exit 3i32; },
+        (types.BoundsIndex)    { exit 3i32; },
+        (ast.BoundsId)         { exit 3i32; },
+        (ast.BoundsScratch)    { exit 3i32; },
+        (ast.BoundsWindow)     { exit 3i32; },
+        (*)                { exit 3i32; }
+    }
+    exit 3i32;
+};

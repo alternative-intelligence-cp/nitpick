@@ -153,6 +153,17 @@ may appear in it, **with no relaxing flag** — which is what makes "in-process
 FFI does not exist" a structural guarantee for every program, not a project
 convention (D-149).
 
+> **The scan's reader is `npkg`'s own** (`npkg/elf.npk`, 1.4.8): the object's
+> ELF64 symbol table read directly — every `SHN_UNDEF` entry with a name —
+> and held to the allowlist derived from `runtime/npkrt.ll`'s own `define`s
+> plus `main`, the one symbol the runtime may need because the program
+> provides it. Not `llvm-readelf`: a fourth tool outside the `[toolchain]`
+> pin, whose text output nothing checks, is a poor foundation for a rule that
+> is law. The Python harness still spawns `llvm-readelf`, and the parity
+> stage holds the two readers to each other on every object it scans. The
+> link line `npkg` builds takes one program object and adds the runtime
+> object; there is no parameter through which a third input could enter.
+
 Verification, where `[verify]` requests it, runs against the IR and the source
 before linking, over **SMT-LIB2 text** to `z3` (D-067).
 
@@ -323,7 +334,7 @@ even for edits at the very bottom of the language.
 | Command | Behaviour |
 |---|---|
 | `npkg build` | reads lock + vendored source; never resolves, never fetches |
-| `npkg test` | builds and runs the `[[test]]` targets (§7.1); diagnostics captured through `dyn Writer` (D-075), so expected output is compared rather than eyeballed |
+| `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every suite the tree holds: the `[[test]]` targets and the built-in sweeps — the real-parser sweep, the five rejection suites, the backend programs with their `opt -O2` re-run, the runtime floor's tests, the acceptance suite (their declaration is **S-10**). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. `--only SUBSTR` narrows to the `[[test]]` files whose path holds it and skips the sweeps, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
 | `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
 | `npkg verify` | a clean build with `[verify]` enforced, ending in the stage-1/stage-2 comparison for the compiler itself |
 
@@ -353,11 +364,18 @@ path = "tests/rejection"
 expectation cannot drift apart:
 
 ```nitpick
-// expect-error: NITPICK-RUNG-001
-// expect-error-at: 14:9
-// expect-exit: 7
-// expect-no-parse-error
+// expect-error: NITPICK-RUNG-001     a finding that must be reported (appended)
+// expect-error-at: 14:9              moves the LAST expect-error to that line[:column]
+// expect-note: NITPICK-MACRO-009     a note that must be reported (its own channel)
+// expect-note-at: 3                  the same for the last expect-note
+// expect-exit: 7                     the exit a run must produce (0 when absent)
+// stress: 40                         run it that many times, the SAME answer every time
+// argv: MOCK_DRIVER 555              extra argv; a fixture's name becomes its built path
+// expect-no-parse-error              the file is meant to reach the backend (D-085)
 ```
+
+Both runners read exactly this grammar, marker for marker and in this order
+(`bootstrap/harness/harness.py` `read_expectations`, `npkg/expect.npk`).
 
 Three rules make this worth having rather than decorative:
 
@@ -377,6 +395,14 @@ Three rules make this worth having rather than decorative:
 - **Unexpected diagnostics fail a test as surely as missing ones.** A suite that
   ignores extras stops noticing new problems.
 
+  > **Measured at 1.4.8: neither runner enforces this sentence.** Both match
+  > the expected codes as a SUBSET of what was reported — every expected code
+  > must appear, at its line and column when spelled, extras pass — and notes
+  > are asserted on their own channel. A rule the spec states and nothing
+  > enforces is the dormant-rule pattern; making it strict is **S-9**
+  > (`OPEN_DECISIONS.md` §2e), the user's, and parity is measured on the rule
+  > as implemented until then.
+
 **`expect-no-parse-error` is the load-bearing one.** It asserts that a file
 reached the *backend* to be rejected, rather than tripping the parser. That is
 D-085's rule — the parser never restricts, the backend does — made checkable, and
@@ -387,7 +413,19 @@ handed is worse than no suite, because it reports green while checking nothing.
 So there is a self-check that feeds the harness wrong expectations — wrong code,
 wrong line, wrong exit status, a negative test that compiles, a negative test
 with no expectation, and a rejection file that fails at parse time — and requires
-it to report every one as a failure.
+it to report every one as a failure. Both runners carry it, over one case set:
+`bootstrap/harness/selfcheck.py` for the Python harness and `npkg test
+--selfcheck` for `npkg` (D-206 §5 transferred the obligation; a full `npkg
+test` runs it first), each with D-204's toolchain pin driven through its
+FAILURE path — a pin that is not the installed version must refuse, no pin
+must refuse, the real pin must pass.
+
+**Parity between the runners is measured, not assumed** (D-206 §5, 1.4.8).
+The harness's `parity` stage builds `npkg` with the compiler under test, runs
+`npkg test --verdicts` from the manifest root, and diffs the two verdict lists
+unit for unit — the same suites, the same files, the same pass or fail — then
+byte-compares `npkg build`'s compiler with its own. The harness retires only
+under `meta/SWITCH.md`, after parity has held through cycle 1.5.
 
 ---
 

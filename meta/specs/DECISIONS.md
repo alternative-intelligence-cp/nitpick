@@ -14525,6 +14525,32 @@ Closes B-4. Scope for 1.4 (subcycle 1.4.8): **`npkg build` and
 > supervised identically, and renaming an error identity costs every
 > `failsafe` in the tree an arm for cosmetics.
 
+> **Landed, items 3–5 (1.4.8 Part D, 2026-09-02).** `npkg/` — twelve modules
+> of Nitpick built by the compiler under test, over the compiler's own path
+> code, list and lexer. `npkg build` runs the README's ladder and produces a
+> compiler BYTE-IDENTICAL to the harness's; `npkg test` runs the runner
+> self-check (§7.1's obligation, `--selfcheck` alone) and every suite the
+> harness runs, unit for unit — 908 verdicts on the first full run, every
+> suite count the harness's — with `--only`, `--verdicts`, and `update` and
+> `verify` refusing by name. Item 4's scan reads the object's ELF64 symbol
+> table itself (`npkg/elf.npk`) against the allowlist derived from
+> `npkrt.ll`'s defines plus `main`: `llvm-readelf` is a fourth tool outside
+> the `[toolchain]` pin, and a law enforced by an unpinned tool's text is
+> weaker than the rule; the harness keeps spawning `llvm-readelf`, and the
+> parity stage holds the two readers to each other. Item 5's parity is the
+> harness's `parity` stage — `npkg` built by the compiler under test, `npkg
+> test --verdicts` run from the manifest root, the two verdict lists diffed
+> unit for unit, `build/npkc` byte-compared — and every per-file site in the
+> harness now records a verdict. Two questions the port raised are S-9
+> (BUILD_REFERENCE §7.1's "unexpected diagnostics fail a test" is a rule
+> neither runner enforces; measured at 17 of 131 files, nine of them one
+> `resolve_check` defect fixed on the spot) and S-10 (the manifest declares
+> four of the fourteen suites). `proc_wait` CONSUMES its `Proc` since this
+> landing: a borrow there would taint the captured text under D-004's
+> conservative rule, and after the wait nothing is left to hold. The
+> stage's first result, on the concluding 1.4.8 harness run: 902 verdicts
+> agree between the two runners, npkc byte-identical, every stage green.
+
 ## D-207 — per-scope joins — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-22. `join_head` becomes per-scope, threaded through the 1.2

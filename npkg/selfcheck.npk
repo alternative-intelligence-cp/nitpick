@@ -1,0 +1,186 @@
+// selfcheck -- does `npkg test` actually detect a wrong expectation?
+// (1.4.8; BUILD_REFERENCE §7.1's obligation, transferred to `npkg` by
+// D-206 §5 -- `npkg test --selfcheck`.)
+//
+// A test suite that only ever agrees with what it is handed is worse than
+// no suite, because it reports green while checking nothing. So the runner
+// is itself tested, against cases where it MUST report a failure -- a
+// negative test expecting the wrong code, one whose program compiles, one
+// with no expectation, a positive test exiting with the wrong code, a
+// negative test expecting the wrong line, a rejection file that fl at
+// PARSE time rather than in the backend -- and two where it must not.
+// Then the toolchain pin (D-204): a pin that is not the installed version
+// must refuse, no pin must refuse, the real pin must pass -- driven by
+// moving the pin, the only half of the comparison this can move.
+//
+// The case set is `bootstrap/harness/selfcheck.py`'s, case for case; the
+// rung the negative cases lean on is `limit<Rules>`, a rung rather than a
+// type error on purpose, because the property under test is D-085's --
+// the parser reads it, the backend refuses it. THE BUILDER IS THE COMPILER
+// HERE: these cases ask whether the RUNNER reports failures, not whether
+// today's compiler is right about anything.
+
+mod:selfcheck;
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/paths.npk".*;
+use "./text.npk".*;
+use "./expect.npk".*;
+use "./toolchain.npk".*;
+use "./build.npk".*;
+use "./suites.npk".*;
+
+func:FAILSAFE = string() never fails {
+    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 1i32; },\n        (HeapOom) { exit 1i32; },\n        (Unreachable) { exit 1i32; },\n        (WildLeak) { exit 1i32; },\n        (*) { exit 1i32; }\n    }\n    exit 1i32;\n};\n";
+};
+
+func:MAIN_OK = string() never fails {
+    pass "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n";
+};
+
+// The refused construct, at line 2 of whatever it is spliced into.
+func:RUNG = string() never fails {
+    pass "func:build = int32(int32:seed) {\n    limit<r_pos> int32:x = seed;\n    pass x;\n};\n";
+};
+
+func:CASE_COUNT = int64() never fails { pass 8i64; };
+
+func:case_name = string(int64:i) never fails {
+    if (i == 0i64) { pass "correct-expectation"; }
+    if (i == 1i64) { pass "wrong-code"; }
+    if (i == 2i64) { pass "compiles-anyway"; }
+    if (i == 3i64) { pass "no-expectation"; }
+    if (i == 4i64) { pass "wrong-line"; }
+    if (i == 5i64) { pass "wrong-exit"; }
+    if (i == 6i64) { pass "right-exit"; }
+    pass "parse-error-not-backend";
+};
+
+func:case_negative = bool(int64:i) never fails {
+    if (i == 5i64) { pass false; }
+    if (i == 6i64) { pass false; }
+    pass true;
+};
+
+func:case_must_fail = bool(int64:i) never fails {
+    if (i == 0i64) { pass false; }
+    if (i == 6i64) { pass false; }
+    pass true;
+};
+
+func:case_why = string(int64:i) never fails {
+    if (i == 0i64) { pass "a correct expectation must pass"; }
+    if (i == 1i64) { pass "expecting the wrong code must fail"; }
+    if (i == 2i64) { pass "a negative test that compiles must fail"; }
+    if (i == 3i64) { pass "a negative test with no expect-error must fail"; }
+    if (i == 4i64) { pass "expecting the wrong line must fail"; }
+    if (i == 5i64) { pass "a positive test exiting with the wrong code must fail"; }
+    if (i == 6i64) { pass "a positive test exiting as expected must pass"; }
+    pass "a parse error where a backend rejection was expected must fail";
+};
+
+func:case_source = string(int64:i) never fails {
+    string:tail = string_concat(raw MAIN_OK(), raw FAILSAFE());
+    if (i == 0i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n", raw RUNG()), tail)); }
+    if (i == 1i64) { pass (string_concat(string_concat("// expect-error: NITPICK-CHECK-001\n", raw RUNG()), tail)); }
+    if (i == 2i64) { pass (string_concat("// expect-error: NITPICK-RUNG-001\n", tail)); }
+    if (i == 3i64) { pass (string_concat(raw RUNG(), tail)); }
+    if (i == 4i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n", raw RUNG()), tail)); }
+    if (i == 5i64) { pass (string_concat("// expect-exit: 3\n", tail)); }
+    if (i == 6i64) { pass tail; }
+    // The one that guards D-085: a file meant to reach the backend but
+    // tripping the PARSER instead must be reported, not accepted as "it
+    // failed, close enough".
+    pass (string_concat("// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\nfunc:main = int32() { this is not nitpick };\n", raw FAILSAFE()));
+};
+
+func:case_line = string(string:name, bool:ok, string:why) never fails {
+    string:s = string_concat("  ", raw text_pad_right(name, 26i64));
+    s = string_concat(s, " ");
+    if (ok) { s = string_concat(s, raw text_pad_right("ok", 4i64)); }
+    else { s = string_concat(s, raw text_pad_right("BAD", 4i64)); }
+    s = string_concat(s, "  ");
+    pass (string_concat(s, why));
+};
+
+// Runs every case; prints the table when `verbose` or when a case is
+// wrong; returns how many cases were wrong.
+pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
+    string:dir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "selfcheck");
+    Result<NIL>:d = ensure_dir(dir);
+    if (d.is_error) { fail d.err; }
+    // THE COMMITTED SNAPSHOT IS THE COMPILER HERE (the harness's
+    // `COMPILER = BUILDER`); the artifact is restored afterwards.
+    string:saved = string_concat(c.npkc, "");
+    c.npkc = string_concat(c.builder, "");
+    List<string>:report = raw list_init::<string>(16i64);
+    int64:bad = 0i64;
+    for (int64:i in 0i64...(raw CASE_COUNT())) {
+        string:name = raw case_name(i);
+        string:path = raw path_join(dir, string_concat(name, ".npk"));
+        Result<cstring>:cp = to_cstring(path);
+        if (cp.is_error) { fail cp.err; }
+        Result<NIL>:w = write_file(cp.value, raw case_source(i));
+        if (w.is_error) { fail w.err; }
+        Expect:exp = raw expect_read(raw case_source(i));
+        List<string>:fl = raw list_init::<string>(1i64);
+        if (raw case_negative(i)) {
+            fl = relay await check_negative(c, name, path, exp);
+        } else {
+            fl = relay await check_positive(c, name, path, exp);
+        }
+        bool:did_fail = (fl.count > 0i64);
+        bool:ok = (did_fail == (raw case_must_fail(i)));
+        if (!ok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(name, ok, raw case_why(i)));
+        if (!ok) {
+            if (raw case_must_fail(i)) {
+                drop strlist_push(@report, "      the runner accepted this; it should have rejected it");
+            } else {
+                drop strlist_push(@report, string_concat("      the runner rejected this: ", raw strlist_view(fl, 0i64)));
+            }
+        }
+    }
+    c.npkc = move(saved);
+
+    // THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
+    // value is its failure path, and a check that has only ever been seen
+    // to PASS is a check nobody has tested.
+    string:real = string_from_bytes(c.m.llvm.ptr, c.m.llvm.len);
+    string:moved = "0.0.0";
+    if (real.len > 0i64) { moved = string_concat(real, ".999"); }
+    string:llc = string_concat(c.t.llc, "");
+    string:opt = string_concat(c.t.opt, "");
+    string:lld = string_concat(c.t.lld, "");
+    List<string>:mismatch = relay await toolchain_pin_check(llc, opt, lld, c.t.env, moved);
+    List<string>:unpinned = relay await toolchain_pin_check(llc, opt, lld, c.t.env, "");
+    List<string>:restored = relay await toolchain_pin_check(llc, opt, lld, c.t.env, real);
+    bool:ok1 = (mismatch.count > 0i64);
+    if (!ok1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("toolchain-mismatch", ok1, "a toolchain that is not the pinned version must fail"));
+    if (!ok1) { drop strlist_push(@report, "      the pin check accepted it; it should not have"); }
+    bool:ok2 = (unpinned.count > 0i64);
+    if (!ok2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("toolchain-unpinned", ok2, "no [toolchain] pin at all must fail"));
+    if (!ok2) { drop strlist_push(@report, "      the pin check accepted it; it should not have"); }
+    bool:ok3 = (restored.count == 0i64);
+    if (!ok3) {
+        bad = bad + 1i64;
+        drop strlist_push(@report, raw case_line("toolchain-restored", false,
+            string_concat("the real toolchain must pass: ", raw strlist_view(restored, 0i64))));
+    } else {
+        drop strlist_push(@report, raw case_line("toolchain-restored", true, "the pinned toolchain that is installed must pass"));
+    }
+
+    if (verbose || (bad > 0i64)) {
+        drop say("runner self-check");
+        for (int64:k in 0i64...report.count) { drop say(raw strlist_view(report, k)); }
+        if (bad > 0i64) {
+            string:m = string_concat("\n", int_to_string(bad));
+            drop say(string_concat(m, " case(s) wrong -- the runner cannot be trusted to report failures."));
+        } else {
+            drop say("\nok  the runner reports failures as well as passes");
+        }
+    }
+    pass bad;
+};

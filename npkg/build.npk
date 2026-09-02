@@ -1,0 +1,599 @@
+// build -- the ladder, the closed-world link, and the program pipeline
+// (1.4.8; D-203/D-205 for the ladder, D-206 §4 and D-011 for the link,
+// BUILD_REFERENCE §4 for the stage order).
+//
+// THE LADDER IS THE README'S, VERBATIM IN SHAPE: the floor (`runtime/npkrt.ll`)
+// and the committed snapshot (`bootstrap/seed/stage1.ll`) assemble with the
+// manifest's `llc-flags`, link with its `lld-flags` into the BUILDER, and
+// the builder compiles `[build] entry` -- `src/` is built by the snapshot
+// and by nothing else (D-205). Every `llc`/`opt`/`ld.lld` argv is BUILT from
+// the manifest's lists; no tool ever runs at its own defaults (§4: "every
+// subprocess is invoked with settings derived from the manifest").
+//
+// THE LINK IS CLOSED-WORLD, BY CONSTRUCTION: `lld_link` takes ONE object and
+// adds the runtime object, and there is no parameter through which a third
+// input, a library, or a search path could enter -- the rule is not a flag
+// that could be relaxed because there is nothing to relax. Before any object
+// is linked its undefined symbols are read (`elf.npk`) and held to the
+// runtime's allowlist; a symbol nobody provides fl the build BY NAME,
+// which is D-011 §3 as a pipeline step rather than a harness convenience.
+
+mod:build;
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/paths.npk".*;
+use "../lib/nfs.npk".*;
+use "../lib/nio.npk".*;
+use "../lib/nproc.npk".*;
+use "./text.npk".*;
+use "./manifest.npk".*;
+use "./toolchain.npk".*;
+use "./elf.npk".*;
+use "./irscan.npk".*;
+
+pub struct:Verdict = {
+    string:suite;
+    string:name;
+    bool:ok;
+    string:msg;
+};
+
+pub struct:Ctx = {
+    Manifest:m;
+    Tools:t;
+    string:bdir;             // <root>/build
+    string:tdir;             // <root>/build/test
+    string:rt_obj;           // <root>/build/npkrt.o, once assembled
+    string:builder;          // <root>/build/builder, once linked
+    string:npkc;             // the artifact, absolute, once built
+    List<string>:allow;      // the runtime allowlist (npkrt.ll's defines + main)
+    List<Verdict>:verdicts;  // every unit's verdict, in run order
+    List<string>:failures;   // every failure message, in run order
+    int64:total;             // [[test]] files run
+    int64:available;         // [[test]] files there were, before any --only filter
+};
+
+pub struct:Step = { bool:ok; string:text; };
+
+pub func:step_ok = Step(string:text) never fails { pass Step{ ok: true, text: raw text_copy(text) }; };
+pub func:step_bad = Step(string:text) never fails { pass Step{ ok: false, text: raw text_copy(text) }; };
+
+pub func:ctx_init = Ctx(move Manifest:m, move Tools:t) never fails {
+    string:root = string_from_bytes(m.root.ptr, m.root.len);
+    string:bdir = raw path_join(root, "build");
+    string:tdir = raw path_join(bdir, "test");
+    pass Ctx{ m: move(m), t: move(t), bdir: move(bdir), tdir: move(tdir),
+              rt_obj: "", builder: "", npkc: "",
+              allow: raw list_init::<string>(1i64),
+              verdicts: raw list_init::<Verdict>(64i64),
+              failures: raw list_init::<string>(8i64),
+              total: 0i64, available: 0i64 };
+};
+
+pub func:in_root = string(Ctx->:c, string:rel) never fails {
+    pass (raw path_join(string_from_bytes(c.m.root.ptr, c.m.root.len), rel));
+};
+
+pub func:rel_to_root = string(Ctx->:c, string:abs) never fails {
+    pass (raw path_relative(string_from_bytes(c.m.root.ptr, c.m.root.len), abs));
+};
+
+// --- the console -------------------------------------------------------------------
+
+pub func:say = NIL(string:s) never fails {
+    string:ln = string_concat(s, "\n");
+    Result<NIL>:r = nio_write_all(raw nio_stdout_fd(), ln.ptr =>! wild int8->, ln.len);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+pub func:say_err = NIL(string:s) never fails {
+    string:ln = string_concat(s, "\n");
+    Result<NIL>:r = nio_write_all(raw nio_stderr_fd(), ln.ptr =>! wild int8->, ln.len);
+    if (r.is_error) { }
+    pass NIL;
+};
+
+// `"  %-11s %2d %s"`: the harness's stage line.
+pub func:stage_line = string(string:label, int64:n, string:rest) never fails {
+    string:s = string_concat("  ", raw text_pad_right(label, 11i64));
+    s = string_concat(s, " ");
+    s = string_concat(s, raw text_pad_left(int_to_string(n), 2i64));
+    s = string_concat(s, " ");
+    pass (string_concat(s, rest));
+};
+
+pub func:stage_text = string(string:label, string:rest) never fails {
+    string:s = string_concat("  ", raw text_pad_right(label, 11i64));
+    s = string_concat(s, " ");
+    pass (string_concat(s, rest));
+};
+
+// --- directories -------------------------------------------------------------------
+
+// `abs` exists as a directory afterwards (0700 -- G-3's default; a build
+// directory is this user's). An existing one is fine.
+pub func:ensure_dir = NIL(string:abs) {
+    Path:parent = relay path_parse(raw path_dirname(abs));
+    fd:d = relay dir_open(parent);
+    Result<NIL>:mk = mkdir_at(d, raw text_file_name(abs));
+    Result<NIL>:cl = close(d);
+    if (mk.is_error) { if (mk.err != Exists) { fail mk.err; } }
+    if (cl.is_error) { fail cl.err; }
+    pass NIL;
+};
+
+// --- one tool, one step ------------------------------------------------------------
+
+// The first stderr line containing `needle`, else the whole stderr; stripped
+// and cut to `n` -- `next((l for l in stderr.splitlines() if needle in l), stderr).strip()[:n]`.
+func:first_line_with = string(string:err, string:needle, int64:n) never fails {
+    List<string>:lines = raw text_lines(err);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        bool:hit = false;
+        if (needle.len == 0i64) {
+            if ((raw text_trim(ln)).len > 0i64) { hit = true; }
+        } else {
+            if (raw text_contains(ln, needle)) { hit = true; }
+        }
+        if (hit) { pass (raw text_head(raw text_trim(ln), n)); }
+    }
+    pass (raw text_head(raw text_trim(err), n));
+};
+
+// Run `exe` with `args`; a nonzero exit, a signal or the deadline is the
+// failure, with the tool's stderr as the text.
+pub async func:tool_step = Step(Ctx->:c, string:exe, List<string>:args, Duration:within) {
+    Result<Run>:r = await run_argv(exe, args, c.t.env, within);
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) { pass (raw step_bad(string_concat(raw text_file_name(exe), " did not terminate"))); }
+    if (!run.x.exited) {
+        string:m = string_concat(raw text_file_name(exe), " was killed by signal ");
+        pass (raw step_bad(string_concat(m, int_to_string(run.x.signal))));
+    }
+    if (run.x.status != 0i64) { pass Step{ ok: false, text: raw text_copy(run.x.err) }; }
+    pass Step{ ok: true, text: raw text_copy(run.x.err) };
+};
+
+// `llc <flags> <ll> -o <obj>`.
+pub async func:llc_obj = Step(Ctx->:c, List<string>:flags, string:ll, string:obj) {
+    List<string>:args = raw strlist_clone(flags);
+    drop strlist_push(@args, ll);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, obj);
+    pass (relay await tool_step(c, string_from_bytes(c.t.llc.ptr, c.t.llc.len), args,
+                                raw duration_secs(600i64)));
+};
+
+// `opt <opt-flags> <ll> -o <out>`; the caller has checked `opt` exists.
+pub async func:opt_ll = Step(Ctx->:c, string:ll, string:out_ll) {
+    List<string>:args = raw strlist_clone(c.m.opt_flags);
+    drop strlist_push(@args, ll);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, out_ll);
+    pass (relay await tool_step(c, string_from_bytes(c.t.opt.ptr, c.t.opt.len), args,
+                                raw duration_secs(600i64)));
+};
+
+// THE CLOSED-WORLD LINK: `ld.lld <lld-flags> -o <out> <obj> <npkrt.o>` --
+// one program object, the runtime object, nothing else, and no way to say
+// otherwise.
+pub async func:lld_link = Step(Ctx->:c, string:out, string:obj) {
+    List<string>:args = raw strlist_clone(c.m.lld_flags);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, out);
+    drop strlist_push(@args, obj);
+    drop strlist_push(@args, string_from_bytes(c.rt_obj.ptr, c.rt_obj.len));
+    pass (relay await tool_step(c, string_from_bytes(c.t.lld.ptr, c.t.lld.len), args,
+                                raw duration_secs(600i64)));
+};
+
+// D-011, enforced mechanically: the object's undefined symbols outside
+// `allow`, as the harness's message; an object the reader cannot walk is
+// its own named failure, never a pass.
+pub func:zero_dep = List<string>(Ctx->:c, string:obj, List<string>:allow, string:name) never fails {
+    List<string>:out = raw list_init::<string>(1i64);
+    Result<List<string>>:u = elf_undefined(obj);
+    if (u.is_error) {
+        string:m0 = string_concat(name, ": the object could not be read for the zero-dependency scan (");
+        m0 = string_concat(m0, obj);
+        m0 = string_concat(m0, ") -- not an ELF64 object this reader can walk, or unreadable");
+        drop list_push(@out, move(m0));
+        pass out;
+    }
+    List<string>:undef = u.value;
+    List<string>:extra = raw strlist_minus(undef, allow);
+    if (extra.count == 0i64) { pass out; }
+    string:m = string_concat(name, ": needs symbol(s) the project does not provide: ");
+    m = string_concat(m, raw text_join(extra, ", "));
+    m = string_concat(m, " -- a zero-dependency violation (D-011); either the emitter must stop producing the reference or npkrt.ll must define it as hand-written, verified IR");
+    drop list_push(@out, move(m));
+    pass out;
+};
+
+// --- the ladder --------------------------------------------------------------------
+
+// The floor: `runtime/npkrt.ll` -> build/npkrt.o. Its own undefined set may
+// hold exactly `main` and `npk_failsafe`, which the program provides.
+pub async func:build_floor = Step(Ctx->:c) {
+    Result<NIL>:d = ensure_dir(string_from_bytes(c.bdir.ptr, c.bdir.len));
+    if (d.is_error) { pass (raw step_bad("build/ could not be created")); }
+    string:rt = raw in_root(c, "runtime/npkrt.ll");
+    Result<List<string>>:al = runtime_allowlist(rt);
+    if (al.is_error) { pass (raw step_bad("runtime/npkrt.ll could not be read for the allowlist")); }
+    c.allow = al.value;
+    string:obj = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkrt.o");
+    Result<Step>:s = await llc_obj(c, c.m.llc_flags, rt, obj);
+    if (s.is_error) { fail s.err; }
+    Step:st = move(s.value);
+    if (!st.ok) { pass (raw step_bad(string_concat("runtime floor did not compile: ", st.text))); }
+    List<string>:floor_allow = raw list_init::<string>(2i64);
+    drop strlist_push(@floor_allow, "main");
+    drop strlist_push(@floor_allow, "npk_failsafe");
+    List<string>:zd = raw zero_dep(c, obj, floor_allow, "npkrt.o");
+    if (zd.count > 0i64) { pass (raw step_bad(raw strlist_view(zd, 0i64))); }
+    c.rt_obj = move(obj);
+    pass (raw step_ok(""));
+};
+
+// The builder: the committed snapshot made runnable (D-203).
+pub async func:build_builder = Step(Ctx->:c) {
+    string:snap = raw in_root(c, "bootstrap/seed/stage1.ll");
+    Result<cstring>:sc = to_cstring(snap);
+    if (sc.is_error) { pass (raw step_bad("bootstrap/seed/stage1.ll: not a path")); }
+    if (!(path_exists(sc.value))) {
+        pass (raw step_bad("bootstrap/seed/stage1.ll is missing -- it IS the bootstrap (D-203): a checkout without it cannot build src/"));
+    }
+    string:b = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "builder");
+    string:bo = string_concat(b, ".o");
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, snap, bo);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) { pass (raw step_bad(string_concat("the committed builder is unusable: LLC ", raw text_head(raw text_trim(st1.text), 160i64)))); }
+    List<string>:zd = raw zero_dep(c, bo, c.allow, "builder.o");
+    if (zd.count > 0i64) { pass (raw step_bad(raw strlist_view(zd, 0i64))); }
+    Result<Step>:s2 = await lld_link(c, b, bo);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) { pass (raw step_bad(string_concat("the committed builder is unusable: LINK ", raw text_head(raw text_trim(st2.text), 160i64)))); }
+    c.builder = move(b);
+    pass (raw step_ok(""));
+};
+
+// Compile a program (an absolute path) with `compiler`, its IR on stdout.
+pub async func:compile_stdout = Run(Ctx->:c, string:compiler, string:path, Duration:within) {
+    List<string>:args = raw list_init::<string>(1i64);
+    drop strlist_push(@args, path);
+    pass (relay await run_argv(compiler, args, c.t.env, within));
+};
+
+// A tool under `tools/` or `src/`, built BY THE BUILDER through `-o`
+// (the harness's `build_tool`): `<base>.ll`, `<base>.o`, `<base>`. The
+// text of a good step is the binary's path.
+pub async func:build_tool = Step(Ctx->:c, string:source, string:name) {
+    if (c.builder.len == 0i64) { pass (raw step_bad("no builder")); }
+    string:base = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), name);
+    string:ll = string_concat(base, ".ll");
+    string:obj = string_concat(base, ".o");
+    List<string>:args = raw list_init::<string>(3i64);
+    drop strlist_push(@args, source);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, ll);
+    Result<Run>:r = await run_argv(string_from_bytes(c.builder.ptr, c.builder.len), args, c.t.env,
+                                   raw duration_secs(900i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) { pass (raw step_bad(string_concat("the snapshot did not terminate compiling ", source))); }
+    bool:clean = false;
+    if (run.x.exited) { if (run.x.status == 0i64) { clean = true; } }
+    if (!clean) { pass (raw step_bad(string_concat("DIAG ", raw text_head(raw text_trim(run.x.err), 400i64)))); }
+    if (run.x.out.len > 0i64) {
+        pass (raw step_bad("npkc -o wrote the IR to a file AND to stdout -- one delivery, not two"));
+    }
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) { pass (raw step_bad(string_concat("LLC ", raw text_head(raw text_trim(st1.text), 160i64)))); }
+    List<string>:zd = raw zero_dep(c, obj, c.allow, name);
+    if (zd.count > 0i64) { pass (raw step_bad(raw strlist_view(zd, 0i64))); }
+    Result<Step>:s2 = await lld_link(c, base, obj);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) { pass (raw step_bad(string_concat("LINK ", raw text_head(raw text_trim(st2.text), 160i64)))); }
+    pass (raw step_ok(base));
+};
+
+// THE ARTIFACT: the builder compiles `[build] entry` to `build/npkc.ll`,
+// both IR scans run over it, `llc` at the manifest's level (through `opt`
+// when it asks for one), the scan, the link to `[build] output`.
+pub async func:build_artifact = Step(Ctx->:c) {
+    string:entry = raw in_root(c, string_from_bytes(c.m.entry.ptr, c.m.entry.len));
+    string:out = raw in_root(c, string_from_bytes(c.m.output.ptr, c.m.output.len));
+    Result<NIL>:d = ensure_dir(raw path_dirname(out));
+    if (d.is_error) { pass (raw step_bad("the output directory could not be created")); }
+    string:base = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkc");
+    string:ll = string_concat(base, ".ll");
+    string:obj = string_concat(base, ".o");
+    List<string>:args = raw list_init::<string>(3i64);
+    drop strlist_push(@args, entry);
+    drop strlist_push(@args, "-o");
+    drop strlist_push(@args, ll);
+    Result<Run>:r = await run_argv(string_from_bytes(c.builder.ptr, c.builder.len), args, c.t.env,
+                                   raw duration_secs(900i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) { pass (raw step_bad(string_concat("the snapshot did not terminate compiling ", entry))); }
+    bool:clean = false;
+    if (run.x.exited) { if (run.x.status == 0i64) { clean = true; } }
+    if (!clean) {
+        pass (raw step_bad(string_concat("the snapshot cannot build [build] entry (D-205: src/ may use nothing its builder cannot compile): ",
+                                         raw text_head(raw text_trim(run.x.err), 400i64))));
+    }
+    if (run.x.out.len > 0i64) {
+        pass (raw step_bad("npkc -o wrote the IR to a file AND to stdout -- one delivery, not two"));
+    }
+    Result<cstring>:lc = to_cstring(ll);
+    if (lc.is_error) { pass (raw step_bad("build/npkc.ll: not a path")); }
+    Result<string>:ir = read_file(lc.value);
+    if (ir.is_error) { pass (raw step_bad("build/npkc.ll could not be read back")); }
+    List<string>:dupes = raw ir_symbols_unique(ir.value, "npkc.ll");
+    if (dupes.count > 0i64) { pass (raw step_bad(raw strlist_view(dupes, 0i64))); }
+    List<string>:hoist = raw ir_allocas_hoisted(ir.value, "npkc.ll");
+    if (hoist.count > 0i64) { pass (raw step_bad(raw strlist_view(hoist, 0i64))); }
+    string:to_llc = raw text_copy(ll);
+    if (c.m.opt_level == 2i64) {
+        if (c.t.opt.len == 0i64) { pass (raw step_bad("[build] opt-level is 2 and `opt` is not on PATH")); }
+        string:oll = string_concat(base, ".opt.ll");
+        Result<Step>:so = await opt_ll(c, ll, oll);
+        if (so.is_error) { fail so.err; }
+        Step:sto = move(so.value);
+        if (!sto.ok) { pass (raw step_bad(string_concat("opt rejected the emitted IR: ", raw first_line_with(sto.text, "", 160i64)))); }
+        to_llc = move(oll);
+    }
+    Result<Step>:s1;
+    if (c.m.opt_level == 2i64) {
+        s1 = await llc_obj(c, c.m.llc_opt_flags, to_llc, obj);
+    } else {
+        s1 = await llc_obj(c, c.m.llc_flags, to_llc, obj);
+    }
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) { pass (raw step_bad(string_concat("llc rejected the compiler's own IR: ", raw first_line_with(st1.text, "error", 160i64)))); }
+    List<string>:zd = raw zero_dep(c, obj, c.allow, "npkc.o");
+    if (zd.count > 0i64) { pass (raw step_bad(raw strlist_view(zd, 0i64))); }
+    Result<Step>:s2 = await lld_link(c, out, obj);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) { pass (raw step_bad(string_concat("link failed: ", raw text_head(raw text_trim(st2.text), 160i64)))); }
+    c.npkc = move(out);
+    pass (raw step_ok(string_from_bytes(c.npkc.ptr, c.npkc.len)));
+};
+
+// --- a program: emit, scan, assemble, scan, link ------------------------------------
+
+// The harness's `emit_and_link`: `compiler <path>` with the IR on stdout,
+// the two text scans, `llc`, the zero-dependency scan, the closed-world
+// link to `<base>`. The list is empty on success.
+pub async func:emit_and_link = List<string>(Ctx->:c, string:compiler, string:path, string:name,
+                                            string:base) {
+    List<string>:fl = raw list_init::<string>(1i64);
+    Result<Run>:r = await compile_stdout(c, compiler, path, raw duration_secs(300i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    if (run.timed_out) {
+        drop strlist_push(@fl, string_concat(name, ": emit_check did not terminate"));
+        pass fl;
+    }
+    int64:rc = run.x.status;
+    if (!run.x.exited) { rc = 0i64 - run.x.signal; }
+    if (rc == 3i64) {
+        drop strlist_push(@fl, string_concat(name, ": the compiler TRAPPED -- a defect in it, not in this file"));
+        pass fl;
+    }
+    if (rc != 0i64) {
+        string:m = string_concat(name, ": expected IR, got a refusal (");
+        m = string_concat(m, raw text_replace_all(raw text_trim(run.x.err), "\n", ", "));
+        m = string_concat(m, ")");
+        drop list_push(@fl, move(m));
+        pass fl;
+    }
+    string:ll = string_concat(base, ".ll");
+    Result<cstring>:lc = to_cstring(ll);
+    if (lc.is_error) { fail lc.err; }
+    Result<NIL>:w = write_file(lc.value, run.x.out);
+    if (w.is_error) { fail w.err; }
+    List<string>:dupes = raw ir_symbols_unique(run.x.out, name);
+    if (dupes.count > 0i64) { pass dupes; }
+    List<string>:hoist = raw ir_allocas_hoisted(run.x.out, name);
+    if (hoist.count > 0i64) { pass hoist; }
+    string:obj = string_concat(base, ".o");
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) {
+        string:m1 = string_concat(name, ": llc rejected the REAL BACKEND's IR: ");
+        m1 = string_concat(m1, raw first_line_with(st1.text, "error", 160i64));
+        drop list_push(@fl, move(m1));
+        pass fl;
+    }
+    List<string>:zd = raw zero_dep(c, obj, c.allow, name);
+    if (zd.count > 0i64) { pass zd; }
+    Result<Step>:s2 = await lld_link(c, base, obj);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) {
+        string:m2 = string_concat(name, ": link failed: ");
+        m2 = string_concat(m2, raw text_head(raw text_trim(st2.text), 140i64));
+        drop list_push(@fl, move(m2));
+        pass fl;
+    }
+    pass fl;
+};
+
+// Run `exe` with `args` `stress` times, ten seconds each, and require
+// `want` every time. `tail` is what the message ends with (the harness's
+// two spellings differ by " (compiled by the REAL backend)"); `optimised`
+// selects the -O2 leg's wording.
+pub async func:run_binary = List<string>(Ctx->:c, string:name, string:exe, List<string>:args,
+                                         int64:stress, int64:want, string:tail, bool:optimised) {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<int64>:codes = raw list_init::<int64>(2i64);
+    List<int64>:counts = raw list_init::<int64>(2i64);
+    int64:runs = stress;
+    if (runs < 1i64) { runs = 1i64; }
+    for (int64:k in 0i64...runs) {
+        Result<Run>:r = await run_argv(exe, args, c.t.env, raw duration_secs(10i64));
+        if (r.is_error) { fail r.err; }
+        Run:run = move(r.value);
+        if (run.timed_out) {
+            if (optimised) {
+                drop strlist_push(@fl, string_concat(name, ": timed out under -O2 -- an optimised hang where -O0 terminated is an optimiser interaction, not a flake"));
+            } else {
+                drop strlist_push(@fl, string_concat(name, ": timed out"));
+            }
+            pass fl;
+        }
+        int64:got = run.x.status;
+        if (!run.x.exited) { got = 0i64 - run.x.signal; }
+        if (got != want) {
+            int64:slot = 0i64 - 1i64;
+            for (int64:i in 0i64...codes.count) { if (codes.items[i] == got) { slot = i; } }
+            if (slot < 0i64) {
+                drop list_push(@codes, got);
+                drop list_push(@counts, 1i64);
+            } else {
+                counts.items[slot] = counts.items[slot] + 1i64;
+            }
+        }
+    }
+    if (codes.count == 0i64) { pass fl; }
+    if (stress > 1i64) {
+        // `", ".join("%d x%d" % (rc, n) for rc, n in sorted(seen.items()))`
+        string:detail = "";
+        List<int64>:done = raw list_init::<int64>(2i64);
+        for (int64:pk in 0i64...codes.count) {
+            int64:best = 0i64 - 1i64;
+            for (int64:i2 in 0i64...codes.count) {
+                bool:used = false;
+                for (int64:j in 0i64...done.count) { if (done.items[j] == i2) { used = true; } }
+                if (used) { continue; }
+                if (best < 0i64) { best = i2; }
+                else { if (codes.items[i2] < codes.items[best]) { best = i2; } }
+            }
+            drop list_push(@done, best);
+            if (detail.len > 0i64) { detail = string_concat(detail, ", "); }
+            detail = string_concat(detail, int_to_string(codes.items[best]));
+            detail = string_concat(detail, " x");
+            detail = string_concat(detail, int_to_string(counts.items[best]));
+        }
+        string:m = string_concat(name, ": expected ");
+        m = string_concat(m, int_to_string(want));
+        if (optimised) { m = string_concat(m, " every run under -O2, got "); }
+        else { m = string_concat(m, " every run, got "); }
+        m = string_concat(m, detail);
+        m = string_concat(m, " in ");
+        m = string_concat(m, int_to_string(stress));
+        if (optimised) {
+            m = string_concat(m, " runs (the -O0 build answered correctly -- the optimiser changed the program)");
+        } else {
+            m = string_concat(m, " runs -- a schedule-dependent answer is a bug that passes most of the time");
+            m = string_concat(m, tail);
+        }
+        drop list_push(@fl, move(m));
+        pass fl;
+    }
+    string:m2 = string_concat(name, ": exited ");
+    m2 = string_concat(m2, int_to_string(codes.items[0i64]));
+    if (optimised) {
+        m2 = string_concat(m2, " under -O2, expected ");
+        m2 = string_concat(m2, int_to_string(want));
+        m2 = string_concat(m2, " (the -O0 build answered correctly -- the optimiser changed the program)");
+    } else {
+        m2 = string_concat(m2, ", expected ");
+        m2 = string_concat(m2, int_to_string(want));
+        m2 = string_concat(m2, tail);
+    }
+    drop list_push(@fl, move(m2));
+    pass fl;
+};
+
+// The SAME program through `opt -O2` and `llc -O2`, same answer required
+// (1.3.8): the zero-dependency scan runs again on the optimised object,
+// because `opt` is licensed to MINT libcalls.
+pub async func:check_optimised = List<string>(Ctx->:c, string:name, string:base, List<string>:args,
+                                              int64:stress, int64:want) {
+    List<string>:fl = raw list_init::<string>(1i64);
+    if (c.t.opt.len == 0i64) {
+        drop strlist_push(@fl, string_concat(name, ": `opt` is not on PATH -- the optimised-output check cannot run, and skipping it silently is how an optimiser defect ships (install LLVM's opt, CLAUDE.md lists the symlink set)"));
+        pass fl;
+    }
+    string:ll = string_concat(base, ".ll");
+    string:oll = string_concat(base, ".opt.ll");
+    string:oobj = string_concat(base, ".opt.o");
+    string:obin = string_concat(base, ".opt");
+    Result<Step>:so = await opt_ll(c, ll, oll);
+    if (so.is_error) { fail so.err; }
+    Step:sto = move(so.value);
+    if (!sto.ok) {
+        string:m0 = string_concat(name, ": opt -O2 rejected the emitted IR: ");
+        m0 = string_concat(m0, raw first_line_with(sto.text, "", 160i64));
+        drop list_push(@fl, move(m0));
+        pass fl;
+    }
+    Result<Step>:s1 = await llc_obj(c, c.m.llc_opt_flags, oll, oobj);
+    if (s1.is_error) { fail s1.err; }
+    Step:st1 = move(s1.value);
+    if (!st1.ok) {
+        string:m1 = string_concat(name, ": llc -O2 rejected the OPTIMISED IR: ");
+        m1 = string_concat(m1, raw first_line_with(st1.text, "error", 160i64));
+        drop list_push(@fl, move(m1));
+        pass fl;
+    }
+    List<string>:zd = raw zero_dep(c, oobj, c.allow, string_concat(name, " (opt -O2)"));
+    if (zd.count > 0i64) { pass zd; }
+    Result<Step>:s2 = await lld_link(c, obin, oobj);
+    if (s2.is_error) { fail s2.err; }
+    Step:st2 = move(s2.value);
+    if (!st2.ok) {
+        string:m2 = string_concat(name, ": optimised link failed: ");
+        m2 = string_concat(m2, raw text_head(raw text_trim(st2.text), 140i64));
+        drop list_push(@fl, move(m2));
+        pass fl;
+    }
+    pass (relay await run_binary(c, name, obin, args, stress, want, "", true));
+};
+
+// --- verdicts ----------------------------------------------------------------------
+
+pub func:record = NIL(Ctx->:c, string:suite, string:name, List<string>:fl) never fails {
+    Verdict:v = Verdict{ suite: raw text_copy(suite), name: raw text_copy(name),
+                         ok: (fl.count == 0i64), msg: raw text_join(fl, " | ") };
+    drop list_push(@c.verdicts, move(v));
+    for (int64:i in 0i64...fl.count) {
+        drop strlist_push(@c.failures, raw strlist_view(fl, i));
+    }
+    pass NIL;
+};
+
+pub func:note_failure = NIL(Ctx->:c, string:msg) never fails {
+    drop strlist_push(@c.failures, msg);
+    pass NIL;
+};
+
+// `STATUS<TAB>suite<TAB>name<TAB>message`, one line per verdict.
+pub func:verdicts_text = string(Ctx->:c) never fails {
+    string:out = "";
+    for (int64:i in 0i64...c.verdicts.count) {
+        if (c.verdicts.items[i].ok) { out = string_concat(out, "PASS\t"); }
+        else { out = string_concat(out, "FAIL\t"); }
+        out = string_concat(out, string_from_bytes(c.verdicts.items[i].suite.ptr, c.verdicts.items[i].suite.len));
+        out = string_concat(out, "\t");
+        out = string_concat(out, string_from_bytes(c.verdicts.items[i].name.ptr, c.verdicts.items[i].name.len));
+        out = string_concat(out, "\t");
+        out = string_concat(out, raw text_replace_byte(string_from_bytes(c.verdicts.items[i].msg.ptr, c.verdicts.items[i].msg.len), 10u8, 32u8));
+        out = string_concat(out, "\n");
+    }
+    pass out;
+};

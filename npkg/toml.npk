@@ -1,0 +1,329 @@
+// toml -- a STRICT reader for the TOML subset `nitpick.toml` is written in
+// (1.4.8, D-206; the manifest's schema is D-077's).
+//
+// The subset: `#` comments, `[table]` and dotted `[table.sub]` headers,
+// `[[array]]` array-of-tables headers, and `key = value` lines whose value is
+// a basic `"string"` (escapes `\\ \" \n \t`), a decimal integer, `true`/
+// `false`, or a single-line `[ ... ]` array of strings or of integers.
+// Nothing else -- and NOTHING ELSE IS SKIPPED: a line the reader cannot read
+// makes the whole document unreadable, with the line number, because a
+// manifest half-read is a build with settings its author did not write
+// (the `gen_tables.py` rule: hard-fail on a row you cannot read).
+//
+// This is the reader for a file the build depends on, so it lives beside the
+// build tool rather than in `lib/`: the driver reads no manifest yet (D-236's
+// root walk only probes for the file), and the day it does, this moves.
+
+mod:toml;
+
+use "../src/frontend/list.npk".*;
+use "./text.npk".*;
+
+pub error:ETomlMissing;   // no such key under that table
+pub error:ETomlKind;      // the key exists with another kind of value
+
+pub struct:TomlEntry = {
+    string:section;       // "" at the root; "build"; "verify.nikos"; an array's name under [[name]]
+    int64:index;          // the element index under a [[name]] header; -1 under a [name] header
+    string:key;
+    int64:kind;           // 0 string, 1 integer, 2 bool, 3 array of strings, 4 array of integers, 5 empty array
+    string:sval;
+    int64:ival;
+    List<string>:items;
+    List<int64>:ints;
+    int64:line;           // 1-based, for the schema check's messages
+};
+
+pub struct:TomlDoc = {
+    List<TomlEntry>:entries;
+    List<string>:arrays;  // every [[name]] seen, once
+    List<int64>:counts;   // and how many elements each has
+    bool:ok;
+    int64:bad_line;       // when !ok: the first line the reader could not read
+};
+
+func:bare_key_ok = bool(string:k) never fails {
+    if (k.len == 0i64) { pass false; }
+    for (int64:i in 0i64...k.len) {
+        uint8:c = k.ptr[i];
+        bool:good = false;
+        if ((c >= 97u8) && (c <= 122u8)) { good = true; }
+        if ((c >= 65u8) && (c <= 90u8))  { good = true; }
+        if ((c >= 48u8) && (c <= 57u8))  { good = true; }
+        if (c == 95u8) { good = true; }   // _
+        if (c == 45u8) { good = true; }   // -
+        if (!good) { pass false; }
+    }
+    pass true;
+};
+
+func:header_name_ok = bool(string:k) never fails {
+    if (k.len == 0i64) { pass false; }
+    if (k.ptr[0i64] == 46u8) { pass false; }
+    if (k.ptr[k.len - 1i64] == 46u8) { pass false; }
+    for (int64:i in 0i64...k.len) {
+        uint8:c = k.ptr[i];
+        bool:good = false;
+        if ((c >= 97u8) && (c <= 122u8)) { good = true; }
+        if ((c >= 65u8) && (c <= 90u8))  { good = true; }
+        if ((c >= 48u8) && (c <= 57u8))  { good = true; }
+        if (c == 95u8) { good = true; }
+        if (c == 45u8) { good = true; }
+        if (c == 46u8) { good = true; }
+        if (!good) { pass false; }
+    }
+    pass true;
+};
+
+// What follows a complete value on its line: nothing, or a comment.
+func:tail_ok = bool(string:s, int64:from) never fails {
+    int64:i = from;
+    while (i < s.len) {
+        uint8:c = s.ptr[i];
+        if (c == 35u8) { pass true; }
+        if (!(raw text_is_ws(c))) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+// A basic string starting at the `"` at `at`. Returns the byte offset just
+// past the closing quote, or -1; the decoded text lands in `out`.
+struct:StrRead = { int64:next; string:text; };
+
+func:read_string = StrRead(string:s, int64:at) never fails {
+    int64:i = at + 1i64;
+    string:out = "";
+    wild int8->:one = alloc(1i64);
+    defer { dalloc(one); }
+    while (i < s.len) {
+        uint8:c = s.ptr[i];
+        if (c == 34u8) {
+            pass StrRead{ next: i + 1i64, text: move(out) };
+        }
+        if (c == 92u8) {
+            if ((i + 1i64) >= s.len) { pass StrRead{ next: 0i64 - 1i64, text: "" }; }
+            uint8:e = s.ptr[i + 1i64];
+            uint8:d = 0u8;
+            if (e == 92u8)  { d = 92u8; }
+            if (e == 34u8)  { d = 34u8; }
+            if (e == 110u8) { d = 10u8; }
+            if (e == 116u8) { d = 9u8; }
+            if (d == 0u8) { pass StrRead{ next: 0i64 - 1i64, text: "" }; }
+            one[0i64] = d =>! int8;
+            out = string_concat(out, string_from_bytes(one, 1i64));
+            i = i + 2i64;
+        } else {
+            if (c < 32u8) { pass StrRead{ next: 0i64 - 1i64, text: "" }; }
+            one[0i64] = c =>! int8;
+            out = string_concat(out, string_from_bytes(one, 1i64));
+            i = i + 1i64;
+        }
+    }
+    pass StrRead{ next: 0i64 - 1i64, text: "" };
+};
+
+func:entry_blank = TomlEntry(string:section, int64:index, string:key, int64:line) never fails {
+    pass TomlEntry{ section: raw text_copy(section), index: index, key: raw text_copy(key),
+                    kind: 0i64, sval: "", ival: 0i64,
+                    items: raw list_init::<string>(1i64), ints: raw list_init::<int64>(1i64),
+                    line: line };
+};
+
+// Read `value` (already trimmed on the left) into `e`. True when readable.
+func:read_value = bool(TomlEntry->:e, string:v) never fails {
+    if (v.len == 0i64) { pass false; }
+    uint8:c0 = v.ptr[0i64];
+    if (c0 == 34u8) {
+        StrRead:r = raw read_string(v, 0i64);
+        if (r.next < 0i64) { pass false; }
+        if (!(raw tail_ok(v, r.next))) { pass false; }
+        e.kind = 0i64;
+        e.sval = raw text_copy(r.text);
+        pass true;
+    }
+    if (c0 == 91u8) {
+        // A single-line array: elements separated by commas, a trailing comma
+        // allowed, all strings or all integers.
+        int64:i = 1i64;
+        int64:nstr = 0i64;
+        int64:nint = 0i64;
+        bool:want_elem = true;
+        while (true) {
+            while (i < v.len) {
+                if (!(raw text_is_ws(v.ptr[i]))) { break; }
+                i = i + 1i64;
+            }
+            if (i >= v.len) { pass false; }
+            uint8:c = v.ptr[i];
+            if (c == 93u8) {
+                i = i + 1i64;
+                break;
+            }
+            if (!want_elem) {
+                if (c != 44u8) { pass false; }
+                i = i + 1i64;
+                want_elem = true;
+                continue;
+            }
+            if (c == 34u8) {
+                StrRead:r2 = raw read_string(v, i);
+                if (r2.next < 0i64) { pass false; }
+                drop strlist_push(@e.items, r2.text);
+                nstr = nstr + 1i64;
+                i = r2.next;
+                want_elem = false;
+                continue;
+            }
+            // an integer element
+            int64:start = i;
+            if ((c == 45u8) || (c == 43u8)) { i = i + 1i64; }
+            while (i < v.len) {
+                if (!(raw text_is_digit(v.ptr[i]))) { break; }
+                i = i + 1i64;
+            }
+            if (i == start) { pass false; }
+            Result<int64>:iv = text_int(raw text_slice(v, start, i));
+            if (iv.is_error) { pass false; }
+            drop list_push(@e.ints, iv.value);
+            nint = nint + 1i64;
+            want_elem = false;
+        }
+        if (!(raw tail_ok(v, i))) { pass false; }
+        if ((nstr > 0i64) && (nint > 0i64)) { pass false; }
+        if (nstr > 0i64) { e.kind = 3i64; pass true; }
+        if (nint > 0i64) { e.kind = 4i64; pass true; }
+        e.kind = 5i64;
+        pass true;
+    }
+    // a bare word: true, false, or an integer, then only a comment
+    int64:j = 0i64;
+    while (j < v.len) {
+        uint8:c2 = v.ptr[j];
+        if (raw text_is_ws(c2)) { break; }
+        if (c2 == 35u8) { break; }
+        j = j + 1i64;
+    }
+    string:word = raw text_slice(v, 0i64, j);
+    if (!(raw tail_ok(v, j))) { pass false; }
+    if (raw text_eq(word, "true"))  { e.kind = 2i64; e.ival = 1i64; pass true; }
+    if (raw text_eq(word, "false")) { e.kind = 2i64; e.ival = 0i64; pass true; }
+    Result<int64>:n = text_int(word);
+    if (n.is_error) { pass false; }
+    e.kind = 1i64;
+    e.ival = n.value;
+    pass true;
+};
+
+pub func:toml_parse = TomlDoc(string:text) never fails {
+    TomlDoc:d = TomlDoc{ entries: raw list_init::<TomlEntry>(32i64),
+                         arrays: raw list_init::<string>(4i64),
+                         counts: raw list_init::<int64>(4i64),
+                         ok: true, bad_line: 0i64 };
+    List<string>:lines = raw text_lines(text);
+    string:section = "";
+    int64:index = 0i64 - 1i64;
+    for (int64:li in 0i64...lines.count) {
+        int64:lineno = li + 1i64;
+        string:s = raw text_trim(raw strlist_view(lines, li));
+        if (s.len == 0i64) { continue; }
+        if (s.ptr[0i64] == 35u8) { continue; }
+        if (raw text_starts_with(s, "[[")) {
+            int64:close = raw text_index_of(s, "]]");
+            if (close < 0i64) { d.ok = false; d.bad_line = lineno; pass d; }
+            string:name = raw text_trim(raw text_slice(s, 2i64, close));
+            if (!(raw header_name_ok(name))) { d.ok = false; d.bad_line = lineno; pass d; }
+            if (!(raw tail_ok(s, close + 2i64))) { d.ok = false; d.bad_line = lineno; pass d; }
+            int64:slot = 0i64 - 1i64;
+            for (int64:a in 0i64...d.arrays.count) {
+                if (raw text_eq(raw strlist_view(d.arrays, a), name)) { slot = a; }
+            }
+            if (slot < 0i64) {
+                drop strlist_push(@d.arrays, name);
+                drop list_push(@d.counts, 0i64);
+                slot = d.arrays.count - 1i64;
+            }
+            index = d.counts.items[slot];
+            d.counts.items[slot] = index + 1i64;
+            section = move(name);
+            continue;
+        }
+        if (s.ptr[0i64] == 91u8) {
+            int64:close1 = raw text_find_byte(s, 93u8, 1i64);
+            if (close1 < 0i64) { d.ok = false; d.bad_line = lineno; pass d; }
+            string:name1 = raw text_trim(raw text_slice(s, 1i64, close1));
+            if (!(raw header_name_ok(name1))) { d.ok = false; d.bad_line = lineno; pass d; }
+            if (!(raw tail_ok(s, close1 + 1i64))) { d.ok = false; d.bad_line = lineno; pass d; }
+            section = move(name1);
+            index = 0i64 - 1i64;
+            continue;
+        }
+        int64:eq = raw text_find_byte(s, 61u8, 0i64);
+        if (eq < 0i64) { d.ok = false; d.bad_line = lineno; pass d; }
+        string:key = raw text_trim(raw text_slice(s, 0i64, eq));
+        if (!(raw bare_key_ok(key))) { d.ok = false; d.bad_line = lineno; pass d; }
+        string:value = raw text_trim(raw text_slice(s, eq + 1i64, s.len));
+        TomlEntry:e = raw entry_blank(section, index, key, lineno);
+        if (!(raw read_value(@e, value))) { d.ok = false; d.bad_line = lineno; pass d; }
+        drop list_push(@d.entries, move(e));
+    }
+    pass d;
+};
+
+// --- reading -----------------------------------------------------------------------
+
+pub func:toml_find = int64(TomlDoc:d, string:section, int64:index, string:key) never fails {
+    for (int64:i in 0i64...d.entries.count) {
+        if (d.entries.items[i].index != index) { continue; }
+        if (!(raw text_eq(string_from_bytes(d.entries.items[i].section.ptr,
+                                            d.entries.items[i].section.len), section))) { continue; }
+        if (raw text_eq(string_from_bytes(d.entries.items[i].key.ptr,
+                                          d.entries.items[i].key.len), key)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+pub func:toml_has = bool(TomlDoc:d, string:section, int64:index, string:key) never fails {
+    pass ((raw toml_find(d, section, index, key)) >= 0i64);
+};
+
+pub func:toml_string = string(TomlDoc:d, string:section, int64:index, string:key) {
+    int64:i = raw toml_find(d, section, index, key);
+    if (i < 0i64) { fail ETomlMissing; }
+    if (d.entries.items[i].kind != 0i64) { fail ETomlKind; }
+    pass (string_concat(string_from_bytes(d.entries.items[i].sval.ptr,
+                                          d.entries.items[i].sval.len), ""));
+};
+
+pub func:toml_int = int64(TomlDoc:d, string:section, int64:index, string:key) {
+    int64:i = raw toml_find(d, section, index, key);
+    if (i < 0i64) { fail ETomlMissing; }
+    if (d.entries.items[i].kind != 1i64) { fail ETomlKind; }
+    pass d.entries.items[i].ival;
+};
+
+pub func:toml_bool = bool(TomlDoc:d, string:section, int64:index, string:key) {
+    int64:i = raw toml_find(d, section, index, key);
+    if (i < 0i64) { fail ETomlMissing; }
+    if (d.entries.items[i].kind != 2i64) { fail ETomlKind; }
+    pass (d.entries.items[i].ival != 0i64);
+};
+
+// An array of strings, COPIED out; an empty array is an empty list.
+pub func:toml_strings = List<string>(TomlDoc:d, string:section, int64:index, string:key) {
+    int64:i = raw toml_find(d, section, index, key);
+    if (i < 0i64) { fail ETomlMissing; }
+    if (d.entries.items[i].kind == 5i64) { pass (raw list_init::<string>(1i64)); }
+    if (d.entries.items[i].kind != 3i64) { fail ETomlKind; }
+    pass (raw strlist_clone(d.entries.items[i].items));
+};
+
+// How many [[name]] elements the document holds; zero when none.
+pub func:toml_array_count = int64(TomlDoc:d, string:name) never fails {
+    for (int64:a in 0i64...d.arrays.count) {
+        if (raw text_eq(raw strlist_view(d.arrays, a), name)) { pass d.counts.items[a]; }
+    }
+    pass 0i64;
+};
+
+pub func:toml_entry_count = int64(TomlDoc:d) never fails { pass d.entries.count; };

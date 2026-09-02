@@ -1,0 +1,390 @@
+// text -- the byte-string helpers `npkg` needs beyond `nstr` (1.4.8, D-206).
+//
+// Byte-indexed over the `string` representation, like `nstr`; nothing here
+// knows what a codepoint is, because nothing `npkg` compares -- paths,
+// diagnostic codes, tool output -- needs to. The rules these serve are the
+// Python harness's, ported token for token, because the parity stage diffs
+// verdicts between the two runners and a helper that "improves" on
+// `str.split()` would be a verdict difference: `split()` splits on runs of
+// the six ASCII whitespace bytes and yields no empty field, `strip()` trims
+// the same six, `splitlines()` on a `\n`-terminated text opens no empty last
+// line, and `int()` reads an optional sign and decimal digits.
+
+mod:text;
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/intern.npk".*;
+
+pub error:ETextInt;   // not an integer: `text_int` reads [ws][+-]digits[ws] and nothing else
+
+pub func:text_copy = string(string:s) never fails { pass (string_concat(s, "")); };
+
+pub func:text_eq = bool(string:a, string:b) never fails { pass (raw string_eq(a, b)); };
+
+// `str.isspace()` as `split()`/`strip()` see it, restricted to ASCII: space,
+// tab, newline, carriage return, form feed, vertical tab.
+pub func:text_is_ws = bool(uint8:c) never fails {
+    if (c == 32u8) { pass true; }
+    if (c == 9u8)  { pass true; }
+    if (c == 10u8) { pass true; }
+    if (c == 13u8) { pass true; }
+    if (c == 12u8) { pass true; }
+    if (c == 11u8) { pass true; }
+    pass false;
+};
+
+// An OWNED slice over bounds the caller has established (the intern module's
+// proven slice; a bad bound is a defect and traps by name).
+pub func:text_slice = string(string:s, int64:lo, int64:hi) never fails {
+    pass (raw slice_proven(s, lo, hi));
+};
+
+pub func:text_trim = string(string:s) never fails {
+    int64:lo = 0i64;
+    int64:hi = s.len;
+    while (lo < hi) {
+        if (!(raw text_is_ws(s.ptr[lo]))) { break; }
+        lo = lo + 1i64;
+    }
+    while (hi > lo) {
+        if (!(raw text_is_ws(s.ptr[hi - 1i64]))) { break; }
+        hi = hi - 1i64;
+    }
+    pass (raw slice_proven(s, lo, hi));
+};
+
+pub func:text_starts_with = bool(string:s, string:p) never fails {
+    if (p.len > s.len) { pass false; }
+    for (int64:i in 0i64...p.len) {
+        if (s.ptr[i] != p.ptr[i]) { pass false; }
+    }
+    pass true;
+};
+
+pub func:text_ends_with = bool(string:s, string:p) never fails {
+    if (p.len > s.len) { pass false; }
+    int64:base = s.len - p.len;
+    for (int64:i in 0i64...p.len) {
+        if (s.ptr[base + i] != p.ptr[i]) { pass false; }
+    }
+    pass true;
+};
+
+// First byte offset of `needle` at or after `from`, or -1. An empty needle is
+// found at `from` -- every search API before this one settled on that.
+pub func:text_index_from = int64(string:s, string:needle, int64:from) never fails {
+    if (from > s.len) { pass (0i64 - 1i64); }
+    if (needle.len == 0i64) { pass from; }
+    if (needle.len > (s.len - from)) { pass (0i64 - 1i64); }
+    int64:last = s.len - needle.len;
+    int64:at = from;
+    while (at <= last) {
+        bool:hit = true;
+        for (int64:i in 0i64...needle.len) {
+            if (s.ptr[at + i] != needle.ptr[i]) { hit = false; break; }
+        }
+        if (hit) { pass at; }
+        at = at + 1i64;
+    }
+    pass (0i64 - 1i64);
+};
+
+pub func:text_index_of = int64(string:s, string:needle) never fails {
+    pass (raw text_index_from(s, needle, 0i64));
+};
+
+pub func:text_contains = bool(string:s, string:needle) never fails {
+    pass ((raw text_index_of(s, needle)) >= 0i64);
+};
+
+pub func:text_find_byte = int64(string:s, uint8:b, int64:from) never fails {
+    int64:i = from;
+    while (i < s.len) {
+        if (s.ptr[i] == b) { pass i; }
+        i = i + 1i64;
+    }
+    pass (0i64 - 1i64);
+};
+
+pub func:text_rfind_byte = int64(string:s, uint8:b) never fails {
+    int64:i = s.len;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (s.ptr[i] == b) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// Everything after the last `/` -- the file's own name, extension included
+// (`paths.npk`'s `path_basename` strips `.npk`; this does not).
+pub func:text_file_name = string(string:p) never fails {
+    int64:slash = raw text_rfind_byte(p, 47u8);
+    if (slash < 0i64) { pass (string_concat(p, "")); }
+    pass (raw slice_proven(p, slash + 1i64, p.len));
+};
+
+// `str.split()`: runs of whitespace separate, and there is no empty field.
+pub func:text_split_ws = List<string>(string:s) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    int64:i = 0i64;
+    while (i < s.len) {
+        while (i < s.len) {
+            if (!(raw text_is_ws(s.ptr[i]))) { break; }
+            i = i + 1i64;
+        }
+        if (i >= s.len) { break; }
+        int64:start = i;
+        while (i < s.len) {
+            if (raw text_is_ws(s.ptr[i])) { break; }
+            i = i + 1i64;
+        }
+        string:w = raw slice_proven(s, start, i);
+        drop list_push(@out, move(w));
+    }
+    pass out;
+};
+
+// `str.splitlines()` over `\n`, a trailing `\r` dropped from each line: a
+// text ending in `\n` has no empty last line, and `a\n\nb` has an empty
+// middle one.
+pub func:text_lines = List<string>(string:s) never fails {
+    List<string>:out = raw list_init::<string>(16i64);
+    int64:start = 0i64;
+    int64:i = 0i64;
+    while (i < s.len) {
+        if (s.ptr[i] == 10u8) {
+            int64:stop = i;
+            if (stop > start) { if (s.ptr[stop - 1i64] == 13u8) { stop = stop - 1i64; } }
+            string:ln = raw slice_proven(s, start, stop);
+            drop list_push(@out, move(ln));
+            start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    if (start < s.len) {
+        int64:stop2 = s.len;
+        if (s.ptr[stop2 - 1i64] == 13u8) { stop2 = stop2 - 1i64; }
+        string:tail = raw slice_proven(s, start, stop2);
+        drop list_push(@out, move(tail));
+    }
+    pass out;
+};
+
+// `int()`: surrounding whitespace, an optional sign, decimal digits. At most
+// eighteen digits, so the accumulation cannot reach D-210's overflow trap
+// on a malformed marker -- an unreadable expectation is the test's failure,
+// never `npkg`'s.
+pub func:text_int = int64(string:s) {
+    string:t = raw text_trim(s);
+    if (t.len == 0i64) { fail ETextInt; }
+    int64:i = 0i64;
+    bool:neg = false;
+    if (t.ptr[0i64] == 45u8) { neg = true; i = 1i64; }
+    if (t.ptr[0i64] == 43u8) { i = 1i64; }
+    if (i >= t.len) { fail ETextInt; }
+    if ((t.len - i) > 18i64) { fail ETextInt; }
+    int64:v = 0i64;
+    while (i < t.len) {
+        uint8:c = t.ptr[i];
+        if ((c < 48u8) || (c > 57u8)) { fail ETextInt; }
+        v = (v * 10i64) + ((c - 48u8) => int64);
+        i = i + 1i64;
+    }
+    if (neg) { v = 0i64 - v; }
+    pass v;
+};
+
+pub func:text_is_digit = bool(uint8:c) never fails {
+    pass ((c >= 48u8) && (c <= 57u8));
+};
+
+// `str.upper()` over ASCII letters; every other byte is kept.
+pub func:text_upper = string(string:s) never fails {
+    wild int8->:buf = alloc(s.len + 1i64);
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        if ((c >= 97u8) && (c <= 122u8)) { c = c - 32u8; }
+        buf[i] = c =>! int8;
+    }
+    string:owned = string_concat(string_from_bytes(buf, s.len), "");
+    dalloc(buf);
+    pass owned;
+};
+
+pub func:text_replace_byte = string(string:s, uint8:from, uint8:to) never fails {
+    wild int8->:buf = alloc(s.len + 1i64);
+    for (int64:i in 0i64...s.len) {
+        uint8:c = s.ptr[i];
+        if (c == from) { c = to; }
+        buf[i] = c =>! int8;
+    }
+    string:owned = string_concat(string_from_bytes(buf, s.len), "");
+    dalloc(buf);
+    pass owned;
+};
+
+// The first `n` bytes, or the whole string when it is shorter -- Python's
+// `s[:n]`, which every harness message truncates with.
+pub func:text_head = string(string:s, int64:n) never fails {
+    int64:hi = n;
+    if (hi > s.len) { hi = s.len; }
+    pass (raw slice_proven(s, 0i64, hi));
+};
+
+pub func:text_join = string(List<string>:l, string:sep) never fails {
+    string:out = "";
+    for (int64:i in 0i64...l.count) {
+        if (i > 0i64) { out = string_concat(out, sep); }
+        out = string_concat(out, string_from_bytes(l.items[i].ptr, l.items[i].len));
+    }
+    pass out;
+};
+
+// --- List<string> ------------------------------------------------------------------
+//
+// A string element is read as a VIEW (the list keeps ownership) or as an
+// OWNED COPY (the caller keeps it past the list), never as a bare `items[i]`
+// read, which would copy an owning value (TYPE-046).
+
+pub func:strlist_view = string(List<string>:l, int64:i) never fails {
+    if (i < 0i64)       { !!! OutOfBounds; }
+    if (i >= l.count)   { !!! OutOfBounds; }
+    pass (string_from_bytes(l.items[i].ptr, l.items[i].len));
+};
+
+pub func:strlist_copy = string(List<string>:l, int64:i) never fails {
+    if (i < 0i64)       { !!! OutOfBounds; }
+    if (i >= l.count)   { !!! OutOfBounds; }
+    pass (string_concat(string_from_bytes(l.items[i].ptr, l.items[i].len), ""));
+};
+
+pub func:strlist_push = NIL(List<string>->:l, string:s) never fails {
+    string:c = string_concat(s, "");
+    drop list_push(l, move(c));
+    pass NIL;
+};
+
+pub func:strlist_contains = bool(List<string>:l, string:s) never fails {
+    for (int64:i in 0i64...l.count) {
+        if (raw string_eq(string_from_bytes(l.items[i].ptr, l.items[i].len), s)) { pass true; }
+    }
+    pass false;
+};
+
+pub func:strlist_clone = List<string>(List<string>:l) never fails {
+    List<string>:out = raw list_init::<string>(l.count + 1i64);
+    for (int64:i in 0i64...l.count) {
+        drop strlist_push(@out, string_from_bytes(l.items[i].ptr, l.items[i].len));
+    }
+    pass out;
+};
+
+// Strict byte order, UNSIGNED, shorter-is-smaller on a shared prefix: what
+// Python's `sorted()` does to ASCII paths, and the one order `dir_list`
+// already uses. `intern.npk`'s `name_lt` compares signed bytes and is for
+// identifiers only.
+pub func:text_less = bool(string:a, string:b) never fails {
+    int64:n = a.len;
+    if (b.len < n) { n = b.len; }
+    for (int64:i in 0i64...n) {
+        if (a.ptr[i] != b.ptr[i]) { pass (a.ptr[i] < b.ptr[i]); }
+    }
+    pass (a.len < b.len);
+};
+
+// A SORTED COPY. Sorting in place would move owning values between wild
+// slots; sorting an index and copying out in order needs no move at all.
+// Insertion sort, stable: a listing is hundreds of names at most.
+pub func:strlist_sorted = List<string>(List<string>:l) never fails {
+    int64:n = l.count;
+    wild int8->:raw_ix = alloc((n + 1i64) * 8i64);
+    wild int64->:ix = raw_ix =>! wild int64->;
+    for (int64:k in 0i64...n) { ix[k] = k; }
+    int64:i = 1i64;
+    while (i < n) {
+        int64:j = i;
+        while (j > 0i64) {
+            string:a = string_from_bytes(l.items[ix[j]].ptr, l.items[ix[j]].len);
+            string:b = string_from_bytes(l.items[ix[j - 1i64]].ptr, l.items[ix[j - 1i64]].len);
+            if (raw text_less(a, b)) {
+                int64:t = ix[j];
+                ix[j] = ix[j - 1i64];
+                ix[j - 1i64] = t;
+                j = j - 1i64;
+            } else {
+                j = 0i64;
+            }
+        }
+        i = i + 1i64;
+    }
+    List<string>:out = raw list_init::<string>(n + 1i64);
+    for (int64:k2 in 0i64...n) {
+        drop strlist_push(@out, string_from_bytes(l.items[ix[k2]].ptr, l.items[ix[k2]].len));
+    }
+    dalloc(raw_ix);
+    pass out;
+};
+
+// `sorted(set(xs))`: sorted, consecutive duplicates dropped.
+pub func:strlist_sorted_unique = List<string>(List<string>:l) never fails {
+    List<string>:s = raw strlist_sorted(l);
+    List<string>:out = raw list_init::<string>(s.count + 1i64);
+    for (int64:i in 0i64...s.count) {
+        string:cur = string_from_bytes(s.items[i].ptr, s.items[i].len);
+        bool:dup = false;
+        if (out.count > 0i64) {
+            if (raw string_eq(cur, string_from_bytes(out.items[out.count - 1i64].ptr,
+                                                     out.items[out.count - 1i64].len))) {
+                dup = true;
+            }
+        }
+        if (!dup) { drop strlist_push(@out, cur); }
+    }
+    pass out;
+};
+
+// Every element of `a` that is not in `b` -- the `set - set` of the
+// zero-dependency scan, sorted.
+pub func:strlist_minus = List<string>(List<string>:a, List<string>:b) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    for (int64:i in 0i64...a.count) {
+        string:cur = string_from_bytes(a.items[i].ptr, a.items[i].len);
+        if (!(raw strlist_contains(b, cur))) {
+            if (!(raw strlist_contains(out, cur))) { drop strlist_push(@out, cur); }
+        }
+    }
+    pass (raw strlist_sorted(out));
+};
+
+// `s.replace(from, to)` over byte strings; an empty `from` returns a copy.
+pub func:text_replace_all = string(string:s, string:from, string:to) never fails {
+    if (from.len == 0i64) { pass (string_concat(s, "")); }
+    string:out = "";
+    int64:i = 0i64;
+    while (i < s.len) {
+        int64:p = raw text_index_from(s, from, i);
+        if (p < 0i64) {
+            out = string_concat(out, raw slice_proven(s, i, s.len));
+            pass out;
+        }
+        out = string_concat(out, raw slice_proven(s, i, p));
+        out = string_concat(out, to);
+        i = p + from.len;
+    }
+    pass out;
+};
+
+// `"%-Ns"` and `"%Nd"`: padded with spaces to width `n`, never truncated.
+pub func:text_pad_right = string(string:s, int64:n) never fails {
+    string:out = string_concat(s, "");
+    int64:k = s.len;
+    while (k < n) { out = string_concat(out, " "); k = k + 1i64; }
+    pass out;
+};
+
+pub func:text_pad_left = string(string:s, int64:n) never fails {
+    string:out = "";
+    int64:k = s.len;
+    while (k < n) { out = string_concat(out, " "); k = k + 1i64; }
+    pass (string_concat(out, s));
+};

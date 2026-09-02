@@ -23,6 +23,7 @@ nitpick-native/
 │   │   ├── ir/             #   LLVM IR text emission (cycle 0.7)
 │   │   └── layout/         #   type layout / ABI
 │   └── driver/             # manifest, module graph, subprocess invocation
+├── npkg/                   # the build and test driver (D-206, 1.4.8): a shipped tool, not the compiler
 ├── bootstrap/              # Not the compiler. (D-085; survival map D-203)
 │   ├── generator/          #   the seed generator: subset-1 .npk -> .ll (permanent, regeneration-only)
 │   ├── runtime/            #   the runtime floor, hand-written .ll — permanent form; re-homes to runtime/ at 1.4.6 (D-015/D-203)
@@ -101,13 +102,22 @@ written in Nitpick: subset 1 has no directory reading and no process spawning,
 and the runtime floor has no `exec`. The permanent harness is `npkg test`
 (`BUILD_REFERENCE.md` §7.1). `tools/` was created at 0.0.0 in anticipation of it
 and removed at 0.0.5 — which is this document's own rule about not guessing at
-directories, applied to itself.
+directories, applied to itself. It returned at 0.7.8 for the three checker
+drivers the harness builds (`check`, `parse_check`, `resolve_check`); the empty
+`tools/harness/` placeholder that had survived from 0.0.0 went at 1.4.8, under
+the same rule.
 
-## What is not here yet
+## `npkg/` — the build and test driver (added 1.4.8, D-206)
 
-No `npkg/`. `BUILD_REFERENCE.md` names two tools — `npkc` the compiler and `npkg`
-the driver — and the real `npkg` needs a working compiler to write it with. The
-minimal build driving that happens before then lives in `bootstrap/`.
+`npkg build` and `npkg test`, in full Nitpick against the compiler's own
+modules — the path code, the growable list, the lexer that finds a test's
+imports — and BUILT BY THE COMPILER UNDER TEST: it is not `src/`, so D-205's
+snapshot rule does not bind it, and it may use whatever today's compiler
+compiles. Top level because it is a shipped tool and `src/` is the compiler
+and nothing else; outside `lib/` because it is a program, not library tier.
+Its header comment (`npkg/main.npk`) is its README. `bootstrap/harness/`
+keeps running beside it, its `parity` stage diffing the two runners' verdicts,
+until `meta/SWITCH.md` retires the harness.
 
 Directories are created when a decision names them, not in anticipation. An empty
 tree fifteen cycles deep is a guess, and guesses in a layout become `use` paths

@@ -1,0 +1,149 @@
+// expect -- a test's expectations, read from the test (1.4.8; BUILD_REFERENCE
+// §7.1: "expectations live in the test file, next to the code").
+//
+// The grammar is the Python harness's, marker for marker and in its dispatch
+// order, because the parity stage diffs the two runners' verdicts: a line
+// whose stripped form starts with `//`, its body the rest stripped, and the
+// body dispatched on its prefix --
+//
+//   expect-error-at: L[:C]   moves the LAST expect-error to line L (column C)
+//   expect-error: CODE       a finding that must be reported (appended)
+//   expect-note-at: L[:C]    the same for the last expect-note
+//   expect-note: CODE        a note that must be reported (its own channel)
+//   expect-exit: N           the exit code a run must produce (last wins; 0)
+//   stress: N                run N times, the SAME answer every time (1)
+//   argv: TOK ...            extra argv for the run, fixture names substituted
+//   expect-no-parse-error    the file is meant to reach the backend (D-085)
+//
+// A number the reader cannot read marks the expectations unreadable, with
+// the line: the test is then a failing test, never a silently defaulted one.
+
+mod:expect;
+
+use "../src/frontend/list.npk".*;
+use "./text.npk".*;
+
+pub struct:Expected = {
+    string:code;
+    int64:line;     // -1: any line
+    int64:col;      // -1: any column
+};
+
+pub struct:Expect = {
+    List<Expected>:errors;
+    List<Expected>:notes;
+    int64:exit_code;
+    int64:stress;
+    List<string>:argv;
+    bool:no_parse_error;
+    bool:ok;
+    int64:bad_line;
+};
+
+func:push_expected = NIL(List<Expected>->:l, string:code) never fails {
+    Expected:e = Expected{ code: raw text_copy(code), line: 0i64 - 1i64, col: 0i64 - 1i64 };
+    drop list_push(l, move(e));
+    pass NIL;
+};
+
+// `L[:C]` after the marker: the line, and the column when one is spelled.
+// False when a number is unreadable.
+struct:At = { bool:ok; int64:line; int64:col; };
+
+func:read_at = At(string:loc) never fails {
+    int64:colon = raw text_find_byte(loc, 58u8, 0i64);
+    string:ln = "";
+    string:cl = "";
+    if (colon < 0i64) {
+        ln = raw text_copy(loc);
+    } else {
+        ln = raw text_slice(loc, 0i64, colon);
+        cl = raw text_slice(loc, colon + 1i64, loc.len);
+    }
+    Result<int64>:l = text_int(ln);
+    if (l.is_error) { pass At{ ok: false, line: 0i64, col: 0i64 }; }
+    if (cl.len == 0i64) { pass At{ ok: true, line: l.value, col: 0i64 - 1i64 }; }
+    Result<int64>:c = text_int(cl);
+    if (c.is_error) { pass At{ ok: false, line: 0i64, col: 0i64 }; }
+    pass At{ ok: true, line: l.value, col: c.value };
+};
+
+func:after_colon = string(string:body) never fails {
+    int64:colon = raw text_find_byte(body, 58u8, 0i64);
+    if (colon < 0i64) { pass ""; }
+    pass (raw text_trim(raw text_slice(body, colon + 1i64, body.len)));
+};
+
+pub func:expect_read = Expect(string:text) never fails {
+    Expect:e = Expect{ errors: raw list_init::<Expected>(4i64),
+                       notes: raw list_init::<Expected>(2i64),
+                       exit_code: 0i64, stress: 1i64,
+                       argv: raw list_init::<string>(2i64),
+                       no_parse_error: false, ok: true, bad_line: 0i64 };
+    List<string>:lines = raw text_lines(text);
+    for (int64:li in 0i64...lines.count) {
+        string:s = raw text_trim(raw strlist_view(lines, li));
+        if (!(raw text_starts_with(s, "//"))) { continue; }
+        string:body = raw text_trim(raw text_slice(s, 2i64, s.len));
+        if (raw text_starts_with(body, "expect-error-at:")) {
+            At:a = raw read_at(raw after_colon(body));
+            if (!a.ok) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            if (e.errors.count > 0i64) {
+                e.errors.items[e.errors.count - 1i64].line = a.line;
+                e.errors.items[e.errors.count - 1i64].col = a.col;
+            }
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-error:")) {
+            drop push_expected(@e.errors, raw after_colon(body));
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-note-at:")) {
+            At:a2 = raw read_at(raw after_colon(body));
+            if (!a2.ok) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            if (e.notes.count > 0i64) {
+                e.notes.items[e.notes.count - 1i64].line = a2.line;
+                e.notes.items[e.notes.count - 1i64].col = a2.col;
+            }
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-note:")) {
+            drop push_expected(@e.notes, raw after_colon(body));
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-exit:")) {
+            Result<int64>:x = text_int(raw after_colon(body));
+            if (x.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            e.exit_code = x.value;
+            continue;
+        }
+        if (raw text_starts_with(body, "stress:")) {
+            Result<int64>:n = text_int(raw after_colon(body));
+            if (n.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            e.stress = n.value;
+            continue;
+        }
+        if (raw text_starts_with(body, "argv:")) {
+            e.argv = raw text_split_ws(raw after_colon(body));
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-no-parse-error")) {
+            e.no_parse_error = true;
+            continue;
+        }
+    }
+    pass e;
+};
+
+// The codes, `[c for c, _, _ in exp.errors]` rendered as Python prints a
+// list of strings -- the harness's failure messages quote it that way.
+pub func:expect_codes = string(List<Expected>:l) never fails {
+    string:out = "[";
+    for (int64:i in 0i64...l.count) {
+        if (i > 0i64) { out = string_concat(out, ", "); }
+        out = string_concat(out, "'");
+        out = string_concat(out, string_from_bytes(l.items[i].code.ptr, l.items[i].code.len));
+        out = string_concat(out, "'");
+    }
+    pass (string_concat(out, "]"));
+};

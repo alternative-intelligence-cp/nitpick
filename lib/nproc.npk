@@ -218,21 +218,63 @@ pub func:proc_spawn = Proc(Path:exe, ProcArgs->:argv, ProcArgs->:env) {
     };
 };
 
-// Read what `src` holds RIGHT NOW into the chosen capture, without blocking
-// (the read end is NONBLOCK). True while the pipe is still open: false once
-// EOF — or anything that is not "try again" — has been seen.
-func:cap_drain = bool(ProcExit->:x, bool:is_out, fd:src, wild int8->:tmp) never fails {
+// A capture: the bytes a pipe delivered, appended as they arrive into ONE
+// growing `wild` block, the string built once at the end. It was a
+// `string_concat` per read (1.4.8 Part A): every 8 KB piece copied the whole
+// accumulated text again, so a fifteen-megabyte compiler emission cost
+// gigabytes of copying and, since each copy was a fresh multi-megabyte
+// allocation, minutes of page faults -- `npkg test`'s first full run spent
+// seventeen minutes in the kernel on it. Linear now: doubling growth, one
+// copy per byte on the way in, one on the way out.
+struct:Cap = {
+    wild int8->:buf;
+    int64:len;
+    int64:cap;
+};
+
+func:cap_init = Cap() never fails {
+    pass Cap{ buf: alloc(65536i64), len: 0i64, cap: 65536i64 };
+};
+
+func:cap_append = NIL(Cap->:c, wild int8->:src, int64:n) never fails {
+    if ((c.len + n) > c.cap) {
+        int64:nc = c.cap * 2i64;
+        while ((c.len + n) > nc) { nc = nc * 2i64; }
+        c.buf = ralloc(c.buf, nc);
+        c.cap = nc;
+    }
+    for (int64:i in 0i64...n) { c.buf[c.len + i] = src[i]; }
+    c.len = c.len + n;
+    pass NIL;
+};
+
+// The captured text as an OWNED string, the block freed. BY VALUE: a
+// borrow of the capture would make the string borrow-tainted (D-004's
+// conservative rule) and unstorable in the ProcExit; the caller zeroes its
+// copy's `cap` afterwards so the backstop below frees nothing twice.
+func:cap_take = string(Cap:c) never fails {
+    string:s = string_concat(string_from_bytes(c.buf, c.len), "");
+    dalloc(c.buf);
+    pass s;
+};
+
+func:cap_free = NIL(Cap->:c) never fails {
+    if (c.cap > 0i64) { dalloc(c.buf); c.buf = NULL; c.cap = 0i64; c.len = 0i64; }
+    pass NIL;
+};
+
+// Read what `src` holds RIGHT NOW into the capture, without blocking (the
+// read end is NONBLOCK). True while the pipe is still open: false once EOF
+// — or anything that is not "try again" — has been seen.
+func:cap_drain = bool(Cap->:c, fd:src, wild int8->:tmp) never fails {
     while (true) {
-        Result<int64>:r = read(src, tmp, 8192i64);
+        Result<int64>:r = read(src, tmp, 65536i64);
         if (r.is_error) {
             if (r.err == WouldBlock)  { pass true; }
             if (r.err == Interrupted) { } else { pass false; }
         } else {
             if (r.value == 0i64) { pass false; }
-            // `string_from_bytes` is a VIEW over the scratch; the concat copies.
-            string:piece = string_from_bytes(tmp, r.value);
-            if (is_out) { x.out = string_concat(x.out, piece); }
-            else        { x.err = string_concat(x.err, piece); }
+            drop cap_append(c, tmp, r.value);
         }
     }
     pass false;
@@ -267,22 +309,35 @@ pub func:proc_reap = NIL(Proc->:p) never fails {
 // writes. Both pipes are drained as they fill; once both have closed the
 // exit is collected through the pidfd; the deadline passing at ANY point
 // kills the child, reaps it, retires the slot and fails `EProcDeadline`.
-pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
+//
+// THE WAIT CONSUMES THE PROCESS (1.4.8, `npkg`): after it the child is
+// dead and reaped on every path, so nothing is left for the caller to hold
+// -- and a `Proc->` borrow here would make the ProcExit it returns
+// borrow-tainted under D-004's conservative rule (a call handed `@local`
+// may have returned it inside a pointer-carrying result), which no caller
+// could then pass up. Moved in, the descriptors close at this frame's exit;
+// `proc_reap` stays the backstop for a spawn that is never waited on.
+pub async func:proc_wait = ProcExit(move Proc:p, Duration:within) {
     int64:give_up = (mono_now()) + within.ns;
     ProcExit:x = ProcExit{ exited: false, status: 0i64, signal: 0i64, out: "", err: "" };
     bool:out_open = true;
     bool:err_open = true;
-    wild int8->:tmp = alloc(8192i64);
+    wild int8->:tmp = alloc(65536i64);
     defer { dalloc(tmp); }
+    Cap:co = raw cap_init();
+    Cap:ce = raw cap_init();
+    // The backstop for every failing path below: a capture not yet taken is
+    // freed here, so a deadline leaves no wild block behind (D-151).
+    defer { drop cap_free(@co); drop cap_free(@ce); }
     int32:ofd = (p.out.value) => int32;
     int32:efd = (p.err.value) => int32;
     while (out_open || err_open) {
-        if (out_open) { out_open = raw cap_drain(@x, true, p.out.value, tmp); }
-        if (err_open) { err_open = raw cap_drain(@x, false, p.err.value, tmp); }
+        if (out_open) { out_open = raw cap_drain(@co, p.out.value, tmp); }
+        if (err_open) { err_open = raw cap_drain(@ce, p.err.value, tmp); }
         if (!(out_open || err_open)) { break; }
         int64:rem = give_up - (mono_now());
         if (rem <= 0i64) {
-            drop kill_reap_retire(p);
+            drop kill_reap_retire(@p);
             fail EProcDeadline;
         }
         bool:woke = true;
@@ -296,7 +351,7 @@ pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
             if (w1.is_error) { woke = false; }
         }
         if (!woke) {
-            drop kill_reap_retire(p);
+            drop kill_reap_retire(@p);
             fail EProcDeadline;
         }
     }
@@ -306,12 +361,12 @@ pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
     // closed its descriptors and kept running still ends at the deadline.
     int64:rem2 = give_up - (mono_now());
     if (rem2 <= 0i64) {
-        drop kill_reap_retire(p);
+        drop kill_reap_retire(@p);
         fail EProcDeadline;
     }
     Result<NIL>:pw = await io_ready((p.pidfd.value) => int32, 1i32, raw duration_ns(rem2));
     if (pw.is_error) {
-        drop kill_reap_retire(p);
+        drop kill_reap_retire(@p);
         fail EProcDeadline;
     }
 
@@ -323,7 +378,7 @@ pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
     Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), (p.pidfd.value) => int64,
                           si, raw WEXITED(), 0i64);
     if (w.is_error) {
-        drop kill_reap_retire(p);
+        drop kill_reap_retire(@p);
         fail EProcWait;
     }
     int64:code = (<-(#ptr_add<int32>(si, raw SI_CODE_IDX()))) => int64;
@@ -332,5 +387,11 @@ pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
     driver_retire(p.reg_slot);
     x.exited = (code == (raw CLD_EXITED()));
     if (x.exited) { x.status = stat; } else { x.signal = stat; }
+    x.out = raw cap_take(co);
+    co.cap = 0i64;
+    co.buf = NULL;
+    x.err = raw cap_take(ce);
+    ce.cap = 0i64;
+    ce.buf = NULL;
     pass x;
 };
