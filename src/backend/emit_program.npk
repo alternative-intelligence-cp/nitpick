@@ -714,7 +714,7 @@ func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) never fails {
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
-        string:base = raw path_basename(raw srcmgr_path_proven(@g.sm, me.file));
+        string:base = raw path_basename(raw srcmgr_resolved_proven(@g.sm, me.file));
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
         drop modmap_members(g, map, mn, move(base));
         m = m + 1i32;

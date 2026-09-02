@@ -516,7 +516,7 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
     string:full = string_concat("mod:derived;\n", src);
     // The manager OWNS the derived source (D-183); the lexer takes the
     // manager's cap-0 view, like every real file.
-    int32:file = raw srcmgr_add(@g.sm, move(path), move(full));
+    int32:file = raw srcmgr_add_synthetic(@g.sm, move(path), move(full));
     string:dtext = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, dtext, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);

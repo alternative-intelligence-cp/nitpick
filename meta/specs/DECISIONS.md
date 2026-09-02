@@ -15785,6 +15785,20 @@ longer changes the emission, so the `repro` stage's H9 leg measures what it
 was written to measure; the 1.4.7 close's guard (no absolute site path in the
 committed `stage1.ll`) stays as the belt.
 
+> **Landed at 1.4.8 step 6 (2026-09-02).** The source manager keeps TWO paths
+> per file: the resolved one (what the loader opened by; `use` resolution and
+> the module's basename read it) and the shown one, rendered relative to the
+> manifest root at the moment the file is added (`path_relative`: segment-wise,
+> `..` for a file outside the root). The driver finds the root by walking up
+> from the main file's directory probing `nitpick.toml` with the loader's own
+> `path_exists`, the working directory coming from `lib/nsys.npk`'s `sys_cwd`
+> (a relative argument needs it); a synthesised source — the prelude, a
+> derive's or an extern block's generated text — keeps its name. The harness's
+> `selfhost` stage now asserts that the compiler's own ABSOLUTELY invoked
+> emission carries no absolute site path — the count was 1,479 of 1,637 the
+> day before — which is H9's leg measuring at last; the committed-snapshot guard
+> stays as the belt over the artifact.
+
 **Declined — as-given paths plus the README's discipline** (the state at the
 close): the guard protects the committed artifact and nothing else, and every
 emission the harness makes carries the machine's path. **Declined — the

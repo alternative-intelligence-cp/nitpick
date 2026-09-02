@@ -179,7 +179,7 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never f
 // IT IS LOADED FIRST, before the root module, because everything that follows may
 // name what it declares.
 pub func:graph_load_prelude = int32(ModuleGraph->:g) never fails {
-    int32:file = raw srcmgr_add(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
+    int32:file = raw srcmgr_add_synthetic(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
     string:text = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
@@ -313,7 +313,7 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) never fails {
 
 func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
     ModuleEntry:e = raw graph_at(g, index);
-    string:from = raw srcmgr_path_proven(@g.sm, e.file);
+    string:from = raw srcmgr_resolved_proven(@g.sm, e.file);   // resolution walks the OPENED path (D-236)
     DeclId:rootId = DeclId{ index: e.root };
     DeclNode:m = raw ast_decl(@g.ast, rootId);
 
@@ -722,7 +722,7 @@ pub func:graph_apply_imports = NIL(ModuleGraph->:g) never fails {
 
 func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) never fails {
     ModuleEntry:e = raw graph_at(g, index);
-    string:from = raw srcmgr_path_proven(@g.sm, e.file);
+    string:from = raw srcmgr_resolved_proven(@g.sm, e.file);   // resolution walks the OPENED path (D-236)
     DeclId:rootId = DeclId{ index: e.root };
     DeclNode:m = raw ast_decl(@g.ast, rootId);
 
@@ -950,7 +950,7 @@ func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
 // the two compilers numbering identically.
 pub func:module_basename_intern = int32(ModuleGraph->:g, int32:file,
                                         InternTable->:it) never fails {
-    string:p = raw srcmgr_path_proven(@g.sm, file);
+    string:p = raw srcmgr_resolved_proven(@g.sm, file);
     int64:start = 0i64;
     int64:i = 0i64;
     while (i < p.len) {

@@ -17,22 +17,58 @@ error:FileUnknown;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./list.npk".*;
+use "./paths.npk".*;   // the relativiser (D-236)
 
 pub struct:SourceFile = {
-    string:path;      // as given on the command line or resolved from a `use`
+    string:path;      // as given on the command line or resolved from a `use` -- what the file was OPENED by
     string:text;      // the whole file; the lexer works over these bytes
+    string:shown;     // what diagnostics and the site table PRINT (D-236): relative to the manifest root, or as given
 };
 
 // Storage is `List<SourceFile>` (1.4.7). It was hand-written because subset 1
 // had no generics -- "the cost SUBSET_1 accepted deliberately, to keep
 // monomorphization out of the least-audited artifact in the chain" -- and that
 // constraint expired when the seed was retired at 1.4.6.
+// TWO PATHS PER FILE SINCE D-236 (1.4.8). The RESOLVED one is what the loader
+// opened by and what `use` resolution walks from -- it may be absolute, or
+// relative to wherever `npkc` was invoked. The SHOWN one is what every
+// diagnostic and every site-table row carries: the same file rendered
+// RELATIVE TO THE MANIFEST ROOT, so the emitted bytes cannot depend on how
+// the compiler was invoked (D-078; D-204's H9 -- 1,479 of the compiler's
+// 1,637 site rows were absolute before this, because the harness invokes it
+// absolutely). With no root set (a unit test's manager) a path shows as
+// given -- the pre-D-236 behaviour, kept for exactly those callers.
 pub struct:SourceManager = {
     List<SourceFile>:v;
+    string:cwd;       // absolute; joins a relative path before it is rendered
+    string:root;      // absolute, normalised; "" = no root, render as given
 };
 
 pub func:srcmgr_init = SourceManager() never fails {
-    pass SourceManager{ v: raw list_init::<SourceFile>(8i64) };
+    pass SourceManager{ v: raw list_init::<SourceFile>(8i64), cwd: "", root: "" };
+};
+
+// The render anchor: the working directory (for relative resolved paths)
+// and the manifest root, both absolute. Set by the driver before the first
+// file is added; a manager whose root stays empty renders as given.
+pub func:srcmgr_set_root = NIL(SourceManager->:m, move string:cwd,
+                               move string:root) never fails {
+    m.cwd = raw path_normalise(cwd);
+    m.root = raw path_normalise(root);
+    pass NIL;
+};
+
+// The shown spelling of a resolved path: absolutised against the cwd if
+// relative, normalised, then rendered relative to the root. An OWNED string.
+func:srcmgr_render = string(SourceManager->:m, string:path) never fails {
+    if (m.root.len == 0i64) { pass (string_concat(path, "")); }
+    string:abs = "";
+    if (raw path_is_absolute(path)) {
+        abs = raw path_normalise(path);
+    } else {
+        abs = raw path_normalise(raw path_join(m.cwd, path));
+    }
+    pass (raw path_relative(m.root, abs));
 };
 
 // A FILE ID IS int32 BY DESIGN -- it is what a `Span` carries, in every AST
@@ -49,7 +85,21 @@ func:srcmgr_id = int32(int64:n) never fails {
 
 // Returns the file index, which is what a Span carries.
 pub func:srcmgr_add = int32(SourceManager->:m, move string:path, move string:text) never fails {
-    SourceFile:f = SourceFile{ path: move(path), text: move(text) };
+    string:shown = raw srcmgr_render(m, path);
+    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown) };
+    int32:index = raw srcmgr_id(m.v.count);
+    drop list_push(@m.v, move(f));
+    pass index;
+};
+
+// A SYNTHESISED source -- the prelude's constant text, a derive's or an
+// extern block's generated declarations -- has no file behind it, so its
+// name is shown AS GIVEN (`prelude.npk`, `<derived-3>`): rendering it against
+// a root would print a path to a file that does not exist.
+pub func:srcmgr_add_synthetic = int32(SourceManager->:m, move string:path,
+                                      move string:text) never fails {
+    string:shown = string_concat(path, "");
+    SourceFile:f = SourceFile{ path: move(path), text: move(text), shown: move(shown) };
     int32:index = raw srcmgr_id(m.v.count);
     drop list_push(@m.v, move(f));
     pass index;
@@ -99,6 +149,9 @@ pub func:srcmgr_load = int32(SourceManager->:m, move string:path) {
     pass (raw srcmgr_add(m, move(path), move(text)));
 };
 
+// THE SHOWN PATH (D-236): what a diagnostic prints and a site-table row
+// records. A VIEW of container-owned storage (D-183): cap 0, drops free
+// nothing.
 pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
         fail FileUnknown;
@@ -106,7 +159,18 @@ pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if ((file => int64) >= m.v.count) {
         fail FileUnknown;
     }
-    // A VIEW of container-owned storage (D-183): cap 0, drops free nothing.
+    pass (string_from_bytes(m.v.items[file => int64].shown.ptr, m.v.items[file => int64].shown.len));
+};
+
+// THE RESOLVED PATH: what the file was opened by, and what a `use` inside it
+// resolves against. Never rendered.
+pub func:srcmgr_resolved = string(SourceManager->:m, int32:file) {
+    if (file < 0i32) {
+        fail FileUnknown;
+    }
+    if ((file => int64) >= m.v.count) {
+        fail FileUnknown;
+    }
     pass (string_from_bytes(m.v.items[file => int64].path.ptr, m.v.items[file => int64].path.len));
 };
 
@@ -150,6 +214,10 @@ pub func:srcmgr_length = int64(SourceManager->:m, int32:file) never fails {
 // outside the manager rather than failing a diagnostic over it.
 pub func:srcmgr_path_proven = string(SourceManager->:m, int32:file) never fails {
     pass (srcmgr_path(m, file) ?! FileUnknown);
+};
+
+pub func:srcmgr_resolved_proven = string(SourceManager->:m, int32:file) never fails {
+    pass (srcmgr_resolved(m, file) ?! FileUnknown);
 };
 
 // A VIEW, NOT A TRANSFER (D-183). The manager owns every source body for the

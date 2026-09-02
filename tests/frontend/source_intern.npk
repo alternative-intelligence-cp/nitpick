@@ -40,6 +40,31 @@ func:main = int32(cstring[]:_~argv) {
     Result<string>:bad = srcmgr_text(@sm, 999i32);
     if (!(bad.is_error)) { exit 27i32; }
 
+    // --- D-236 (1.4.8): a path SHOWS relative to the manifest root ----------
+    // With no root set (this manager) a path shows as given; with one, every
+    // real file renders against it -- a relative path through the cwd, an
+    // absolute one directly, one outside the root as `../…` -- and a
+    // synthesised source keeps its name. The RESOLVED path never changes.
+    if (!(raw string_eq(raw srcmgr_path_proven(@sm, b), "b.npk")))          { exit 40i32; }
+    SourceManager:rm = raw srcmgr_init();
+    drop srcmgr_set_root(@rm, "/r/w", "/r");
+    int32:r0 = raw srcmgr_add(@rm, "src/a.npk", "");
+    int32:r1 = raw srcmgr_add(@rm, "/r/lib/b.npk", "");
+    int32:r2 = raw srcmgr_add(@rm, "/other/c.npk", "");
+    int32:r3 = raw srcmgr_add_synthetic(@rm, "<derived-1>", "");
+    int32:r4 = raw srcmgr_add(@rm, "../x/../y.npk", "");
+    int32:r5 = raw srcmgr_add(@rm, "/r", "");
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r0), "w/src/a.npk")))    { exit 41i32; }
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r1), "lib/b.npk")))      { exit 42i32; }
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r2), "../other/c.npk"))) { exit 43i32; }
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r3), "<derived-1>")))    { exit 44i32; }
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r4), "y.npk")))          { exit 45i32; }
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r5), ".")))              { exit 46i32; }
+    if (!(raw string_eq(raw srcmgr_resolved_proven(@rm, r0), "src/a.npk")))  { exit 47i32; }
+    // Segment-wise: `/rx` is not under `/r`.
+    int32:r6 = raw srcmgr_add(@rm, "/rx/d.npk", "");
+    if (!(raw string_eq(raw srcmgr_path_proven(@rm, r6), "../rx/d.npk")))    { exit 48i32; }
+
     // --- intern table ------------------------------------------------------
     InternTable:it = raw intern_init();
 

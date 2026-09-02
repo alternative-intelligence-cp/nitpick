@@ -63,13 +63,17 @@ does not rebuild itself is a snapshot that works exactly once, and the next
 refresh from it produces something else again.
 
 **Run it from the tree root with `src/main.npk` spelled relatively, exactly as
-written.** D-179's site table records each source path AS GIVEN, so a builder
-handed an absolute path embeds the machine's path into every one of its ~1,500
-site constants — and neither the fixpoint nor the STAMP notices, since each
-compares the emission with itself. Found at 1.4.7's close by doing exactly that
-in a dry run (1,489 of 1,647 rows absolute); the `repro` stage now refuses a
-snapshot whose site table carries an absolute path, and OPEN_DECISIONS S-7
-asks whether the emission should stop depending on the spelling at all.
+written.** Until 1.4.8 D-179's site table recorded each source path AS GIVEN,
+so a builder handed an absolute path embedded the machine's path into every
+one of its ~1,500 site constants — and neither the fixpoint nor the STAMP
+noticed, since each compares the emission with itself (found at 1.4.7's close
+by doing exactly that in a dry run: 1,489 of 1,647 rows absolute). **D-236
+closed that at 1.4.8**: every path now renders relative to the manifest root
+whatever the argument's spelling, so an absolute invocation emits the same
+bytes. The relative spelling stays the documented form, the `repro` stage
+still refuses a snapshot whose site table carries an absolute path, and the
+`selfhost` stage asserts the same of every fresh emission — belts over a
+property the source manager now holds by construction.
 
 **It compares stage2 with stage3, not stage1 with stage2, and it installs
 STAGE 2** — corrected at 1.4.7/D-225, where the older spelling failed on a

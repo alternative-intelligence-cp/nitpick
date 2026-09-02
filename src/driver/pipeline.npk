@@ -64,6 +64,7 @@ use "../frontend/analysis/exhaust.npk".*;
 use "../frontend/analysis/locks.npk".*;
 use "../frontend/analysis/suspend.npk".*;
 use "../frontend/analysis/reach.npk".*;
+use "../../lib/nsys.npk".*;   // `sys_cwd`, for the manifest walk (D-236)
 
 // Every table the pipeline fills, owned by the caller for the caller's lifetime.
 pub struct:Front = {
@@ -122,11 +123,52 @@ pub func:reject_wildx = int32(Front->:f) never fails {
     pass found;
 };
 
+// THE MANIFEST ROOT (D-236, 1.4.8): the directory holding `nitpick.toml`,
+// found by walking up from the main file's directory, or that directory
+// when no manifest is found. Every source path the front half records
+// renders relative to it, so the emission cannot depend on how `npkc` was
+// invoked. The probe is the loader's own `path_exists`; the working
+// directory comes from `sys_cwd` (a relative argument needs it). Should the
+// cwd be unreadable -- the one way this fails -- paths render as given, the
+// pre-D-236 behaviour, and the harness's site-table check is what would say
+// so.
+func:front_set_root = NIL(Front->:f, string:root_path) never fails {
+    Result<string>:cw = sys_cwd();
+    if (cw.is_error) { pass NIL; }
+    string:abs = "";
+    if (raw path_is_absolute(root_path)) {
+        abs = raw path_normalise(root_path);
+    } else {
+        abs = raw path_normalise(raw path_join(cw.value, root_path));
+    }
+    string:dir = raw path_dirname(abs);
+    string:probe = string_concat(dir, "");
+    string:found = "";
+    bool:looking = true;
+    while (looking) {
+        Result<cstring>:cc = to_cstring(raw path_join(probe, "nitpick.toml"));
+        if (!cc.is_error) {
+            if (path_exists(cc.value)) {
+                found = string_concat(probe, "");
+                looking = false;
+            }
+        }
+        if (looking) {
+            if (raw string_eq(probe, "/")) { looking = false; }
+            probe = raw path_dirname(probe);
+        }
+    }
+    if (found.len == 0i64) { found = string_concat(dir, ""); }
+    drop srcmgr_set_root(@f.g.sm, string_concat(cw.value, ""), move(found));
+    pass NIL;
+};
+
 pub func:front_run = int32(Front->:f, string:root) never fails {
     f.it = raw intern_init();
     f.diags = raw diaglist_init();
     f.roots = raw rootlist_init();
     f.g = raw graph_init(@f.it, @f.diags, @f.roots, "");
+    drop front_set_root(f, root);
 
     // THE PRELUDE FIRST. Everything after it may name what it declares, and it is
     // loaded rather than synthesised: the same lexer, parser and collector.

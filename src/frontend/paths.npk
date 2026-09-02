@@ -191,6 +191,54 @@ pub func:path_normalise = string(string:p) never fails {
     pass body;
 };
 
+// The path of `target` RELATIVE TO the directory `base` -- both absolute and
+// normalised (D-236, 1.4.8): the common ancestor drops, every `base` segment
+// below it becomes `..`, and `target`'s remaining segments follow. `/r/w/a.npk`
+// from `/r` is `w/a.npk`; `/other/c.npk` from `/r` is `../other/c.npk`; the
+// base itself is `.`. Segment-wise, never character-wise: `/r/wx` is not
+// under `/r/w`. What the site table and every diagnostic render.
+pub func:path_relative = string(string:base, string:target) never fails {
+    int64:i = 0i64;
+    int64:cut = 0i64;   // just past the common ancestor's trailing `/`
+    while ((i < base.len) && (i < target.len)) {
+        if (base.ptr[i] != target.ptr[i]) { break; }
+        if (base.ptr[i] == ((raw SLASH()) =>! uint8)) { cut = i + 1i64; }
+        i = i + 1i64;
+    }
+    if (i == base.len) {
+        if (i == target.len) { pass "."; }
+        if (target.ptr[i] == ((raw SLASH()) =>! uint8)) { cut = i + 1i64; }
+    }
+    if (i == target.len) {
+        if (base.ptr[i] == ((raw SLASH()) =>! uint8)) { cut = i + 1i64; }
+    }
+    // How many of `base`'s segments lie below the ancestor: one `..` each.
+    int64:ups = 0i64;
+    bool:in_seg = false;
+    int64:k = cut;
+    while (k < base.len) {
+        if (base.ptr[k] == ((raw SLASH()) =>! uint8)) {
+            in_seg = false;
+        } else {
+            if (!in_seg) { ups = ups + 1i64; in_seg = true; }
+        }
+        k = k + 1i64;
+    }
+    string:out = "";
+    int64:u = 0i64;
+    while (u < ups) {
+        if (out.len > 0i64) { out = string_concat(out, "/"); }
+        out = string_concat(out, "..");
+        u = u + 1i64;
+    }
+    if (cut < target.len) {
+        if (out.len > 0i64) { out = string_concat(out, "/"); }
+        out = string_concat(out, raw slice_proven(target, cut, target.len));
+    }
+    if (out.len == 0i64) { pass "."; }
+    pass out;
+};
+
 // Resolve `rest` against the directory holding `from`, normalised.
 pub func:path_relative_to = string(string:from, string:rest) never fails {
     string:dir = raw path_dirname(from);

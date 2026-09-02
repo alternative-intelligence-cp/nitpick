@@ -2717,6 +2717,25 @@ def main(argv):
             with open(s1 + ".ll", "rb") as fh:
                 stage1_ir = fh.read()
             ok = True
+            # THE EMISSION IS PATH-FREE (D-236, 1.4.8). This compiler was
+            # invoked with an ABSOLUTE `src/main.npk`, and every source path
+            # in its site table must still render relative to the manifest
+            # root. Before D-236 this leaked 1,479 of 1,637 rows, and the
+            # `repro` stage below could not see it -- its two cwds agree by
+            # construction when the argument is absolute. H9's leg, measuring
+            # at last; the committed-snapshot guard further down stays as the
+            # belt over the artifact.
+            absfresh = len(re.findall(
+                r'^@npk\.sitep\.\d+ = internal constant \[\d+ x i8\] c"/',
+                stage1_ir.decode("utf-8", "replace"), re.M))
+            if absfresh:
+                failures.append(
+                    "selfhost: the compiler's own emission carries %d ABSOLUTE "
+                    "source paths in its site table -- D-236 says every path "
+                    "renders relative to the manifest root whatever the "
+                    "argument's spelling, so the emission depended on how the "
+                    "compiler was invoked" % absfresh)
+                ok = False
             # THE COMPILER'S OWN OUTPUT IS THE BIGGEST MODULE IT EMITS, so
             # it is the one where a duplicate symbol is hardest to read off
             # an llc error. Checked here first, in the compiler's terms.
