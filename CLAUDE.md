@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) at 1.4.7; steps 1 and 2 complete
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 CLOSED; D-230/D-231 then 1.4.8 next
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 233 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -457,6 +457,17 @@ parallel scheme ever produced was a race in the C test fixture (the hostile
 tail stored after the completion), reproduced 11 times in 120 under contention
 and fixed at its source; the Bridge, the reactor and the optimiser were
 exonerated by measurement, and D-228's width calibration is unblocked.
+**1.4.7 IS CLOSED (2026-09-01)**: the FNV step took the one copy's `uint128`
+spelling (1.4.6's owed item; `bridge_stubs.npk`'s second copy of the trio,
+missed by 1.4.2b's collapse, is gone — 175 of 176 backend programs emit
+byte-identical IR, the 176th differing by exactly that body), the fixpoint is
+declared under D-202, and **the snapshot is refreshed from the adopted tree**
+(stage2 == stage3, 15,450,688 bytes). The refresh's dry run found that an
+absolute `src/main.npk` argument embeds the build path into 1,489 of 1,647
+site-table rows — D-078 held by one README line — so the `repro` stage now
+refuses an absolute site path in the committed snapshot, and whether the
+source manager should record manifest-root-relative paths is **S-7** (the
+user's). SUBSET_1 §4 carries its closing edit.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

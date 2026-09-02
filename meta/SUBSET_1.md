@@ -282,3 +282,36 @@ mass `&{ }` re-spell, async in the sequential pipeline, and macro adoption in
 By self-hosting (1.4) the restriction is historical, and **no migration phase
 is needed** — the source was always Nitpick. That is the whole difference
 between this and seeding from a foreign compiler.
+
+### At 1.4.7's close: adoption happened, and the restriction is history
+
+Measured 2026-09-01, at the subcycle's close, over the 72 modules of `src/`
+outside the prelude:
+
+- **Generics are in.** Every growable array is the one `List<T>`
+  (`src/frontend/list.npk`): twenty-two hand-written families retired, and
+  `ralloc` is called nowhere else in `src/`. The diagnostic walk is
+  `diag_report<W: Writer>`, generic and borrowing (D-229).
+- **Traits and `async` are in.** `impl:Sink:Writer` is the tree's first impl
+  on a struct declared in another module, the drivers' report path is async
+  (`diag_writer.npk`), and `main` is `async` under D-224.
+- **The counted forms are in, by rule.** Of the 600 counter loops, 268 are
+  `for (intN:i in 0iN...b)` and 332 stay `while`, because a `for` captures
+  its bound at entry and a `while` re-reads it — the spelling says which.
+  Five match-shaped unwraps are `?|`/`?!`.
+- **Decided OUT, not deferred (D-209):** the mass `&{ }` re-spell, `async` in
+  the sequential pipeline, and macros in `src/`. The limb arithmetic of
+  `numeric.npk`'s tfp literal folding also stays as written — exact by
+  construction and pinned by the tier's programs; respelling it over
+  `uint256` would be a simplification no decision has asked for.
+
+**The builder rule keeps its post-switch meaning** (D-205): `src/` is bounded
+by what the committed snapshot compiles, a feature enters `src/` only after a
+snapshot that understands it, and the snapshot refreshes at cycle closes —
+the 1.4.7 close refreshed it from the tree that adopted all of the above. The
+`// Subset 1 (meta/SUBSET_1.md). Cycle 0.x.y.` line at the head of most `src/`
+files records the dialect and the cycle each was WRITTEN in: provenance, not
+a claim about what the file uses now. Sections 1 and 2 above are the record
+of what the seed lowered and what the compiler's source did instead; nothing
+in the tree is bounded by them any more. Section 3's rung diagnostic is still
+live — the real backend refuses what it has not lowered yet the same way.

@@ -2899,6 +2899,26 @@ def main(argv):
                             "repro: STAMP says %s bytes and stage1.ll is %d"
                             % (mb.group(1), len(snap_ir)))
                         rok = False
+                    # THE SITE TABLE IS PATH-FREE (D-078; D-204's H9). D-179's
+                    # site table records each source path AS GIVEN, so a
+                    # refresh whose builder was handed an absolute
+                    # `src/main.npk` embeds the machine's path into every one
+                    # of its ~1,500 site constants -- and the fixpoint and the
+                    # STAMP both pass, because each compares the emission with
+                    # itself. Found at 1.4.7's close by doing exactly that in a
+                    # dry run (1,489 of 1,647 rows). Relative paths only; the
+                    # pattern is the emitter's own row shape (emit_program.npk).
+                    absn = len(re.findall(
+                        r'^@npk\.sitep\.\d+ = internal constant \[\d+ x i8\] c"/',
+                        snap_ir.decode("utf-8", "replace"), re.M))
+                    if absn:
+                        failures.append(
+                            "repro: bootstrap/seed/stage1.ll embeds %d ABSOLUTE "
+                            "source paths in its site table -- it was refreshed "
+                            "with an absolute path argument; bootstrap/seed/"
+                            "README.md: run from the tree root with "
+                            "`src/main.npk` spelled relatively" % absn)
+                        rok = False
                 if rok:
                     print("  %-11s emission cwd-independent, llc "
                           "deterministic" % ("repro",))

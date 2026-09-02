@@ -62,6 +62,15 @@ Step 3 is not optional. A snapshot that compiles the compiler but whose output
 does not rebuild itself is a snapshot that works exactly once, and the next
 refresh from it produces something else again.
 
+**Run it from the tree root with `src/main.npk` spelled relatively, exactly as
+written.** D-179's site table records each source path AS GIVEN, so a builder
+handed an absolute path embeds the machine's path into every one of its ~1,500
+site constants — and neither the fixpoint nor the STAMP notices, since each
+compares the emission with itself. Found at 1.4.7's close by doing exactly that
+in a dry run (1,489 of 1,647 rows absolute); the `repro` stage now refuses a
+snapshot whose site table carries an absolute path, and OPEN_DECISIONS S-7
+asks whether the emission should stop depending on the spelling at all.
+
 **It compares stage2 with stage3, not stage1 with stage2, and it installs
 STAGE 2** — corrected at 1.4.7/D-225, where the older spelling failed on a
 correct refresh. Whenever a change alters what the compiler EMITS, stage1.new
@@ -76,8 +85,13 @@ This is D-202's lesson in a second place: the criterion is that the compiler
 AGREES WITH ITSELF, never that two particular artifacts are byte-equal.
 
 Write the sha256 and the commit into `STAMP`. The harness's `repro` stage reads
-`stage1.ll` back and asserts it still matches a fresh emission, so a snapshot
-left stale fails the suite rather than rotting quietly.
+`stage1.ll` back and asserts that it matches its STAMP (sha256 and byte count)
+and that its site table carries no absolute path; that the snapshot still
+BUILDS `src/` is the run's first act. It does NOT assert byte-equality with a
+fresh emission — between refreshes the snapshot is legitimately older than
+`src/` (D-205), and D-202's fixpoint compares two current-source emissions
+precisely so a stale builder is tolerated. (This paragraph said otherwise until
+1.4.7's close; 1.4.6 had corrected the stage and not the sentence.)
 
 ## Why the IR is committed rather than regenerated
 

@@ -8,10 +8,16 @@
 
 ## Where you are
 
-**1.4.7 steps 1, 2 and 3 are COMPLETE, D-229 is COMPLETE, OWED-8 and OWED-1
-are CLOSED.** The subcycle's remaining acceptance item is the snapshot refresh
-at its close (`bootstrap/seed/README.md`, stage2 == stage3) and the SUBSET_1
-§4 closing edit. Everything below is committed; the tree is clean and nothing
+**1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
+OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is
+refreshed FROM THE ADOPTED TREE (stage2 == stage3, 15,450,688 bytes, STAMP
+source-commit `43379b0`); SUBSET_1 §4 has its closing edit. The last two
+commits before the close: the FNV step took the one copy's `uint128` spelling
+(1.4.6's owed item — and `bridge_stubs.npk`'s second copy of the trio, which
+1.4.2b's collapse never saw, is gone), and four `src/` comments the adoption
+had made false came current. **Next: D-230 (`TY_FLAGS`) and D-231 (the
+sub-byte strike, the wide-ladder pin), both sequenced before 1.4.8; then
+1.4.8 (`npkg`).** Everything below is committed; the tree is clean and nothing
 is in flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
@@ -187,6 +193,22 @@ remains below is execution, not deliberation.
    site reaches layout only through a `use` cycle (type_layout imports
    resolve_type), declared with its reason at the `use` — legal by D-086, the
    third such cycle. 1.4.7.md's record has the alternative and why not.
+
+### New at the 1.4.7 close (2026-09-01)
+
+- **S-7 (OPEN_DECISIONS §2e, the user's)** — the emission records each source
+  path AS GIVEN, so an absolute `src/main.npk` embeds the machine's path in
+  the site table (1,489 of 1,647 rows in a dry-run refresh) and nothing but
+  the README's relative spelling kept the committed snapshot clean. The
+  `repro` stage now refuses an absolute site path in `stage1.ll`; the
+  recommendation is manifest-root-relative paths in the source manager.
+- **The loop-bound rule** still wants ratification (step 3's record), and
+  **S-6** still wants its answer; **D-228's width calibration** is unblocked
+  and is the orchestrator's run.
+- **Two candidates recorded, not acted on**: `numeric.npk`'s limb arithmetic
+  respelled over `uint256` (a simplification outside D-209's scope), and the
+  55 `// Subset 1 … Cycle 0.x.y.` provenance headers (SUBSET_1 §4 says what
+  they mean; a one-line sweep if the user prefers they stop saying it).
 
 ### New, from the same ratification batch
 
@@ -384,11 +406,14 @@ rule, then the four families the enumeration had missed and the D-227
 neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
 says what to look for, not a blind offset.
 
-Then close 1.4.7 per its acceptance section: the fixpoint re-closed and
-DECLARED at the final commit, the snapshot refreshed (`bootstrap/seed/README.md`
-— stage2 == stage3, stage 2 installed), SUBSET_1 §4's closing edit, and the
-cycle folder's move to `done/` only when 1.4.8 is also done. Announce the item
-you are on; one full harness run per commit, no exceptions.
+1.4.7 is closed. Next are **D-230** (`TY_FLAGS`, one kind — read D-230 and
+D-044; B-7's walkers-total instrument enumerates the sweep up front, the way
+1.3.1 ran it for `TY_SIMD`) and **D-231** (strike the sub-byte widths from
+LEXICAL_REFERENCE §6.2's marked region and regenerate; pin the wide ladder
+with layout rows and one executed conformance case), then **1.4.8**
+(`meta/roadmap/1.4/1.4.8.md`). A new type kind means a snapshot refresh
+BEFORE `src/` may spell it (D-205). Announce the item you are on; one full
+harness run per commit, no exceptions.
 
 ## What this cycle proved about how to work here, in one place
 
