@@ -272,13 +272,13 @@ pub func:num_scan = NumScan(string:run) never fails {
 
 // --- tfp literal folding (D-195, 1.3.2) --------------------------------------------
 //
-// EXACT decimal → Q(N/2).(N/2), in LIMB ARITHMETIC: the value lives in ten
-// u64 limbs each holding 32 bits. Written that way because the SEED built this
-// file and wide integers were outside its subset; since the 1.4.6 switch the
-// builder has `uint256`, and the limbs stay because they are exact by
-// construction and pinned by the tier's conformance programs — respelling
-// them over a wide integer would be a simplification, not a repair, and it is
-// not in D-209's adoption scope. The integer digits accumulate
+// EXACT decimal → Q(N/2).(N/2), in ONE `uint512` (1.4.7b). Until then the
+// value lived in ten u64 limbs each holding 32 bits, written that way because
+// the SEED built this file and wide integers were outside its subset; the
+// user ratified the respell at the 1.4.7 close once D-231 had pinned the wide
+// ladder by execution. The result is exact by construction either way, and
+// every program that folds a tfp literal emits the same bytes as before
+// (measured at the respell). The integer digits accumulate
 // by ×10+digit; the fraction digits yield their F bits by the
 // multiply-the-decimal-by-two carry method; the result rounds to NEAREST
 // with ties to even (one extra bit plus a sticky over the remaining digits).
@@ -294,84 +294,32 @@ pub func:num_scan = NumScan(string:run) never fails {
 // 1e-350 is under half of tfp256's smallest step — so the digit buffers
 // stay bounded.
 
-func:tfpq_mul10_add = uint64(wild uint64->:limbs, uint64:d) never fails {
-    uint64:carry = d;
-    for (int64:i in 0i64...10i64) {
-        uint64:t = (limbs[i] * 10u64) + carry;
-        limbs[i] = t & 4294967295u64;
-        carry = t >> 32u64;
-    }
-    pass carry;
-};
-
-func:tfpq_shl = NIL(wild uint64->:limbs, int32:k) never fails {
-    int32:words = k / 32i32;
-    int32:rem = k % 32i32;
-    int64:i = 9i64;
-    while (i >= 0i64) {
-        uint64:v = 0u64;
-        int64:src = i - (words => int64);
-        if (src >= 0i64) {
-            v = limbs[src] << (rem =>! uint64);
-            if (rem > 0i32) {
-                if (src > 0i64) {
-                    v = v | (limbs[src - 1i64] >> ((32i32 - rem) =>! uint64));
-                }
-            }
-        }
-        limbs[i] = v & 4294967295u64;
-        i = i - 1i64;
-    }
-    pass NIL;
-};
-
-func:tfpq_add1 = NIL(wild uint64->:limbs) never fails {
-    uint64:carry = 1u64;
-    int64:i = 0i64;
-    while (i < 10i64) {
-        if (carry == 0u64) { i = 10i64; } else {
-            uint64:t = limbs[i] + carry;
-            limbs[i] = t & 4294967295u64;
-            carry = t >> 32u64;
-            i = i + 1i64;
-        }
-    }
-    pass NIL;
-};
+// THE ACCUMULATOR IS ONE `uint512`. 512 is the smallest rung above the 320
+// bits the limbs had; the value never needs more than 256 + F + 1 bits, and
+// the integer accumulation is CAPPED at 2^256 (`tfpq_over`) so `v * 10 + 9`
+// and `v << F` stay inside 512 bits -- no operation can wrap and no shift
+// can lose a high bit, which is what makes the fold exact by construction.
 
 // value ≤ 2^(bits-1) − 1 — the widest VALID magnitude (the sentinel's
 // magnitude 2^(bits-1) itself refuses, D-008 §1's balance).
-func:tfpq_in_range = bool(wild uint64->:limbs, int32:bits) never fails {
-    int64:top_limb = ((bits / 32i32) => int64) - 1i64;
-    int64:i = 9i64;
-    while (i > top_limb) {
-        if (limbs[i] != 0u64) { pass false; }
-        i = i - 1i64;
-    }
-    // bit (bits-1) sits at the top of limb top_limb.
-    if ((limbs[top_limb] >> 31u64) != 0u64) { pass false; }
-    pass true;
+func:tfpq_in_range = bool(uint512:v, int32:bits) never fails {
+    pass (v < (1u512 << ((bits - 1i32) =>! uint512)));
 };
 
-func:tfpq_is_zero = bool(wild uint64->:limbs) never fails {
-    for (int64:i in 0i64...10i64) {
-        if (limbs[i] != 0u64) { pass false; }
-    }
-    pass true;
+// Any integer part at or past 2^256 is beyond every width's range (2^127 at
+// tfp256), so refusing it is what `tfpq_in_range` would do anyway; stopping
+// the accumulation there is what keeps the arithmetic inside 512 bits.
+func:tfpq_over = bool(uint512:v) never fails {
+    pass (v >= (1u512 << 256u512));
 };
 
-func:tfpq_decimal = string(wild uint64->:limbs) never fails {
-    if (raw tfpq_is_zero(limbs)) { pass "0"; }
+func:tfpq_decimal = string(uint512:v0) never fails {
+    if (v0 == 0u512) { pass "0"; }
+    uint512:v = v0;
     string:acc = "";
-    while (!(raw tfpq_is_zero(limbs))) {
-        uint64:rem = 0u64;
-        int64:i = 9i64;
-        while (i >= 0i64) {
-            uint64:t = (rem << 32u64) | limbs[i];
-            limbs[i] = t / 10u64;
-            rem = t % 10u64;
-            i = i - 1i64;
-        }
+    while (v != 0u512) {
+        uint512:rem = v % 10u512;
+        v = v / 10u512;
         acc = string_concat(int_to_string(rem =>! int64), acc);
     }
     pass acc;
@@ -455,28 +403,18 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
         ex = ex + 1i64;
     }
 
-    // --- integer digits into limbs; overflow past the top limb refuses ---
-    wild uint64->:limbs = alloc(80i64) =>! wild uint64->;
-    int64:li = 0i64;
-    while (li < 10i64) { limbs[li] = 0u64; li = li + 1i64; }
+    // --- integer digits into the accumulator; at 2^256 it refuses ---
+    uint512:val = 0u512;
     bool:over = false;
     for (int64:k in 0i64...ni) {
-        if ((raw tfpq_mul10_add(limbs, (ints[k]) => uint64)) != 0u64) { over = true; }
+        if (!over) {
+            if (raw tfpq_over(val)) { over = true; }
+            else { val = (val * 10u512) + ((ints[k]) => uint512); }
+        }
     }
     // --- shift by F, then the fraction's bits ---
     if (!over) {
-        int64:tl = 9i64;
-        int32:room = 0i32;
-        while (tl >= 0i64) {
-            if (limbs[tl] != 0u64) { room = ((9i64 - tl) =>! int32) * 32i32; tl = 0i64 - 1i64; }
-            else { tl = tl - 1i64; }
-        }
-        if (room != 0i32) {
-            if (room < (frac_bits + 32i32)) { over = true; }
-        }
-    }
-    if (!over) {
-        drop tfpq_shl(limbs, frac_bits);
+        val = val << (frac_bits =>! uint512);
         for (int32:b in 0i32...frac_bits) {
             // ×2 over the decimal fraction, right to left; the carry OUT is
             // the next bit below the point, most significant first.
@@ -491,7 +429,7 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
             }
             if (carry != 0u64) {
                 int64:pos = ((frac_bits - 1i32 - b) => int64);
-                limbs[pos / 32i64] = limbs[pos / 32i64] | (1u64 << ((pos % 32i64) =>! uint64));
+                val = val | (1u512 << (pos =>! uint512));
             }
         }
         // --- rounding: one more doubled bit, sticky over what remains ---
@@ -511,22 +449,14 @@ pub func:tfp_q_decimal = string(string:text, int32:bits) never fails {
         if (rcarry != 0u64) {
             bool:up = sticky;
             if (!up) {
-                if ((limbs[0i64] & 1u64) == 1u64) { up = true; }   // ties to even
+                if ((val & 1u512) == 1u512) { up = true; }   // ties to even
             }
-            if (up) { drop tfpq_add1(limbs); }
+            if (up) { val = val + 1u512; }
         }
     }
     dalloc(ints);
     dalloc(frs);
-    if (over) {
-        dalloc(limbs);
-        pass "";
-    }
-    if (!(raw tfpq_in_range(limbs, bits))) {
-        dalloc(limbs);
-        pass "";
-    }
-    string:out = raw tfpq_decimal(limbs);
-    dalloc(limbs);
-    pass out;
+    if (over) { pass ""; }
+    if (!(raw tfpq_in_range(val, bits))) { pass ""; }
+    pass (raw tfpq_decimal(val));
 };
