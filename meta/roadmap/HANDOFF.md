@@ -15,10 +15,11 @@ source-commit `43379b0`); SUBSET_1 §4 has its closing edit. The last two
 commits before the close: the FNV step took the one copy's `uint128` spelling
 (1.4.6's owed item — and `bridge_stubs.npk`'s second copy of the trio, which
 1.4.2b's collapse never saw, is gone), and four `src/` comments the adoption
-had made false came current. **Next: D-230 (`TY_FLAGS`) and D-231 (the
-sub-byte strike, the wide-ladder pin), both sequenced before 1.4.8; then
-1.4.8 (`npkg`).** Everything below is committed; the tree is clean and nothing
-is in flight.
+had made false came current. **Next: 1.4.7b, the pre-1.4.8 batch
+(`meta/roadmap/1.4/1.4.7b.md`) — the close's recommendations ratified as
+D-234/D-235/D-236, D-230's `TY_FLAGS`, D-231's strike-and-pin, and the width
+calibration; then 1.4.8 (`npkg`) in a fresh session.** Everything below is
+committed; the tree is clean and nothing is in flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
   one `diag_report`. It needed **D-224** (`exit` is process exit in every body)

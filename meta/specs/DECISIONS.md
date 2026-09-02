@@ -15625,3 +15625,123 @@ validates the real pipeline instead. **Declined — waiting for AbsInt's
 answer before moving**: the survey's sibling-artifact objection stands
 whatever AbsInt says about ingestion, so the contact no longer gates
 anything.
+
+## D-234 — a `for` captures its bound at entry; a `while` re-reads it — the loop spelling says which — **SETTLED (user decision, 2026-09-01)**
+
+Proposed in 1.4.7's step-3 record and ratified at the subcycle's close. An
+engineering rule about `src/` in D-226's shape: nothing in the grammar or the
+type system changes, and it is recorded here because it governs every counter
+loop the compiler will ever grow.
+
+**The fact the rule rests on, measured by probe before any loop moved.** A
+`for (intN:i in lo...hi)` evaluates its range ONCE, at entry — `emit_for`
+extracts `hi` into a loop slot — while a `while (i < x.count)` re-reads
+`x.count` every iteration. For a bound that is a container's live count the two
+are different programs, and this compiler has loops that depend on the
+difference: the instance loop in `emit_program` re-reads the table it is
+emitting (transitive monomorphization), the escape settle walks, every
+`tt_count`/`inst_count` bound under a body that can intern. A conversion by
+shape alone would have been silently wrong for exactly those and
+indistinguishable at a glance from the loops it was right for.
+
+**The rule:**
+
+> A counter loop is spelled `for (intN:i in 0iN...b)` only where `b` cannot
+> change under the loop — a literal, or a local the body never assigns. A loop
+> bounded by a container's live count (`x.count`, `raw tt_count(t)`) is spelled
+> `while`: that spelling says the bound is re-read, and a reader can trust that
+> a `for` in this tree never hides a live bound.
+
+So the two spellings carry MEANING — which is the blueprint argument for keeping
+both rather than a style preference for either. 268 of 600 counter loops
+converted under the rule at 1.4.7 step 3 and 332 stayed `while`, 175 of them
+because their bound is live; the classifier that applied the rule admits zero
+further loops on the converted tree.
+
+**Riders.** `..` is the INCLUSIVE range and `...` the exclusive one (OP_REFERENCE
+§5); an index loop is therefore three dots. A `for` whose body needs the counter
+after the loop, advances it conditionally, or reads it as a search result is not
+a plain iteration and stays `while` — the record lists each class with its count.
+
+## D-235 — every kind is decided as a channel element: a simd vector and a function value ride, the sync primitives, atomics and arenas refuse permanently — **SETTLED (user decision, 2026-09-01)**
+
+Closes OPEN_DECISIONS S-6, raised by OWED-8's own instrument: `check_rung_names_
+open_cycle` refused a rung message that named neither a cycle nor a row, which
+was the instrument saying that an undecided kind is an open decision, not a
+state to describe. TYPE-057 (OWED-8) had moved the DECIDED refusals into the
+checker — a borrow, a `dyn`, an `OwnedFd`, a `Guard`, an aggregate holding one —
+and left a middle class the backend refused as a rung: `Mutex`/`RwLock`/
+`CondVar`/`Barrier`, `atomic<T>`, `arena`/`shared_arena`, function values, and
+`simd<T, N>`.
+
+**The decision, both halves:**
+
+1. **A `simd<T, N>` and a function value RIDE.** A simd vector is a plain value
+   and a code address never dangles; both transfer whole by copying their
+   bytes. The simd refusal was an oversight of the 1.3.1 sweep, not a decision.
+   `chan_value_kinds.npk` proves the LOWERING: four lanes arrive as four lanes
+   and the function arrives callable.
+2. **The sync primitives, atomics and arenas refuse PERMANENTLY under TYPE-057,
+   with their own message — and so does whatever holds one.** The reasoning is
+   D-180's: a borrow of a `Mutex`, an `atomic`, or a `shared_arena` is the
+   SANCTIONED way to share one across a spawn, and a holder's borrow is exactly
+   what moving the cell through a channel would pull it out from under. What
+   other tasks may borrow cannot be moved out from under them; the cell is shared
+   as `T->`. A `CondVar` and a `Barrier` are cells of the same family; a plain
+   `arena` is owned storage other handles point into.
+
+**Mechanism.** Layout's walk gains a FOURTH memoised bit, `hasshared`, beside
+`drops`, `haschan` and `hasborrow` (D-227's discipline: the query ensures, the
+reader is `_recorded`, the absent-fact stage flips all four), read by a new
+total walker `type_contains_shared_recorded` under an EMPTY excuse table in the
+walkers-total instrument. The verdict table in `types.npk` now names every one
+of the 47 kinds with a decision; a range answers from its element (two values of
+it, D-093); the not-value kinds (an invalid type, a trait, a comptime argument)
+are refused before the table is asked. **The backend's admission table names no
+rung**: a kind it does not admit is one the checker refused or one that is not
+a value, and reaching it is the two tables disagreeing — an internal defect,
+never "not lowered yet".
+
+**Declined — admitting the sync primitives under the move analysis alone**
+(refuse `move(m)` only while a borrow of `m` is live). The analysis that would
+carry it does not exist for spawn-crossing borrows, and a rule enforced by an
+analysis nobody wrote is the "believed in force" pattern; the type-level refusal
+is total and needs no second mechanism. **Declined — keeping the rung** for the
+class: a rung says "later", and there is no later for a language rule (the
+standing no-deferral rule).
+
+## D-236 — source paths are recorded relative to the manifest root, for diagnostics and the site table alike — **SETTLED (user decision, 2026-09-01)**
+
+Closes OPEN_DECISIONS S-7, found at the 1.4.7 close. D-179's site table records
+each source path AS GIVEN: `npkc src/main.npk` from the tree root emits
+`c"src/frontend/token.npk"`, and the same call with an absolute argument emits
+the absolute path — 1,489 of the 1,647 site constants in a dry-run refresh of
+the snapshot, which the fixpoint (stage2 == stage3) and the STAMP both passed,
+because each compares the emission with itself. D-078 says emitted bytes must
+not vary with the build tree and D-204's H9 names exactly this leak, but the
+`repro` stage tests it with absolute inputs from two cwds — which agree BY
+CONSTRUCTION — and the harness's own selfhost emission is invoked absolutely.
+The committed snapshot had always been clean only because the README's
+commands are relative: a decided property held by the discipline of one line.
+
+**The decision.** The source manager records every file's path RELATIVE TO THE
+MANIFEST ROOT — the directory holding `nitpick.toml`, found by walking up from
+the main file's directory, or the main file's directory when no manifest is
+found — normalised, `/`-joined, and used by diagnostics (`CODE path:line:col`)
+and by the site table alike: one spelling, deterministic, and the same bytes
+the snapshot carries today when invoked from the root. The path a file is
+OPENED by stays as resolved, so `npkc` works from any working directory and
+`use` resolution is untouched. A file outside the root shows as `../…`,
+relative and machine-independent. With this in force an absolute argument no
+longer changes the emission, so the `repro` stage's H9 leg measures what it
+was written to measure; the 1.4.7 close's guard (no absolute site path in the
+committed `stage1.ll`) stays as the belt.
+
+**Declined — as-given paths plus the README's discipline** (the state at the
+close): the guard protects the committed artifact and nothing else, and every
+emission the harness makes carries the machine's path. **Declined — the
+basename alone**: D-156 admits two modules of one basename in different
+directories, which a basename-only table could not tell apart, and a
+diagnostic that names `util.npk` without saying which is a worse diagnostic.
+**Declined — an explicit `--root` flag**: a flag nobody passes is the default
+nobody chose, and the manifest already IS the root's declaration.

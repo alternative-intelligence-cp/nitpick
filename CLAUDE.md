@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 CLOSED; D-230/D-231 then 1.4.8 next
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 CLOSED; 1.4.7b (the pre-1.4.8 batch) UNDERWAY
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 233 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 236 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -468,6 +468,13 @@ site-table rows — D-078 held by one README line — so the `repro` stage now
 refuses an absolute site path in the committed snapshot, and whether the
 source manager should record manifest-root-relative paths is **S-7** (the
 user's). SUBSET_1 §4 carries its closing edit.
+**1.4.7b IS UNDERWAY** (`meta/roadmap/1.4/1.4.7b.md`): the close's
+recommendations were ratified as **D-234** (a `for` captures its bound, a
+`while` re-reads it), **D-235** (every kind decided as a channel element:
+simd and function values ride, the sync primitives, atomics and arenas refuse
+permanently) and **D-236** (manifest-root-relative source paths), and are
+landing one commit each beside D-230's `TY_FLAGS`, D-231's strike-and-pin and
+D-228's width calibration, before 1.4.8 starts in a fresh session.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
