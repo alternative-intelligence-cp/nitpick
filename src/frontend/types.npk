@@ -237,6 +237,10 @@ pub struct:TypeTable = {
     List<int32>:haschan;
     // Borrow containment (D-183, 1.2.5b): pointers that are NOT owned bodies.
     List<int32>:hasborrow;
+    // Shared-cell containment (D-235, 1.4.7b): a sync primitive, an atomic or
+    // an arena -- what other tasks may hold a BORROW of across a spawn (D-180),
+    // which a channel may therefore not move out from under them.
+    List<int32>:hasshared;
 
     // THE UNIT TABLE (D-196, 1.3.3): each `unit:` declaration's evaluated
     // exponent vector, keyed by DECL index — visibility stays the symbol
@@ -286,7 +290,7 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
     int32:id = raw tt_id(t.items.count);   // BEFORE the push
-    // ALL FIVE, ALWAYS. The four bit lists get "not computed" explicitly; this
+    // ALL SIX, ALWAYS. The five bit lists get "not computed" explicitly; this
     // is the invariant `tt_grow`'s tail fill held for haspt and drops and never
     // held for haschan and hasborrow.
     drop list_push(@t.items, n);
@@ -294,6 +298,7 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     drop list_push(@t.drops, 0i32);
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
+    drop list_push(@t.hasshared, 0i32);
     pass id;
 };
 
@@ -372,6 +377,20 @@ pub func:tt_hasborrow = int32(TypeTable->:t, int32:id) never fails {
     if (id < 0i32) { pass 0i32; }
     if ((id => int64) >= t.hasborrow.count) { pass 0i32; }
     pass (t.hasborrow.items[id => int64]);
+};
+
+// The shared-cell-containment bit, written once by layout (D-235, 1.4.7b).
+pub func:tt_set_hasshared = NIL(TypeTable->:t, int32:id, bool:has) never fails {
+    if (id < 0i32) { !!! BoundsId; }
+    if ((id => int64) >= t.hasshared.count) { !!! BoundsId; }
+    t.hasshared.items[id => int64] = 1i32;
+    if (has) { t.hasshared.items[id => int64] = 2i32; }
+    pass NIL;
+};
+pub func:tt_hasshared = int32(TypeTable->:t, int32:id) never fails {
+    if (id < 0i32) { pass 0i32; }
+    if ((id => int64) >= t.hasshared.count) { pass 0i32; }
+    pass (t.hasshared.items[id => int64]);
 };
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
@@ -1237,6 +1256,7 @@ pub func:typetable_init = TypeTable() never fails {
         drops: raw list_init::<int32>(n),
         haschan: raw list_init::<int32>(n),
         hasborrow: raw list_init::<int32>(n),
+        hasshared: raw list_init::<int32>(n),
         unit_decls: raw list_init::<int32>(16i64),
         unit_vecs: raw list_init::<int64>(16i64)
     };
@@ -1522,7 +1542,78 @@ pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fue
     pass false;
 };
 
-// --- what a channel may carry (TYPE-057, 1.4.7 OWED-8) --------------------------
+// DOES THIS TYPE HOLD A CELL OTHER TASKS MAY BORROW (D-235, 1.4.7b) -- a sync
+// primitive, an atomic or an arena? D-180 makes a borrow of one the sanctioned
+// way to share it across a spawn, and a holder's borrow is exactly what moving
+// the cell through a channel would pull it out from under; so a channel
+// refuses the cell (TYPE-057) and everything that contains one. The bit is
+// layout's, on the same walk as the other three; every kind answers here
+// explicitly, under an EMPTY excuse table in the walkers-total instrument.
+pub func:type_contains_shared_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(t, id);
+    // The cells themselves.
+    if (k == (raw TY_MUTEX()))        { pass true; }
+    if (k == (raw TY_RWLOCK()))       { pass true; }
+    if (k == (raw TY_CONDVAR()))      { pass true; }
+    if (k == (raw TY_BARRIER()))      { pass true; }
+    if (k == (raw TY_ATOMIC()))       { pass true; }
+    if (k == (raw TY_ARENA()))        { pass true; }
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
+    // Wrappers, and a range (two values of its element, D-093), answer from
+    // what they carry.
+    if (k == (raw TY_ARRAY()))    { pass (raw type_contains_shared_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw type_contains_shared_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw type_contains_shared_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (raw type_contains_shared_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
+    // Structs and enums answer from layout's walk, like the other three bits.
+    if (k == (raw TY_STRUCT()))   { pass ((raw tt_hasshared(t, id)) == 2i32); }
+    if (k == (raw TY_ENUM()))     { pass ((raw tt_hasshared(t, id)) == 2i32); }
+    // A borrow, a guard, a handle or an endpoint may POINT at such a cell but
+    // does not contain one; the borrow rule judges those, and a `dyn` is
+    // refused as erased before this question is reached.
+    if (k == (raw TY_POINTER())) { pass false; }
+    if (k == (raw TY_SLICE()))   { pass false; }
+    if (k == (raw TY_DYN()))     { pass false; }
+    if (k == (raw TY_ANY()))     { pass false; }
+    if (k == (raw TY_CSTRING())) { pass false; }
+    if (k == (raw TY_GUARD()))   { pass false; }
+    if (k == (raw TY_RGUARD()))  { pass false; }
+    if (k == (raw TY_HANDLE()))  { pass false; }
+    if (k == (raw TY_CHANNEL())) { pass false; }
+    if (k == (raw TY_OWNEDFD())) { pass false; }
+    // Values that carry no cell: the scalars, the tier, the owning byte
+    // cells, a code word, a code address.
+    if (k == (raw TY_INVALID())) { pass false; }
+    if (k == (raw TY_NIL()))     { pass false; }
+    if (k == (raw TY_BOOL()))    { pass false; }
+    if (k == (raw TY_INT()))     { pass false; }
+    if (k == (raw TY_CHAR()))    { pass false; }
+    if (k == (raw TY_FLOAT()))   { pass false; }
+    if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_TFP()))     { pass false; }
+    if (k == (raw TY_DIM()))     { pass false; }
+    if (k == (raw TY_TERN()))    { pass false; }
+    if (k == (raw TY_FRAC()))    { pass false; }
+    if (k == (raw TY_COMPLEX())) { pass false; }
+    if (k == (raw TY_SIMD()))    { pass false; }
+    if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_ERROR()))   { pass false; }
+    if (k == (raw TY_STRING()))  { pass false; }
+    if (k == (raw TY_BUFFER()))  { pass false; }
+    if (k == (raw TY_FUNC()))          { pass false; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
+    // Not runtime values, or resolved before any crossing rule asks.
+    if (k == (raw TY_TRAIT()))    { pass false; }
+    if (k == (raw TY_COMPTIME())) { pass false; }
+    if (k == (raw TY_SELF()))     { pass false; }
+    if (k == (raw TY_PARAM()))    { pass false; }
+    if (k == (raw TY_ASSOC()))    { pass false; }
+    pass false;
+};
+
+// --- what a channel may carry (TYPE-057, 1.4.7 OWED-8; total since D-235) -------
 //
 // THE ONE TABLE for "can this type be a channel element", answered over the
 // RECORDED bits: the checker asks through `chan_elem_verdict` in type_layout
@@ -1531,18 +1622,21 @@ pub func:type_contains_borrow_recorded = bool(TypeTable->:t, int32:id, int32:fue
 // one of them, which is why the backend's `chan_elem_ok` no longer carries the
 // decided classes itself.
 //
-// The verdicts are the DECIDED refusals, each with its decision, and OK for
-// everything else -- including the kinds no decision has settled (a mutex, an
-// atomic, an arena, a simd vector, a function value, ...), which the backend
-// still refuses AS A RUNG, by name. That split is deliberate: a `TYPE` code is
-// a permanent language rule and a rung is "not lowered yet", and this table
-// is not where the second becomes the first.
+// EVERY KIND IS DECIDED (D-235, 1.4.7b): the verdicts are the permanent
+// refusals, each with its decision, and OK for everything that transfers
+// whole. Until D-235 the sync primitives, atomics, arenas, function values and
+// simd vectors sat between the two as "no decision", refused by the backend as
+// a rung naming OPEN_DECISIONS S-6; S-6 is settled and the rung is gone. A kind
+// added later must be classified here rather than admitted by default -- the
+// walkers-total instrument holds this walker to an EMPTY excuse table.
 pub func:CHAN_ELEM_OK = int32() never fails     { pass 0i32; };
 pub func:CHAN_ELEM_BORROW = int32() never fails { pass 1i32; };  // a `T->`, a slice, a `cstring`, `any` (D-072/D-183)
 pub func:CHAN_ELEM_DYN = int32() never fails    { pass 2i32; };  // erased (D-207)
 pub func:CHAN_ELEM_FD = int32() never fails     { pass 3i32; };  // scope-bound descriptor (D-185)
 pub func:CHAN_ELEM_GUARD = int32() never fails  { pass 4i32; };  // borrows its mutex's cell (D-056, 1.1.11)
 pub func:CHAN_ELEM_HOLDS = int32() never fails  { pass 5i32; };  // an aggregate holding one of the above
+pub func:CHAN_ELEM_SHARED = int32() never fails { pass 6i32; };  // a cell other tasks may borrow: a sync primitive, an atomic, an arena (D-180, D-235)
+pub func:CHAN_ELEM_HOLDS_SHARED = int32() never fails { pass 7i32; };  // an aggregate holding one of those
 
 pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fuel) never fails {
     // Out of fuel is FAIL CLOSED: a containment too deep to see is one that
@@ -1559,19 +1653,35 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     if (k == (raw TY_OWNEDFD())) { pass (raw CHAN_ELEM_FD()); }
     if (k == (raw TY_GUARD()))   { pass (raw CHAN_ELEM_GUARD()); }
     if (k == (raw TY_RGUARD()))  { pass (raw CHAN_ELEM_GUARD()); }
-    // Wrappers answer from what they wrap.
+    // WHAT OTHER TASKS MAY BORROW (D-235, 1.4.7b): D-180 sanctions a borrow of
+    // a sync primitive, an atomic or an arena as a spawn crossing, and a
+    // holder's borrow is exactly what a move through a channel would pull the
+    // cell out from under. Refused permanently; the cell is shared as `T->`.
+    if (k == (raw TY_MUTEX()))        { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_RWLOCK()))       { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_CONDVAR()))      { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_BARRIER()))      { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_ATOMIC()))       { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_ARENA()))        { pass (raw CHAN_ELEM_SHARED()); }
+    if (k == (raw TY_SHARED_ARENA())) { pass (raw CHAN_ELEM_SHARED()); }
+    // Wrappers answer from what they wrap; a range is two values of its
+    // element (D-093) and answers the same way.
     if (k == (raw TY_OPTIONAL())) { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
     if (k == (raw TY_RESULT()))   { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
     if (k == (raw TY_ARRAY()))    { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
-    // Aggregates answer from layout's walk (`hasborrow` names every kind
-    // above, transitively); which field is not recorded, and the message
-    // says so rather than walking a second time.
+    if (k == (raw TY_RANGE()))    { pass (raw chan_elem_verdict_recorded(t, raw type_elem(t, elem), fuel - 1i32)); }
+    // Aggregates answer from layout's walks (`hasborrow` names every borrow-
+    // like kind above transitively, `hasshared` every shared cell); which
+    // field is not recorded, and the message says so rather than walking a
+    // second time.
     if (k == (raw TY_STRUCT())) {
         if (raw type_contains_borrow_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS()); }
+        if (raw type_contains_shared_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS_SHARED()); }
         pass (raw CHAN_ELEM_OK());
     }
     if (k == (raw TY_ENUM())) {
         if (raw type_contains_borrow_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS()); }
+        if (raw type_contains_shared_recorded(t, elem, fuel)) { pass (raw CHAN_ELEM_HOLDS_SHARED()); }
         pass (raw CHAN_ELEM_OK());
     }
     // Everything that transfers whole: the scalars and the tier ...
@@ -1588,6 +1698,11 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     if (k == (raw TY_COMPLEX())) { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_KERNEL()))  { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_ERROR()))   { pass (raw CHAN_ELEM_OK()); }
+    // ... a simd vector, which is a plain value, and a function value, which
+    // is a code address and never dangles (D-235; both a rung until 1.4.7b) ...
+    if (k == (raw TY_SIMD()))          { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FUNC()))          { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw CHAN_ELEM_OK()); }
     // ... the owning cells, which cross WITH their ownership (D-183, D-200) ...
     if (k == (raw TY_STRING()))  { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_BUFFER()))  { pass (raw CHAN_ELEM_OK()); }
@@ -1600,22 +1715,13 @@ pub func:chan_elem_verdict_recorded = int32(TypeTable->:t, int32:elem, int32:fue
     if (k == (raw TY_PARAM()))   { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_SELF()))    { pass (raw CHAN_ELEM_OK()); }
     if (k == (raw TY_ASSOC()))   { pass (raw CHAN_ELEM_OK()); }
-    // UNDECIDED kinds: not this table's to refuse. The backend's admission
-    // table refuses them as a rung, by name, until a decision says otherwise.
-    if (k == (raw TY_INVALID()))       { pass (raw CHAN_ELEM_OK()); }   // already reported
-    if (k == (raw TY_TRAIT()))         { pass (raw CHAN_ELEM_OK()); }   // refused as a value type already
-    if (k == (raw TY_FUNC()))          { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_RANGE()))         { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_COMPTIME()))      { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_ARENA()))         { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_SHARED_ARENA()))  { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_ATOMIC()))        { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_MUTEX()))         { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_RWLOCK()))        { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_CONDVAR()))       { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_BARRIER()))       { pass (raw CHAN_ELEM_OK()); }
-    if (k == (raw TY_SIMD()))          { pass (raw CHAN_ELEM_OK()); }
+    // NOT VALUE TYPES: an invalid type was already reported, a trait is a
+    // bound and a comptime argument is never a runtime value -- a channel of
+    // one is refused before this table is asked, and the backend's belt fails
+    // closed (never a rung) if one ever arrives.
+    if (k == (raw TY_INVALID()))  { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_TRAIT()))    { pass (raw CHAN_ELEM_OK()); }
+    if (k == (raw TY_COMPTIME())) { pass (raw CHAN_ELEM_OK()); }
     pass (raw CHAN_ELEM_OK());
 };
 

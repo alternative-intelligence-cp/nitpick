@@ -1676,9 +1676,10 @@ func:channel_const_arg = int32(TypeResolver->:r, TypeNode:n, int32:i,
 // decision, so a reader is told what to send instead.
 //
 // Three permanent rules reported as `NITPICK-RUNG-001` from the backend until
-// 1.4.7, out of a suite whose contents graduate as rungs land. The backend's
-// admission table stays as a fail-closed belt for the kinds no decision has
-// settled, which it still refuses as a rung.
+// 1.4.7, out of a suite whose contents graduate as rungs land. Since D-235
+// (1.4.7b) EVERY kind is decided -- the sync primitives, atomics and arenas
+// refuse here too, and a simd vector or a function value rides -- so the
+// backend's admission table is a fail-closed belt and names no rung.
 pub func:check_channel_elem = NIL(TypeResolver->:r, int32:elem, int32:scope,
                                   Span:at) never fails {
     int32:v = raw chan_elem_verdict(r, elem, scope, 64i32);
@@ -1697,6 +1698,12 @@ pub func:check_channel_elem = NIL(TypeResolver->:r, int32:elem, int32:scope,
     }
     if (v == (raw CHAN_ELEM_GUARD())) {
         why = "a guard borrows its mutex's cell and may not outrun the mutex, and a task boundary is exactly where it would (D-056, 1.1.11)";
+    }
+    if (v == (raw CHAN_ELEM_SHARED())) {
+        why = "it is a cell other tasks may hold a borrow of — a sync primitive, an atomic or an arena is shared across a spawn by BORROW (D-180), and a move through a channel would pull the cell out from under every holder; share it as `T->` instead (D-235)";
+    }
+    if (v == (raw CHAN_ELEM_HOLDS_SHARED())) {
+        why = "it holds a sync primitive, an atomic or an arena — a cell other tasks may borrow across a spawn (D-180) cannot be moved out from under them, and neither can whatever contains it; share the container as `T->` instead (D-235)";
     }
     if (v == (raw CHAN_ELEM_HOLDS())) {
         why = "it holds a borrow, a `dyn`, a `Guard` or an `OwnedFd` — a borrow names storage left on the sender's frame (D-072/D-183), an erased value hides that question (D-207), a guard may not outrun its mutex (D-056), a descriptor is scope-bound (D-185); send a type whose every field transfers whole";

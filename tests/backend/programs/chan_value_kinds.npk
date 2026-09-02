@@ -1,0 +1,46 @@
+// expect-exit: 0
+//
+// A SIMD VECTOR AND A FUNCTION VALUE RIDE A CHANNEL (D-235, 1.4.7b). Both were
+// refused by the backend as a rung naming OPEN_DECISIONS S-6 -- "no decision
+// admits or refuses" -- while the checker's table admitted them; S-6 settled
+// that a plain value and a code address transfer whole by copying their
+// bytes, and this program proves the LOWERING, not just the rule: four lanes
+// arrive as four lanes, and the function arrives callable. It exits 0 so
+// D-151's leak check runs.
+mod:chan_value_kinds;
+error:E9;
+
+func:triple = int32(int32:x) never fails { pass (x * 3i32); };
+
+async func:main = int32(cstring[]:_~argv) {
+    Channel<simd<int32, 4>, 2i32, 2i64>:cv = channel() ?! Unreachable;
+    simd<int32, 4>:v = simd(1i32, 2i32, 3i32, 4i32);
+    await cv.send(v, raw duration_ms(50i64)) ?! E9;
+    simd<int32, 4>:g = await cv.recv(raw duration_ms(50i64)) ?! E9;
+    int32:lanes = g[0i64] + g[1i64] + g[2i64] + g[3i64];
+    if (lanes != 10i32) { exit 11i32; }
+
+    Channel<func int32(int32) never fails, 2i32, 2i64>:cf = channel() ?! Unreachable;
+    await cf.send(triple, raw duration_ms(50i64)) ?! E9;
+    func int32(int32) never fails:f = await cf.recv(raw duration_ms(50i64)) ?! E9;
+    int32:t = raw f(4i32);
+    if (t != 12i32) { exit 12i32; }
+    if ((lanes + t) != 22i32) { exit 13i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 90i32; },
+        (DeadlineExceeded) { exit 91i32; },
+        (StaleHandle)      { exit 92i32; },
+        (ChannelClosed)    { exit 93i32; },
+        (IntOverflow)      { exit 94i32; },
+        (OutOfBounds)      { exit 95i32; },
+        (WildLeak)         { exit 96i32; },
+        (HeapBadRequest)   { exit 97i32; },
+        (HeapOom)          { exit 97i32; },
+        (Unreachable)      { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+};

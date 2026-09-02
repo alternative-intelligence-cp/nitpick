@@ -446,10 +446,13 @@ pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
 //
 // So the rung transfers what it can transfer by copying the bytes: scalars, the
 // index-shaped handles, pointer-free structs, and arrays of those. Everything
-// else refuses by name. `tt_haspt` is layout's own answer to "can this struct
-// hold an address" and is exactly the question here; 0 means layout never
-// computed it, which is refused with the rest — an unasked question is not a
-// no.
+// else FAILS CLOSED: since D-235 (1.4.7b) every kind is decided by the
+// checker's table, so a kind this table does not admit is one the checker
+// refused or one that is not a value at all, and reaching here with it is the
+// two tables disagreeing -- an internal defect, never a rung. `tt_haspt` is
+// layout's own answer to "can this struct hold an address" and is exactly the
+// question here; 0 means layout never computed it, which is refused with the
+// rest — an unasked question is not a no.
 func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     int32:k = raw type_kind(c.types, elem);
@@ -466,6 +469,12 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
     if (k == (raw TY_KERNEL()))  { pass true; }
     if (k == (raw TY_ERROR()))   { pass true; }
     if (k == (raw TY_NIL()))     { pass true; }
+    // A SIMD VECTOR IS A PLAIN VALUE and a function value is a code address
+    // (D-235, 1.4.7b): both transfer whole by copying their bytes. Both were
+    // refused here as a rung naming OPEN_DECISIONS S-6 until that row settled.
+    if (k == (raw TY_SIMD()))          { pass true; }
+    if (k == (raw TY_FUNC()))          { pass true; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass true; }
     // An index and a generation, both ways: a `Handle<T>` into an arena the
     // runtime owns, and a channel endpoint — the shapes that exist BECAUSE
     // they cross a task boundary without carrying an address.
@@ -490,6 +499,10 @@ func:chan_elem_ok = bool(LlCtx->:c, int32:elem, int32:fuel) never fails {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
     if (k == (raw TY_ARRAY()))   {
+        pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
+    }
+    // A range is two values of its element (D-093): it rides iff they do.
+    if (k == (raw TY_RANGE()))   {
         pass (raw chan_elem_ok(c, raw type_elem(c.types, elem), fuel - 1i32));
     }
     if (k == (raw TY_ENUM()))    {
@@ -572,12 +585,14 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
         if ((raw chan_elem_verdict_recorded(c.types, celem, 8i32)) != (raw CHAN_ELEM_OK())) {
             pass (raw ll_broken());
         }
-        // WHAT NO DECISION HAS SETTLED stays a rung, by name -- a mutex, an
-        // atomic, an arena, a function value, a simd vector: the admission
-        // table below says what transfers whole today, and a `TYPE` code is
-        // not where "not lowered yet" turns into "never".
+        // EVERY KIND IS DECIDED (D-235, 1.4.7b): the admission table names
+        // what transfers whole, and a kind it does not name is one the
+        // checker's table refused or one that is not a value at all -- either
+        // way the two tables disagree, which is an internal defect and never a
+        // rung. (Until D-235 the undecided kinds were refused here by name, as
+        // a rung naming OPEN_DECISIONS S-6.)
         if (!(raw chan_elem_ok(c, celem, 8i32))) {
-            pass (raw ll_rung("a channel element of this kind — a sync primitive, an atomic, an arena, a function value or a simd vector — which no decision yet admits or refuses; a later cycle (S-6) settles which transfer whole, and until then it is not lowered at this rung. The permanent refusals (a borrow, a `dyn`, an `OwnedFd`, an aggregate holding one) are the checker's, `NITPICK-TYPE-057`"));
+            pass (raw ll_broken());
         }
         pass (raw ll_ok("{ i32, i32 }"));
     }

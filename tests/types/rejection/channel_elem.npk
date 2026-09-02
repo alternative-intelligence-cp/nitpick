@@ -18,10 +18,19 @@
 // A `dyn` DOES NOT RIDE A CHANNEL (D-207): an erased value hides whether it
 // carries a borrow, and the question cannot be asked of it -- settled as NOT
 // GOING IN rather than as waiting.
+//
+// WHAT OTHER TASKS MAY BORROW DOES NOT RIDE (D-235, 1.4.7b): a sync primitive,
+// an atomic or an arena is shared across a spawn by BORROW (D-180), and a move
+// through a channel would pull the cell out from under every holder -- so the
+// cell refuses, and so does an aggregate holding one. These sat between the
+// decided classes as "no decision", a backend rung naming OPEN_DECISIONS S-6,
+// until that row settled. The same row ADMITTED a simd vector and a function
+// value: a plain value and a code address transfer whole.
 mod:channel_elem;
 
 struct:Holder = { int64->:p; int32:tag; };
 struct:Plain = { int64:v; string:s; };
+struct:Locked = { Mutex<int32, 3i32>:m; int32:tag; };
 
 // Each spelling is refused at ITS annotation, naming the rule.
 // expect-error: NITPICK-TYPE-057
@@ -42,6 +51,29 @@ func:opt_elem = NIL(Channel<OwnedFd?, 3i32, 2i64>:_~ch) never fails { pass NIL; 
 
 // An owning aggregate RIDES (D-183, 1.2.5b): not refused.
 func:plain_elem = NIL(Channel<Plain, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+
+// The shared cells, each refused at its annotation (D-235) ...
+// expect-error: NITPICK-TYPE-057
+func:mutex_elem = NIL(Channel<Mutex<int32, 3i32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:rwlock_elem = NIL(Channel<RwLock<int32, 3i32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:condvar_elem = NIL(Channel<CondVar<4i32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:barrier_elem = NIL(Channel<Barrier<3i32, 6i32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:atomic_elem = NIL(Channel<atomic<int32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:arena_elem = NIL(Channel<arena<int32>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// expect-error: NITPICK-TYPE-057
+func:shared_arena_elem = NIL(Channel<shared_arena<int64>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+// ... and an aggregate holding one, through layout's fourth bit (`hasshared`).
+// expect-error: NITPICK-TYPE-057
+func:locked_elem = NIL(Channel<Locked, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+
+// A simd vector and a function value RIDE (D-235): not refused.
+func:simd_elem = NIL(Channel<simd<int32, 4>, 3i32, 2i64>:_~ch) never fails { pass NIL; };
+func:func_elem = NIL(Channel<func int32(int32) never fails, 3i32, 2i64>:_~ch) never fails { pass NIL; };
 
 // THE SUBSTITUTION SITE. The template says nothing -- `T` is an unknown the
 // spelling cannot judge -- and the instantiation with a borrow is refused at

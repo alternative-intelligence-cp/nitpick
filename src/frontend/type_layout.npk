@@ -150,6 +150,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     bool:drops = false;
     bool:haschan = false;
     bool:hasborrow = false;
+    bool:hasshared = false;
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
@@ -177,6 +178,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // the reclaim machinery asks the RETURN type.
             if (raw type_contains_channel_recorded(r.types, ft, 64i32)) { haschan = true; }
             if (raw type_contains_borrow_recorded(r.types, ft, 64i32)) { hasborrow = true; }
+            if (raw type_contains_shared_recorded(r.types, ft, 64i32)) { hasshared = true; }
         }
         i = i + 1i32;
     }
@@ -184,6 +186,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     drop tt_set_drops(r.types, struct_type, drops);
     drop tt_set_haschan(r.types, struct_type, haschan);
     drop tt_set_hasborrow(r.types, struct_type, hasborrow);
+    drop tt_set_hasshared(r.types, struct_type, hasshared);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -322,6 +325,12 @@ pub func:type_contains_borrow = bool(TypeResolver->:r, int32:id, int32:scope,
     pass (raw type_contains_borrow_recorded(r.types, id, fuel));
 };
 
+pub func:type_contains_shared = bool(TypeResolver->:r, int32:id, int32:scope,
+                                     int32:fuel) never fails {
+    drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
+    pass (raw type_contains_shared_recorded(r.types, id, fuel));
+};
+
 // The channel-element verdict, ENSURED (TYPE-057, 1.4.7): the checker's entry
 // point to the one table in types.npk. An aggregate's answer is layout's
 // `hasborrow` bit, so the layout is computed first -- the query ensures, the
@@ -404,7 +413,8 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         // uniform `{i32, i64}` word this replaces was the SEED's rung shape;
         // the seed keeps it for what it builds, each compiler self-consistent,
         // and no program is ever compiled by both.)
-        // THE THREE BITS ARE WRITTEN FOR EVERY ENUM, PAYLOAD OR NOT (D-227).
+        // THE FOUR BITS ARE WRITTEN FOR EVERY ENUM, PAYLOAD OR NOT (D-227;
+        // `hasshared` joined the three at D-235).
         // They used to be set inside the has-payload arm below, so a
         // payload-less enum had its SIZE written -- which makes the re-entry
         // guard above early-out forever -- while `drops`, `haschan` and
@@ -418,6 +428,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         bool:edrops = false;
         bool:ehaschan = false;
         bool:ehasborrow = false;
+        bool:ehasshared = false;
         if (raw enum_has_payload(r.ast, r.types, t)) {
             DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
             DeclNode:d = raw ast_decl(r.ast, did);
@@ -461,6 +472,9 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         if (raw type_contains_borrow_recorded(r.types, pt, 64i32)) {
                             ehasborrow = true;
                         }
+                        if (raw type_contains_shared_recorded(r.types, pt, 64i32)) {
+                            ehasshared = true;
+                        }
                     }
                     if (vsize > wsize) { wsize = vsize; }
                 }
@@ -473,6 +487,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         drop tt_set_drops(r.types, t, edrops);
         drop tt_set_haschan(r.types, t, ehaschan);
         drop tt_set_hasborrow(r.types, t, ehasborrow);
+        drop tt_set_hasshared(r.types, t, ehasshared);
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;

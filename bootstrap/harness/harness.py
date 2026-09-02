@@ -767,6 +767,8 @@ WALKER_DEFAULT_OK = {
     # what a channel may carry (TYPE-057, 1.4.7): every kind named in the body,
     # so a kind added later must be classified rather than admitted by default
     ("chan_elem_verdict_recorded", "src/frontend/types.npk"): {},
+    # shared-cell containment (D-235): every kind named, like the verdict table
+    ("type_contains_shared_recorded", "src/frontend/types.npk"): {},
     # whether a type carries a channel endpoint (D-183's gives/factory rules)
     ("type_contains_channel_recorded", "src/frontend/types.npk"): {
         "TY_INVALID": "resolution already failed and already said so",
@@ -2940,7 +2942,7 @@ def main(argv):
             # each was found by FLIPPING the reading and watching what moved.
             # This is that experiment, kept.
             #
-            # Build a compiler whose three readers treat 0 as the NON-default
+            # Build a compiler whose four readers treat 0 as the NON-default
             # answer, and require its emission of the compiler to be
             # byte-identical to the real one. Byte-identity is the strong form:
             # "nothing refused" would miss a 0-bit read whose flipped answer
@@ -2966,13 +2968,14 @@ def main(argv):
                 tp = os.path.join(strict, "src", "frontend", "types.npk")
                 txt = open(tp, encoding="utf-8").read()
                 flipped = 0
-                for fn in ("tt_drops", "tt_haschan", "tt_hasborrow"):
+                for fn in ("tt_drops", "tt_haschan", "tt_hasborrow",
+                           "tt_hasshared"):
                     old = "(raw %s(t, id)) == 2i32" % fn
                     flipped += txt.count(old)
                     txt = txt.replace(old, "(raw %s(t, id)) != 1i32" % fn)
-                if flipped != 6:
+                if flipped != 8:
                     failures.append(
-                        "absent-fact: expected 6 memoised-bit readings to "
+                        "absent-fact: expected 8 memoised-bit readings to "
                         "flip and found %d -- this check has lost its grip on "
                         "the source it is about, which makes it a check that "
                         "passes without testing anything (D-227)" % flipped)
