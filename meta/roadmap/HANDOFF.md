@@ -10,8 +10,22 @@
 
 > **2026-09-02: 1.4.8 is UNDERWAY in the main tree** (the fresh session the
 > 1.4.7b close asked for). Its execution record — order, decisions taken on
-> contact, the user's answers — is the tail of `meta/roadmap/1.4/1.4.8.md`;
-> read that before this file's older stretch.
+> contact, the user's answers, and every step's landing — is the tail of
+> `meta/roadmap/1.4/1.4.8.md`; read that before this file's older stretch.
+>
+> **LANDED so far:** Part A (`clone_exec` / `environ` / `lib/nproc.npk`),
+> step 2 (`TY_FLAGS`), step 2b (`range<T>` spellable), step 3 (mid-cycle
+> snapshot refresh), step 4 (every `open` caller crosses typed flags to the
+> floor), step 5 (`lib/nfs.npk` — the file-system surface — plus `sys_cwd`),
+> step 6 (D-236 manifest-root paths; the `selfhost` stage now measures H9
+> green). Steps 3–6 were validated under D-228's cumulative-prefix protocol
+> and landed after a UI freeze interrupted the executing session — the
+> recovery lost nothing, main is byte-identical to the fully-merged `w456`,
+> and a confirmatory harness on committed main followed.
+>
+> **NEXT: Part D — `npkg` itself** (build, test, the closed-world link, the
+> self-check), then the parity stage and the final doc sync. Nothing else in
+> 1.4.8 is started.
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is
