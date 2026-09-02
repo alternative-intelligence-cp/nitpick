@@ -39,40 +39,17 @@ use "../source.npk".*;
 use "../module_graph.npk".*;
 use "./bridge_codes.npk".*;
 
-// FNV-1a over the canonical interface spelling — the D-123 combiner, the
-// same constants `resolve.npk` uses for error identities, restated here for
-// the reason stated there: the prelude's hash helpers reach user programs
-// through injection, which the compiler's own source does not receive.
-func:bs_fnv_seed = uint64() never fails {
-    pass ((3421887204u64 << 32u64) | 2216829733u64);
-};
-// FNV'S MULTIPLY IS A DELIBERATE WRAPAROUND, and it must SAY so (D-210).
-//
-// This was a plain `uint64` multiply, and it overflowed on the first byte it
-// ever hashed. It never fired because the PYTHON SEED emitted no overflow
-// checks: `src/`'s own arithmetic went unchecked for as long as the seed built
-// it, so D-210's 1.4.2b sweep — which found and fixed `intern.npk`'s FNV —
-// could not see this second one. The 1.4.6 switch put the snapshot in the
-// seed's place, the checks appeared in `src/` for the first time, and the two
-// `extern` programs trapped inside the compiler.
-//
-// The spelling is the prelude's: widen, multiply where it cannot overflow,
-// and narrow with `=>!` to state the truncation. `intern.npk` carries the
-// hand-decomposed form with a comment saying it becomes this one — that was
-// written when `src/` was bounded by what the SEED could compile, and since
-// the switch it is bounded by the snapshot, which has `uint128`.
-func:bs_fnv_step = uint64(uint64:h, uint64:v) never fails {
-    pass ((((h ^ v) => uint128) * 1099511628211u128) =>! uint64);
-};
-func:bs_fnv_str = uint64(string:sv, uint64:h0) never fails {
-    uint64:h = h0;
-    int64:i = 0i64;
-    while (i < sv.len) {
-        h = raw bs_fnv_step(h, (sv.ptr[i] =>! uint64) & 255u64);
-        i = i + 1i64;
-    }
-    pass h;
-};
+// FNV-1a over the canonical interface spelling — `intern.npk`'s ONE copy
+// (D-123, D-179): the same seed and the same step as every error identity, so
+// the interface hash and the error identities cannot drift apart. This file
+// carried its own copy of all three functions until 1.4.7 — "restated here"
+// because the PRELUDE's hash helpers reach user programs through injection,
+// which the compiler's own source does not receive; but `intern.npk` is not
+// the prelude, it is imported above, and 1.4.2b's collapse to one copy simply
+// did not see this one. The 1.4.6 builder switch found its plain `uint64`
+// multiply overflowing under D-210 (the seed had never checked `src/`'s own
+// arithmetic); the widen-multiply-`=>!` spelling that fixed it is the one
+// copy's spelling now.
 
 // --- the tiny syntactic type vocabulary --------------------------------------
 //
@@ -445,7 +422,7 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
                     d.span));
             }
             if (raw bs_ident_ok(lib)) {
-                uint64:h = raw bs_fnv_seed();
+                uint64:h = raw fnv1a_seed();
                 int32:n = raw decl_win_count(d);
                 int32:k = 0i32;
                 bool:allok = true;
@@ -458,8 +435,8 @@ func:bridge_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
                     if (stub.len != 0i64) {
                         src = raw bs_cat(move(src), stub);
                         string:canon = raw bs_canon(@g.ast, g.interns, fnid);
-                        h = raw bs_fnv_str(canon, h);
-                        h = raw bs_fnv_step(h, 59u64);   // ';' between methods
+                        h = raw fnv1a_bytes(canon, h);
+                        h = raw fnv1a_step(h, 59u64);   // ';' between methods
                     }
                     k = k + 1i32;
                 }

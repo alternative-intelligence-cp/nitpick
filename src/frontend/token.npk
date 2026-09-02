@@ -54,10 +54,12 @@ pub func:token_is_eof = bool(Token:t) never fails {
 // ---------------------------------------------------------------------------
 // TokenList
 //
-// Growable over alloc/ralloc and #size_of<Token>, because subset 1 has no
-// generics. Doubling rather than incrementing: a source file's token count is
-// not knowable in advance, and repeated ralloc of a large buffer is the one
-// place a bump allocator that never frees actually hurts.
+// Storage is `List<Token>` (1.4.7, family 12 of the step-2 conversion). It was
+// hand-written over alloc/ralloc and #size_of<Token> because subset 1 had no
+// generics — the same story as `SourceManager` — and that constraint expired
+// when the seed was retired at 1.4.6. The doubling growth the old code did by
+// hand is `list.npk`'s now; the 256-token initial capacity below is the old
+// one, kept because a source file's token count is not knowable in advance.
 // ---------------------------------------------------------------------------
 
 pub struct:TokenList = {

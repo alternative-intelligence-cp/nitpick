@@ -272,9 +272,13 @@ pub func:num_scan = NumScan(string:run) never fails {
 
 // --- tfp literal folding (D-195, 1.3.2) --------------------------------------------
 //
-// EXACT decimal → Q(N/2).(N/2), in SUBSET-1 ARITHMETIC — the seed still
-// builds this file, and wide integers are outside its subset — so the value
-// lives in ten u64 limbs each holding 32 bits. The integer digits accumulate
+// EXACT decimal → Q(N/2).(N/2), in LIMB ARITHMETIC: the value lives in ten
+// u64 limbs each holding 32 bits. Written that way because the SEED built this
+// file and wide integers were outside its subset; since the 1.4.6 switch the
+// builder has `uint256`, and the limbs stay because they are exact by
+// construction and pinned by the tier's conformance programs — respelling
+// them over a wide integer would be a simplification, not a repair, and it is
+// not in D-209's adoption scope. The integer digits accumulate
 // by ×10+digit; the fraction digits yield their F bits by the
 // multiply-the-decimal-by-two carry method; the result rounds to NEAREST
 // with ties to even (one extra bit plus a sticky over the remaining digits).

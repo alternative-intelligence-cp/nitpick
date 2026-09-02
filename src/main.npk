@@ -10,10 +10,11 @@
 // UNBUFFERED writer (D-076) — which is why `npkc bad.npk > out.ll` shows its
 // errors instead of burying them in the redirect, and why they survive a trap.
 //
-// IT WRITES TEXT — and nothing else. Subset 1
-// has no process spawning, so `llc` and `ld.lld` are the build system's to invoke
-// (BUILD_REFERENCE §4), which is also the honest shape: the compiler's output IS
-// the IR, and what a build does with it is the build's.
+// IT WRITES TEXT — and nothing else. It could not spawn `llc` when it was
+// written (subset 1 had no process spawning) and it does not once it can:
+// `llc` and `ld.lld` are the build system's to invoke (BUILD_REFERENCE §4;
+// `npkg build` under D-206), which is the honest shape — the compiler's output
+// IS the IR, and what a build does with it is the build's.
 //
 //   npkc <root.npk>              IR on stdout
 //   npkc <root.npk> -o <out.ll>  IR written to the file, stdout silent
