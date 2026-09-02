@@ -452,7 +452,11 @@ and the spelling says which (proposed for ratification in 1.4.7.md). Five
 match-shaped unwraps became `?|`/`?!`. **OWED-8 is CLOSED**: a type that
 cannot be a channel element is `NITPICK-TYPE-057`, the checker's refusal at the
 spelling and at the substitution, from one table the backend's belt also reads;
-the undecided kinds stay a rung. What remains of 1.4.7 is OWED-1.
+the undecided kinds stay a rung. **OWED-1 is CLOSED**: the one red the
+parallel scheme ever produced was a race in the C test fixture (the hostile
+tail stored after the completion), reproduced 11 times in 120 under contention
+and fixed at its source; the Bridge, the reactor and the optimiser were
+exonerated by measurement, and D-228's width calibration is unblocked.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

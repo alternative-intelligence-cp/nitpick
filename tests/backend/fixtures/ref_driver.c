@@ -32,7 +32,9 @@ int main(void) {
         npkdrv_desc req;
         int r = npkdrv_next(&d, &req);
         if (r == 0) return 0;
-        if (r < 0) return 11;
+        /* SAY WHY before dying: the Bridge's stderr tail is how a test
+         * attributes a fault to the driver's side (OWED-1, 1.4.7). */
+        if (r < 0) { fprintf(stderr, "ref_driver: npkdrv_next returned %d\n", r); return 11; }
         switch (req.kernel_id) {
         case 0: {
             int64_t x, y;
@@ -44,14 +46,28 @@ int main(void) {
             break;
         }
         case 1: {
-            if (npkdrv_complete(req.seq, 0) != 0) return 12;
-            /* AFTER completing: a hostile free-running tail, far outside
-             * [head - capacity, head]. The next dispatch's validation must
-             * kill this process and fail EDriverProtocol. */
+            /* A hostile free-running tail, far outside [head - capacity,
+             * head]. The next dispatch's validation must kill this process
+             * and fail EDriverProtocol.
+             *
+             * STORED BEFORE THE COMPLETION, NOT AFTER (OWED-1, 1.4.7). This
+             * request still completes normally -- the Bridge validates the
+             * tail at the START of a dispatch, so this one's check is
+             * already behind us -- and the completion's write/read on the
+             * control socket is what orders the store before the Bridge's
+             * next load. Stored after, the order was the scheduler's: under
+             * load this process was descheduled between the completion and
+             * the store, the Bridge dispatched the next request against an
+             * honest tail, and this process then poisoned the ring and died
+             * on its own poison in npkdrv_next -- so the Bridge reported
+             * EDriverFault, correctly, and the test read it as "the wrong
+             * error" once in forty runs. A race in the fixture, not in the
+             * reactor; 1.4.7.md's OWED-1 record has the measurement. */
             atomic_store_explicit(d.tail,
                 atomic_load_explicit(d.head, memory_order_acquire) +
                     (int64_t)d.capacity + 5,
                 memory_order_release);
+            if (npkdrv_complete(req.seq, 0) != 0) return 12;
             break;
         }
         case 2: {

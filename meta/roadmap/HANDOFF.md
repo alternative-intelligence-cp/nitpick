@@ -8,9 +8,11 @@
 
 ## Where you are
 
-**1.4.7 steps 1, 2 and 3 are COMPLETE, D-229 is COMPLETE, and OWED-8 is
-CLOSED.** What remains of the subcycle is OWED-1. Everything below is
-committed; the tree is clean and nothing is in flight.
+**1.4.7 steps 1, 2 and 3 are COMPLETE, D-229 is COMPLETE, OWED-8 and OWED-1
+are CLOSED.** The subcycle's remaining acceptance item is the snapshot refresh
+at its close (`bootstrap/seed/README.md`, stage2 == stage3) and the SUBSET_1
+§4 closing edit. Everything below is committed; the tree is clean and nothing
+is in flight.
 
 - **STEP 1 IS COMPLETE** (`e2a835c`). Five copies of the diagnostic walk became
   one `diag_report`. It needed **D-224** (`exit` is process exit in every body)
@@ -151,21 +153,16 @@ walk's crossing decisions never changed. A harness run would have taken fifty.
 Ratified 2026-09-01 as **D-228…D-232** after a Fable analysis pass; what
 remains below is execution, not deliberation.
 
-1. **`extern_c_driver.npk` under load** — an INVESTIGATION, not a decision, and
-   D-228 sequences the parallel-width calibration behind it. The prior is
-   RACE, not tightness: three harnesses cost ~4 of 48 cores, and five seconds
-   is ~10^3x the actual work, so an expiring deadline means something slept or
-   a wake was lost. Method, cheapest-decisive first: (a) make the test NAME the
-   wrong error — exit 29 collapses every wrong `r4.err` into one number, which
-   is exactly why the two readings cannot be told apart, and per-error exits
-   are a permanent improvement either way; (b) record elapsed time around r4 —
-   ~5.00s means a wait ran its full deadline, well under means a classification
-   race in the triple wait; (c) attribute the side — did the C driver reply?
-   Replied-but-slept-through is a lost wake in the reactor, which is
-   safety-relevant; no reply is a fixture question; (d) reproduce by looping
-   the ONE program under synthetic contention at -O2, not three 50-minute
-   harnesses. If it does prove tightness, raising the deadline is still not the
-   reflex — understand what consumed five seconds first.
+1. ~~**`extern_c_driver.npk` under load**~~ — **CLOSED 2026-09-01**, the
+   method followed in order and every step measured: a RACE in the C FIXTURE.
+   Kernel 1 stored its hostile tail AFTER its completion, so under load the
+   driver could poison the ring after the next dispatch had validated an
+   honest tail, then die on its own poison — and the Bridge reported
+   `EDriverFault`, correctly, which exit 29 collapsed. 11 of 120 under 48 CPU
+   hogs at -O2, every failure within five milliseconds (no wait ever ran out);
+   identical at -O0 with the window widened. Fixed at the source (store before
+   complete; the test names r4's wrong error). **D-228's width calibration is
+   unblocked**; the width stays at 2 until that run is made.
 2. ~~The `escape.npk` `ident_holds` belt~~ — **CLOSED 2026-09-01** (`ea2faea`).
    Fails closed as `pass true`, the opposite of its siblings, because both
    callers invert the answer.
@@ -387,9 +384,11 @@ rule, then the four families the enumeration had missed and the D-227
 neighbourhood. Re-verify every anchor before editing (lines drift); an anchor
 says what to look for, not a blind offset.
 
-Then pick up **OWED-1** (an investigation with a written method, below).
-Announce the item you are on; commit per the subcycle file's acceptance
-section: one full harness run per commit, no exceptions.
+Then close 1.4.7 per its acceptance section: the fixpoint re-closed and
+DECLARED at the final commit, the snapshot refreshed (`bootstrap/seed/README.md`
+— stage2 == stage3, stage 2 installed), SUBSET_1 §4's closing edit, and the
+cycle folder's move to `done/` only when 1.4.8 is also done. Announce the item
+you are on; one full harness run per commit, no exceptions.
 
 ## What this cycle proved about how to work here, in one place
 

@@ -11,10 +11,16 @@
 //             stub's unmarshal.
 //   refusal   kernel 2 reports status 55: the stub fails EDriverError —
 //             the wire delivered, the work refused, stderr says why.
-//   hostile   kernel 1 completes and then writes a tail far outside
-//             [head−cap, head]; the NEXT dispatch's [UNTRUSTED] validation
-//             kills the driver and fails EDriverProtocol (§6.2) — a
-//             hostile index never becomes a Nitpick-side read.
+//   hostile   kernel 1 writes a tail far outside [head−cap, head] and then
+//             completes; the NEXT dispatch's [UNTRUSTED] validation kills
+//             the driver and fails EDriverProtocol (§6.2) — a hostile index
+//             never becomes a Nitpick-side read. The store precedes the
+//             completion on purpose (OWED-1, 1.4.7): stored after it, the
+//             order was the scheduler's, and under load the driver could
+//             poison the ring AFTER the next dispatch had already validated
+//             an honest tail — then die on its own poison, which the Bridge
+//             correctly reported as EDriverFault. The exits below NAME the
+//             error r4 came back with, so a wrong one is never one number.
 //   staleness the same extern hash offered to a driver BUILT AGAINST A
 //             DIFFERENT SPELLING refuses at the handshake: EDriverSpawn,
 //             with the mismatch on the stderr the spawn already tore down.
@@ -55,7 +61,15 @@ async func:main = int32(cstring[]:argv) {
     if (r3.is_error) { exit 27i32; }
     Result<int64>:r4 = await echo_add(@b, 1i64, 1i64, raw duration_secs(5i64));
     if (!r4.is_error)              { exit 28i32; }
-    if (r4.err != EDriverProtocol) { exit 29i32; }
+    if (r4.err != EDriverProtocol) {
+        // WHICH wrong error, in the exit code: a fault is the driver dying
+        // (its stderr tail says why), a deadline is a wait that ran out.
+        if (r4.err == EDriverFault)    { exit 41i32; }
+        if (r4.err == EDriverDeadline) { exit 42i32; }
+        if (r4.err == EDriverError)    { exit 43i32; }
+        if (r4.err == EBridgePoisoned) { exit 44i32; }
+        exit 29i32;
+    }
     drop bridge_reap(@b);
 
     // staleness: same hash, differently-built driver — handshake refuses
