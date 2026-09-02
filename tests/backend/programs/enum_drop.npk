@@ -24,7 +24,7 @@ func:main = int32(cstring[]:_~argv) {
     int32:i = 0i32;
     while (i < 2000i32) {
         {
-            fd:fi = open(devnull, 0i64, 0i64) ?! E9;
+            fd:fi = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
             Res:r = Res.Fd(own_fd(fi));
         }
         i = i + 1i32;
@@ -48,7 +48,7 @@ func:main = int32(cstring[]:_~argv) {
 
     // An enum behind a struct field: the struct arm calls the enum body.
     {
-        fd:fs = open(devnull, 0i64, 0i64) ?! E9;
+        fd:fs = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
         Wrap:w = Wrap{ inner: Res.Fd(own_fd(fs)), n: 5i32 };
     }
     exit 42i32;

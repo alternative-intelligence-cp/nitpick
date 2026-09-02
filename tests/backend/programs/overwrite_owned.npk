@@ -24,22 +24,22 @@ func:main = int32(cstring[]:_~argv) {
     cstring:devnull = to_cstring("/dev/null") ?! E9;
 
     // an owning FIELD overwritten 2000 times
-    fd:f0 = open(devnull, 0i64, 0i64) ?! E9;
+    fd:f0 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
     Holder:hold = Holder{ h: own_fd(f0), tag: "t" };
     int32:i = 0i32;
     while (i < 2000i32) {
-        fd:fi = open(devnull, 0i64, 0i64) ?! E9;
+        fd:fi = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
         hold.h = own_fd(fi);
         i = i + 1i32;
     }
 
     // an owning ELEMENT of a managed array, same count
-    fd:a0 = open(devnull, 0i64, 0i64) ?! E9;
-    fd:a1 = open(devnull, 0i64, 0i64) ?! E9;
+    fd:a0 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
+    fd:a1 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
     OwnedFd[2]:pair = [own_fd(a0), own_fd(a1)];
     int32:j = 0i32;
     while (j < 2000i32) {
-        fd:fj = open(devnull, 0i64, 0i64) ?! E9;
+        fd:fj = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
         pair[0i64] = own_fd(fj);
         j = j + 1i32;
     }

@@ -119,10 +119,13 @@ pub func:nio_stderr = NioW() never fails {
 };
 
 // A file writer: fully buffered, ending chosen at creation — the D-050 opt-in
-// point. openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC = 577, 0644 = 420),
-// the same shape write_file uses.
+// point. openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC, 0644), the same
+// shape write_file uses, spelled in the typed families (D-230, 1.4.8): the
+// floor takes the kernel's word, and `=> int32` is a flag set's one crossing.
 pub func:nio_create = NioW(cstring:path, NioEnding:e) {
-    fd:sink = relay open(path, 577i64, 420i64);
+    fd:sink = relay open(path,
+                         (((O_WRONLY | O_CREAT) | O_TRUNC) => int32) => int64,
+                         ((((S_IRUSR | S_IWUSR) | S_IRGRP) | S_IROTH) => int32) => int64);
     pass (raw nio_writer(sink, e, NioMode.Full, true));
 };
 

@@ -768,15 +768,17 @@ pub struct:ByteWriter = { OwnedFd:sink; };
 // the stream performs after it.
 pub func:byte_reader_open = ByteReader(Path:p, Duration:_~within) {
     cstring:cp = relay to_cstring(p.text);
-    // O_RDONLY | O_NONBLOCK | O_CLOEXEC
-    fd:f = relay open(cp, 526336i64, 0i64);
+    // The families, crossed to the floor's word at the call (D-230, 1.4.8).
+    fd:f = relay open(cp, (((O_RDONLY | O_NONBLOCK) | O_CLOEXEC) => int32) => int64,
+                      (S_NONE => int32) => int64);
     pass ByteReader{ src: own_fd(f) };
 };
 
 pub func:byte_writer_create = ByteWriter(Path:p, Duration:_~within) {
     cstring:cp = relay to_cstring(p.text);
-    // O_WRONLY | O_CREAT | O_TRUNC | O_NONBLOCK | O_CLOEXEC, mode 0644
-    fd:f = relay open(cp, 526913i64, 420i64);
+    fd:f = relay open(cp,
+                      (((((O_WRONLY | O_CREAT) | O_TRUNC) | O_NONBLOCK) | O_CLOEXEC) => int32) => int64,
+                      ((((S_IRUSR | S_IWUSR) | S_IRGRP) | S_IROTH) => int32) => int64);   // 0644
     pass ByteWriter{ sink: own_fd(f) };
 };
 

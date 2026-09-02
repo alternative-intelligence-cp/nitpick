@@ -139,6 +139,8 @@ LL_OF = {
     "OwnedFd": "i32",
     # A slice is a fat pointer (D-070): `environ()` hands back the argv shape.
     "cstring[]": "{ ptr, i64 }",
+    # The flag families are one i32 word each (D-044/D-230).
+    "oflags": "i32", "prot": "i32", "mflags": "i32", "fmode": "i32",
 }
 
 QUALIFIERS = ("wild ", "wildx ", "stack ", "const ", "fixed ")
