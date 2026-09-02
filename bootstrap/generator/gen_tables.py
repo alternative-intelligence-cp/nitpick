@@ -137,6 +137,8 @@ LL_OF = {
     # An OwnedFd IS the descriptor -- the ownership is the compiler's bookkeeping,
     # not a field (D-185).
     "OwnedFd": "i32",
+    # A slice is a fat pointer (D-070): `environ()` hands back the argv shape.
+    "cstring[]": "{ ptr, i64 }",
 }
 
 QUALIFIERS = ("wild ", "wildx ", "stack ", "const ", "fixed ")

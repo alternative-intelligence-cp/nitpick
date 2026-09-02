@@ -93,31 +93,40 @@ module asm "  hlt"
 
 declare i32 @main({ ptr, i64 })
 
-define internal void @npk_start(i64 %sp) noreturn {
+; A NUL-terminated pointer array -- argv, envp -- as the `cstring[]` slice the
+; language sees. Every entry's length is measured exactly once, HERE, at the
+; boundary (D-049): a cstring carries its length, and nothing downstream scans
+; for a NUL again. Allocated from the untracked heap and never freed -- both
+; arrays outlive everything, and the first allocation is also what draws the
+; heap secret. ONE builder for both (1.4.8, D-206): the environment used to be
+; left on the stack here, and `npkg` needs `PATH`.
+define internal { ptr, i64 } @npk_cstr_slice(ptr %base) {
 entry:
-  ; the executor's TLS block first: every allocation, trap and error chain
-  ; below reaches its executor through `%fs:8` (D-181).
-  call void @npk_tls_boot()
-  %spp = inttoptr i64 %sp to ptr
-  %argc = load i64, ptr %spp
-  %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
-  %bytes = mul i64 %argc, 16                      ; sizeof(cstring) = {ptr,i64}
+  br label %count
+
+count:                                            ; preds = %entry, %count
+  %n = phi i64 [ 0, %entry ], [ %n1, %count ]
+  %ep = getelementptr ptr, ptr %base, i64 %n
+  %e = load ptr, ptr %ep
+  %n1 = add i64 %n, 1
+  %atend = icmp eq ptr %e, null
+  br i1 %atend, label %sized, label %count
+
+sized:                                            ; preds = %count
+  %bytes = mul i64 %n, 16                         ; sizeof(cstring) = {ptr,i64}
   %buf = call ptr @npk_alloc_internal(i64 %bytes)
   br label %loop
 
-loop:                                             ; preds = %entry, %next
-  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
-  %done = icmp uge i64 %i, %argc
+loop:                                             ; preds = %sized, %next
+  %i = phi i64 [ 0, %sized ], [ %i1, %next ]
+  %done = icmp uge i64 %i, %n
   br i1 %done, label %ready, label %body
 
 body:                                             ; preds = %loop
-  %slotp = getelementptr ptr, ptr %argvp, i64 %i
+  %slotp = getelementptr ptr, ptr %base, i64 %i
   %s = load ptr, ptr %slotp
   br label %slen
 
-; A cstring carries its length (D-049), and the kernel hands over a bare
-; NUL-terminated pointer -- so the length is measured exactly once, here, at the
-; boundary. Nothing downstream scans for a NUL again.
 slen:                                             ; preds = %body, %slen
   %k = phi i64 [ 0, %body ], [ %k1, %slen ]
   %cp = getelementptr i8, ptr %s, i64 %k
@@ -139,10 +148,41 @@ next:                                             ; preds = %store
 
 ready:                                            ; preds = %loop
   %sl0 = insertvalue { ptr, i64 } undef, ptr %buf, 0
-  %sl1 = insertvalue { ptr, i64 } %sl0, i64 %argc, 1
-  %rc = call i32 @main({ ptr, i64 } %sl1)
+  %sl1 = insertvalue { ptr, i64 } %sl0, i64 %n, 1
+  ret { ptr, i64 } %sl1
+}
+
+; THE ENVIRONMENT, kept from `_start` for `environ()` (1.4.8, D-206). Written
+; once before `main` and read-only after, so no thread ever races it.
+@npk_environ_slice = internal global { ptr, i64 } zeroinitializer
+
+define internal void @npk_start(i64 %sp) noreturn {
+entry:
+  ; the executor's TLS block first: every allocation, trap and error chain
+  ; below reaches its executor through `%fs:8` (D-181).
+  call void @npk_tls_boot()
+  %spp = inttoptr i64 %sp to ptr
+  %argc = load i64, ptr %spp
+  %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
+  %argv = call { ptr, i64 } @npk_cstr_slice(ptr %argvp)
+  ; envp starts one slot past argv's NULL terminator: argv[argc] is that NULL.
+  %envoff = add i64 %argc, 1
+  %envpp = getelementptr ptr, ptr %argvp, i64 %envoff
+  %env = call { ptr, i64 } @npk_cstr_slice(ptr %envpp)
+  store { ptr, i64 } %env, ptr @npk_environ_slice
+  %rc = call i32 @main({ ptr, i64 } %argv)
   call void @npk_exit(i32 %rc)
   unreachable
+}
+
+; `environ() -> cstring[]`: the process environment as the kernel handed it
+; over, `KEY=VALUE` entries measured at `_start`. D-089 keeps `main`'s
+; signature to `argv` alone; the environment is the other half of the same
+; stack and is reached by asking. The block is the kernel's, never freed.
+define { ptr, i64 } @npk_environ() {
+entry:
+  %e = load { ptr, i64 }, ptr @npk_environ_slice
+  ret { ptr, i64 } %e
 }
 
 ; ---------------------------------------------------------------------------
@@ -1674,7 +1714,9 @@ declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)
 ; ---------------------------------------------------------------------------
 ; THE DRIVER REGISTRY (1.1.13a; D-149 over D-055, v3 plan §8).
 ;
-; Every foreign capability runs as a SUPERVISED CHILD PROCESS, and this table
+; Every foreign capability runs as a SUPERVISED CHILD PROCESS -- and since
+; 1.4.8 (D-206) so does every tool the build spawns: `npkc`, `llc`, `ld.lld`,
+; a test binary. One registry, one clone (`npk_clone_exec`), and this table
 ; is what makes "supervised" hold on the failure paths: it is preallocated
 ; .bss (failsafe cannot allocate, D-014), CAS-claimed, and walked by the trap
 ; route itself — `npk_driver_kill_all` runs BEFORE user `failsafe`, because
@@ -1699,36 +1741,68 @@ declare i64 @npk_clone_raw(i64, i64, i64, i64, ptr, i64)
 ; pidfd whose process was just reaped) is an ESRCH, by design.
 @npk_driver_reg = internal global [64 x i32] zeroinitializer
 
-; Spawn a driver: claim a slot, clone(SIGCHLD | CLONE_PIDFD), and in the
-; child run the fixed descriptor-and-exec sequence. Returns Result<int64>
-; ({ pid, 0 } or { 0, -errno }; -EAGAIN when the registry is full).
+; Spawn a SUPERVISED CHILD PROCESS: claim a registry slot, clone(SIGCHLD |
+; CLONE_PIDFD), and in the child run the fixed descriptor-and-exec sequence.
+; Returns Result<int64> ({ pid, 0 } or { 0, -errno }; -EAGAIN when the
+; registry is full, -EINVAL when the block breaks the descriptor rule).
 ;
-; The param block `blk` is nine i64s, PREPARED BY THE CALLER BEFORE THE
-; CLONE (the npk_thread precedent — no shared state is read after the child
+; ONE PRIMITIVE FOR EVERY CHILD (D-206, 1.4.8). This was the driver's
+; clone-exec with the driver's descriptor map baked in -- stdin and stdout
+; to /dev/null, a mandatory control fd on 3. The build's tools are the same
+; kind of thing to the runtime: a process it must be able to kill on the
+; trap path and must not abandon at a clean exit (D-188), so they share the
+; registry and this one clone, and what differed between them is now what
+; the block carries in full. Ten i64s, PREPARED BY THE CALLER BEFORE THE
+; CLONE (the npk_thread precedent -- no shared state is read after the child
 ; exists that was not written before it):
-;   [0] path   (ptr, NUL-terminated)      [5] ctrl fd      (dup3 → 3)
-;   [1] argv   (ptr, NULL-terminated)     [6] parent pid   (pre-recorded)
-;   [2] envp   (ptr, NULL-terminated)     [7] OUT: registry slot
-;   [3] /dev/null fd (dup3 → 0 and 1)     [8] OUT: pidfd
-;   [4] stderr write end (dup3 → 2)
+;   [0] path   (ptr, NUL-terminated)      [5] stderr fd    (dup3 -> 2)
+;   [1] argv   (ptr, NULL-terminated)     [6] ctrl fd      (dup3 -> 3), < 0 for none
+;   [2] envp   (ptr, NULL-terminated)     [7] parent pid   (pre-recorded)
+;   [3] stdin fd  (dup3 -> 0)             [8] OUT: registry slot
+;   [4] stdout fd (dup3 -> 1)             [9] OUT: pidfd
 ;
 ; THE CHILD PATH IS ALLOCATION-FREE BY CONSTRUCTION: it reads the block and
 ; issues raw syscalls, nothing else. Another thread may hold the allocator
-; futex at clone time, and the child — a copy with ONE thread — would
+; futex at clone time, and the child -- a copy with ONE thread -- would
 ; deadlock on the copied lock word at its first allocation. The same
 ; reasoning bars running ANY Nitpick code in the child: prctl, getppid,
-; dup3 ×4, execve, exit_group(127), in that order, and nothing more.
+; dup3 x3 (x4 with a ctrl fd), execve, exit_group(127), in that order, and
+; nothing more.
 ;
-; The caller guarantees every child-bound fd (blk[3..5]) is ≥ 4 — all are
-; born CLOEXEC and re-homed upward pre-clone if the std slots were somehow
-; free — so the dup3 shuffle onto 0/1/2/3 can never clobber a source before
-; it is consumed, and dup3 (which refuses oldfd == newfd) never sees the
-; degenerate pair. dup3 with flags 0 clears CLOEXEC on the new fd: exactly
-; the four descriptors meant to survive the exec do, and nothing else does
-; (birth-CLOEXEC makes fd-leak-freedom structural, v3 §4.3).
-define { i64, i32 } @npk_driver_clone_exec(ptr %blk) {
+; THE DESCRIPTOR RULE, CHECKED HERE BEFORE ANYTHING IS CLAIMED: every
+; child-bound source ([3..5], and [6] when present) is >= 4. The dup3
+; shuffle onto 0/1/2/3 must never clobber a source before it is consumed,
+; and dup3 refuses oldfd == newfd, so a low descriptor is re-homed upward by
+; the caller (F_DUPFD_CLOEXEC; `fd_above_std` in lib/nsys.npk) -- "the child
+; inherits our stdin" is spelled by dup'ing it above the trio first, one
+; rule for every slot. It was a comment the caller was trusted to honour;
+; a block that breaks it is now refused as -EINVAL, before the clone, where
+; the failure is still a value. dup3 with flags 0 clears CLOEXEC on the new
+; fd: exactly the descriptors meant to survive the exec do, and nothing
+; else does (birth-CLOEXEC makes fd-leak-freedom structural, v3 s4.3).
+define { i64, i32 } @npk_clone_exec(ptr %blk) {
 entry:
-  br label %scan
+  %p3 = getelementptr i64, ptr %blk, i64 3
+  %f3 = load i64, ptr %p3
+  %p4 = getelementptr i64, ptr %blk, i64 4
+  %f4 = load i64, ptr %p4
+  %p5 = getelementptr i64, ptr %blk, i64 5
+  %f5 = load i64, ptr %p5
+  %p6 = getelementptr i64, ptr %blk, i64 6
+  %f6 = load i64, ptr %p6
+  %lo3 = icmp slt i64 %f3, 4
+  %lo4 = icmp slt i64 %f4, 4
+  %lo5 = icmp slt i64 %f5, 4
+  %has6 = icmp sge i64 %f6, 0
+  %lo6a = icmp slt i64 %f6, 4
+  %lo6 = and i1 %has6, %lo6a
+  %bad1 = or i1 %lo3, %lo4
+  %bad2 = or i1 %bad1, %lo5
+  %bad = or i1 %bad2, %lo6
+  br i1 %bad, label %einval, label %scan
+einval:
+  ; a child-bound descriptor below the std trio: refused, nothing claimed.
+  ret { i64, i32 } { i64 0, i32 -22 }
 scan:
   %i = phi i64 [ 0, %entry ], [ %inx, %miss ]
   %full = icmp sge i64 %i, 16
@@ -1743,7 +1817,7 @@ miss:
   %inx = add i64 %i, 1
   br label %scan
 nofree:
-  ; the registry is FULL: refuse, bounded — the D-055 posture, never grow.
+  ; the registry is FULL: refuse, bounded -- the D-055 posture, never grow.
   ret { i64, i32 } { i64 0, i32 -11 }
 claimed:
   %b1 = add i64 %base, 1
@@ -1754,12 +1828,12 @@ claimed:
   store i32 -1, ptr %pfdp
   ; PUBLISH BEFORE THE CLONE (release pairs with the walker's acquire): from
   ; here a trap on any thread finds this slot, even though the child does
-  ; not exist yet — the walker skips pidfd -1, and the kernel overwrites it
+  ; not exist yet -- the walker skips pidfd -1, and the kernel overwrites it
   ; with the real pidfd during the clone below.
   store atomic i32 2, ptr %sp release, align 4
   ; clone(SIGCHLD | CLONE_PIDFD, stack 0, parent_tidptr = &slot.pidfd).
   ; 4113 = SIGCHLD 17 | CLONE_PIDFD 0x1000. Stack 0 is fork-shape: the child
-  ; continues HERE on a copy-on-write copy of this stack — legal in ordinary
+  ; continues HERE on a copy-on-write copy of this stack -- legal in ordinary
   ; IR (unlike the CLONE_VM thread clone, which must ride the asm
   ; trampoline), because every frame offset it reads is its own copy.
   %pfdi = ptrtoint ptr %pfdp to i64
@@ -1780,41 +1854,39 @@ ok:
   %pc = trunc i64 %r to i32
   store i32 %pc, ptr %pidp
   %pfd = load i32, ptr %pfdp
-  %o7 = getelementptr i64, ptr %blk, i64 7
-  store i64 %i, ptr %o7
-  %pfde = sext i32 %pfd to i64
   %o8 = getelementptr i64, ptr %blk, i64 8
-  store i64 %pfde, ptr %o8
+  store i64 %i, ptr %o8
+  %pfde = sext i32 %pfd to i64
+  %o9 = getelementptr i64, ptr %blk, i64 9
+  store i64 %pfde, ptr %o9
   %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
   %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
   ret { i64, i32 } %k1
 child:
-  ; THE CHILD. PDEATHSIG first — if the runtime dies by ANY means, SIGKILL
+  ; THE CHILD. PDEATHSIG first -- if the runtime dies by ANY means, SIGKILL
   ; included (where failsafe never runs), the kernel reaps this process
   ; (poc test 3). The prctl races the parent dying between clone and here;
   ; the recorded-parent check closes it: a mismatched getppid means the
   ; death signal is already unarmed, so exit now.
   %d1 = call i64 @npk_sys6(i64 157, i64 1, i64 9, i64 0, i64 0, i64 0, i64 0)
   %pp = call i64 @npk_sys6(i64 110, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)
-  %wantp = getelementptr i64, ptr %blk, i64 6
+  %wantp = getelementptr i64, ptr %blk, i64 7
   %want = load i64, ptr %wantp
   %orph = icmp ne i64 %pp, %want
   br i1 %orph, label %cdie, label %harden
 harden:
-  ; NO_NEW_PRIVS: unconditional, free — a compromised driver cannot escalate
+  ; NO_NEW_PRIVS: unconditional, free -- a compromised child cannot escalate
   ; through setuid/fscaps, and it is the precondition for any later seccomp
-  ; filter (v3 §12).
+  ; filter (v3 s12).
   %d2 = call i64 @npk_sys6(i64 157, i64 38, i64 1, i64 0, i64 0, i64 0, i64 0)
-  %np = getelementptr i64, ptr %blk, i64 3
-  %nfd = load i64, ptr %np
-  %d3 = call i64 @npk_sys6(i64 292, i64 %nfd, i64 0, i64 0, i64 0, i64 0, i64 0)
-  %d4 = call i64 @npk_sys6(i64 292, i64 %nfd, i64 1, i64 0, i64 0, i64 0, i64 0)
-  %sp2 = getelementptr i64, ptr %blk, i64 4
-  %sfd = load i64, ptr %sp2
-  %d5 = call i64 @npk_sys6(i64 292, i64 %sfd, i64 2, i64 0, i64 0, i64 0, i64 0)
-  %cp = getelementptr i64, ptr %blk, i64 5
-  %cfd = load i64, ptr %cp
-  %d6 = call i64 @npk_sys6(i64 292, i64 %cfd, i64 3, i64 0, i64 0, i64 0, i64 0)
+  %d3 = call i64 @npk_sys6(i64 292, i64 %f3, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %d4 = call i64 @npk_sys6(i64 292, i64 %f4, i64 1, i64 0, i64 0, i64 0, i64 0)
+  %d5 = call i64 @npk_sys6(i64 292, i64 %f5, i64 2, i64 0, i64 0, i64 0, i64 0)
+  br i1 %has6, label %dupctrl, label %doexec
+dupctrl:
+  %d6 = call i64 @npk_sys6(i64 292, i64 %f6, i64 3, i64 0, i64 0, i64 0, i64 0)
+  br label %doexec
+doexec:
   %pathp = getelementptr i64, ptr %blk, i64 0
   %path = load i64, ptr %pathp
   %argvp = getelementptr i64, ptr %blk, i64 1
@@ -1824,10 +1896,10 @@ harden:
   %dx = call i64 @npk_sys6(i64 59, i64 %path, i64 %argv, i64 %envp, i64 0, i64 0, i64 0)
   br label %cdie
 cdie:
-  ; execve returned (or the parent vanished pre-prctl): nothing to clean —
-  ; the child owns no Nitpick state — and one obligation: STOP. 127 is the
-  ; shell's exec-failure convention; the parent observes it as ctrl EOF at
-  ; the handshake, which is the failure path spawn already reports.
+  ; execve returned (or the parent vanished pre-prctl): nothing to clean --
+  ; the child owns no Nitpick state -- and one obligation: STOP. 127 is the
+  ; shell's exec-failure convention; a driver's parent observes it as ctrl
+  ; EOF at the handshake, a tool's as the exit status the pidfd reports.
   %dz = call i64 @npk_sys6(i64 231, i64 127, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
 }

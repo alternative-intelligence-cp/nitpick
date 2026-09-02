@@ -1,0 +1,133 @@
+// nsys — the x86_64 syscall vocabulary the library tier shares, nlibc tier.
+//
+// Written at 1.4.8 (D-206), when a second module — `nproc`, the tool runner —
+// needed the numbers and the descriptor helpers `nbridge` had carried alone
+// since 1.1.13a. Not a second copy and not an import of the Bridge: REACH is
+// import-scoped, so a build tool importing `nbridge` for six constants would
+// have every Bridge error "reachable" in its `failsafe`. The numbers live
+// HERE, once; both spawn surfaces import this file, and `nbridge` re-exports
+// it so its own importers see what they always saw.
+//
+// nlibc tier: `wild`-and-`sys` code (D-048). A failure here carries the
+// KERNEL'S OWN errno verbatim (`fail r.err`) — the most informative answer
+// there is, and one REACH does not enumerate (a dynamic operand) — so each
+// caller maps it to its own named error at the site that knows what was being
+// attempted, exactly as the Bridge did for its own copies.
+//
+// Confined here, the nlibc tier, exactly as D-044 confines the flag→int cast.
+
+mod:nsys;
+
+// --- syscall numbers (x86_64; D-055 §3.5) ------------------------------------
+pub func:SYS_MMAP = int64() never fails         { pass 9i64; };
+pub func:SYS_MUNMAP = int64() never fails       { pass 11i64; };
+pub func:SYS_GETPID = int64() never fails       { pass 39i64; };
+pub func:SYS_SENDMSG = int64() never fails      { pass 46i64; };
+pub func:SYS_RECVMSG = int64() never fails      { pass 47i64; };
+pub func:SYS_SHUTDOWN = int64() never fails     { pass 48i64; };
+pub func:SYS_SOCKETPAIR = int64() never fails   { pass 53i64; };
+pub func:SYS_FCNTL = int64() never fails        { pass 72i64; };
+pub func:SYS_FTRUNCATE = int64() never fails    { pass 77i64; };
+pub func:SYS_WAITID = int64() never fails       { pass 247i64; };
+pub func:SYS_OPENAT = int64() never fails       { pass 257i64; };
+pub func:SYS_PIPE2 = int64() never fails        { pass 293i64; };
+pub func:SYS_MEMFD_CREATE = int64() never fails { pass 319i64; };
+pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
+
+// --- the constants those calls take ------------------------------------------
+pub func:MFD_CLOEXEC = int64() never fails       { pass 1i64; };
+pub func:MFD_ALLOW_SEALING = int64() never fails { pass 2i64; };
+pub func:F_ADD_SEALS = int64() never fails       { pass 1033i64; };
+pub func:F_SEAL_SEAL = int64() never fails       { pass 1i64; };
+pub func:F_SEAL_SHRINK = int64() never fails     { pass 2i64; };
+pub func:F_SEAL_GROW = int64() never fails       { pass 4i64; };
+pub func:PROT_READ = int64() never fails         { pass 1i64; };
+pub func:PROT_WRITE = int64() never fails        { pass 2i64; };
+pub func:MAP_SHARED = int64() never fails        { pass 1i64; };
+pub func:AF_UNIX = int64() never fails           { pass 1i64; };
+pub func:SOCK_STREAM = int64() never fails       { pass 1i64; };
+pub func:SOCK_CLOEXEC = int64() never fails      { pass 524288i64; };
+pub func:SOCK_NONBLOCK = int64() never fails     { pass 2048i64; };
+pub func:O_RDWR = int64() never fails            { pass 2i64; };
+pub func:O_CLOEXEC = int64() never fails         { pass 524288i64; };
+pub func:O_NONBLOCK = int64() never fails        { pass 2048i64; };
+pub func:AT_FDCWD = int64() never fails          { pass (0i64 - 100i64); };
+pub func:F_SETFL = int64() never fails           { pass 4i64; };
+pub func:F_DUPFD_CLOEXEC = int64() never fails   { pass 1030i64; };
+pub func:SIGKILL = int64() never fails           { pass 9i64; };
+pub func:SIGTERM = int64() never fails           { pass 15i64; };
+pub func:P_PIDFD = int64() never fails           { pass 3i64; };
+pub func:WEXITED = int64() never fails           { pass 4i64; };
+pub func:WNOHANG = int64() never fails           { pass 1i64; };
+pub func:WNOWAIT = int64() never fails           { pass 16777216i64; };
+pub func:SHUT_WR = int64() never fails           { pass 1i64; };
+pub func:MSG_NOSIGNAL = int64() never fails      { pass 16384i64; };
+pub func:SOL_SOCKET = int64() never fails        { pass 1i64; };
+pub func:SCM_RIGHTS = int64() never fails        { pass 1i64; };
+
+// `waitid`'s siginfo, the fields a reaper reads (byte offsets of the x86_64
+// `siginfo_t`, as int32 indices): `si_code` at byte 8, `si_pid` at 16,
+// `si_status` at 24. CLD_EXITED is 1; 2 and 3 are killed and dumped.
+pub func:SI_CODE_IDX = int64() never fails   { pass 2i64; };
+pub func:SI_PID_IDX = int64() never fails    { pass 4i64; };
+pub func:SI_STATUS_IDX = int64() never fails { pass 6i64; };
+pub func:CLD_EXITED = int64() never fails    { pass 1i64; };
+
+// --- descriptor helpers --------------------------------------------------------
+
+// A descriptor pair from a pipe or a socketpair: OURS stays in this process,
+// CHILD is what a spawn block hands to the child — re-homed above the std
+// trio, CLOEXEC until the child's dup3 clears it.
+pub struct:FdPair = { int64:ours; int64:child; };
+
+// Every child-bound descriptor must sit ABOVE the std trio before the clone:
+// the child's dup3 shuffle onto 0/1/2/3 must never clobber a source before
+// it is consumed, and dup3 refuses oldfd == newfd, so the degenerate pairs
+// are re-homed here, in the parent, where failure is still reportable (and
+// the runtime refuses a block that breaks the rule anyway — this is how a
+// caller satisfies it). The duplicate is CLOEXEC at birth like everything
+// else; the low original is closed. Descriptors are ≥ 4 in any ordinary
+// process state — this fires only when the std slots themselves were closed
+// before the spawn.
+pub func:fd_above_std = int64(int64:fdn) {
+    if (fdn >= 4i64) { pass fdn; }
+    Result<int64>:rup = sys(raw SYS_FCNTL(), fdn, raw F_DUPFD_CLOEXEC(), 4i64);
+    if (rup.is_error) { fail rup.err; }
+    Result<NIL>:c = close((fdn =>! int32) =>! fd);   // the low original
+    if (c.is_error) { }                              // best-effort; the dup stands
+    pass rup.value;
+};
+
+// A capture pipe: both ends CLOEXEC; the write end (the child's, after dup3
+// clears CLOEXEC on it) stays BLOCKING — a full pipe blocks the child, which
+// is why the parent drains continuously — while OUR read end is flipped
+// NONBLOCK so the drain is readiness-driven (D-071: every wait is a task
+// suspension through `io_ready`).
+pub func:capture_pipe = FdPair() {
+    wild int8->:pv = alloc(8i64);
+    defer { dalloc(pv); }
+    Result<int64>:rpp = sys(raw SYS_PIPE2(), pv, raw O_CLOEXEC());
+    if (rpp.is_error) { fail rpp.err; }
+    int64:rd = (<-(#ptr_add<int32>(pv, 0i64))) => int64;
+    int64:wr = (<-(#ptr_add<int32>(pv, 1i64))) => int64;
+    Result<int64>:rfl = sys(raw SYS_FCNTL(), rd, raw F_SETFL(), raw O_NONBLOCK());
+    if (rfl.is_error) { fail rfl.err; }
+    int64:wc = relay fd_above_std(wr);
+    pass FdPair{ ours: rd, child: wc };
+};
+
+// /dev/null, CLOEXEC and above the std trio — a child's stdin (no tool reads
+// a terminal) or, for a driver, its stdout too (v1: stdout is not
+// interpreted — v3 §10).
+pub func:open_devnull = int64() {
+    cstring:dn = relay to_cstring("/dev/null");
+    // NOT `wild` (D-223). A string's bytes belong to the STRING — its drop frees
+    // them — so a binding that points at them is an ordinary pointer, not a
+    // claim of manual ownership. The pointer exists only to reach the syscall
+    // boundary, where an address becomes a number (1.1.12a).
+    uint8->:dp = dn.ptr;
+    int64:ofl = (raw O_RDWR()) | (raw O_CLOEXEC());
+    Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
+    if (rf.is_error) { fail rf.err; }
+    pass (relay fd_above_std(rf.value));
+};

@@ -1855,6 +1855,10 @@ func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
     if (raw string_eq(t, "uint8[]")) {
         pass (raw tt_slice(e.types, raw tt_int(e.types, 8i32, false)));
     }
+    // `environ()`'s shape (1.4.8, D-206): the argv slice, as a return.
+    if (raw string_eq(t, "cstring[]")) {
+        pass (raw tt_slice(e.types, e.types.t_cstring));
+    }
     if (raw string_eq(t, "wild any->")) {
         pass (raw tt_pointer(e.types, e.types.t_any));
     }

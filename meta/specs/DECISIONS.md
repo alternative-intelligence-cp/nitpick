@@ -14495,6 +14495,25 @@ Closes B-4. Scope for 1.4 (subcycle 1.4.8): **`npkg build` and
    first wires the existing `selfcheck.py` into the Python run so the
    property is continuously held on both sides.
 
+> **Landed, item 1 (1.4.8 Part A, 2026-09-02).** The floor entry is spelled
+> `clone_exec` (symbol `@npk_clone_exec`), not `npk_spawn`: `spawn` is the
+> task keyword (D-062), so no bare builtin can carry that name, and the old
+> `driver_clone_exec` already said what the primitive does — the
+> generalization drops the tenant from the name. The block is ten words as
+> planned, and the descriptor rule ("every child-bound fd ≥ 4") is CHECKED by
+> the runtime (`-EINVAL` before any slot is claimed) rather than trusted to
+> the caller. One addition the item did not foresee: `environ() → cstring[]`,
+> a floor builtin measured at `_start` beside `argv` by the one cstring-array
+> builder — no syscall returns the environment, and `npkg` needs `PATH`;
+> D-089's `main` signature is untouched. The shared syscall vocabulary moved
+> to `lib/nsys.npk` (REACH is import-scoped; the tool runner could not import
+> the Bridge for six constants), the tool runner is `lib/nproc.npk`
+> (`proc_spawn`/`proc_wait`/`proc_reap`, both pipes captured, every wait
+> bounded), and `spawn_driver` is a caller of the same primitive. The
+> registry's names (`driver_retire`, `DriverLeak`) are kept: a tool child is
+> supervised identically, and renaming an error identity costs every
+> `failsafe` in the tree an arm for cosmetics.
+
 ## D-207 — per-scope joins — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-22. `join_head` becomes per-scope, threaded through the 1.2

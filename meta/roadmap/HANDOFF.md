@@ -8,6 +8,11 @@
 
 ## Where you are
 
+> **2026-09-02: 1.4.8 is UNDERWAY in the main tree** (the fresh session the
+> 1.4.7b close asked for). Its execution record — order, decisions taken on
+> contact, the user's answers — is the tail of `meta/roadmap/1.4/1.4.8.md`;
+> read that before this file's older stretch.
+
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is
 refreshed FROM THE ADOPTED TREE (stage2 == stage3, 15,450,688 bytes, STAMP

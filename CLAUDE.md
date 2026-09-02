@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 CLOSED; 1.4.7b (the pre-1.4.8 batch) UNDERWAY
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7 and 1.4.7b CLOSED; 1.4.8 (`npkg`, D-206) UNDERWAY
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 236 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -468,13 +468,30 @@ site-table rows — D-078 held by one README line — so the `repro` stage now
 refuses an absolute site path in the committed snapshot, and whether the
 source manager should record manifest-root-relative paths is **S-7** (the
 user's). SUBSET_1 §4 carries its closing edit.
-**1.4.7b IS UNDERWAY** (`meta/roadmap/1.4/1.4.7b.md`): the close's
+**1.4.7b IS COMPLETE** (`meta/roadmap/1.4/1.4.7b.md`): the close's
 recommendations were ratified as **D-234** (a `for` captures its bound, a
 `while` re-reads it), **D-235** (every kind decided as a channel element:
 simd and function values ride, the sync primitives, atomics and arenas refuse
-permanently) and **D-236** (manifest-root-relative source paths), and are
-landing one commit each beside D-230's `TY_FLAGS`, D-231's strike-and-pin and
-D-228's width calibration, before 1.4.8 starts in a fresh session.
+permanently) and **D-236** (manifest-root-relative source paths); D-235 and
+D-231 landed, the tfp fold runs in one `uint512`, and D-228's width is
+calibrated at 6. D-236's implementation and D-230's `TY_FLAGS` were re-homed
+to 1.4.8's open beside the layers they need.
+**1.4.8 (`npkg`, D-206) IS UNDERWAY** (`meta/roadmap/1.4/1.4.8.md` carries the
+execution record and the order). **Part A landed**: the runtime's driver
+clone is ONE primitive for every supervised child — `clone_exec`, a ten-word
+block with the child's 0/1/2 sources, an optional ctrl fd, and the "every
+child-bound fd ≥ 4" rule CHECKED by the runtime (`-EINVAL` before any slot is
+claimed) instead of trusted; `spawn_driver` is a caller of it. `environ()` is
+a floor builtin (`_start` measures argv and envp with one builder; no syscall
+returns the environment and `npkg` needs `PATH`). `lib/nsys.npk` holds the
+shared syscall vocabulary (REACH is import-scoped — the tool runner could not
+import the Bridge for six constants), `lib/nproc.npk` is the tool runner
+(`proc_spawn`/`proc_wait`/`proc_reap`: both pipes captured, every wait
+bounded, a deadline kills-reaps-retires), and `proc_tool.npk` proves capture,
+the environment passed through, a missing tool's 127 as the CHILD's answer,
+and a hung tool killed at a deadline — exiting 0 so D-151/D-188 assert nothing
+leaked. The user settled D-230's families and S-8 on 2026-09-02 (the
+recommendations as written).
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

@@ -26,11 +26,12 @@ pub func:is_builtin_name = bool(string:name) never fails {
     if (raw string_eq(name, "chain_depth")) { pass true; }
     if (raw string_eq(name, "chain_site")) { pass true; }
     if (raw string_eq(name, "channel")) { pass true; }
+    if (raw string_eq(name, "clone_exec")) { pass true; }
     if (raw string_eq(name, "close")) { pass true; }
     if (raw string_eq(name, "condvar")) { pass true; }
     if (raw string_eq(name, "dalloc")) { pass true; }
-    if (raw string_eq(name, "driver_clone_exec")) { pass true; }
     if (raw string_eq(name, "driver_retire")) { pass true; }
+    if (raw string_eq(name, "environ")) { pass true; }
     if (raw string_eq(name, "int_to_string")) { pass true; }
     if (raw string_eq(name, "io_unwatch")) { pass true; }
     if (raw string_eq(name, "io_watch")) { pass true; }
@@ -88,6 +89,7 @@ pub func:builtin_never_fails = bool(string:name) never fails {
     if (raw string_eq(name, "chain_site")) { pass true; }
     if (raw string_eq(name, "dalloc")) { pass true; }
     if (raw string_eq(name, "driver_retire")) { pass true; }
+    if (raw string_eq(name, "environ")) { pass true; }
     if (raw string_eq(name, "int_to_string")) { pass true; }
     if (raw string_eq(name, "io_unwatch")) { pass true; }
     if (raw string_eq(name, "io_watch")) { pass true; }
@@ -144,9 +146,9 @@ pub func:builtin_sig_count = int32(string:name) never fails {
     if (raw string_eq(name, "buffer_new")) { pass 1i32; }
     if (raw string_eq(name, "calloc")) { pass 2i32; }
     if (raw string_eq(name, "chain_site")) { pass 1i32; }
+    if (raw string_eq(name, "clone_exec")) { pass 1i32; }
     if (raw string_eq(name, "close")) { pass 1i32; }
     if (raw string_eq(name, "dalloc")) { pass 1i32; }
-    if (raw string_eq(name, "driver_clone_exec")) { pass 1i32; }
     if (raw string_eq(name, "driver_retire")) { pass 1i32; }
     if (raw string_eq(name, "int_to_string")) { pass 1i32; }
     if (raw string_eq(name, "io_unwatch")) { pass 1i32; }
@@ -203,13 +205,13 @@ pub func:builtin_sig_param = string(string:name, int32:i) never fails {
     if (raw string_eq(name, "chain_site")) {
         if (i == 0i32) { pass "int32"; }
     }
+    if (raw string_eq(name, "clone_exec")) {
+        if (i == 0i32) { pass "wild any->"; }
+    }
     if (raw string_eq(name, "close")) {
         if (i == 0i32) { pass "fd"; }
     }
     if (raw string_eq(name, "dalloc")) {
-        if (i == 0i32) { pass "wild any->"; }
-    }
-    if (raw string_eq(name, "driver_clone_exec")) {
         if (i == 0i32) { pass "wild any->"; }
     }
     if (raw string_eq(name, "driver_retire")) {
@@ -352,10 +354,11 @@ pub func:builtin_sig_ret = string(string:name) never fails {
     if (raw string_eq(name, "calloc")) { pass "wild int8->"; }
     if (raw string_eq(name, "chain_depth")) { pass "int32"; }
     if (raw string_eq(name, "chain_site")) { pass "int32"; }
+    if (raw string_eq(name, "clone_exec")) { pass "int64"; }
     if (raw string_eq(name, "close")) { pass "NIL"; }
     if (raw string_eq(name, "dalloc")) { pass "NIL"; }
-    if (raw string_eq(name, "driver_clone_exec")) { pass "int64"; }
     if (raw string_eq(name, "driver_retire")) { pass "NIL"; }
+    if (raw string_eq(name, "environ")) { pass "cstring[]"; }
     if (raw string_eq(name, "int_to_string")) { pass "string"; }
     if (raw string_eq(name, "io_unwatch")) { pass "NIL"; }
     if (raw string_eq(name, "io_watch")) { pass "NIL"; }

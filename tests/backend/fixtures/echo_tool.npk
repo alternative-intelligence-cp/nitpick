@@ -1,0 +1,49 @@
+// A FIXTURE, never run by the harness itself (everything in this directory is
+// built with the real backend and held to a program's checks): the TOOL that
+// `proc_spawn.npk` spawns through `lib/nproc.npk`. Its whole job is to be
+// observable from the other side of the pipes — stdout gets `hello <arg>`,
+// then `probe` when `NPK_PROBE=1` rides its environment (the envp half of the
+// block, read back through `environ()`); stderr gets `n=<argc>`; the exit
+// status is 7 for the argument `seven` and 3 otherwise; the argument `sleep`
+// parks the task for ten seconds first, which is how the deadline path is
+// exercised without a real hang.
+mod:echo_tool;
+use "../../../lib/nio.npk".*;
+error:E9;
+
+func:put = NIL(fd:to, string:s) {
+    pass (relay nio_write_all(to, s.ptr =>! wild int8->, s.len));
+};
+
+async func:main = int32(cstring[]:argv) {
+    string:a1 = "";
+    if (argv.len > 1i64) { a1 = string_from_bytes(argv[1i64].ptr, argv[1i64].len); }
+    if (string_equals(a1, "sleep")) { suspend_until((mono_now()) + 10000000000i64); }
+    string:line = string_concat("hello ", a1);
+    put(raw nio_stdout_fd(), string_concat(line, "\n")) ?! E9;
+    cstring[]:env = environ();
+    for (int64:i in 0i64...env.len) {
+        if (string_equals(string_from_bytes(env[i].ptr, env[i].len), "NPK_PROBE=1")) {
+            put(raw nio_stdout_fd(), "probe\n") ?! E9;
+        }
+    }
+    string:count = string_concat("n=", int_to_string(argv.len));
+    put(raw nio_stderr_fd(), string_concat(count, "\n")) ?! E9;
+    if (string_equals(a1, "seven")) { exit 7i32; }
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (IntOverflow)      { exit 87i32; },
+        (OutOfBounds)      { exit 86i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

@@ -1,0 +1,336 @@
+// nproc — supervised child processes for the build (D-206, 1.4.8), nlibc tier.
+//
+// `npkg` runs `npkc`, `llc`, `ld.lld` and every test binary as a CHILD it
+// supervises: spawned through the runtime's one clone primitive (`clone_exec`
+// — the Bridge's `spawn_driver` is the other caller, with a control channel
+// and a shared ring where this has two pipes and an exit status), registered
+// from birth so the trap path can kill it and a clean exit refuses to abandon
+// it (D-188), its stdout and stderr CAPTURED through pipes, and waited for
+// under a deadline. A tool that hangs ends; it does not hang the build.
+//
+// THE CHILD'S DESCRIPTOR MAP: stdin from /dev/null (a build tool reads no
+// terminal), stdout and stderr into pipes whose read ends this process holds
+// NONBLOCK, no control fd. Both pipes are drained while the child runs — a
+// child blocked on a full stdout while its parent waits on stderr is a
+// deadlock, so the wait watches whichever pipe is still open — and the exit
+// is collected through the pidfd, bounded like every other wait.
+//
+// nlibc tier: `wild`-and-`sys` code (D-048).
+
+mod:nproc;
+
+use "./nsys.npk".*;
+
+pub error:EProcArgs;      // an argument or environment entry holds an interior NUL (D-049), or argv is empty
+pub error:EProcSpawn;     // a descriptor, the registry or the clone refused — the origin chain says where
+pub error:EProcDeadline;  // the wait ran out: the child was killed, reaped and retired first
+pub error:EProcWait;      // the reap itself failed after the pidfd signalled — the runtime's defect, not the child's
+
+// --- argv and envp blocks ---------------------------------------------------------
+//
+// What execve reads: a NULL-terminated array of pointers to NUL-terminated
+// bytes. Both are copies this block OWNS — `wild` storage, freed by
+// `args_free` — never a `to_cstring` (whose copy is internal and immortal) and
+// never a pointer into a caller's string, which the caller may drop before the
+// clone. `ptrs` holds `cap` slots; slot `count` is always the NULL.
+pub struct:ProcArgs = {
+    wild int8->: ptrs;
+    int64:       count;
+    int64:       cap;
+};
+
+pub func:args_init = ProcArgs() never fails {
+    wild int8->:p = calloc(8i64, 8i64);
+    pass ProcArgs{ ptrs: p, count: 0i64, cap: 8i64 };
+};
+
+// A NUL-terminated OWNED copy of `n` bytes at `src`, refusing an interior NUL:
+// the poison-NUL bypass (D-049) — the bytes checked and the bytes the kernel
+// reads must be the same bytes.
+func:nul_copy = wild int8->(wild uint8->:src, int64:n) {
+    for (int64:i in 0i64...n) {
+        if (src[i] == 0u8) { fail EProcArgs; }
+    }
+    wild int8->:c = alloc(n + 1i64);
+    for (int64:j in 0i64...n) { c[j] = src[j] =>! int8; }
+    c[n] = 0i8;
+    pass c;
+};
+
+// Room for one more entry AND the NULL after it.
+func:args_grow = NIL(ProcArgs->:a) never fails {
+    if ((a.count + 2i64) <= a.cap) { pass NIL; }
+    int64:nc = a.cap * 2i64;
+    a.ptrs = ralloc(a.ptrs, nc * 8i64);
+    a.cap = nc;
+    pass NIL;
+};
+
+pub func:args_push = NIL(ProcArgs->:a, string:s) {
+    wild int8->:c = relay nul_copy(s.ptr =>! wild uint8->, s.len);
+    drop args_grow(a);
+    wild int8->->:slots = a.ptrs =>! wild int8->->;
+    slots[a.count] = c;
+    a.count = a.count + 1i64;
+    slots[a.count] = NULL;
+    pass NIL;
+};
+
+// An entry that already is a cstring — an `environ()` element, an argv word.
+// Copied like every other entry, so the block's ownership stays uniform.
+pub func:args_push_cstring = NIL(ProcArgs->:a, cstring:c) {
+    pass (relay args_push(a, string_from_bytes(c.ptr, c.len)));
+};
+
+pub func:args_free = NIL(ProcArgs->:a) never fails {
+    wild int8->->:slots = a.ptrs =>! wild int8->->;
+    for (int64:i in 0i64...a.count) { dalloc(slots[i] =>! wild int8->); }
+    dalloc(a.ptrs);
+    a.ptrs = NULL;
+    a.count = 0i64;
+    a.cap = 0i64;
+    pass NIL;
+};
+
+// --- the child ---------------------------------------------------------------------
+
+// The ten-word block `clone_exec` reads (runtime/npkrt.ll), as a struct so
+// every slot is written by NAME. `fd_ctrl` is −1: a tool gets no control
+// channel.
+struct:ToolBlk = {
+    wild int8->: path;        // [0] execve's path, NUL-terminated
+    wild int8->: argv;        // [1] NULL-terminated pointer array
+    wild int8->: envp;        // [2] NULL-terminated pointer array
+    int64:       fd_stdin;    // [3] dup3 → 0
+    int64:       fd_stdout;   // [4] dup3 → 1
+    int64:       fd_stderr;   // [5] dup3 → 2
+    int64:       fd_ctrl;     // [6] dup3 → 3, or < 0 for none
+    int64:       parent_pid;  // [7] for the child's PDEATHSIG race check
+    int64:       out_slot;    // [8] OUT: the registry slot
+    int64:       out_pidfd;   // [9] OUT: the pollable kill handle
+};
+
+// A supervised child. SINGLE-OWNER, MOVE-ONLY (it owns descriptors, so
+// TYPE-046 makes it so). The registry slot is retired by `proc_wait` on the
+// normal path and by `proc_reap` — the backstop a `defer` may hold — on every
+// other; the descriptors close when the value drops.
+pub struct:Proc = {
+    pid:     child;      // diagnostic; every signal travels the pidfd
+    OwnedFd: pidfd;      // THE kill handle, and the exit signal — readable once the child has exited
+    OwnedFd: out;        // the child's stdout, our read end (NONBLOCK)
+    OwnedFd: err;        // the child's stderr, our read end (NONBLOCK)
+    int64:   reg_slot;   // the registry entry, retired LAST (v3 §4.2)
+    bool:    reaped;     // set once the zombie is consumed and the slot retired
+};
+
+// What a finished child left: its status, and everything it wrote.
+pub struct:ProcExit = {
+    bool:   exited;      // true: `status` is the exit code; false: `signal` ended it
+    int64:  status;
+    int64:  signal;
+    string: out;
+    string: err;
+};
+
+// The spawn's failure paths' shared release: close what exists so far (−1
+// marks a descriptor not yet created). Best-effort by design — the spawn is
+// already failing, and these can only be this process's own descriptors.
+func:spawn_scrap = NIL(int64:a, int64:b, int64:c, int64:d, int64:e) never fails {
+    if (a >= 0i64) { Result<NIL>:ca = close((a =>! int32) =>! fd); if (ca.is_error) { } }
+    if (b >= 0i64) { Result<NIL>:cb = close((b =>! int32) =>! fd); if (cb.is_error) { } }
+    if (c >= 0i64) { Result<NIL>:cc = close((c =>! int32) =>! fd); if (cc.is_error) { } }
+    if (d >= 0i64) { Result<NIL>:cd = close((d =>! int32) =>! fd); if (cd.is_error) { } }
+    if (e >= 0i64) { Result<NIL>:ce = close((e =>! int32) =>! fd); if (ce.is_error) { } }
+    pass NIL;
+};
+
+// Spawn `exe` with `argv` (whose first entry is the program's own name, by
+// the convention every tool reads) and `env`. The spawn is the one
+// synchronous hop, like an `open`; everything after it is a task suspension.
+// On ANY failure past the clone nothing is left running and nothing claimed.
+pub func:proc_spawn = Proc(Path:exe, ProcArgs->:argv, ProcArgs->:env) {
+    if (argv.count == 0i64) { fail EProcArgs; }
+    // getpid first — before anything exists that a failure would strand.
+    Result<int64>:rpid = sys(raw SYS_GETPID());
+    if (rpid.is_error) { fail EProcSpawn; }
+    int64:mypid = rpid.value;
+
+    // The path: an owned NUL-terminated copy, freed after the clone. The
+    // child reads it through its copy-on-write copy of this memory, so the
+    // parent's copy is free to go the moment the clone has returned.
+    wild int8->:pathz = relay nul_copy(exe.text.ptr =>! wild uint8->, exe.text.len);
+    defer { dalloc(pathz); }
+
+    // 1. /dev/null for stdin, then the two capture pipes; every child-bound
+    //    descriptor ≥ 4, ours NONBLOCK.
+    Result<int64>:dnr = open_devnull();
+    if (dnr.is_error) { fail EProcSpawn; }
+    int64:devnull = dnr.value;
+    Result<FdPair>:por = capture_pipe();
+    if (por.is_error) {
+        drop spawn_scrap(devnull, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64);
+        fail EProcSpawn;
+    }
+    FdPair:po = por.value;
+    Result<FdPair>:per = capture_pipe();
+    if (per.is_error) {
+        drop spawn_scrap(devnull, po.ours, po.child, 0i64 - 1i64, 0i64 - 1i64);
+        fail EProcSpawn;
+    }
+    FdPair:pe = per.value;
+
+    // 2. the block — everything the child reads, written pre-clone.
+    wild int8->:bb = calloc(1i64, 80i64);
+    defer { dalloc(bb); }
+    wild ToolBlk->:blk = bb =>! wild ToolBlk->;
+    blk.path = pathz;
+    blk.argv = argv.ptrs;
+    blk.envp = env.ptrs;
+    blk.fd_stdin = devnull;
+    blk.fd_stdout = po.child;
+    blk.fd_stderr = pe.child;
+    blk.fd_ctrl = 0i64 - 1i64;
+    blk.parent_pid = mypid;
+
+    // 3. the clone — the registry entry is published BEFORE the child
+    //    exists, and the kernel writes the pidfd INTO the slot (npkrt).
+    Result<int64>:pr = clone_exec(bb);
+    if (pr.is_error) {
+        drop spawn_scrap(devnull, po.ours, po.child, pe.ours, pe.child);
+        fail EProcSpawn;
+    }
+    int64:cpid = pr.value;
+    int64:pidfd = blk.out_pidfd;
+    int64:slot = blk.out_slot;
+
+    // 4. the child's copies are installed; the parent's originals of the
+    //    child-bound three close now — the child holds exactly what step 3
+    //    installed, and nothing else survives the exec (birth-CLOEXEC).
+    drop spawn_scrap(devnull, po.child, pe.child, 0i64 - 1i64, 0i64 - 1i64);
+
+    pass Proc{
+        child:    (cpid =>! int32) =>! pid,
+        pidfd:    own_fd((pidfd =>! int32) =>! fd),
+        out:      own_fd((po.ours =>! int32) =>! fd),
+        err:      own_fd((pe.ours =>! int32) =>! fd),
+        reg_slot: slot,
+        reaped:   false
+    };
+};
+
+// Read what `src` holds RIGHT NOW into the chosen capture, without blocking
+// (the read end is NONBLOCK). True while the pipe is still open: false once
+// EOF — or anything that is not "try again" — has been seen.
+func:cap_drain = bool(ProcExit->:x, bool:is_out, fd:src, wild int8->:tmp) never fails {
+    while (true) {
+        Result<int64>:r = read(src, tmp, 8192i64);
+        if (r.is_error) {
+            if (r.err == WouldBlock)  { pass true; }
+            if (r.err == Interrupted) { } else { pass false; }
+        } else {
+            if (r.value == 0i64) { pass false; }
+            // `string_from_bytes` is a VIEW over the scratch; the concat copies.
+            string:piece = string_from_bytes(tmp, r.value);
+            if (is_out) { x.out = string_concat(x.out, piece); }
+            else        { x.err = string_concat(x.err, piece); }
+        }
+    }
+    pass false;
+};
+
+// SIGKILL via the pidfd (ESRCH after a voluntary exit is fine), consume the
+// zombie — bounded, the process is dead — and retire the slot LAST (v3 §4.2:
+// the entry outlives every resource it guards). Single-shot through `reaped`.
+func:kill_reap_retire = NIL(Proc->:p) never fails {
+    if (p.reaped) { pass NIL; }
+    p.reaped = true;
+    int64:pfd = (p.pidfd.value) => int64;
+    Result<int64>:k = sys(raw SYS_PIDFD_SEND_SIGNAL(), pfd, raw SIGKILL(), 0i64, 0i64);
+    if (k.is_error) { }
+    wild int8->:si = alloc(128i64);
+    Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pfd, si, raw WEXITED(), 0i64);
+    if (w.is_error) { }
+    dalloc(si);
+    driver_retire(p.reg_slot);
+    pass NIL;
+};
+
+// The teardown BACKSTOP: synchronous, bounded, `never fails` — the shape a
+// `defer` may hold (D-187). After a successful `proc_wait` it finds `reaped`
+// and does nothing.
+pub func:proc_reap = NIL(Proc->:p) never fails {
+    drop kill_reap_retire(p);
+    pass NIL;
+};
+
+// Wait for the child to finish under `within`, capturing everything it
+// writes. Both pipes are drained as they fill; once both have closed the
+// exit is collected through the pidfd; the deadline passing at ANY point
+// kills the child, reaps it, retires the slot and fails `EProcDeadline`.
+pub async func:proc_wait = ProcExit(Proc->:p, Duration:within) {
+    int64:give_up = (mono_now()) + within.ns;
+    ProcExit:x = ProcExit{ exited: false, status: 0i64, signal: 0i64, out: "", err: "" };
+    bool:out_open = true;
+    bool:err_open = true;
+    wild int8->:tmp = alloc(8192i64);
+    defer { dalloc(tmp); }
+    int32:ofd = (p.out.value) => int32;
+    int32:efd = (p.err.value) => int32;
+    while (out_open || err_open) {
+        if (out_open) { out_open = raw cap_drain(@x, true, p.out.value, tmp); }
+        if (err_open) { err_open = raw cap_drain(@x, false, p.err.value, tmp); }
+        if (!(out_open || err_open)) { break; }
+        int64:rem = give_up - (mono_now());
+        if (rem <= 0i64) {
+            drop kill_reap_retire(p);
+            fail EProcDeadline;
+        }
+        bool:woke = true;
+        if (out_open && err_open) {
+            Result<NIL>:w2 = await io_ready2(ofd, 1i32, efd, 1i32, raw duration_ns(rem));
+            if (w2.is_error) { woke = false; }
+        } else {
+            int32:one = efd;
+            if (out_open) { one = ofd; }
+            Result<NIL>:w1 = await io_ready(one, 1i32, raw duration_ns(rem));
+            if (w1.is_error) { woke = false; }
+        }
+        if (!woke) {
+            drop kill_reap_retire(p);
+            fail EProcDeadline;
+        }
+    }
+
+    // Both pipes closed: the child has closed its stdio. Its EXIT arrives on
+    // the pidfd, bounded by what remains of the deadline — a child that
+    // closed its descriptors and kept running still ends at the deadline.
+    int64:rem2 = give_up - (mono_now());
+    if (rem2 <= 0i64) {
+        drop kill_reap_retire(p);
+        fail EProcDeadline;
+    }
+    Result<NIL>:pw = await io_ready((p.pidfd.value) => int32, 1i32, raw duration_ns(rem2));
+    if (pw.is_error) {
+        drop kill_reap_retire(p);
+        fail EProcDeadline;
+    }
+
+    // Reap: the pidfd is readable, so this waitid returns at once. The
+    // buffer is zeroed first because a wait that reports nothing writes
+    // nothing.
+    wild int8->:si = calloc(1i64, 128i64);
+    defer { dalloc(si); }
+    Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), (p.pidfd.value) => int64,
+                          si, raw WEXITED(), 0i64);
+    if (w.is_error) {
+        drop kill_reap_retire(p);
+        fail EProcWait;
+    }
+    int64:code = (<-(#ptr_add<int32>(si, raw SI_CODE_IDX()))) => int64;
+    int64:stat = (<-(#ptr_add<int32>(si, raw SI_STATUS_IDX()))) => int64;
+    p.reaped = true;
+    driver_retire(p.reg_slot);
+    x.exited = (code == (raw CLD_EXITED()));
+    if (x.exited) { x.status = stat; } else { x.signal = stat; }
+    pass x;
+};
