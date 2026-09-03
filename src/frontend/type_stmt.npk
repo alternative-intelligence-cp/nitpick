@@ -1508,6 +1508,10 @@ func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) never fails 
     TypeId:tgt = raw impl_target(e.ast, d);
     if (raw type_is_none(tgt)) { pass 0i32; }
     TypeResolver:r = raw etyper_resolver(e);
+    // THE OLD BLANKET SPELLING WAS REFUSED BY NAME at collection (TYPE-012,
+    // D-171); resolving its trait as a value type here would add the generic
+    // TYPE-002 to that report -- one mistake, one report (D-240).
+    if ((raw impl_old_blanket_trait(@r, d, scope)) != 0i32) { pass 0i32; }
     IdSpan:gw = raw decl_generic_window(e.ast, d);
     GenericScope:saved = r.generics;
     r.generics = GenericScope{ params_start: gw.start, params_count: gw.count,

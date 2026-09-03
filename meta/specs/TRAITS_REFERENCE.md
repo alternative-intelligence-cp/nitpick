@@ -192,7 +192,11 @@ FIELDS, and it is enforced where the generated body is checked.
 The seven are declared in the **prelude** (D-132) — `src/prelude/prelude.npk`,
 ordinary Nitpick that every module has bound into it the way `use "prelude.npk".*`
 would bind it. They are not magic; they are an import nobody has to write, and a
-program may not declare a name the prelude declares.
+program may not declare a name the prelude declares — at module scope, as an
+associated type, or as a generic parameter (D-239, 1.4.8c: the nearer binding
+would otherwise take the name over inside its own scope in silence), and the
+compiler's own `Error` type (D-179) is protected the same way at every
+declaration kind.
 
 | Trait | Method |
 |---|---|

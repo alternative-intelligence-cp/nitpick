@@ -27,6 +27,8 @@ exists to demonstrate.
 | `global_cycle.npk` | `NITPICK-RESOLVE-006` — a `const` initialised from itself |
 | `no_such_name.npk` | `NITPICK-RESOLVE-007` — importing a name the module lacks |
 | `shadowed.npk` | `NITPICK-RESOLVE-008` — a wildcard colliding with a local |
+| `owned_names.npk` | `NITPICK-RESOLVE-001` — a name the compiler (`Error`) or the prelude owns, declared by the program: at module scope, as an associated type, as a generic parameter (D-239) |
 
-Eight codes, eight files. A code with no test is a diagnostic nobody has ever
-seen produced.
+Eight codes, nine files (RESOLVE-001 has two: the plain duplicate, and the
+owned name — one code, because each is "this name already means something
+here"). A code with no test is a diagnostic nobody has ever seen produced.

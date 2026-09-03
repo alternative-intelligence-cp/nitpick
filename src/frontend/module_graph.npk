@@ -282,6 +282,155 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) neve
     pass NIL;
 };
 
+// --- owned names (D-239, 1.4.8c) -----------------------------------------------------------
+//
+// A NAME THE COMPILER OR THE PRELUDE OWNS CANNOT BE DECLARED BY A PROGRAM, at any
+// type-namespace declaration. `bind_prelude_into` has refused a MODULE-SCOPE
+// declaration named after a prelude export since 0.3 ("a local one would silently
+// take over"), and 1.4.8b's exact matching found the two places that rule did not
+// reach. `Error` (D-179) is compiler-known -- resolved BY NAME ahead of every user
+// lookup (`resolve_type.npk`), declared by no module -- so the prelude clash never
+// saw a `struct:Error`, and a program could declare one that nothing would ever
+// resolve to. An ASSOCIATED TYPE or a GENERIC PARAMETER is a trait member or a
+// window entry, not a scope symbol, so `assoc:Duration = int32;` shadowed the
+// prelude's `Duration` inside its trait under D-160's nearer-binding rule, and
+// `assoc:Error = int32;` was read two ways by one checker: the signature
+// comparison saw the builtin, the object-safety walk (matching by name) saw the
+// assoc. One name, one meaning: all of it is refused here, by the loader, under
+// the code the module-scope clash already carries.
+//
+// MODULE-SCOPE names are checked against `Error` only -- the prelude clash is
+// `bind_prelude_into`'s report, and a second line for one mistake is what D-240
+// forbids. Associated types and generic parameters are checked against both,
+// because nothing else sees them. Fields, variants and methods are members reached
+// through their owner and shadow nothing; they are not this rule's business.
+pub func:graph_check_owned_names = NIL(ModuleGraph->:g) never fails {
+    int32:pscope = 0i32;
+    if (g.prelude >= 0i32) {
+        ModuleEntry:pe = raw graph_at(g, g.prelude);
+        pscope = pe.scope;
+    }
+    int32:mi = 0i32;
+    while ((mi => int64) < g.v.count) {
+        if (mi != g.prelude) {
+            ModuleEntry:e = raw graph_at(g, mi);
+            drop owned_names_in_module(g, DeclId{ index: e.root }, pscope);
+        }
+        mi = mi + 1i32;
+    }
+    pass NIL;
+};
+
+// Does the prelude EXPORT `name`? False when there is no prelude.
+func:prelude_owns = bool(ModuleGraph->:g, int32:pscope, int32:name) never fails {
+    if (pscope == 0i32) { pass false; }
+    int32:sym = raw scope_lookup_local(@g.tab, pscope, name);
+    if (sym == 0i32) { pass false; }
+    pass (raw symbol_is_exported(raw symtab_get(@g.tab, sym)));
+};
+
+// One declaration's own name; `what` says which kind, for the message.
+func:owned_name_error = NIL(ModuleGraph->:g, int32:pscope, int32:name, string:what,
+                            Span:at, bool:against_prelude) never fails {
+    if (raw intern_is_none(name)) { pass NIL; }
+    string:nm = raw intern_get(g.interns, name);
+    if (raw string_eq(nm, "Error")) {
+        string:m1 = "`Error` is the compiler's error type (D-179), so a program cannot declare it as ";
+        string:m2 = string_concat(m1, what);
+        drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_DUPLICATE(),
+            string_concat(m2, ": the name resolves to that type in every scope and cannot be shadowed into meaning less (D-239)"),
+            at));
+        pass NIL;
+    }
+    if (against_prelude) {
+        if (raw prelude_owns(g, pscope, name)) {
+            string:p1 = string_concat("`", nm);
+            string:p2 = string_concat(p1, "` is declared by the prelude, so a program cannot declare it as ");
+            string:p3 = string_concat(p2, what);
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_DUPLICATE(),
+                string_concat(p3, ": a nearer binding would silently take the name over inside its own scope (D-239)"),
+                at));
+        }
+    }
+    pass NIL;
+};
+
+func:owned_what = string(DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclFunctionDecl) { pass "a function"; }
+    if (d.kind == DeclKind.DeclStructDecl)   { pass "a struct"; }
+    if (d.kind == DeclKind.DeclEnumDecl)     { pass "an enum"; }
+    if (d.kind == DeclKind.DeclTraitDecl)    { pass "a trait"; }
+    if (d.kind == DeclKind.DeclMacroDecl)    { pass "a macro"; }
+    if (d.kind == DeclKind.DeclOpaqueDecl)   { pass "an opaque struct"; }
+    if (d.kind == DeclKind.DeclGlobalDecl)   { pass "a module binding"; }
+    if (d.kind == DeclKind.DeclUnitDecl)     { pass "a unit"; }
+    if (d.kind == DeclKind.DeclErrorDecl)    { pass "an error identity"; }
+    if (d.kind == DeclKind.DeclModuleDecl)   { pass "a module"; }
+    pass "a declaration";
+};
+
+// The generic parameters a declaration opens, `<T, U>` -- a window of
+// DeclGenericParam declarations, each a name nothing but this walk checks.
+func:owned_generic_params = NIL(ModuleGraph->:g, int32:pscope, DeclNode:d) never fails {
+    IdSpan:gw = raw decl_generic_window(@g.ast, d);
+    for (int32:k in 0i32...gw.count) {
+        DeclId:gpid = DeclId{ index: raw ast_id_at(@g.ast, gw.start, k) };
+        DeclNode:p = raw ast_decl(@g.ast, gpid);
+        if (p.kind == DeclKind.DeclGenericParam) {
+            drop owned_name_error(g, pscope, raw decl_name(p), "a generic parameter", p.span, true);
+        }
+    }
+    pass NIL;
+};
+
+// A trait's or an impl's members: an `assoc` is a type name checked against both
+// owners; a method opens generic parameters of its own.
+func:owned_names_in_members = NIL(ModuleGraph->:g, int32:pscope, DeclNode:d, bool:is_impl) never fails {
+    int32:n = 0i32;
+    if (is_impl) { n = raw impl_member_count(@g.ast, d); }
+    else { n = raw item_member_count(@g.ast, d); }
+    for (int32:i in 0i32...n) {
+        DeclId:mid = DeclId{ index: 0i32 };
+        if (is_impl) { mid = raw impl_member(@g.ast, d, i); }
+        else { mid = raw item_member(@g.ast, d, i); }
+        DeclNode:m = raw ast_decl(@g.ast, mid);
+        if (m.kind == DeclKind.DeclAssocTypeDecl) {
+            drop owned_name_error(g, pscope, raw decl_name(m), "an associated type", m.span, true);
+        }
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            drop owned_generic_params(g, pscope, m);
+        }
+    }
+    pass NIL;
+};
+
+func:owned_names_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:pscope) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
+    int32:n = raw item_member_count(@g.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclId:item = raw item_member(@g.ast, m, i);
+        DeclNode:d = raw ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclImportDecl) { continue; }
+        if (d.kind == DeclKind.DeclExternBlock) { continue; }
+        if (d.kind == DeclKind.DeclImplDecl) {
+            // an impl declares no name of its own; its parameters and its
+            // methods' parameters are names
+            drop owned_generic_params(g, pscope, d);
+            drop owned_names_in_members(g, pscope, d, true);
+            continue;
+        }
+        drop owned_name_error(g, pscope, raw decl_name(d), raw owned_what(d), d.span, false);
+        drop owned_generic_params(g, pscope, d);
+        if (d.kind == DeclKind.DeclTraitDecl) {
+            drop owned_names_in_members(g, pscope, d, false);
+        }
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            drop owned_names_in_module(g, item, pscope);
+        }
+    }
+    pass NIL;
+};
+
 // Load a root file and everything it reaches, transitively.
 //
 // Breadth-first over discovery order, which is deterministic given the root: the

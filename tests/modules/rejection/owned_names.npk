@@ -1,0 +1,61 @@
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 33:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 36:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 39:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 45:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 53:5
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 58:11
+//
+// A NAME THE COMPILER OR THE PRELUDE OWNS CANNOT BE DECLARED BY A PROGRAM (D-239,
+// 1.4.8c) -- at ANY type-namespace declaration, not only at module scope, where
+// the prelude clash has refused it since 0.3 (`duplicate.npk`'s code, the same
+// rule: this name already means something here). Found by 1.4.8b's exact
+// matching: `types/rejection/assoc.npk` had named its default assoc `Error`
+// before D-179 made that the compiler's error type, and one checker then read
+// the word two ways -- the signature comparison saw the builtin, the
+// object-safety walk saw the assoc. Six shapes, each in its own scope so no plain
+// duplicate joins the report:
+//
+//   `Error` at module scope as a struct, an error identity and a trait -- the
+//   compiler-known name no prelude clash could see (`struct:Duration` was
+//   refused; `struct:Error` was not);
+//   `Error` as an associated type -- the shape assoc.npk carried;
+//   a prelude type as an associated type and as a generic parameter -- where
+//   D-160's nearer-binding rule let the trait or the function shadow it in
+//   silence.
+
+mod:as_struct = {
+    struct:Error = { int32:x; };
+};
+mod:as_identity = {
+    error:Error;
+};
+mod:as_trait = {
+    trait:Error = { func:go = int32(Self:self); };
+};
+
+// The assoc.npk shape: a default named `Error`, read as the builtin by one walk
+// and as the assoc by another until this refusal.
+trait:Seq = {
+    assoc:Error = int32;
+    func:last = Error(Self:self);
+};
+
+// A prelude TYPE as an associated type: accepted before D-239, and `Duration`
+// inside `Timed` then meant the assoc, not the prelude's type -- one word, two
+// meanings, by position.
+trait:Timed = {
+    assoc:Duration = int32;
+    func:took = Duration(Self:self);
+};
+
+// ...and as a generic parameter, where the same nearer-binding rule applied.
+func:wait<Duration> = int32(Duration:d) never fails {
+    discard(d);
+    pass 1i32;
+};

@@ -15902,3 +15902,70 @@ stage it does not know, loudly; the hardcoded loops go from both in the same
 step, and the parity stage's verdict lists before and after the move must be
 identical, suite names included — the move is proven to have changed nothing
 before it lands. BUILD_REFERENCE §7.1 carries the schema.
+
+## D-239 — a name the compiler or the prelude owns cannot be declared by a program at any type-namespace declaration, associated types and generic parameters included — **SETTLED (user decision, 2026-09-02)**
+
+Closes OPEN_DECISIONS S-11, found at 1.4.8b step 1 while resolving
+`tests/types/rejection/assoc.npk` under D-237. The trait there had declared
+`assoc:Error = int32;` at 1.0.6, when `Error` was an ordinary name; D-179 (1.1)
+then made `Error` the compiler-known error type, resolved BY NAME ahead of
+every user lookup so that it "cannot be shadowed into meaning less"
+(`resolve_type.npk`), and from that day one checker read the word two ways:
+the impl-signature comparison saw the builtin (so the impl's `int32`
+mismatched, TYPE-014, even with `assoc:Error = int32;` written in the impl),
+while the object-safety walk, matching assoc names by name, saw the trait's
+assoc ("returns an associated type"). The subset matching rule hid it for a
+year. Measured with the built checker before deciding: a module-level
+`struct:Error = { … };` was ACCEPTED where `struct:Duration` is refused —
+RESOLVE-001's prelude clash (`bind_prelude_into`, since 0.3) protects names
+the prelude DECLARES, and `Error` is compiler-known, declared by no module —
+and `assoc:Duration = int32;` was accepted and shadowed the prelude's
+`Duration` inside its trait under D-160's nearer-binding rule, where a
+module-level `Duration` is refused.
+
+**The decision.** One rule, no exception by declaration kind: a name the
+compiler or the prelude owns cannot be declared by a program at any
+type-namespace declaration — every module-scope declaration kind (function,
+struct, enum, trait, macro, opaque struct, module binding, unit, error
+identity, nested module), an associated type in a trait, a generic parameter
+of a function, struct, enum, trait, impl or method. `Error` joins the
+protected set explicitly, being the one type name that is neither a keyword
+nor a prelude declaration. Members reached through their owner — fields,
+variants, methods — shadow nothing and are not covered; the value namespace's
+locals and parameters are not covered either (a local `int32:x` cannot make a
+type mean less). The rationale is RESOLVE-001's own ("a local one would
+silently take over") and blueprint facet 1: `Error` means one thing in every
+scope, and a word that the resolver reads one way and another walk reads
+another is the defect this rule ends. One code, RESOLVE-001 — every case is
+"this name already means something here" — refused by the LOADER, so
+`tools/resolve_check` reports it and the test is the module-rejection suite's
+(`tests/modules/rejection/owned_names.npk`: six shapes in six scopes). The
+object-safety walk's by-name assoc match now agrees with resolution by
+construction, since no assoc can carry an owned name. `TRAITS_REFERENCE`'s
+sentence carries the extension. Landed at 1.4.8c.
+
+## D-240 — where a sharper refusal fires, the generic one it was written to replace stays silent — **SETTLED (user decision, 2026-09-02)**
+
+Closes OPEN_DECISIONS S-12, found at 1.4.8b step 1: D-237's exact matching
+surfaced three sites where two rules reported one mistake — `builtin_args.npk`
+36:27 (`TYPE-054` for `..^` into a builtin AND `TYPE-007` for the spread
+argument's type), `builtin_args.npk` 95:5 (`TYPE-007` "`drop` needs a
+`Result`" AND `TYPE-042` "`drop` discards a VALUE"), and `impl_old_blanket.npk`
+22 (`TYPE-012`, whose own header says it exists so the reader is not left with
+the generic "is a trait, not a value type" — AND that generic `TYPE-002`).
+D-157's rules 1 and 2 are the precedent for one mistake, one report, and
+`type_trait.npk`'s no-binding branch already cited it.
+
+**The decision.** One mistake, one report: a rule written to say something
+more specific than another is the report, and the generic one is silent where
+it fires. Landed at 1.4.8c at the three sites, each fixed at its emitter with
+the test's second expectation removed in the same commit: the old blanket
+spelling is recognised by ONE probe (`impl_old_blanket_trait`, type_trait.npk)
+that `impl_collect` reports through (TYPE-012) and `impl_self_type` asks first,
+so TYPE-002 never joins it; `drop` over an operand that is not a `Result` at
+all — a never-fails builtin's bare value — is `type_unwrap`'s TYPE-007 alone,
+and rule 4's "discards a VALUE" (TYPE-042) speaks only of a `Result` carrying a
+value, which is the only case where the sentence is true; a `..^` argument the
+TYPE-054 refusal named is not also measured against the register it cannot
+become, though its contents are still typed. The principle binds every future
+pair of rules the same way.

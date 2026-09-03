@@ -2,10 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b, 1.4.8 (`npkg`, D-206) and 1.4.8b (D-237, D-238) CLOSED; 1.4.9 (the close) is NEXT
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b, 1.4.8 (`npkg`, D-206), 1.4.8b (D-237, D-238) and 1.4.8c (D-239, D-240) CLOSED; 1.4.9 (the close) is NEXT
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
-`DECISIONS.md` records 238 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
@@ -518,6 +518,17 @@ gone from both (the harness dispatches from `run_stage`, npkg from
 before/after verdict lists differ in exactly the two recorded ways — the six
 duplicated grammar units collapse and the two `nf_twin` twins the old
 non-recursive glob missed are swept — and nothing is judged differently.
+**1.4.8c IS COMPLETE (2026-09-02)**: S-11 and S-12 ratified the same day as
+**D-239** — a name the compiler (`Error`) or the prelude owns cannot be declared
+by a program at ANY type-namespace declaration, associated types and generic
+parameters included, refused by the loader under RESOLVE-001
+(`owned_names.npk`: six shapes; a module-level `struct:Error` had been ACCEPTED
+where `struct:Duration` was refused, and an `assoc:Duration` shadowed the
+prelude inside its trait) — and **D-240** — one mistake, one report: the old
+blanket spelling is recognised by one probe so TYPE-002 never joins TYPE-012,
+`drop` over a bare non-`Result` is TYPE-007 alone, and a refused `..^` argument
+is not also fit-checked. Refusal-only: the compiler's emission of itself is
+unchanged.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

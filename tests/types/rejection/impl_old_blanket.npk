@@ -13,12 +13,10 @@ mod:impl_old_blanket;
 trait:Base    = { func:base    = int32(Self:self); };
 trait:Doubled = { func:doubled = int32(Self:self); };
 
-// Both rules report: TYPE-012 names the new spelling, and TYPE-002 -- the generic
-// rule it sharpens -- says what the slot now means. Both are named (D-237).
+// ONE REPORT (D-240): the generic "is a trait, not a value type" this rule was
+// written to replace stays silent where TYPE-012 has spoken.
 // expect-error: NITPICK-TYPE-012
-// expect-error-at: 22:1
-// expect-error: NITPICK-TYPE-002
-// expect-error-at: 22:16
+// expect-error-at: 20:1
 impl:<T: Base>:Doubled = { func:doubled = int32(T:self) { pass 2i32; }; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };

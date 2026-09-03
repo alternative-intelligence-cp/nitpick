@@ -45,9 +45,12 @@
 > move proven by the before/after verdict lists). Two new questions for the user
 > in `OPEN_DECISIONS.md` §2e: **S-11** (`Error` joining the names a program
 > cannot declare; `assoc` held to RESOLVE-001) and **S-12** (a sharper refusal
-> suppressing the generic one). **NEXT: 1.4.9, the close** — self-hosting
-> declared against D-202's criterion, the snapshot refreshed, docs synced, the
-> cycle to `done/`.
+> suppressing the generic one) — **both ratified the same day and LANDED as
+> 1.4.8c (D-239, D-240; `meta/roadmap/1.4/1.4.8c.md`)**, refusal-only, so the
+> compiler's emission of itself is unchanged and the close's snapshot refresh
+> carries the rule. Nothing is pending on the user. **NEXT: 1.4.9, the close** —
+> self-hosting declared against D-202's criterion, the snapshot refreshed, docs
+> synced, the cycle to `done/`.
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is

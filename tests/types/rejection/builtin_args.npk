@@ -83,13 +83,11 @@ func:raw_over_builtin = NIL() never fails {
 };
 
 // ...and `drop` is the same claim about a `Result<NIL>`. `dalloc(p);` is the
-// spelling: there is nothing to discard. Two rules meet at the site and both
-// report -- the type rule (`drop` needs a `Result`) and D-163 rule 4 (`drop`
-// discards a VALUE) -- so both are named (D-237).
+// spelling: there is nothing to discard. One report: D-163 rule 4's "discards a
+// VALUE" stayed silent here from D-240 on -- a bare `NIL` is no value, and the
+// type rule has already said what is wrong.
 // expect-error: NITPICK-TYPE-007
-// expect-error-at: 95:5
-// expect-error: NITPICK-TYPE-042
-// expect-error-at: 95:5
+// expect-error-at: 93:5
 func:drop_over_builtin = NIL() never fails {
     wild int8->:p = alloc(8i64);
     drop dalloc(p);

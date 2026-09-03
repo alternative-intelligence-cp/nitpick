@@ -201,26 +201,19 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     // family impl's target is a type mentioning its parameters (`Box<T>`), and a
     // modern blanket's is the bare parameter, already handled above. So this
     // names the new spelling instead of the generic refusal.
-    if (igw.count > 0i32) {
-        int32:as_trait = raw resolve_trait_type(r,
-                             raw impl_target(r.ast, d), scope);
-        if (as_trait != 0i32) {
-            if (!(raw type_is_invalid(r.types, as_trait))) {
-                if ((raw type_kind(r.types, as_trait)) == (raw TY_TRAIT())) {
-                    r.generics = isaved;
-                    string:o1 = string_concat("`",
-                        raw type_display(r.types, r.interns, as_trait));
-                    string:o2 = string_concat(o1,
-                        "` is a trait where an impl's target belongs; a blanket impl names its parameter as the target now (D-171) — write `impl:<T: Bound>:T:");
-                    string:o3 = string_concat(o2,
-                        raw type_display(r.types, r.interns, as_trait));
-                    drop diaglist_push(r.diags,
-                        raw diag_error(raw TYPE_NOT_A_TRAIT(),
-                            string_concat(o3, "`"), d.span));
-                    pass NIL;
-                }
-            }
-        }
+    int32:as_trait = raw impl_old_blanket_trait(r, d, scope);
+    if (as_trait != 0i32) {
+        r.generics = isaved;
+        string:o1 = string_concat("`",
+            raw type_display(r.types, r.interns, as_trait));
+        string:o2 = string_concat(o1,
+            "` is a trait where an impl's target belongs; a blanket impl names its parameter as the target now (D-171) — write `impl:<T: Bound>:T:");
+        string:o3 = string_concat(o2,
+            raw type_display(r.types, r.interns, as_trait));
+        drop diaglist_push(r.diags,
+            raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                string_concat(o3, "`"), d.span));
+        pass NIL;
     }
 
     int32:target = raw resolve_type(r, raw impl_target(r.ast, d), scope);
@@ -1236,6 +1229,30 @@ func:extra_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:m, string:what) n
 func:a_or_an = string(string:what) never fails {
     if (raw string_eq(what, "associated type")) { pass "an associated type"; }
     pass "a method";
+};
+
+// THE OLD BLANKET SPELLING, RECOGNISED IN ONE PLACE (D-171; D-240, 1.4.8c). A
+// GENERIC impl whose target slot resolves to a TRAIT is unambiguously the
+// pre-D-171 form `impl:<T: Bound>:Trait`: a modern family impl's target is a
+// type mentioning its parameters (`Box<T>`) and a modern blanket's is the bare
+// parameter. `impl_collect` names it (TYPE-012, with the new spelling); every
+// later walk that resolves an impl's target asks this FIRST and stays silent,
+// so the generic "is a trait, not a value type" (TYPE-002) never joins it — one
+// mistake, one report. Returns the trait's type id, or 0 when the impl is not
+// that form. The probe resolves under the impl's own parameters and restores
+// them; `resolve_trait_type` reports nothing for a non-trait target.
+pub func:impl_old_blanket_trait = int32(TypeResolver->:r, DeclNode:d, int32:scope) never fails {
+    IdSpan:gw = raw decl_generic_window(r.ast, d);
+    if (gw.count == 0i32) { pass 0i32; }
+    GenericScope:saved = r.generics;
+    r.generics = GenericScope{ params_start: gw.start, params_count: gw.count,
+                               args_start: 0i32, args_count: 0i32 };
+    int32:as_trait = raw resolve_trait_type(r, raw impl_target(r.ast, d), scope);
+    r.generics = saved;
+    if (as_trait == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(r.types, as_trait)) { pass 0i32; }
+    if ((raw type_kind(r.types, as_trait)) != (raw TY_TRAIT())) { pass 0i32; }
+    pass as_trait;
 };
 
 // --- signatures must match (TRAITS_REFERENCE 2) ------------------------------------------

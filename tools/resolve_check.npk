@@ -107,6 +107,10 @@ async func:main = int32(cstring[]:argv) {
     // The two unresolvable-cycle checks, both from D-086. Structs need only the
     // AST; globals need the bindings phase 2 just produced.
     drop graph_check_struct_cycles(@g);
+    // A NAME THE COMPILER OR THE PRELUDE OWNS, declared by the program (D-239):
+    // the loader's rule, so the loader's tool reports it -- the pipeline calls
+    // the same check at the same point.
+    drop graph_check_owned_names(@g);
     int32:k = 0i32;
     while (k < (raw graph_count(@g))) {
         ModuleEntry:e2 = raw graph_at(@g, k);

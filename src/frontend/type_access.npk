@@ -1916,7 +1916,8 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         // `..^` NEEDS A VARIADIC TAIL TO EXPAND INTO, and a builtin's
         // arguments are fixed registers (1.1.13-close): the same refusal
         // `type_args_only` carried, kept where the arguments are now checked.
-        if (raw is_spread(e, a)) {
+        bool:spread = raw is_spread(e, a);
+        if (spread) {
             ExprNode:sn = raw ast_expr(e.ast, a);
             discard(raw te_error(e, raw TYPE_BUILTIN_ARGS(),
                 "`..^` expands a collection into a variadic parameter, and a builtin's arguments are fixed — pass the elements yourself",
@@ -1935,6 +1936,11 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         e.expected = pt;
         int32:got = raw type_of_expr(e, a);
         e.expected = saved;
+        // A SPREAD ARGUMENT WAS REFUSED ABOVE, BY NAME; measuring the collection
+        // against the register it cannot become would be a second report of
+        // the one mistake (D-240). The argument is still typed, so a mistake
+        // inside it is not hidden.
+        if (spread) { pt = 0i32; }
         if (pt != 0i32) {
             if (got != 0i32) {
                 if (!(raw type_is_invalid(e.types, got))) {

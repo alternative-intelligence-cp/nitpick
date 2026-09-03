@@ -6,6 +6,12 @@
 // call site silently invents a NEW code, and the test asserting the old one then
 // fails for a reason unrelated to the bug it guards.
 
+// Two declarations of one name in one scope; a member declared twice in one
+// type; a program declaring a name the prelude exports -- or, since D-239
+// (1.4.8c), the compiler's `Error` at any declaration kind, and a prelude
+// name as an associated type or a generic parameter, where the nearer binding
+// would otherwise win in silence. One code: every case is "this name already
+// means something here".
 pub func:RESOLVE_DUPLICATE = string() never fails   { pass "NITPICK-RESOLVE-001"; };
 pub func:RESOLVE_UNKNOWN = string() never fails     { pass "NITPICK-RESOLVE-002"; };
 pub func:RESOLVE_PRIVATE = string() never fails     { pass "NITPICK-RESOLVE-003"; };

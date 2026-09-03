@@ -3207,7 +3207,17 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                 if (dt != 0i32) {
                     if ((raw type_kind(e.types, dt)) == (raw TY_RESULT())) {
                         if ((raw type_elem(e.types, dt)) == e.types.t_nil) { d_ok_nil = true; }
+                    } else {
+                        // NOT A `Result` AT ALL — a never-fails builtin's bare
+                        // value, `drop dalloc(p);` — and `type_unwrap` has
+                        // already said so ("`drop` needs a `Result`"). Rule 4's
+                        // "discards a VALUE" would be a second report of the one
+                        // mistake, and for a bare `NIL` an untrue one (D-240).
+                        d_ok_nil = true;
                     }
+                } else {
+                    // untyped: refused where it failed to type
+                    d_ok_nil = true;
                 }
                 // (The nine NIL-returning builtins were listed BY NAME here
                 // until 1.4.2, because a builtin's call typed as UNKNOWN and
