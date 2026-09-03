@@ -77,7 +77,7 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_ret_done(@f2);
     drop fnem_close(@f2, true);
     if (!(raw string_eq(raw irw_text(@w2),
-        "define { i32, i32 } @npk_add(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = insertvalue { i32, i32 } undef, i32 7, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 22i32; }
+        "define { i32, i32 } @npk_add(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  %t1 = alloca i32\n  store i32 %a0, ptr %t0\n  store i32 %a1, ptr %t1\n  %t2 = insertvalue { i32, i32 } zeroinitializer, i32 7, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 22i32; }
 
     // …and the parameter slots are real bindings: both resolve, to the right
     // slots and the right types.
@@ -111,7 +111,7 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_ret_done(@f4);
     drop fnem_close(@f4, true);
     if (!(raw string_eq(raw irw_text(@w4),
-        "define { i32 } @npk_halt() {\nentry:\n  %t0 = insertvalue { i32 } undef, i32 9, 0\n  ret { i32 } %t0\n}\n\n"))) { exit 31i32; }
+        "define { i32 } @npk_halt() {\nentry:\n  %t0 = insertvalue { i32 } zeroinitializer, i32 9, 0\n  ret { i32 } %t0\n}\n\n"))) { exit 31i32; }
 
     // --- A FAILED Result CARRIES A ZEROED VALUE, not leftover memory ----------
     //
@@ -126,7 +126,7 @@ func:main = int32(cstring[]:_~argv) {
     drop fnem_ret_done(@f5);
     drop fnem_close(@f5, true);
     if (!(raw string_eq(raw irw_text(@w5),
-        "define { { ptr, i64, i64 }, i32 } @npk_read() {\nentry:\n  %t0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } zeroinitializer, 0\n  %t1 = insertvalue { { ptr, i64, i64 }, i32 } %t0, i32 3, 1\n  ret { { ptr, i64, i64 }, i32 } %t1\n}\n\n"))) { exit 32i32; }
+        "define { { ptr, i64, i64 }, i32 } @npk_read() {\nentry:\n  %t0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } zeroinitializer, 0\n  %t1 = insertvalue { { ptr, i64, i64 }, i32 } %t0, i32 3, 1\n  ret { { ptr, i64, i64 }, i32 } %t1\n}\n\n"))) { exit 32i32; }
 
     // --- FALLING OFF THE END STILL TERMINATES, wrapped form -------------------
     IrWriter:w6 = raw irw_to_buffer();

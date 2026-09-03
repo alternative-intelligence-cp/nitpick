@@ -25,6 +25,14 @@
 // THE ERROR FIELD OF A SUCCESSFUL Result IS WRITTEN, NEVER LEFT undef. A Result
 // whose error slot is undef is one whose `.is_error` answers differently on
 // different runs — a slot that means two things, decided by the optimiser.
+//
+// AND NO AGGREGATE IS SEEDED WITH `undef` AT ALL (1.5.0, D-218.10): every
+// `insertvalue` chain in this backend starts from `zeroinitializer`, never
+// `undef` and never `poison`. Every chain inserts every field before the value
+// escapes (audited at 1.5.0), so the seed is never observed — but a seed that
+// IS a defined value makes an audit slip a wrong zero rather than a value
+// the optimiser may choose per use (r8's ~18% of Alive2-found miscompiles),
+// and the harness bans the word from every `.ll` the tree holds or emits.
 
 mod:ir_func;
 
@@ -1191,7 +1199,7 @@ pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) never fails {
     }
     string:a = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
-                                   " undef, ",
+                                   " zeroinitializer, ",
                                    raw cat4(fe.val_ll, " ", value, ", 0")));
     string:b = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,
@@ -1214,14 +1222,14 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
     if (fe.ret_nil) {
         string:a = raw irw_temp(fe.w);
         drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
-                                       " undef, i32 ",
+                                       " zeroinitializer, i32 ",
                                        string_concat(code, ", 0")));
         drop fnem_ret_agg(fe, a);
         pass NIL;
     }
     string:a = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(a, " = insertvalue ", fe.ret_ll,
-                                   " undef, ",
+                                   " zeroinitializer, ",
                                    raw cat4(fe.val_ll, " ", fe.val_zero, ", 0")));
     string:b = raw irw_temp(fe.w);
     drop irw_line(fe.w, raw cat5(b, " = insertvalue ", fe.ret_ll,

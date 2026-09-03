@@ -851,7 +851,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             string:slen = int_to_string(cv.text.len);
             string:s1 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat4(s1,
-                " = insertvalue { ptr, i64, i64 } undef, ptr ", sg, ", 0"));
+                " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", sg, ", 0"));
             string:s2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(s2,
                 " = insertvalue { ptr, i64, i64 } ", s1, ", i64 ",
@@ -891,7 +891,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         string:ra = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(ra, " = insertvalue ", rll.text,
-                          " undef, ", raw cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
+                          " zeroinitializer, ", raw cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
         string:rb = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(rb, " = insertvalue ", rll.text, " ",
                           raw cat5(ra, ", ", rhi.ll, " ",
@@ -1054,7 +1054,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
             if (!(raw iv_is_ok(imv))) { pass imv; }
             string:cu0 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", cxll.text,
-                              " undef, ",
+                              " zeroinitializer, ",
                               string_concat(raw cat3(rev.ll, " ", rev.ref), ", 0")));
             string:cu1 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", cxll.text, " ",
@@ -1075,7 +1075,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         int32:vlanes = (raw tt_get(x.fe.ctx.types, vt)).b;
         int32:vcnt = raw expr_list_count(n);
         int32:vstart = raw expr_list_start(n);
-        string:vcur = "poison";
+        string:vcur = "zeroinitializer";
         string:vone = "";
         if (vcnt == 1i32) {
             IrVal:vsv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, vstart, 0i32) });
@@ -1250,7 +1250,7 @@ func:emit_template = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         string:g = raw strtab_add(x.strs, "");
         string:a = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat4(a,
-            " = insertvalue { ptr, i64, i64 } undef, ptr ", g, ", 0"));
+            " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", g, ", 0"));
         string:b = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(b,
             " = insertvalue { ptr, i64, i64 } ", a, ", i64 0", ", 1"));
@@ -1329,7 +1329,7 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
     string:len = int_to_string(data.len);
     string:a = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(a,
-        " = insertvalue { ptr, i64, i64 } undef, ptr ", g, ", 0"));
+        " = insertvalue { ptr, i64, i64 } zeroinitializer, ptr ", g, ", 0"));
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64, i64 } ", a,
                                      ", i64 ", string_concat(len, ", 1")));
@@ -1644,7 +1644,7 @@ func:emit_complex_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         }
         string:cu0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cu0, " = insertvalue ", rv.ll,
-                          " undef, ",
+                          " zeroinitializer, ",
                           string_concat(raw cat3(cell.text, " ", cr), ", 0")));
         string:cu1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cu1, " = insertvalue ", rv.ll, " ",
@@ -3420,7 +3420,7 @@ func:frac_pack = IrVal(ExprEmitter->:x, string:partsref, string:taint,
     drop irw_line(x.fe.w, raw cat5(ds, " = select i1 ", bad, ", ",
                       raw cat5(cll, " 0, ", cll, " ", dt)));
     string:u0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " undef, ",
+    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " zeroinitializer, ",
                       string_concat(raw cat3(cll, " ", ws), ", 0")));
     string:u1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(u1, " = insertvalue ", structll, " ",
@@ -3662,7 +3662,7 @@ func:cplx_err_test = string(ExprEmitter->:x, IrVal:v, string:ell,
 func:frac_build = string(ExprEmitter->:x, string:structll, string:cll,
                          string:w, string:n2, string:d) never fails {
     string:u0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " undef, ",
+    drop irw_line(x.fe.w, raw cat5(u0, " = insertvalue ", structll, " zeroinitializer, ",
                       string_concat(raw cat3(cll, " ", w), ", 0")));
     string:u1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(u1, " = insertvalue ", structll, " ",
@@ -5022,7 +5022,7 @@ func:emit_channel_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     drop irw_line(x.fe.w, raw cat5(rc, " = call i32 @npk_ch_close(i64 ", hw,
                       ")", ""));
     string:r0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(r0, " = insertvalue { i32 } undef, i32 ",
+    drop irw_line(x.fe.w, raw cat5(r0, " = insertvalue { i32 } zeroinitializer, i32 ",
                       rc, ", 0", ""));
     IrVal:out = raw iv("{ i32 }", move(r0), raw exprtypes_get(x.et, id));
     out.wrapped = true;
@@ -5361,7 +5361,7 @@ func:emit_condvar_wait = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     drop s_start(x, kp);
     int32:rt_id = raw exprtypes_get(x.et, cid);
     string:o0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
+    drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } zeroinitializer, i32 ",
                       err, ", 0", ""));
     IrVal:cvo = raw iv("{ i32 }", move(o0), rt_id);
     cvo.wrapped = true;
@@ -5499,7 +5499,7 @@ func:emit_barrier_arrive = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
                       string_concat(eslot, "")));
     int32:rt_id = raw exprtypes_get(x.et, cid);
     string:o0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
+    drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } zeroinitializer, i32 ",
                       err, ", 0", ""));
     IrVal:bao = raw iv("{ i32 }", move(o0), rt_id);
     bao.wrapped = true;
@@ -5627,7 +5627,7 @@ func:emit_lock_acquire = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     int32:rt_id = raw exprtypes_get(x.et, id);
     string:v0 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v0,
-                      " = insertvalue { ptr, i32 } undef, ptr ", gp2, ", 0", ""));
+                      " = insertvalue { ptr, i32 } zeroinitializer, ptr ", gp2, ", 0", ""));
     string:v1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v1, " = insertvalue { ptr, i32 } ", v0,
                       ", i32 ", string_concat(err, ", 1")));
@@ -5816,7 +5816,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
             drop s_start(x, sfk);
         }
         string:o0 = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } undef, i32 ",
+        drop irw_line(x.fe.w, raw cat5(o0, " = insertvalue { i32 } zeroinitializer, i32 ",
                           err, ", 0", ""));
         IrVal:so = raw iv("{ i32 }", move(o0), rt_id);
         so.wrapped = true;
@@ -5829,7 +5829,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
     LlType:rll = raw ll_wrap_result(x.fe.ctx, elem);
     if (!(raw ll_is_ok(rll))) { pass (raw iv_from_ll_at(x, rll, elem, at)); }
     string:v0 = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(v0, " = insertvalue ", rll.text, " undef, ",
+    drop irw_line(x.fe.w, raw cat5(v0, " = insertvalue ", rll.text, " zeroinitializer, ",
                       raw cat4(ell.text, " ", got, ", 0")));
     string:v1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v1, " = insertvalue ", rll.text, " ",
@@ -6236,7 +6236,7 @@ func:va_spread_operand = int32(ExprEmitter->:x, int32:start, int32:count,
 func:va_empty_slice = IrVal(ExprEmitter->:x, int32:coll) never fails {
     string:z0 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(z0,
-                      " = insertvalue { ptr, i64 } undef, ptr null, 0", ""));
+                      " = insertvalue { ptr, i64 } zeroinitializer, ptr null, 0", ""));
     string:z1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(z1, " = insertvalue { ptr, i64 } ",
                       string_concat(z0, ", i64 0, 1")));
@@ -6268,7 +6268,7 @@ func:va_fill = IrVal(ExprEmitter->:x, int32:elem, string:arrty, string:arrp,
                       ", ptr ", string_concat(arrp, ", i64 0, i64 0")));
     string:s0 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat4(s0,
-                      " = insertvalue { ptr, i64 } undef, ptr ", bp, ", 0"));
+                      " = insertvalue { ptr, i64 } zeroinitializer, ptr ", bp, ", 0"));
     string:s1 = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(s1, " = insertvalue { ptr, i64 } ", s0,
                       ", i64 ", raw cat3(
@@ -6591,7 +6591,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(", ptr ", rep)));
         string:rr0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(rr0,
-                          " = insertvalue { ptr, i32 } undef, ptr ", rcell,
+                          " = insertvalue { ptr, i32 } zeroinitializer, ptr ", rcell,
                           ", 0", ""));
         string:rr1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(rr1,
@@ -6620,7 +6620,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3("store i32 2, ptr ", ckp, ""));
         string:cr0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cr0,
-                          " = insertvalue { ptr, i32 } undef, ptr ", ccell,
+                          " = insertvalue { ptr, i32 } zeroinitializer, ptr ", ccell,
                           ", 0", ""));
         string:cr1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(cr1,
@@ -6661,7 +6661,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           int_to_string(bn => int64), ", ptr ", bnp, ""));
         string:br0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(br0,
-                          " = insertvalue { ptr, i32 } undef, ptr ", bcell,
+                          " = insertvalue { ptr, i32 } zeroinitializer, ptr ", bcell,
                           ", 0", ""));
         string:br1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(br1,
@@ -6715,7 +6715,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(", ptr ", mep)));
         string:mr0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(mr0,
-                          " = insertvalue { ptr, i32 } undef, ptr ", mcell,
+                          " = insertvalue { ptr, i32 } zeroinitializer, ptr ", mcell,
                           ", 0", ""));
         string:mr1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(mr1,
@@ -6800,7 +6800,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3(hi, " = trunc i64 ",
                           string_concat(sh, " to i32")));
         string:h0 = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(h0, " = insertvalue { i32, i32 } undef, i32 ",
+        drop irw_line(x.fe.w, raw cat5(h0, " = insertvalue { i32, i32 } zeroinitializer, i32 ",
                           lo, ", 0", ""));
         string:h1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(h1, " = insertvalue { i32, i32 } ", h0,
@@ -6808,7 +6808,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         // wrapped as the Result the checker gave it
         string:r0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r0,
-                          " = insertvalue { { i32, i32 }, i32 } undef, { i32, i32 } ",
+                          " = insertvalue { { i32, i32 }, i32 } zeroinitializer, { i32, i32 } ",
                           h1, ", 0", ""));
         string:r1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(r1,
@@ -6850,7 +6850,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(sbv.ref, ", 1")));
         string:sb0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat4(sb0,
-                          " = insertvalue { ptr, i64 } undef, ptr ", sbp, ", 0"));
+                          " = insertvalue { ptr, i64 } zeroinitializer, ptr ", sbp, ", 0"));
         string:sb1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(sb1, " = insertvalue { ptr, i64 } ",
                           sb0, ", i64 ", string_concat(sbl, ", 1")));
@@ -7163,7 +7163,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                               ", i64 0, i64 ", sr));
             string:sa2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(sa2,
-                              " = insertvalue { i64, i32 } undef, i64 ", sval,
+                              " = insertvalue { i64, i32 } zeroinitializer, i64 ", sval,
                               ", 0", ""));
             string:sb2 = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(sb2,
@@ -7503,7 +7503,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:ec = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(ec, " = select i1 ", string_concat(bad, ", i32 -4106, i32 0")));
         string:rr = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(rr, " = insertvalue { i32 } undef, i32 ",
+        drop irw_line(x.fe.w, raw cat5(rr, " = insertvalue { i32 } zeroinitializer, i32 ",
                           ec, ", ", "0"));
         pass (raw iv("{ i32 }", move(rr), raw exprtypes_get(x.et, id)));
     }
@@ -7643,7 +7643,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
                           string_concat(", ptr ", p)));
         string:h0 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(h0,
-            " = insertvalue { i64, i32 } undef, i64 ", idx, ", ", "0"));
+            " = insertvalue { i64, i32 } zeroinitializer, i64 ", idx, ", ", "0"));
         string:h1 = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(h1,
             " = insertvalue { i64, i32 } ", h0, ", i32 0, ", "1"));
@@ -7888,7 +7888,7 @@ pub func:emit_dyn_from = IrVal(ExprEmitter->:x, int32:dyn_ty, IrVal:v,
 
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = insertvalue ", dll.text,
-                      " undef, ptr ", string_concat(spill, ", 0")));
+                      " zeroinitializer, ptr ", string_concat(spill, ", 0")));
 
     int32:n = raw type_dyn_count(x.fe.ctx.types, dyn_ty);
     int32:start = raw type_dyn_start(x.fe.ctx.types, dyn_ty);
@@ -7935,7 +7935,7 @@ pub func:emit_dyn_widen = IrVal(ExprEmitter->:x, int32:dst_ty, IrVal:v,
     drop irw_line(x.fe.w, raw cat5(dat, " = extractvalue ", v.ll, " ",
                       string_concat(v.ref, ", 0")));
     drop irw_line(x.fe.w, raw cat5(cur, " = insertvalue ", dll.text,
-                      " undef, ptr ", string_concat(dat, ", 0")));
+                      " zeroinitializer, ptr ", string_concat(dat, ", 0")));
 
     int32:dn = raw type_dyn_count(x.fe.ctx.types, dst_ty);
     int32:ds = raw type_dyn_start(x.fe.ctx.types, dst_ty);
@@ -9330,7 +9330,7 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     string:cnt = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cnt, " = sub i64 ", hi64, ", ", lo64));
     string:a = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat3(a, " = insertvalue { ptr, i64 } undef, ptr ",
+    drop irw_line(x.fe.w, raw cat3(a, " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
                       string_concat(g, ", 0")));
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
@@ -9470,7 +9470,7 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     LlType:sll = raw ll_type(x.fe.ctx, stid);
     if (!(raw ll_is_ok(sll))) { pass (raw iv_from_ll_at(x, sll, stid, n.span)); }
 
-    string:acc = "undef";
+    string:acc = "zeroinitializer";
     int32:i = 0i32;
     int32:pairs = (raw expr_list_count(n)) / 2i32;
     while (i < pairs) {
@@ -9503,7 +9503,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     if ((raw expr_list_count(n)) == 0i32) {
         pass (raw iv(move(all.text), "zeroinitializer", atid));
     }
-    string:acc = "undef";
+    string:acc = "zeroinitializer";
     int32:i = 0i32;
     while (i < (raw expr_list_count(n))) {
         ExprId:eid = ExprId{ index: raw ast_id_at(x.ast,
@@ -9544,7 +9544,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     if ((raw type_kind(x.fe.ctx.types, inner)) == (raw TY_NIL())) {
         string:a = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(a, " = insertvalue ", rll.text,
-                          " undef, i32 ", string_concat(eref, ", 0")));
+                          " zeroinitializer, i32 ", string_concat(eref, ", 0")));
         pass (raw iv(move(rll.text), move(a), rtid));
     }
 
@@ -9561,7 +9561,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         vref = move(vv.ref);
     }
     string:a = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(a, " = insertvalue ", rll.text, " undef, ",
+    drop irw_line(x.fe.w, raw cat5(a, " = insertvalue ", rll.text, " zeroinitializer, ",
                       raw cat4(ill.text, " ", vref, ", 0")));
     string:b = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(b, " = insertvalue ", rll.text, " ",
@@ -9652,7 +9652,7 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (!(raw iv_is_ok(lv))) { pass lv; }
         string:a = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(a,
-            " = insertvalue { ptr, i64 } undef, ptr ",
+            " = insertvalue { ptr, i64 } zeroinitializer, ptr ",
             string_concat(pv2.ref, ", 0")));
         string:b = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(b, " = insertvalue { ptr, i64 } ", a,
@@ -9666,7 +9666,8 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // exclusion was wrong. `unreachable` is a block terminator, so a fresh
     // (dead) block follows it — whatever the surrounding expression emits next
     // lands there, valid but never reached — and the handed-back value is
-    // `undef` of the node's type, which is never produced.
+    // the ZERO of the node's type (never `undef` -- D-218.10), which is
+    // never produced.
     if (raw string_eq(name, "unreachable")) {
         drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
         drop irw_line(x.fe.w, "unreachable");
@@ -9677,7 +9678,8 @@ func:emit_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (ull.state != (raw LL_OK())) {
             pass (raw iv_from_ll_at(x, ull, utid, n.span));
         }
-        pass (raw iv(move(ull.text), "undef", utid));
+        string:uz = raw ll_zero(ull);
+        pass (raw iv(move(ull.text), move(uz), utid));
     }
 
     pass (raw iv_broken(n.span));

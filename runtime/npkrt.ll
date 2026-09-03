@@ -147,7 +147,7 @@ next:                                             ; preds = %store
   br label %loop
 
 ready:                                            ; preds = %loop
-  %sl0 = insertvalue { ptr, i64 } undef, ptr %buf, 0
+  %sl0 = insertvalue { ptr, i64 } zeroinitializer, ptr %buf, 0
   %sl1 = insertvalue { ptr, i64 } %sl0, i64 %n, 1
   ret { ptr, i64 } %sl1
 }
@@ -1847,7 +1847,7 @@ cfail:
   ; the clone itself failed: retire the claimed slot, hand the errno up.
   store atomic i32 0, ptr %sp release, align 4
   %ec = trunc i64 %r to i32
-  %f0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %f0 = insertvalue { i64, i32 } zeroinitializer, i64 0, 0
   %f1 = insertvalue { i64, i32 } %f0, i32 %ec, 1
   ret { i64, i32 } %f1
 ok:
@@ -1859,7 +1859,7 @@ ok:
   %pfde = sext i32 %pfd to i64
   %o9 = getelementptr i64, ptr %blk, i64 9
   store i64 %pfde, ptr %o9
-  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k0 = insertvalue { i64, i32 } zeroinitializer, i64 %r, 0
   %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
   ret { i64, i32 } %k1
 child:
@@ -3044,7 +3044,7 @@ loop:
 next:
   br label %loop
 out:
-  %p0 = insertvalue { i128, i128 } undef, i128 %q2, 0
+  %p0 = insertvalue { i128, i128 } zeroinitializer, i128 %q2, 0
   %p1 = insertvalue { i128, i128 } %p0, i128 %r2, 1
   ret { i128, i128 } %p1
 }
@@ -3112,12 +3112,12 @@ define { i32, i32 } @npk_open({ ptr, i64 } %path, i64 %flags, i64 %mode) {
   br i1 %bad, label %err, label %ok
 ok:
   %f = trunc i64 %r to i32
-  %o0 = insertvalue { i32, i32 } undef, i32 %f, 0
+  %o0 = insertvalue { i32, i32 } zeroinitializer, i32 %f, 0
   %o1 = insertvalue { i32, i32 } %o0, i32 0, 1
   ret { i32, i32 } %o1
 err:
   %c = trunc i64 %r to i32
-  %e0 = insertvalue { i32, i32 } undef, i32 0, 0
+  %e0 = insertvalue { i32, i32 } zeroinitializer, i32 0, 0
   %e1 = insertvalue { i32, i32 } %e0, i32 %c, 1
   ret { i32, i32 } %e1
 }
@@ -3131,7 +3131,7 @@ ok:
   ret { i32 } zeroinitializer
 err:
   %c = trunc i64 %r to i32
-  %e0 = insertvalue { i32 } undef, i32 %c, 0
+  %e0 = insertvalue { i32 } zeroinitializer, i32 %c, 0
   ret { i32 } %e0
 }
 
@@ -3156,16 +3156,16 @@ ateof:
   ; E_EOF = -4096 (D-141): end-of-input is an error code, never a sentinel in
   ; the value channel (D-075) -- at the floor exactly as it will be in the
   ; Stream trait above it.
-  %z0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %z0 = insertvalue { i64, i32 } zeroinitializer, i64 0, 0
   %z1 = insertvalue { i64, i32 } %z0, i32 -4096, 1
   ret { i64, i32 } %z1
 ok:
-  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k0 = insertvalue { i64, i32 } zeroinitializer, i64 %r, 0
   %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
   ret { i64, i32 } %k1
 err:
   %c = trunc i64 %r to i32
-  %e0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %e0 = insertvalue { i64, i32 } zeroinitializer, i64 0, 0
   %e1 = insertvalue { i64, i32 } %e0, i32 %c, 1
   ret { i64, i32 } %e1
 }
@@ -3177,12 +3177,12 @@ define { i64, i32 } @npk_write(i32 %fd, ptr %buf, i64 %len) {
   %bad = icmp slt i64 %r, 0
   br i1 %bad, label %err, label %ok
 ok:
-  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k0 = insertvalue { i64, i32 } zeroinitializer, i64 %r, 0
   %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
   ret { i64, i32 } %k1
 err:
   %c = trunc i64 %r to i32
-  %e0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %e0 = insertvalue { i64, i32 } zeroinitializer, i64 0, 0
   %e1 = insertvalue { i64, i32 } %e0, i32 %c, 1
   ret { i64, i32 } %e1
 }
@@ -3242,16 +3242,16 @@ copy:                                     ; preds = %scan
   call ptr @memcpy(ptr %buf, ptr %p, i64 %n)
   %end = getelementptr i8, ptr %buf, i64 %n
   store i8 0, ptr %end
-  %c0 = insertvalue { ptr, i64 } undef, ptr %buf, 0
+  %c0 = insertvalue { ptr, i64 } zeroinitializer, ptr %buf, 0
   %c1 = insertvalue { ptr, i64 } %c0, i64 %n, 1
-  %r0 = insertvalue { { ptr, i64 }, i32 } undef, { ptr, i64 } %c1, 0
+  %r0 = insertvalue { { ptr, i64 }, i32 } zeroinitializer, { ptr, i64 } %c1, 0
   %r1 = insertvalue { { ptr, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64 }, i32 } %r1
 
 interior:                                 ; preds = %check
-  %e0 = insertvalue { ptr, i64 } undef, ptr null, 0
+  %e0 = insertvalue { ptr, i64 } zeroinitializer, ptr null, 0
   %e1 = insertvalue { ptr, i64 } %e0, i64 0, 1
-  %q0 = insertvalue { { ptr, i64 }, i32 } undef, { ptr, i64 } %e1, 0
+  %q0 = insertvalue { { ptr, i64 }, i32 } zeroinitializer, { ptr, i64 } %e1, 0
   %q1 = insertvalue { { ptr, i64 }, i32 } %q0, i32 -22, 1
   ret { { ptr, i64 }, i32 } %q1
 }
@@ -3374,21 +3374,21 @@ ok:
 
 openfail:
   %oec = trunc i64 %fd to i32
-  %or0 = insertvalue { i32 } undef, i32 %oec, 0
+  %or0 = insertvalue { i32 } zeroinitializer, i32 %oec, 0
   ret { i32 } %or0
 
 writefail:
   ; close best-effort: the write's errno is the story, not the close's.
   %ce = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
   %wec = trunc i64 %n to i32
-  %wr0 = insertvalue { i32 } undef, i32 %wec, 0
+  %wr0 = insertvalue { i32 } zeroinitializer, i32 %wec, 0
   ret { i32 } %wr0
 
 closefail:
   ; A FAILED CLOSE IS A FAILED WRITE. Buffered-at-the-kernel errors surface
   ; here, and reporting success past one is reporting bytes that may not exist.
   %lec = trunc i64 %c to i32
-  %lr0 = insertvalue { i32 } undef, i32 %lec, 0
+  %lr0 = insertvalue { i32 } zeroinitializer, i32 %lec, 0
   ret { i32 } %lr0
 }
 
@@ -3442,10 +3442,10 @@ iter:                                     ; preds = %check
 
 done:                                     ; preds = %check
   %cr = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %rbuf, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %rbuf, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %rcap, 2
-  %o0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %o0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %s2, 0
   %o1 = insertvalue { { ptr, i64, i64 }, i32 } %o0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %o1
 
@@ -3463,10 +3463,10 @@ openfail:                                 ; preds = %entry
 
 fail:                                     ; preds = %readfail, %openfail
   %code = phi i32 [ %rerr32, %readfail ], [ %oerr32, %openfail ]
-  %f0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %f0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr null, 0
   %f1 = insertvalue { ptr, i64, i64 } %f0, i64 0, 1
   %f2 = insertvalue { ptr, i64, i64 } %f1, i64 0, 2
-  %g0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %f2, 0
+  %g0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %f2, 0
   %g1 = insertvalue { { ptr, i64, i64 }, i32 } %g0, i32 %code, 1
   ret { { ptr, i64, i64 }, i32 } %g1
 }
@@ -3530,20 +3530,20 @@ iter:                                     ; preds = %check
   br label %loop
 
 done:                                     ; preds = %check
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %rbuf, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %rbuf, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %rcap, 2
-  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 
 err:
   ; An errored Result carries a zeroed value, so a caller that unwraps without
   ; checking gets an empty string rather than a pointer into nothing.
-  %e0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %e0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr null, 0
   %e1 = insertvalue { ptr, i64, i64 } %e0, i64 0, 1
   %e2 = insertvalue { ptr, i64, i64 } %e1, i64 0, 2
-  %q0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %e2, 0
+  %q0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %e2, 0
   %qc = trunc i64 %n to i32
   %q1 = insertvalue { { ptr, i64, i64 }, i32 } %q0, i32 %qc, 1
   ret { { ptr, i64, i64 }, i32 } %q1
@@ -4602,17 +4602,17 @@ entry:
 mk:
   %p = call ptr @npk_alloc_impl(i64 %n, i64 0)
   call ptr @memset(ptr %p, i32 0, i64 %n)
-  %b0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
+  %b0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %p, 0
   %b1 = insertvalue { ptr, i64, i64 } %b0, i64 %n, 1
   %b2 = insertvalue { ptr, i64, i64 } %b1, i64 %n, 2
-  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %b2, 0
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %b2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 empty:
-  %e0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %e0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr null, 0
   %e1 = insertvalue { ptr, i64, i64 } %e0, i64 0, 1
   %e2 = insertvalue { ptr, i64, i64 } %e1, i64 0, 2
-  %s0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %e2, 0
+  %s0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %e2, 0
   %s1 = insertvalue { { ptr, i64, i64 }, i32 } %s0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %s1
 }
@@ -5057,7 +5057,7 @@ mkslab:
   %gb = shl i64 %cap, 2
   %gens = call ptr @npk_alloc_impl(i64 %gb, i64 0)
   call void @llvm.memset.p0.i64(ptr %gens, i8 0, i64 %gb, i1 false)
-  %r0 = insertvalue { ptr, ptr, i64, i64, i64 } undef, ptr %slab, 0
+  %r0 = insertvalue { ptr, ptr, i64, i64, i64 } zeroinitializer, ptr %slab, 0
   %r1 = insertvalue { ptr, ptr, i64, i64, i64 } %r0, ptr %gens, 1
   %r2 = insertvalue { ptr, ptr, i64, i64, i64 } %r1, i64 %cap, 2
   %r3 = insertvalue { ptr, ptr, i64, i64, i64 } %r2, i64 0, 3
@@ -5153,7 +5153,7 @@ issue:
   %g2 = add i32 %g, 1
   %gv = select i1 %isodd, i32 %g2, i32 %g
   store i32 %gv, ptr %gp
-  %h0 = insertvalue { i64, i32 } undef, i64 %idx, 0
+  %h0 = insertvalue { i64, i32 } zeroinitializer, i64 %idx, 0
   %h1 = insertvalue { i64, i32 } %h0, i32 %gv, 1
   ret { i64, i32 } %h1
 }
@@ -6138,10 +6138,10 @@ qok:
   call ptr @memcpy(ptr %p, ptr %ap, i64 %al)
   %tail = getelementptr i8, ptr %p, i64 %al
   call ptr @memcpy(ptr %tail, ptr %bp, i64 %bl)
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %p, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
-  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 }
@@ -6212,10 +6212,10 @@ rehome_step:
   %rin = add i64 %ri, 1
   br label %rehome
 homed:
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %buf, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %buf, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 24, 2
-  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 }
@@ -6233,7 +6233,7 @@ entry:
   br i1 %bad, label %err, label %ok
 
 err:
-  %e0 = insertvalue { { ptr, i64, i64 }, i32 } undef,
+  %e0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer,
                     { ptr, i64, i64 } zeroinitializer, 0
   %e1 = insertvalue { { ptr, i64, i64 }, i32 } %e0, i32 -34, 1
   ret { { ptr, i64, i64 }, i32 } %e1
@@ -6254,10 +6254,10 @@ ok:
   %none = icmp eq i64 %n, 0
   br i1 %none, label %empty, label %copy
 empty:
-  %ez0 = insertvalue { ptr, i64, i64 } undef, ptr %np, 0
+  %ez0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %np, 0
   %ez1 = insertvalue { ptr, i64, i64 } %ez0, i64 0, 1
   %ez2 = insertvalue { ptr, i64, i64 } %ez1, i64 0, 2
-  %ezr0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %ez2, 0
+  %ezr0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %ez2, 0
   %ezr1 = insertvalue { { ptr, i64, i64 }, i32 } %ezr0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %ezr1
 copy:
@@ -6269,10 +6269,10 @@ copy:
   ; stderr-tail test, the first to hold one there.
   %body = call ptr @npk_alloc_internal(i64 %n)
   call void @llvm.memcpy.p0.p0.i64(ptr %body, ptr %np, i64 %n, i1 false)
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %body, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %body, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
-  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %s2, 0
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 }
@@ -6286,7 +6286,7 @@ define { ptr, i64, i64 } @npk_string_from_bytes(ptr %p, i64 %n) {
   ; borrowed view of it. `irw_text` builds one over the IR writer's LIVE
   ; buffer; with `cap = n` the local holding it dropped the compiler's own
   ; output stream from under it.
-  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
+  %s0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %p, 0
   %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
   %s2 = insertvalue { ptr, i64, i64 } %s1, i64 0, 2
   ret { ptr, i64, i64 } %s2
