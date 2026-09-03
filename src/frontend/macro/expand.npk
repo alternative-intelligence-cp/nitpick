@@ -496,7 +496,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         int32:mark = raw ast_scratch_mark(x.ast);
         drop ast_scratch_push(x.ast, init.index);
         drop ast_scratch_push(x.ast, raw stmt_quals(x.ast, s));
-        drop ast_scratch_push(x.ast, (raw stmt_decl_limit(x.ast, s)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_decl_limit(x.ast, s), f)).index);
         int32:ac = raw stmt_decl_attr_count(x.ast, s);
         drop ast_scratch_push(x.ast, ac);
         for (int32:i in 0i32...ac) {
@@ -524,7 +524,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         StmtId:b = raw clone_stmt(x, raw stmt_body(x.ast, s), f);
         int32:mark = raw ast_scratch_mark(x.ast);
         drop ast_scratch_push(x.ast, b.index);
-        drop ast_scratch_push(x.ast, (raw stmt_while_invariant(x.ast, s)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_while_invariant(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, c.index, w.start, w.count, s.payload));
     }
@@ -535,7 +535,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         int32:mark = raw ast_scratch_mark(x.ast);
         drop ast_scratch_push(x.ast, it.index);
         drop ast_scratch_push(x.ast, b.index);
-        drop ast_scratch_push(x.ast, (raw stmt_for_invariant(x.ast, s)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_for_invariant(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, s.a, w.start, w.count, s.payload));
     }
@@ -549,7 +549,7 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) never fails {
         drop ast_scratch_push(x.ast, b.index);
         drop ast_scratch_push(x.ast, t.index);
         drop ast_scratch_push(x.ast, e.index);
-        drop ast_scratch_push(x.ast, (raw stmt_when_invariant(x.ast, s)).index);
+        drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_when_invariant(x.ast, s), f)).index);
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
         pass (raw ast_add_stmt(x.ast, s.kind, s.span, c.index, w.start, w.count, s.payload));
     }
@@ -606,11 +606,50 @@ func:clone_operand_stmt = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fai
     pass (raw ast_add_stmt(x.ast, s.kind, s.span, e.index, s.b, s.c, s.payload));
 };
 
+// A VERIFICATION NODE IS CLONED PER EXPANSION (1.5.1, V-19). Until then every
+// site copied the VerifyId INDEX, so all expansions of a macro shared one node
+// and one condition expression with the template and with each other — and
+// resolution writes an identifier's binding onto the shared node, so the LAST
+// expansion resolved won, and the first expansion's contract named the last
+// expansion's parameter symbol. Invisible while the backend refused the whole
+// family as a rung; a miscompile the day 1.5.3 lowers a contract inside a
+// macro-emitted function. A limit is a leaf (its binding slot is written by
+// resolve, after this), `never fails` and `gives` are markers; a contract and a
+// `joins` clause carry one expression, an invariant a window.
+func:clone_verify = VerifyId(Expander->:x, VerifyId:id, int32:fuel) never fails {
+    if (raw verify_is_none(id)) { pass (raw verify_none()); }
+    VerifyNode:v = raw ast_verify(x.ast, id);
+    if (v.kind == VerifyKind.VerifyContractNode) {
+        ExprId:c = raw clone_expr(x, raw contract_cond(v), fuel);
+        pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, c.index, v.c, v.payload));
+    }
+    if (v.kind == VerifyKind.VerifyJoinsWithin) {
+        ExprId:jd = raw clone_expr(x, raw contract_cond(v), fuel);
+        pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, jd.index, v.c, v.payload));
+    }
+    if (v.kind == VerifyKind.VerifyInvariantNode) {
+        IdSpan:w = raw clone_expr_window(x, raw invariant_start(v),
+                                           raw invariant_count(v), fuel);
+        pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, w.start, w.count, v.payload));
+    }
+    pass (raw ast_add_verify(x.ast, v.kind, v.span, v.a, v.b, v.c, v.payload));
+};
+
+// A PARAMETER IS CLONED WITH ITS `limit` (1.5.1): the flat copy every other
+// slot gets, plus its own verification node, so what resolve writes onto the
+// limit belongs to this expansion alone.
+func:clone_param = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
+    if (raw decl_is_none(id)) { pass (raw decl_none()); }
+    DeclNode:d = raw ast_decl(x.ast, id);
+    VerifyId:lim = raw clone_verify(x, raw param_limit(d), fuel);
+    pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, lim.index, d.c, d.payload));
+};
+
 func:clone_counted = StmtId(Expander->:x, StmtNode:s, int32:fuel) never fails {
     StmtId:b = raw clone_stmt(x, raw stmt_counted_body(s), fuel);
     int32:argc = raw stmt_counted_argc(x.ast, s);
     int32:mark = raw ast_scratch_mark(x.ast);
-    drop ast_scratch_push(x.ast, (raw stmt_counted_invariant(x.ast, s)).index);
+    drop ast_scratch_push(x.ast, (raw clone_verify(x, raw stmt_counted_invariant(x.ast, s), fuel)).index);
     drop ast_scratch_push(x.ast, argc);
     for (int32:i in 0i32...argc) {
         ExprId:a = raw clone_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel);
@@ -688,10 +727,13 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
         // becomes a defect, and this clone would be the worst place to have one.
         int32:i = 0i32;
         while (i < gc) { drop ast_scratch_push(x.ast, (raw fn_generic(x.ast, d, i)).index); i = i + 1i32; }
+        // PARAMETERS AND CONTRACTS ARE CLONED (1.5.1, V-19): a parameter carries
+        // a `limit` and a contract carries a condition, and both are nodes
+        // resolution writes onto — shared, the last expansion resolved wins.
         i = 0i32;
-        while (i < pc) { drop ast_scratch_push(x.ast, (raw fn_param(x.ast, d, i)).index); i = i + 1i32; }
+        while (i < pc) { drop ast_scratch_push(x.ast, (raw clone_param(x, raw fn_param(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
-        while (i < cc) { drop ast_scratch_push(x.ast, (raw fn_contract(x.ast, d, i)).index); i = i + 1i32; }
+        while (i < cc) { drop ast_scratch_push(x.ast, (raw clone_verify(x, raw fn_contract(x.ast, d, i), f)).index); i = i + 1i32; }
         i = 0i32;
         while (i < ac) { drop ast_scratch_push(x.ast, (raw fn_attr(x.ast, d, i)).index); i = i + 1i32; }
         IdSpan:w = raw ast_scratch_commit(x.ast, mark);
@@ -724,6 +766,27 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) never fails {
     // member count. Shipped in 0.6.1 and never fired, because it takes a macro body
     // containing an `impl` to reach, and none of the tests had one.
     if (d.kind == DeclKind.DeclImplDecl) { pass (raw clone_impl(x, d, f)); }
+
+    // A `Rules` BLOCK IN A MACRO BODY (1.5.1): its refinements are verification
+    // nodes and its clauses are expressions, both cloned; the subject is a
+    // type id, copied through like every type. Until 1.5.1 this kind fell to
+    // the fail-closed default below — refused loudly, never silently — and it
+    // gains an arm here because its bodies are typed now (D-220).
+    if (d.kind == DeclKind.DeclRuleDecl) {
+        int32:rn = raw rule_refine_count(x.ast, d);
+        int32:cn = raw rule_clause_count(x.ast, d);
+        int32:mark = raw ast_scratch_mark(x.ast);
+        drop ast_scratch_push(x.ast, rn);
+        drop ast_scratch_push(x.ast, cn);
+        for (int32:ri in 0i32...rn) {
+            drop ast_scratch_push(x.ast, (raw clone_verify(x, raw rule_refine(x.ast, d, ri), f)).index);
+        }
+        for (int32:ci in 0i32...cn) {
+            drop ast_scratch_push(x.ast, (raw clone_expr(x, raw rule_clause(x.ast, d, ci), f)).index);
+        }
+        IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+        pass (raw ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
+    }
 
     // A NESTED INVOCATION IS COPIED THROUGH AND EXPANDS ON THE NEXT ROUND. That is
     // what makes the fixed point a fixed point rather than a single pass: `#outer()`

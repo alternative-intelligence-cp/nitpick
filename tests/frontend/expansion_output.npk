@@ -26,6 +26,7 @@ use "../../src/frontend/token.npk".*;
 use "../../src/frontend/lexer.npk".*;
 use "../../src/frontend/parser.npk".*;
 use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;   // contract_cond (1.5.1)
 use "../../src/frontend/parse_expr.npk".*;
 use "../../src/frontend/macro/expand.npk".*;
 
@@ -151,6 +152,40 @@ func:main = int32(cstring[]:_~argv) {
     // `mod:m;` + the macro + the emitted function.
     if ((raw member_count(@v4)) != 3i32)                            { exit 41i32; }
     if (!(raw has_member(@v4, @it, DeclKind.DeclFunctionDecl, "got"))) { exit 42i32; }
+
+    // --- VERIFICATION NODES ARE CLONED PER EXPANSION (1.5.1, V-19) ----------
+    //
+    // Two invocations of a macro whose function carries an `ensures` must
+    // produce two contract nodes with two DISTINCT condition expressions. The
+    // clone used to copy the VerifyId index, so both expansions shared one
+    // condition with the template — and resolution writes a binding onto the
+    // shared node, so the last expansion resolved won. Nothing about the
+    // program was ill-typed; only its meaning was wrong, in the second copy.
+    Ex:v5 = raw expanded(
+        "mod:m; macro:mkg = () { func:g = int32(int32:a) ensures result > 0i32 { pass a; }; }; #mkg(); #mkg();",
+        @it);
+    if ((raw diaglist_count(@v5.diags)) != 0i64)                    { exit 60i32; }
+    // `mod:m;` + the macro + BOTH emitted functions.
+    if ((raw member_count(@v5)) != 4i32)                            { exit 61i32; }
+    int32:first_cond = 0i32;
+    int32:second_cond = 0i32;
+    int32:seen = 0i32;
+    DeclNode:m5 = raw ast_decl(@v5.ast, v5.root);
+    int32:mc5 = raw item_member_count(@v5.ast, m5);
+    for (int32:mi in 0i32...mc5) {
+        DeclNode:md = raw ast_decl(@v5.ast, raw item_member(@v5.ast, m5, mi));
+        if (md.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw fn_contract_count(@v5.ast, md)) == 1i32) {
+                VerifyNode:cv = raw ast_verify(@v5.ast, raw fn_contract(@v5.ast, md, 0i32));
+                if (seen == 0i32) { first_cond = (raw contract_cond(cv)).index; }
+                if (seen == 1i32) { second_cond = (raw contract_cond(cv)).index; }
+                seen = seen + 1i32;
+            }
+        }
+    }
+    if (seen != 2i32)                                                { exit 62i32; }
+    if (first_cond == 0i32)                                          { exit 63i32; }
+    if (first_cond == second_cond)                                   { exit 64i32; }
 
     wild_release_all();
 

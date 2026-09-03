@@ -266,6 +266,30 @@ func:main = int32(cstring[]:_~argv) {
         if (!(raw string_eq(raw code0(@e3), raw TYPE_RESULT_RETURN()))) { exit 63i32; }
     }
 
+    // --- 1.5.1 (D-221): loop invariants, `prove` and `assert_static` are
+    // propositions, typed under the contract rules and held to `bool`. The
+    // walk `fx` drives is `check_stmt`, which is where the loop arms and the
+    // two statements live; `requires`/`ensures` and `Rules` are typed by
+    // `check_function`/`check_decl` and exercised by the rejection and accept
+    // suites instead.
+    {
+        Fx:p1 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t >= 0i32 { t = t + 1i32; } pass t; };", @it);
+        if (raw errs(@p1) != 0i64)                                 { exit 110i32; }
+        Fx:p2 = raw fx("func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t { t = t + 1i32; } pass t; };", @it);
+        if (raw errs(@p2) != 1i64)                                 { exit 111i32; }
+        if (!(raw string_eq(raw code0(@p2), raw TYPE_MISMATCH()))) { exit 112i32; }
+        Fx:p3 = raw fx("func:f = int32(int32:n) { prove(n); pass n; };", @it);
+        if (raw errs(@p3) != 1i64)                                 { exit 113i32; }
+        // `$` inside a counted loop's invariant is the counter, typed there.
+        Fx:p4 = raw fx("func:f = int32(int32:n) { till (4i64, 1i64) invariant $ >= 0i64 { n = n + 1i32; } pass n; };", @it);
+        if (raw errs(@p4) != 0i64)                                 { exit 114i32; }
+        // An outcome operator inside an invariant is the contract rule's
+        // refusal, not a type mismatch (D-240: one mistake, one report).
+        Fx:p5 = raw fx("func:g = int32(int32:v) { pass v; }; func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant (g(t) ?| 0i32) >= 0i32 { t = t + 1i32; } pass t; };", @it);
+        if (raw errs(@p5) != 1i64)                                 { exit 115i32; }
+        if (!(raw string_eq(raw code0(@p5), raw TYPE_CONTRACT_RULES()))) { exit 116i32; }
+    }
+
     // --- THE WALK IS TOTAL --------------------------------------------------
     // The mechanical half of the check, and the counterpart to `expr_shape`'s
     // table and `resolve_audit`. It caught nothing when it was written because

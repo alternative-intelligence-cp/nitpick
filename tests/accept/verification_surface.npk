@@ -1,0 +1,59 @@
+// D-220/D-221 (1.5.1): every legal shape of the verification surface, in full
+// silence -- the counterweight to `rules_types.npk` and `contract_types.npk`
+// (the 0.5 lesson: over-refusal is only caught by a program that must stay
+// silent). A `Rules` block over `$`, a refinement, a `limit` on a parameter
+// and on a local, `requires`/`ensures` with `result` and with `raw` calls to a
+// `never fails` helper, a never-fails builtin called bare, `is_err` as a
+// predicate, invariants on every loop form (`$` inside a counted one),
+// `prove` and `assert_static`. Frontend only: the backend still refuses the
+// family as a rung until 1.5.2/1.5.3 lower it.
+mod:verification_surface;
+
+Rules<int32>:r_pos = { $ > 0i32 };
+Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };
+Rules<tbb32>:r_sound = { !is_err($) };
+
+func:helper = int32(int32:v) never fails { pass v; };
+
+func:clamp = int32(limit<r_pos> int32:n)
+    requires n < 50i32
+    ensures result > 0i32
+{
+    limit<r_small> int32:m = n;
+    int32:i = 0i32;
+    while (i < m) invariant i >= 0i32, m > 0i32 {
+        i = i + 1i32;
+    }
+    for (int64:k in 0i64...3i64) invariant k >= 0i64 { i = i + 1i32; }
+    till (4i64, 1i64) invariant $ >= 0i64 { i = i + 1i32; }
+    when (i > 0i32) invariant i >= 0i32 { i = i - 1i32; } then { i = 0i32; } end { i = 1i32; }
+    prove(i >= 0i32);
+    assert_static(1i32 == 1i32);
+    pass m;
+};
+
+func:calls = int32(int32:a) requires (raw helper(a)) >= 0i32 ensures result == (raw helper(a)) {
+    pass a;
+};
+
+func:sound = int32(tbb32:t) requires !is_err(t) { pass 1i32; };
+
+func:view = int32(int8->:p, int64:n) requires (string_from_bytes(p, n)).len == n { pass 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (BadStep) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (IntOverflow) { exit 1i32; },
+        (TbbErr) { exit 1i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 1i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

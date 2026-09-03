@@ -297,3 +297,24 @@ pub func:TYPE_CHANNEL_ELEMENT = string() never fails { pass "NITPICK-TYPE-057"; 
 // the kind, two families never meet, and an integer is not a member. One
 // code for one rule with several ways to fail it; the message names which.
 pub func:TYPE_FLAGS_RULES = string() never fails { pass "NITPICK-TYPE-058"; };
+
+// 1.5.1 (D-220): the `limit`/`Rules` TYPE rules — a limited binding or
+// parameter whose declared type is not the rule's subject (by IDENTITY: never a
+// widening, a wrap, or a type parameter — the check runs at the binding's own
+// write points on the binding's own value), or a refinement whose subject
+// differs from the refining rule's (a refinement is a conjunction over ONE
+// subject). One code for one rule with two ways to fail it; the message shows
+// both types.
+pub func:TYPE_RULES_SUBJECT = string() never fails { pass "NITPICK-TYPE-059"; };
+
+// 1.5.1 (D-221): the CONTRACT-EXPRESSION rules — what a `requires`, an
+// `ensures`, an `invariant`, a `Rules` clause, a `prove` or an `assert_static`
+// may contain. A contract is a proposition evaluable anywhere: it does not
+// suspend (`await`), consume (`move`), decide an outcome (`relay`, `?!`, `?|`,
+// `drop`, a bare may-fail call), run statements (a `pick` expression), or call
+// anything but a NAMED function — a user function under `raw` (the licence
+// checks `never fails`), or a never-fails builtin bare; a function value, a
+// field or a `dyn` is refused because the verifier encodes a call it can NAME
+// and never one it cannot. One code, several ways to fail it; the message
+// names which. (`is_err` is a predicate, not an outcome, and is admitted.)
+pub func:TYPE_CONTRACT_RULES = string() never fails { pass "NITPICK-TYPE-060"; };

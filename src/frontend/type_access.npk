@@ -49,7 +49,15 @@ pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
     if (n.kind == ExprKind.ExprIndexExpr)      { pass (raw type_index(e, n)); }
     if (n.kind == ExprKind.ExprCallExpr)       { pass (raw type_call(e, id, n)); }
-    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (raw type_method_call(e, id, n)); }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        int32:mt = raw type_method_call(e, id, n);
+        // INSIDE A CONTRACT the call rule is asked once the receiver's type
+        // and the resolved method are recorded (1.5.1, D-221).
+        if (e.contract_ctx != 0i32) {
+            if (raw contract_method_refused(e, id, n)) { pass 0i32; }
+        }
+        pass mt;
+    }
     pass 0i32;
 };
 
@@ -592,6 +600,16 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // `extract::<int32>(c)` checked as though the turbofish were not there and
     // `extract(c)` returned `T` rather than the type it was called with.
     DeclNode:d = raw callee_decl(e, n);
+    // A CALL INSIDE A CONTRACT (1.5.1, D-221): a NAMED callee only — a user
+    // function under `raw` (its call is a `Result`; `raw` is the licensed
+    // unwrap, and the licence is what checks `never fails`), or a never-fails
+    // builtin bare (D-201). A function value, a field, a `dyn`: refused,
+    // because the obligation walk encodes a call it can NAME as an
+    // uninterpreted function per known symbol, which is sound, and a call to
+    // "whatever this pointer is" is not.
+    if (e.contract_ctx != 0i32) {
+        if (raw contract_call_refused(e, id, n, d)) { pass 0i32; }
+    }
     if (d.kind == DeclKind.DeclFunctionDecl) {
         // AN `async` CALLEE HAS NO DIRECT SYMBOL (D-177): the machine runs
         // only under `await`, or as the spawn form `drop f(…)` (D-058). A
@@ -1089,6 +1107,65 @@ func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) never fails {
     }
     DeclId:did = DeclId{ index: s.origin };
     pass (raw ast_decl(e.ast, did));
+};
+
+// THE CONTRACT CALL RULE (1.5.1, D-221) for a direct call — see `type_call`.
+// True when it reported; the caller answers the silent 0.
+func:contract_call_refused = bool(ExprTyper->:e, ExprId:id, ExprNode:n, DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        if (id.index == e.contract_raw_operand) { pass false; }
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a call in a contract is spelled `raw f(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so — a bare call is a `Result`, which is not a proposition",
+            n.span));
+        pass true;
+    }
+    ExprNode:cn = raw ast_expr(e.ast, raw expr_callee(n));
+    if (cn.kind == ExprKind.ExprIdentifierExpr) {
+        if (cn.a == 0i32) {
+            string:bn = raw intern_get(e.interns, cn.payload =>! int32);
+            if (raw is_builtin_name(bn)) {
+                if (raw builtin_never_fails(bn)) { pass false; }
+                string:b1 = string_concat("`", bn);
+                string:b2 = string_concat(b1,
+                    "` may fail, and a contract calls only `never fails` functions (D-221): a proposition has no error path");
+                discard(raw te_error(e, raw TYPE_CONTRACT_RULES(), move(b2), n.span));
+                pass true;
+            }
+            // An unresolved name: resolution already said so.
+            pass false;
+        }
+    }
+    discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+        "a contract calls only NAMED functions (D-221): this callee is a value — a function pointer, a field, a `dyn` — or a declaration of another kind, and the verifier can encode a call it can name, never one it cannot",
+        n.span));
+    pass true;
+};
+
+// THE SAME RULE FOR A METHOD CALL (1.5.1, D-221), asked after the call is
+// typed, when the receiver's type and the resolved method are recorded: a
+// `dyn` receiver dispatches at run time (refused), and a resolved user method
+// must be under `raw` like any user function. A checker-typed method on a
+// builtin receiver records no callee and passes here; 1.5.1 step 4's purity
+// column is what sorts those.
+func:contract_method_refused = bool(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    int32:rt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+    if (rt != 0i32) {
+        if ((raw type_kind(e.types, rt)) == (raw TY_DYN())) {
+            discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "a contract calls only NAMED functions (D-221): a call through a `dyn` dispatches at run time, and the verifier can encode a call it can name, never one it cannot",
+                n.span));
+            pass true;
+        }
+    }
+    int32:md = raw exprtypes_callee(e.expr_types, id);
+    if (md != 0i32) {
+        if (id.index == e.contract_raw_operand) { pass false; }
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a method call in a contract is spelled `raw recv.method(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so",
+            n.span));
+        pass true;
+    }
+    pass false;
 };
 
 // --- a generic call (TRAITS_REFERENCE 3.3, D-064 section 3) -------------------------------

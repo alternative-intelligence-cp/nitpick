@@ -1,0 +1,60 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 43
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 44
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 45
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 46
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 49
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 50
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 51
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 52
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 53
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 54
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 55
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 56
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 57
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 58
+//
+// D-221 (1.5.1): a contract expression TYPES. Every proposition is a `bool`
+// (TYPE-007, the sentence every `if` gets) -- `requires`, `ensures` (where
+// `result` is the SUCCESS value), each `invariant` conjunct, `prove` and
+// `assert_static`. And a contract may not contain what a proposition cannot
+// evaluate anywhere (TYPE-060, one code, the message names which).
+mod:contract_types;
+error:E1;
+func:helper = int32(int32:v) never fails { pass v; };
+func:mayfail = int32(int32:v) { if (v < 0i32) { fail E1; } pass v; };
+async func:later = int32(int32:v) { pass v; };
+func:c_requires = int32(int32:a) requires a + 1i32 { pass a; };
+func:c_ensures = int32(int32:a) ensures result { pass a; };
+func:c_invariant = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t { t = t + 1i32; } pass t; };
+func:c_prove = int32(int32:a) { prove(a); pass a; };
+func:c_assert = int32(int32:a) { assert_static(1i32); pass a; };
+// What a contract may not contain: a suspension, a consumption, an outcome
+// operator, a bare user call, a may-fail builtin, an indirect callee, a `pick`.
+async func:c_await = int32(int32:a) requires (await later(a)) > 0i32 { pass a; };
+func:c_move = int32(string:s) requires (move(s)).len > 0i64 { pass 1i32; };
+func:c_relay = int32(int32:a) requires (relay mayfail(a)) > 0i32 { pass a; };
+func:c_trap = int32(int32:a) requires (mayfail(a) ?! E1) > 0i32 { pass a; };
+func:c_default = int32(int32:a) requires (mayfail(a) ?| 0i32) > 0i32 { pass a; };
+func:c_drop = int32(int32:a) requires drop helper(a) { pass a; };
+func:c_bare = int32(int32:a) requires helper(a) > 0i32 { pass a; };
+func:c_mayfail = int32(int32:a) requires to_cstring("x") { pass a; };
+func:c_indirect = int32(func int32(int32) never fails:f, int32:a) requires (raw f(a)) > 0i32 { pass a; };
+func:c_pick = int32(int32:a) requires pick (a) { (0i32) { give true; }, (*) { give false; } } { pass a; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

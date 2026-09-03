@@ -111,6 +111,19 @@ pub struct:ExprTyper = {
     // own fault.
     int32:counted_depth;
 
+    // THE CONTRACT CONTEXT (1.5.1, D-221): nonzero — one of the CTX_* values
+    // — while a `requires`, an `ensures`, an `invariant`, a `Rules` clause, a
+    // `prove` or an `assert_static` is being typed, so the expression walk can
+    // refuse what a proposition may not contain, by kind, in ONE place
+    // (`contract_refuses`). `rules_subject` is `$`'s type inside a `Rules`
+    // body and 0 elsewhere, where `$` is the counted loop's counter.
+    // `contract_raw_operand` is the call a `raw` is unwrapping, so a call in a
+    // contract can tell whether it was spelled `raw f(…)` — the one call form
+    // a contract admits for a user function (the `await_operand` shape).
+    int32:contract_ctx;
+    int32:rules_subject;
+    int32:contract_raw_operand;
+
     // THE MODULE'S `impl` BLOCKS. A method call resolves through this rather than
     // through the scope, because an `impl` declares nothing at module scope
     // (0.3.1, deferring the question to here) — so before 0.4.6 the only method
@@ -183,6 +196,8 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
                              counted_depth: 0i32,
+                             contract_ctx: 0i32, rules_subject: 0i32,
+                             contract_raw_operand: 0i32,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -1932,6 +1947,17 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
 func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:sym = n.a;
     if (sym == 0i32) {
+        // `result` INSIDE `ensures` IS THE SUCCESS VALUE (1.5.1, D-221): the
+        // resolver leaves the name unbound there on purpose. This
+        // name-in-context arm is 1.5.1 step 2's; step 3 replaces it with the
+        // keyword's own node (`ExprResultValueExpr`, S-18), which is what
+        // 1.5.3's encoder reads.
+        if (e.contract_ctx == (raw CTX_ENSURES())) {
+            if (raw string_eq(raw intern_get(e.interns, (raw expr_name(n)) =>! int32),
+                              "result")) {
+                pass e.fn_success;
+            }
+        }
         // A bare-name builtin resolves to no symbol and that is correct
         // (AST_REFERENCE 3.3). Its signature arrives with call checking.
         pass 0i32;
@@ -3032,8 +3058,62 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
     pass t;
 };
 
+// THE CONTRACT CONTEXTS (1.5.1, D-221). Five, because the rules differ by
+// what the proposition is ABOUT: `result` exists under ENSURES alone (and
+// `old`, 1.5.1 step 3), `$` is the subject under RULES, and the emitter's
+// obligation kinds follow the same split. Zero is "not a contract".
+pub func:CTX_REQUIRES = int32() never fails  { pass 1i32; };
+pub func:CTX_ENSURES = int32() never fails   { pass 2i32; };
+pub func:CTX_INVARIANT = int32() never fails { pass 3i32; };
+pub func:CTX_RULES = int32() never fails     { pass 4i32; };
+pub func:CTX_PROVE = int32() never fails     { pass 5i32; };
+
+// WHAT A CONTRACT MAY NOT CONTAIN (1.5.1, D-221), in one place, by kind. A
+// contract is a proposition evaluable anywhere — at a call site the caller
+// never wrote, at an entry the callee never sees, in a solver that runs no
+// code at all — so it does not suspend, consume, decide an outcome, or run
+// statements. Refused before any arm types the node, and the caller answers
+// the silent 0 so no second sentence follows (D-240). `is_err` is a PREDICATE
+// on a twisted value, not an outcome, and passes.
+func:contract_refuses = bool(ExprTyper->:e, ExprNode:n) never fails {
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a contract does not suspend (D-221): `await` cannot appear in a `requires`, `ensures`, `invariant`, `Rules` clause, `prove` or `assert_static` — a proposition is evaluated where no executor runs",
+            n.span));
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a contract does not consume (D-221): `move` cannot appear in one — a proposition reads its values and changes nothing",
+            n.span));
+        pass true;
+    }
+    bool:outcome = n.kind == ExprKind.ExprRelayExpr;
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { outcome = true; }
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr)     { outcome = true; }
+    if (n.kind == ExprKind.ExprDropExpr)           { outcome = true; }
+    if (outcome) {
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a contract is a proposition, not an outcome (D-221): `relay`, `?!`, `?|` and `drop` decide what happens to an error, and a contract calls only `never fails` functions — spelled `raw f(…)`, whose error path does not exist",
+            n.span));
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a contract holds no statements (D-221): a `pick` expression's arms are statement blocks; write the case analysis as an expression (`is (c) : a : b`, `&&`, `||`)",
+            n.span));
+        pass true;
+    }
+    pass false;
+};
+
 func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(e.ast, id);
+
+    // INSIDE A CONTRACT, THE FORBIDDEN KINDS ARE REFUSED FIRST (1.5.1).
+    if (e.contract_ctx != 0i32) {
+        if (raw contract_refuses(e, n)) { pass 0i32; }
+    }
 
     if (n.kind == ExprKind.ExprIntLiteral)   { pass (raw type_numeric_literal(e, n, "42i32")); }
     if (n.kind == ExprKind.ExprFloatLiteral) { pass (raw type_numeric_literal(e, n, "1.5f64")); }
@@ -3049,7 +3129,13 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     }
 
     // `$` inside `loop`/`till` — a counter with a type and no declaration.
+    // INSIDE A `Rules` BODY, `$` IS THE SUBJECT (1.5.1, D-220): the same node,
+    // the same meaning — the value under consideration — typed as the rule's
+    // subject. The two constructs cannot nest (a `Rules` body holds
+    // expressions; a loop is a statement), so nothing has to remember which
+    // `$` this is.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
+        if (e.rules_subject != 0i32) { pass e.rules_subject; }
         if (e.counted_depth == 0i32) {
             pass (raw te_error(e, raw TYPE_UNKNOWN(),
                 "`$` is the innermost counted loop's counter, and no `loop` or `till` encloses this",
@@ -3098,7 +3184,18 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         ExprNode:ropn = raw ast_expr(e.ast, ropid);
         // typed FIRST: the licence reads what typing records (the callee decl,
         // the callee's function type), so the order is load-bearing
+        // INSIDE A CONTRACT the call being unwrapped is recorded (1.5.1,
+        // D-221) so `type_call` can tell a `raw f(…)` from a bare `f(…)` —
+        // the one call form a contract admits for a user function. A refused
+        // operand answered 0 with its own sentence, and the licence is not
+        // asked a second question about it (D-240).
+        int32:cro_saved = e.contract_raw_operand;
+        e.contract_raw_operand = ropid.index;
         int32:rres = raw type_unwrap(e, n, "raw");
+        e.contract_raw_operand = cro_saved;
+        if (e.contract_ctx != 0i32) {
+            if (rres == 0i32) { pass 0i32; }
+        }
         int32:rlic = raw unwrap_licence_of(e, ropn, ropid);
         if (rlic == 2i32) {
             discard(raw te_error(e, raw TYPE_RAW_UNLICENSED(),

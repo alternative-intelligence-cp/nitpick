@@ -81,11 +81,13 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop check_cond(e, s);
+        drop check_invariants(e, raw stmt_while_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_body(e.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop check_cond(e, s);
+        drop check_invariants(e, raw stmt_when_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_when_body(e.ast, s));
         drop check_stmt(e, raw stmt_when_then(e.ast, s));
         drop check_stmt(e, raw stmt_when_end(e.ast, s));
@@ -105,6 +107,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
 
     if (s.kind == StmtKind.StmtForStmt) {
         drop check_for(e, s);
+        drop check_invariants(e, raw stmt_for_invariant(e.ast, s));
         drop check_stmt(e, raw stmt_for_body(e.ast, s));
         pass NIL;
     }
@@ -268,9 +271,22 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         pass NIL;
     }
 
-    // One expression in slot `a`, typed for its own sake: `trap`, `give`,
-    // `prove`, `assert_static`. A mistake inside one is worth reporting even
-    // where the value goes nowhere.
+    // `prove(e)` AND `assert_static(e)` ARE PROPOSITIONS (1.5.1, D-221): a
+    // `bool`, under the contract rules. Whether an `assert_static` FOLDS is
+    // 1.5.4's (the frontend fold); whether a `prove` HOLDS is 1.5.4's
+    // obligation. Until 1.5.1 both fell to the "typed for its own sake" arm
+    // below and an operand of any type was accepted.
+    if (s.kind == StmtKind.StmtProveStmt) {
+        drop check_proposition(e, raw stmt_expr(s), raw CTX_PROVE());
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssertStaticStmt) {
+        drop check_proposition(e, raw stmt_expr(s), raw CTX_PROVE());
+        pass NIL;
+    }
+
+    // One expression in slot `a`, typed for its own sake: `trap`, `give`. A
+    // mistake inside one is worth reporting even where the value goes nowhere.
     if (raw stmt_carries_expr(s.kind)) {
         discard(raw type_of_expr(e, raw stmt_expr(s)));
         pass NIL;
@@ -564,6 +580,8 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
         discard(raw type_of_expr(e, raw stmt_counted_arg(e.ast, s, i)));
     }
     e.counted_depth = e.counted_depth + 1i32;
+    // The invariant may name `$`, so it is typed inside the counter's window.
+    drop check_invariants(e, raw stmt_counted_invariant(e.ast, s));
     drop check_stmt(e, raw stmt_counted_body(s));
     e.counted_depth = e.counted_depth - 1i32;
     pass NIL;
@@ -578,6 +596,98 @@ func:check_cond = NIL(ExprTyper->:e, StmtNode:s) never fails {
     pass NIL;
 };
 
+// --- the verification surface (1.5.1, D-220/D-221) ---------------------------------------
+
+// A PROPOSITION: typed under its contract context and held to `bool` — the
+// sentence every `if` gets. 0 is "already reported": stay silent.
+pub func:check_proposition = NIL(ExprTyper->:e, ExprId:c, int32:ctx) never fails {
+    if (raw expr_is_none(c)) { pass NIL; }
+    int32:saved = e.contract_ctx;
+    e.contract_ctx = ctx;
+    int32:t = raw type_of_expr(e, c);
+    e.contract_ctx = saved;
+    if (t == 0i32) { pass NIL; }
+    ExprNode:cn = raw ast_expr(e.ast, c);
+    drop require_bool(e, t, cn.span);
+    pass NIL;
+};
+
+// A loop's invariants: each conjunct a proposition. The reserved NONE handle
+// is "no clause", a value rather than an absence to test for.
+pub func:check_invariants = NIL(ExprTyper->:e, VerifyId:inv) never fails {
+    if (raw verify_is_none(inv)) { pass NIL; }
+    VerifyNode:v = raw ast_verify(e.ast, inv);
+    int32:n = raw invariant_count(v);
+    for (int32:i in 0i32...n) {
+        ExprId:c = ExprId{ index: raw ast_id_at(e.ast, raw invariant_start(v), i) };
+        drop check_proposition(e, c, raw CTX_INVARIANT());
+    }
+    pass NIL;
+};
+
+// THE SUBJECT OF A `Rules` DECLARATION, resolved in its home scope — SILENTLY.
+// The declaration's own arm in `check_decl` is the one reporter of a broken
+// subject (a `Rules<Nope>`); every `limit` that names the rule resolves the
+// subject again against a scratch diagnostic list, and a subject that does not
+// resolve answers 0 here, so one mistake is reported once (D-240).
+func:rules_subject_type = int32(ExprTyper->:e, DeclId:rd) never fails {
+    DeclNode:dn = raw ast_decl(e.ast, rd);
+    if (dn.kind != DeclKind.DeclRuleDecl) { pass 0i32; }
+    int32:home = raw symtab_home_scope(e.tab, rd.index, e.scope);
+    DiagList:scratch = raw diaglist_init();
+    TypeResolver:rr = raw tyres_init(e.ast, e.types, e.tab, e.interns, @scratch, e.instances);
+    int32:subject = raw resolve_type(@rr, raw rule_subject(dn), home);
+    if ((raw diaglist_count(@scratch)) != 0i64) { pass 0i32; }
+    pass subject;
+};
+
+// A LIMITED BINDING'S TYPE IS THE RULE'S SUBJECT, BY IDENTITY (1.5.1, D-220):
+// the check runs at the binding's own write points on the binding's own
+// value, so a rule over another type would need a conversion the author did
+// not write. No widening, no `fits`, no `Optional` wrap, no type parameter.
+pub func:check_limit_subject = NIL(ExprTyper->:e, VerifyId:lim, int32:declared, Span:at) never fails {
+    if (raw verify_is_none(lim)) { pass NIL; }
+    if (declared == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, declared)) { pass NIL; }
+    VerifyNode:lv = raw ast_verify(e.ast, lim);
+    DeclId:rd = raw limit_target(lv);
+    if (raw decl_is_none(rd)) { pass NIL; }     // resolution already refused it
+    int32:subject = raw rules_subject_type(e, rd);
+    if (subject == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, subject)) { pass NIL; }
+    if (subject == declared) { pass NIL; }
+    string:m1 = string_concat("`limit<", raw intern_get(e.interns, raw limit_rule(lv)));
+    string:m2 = string_concat(m1, ">` constrains a `");
+    string:m3 = string_concat(m2, raw type_display(e.types, e.interns, subject));
+    string:m4 = string_concat(m3, "`, and this binding is a `");
+    string:m5 = string_concat(m4, raw type_display(e.types, e.interns, declared));
+    string:m6 = string_concat(m5,
+        "` (D-220): a rule checks the binding's own value at every write, so the two are one type — write the concrete type the rule names");
+    discard(raw te_error(e, raw TYPE_RULES_SUBJECT(), move(m6), at));
+    pass NIL;
+};
+
+// A REFINEMENT NAMES A RULE OVER THE SAME SUBJECT (1.5.1, D-220): a refinement
+// is a conjunction, and a conjunction has one subject.
+func:check_refine_subject = NIL(ExprTyper->:e, VerifyId:ref, int32:subject) never fails {
+    VerifyNode:rv = raw ast_verify(e.ast, ref);
+    DeclId:rd = raw limit_target(rv);
+    if (raw decl_is_none(rd)) { pass NIL; }     // resolution already refused it
+    int32:theirs = raw rules_subject_type(e, rd);
+    if (theirs == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, theirs)) { pass NIL; }
+    if (theirs == subject) { pass NIL; }
+    string:m1 = string_concat("`limit<", raw intern_get(e.interns, raw limit_rule(rv)));
+    string:m2 = string_concat(m1, ">` refines a rule over `");
+    string:m3 = string_concat(m2, raw type_display(e.types, e.interns, theirs));
+    string:m4 = string_concat(m3, "` from a rule over `");
+    string:m5 = string_concat(m4, raw type_display(e.types, e.interns, subject));
+    string:m6 = string_concat(m5,
+        "` (D-220): a refinement is a conjunction over ONE subject, so the two rules constrain one type");
+    discard(raw te_error(e, raw TYPE_RULES_SUBJECT(), move(m6), rv.span));
+    pass NIL;
+};
+
 // `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
@@ -586,6 +696,10 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     TypeResolver:r = raw etyper_resolver(e);
     TypeId:ann = raw stmt_decl_type(s);
     int32:want = raw resolve_type(@r, ann, e.scope);
+
+    // A LOCAL'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
+    // declared type, by identity.
+    drop check_limit_subject(e, raw stmt_decl_limit(e.ast, s), want, s.span);
 
     // AN OWNING DECL IS RECORDED FOR THE SUSPEND WALK (D-183, 1.2.4b): its
     // drop at scope exit is a use the source text does not show, so a local
@@ -1072,6 +1186,34 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
         pass NIL;
     }
 
+    // A `Rules` BLOCK TYPES EAGERLY (1.5.1, D-220): its subject resolves (a
+    // broken one refuses even when nothing uses the rule — the `unit:`
+    // precedent above), every clause is a proposition over `$` of that type,
+    // and every refinement names a rule over the SAME subject. Nothing typed
+    // a `Rules` body before 1.5.1: `check_decl` had no arm for the kind, so a
+    // clause of any type — or none — was accepted in silence.
+    if (d.kind == DeclKind.DeclRuleDecl) {
+        TypeResolver:rr = raw etyper_resolver(e);
+        int32:subject = raw resolve_type(@rr, raw rule_subject(d), scope);
+        if (subject != 0i32) {
+            if (!(raw type_is_invalid(e.types, subject))) {
+                int32:saved_subject = e.rules_subject;
+                e.rules_subject = subject;
+                int32:rcn = raw rule_clause_count(e.ast, d);
+                for (int32:rci in 0i32...rcn) {
+                    drop check_proposition(e, raw rule_clause(e.ast, d, rci),
+                                           raw CTX_RULES());
+                }
+                e.rules_subject = saved_subject;
+                int32:rrn = raw rule_refine_count(e.ast, d);
+                for (int32:rri in 0i32...rrn) {
+                    drop check_refine_subject(e, raw rule_refine(e.ast, d, rri), subject);
+                }
+            }
+        }
+        pass NIL;
+    }
+
     // A NESTED `mod:name = { … };` IS CHECKED, in the scope its name opened.
     //
     // NOTHING CHECKED IT AT ALL until now. The resolver descends into a nested
@@ -1486,6 +1628,43 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
             }
             npi = npi + 1i32;
         }
+    }
+
+    // THE CONTRACTS ARE TYPED (1.5.1, D-221): `requires` and `ensures` are
+    // propositions — `bool`, evaluable anywhere — and `ensures` may name
+    // `result`, the SUCCESS value. Typed before the body, under the
+    // function's own generic scope, so a contract over a generic parameter
+    // types under the binding the signature did. `acquires` is the lock
+    // analysis's (a level, folded there), `joins` was typed above, and the
+    // marker clauses carry no expression. Until 1.5.1 these were "the
+    // verifier's, typed nowhere" — the sentence above the `joins` loop —
+    // which is how a contract of any type at all was accepted.
+    int32:cci = 0i32;
+    while (cci < (raw fn_contract_count(e.ast, d))) {
+        VerifyNode:ccv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, cci));
+        if (ccv.kind == VerifyKind.VerifyContractNode) {
+            int32:ck = raw contract_kind(ccv);
+            int32:cctx = 0i32;
+            if (ck == (raw CONTRACT_REQUIRES())) { cctx = raw CTX_REQUIRES(); }
+            if (ck == (raw CONTRACT_ENSURES()))  { cctx = raw CTX_ENSURES(); }
+            if (cctx != 0i32) {
+                drop check_proposition(e, raw contract_cond(ccv), cctx);
+            }
+        }
+        cci = cci + 1i32;
+    }
+    // A PARAMETER'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
+    // parameter's own type, by identity. A type parameter is never it.
+    int32:lpi = 0i32;
+    while (lpi < (raw fn_param_count(e.ast, d))) {
+        DeclNode:lpd = raw ast_decl(e.ast, raw fn_param(e.ast, d, lpi));
+        VerifyId:lpl = raw param_limit(lpd);
+        if (!(raw verify_is_none(lpl))) {
+            TypeResolver:lpr = raw etyper_resolver(e);
+            int32:lpt = raw resolve_type(@lpr, raw param_type(lpd), scope);
+            drop check_limit_subject(e, lpl, lpt, lpd.span);
+        }
+        lpi = lpi + 1i32;
     }
 
     // A TRAIT METHOD WITH NO BODY IS A DECLARATION, not an empty function. The

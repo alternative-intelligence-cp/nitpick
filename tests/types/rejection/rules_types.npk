@@ -1,0 +1,31 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 18
+// expect-error: NITPICK-TYPE-059
+// expect-error-at: 20
+// expect-error: NITPICK-TYPE-059
+// expect-error-at: 23
+// expect-error: NITPICK-TYPE-059
+// expect-error-at: 27
+// expect-error: NITPICK-TYPE-059
+// expect-error-at: 29
+//
+// D-220 (1.5.1): a `Rules` block TYPES. Every clause is a proposition over `$`,
+// the subject (TYPE-007, the sentence every `if` gets); a limited binding's or
+// parameter's declared type is the rule's subject BY IDENTITY, never a widening
+// or a type parameter; and a refinement names a rule over the same subject.
+mod:rules_types;
+Rules<int32>:r_pos = { $ > 0i32 };
+Rules<int32>:r_num = { $ + 1i32 };
+Rules<int64>:r_wide = { $ > 0i64 };
+Rules<int64>:r_mixed = { limit<r_pos>, $ < 9i64 };
+
+func:local_wrong = int32(int32:v) {
+    limit<r_pos> int64:w = v => int64;
+    pass (w =>! int32);
+};
+// The parameter's type is the subject, by identity; a type parameter is never it.
+func:param_wrong = int32(limit<r_pos> int64:n) { pass (n =>! int32); };
+// (a generic parameter cannot carry a rule over a concrete type)
+func:generic_wrong<T> = T(limit<r_pos> T:x) { pass x; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };
