@@ -2,10 +2,22 @@
 
 A safety-critical systems language and its self-hosted compiler.
 
-**Status: early, and building.** The specification set is complete. The frontend
-is real Nitpick source that lexes, parses, resolves and type-checks — cycles
-0.0–0.3 are done and the type system is in progress. **Nothing is emitted yet**:
-Phase A's artifact is a checker, and code generation begins in cycle 0.7.
+> **Looking for the C/C++ prototype that used to live at this address?** It is
+> archived, fully browsable, as
+> [`nitpick-prototype`](https://github.com/alternative-intelligence-cp/nitpick-prototype),
+> with its documentation at
+> [`nitpick-prototype-docs`](https://github.com/alternative-intelligence-cp/nitpick-prototype-docs).
+> This repository is its successor — a fresh line that starts at version `0.0`,
+> written in Nitpick and compiled by itself. A prototype clone that pulls from
+> here will refuse to merge unrelated histories, which is the intended outcome.
+
+**Status: self-hosting (cycle 1.4 of the plan, Phase C).** The specification set
+is complete and every design decision is recorded with its reasoning. The
+compiler is Nitpick source, built by a committed snapshot of its own emission
+(`bootstrap/seed/`) and rebuilding itself byte-identically on every full test
+run; the runtime floor is hand-written LLVM IR and nothing else is linked. The
+build and test driver `npkg` is Nitpick too. What comes next is verification
+(cycle 1.5) — the reason the language exists in this form.
 
 ## What it is
 
@@ -37,10 +49,12 @@ See [`meta/LAYOUT.md`](meta/LAYOUT.md) for the tree and the reasoning behind it.
 | Path | Contents |
 |---|---|
 | `src/` | the compiler — Nitpick source only |
-| `bootstrap/` | the throwaway bootstrap seed and its generator |
-| `tests/` | conformance, rejection, and per-cycle suites |
+| `bootstrap/` | the committed bootstrap snapshot (`seed/`), the retired generator, and the Python harness that runs until `npkg` parity is proven |
+| `tests/` | every suite `nitpick.toml` declares — conformance, the rejection suites by stage, the real-backend programs, acceptance |
 | `meta/specs/` | the language specification |
 | `meta/roadmap/` | the plan, in numbered cycles |
+| `npkg/` | the build and test driver, in Nitpick |
+| `runtime/` | `npkrt.ll`, the runtime floor — hand-written LLVM IR |
 
 ## Specification
 

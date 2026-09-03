@@ -223,7 +223,7 @@ that was verified, and §6's fixpoint check is impossible without it.
 
 ## 6. The bootstrap ladder
 
-The prototype builds with **CMake**, which is barred here, and nitpick-native
+The prototype builds with **CMake**, which is barred here, and this compiler
 cannot build itself before it can compile anything.
 
 | Stage | What it is | Written in | Fate |

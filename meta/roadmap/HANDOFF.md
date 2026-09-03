@@ -51,6 +51,21 @@
 > carries the rule. Nothing is pending on the user. **NEXT: 1.4.9, the close** —
 > self-hosting declared against D-202's criterion, the snapshot refreshed, docs
 > synced, the cycle to `done/`.
+>
+> **Housekeeping done the same day (the user's tidy-up):** the prototype and its
+> docs are archived on GitHub as `nitpick-prototype` / `nitpick-prototype-docs`
+> and live locally under `REPOS/ARCHIVE/` with every predecessor and
+> prototype-era library; the remote is renamed `alternative-intelligence-cp/nitpick`
+> and `origin` repointed; `alternative-intelligence-cp/nitpick-docs` exists,
+> empty, for the official documentation after the compiler is finished; the
+> docs that cited the old sibling paths are updated and `meta/SWITCH.md` records
+> its repository half as executed. **Two acts remain for the close, as its LAST
+> steps after the push:** rename the local folder `REPOS/nitpick-native` to
+> `REPOS/nitpick`, and rename Claude Code's per-project memory directory with it
+> — `~/.claude/projects/-home-randy-Workspace-REPOS-nitpick-native/` becomes
+> `.../-home-randy-Workspace-REPOS-nitpick/`, since it is keyed by the path and
+> the memories are otherwise left behind. When `nitpick-docs` is first cloned,
+> set `tag.sort = v:refname` on it (SWITCH.md).
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is

@@ -337,11 +337,14 @@ monotone). C-19 is closed; no external contact gates anything.
 
 ## After Phase C — the switch
 
-Replacing the prototype is **one coordinated operation** across two repositories
-and the website, and it is planned in **`meta/SWITCH.md`**: what moves where, why
-`nitpick-docs` stays frozen until then, what `meta/specs/` owes before it can
-replace it, the version restarting at `0.0`, and the one step that cannot be
-undone cleanly.
+Replacing the prototype was planned as **one coordinated operation** across two
+repositories and the website (**`meta/SWITCH.md`**). **Its repository half
+happened on 2026-09-02** — the prototype and its docs archived as
+`nitpick-prototype` / `nitpick-prototype-docs`, this repository renamed
+`nitpick`, an empty `nitpick-docs` created for the official documentation. The
+documentation half — what `meta/specs/` owes before it can fill `nitpick-docs`,
+and the fill itself — stays gated on the compiler being finished; the version
+restarts at `0.0`.
 
 Nothing there happens until 1.5 is finished. It is written down because the plan
 was worked out in conversation, and a plan that lives only in a conversation

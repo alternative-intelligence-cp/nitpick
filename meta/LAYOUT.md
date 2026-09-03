@@ -2,7 +2,7 @@
 
 Established in cycle **0.0.0**.
 
-`../npkc-native/MAPPING.md` documents a self-hosted Nitpick frontend decomposition
+`../ARCHIVE/npkc-native/MAPPING.md` documents a self-hosted Nitpick frontend decomposition
 that `CLAUDE.md` names as a reasonable starting point. It is — with five
 departures, each forced by a decision made since. They are recorded here so they
 are not "corrected" back later by someone comparing the two trees.
@@ -10,7 +10,7 @@ are not "corrected" back later by someone comparing the two trees.
 ## The tree
 
 ```
-nitpick-native/
+nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-09-02 (was nitpick-native)
 ├── nitpick.toml            # manifest (D-077)
 ├── nitpick.lock            # committed, read never written (D-078)
 ├── meta/                   # specs, roadmap, audits — not shipped

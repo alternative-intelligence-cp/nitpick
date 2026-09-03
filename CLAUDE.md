@@ -700,8 +700,9 @@ Three more shapes that are not what a C or Rust habit expects:
 
 **`npkc` now means `src/main.npk`** — the harness builds and runs it for every
 backend stage (IR on stdout; `llc` and `ld.lld` after, per BUILD_REFERENCE §4).
-The `npkc` on PATH is still the *old* C++ prototype (`../nitpick/build/npkc`), not
-this project's output; nothing installs ours yet.
+The `npkc` on PATH (`/usr/local/bin/npkc`) is still the *installed* C/C++
+prototype's compiler, not this project's output; nothing installs ours yet.
+(The prototype's source is `../ARCHIVE/nitpick-prototype/`.)
 
 ```
 src/          # THE COMPILER — Nitpick source only; nothing else belongs here
@@ -722,7 +723,7 @@ tests/        # FOUR rejection suites, named by the stage that refuses:
               #   conformance/ (subset 1 compiles and runs), frontend/, grammar/
 meta/specs/   # language specs — see below
 meta/roadmap/ # the plan; meta/roadmap/done/ archives completed cycles
-meta/LAYOUT.md# the tree, and why it departs from ../npkc-native
+meta/LAYOUT.md# the tree, and why it departs from ../ARCHIVE/npkc-native
 .internal/    # gitignored scratch area — never commit anything from here
 ```
 
@@ -731,7 +732,7 @@ modules, not headers. See `meta/LAYOUT.md` for that and the four other departure
 from the `npkc-native` decomposition, each with the decision that forced it.
 
 `meta/specs/` holds ten `.md` reference documents carried over from
-`../nitpick-next/meta/specs/` (the Gemini experiment), plus two written here:
+`../ARCHIVE/nitpick-next/meta/specs/` (the Gemini experiment), plus two written here:
 
 - `PROTOTYPE_DELTA.md` — what changed between the prototype's specs and these,
   and which questions the carried-over set leaves open.
@@ -805,7 +806,7 @@ low-level work to be hand-written LLVM IR, which is the level at which the
 project can do systems work without inheriting a runtime.
 
 The build-out is therefore much larger than a compiler of comparable scope would
-normally be. The prototype (see `../nitpick`) exceeded 50k lines *with* heavy
+normally be. The prototype (see `../ARCHIVE/nitpick-prototype`) exceeded 50k lines *with* heavy
 C/C++ dependency use; this implementation is expected to be bigger precisely
 because those dependencies are being replaced with verifiable in-house code.
 
@@ -836,7 +837,7 @@ grammar change is a language change and those are the user's call.
 
 The language has four allocation regimes, spelled as modifiers in
 source. **`DECISIONS.md` is the authority here**, not
-`../nitpick-docs/specs/memory_specs.txt`, which still describes a collector this
+`../ARCHIVE/nitpick-prototype-docs/specs/memory_specs.txt`, which still describes a collector this
 language does not have:
 
 | Modifier   | Regime                                                      |
@@ -863,7 +864,7 @@ being correct.
 
 ## What this replaces, and what must change
 
-`../npkc-native` is the direct predecessor and the most useful structural
+`../ARCHIVE/npkc-native` is the direct predecessor and the most useful structural
 reference: a self-hosted Nitpick frontend (`.npk` sources) organized as
 `src/frontend/`, `src/backend/`, `src/driver/`, `src/tools/`. Its module
 breakdown — `lexer`, `parser`, `type_system`, `type_checker_*`, `borrow_checker`,
@@ -873,40 +874,56 @@ breakdown — `lexer`, `parser`, `type_system`, `type_checker_*`, `borrow_checke
 **But its backend is exactly what this project exists to eliminate.** `npkc-native`
 reached the C++ nitpick backend (LLVM 20, Z3, IKOS) through an FFI bridge
 (`src/backend/ffi_bridge.npk`). That bridge, and everything behind it, is
-disallowed here. Read `../npkc-native/MAPPING.md` for the frontend decomposition;
-ignore its backend arrangement.
+disallowed here. Read `../ARCHIVE/npkc-native/MAPPING.md` for the frontend
+decomposition; ignore its backend arrangement.
 
 One transferable frontend technique documented there: Nitpick has no OOP
 inheritance, so the C++ AST class hierarchy is expressed as tagged enums over
 composable structs rather than base/derived nodes.
 
-## Reference material (read-only siblings)
+## Reference material (read-only, archived)
 
-These live outside this repo and must never be modified:
+**Moved to `../ARCHIVE/` on 2026-09-02** — the user's tidy-up executed the
+repository half of `meta/SWITCH.md` early: the prototype is archived on GitHub as
+`alternative-intelligence-cp/nitpick-prototype`, its documentation as
+`nitpick-prototype-docs`, the rest archived or deleted. All of it stays
+browsable and must never be modified:
 
-- `../nitpick-docs/specs/` — the language specification, split by topic
-  (`memory_specs.txt`, `formal_verification_specs.txt`, `safety_systems_specs.txt`,
+- `../ARCHIVE/nitpick-prototype-docs/specs/` — the PROTOTYPE's language
+  specification, split by topic (`memory_specs.txt`,
+  `formal_verification_specs.txt`, `safety_systems_specs.txt`,
   `compiler_specs.txt`, `pointer_system_specs.txt`, `traits_oop_specs.txt`, …).
-  `FULL_specs.txt` is the ~14k-line consolidated version. **This is the
-  authority on language semantics.**
-- `../nitpick-docs/reference/COMPILER_ARCHITECTURE.md` — pipeline walkthrough for
-  the C++ prototype (preprocessor → lexer → parser → type/borrow check → IR gen).
-  Good for *what the stages do*; its implementation is dependency-laden and is
-  not a model to copy.
-- `../nitpick-docs/reference/` — also has `TYPE_SYSTEM_DESIGN.md`,
-  `TRAITS_AND_BORROW_SEMANTICS_RFC.md`, `UNDEFINED_STATE_PREVENTION.md`,
-  `GC_TUNING_GUIDE.md`, `abi.md`, `RESERVED_WORDS.md`.
-- `../nitpick/` — the ~26k-file C/C++ prototype compiler. Useful as a behavioral
-  oracle; its dependency choices are **not** precedent.
-- `../nitpick-proofs/` — verification harnesses (`esbmc/`, `frama-c/`, `smt/`).
-- `../nitpick-bootstrap/`, `../nitpick-next/` — earlier bootstrap attempts.
+  `FULL_specs.txt` is the ~14k-line consolidated version. **It was the authority
+  on language semantics when this repo opened; `meta/specs/` and `DECISIONS.md`
+  are the authority now**, and where they disagree with it the difference is
+  recorded in `PROTOTYPE_DELTA.md`.
+- `../ARCHIVE/nitpick-prototype-docs/reference/COMPILER_ARCHITECTURE.md` —
+  pipeline walkthrough for the C++ prototype (preprocessor → lexer → parser →
+  type/borrow check → IR gen). Good for *what the stages do*; its
+  implementation is dependency-laden and is not a model to copy. The same
+  directory has `TYPE_SYSTEM_DESIGN.md`, `TRAITS_AND_BORROW_SEMANTICS_RFC.md`,
+  `UNDEFINED_STATE_PREVENTION.md`, `GC_TUNING_GUIDE.md`, `abi.md`,
+  `RESERVED_WORDS.md`.
+- `../ARCHIVE/nitpick-prototype/` — the ~26k-file C/C++ prototype compiler.
+  Useful as a behavioral oracle; its dependency choices are **not** precedent.
+- `../ARCHIVE/nitpick-proofs/` — verification harnesses (`esbmc/`, `frama-c/`,
+  `smt/`).
+- `../ARCHIVE/nitpick-bootstrap/`, `../ARCHIVE/nitpick-next/` — earlier
+  bootstrap attempts; `../ARCHIVE/npkc-native/` — the frontend decomposition
+  above.
 
 ## Ecosystem conventions
 
 - Source extension is `.npk`; package manifest is `nitpick.toml`.
 - `npkc` is the compiler, `npkpkg` the package manager. Both resolve on PATH
-  today — `npkc` points at the prototype build (`../nitpick/build/npkc`), so
-  treat it as the *old* compiler, not this one.
+  today (`/usr/local/bin/`) as the prototype's INSTALLED binaries, so treat
+  them as the *old* compiler, not this one.
+- **The repository is `alternative-intelligence-cp/nitpick`** (renamed from
+  `nitpick-native` on 2026-09-02; the local checkout is renamed at the 1.4
+  close). Everything lives under that organisation, never under a personal
+  account. `alternative-intelligence-cp/nitpick-docs` exists again, empty: the
+  home of the OFFICIAL documentation (HTML, man pages, Markdown), built after the
+  compiler is finished — until then `meta/specs/` is the specification.
 - **LLVM 20.1.2** is the toolchain, matching the version the prototype targets.
   Ubuntu/Mint ship only versioned binaries (`llc-20`, `opt-20`, …) because LLVM
   14, 18, and 20 coexist on this machine, so unversioned names are provided by

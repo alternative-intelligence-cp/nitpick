@@ -169,7 +169,7 @@ threading calls — `futex` (12 uses), `clone` (5), `gettid`, `tkill`,
 `set_robust_list` — so the foundation is present even though `libn` has no
 thread *module* of its own.
 
-**The promoted stdlib supplies the abstractions** (`../nitpick/stdlib/`):
+**The promoted stdlib supplies the abstractions** (`../ARCHIVE/nitpick-prototype/stdlib/`):
 
 | Module | Lines | C surface |
 |---|---|---|

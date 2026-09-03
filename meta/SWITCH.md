@@ -1,27 +1,38 @@
 # The switch — replacing the prototype
 
-**Status: planned, not scheduled.** Nothing here happens until Phase C is
-finished. It is written down now because it was worked out in conversation, and a
-plan that lives only in a conversation is a plan that evaporates.
+**Status: the REPOSITORY half executed on 2026-09-02, by the user, as a
+tidy-up; the DOCUMENTATION half is still owed and still gated on the compiler
+being finished.** The prototype and its docs are archived on GitHub as
+`nitpick-prototype` and `nitpick-prototype-docs` (locally under
+`REPOS/ARCHIVE/`, with every prototype-era library and application), this
+repository is `alternative-intelligence-cp/nitpick` (renamed from
+`nitpick-native`), and `nitpick-docs` exists again, EMPTY, for the official
+documentation — HTML, man pages and Markdown built from `meta/specs/` once the
+compiler is finished. The rest of this document stands as written: what
+`meta/specs/` owes before it can fill `nitpick-docs`, the version scheme, the
+tag ordering, and the redirect caveat (which has now happened, and whose
+safeguard — the README pointer — is in place).
 
-Nothing in this document may be executed early. **Doing any part of it before the
-rest is the failure mode the whole plan is arranged to avoid** — a repo half
-migrated to a version that is not finished is worse for everyone looking at it
-today than one that is cleanly old.
+This document was written when the plan was "nothing happens until Phase C is
+finished", because a repo half migrated to a version that is not finished is
+worse than one that is cleanly old. The user judged the tidier layout worth
+more than that caution for the repository half, and the archived repositories
+remain fully browsable, so nothing is lost; the documentation half keeps the
+original gate.
 
 ## What the switch is
 
 One coordinated operation across two repositories and the website:
 
-| Today | After |
-|---|---|
-| `nitpick` — the C/C++ prototype compiler | `nitpick` — **this repository's contents** |
-| `nitpick-docs` — the prototype's specification | `nitpick-docs` — **`meta/specs/` from this repository** |
-| — | `nitpick-prototype` — the old compiler, archived |
-| — | `nitpick-prototype-docs` — the old specification, archived |
+| Before | After | Status |
+|---|---|---|
+| `nitpick` — the C/C++ prototype compiler | `nitpick` — **this repository's contents** | **done 2026-09-02** (the remote renamed; the local folder is renamed at the 1.4 close) |
+| `nitpick-docs` — the prototype's specification | `nitpick-docs` — **the official documentation, built from `meta/specs/`** | the repo exists, empty; populated after the compiler is finished |
+| — | `nitpick-prototype` — the old compiler, archived | **done 2026-09-02** |
+| — | `nitpick-prototype-docs` — the old specification, archived | **done 2026-09-02** |
 
-Every library and application targeting the prototype is archived in the same
-operation.
+Every library and application targeting the prototype was archived (or
+deleted on the remote) in the same operation — `REPOS/ARCHIVE/` holds them.
 
 ## Why the prototype's docs are frozen until then
 
@@ -48,10 +59,12 @@ So `nitpick-docs` is **emptied and repopulated from `meta/specs/`**.
 complete on its own.** Nothing is merged in to fill gaps, so anything the old set
 covers that the new one does not is simply missing afterwards.
 
-### Owed before the archive, not after
+### Owed before `nitpick-docs` is filled
 
-A **coverage pass** against the prototype's topic list, while both are still live
-and easy to compare. The prototype splits its specification across ~28 topic
+A **coverage pass** against the prototype's topic list — the archive happened
+first, but archived repositories stay browsable and the prototype's docs are
+local under `REPOS/ARCHIVE/nitpick-prototype-docs/`, so the comparison is still
+easy to make. The prototype splits its specification across ~28 topic
 files; this repository has twenty consolidated references. Topics to check for an
 equivalent, none of which obviously has one yet:
 
@@ -136,5 +149,8 @@ Two things make it safe, and both are in the plan already:
   unrelated histories"** rather than a silent wrong merge. It fails loudly, which
   is the good outcome.
 
-Confirm GitHub's current rename and redirect behaviour before executing. It is the
-one step in this plan that is awkward to reverse.
+**This step happened on 2026-09-02**: `nitpick` → `nitpick-prototype` (archived),
+then `nitpick-native` → `nitpick`, so the prototype's old URL now lands on this
+compiler. The README pointer to `nitpick-prototype` leads this repository's
+README from the same day; the website's pointer is the remaining half of the
+safeguard.
