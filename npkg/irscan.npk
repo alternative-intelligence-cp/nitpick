@@ -1,8 +1,9 @@
-// irscan -- the two text scans every emitted module passes before `llc`
-// (1.4.8): no symbol defined twice (D-156), every `alloca` in its entry
-// block (D-173). Ported from the harness's `check_symbols_unique` and
-// `check_allocas_hoisted`, whose regexes are spelled out here as byte
-// walks; the parity stage holds the two to each other.
+// irscan -- the three text scans every emitted module passes before `llc`
+// (1.4.8; the third at 1.5.0): no symbol defined twice (D-156), every
+// `alloca` in its entry block (D-173), no `undef` anywhere (D-218.10).
+// Ported from the harness's `check_symbols_unique`, `check_allocas_hoisted`
+// and `check_no_undef`, whose regexes are spelled out here as byte walks;
+// the parity stage holds the two to each other.
 //
 //   DEFINE_RE  ^\s*define[^@]*(@(?:"[^"]*"|[\w.$-]+))\s*\(
 //   GLOBAL_RE  ^\s*(@(?:"[^"]*"|[\w.$-]+))\s*=\s*(?!.*\bexternal\b)
@@ -189,4 +190,93 @@ pub func:ir_allocas_hoisted = List<string>(string:ir, string:name) never fails {
         }
     }
     pass bad;
+};
+
+// --- no `undef`, anywhere (D-218.10, 1.5.0) -------------------------------------
+//
+// The harness's `check_no_undef`, byte for byte. A line's CODE is the text up
+// to its comment with every string constant's contents blanked: a `;` starts
+// a comment only outside a string constant (`c"…"`, where `;` is data and a
+// quote is spelled `\22`), and the bytes inside one are data too -- the
+// compiler's own emission carries the literal `"undef"` its source spells.
+// Then the token: `undef` with no identifier byte on either side (`%undef` is
+// a value's name, `@undef_x` a symbol's). `poison` is not banned here: LLVM's
+// own value model uses it, and 1.6 may need `freeze`.
+
+func:is_ir_word_byte = bool(uint8:c) never fails {
+    if (raw is_sym_byte(c)) { pass true; }
+    if (c == 37u8) { pass true; }   // %
+    if (c == 64u8) { pass true; }   // @
+    pass false;
+};
+
+// The line's code part: comment cut, string contents blanked.
+func:ir_code_part = string(string:line) never fails {
+    wild int8->:buf = alloc(line.len + 1i64);
+    int64:n = 0i64;
+    bool:in_str = false;
+    for (int64:i in 0i64...line.len) {
+        uint8:c = line.ptr[i];
+        if (c == 34u8) {
+            in_str = !in_str;
+            buf[n] = c =>! int8;
+            n = n + 1i64;
+            continue;
+        }
+        if (in_str) { buf[n] = 32i8; n = n + 1i64; continue; }
+        if (c == 59u8) { break; }
+        buf[n] = c =>! int8;
+        n = n + 1i64;
+    }
+    string:out = string_concat(string_from_bytes(buf, n), "");
+    dalloc(buf);
+    pass out;
+};
+
+// How many `undef` tokens a code line holds.
+func:undef_tokens = int64(string:code) never fails {
+    int64:n = 0i64;
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(code, "undef", from);
+        if (p < 0i64) { pass n; }
+        bool:left_ok = true;
+        if (p > 0i64) { if (raw is_ir_word_byte(code.ptr[p - 1i64])) { left_ok = false; } }
+        bool:right_ok = true;
+        int64:after = p + 5i64;
+        if (after < code.len) { if (raw is_sym_byte(code.ptr[after])) { right_ok = false; } }
+        if (left_ok && right_ok) { n = n + 1i64; }
+        from = p + 1i64;
+    }
+    pass n;
+};
+
+pub func:ir_no_undef = List<string>(string:ir, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    int64:hits = 0i64;
+    int64:first_line = 0i64;
+    string:first_text = "";
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (!(raw text_contains(ln, "undef"))) { continue; }
+        string:code = raw ir_code_part(ln);
+        int64:k = raw undef_tokens(code);
+        if (k == 0i64) { continue; }
+        if (hits == 0i64) {
+            first_line = i + 1i64;
+            first_text = raw text_head(raw text_trim(code), 120i64);
+        }
+        hits = hits + k;
+    }
+    if (hits == 0i64) { pass fl; }
+    string:m = string_concat(name, ": `undef` appears ");
+    m = string_concat(m, int_to_string(hits));
+    m = string_concat(m, " time(s) in the IR (first at line ");
+    m = string_concat(m, int_to_string(first_line));
+    m = string_concat(m, ": `");
+    m = string_concat(m, first_text);
+    m = string_concat(m, "`) -- the emitter and the floor seed every aggregate with `zeroinitializer` (D-218.10); an `undef` is a value the optimiser may choose differently per use, which breaks the refinement checking the evidence campaign rests on");
+    drop list_push(@fl, move(m));
+    pass fl;
 };

@@ -14,8 +14,10 @@ against cases where it MUST report a failure:
   - a positive test that exits with the wrong code
   - a rejection file that fails at PARSE time rather than in the backend
   - a toolchain that is not the pinned version, and no pin at all (D-204)
+  - an `undef` seed in emitted IR (D-218.10)
 
-and two where it must NOT: a correct expectation, and the real toolchain.
+and three where it must NOT: a correct expectation, the real toolchain, and
+the word `undef` in a comment or a string constant rather than as a token.
 
 The last of the failing cases is the one this project cares about most. It is the
 executable form of D-085's rule -- the parser never restricts, the backend does --
@@ -193,6 +195,32 @@ def main():
         print("  %-26s %-4s  %s" % ("toolchain-restored", "ok",
                                     "the pinned toolchain that is installed "
                                     "must pass"))
+
+    # THE UNDEF BAN REPORTS AN `undef` (D-218.10, 1.5.0) -- and only a real
+    # one: the word in a comment or inside a string constant is prose, not
+    # IR, and a ban that fired on prose would be silenced by the first
+    # comment that explained it.
+    bad_ir = ("define { i32 } @f() {\nentry:\n"
+              "  %t0 = insertvalue { i32 } undef, i32 1, 0\n"
+              "  ret { i32 } %t0\n}\n")
+    ok_ir = ("; an undef in a comment is not an undef\n"
+             "@s = constant [7 x i8] c\"undef;\\00\"\n"
+             "define i32 @g() {\nentry:\n  ret i32 0\n}\n")
+    for name, text, must_fail, why in (
+            ("undef-in-emission", bad_ir, True,
+             "an `undef` seed in emitted IR must fail"),
+            ("undef-in-comment", ok_ir, False,
+             "the word in a comment or a string constant must pass")):
+        fails = harness.check_no_undef(text, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      check_no_undef accepted it; it should not have")
+            else:
+                print("      check_no_undef rejected prose: %s" % fails[0])
 
     shutil.rmtree(tmp, ignore_errors=True)
     if bad:

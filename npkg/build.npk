@@ -232,6 +232,14 @@ pub async func:build_floor = Step(Ctx->:c) {
     Result<List<string>>:al = runtime_allowlist(rt);
     if (al.is_error) { pass (raw step_bad("runtime/npkrt.ll could not be read for the allowlist")); }
     c.allow = al.value;
+    // THE FLOOR IS HELD TO THE SAME BAN as every emission (D-218.10): it is
+    // linked into every artifact, including the one that ships.
+    Result<cstring>:flc = to_cstring(rt);
+    if (flc.is_error) { pass (raw step_bad("runtime/npkrt.ll: not a path")); }
+    Result<string>:ftext = read_file(flc.value);
+    if (ftext.is_error) { pass (raw step_bad("runtime/npkrt.ll could not be read for the undef ban")); }
+    List<string>:fnu = raw ir_no_undef(ftext.value, "runtime/npkrt.ll");
+    if (fnu.count > 0i64) { pass (raw step_bad(raw strlist_view(fnu, 0i64))); }
     string:obj = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkrt.o");
     Result<Step>:s = await llc_obj(c, c.m.llc_flags, rt, obj);
     if (s.is_error) { fail s.err; }
@@ -300,6 +308,13 @@ pub async func:build_tool = Step(Ctx->:c, string:source, string:name) {
     if (run.x.out.len > 0i64) {
         pass (raw step_bad("npkc -o wrote the IR to a file AND to stdout -- one delivery, not two"));
     }
+    // A tool's emission is held to the undef ban like a program's (D-218.10).
+    Result<cstring>:tlc = to_cstring(ll);
+    if (tlc.is_error) { pass (raw step_bad(string_concat(name, ".ll: not a path"))); }
+    Result<string>:tir = read_file(tlc.value);
+    if (tir.is_error) { pass (raw step_bad(string_concat(name, ".ll could not be read back"))); }
+    List<string>:tnu = raw ir_no_undef(tir.value, string_concat(name, ".ll"));
+    if (tnu.count > 0i64) { pass (raw step_bad(string_concat("UNDEF ", raw strlist_view(tnu, 0i64)))); }
     Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);
     if (s1.is_error) { fail s1.err; }
     Step:st1 = move(s1.value);
@@ -350,6 +365,8 @@ pub async func:build_artifact = Step(Ctx->:c) {
     if (dupes.count > 0i64) { pass (raw step_bad(raw strlist_view(dupes, 0i64))); }
     List<string>:hoist = raw ir_allocas_hoisted(ir.value, "npkc.ll");
     if (hoist.count > 0i64) { pass (raw step_bad(raw strlist_view(hoist, 0i64))); }
+    List<string>:nu = raw ir_no_undef(ir.value, "npkc.ll");
+    if (nu.count > 0i64) { pass (raw step_bad(raw strlist_view(nu, 0i64))); }
     string:to_llc = raw text_copy(ll);
     if (c.m.opt_level == 2i64) {
         if (c.t.opt.len == 0i64) { pass (raw step_bad("[build] opt-level is 2 and `opt` is not on PATH")); }
@@ -416,6 +433,8 @@ pub async func:emit_and_link = List<string>(Ctx->:c, string:compiler, string:pat
     if (dupes.count > 0i64) { pass dupes; }
     List<string>:hoist = raw ir_allocas_hoisted(run.x.out, name);
     if (hoist.count > 0i64) { pass hoist; }
+    List<string>:nu = raw ir_no_undef(run.x.out, name);
+    if (nu.count > 0i64) { pass nu; }
     string:obj = string_concat(base, ".o");
     Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);
     if (s1.is_error) { fail s1.err; }

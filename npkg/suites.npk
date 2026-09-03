@@ -39,6 +39,7 @@ use "./expect.npk".*;
 use "./manifest.npk".*;
 use "./toolchain.npk".*;
 use "./build.npk".*;
+use "./irscan.npk".*;
 
 // --- discovery ---------------------------------------------------------------------
 
@@ -804,6 +805,9 @@ async func:run_runtime_stage = NIL(Ctx->:c, int64:t) {
         string:rp = raw strlist_view(tests, i);
         string:name = raw rel_to_root(c, rp);
         string:text = relay read_text(rp);
+        // A hand-written floor test is held to the undef ban too (D-218.10).
+        List<string>:fnu = raw ir_no_undef(text, name);
+        if (fnu.count > 0i64) { drop record(c, tname, name, fnu); continue; }
         string:head = raw text_head(text, 400i64);
         int64:want = 0i64;
         int64:at = raw text_index_of(head, "expect-exit:");

@@ -12,7 +12,9 @@
 // time rather than in the backend -- and two where it must not.
 // Then the toolchain pin (D-204): a pin that is not the installed version
 // must refuse, no pin must refuse, the real pin must pass -- driven by
-// moving the pin, the only half of the comparison this can move.
+// moving the pin, the only half of the comparison this can move. Then the
+// undef ban (D-218.10, 1.5.0): an `undef` seed in IR must fail, and the word
+// in a comment or a string constant must pass.
 //
 // The case set is `bootstrap/harness/selfcheck.py`'s, case for case; the
 // rung the negative cases lean on is `limit<Rules>`, a rung rather than a
@@ -30,6 +32,7 @@ use "./expect.npk".*;
 use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./suites.npk".*;
+use "./irscan.npk".*;
 
 func:FAILSAFE = string() never fails {
     pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 1i32; },\n        (HeapOom) { exit 1i32; },\n        (Unreachable) { exit 1i32; },\n        (WildLeak) { exit 1i32; },\n        (*) { exit 1i32; }\n    }\n    exit 1i32;\n};\n";
@@ -186,6 +189,24 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     } else {
         drop strlist_push(@report, raw case_line("toolchain-restored", true, "the pinned toolchain that is installed must pass"));
     }
+
+    // THE UNDEF BAN REPORTS AN `undef` (D-218.10, 1.5.0) -- and only a real
+    // one: the word in a comment or inside a string constant is prose, not
+    // IR, and a ban that fired on prose would be silenced by the first
+    // comment that explained it. The two texts are the harness's, byte for
+    // byte.
+    string:bad_ir = "define { i32 } @f() {\nentry:\n  %t0 = insertvalue { i32 } undef, i32 1, 0\n  ret { i32 } %t0\n}\n";
+    string:ok_ir = "; an undef in a comment is not an undef\n@s = constant [7 x i8] c\"undef;\\00\"\ndefine i32 @g() {\nentry:\n  ret i32 0\n}\n";
+    List<string>:u1 = raw ir_no_undef(bad_ir, "undef-in-emission");
+    bool:ok4 = (u1.count > 0i64);
+    if (!ok4) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("undef-in-emission", ok4, "an `undef` seed in emitted IR must fail"));
+    if (!ok4) { drop strlist_push(@report, "      the undef ban accepted it; it should not have"); }
+    List<string>:u2 = raw ir_no_undef(ok_ir, "undef-in-comment");
+    bool:ok5 = (u2.count == 0i64);
+    if (!ok5) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("undef-in-comment", ok5, "the word in a comment or a string constant must pass"));
+    if (!ok5) { drop strlist_push(@report, string_concat("      the undef ban rejected prose: ", raw strlist_view(u2, 0i64))); }
 
     if (verbose || (bad > 0i64)) {
         drop say("runner self-check");

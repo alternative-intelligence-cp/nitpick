@@ -1655,6 +1655,10 @@ def build_tool(tmp, tools, source, name):
         return "the snapshot did not terminate compiling %s" % source
     if r.returncode != 0:
         return "DIAG %s" % r.stderr.decode("utf-8", "replace").strip()[:400]
+    with open(base + ".ll", encoding="utf-8", errors="replace") as fh:
+        nu = check_no_undef(fh.read(), name + ".ll")
+    if nu:
+        return "UNDEF %s" % nu[0]
     r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -1980,6 +1984,71 @@ def check_allocas_hoisted(ll_text, name):
     return bad
 
 
+_UNDEF_RE = re.compile(r"(?<![A-Za-z0-9_.$%@\-])undef(?![A-Za-z0-9_.$\-])")
+_POISON_RE = re.compile(r"(?<![A-Za-z0-9_.$%@\-])poison(?![A-Za-z0-9_.$\-])")
+
+
+def _ir_code_part(line):
+    """The line's CODE: up to its comment, with every string constant's
+    contents blanked. A `;` starts a comment only outside a string constant
+    (`c"…"`, where `;` is data and a quote is spelled `\22`), and the bytes
+    inside one are data too -- the compiler's own emission carries the
+    literal `"undef"` its source spells, as `c"undef\\00"`."""
+    out = []
+    in_str = False
+    for ch in line:
+        if ch == '"':
+            in_str = not in_str
+            out.append(ch)
+        elif in_str:
+            out.append(" ")
+        elif ch == ";":
+            break
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _ir_code_part_all(text):
+    return "\n".join(_ir_code_part(l) for l in text.splitlines())
+
+
+def check_no_undef(ll_text, name):
+    """No `undef` in any IR this project holds or emits (D-218.10, 1.5.0).
+
+    r8's finding: `undef` breaks SMT refinement checking -- about 18% of the
+    miscompiles Alive2 found were due to it alone -- and every `insertvalue`
+    seed the emitter and the floor wrote was one. They are `zeroinitializer`
+    now (a DEFINED seed: an audit slip reads a wrong zero, never a value the
+    optimiser chooses per use), and this is the grep that keeps it so, over
+    every emission the harness produces, the floor, its tests and the
+    committed snapshot. Comments are stripped first, so prose may still say
+    the word; `%undef` is a value's name and `@undef_x` a symbol's, not the
+    token. `poison` is NOT banned -- LLVM's own value model uses it and 1.6
+    may need `freeze` -- only counted by the stage line. The optimised leg's
+    output is LLVM's text, not ours, and is the Alive2 leg's business (1.6)
+    rather than this check's.
+    """
+    hits = 0
+    first = None
+    for lineno, line in enumerate(ll_text.splitlines(), 1):
+        if "undef" not in line:
+            continue
+        code = _ir_code_part(line)
+        for _ in _UNDEF_RE.finditer(code):
+            hits += 1
+            if first is None:
+                first = (lineno, code.strip())
+    if not hits:
+        return []
+    return ["%s: `undef` appears %d time(s) in the IR (first at line %d: `%s`) "
+            "-- the emitter and the floor seed every aggregate with "
+            "`zeroinitializer` (D-218.10); an `undef` is a value the optimiser "
+            "may choose differently per use, which breaks the refinement "
+            "checking the evidence campaign rests on"
+            % (name, hits, first[0], first[1][:120])]
+
+
 def runtime_allowlist():
     """Every symbol npkrt.ll defines, plus `main` -- which is the one symbol the
     RUNTIME is allowed to need, because the program provides it."""
@@ -2033,6 +2102,9 @@ def emit_and_link(binary, path, name, base, tmp):
     hoist = check_allocas_hoisted(ir_text, name)
     if hoist:
         return hoist
+    nu = check_no_undef(ir_text, name)
+    if nu:
+        return nu
     r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -2534,12 +2606,16 @@ def stage_runtime(t, s):
     for rp in files_of(t, ".ll"):
         rexp = 0
         with open(rp, encoding="utf-8") as fh:
-            rhead = fh.read(400)
-        rm = re.search(r"expect-exit:\s*(\d+)", rhead)
+            rtext = fh.read()
+        rm = re.search(r"expect-exit:\s*(\d+)", rtext[:400])
         if rm:
             rexp = int(rm.group(1))
         rbase = os.path.join(s.tmp, "rt_" + os.path.basename(rp)[:-3])
         rname = os.path.relpath(rp, ROOT)
+        nu = check_no_undef(rtext, rname)
+        if nu:
+            s.failures += record_verdict(t["name"], rname, nu)
+            continue
         r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
                            capture_output=True, text=True)
         if r.returncode != 0:
@@ -2788,6 +2864,11 @@ def main(argv):
         # reproducibility legs, the absent-fact flip, and parity with npkg.
         ec = COMPILER
 
+        # THE FLOOR IS HELD TO THE SAME BAN as every emission (D-218.10): it
+        # is linked into every artifact, including the one that ships.
+        with open(RUNTIME_LL, encoding="utf-8") as fh:
+            failures += check_no_undef(fh.read(), "runtime/npkrt.ll")
+
 
 
         # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
@@ -2826,6 +2907,7 @@ def main(argv):
                             "IR -- D-163 is a checked claim, not a "
                             "codegen hint")
         else:
+            failures += check_no_undef(ra.stdout, "nf_twin/nf_inert.npk")
             print("  %-11s the `never fails` twins emit byte-identical IR"
                   % "nf-inert")
 
@@ -2896,6 +2978,10 @@ def main(argv):
             if hoist:
                 failures += hoist
                 ok = False
+            nu = check_no_undef(stage1_ir.decode("utf-8", "replace"), "stage1.ll")
+            if nu:
+                failures += nu
+                ok = False
             rr = subprocess.run(["llc"] + LLC_FLAGS + [s1 + ".ll", "-o", s1 + ".o"],
                                 capture_output=True, text=True)
             if rr.returncode != 0:
@@ -2946,6 +3032,11 @@ def main(argv):
             if ok:
                 print("  %-11s stage 1 rebuilt itself byte-identically"
                       % ("selfhost",))
+                npoison = len(_POISON_RE.findall(
+                    _ir_code_part_all(stage1_ir.decode("utf-8", "replace"))))
+                print("  %-11s no `undef` in any emitted .ll, the floor or "
+                      "its tests; %d `poison` in the compiler's own emission"
+                      % ("undef-ban", npoison))
 
             # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
             #
@@ -3089,6 +3180,16 @@ def main(argv):
                             "with an absolute path argument; bootstrap/seed/"
                             "README.md: run from the tree root with "
                             "`src/main.npk` spelled relatively" % absn)
+                        rok = False
+                    # AND THE SNAPSHOT CARRIES NO `undef` (D-218.10, 1.5.0):
+                    # it is an emission like any other, and the builder of
+                    # every tool. Refreshed at 1.5.0 step 1b from the swept
+                    # tree; a refresh from a tree whose emitter regressed
+                    # would fail here by name.
+                    snu = check_no_undef(snap_ir.decode("utf-8", "replace"),
+                                         "bootstrap/seed/stage1.ll")
+                    if snu:
+                        failures += snu
                         rok = False
                 if rok:
                     print("  %-11s emission cwd-independent, llc "
