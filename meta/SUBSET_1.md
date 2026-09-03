@@ -23,7 +23,9 @@ It is bounded from both sides, which is the whole difficulty:
 
 The seed is the **least-audited** artifact in the chain — hand-generated, thrown
 away, and the one place a Thompson-style problem could hide (D-085). The compiler
-is the **most**-audited: it is checked by stage 1, verified in cycle 1.4, and is
+is the **most**-audited: it is checked by stage 1, verified in cycles 1.5–1.6 (this
+line said "cycle 1.4" until the 1.4.9 close — verification was renumbered twice and
+the sentence swept once), and is
 the artifact of record.
 
 So wherever a capability could live in either, it goes in the compiler, even when

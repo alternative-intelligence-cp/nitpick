@@ -29,6 +29,18 @@ snapshot, *then* use it in the compiler's own source. Getting this backwards
 produces a tree that cannot build itself from a clean checkout, which is the
 one failure mode the committed snapshot exists to prevent.
 
+The rule has a mirror direction, found at 1.4.7 and recorded here at the 1.4
+close: **a fix in the compiler's BACKEND does not reach the tools until the
+snapshot carries it.** The harness compiles `tools/check.npk`, `parse_check`
+and `resolve_check` with the SNAPSHOT — the builder — so the tools' own
+source (the frontend, `src/frontend/`) is always the current tree while
+their binaries are emitted by the old backend. A checker rule added in
+`src/` is in the built tools at once; an emitter fix is not (measured under
+D-225: the npkc-built checker exited 0 and the snapshot-built one 3, same
+sources). When a step needs an emitter fix visible to the tools, refresh at
+the previous commit — the mid-cycle refreshes of 1.4.7 (D-224, D-225) and
+1.4.8 step 3 are the precedents.
+
 ## Refreshing it
 
 At cycle closes, with the push. The refresh is done BY THE SNAPSHOT, never by

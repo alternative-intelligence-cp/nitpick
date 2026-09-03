@@ -14301,6 +14301,14 @@ Spec-only; no code changes. D-085/D-079 carry dated annotations pointing
 here. (OPEN_DECISIONS' citation "D-085:5747" was off — the operative
 lines were 5798/5825/5883 and D-079's 5443.)
 
+> **DECLARED at 1.4.9 (2026-09-02).** The `selfhost` stage measured the
+> criterion on every full run of the cycle; at the close it held on the
+> final tree in both spellings: stage2 == stage3 at 15,631,627 bytes (sha256
+> `9ce0ec8d3de5b2c83da4a1f11d3f89965728f6cf938f70042ea053eff5defaaf`) from `80784f3` by the README's relative refresh — installed as
+> the snapshot, so the committed builder IS the fixpoint text — and stage 1
+> rebuilt itself byte-identically under the harness, `repro` and `parity`
+> green beside it. The record is `meta/roadmap/done/1.4/1.4.9.md`.
+
 ## D-203 — the committed bootstrap IR, the `bootstrap/` survival map, and the floor's permanent form — **SETTLED (1.4.0 batch, user-ratified)**
 
 Closes C-11, and settles D-015's open "later" row. Three parts:

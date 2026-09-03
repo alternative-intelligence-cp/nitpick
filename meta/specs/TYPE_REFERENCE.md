@@ -352,7 +352,7 @@ cstring   { ptr: wild char8->, len: int64 }
 The buffer is `len + 1` bytes with `buf[len] == 0u8`. **The length is retained**,
 so `nlibc` never calls `strlen` — the unbounded "scan until NUL" read is absent
 from every path and name in the library, which is what makes these calls
-tractable for Astrée.
+tractable for the analyzers of the evidence campaign (D-233).
 
 **`to_cstring` fails on an interior NUL.** A `string` may contain `0u8` anywhere;
 a NUL-terminated form silently truncates there, so a validator inspecting the
@@ -714,8 +714,9 @@ the type:
 > assume `i8`.
 >
 > It is the same argument the escape analysis makes for writing rules ahead of the
-> constructs they govern — groundwork laid before the single Astrée run is far
-> cheaper than groundwork added after it.
+> constructs they govern — groundwork laid before the evidence campaign closes
+> (D-233) is far cheaper than groundwork added after it, since a language change
+> then re-opens every touched obligation.
 
 **The binary rung stores the VALUE** (D-197, 1.3.4): a `tryte` is its balanced
 value −29524..29524 in the carrier, so balanced order IS numeric order and the

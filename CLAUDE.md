@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b, 1.4.8 (`npkg`, D-206), 1.4.8b (D-237, D-238) and 1.4.8c (D-239, D-240) CLOSED; 1.4.9 (the close) is NEXT
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting) COMPLETE: the compiler is self-hosting under D-202, `npkg` runs beside the harness, and cycle 1.5 (verification) is NEXT
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 240 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -301,8 +301,8 @@ eleven programs deterministically. The walk now records the park as a
 suspension (the await rule: past the arguments), `give_up` lives in the
 frame, and both levels answer identically. The second hole in the same
 analysis (D-191's `fn_end` was the first).
-**CYCLE 1.4 (self-hosting) is UNDERWAY.** 1.4.0 ratified the whole batch
-as **D-201…D-209** (`meta/roadmap/1.4/1.4.0.md`): the builtin surface
+**CYCLE 1.4 (self-hosting) is COMPLETE** (`meta/roadmap/done/1.4/`; closed 2026-09-02 at 1.4.9). 1.4.0 ratified the whole batch
+as **D-201…D-209** (`meta/roadmap/done/1.4/1.4.0.md`): the builtin surface
 typed from ONE generated signature table (D-201 — never-fails builtins
 type BARE, the 13-arm convention generalized; the emitter's parallel
 authority retires; the ~1,700-site `raw` shed rides a transitional
@@ -468,7 +468,7 @@ site-table rows — D-078 held by one README line — so the `repro` stage now
 refuses an absolute site path in the committed snapshot, and whether the
 source manager should record manifest-root-relative paths is **S-7** (the
 user's). SUBSET_1 §4 carries its closing edit.
-**1.4.7b IS COMPLETE** (`meta/roadmap/1.4/1.4.7b.md`): the close's
+**1.4.7b IS COMPLETE** (`meta/roadmap/done/1.4/1.4.7b.md`): the close's
 recommendations were ratified as **D-234** (a `for` captures its bound, a
 `while` re-reads it), **D-235** (every kind decided as a channel element:
 simd and function values ride, the sync primitives, atomics and arenas refuse
@@ -476,7 +476,7 @@ permanently) and **D-236** (manifest-root-relative source paths); D-235 and
 D-231 landed, the tfp fold runs in one `uint512`, and D-228's width is
 calibrated at 6. D-236's implementation and D-230's `TY_FLAGS` were re-homed
 to 1.4.8's open beside the layers they need.
-**1.4.8 (`npkg`, D-206) IS UNDERWAY** (`meta/roadmap/1.4/1.4.8.md` carries the
+**1.4.8 (`npkg`, D-206) IS UNDERWAY** (`meta/roadmap/done/1.4/1.4.8.md` carries the
 execution record and the order). **Part A landed**: the runtime's driver
 clone is ONE primitive for every supervised child — `clone_exec`, a ten-word
 block with the child's 0/1/2 sources, an optional ctrl fd, and the "every
@@ -492,7 +492,7 @@ the environment passed through, a missing tool's 127 as the CHILD's answer,
 and a hung tool killed at a deadline — exiting 0 so D-151/D-188 assert nothing
 leaked. The user settled D-230's families and S-8 on 2026-09-02 (the
 recommendations as written).
-**Steps 2b–6 landed (2026-09-02), validated under D-228's cumulative-prefix protocol after a mid-step-6 UI freeze the recovery lost nothing to.** `range<T>` is spellable (2b, S-8/D-093); the snapshot was refreshed mid-cycle so `src/` and the library it imports may spell the flag families (3); every `open` caller crosses its `oflags`/`fmode` to the floor's word with `=> int32`, `open` itself staying `int64` — the floor is the syscall surface (4); `lib/nfs.npk` is the file-system surface — a sorted listing over `getdents64`, containment answered by OPENING not by string checks, restrictive creation defaults and the at-family (D-213's three riders), with `sys_cwd` and three named errnos in the prelude (5); and **D-236** renders every source path relative to the manifest root the driver finds by walking up from the main file, so the `selfhost` stage's new assertion measures H9 green — zero absolute site rows where 1,479 of 1,637 leaked before (6). Four full harnesses (main plus three cumulative-prefix worktrees) came back 58/58; main is byte-identical to the fully-merged `w456`, and a confirmatory harness on committed main followed. **Part D LANDED (2026-09-02): `npkg/` exists** — twelve modules of Nitpick built by the compiler under test, over the compiler's own path code, list and lexer. `npkg build` runs the README's ladder and produces a compiler BYTE-IDENTICAL to the harness's; `npkg test` builds, runs the runner self-check (§7.1, also `--selfcheck` alone), then every suite the harness runs unit for unit — 908 verdicts on the first full run, every suite count the harness's — with `--only`, `--verdicts PATH`, and `update`/`verify` refusing by name. The undefined-symbol scan reads the object's ELF64 symbol table itself (`npkg/elf.npk`) rather than spawning an unpinned `llvm-readelf`; the harness keeps spawning it and the new **`parity` stage** builds `npkg`, runs `npkg test --verdicts` from the manifest root, diffs the two verdict lists unit for unit and byte-compares `build/npkc` — every per-file harness site now records a verdict. Three things the port found: BUILD_REFERENCE §7.1's "unexpected diagnostics fail a test" is a rule NEITHER runner enforces (subset matching since 0.8; 17 of 131 rejection files carry unasserted extras — **S-9**), nine of those seventeen were `tools/resolve_check.npk` never naming the prelude module (fixed), and the tool runner's capture was quadratic (a `string_concat` per 8 KB read; `npkg test`'s first full run spent 17 of 56 minutes in the kernel — `lib/nproc.npk` accumulates linearly now, and `proc_wait` CONSUMES its `Proc`, which D-004's conservative borrow rule required for the captured text to leave the frame). Whether every suite should be a manifest `[[test]]` entry is **S-10**. Both runners run until `meta/SWITCH.md`; the harness remains the run whose result means the suite is green. **The concluding harness run on the final tree: every stage green, 58/58, and the `parity` stage's first result — 902 verdicts agree between the two runners, npkc byte-identical.** 1.4.8 is closed; S-9 and S-10 were ratified the same day as **D-237** (exact diagnostic matching in both runners) and **D-238** (every suite a `[[test]]` entry with a `stage`, one table both runners read), and land as **1.4.8b** (`meta/roadmap/1.4/1.4.8b.md`, execution-grade).
+**Steps 2b–6 landed (2026-09-02), validated under D-228's cumulative-prefix protocol after a mid-step-6 UI freeze the recovery lost nothing to.** `range<T>` is spellable (2b, S-8/D-093); the snapshot was refreshed mid-cycle so `src/` and the library it imports may spell the flag families (3); every `open` caller crosses its `oflags`/`fmode` to the floor's word with `=> int32`, `open` itself staying `int64` — the floor is the syscall surface (4); `lib/nfs.npk` is the file-system surface — a sorted listing over `getdents64`, containment answered by OPENING not by string checks, restrictive creation defaults and the at-family (D-213's three riders), with `sys_cwd` and three named errnos in the prelude (5); and **D-236** renders every source path relative to the manifest root the driver finds by walking up from the main file, so the `selfhost` stage's new assertion measures H9 green — zero absolute site rows where 1,479 of 1,637 leaked before (6). Four full harnesses (main plus three cumulative-prefix worktrees) came back 58/58; main is byte-identical to the fully-merged `w456`, and a confirmatory harness on committed main followed. **Part D LANDED (2026-09-02): `npkg/` exists** — twelve modules of Nitpick built by the compiler under test, over the compiler's own path code, list and lexer. `npkg build` runs the README's ladder and produces a compiler BYTE-IDENTICAL to the harness's; `npkg test` builds, runs the runner self-check (§7.1, also `--selfcheck` alone), then every suite the harness runs unit for unit — 908 verdicts on the first full run, every suite count the harness's — with `--only`, `--verdicts PATH`, and `update`/`verify` refusing by name. The undefined-symbol scan reads the object's ELF64 symbol table itself (`npkg/elf.npk`) rather than spawning an unpinned `llvm-readelf`; the harness keeps spawning it and the new **`parity` stage** builds `npkg`, runs `npkg test --verdicts` from the manifest root, diffs the two verdict lists unit for unit and byte-compares `build/npkc` — every per-file harness site now records a verdict. Three things the port found: BUILD_REFERENCE §7.1's "unexpected diagnostics fail a test" is a rule NEITHER runner enforces (subset matching since 0.8; 17 of 131 rejection files carry unasserted extras — **S-9**), nine of those seventeen were `tools/resolve_check.npk` never naming the prelude module (fixed), and the tool runner's capture was quadratic (a `string_concat` per 8 KB read; `npkg test`'s first full run spent 17 of 56 minutes in the kernel — `lib/nproc.npk` accumulates linearly now, and `proc_wait` CONSUMES its `Proc`, which D-004's conservative borrow rule required for the captured text to leave the frame). Whether every suite should be a manifest `[[test]]` entry is **S-10**. Both runners run until `meta/SWITCH.md`; the harness remains the run whose result means the suite is green. **The concluding harness run on the final tree: every stage green, 58/58, and the `parity` stage's first result — 902 verdicts agree between the two runners, npkc byte-identical.** 1.4.8 is closed; S-9 and S-10 were ratified the same day as **D-237** (exact diagnostic matching in both runners) and **D-238** (every suite a `[[test]]` entry with a `stage`, one table both runners read), and land as **1.4.8b** (`meta/roadmap/done/1.4/1.4.8b.md`, execution-grade).
 **1.4.8b IS COMPLETE (2026-09-02)**, two commits each under a full harness with
 `parity` green. **D-237**: on the error channel the SET of codes a rejection test
 reports must EQUAL the set its expectations name — `check_module_rejection`
@@ -529,6 +529,21 @@ blanket spelling is recognised by one probe so TYPE-002 never joins TYPE-012,
 `drop` over a bare non-`Result` is TYPE-007 alone, and a refused `..^` argument
 is not also fit-checked. Refusal-only: the compiler's emission of itself is
 unchanged.
+**1.4.9 CLOSED THE CYCLE (2026-09-02): self-hosting is declared under D-202.**
+The README's refresh, invoked relatively from the tree root, gives stage2 ==
+stage3 at 15,631,627 bytes (sha256 `9ce0ec8d3de5b2c83da4a1f11d3f89965728f6cf938f70042ea053eff5defaaf`) from the final tree
+(`80784f3`, whose `src/` is 1.4.8c's) — installed as the snapshot with its
+STAMP, so the committed builder IS the fixpoint text — and the harness's
+`selfhost`, `repro` and `parity` stages are green on the same tree (906
+verdicts agreeing between the two runners, `build/npkc` byte-identical). The
+close synced the docs (the D-233 doc-sync batch drained, G-2 recorded as
+settled by D-231, the width measurement into ORCHESTRATION §4), retired
+HANDOFF.md into ROADMAP's and the 1.4 README's "What cycle 1.4 taught" (every
+part re-homed; `1.4.9.md` has the map), and archived the folder. **Next: cycle
+1.5 (verification)** — its batch D-217…D-221 is ratified,
+`meta/roadmap/1.5/README.md` is the map (its opening says where to start), and
+1.5.0 is the skeleton: the SMT-LIB2 writer, z3 spawned through `lib/nproc.npk`
+under the determinism profile, the obligation manifest, `TCB.md` drafted.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -657,6 +672,27 @@ Three things to know before you use it:
 - **Every test builds the whole frontend through the seed**, which is why even one
   test costs about a minute. That is the floor, not something to optimise around.
 
+Five more, each of which cost a debugging cycle in 1.4 (the executor HANDOFF
+that carried them retired at the cycle close):
+
+- **Strings are move-only owners** (TYPE-046): no binding-to-binding copies;
+  pass as plain arguments freely; consume with `move T:p`; in emitter code
+  rebuild a name per use rather than holding one binding across lines.
+- **The walkers-total instrument refuses a half-done type-kind change**
+  (`check_type_walkers_total`, with excuse tables in `harness.py`). When it
+  fires, complete the change or update the excuse WITH A TRUE REASON — never
+  silence it.
+- **A backend fix does not reach the tools until the snapshot carries it.**
+  The harness compiles `tools/` with the SNAPSHOT, so a checker rule in
+  `src/frontend/` is in the built tools at once and an emitter fix is not
+  (`bootstrap/seed/README.md`, the mirror of D-205).
+- **`src/`'s own code is checked like everyone else's since the switch** —
+  overflow traps, the escape analysis, move-only owners. A trap inside the
+  compiler is a `src/` bug, not a test bug; `gdb -ex "break npk_trap" -ex run
+  -ex bt` on the built `npkc` names it in one shot.
+- **Never rewrite `done/` archives or settled DECISIONS text** — annotate
+  with dated notes (the D-085/D-202 pattern).
+
 ### Reserved words that read like ordinary names
 
 Each of these has cost an edit-build-fail cycle, because the error arrives as a
@@ -680,6 +716,7 @@ parse failure some lines away from the mistake:
 | `unit` | the unit-declaration keyword (D-196, 1.3.3) — `unit:Hertz = 1 / Seconds;`; it reads like the most ordinary local name in any measurement code |
 | `trit`, `nit` | the single-digit ternary/nonary type keywords (D-197, 1.3.4) — like `acquire`/`any`, each interns itself as a NAME only after a `.` (the digit extraction `t.trit(i)`) |
 | `oflags`, `prot`, `mflags`, `fmode` | the four flag-family TYPE keywords (D-044/D-230, 1.4.8) — `prot` and `fmode` in particular read like the most ordinary locals in any file code; their members (`O_RDONLY`, `PROT_READ`, `MAP_SHARED`, `S_IRUSR`, …) are prelude constants, so those names are taken too |
+| `fails`, `end` | the `never fails` contract clause's second word (D-002/D-163) and the `when`/`then`/`end` control-flow family's terminator (LEXICAL_REFERENCE's keyword table) — each cost the 1.4.8 executor a build |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,
@@ -712,14 +749,18 @@ src/          # THE COMPILER — Nitpick source only; nothing else belongs here
 bootstrap/    # seed/ — THE COMMITTED SNAPSHOT: stage1.ll + STAMP + README (D-203).
               #   This is what builds src/ since 1.4.6; read seed/README.md
               #   before touching it. generator/ made the FIRST one and builds
-              #   nothing now; harness/ runs until `npkg` parity (D-206).
+              #   nothing now; harness/ runs beside `npkg` until meta/SWITCH.md
+              #   retires it (D-206) — parity is a stage on every full run.
 runtime/      # npkrt.ll — the runtime FLOOR, hand-written LLVM IR, PERMANENT
               #   (D-203). In every artifact; re-homed out of bootstrap/ at 1.4.6
 tools/        # check/resolve_check/parse_check — the real frontend, for the harness
-tests/        # FOUR rejection suites, named by the stage that refuses:
+tests/        # SIX rejection suites, named by the stage that refuses:
               #   modules/rejection/ (loader), types/rejection/ (type checker),
-              #   analysis/rejection/ (a static analysis), rejection/ (backend rung)
-              #   accept/ is ONE suite for all four — silence has no stage
+              #   analysis/rejection/ (a static analysis), expansion/rejection/
+              #   (macro expansion), derive/rejection/ (the derive reader),
+              #   rejection/ (backend rung); nitpick.toml's [[test]] table is
+              #   the one list of suites both runners read (D-238)
+              #   accept/ is ONE suite for all of them — silence has no stage
               #   conformance/ (subset 1 compiles and runs), frontend/, grammar/
 meta/specs/   # language specs — see below
 meta/roadmap/ # the plan; meta/roadmap/done/ archives completed cycles

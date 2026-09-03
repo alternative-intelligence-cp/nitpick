@@ -178,7 +178,8 @@ ByteReader:r = byte_reader_open(p, within) ?! …;
 ```
 
 > As built (D-185): the open itself is the one synchronous hop — epoll
-> cannot wait for an `open`, and io_uring is refused before Astrée (D-184) —
+> cannot wait for an `open`, and io_uring is refused before the evidence
+> campaign closes (D-184, its basis restated by D-233) —
 > so `within` governs the waits the stream performs after it. Descriptors
 > open `O_NONBLOCK | O_CLOEXEC`; every wait after is `io_ready`, a task
 > suspension (D-071).
@@ -276,7 +277,8 @@ stream to interpret.
   the `Result` mapping for the socket-specific error space are not specified here.
   `ARCHIVE/nsocket` exists and has not been assessed.
 - ~~**`io_uring` versus `epoll`.**~~ **SETTLED as D-184** (1.1.12a): epoll,
-  and only epoll — no timerfd; io_uring refused before Astrée by decision.
+  and only epoll — no timerfd; io_uring refused before the evidence campaign
+  closes, by decision (D-233 restates D-184's basis).
 - **The stream registry's exact shape**, as handed to `failsafe`. It parallels the
   allocation registry D-014 already specifies, and shares its MECHANISM rather
   than inventing a second one: the sorted fixed-stride table of 0.10.1/D-151

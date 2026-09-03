@@ -142,6 +142,12 @@ first and require all green. The tests whose failure mode is a deadline are
 `channel_deadline`, `driver_deadline`, `executor_sleep`, and anything that
 joins a thread.
 
+> **Measured (1.4.7b step 4, 2026-09-01):** six concurrent full runs on the
+> 1.4.7 close commit, all green — the width is 6. Twelve is still unmeasured
+> and still owed: the orchestrator's run, on a known-green tree, before the
+> first 12-wide window (recorded here at the 1.4.9 close so the item outlives
+> the HANDOFF that carried it).
+
 ## 5. What splits, and what does not
 
 **Parallelisable** — leaf work against a frozen npkc, disjoint by path:
@@ -178,6 +184,20 @@ Cross-session messages are the coordination channel and they work; the
 cannot approve another session's pending prompt, and cannot authorise an
 action a session's own settings refuse.
 
+**Escalation, as 1.4 ran it** (carried from the cycle's HANDOFF at the 1.4.9
+close): before escalating, the executor writes what it found into the
+subcycle's file — symptoms, ruled-out causes, the exact failing command — so
+the escalation session starts warm instead of re-deriving the steps. The
+escalated session works in its own worktree (R1; the 2026-08-30 incident is
+the reason). Escalate when a plan step is wrong on contact, when a
+miscompile/fixpoint-drift/nondeterminism hunt has survived two serious
+hypotheses, or when anything decision-shaped appears; the 1.4.7 family-10
+stop-the-line is the worked example of it paying (a plain memset would have
+closed stdin — `OwnedFd`'s vacant is −1, D-225). A symptom that moves when
+unrelated things change size is a value never written; reach for the debugger
+(valgrind is fine — zero-dependency governs the artifact, not the workbench)
+before building instrumentation.
+
 ## 7. When this starts
 
 The natural point is the **1.4 close or 1.5's open**. 1.5 is itself partly
@@ -199,8 +219,10 @@ The rules above are recommendations with evidence. These are decisions:
    triage, record composition) and no code output. Recommendation: Fable,
    since the role is judgement-dense and output-light, which is the shape the
    budget already favours.
-3. **The width to calibrate at** (§4). Recommendation: 6 first, then 12 only
-   if 6 is clean, since the deadline-flake risk is the one unmeasured hazard.
+3. ~~**The width to calibrate at** (§4).~~ **ANSWERED — D-228 sequenced it
+   behind OWED-1; measured clean at 6 (1.4.7b step 4); 12 owed** (§4's note).
+   The recommendation stood: 6 first, then 12 only if 6 is clean, since the
+   deadline-flake risk is the one unmeasured hazard.
 4. **Whether R6's "never work around a compiler defect" is absolute.** It is
    written as absolute. If there is a case for a recorded, time-boxed
    exception the user wants available, it has to be named now — under the

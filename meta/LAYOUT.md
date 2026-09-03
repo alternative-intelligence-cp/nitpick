@@ -23,12 +23,15 @@ nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-0
 │   │   ├── ir/             #   LLVM IR text emission (cycle 0.7)
 │   │   └── layout/         #   type layout / ABI
 │   └── driver/             # manifest, module graph, subprocess invocation
+├── lib/                    # the library tier (0.8.4): ordinary Nitpick over the floor, outside src/
 ├── npkg/                   # the build and test driver (D-206, 1.4.8): a shipped tool, not the compiler
+├── runtime/                # npkrt.ll, the runtime FLOOR: hand-written .ll, PERMANENT (D-015/D-203;
+│   └── tests/              #   re-homed here at 1.4.6), and the floor's own hand-written tests
+├── tools/                  # check / parse_check / resolve_check — the real frontend, for the harness (0.7.8)
 ├── bootstrap/              # Not the compiler. (D-085; survival map D-203)
-│   ├── generator/          #   the seed generator: subset-1 .npk -> .ll (permanent, regeneration-only)
-│   ├── runtime/            #   the runtime floor, hand-written .ll — permanent form; re-homes to runtime/ at 1.4.6 (D-015/D-203)
-│   ├── harness/            #   the test runner, until `npkg` parity is proven (SWITCH.md)
-│   └── seed/               #   committed fixpoint IR + STAMP, from the 1.4.6 switch (D-203)
+│   ├── generator/          #   made the FIRST snapshot; builds nothing now (permanent, regeneration-only)
+│   ├── harness/            #   the Python runner, beside `npkg` until SWITCH.md retires it (D-206; parity is a stage on every run)
+│   └── seed/               #   stage1.ll + STAMP + README — THE BUILDER since 1.4.6, refreshed at cycle closes (D-203/D-205)
 └── tests/
     ├── conformance/        # subset 1 must compile (cycle 0.0.1)
     └── rejection/          # outside subset 1 → backend diagnostic, not parse error

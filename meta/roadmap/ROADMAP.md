@@ -316,7 +316,7 @@ the sharpening is bounded work rather than open discovery.
 | ~~**1.1**~~ | ~~**Async and concurrency**~~ — **DONE** (`done/1.1/`). D-163 (`never fails` checked, `raw`/`drop` licensed), `Duration` and the clock (D-176), coroutines as switched-resume machines (D-177/D-178), the typed `Error` system (D-179), executors and real threads (D-181), `atomic<T>`/channels/pools/actors (D-182), the sync primitives (D-056), the reactor and the I/O surface (D-184/D-185), and **the Bridge (D-149 over D-055, 1.1.13, D-187–D-190)** — sealed shm, the supervised spawn with the registry published before the clone, dispatch over the ring with kill-on-deadline and poisoning, generated `extern` stubs with the interface hash, and the C SDK with a conformance suite against real C drivers. Closed by D-191: user variadics and `..^` landed (the spec's "a variadic call lowers to building one"), the await-edge rungs became checker rules (SUSPEND-003) and belts, and three latent crossing/typing defects found by the first programs to exercise them. The original planning row: opens with D-163: `never fails` on every function, checked; `raw` and `drop` licensed only by it; a `Result` never discarded without a keyword** (three subcycles: the contract and the instrument, the `src/` sweep of ~7,900 sites, the `tests/` sweep and the refusal — the 0.8.0 shape), then coroutine lowering (D-177/D-178, 1.1.4 — landed), **the typed-error system (D-179, 1.1.5–1.1.7: `Error` as a nominal non-number, origin chains on `relay`, and the exhaustive `failsafe` — deliberately before the executor so its failures are born named)**, per-thread executors (1.1.8), channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
 | **1.2** ✅ | **The managed lowering — DONE** (see `done/1.2/`) — — RAII at scope exit: the memory model's DEFAULT regime, of which the backend implements nothing. Nothing is dropped at a closing brace, so the regime every program gets unless it says otherwise is leak-until-exit, and D-151's own text records the interim as accepted ("managed-regime storage whose RAII arrives with the managed lowering"). What a drop IS per type, its ORDER against `defer` and against D-014's rule that a trap runs neither, `nodrop`, the move analysis deciding which paths still own a value at the brace, the early exits, and what a COPY of an owning value is. **Inserted here because it blocks 1.1.11**: a `Mutex` hands out a guard whose release IS scope exit, and closures are gone (D-018) so no scoped-callback form can stand in. Verifying (1.4) a compiler whose default regime is unimplemented, or handing Astrée (1.5) a program that leaks by design, are the other two reasons it cannot wait. Map: `1.2/`. **B-6.** |
 | **1.3** ✅ | **The exotic numeric tier — DONE** (`done/1.3/`). D-194…D-200 ratified at open, then landed in seven subcycles: `simd<T, N>` (elementwise, ordered reductions, D-007 lane guards), `tfp32..256` (Q-format on native `iN`, the D-144-as-amended ERR discipline both families now share), `dim256<Unit>` (packed SI exponent vectors, `unit:` declarations, the zero vector IS `tfp256`, erased lowering), the ternary/nonary four (balanced values in binary carriers, Kleene `&`/`|`, digit extraction), `frac*` (invariant-normalized exact-or-ERR, the PRELUDE-core architecture — arithmetic a verifier reads as source), `complex<T>` (per-element prelude cores, Smith's division, equality only), and the library tier (`buffer` as the managed owning cell, `#sqrt` the instruction, `lib/nvec.npk`, `lib/ntensor.npk` — rank ≤ 9 inline, `matrix<tryte>` as the ttensor story). Closed at 1.3.8: the tier's lowering pinned in the ir_types fixture, the G-3 rung retired, and the harness grew the **opt-O2 leg** — every real-backend program re-runs through `opt -O2` + `llc -O2` and must answer identically (the prototype's optimiser-removed-guarantee defect class, now a standing instrument). The original row: created at 1.1-close by the user's G-3 decision (D-191) — everything that is going in lands before the fixpoint re-close and the one-shot verified artifact. Map: `done/1.3/`. |
-| **1.4** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.3), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.4/`. |
+| **1.4** ✅ | **Self-hosting — DONE** (`done/1.4/`). D-201…D-209 ratified at open (the generated builtin signature table, the fixpoint criterion restated, the committed snapshot with the floor's permanent form as hand-written IR, reproducibility pinned and tested, the builder rule with the switch at 1.4.6, `npkg`, per-scope joins, loop-carried moves, the adoption scope); the bug/vuln-statistics review ratified the same day as D-210…D-216 with the 1.5 batch early (D-217…D-221); D-222…D-240 on the way. Landed: the instruments (1.4.1); every builtin call typed from ONE generated table and 2,215 `raw`/`relay` shed (1.4.2); overflow traps on plain ints, `fixed`-only module state, `const` retired (1.4.2b/c); the move analysis learning about PARAMETERS and the consuming `pick (move(v))` (1.4.3/1.4.3b); per-scope joins with the exit order join → defers → drops → reclaims, and the five-second futex sleep on every thread join found (1.4.4); the toolchain a pinned build input and the `repro` stage (1.4.5); **the builder switch** — `bootstrap/seed/stage1.ll` builds `src/`, the Python seed builds nothing, `npkrt.ll` re-homed to `runtime/` (1.4.6); **adoption** — every growable array a `List<T>`, the diagnostic walk generic and borrowing over `dyn Writer`, 268 counted `for` loops by a rule (D-234), the method-symbol scheme fixed by the tree's first foreign-module impl, the snapshot refreshed from the adopted tree, then `TY_FLAGS`, the wide ladder, every kind decided as a channel element and the width calibrated at 6 (1.4.7/1.4.7b); **`npkg`** — one clone primitive for every supervised child, `lib/nproc.npk`, `lib/nfs.npk`, manifest-root-relative paths, and `npkg build`/`npkg test` proven against the harness by a `parity` stage on every full run (1.4.8); exact diagnostic matching and every suite declared in one manifest table both runners read (1.4.8b); `Error` and the prelude's names refused at every type-namespace declaration, a sharper refusal silencing the generic one (1.4.8c). **Closed at 1.4.9: self-hosting declared under D-202** — stage2 == stage3 at 15,631,627 bytes from `80784f3`, the `selfhost`, `repro` and `parity` stages green on the same tree, the snapshot refreshed from the final tree. What the cycle taught is below. The original row: the stage-1/stage-2 fixpoint (re-closed after 0.9–1.3), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `done/1.4/`. |
 | **1.5** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.5/`. |
 | **1.6** | **The LLVM-native analyzer evidence (D-233)** — the cycle was "Astrée preparation — the single non-renewable 30-day run" until D-233 (2026-09-01) superseded D-232: the evidence moved to the emitted IR itself, and no external clock remains anywhere in Phase C. Abstract interpretation over our own emission (engine — Clam/Crab vs IKOS — chosen at 1.6.0's measured bring-up gate; the loser decided out), Alive2 translation validation beside the opt-O2 leg, the committed alarm ledger, and the assembled evidence package: analyzer verdicts + the D-218 obligation manifest + Alive2's ledger + TCB.md's enumerated floor. Every engine open, pinned by commit, built on the workbench, run as a standing instrument. Map: `1.6/`. |
 
@@ -332,6 +332,37 @@ touched obligation — so the standing rule keeps its force with its basis
 restated: everything entering the LANGUAGE lands before the campaign
 closes; tools may join the campaign whenever they earn it (tool adoption is
 monotone). C-19 is closed; no external contact gates anything.
+
+### What cycle 1.4 taught
+
+The full account, with the incident behind each line, is
+`done/1.4/README.md` ("What cycle 1.4 taught"). The rules of working that
+generalise:
+
+1. **Test the reported symptom before implementing the reported fix.** Every
+   1.4 plan whose diagnosis could be tested was wrong about the diagnosis
+   while right about the goal — nine times, from D-204's ModuleID to two of
+   D-237's eight pre-settlements.
+2. **A rule believed in force because a document says so is the cycle's
+   recurring defect.** Six live defects surfaced by making a dormant rule
+   apply, and 1.4.8's answer is structural: one table both runners read
+   (D-238), one signature authority (D-201), one toolchain pin every
+   invocation is built from (D-204).
+3. **Hunt "correct by accident."** Poison the value: a right answer from an
+   uninitialised, uncomputed or freed read is a defect no test can see, and
+   the `absent-fact` stage is that experiment kept. A number that lands
+   exactly on a configured timeout is never a coincidence.
+4. **Silence is not success, and a right count is not a right edit.** Ask any
+   "none" a decision rests on a second way; negative-control every
+   instrument before trusting it — a control caught a real bug in one of
+   this cycle's.
+5. **The compiler is the completeness check, not grep** (text search wrong in
+   eight structurally different ways, the compiler in none) — but it cannot
+   see an unstarted conversion or an asymmetry that type-checks.
+6. **Two implementations that must agree are an instrument** — the `parity`
+   stage found three things neither runner found alone — **and a red under
+   parallel load is a stop sign**: the cycle's one red was a race in a C
+   fixture, measured and fixed at its source, never retried (D-228 R5).
 
 ---
 
@@ -381,9 +412,11 @@ can replace `nitpick-docs`.
   lines of `raw` and `drop`; written under the licence they need no second sweep.
   1.1 retires the word's old home (D-149's Bridge) and owns the spawn form whose
   error channel D-163 requires, so it is the cycle that gives the word its new one.
-- **Verification is 1.4, but its obligations are carried forward from every cycle** —
+- **Verification is 1.5, but its obligations are carried forward from every cycle** —
   0.9.0's rung refusals for `limit`/contracts are the first installment, so the
-  constructs are honestly refused until 1.4 can honestly check them.
+  constructs are honestly refused until 1.5 can honestly check them. (This note
+  said "1.4" until the 1.4.9 close: written before both renumberings below and
+  missed by both sweeps.)
 
 
 ## The cycle-numbering convention, relaxed at 0.10

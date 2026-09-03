@@ -89,8 +89,9 @@ documentation:
   internals throughout. They document a migration nobody outside the project needs.
 - **`DECISIONS.md`** — a rationale record rather than a reference manual, and the
   one genuinely open question. For a language heading into formal verification, a
-  decision log with reasoning is arguably *required* rather than optional: Astrée-
-  facing work needs to know why a rule exists, not only that it does.
+  decision log with reasoning is arguably *required* rather than optional: the
+  evidence campaign's work (D-233) needs to know why a rule exists, not only that
+  it does.
 
 ## Versioning
 

@@ -5,7 +5,8 @@
 > `done/OPEN_DECISIONS-through-0.8.md`. Every item here traces to the audit at
 > `audit-0.8-close/total_audit.md`, blocks a named cycle, and nothing is
 > optional — per the standing constraint, anything entering the language must be
-> settled before the Astrée trial, because re-verification is unaffordable.
+> settled before the evidence campaign closes (D-233 restated the basis: proof
+> invalidation, not a one-shot trial), because re-verification is unaffordable.
 >
 > Proposed decision numbers start at **D-142** (last settled: D-141). Numbers
 > are suggestions; the letters (LIVE-*, B-*, C-*) are the stable handles the
@@ -137,7 +138,7 @@ the builtin surface is typed from a signature table.
 | ~~**S-12**~~ | **D-240** | **SETTLED (user, 2026-09-02: the recommendation as written), LANDED at 1.4.8c at the three sites, each at its emitter, the second expectations removed.** ~~Should a sharper refusal suppress the generic one it was written to replace?~~ (1.4.8b step 1.) D-237's exact matching surfaced three sites where two rules report one mistake: `builtin_args.npk` 36:27 (`TYPE-054` for `..^` into a builtin AND `TYPE-007` for the spread argument's type), `builtin_args.npk` 95:5 (`TYPE-007` "`drop` needs a `Result`" AND `TYPE-042` "`drop` discards a VALUE"), and `impl_old_blanket.npk` 22 (`TYPE-012`, whose header says it exists so the reader is not left with the generic "is a trait, not a value type" — AND that generic `TYPE-002`). All three are named in their tests now, so nothing is hidden; the question is diagnostics quality. D-157's rules 1 and 2 are the precedent for one mistake, one report, and `type_trait.npk`'s no-binding branch cites it. **Recommendation:** yes, where the sharper rule fires the generic one stays silent, each site fixed at its emitter with the test's second expectation removed in the same commit; a small, self-contained item for the 1.4.9 close or the first 1.5 subcycle that touches the checker. | 1.4.9 or early 1.5 | 1.4.8b step 1 |
 | ~~**S-5**~~ | **D-216** | **SETTLED (user-ratified): the consuming `pick (move(v))` — ownership transfers into the matched arm; lands at 1.4.3b.** ~~An owning enum payload cannot be read back out — enums with owning payloads are write-only containers.~~ TYPE-046 correctly refuses a `pick` arm binding an owning payload (the binding is a copy; two owners, one double free), and no move-binding form exists in patterns — so `enum:Res = { Note(string); }` can be constructed and dropped but its string can never be recovered. The missing form is a CONSUMING destructure: a `pick` over `move(v)` whose arms receive ownership of what they bind (the enum's own drop then does not run — the arm took the payload). Spelling and semantics are a language decision. Natural home: beside S-2's loop-carried move work (1.4.3), which is already in the move analysis. | 1.4.3 (or its own slot) | 1.4.1 |
 
-## 3. Decisions blocking 1.4 (self-hosting)
+## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
 |---|---|---|---|---|
@@ -151,7 +152,7 @@ the builtin surface is typed from a signature table.
 
 ---
 
-## 4. Decisions blocking 1.5 (verification) and 1.6 (Astrée)
+## 4. Decisions blocking 1.5 (verification) and 1.6 (the analyzer evidence — "Astrée" until D-233)
 
 The 1.5 surface (grammar/AST/resolution of contracts, Rules, invariants) is built;
 everything from *typing* through *Z3* is not. Five decisions, plus the Astrée gate.
@@ -198,7 +199,7 @@ These would force token-table renumbering *after* the "built once, in full" free
 |---|---|---|---|
 | ~~**G-1**~~ | **D-230** | **SETTLED (user decision 2026-09-01), LANDED at 1.4.8 step 2: one kind `TY_FLAGS`, four families as keywords, the members generated prelude constants from TYPE_REFERENCE §8's marked region; `whence`/`fcmd`/`advice` per the user's families answer (1.4.7b).** ~~D-044's seven bitflag types~~ (`oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence`) are listed in AST_REFERENCE as parser-known builtins, are required by every syscall wrapper, and exist nowhere — a user type named `oflags` silently shadows a decided builtin. Run the generator to add them now, or supersede D-044 with a library-enum design. Decide before the frontend freeze. | grammar #9 |
 | ~~**G-3**~~ | **D-191 — SETTLED at 1.1-close (the user's call): a NEW CYCLE.** The exotic numeric tier is **cycle 1.3**, inserted before self-hosting (the D-183 renumbering precedent, applied again: self-hosting 1.4, verification 1.5, Astrée 1.6 — everything must land before the fixpoint re-close and the verified artifact anyway). The rung strings cite "1.3 (G-3)"; the cycle's map is `1.3/README.md`. ~~The exotic numeric tier has no owner: `vec2/vec3`, `matrix`, `tensor`, `tfp*`, `frac*`, `dim256`, `simd`, `complex` parse and resolve but no cycle lowers them.~~ | ~~before 1.1 closes~~ | 0.9.7 sweep |
-| **G-2** | next free | **The full integer-width set** (`int1/2/4`, `int512`–`int4096`) is accepted by lexer/impl but has no layout in TYPE_REFERENCE, and `tt_int` computes size/align 0 for sub-byte widths. Enumerate with a stored-as-byte rule, or trim the grammar. | type-sys #18 |
+| ~~**G-2**~~ | **D-231** | **SETTLED (user decision 2026-09-01), LANDED at 1.4.7b step 2: the sub-byte widths are STRUCK from the grammar and the wide ladder (`int512`–`int4096`) is pinned with layout rows and one executed conformance case (`wide_ladder.npk` runs arithmetic at 1024/2048/4096 bits; `widths_struck.npk` shows `int4` is no longer a type).** D-231's own text opens "G-2, answered in two halves"; this row still read "next free" until the 1.4.9 close read the table. ~~The full integer-width set (`int1/2/4`, `int512`–`int4096`) is accepted by lexer/impl but has no layout in TYPE_REFERENCE, and `tt_int` computes size/align 0 for sub-byte widths. Enumerate with a stored-as-byte rule, or trim the grammar.~~ | type-sys #18 |
 | **G-4** | D-163 | **`raw` and `drop` are unchecked, and a bare `f();` discards a `Result` with no keyword.** `type_unwrap` verifies only that the operand is a `Result<T>`; `emit_raw` is an unguarded `extractvalue`; `drop` evaluates and discards; `check_stmt` types an expression statement without reading its type. The `never fails` contract (D-002) names the property all three depend on but is attached to nothing they can see, and D-149 is retiring it. Measured: 262–300 `raw` sites and **741 `drop` sites** in `src/` sit on callees that `fail` — the table accessors (`ast_id_at` ×92 …) and the driver's own stage calls (`drop check_module(…)`), each continuing on node 0 or past a failed stage. Decide: `never fails` on any function, checked; `raw` and `drop` licensed only by it; the value-less statement forms a closed list; the spawn form's error routed to the D-062 join; always on. **SETTLED as D-163**; ~~struck at 1.1.0~~ — the contract, its checks, and the statement rules landed there (the instrument measured the REAL debt: 8,921 may-fail `src/` sites — see `1.1/raw_sweep_worklist.md`); the refusal itself flips at 1.1.2 after the 1.1.1 sweep. | user, post-1.0.0 |
 
 ---
@@ -223,7 +224,9 @@ stale, the input was never monomorphized C),
 `CONCURRENCY_REFERENCE.md:570` ("the single Astrée run"),
 `IO_REFERENCE.md:181/279` ("io_uring refused before Astrée" — D-184's rule
 now reads "before the evidence campaign closes"), `SWITCH.md:79`. Line
-numbers as of 23e9e79; sweep with the next doc-sync pass.
+numbers as of 23e9e79; sweep with the next doc-sync pass. **Swept at the 1.4.9
+close (2026-09-02)** — all six read "the evidence campaign (D-233)" now, and
+`SWITCH.md`'s line with them.
 
 ---
 
@@ -271,7 +274,7 @@ the standing instruction is to implement and perfect what is already
 planned rather than grow new coverage scope mid-build.
 
 **Timing constraint (the D-183-era rule applies):** anything that review
-motivates must land BEFORE the Astrée trial — re-verification is
+motivates must land BEFORE the evidence campaign closes (D-233) — re-verification is
 unaffordable — so the review itself must happen before 1.6 pulls the
 trigger, not drift past it. Natural slot: alongside 1.4/1.5, when the
 compiler is self-hosting and the library tier is being grown anyway.
@@ -294,8 +297,9 @@ which their scheduling already satisfies (1.4.2b, 1.4.3b, 1.4.4, 1.4.8,
 2. **C-1 (mangling) before 1.0 anything** — the whole cycle's symbol scheme.
 2a. **G-4/D-163 decided before 1.0's call-form subcycles, implemented before 1.1 anything** — the cycle's own code is written under the licence, not swept after it, and the spawn form's error channel exists before the join is designed.
 3. **B-2 (Duration) + C-7 (coro) before 1.1 anything** — the substrate.
-4. **C-10…C-12 before 1.4 anything** — the fixpoint must be measuring the right
-   thing before self-hosting is declared.
+4. ~~**C-10…C-12 before 1.4 anything** — the fixpoint must be measuring the right
+   thing before self-hosting is declared.~~ **DONE** — D-202…D-204 at 1.4.0 and
+   1.4.5; self-hosting declared at 1.4.9.
 5. **C-14…C-17 before 1.5 anything**, and ~~C-19 answered before 1.5
    exits~~ — C-19 CLOSED by D-232→D-233 (2026-09-01); 1.6's bring-up gate
    is ordinary scheduled work with no external dependency.

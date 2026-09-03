@@ -32,6 +32,31 @@ process-spawn primitive Z3 needs arrives with 1.4.8's `npk_spawn` (D-206), and
 `npkg` owns the invocation. The typed-builtin world (D-201) means new floor
 entries are table-typed from birth.
 
+> **At the 1.4 close (1.4.9, 2026-09-02) — what the paragraph above now
+> means, for the executor who starts here.** Cycle 1.4 is archived
+> (`../done/1.4/`); the compiler is self-hosting under D-202 and the
+> snapshot is refreshed from the final tree. The spawn primitive LANDED: the
+> floor's `clone_exec` (one ten-word block for every supervised child; the
+> every-child-bound-fd-≥-4 rule CHECKED by the runtime) and `lib/nproc.npk`'s
+> `proc_spawn`/`proc_wait`/`proc_reap` — both pipes captured, every wait
+> bounded, a deadline kills-reaps-retires, `proc_wait` consuming its `Proc`
+> (`tests/backend/programs/proc_tool.npk` is the worked example;
+> `lib/nsys.npk` holds the syscall vocabulary; `lib/nfs.npk` the file-system
+> surface). That is what 1.5.0 spawns z3 through. `npkg verify` refuses by
+> name today (`npkg/main.npk`) and is the command this cycle gives a body;
+> `[verify]` in `nitpick.toml` is already switched on (D-068), and
+> `[verify.nikos]` is D-217's — refused by name until a post-1.6 cycle.
+> A ONE-TIME `HANDOFF-1.5.0.md` sits beside this file (the folder rename at
+> the 1.4 close's end made the message-based handoff impossible at that one
+> boundary; it retires when 1.5.0 closes). Read, in this order, `CLAUDE.md`'s
+> status, `../done/1.4/README.md`'s "What cycle 1.4 taught",
+> `../ORCHESTRATION.md` (D-228, normative), `bootstrap/seed/README.md` (a
+> feature enters `src/` only after a snapshot that understands it — 1.5
+> turns rung refusals into checker work, so plan the refreshes), this file's
+> batch, then write `1.5.0.md` execution-grade before touching code. The
+> harness and `npkg` both run until `meta/SWITCH.md`; the harness's result
+> is the one that means the suite is green.
+
 ## The decision batch (RATIFIED — D-217…D-221; the text below is the normative detail the records cite)
 
 ### C-17 — the SMT emitter and invocation architecture (the cycle's spine)

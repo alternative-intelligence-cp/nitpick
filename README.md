@@ -11,7 +11,8 @@ A safety-critical systems language and its self-hosted compiler.
 > written in Nitpick and compiled by itself. A prototype clone that pulls from
 > here will refuse to merge unrelated histories, which is the intended outcome.
 
-**Status: self-hosting (cycle 1.4 of the plan, Phase C).** The specification set
+**Status: self-hosting declared — cycle 1.4 of the plan (Phase C) is complete;
+verification (cycle 1.5) is next.** The specification set
 is complete and every design decision is recorded with its reasoning. The
 compiler is Nitpick source, built by a committed snapshot of its own emission
 (`bootstrap/seed/`) and rebuilding itself byte-identically on every full test

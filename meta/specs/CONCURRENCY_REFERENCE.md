@@ -567,8 +567,8 @@ releases the guard at the closing brace.
 **There is no lock-free queue.** `lockfree.npk` is not ported: a lock-free MPMC
 queue under SeqCst-only atomics (D-016) is hard to get right and expensive to
 verify, a channel already provides the operation, and a second queue with a harder
-proof obligation spends verification budget against the single Astrée run for a
-case nothing has been shown to need (D-073).
+proof obligation spends verification budget — proof invalidation, the scarce
+resource under D-233 — for a case nothing has been shown to need (D-073).
 
 ---
 

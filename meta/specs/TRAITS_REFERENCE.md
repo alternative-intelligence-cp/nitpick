@@ -397,8 +397,9 @@ that the concrete arguments satisfy those bounds; the body is not re-checked
 The consequence to know: **a body may not use any capability its bounds do not
 declare.** There is no duck typing. That restriction is what makes the body
 checkable once rather than once per instantiation — which matters directly,
-because Astrée analyses monomorphized output and a body correct for the
-instantiations that happen to exist may still be wrong in general.
+because the evidence campaign (D-233) analyses the emitted IR — monomorphized
+output — and a body correct for the instantiations that happen to exist may
+still be wrong in general.
 
 Three rules follow, all D-107:
 

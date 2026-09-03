@@ -244,6 +244,17 @@ stage-N+1 where stage N is the first current-source compiler — §6.2's
 three-pass shape. If successive emissions differ, something from the previous
 stage still influences the output and the result is not self-hosted.
 
+> **Declared at 1.4.9 (2026-09-02).** The criterion held on the final 1.4
+> tree in both spellings the tree uses: the README's refresh from the tree
+> root gives stage2 == stage3 at 15,631,627 bytes (sha256 `9ce0ec8d3de5b2c83da4a1f11d3f89965728f6cf938f70042ea053eff5defaaf`) from the
+> source at `80784f3`, installed as the snapshot with its STAMP; and the
+> harness's `selfhost` stage rebuilds stage 1 byte-identically on the same
+> tree, with `repro` (cwd-independent, `llc` deterministic, the STAMP
+> matching, zero absolute site rows) and `parity` (906 verdicts agreeing
+> between the two runners, `build/npkc` byte-identical) green beside it. Every
+> snapshot before 1.4.7's was emitted by a compiler whose own source was
+> subset 1; this one is emitted by, and is, the adopted compiler (SUBSET_1 §4).
+
 > **The prototype `npkc` is not the seed** (D-085, superseding D-079). It
 > implements the language Nitpick *used to be* — no `relay`, no `cstring` — so
 > seeding from it would force our own sources into a foreign dialect and create a
