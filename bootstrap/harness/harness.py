@@ -132,6 +132,14 @@ LLC_FLAGS = list(_TC.get("llc-flags", []))
 LLC_OPT_FLAGS = list(_TC.get("llc-opt-flags", []))
 OPT_FLAGS = list(_TC.get("opt-flags", []))
 LLD_FLAGS = list(_TC.get("lld-flags", []))
+# THE SOLVER PIN (D-218.1/D-218.2, 1.5.0): read like the toolchain's, checked
+# by `check_verify_pin`, and the options list is what every z3 invocation is
+# BUILT from -- the profile is data the runner reads, never a constant here.
+_VF = MANIFEST.get("verify", {})
+Z3_ENABLED = bool(_VF.get("z3", False))
+Z3_VERSION = _VF.get("z3-version", "")
+Z3_SHA = _VF.get("z3-sha256", "")
+Z3_OPTIONS = list(_VF.get("z3-options", []))
 
 # Files that are imported by another test rather than run on their own.
 # `use "x.npk".*` names the dependency, so this is derived, not configured.
@@ -153,6 +161,8 @@ class Expect:
         self.notes = []         # [(code, line|None, col|None)]
         self.exit = 0
         self.no_parse_error = False
+        self.obligations = []      # (kind, verdict, n) -- the `verify` stage's rows (1.5.0)
+        self.obligations_none = False
         # `// argv: TOK ...` -- extra argv for the RUN. A token that names a
         # fixture (its basename, uppercased -- MOCK_DRIVER for
         # tests/backend/fixtures/mock_driver.npk) is substituted with the
@@ -210,6 +220,16 @@ def read_expectations(path):
                 e.stress = int(body.split(":", 1)[1].strip())
             elif body.startswith("argv:"):
                 e.argv = body.split(":", 1)[1].split()
+            elif body.startswith("expect-obligation:"):
+                # THE `verify` STAGE'S ROW (1.5.0, P-22): `KIND VERDICT N`, or
+                # `none` -- the (kind, verdict) counts over the test's own
+                # module's rows must EQUAL the set named, D-237's shape.
+                rest = body.split(":", 1)[1].strip()
+                if rest == "none":
+                    e.obligations_none = True
+                else:
+                    kind, verdict, n = rest.split()
+                    e.obligations.append((kind, verdict, int(n)))
             elif body.startswith("expect-no-parse-error"):
                 e.no_parse_error = True
     return e
@@ -2302,13 +2322,88 @@ def check_toolchain_pin():
     return fails
 
 
+_Z3_FORBIDDEN = (("timeout=", "a wall-clock timeout"), ("-T:", "a wall-clock timeout"),
+                 ("-t:", "a wall-clock timeout"), ("solver.timeout=", "a wall-clock timeout"),
+                 ("parallel.enable=", "parallelism"), ("smt.threads=", "parallelism"))
+
+
+def check_verify_pin():
+    """The solver that will decide obligations is the pinned BUILD (D-218.1),
+    and the profile it runs under is the deterministic one (D-218.2).
+
+    `check_toolchain_pin`'s shape, one step further: z3's version string
+    cannot tell two builds of one tag apart, so the binary `z3` resolves to
+    on PATH is hashed as well -- a verdict is a function of (obligation,
+    solver build, budget), and the build is the pin. The options list is
+    refused when it carries a wall-clock knob (`timeout=`, `-T:`, `-t:`,
+    `solver.timeout=`), a parallelism knob (`sat.threads=` other than 1,
+    `smt.threads=`, `parallel.enable=`), or no `rlimit=` budget: the two
+    "disabled" rows of the profile are refusals, not memories. Nothing is
+    checked when the manifest declares no z3 verification (`z3 = false`).
+    """
+    if not Z3_ENABLED:
+        return []
+    fails = []
+    if not Z3_VERSION:
+        return ["nitpick.toml has no [verify] z3-version pin -- the solver is a "
+                "build INPUT (D-218.1), and an unpinned input is not one"]
+    if not Z3_SHA:
+        return ["nitpick.toml has no [verify] z3-sha256 pin -- a version string "
+                "cannot tell two builds apart (D-218.1)"]
+    has_rlimit = False
+    for o in Z3_OPTIONS:
+        if o.startswith("rlimit="):
+            has_rlimit = True
+        why = None
+        for prefix, what in _Z3_FORBIDDEN:
+            if o.startswith(prefix):
+                why = what
+        if o.startswith("sat.threads=") and o != "sat.threads=1":
+            why = "parallelism"
+        if why:
+            fails.append("nitpick.toml: [verify] z3-options carries `%s`, which is %s "
+                         "-- the determinism profile (D-218.2) admits fixed seeds and "
+                         "`rlimit` only; a verdict that depends on the clock or on a "
+                         "thread schedule differs between machines" % (o, why))
+    if not has_rlimit:
+        fails.append("nitpick.toml: [verify] z3-options has no `rlimit=` entry -- the "
+                     "determinism profile's SOLE budget is missing (D-218.2)")
+    if fails:
+        return fails
+    z3 = shutil.which("z3")
+    if not z3:
+        return ["z3 is not on PATH -- the solver is a build input (D-218.1), and a "
+                "verify without it is not a verify"]
+    try:
+        r = subprocess.run([z3, "-version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return ["z3 -version failed: %s" % e]
+    m = re.search(r"Z3 version\s+(\d+\.\d+\.\d+)", r.stdout)
+    if not m:
+        return ["z3 -version did not report a version this can read: %r"
+                % r.stdout.strip()[:120]]
+    if m.group(1) != Z3_VERSION:
+        return ["z3 is %s but nitpick.toml pins %s -- the solver is a BUILD INPUT "
+                "(D-218.1); install the pinned release, or update the pin AND "
+                "re-record nitpick.obligations in the same change"
+                % (m.group(1), Z3_VERSION)]
+    import hashlib
+    with open(z3, "rb") as fh:
+        got = hashlib.sha256(fh.read()).hexdigest()
+    if got != Z3_SHA:
+        return ["z3's sha256 is %s but nitpick.toml pins %s -- a different BUILD of "
+                "the solver (D-218.1): a verdict is a function of the build, so the "
+                "pin moves only with a re-recorded nitpick.obligations" % (got, Z3_SHA)]
+    return []
+
+
 # --- driver ------------------------------------------------------------------
 
 # THE STAGES A `[[test]]` ENTRY MAY NAME (D-238, 1.4.8b): the tool that judges
 # the suite and what it must say. `compile` is the default and the only stage
 # with a `kind`. Both runners carry this list and refuse anything outside it.
 STAGES = ("compile", "parse", "resolve", "check", "accept", "fixture",
-          "program", "runtime")
+          "program", "runtime", "verify")
 TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
 
 
@@ -2640,6 +2735,417 @@ def stage_runtime(t, s):
     print("  %-11s %2d runtime-floor test(s)" % (t["name"], n))
 
 
+# --- the verification leg (1.5.0, D-218; the plan is meta/roadmap/1.5/1.5.0.md) -----
+#
+# The compiler EMITS obligations (`--obligations DIR`: one SMT-LIB2 file per
+# function instance, index.txt, rows.txt) and READS a manifest (`--elide`);
+# the runner spawns z3 -- one fresh process per file under the profile the
+# manifest pins (D-218.2/D-218.3) -- maps the answers to rows, renders the
+# manifest (P-10, the one row shape `smt_manifest.npk` renders; npkg's file
+# and this one are byte-compared by the parity stage) and drives the second
+# run. Everything here is the Python twin of `npkg verify`.
+
+Z3_KINDS = ("div-zero", "div-min", "overflow", "bounds", "cast-range", "exhaustive",
+            "requires", "ensures", "invariant", "limit", "limit-subsume", "terminate",
+            "stack-depth", "err-exit", "failsafe-post", "prove", "assert-static")
+VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
+
+
+def z3_verdicts(obl_dir, name):
+    """Every function file under the profile, one process each; the rows of
+    rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym)] --
+    or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
+    exactly N answer lines for N encoded rows, anything else fails the run by
+    name. The wall-clock net (P-13) is a hang net and never a verdict."""
+    z3 = shutil.which("z3")
+    if not z3:
+        return None, ["%s: z3 is not on PATH (the pin check should have said so)" % name]
+    try:
+        idx = [l.rstrip("\n").split("\t") for l in open(os.path.join(obl_dir, "index.txt"), encoding="utf-8") if l.strip()]
+        rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(obl_dir, "rows.txt"), encoding="utf-8") if l.strip()]
+    except OSError as e:
+        return None, ["%s: the obligation directory is unreadable: %s" % (name, e)]
+    verdict = {}
+    for fno, sym, checks in idx:
+        checks = int(checks)
+        enc = [r for r in rows if r[0] == fno and r[4] == "1"]
+        if len(enc) != checks:
+            return None, ["%s: index.txt says %s has %d checks, rows.txt lists %d encoded rows" % (name, fno, checks, len(enc))]
+        if checks == 0:
+            continue
+        try:
+            r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(obl_dir, fno + ".smt2")],
+                               capture_output=True, text=True, timeout=120 + 10 * checks)
+        except subprocess.TimeoutExpired:
+            return None, ["%s: z3 exceeded the wall-clock net on %s (%s) -- not a verdict: a "
+                          "wedged solver is a build failure, never a `budget` row (P-13)" % (name, fno, sym)]
+        ans = [l for l in r.stdout.splitlines() if l.strip()]
+        bad = [l for l in ans if l not in VERDICT_OF_ANSWER]
+        if bad:
+            return None, ["%s: z3 said something other than a verdict on %s (%s): %r" % (name, fno, sym, bad[0][:160])]
+        if len(ans) != checks:
+            return None, ["%s: z3 answered %d times for the %d obligations of %s (%s)" % (name, len(ans), checks, fno, sym)]
+        for row, a in zip(enc, ans):
+            verdict[(fno, row[1])] = VERDICT_OF_ANSWER[a]
+    full = []
+    for fno, k, kind, h, encoded, sym in rows:
+        v = verdict[(fno, k)] if encoded == "1" else "unencoded"
+        full.append((fno, k, kind, h, v, sym))
+    return full, []
+
+
+def manifest_text(full):
+    """`nitpick.obligations` (P-10): the header with the pin and the profile,
+    then one row per distinct (hash, kind, verdict, symbol), sorted by symbol
+    then hash -- a total order carrying no position. Byte for byte what
+    `smt_manifest.npk` renders."""
+    lines = ["# nitpick.obligations v1",
+             "# z3 %s sha256 %s" % (Z3_VERSION, Z3_SHA),
+             "# options " + " ".join(Z3_OPTIONS)]
+    for sym, h, kind, v in sorted(set((f[5], f[3], f[2], f[4]) for f in full)):
+        tier = "-" if v == "unencoded" else "int"
+        elision = "elided" if v == "discharged" else "retained"
+        lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision, sym))
+    return "\n".join(lines) + "\n"
+
+
+def manifest_rows(text):
+    """The rows of a manifest text as a set of (hash, kind, verdict, symbol),
+    or None with a reason when the text is not one this reader can read."""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines or lines[0] != "# nitpick.obligations v1":
+        return None, "the first line is not `# nitpick.obligations v1`"
+    out = set()
+    for l in lines[1:]:
+        if l.startswith("#"):
+            continue
+        parts = l.split(" ", 5)
+        if len(parts) != 6:
+            return None, "a row is not `<hash> <kind> <tier> <verdict> <elision> <symbol>`: %r" % l[:80]
+        h, kind, tier, v, elision, sym = parts
+        if kind not in Z3_KINDS:
+            return None, "a row names a kind the catalogue does not: %r" % kind
+        out.add((h, kind, v, sym))
+    return out, None
+
+
+def manifest_diff(committed, run):
+    """The three-way summary a mismatch prints (D-040's table, P-9)."""
+    by_key = lambda s: {(h, k, sym): v for (h, k, v, sym) in s}
+    c, r = by_key(committed), by_key(run)
+    only_c = sorted(k for k in c if k not in r)
+    only_r = sorted(k for k in r if k not in c)
+    moved = sorted((k, c[k], r[k]) for k in c if k in r and c[k] != r[k])
+    out = []
+    for h, k, sym in only_c[:10]:
+        out.append("  only in nitpick.obligations: %s %s %s" % (h[:16], k, sym))
+    for h, k, sym in only_r[:10]:
+        out.append("  only in this run:            %s %s %s" % (h[:16], k, sym))
+    for (h, k, sym), a, b in moved[:10]:
+        out.append("  verdict moved:               %s %s %s: recorded %s, this run %s" % (h[:16], k, sym, a, b))
+    more = len(only_c) + len(only_r) + len(moved) - len(out)
+    if more > 0:
+        out.append("  ... and %d more" % more)
+    return "\n".join(out)
+
+
+def module_of(path):
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            m = re.match(r"\s*mod:(\w+);", line)
+            if m:
+                return m.group(1)
+    return os.path.basename(path)[:-4]
+
+
+def row_in_module(sym, mod):
+    return sym == "@main" or sym == "@npk_failsafe" or sym.startswith('@"npk.%s.' % mod)
+
+
+def elided_ir_checks(full, ir_text, name):
+    """The verified emission carries an `llvm.assume` per discharged SITE and
+    a trap per retained site of each guarded kind -- the cross-check that
+    makes the manifest an inventory of guards (P-12)."""
+    fails = []
+    # CODE ONLY: the compiler's own emission carries these very spellings as
+    # STRING CONSTANTS (its source writes them), and a constant is not a site.
+    ir_text = _ir_code_part_all(ir_text)
+    disch = sum(1 for f in full if f[4] == "discharged")
+    got = len(re.findall(r"call void @llvm\.assume\(", ir_text))
+    if got != disch:
+        fails.append("%s: the verified IR holds %d `llvm.assume` for %d discharged sites" % (name, got, disch))
+    for code, kind in (("-4097", "div-zero"), ("-4098", "div-min")):
+        left = sum(1 for f in full if f[2] == kind and f[4] != "discharged")
+        traps = len(re.findall(r"@npk_trap\(i32 %s\)" % code, ir_text))
+        if traps != left:
+            fails.append("%s: the verified IR holds %d %s traps for %d retained rows" % (name, traps, kind, left))
+    return fails
+
+
+def check_verify_program(path, name, exp, tmp):
+    """One `verify` test (P-22): obligations emitted and decided, the counts
+    over the test's module compared exactly, then the VERIFIED build emitted
+    with this run's manifest, cross-checked, linked and run at -O0 and -O2."""
+    if not exp.obligations and not exp.obligations_none:
+        return ["%s: a verify test with no expect-obligation is a failing test" % name]
+    base = os.path.join(tmp, "verify_" + os.path.basename(path).replace(".", "_"))
+    obl = base + ".obl"
+    r = subprocess.run([COMPILER, path, "--obligations", obl, "-o", base + ".plain.ll"],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return ["%s: expected IR, got a refusal (%s)" % (name, r.stderr.strip().replace("\n", ", ")[:300])]
+    with open(base + ".plain.ll", "rb") as fh:
+        plain = fh.read()
+    r2 = subprocess.run([COMPILER, path], capture_output=True, timeout=300)
+    if r2.stdout != plain:
+        return ["%s: `--obligations` changed the emitted IR -- the walk must never touch the writer (P-3)" % name]
+    fails = check_no_undef(plain.decode("utf-8", "replace"), name)
+    if fails:
+        return fails
+    full, fails = z3_verdicts(obl, name)
+    if fails:
+        return fails
+    mod = module_of(path)
+    counts = {}
+    for f in full:
+        if row_in_module(f[5], mod):
+            counts[(f[2], f[4])] = counts.get((f[2], f[4]), 0) + 1
+    want = {(k, v): n for k, v, n in exp.obligations}
+    if exp.obligations_none and counts:
+        return ["%s: expected no obligations in module `%s`, found %s"
+                % (name, mod, ", ".join("%s %s x%d" % (k, v, n) for (k, v), n in sorted(counts.items())))]
+    for key in sorted(set(want) | set(counts)):
+        if want.get(key, 0) != counts.get(key, 0):
+            fails.append("%s: %s %s: expected %d, found %d (the rows of module `%s`; every reported kind/verdict must be named, D-237's shape)"
+                         % (name, key[0], key[1], want.get(key, 0), counts.get(key, 0), mod))
+    if fails:
+        return fails
+    man = base + ".obligations"
+    with open(man, "w", encoding="utf-8") as fh:
+        fh.write(manifest_text(full))
+    r = subprocess.run([COMPILER, path, "--elide", man, "--obligations", obl + "2", "-o", base + ".v.ll"],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        return ["%s: the --elide run refused: %s" % (name, r.stderr.strip()[:300])]
+    with open(os.path.join(obl, "rows.txt"), encoding="utf-8") as fa, open(os.path.join(obl + "2", "rows.txt"), encoding="utf-8") as fb:
+        if fa.read() != fb.read():
+            return ["%s: the --elide run computed different rows than the --obligations run -- the walk depends on something it must not (P-3)" % name]
+    with open(base + ".v.ll", encoding="utf-8", errors="replace") as fh:
+        vir = fh.read()
+    fails = check_no_undef(vir, name + " (verified)") + elided_ir_checks(full, vir, name)
+    if fails:
+        return fails
+    for tag, llc_flags, src in (("v", LLC_FLAGS, base + ".v.ll"), ("v.opt", LLC_OPT_FLAGS, base + ".v.opt.ll")):
+        if tag == "v.opt":
+            if not shutil.which("opt"):
+                return ["%s: `opt` is not on PATH -- the verified build's optimised leg cannot run" % name]
+            ro = subprocess.run(["opt"] + OPT_FLAGS + [base + ".v.ll", "-o", src], capture_output=True, text=True)
+            if ro.returncode != 0:
+                return ["%s: opt -O2 rejected the verified IR: %s" % (name, ro.stderr.strip()[:160])]
+        rl = subprocess.run(["llc"] + llc_flags + [src, "-o", base + "." + tag + ".o"], capture_output=True, text=True)
+        if rl.returncode != 0:
+            return ["%s: llc rejected the verified IR (%s): %s" % (name, tag, rl.stderr.strip()[:160])]
+        fails = check_zero_dependency(base + "." + tag + ".o", runtime_allowlist(), name + " (verified, %s)" % tag)
+        if fails:
+            return fails
+        rk = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base + "." + tag, base + "." + tag + ".o",
+                            os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
+        if rk.returncode != 0:
+            return ["%s: the verified build failed to link (%s): %s" % (name, tag, rk.stderr.strip()[:140])]
+        try:
+            got = subprocess.run([base + "." + tag], capture_output=True, timeout=10).returncode
+        except subprocess.TimeoutExpired:
+            return ["%s: the verified binary timed out (%s)" % (name, tag)]
+        if got != exp.exit:
+            return ["%s: the verified binary exited %d, expected %d (%s) -- an elided guard changed the program's answer" % (name, got, exp.exit, tag)]
+    return []
+
+
+def stage_verify(t, s):
+    """Programs whose D-218 obligations are emitted, decided by z3 under the
+    manifest's profile, and elided where discharged (1.5.0). The expectations
+    are the (kind, verdict) counts of the test's own module, exactly; the
+    verified build must keep its answer at -O0 and under opt -O2."""
+    if not s.tools or not COMPILER:
+        return
+    n = 0
+    for p in files_of(t):
+        exp = read_expectations(p)
+        name = os.path.relpath(p, ROOT)
+        s.failures += record_verdict(t["name"], name, check_verify_program(p, name, exp, s.tmp))
+        n += 1
+    print("  %-11s %2d verified program(s): obligations decided, elided where discharged, run at -O0 and -O2" % (t["name"], n))
+
+
+def check_obligation_kinds_agree():
+    """The kind vocabulary `smt_kinds.npk` spells and the catalogue table
+    VERIFICATION_REFERENCE marks are one list (P-11): two lists that must
+    agree are an instrument, and "every carried obligation appears or the
+    manifest has holes" is a check rather than a hope."""
+    src = open(os.path.join(ROOT, "src", "backend", "smt", "smt_kinds.npk"), encoding="utf-8").read()
+    code = set(re.findall(r'\{ pass "([a-z-]+)"; \}', src.split("pub func:ok_name")[1].split("};")[0]))
+    spec = open(os.path.join(ROOT, "meta", "specs", "VERIFICATION_REFERENCE.md"), encoding="utf-8").read()
+    m = re.search(r"<!-- BEGIN obligation-catalogue -->(.*?)<!-- END obligation-catalogue -->", spec, re.S)
+    if not m:
+        return ["kinds-agree: VERIFICATION_REFERENCE.md has no marked obligation-catalogue region"]
+    doc = set(re.findall(r"^\| `([a-z-]+)` \|", m.group(1), re.M))
+    fails = []
+    for k in sorted(code - doc):
+        fails.append("kinds-agree: `smt_kinds.npk` spells kind `%s`, which the catalogue table does not list" % k)
+    for k in sorted(doc - code):
+        fails.append("kinds-agree: the catalogue table lists `%s`, which `smt_kinds.npk` does not spell" % k)
+    if code != set(Z3_KINDS):
+        fails.append("kinds-agree: the harness's own Z3_KINDS differs from `smt_kinds.npk`")
+    return fails
+
+
+def check_verify_compiler(tmp, stage1_ir):
+    """The compiler's own obligations (1.5.0): emitted, decided, compared with
+    the COMMITTED `nitpick.obligations` (absent or different is a failure --
+    `npkg verify --record` is the deliberate re-baseline, P-9), then the
+    VERIFIED build emitted with it, cross-checked, assembled, and shown to
+    rebuild itself byte-identically (D-202 over the verified build)."""
+    fails = []
+    vdir = os.path.join(tmp, "verify")
+    os.makedirs(vdir, exist_ok=True)
+    src = os.path.join(ROOT, "src", "main.npk")
+    obl = os.path.join(vdir, "obl")
+    r = subprocess.run([COMPILER, src, "--obligations", obl, "-o", os.path.join(vdir, "plain.ll")],
+                       capture_output=True, timeout=900)
+    if r.returncode != 0:
+        return ["verify: the compiler refused its own source under --obligations (rc=%d): %s"
+                % (r.returncode, r.stderr.decode("utf-8", "replace")[:300])]
+    with open(os.path.join(vdir, "plain.ll"), "rb") as fh:
+        if fh.read() != stage1_ir:
+            return ["verify: the --obligations emission of the compiler differs from stage 1's -- the walk touched the writer (P-3)"]
+    full, f2 = z3_verdicts(obl, "verify")
+    if f2:
+        return f2
+    run_text = manifest_text(full)
+    committed = os.path.join(ROOT, "nitpick.obligations")
+    if not os.path.exists(committed):
+        return ["verify: nitpick.obligations is not committed -- the verified build is governed by the manifest "
+                "and nothing writes it implicitly (P-9); run `npkg verify --record` and commit the file"]
+    with open(committed, encoding="utf-8") as fh:
+        ctext = fh.read()
+    crows, why = manifest_rows(ctext)
+    if crows is None:
+        return ["verify: nitpick.obligations cannot be read: %s" % why]
+    rrows, _ = manifest_rows(run_text)
+    if crows != rrows:
+        return ["verify: this run's obligations differ from nitpick.obligations (D-040: a build that would differ "
+                "from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):\n"
+                + manifest_diff(crows, rrows)]
+    if ctext != run_text:
+        return ["verify: nitpick.obligations carries the same rows as this run but different bytes -- the header "
+                "(the pinned z3, the profile) or the row order moved; re-record it"]
+    r = subprocess.run([COMPILER, src, "--elide", committed, "--obligations", obl + "2", "-o", os.path.join(vdir, "npkc.v.ll")],
+                       capture_output=True, timeout=900)
+    if r.returncode != 0:
+        return ["verify: the --elide run refused the compiler's own source: %s" % r.stderr.decode("utf-8", "replace")[:300]]
+    with open(os.path.join(obl, "rows.txt"), encoding="utf-8") as fa, open(os.path.join(obl + "2", "rows.txt"), encoding="utf-8") as fb:
+        if fa.read() != fb.read():
+            return ["verify: the --elide run computed different rows than the --obligations run (P-3)"]
+    with open(os.path.join(vdir, "npkc.v.ll"), encoding="utf-8", errors="replace") as fh:
+        vir = fh.read()
+    fails += check_no_undef(vir, "npkc.v.ll") + check_symbols_unique(vir, "npkc.v.ll") + check_allocas_hoisted(vir, "npkc.v.ll")
+    fails += elided_ir_checks(full, vir, "verify")
+    if fails:
+        return fails
+    r = subprocess.run(["llc"] + LLC_FLAGS + [os.path.join(vdir, "npkc.v.ll"), "-o", os.path.join(vdir, "npkc.v.o")],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["verify: llc rejected the verified compiler's IR: %s" % r.stderr.strip()[:160]]
+    fails += check_zero_dependency(os.path.join(vdir, "npkc.v.o"), runtime_allowlist(), "npkc.v.o")
+    if fails:
+        return fails
+    r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", os.path.join(vdir, "npkc.v"), os.path.join(vdir, "npkc.v.o"),
+                        os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["verify: the verified compiler failed to link: %s" % r.stderr.strip()[:160]]
+    r = subprocess.run([os.path.join(vdir, "npkc.v"), src, "--elide", committed, "-o", os.path.join(vdir, "stage2.v.ll")],
+                       capture_output=True, timeout=900)
+    if r.returncode != 0:
+        return ["verify: THE VERIFIED COMPILER cannot compile the compiler (rc=%d) %s"
+                % (r.returncode, r.stderr.decode("utf-8", "replace")[:300])]
+    with open(os.path.join(vdir, "stage2.v.ll"), "rb") as fa, open(os.path.join(vdir, "npkc.v.ll"), "rb") as fb:
+        if fa.read() != fb.read():
+            return ["verify: THE VERIFIED FIXPOINT DRIFTED -- the verified compiler's emission of the compiler differs "
+                    "from the unverified compiler's verified emission (D-202 over the verified build)"]
+    n = len(full)
+    counts = {}
+    for f in full:
+        counts[f[4]] = counts.get(f[4], 0) + 1
+    disch = counts.get("discharged", 0)
+    print("  %-11s %d obligation(s): %d discharged, %d open, %d budget, %d unencoded; nitpick.obligations "
+          "matches; %d guard(s) elided; the verified compiler rebuilds itself byte-identically"
+          % ("verify", n, disch, counts.get("open", 0), counts.get("budget", 0), counts.get("unencoded", 0), disch))
+    return []
+
+
+def _floor_classes():
+    """Every `define` in runtime/npkrt.ll, classified as TCB.md's table is
+    (P-26): `asm` (inline assembly in the body), `atomic` (an atomic
+    operation), `syscall` (reaches the trampoline transitively), `pure`
+    (none of those) -- precedence in that order."""
+    text = open(RUNTIME_LL, encoding="utf-8").read()
+    defs = {}
+    for m in re.finditer(r'^define[^\n]*?(@(?:"[^"]*"|[\w.$-]+))\s*\((.*?)^\}', text, re.S | re.M):
+        defs[m.group(1).strip('"')] = m.group(0)
+    def calls(body):
+        return set(re.findall(r'call[^@\n]*(@[\w.$-]+)', body)) | set(re.findall(r'invoke[^@\n]*(@[\w.$-]+)', body))
+    asm = {n for n, b in defs.items() if re.search(r'\basm\b', b)}
+    atomic = {n for n, b in defs.items()
+              if re.search(r'\b(atomicrmw|cmpxchg|fence)\b', b) or re.search(r'\b(load|store) atomic\b', b)}
+    graph = {n: {c for c in calls(b) if c in defs} for n, b in defs.items()}
+    def reaches(n, target, seen):
+        if n in seen:
+            return False
+        seen.add(n)
+        if n in target:
+            return True
+        return any(reaches(c, target, seen) for c in graph[n])
+    out = {}
+    for n in defs:
+        if n in asm:
+            out[n] = "asm"
+        elif n in atomic:
+            out[n] = "atomic"
+        elif reaches(n, asm, set()):
+            out[n] = "syscall"
+        else:
+            out[n] = "pure"
+    return out
+
+
+def check_tcb_floor_current():
+    """TCB.md's enumeration of the floor is GENERATED, never hand-maintained
+    (P-26, 1.5.0): the table's symbol and class columns must equal what the
+    classifier computes from runtime/npkrt.ll today. A floor symbol added,
+    removed or reclassified without the table moving is a stale TCB claim --
+    the one table an auditor reads first."""
+    path = os.path.join(ROOT, "meta", "specs", "TCB.md")
+    if not os.path.exists(path):
+        return ["tcb-floor: meta/specs/TCB.md is missing"]
+    doc = open(path, encoding="utf-8").read()
+    m = re.search(r"<!-- BEGIN floor-table -->(.*?)<!-- END floor-table -->", doc, re.S)
+    if not m:
+        return ["tcb-floor: TCB.md has no marked floor-table region"]
+    listed = {}
+    for sym, cls in re.findall(r"^\| `(@[^`]+)` \| (asm|atomic|syscall|pure) \|", m.group(1), re.M):
+        listed[sym] = cls
+    real = _floor_classes()
+    fails = []
+    for s in sorted(set(real) - set(listed)):
+        fails.append("tcb-floor: `%s` (%s) is a floor define TCB.md's table does not list" % (s, real[s]))
+    for s in sorted(set(listed) - set(real)):
+        fails.append("tcb-floor: TCB.md's table lists `%s`, which the floor no longer defines" % s)
+    for s in sorted(set(real) & set(listed)):
+        if real[s] != listed[s]:
+            fails.append("tcb-floor: `%s` is %s in the floor and %s in TCB.md's table" % (s, real[s], listed[s]))
+    return fails
+
+
 def run_stage(t, s, only):
     """Dispatch on the entry's stage. `compile` is the only stage `--only` can
     select; a filtered run skips every other stage, saying so -- today's
@@ -2661,6 +3167,8 @@ def run_stage(t, s, only):
         stage_program(t, s)
     elif stage == "runtime":
         stage_runtime(t, s)
+    elif stage == "verify":
+        stage_verify(t, s)
     else:
         # load_targets refused everything else before any test ran.
         raise AssertionError("unknown stage reached run_stage: %s" % stage)
@@ -2784,6 +3292,7 @@ def main(argv):
     # suite in one loop, and the pin belongs before the loop.)
     if not filtering:
         failures += check_toolchain_pin()
+        failures += check_verify_pin()
 
     # EVERY SUITE, IN MANIFEST ORDER (D-238, 1.4.8b). The table in nitpick.toml
     # is the one list of what runs; `npkg test` reads the same table, and the
@@ -2830,6 +3339,8 @@ def main(argv):
         failures += check_rung_names_open_cycle()
         failures += check_runtime_sigs_agree()
         failures += check_builtin_sig_texts()
+        failures += check_obligation_kinds_agree()
+        failures += check_tcb_floor_current()
 
         # The two standalone instruments that were wired to NOTHING until
         # 1.4.1 (found by the 1.4.0 survey): the harness's own self-check
@@ -2839,10 +3350,13 @@ def main(argv):
         # surfaces only on failure.
         for script, what in (("spec_coverage.py", "spec-coverage"),
                              ("selfcheck.py", "harness-selfcheck")):
+            env = dict(os.environ)
+            if COMPILER:
+                env["NPK_SELFCHECK_COMPILER"] = str(COMPILER)
             r = subprocess.run(
                 [sys.executable, os.path.join(ROOT, "bootstrap", "harness",
                                               script)],
-                capture_output=True, text=True, cwd=ROOT)
+                capture_output=True, text=True, cwd=ROOT, env=env)
             if r.returncode != 0:
                 failures.append("%s: %s exited %d:\n%s"
                                 % (what, script, r.returncode,
@@ -3284,6 +3798,16 @@ def main(argv):
                                   "read" % ("absent-fact",))
 
 
+        # --- THE COMPILER'S OWN OBLIGATIONS (1.5.0, D-218/D-219) -----------
+        #
+        # The verification leg over the artifact of record: every division
+        # site's D-007 pair emitted, decided by the pinned z3 under the
+        # pinned profile, held to the committed manifest, and the VERIFIED
+        # build shown to rebuild itself. Runs only when the whole fixpoint
+        # above held -- it starts from stage 1's bytes.
+        if ok:
+            failures += check_verify_compiler(tmp, stage1_ir)
+
         # --- PARITY WITH `npkg test` (1.4.8, D-206 §5) --------------------
         #
         # SUCCESSION, NOT REPLACEMENT: both runners run over the full tree
@@ -3394,10 +3918,35 @@ def check_parity(tmp, tools):
         with open(built, "rb") as fa, open(COMPILER, "rb") as fb:
             if fa.read() != fb.read():
                 fails.append("parity: build/npkc (npkg's) differs from the harness's npkc -- same inputs, same flags, different bytes (D-204/D-206)")
+    # THE VERIFIED BUILD TOO (1.5.0): `npkg verify` from the manifest root, held
+    # to the committed nitpick.obligations exactly as this run's verify stage
+    # was, and its verified compiler byte-compared with this run's.
+    vfails = []
+    if Z3_ENABLED and os.path.exists(os.path.join(ROOT, "nitpick.obligations")):
+        try:
+            r = subprocess.run([npkg, "verify"], capture_output=True, text=True, timeout=3600, cwd=ROOT)
+        except subprocess.TimeoutExpired:
+            vfails.append("parity: `npkg verify` did not terminate in an hour")
+            r = None
+        if r is not None and r.returncode != 0:
+            vfails.append("parity: `npkg verify` failed (exit %d):\n%s"
+                          % (r.returncode, (r.stdout + r.stderr).strip()[-1500:]))
+        elif r is not None:
+            theirs_v = os.path.join(ROOT, "build", "verify", "npkc")
+            ours_v = os.path.join(tmp, "verify", "npkc.v")
+            if not os.path.exists(theirs_v):
+                vfails.append("parity: `npkg verify` left no build/verify/npkc behind")
+            elif not os.path.exists(ours_v):
+                vfails.append("parity: this run built no verified compiler to compare with")
+            else:
+                with open(theirs_v, "rb") as fa, open(ours_v, "rb") as fb:
+                    if fa.read() != fb.read():
+                        vfails.append("parity: build/verify/npkc (npkg's verified compiler) differs from the harness's -- same manifest, same inputs, different bytes")
+    fails += vfails
     if not fails:
         agreed = sum(1 for k in ours if k in theirs)
-        print("  %-11s %d verdict(s) agree between the two runners; npkc byte-identical"
-              % ("parity", agreed))
+        print("  %-11s %d verdict(s) agree between the two runners; npkc byte-identical%s"
+              % ("parity", agreed, "; the verified compiler byte-identical" if Z3_ENABLED else ""))
     return fails
 
 

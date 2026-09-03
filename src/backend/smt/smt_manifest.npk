@@ -1,0 +1,203 @@
+// smt_manifest — `nitpick.obligations`, read and rendered (1.5.0; P-9, P-10).
+//
+// THE ONE RENDERER. `npkg verify` writes the file through `man_row` and
+// `man_header`, `npkc --elide` reads it through `man_parse`, and the harness's
+// Python mirrors the row shape byte for byte -- the parity stage compares the
+// two runners' files, so a drift between the spellings is a red run, not a
+// quiet divergence.
+//
+//   # nitpick.obligations v1
+//   # z3 <version> sha256 <64 hex>
+//   # options <the [verify] z3-options, space-separated>
+//   <hash64> <kind> <tier> <verdict> <elision> <symbol>
+//
+// The symbol is LAST because an instantiation's name carries spaces inside
+// its quotes (`@"npk.m.f<int32, int64>"`); a reader takes the five fixed
+// fields and the rest of the line. Rows are sorted by symbol then hash (a
+// total order carrying no position), and duplicate rows collapse.
+
+mod:smt_manifest;
+
+use "../../frontend/list.npk".*;
+use "./smt_kinds.npk".*;
+
+pub struct:ManRow = {
+    string:hash;
+    int32:kind;
+    string:tier;
+    int32:verdict;
+    string:elision;
+    string:symbol;
+};
+
+pub struct:ObManifest = {
+    bool:ok;
+    string:problem;          // when !ok: the one sentence
+    string:z3_version;
+    string:z3_sha;
+    string:options;          // the options line's remainder, verbatim
+    List<ManRow>:rows;
+};
+
+pub func:MAN_MAGIC = string() never fails { pass "# nitpick.obligations v1"; };
+
+pub func:man_header = string(string:version, string:sha, string:options) never fails {
+    string:h = string_concat(raw MAN_MAGIC(), "\n# z3 ");
+    h = string_concat(h, version);
+    h = string_concat(h, " sha256 ");
+    h = string_concat(h, sha);
+    h = string_concat(h, "\n# options ");
+    h = string_concat(h, options);
+    pass (string_concat(h, "\n"));
+};
+
+pub func:man_row = string(string:hash, int32:kind, string:tier, int32:verdict,
+                          string:elision, string:symbol) never fails {
+    string:r = string_concat(hash, " ");
+    r = string_concat(r, raw ok_name(kind));
+    r = string_concat(r, " ");
+    r = string_concat(r, tier);
+    r = string_concat(r, " ");
+    r = string_concat(r, raw ov_name(verdict));
+    r = string_concat(r, " ");
+    r = string_concat(r, elision);
+    r = string_concat(r, " ");
+    pass (string_concat(r, symbol));
+};
+
+func:man_refuse = ObManifest(string:why) never fails {
+    pass ObManifest{ ok: false, problem: string_concat(why, ""), z3_version: "", z3_sha: "",
+                     options: "", rows: raw list_init::<ManRow>(1i64) };
+};
+
+func:kind_of_name = int32(string:s) never fails {
+    for (int32:k in 1i32...((raw OK_COUNT()) + 1i32)) {
+        if (string_equals(raw ok_name(k), s)) { pass k; }
+    }
+    pass 0i32;
+};
+
+// The bytes of `s` from `lo` up to (not including) `hi`, owned.
+func:piece = string(string:s, int64:lo, int64:hi) never fails {
+    pass (string_concat(string_from_bytes(#ptr_add<uint8>(s.ptr =>! wild uint8->, lo), hi - lo), ""));
+};
+
+func:starts_with = bool(string:s, string:p) never fails {
+    if (s.len < p.len) { pass false; }
+    for (int64:i in 0i64...p.len) { if (s.ptr[i] != p.ptr[i]) { pass false; } }
+    pass true;
+};
+
+func:is_hex64 = bool(string:s) never fails {
+    if (s.len != 64i64) { pass false; }
+    for (int64:i in 0i64...64i64) {
+        uint8:c = s.ptr[i];
+        bool:ok = false;
+        if ((c >= 48u8) && (c <= 57u8)) { ok = true; }
+        if ((c >= 97u8) && (c <= 102u8)) { ok = true; }
+        if (!ok) { pass false; }
+    }
+    pass true;
+};
+
+// Split `line` on single spaces into at most `n` leading fields; the
+// remainder after the n-th separator is the last entry (the symbol).
+func:split_fields = List<string>(string:line, int64:n) never fails {
+    List<string>:out = raw list_init::<string>(n + 1i64);
+    int64:start = 0i64;
+    int64:i = 0i64;
+    while ((i < line.len) && (out.count < (n - 1i64))) {
+        if (line.ptr[i] == 32u8) {
+            drop list_push(@out, raw piece(line, start, i));
+            start = i + 1i64;
+        }
+        i = i + 1i64;
+    }
+    drop list_push(@out, raw piece(line, start, line.len));
+    pass out;
+};
+
+pub func:man_parse = ObManifest(string:text) never fails {
+    ObManifest:m = ObManifest{ ok: true, problem: "", z3_version: "", z3_sha: "",
+                               options: "", rows: raw list_init::<ManRow>(64i64) };
+    int64:lineno = 0i64;
+    int64:start = 0i64;
+    int64:i = 0i64;
+    bool:saw_magic = false;
+    while (i <= text.len) {
+        bool:at_end = (i == text.len);
+        bool:nl = false;
+        if (!at_end) { if (text.ptr[i] == 10u8) { nl = true; } }
+        if (!(at_end || nl)) { i = i + 1i64; continue; }
+        string:line = raw piece(text, start, i);
+        start = i + 1i64;
+        i = i + 1i64;
+        if (line.len == 0i64) { continue; }
+        lineno = lineno + 1i64;
+        if (!saw_magic) {
+            if (!string_equals(line, raw MAN_MAGIC())) {
+                pass (raw man_refuse("nitpick.obligations: the first line is not `# nitpick.obligations v1` -- a file this reader cannot vouch for governs nothing (D-219)"));
+            }
+            saw_magic = true;
+            continue;
+        }
+        if (raw starts_with(line, "# z3 ")) {
+            List<string>:f = raw split_fields(raw piece(line, 5i64, line.len), 3i64);
+            if (f.count != 3i64) { pass (raw man_refuse("nitpick.obligations: the `# z3` line is not `# z3 <version> sha256 <hex>`")); }
+            m.z3_version = raw view_copy(f, 0i64);
+            m.z3_sha = raw view_copy(f, 2i64);
+            continue;
+        }
+        if (raw starts_with(line, "# options ")) {
+            m.options = raw piece(line, 10i64, line.len);
+            continue;
+        }
+        if (raw starts_with(line, "#")) { continue; }
+        List<string>:g = raw split_fields(line, 6i64);
+        if (g.count != 6i64) {
+            string:w = string_concat("nitpick.obligations: line ", int_to_string(lineno));
+            w = string_concat(w, " is not `<hash> <kind> <tier> <verdict> <elision> <symbol>`");
+            pass (raw man_refuse(w));
+        }
+        string:hash = raw view_copy(g, 0i64);
+        if (!(raw is_hex64(hash))) {
+            string:w1 = string_concat("nitpick.obligations: line ", int_to_string(lineno));
+            w1 = string_concat(w1, ": the hash is not 64 lowercase hex characters");
+            pass (raw man_refuse(w1));
+        }
+        int32:kind = raw kind_of_name(raw view_copy(g, 1i64));
+        if (kind == 0i32) {
+            string:w2 = string_concat("nitpick.obligations: line ", int_to_string(lineno));
+            w2 = string_concat(w2, ": the kind is not one the catalogue names (D-218.7)");
+            pass (raw man_refuse(w2));
+        }
+        int32:verdict = raw ov_of_name(raw view_copy(g, 3i64));
+        if (verdict == 0i32) {
+            string:w3 = string_concat("nitpick.obligations: line ", int_to_string(lineno));
+            w3 = string_concat(w3, ": the verdict is not discharged, open, budget, unencoded or checker");
+            pass (raw man_refuse(w3));
+        }
+        ManRow:r = ManRow{ hash: move(hash), kind: kind, tier: raw view_copy(g, 2i64), verdict: verdict,
+                           elision: raw view_copy(g, 4i64), symbol: raw view_copy(g, 5i64) };
+        drop list_push(@m.rows, move(r));
+    }
+    if (!saw_magic) { pass (raw man_refuse("nitpick.obligations: empty -- a file this reader cannot vouch for governs nothing (D-219)")); }
+    pass m;
+};
+
+// An owned copy of the i-th string of a list.
+func:view_copy = string(List<string>:l, int64:i) never fails {
+    pass (string_concat(string_from_bytes(l.items[i].ptr, l.items[i].len), ""));
+};
+
+// The discharged hashes of a parsed manifest -- what `--elide` needs. CONSUMES
+// the manifest (D-004's conservative rule: a borrow would taint the list).
+pub func:man_discharged = List<string>(move ObManifest:m) never fails {
+    List<string>:out = raw list_init::<string>(m.rows.count + 1i64);
+    for (int64:i in 0i64...m.rows.count) {
+        if (m.rows.items[i].verdict == (raw OV_DISCHARGED())) {
+            drop list_push(@out, string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), ""));
+        }
+    }
+    pass out;
+};

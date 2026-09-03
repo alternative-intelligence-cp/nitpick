@@ -1,0 +1,66 @@
+// smt_obligations — THE WALK'S GLUE INTO THE EMITTER (1.5.0; P-3): one call
+// per function instance, from `emit_function_body_subst`, after the
+// parameters are bound and before the body is lowered, inside the instance's
+// generic window. It runs the walk (`smt_encode.npk`), fills the elision
+// answers the division emitter consults (`LlCtx.el_sites`/`el_kinds`,
+// cleared per function), and appends the function's solver file and rows to
+// the program's table (`smt_table.npk`) when `--obligations` asked for them.
+
+mod:smt_obligations;
+
+use "../../frontend/list.npk".*;
+use "../../frontend/ast.npk".*;
+use "../ir/ir_types.npk".*;
+use "../ir/ir_expr.npk".*;
+use "./smt_kinds.npk".*;
+use "./smt_table.npk".*;
+use "./smt_encode.npk".*;
+
+// THE CALL PER FUNCTION INSTANCE, from `emit_function_body_subst` after the
+// parameters are bound and before the body is lowered, inside the instance's
+// generic window. `pnames`/`ptypes` are the parameters as the emitter
+// resolved them (the same types its slots have).
+pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
+                            List<int32>:ptypes, StmtId:body) never fails {
+    LlCtx->:c = x.fe.ctx;
+    c.el_sites.count = 0i64;
+    c.el_kinds.count = 0i64;
+    if (c.obl == NULL) { pass NIL; }
+    Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
+    for (int64:i in 0i64...pnames.count) { drop enc_param(@en, pnames.items[i], ptypes.items[i]); }
+    drop enc_body(@en, body);
+    drop enc_finish(@en);
+    if (en.obls.count == 0i64) { pass NIL; }
+    if (c.obl.elide.count > 0i64) {
+        drop enc_mark_discharged(@en, c.obl.elide);
+        for (int64:oi in 0i64...en.obls.count) {
+            if (en.obls.items[oi].discharged && en.obls.items[oi].encoded) {
+                drop list_push(@c.el_sites, en.obls.items[oi].site);
+                drop list_push(@c.el_kinds, en.obls.items[oi].kind);
+            }
+        }
+    }
+    if (!c.obl.want_files) { pass NIL; }
+    int64:checks = 0i64;
+    for (int64:oi2 in 0i64...en.obls.count) { if (en.obls.items[oi2].encoded) { checks = checks + 1i64; } }
+    drop list_push(@c.obl.files, raw enc_file_text(@en));
+    drop list_push(@c.obl.file_syms, string_concat(symbol, ""));
+    drop list_push(@c.obl.file_checks, checks);
+    string:fno = raw file_number(c.obl.files.count);
+    for (int64:oi3 in 0i64...en.obls.count) {
+        string:r = string_concat(fno, "\t");
+        r = string_concat(r, int_to_string(oi3 + 1i64));
+        r = string_concat(r, "\t");
+        r = string_concat(r, raw ok_name(en.obls.items[oi3].kind));
+        r = string_concat(r, "\t");
+        r = string_concat(r, string_from_bytes(en.obls.items[oi3].hash.ptr, en.obls.items[oi3].hash.len));
+        r = string_concat(r, "\t");
+        if (en.obls.items[oi3].encoded) { r = string_concat(r, "1"); c.obl.encoded_rows = c.obl.encoded_rows + 1i64; }
+        else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
+        r = string_concat(r, "\t");
+        r = string_concat(r, symbol);
+        drop list_push(@c.obl.rows, move(r));
+    }
+    pass NIL;
+};
+

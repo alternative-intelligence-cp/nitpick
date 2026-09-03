@@ -1,0 +1,35 @@
+// expect-exit: 183
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// A LOOP-CARRIED DIVISOR: the counter is invalidated at the body's entry
+// (its value there is any iteration's), so `100 / i` is `open` although the
+// guard `i > 0` would prove it -- loop guards and invariants are 1.5.4's and
+// 1.5.2's. The dividend is a literal, so the INT_MIN/-1 half discharges.
+mod:divz_loop;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:acc = 0i32;
+    int32:i = 3i32;
+    while (i > 0i32) {
+        int32:q = 100i32 / i;        // 33, 50, 100
+        acc = acc + q;
+        i = i - 1i32;
+    }
+    exit acc;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

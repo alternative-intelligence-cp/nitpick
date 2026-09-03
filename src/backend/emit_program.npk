@@ -12,6 +12,7 @@
 
 mod:emit_program;
 
+use "./smt/smt_table.npk".*;
 use "../frontend/source_location.npk".*;
 use "../frontend/intern.npk".*;
 use "../frontend/ast_kind.npk".*;
@@ -865,6 +866,11 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
     // unconditionally because the declare block is a fixed constant.
     drop irw_raw(w, "declare void @npk_trap(i32)");
+    // THE PROVEN FACT'S CHANNEL (1.5.0, D-218.9): where the verified build's
+    // manifest discharged a guard, the emitter states the fact the solver
+    // proved through `llvm.assume` instead of testing it -- never `nsw`/`nuw`,
+    // which mint poison. Declared unconditionally, like the trap.
+    drop irw_raw(w, "declare void @llvm.assume(i1)");
     // The `dyn` CELL (D-183, 1.2.4): a coercion moves the concrete value
     // into a managed heap cell the `dyn` owns — the data pointer must
     // outlive the frame that built it, which an alloca cannot. Not a
@@ -1056,10 +1062,12 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
 pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              InternTable->:interns, ExprTypes->:ets,
                              TypeResolver->:tr, FnInstTable->:fninsts,
-                             wild ImplTable->:impls, DiagList->:diags) never fails {
+                             wild ImplTable->:impls, DiagList->:diags,
+                             wild ObTable->:obl, bool:verify_on) never fails {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
     drop llctx_set_impls(@c, impls, tr);
+    if (verify_on) { drop llctx_set_obl(@c, obl); }
     drop build_modmap(g, @c);
     drop build_vtmap(g, tr, @c);
     StrTable:st = raw strtab_init();

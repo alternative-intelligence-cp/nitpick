@@ -233,6 +233,17 @@ func:ir_code_part = string(string:line) never fails {
     pass out;
 };
 
+// Every line's code part, joined: what a count of instructions must run over
+// (the compiler's own emission spells its guard calls as STRING CONSTANTS).
+pub func:ir_code_all = string(string:ir) never fails {
+    List<string>:lines = raw text_lines(ir);
+    List<string>:code = raw list_init::<string>(lines.count + 1i64);
+    for (int64:i in 0i64...lines.count) {
+        drop list_push(@code, raw ir_code_part(raw strlist_view(lines, i)));
+    }
+    pass (raw text_join(code, "\n"));
+};
+
 // How many `undef` tokens a code line holds.
 func:undef_tokens = int64(string:code) never fails {
     int64:n = 0i64;

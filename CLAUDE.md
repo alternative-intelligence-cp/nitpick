@@ -654,6 +654,23 @@ error; `--ir` prints the IR too, `--keep` leaves the `.ll`/`.o`/binary behind):
 python3 bootstrap/harness/quickemit.py tests/backend/programs/dyn_slots.npk
 ```
 
+**The verification leg (1.5.0, D-218/D-219).** The compiler emits every
+function's obligations and reads a manifest of verdicts; `npkg` owns z3:
+
+```
+.internal/quickemit/p_main_npk verify              # the VERIFIED build: obligations decided by the pinned z3, held to nitpick.obligations, guards elided, the verified compiler rebuilt from itself
+.internal/quickemit/p_main_npk verify --record     # write nitpick.obligations from this run -- a deliberate re-baseline, committed with the change that moved it
+.internal/quickemit/p_main_npk verify --explain    # plus build/verify/explain.txt: a model per open row, a reason per budget row, a core per discharged one
+.internal/quickemit/npkc file.npk --obligations D  # the compiler's half by hand: D/NNNN.smt2, index.txt, rows.txt
+z3 smt.random_seed=0 sat.random_seed=0 rlimit=20000000 -smt2 D/0001.smt2   # one file, the profile spelled out
+```
+
+The harness's `verify` stage does the same over `tests/verify/` (each file
+names its rows with `// expect-obligation: KIND VERDICT N`, exactly) and over
+the compiler itself, and its `parity` stage byte-compares `npkg`'s verified
+compiler with its own. A verdict that moves is a red run, never a rebaseline
+(D-040): run `--record` only in the commit that changes what is proven.
+
 Neither is a substitute for the harness; both skip every whole-suite check.
 `quickcheck` watches nothing — rebuild it after every edit to `src/`, since a
 stale binary answering an old question is the failure mode to expect;
@@ -717,6 +734,7 @@ parse failure some lines away from the mistake:
 | `trit`, `nit` | the single-digit ternary/nonary type keywords (D-197, 1.3.4) — like `acquire`/`any`, each interns itself as a NAME only after a `.` (the digit extraction `t.trit(i)`) |
 | `oflags`, `prot`, `mflags`, `fmode` | the four flag-family TYPE keywords (D-044/D-230, 1.4.8) — `prot` and `fmode` in particular read like the most ordinary locals in any file code; their members (`O_RDONLY`, `PROT_READ`, `MAP_SHARED`, `S_IRUSR`, …) are prelude constants, so those names are taken too |
 | `fails`, `end` | the `never fails` contract clause's second word (D-002/D-163) and the `when`/`then`/`end` control-flow family's terminator (LEXICAL_REFERENCE's keyword table) — each cost the 1.4.8 executor a build |
+| `in`, `mod` | the `for … in` keyword and the module-declaration keyword (`mod:name;`) — each cost the 1.5.0 executor a build, as a local named `in` (a byte source) and one named `mod` (a module name) |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

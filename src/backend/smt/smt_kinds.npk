@@ -1,0 +1,101 @@
+// smt_kinds — THE OBLIGATION CATALOGUE, total from birth (1.5.0; D-218.7).
+//
+// Every kind D-218.7 names is a row here, whether or not a subcycle produces
+// it yet: the manifest's `kind` column is drawn from this list and from
+// nothing else, and the harness's `check_obligation_kinds_agree` diffs these
+// names against VERIFICATION_REFERENCE's marked catalogue table -- two lists
+// that must agree are an instrument, and "every carried obligation appears or
+// the manifest has holes" is a check rather than a hope. 1.5.0 produces the
+// first two (the D-007 division pair); each later kind is a later subcycle's.
+//
+// `ok_has_guard` says whether a kind has a RUNTIME GUARD to elide: a
+// discharged row of a guarded kind is `elided`, of an unguarded kind `none`
+// (P-10). The answers are the language's, not this file's: division traps
+// (D-142), overflow traps (D-210), bounds trap (D-070), casts trap (D-148),
+// `limit` residue traps (D-220), a contract violation traps (D-221), an
+// ERR exit traps (D-144); exhaustiveness is the checker's, `prove` and
+// `assert_static` are compile-time obligations, and termination and the
+// stack-depth row have no runtime counterpart to remove.
+
+mod:smt_kinds;
+
+pub func:OK_DIV_ZERO = int32() never fails      { pass 1i32; };
+pub func:OK_DIV_MIN = int32() never fails       { pass 2i32; };
+pub func:OK_OVERFLOW = int32() never fails      { pass 3i32; };
+pub func:OK_BOUNDS = int32() never fails        { pass 4i32; };
+pub func:OK_CAST_RANGE = int32() never fails    { pass 5i32; };
+pub func:OK_EXHAUSTIVE = int32() never fails    { pass 6i32; };
+pub func:OK_REQUIRES = int32() never fails      { pass 7i32; };
+pub func:OK_ENSURES = int32() never fails       { pass 8i32; };
+pub func:OK_INVARIANT = int32() never fails     { pass 9i32; };
+pub func:OK_LIMIT = int32() never fails         { pass 10i32; };
+pub func:OK_LIMIT_SUBSUME = int32() never fails { pass 11i32; };
+pub func:OK_TERMINATE = int32() never fails     { pass 12i32; };
+pub func:OK_STACK_DEPTH = int32() never fails   { pass 13i32; };
+pub func:OK_ERR_EXIT = int32() never fails      { pass 14i32; };
+pub func:OK_FAILSAFE_POST = int32() never fails { pass 15i32; };
+pub func:OK_PROVE = int32() never fails         { pass 16i32; };
+pub func:OK_ASSERT_STATIC = int32() never fails { pass 17i32; };
+pub func:OK_COUNT = int32() never fails         { pass 17i32; };
+
+// The manifest spelling of a kind (P-10's `kind` column).
+pub func:ok_name = string(int32:k) never fails {
+    if (k == 1i32)  { pass "div-zero"; }
+    if (k == 2i32)  { pass "div-min"; }
+    if (k == 3i32)  { pass "overflow"; }
+    if (k == 4i32)  { pass "bounds"; }
+    if (k == 5i32)  { pass "cast-range"; }
+    if (k == 6i32)  { pass "exhaustive"; }
+    if (k == 7i32)  { pass "requires"; }
+    if (k == 8i32)  { pass "ensures"; }
+    if (k == 9i32)  { pass "invariant"; }
+    if (k == 10i32) { pass "limit"; }
+    if (k == 11i32) { pass "limit-subsume"; }
+    if (k == 12i32) { pass "terminate"; }
+    if (k == 13i32) { pass "stack-depth"; }
+    if (k == 14i32) { pass "err-exit"; }
+    if (k == 15i32) { pass "failsafe-post"; }
+    if (k == 16i32) { pass "prove"; }
+    if (k == 17i32) { pass "assert-static"; }
+    pass "?";
+};
+
+pub func:ok_has_guard = bool(int32:k) never fails {
+    if (k == 1i32)  { pass true; }
+    if (k == 2i32)  { pass true; }
+    if (k == 3i32)  { pass true; }
+    if (k == 4i32)  { pass true; }
+    if (k == 5i32)  { pass true; }
+    if (k == 7i32)  { pass true; }
+    if (k == 8i32)  { pass true; }
+    if (k == 9i32)  { pass true; }
+    if (k == 10i32) { pass true; }
+    if (k == 14i32) { pass true; }
+    pass false;
+};
+
+// The verdict column (P-10), spelled once.
+pub func:OV_DISCHARGED = int32() never fails { pass 1i32; };
+pub func:OV_OPEN = int32() never fails       { pass 2i32; };
+pub func:OV_BUDGET = int32() never fails     { pass 3i32; };
+pub func:OV_UNENCODED = int32() never fails  { pass 4i32; };
+pub func:OV_CHECKER = int32() never fails    { pass 5i32; };
+
+pub func:ov_name = string(int32:v) never fails {
+    if (v == 1i32) { pass "discharged"; }
+    if (v == 2i32) { pass "open"; }
+    if (v == 3i32) { pass "budget"; }
+    if (v == 4i32) { pass "unencoded"; }
+    if (v == 5i32) { pass "checker"; }
+    pass "?";
+};
+
+// The verdict a manifest row spells, or 0 when the word is not one.
+pub func:ov_of_name = int32(string:s) never fails {
+    if (string_equals(s, "discharged")) { pass 1i32; }
+    if (string_equals(s, "open"))       { pass 2i32; }
+    if (string_equals(s, "budget"))     { pass 3i32; }
+    if (string_equals(s, "unencoded"))  { pass 4i32; }
+    if (string_equals(s, "checker"))    { pass 5i32; }
+    pass 0i32;
+};

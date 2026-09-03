@@ -14,6 +14,9 @@
 //   stress: N                run N times, the SAME answer every time (1)
 //   argv: TOK ...            extra argv for the run, fixture names substituted
 //   expect-no-parse-error    the file is meant to reach the backend (D-085)
+//   expect-obligation: KIND VERDICT N   a `verify` test's row (1.5.0, P-22): the
+//                            (kind, verdict) counts over the test's own module
+//                            must EQUAL the set named; `none` says there are none
 //
 // A number the reader cannot read marks the expectations unreadable, with
 // the line: the test is then a failing test, never a silently defaulted one.
@@ -29,6 +32,12 @@ pub struct:Expected = {
     int64:col;      // -1: any column
 };
 
+pub struct:ObExpect = {
+    string:kind;
+    string:verdict;
+    int64:n;
+};
+
 pub struct:Expect = {
     List<Expected>:errors;
     List<Expected>:notes;
@@ -36,6 +45,8 @@ pub struct:Expect = {
     int64:stress;
     List<string>:argv;
     bool:no_parse_error;
+    List<ObExpect>:obligations;   // `expect-obligation:` rows (the verify stage)
+    bool:obligations_none;        // `expect-obligation: none`
     bool:ok;
     int64:bad_line;
 };
@@ -79,7 +90,10 @@ pub func:expect_read = Expect(string:text) never fails {
                        notes: raw list_init::<Expected>(2i64),
                        exit_code: 0i64, stress: 1i64,
                        argv: raw list_init::<string>(2i64),
-                       no_parse_error: false, ok: true, bad_line: 0i64 };
+                       no_parse_error: false,
+                       obligations: raw list_init::<ObExpect>(2i64),
+                       obligations_none: false,
+                       ok: true, bad_line: 0i64 };
     List<string>:lines = raw text_lines(text);
     for (int64:li in 0i64...lines.count) {
         string:s = raw text_trim(raw strlist_view(lines, li));
@@ -129,6 +143,17 @@ pub func:expect_read = Expect(string:text) never fails {
         }
         if (raw text_starts_with(body, "expect-no-parse-error")) {
             e.no_parse_error = true;
+            continue;
+        }
+        if (raw text_starts_with(body, "expect-obligation:")) {
+            string:rest = raw after_colon(body);
+            if (raw text_eq(rest, "none")) { e.obligations_none = true; continue; }
+            List<string>:parts = raw text_split_ws(rest);
+            if (parts.count != 3i64) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            Result<int64>:n = text_int(raw strlist_view(parts, 2i64));
+            if (n.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            ObExpect:ob = ObExpect{ kind: raw strlist_copy(parts, 0i64), verdict: raw strlist_copy(parts, 1i64), n: n.value };
+            drop list_push(@e.obligations, move(ob));
             continue;
         }
     }

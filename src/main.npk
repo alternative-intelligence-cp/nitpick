@@ -18,6 +18,13 @@
 //
 //   npkc <root.npk>              IR on stdout
 //   npkc <root.npk> -o <out.ll>  IR written to the file, stdout silent
+//   --obligations <dir>          also write the program's proof obligations
+//                                (one SMT-LIB2 file per function, index.txt,
+//                                rows.txt) into <dir> (1.5.0, D-218)
+//   --elide <nitpick.obligations>  emit the VERIFIED build: every guard the
+//                                manifest records as discharged gives way to
+//                                `llvm.assume` of the proven fact (D-219)
+//   --extra-picky=no-wildx       the high-assurance build mode (D-035)
 //
 // Exit codes, the same contract every tool holds:
 //
@@ -47,43 +54,94 @@ use "./frontend/resolve_path.npk".*;
 use "./frontend/symbols.npk".*;
 use "./frontend/token.npk".*;
 use "./frontend/type_trait.npk".*;
+use "./frontend/paths.npk".*;
+use "./backend/smt/smt_table.npk".*;
+use "./backend/smt/smt_manifest.npk".*;
+use "../lib/nfs.npk".*;
+use "../lib/nsys.npk".*;
 
 // The renderer moved to `diag_report` (diag_writer.npk) at 1.4.7 step 1:
 // ONE walk -- generic and borrowing since D-229 -- where this file, check,
 // resolve_check and parse_check each kept their own copy of the loop.
 
+func:USAGE = string() never fails {
+    pass "usage: npkc <root.npk> [-o out.ll] [--obligations DIR] [--elide nitpick.obligations] [--extra-picky=no-wildx]";
+};
+
 async func:main = int32(cstring[]:argv) {
-    if (argv.len < 2i64) {
-        await diag_say("usage: npkc <root.npk> [-o out.ll]") ?| NIL;
-        exit 2i32;
-    }
-    cstring:arg = argv[1i64];
-    string:root = string_from_bytes(arg.ptr, arg.len);
-
-    // `-o out.ll` — the one flag. Parsed positionally rather than by a scanner,
-    // because one flag does not justify one; the day there are two, this becomes
-    // the driver's argument table, not a second special case.
+    // THE ARGUMENT TABLE (1.5.0). `-o` was parsed positionally while it was
+    // the one flag, with a note that the second flag would make this a
+    // table; the third and fourth did. Every flag is order-free, given at
+    // most once, and an argument this does not know is a usage error: a
+    // misspelled flag must never be read as the root file.
+    string:root = "";
     string:out_path = "";
-    if (argv.len >= 4i64) {
-        cstring:flag = argv[2i64];
-        string:flag_s = string_from_bytes(flag.ptr, flag.len);
-        if (raw string_eq(flag_s, "-o")) {
-            cstring:op = argv[3i64];
-            out_path = string_from_bytes(op.ptr, op.len);
-        }
-    }
-
-    // `--extra-picky=no-wildx` — the high-assurance build mode (D-035). Scanned
-    // across every argument, since it is order-free and pairs with `-o`.
+    string:obl_dir = "";
+    string:elide_path = "";
     bool:no_wildx = false;
     int64:ai = 1i64;
     while (ai < argv.len) {
-        cstring:a = argv[ai];
-        if (raw string_eq(string_from_bytes(a.ptr, a.len),
-                          "--extra-picky=no-wildx")) {
-            no_wildx = true;
+        string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
+        if (raw string_eq(a, "-o") || raw string_eq(a, "--obligations") || raw string_eq(a, "--elide")) {
+            if ((ai + 1i64) >= argv.len) {
+                await diag_say(string_concat(a, " needs an argument")) ?| NIL;
+                await diag_say(raw USAGE()) ?| NIL;
+                exit 2i32;
+            }
+            string:val = string_from_bytes(argv[ai + 1i64].ptr, argv[ai + 1i64].len);
+            if (raw string_eq(a, "-o")) {
+                if (out_path.len > 0i64) { await diag_say("-o given twice") ?| NIL; exit 2i32; }
+                out_path = move(val);
+            } else {
+                if (raw string_eq(a, "--obligations")) {
+                    if (obl_dir.len > 0i64) { await diag_say("--obligations given twice") ?| NIL; exit 2i32; }
+                    obl_dir = move(val);
+                } else {
+                    if (elide_path.len > 0i64) { await diag_say("--elide given twice") ?| NIL; exit 2i32; }
+                    elide_path = move(val);
+                }
+            }
+            ai = ai + 2i64;
+            continue;
         }
+        if (raw string_eq(a, "--extra-picky=no-wildx")) {
+            no_wildx = true;
+            ai = ai + 1i64;
+            continue;
+        }
+        if (a.len > 0i64) {
+            if (a.ptr[0i64] == 45u8) {
+                await diag_say(string_concat("unknown argument: ", a)) ?| NIL;
+                await diag_say(raw USAGE()) ?| NIL;
+                exit 2i32;
+            }
+        }
+        if (root.len > 0i64) {
+            await diag_say("npkc takes one root file") ?| NIL;
+            await diag_say(raw USAGE()) ?| NIL;
+            exit 2i32;
+        }
+        root = move(a);
         ai = ai + 1i64;
+    }
+    if (root.len == 0i64) {
+        await diag_say(raw USAGE()) ?| NIL;
+        exit 2i32;
+    }
+
+    // THE OBLIGATION TABLE (1.5.0, P-3): what `--obligations` fills and what
+    // `--elide` reads. The manifest is read before the front half runs, so a
+    // file this compiler cannot vouch for is refused before any work.
+    ObTable:obl = raw obtable_init(obl_dir.len > 0i64);
+    bool:verify_on = (obl_dir.len > 0i64) || (elide_path.len > 0i64);
+    if (elide_path.len > 0i64) {
+        Result<cstring>:ec = to_cstring(elide_path);
+        if (ec.is_error) { await diag_say("npkc: --elide: not a path") ?| NIL; exit 2i32; }
+        Result<string>:et = read_file(ec.value);
+        if (et.is_error) { await diag_say("npkc: --elide: the manifest cannot be read") ?| NIL; exit 2i32; }
+        ObManifest:man = raw man_parse(et.value);
+        if (!man.ok) { await diag_say(string_concat("npkc: --elide: ", man.problem)) ?| NIL; exit 2i32; }
+        obl.elide = raw man_discharged(move(man));
     }
 
     // Declared UNINITIALISED and filled by the pipeline through the pointer —
@@ -119,10 +177,19 @@ async func:main = int32(cstring[]:argv) {
     TypeResolver:tr = raw tyres_init(@f.g.ast, @f.types, @f.g.tab, @f.it,
                                      @f.diags, @einst);
     bool:emitted = raw emit_all(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
-                                    @f.fninsts, @f.im, @f.diags);
+                                    @f.fninsts, @f.im, @f.diags, @obl, verify_on);
     if (!emitted) {
         await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
         exit 1i32;
+    }
+    // THE OBLIGATION FILES (1.5.0, P-6): one `.smt2` per function with rows,
+    // the index and the row list, into `--obligations`' directory (created
+    // if absent; an existing one is fine).
+    if (obl_dir.len > 0i64) {
+        if (!(raw obl_write_dir(obl_dir, @obl))) {
+            await diag_say("npkc: --obligations: the directory or a file in it could not be written") ?| NIL;
+            exit 2i32;
+        }
     }
     string:ir = raw irw_text(@w);
     if (out_path.len > 0i64) {
@@ -158,6 +225,42 @@ async func:main = int32(cstring[]:argv) {
     exit 0i32;
 };
 
+// The obligation directory: `dir` absolute or relative to the working
+// directory; created when absent; then every file through the floor's
+// whole-file write. False on any refusal -- the caller reports it.
+func:obl_write_dir = bool(string:dir, ObTable->:t) never fails {
+    string:abs = string_concat(dir, "");
+    if (!(raw path_is_absolute(abs))) {
+        Result<string>:cw = sys_cwd();
+        if (cw.is_error) { pass false; }
+        abs = raw path_normalise(raw path_join(cw.value, dir));
+    }
+    Result<Path>:parent = path_parse(raw path_dirname(abs));
+    if (parent.is_error) { pass false; }
+    Result<fd>:pd = dir_open(parent.value);
+    if (pd.is_error) { pass false; }
+    Result<NIL>:mk = mkdir_at(pd.value, raw path_basename(abs));
+    Result<NIL>:cl = close(pd.value);
+    if (mk.is_error) { if (mk.err != Exists) { pass false; } }
+    if (cl.is_error) { pass false; }
+    for (int64:i in 0i64...t.files.count) {
+        string:name = string_concat(raw file_number(i + 1i64), ".smt2");
+        Result<cstring>:fc = to_cstring(raw path_join(abs, name));
+        if (fc.is_error) { pass false; }
+        Result<NIL>:w = write_file(fc.value, string_from_bytes(t.files.items[i].ptr, t.files.items[i].len));
+        if (w.is_error) { pass false; }
+    }
+    Result<cstring>:ic = to_cstring(raw path_join(abs, "index.txt"));
+    if (ic.is_error) { pass false; }
+    Result<NIL>:iw = write_file(ic.value, raw obl_index_text(t));
+    if (iw.is_error) { pass false; }
+    Result<cstring>:rc = to_cstring(raw path_join(abs, "rows.txt"));
+    if (rc.is_error) { pass false; }
+    Result<NIL>:rw = write_file(rc.value, raw obl_rows_text(t));
+    if (rw.is_error) { pass false; }
+    pass true;
+};
+
 func:failsafe = int32(Error:e) {
     // Every defect family this program can die from, NAMED
     // (D-179) — the doctrine applied to ourselves. Exit 3 for
@@ -172,6 +275,10 @@ func:failsafe = int32(Error:e) {
         (OutOfBounds) { exit 3i32; },
         (Unreachable) { exit 3i32; },
         (WildLeak) { exit 3i32; },
+        (BadPath) { exit 3i32; },
+        (EFsPath) { exit 3i32; },
+        (EFsIndex) { exit 3i32; },
+        (EFsRecord) { exit 3i32; },
         (ast.BoundsId) { exit 3i32; },
         (ast.BoundsScratch) { exit 3i32; },
         (ast.BoundsWindow) { exit 3i32; },

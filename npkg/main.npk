@@ -16,7 +16,13 @@
 //   npkg test --selfcheck      the runner self-check alone (BUILD_REFERENCE §7.1)
 //   npkg test --verdicts PATH  also write one `STATUS<TAB>suite<TAB>name<TAB>message` per unit
 //   npkg update                refused by name: a single-repo world has nothing to resolve
-//   npkg verify                refused by name: the z3 pipeline is cycle 1.5's
+//   npkg verify                the ladder, then the VERIFIED build (1.5.0, D-218/D-219): the
+//                              obligations of `[build] entry` decided by the pinned z3, held to
+//                              the committed nitpick.obligations, the guards the manifest
+//                              discharged elided, the verified compiler rebuilt from itself
+//   npkg verify --record       write nitpick.obligations from this run (a deliberate re-baseline)
+//   npkg verify --explain      also build/verify/explain.txt: a model per open row, a reason per
+//                              budget row, an unsat core per discharged one
 //
 // Exit codes, the contract every tool holds (src/main.npk):
 //
@@ -42,9 +48,10 @@ use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./suites.npk".*;
 use "./selfcheck.npk".*;
+use "./verify.npk".*;
 
 func:usage = string() never fails {
-    pass "usage: npkg build | npkg test [--only SUBSTR]... [--selfcheck] [--verdicts PATH] | npkg update | npkg verify";
+    pass "usage: npkg build | npkg test [--only SUBSTR]... [--selfcheck] [--verdicts PATH] | npkg update | npkg verify [--record] [--explain]";
 };
 
 // The directory holding `nitpick.toml`, walking up from the working
@@ -80,12 +87,16 @@ async func:main = int32(cstring[]:argv) {
     }
     string:cmd = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
     bool:selfcheck = false;
+    bool:record = false;
+    bool:explain = false;
     List<string>:only = raw list_init::<string>(2i64);
     string:verdicts_path = "";
     int64:ai = 2i64;
     while (ai < argv.len) {
         string:a = string_from_bytes(argv[ai].ptr, argv[ai].len);
         if (raw text_eq(a, "--selfcheck")) { selfcheck = true; ai = ai + 1i64; continue; }
+        if (raw text_eq(a, "--record"))    { record = true; ai = ai + 1i64; continue; }
+        if (raw text_eq(a, "--explain"))   { explain = true; ai = ai + 1i64; continue; }
         if (raw text_eq(a, "--only")) {
             if ((ai + 1i64) >= argv.len) { drop say_err("--only needs a substring"); exit 2i32; }
             drop strlist_push(@only, string_from_bytes(argv[ai + 1i64].ptr, argv[ai + 1i64].len));
@@ -112,13 +123,10 @@ async func:main = int32(cstring[]:argv) {
         drop say_err("npkg update: refused -- there is nothing to resolve in a single-repository world; `nitpick.lock` is read by every build and written by nobody until dependencies exist (D-078, D-206)");
         exit 2i32;
     }
-    if (raw text_eq(cmd, "verify")) {
-        drop say_err("npkg verify: refused -- the verification pipeline (`[verify]`, z3 over SMT-LIB2, the stage-1/stage-2 comparison) is cycle 1.5's; until it lands there is no verification to run, and a command that pretended otherwise would be a green light nobody earned (D-206)");
-        exit 2i32;
-    }
     bool:is_build = raw text_eq(cmd, "build");
     bool:is_test = raw text_eq(cmd, "test");
-    if (!(is_build || is_test)) {
+    bool:is_verify = raw text_eq(cmd, "verify");
+    if (!(is_build || is_test || is_verify)) {
         drop say_err(raw usage());
         exit 2i32;
     }
@@ -176,6 +184,14 @@ async func:main = int32(cstring[]:argv) {
     drop say(raw stage_text("builder", "snapshot -> builder -> npkc (D-205)"));
     if (is_build) {
         drop say(string_concat("\nok  built ", raw rel_to_root(@c, s2.value.text)));
+        wild_release_all();
+        exit 0i32;
+    }
+    if (is_verify) {
+        Result<Step>:sv = await verify_run(@c, record, explain);
+        if (sv.is_error) { drop say_err("npkg verify: a spawn or a read failed"); exit 2i32; }
+        if (!sv.value.ok) { drop say_err(sv.value.text); exit 1i32; }
+        drop say(string_concat("\nok  verified ", raw rel_to_root(@c, sv.value.text)));
         wild_release_all();
         exit 0i32;
     }

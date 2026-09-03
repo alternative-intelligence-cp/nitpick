@@ -1,0 +1,69 @@
+// smt_table — THE PER-PROGRAM OBLIGATION TABLE, the data half (1.5.0; P-3,
+// P-6, P-12): what `--obligations` writes and what `--elide` hands the
+// emitter. A leaf module -- `LlCtx` carries a pointer to one, so this cannot
+// import the emitter; the walk that fills it is `smt_obligations.npk`.
+//
+//   <dir>/NNNN.smt2   one per function with obligations, in emission order
+//   <dir>/index.txt   NNNN<TAB>symbol<TAB>checks
+//   <dir>/rows.txt    NNNN<TAB>k<TAB>kind<TAB>hash<TAB>encoded<TAB>symbol
+//
+// `k` is the obligation's 1-based index within its function (the file's
+// `o<k>` comment), `encoded` is 1 for a row with a `(check-sat)` and 0 for an
+// `unencoded` row (P-12), and the runner maps the file's answers to its
+// encoded rows in order.
+
+mod:smt_table;
+
+use "../../frontend/list.npk".*;
+
+pub struct:ObTable = {
+    bool:want_files;         // --obligations DIR was given
+    List<string>:elide;      // --elide FILE's discharged hashes ("" count when absent)
+    List<string>:files;      // each function's .smt2 text, in emission order
+    List<string>:file_syms;  // its symbol
+    List<int64>:file_checks; // its `(check-sat)` count
+    List<string>:rows;       // rows.txt lines
+    int64:encoded_rows;      // totals for the driver's report line
+    int64:unencoded_rows;
+};
+
+pub func:obtable_init = ObTable(bool:want_files) never fails {
+    pass ObTable{ want_files: want_files,
+                  elide: raw list_init::<string>(8i64),
+                  files: raw list_init::<string>(16i64),
+                  file_syms: raw list_init::<string>(16i64),
+                  file_checks: raw list_init::<int64>(16i64),
+                  rows: raw list_init::<string>(32i64),
+                  encoded_rows: 0i64, unencoded_rows: 0i64 };
+};
+
+// `NNNN`, four digits, 1-based.
+pub func:file_number = string(int64:n) never fails {
+    string:d = int_to_string(n);
+    string:z = "";
+    for (int64:i in d.len...4i64) { z = string_concat(z, "0"); }
+    pass (string_concat(z, d));
+};
+
+// The index and the row list, as the two files' texts.
+pub func:obl_index_text = string(ObTable->:t) never fails {
+    string:s = "";
+    for (int64:i in 0i64...t.files.count) {
+        s = string_concat(s, raw file_number(i + 1i64));
+        s = string_concat(s, "\t");
+        s = string_concat(s, string_from_bytes(t.file_syms.items[i].ptr, t.file_syms.items[i].len));
+        s = string_concat(s, "\t");
+        s = string_concat(s, int_to_string(t.file_checks.items[i]));
+        s = string_concat(s, "\n");
+    }
+    pass s;
+};
+
+pub func:obl_rows_text = string(ObTable->:t) never fails {
+    string:s = "";
+    for (int64:i in 0i64...t.rows.count) {
+        s = string_concat(s, string_from_bytes(t.rows.items[i].ptr, t.rows.items[i].len));
+        s = string_concat(s, "\n");
+    }
+    pass s;
+};

@@ -2343,7 +2343,7 @@ manifest is authoritative:
 
 | Situation | Outcome |
 |---|---|
-| no manifest present | one is generated; the build is marked *not reproducibility-verified* |
+| no manifest present | one is generated; the build is marked *not reproducibility-verified* — **amended at 1.5.0 (P-9): nothing writes the manifest implicitly; an absent `nitpick.obligations` fails `npkg verify` by name and `npkg verify --record` writes it on purpose** |
 | manifest present, every obligation matches | build proceeds; binary is reproducible |
 | Z3 proves **more** than the manifest records (faster machine, warmer cache) | **build fails** — the binary would differ |
 | Z3 proves **less** (timeout, slower host, different solver build) | **build fails** — the binary would differ |
@@ -14884,6 +14884,22 @@ become `poison` and a harness grep enforces the ban thereafter;
 (11) the TCB statement — verified middle-end plus validated floor,
 `llc`/`ld.lld` named trusted, the floor's volatile bottom enumerated
 in `meta/specs/TCB.md` (r8 Lesson 2).
+
+> **LANDED at 1.5.0 (2026-09-03), the skeleton with one real obligation
+> kind — the record is `meta/roadmap/1.5/1.5.0.md`, whose P-1…P-27 are the
+> landing's decisions.** The compiler emits obligations (`--obligations`)
+> and reads verdicts (`--elide`); `npkg verify` spawns the pinned z3 (the
+> workbench's build of tag `z3-4.16.0`, sha256-pinned in `[verify]` with the
+> profile as a READ list) one process per function; `nitpick.obligations` at
+> the root is the manifest, written only by `--record`. Three readings the
+> landing settled: (10)'s seeds are `zeroinitializer`, not `poison` (the
+> emitter mints none); (8)'s canonical text is the obligation's relevance
+> cone over the hypotheses that DOMINATE the site, hashed with SHA-256 over
+> source-derived SSA names; the verdict pass asks `(check-sat)` alone and
+> models/cores are `--explain`'s second pass. The D-007 pair (`div-zero`,
+> `div-min`) rides end to end: the compiler's own set is 141 obligations in
+> 40 functions, 116 discharged, and the verified compiler rebuilds itself
+> byte-identically.
 
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 

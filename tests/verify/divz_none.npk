@@ -1,0 +1,32 @@
+// expect-exit: 0
+// expect-obligation: none
+//
+// NO ROW WHERE NO TRAP ARMS: float division is IEEE and total (D-143) and a
+// twisted division yields ERR and continues (D-007, D-144), so neither site
+// carries a D-007 guard and neither produces an obligation. The manifest's
+// inventory is of GUARDS, and a family with none has none to list.
+mod:divz_none;
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:f = 1.0f64 / 0.0f64;
+    tbb32:t = 5tbb32 / 0tbb32;
+    if (!(is_err(t))) { exit 1i32; }
+    if (f < 1.0f64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (TbbErr) { exit 25i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

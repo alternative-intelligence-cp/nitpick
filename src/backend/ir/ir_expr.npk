@@ -50,6 +50,7 @@ use "../../frontend/parse_decl.npk".*;
 use "../../frontend/parse_decorate.npk".*;
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
+use "../smt/smt_kinds.npk".*;
 use "./ir_func.npk".*;
 use "../../frontend/resolve_type.npk".*;
 use "../../frontend/type_generic.npk".*;   // type_subst, for transitive instantiation (1.0.7)
@@ -1481,7 +1482,7 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if ((raw type_kind(x.fe.ctx.types, utid)) == (raw TY_INT())) {
             pass (raw emit_arith_value(x, TokenKind.OpMinus, utid,
                       raw iv(string_concat(v.ll, ""), "0", utid), v,
-                      raw exprtypes_get(x.et, id), n.span));
+                      raw exprtypes_get(x.et, id), n.span, 0i32));
         }
         // A `simd` negates LANE-WISE and lands here: the vector's rule is its
         // element's, and D-194's guards are the ones its arithmetic carries.
@@ -2003,7 +2004,7 @@ func:ovf_family_of = int32(TokenKind:op, bool:signed) never fails {
 
 pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
                               IrVal:lhs, IrVal:rhs, int32:out_tid,
-                              Span:at) never fails {
+                              Span:at, int32:site) never fails {
     bool:signed = false;
     if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_INT())) {
         signed = raw type_is_signed(x.fe.ctx.types, lt);
@@ -2382,29 +2383,48 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
     // divisor — D-007's rule, and the difference between a controlled shutdown
     // through `failsafe` and SIGFPE with actuators live. Signed division adds
     // the INT_MIN/-1 case: LLVM UB with no defined value, and D-008 already
-    // refused inventing one, so it traps too. The guard is emitted, never
-    // elided — a build without the verifier still has to emit the check
-    // (D-068), and 1.4's static discharge may remove only what it proves.
+    // refused inventing one, so it traps too. The guard is emitted in every
+    // build (D-068) -- and ELIDED only where the verified build's manifest
+    // says the obligation was DISCHARGED (1.5.0; D-218.9, D-219): the branch
+    // and the trap give way to `llvm.assume` of the proven fact, so the
+    // optimiser and 1.6's analyzers read what the solver established and
+    // nothing is deleted on a flag. `llctx_elided` answers false unless the
+    // driver was handed `--elide`, so an unverified build's IR is unchanged.
     bool:divlike = false;
     if (op == TokenKind.OpSlash)   { divlike = true; }
     if (op == TokenKind.OpPercent) { divlike = true; }
     if (divlike) {
-        string:z = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(z, " = icmp eq ", lhs.ll, " ",
-                          string_concat(rhs.ref, ", 0")));
-        string:trap_l = raw irw_new_label(x.fe.w, "div.zero");
+        bool:el_zero = raw llctx_elided(x.fe.ctx, site, raw OK_DIV_ZERO());
+        bool:el_min = raw llctx_elided(x.fe.ctx, site, raw OK_DIV_MIN());
         string:ok_l = raw irw_new_label(x.fe.w, "div.ok");
         string:next_l = string_concat(ok_l, "");
         if (signed) {
             next_l = raw irw_new_label(x.fe.w, "div.chk");
         }
-        drop irw_line(x.fe.w, raw cat5("br i1 ", z, ", label %", trap_l,
-                          string_concat(", label %", next_l)));
-        drop irw_label(x.fe.w, trap_l);
-        drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                          int_to_string((raw x_site(x, at)) => int64), ")"));
-        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
-        drop irw_line(x.fe.w, "unreachable");
+        if (el_zero) {
+            // DISCHARGED: `b != 0` is a proven fact of every continuing path.
+            string:nz = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(nz, " = icmp ne ", lhs.ll, " ",
+                              string_concat(rhs.ref, ", 0")));
+            drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nz, ")"));
+            if (signed) {
+                drop irw_line(x.fe.w, raw cat3("br label %", next_l, ""));
+            } else {
+                drop irw_line(x.fe.w, raw cat3("br label %", ok_l, ""));
+            }
+        } else {
+            string:z = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(z, " = icmp eq ", lhs.ll, " ",
+                              string_concat(rhs.ref, ", 0")));
+            string:trap_l = raw irw_new_label(x.fe.w, "div.zero");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", z, ", label %", trap_l,
+                              string_concat(", label %", next_l)));
+            drop irw_label(x.fe.w, trap_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              int_to_string((raw x_site(x, at)) => int64), ")"));
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
+            drop irw_line(x.fe.w, "unreachable");
+        }
         if (signed) {
             drop irw_label(x.fe.w, next_l);
             // INT_MIN is detected STRUCTURALLY (0.9.3): it is the one nonzero
@@ -2428,14 +2448,22 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
                               string_concat(rhs.ref, ", -1")));
             string:both = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat5(both, " = and i1 ", m, ", ", o));
-            string:min_l = raw irw_new_label(x.fe.w, "div.min");
-            drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", min_l,
-                              string_concat(", label %", ok_l)));
-            drop irw_label(x.fe.w, min_l);
-            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
-                              int_to_string((raw x_site(x, at)) => int64), ")"));
-            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
-            drop irw_line(x.fe.w, "unreachable");
+            if (el_min) {
+                // DISCHARGED: not (a == MIN and b == -1) is a proven fact.
+                string:nb = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat3(nb, " = xor i1 ", string_concat(both, ", true")));
+                drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", nb, ")"));
+                drop irw_line(x.fe.w, raw cat3("br label %", ok_l, ""));
+            } else {
+                string:min_l = raw irw_new_label(x.fe.w, "div.min");
+                drop irw_line(x.fe.w, raw cat5("br i1 ", both, ", label %", min_l,
+                                  string_concat(", label %", ok_l)));
+                drop irw_label(x.fe.w, min_l);
+                drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                                  int_to_string((raw x_site(x, at)) => int64), ")"));
+                drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
+                drop irw_line(x.fe.w, "unreachable");
+            }
         }
         drop irw_label(x.fe.w, ok_l);
     }
@@ -2782,7 +2810,7 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     }
 
     pass (raw emit_arith_value(x, op, lt, lhs, rhs,
-                               raw exprtypes_get(x.et, id), n.span));
+                               raw exprtypes_get(x.et, id), n.span, id.index));
 };
 
 // `&&` and `||` short-circuit THROUGH A SLOT, not a phi — naive lowering says

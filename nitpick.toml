@@ -74,6 +74,9 @@ lld-flags     = ["-static"]
 #                fixture   built like a program and never run; its uppercased stem is an `// argv:` token
 #                program   emitted, scanned, assembled, linked, run at -O0 and again through opt -O2
 #                runtime   a hand-written .ll assembled, linked against the floor, run
+#                verify    the compiler under test with `--obligations`, z3 under the pinned
+#                            profile, the module's (kind, verdict) counts exact, the verified
+#                            build (`--elide`) cross-checked, linked and run at -O0 and -O2
 #              (`compile` is the default; it is the only stage with a `kind`)
 #   paths      the directories swept, an array; `path` is its one-element shorthand
 #   recursive  sweep subdirectories too (default false)
@@ -193,6 +196,18 @@ name = "runtime"
 stage = "runtime"
 path = "runtime/tests"
 
+# THE VERIFICATION LEG'S PROGRAMS (1.5.0, D-218; the plan is
+# meta/roadmap/1.5/1.5.0.md, P-22): each is compiled with `--obligations`,
+# its D-218 rows decided by the pinned z3 under the pinned profile, the
+# (kind, verdict) counts of its OWN module compared exactly with its
+# `// expect-obligation:` lines, then the VERIFIED build emitted with that
+# run's manifest, cross-checked (an `llvm.assume` per discharged site, a trap
+# per retained one), linked and run at -O0 and under opt -O2.
+[[test]]
+name = "verify"
+stage = "verify"
+path = "tests/verify"
+
 # Whole programs the frontend must ACCEPT in full silence -- the counterweight
 # to the rejection suites, since a checker that refused every program would
 # pass every one of them. One suite, not one per stage: silence has no stage.
@@ -211,7 +226,31 @@ path = "tests/accept"
 # someone has to remember — a safety property must not depend on a flag being
 # flipped later (D-068).
 [verify]
-z3 = true
+z3         = true
+# THE SOLVER IS A BUILD INPUT TOO (D-218.1, D-218.2; landed 1.5.0 step 2), so
+# it is pinned here as DATA exactly as the LLVM toolchain is: the exact release
+# the tool reports, the sha256 of the binary `z3` resolves to on PATH, and the
+# determinism profile as the options every invocation is BUILT from. A verdict
+# is a function of (obligation, solver build, budget) and of nothing else.
+#
+# THE BINARY IS THE WORKBENCH'S OWN BUILD of Z3Prover/z3 at tag z3-4.16.0
+# (commit ddb49568d3520e99799e364fb22f35fc67d887b1), built with clang, installed
+# at ~/.local/bin/z3 beside the LLVM symlinks -- D-233's doctrine for every
+# engine: pinned by commit, built locally, auditable. A different build of the
+# same tag is a different pin: update the sha AND re-record nitpick.obligations
+# (`npkg verify --record`) in the same change, never a quiet bump.
+#
+# THE OPTIONS ARE THE PROFILE AND THE ONLY BUDGET: fixed seeds for the smt and
+# sat cores, and `rlimit` -- z3's deterministic resource counter, per
+# `check-sat`. NO WALL-CLOCK KNOB may appear here (`timeout=`, `-T:`, `-t:`,
+# `solver.timeout=`) and no parallelism (`sat.threads=` other than 1,
+# `parallel.enable=`): both runners REFUSE such an entry by name, because a
+# proof that depends on the clock or on a thread schedule is a proof that
+# differs between machines. z3's defaults for both are already "off"; the
+# refusal is what keeps them so.
+z3-version = "4.16.0"
+z3-sha256  = "9a1657b3169fc8e60f1447ab11c0f26c3bae915b020485f19c8e4138c069bc3c"
+z3-options = ["smt.random_seed=0", "sat.random_seed=0", "rlimit=20000000"]
 
 [verify.nikos]
 domain = "interval"

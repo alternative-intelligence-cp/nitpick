@@ -40,6 +40,8 @@ use "./manifest.npk".*;
 use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./irscan.npk".*;
+use "./verify.npk".*;
+use "../src/backend/smt/smt_kinds.npk".*;
 
 // --- discovery ---------------------------------------------------------------------
 
@@ -876,6 +878,224 @@ async func:run_runtime_stage = NIL(Ctx->:c, int64:t) {
     pass NIL;
 };
 
+// --- the verify stage (1.5.0, P-22) -------------------------------------------------
+
+// The module a test declares (`mod:NAME;`), for scoping its rows.
+func:module_of = string(string:text) never fails {
+    List<string>:lines = raw text_lines(text);
+    for (int64:i in 0i64...lines.count) {
+        string:s = raw text_trim(raw strlist_view(lines, i));
+        if (raw text_starts_with(s, "mod:")) {
+            int64:semi = raw text_find_byte(s, 59u8, 0i64);
+            if (semi > 4i64) { pass (raw text_slice(s, 4i64, semi)); }
+        }
+    }
+    pass "";
+};
+
+func:row_in_module = bool(string:sym, string:modname) never fails {
+    if (raw text_eq(sym, "@main")) { pass true; }
+    if (raw text_eq(sym, "@npk_failsafe")) { pass true; }
+    string:prefix = string_concat("@\"npk.", modname);
+    prefix = string_concat(prefix, ".");
+    pass (raw text_starts_with(sym, prefix));
+};
+
+// One `verify` test, the harness's `check_verify_program` step for step:
+// obligations emitted (and the flag-less emission byte-identical), decided,
+// the module's (kind, verdict) counts compared exactly, the VERIFIED build
+// emitted with this run's manifest, cross-checked, linked, run at -O0 and -O2.
+pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Expect:exp) {
+    List<string>:fl = raw list_init::<string>(1i64);
+    if (!exp.ok) { pass (raw unreadable(name, exp)); }
+    if ((exp.obligations.count == 0i64) && (!exp.obligations_none)) {
+        drop strlist_push(@fl, string_concat(name, ": a verify test with no expect-obligation is a failing test"));
+        pass fl;
+    }
+    Result<string>:z3r = which("z3");
+    if (z3r.is_error) { fail z3r.err; }
+    string:z3 = move(z3r.value);
+    if (z3.len == 0i64) { drop strlist_push(@fl, string_concat(name, ": z3 is not on PATH")); pass fl; }
+    string:base = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len),
+                                string_concat("verify_", raw text_replace_byte(raw text_file_name(path), 46u8, 95u8)));
+    string:obl = string_concat(base, ".obl");
+    string:plain = string_concat(base, ".plain.ll");
+    string:compiler = string_from_bytes(c.npkc.ptr, c.npkc.len);
+    List<string>:a1 = raw list_init::<string>(6i64);
+    drop strlist_push(@a1, path);
+    drop strlist_push(@a1, "--obligations");
+    drop strlist_push(@a1, obl);
+    drop strlist_push(@a1, "-o");
+    drop strlist_push(@a1, plain);
+    Result<Run>:r1 = await compile_args(c, compiler, a1, raw duration_secs(300i64));
+    if (r1.is_error) { fail r1.err; }
+    Run:run1 = move(r1.value);
+    if (run1.timed_out) { drop strlist_push(@fl, string_concat(name, ": npkc did not terminate")); pass fl; }
+    if (!(run1.x.exited && (run1.x.status == 0i64))) {
+        string:m0 = string_concat(name, ": expected IR, got a refusal (");
+        m0 = string_concat(m0, raw text_replace_all(raw text_trim(run1.x.err), "\n", ", "));
+        m0 = string_concat(m0, ")");
+        drop list_push(@fl, move(m0));
+        pass fl;
+    }
+    Result<Run>:r0 = await compile_stdout(c, compiler, path, raw duration_secs(300i64));
+    if (r0.is_error) { fail r0.err; }
+    Run:run0 = move(r0.value);
+    Result<cstring>:pc = to_cstring(plain);
+    if (pc.is_error) { fail pc.err; }
+    Result<string>:ptext = read_file(pc.value);
+    if (ptext.is_error) { fail ptext.err; }
+    if (!(raw text_eq(run0.x.out, ptext.value))) {
+        drop strlist_push(@fl, string_concat(name, ": `--obligations` changed the emitted IR -- the walk must never touch the writer (P-3)"));
+        pass fl;
+    }
+    List<string>:nu = raw ir_no_undef(ptext.value, name);
+    if (nu.count > 0i64) { pass nu; }
+    Result<List<VRow>>:rows_r = read_rows(obl);
+    if (rows_r.is_error) { drop strlist_push(@fl, string_concat(name, ": rows.txt could not be read")); pass fl; }
+    List<VRow>:rows = rows_r.value;
+    Result<List<VFile>>:files_r = read_index(obl);
+    if (files_r.is_error) { drop strlist_push(@fl, string_concat(name, ": index.txt could not be read")); pass fl; }
+    List<VFile>:files = files_r.value;
+    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, name, @fl);
+    if (zr.is_error) { fail zr.err; }
+    if (fl.count > 0i64) { pass fl; }
+    // the module's counts, exactly (D-237's shape)
+    string:modname = raw module_of(relay read_text(path));
+    List<string>:keys = raw list_init::<string>(4i64);
+    List<int64>:counts = raw list_init::<int64>(4i64);
+    for (int64:i in 0i64...rows.count) {
+        if (!(raw row_in_module(string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len), modname))) { continue; }
+        string:key = string_concat(string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len), " ");
+        key = string_concat(key, raw ov_name(rows.items[i].verdict));
+        int64:slot = 0i64 - 1i64;
+        for (int64:j in 0i64...keys.count) { if (raw text_eq(raw strlist_view(keys, j), key)) { slot = j; } }
+        if (slot < 0i64) { drop list_push(@keys, move(key)); drop list_push(@counts, 1i64); }
+        else { counts.items[slot] = counts.items[slot] + 1i64; }
+    }
+    if (exp.obligations_none && (keys.count > 0i64)) {
+        string:m1 = string_concat(name, ": expected no obligations in module `");
+        m1 = string_concat(m1, modname);
+        m1 = string_concat(m1, "`, found ");
+        m1 = string_concat(m1, int_to_string(rows.count));
+        drop list_push(@fl, move(m1));
+        pass fl;
+    }
+    // every expected key present with its count; every found key expected
+    for (int64:e in 0i64...exp.obligations.count) {
+        string:want = string_concat(string_from_bytes(exp.obligations.items[e].kind.ptr, exp.obligations.items[e].kind.len), " ");
+        want = string_concat(want, string_from_bytes(exp.obligations.items[e].verdict.ptr, exp.obligations.items[e].verdict.len));
+        int64:found = 0i64;
+        for (int64:j2 in 0i64...keys.count) { if (raw text_eq(raw strlist_view(keys, j2), want)) { found = counts.items[j2]; } }
+        if (found != exp.obligations.items[e].n) {
+            string:m2 = string_concat(name, ": ");
+            m2 = string_concat(m2, want);
+            m2 = string_concat(m2, ": expected ");
+            m2 = string_concat(m2, int_to_string(exp.obligations.items[e].n));
+            m2 = string_concat(m2, ", found ");
+            m2 = string_concat(m2, int_to_string(found));
+            m2 = string_concat(m2, " (the rows of module `");
+            m2 = string_concat(m2, modname);
+            m2 = string_concat(m2, "`; every reported kind/verdict must be named, D-237's shape)");
+            drop list_push(@fl, move(m2));
+        }
+    }
+    for (int64:j3 in 0i64...keys.count) {
+        bool:named = false;
+        for (int64:e2 in 0i64...exp.obligations.count) {
+            string:w2 = string_concat(string_from_bytes(exp.obligations.items[e2].kind.ptr, exp.obligations.items[e2].kind.len), " ");
+            w2 = string_concat(w2, string_from_bytes(exp.obligations.items[e2].verdict.ptr, exp.obligations.items[e2].verdict.len));
+            if (raw text_eq(w2, raw strlist_view(keys, j3))) { named = true; }
+        }
+        if (!named) {
+            string:m3 = string_concat(name, ": ");
+            m3 = string_concat(m3, raw strlist_view(keys, j3));
+            m3 = string_concat(m3, ": expected 0, found ");
+            m3 = string_concat(m3, int_to_string(counts.items[j3]));
+            m3 = string_concat(m3, " (the rows of module `");
+            m3 = string_concat(m3, modname);
+            m3 = string_concat(m3, "`; every reported kind/verdict must be named, D-237's shape)");
+            drop list_push(@fl, move(m3));
+        }
+    }
+    if (fl.count > 0i64) { pass fl; }
+    // this run's manifest, the verified build, its cross-checks
+    string:man = string_concat(base, ".obligations");
+    Result<cstring>:mc = to_cstring(man);
+    if (mc.is_error) { fail mc.err; }
+    Result<NIL>:mw = write_file(mc.value, raw manifest_of(c, rows));
+    if (mw.is_error) { fail mw.err; }
+    string:vbase = string_concat(base, ".v");
+    string:vll = string_concat(vbase, ".ll");
+    List<string>:a2 = raw list_init::<string>(8i64);
+    drop strlist_push(@a2, path);
+    drop strlist_push(@a2, "--elide");
+    drop strlist_push(@a2, man);
+    drop strlist_push(@a2, "--obligations");
+    drop strlist_push(@a2, string_concat(obl, "2"));
+    drop strlist_push(@a2, "-o");
+    drop strlist_push(@a2, vll);
+    Result<Run>:r2 = await compile_args(c, compiler, a2, raw duration_secs(300i64));
+    if (r2.is_error) { fail r2.err; }
+    Run:run2 = move(r2.value);
+    if (!(run2.x.exited && (run2.x.status == 0i64))) {
+        drop strlist_push(@fl, string_concat(name, string_concat(": the --elide run refused: ", raw text_head(raw text_trim(run2.x.err), 300i64))));
+        pass fl;
+    }
+    Result<cstring>:ra = to_cstring(raw path_join(obl, "rows.txt"));
+    if (ra.is_error) { fail ra.err; }
+    Result<cstring>:rb = to_cstring(raw path_join(string_concat(obl, "2"), "rows.txt"));
+    if (rb.is_error) { fail rb.err; }
+    Result<string>:ta = read_file(ra.value);
+    if (ta.is_error) { fail ta.err; }
+    Result<string>:tb = read_file(rb.value);
+    if (tb.is_error) { fail tb.err; }
+    if (!(raw text_eq(ta.value, tb.value))) {
+        drop strlist_push(@fl, string_concat(name, ": the --elide run computed different rows than the --obligations run -- the walk depends on something it must not (P-3)"));
+        pass fl;
+    }
+    Result<cstring>:vc = to_cstring(vll);
+    if (vc.is_error) { fail vc.err; }
+    Result<string>:vir = read_file(vc.value);
+    if (vir.is_error) { fail vir.err; }
+    List<string>:nu2 = raw ir_no_undef(vir.value, string_concat(name, " (verified)"));
+    if (nu2.count > 0i64) { pass nu2; }
+    List<string>:xc = raw elided_ir_checks(rows, vir.value, name);
+    if (xc.count > 0i64) { pass xc; }
+    string:vobj = string_concat(vbase, ".o");
+    Result<Step>:l1 = await llc_obj(c, c.m.llc_flags, vll, vobj);
+    if (l1.is_error) { fail l1.err; }
+    Step:st1 = move(l1.value);
+    if (!st1.ok) { drop strlist_push(@fl, string_concat(name, string_concat(": llc rejected the verified IR: ", raw first_line_with(st1.text, "error", 160i64)))); pass fl; }
+    List<string>:zd = raw zero_dep(c, vobj, c.allow, string_concat(name, " (verified)"));
+    if (zd.count > 0i64) { pass zd; }
+    Result<Step>:l2 = await lld_link(c, vbase, vobj);
+    if (l2.is_error) { fail l2.err; }
+    Step:st2 = move(l2.value);
+    if (!st2.ok) { drop strlist_push(@fl, string_concat(name, string_concat(": the verified build failed to link: ", raw text_head(raw text_trim(st2.text), 140i64)))); pass fl; }
+    List<string>:noargs = raw list_init::<string>(1i64);
+    List<string>:r0f = relay await run_binary(c, name, vbase, noargs, 1i64, exp.exit_code, " (the verified build)", false);
+    if (r0f.count > 0i64) { pass r0f; }
+    pass (relay await check_optimised(c, name, vbase, noargs, 1i64, exp.exit_code));
+};
+
+async func:run_verify = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    int64:count = 0i64;
+    for (int64:k in 0i64...paths.count) {
+        string:p2 = raw strlist_view(paths, k);
+        string:text = relay read_text(p2);
+        Expect:exp = raw expect_read(text);
+        string:name = raw rel_to_root(c, p2);
+        List<string>:fl = relay await check_verify(c, p2, name, exp);
+        drop record(c, tname, name, fl);
+        count = count + 1i64;
+    }
+    drop say(raw stage_line(tname, count, "verified program(s): obligations decided, elided where discharged, run at -O0 and -O2"));
+    pass NIL;
+};
+
 // EVERY SUITE, IN MANIFEST ORDER (D-238). A filtered run touches the
 // compile-stage entries only: the other stages ask questions about the
 // sources as a set -- does every file parse, is every rejection exact --
@@ -924,6 +1144,11 @@ pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
         if (raw text_eq(stage, "runtime")) {
             Result<NIL>:r7 = await run_runtime_stage(c, t);
             if (r7.is_error) { fail r7.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "verify")) {
+            Result<NIL>:r8 = await run_verify(c, t);
+            if (r8.is_error) { fail r8.err; }
             continue;
         }
     }

@@ -1,0 +1,36 @@
+// expect-exit: 1
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 3
+//
+// THE COMPOUND SPELLINGS ARE SITES LIKE THE BINARY ONES (P-3): `/=` and `%=`
+// route through the same arithmetic core (1.3.3) and the same walk, keyed by
+// the assignment's target. The literal divisors discharge; the third
+// division's divisor is argv-derived and stays open, while its INT_MIN/-1
+// half discharges because the dividend is the DEFINED value `v.3 = 2`, which
+// the solver computes from the two definitions before it.
+mod:divz_compound;
+
+func:main = int32(cstring[]:argv) {
+    int32:v = 1000i32;
+    v /= 7i32;                       // 142
+    v %= 5i32;                       // 2
+    int32:w = argv.len =>! int32;    // 1
+    v /= (w + 1i32);                 // 1
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

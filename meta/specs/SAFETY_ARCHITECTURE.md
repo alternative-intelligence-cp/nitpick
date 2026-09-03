@@ -65,7 +65,7 @@ When a state cannot be mathematically proven at compile time (e.g., reading user
     *   `?!` (Emphatic Unwrap): Asserts success; traps to Layer 3 (`failsafe()`) if it errors.
     *   `raw` (Explicit Cast): Bypasses safety (acts as a searchable "TOS" keyword).
     *   `drop`: Explicitly discards the result.
-*   **The Contract Intercept**: This is where Layer 1 meets Layer 2. If a function has a `requires` contract that cannot be statically proven, Nitpick automatically forces the function to return a `Result<T>`. If the caller violates the contract at runtime, the function immediately intercepts and returns a `Result` error rather than crashing.
+*   **The Contract Intercept**: This is where Layer 1 meets Layer 2. If a function has a `requires` contract that cannot be statically proven, Nitpick automatically forces the function to return a `Result<T>`. If the caller violates the contract at runtime, the function immediately intercepts and returns a `Result` error rather than crashing. *(**Dead by D-221**, recorded 1.5.0: a contract violation is a program-invalid state and takes the TRAP route to `failsafe`, never a `Result`; the sentence stays as the record of the replaced framing — 1.5.3 implements the route.)*
 
 **Architectural Impact**: `Result<T>` is heavily intertwined with the type system and ABI. The compiler must automatically inject runtime bounds/contract checks and wrap return types implicitly when verification is deferred to runtime.
 

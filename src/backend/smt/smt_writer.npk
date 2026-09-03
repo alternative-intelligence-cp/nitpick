@@ -1,0 +1,222 @@
+// smt_writer — the SMT-LIB2 TEXT layer of the verification pipeline (1.5.0,
+// D-218): a line buffer, the quoting of user-derived symbols, and the exact
+// decimal bounds of every integer width the language has. Nothing here knows
+// the AST; `smt_encode.npk` builds terms and hypotheses with these helpers and
+// `smt_obligations.npk` assembles files. Like `ir_writer.npk`, this module
+// exists so the two properties the pipeline rests on are the writer's own:
+// DETERMINISM (the same calls produce the same bytes -- an obligation's
+// identity is a hash of them, D-218.8) and one spelling per construct.
+//
+// SYMBOLS ARE QUOTED, ALWAYS. A binding's k-th definition is `|name.k|`
+// (P-5): the bars make any Nitpick identifier a legal SMT-LIB symbol whatever
+// it collides with (`div`, `mod`, `abs`, `select` are all solver words and all
+// plausible locals), and the `.` inside is data, not a path.
+//
+// BOUNDS ARE EXACT DECIMALS at every width of the ladder (D-231: 8..4096
+// bits): 2^N rendered by repeated doubling of a decimal digit vector, so a
+// `uint4096`'s range axiom carries its 1,234-digit maximum rather than a
+// float's idea of it. Computed once per (bits, signed) pair and cached.
+
+mod:smt_writer;
+
+use "../../frontend/list.npk".*;
+
+// --- the line buffer -----------------------------------------------------------------
+
+pub struct:SmtBuf = {
+    List<string>:lines;
+    int64:bytes;          // the joined length, kept so the join allocates once
+};
+
+pub func:smtbuf_init = SmtBuf() never fails {
+    pass SmtBuf{ lines: raw list_init::<string>(64i64), bytes: 0i64 };
+};
+
+pub func:smtbuf_line = NIL(SmtBuf->:b, string:s) never fails {
+    b.bytes = b.bytes + s.len + 1i64;
+    drop list_push(@b.lines, string_concat(s, ""));
+    pass NIL;
+};
+
+pub func:smtbuf_count = int64(SmtBuf->:b) never fails { pass b.lines.count; };
+
+// Every line, each followed by `\n`, as one owned string -- one allocation,
+// one copy, never a concat per line (the 1.4.8 capture lesson). CONSUMES the
+// buffer: a borrow here would taint the text under D-004's conservative rule,
+// and after the join nothing is left to hold (the `proc_wait` shape).
+pub func:smtbuf_text = string(move SmtBuf:b) never fails {
+    wild int8->:out = alloc(b.bytes + 1i64);
+    int64:at = 0i64;
+    for (int64:i in 0i64...b.lines.count) {
+        string:ln = string_from_bytes(b.lines.items[i].ptr, b.lines.items[i].len);
+        for (int64:j in 0i64...ln.len) { out[at + j] = ln.ptr[j] =>! int8; }
+        at = at + ln.len;
+        out[at] = 10i8;
+        at = at + 1i64;
+    }
+    string:s = string_concat(string_from_bytes(out, at), "");
+    dalloc(out);
+    pass s;
+};
+
+// --- symbols ---------------------------------------------------------------------------
+
+// `|name.k|` -- a binding's k-th definition, quoted.
+pub func:smt_sym = string(string:name, int64:k) never fails {
+    string:s = string_concat("|", name);
+    s = string_concat(s, ".");
+    s = string_concat(s, int_to_string(k));
+    pass (string_concat(s, "|"));
+};
+
+// The two-argument application and its friends, spelled once.
+pub func:smt_app2 = string(string:op, string:a, string:b) never fails {
+    string:s = string_concat("(", op);
+    s = string_concat(s, " ");
+    s = string_concat(s, a);
+    s = string_concat(s, " ");
+    s = string_concat(s, b);
+    pass (string_concat(s, ")"));
+};
+
+pub func:smt_app1 = string(string:op, string:a) never fails {
+    string:s = string_concat("(", op);
+    s = string_concat(s, " ");
+    s = string_concat(s, a);
+    pass (string_concat(s, ")"));
+};
+
+pub func:smt_app3 = string(string:op, string:a, string:b, string:c) never fails {
+    string:s = string_concat("(", op);
+    s = string_concat(s, " ");
+    s = string_concat(s, a);
+    s = string_concat(s, " ");
+    s = string_concat(s, b);
+    s = string_concat(s, " ");
+    s = string_concat(s, c);
+    pass (string_concat(s, ")"));
+};
+
+// An integer literal as an SMT numeral: a negative value is `(- N)`, because
+// SMT-LIB has no negative numerals.
+pub func:smt_int = string(int64:v) never fails {
+    if (v >= 0i64) { pass (int_to_string(v)); }
+    // −v cannot overflow for INT64_MIN through the unsigned route.
+    uint64:mag = (0u64 - (v =>! uint64));
+    pass (raw smt_app1("-", raw u64_decimal(mag)));
+};
+
+// A uint64 as decimal -- `int_to_string` takes int64, and a literal's payload
+// with the top bit set is an unsigned value the signed spelling would negate.
+pub func:u64_decimal = string(uint64:v) never fails {
+    if (v == 0u64) { pass "0"; }
+    wild int8->:buf = alloc(24i64);
+    int64:n = 0i64;
+    uint64:x = v;
+    while (x > 0u64) {
+        buf[n] = ((x % 10u64) =>! int8) + 48i8;
+        n = n + 1i64;
+        x = x / 10u64;
+    }
+    wild int8->:rev = alloc(n);
+    for (int64:i in 0i64...n) { rev[i] = buf[n - 1i64 - i]; }
+    string:s = string_concat(string_from_bytes(rev, n), "");
+    dalloc(rev);
+    dalloc(buf);
+    pass s;
+};
+
+// --- exact bounds: 2^n by decimal doubling ---------------------------------------------
+//
+// A little-endian digit vector (one byte per decimal digit, 0..9) in a wild
+// block of `cap` digits; `len` digits are live. 2^4096 has 1,234 digits.
+
+struct:Dec = {
+    wild int8->:d;
+    int64:len;
+    int64:cap;
+};
+
+func:dec_one = Dec(int64:cap) never fails {
+    wild int8->:d = calloc(1i64, cap);
+    d[0i64] = 1i8;
+    pass Dec{ d: d, len: 1i64, cap: cap };
+};
+
+func:dec_double = NIL(Dec->:x) never fails {
+    int64:carry = 0i64;
+    for (int64:i in 0i64...x.len) {
+        int64:v = ((x.d[i] => int64) * 2i64) + carry;
+        x.d[i] = (v % 10i64) =>! int8;
+        carry = v / 10i64;
+    }
+    if (carry > 0i64) {
+        x.d[x.len] = carry =>! int8;
+        x.len = x.len + 1i64;
+    }
+    pass NIL;
+};
+
+// x := x - 1, for x >= 1.
+func:dec_minus_one = NIL(Dec->:x) never fails {
+    int64:i = 0i64;
+    while (i < x.len) {
+        if (x.d[i] > 0i8) {
+            x.d[i] = x.d[i] - 1i8;
+            break;
+        }
+        x.d[i] = 9i8;
+        i = i + 1i64;
+    }
+    if (x.len > 1i64) {
+        if (x.d[x.len - 1i64] == 0i8) { x.len = x.len - 1i64; }
+    }
+    pass NIL;
+};
+
+func:dec_text = string(Dec:x) never fails {
+    wild int8->:out = alloc(x.len);
+    for (int64:i in 0i64...x.len) { out[i] = x.d[x.len - 1i64 - i] + 48i8; }
+    string:s = string_concat(string_from_bytes(out, x.len), "");
+    dalloc(out);
+    pass s;
+};
+
+// 2^n as decimal text (n >= 0).
+pub func:pow2_decimal = string(int64:n) never fails {
+    Dec:x = raw dec_one((n * 31i64 / 100i64) + 4i64);   // digits(2^n) = floor(n*log10 2)+1 < 0.302n + 2
+    for (int64:i in 0i64...n) { drop dec_double(@x); }
+    string:s = raw dec_text(x);
+    dalloc(x.d);
+    pass s;
+};
+
+// 2^n - 1 as decimal text (n >= 1).
+pub func:pow2_minus_one_decimal = string(int64:n) never fails {
+    Dec:x = raw dec_one((n * 31i64 / 100i64) + 4i64);
+    for (int64:i in 0i64...n) { drop dec_double(@x); }
+    drop dec_minus_one(@x);
+    string:s = raw dec_text(x);
+    dalloc(x.d);
+    pass s;
+};
+
+// The range axiom of an integer symbol: `(and (<= MIN s) (<= s MAX))`, with
+// the bounds exact for the width. Signed: −2^(b−1) .. 2^(b−1)−1; unsigned:
+// 0 .. 2^b−1.
+pub func:smt_range_axiom = string(string:sym, int32:bits, bool:signed) never fails {
+    string:lo = "0";
+    string:hi = "";
+    if (signed) {
+        lo = raw smt_app1("-", raw pow2_decimal((bits => int64) - 1i64));
+        hi = raw pow2_minus_one_decimal((bits => int64) - 1i64);
+    } else {
+        hi = raw pow2_minus_one_decimal(bits => int64);
+    }
+    pass (raw smt_app2("and", raw smt_app2("<=", lo, sym), raw smt_app2("<=", sym, hi)));
+};
+
+// The most negative value of a signed width, as an SMT numeral: `(- 2^(b-1))`.
+pub func:smt_int_min = string(int32:bits) never fails {
+    pass (raw smt_app1("-", raw pow2_decimal((bits => int64) - 1i64)));
+};

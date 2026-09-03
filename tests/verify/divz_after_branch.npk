@@ -1,0 +1,32 @@
+// expect-exit: 20
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// PINNED CONSERVATIVE (1.5.0): both arms assign a nonzero divisor, but
+// 1.5.0's walk has no path conditions -- after the `if` the name is a fresh
+// opaque version and the obligation is `open`. 1.5.4 adds the branch guards
+// as hypotheses; when it lands, this expectation changes to `discharged`,
+// and that change is the visible measure of the improvement.
+mod:divz_after_branch;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = 1i32;
+    if (argv.len > 5i64) { d = 3i32; } else { d = 5i32; }
+    int32:q = 100i32 / d;            // 20
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

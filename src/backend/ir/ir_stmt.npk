@@ -50,6 +50,8 @@ use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
 use "./ir_expr.npk".*;
+use "../../frontend/list.npk".*;
+use "../smt/smt_obligations.npk".*;
 
 // A `br` or a block start, through the terminated flag — mirrors the seed's
 // `br()`/`start_block()`: a branch after a terminator is IR llc rejects, and a
@@ -841,7 +843,8 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:lhsv = raw iv(string_concat(ll.text, ""),
                         string_concat(cur, ""), place.type_id);
     IrVal:res = raw emit_arith_value(x, raw compound_op(op), place.type_id,
-                                     lhsv, v, place.type_id, s.span);
+                                     lhsv, v, place.type_id, s.span,
+                                     (raw stmt_target(s)).index);
     if (!(raw iv_is_ok(res))) { pass res; }
     drop irw_line(x.fe.w, raw cat5("store ", res.ll, " ", res.ref,
                       string_concat(", ptr ", place.addr)));
@@ -2889,6 +2892,10 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         if (!(raw iv_is_ok(cs))) { pass cs; }
     }
 
+    // The parameters as the obligation walk will see them (1.5.0): the same
+    // names and the same resolved types the slots below get.
+    List<int32>:obl_pn = raw list_init::<int32>(8i64);
+    List<int32>:obl_pt = raw list_init::<int32>(8i64);
     int32:i = 0i32;
     int32:n = raw fn_param_count(x.ast, d);
     while (i < n) {
@@ -2923,6 +2930,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         LlType:pl = raw fnem_param(x.fe, raw decl_name(pd), pt,
                         ((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
         if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, pt, pd.span)); }
+        drop list_push(@obl_pn, raw decl_name(pd));
+        drop list_push(@obl_pt, pt);
         i = i + 1i32;
     }
 
@@ -2949,6 +2958,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         }
         LlType:vl = raw fnem_param(x.fe, raw decl_name(vn), vt, false);
         if (!(raw ll_is_ok(vl))) { pass (raw iv_from_ll_at(x, vl, vt, vn.span)); }
+        drop list_push(@obl_pn, raw decl_name(vn));
+        drop list_push(@obl_pt, vt);
     }
 
     drop fnem_open(x.fe);
@@ -2963,6 +2974,13 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = g;
         x.tr.enclosing = g;
     }
+    // THE OBLIGATION WALK (1.5.0, P-3): over the same typed body, under the
+    // same binding, BEFORE the body is lowered and never reading the writer
+    // -- so the `--obligations` run and the `--elide` run compute the same
+    // rows by construction. It fills the elision answers the division sites
+    // below consult, and the program's solver files when asked.
+    drop obl_function(x, raw mangled_fn_sym(x.fe.ctx, qual, fname), obl_pn, obl_pt,
+                      raw fn_body(x.ast, d));
     IrVal:b = raw emit_block(x, raw fn_body(x.ast, d));
     x.tr.generics = bsaved;
     x.tr.enclosing = besaved;

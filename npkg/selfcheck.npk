@@ -13,8 +13,14 @@
 // Then the toolchain pin (D-204): a pin that is not the installed version
 // must refuse, no pin must refuse, the real pin must pass -- driven by
 // moving the pin, the only half of the comparison this can move. Then the
-// undef ban (D-218.10, 1.5.0): an `undef` seed in IR must fail, and the word
-// in a comment or a string constant must pass.
+// solver pin (D-218.1/D-218.2, 1.5.0): a moved sha must refuse, no sha must
+// refuse, a wall-clock knob in the profile must refuse, the real pin must
+// pass. Then the undef ban (D-218.10, 1.5.0): an `undef` seed in IR must
+// fail, and the word in a comment or a string constant must pass. Then the
+// verify stage (P-22, 1.5.0): a test expecting `discharged` for an opaque
+// divisor must fail, and the same program naming `open` must pass -- run
+// against the compiler under test, since the snapshot learns
+// `--obligations` only at the refresh that follows the pipeline.
 //
 // The case set is `bootstrap/harness/selfcheck.py`'s, case for case; the
 // rung the negative cases lean on is `limit<Rules>`, a rung rather than a
@@ -188,6 +194,79 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             string_concat("the real toolchain must pass: ", raw strlist_view(restored, 0i64))));
     } else {
         drop strlist_push(@report, raw case_line("toolchain-restored", true, "the pinned toolchain that is installed must pass"));
+    }
+
+    // THE SOLVER PIN REPORTS A MISMATCH (D-218.1/D-218.2, 1.5.0): the sha
+    // moved, the pin absent, a wall-clock knob in the profile -- and the real
+    // pin passes. Driven by moving the pin and the options.
+    Result<string>:z3r = which("z3");
+    string:z3p = "";
+    if (!z3r.is_error) { z3p = move(z3r.value); }
+    string:zver = string_from_bytes(c.m.z3_version.ptr, c.m.z3_version.len);
+    string:zsha = string_from_bytes(c.m.z3_sha256.ptr, c.m.z3_sha256.len);
+    string:zeros = "0000000000000000000000000000000000000000000000000000000000000000";
+    List<string>:clocked = raw strlist_clone(c.m.z3_options);
+    drop strlist_push(@clocked, "timeout=1000");
+    List<string>:zm = relay await verify_pin_check(z3p, c.t.env, zver, zeros, c.m.z3_options);
+    List<string>:zu = relay await verify_pin_check(z3p, c.t.env, zver, "", c.m.z3_options);
+    List<string>:zc = relay await verify_pin_check(z3p, c.t.env, zver, zsha, clocked);
+    List<string>:zr = relay await verify_pin_check(z3p, c.t.env, zver, zsha, c.m.z3_options);
+    bool:okz1 = (zm.count > 0i64);
+    if (!okz1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("z3-mismatch", okz1, "a z3 whose sha256 is not the pinned one must fail"));
+    if (!okz1) { drop strlist_push(@report, "      the pin check accepted it; it should not have"); }
+    bool:okz2 = (zu.count > 0i64);
+    if (!okz2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("z3-unpinned", okz2, "no [verify] z3-sha256 pin at all must fail"));
+    if (!okz2) { drop strlist_push(@report, "      the pin check accepted it; it should not have"); }
+    bool:okz3 = (zc.count > 0i64);
+    if (!okz3) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("z3-wall-clock", okz3, "a wall-clock knob in the profile must fail"));
+    if (!okz3) { drop strlist_push(@report, "      the pin check accepted it; it should not have"); }
+    bool:okz4 = (zr.count == 0i64);
+    if (!okz4) {
+        bad = bad + 1i64;
+        drop strlist_push(@report, raw case_line("z3-restored", false,
+            string_concat("the pinned z3 that is installed must pass: ", raw strlist_view(zr, 0i64))));
+    } else {
+        drop strlist_push(@report, raw case_line("z3-restored", true, "the pinned z3 that is installed must pass"));
+    }
+
+    // THE VERIFY STAGE REPORTS A WRONG VERDICT (P-22, 1.5.0): the case set is
+    // the harness's, byte for byte. Against the ARTIFACT (`c.npkc` is the
+    // real compiler here, restored above), which knows `--obligations`; the
+    // snapshot does only after the next refresh.
+    string:vdiv = "func:main = int32(cstring[]:argv) {\n    int32:zero = (argv.len =>! int32) - 1i32;\n    int32:q = 10i32 / zero;\n    exit q;\n};\n";
+    string:vfs = "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (DivByZero) { exit 21i32; },\n        (DivOverflow) { exit 22i32; },\n        (HeapBadRequest) { exit 9i32; },\n        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n        (OutOfBounds) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n";
+    for (int64:vi in 0i64...2i64) {
+        string:vname = "wrong-verdict";
+        string:vhead = "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\nmod:wrong_verdict;\n";
+        bool:vmust_fail = true;
+        string:vwhy = "a verify test expecting `discharged` for an opaque divisor must fail";
+        if (vi == 1i64) {
+            vname = "right-verdict";
+            vhead = "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\nmod:right_verdict;\n";
+            vmust_fail = false;
+            vwhy = "a verify test naming its rows exactly must pass";
+        }
+        string:vsrc = string_concat(string_concat(vhead, vdiv), vfs);
+        // THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005): the
+        // hyphen in the display name becomes an underscore in the file.
+        string:vfile = raw text_replace_byte(vname, 45u8, 95u8);
+        string:vpath = raw path_join(dir, string_concat(vfile, ".npk"));
+        Result<cstring>:vpc = to_cstring(vpath);
+        if (vpc.is_error) { fail vpc.err; }
+        Result<NIL>:vw = write_file(vpc.value, vsrc);
+        if (vw.is_error) { fail vw.err; }
+        Expect:vexp = raw expect_read(vsrc);
+        List<string>:vfl = relay await check_verify(c, vpath, vname, vexp);
+        bool:vok = ((vfl.count > 0i64) == vmust_fail);
+        if (!vok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(vname, vok, vwhy));
+        if (!vok) {
+            if (vmust_fail) { drop strlist_push(@report, "      the verify stage accepted this; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      the verify stage rejected this: ", raw strlist_view(vfl, 0i64))); }
+        }
     }
 
     // THE UNDEF BAN REPORTS AN `undef` (D-218.10, 1.5.0) -- and only a real

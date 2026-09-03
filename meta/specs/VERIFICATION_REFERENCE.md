@@ -2,6 +2,21 @@
 
 Nitpick fundamentally rejects unsafe behavior. To achieve this, it deeply integrates with the Z3 SMT solver to mathematically prove the correctness of the code before it is allowed to execute.
 
+> **The pipeline is real since 1.5.0 (2026-09-03; D-218, D-219; the record is
+> `meta/roadmap/1.5/1.5.0.md`).** The compiler emits every function's proof
+> obligations as SMT-LIB2 text (`npkc --obligations DIR`) and reads a
+> manifest of verdicts (`npkc --elide nitpick.obligations`); `npkg verify`
+> spawns the pinned z3 — one fresh process per function under the pinned
+> determinism profile — decides every obligation, holds the rows to the
+> committed `nitpick.obligations`, and emits the VERIFIED build, where every
+> guard the manifest discharged gives way to `llvm.assume` of the proven fact.
+> §7b is the obligation catalogue; §8's manifest is the D-218 schema now. The
+> `--verify*` and `--smt-*` compiler flags this file once tabulated are
+> STRUCK (§5): verification is a property of the project, in `[verify]`,
+> never of a command line (D-077, D-219). 1.5.0 produces the D-007 division
+> pair; `limit`, contracts, `prove`, overflow and the rest follow in
+> 1.5.1–1.5.8.
+
 ## 1. Formal Proofs (`prove` and `assert_static`)
 
 ### 1.1 `assert_static`
@@ -124,6 +139,13 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 
 ### 3.1 The `Result<T>` Intercept
 
+> **Dead by D-221 (ratified for 1.5, recorded 1.5.0):** a contract violation
+> is a PROGRAM-INVALID state, not a value — the violation channel is the trap
+> route (distinct D-141-space codes for `requires`/`ensures`/`invariant`),
+> reaching `failsafe` like every trap, never a `Result`. The paragraphs below
+> describe the pre-D-084 framing and stay as the record of what was replaced;
+> 1.5.3 implements the trap route.
+
 One of the most powerful features of Nitpick's DbC implementation is how it interacts with the type system. If a function declares a `requires` clause, **Nitpick implicitly ensures its return type is wrapped in a `Result<T>`**. 
 
 If a caller violates the precondition at runtime, the function immediately intercepts execution and returns a `Result` error rather than crashing or triggering the failsafe. This heavily intertwines contract programming with Nitpick's sticky error propagation system: the caller handles the potential contract violation like any other error — `?|` a default, `?!` to trap, `relay` it, or branch on it. (`raw` is D-163's checked unwrap of a `never fails` callee, and a function with a `requires` can refuse its inputs, so it is never `never fails` — `raw` does not apply here.)
@@ -164,6 +186,24 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 ---
 
 ## 5. Verification Compiler Flags
+
+> **STRUCK at 1.5.0 (user-ratified, 2026-09-03; D-077, D-218.2, D-219).**
+> None of the flags below exists in `npkc`. Verification configuration is the
+> PROJECT's, in `nitpick.toml`'s `[verify]` (the solver pin and the
+> determinism profile, read by every invocation), and the command is
+> `npkg verify` (BUILD_REFERENCE §7): `--smt-opt` (D-219 — elision is a
+> property of the verified build, recorded in the manifest, never a flag),
+> `--smt-manifest` (the manifest is `nitpick.obligations`, at the root, by
+> convention), `--smt-timeout` (D-218.2 — the wall-clock timeout is DISABLED
+> and `rlimit` is the sole budget; a knob that would re-enable it is refused
+> by name), `--verify-level` and the `--verify-*` family (every obligation
+> kind is attempted, always, under the one budget — a level would be a
+> default that varies by invocation). What survives, re-homed:
+> `--prove-report` and `--debug-z3` are `npkg verify --explain` (a model per
+> open row, the reason per budget row, an unsat core per discharged one) and
+> the retained `build/verify/obl/` directory. The compiler's own flags are
+> `--obligations DIR` and `--elide FILE`, driven by the runner. The table is
+> kept as the record of the prototype's surface.
 
 | Flag | Purpose |
 |------|---------|
@@ -299,7 +339,57 @@ because it invites reliance.
 
 ---
 
+## 7b. The obligation catalogue (D-218.7; landed 1.5.0)
+
+Every kind the manifest's `kind` column may carry, exhaustively — the list
+`src/backend/smt/smt_kinds.npk` spells and the harness diffs against this
+table (`check_obligation_kinds_agree`): two lists that must agree are an
+instrument. A kind's `guard` says whether a runtime check exists for it to
+elide (D-219); the subcycle column says where its rows are produced.
+
+<!-- BEGIN obligation-catalogue -->
+| kind | what the obligation states | guard | rows from |
+|---|---|---|---|
+| `div-zero` | the divisor of an integer `/` or `%` is not zero (D-007, D-142) | yes | 1.5.0 |
+| `div-min` | a signed division is not `INT_MIN / -1` (D-142) | yes | 1.5.0 |
+| `overflow` | a plain-integer `+ - *` stays in range (D-210) | yes | 1.5.8 |
+| `bounds` | an index is inside its array, slice or buffer (D-070) | yes | 1.5.8 |
+| `cast-range` | a checked cast's value fits its target (D-148) | yes | 1.5.8 |
+| `exhaustive` | a `pick` covers its domain (checker-discharged) | no | 1.5.4 |
+| `requires` | a callee's precondition holds at the call (D-221) | yes | 1.5.3 |
+| `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
+| `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
+| `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220) | yes | 1.5.2 |
+| `limit-subsume` | one `Rules` implies another at a boundary (D-220) | no | 1.5.2 |
+| `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8 |
+| `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
+| `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
+| `failsafe-post` | `failsafe` returns a positive value (D-014) | no | 1.5.3 |
+| `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
+| `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
+<!-- END obligation-catalogue -->
+
+The verdict column is `discharged` (unsat), `open` (sat — a counterexample
+exists under the encoding's hypotheses; not a refutation of the program, a
+guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`
+(a site the encoder could not express — listed so the manifest is an
+INVENTORY of guards), or `checker` (discharged by the frontend). The elision
+column is `elided`, `retained`, or `none` for a kind with no guard.
+
 ## 8. The SMT elimination manifest
+
+> **The schema is D-218's since 1.5.0 (P-10 in `meta/roadmap/1.5/1.5.0.md`):**
+> the file is `nitpick.obligations` at the manifest root, committed, written
+> only by `npkg verify --record` (D-040's "generated when absent" row is
+> amended: a file that governs the artifact is written on purpose or not at
+> all); its header carries the pinned z3 and the profile; each row is
+> `<sha256> <kind> <tier> <verdict> <elision> <symbol>` — the hash over the
+> obligation's canonical SMT text plus the module-qualified symbol and the
+> kind (D-218.8), the kind from §7b, the tier the theory that decided it
+> (`int` in 1.5.0), the verdict `discharged`/`open`/`budget`/`unencoded`/
+> `checker`, the elision `elided`/`retained`/`none`. Rows sort by symbol then
+> hash. The v1 sketch below is superseded; its rule — divergence is
+> detectable and fatal, never silent — is unchanged.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

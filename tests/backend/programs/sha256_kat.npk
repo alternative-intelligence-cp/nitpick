@@ -1,0 +1,55 @@
+// expect-exit: 0
+//
+// SHA-256 KNOWN ANSWERS (FIPS 180-4 and its example vectors; 1.5.0). The
+// library's digest is the project's obligation identity (D-218.8) and the
+// solver pin (D-218.1), so it is proven against the standard's own vectors
+// before either consumer exists: the empty message, "abc", the 448-bit and
+// 896-bit two-block messages, one million `a` (the long-message vector),
+// and the three padding edges -- 55, 56 and 64 bytes, where the length
+// field does and does not fit the final block. Each mismatch has its own
+// exit; hex is compared as text so a wrong nibble is a wrong answer.
+mod:sha256_kat;
+use "../../../lib/nhash.npk".*;
+
+func:check = bool(string:msg, string:want) never fails {
+    string:got = raw sha256_hex(msg);
+    pass (string_equals(got, want));
+};
+
+func:repeat = string(uint8:byte, int64:n) never fails {
+    wild int8->:b = alloc(n);
+    wild uint8->:u = b =>! wild uint8->;
+    for (int64:i in 0i64...n) { u[i] = byte; }
+    string:s = string_concat(string_from_bytes(b, n), "");
+    dalloc(b);
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (!(raw check("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))) { exit 11i32; }
+    if (!(raw check("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"))) { exit 12i32; }
+    if (!(raw check("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+                    "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"))) { exit 13i32; }
+    if (!(raw check("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+                    "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"))) { exit 14i32; }
+    if (!(raw check(raw repeat(97u8, 1000000i64), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"))) { exit 15i32; }
+    if (!(raw check(raw repeat(120u8, 55i64), "d5e285683cd4efc02d021a5c62014694958901005d6f71e89e0989fac77e4072"))) { exit 16i32; }
+    if (!(raw check(raw repeat(120u8, 56i64), "04c26261370ee7541549d16dee320c723e3fd14671e66a099afe0a377c16888e"))) { exit 17i32; }
+    if (!(raw check(raw repeat(120u8, 64i64), "7ce100971f64e7001e8fe5a51973ecdfe1ced42befe7ee8d5fd6219506b5393c"))) { exit 18i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom) { exit 1i32; },
+        (IntOverflow) { exit 2i32; },
+        (OutOfBounds) { exit 3i32; },
+        (Unreachable) { exit 1i32; },
+        (WildLeak) { exit 4i32; },
+        (*) { exit 1i32; }
+    }
+    exit 1i32;
+};

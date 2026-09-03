@@ -1,0 +1,1216 @@
+// smt_encode — THE OBLIGATION WALK (1.5.0; D-218.4, D-218.6, D-218.8): one
+// function instance's body, walked in program order over the SAME typed AST
+// the emitter lowers, under the SAME generic bindings, producing the
+// hypotheses the solver may use and the obligations it must decide. It never
+// reads the IR writer -- which is what makes the obligations of the
+// `--obligations` run and the `--elide` run identical by construction (P-3).
+//
+// THE ENCODING IS FAIL-CLOSED OPACITY (P-8). A value the walk can express is
+// a term; a value it cannot is an OPAQUE symbol -- declared with its type's
+// range axiom and no definition -- and the site's obligation is still recorded
+// over it. Every hypothesis asserted here is a fact on every execution that
+// reaches the site: a definition is the language's semantics, a range axiom
+// is the type's, and the D-210/D-007 traps make the continuing path satisfy
+// both. An `unsat` under those hypotheses proves the guard cannot fire on any
+// continuing path. What 1.5.0 expresses: plain `intN`/`uintN` and `bool`
+// values, literals, `+ - *`, `/ %` (through the truncating definitions --
+// P-17), comparisons, `&& || !`, unary minus, the ternary, the widening
+// cast, and a binding's definitions in straight-line code. Everything else
+// is opaque, and every construct's SUBEXPRESSIONS are still walked, because
+// a division inside an argument is a site whatever its parent is.
+//
+// NAMES ARE SOURCE-DERIVED SSA (P-5): a binding's k-th definition is
+// `|name.k|`, an anonymous opaque term `|_.k|`. A branch's assignments are
+// visible inside the branch and INVALIDATED after it (a fresh opaque
+// version for every name either arm assigned); a loop invalidates the names
+// its body assigns before the body is walked and again after it; a `defer`
+// body reads every name as opaque (it runs at an exit the straight line does
+// not see); and a local whose ADDRESS is taken anywhere in the function is
+// never defined at all (a write through the pointer would make a definition
+// stale -- the one aliasing route a value can have here). Path conditions
+// are 1.5.4's; contracts as hypotheses 1.5.3's.
+//
+// THE CONE (P-4): an obligation's canonical text is the relevance closure of
+// its goal over the hypotheses that DOMINATE it -- recorded before it, in a
+// branch region on the path from the function's entry to the site. Later
+// definitions describe values that exist only if execution passes later
+// traps, and a sibling branch's definitions describe values the site's path
+// never computes (a then-arm's `x.2 = x.1 + 1`, in range by D-210's trap,
+// would otherwise tell an else-arm site that `x.1 < MAX`); using either
+// would be unsound. Its SHA-256 over (text, symbol, kind) is the
+// obligation's identity (D-218.8).
+
+mod:smt_encode;
+
+use "../../frontend/list.npk".*;
+use "../../frontend/intern.npk".*;
+use "../../frontend/token_kind.npk".*;
+use "../../frontend/source_location.npk".*;
+use "../../frontend/ast_kind.npk".*;
+use "../../frontend/ast.npk".*;
+use "../../frontend/parse_expr.npk".*;
+use "../../frontend/parse_stmt.npk".*;
+use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_pick.npk".*;
+use "../../frontend/types.npk".*;
+use "../../frontend/expr_types.npk".*;
+use "../../frontend/resolve_type.npk".*;
+use "../../../lib/nhash.npk".*;
+use "../ir/ir_types.npk".*;
+use "./smt_writer.npk".*;
+use "./smt_kinds.npk".*;
+
+// --- the state -----------------------------------------------------------------------
+
+// A declared constant.
+pub struct:SmtSym = {
+    string:text;      // `|x.2|`
+    bool:is_bool;     // Bool, else Int
+};
+
+// One hypothesis: its text and the symbols it mentions (by index into `syms`).
+pub struct:SmtHyp = {
+    string:text;
+    List<int32>:syms;
+    int32:region;            // the branch region it was recorded in
+};
+
+// One obligation, as the walk records it; `finish` fills the cone and the hash.
+pub struct:SmtObl = {
+    int32:kind;
+    string:goal;             // the property to prove (the file asserts its negation)
+    List<int32>:syms;        // the goal's symbols
+    int64:hyps;              // hypotheses recorded before it: the cone draws from [0, hyps)
+    int32:site;              // the ExprId that identifies the site (the emitter's key)
+    int32:ordinal;           // the k-th of its kind in this function
+    int32:line;
+    int32:col;
+    int32:region;            // the branch region of the site
+    bool:encoded;            // false: an `unencoded` row (P-12)
+    List<int32>:cone_syms;   // filled by finish: symbols in the cone, ascending
+    List<int32>:cone_hyps;   // filled by finish: hypotheses in the cone, in order
+    string:canon;            // filled by finish: the canonical text
+    string:hash;             // filled by finish: sha256 hex of canon + symbol + kind
+    bool:discharged;         // set by the elision reader: the manifest says so
+};
+
+// A binding in scope: the name, its current symbol (-1: none -- reads of it
+// are opaque), and its type.
+struct:Bind = {
+    int32:name;
+    int32:sym;
+    int32:type_id;
+};
+
+// A term: encodable or not; when encodable, its text, sort and symbols.
+struct:Term = {
+    bool:ok;
+    bool:is_bool;
+    string:text;
+    List<int32>:syms;
+};
+
+pub struct:Encoder = {
+    Ast->:ast;
+    ExprTypes->:et;
+    TypeTable->:types;
+    InternTable->:interns;
+    LlCtx->:ctx;
+    TypeResolver->:tr;
+    int32:scope;
+    string:symbol;             // the function instance's mangled symbol
+    List<SmtSym>:syms;
+    List<SmtHyp>:hyps;
+    List<SmtObl>:obls;
+    List<Bind>:binds;
+    List<int32>:ver_name;      // per-name version counters
+    List<int32>:ver_next;
+    List<int32>:escaped;       // names whose address is taken: never defined
+    int32:anon;                // anonymous opaque counter
+    List<int32>:ordinals;      // per-kind ordinal counters, OK_COUNT + 1 slots
+    bool:nonlinear;            // a non-literal `*` or a non-literal divisor appeared
+    bool:uses_sdiv;            // a signed division term appeared (the define-funs are needed)
+    List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
+    int32:cur_region;          // the region the walk is in
+};
+
+// Branch regions (the dominance rule): a then-arm, an else-arm, a loop body,
+// a pick arm, a `when` block and a `defer` body each open a child region of
+// the one they sit in; straight-line blocks stay in their region.
+func:region_enter = NIL(Encoder->:e) never fails {
+    drop list_push(@e.region_parent, e.cur_region);
+    e.cur_region = (e.region_parent.count - 1i64) =>! int32;
+    pass NIL;
+};
+
+func:region_leave = NIL(Encoder->:e) never fails {
+    e.cur_region = e.region_parent.items[e.cur_region => int64];
+    pass NIL;
+};
+
+// Is region `h` on the path from the root to region `o`?
+func:region_dominates = bool(Encoder->:e, int32:h, int32:o) never fails {
+    int32:r = o;
+    int32:fuel = 4096i32;
+    while ((r >= 0i32) && (fuel > 0i32)) {
+        if (r == h) { pass true; }
+        r = e.region_parent.items[r => int64];
+        fuel = fuel - 1i32;
+    }
+    pass false;
+};
+
+pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, TypeTable->:types,
+                            InternTable->:interns, LlCtx->:ctx, TypeResolver->:tr,
+                            int32:scope, string:symbol) never fails {
+    List<int32>:ords = raw list_init::<int32>(((raw OK_COUNT()) => int64) + 1i64);
+    for (int64:i in 0i64...(((raw OK_COUNT()) => int64) + 1i64)) { drop list_push(@ords, 0i32); }
+    List<int32>:rp = raw list_init::<int32>(8i64);
+    drop list_push(@rp, 0i32 - 1i32);   // the root region
+    pass Encoder{ ast: ast, et: et, types: types, interns: interns, ctx: ctx, tr: tr,
+                  scope: scope, symbol: string_concat(symbol, ""),
+                  syms: raw list_init::<SmtSym>(32i64),
+                  hyps: raw list_init::<SmtHyp>(32i64),
+                  obls: raw list_init::<SmtObl>(8i64),
+                  binds: raw list_init::<Bind>(16i64),
+                  ver_name: raw list_init::<int32>(16i64),
+                  ver_next: raw list_init::<int32>(16i64),
+                  escaped: raw list_init::<int32>(4i64),
+                  anon: 0i32, ordinals: ords, nonlinear: false, uses_sdiv: false,
+                  region_parent: rp, cur_region: 0i32 };
+};
+
+// --- types -----------------------------------------------------------------------------
+
+// An expression's recorded type, under the instance's binding.
+func:ty_of = int32(Encoder->:e, ExprId:id) never fails {
+    pass (raw subst_emitted_param(e.ctx, raw exprtypes_get(e.et, id)));
+};
+
+func:is_int = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    pass ((raw type_kind(e.types, ty)) == (raw TY_INT()));
+};
+
+func:is_bool = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    pass ((raw type_kind(e.types, ty)) == (raw TY_BOOL()));
+};
+
+// --- symbols and hypotheses --------------------------------------------------------------
+
+func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
+    List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: copy, region: e.cur_region };
+    drop list_push(@e.hyps, move(h));
+    pass NIL;
+};
+
+// Declare a constant; an integer one gets its range axiom as a hypothesis.
+func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
+    bool:b = raw is_bool(e, ty);
+    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b };
+    drop list_push(@e.syms, move(s));
+    int32:idx = (e.syms.count - 1i64) =>! int32;
+    if (raw is_int(e, ty)) {
+        List<int32>:one = raw list_init::<int32>(1i64);
+        drop list_push(@one, idx);
+        drop hyp_push(e, raw smt_range_axiom(text, raw type_int_bits(e.types, ty),
+                                              raw type_is_signed(e.types, ty)), one);
+    }
+    pass idx;
+};
+
+func:sym_text = string(Encoder->:e, int32:idx) never fails {
+    pass (string_concat(e.syms.items[idx => int64].text, ""));
+};
+
+// A fresh anonymous opaque symbol of an int or bool type, as a term.
+func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
+    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    e.anon = e.anon + 1i32;
+    string:nm = raw smt_sym("_", e.anon => int64);
+    int32:idx = raw sym_new(e, nm, ty);
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, idx);
+    pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(nm), syms: one };
+};
+
+func:term_none = Term() never fails {
+    pass Term{ ok: false, is_bool: false, text: "", syms: raw list_init::<int32>(1i64) };
+};
+
+func:term_lit = Term(string:text, bool:is_bool) never fails {
+    pass Term{ ok: true, is_bool: is_bool, text: string_concat(text, ""),
+               syms: raw list_init::<int32>(1i64) };
+};
+
+func:syms_union = List<int32>(List<int32>:a, List<int32>:b) never fails {
+    List<int32>:out = raw list_init::<int32>(a.count + b.count + 1i64);
+    for (int64:i in 0i64...a.count) { drop list_push(@out, a.items[i]); }
+    for (int64:j in 0i64...b.count) {
+        bool:have = false;
+        for (int64:k in 0i64...out.count) { if (out.items[k] == b.items[j]) { have = true; } }
+        if (!have) { drop list_push(@out, b.items[j]); }
+    }
+    pass out;
+};
+
+func:term_app2 = Term(string:op, Term:a, Term:b, bool:is_bool) never fails {
+    pass Term{ ok: true, is_bool: is_bool, text: raw smt_app2(op, a.text, b.text),
+               syms: raw syms_union(a.syms, b.syms) };
+};
+
+// Is the term a plain numeral (so a product or a division by it is linear)?
+func:term_is_numeral = bool(Term:t) never fails {
+    if (!t.ok) { pass false; }
+    if (t.text.len == 0i64) { pass false; }
+    for (int64:i in 0i64...t.text.len) {
+        uint8:c = t.text.ptr[i];
+        if ((c < 48u8) || (c > 57u8)) { pass false; }
+    }
+    pass true;
+};
+
+// --- bindings and versions ---------------------------------------------------------------
+
+func:version_next = int64(Encoder->:e, int32:name) never fails {
+    for (int64:i in 0i64...e.ver_name.count) {
+        if (e.ver_name.items[i] == name) {
+            int32:k = e.ver_next.items[i];
+            e.ver_next.items[i] = k + 1i32;
+            pass (k => int64);
+        }
+    }
+    drop list_push(@e.ver_name, name);
+    drop list_push(@e.ver_next, 2i32);
+    pass 1i64;
+};
+
+func:bind_find = int64(Encoder->:e, int32:name) never fails {
+    int64:i = e.binds.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (e.binds.items[i].name == name) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+func:is_escaped = bool(Encoder->:e, int32:name) never fails {
+    for (int64:i in 0i64...e.escaped.count) { if (e.escaped.items[i] == name) { pass true; } }
+    pass false;
+};
+
+// A new version of `name` with type `ty`: defined by `t` when the type is
+// int/bool, the name is not address-taken and the term is encodable; opaque
+// (range axiom only) otherwise; symbol-less when the type is neither.
+func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t) never fails {
+    int32:sym = 0i32 - 1i32;
+    if ((raw is_int(e, ty)) || (raw is_bool(e, ty))) {
+        string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
+        sym = raw sym_new(e, nm, ty);
+        bool:define = t.ok;
+        if (raw is_escaped(e, name)) { define = false; }
+        if (define) {
+            if (t.is_bool != (raw is_bool(e, ty))) { define = false; }
+        }
+        if (define) {
+            List<int32>:one = raw list_init::<int32>(1i64);
+            drop list_push(@one, sym);
+            drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
+        }
+    }
+    Bind:b = Bind{ name: name, sym: sym, type_id: ty };
+    drop list_push(@e.binds, move(b));
+    pass NIL;
+};
+
+// Assignment to an existing binding: a new version in place (same type).
+func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
+    int64:i = raw bind_find(e, name);
+    if (i < 0i64) { pass NIL; }
+    int32:ty = e.binds.items[i].type_id;
+    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
+    string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
+    int32:sym = raw sym_new(e, nm, ty);
+    bool:define = t.ok;
+    if (raw is_escaped(e, name)) { define = false; }
+    if (define) { if (t.is_bool != (raw is_bool(e, ty))) { define = false; } }
+    if (define) {
+        List<int32>:one = raw list_init::<int32>(1i64);
+        drop list_push(@one, sym);
+        drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
+    }
+    e.binds.items[i].sym = sym;
+    pass NIL;
+};
+
+// Every binding named in `names` gets a fresh OPAQUE version (the value after a
+// construct the straight line does not see through).
+func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
+    for (int64:k in 0i64...names.count) {
+        int64:i = raw bind_find(e, names.items[k]);
+        if (i < 0i64) { continue; }
+        int32:ty = e.binds.items[i].type_id;
+        if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { continue; }
+        string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
+                                raw version_next(e, names.items[k]));
+        e.binds.items[i].sym = raw sym_new(e, nm, ty);
+    }
+    pass NIL;
+};
+
+func:invalidate_all = NIL(Encoder->:e) never fails {
+    List<int32>:names = raw list_init::<int32>(e.binds.count + 1i64);
+    for (int64:i in 0i64...e.binds.count) { drop list_push(@names, e.binds.items[i].name); }
+    drop invalidate(e, names);
+    pass NIL;
+};
+
+// The symbols of every binding, to restore after a branch.
+func:snapshot = List<int32>(Encoder->:e) never fails {
+    List<int32>:out = raw list_init::<int32>(e.binds.count + 1i64);
+    for (int64:i in 0i64...e.binds.count) { drop list_push(@out, e.binds.items[i].sym); }
+    pass out;
+};
+
+func:restore = NIL(Encoder->:e, List<int32>:snap) never fails {
+    int64:n = snap.count;
+    if (e.binds.count < n) { n = e.binds.count; }
+    for (int64:i in 0i64...n) { e.binds.items[i].sym = snap.items[i]; }
+    pass NIL;
+};
+
+func:scope_mark = int64(Encoder->:e) never fails { pass e.binds.count; };
+func:scope_release = NIL(Encoder->:e, int64:mark) never fails { e.binds.count = mark; pass NIL; };
+
+// --- obligations ---------------------------------------------------------------------------
+
+func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:site,
+                  Span:at, bool:encoded) never fails {
+    int32:ord = e.ordinals.items[kind => int64] + 1i32;
+    e.ordinals.items[kind => int64] = ord;
+    List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
+    for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
+    SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: copy,
+                       hyps: e.hyps.count, site: site, ordinal: ord,
+                       line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
+                       cone_syms: raw list_init::<int32>(1i64),
+                       cone_hyps: raw list_init::<int32>(1i64),
+                       canon: "", hash: "", discharged: false };
+    drop list_push(@e.obls, move(o));
+    pass NIL;
+};
+
+// The D-007 pair at a plain-integer division: `b != 0`, and for a signed
+// width `not (a == MIN and b == -1)`. Terms that could not be expressed are
+// stood in for by opaque symbols, so the obligation is recorded whatever the
+// operands were (P-8, P-12).
+func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
+                           Span:at) never fails {
+    Term:ta = raw term_copy(a);
+    Term:tb = raw term_copy(b);
+    if (!ta.ok) { ta = raw term_opaque(e, lt); }
+    if (!tb.ok) { tb = raw term_opaque(e, lt); }
+    string:zero = raw smt_app1("not", raw smt_app2("=", tb.text, "0"));
+    drop record(e, raw OK_DIV_ZERO(), zero, tb.syms, site, at, true);
+    if (raw type_is_signed(e.types, lt)) {
+        string:mn = raw smt_int_min(raw type_int_bits(e.types, lt));
+        string:both = raw smt_app2("and", raw smt_app2("=", ta.text, mn),
+                                   raw smt_app2("=", tb.text, "(- 1)"));
+        drop record(e, raw OK_DIV_MIN(), raw smt_app1("not", both),
+                    raw syms_union(ta.syms, tb.syms), site, at, true);
+    }
+    pass NIL;
+};
+
+func:term_copy = Term(Term:t) never fails {
+    List<int32>:s = raw list_init::<int32>(t.syms.count + 1i64);
+    for (int64:i in 0i64...t.syms.count) { drop list_push(@s, t.syms.items[i]); }
+    pass Term{ ok: t.ok, is_bool: t.is_bool, text: string_concat(t.text, ""), syms: s };
+};
+
+// A simd division: the any-lane guard's site, `unencoded` (P-12).
+func:record_unencoded_division = NIL(Encoder->:e, int32:elem, int32:site, Span:at) never fails {
+    List<int32>:none = raw list_init::<int32>(1i64);
+    drop record(e, raw OK_DIV_ZERO(), "", none, site, at, false);
+    if (raw is_int(e, elem)) {
+        if (raw type_is_signed(e.types, elem)) {
+            drop record(e, raw OK_DIV_MIN(), "", none, site, at, false);
+        }
+    }
+    pass NIL;
+};
+
+// --- the expression walk -------------------------------------------------------------------
+
+// The child expressions of a node, by kind -- ONE place knows the layouts
+// (AST_REFERENCE §3; the parser's construction sites). A kind not listed here
+// has no expression children the walk can see, which for a kind that DOES
+// have some would be a missed site: the harness's every-guard-has-a-row
+// cross-check is what catches that class.
+func:expr_children = NIL(Encoder->:e, ExprNode:n, List<int32>->:out) never fails {
+    ExprKind:k = n.kind;
+    if ((k == ExprKind.ExprBinaryExpr) || (k == ExprKind.ExprSafeUnwrapExpr)
+        || (k == ExprKind.ExprNullCoalesceExpr) || (k == ExprKind.ExprEmphaticUnwrapExpr)
+        || (k == ExprKind.ExprDefaultsExpr) || (k == ExprKind.ExprRangeExpr)
+        || (k == ExprKind.ExprPipeExpr) || (k == ExprKind.ExprIndexExpr)
+        || (k == ExprKind.ExprResultLiteralExpr)) {
+        if (n.a != 0i32) { drop list_push(out, n.a); }
+        if (n.b != 0i32) { drop list_push(out, n.b); }
+        pass NIL;
+    }
+    if (k == ExprKind.ExprTernaryExpr) {
+        if (n.a != 0i32) { drop list_push(out, n.a); }
+        if (n.b != 0i32) { drop list_push(out, n.b); }
+        if (n.c != 0i32) { drop list_push(out, n.c); }
+        pass NIL;
+    }
+    if ((k == ExprKind.ExprUnaryExpr) || (k == ExprKind.ExprPostfixExpr)
+        || (k == ExprKind.ExprAddressOfExpr) || (k == ExprKind.ExprDerefExpr)
+        || (k == ExprKind.ExprBorrowExpr) || (k == ExprKind.ExprSpreadExpr)
+        || (k == ExprKind.ExprMoveExpr) || (k == ExprKind.ExprIsErrExpr)
+        || (k == ExprKind.ExprMemberAccessExpr) || (k == ExprKind.ExprSafeNavExpr)
+        || (k == ExprKind.ExprComptimeExpr) || (k == ExprKind.ExprRawUnwrapExpr)
+        || (k == ExprKind.ExprDropExpr) || (k == ExprKind.ExprRelayExpr)
+        || (k == ExprKind.ExprCastExpr) || (k == ExprKind.ExprUncheckedCastExpr)
+        || (k == ExprKind.ExprDynCastExpr) || (k == ExprKind.ExprAwaitExpr)) {
+        if (n.a != 0i32) { drop list_push(out, n.a); }
+        pass NIL;
+    }
+    if (k == ExprKind.ExprCallExpr) {
+        if (n.a != 0i32) { drop list_push(out, n.a); }
+        int32:g = raw expr_generic_count(n);
+        for (int32:i in g...n.c) { drop list_push(out, raw ast_id_at(e.ast, n.b, i)); }
+        pass NIL;
+    }
+    if (k == ExprKind.ExprMethodCallExpr) {
+        if (n.a != 0i32) { drop list_push(out, n.a); }
+        for (int32:i2 in 0i32...n.c) { drop list_push(out, raw ast_id_at(e.ast, n.b, i2)); }
+        pass NIL;
+    }
+    if (k == ExprKind.ExprBuiltinExpr) {
+        int32:g2 = raw builtin_generic_count(n);
+        for (int32:i3 in g2...n.c) { drop list_push(out, raw ast_id_at(e.ast, n.b, i3)); }
+        pass NIL;
+    }
+    if ((k == ExprKind.ExprArrayLiteralExpr) || (k == ExprKind.ExprTemplateLiteral)
+        || (k == ExprKind.ExprVectorCtorExpr) || (k == ExprKind.ExprPickExpr)) {
+        if (k == ExprKind.ExprPickExpr) {
+            // a value-pick's arms are statements; its selector is the one expression
+            if (n.a != 0i32) { drop list_push(out, n.a); }
+            pass NIL;
+        }
+        for (int32:i4 in 0i32...n.c) { drop list_push(out, raw ast_id_at(e.ast, n.b, i4)); }
+        pass NIL;
+    }
+    if (k == ExprKind.ExprStructLiteralExpr) {
+        int32:pairs = n.c / 2i32;
+        for (int32:i5 in 0i32...pairs) {
+            drop list_push(out, raw ast_id_at(e.ast, n.b, (i5 * 2i32) + 1i32));
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// Walk the children for sites only; the value is opaque.
+func:walk_children = NIL(Encoder->:e, ExprNode:n) never fails {
+    List<int32>:kids = raw list_init::<int32>(4i64);
+    drop expr_children(e, n, @kids);
+    for (int64:i in 0i64...kids.count) {
+        Term:t = raw enc_expr(e, ExprId{ index: kids.items[i] });
+    }
+    pass NIL;
+};
+
+pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass (raw term_none()); }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    int32:ty = raw ty_of(e, id);
+
+    if (n.kind == ExprKind.ExprIntLiteral) {
+        if (!(raw is_int(e, ty))) { pass (raw term_none()); }
+        if (raw type_is_signed(e.types, ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
+        pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
+    }
+    if (n.kind == ExprKind.ExprBoolLiteral) {
+        if (n.payload != 0i64) { pass (raw term_lit("true", true)); }
+        pass (raw term_lit("false", true));
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        int64:bi = raw bind_find(e, n.payload =>! int32);
+        if (bi >= 0i64) {
+            if (e.binds.items[bi].sym >= 0i32) {
+                int32:si = e.binds.items[bi].sym;
+                List<int32>:one = raw list_init::<int32>(1i64);
+                drop list_push(@one, si);
+                pass Term{ ok: true, is_bool: e.syms.items[si => int64].is_bool,
+                           text: raw sym_text(e, si), syms: one };
+            }
+        }
+        pass (raw term_opaque(e, ty));
+    }
+    if (n.kind == ExprKind.ExprBinaryExpr) {
+        TokenKind:op = raw expr_op(n);
+        Term:a = raw enc_expr(e, raw expr_lhs(n));
+        Term:b = raw enc_expr(e, raw expr_rhs(n));
+        int32:lt = raw ty_of(e, raw expr_lhs(n));
+        if ((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) {
+            if (a.ok && b.ok && a.is_bool && b.is_bool) {
+                if (op == TokenKind.OpAndAnd) { pass (raw term_app2("and", a, b, true)); }
+                pass (raw term_app2("or", a, b, true));
+            }
+            pass (raw term_opaque(e, ty));
+        }
+        if (raw is_int(e, lt)) {
+            bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
+            if (divlike) {
+                drop record_division(e, lt, a, b, id.index, n.span);
+                if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
+                if (!(raw term_is_numeral(b))) { e.nonlinear = true; }
+                if (raw type_is_signed(e.types, lt)) {
+                    e.uses_sdiv = true;
+                    e.nonlinear = true;
+                    if (op == TokenKind.OpSlash) { pass (raw term_app2("npk_sdiv", a, b, false)); }
+                    pass (raw term_app2("npk_srem", a, b, false));
+                }
+                if (op == TokenKind.OpSlash) { pass (raw term_app2("div", a, b, false)); }
+                pass (raw term_app2("mod", a, b, false));
+            }
+            if (!(a.ok && b.ok)) { pass (raw term_opaque(e, ty)); }
+            if (a.is_bool || b.is_bool) { pass (raw term_opaque(e, ty)); }
+            if (op == TokenKind.OpPlus)  { pass (raw term_app2("+", a, b, false)); }
+            if (op == TokenKind.OpMinus) { pass (raw term_app2("-", a, b, false)); }
+            if (op == TokenKind.OpStar) {
+                if (!((raw term_is_numeral(a)) || (raw term_is_numeral(b)))) { e.nonlinear = true; }
+                pass (raw term_app2("*", a, b, false));
+            }
+            if (op == TokenKind.OpLt)    { pass (raw term_app2("<", a, b, true)); }
+            if (op == TokenKind.OpLtEq)  { pass (raw term_app2("<=", a, b, true)); }
+            if (op == TokenKind.OpGt)    { pass (raw term_app2(">", a, b, true)); }
+            if (op == TokenKind.OpGtEq)  { pass (raw term_app2(">=", a, b, true)); }
+            if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+            if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+            pass (raw term_opaque(e, ty));
+        }
+        if (raw is_bool(e, lt)) {
+            if (a.ok && b.ok && a.is_bool && b.is_bool) {
+                if (op == TokenKind.OpEqEq)  { pass (raw term_app2("=", a, b, true)); }
+                if (op == TokenKind.OpNotEq) { pass (raw term_app2("distinct", a, b, true)); }
+            }
+            pass (raw term_opaque(e, ty));
+        }
+        if (lt != 0i32) {
+            if ((raw type_kind(e.types, lt)) == (raw TY_SIMD())) {
+                if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
+                    drop record_unencoded_division(e, raw type_elem(e.types, lt), id.index, n.span);
+                }
+            }
+        }
+        pass (raw term_none());
+    }
+    if (n.kind == ExprKind.ExprUnaryExpr) {
+        TokenKind:uop = raw expr_op(n);
+        Term:o = raw enc_expr(e, raw expr_operand(n));
+        if (!o.ok) { pass (raw term_opaque(e, ty)); }
+        if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty)) && (!o.is_bool)) {
+            pass (raw term_app2("-", raw term_lit("0", false), o, false));
+        }
+        if ((uop == TokenKind.OpBang) && o.is_bool) {
+            pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", o.text),
+                       syms: raw syms_union(o.syms, raw list_init::<int32>(1i64)) };
+        }
+        pass (raw term_opaque(e, ty));
+    }
+    if (n.kind == ExprKind.ExprTernaryExpr) {
+        Term:c = raw enc_expr(e, ExprId{ index: n.a });
+        Term:t1 = raw enc_expr(e, ExprId{ index: n.b });
+        Term:t2 = raw enc_expr(e, ExprId{ index: n.c });
+        if (c.ok && t1.ok && t2.ok && c.is_bool && (t1.is_bool == t2.is_bool)) {
+            pass Term{ ok: true, is_bool: t1.is_bool,
+                       text: raw smt_app3("ite", c.text, t1.text, t2.text),
+                       syms: raw syms_union(c.syms, raw syms_union(t1.syms, t2.syms)) };
+        }
+        pass (raw term_opaque(e, ty));
+    }
+    if (n.kind == ExprKind.ExprCastExpr) {
+        // `=>` between integers is value-preserving by the checker's own rule
+        // (a lossy `=>` is refused), so the term is the operand's.
+        Term:ct = raw enc_expr(e, raw expr_operand(n));
+        int32:st = raw ty_of(e, raw expr_operand(n));
+        if (ct.ok && (raw is_int(e, st)) && (raw is_int(e, ty)) && (!ct.is_bool)) { pass ct; }
+        pass (raw term_opaque(e, ty));
+    }
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        Term:mt = raw enc_expr(e, raw expr_operand(n));
+        if (mt.ok) { pass mt; }
+        pass (raw term_opaque(e, ty));
+    }
+    // Everything else: the value is opaque, the children are still sites.
+    drop walk_children(e, n);
+    pass (raw term_opaque(e, ty));
+};
+
+// --- the statement walk --------------------------------------------------------------------
+
+// Names an assignment statement inside `sid` targets (recursively), so a
+// construct's exit can invalidate exactly what it may have changed.
+func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        ExprNode:t = raw ast_expr(e.ast, raw stmt_target(s));
+        if (t.kind == ExprKind.ExprIdentifierExpr) { drop list_push(out, t.payload =>! int32); }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop collect_assigned(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) }, out);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop collect_assigned(e, raw stmt_then(s), out);
+        drop collect_assigned(e, raw stmt_else(s), out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_assigned(e, raw stmt_body(e.ast, s), out); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt)   { drop collect_assigned(e, raw stmt_for_body(e.ast, s), out); pass NIL; }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        drop collect_assigned(e, raw stmt_counted_body(s), out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop collect_assigned(e, raw stmt_when_body(e.ast, s), out);
+        drop collect_assigned(e, raw stmt_when_then(e.ast, s), out);
+        drop collect_assigned(e, raw stmt_when_end(e.ast, s), out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            drop collect_assigned(e, raw arm_body(arm), out);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        drop collect_assigned(e, StmtId{ index: (raw stmt_target(s)).index }, out);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// The root name of a place (`x`, `x.f`, `x[i]`, …), or 0.
+func:place_root_name = int32(Encoder->:e, ExprId:id) never fails {
+    ExprId:cur = id;
+    int32:fuel = 64i32;
+    while (fuel > 0i32) {
+        fuel = fuel - 1i32;
+        if (raw expr_is_none(cur)) { pass 0i32; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass (n.payload =>! int32); }
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprIndexExpr)
+            || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprDerefExpr)) {
+            cur = ExprId{ index: n.a };
+            continue;
+        }
+        pass 0i32;
+    }
+    pass 0i32;
+};
+
+// Every name whose address is taken (`@x`, `$$m x`, `$$i x`, through any
+// place path) anywhere under `id`.
+func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if ((n.kind == ExprKind.ExprAddressOfExpr) || (n.kind == ExprKind.ExprBorrowExpr)) {
+        int32:root = raw place_root_name(e, raw expr_operand(n));
+        if (root != 0i32) { drop list_push(@e.escaped, root); }
+    }
+    List<int32>:kids = raw list_init::<int32>(4i64);
+    drop expr_children(e, n, @kids);
+    for (int64:i in 0i64...kids.count) { drop collect_escaped_expr(e, ExprId{ index: kids.items[i] }); }
+    pass NIL;
+};
+
+func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            drop collect_escaped(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) });
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) { drop collect_escaped_expr(e, raw stmt_decl_init(e.ast, s)); pass NIL; }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop collect_escaped_expr(e, raw stmt_target(s));
+        drop collect_escaped_expr(e, raw stmt_assigned(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop collect_escaped_expr(e, raw stmt_cond(s));
+        drop collect_escaped(e, raw stmt_then(s));
+        drop collect_escaped(e, raw stmt_else(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop collect_escaped_expr(e, raw stmt_cond(s));
+        drop collect_escaped(e, raw stmt_body(e.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop collect_escaped_expr(e, raw stmt_for_iter(e.ast, s));
+        drop collect_escaped(e, raw stmt_for_body(e.ast, s));
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(e.ast, s))) {
+            drop collect_escaped_expr(e, raw stmt_counted_arg(e.ast, s, ai));
+        }
+        drop collect_escaped(e, raw stmt_counted_body(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop collect_escaped_expr(e, raw stmt_cond(s));
+        drop collect_escaped(e, raw stmt_when_body(e.ast, s));
+        drop collect_escaped(e, raw stmt_when_then(e.ast, s));
+        drop collect_escaped(e, raw stmt_when_end(e.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop collect_escaped_expr(e, raw pick_selector(s));
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            drop collect_escaped_expr(e, raw arm_guard(arm));
+            drop collect_escaped(e, raw arm_body(arm));
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        drop collect_escaped(e, StmtId{ index: (raw stmt_target(s)).index });
+        pass NIL;
+    }
+    if (raw stmt_carries_expr(s.kind)) { drop collect_escaped_expr(e, raw stmt_expr(s)); pass NIL; }
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
+        drop collect_escaped_expr(e, raw stmt_operand(s));
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// Register a pattern's bindings as symbol-less bindings for the arm's scope.
+func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
+    if (p.kind == PatKind.PatStructDestructure) {
+        for (int32:i in 0i32...(raw pat_bind_count(p))) {
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32 };
+            drop list_push(@e.binds, move(b));
+        }
+        pass NIL;
+    }
+    if (p.kind == PatKind.PatEnumDestructure) {
+        for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32 };
+            drop list_push(@e.binds, move(b2));
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:walk_block = NIL(Encoder->:e, StmtId:sid) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind != StmtKind.StmtBlockStmt) { drop walk_stmt(e, sid); pass NIL; }
+    int64:mark = raw scope_mark(e);
+    for (int32:i in 0i32...(raw stmt_list_count(s))) {
+        drop walk_stmt(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) });
+    }
+    drop scope_release(e, mark);
+    pass NIL;
+};
+
+// A loop body: the names it assigns are unknown at entry and after exit.
+func:walk_loop_body = NIL(Encoder->:e, StmtId:body) never fails {
+    List<int32>:assigned = raw list_init::<int32>(4i64);
+    drop collect_assigned(e, body, @assigned);
+    drop invalidate(e, assigned);
+    drop region_enter(e);
+    drop walk_block(e, body);
+    drop region_leave(e);
+    drop invalidate(e, assigned);
+    pass NIL;
+};
+
+pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+
+    if (s.kind == StmtKind.StmtBlockStmt) { drop walk_block(e, sid); pass NIL; }
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        int32:name = raw stmt_name(s);
+        int32:dty = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw stmt_decl_type(s), e.scope));
+        ExprId:init = raw stmt_decl_init(e.ast, s);
+        Term:t = raw term_none();
+        if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
+        drop bind_define(e, name, dty, t);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        TokenKind:op = raw stmt_op(s);
+        ExprId:target = raw stmt_target(s);
+        ExprNode:tn = raw ast_expr(e.ast, target);
+        Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
+        if (tn.kind != ExprKind.ExprIdentifierExpr) {
+            // A field, element or pointee write: its own subexpressions are
+            // sites; no local symbol changes (an address-taken local is never
+            // defined, so a write through a pointer invalidates nothing here).
+            drop walk_children(e, tn);
+            if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
+                int32:pt = raw ty_of(e, target);
+                if (raw is_int(e, pt)) {
+                    Term:cur = raw term_opaque(e, pt);
+                    drop record_division(e, pt, cur, rhs, target.index, s.span);
+                }
+            }
+            pass NIL;
+        }
+        int32:name = tn.payload =>! int32;
+        if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
+        // Compound: the current value op the right-hand side.
+        Term:old = raw enc_expr(e, target);
+        int64:bi = raw bind_find(e, name);
+        int32:lt = 0i32;
+        if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
+        if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+        if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
+            drop record_division(e, lt, old, rhs, target.index, s.span);
+            if (!(old.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+            if (!(raw term_is_numeral(rhs))) { e.nonlinear = true; }
+            if (raw type_is_signed(e.types, lt)) {
+                e.uses_sdiv = true;
+                e.nonlinear = true;
+                if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("npk_sdiv", old, rhs, false)); }
+                else { drop bind_assign(e, name, raw term_app2("npk_srem", old, rhs, false)); }
+                pass NIL;
+            }
+            if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", old, rhs, false)); }
+            else { drop bind_assign(e, name, raw term_app2("mod", old, rhs, false)); }
+            pass NIL;
+        }
+        if (!(old.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+        if (op == TokenKind.OpPlusAssign)  { drop bind_assign(e, name, raw term_app2("+", old, rhs, false)); pass NIL; }
+        if (op == TokenKind.OpMinusAssign) { drop bind_assign(e, name, raw term_app2("-", old, rhs, false)); pass NIL; }
+        if (op == TokenKind.OpStarAssign) {
+            if (!((raw term_is_numeral(old)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
+            drop bind_assign(e, name, raw term_app2("*", old, rhs, false));
+            pass NIL;
+        }
+        drop bind_assign(e, name, raw term_none());
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtIfStmt) {
+        Term:c = raw enc_expr(e, raw stmt_cond(s));
+        List<int32>:snap = raw snapshot(e);
+        drop region_enter(e);
+        drop walk_block(e, raw stmt_then(s));
+        drop region_leave(e);
+        drop restore(e, snap);
+        drop region_enter(e);
+        drop walk_block(e, raw stmt_else(s));
+        drop region_leave(e);
+        drop restore(e, snap);
+        List<int32>:assigned = raw list_init::<int32>(4i64);
+        drop collect_assigned(e, raw stmt_then(s), @assigned);
+        drop collect_assigned(e, raw stmt_else(s), @assigned);
+        drop invalidate(e, assigned);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        List<int32>:wa = raw list_init::<int32>(4i64);
+        drop collect_assigned(e, raw stmt_body(e.ast, s), @wa);
+        drop invalidate(e, wa);
+        drop region_enter(e);
+        Term:wc = raw enc_expr(e, raw stmt_cond(s));
+        drop walk_block(e, raw stmt_body(e.ast, s));
+        drop region_leave(e);
+        drop invalidate(e, wa);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtForStmt) {
+        Term:it = raw enc_expr(e, raw stmt_for_iter(e.ast, s));
+        int64:mark = raw scope_mark(e);
+        DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
+        int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
+        drop bind_define(e, raw decl_name(bd), bt, raw term_none());
+        drop walk_loop_body(e, raw stmt_for_body(e.ast, s));
+        drop scope_release(e, mark);
+        pass NIL;
+    }
+
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(e.ast, s))) {
+            Term:at = raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai));
+        }
+        drop walk_loop_body(e, raw stmt_counted_body(s));
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        List<int32>:ka = raw list_init::<int32>(4i64);
+        drop collect_assigned(e, sid, @ka);
+        drop invalidate(e, ka);
+        drop region_enter(e);
+        Term:kc = raw enc_expr(e, raw stmt_cond(s));
+        drop walk_block(e, raw stmt_when_body(e.ast, s));
+        drop region_leave(e);
+        drop invalidate(e, ka);
+        drop region_enter(e);
+        drop walk_block(e, raw stmt_when_then(e.ast, s));
+        drop region_leave(e);
+        drop invalidate(e, ka);
+        drop region_enter(e);
+        drop walk_block(e, raw stmt_when_end(e.ast, s));
+        drop region_leave(e);
+        drop invalidate(e, ka);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtPickStmt) {
+        Term:sel = raw enc_expr(e, raw pick_selector(s));
+        List<int32>:snap = raw snapshot(e);
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            int64:mark = raw scope_mark(e);
+            drop region_enter(e);
+            drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
+            Term:g = raw enc_expr(e, raw arm_guard(arm));
+            drop walk_block(e, raw arm_body(arm));
+            drop region_leave(e);
+            drop scope_release(e, mark);
+            drop restore(e, snap);
+        }
+        List<int32>:pa = raw list_init::<int32>(4i64);
+        drop collect_assigned(e, sid, @pa);
+        drop invalidate(e, pa);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        // Runs at an exit the straight line does not see: every name opaque
+        // while it is walked, the outer state restored after.
+        List<int32>:snap = raw snapshot(e);
+        drop region_enter(e);
+        drop invalidate_all(e);
+        drop walk_block(e, StmtId{ index: (raw stmt_target(s)).index });
+        drop region_leave(e);
+        drop restore(e, snap);
+        pass NIL;
+    }
+
+    if (raw stmt_carries_expr(s.kind)) {
+        Term:x = raw enc_expr(e, raw stmt_expr(s));
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
+        Term:v = raw enc_expr(e, raw stmt_operand(s));
+        pass NIL;
+    }
+    // break, continue, fall, and anything unclassified: no sites, no definitions.
+    pass NIL;
+};
+
+// --- the entry: one function instance ------------------------------------------------------
+
+// Parameters are the first bindings; the escaped set is collected before the
+// body is walked, since an address taken late in the body still aliases the
+// name from its first definition.
+pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty) never fails {
+    drop bind_define(e, name, ty, raw term_none());
+    pass NIL;
+};
+
+pub func:enc_body = NIL(Encoder->:e, StmtId:body) never fails {
+    drop collect_escaped(e, body);
+    // An address-taken parameter is opaque from its first definition on: the
+    // parameter bindings made before this were defined symbol-only, which is
+    // already the opaque form.
+    drop walk_block(e, body);
+    pass NIL;
+};
+
+// --- the cone and the hash (P-4) -----------------------------------------------------------
+
+func:has_sym = bool(List<int32>:l, int32:s) never fails {
+    for (int64:i in 0i64...l.count) { if (l.items[i] == s) { pass true; } }
+    pass false;
+};
+
+func:sym_sort = string(Encoder->:e, int32:idx) never fails {
+    if (e.syms.items[idx => int64].is_bool) { pass "Bool"; }
+    pass "Int";
+};
+
+// Fill every obligation's cone, canonical text and hash.
+pub func:enc_finish = NIL(Encoder->:e) never fails {
+    for (int64:oi in 0i64...e.obls.count) {
+        if (!e.obls.items[oi].encoded) {
+            string:u = string_concat("(unencoded ", raw ok_name(e.obls.items[oi].kind));
+            u = string_concat(u, " ");
+            u = string_concat(u, int_to_string(e.obls.items[oi].ordinal => int64));
+            u = string_concat(u, ")");
+            e.obls.items[oi].canon = string_concat(u, "");
+            string:hu = string_concat(u, "\n");
+            hu = string_concat(hu, e.symbol);
+            hu = string_concat(hu, "\n");
+            hu = string_concat(hu, raw ok_name(e.obls.items[oi].kind));
+            hu = string_concat(hu, "\n");
+            e.obls.items[oi].hash = raw sha256_hex(hu);
+            continue;
+        }
+        // The relevance closure over hypotheses [0, hyps).
+        int64:limit_h = e.obls.items[oi].hyps;
+        List<int32>:cs = raw list_init::<int32>(8i64);
+        for (int64:g in 0i64...e.obls.items[oi].syms.count) {
+            if (!(raw has_sym(cs, e.obls.items[oi].syms.items[g]))) { drop list_push(@cs, e.obls.items[oi].syms.items[g]); }
+        }
+        List<bool>:inc = raw list_init::<bool>(limit_h + 1i64);
+        for (int64:h0 in 0i64...limit_h) { drop list_push(@inc, false); }
+        bool:grew = true;
+        while (grew) {
+            grew = false;
+            for (int64:h in 0i64...limit_h) {
+                if (inc.items[h]) { continue; }
+                if (!(raw region_dominates(e, e.hyps.items[h].region, e.obls.items[oi].region))) { continue; }
+                bool:touch = false;
+                for (int64:q in 0i64...e.hyps.items[h].syms.count) {
+                    if (raw has_sym(cs, e.hyps.items[h].syms.items[q])) { touch = true; }
+                }
+                if (!touch) { continue; }
+                inc.items[h] = true;
+                grew = true;
+                for (int64:q2 in 0i64...e.hyps.items[h].syms.count) {
+                    if (!(raw has_sym(cs, e.hyps.items[h].syms.items[q2]))) { drop list_push(@cs, e.hyps.items[h].syms.items[q2]); }
+                }
+            }
+        }
+        // Symbols ascending (insertion order of declaration), hypotheses in order.
+        List<int32>:sorted = raw list_init::<int32>(cs.count + 1i64);
+        for (int64:si in 0i64...e.syms.count) {
+            if (raw has_sym(cs, si =>! int32)) { drop list_push(@sorted, si =>! int32); }
+        }
+        List<int32>:hl = raw list_init::<int32>(8i64);
+        for (int64:h2 in 0i64...limit_h) { if (inc.items[h2]) { drop list_push(@hl, h2 =>! int32); } }
+        SmtBuf:b = raw smtbuf_init();
+        for (int64:s2 in 0i64...sorted.count) {
+            string:d = string_concat("(declare-const ", raw sym_text(e, sorted.items[s2]));
+            d = string_concat(d, " ");
+            d = string_concat(d, raw sym_sort(e, sorted.items[s2]));
+            d = string_concat(d, ")");
+            drop smtbuf_line(@b, d);
+        }
+        for (int64:h3 in 0i64...hl.count) {
+            drop smtbuf_line(@b, raw smt_app1("assert", string_concat(e.hyps.items[hl.items[h3] => int64].text, "")));
+        }
+        drop smtbuf_line(@b, raw smt_app1("assert", raw smt_app1("not", string_concat(e.obls.items[oi].goal, ""))));
+        string:canon = raw smtbuf_text(move(b));
+        string:hin = string_concat(canon, e.symbol);
+        hin = string_concat(hin, "\n");
+        hin = string_concat(hin, raw ok_name(e.obls.items[oi].kind));
+        hin = string_concat(hin, "\n");
+        e.obls.items[oi].hash = raw sha256_hex(hin);
+        e.obls.items[oi].canon = move(canon);
+        e.obls.items[oi].cone_syms = sorted;
+        e.obls.items[oi].cone_hyps = hl;
+    }
+    pass NIL;
+};
+
+// The `--elide` reader marks rows whose hash the manifest lists as discharged.
+pub func:enc_mark_discharged = NIL(Encoder->:e, List<string>:hashes) never fails {
+    for (int64:oi in 0i64...e.obls.count) {
+        for (int64:h in 0i64...hashes.count) {
+            if (string_equals(e.obls.items[oi].hash, hashes.items[h])) { e.obls.items[oi].discharged = true; }
+        }
+    }
+    pass NIL;
+};
+
+// Is the site (an ExprId index) of kind `kind` discharged? The emitter's question.
+pub func:enc_site_discharged = bool(Encoder->:e, int32:site, int32:kind) never fails {
+    for (int64:oi in 0i64...e.obls.count) {
+        if ((e.obls.items[oi].site == site) && (e.obls.items[oi].kind == kind)) {
+            pass e.obls.items[oi].discharged;
+        }
+    }
+    pass false;
+};
+
+// --- the solver file for one function ------------------------------------------------------
+
+// The header comment, the logic, the definitions, every declaration at the
+// base level, then one push/assert/check-sat/pop per obligation over its cone
+// (P-6, P-7, P-16, P-17). Unencoded rows take no query.
+pub func:enc_file_text = string(Encoder->:e) never fails {
+    SmtBuf:b = raw smtbuf_init();
+    drop smtbuf_line(@b, string_concat("; ", e.symbol));
+    int64:checks = 0i64;
+    for (int64:oi in 0i64...e.obls.count) {
+        string:c = string_concat("; o", int_to_string(oi + 1i64));
+        c = string_concat(c, " ");
+        c = string_concat(c, raw ok_name(e.obls.items[oi].kind));
+        c = string_concat(c, " ");
+        c = string_concat(c, e.obls.items[oi].hash);
+        c = string_concat(c, " ");
+        c = string_concat(c, int_to_string(e.obls.items[oi].line => int64));
+        c = string_concat(c, ":");
+        c = string_concat(c, int_to_string(e.obls.items[oi].col => int64));
+        if (!e.obls.items[oi].encoded) { c = string_concat(c, " unencoded"); }
+        drop smtbuf_line(@b, c);
+        if (e.obls.items[oi].encoded) { checks = checks + 1i64; }
+    }
+    drop smtbuf_line(@b, string_concat("; checks ", int_to_string(checks)));
+    if (e.nonlinear) { drop smtbuf_line(@b, "(set-logic QF_NIA)"); }
+    else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); }
+    if (e.uses_sdiv) {
+        drop smtbuf_line(@b, "(define-fun npk_sdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (>= b 0) (div a b) (- (div a (- b)))) (ite (>= b 0) (- (div (- a) b)) (div (- a) (- b)))))");
+        drop smtbuf_line(@b, "(define-fun npk_srem ((a Int) (b Int)) Int (- a (* b (npk_sdiv a b))))");
+    }
+    for (int64:si in 0i64...e.syms.count) {
+        string:d = string_concat("(declare-const ", raw sym_text(e, si =>! int32));
+        d = string_concat(d, " ");
+        d = string_concat(d, raw sym_sort(e, si =>! int32));
+        d = string_concat(d, ")");
+        drop smtbuf_line(@b, d);
+    }
+    for (int64:oi2 in 0i64...e.obls.count) {
+        if (!e.obls.items[oi2].encoded) { continue; }
+        drop smtbuf_line(@b, "(push)");
+        for (int64:h in 0i64...e.obls.items[oi2].cone_hyps.count) {
+            int32:hi = e.obls.items[oi2].cone_hyps.items[h];
+            string:named = string_concat("(! ", e.hyps.items[hi => int64].text);
+            named = string_concat(named, " :named h");
+            named = string_concat(named, int_to_string(hi => int64));
+            named = string_concat(named, ")");
+            drop smtbuf_line(@b, raw smt_app1("assert", named));
+        }
+        string:goal = string_concat("(! ", raw smt_app1("not", string_concat(e.obls.items[oi2].goal, "")));
+        goal = string_concat(goal, " :named o");
+        goal = string_concat(goal, int_to_string(oi2 + 1i64));
+        goal = string_concat(goal, ")");
+        drop smtbuf_line(@b, raw smt_app1("assert", goal));
+        drop smtbuf_line(@b, "(check-sat)");
+        drop smtbuf_line(@b, "(pop)");
+    }
+    pass (raw smtbuf_text(move(b)));
+};

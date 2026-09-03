@@ -49,8 +49,11 @@ lld-flags     = ["-static"]
 [dependencies]
 nfs = { path = "../nfs", version = "0.3.1" }
 
-[verify]
-z3 = true
+[verify]                         # D-218.1/D-218.2; landed 1.5.0
+z3         = true
+z3-version = "4.16.0"            # what `z3 -version` must report
+z3-sha256  = "9a1657b3…c069bc3c"  # the binary z3 resolves to on PATH, hashed
+z3-options = ["smt.random_seed=0", "sat.random_seed=0", "rlimit=20000000"]
 
 [verify.nikos]
 domain = "interval"
@@ -76,6 +79,17 @@ domain = "interval"
   project must be verified under are a property of the project, not of whoever
   typed the command. `npkc-native`'s existing `[nikos]` table established this and
   becomes `[verify.nikos]`.
+- **The solver is an INPUT like the toolchain** (D-218.1/D-218.2; 1.5.0). When
+  `z3 = true`, the exact release, the sha256 of the binary `z3` resolves to on
+  PATH, and the determinism profile are all required, and every z3 invocation
+  is BUILT from the `z3-options` list. Both runners refuse a mismatched version
+  or hash, a profile with no `rlimit=` budget, and any wall-clock or parallelism
+  knob in the list (`timeout=`, `-T:`, `-t:`, `solver.timeout=`, `sat.threads=`
+  other than 1, `smt.threads=`, `parallel.enable=`): a verdict is a function of
+  (obligation, solver build, budget), never of the machine. The pinned binary is
+  the workbench's own build of the tagged release (D-233's doctrine for every
+  engine); a different build is a different pin and re-records the obligation
+  file with it.
 - **There is no `edition` key** (D-077). One language; keeping incompatible
   versions alive would multiply every verification obligation by the number of
   editions.
@@ -347,7 +361,7 @@ even for edits at the very bottom of the language.
 | `npkg build` | reads lock + vendored source; never resolves, never fetches |
 | `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every `[[test]]` entry in manifest order — the real-parser sweep, the five rejection suites, the fixtures, the backend programs with their `opt -O2` re-run, the runtime floor's tests and the acceptance suite are entries, not code (D-238). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. `--only SUBSTR` narrows to the compile-stage `[[test]]` files whose path holds it and skips every other stage, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
 | `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
-| `npkg verify` | a clean build with `[verify]` enforced, ending in the stage-1/stage-2 comparison for the compiler itself |
+| `npkg verify` | the ladder, then the VERIFIED build (1.5.0; D-218, D-219): `[build] entry` is compiled with `--obligations`, every function's D-218 obligations are decided by the pinned z3 under the pinned profile (one fresh process per function, D-218.3), the rows are held to the committed `nitpick.obligations` — absent or different is a failure by name; **`--record`** writes it, on purpose, the deliberate re-baseline — then the entry is compiled again with `--elide nitpick.obligations`, every guard the manifest discharged giving way to `llvm.assume` (D-218.9), the verified IR cross-checked (an `assume` per discharged site, a trap per retained one), assembled, closed-world linked to `build/verify/npkc`, and shown to rebuild the compiler byte-identically (D-202 over the verified build). **`--explain`** adds `build/verify/explain.txt`: a model per open row, the reason per budget row, an unsat core per discharged one — never on the gate path (P-7). `[verify.nikos]` is declared and not run until 1.6.0's gate names an engine (D-217, D-233) |
 
 ### 7.1 Test targets
 
@@ -388,6 +402,7 @@ paths = ["tests/backend/programs", "tests/conformance"]
 | `fixture` | the compiler under test | built like a program and never run; its uppercased stem becomes an `// argv:` token (a `.c` here is a reference driver built with the system C compiler — test tooling outside the TCB, D-149) |
 | `program` | the compiler under test | emitted, scanned, assembled, linked, run at -O0 and again through `opt -O2`, the same exit required |
 | `runtime` | `llc` + `ld.lld` | a hand-written `.ll` assembled, linked against the floor, run, its `expect-exit:` met |
+| `verify` | the compiler under test, z3 | (1.5.0, D-218) compiled with `--obligations`, its rows decided by the pinned z3 under the pinned profile, the (kind, verdict) counts of the test's OWN module equal to its `expect-obligation:` lines exactly, then the VERIFIED build emitted with that run's manifest, cross-checked, linked and run at -O0 and under opt -O2 with `expect-exit:` met both times |
 
 Membership stays with the stage: a `resolve`/`check` file with no `expect-error`
 is a fixture another file imports and is skipped; a `compile`/`program` file
@@ -408,6 +423,7 @@ expectation cannot drift apart:
 // stress: 40                         run it that many times, the SAME answer every time
 // argv: MOCK_DRIVER 555              extra argv; a fixture's name becomes its built path
 // expect-no-parse-error              the file is meant to reach the backend (D-085)
+// expect-obligation: div-zero open 1   a `verify` test's row: KIND VERDICT N, or `none` (1.5.0)
 ```
 
 Both runners read exactly this grammar, marker for marker and in this order
@@ -456,6 +472,15 @@ Three rules make this worth having rather than decorative:
   > written before D-210 made `IntOverflow` reachable, a test whose assoc was
   > named `Error` before D-179 made that the builtin error type, and four
   > second findings the tests meant and never named.
+
+**A `verify` test names its rows exactly** (1.5.0, P-22): the multiset of
+(kind, verdict) counts over the rows of the test's own module — its `main`,
+its `failsafe`, its `@"npk.<module>.…"` functions; the prelude's rows ride in
+the same manifest and are not the test's to name — must EQUAL the set its
+`expect-obligation:` lines name, and a verify test with no such line is a
+failing test. The verdicts are `discharged`, `open`, `budget` and
+`unencoded` (VERIFICATION_REFERENCE §7b), and `expect-exit:` is met by the
+VERIFIED binary at -O0 and under opt -O2.
 
 **`expect-no-parse-error` is the load-bearing one.** It asserts that a file
 reached the *backend* to be rejected, rather than tripping the parser. That is

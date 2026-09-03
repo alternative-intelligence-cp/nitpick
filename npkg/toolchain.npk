@@ -20,6 +20,7 @@ mod:toolchain;
 use "../src/frontend/list.npk".*;
 use "../lib/nproc.npk".*;
 use "../lib/nsys.npk".*;
+use "../lib/nhash.npk".*;
 use "./text.npk".*;
 
 func:SYS_STAT = int64() never fails   { pass 4i64; };
@@ -218,6 +219,93 @@ pub async func:toolchain_pin_check = List<string>(string:llc, string:opt, string
             m2 = string_concat(m2, " -- the toolchain is a BUILD INPUT (D-204), and a patch release is enough to change instruction selection or section ordering. Install the pinned version, or update the pin AND regenerate every expected hash in the same change");
             drop list_push(@out, move(m2));
         }
+    }
+    pass out;
+};
+
+// --- the solver pin (D-218.1/D-218.2, 1.5.0) ----------------------------------------
+//
+// D-204's refusal for z3, message for message the harness's `check_verify_pin`.
+// The tool is asked its version AND the binary it resolves to is hashed
+// (`lib/nhash.npk`): a version string cannot tell two builds of one tag apart,
+// and a verdict is a function of the BUILD. The options list is the
+// determinism profile and is refused by name when it carries a wall-clock or a
+// parallelism knob, or no `rlimit=` budget at all.
+pub func:option_forbidden = string(string:o) never fails {
+    if (raw text_starts_with(o, "timeout="))        { pass "a wall-clock timeout"; }
+    if (raw text_starts_with(o, "-T:"))             { pass "a wall-clock timeout"; }
+    if (raw text_starts_with(o, "-t:"))             { pass "a wall-clock timeout"; }
+    if (raw text_starts_with(o, "solver.timeout=")) { pass "a wall-clock timeout"; }
+    if (raw text_starts_with(o, "parallel.enable=")) { pass "parallelism"; }
+    if (raw text_starts_with(o, "smt.threads="))    { pass "parallelism"; }
+    if (raw text_starts_with(o, "sat.threads=")) {
+        if (!(raw text_eq(o, "sat.threads=1"))) { pass "parallelism"; }
+    }
+    pass "";
+};
+
+pub async func:verify_pin_check = List<string>(string:z3, ProcArgs:env, string:version,
+                                               string:sha, List<string>:options) {
+    List<string>:out = raw list_init::<string>(2i64);
+    if (version.len == 0i64) {
+        drop strlist_push(@out, "nitpick.toml has no [verify] z3-version pin -- the solver is a build INPUT (D-218.1), and an unpinned input is not one");
+        pass out;
+    }
+    if (sha.len == 0i64) {
+        drop strlist_push(@out, "nitpick.toml has no [verify] z3-sha256 pin -- a version string cannot tell two builds apart (D-218.1)");
+        pass out;
+    }
+    bool:has_rlimit = false;
+    for (int64:i in 0i64...options.count) {
+        string:o = raw strlist_view(options, i);
+        if (raw text_starts_with(o, "rlimit=")) { has_rlimit = true; }
+        string:why = raw option_forbidden(o);
+        if (why.len > 0i64) {
+            string:m0 = string_concat("nitpick.toml: [verify] z3-options carries `", o);
+            m0 = string_concat(m0, "`, which is ");
+            m0 = string_concat(m0, why);
+            m0 = string_concat(m0, " -- the determinism profile (D-218.2) admits fixed seeds and `rlimit` only; a verdict that depends on the clock or on a thread schedule differs between machines");
+            drop list_push(@out, move(m0));
+        }
+    }
+    if (!has_rlimit) {
+        drop strlist_push(@out, "nitpick.toml: [verify] z3-options has no `rlimit=` entry -- the determinism profile's SOLE budget is missing (D-218.2)");
+    }
+    if (out.count > 0i64) { pass out; }
+    if (z3.len == 0i64) {
+        drop strlist_push(@out, "z3 is not on PATH -- the solver is a build input (D-218.1), and a verify without it is not a verify");
+        pass out;
+    }
+    List<string>:args = raw list_init::<string>(1i64);
+    drop strlist_push(@args, "-version");
+    Result<Run>:r = await run_argv(z3, args, env, raw duration_secs(30i64));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    string:got = raw version_after(run.x.out, "Z3 version");
+    if (got.len == 0i64) {
+        string:m1 = string_concat("z3 -version did not report a version this can read: ", raw text_head(run.x.out, 120i64));
+        drop list_push(@out, move(m1));
+        pass out;
+    }
+    if (!(raw text_eq(got, version))) {
+        string:m2 = string_concat("z3 is ", got);
+        m2 = string_concat(m2, " but nitpick.toml pins ");
+        m2 = string_concat(m2, version);
+        m2 = string_concat(m2, " -- the solver is a BUILD INPUT (D-218.1); install the pinned release, or update the pin AND re-record nitpick.obligations in the same change");
+        drop list_push(@out, move(m2));
+        pass out;
+    }
+    Result<cstring>:zc = to_cstring(z3);
+    if (zc.is_error) { drop strlist_push(@out, "the z3 path is not a path"); pass out; }
+    Result<string>:bytes = read_file(zc.value);
+    if (bytes.is_error) { drop strlist_push(@out, "the z3 binary could not be read for its sha256"); pass out; }
+    string:hex = raw sha256_hex(bytes.value);
+    if (!(raw text_eq(hex, sha))) {
+        string:m3 = string_concat("z3's sha256 is ", hex);
+        m3 = string_concat(m3, " but nitpick.toml pins ");
+        m3 = string_concat(m3, sha);
+        m3 = string_concat(m3, " -- a different BUILD of the solver (D-218.1): a verdict is a function of the build, so the pin moves only with a re-recorded nitpick.obligations");
+        drop list_push(@out, move(m3));
     }
     pass out;
 };

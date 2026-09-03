@@ -1,0 +1,32 @@
+// expect-exit: 21
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// AN OPEN OBLIGATION KEEPS ITS GUARD (D-068, D-219): the divisor comes from
+// argv, which no hypothesis constrains beyond its type's range, so `b != 0`
+// is `open` -- and the VERIFIED build still traps to `failsafe` with
+// DivByZero (21) when it is zero, exactly as the unverified one does. The
+// INT_MIN/-1 half discharges: the dividend is the literal 10.
+mod:divz_open;
+
+func:main = int32(cstring[]:argv) {
+    // argv.len is 1 in the runner, so this is 0 -- but only at run time.
+    int32:zero = (argv.len =>! int32) - 1i32;
+    int32:q = 10i32 / zero;
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

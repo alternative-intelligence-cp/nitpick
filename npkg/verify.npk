@@ -1,0 +1,606 @@
+// verify -- `npkg verify` and the z3 leg both `npkg verify` and the `verify`
+// test stage share (1.5.0; D-218, D-219; the plan is meta/roadmap/1.5/1.5.0.md).
+//
+// THE RUNNER OWNS EVERY TOOL INVOCATION (D-067, D-206): the compiler emits
+// obligations (`--obligations DIR`: one SMT-LIB2 file per function instance,
+// index.txt, rows.txt) and reads a manifest (`--elide FILE`); this module
+// spawns z3 -- one fresh process per file under the profile `[verify]` pins
+// (D-218.2/D-218.3), through `lib/nproc.npk` like every other tool -- maps
+// the answers to rows, renders `nitpick.obligations` (P-10, through
+// `smt_manifest.npk`'s one renderer), and drives the second run.
+//
+// THE VERDICT PASS ASKS `(check-sat)` AND NOTHING ELSE (P-7): exactly N
+// answer lines for N encoded rows, anything else fails the run by name. The
+// wall-clock net is a hang net and never a verdict (P-13): a killed solver is
+// a build failure, not a `budget` row.
+//
+// `npkg verify` (P-9, P-25): the ladder, the solver pin, the obligations of
+// `[build] entry`, z3, the comparison with the COMMITTED `nitpick.obligations`
+// -- absent or different is a failure by name; `--record` writes it, on
+// purpose -- then the VERIFIED build (`--elide`), its cross-checks, and the
+// verified fixpoint: the verified compiler must emit the compiler exactly as
+// the unverified one's verified emission (D-202 over the verified build).
+// `--explain` adds a second solver pass for the report: a model for every
+// open row, the reason for every budget row, an unsat core for every
+// discharged one -- never on the gate path.
+
+mod:verify;
+
+use "../src/frontend/list.npk".*;
+use "../src/frontend/paths.npk".*;
+use "../src/backend/smt/smt_kinds.npk".*;
+use "../src/backend/smt/smt_manifest.npk".*;
+use "../lib/nfs.npk".*;
+use "../lib/nproc.npk".*;
+use "./text.npk".*;
+use "./manifest.npk".*;
+use "./toolchain.npk".*;
+use "./build.npk".*;
+use "./irscan.npk".*;
+use "./elf.npk".*;
+
+// One row of rows.txt, with its verdict once decided.
+pub struct:VRow = {
+    string:fno;
+    int64:k;
+    string:kind;
+    string:hash;
+    bool:encoded;
+    string:symbol;
+    int32:verdict;      // OV_* (0 until decided)
+};
+
+// --- reading the compiler's files --------------------------------------------------------
+
+func:split_tabs = List<string>(string:line) never fails {
+    List<string>:out = raw list_init::<string>(6i64);
+    int64:start = 0i64;
+    for (int64:i in 0i64...line.len) {
+        if (line.ptr[i] == 9u8) {
+            drop strlist_push(@out, raw text_slice(line, start, i));
+            start = i + 1i64;
+        }
+    }
+    drop strlist_push(@out, raw text_slice(line, start, line.len));
+    pass out;
+};
+
+pub func:read_rows = List<VRow>(string:dir) {
+    List<VRow>:rows = raw list_init::<VRow>(32i64);
+    Result<cstring>:rc = to_cstring(raw path_join(dir, "rows.txt"));
+    if (rc.is_error) { fail rc.err; }
+    Result<string>:text = read_file(rc.value);
+    if (text.is_error) { fail text.err; }
+    List<string>:lines = raw text_lines(text.value);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (ln.len == 0i64) { continue; }
+        List<string>:f = raw split_tabs(ln);
+        if (f.count != 6i64) { continue; }
+        Result<int64>:k = text_int(raw strlist_view(f, 1i64));
+        if (k.is_error) { continue; }
+        VRow:r = VRow{ fno: raw strlist_copy(f, 0i64), k: k.value,
+                       kind: raw strlist_copy(f, 2i64), hash: raw strlist_copy(f, 3i64),
+                       encoded: raw text_eq(raw strlist_view(f, 4i64), "1"),
+                       symbol: raw strlist_copy(f, 5i64), verdict: 0i32 };
+        drop list_push(@rows, move(r));
+    }
+    pass rows;
+};
+
+pub struct:VFile = { string:fno; string:symbol; int64:checks; };
+
+pub func:read_index = List<VFile>(string:dir) {
+    List<VFile>:files = raw list_init::<VFile>(16i64);
+    Result<cstring>:ic = to_cstring(raw path_join(dir, "index.txt"));
+    if (ic.is_error) { fail ic.err; }
+    Result<string>:text = read_file(ic.value);
+    if (text.is_error) { fail text.err; }
+    List<string>:lines = raw text_lines(text.value);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw strlist_view(lines, i);
+        if (ln.len == 0i64) { continue; }
+        List<string>:f = raw split_tabs(ln);
+        if (f.count != 3i64) { continue; }
+        Result<int64>:n = text_int(raw strlist_view(f, 2i64));
+        if (n.is_error) { continue; }
+        VFile:v = VFile{ fno: raw strlist_copy(f, 0i64), symbol: raw strlist_copy(f, 1i64), checks: n.value };
+        drop list_push(@files, move(v));
+    }
+    pass files;
+};
+
+// --- the solver ----------------------------------------------------------------------------
+
+// z3 over every file of `dir`; the rows' verdicts filled; the failures, by name.
+pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows,
+                               List<VFile>:files, string:name, List<string>->:fl) {
+    for (int64:fi in 0i64...files.count) {
+        string:fno = string_from_bytes(files.items[fi].fno.ptr, files.items[fi].fno.len);
+        int64:checks = files.items[fi].checks;
+        int64:enc = 0i64;
+        for (int64:ri in 0i64...rows.count) {
+            if (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno)) {
+                if (rows.items[ri].encoded) { enc = enc + 1i64; }
+            }
+        }
+        if (enc != checks) {
+            string:m0 = string_concat(name, ": index.txt says ");
+            m0 = string_concat(m0, fno);
+            m0 = string_concat(m0, " has ");
+            m0 = string_concat(m0, int_to_string(checks));
+            m0 = string_concat(m0, " checks, rows.txt lists ");
+            m0 = string_concat(m0, int_to_string(enc));
+            m0 = string_concat(m0, " encoded rows");
+            drop list_push(fl, move(m0));
+            pass NIL;
+        }
+        if (checks == 0i64) { continue; }
+        List<string>:args = raw strlist_clone(c.m.z3_options);
+        drop strlist_push(@args, "-smt2");
+        drop strlist_push(@args, raw path_join(dir, string_concat(fno, ".smt2")));
+        Result<Run>:r = await run_argv(z3, args, c.t.env, raw duration_secs(120i64 + (10i64 * checks)));
+        if (r.is_error) { fail r.err; }
+        Run:run = move(r.value);
+        if (run.timed_out) {
+            string:m1 = string_concat(name, ": z3 exceeded the wall-clock net on ");
+            m1 = string_concat(m1, fno);
+            m1 = string_concat(m1, " -- not a verdict: a wedged solver is a build failure, never a `budget` row (P-13)");
+            drop list_push(fl, move(m1));
+            pass NIL;
+        }
+        List<string>:ans = raw text_lines(run.x.out);
+        int64:got = 0i64;
+        int64:next_row = 0i64;
+        for (int64:ai in 0i64...ans.count) {
+            string:a = raw text_trim(raw strlist_view(ans, ai));
+            if (a.len == 0i64) { continue; }
+            int32:v = 0i32;
+            if (raw text_eq(a, "unsat"))   { v = raw OV_DISCHARGED(); }
+            if (raw text_eq(a, "sat"))     { v = raw OV_OPEN(); }
+            if (raw text_eq(a, "unknown")) { v = raw OV_BUDGET(); }
+            if (v == 0i32) {
+                string:m2 = string_concat(name, ": z3 said something other than a verdict on ");
+                m2 = string_concat(m2, fno);
+                m2 = string_concat(m2, ": ");
+                m2 = string_concat(m2, raw text_head(a, 160i64));
+                drop list_push(fl, move(m2));
+                pass NIL;
+            }
+            got = got + 1i64;
+            // the next encoded row of this file
+            while (next_row < rows.count) {
+                bool:mine = raw text_eq(string_from_bytes(rows.items[next_row].fno.ptr, rows.items[next_row].fno.len), fno);
+                if (mine && rows.items[next_row].encoded) { break; }
+                next_row = next_row + 1i64;
+            }
+            if (next_row < rows.count) { rows.items[next_row].verdict = v; next_row = next_row + 1i64; }
+        }
+        if (got != checks) {
+            string:m3 = string_concat(name, ": z3 answered ");
+            m3 = string_concat(m3, int_to_string(got));
+            m3 = string_concat(m3, " times for the ");
+            m3 = string_concat(m3, int_to_string(checks));
+            m3 = string_concat(m3, " obligations of ");
+            m3 = string_concat(m3, fno);
+            drop list_push(fl, move(m3));
+            pass NIL;
+        }
+    }
+    for (int64:ri2 in 0i64...rows.count) {
+        if (!rows.items[ri2].encoded) { rows.items[ri2].verdict = raw OV_UNENCODED(); }
+    }
+    pass NIL;
+};
+
+// --- the manifest --------------------------------------------------------------------------
+
+// The rows sorted by symbol then hash and deduplicated (P-10), rendered
+// through the one renderer, under the manifest's pin and profile.
+pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
+    List<string>:keys = raw list_init::<string>(rows.count + 1i64);
+    for (int64:i in 0i64...rows.count) {
+        // `symbol<TAB>hash<TAB>kind<TAB>verdict` sorts by symbol, then hash
+        string:k = string_concat(string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len), "\t");
+        k = string_concat(k, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+        k = string_concat(k, "\t");
+        k = string_concat(k, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+        k = string_concat(k, "\t");
+        k = string_concat(k, raw ov_name(rows.items[i].verdict));
+        drop list_push(@keys, move(k));
+    }
+    List<string>:sorted = raw strlist_sorted_unique(keys);
+    string:opts = raw text_join(c.m.z3_options, " ");
+    string:out = raw man_header(string_from_bytes(c.m.z3_version.ptr, c.m.z3_version.len),
+                                string_from_bytes(c.m.z3_sha256.ptr, c.m.z3_sha256.len), opts);
+    for (int64:j in 0i64...sorted.count) {
+        List<string>:f = raw split_tabs(raw strlist_view(sorted, j));
+        int32:v = raw ov_of_name(raw strlist_view(f, 3i64));
+        int32:kind = 0i32;
+        for (int32:kk in 1i32...((raw OK_COUNT()) + 1i32)) {
+            if (raw text_eq(raw ok_name(kk), raw strlist_view(f, 2i64))) { kind = kk; }
+        }
+        string:tier = "int";
+        if (v == (raw OV_UNENCODED())) { tier = "-"; }
+        string:elision = "retained";
+        if (v == (raw OV_DISCHARGED())) { elision = "elided"; }
+        out = string_concat(out, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
+                                             raw strlist_view(f, 0i64)));
+        out = string_concat(out, "\n");
+    }
+    pass out;
+};
+
+// `hash kind verdict symbol` per row of a parsed manifest, sorted unique --
+// the comparable form of a manifest.
+func:manifest_keys = List<string>(move ObManifest:m) never fails {
+    List<string>:keys = raw list_init::<string>(m.rows.count + 1i64);
+    for (int64:i in 0i64...m.rows.count) {
+        string:k = string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), " ");
+        k = string_concat(k, raw ok_name(m.rows.items[i].kind));
+        k = string_concat(k, " ");
+        k = string_concat(k, raw ov_name(m.rows.items[i].verdict));
+        k = string_concat(k, " ");
+        k = string_concat(k, string_from_bytes(m.rows.items[i].symbol.ptr, m.rows.items[i].symbol.len));
+        drop list_push(@keys, move(k));
+    }
+    pass (raw strlist_sorted_unique(keys));
+};
+
+// Are the two manifests the same set of rows? "" when they are; otherwise
+// the three-way summary of the mismatch (D-040's table, P-9): rows only in
+// the committed file, only in this run (a moved verdict shows as one of
+// each). CONSUMES both: a borrow of either would taint the key lists.
+pub func:manifest_compare = string(move ObManifest:committed, move ObManifest:run) never fails {
+    List<string>:a = raw manifest_keys(move(committed));
+    List<string>:b = raw manifest_keys(move(run));
+    List<string>:only_a = raw strlist_minus(a, b);
+    List<string>:only_b = raw strlist_minus(b, a);
+    if ((only_a.count == 0i64) && (only_b.count == 0i64)) { pass ""; }
+    string:out = "";
+    int64:shown = 0i64;
+    for (int64:i in 0i64...only_a.count) {
+        if (shown >= 10i64) { break; }
+        out = string_concat(out, "\n  only in nitpick.obligations: ");
+        out = string_concat(out, raw strlist_view(only_a, i));
+        shown = shown + 1i64;
+    }
+    for (int64:j in 0i64...only_b.count) {
+        if (shown >= 20i64) { break; }
+        out = string_concat(out, "\n  only in this run:            ");
+        out = string_concat(out, raw strlist_view(only_b, j));
+        shown = shown + 1i64;
+    }
+    int64:more = (only_a.count + only_b.count) - shown;
+    if (more > 0i64) {
+        out = string_concat(out, "\n  ... and ");
+        out = string_concat(out, int_to_string(more));
+        out = string_concat(out, " more");
+    }
+    pass out;
+};
+
+// --- the cross-checks over a verified emission ----------------------------------------------
+
+func:count_of = int64(string:ir, string:needle) never fails {
+    int64:n = 0i64;
+    int64:from = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(ir, needle, from);
+        if (p < 0i64) { pass n; }
+        n = n + 1i64;
+        from = p + 1i64;
+    }
+    pass n;
+};
+
+// An `llvm.assume` per discharged SITE, a trap per retained site of each
+// guarded kind (P-12): the manifest is an inventory of guards.
+pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    // CODE ONLY (the compiler's own emission spells these calls as string constants).
+    string:ir = raw ir_code_all(ir_text);
+    int64:disch = 0i64;
+    int64:zero_left = 0i64;
+    int64:min_left = 0i64;
+    for (int64:i in 0i64...rows.count) {
+        bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
+        if (d) { disch = disch + 1i64; }
+        string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
+        if ((!d) && (raw text_eq(k, "div-zero"))) { zero_left = zero_left + 1i64; }
+        if ((!d) && (raw text_eq(k, "div-min")))  { min_left = min_left + 1i64; }
+    }
+    int64:assumes = raw count_of(ir, "call void @llvm.assume(");
+    if (assumes != disch) {
+        string:m = string_concat(name, ": the verified IR holds ");
+        m = string_concat(m, int_to_string(assumes));
+        m = string_concat(m, " `llvm.assume` for ");
+        m = string_concat(m, int_to_string(disch));
+        m = string_concat(m, " discharged sites");
+        drop list_push(@fl, move(m));
+    }
+    int64:z = raw count_of(ir, "@npk_trap(i32 -4097)");
+    if (z != zero_left) {
+        string:m1 = string_concat(name, ": the verified IR holds ");
+        m1 = string_concat(m1, int_to_string(z));
+        m1 = string_concat(m1, " div-zero traps for ");
+        m1 = string_concat(m1, int_to_string(zero_left));
+        m1 = string_concat(m1, " retained rows");
+        drop list_push(@fl, move(m1));
+    }
+    int64:mn = raw count_of(ir, "@npk_trap(i32 -4098)");
+    if (mn != min_left) {
+        string:m2 = string_concat(name, ": the verified IR holds ");
+        m2 = string_concat(m2, int_to_string(mn));
+        m2 = string_concat(m2, " div-min traps for ");
+        m2 = string_concat(m2, int_to_string(min_left));
+        m2 = string_concat(m2, " retained rows");
+        drop list_push(@fl, move(m2));
+    }
+    pass fl;
+};
+
+// --- `npkg verify` --------------------------------------------------------------------------
+
+// The compiler with extra arguments; the IR through `-o`.
+pub async func:compile_args = Run(Ctx->:c, string:compiler, List<string>:args, Duration:within) {
+    pass (relay await run_argv(compiler, args, c.t.env, within));
+};
+
+func:verdict_counts = string(List<VRow>:rows) never fails {
+    int64:d = 0i64; int64:o = 0i64; int64:b = 0i64; int64:u = 0i64;
+    for (int64:i in 0i64...rows.count) {
+        int32:v = rows.items[i].verdict;
+        if (v == (raw OV_DISCHARGED())) { d = d + 1i64; }
+        if (v == (raw OV_OPEN()))       { o = o + 1i64; }
+        if (v == (raw OV_BUDGET()))     { b = b + 1i64; }
+        if (v == (raw OV_UNENCODED()))  { u = u + 1i64; }
+    }
+    string:s = string_concat(int_to_string(rows.count), " obligation(s): ");
+    s = string_concat(s, int_to_string(d)); s = string_concat(s, " discharged, ");
+    s = string_concat(s, int_to_string(o)); s = string_concat(s, " open, ");
+    s = string_concat(s, int_to_string(b)); s = string_concat(s, " budget, ");
+    s = string_concat(s, int_to_string(u)); s = string_concat(s, " unencoded");
+    pass s;
+};
+
+pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
+    if (!c.m.z3) { pass (raw step_bad("nitpick.toml: [verify] z3 is not true -- this project declares no z3 verification, and a verify that pretended otherwise would be a green light nobody earned (D-068)")); }
+    Result<string>:z3r = which("z3");
+    if (z3r.is_error) { pass (raw step_bad("npkg verify: PATH cannot be read")); }
+    string:z3 = move(z3r.value);
+    List<string>:pins = relay await verify_pin_check(z3, c.t.env,
+        string_from_bytes(c.m.z3_version.ptr, c.m.z3_version.len),
+        string_from_bytes(c.m.z3_sha256.ptr, c.m.z3_sha256.len), c.m.z3_options);
+    if (pins.count > 0i64) { pass (raw step_bad(raw strlist_view(pins, 0i64))); }
+    string:vdir = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "verify");
+    Result<NIL>:d = ensure_dir(vdir);
+    if (d.is_error) { pass (raw step_bad("build/verify/ could not be created")); }
+    string:entry = raw in_root(c, string_from_bytes(c.m.entry.ptr, c.m.entry.len));
+    string:obl = raw path_join(vdir, "obl");
+    string:plain = raw path_join(vdir, "plain.ll");
+
+    // 1. the obligations, guards retained
+    List<string>:a1 = raw list_init::<string>(6i64);
+    drop strlist_push(@a1, entry);
+    drop strlist_push(@a1, "--obligations");
+    drop strlist_push(@a1, obl);
+    drop strlist_push(@a1, "-o");
+    drop strlist_push(@a1, plain);
+    Result<Run>:r1 = await compile_args(c, string_from_bytes(c.npkc.ptr, c.npkc.len), a1, raw duration_secs(900i64));
+    if (r1.is_error) { fail r1.err; }
+    Run:run1 = move(r1.value);
+    if (run1.timed_out) { pass (raw step_bad("npkc did not terminate emitting the obligations")); }
+    if (!(run1.x.exited && (run1.x.status == 0i64))) {
+        pass (raw step_bad(string_concat("npkc refused [build] entry under --obligations: ", raw text_head(raw text_trim(run1.x.err), 300i64))));
+    }
+    Result<List<VRow>>:rows_r = read_rows(obl);
+    if (rows_r.is_error) { pass (raw step_bad("the obligation directory could not be read (rows.txt)")); }
+    List<VRow>:rows = rows_r.value;
+    Result<List<VFile>>:files_r = read_index(obl);
+    if (files_r.is_error) { pass (raw step_bad("the obligation directory could not be read (index.txt)")); }
+    List<VFile>:files = files_r.value;
+
+    // 2. z3, one process per function file
+    List<string>:zf = raw list_init::<string>(1i64);
+    Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, "verify", @zf);
+    if (zr.is_error) { fail zr.err; }
+    if (zf.count > 0i64) { pass (raw step_bad(raw strlist_view(zf, 0i64))); }
+    string:run_text = raw manifest_of(c, rows);
+
+    // 3. the committed manifest
+    string:committed = raw in_root(c, "nitpick.obligations");
+    Result<cstring>:cc = to_cstring(committed);
+    if (cc.is_error) { pass (raw step_bad("nitpick.obligations: not a path")); }
+    if (record) {
+        Result<NIL>:w = write_file(cc.value, run_text);
+        if (w.is_error) { pass (raw step_bad("nitpick.obligations could not be written")); }
+        drop say(raw stage_text("recorded", "nitpick.obligations written from this run (--record): commit it with the change that moved it"));
+    } else {
+        if (!(path_exists(cc.value))) {
+            pass (raw step_bad("nitpick.obligations is not committed -- the verified build is governed by the manifest and nothing writes it implicitly (P-9); run `npkg verify --record` and commit the file"));
+        }
+        Result<string>:ct = read_file(cc.value);
+        if (ct.is_error) { pass (raw step_bad("nitpick.obligations cannot be read")); }
+        ObManifest:cman = raw man_parse(ct.value);
+        if (!cman.ok) { pass (raw step_bad(string_concat("nitpick.obligations: ", cman.problem))); }
+        ObManifest:rman = raw man_parse(run_text);
+        if (!rman.ok) { pass (raw step_bad(string_concat("this run's manifest does not read back: ", rman.problem))); }
+        string:diff = raw manifest_compare(move(cman), move(rman));
+        if (diff.len > 0i64) {
+            string:m = "this run's obligations differ from nitpick.obligations (D-040: a build that would differ from the recorded reasoning stops; `npkg verify --record` re-baselines on purpose):";
+            m = string_concat(m, diff);
+            pass (raw step_bad(m));
+        }
+        if (!(raw text_eq(ct.value, run_text))) {
+            pass (raw step_bad("nitpick.obligations carries the same rows as this run but different bytes -- the header (the pinned z3, the profile) or the row order moved; re-record it"));
+        }
+    }
+
+    // 4. the VERIFIED build
+    string:vll = raw path_join(vdir, "npkc.v.ll");
+    List<string>:a2 = raw list_init::<string>(8i64);
+    drop strlist_push(@a2, entry);
+    drop strlist_push(@a2, "--elide");
+    drop strlist_push(@a2, committed);
+    drop strlist_push(@a2, "--obligations");
+    drop strlist_push(@a2, string_concat(obl, "2"));
+    drop strlist_push(@a2, "-o");
+    drop strlist_push(@a2, vll);
+    Result<Run>:r2 = await compile_args(c, string_from_bytes(c.npkc.ptr, c.npkc.len), a2, raw duration_secs(900i64));
+    if (r2.is_error) { fail r2.err; }
+    Run:run2 = move(r2.value);
+    if (run2.timed_out) { pass (raw step_bad("npkc did not terminate emitting the verified build")); }
+    if (!(run2.x.exited && (run2.x.status == 0i64))) {
+        pass (raw step_bad(string_concat("npkc refused [build] entry under --elide: ", raw text_head(raw text_trim(run2.x.err), 300i64))));
+    }
+    Result<cstring>:ra = to_cstring(raw path_join(obl, "rows.txt"));
+    if (ra.is_error) { pass (raw step_bad("rows.txt: not a path")); }
+    Result<cstring>:rb = to_cstring(raw path_join(string_concat(obl, "2"), "rows.txt"));
+    if (rb.is_error) { pass (raw step_bad("rows.txt: not a path")); }
+    Result<string>:ta = read_file(ra.value);
+    if (ta.is_error) { pass (raw step_bad("rows.txt could not be read back")); }
+    Result<string>:tb = read_file(rb.value);
+    if (tb.is_error) { pass (raw step_bad("rows.txt could not be read back")); }
+    if (!(raw text_eq(ta.value, tb.value))) { pass (raw step_bad("the --elide run computed different rows than the --obligations run -- the walk depends on something it must not (P-3)")); }
+    Result<cstring>:vc = to_cstring(vll);
+    if (vc.is_error) { pass (raw step_bad("npkc.v.ll: not a path")); }
+    Result<string>:vir = read_file(vc.value);
+    if (vir.is_error) { pass (raw step_bad("npkc.v.ll could not be read back")); }
+    List<string>:s1 = raw ir_symbols_unique(vir.value, "npkc.v.ll");
+    if (s1.count > 0i64) { pass (raw step_bad(raw strlist_view(s1, 0i64))); }
+    List<string>:s2 = raw ir_allocas_hoisted(vir.value, "npkc.v.ll");
+    if (s2.count > 0i64) { pass (raw step_bad(raw strlist_view(s2, 0i64))); }
+    List<string>:s3 = raw ir_no_undef(vir.value, "npkc.v.ll");
+    if (s3.count > 0i64) { pass (raw step_bad(raw strlist_view(s3, 0i64))); }
+    List<string>:s4 = raw elided_ir_checks(rows, vir.value, "verify");
+    if (s4.count > 0i64) { pass (raw step_bad(raw strlist_view(s4, 0i64))); }
+    string:vobj = raw path_join(vdir, "npkc.v.o");
+    Result<Step>:l1 = await llc_obj(c, c.m.llc_flags, vll, vobj);
+    if (l1.is_error) { fail l1.err; }
+    Step:st1 = move(l1.value);
+    if (!st1.ok) { pass (raw step_bad(string_concat("llc rejected the verified compiler's IR: ", raw first_line_with(st1.text, "error", 160i64)))); }
+    List<string>:zd = raw zero_dep(c, vobj, c.allow, "npkc.v.o");
+    if (zd.count > 0i64) { pass (raw step_bad(raw strlist_view(zd, 0i64))); }
+    string:vbin = raw path_join(vdir, "npkc");
+    Result<Step>:l2 = await lld_link(c, vbin, vobj);
+    if (l2.is_error) { fail l2.err; }
+    Step:st2 = move(l2.value);
+    if (!st2.ok) { pass (raw step_bad(string_concat("the verified compiler failed to link: ", raw text_head(raw text_trim(st2.text), 160i64)))); }
+
+    // 5. the verified fixpoint (D-202 over the verified build)
+    string:s2ll = raw path_join(vdir, "stage2.v.ll");
+    List<string>:a3 = raw list_init::<string>(6i64);
+    drop strlist_push(@a3, entry);
+    drop strlist_push(@a3, "--elide");
+    drop strlist_push(@a3, committed);
+    drop strlist_push(@a3, "-o");
+    drop strlist_push(@a3, s2ll);
+    Result<Run>:r3 = await compile_args(c, vbin, a3, raw duration_secs(900i64));
+    if (r3.is_error) { fail r3.err; }
+    Run:run3 = move(r3.value);
+    if (run3.timed_out) { pass (raw step_bad("THE VERIFIED COMPILER did not terminate compiling the compiler")); }
+    if (!(run3.x.exited && (run3.x.status == 0i64))) {
+        pass (raw step_bad(string_concat("THE VERIFIED COMPILER cannot compile the compiler: ", raw text_head(raw text_trim(run3.x.err), 300i64))));
+    }
+    Result<cstring>:s2c = to_cstring(s2ll);
+    if (s2c.is_error) { pass (raw step_bad("stage2.v.ll: not a path")); }
+    Result<string>:s2t = read_file(s2c.value);
+    if (s2t.is_error) { pass (raw step_bad("stage2.v.ll could not be read back")); }
+    if (!(raw text_eq(s2t.value, vir.value))) {
+        pass (raw step_bad("THE VERIFIED FIXPOINT DRIFTED -- the verified compiler's emission of the compiler differs from the unverified compiler's verified emission (D-202 over the verified build)"));
+    }
+
+    if (explain) {
+        Result<NIL>:ex = await explain_run(c, z3, obl, rows, files, raw path_join(vdir, "explain.txt"));
+        if (ex.is_error) { pass (raw step_bad("the --explain pass could not run")); }
+        drop say(raw stage_text("explain", "build/verify/explain.txt: a model per open row, a reason per budget row, a core per discharged row"));
+    }
+    string:line = raw verdict_counts(rows);
+    line = string_concat(line, "; nitpick.obligations matches; the verified compiler rebuilds itself byte-identically");
+    drop say(raw stage_text("verify", line));
+    drop say(raw stage_text("nikos", "[verify.nikos] declared, not run -- the engine is 1.6.0's gate's (D-217, D-233)"));
+    pass (raw step_ok(vbin));
+};
+
+// --- `--explain` (P-7's second pass) ---------------------------------------------------------
+
+// A function file's base (everything before the first `(push)`) and the
+// k-th obligation's block (between its `(push)` and `(pop)`, exclusive).
+func:file_base = string(string:text) never fails {
+    int64:p = raw text_index_of(text, "(push)");
+    if (p < 0i64) { pass (raw text_copy(text)); }
+    pass (raw text_slice(text, 0i64, p));
+};
+
+func:file_block = string(string:text, int64:k) never fails {
+    int64:from = 0i64;
+    int64:n = 0i64;
+    while (true) {
+        int64:p = raw text_index_from(text, "(push)\n", from);
+        if (p < 0i64) { pass ""; }
+        n = n + 1i64;
+        if (n == k) {
+            int64:q = raw text_index_from(text, "(pop)", p);
+            if (q < 0i64) { pass ""; }
+            pass (raw text_slice(text, p + 7i64, q));
+        }
+        from = p + 1i64;
+    }
+    pass "";
+};
+
+async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, List<VFile>:files, string:out_path) {
+    string:report = "";
+    for (int64:i in 0i64...rows.count) {
+        if (!rows.items[i].encoded) { continue; }
+        string:fno = string_from_bytes(rows.items[i].fno.ptr, rows.items[i].fno.len);
+        Result<cstring>:fc = to_cstring(raw path_join(dir, string_concat(fno, ".smt2")));
+        if (fc.is_error) { fail fc.err; }
+        Result<string>:ft = read_file(fc.value);
+        if (ft.is_error) { fail ft.err; }
+        // the k-th encoded row of the file is the k-th check
+        int64:kth = 0i64;
+        for (int64:j in 0i64...(i + 1i64)) {
+            if (raw text_eq(string_from_bytes(rows.items[j].fno.ptr, rows.items[j].fno.len), fno)) {
+                if (rows.items[j].encoded) { kth = kth + 1i64; }
+            }
+        }
+        string:q = "(set-option :produce-models true)\n(set-option :produce-unsat-cores true)\n";
+        q = string_concat(q, raw file_base(ft.value));
+        q = string_concat(q, "(push)\n");
+        q = string_concat(q, raw file_block(ft.value, kth));
+        int32:v = rows.items[i].verdict;
+        if (v == (raw OV_OPEN()))       { q = string_concat(q, "(get-model)\n"); }
+        if (v == (raw OV_BUDGET()))     { q = string_concat(q, "(get-info :reason-unknown)\n"); }
+        if (v == (raw OV_DISCHARGED())) { q = string_concat(q, "(get-unsat-core)\n"); }
+        q = string_concat(q, "(pop)\n");
+        string:qpath = raw path_join(dir, "explain.smt2");
+        Result<cstring>:qc = to_cstring(qpath);
+        if (qc.is_error) { fail qc.err; }
+        Result<NIL>:w = write_file(qc.value, q);
+        if (w.is_error) { fail w.err; }
+        List<string>:args = raw strlist_clone(c.m.z3_options);
+        drop strlist_push(@args, "-smt2");
+        drop strlist_push(@args, qpath);
+        Result<Run>:r = await run_argv(z3, args, c.t.env, raw duration_secs(300i64));
+        if (r.is_error) { fail r.err; }
+        Run:run = move(r.value);
+        report = string_concat(report, "== ");
+        report = string_concat(report, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len));
+        report = string_concat(report, " ");
+        report = string_concat(report, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+        report = string_concat(report, " ");
+        report = string_concat(report, raw ov_name(v));
+        report = string_concat(report, " ");
+        report = string_concat(report, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+        report = string_concat(report, "\n");
+        if (run.timed_out) { report = string_concat(report, "(the explain query exceeded its wall-clock net)\n"); }
+        else { report = string_concat(report, run.x.out); }
+    }
+    Result<cstring>:oc = to_cstring(out_path);
+    if (oc.is_error) { fail oc.err; }
+    Result<NIL>:ow = write_file(oc.value, report);
+    if (ow.is_error) { fail ow.err; }
+    pass NIL;
+};

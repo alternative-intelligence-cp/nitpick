@@ -21,7 +21,7 @@ use "./toml.npk".*;
 // `compile` is the default and the only stage with a `kind`.
 pub struct:TestTarget = {
     string:name;
-    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime
+    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime | verify
     string:kind;             // compile only: positive | negative | diagnostic; "" otherwise
     List<string>:paths;      // relative to the root, in declaration order
     bool:recursive;          // sweep subdirectories too
@@ -36,6 +36,7 @@ func:stage_known = bool(string:s) never fails {
     if (raw text_eq(s, "fixture")) { pass true; }
     if (raw text_eq(s, "program")) { pass true; }
     if (raw text_eq(s, "runtime")) { pass true; }
+    if (raw text_eq(s, "verify"))  { pass true; }
     pass false;
 };
 
@@ -50,6 +51,10 @@ pub struct:Manifest = {
     List<string>:opt_flags;
     List<string>:lld_flags;
     List<TestTarget>:tests;  // [[test]] in declaration order
+    bool:z3;                 // [verify] z3: this project declares z3 verification (D-068)
+    string:z3_version;       // [verify] z3-version: what `z3 -version` must report (D-218.1)
+    string:z3_sha256;        // [verify] z3-sha256: the binary's sha256, 64 lowercase hex
+    List<string>:z3_options; // [verify] z3-options: the determinism profile, passed verbatim (D-218.2)
     bool:ok;
     string:problem;          // when !ok, the one sentence to print
 };
@@ -61,6 +66,8 @@ func:blank = Manifest(string:root) never fails {
                    opt_flags: raw list_init::<string>(4i64),
                    lld_flags: raw list_init::<string>(4i64),
                    tests: raw list_init::<TestTarget>(4i64),
+                   z3: false, z3_version: "", z3_sha256: "",
+                   z3_options: raw list_init::<string>(4i64),
                    ok: true, problem: "" };
 };
 
@@ -107,7 +114,10 @@ func:schema_allows = bool(string:section, string:key) never fails {
         pass false;
     }
     if (raw text_eq(section, "verify")) {
-        if (raw text_eq(key, "z3")) { pass true; }
+        if (raw text_eq(key, "z3"))         { pass true; }
+        if (raw text_eq(key, "z3-version")) { pass true; }
+        if (raw text_eq(key, "z3-sha256"))  { pass true; }
+        if (raw text_eq(key, "z3-options")) { pass true; }
         pass false;
     }
     if (raw text_eq(section, "verify.nikos")) {
@@ -182,6 +192,29 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
     if (f4.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] lld-flags is missing or is not an array of strings")); }
     m.lld_flags = f4.value;
 
+    // THE SOLVER PIN (D-218.1/D-218.2, 1.5.0). `z3 = true` declares the
+    // project verified; then the version, the sha256 and the options list are
+    // all REQUIRED -- a pin without a hash is not a pin, and an unpinned budget
+    // is a verdict that depends on the machine. The profile's refusals (no
+    // wall-clock knob, no parallelism) are the pin check's, at the tool.
+    if (raw toml_has(d, "verify", 0i64 - 1i64, "z3")) {
+        Result<bool>:zb = toml_bool(d, "verify", 0i64 - 1i64, "z3");
+        if (zb.is_error) { pass (raw refuse(root, "nitpick.toml: [verify] z3 must be true or false")); }
+        m.z3 = zb.value;
+    }
+    if (m.z3) {
+        Result<string>:zv = need_string(d, "verify", "z3-version");
+        if (zv.is_error) { pass (raw refuse(root, "nitpick.toml: [verify] z3 is true but z3-version is missing -- the solver is a build INPUT (D-218.1), and an unpinned input is not one")); }
+        m.z3_version = move(zv.value);
+        Result<string>:zs = need_string(d, "verify", "z3-sha256");
+        if (zs.is_error) { pass (raw refuse(root, "nitpick.toml: [verify] z3 is true but z3-sha256 is missing -- a version string cannot tell two builds apart; the pin is the binary's hash (D-218.1)")); }
+        m.z3_sha256 = move(zs.value);
+        if (m.z3_sha256.len != 64i64) { pass (raw refuse(root, "nitpick.toml: [verify] z3-sha256 must be 64 hex characters")); }
+        Result<List<string>>:zo = need_strings(d, "verify", "z3-options");
+        if (zo.is_error) { pass (raw refuse(root, "nitpick.toml: [verify] z3 is true but z3-options is missing or is not an array of strings -- the determinism profile is READ from here, never assumed (D-218.2)")); }
+        m.z3_options = zo.value;
+    }
+
     // THE TEST TABLE (D-238). An entry the runner cannot honour is refused BY
     // NAME before anything runs, never skipped: a stage this runner does not
     // know, a `kind` on a stage that has none, a compile entry with no kind,
@@ -202,7 +235,7 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         if (!(raw stage_known(stage))) {
             string:w5 = string_concat(who, ": stage `");
             w5 = string_concat(w5, stage);
-            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime (D-238); a stage the runner cannot judge is refused, not skipped");
+            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime, verify (D-238); a stage the runner cannot judge is refused, not skipped");
             pass (raw refuse(root, w5));
         }
         string:kind = "";

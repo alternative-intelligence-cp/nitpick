@@ -31,6 +31,7 @@
 mod:ir_types;
 
 use "../../frontend/list.npk".*;
+use "../smt/smt_table.npk".*;
 use "../../frontend/source_location.npk".*;   // span_none, for the late substitution
 use "../../frontend/intern.npk".*;
 use "../../frontend/ast_kind.npk".*;
@@ -113,6 +114,16 @@ pub struct:LlCtx = {
     // would only reach the top level.
     wild TypeResolver->:tr;
 
+    // THE OBLIGATION TABLE, or NULL (1.5.0, P-3): set by `emit_all` when the
+    // driver asked for `--obligations` or `--elide`; the walk fills it per
+    // function. Beside it, THE ELISION ANSWERS for the function being emitted
+    // -- the (site, kind) pairs the manifest discharged -- cleared per
+    // function by `obl_function` and read by the division emitter through
+    // `llctx_elided`. A wild pointer, like `tr` below, for the same reason.
+    wild ObTable->:obl;
+    List<int32>:el_sites;
+    List<int32>:el_kinds;
+
     // THE IMPL TABLE, or NULL. The backend re-substitutes a specialization's
     // signature when it emits one, and `T.Item` becomes what the impl bound
     // during substitution (D-164) — so the emitter needs the same table the
@@ -144,6 +155,9 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      mod_of: NULL, mod_n: 0i32,
                      subst_params_start: 0i32, subst_params_count: 0i32,
                      subst_args_start: 0i32, impls: NULL, tr: NULL,
+                     obl: NULL,
+                     el_sites: raw list_init::<int32>(8i64),
+                     el_kinds: raw list_init::<int32>(8i64),
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
@@ -233,6 +247,21 @@ pub func:llctx_set_impls = NIL(LlCtx->:c, wild ImplTable->:t,
     c.impls = t;
     c.tr = r;
     pass NIL;
+};
+
+pub func:llctx_set_obl = NIL(LlCtx->:c, wild ObTable->:t) never fails {
+    c.obl = t;
+    pass NIL;
+};
+
+// Did the manifest discharge the obligation of kind `kind` at `site` (an
+// ExprId index) in the function being emitted? The division emitter's one
+// question (D-218.9); false whenever no `--elide` was given.
+pub func:llctx_elided = bool(LlCtx->:c, int32:site, int32:kind) never fails {
+    for (int64:i in 0i64...c.el_sites.count) {
+        if ((c.el_sites.items[i] == site) && (c.el_kinds.items[i] == kind)) { pass true; }
+    }
+    pass false;
 };
 
 pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) never fails {

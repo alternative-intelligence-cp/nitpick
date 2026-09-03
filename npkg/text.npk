@@ -231,12 +231,27 @@ pub func:text_head = string(string:s, int64:n) never fails {
     pass (raw slice_proven(s, 0i64, hi));
 };
 
+// LINEAR, not a concat per element (the 1.4.8 capture lesson): the joined
+// length is summed first, one block is allocated, and each piece is copied
+// once. `string_concat` in a loop is O(n^2) and a 16 MB IR joined that way
+// never returns -- which is exactly how the verified compiler's own
+// cross-checks first hung (1.5.0).
 pub func:text_join = string(List<string>:l, string:sep) never fails {
-    string:out = "";
-    for (int64:i in 0i64...l.count) {
-        if (i > 0i64) { out = string_concat(out, sep); }
-        out = string_concat(out, string_from_bytes(l.items[i].ptr, l.items[i].len));
+    if (l.count == 0i64) { pass ""; }
+    int64:total = sep.len * (l.count - 1i64);
+    for (int64:i in 0i64...l.count) { total = total + l.items[i].len; }
+    wild int8->:buf = alloc(total + 1i64);
+    int64:at = 0i64;
+    for (int64:j in 0i64...l.count) {
+        if (j > 0i64) {
+            for (int64:k in 0i64...sep.len) { buf[at + k] = sep.ptr[k] =>! int8; }
+            at = at + sep.len;
+        }
+        for (int64:m in 0i64...l.items[j].len) { buf[at + m] = l.items[j].ptr[m] =>! int8; }
+        at = at + l.items[j].len;
     }
+    string:out = string_concat(string_from_bytes(buf, at), "");
+    dalloc(buf);
     pass out;
 };
 

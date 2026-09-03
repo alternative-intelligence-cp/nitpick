@@ -1,0 +1,33 @@
+// expect-exit: 25
+// expect-obligation: div-zero discharged 3
+// expect-obligation: div-min discharged 2
+//
+// THE TRACER'S FIRST ROW (1.5.0): every divisor a literal, so every D-007
+// obligation discharges with an empty cone -- `(not (= 7 0))` is the whole
+// query -- and the verified build carries no division guard at all in
+// `main`: three `llvm.assume`s where five traps stood. The obligations of
+// the prelude's own divisions ride along in the manifest and are not this
+// test's to name (P-22 scopes the expectations to the test's module).
+mod:divz_literal;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = 100i32 / 7i32;
+    int32:b = 100i32 % 9i32;
+    uint32:c = 50u32 / 5u32;
+    exit (a + b) + (c =>! int32);       // 14 + 1 + 10
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

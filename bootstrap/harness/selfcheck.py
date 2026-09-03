@@ -15,9 +15,13 @@ against cases where it MUST report a failure:
   - a rejection file that fails at PARSE time rather than in the backend
   - a toolchain that is not the pinned version, and no pin at all (D-204)
   - an `undef` seed in emitted IR (D-218.10)
+  - a z3 whose sha256 is not the pinned one, no z3 pin at all, and a
+    profile carrying a wall-clock knob (D-218.1, D-218.2)
+  - a verify test expecting `discharged` where the divisor is opaque (P-22)
 
-and three where it must NOT: a correct expectation, the real toolchain, and
-the word `undef` in a comment or a string constant rather than as a token.
+and five where it must NOT: a correct expectation, the real toolchain, the
+word `undef` in a comment or a string constant rather than as a token, the
+pinned z3 that is installed, and a verify test naming its rows exactly.
 
 The last of the failing cases is the one this project cares about most. It is the
 executable form of D-085's rule -- the parser never restricts, the backend does --
@@ -141,6 +145,17 @@ def main():
             print("selfcheck: no builder (%s)" % harness.BUILDER)
             return 1
         harness.COMPILER = harness.BUILDER
+        # THE VERIFY CASES NEED A COMPILER THAT KNOWS `--obligations` (1.5.0):
+        # the snapshot does only after the refresh that follows the pipeline's
+        # landing, so the harness hands its compiler under test through
+        # NPK_SELFCHECK_COMPILER, and a standalone run without one builds it.
+        given = os.environ.get("NPK_SELFCHECK_COMPILER")
+        if given and os.path.exists(given):
+            harness.COMPILER = given
+        else:
+            built = harness.build_tool(tmp, tools, harness.EMIT_CHECK, "npkc")
+            if built and os.path.exists(str(built)):
+                harness.COMPILER = built
 
     print("harness self-check")
     bad = 0
@@ -195,6 +210,74 @@ def main():
         print("  %-26s %-4s  %s" % ("toolchain-restored", "ok",
                                     "the pinned toolchain that is installed "
                                     "must pass"))
+
+    # THE SOLVER PIN REPORTS A MISMATCH (D-218.1/D-218.2, 1.5.0): the sha moved,
+    # the pin absent, a wall-clock knob in the profile -- and the real pin
+    # passes. Driven by moving the pin and the options, the halves this can
+    # move.
+    real_sha, real_opts = harness.Z3_SHA, harness.Z3_OPTIONS
+    try:
+        harness.Z3_SHA = "0" * 64
+        z3_mismatch = harness.check_verify_pin()
+        harness.Z3_SHA = ""
+        z3_unpinned = harness.check_verify_pin()
+        harness.Z3_SHA = real_sha
+        harness.Z3_OPTIONS = real_opts + ["timeout=1000"]
+        z3_clock = harness.check_verify_pin()
+    finally:
+        harness.Z3_SHA, harness.Z3_OPTIONS = real_sha, real_opts
+    for name, fails, why in (
+            ("z3-mismatch", z3_mismatch, "a z3 whose sha256 is not the pinned one must fail"),
+            ("z3-unpinned", z3_unpinned, "no [verify] z3-sha256 pin at all must fail"),
+            ("z3-wall-clock", z3_clock, "a wall-clock knob in the profile must fail")):
+        ok = bool(fails)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      check_verify_pin accepted it; it should not have")
+    z3_ok = harness.check_verify_pin()
+    if z3_ok:
+        bad += 1
+        print("  %-26s %-4s  %s" % ("z3-restored", "BAD",
+                                    "the pinned z3 that is installed must pass: %s" % z3_ok[0]))
+    else:
+        print("  %-26s %-4s  %s" % ("z3-restored", "ok",
+                                    "the pinned z3 that is installed must pass"))
+
+    # THE VERIFY STAGE REPORTS A WRONG VERDICT (P-22, 1.5.0): an opaque
+    # divisor's obligation is `open`; a test that expects `discharged` must
+    # fail, and the same program naming `open` must pass. Both need the pinned
+    # z3, which the pin cases above have just checked.
+    VDIV = ("func:main = int32(cstring[]:argv) {\n"
+            "    int32:zero = (argv.len =>! int32) - 1i32;\n"
+            "    int32:q = 10i32 / zero;\n    exit q;\n};\n")
+    VFS = ("func:failsafe = int32(Error:e) {\n    pick (e) {\n        (DivByZero) { exit 21i32; },\n"
+           "        (DivOverflow) { exit 22i32; },\n        (HeapBadRequest) { exit 9i32; },\n"
+           "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
+           "        (OutOfBounds) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n"
+           "        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
+    for name, head, must_fail, why in (
+            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n",
+             True, "a verify test expecting `discharged` for an opaque divisor must fail"),
+            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n",
+             False, "a verify test naming its rows exactly must pass")):
+        # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
+        # hyphen in the case name becomes an underscore in both.
+        modname = name.replace("-", "_")
+        path = os.path.join(tmp, modname + ".npk")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(head + "mod:" + modname + ";\n" + VDIV + VFS)
+        fails = harness.check_verify_program(path, name, harness.read_expectations(path), tmp) if tools else []
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      the verify stage accepted this; it should not have")
+            else:
+                print("      the verify stage rejected this: %s" % fails[0])
 
     # THE UNDEF BAN REPORTS AN `undef` (D-218.10, 1.5.0) -- and only a real
     # one: the word in a comment or inside a string constant is prose, not

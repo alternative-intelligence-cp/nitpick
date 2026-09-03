@@ -210,7 +210,7 @@ is the clean strike.
 
 | # | Topic | Gated on |
 |---|---|---|
-| 1.5.0 | **Ratify + the skeleton** — the batch above recorded; the SMT-LIB2 writer; z3 spawned via `npk_spawn` under the determinism profile; the manifest schema (obligation hash, kind, verdict, elision); the `undef→poison` sweep + harness grep; `meta/specs/TCB.md` drafted | the batch |
+| 1.5.0 | **Ratify + the skeleton — DONE** (`1.5.0.md`; closed 2026-09-03). The `undef` ban (seeds `zeroinitializer`, the check in both runners, the snapshot refreshed), SHA-256 and the solver pin (the workbench's own z3 4.16.0 build, hashed; the profile READ), the SMT-LIB2 writer and the obligation walk (`src/backend/smt/`), z3 spawned one process per function through `lib/nproc.npk`, `nitpick.obligations` (P-10) written only by `npkg verify --record`, elision through `llvm.assume`, the `verify` test stage in both runners with nine tracer programs, the compiler's own set decided (141 obligations, 116 discharged) and the verified compiler rebuilding itself, `TCB.md` drafted with its floor table generated and instrumented. The tracer kind is the D-007 division pair; every later kind reuses the path. | the batch |
 | 1.5.1 | **Type the verification surface** — `limit<R>` names resolve, `Rules` bodies type, contract expressions type (`result`, `old`, purity) | C-15, C-16 |
 | 1.5.2 | **`limit<Rules>` live** — static discharge, runtime residue, subsumption; 0.9.0's rung refusal replaced | 1.5.1 |
 | 1.5.3 | **Contracts live** — requires/ensures static + runtime; the D-014 failsafe injection + non-empty-body | 1.5.1 |

@@ -1,0 +1,171 @@
+// nhash — SHA-256 (FIPS 180-4), the project's one cryptographic hash
+// (1.5.0, D-218.8 and D-218.1): obligation identity in the compiler and the
+// solver's binary pin in `npkg` are both this function, so the two consumers
+// cannot disagree about what a hash IS. Plain Nitpick over the current
+// snapshot: no builtin, no floor symbol.
+//
+// THE ARITHMETIC IS MOD 2^32 BY CONSTRUCTION, NOT BY WRAPPING: D-210 makes a
+// plain `+` trap on overflow, so every sum is taken in `uint64` — at most five
+// 32-bit terms, which cannot reach 2^64 — and narrowed with `=>!`, the
+// acknowledged truncation that IS the reduction (D-210.3, the idiom the FNV
+// step uses). Rotations are two shifts and an `|`; shifts and bitwise ops are
+// bit operations and have nothing to overflow.
+//
+// The known answers are `tests/backend/programs/sha256_kat.npk`: the empty
+// message, "abc", the 448- and 896-bit FIPS messages, and one million `a`.
+
+mod:nhash;
+
+fixed uint32[64]:SHA256_K = [
+    1116352408u32, 1899447441u32, 3049323471u32, 3921009573u32,
+    961987163u32, 1508970993u32, 2453635748u32, 2870763221u32,
+    3624381080u32, 310598401u32, 607225278u32, 1426881987u32,
+    1925078388u32, 2162078206u32, 2614888103u32, 3248222580u32,
+    3835390401u32, 4022224774u32, 264347078u32, 604807628u32,
+    770255983u32, 1249150122u32, 1555081692u32, 1996064986u32,
+    2554220882u32, 2821834349u32, 2952996808u32, 3210313671u32,
+    3336571891u32, 3584528711u32, 113926993u32, 338241895u32,
+    666307205u32, 773529912u32, 1294757372u32, 1396182291u32,
+    1695183700u32, 1986661051u32, 2177026350u32, 2456956037u32,
+    2730485921u32, 2820302411u32, 3259730800u32, 3345764771u32,
+    3516065817u32, 3600352804u32, 4094571909u32, 275423344u32,
+    430227734u32, 506948616u32, 659060556u32, 883997877u32,
+    958139571u32, 1322822218u32, 1537002063u32, 1747873779u32,
+    1955562222u32, 2024104815u32, 2227730452u32, 2361852424u32,
+    2428436474u32, 2756734187u32, 3204031479u32, 3329325298u32
+];
+
+fixed uint32[8]:SHA256_H0 = [
+    1779033703u32, 3144134277u32, 1013904242u32, 2773480762u32,
+    1359893119u32, 2600822924u32, 528734635u32, 1541459225u32
+];
+
+func:rotr = uint32(uint32:x, uint32:n) never fails {
+    pass ((x >> n) | (x << (32u32 - n)));
+};
+
+// `a + b` mod 2^32, spelled as D-210.3 asks.
+func:add32 = uint32(uint32:a, uint32:b) never fails {
+    pass (((a => uint64) + (b => uint64)) =>! uint32);
+};
+
+func:add32_5 = uint32(uint32:a, uint32:b, uint32:c, uint32:d, uint32:e) never fails {
+    uint64:s = (a => uint64) + (b => uint64) + (c => uint64) + (d => uint64) + (e => uint64);
+    pass (s =>! uint32);
+};
+
+func:add32_4 = uint32(uint32:a, uint32:b, uint32:c, uint32:d) never fails {
+    uint64:s = (a => uint64) + (b => uint64) + (c => uint64) + (d => uint64);
+    pass (s =>! uint32);
+};
+
+// One 64-byte block at `blk` folded into the eight-word state at `h`.
+func:sha256_block = NIL(wild uint32->:h, wild uint8->:blk, wild uint32->:w) never fails {
+    for (int64:t in 0i64...16i64) {
+        int64:o = t * 4i64;
+        w[t] = ((blk[o] => uint32) << 24u32) | ((blk[o + 1i64] => uint32) << 16u32)
+             | ((blk[o + 2i64] => uint32) << 8u32) | (blk[o + 3i64] => uint32);
+    }
+    for (int64:t2 in 16i64...64i64) {
+        uint32:x15 = w[t2 - 15i64];
+        uint32:x2 = w[t2 - 2i64];
+        uint32:s0 = (raw rotr(x15, 7u32)) ^ (raw rotr(x15, 18u32)) ^ (x15 >> 3u32);
+        uint32:s1 = (raw rotr(x2, 17u32)) ^ (raw rotr(x2, 19u32)) ^ (x2 >> 10u32);
+        w[t2] = raw add32_4(w[t2 - 16i64], s0, w[t2 - 7i64], s1);
+    }
+    uint32:a = h[0i64];
+    uint32:b = h[1i64];
+    uint32:c = h[2i64];
+    uint32:d = h[3i64];
+    uint32:e = h[4i64];
+    uint32:f = h[5i64];
+    uint32:g = h[6i64];
+    uint32:hh = h[7i64];
+    for (int64:t3 in 0i64...64i64) {
+        uint32:bs1 = (raw rotr(e, 6u32)) ^ (raw rotr(e, 11u32)) ^ (raw rotr(e, 25u32));
+        uint32:ch = (e & f) ^ ((~e) & g);
+        uint32:t1 = raw add32_5(hh, bs1, ch, SHA256_K[t3], w[t3]);
+        uint32:bs0 = (raw rotr(a, 2u32)) ^ (raw rotr(a, 13u32)) ^ (raw rotr(a, 22u32));
+        uint32:maj = (a & b) ^ (a & c) ^ (b & c);
+        uint32:t2v = raw add32(bs0, maj);
+        hh = g;
+        g = f;
+        f = e;
+        e = raw add32(d, t1);
+        d = c;
+        c = b;
+        b = a;
+        a = raw add32(t1, t2v);
+    }
+    h[0i64] = raw add32(h[0i64], a);
+    h[1i64] = raw add32(h[1i64], b);
+    h[2i64] = raw add32(h[2i64], c);
+    h[3i64] = raw add32(h[3i64], d);
+    h[4i64] = raw add32(h[4i64], e);
+    h[5i64] = raw add32(h[5i64], f);
+    h[6i64] = raw add32(h[6i64], g);
+    h[7i64] = raw add32(h[7i64], hh);
+    pass NIL;
+};
+
+// The 32-byte digest of `n` bytes at `src`, as an OWNED string of raw bytes.
+pub func:sha256_bytes = string(wild int8->:src, int64:n) never fails {
+    wild uint8->:src8 = src =>! wild uint8->;
+    wild int8->:hb = alloc(32i64);
+    wild uint32->:h = hb =>! wild uint32->;
+    for (int64:i in 0i64...8i64) { h[i] = SHA256_H0[i]; }
+    wild int8->:wb = alloc(256i64);
+    wild uint32->:w = wb =>! wild uint32->;
+    // Every whole block straight from the input.
+    int64:full = n / 64i64;
+    for (int64:bi in 0i64...full) {
+        drop sha256_block(h, #ptr_add<uint8>(src8, bi * 64i64), w);
+    }
+    // The tail, padded: 0x80, zeros to 56 mod 64, the bit length big-endian.
+    int64:rest = n - (full * 64i64);
+    int64:padlen = 64i64;
+    if (rest >= 56i64) { padlen = 128i64; }
+    wild int8->:pb = calloc(1i64, padlen);
+    wild uint8->:p = pb =>! wild uint8->;
+    for (int64:j in 0i64...rest) { p[j] = src8[(full * 64i64) + j]; }
+    p[rest] = 128u8;
+    uint64:bits = (n =>! uint64) * 8u64;   // n >= 0: the length of a real block
+    for (int64:k in 0i64...8i64) {
+        p[padlen - 1i64 - k] = ((bits >> ((k =>! uint64) * 8u64)) & 255u64) =>! uint8;
+    }
+    drop sha256_block(h, p, w);
+    if (padlen == 128i64) { drop sha256_block(h, #ptr_add<uint8>(p, 64i64), w); }
+    dalloc(pb);
+    dalloc(wb);
+    // The digest, big-endian words, as owned bytes.
+    wild int8->:ob = alloc(32i64);
+    wild uint8->:o = ob =>! wild uint8->;
+    for (int64:m in 0i64...8i64) {
+        uint32:v = h[m];
+        o[m * 4i64] = (v >> 24u32) =>! uint8;
+        o[(m * 4i64) + 1i64] = ((v >> 16u32) & 255u32) =>! uint8;
+        o[(m * 4i64) + 2i64] = ((v >> 8u32) & 255u32) =>! uint8;
+        o[(m * 4i64) + 3i64] = (v & 255u32) =>! uint8;
+    }
+    dalloc(hb);
+    string:digest = string_concat(string_from_bytes(ob, 32i64), "");
+    dalloc(ob);
+    pass digest;
+};
+
+// The digest of a string's bytes as 64 lowercase hex characters, owned.
+pub func:sha256_hex = string(string:data) never fails {
+    string:d = raw sha256_bytes(data.ptr =>! wild int8->, data.len);
+    wild int8->:xb = alloc(64i64);
+    wild uint8->:x = xb =>! wild uint8->;
+    for (int64:i in 0i64...32i64) {
+        uint8:byte = d.ptr[i];
+        uint8:hi = byte >> 4u8;
+        uint8:lo = byte & 15u8;
+        if (hi < 10u8) { x[i * 2i64] = 48u8 + hi; } else { x[i * 2i64] = 87u8 + hi; }
+        if (lo < 10u8) { x[(i * 2i64) + 1i64] = 48u8 + lo; } else { x[(i * 2i64) + 1i64] = 87u8 + lo; }
+    }
+    string:hex = string_concat(string_from_bytes(xb, 64i64), "");
+    dalloc(xb);
+    pass hex;
+};

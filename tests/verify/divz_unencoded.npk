@@ -1,0 +1,31 @@
+// expect-exit: 5
+// expect-obligation: div-zero unencoded 1
+// expect-obligation: div-min unencoded 1
+//
+// AN UNENCODED ROW (P-12): a `simd` division carries D-007's any-lane guard,
+// and 1.5.0's encoder does not express vectors -- so the site is a row the
+// manifest lists as `unencoded`, visibly not proof-backed, and its guard is
+// retained. Every guard site has a row; that is the inventory rule.
+mod:divz_unencoded;
+
+func:main = int32(cstring[]:_~argv) {
+    simd<int32, 4>:a = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:b = simd(2i32);
+    simd<int32, 4>:c = a / b;
+    exit c[0i64] + c[3i64];          // 4 + 1
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

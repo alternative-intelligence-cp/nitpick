@@ -1,0 +1,33 @@
+// expect-exit: 145
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-zero open 1
+//
+// THE UNSIGNED FAMILY HAS NO INT_MIN/-1 ROW, and its range axiom is a
+// hypothesis in its own right: `n = m + 4` with `m >= 0` makes `n >= 4`, so
+// the first division discharges from the type alone; the second's divisor is
+// bare argv and stays open; the third is a literal.
+mod:divz_unsigned;
+
+func:main = int32(cstring[]:argv) {
+    uint32:m = argv.len =>! uint32;
+    uint32:n = m + 4u32;
+    uint32:a = 100u32 / n;            // 20
+    uint32:b = 100u32 / m;            // 100
+    uint32:c = 100u32 / 4u32;         // 25
+    exit ((a + b) + c) =>! int32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
