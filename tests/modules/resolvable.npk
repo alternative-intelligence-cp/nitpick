@@ -16,6 +16,17 @@ enum:Net = { Connected; Disconnect(int32); };
 func:helper = int32(int32:v) never fails { pass v; };
 func:pair_of = int32(int32:a, int32:b) never fails { pass a; };
 
+// 1.5.1 (D-220): a `Rules` block, a refinement, and a `limit` on a parameter
+// and on a local -- the three sites a rule name resolves at. The audit counts
+// an unresolved limit exactly as it counts an unbound identifier.
+Rules<int32>:r_pos = { $ > 0i32 };
+Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };
+
+func:limited_form = int32(limit<r_pos> int32:n) {
+    limit<r_small> int32:m = n;
+    pass m;
+};
+
 func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i32 {
     int32:total = 0i32;
     int32:other = LIMIT;

@@ -489,17 +489,25 @@ pub func:failson_uses_errno = bool(DeclNode:d) never fails { pass (d.b != 0i32);
 // --- RuleDecl --------------------------------------------------------------------------
 //
 //   [0] refinement count   [1] clause count
-//   then refined rule names (intern indices), then clause expressions.
+//   then the refinement `limit<Other>` NODES (VerifyIds), then clause expressions.
 //
 // A `limit<Other>` clause REFINES another ruleset; the rest are predicates. They
 // are stored apart because they are different things, not two spellings of one.
+//
+// A REFINEMENT IS THE NODE, NOT ITS NAME (1.5.1, D-220). Until then the window
+// held the refined rule's intern index and the `VerifyLimitNode` the parser had
+// already built was thrown away with it — so a refinement had no span for a
+// resolve error to point at and no slot for the resolved `Rules` to be written
+// into. The node carries both (`limit_rule`, `limit_target`), and it is the same
+// node a local's or a parameter's `limit` is, so one `resolve_limit` serves all
+// three sites.
 func:RULE_HDR = int32() never fails { pass 2i32; };
 
 pub func:rule_subject = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:rule_refine_count = int32(Ast->:ast, DeclNode:d) never fails { pass (raw d_at(ast, d, 0i32)); };
 pub func:rule_clause_count = int32(Ast->:ast, DeclNode:d) never fails { pass (raw d_at(ast, d, 1i32)); };
-pub func:rule_refine = int32(Ast->:ast, DeclNode:d, int32:i) never fails {
-    pass (raw d_at(ast, d, (raw RULE_HDR()) + i));
+pub func:rule_refine = VerifyId(Ast->:ast, DeclNode:d, int32:i) never fails {
+    VerifyId:v = VerifyId{ index: raw d_at(ast, d, (raw RULE_HDR()) + i) }; pass v;
 };
 pub func:rule_clause = ExprId(Ast->:ast, DeclNode:d, int32:i) never fails {
     int32:base = (raw RULE_HDR()) + (raw rule_refine_count(ast, d));
@@ -518,6 +526,38 @@ pub func:field_quals = int32(DeclNode:d) never fails { pass d.c; };
 pub func:param_quals = int32(DeclNode:d) never fails { pass d.c; };
 pub func:global_type = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_init = ExprId(DeclNode:d) never fails { ExprId:e = ExprId{ index: d.b }; pass e; };
+
+// EVERY KIND HAS A NAME (1.0.8): this answered "not a type" for an enum, a
+// trait, a generic parameter and an associated type — all of them types — so
+// `Color{ x: 1i32 }` reported "`Color` is not a type, and a `{ … }` literal
+// builds a struct", and a bare macro or module in value position reported
+// "is a type, not a value". The article is the noun the reader needs.
+//
+// HERE, beside the declaration accessors, since 1.5.1: it depends on nothing
+// but `DeclKind`, and the resolver (which does not import the type resolver,
+// and must not — phase 2 binds names, phase 3 asks what they mean) needed it
+// to say what a `limit<name>` had wrongly named.
+pub func:decl_kind_article = string(DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclFunctionDecl)  { pass "a function"; }
+    if (d.kind == DeclKind.DeclGlobalDecl)    { pass "a global"; }
+    if (d.kind == DeclKind.DeclModuleDecl)    { pass "a module"; }
+    if (d.kind == DeclKind.DeclParamDecl)     { pass "a parameter"; }
+    if (d.kind == DeclKind.DeclFieldDecl)     { pass "a field"; }
+    if (d.kind == DeclKind.DeclEnumVariant)   { pass "an enum variant"; }
+    if (d.kind == DeclKind.DeclMacroDecl)     { pass "a macro"; }
+    if (d.kind == DeclKind.DeclRuleDecl)      { pass "a `Rules` block"; }
+    if (d.kind == DeclKind.DeclExternFn)      { pass "an extern function"; }
+    if (d.kind == DeclKind.DeclOpaqueDecl)    { pass "an `opaque struct`"; }
+    if (d.kind == DeclKind.DeclStructDecl)    { pass "a struct"; }
+    if (d.kind == DeclKind.DeclEnumDecl)      { pass "an enum"; }
+    if (d.kind == DeclKind.DeclTraitDecl)     { pass "a trait"; }
+    if (d.kind == DeclKind.DeclImplDecl)      { pass "an impl"; }
+    if (d.kind == DeclKind.DeclGenericParam)  { pass "a generic parameter"; }
+    if (d.kind == DeclKind.DeclAssocTypeDecl) { pass "an associated type"; }
+    if (d.kind == DeclKind.DeclUnitDecl)      { pass "a unit"; }
+    if (d.kind == DeclKind.DeclErrorDecl)     { pass "an error constant"; }
+    pass "a declaration of another kind";
+};
 pub func:global_quals = int32(DeclNode:d) never fails { pass (d.c & 65535i32); };
 pub func:global_flags = int32(DeclNode:d) never fails { pass ((d.c >> 16i32) & 65535i32); };
 pub func:assoc_default = TypeId(DeclNode:d) never fails { TypeId:t = TypeId{ index: d.a }; pass t; };
@@ -1161,9 +1201,9 @@ func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) never fails {
         if (raw p_at(p, TokenKind.PRBrace)) { break; }
         if (raw p_at_end(p)) { break; }
         if (raw p_at(p, TokenKind.KwLimit)) {
+            // THE NODE, not its name (1.5.1): see the RuleDecl header.
             VerifyId:l = raw p_parse_limit(p);
-            VerifyNode:ln = raw ast_verify(p.ast, l);
-            drop ast_scratch_push(p.ast, raw limit_rule(ln));
+            drop ast_scratch_push(p.ast, l.index);
             refines = refines + 1i32;
         } else {
             break;

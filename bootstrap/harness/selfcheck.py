@@ -60,11 +60,15 @@ FAILSAFE = """func:failsafe = int32(Error:e) {
 };
 """
 MAIN_OK = "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n"
-# The refused construct, at line 2 of whatever it is spliced into.
+# The refused construct, at line 2 of whatever it is spliced into. The rule it
+# names is DECLARED, after it (1.5.1, D-220): a `limit<name>` resolves now, and
+# an undeclared `r_pos` would refuse at resolve -- before the backend rung these
+# cases exist to lean on -- with a code none of them expects.
 RUNG = """func:build = int32(int32:seed) {
     limit<r_pos> int32:x = seed;
     pass x;
 };
+Rules<int32>:r_pos = { $ > 0i32 };
 """
 # Two findings from two statements, neither a consequence of the other
 # (D-237): a narrower integer where `buffer_new` takes `int64` (TYPE-007) and

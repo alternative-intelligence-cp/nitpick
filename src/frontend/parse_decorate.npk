@@ -63,6 +63,13 @@ pub func:invariant_start = int32(VerifyNode:v) never fails { pass v.b; };
 pub func:invariant_count = int32(VerifyNode:v) never fails { pass v.c; };
 pub func:limit_rule = int32(VerifyNode:v) never fails { pass (v.payload =>! int32); };
 
+// THE `Rules` DECLARATION A `limit<name>` RESOLVED TO (1.5.1, D-220): slot
+// `a`, written exactly once by `resolve_limit` the way an identifier's binding
+// is written onto `ExprNode.a`, and `decl_none()` until then — so "this limit
+// is unbound" is a value every later pass can ask for rather than a name it
+// would have to look up again. The parser leaves the slot zero on purpose.
+pub func:limit_target = DeclId(VerifyNode:v) never fails { DeclId:d = DeclId{ index: v.a }; pass d; };
+
 pub func:attr_arg_start = int32(DeclNode:d) never fails { pass d.b; };
 pub func:attr_arg_count = int32(DeclNode:d) never fails { pass d.c; };
 pub func:attr_name = int32(DeclNode:d) never fails { pass (d.payload =>! int32); };

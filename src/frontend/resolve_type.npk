@@ -1606,31 +1606,10 @@ func:arity_error = int32(TypeResolver->:r, TypeNode:n, int32:name,
     pass (raw ty_error(r, raw TYPE_GENERIC_ARITY(), move(m5), n.span));
 };
 
-// EVERY KIND HAS A NAME (1.0.8): this answered "not a type" for an enum, a
-// trait, a generic parameter and an associated type — all of them types — so
-// `Color{ x: 1i32 }` reported "`Color` is not a type, and a `{ … }` literal
-// builds a struct", and a bare macro or module in value position reported
-// "is a type, not a value". The article is the noun the reader needs.
-pub func:decl_kind_article = string(DeclNode:d) never fails {
-    if (d.kind == DeclKind.DeclFunctionDecl)  { pass "a function"; }
-    if (d.kind == DeclKind.DeclGlobalDecl)    { pass "a global"; }
-    if (d.kind == DeclKind.DeclModuleDecl)    { pass "a module"; }
-    if (d.kind == DeclKind.DeclParamDecl)     { pass "a parameter"; }
-    if (d.kind == DeclKind.DeclFieldDecl)     { pass "a field"; }
-    if (d.kind == DeclKind.DeclEnumVariant)   { pass "an enum variant"; }
-    if (d.kind == DeclKind.DeclMacroDecl)     { pass "a macro"; }
-    if (d.kind == DeclKind.DeclRuleDecl)      { pass "a `Rules` block"; }
-    if (d.kind == DeclKind.DeclExternFn)      { pass "an extern function"; }
-    if (d.kind == DeclKind.DeclOpaqueDecl)    { pass "an `opaque struct`"; }
-    if (d.kind == DeclKind.DeclStructDecl)    { pass "a struct"; }
-    if (d.kind == DeclKind.DeclEnumDecl)      { pass "an enum"; }
-    if (d.kind == DeclKind.DeclTraitDecl)     { pass "a trait"; }
-    if (d.kind == DeclKind.DeclImplDecl)      { pass "an impl"; }
-    if (d.kind == DeclKind.DeclGenericParam)  { pass "a generic parameter"; }
-    if (d.kind == DeclKind.DeclAssocTypeDecl) { pass "an associated type"; }
-    if (d.kind == DeclKind.DeclUnitDecl)      { pass "a unit"; }
-    pass "a declaration of another kind";
-};
+// `decl_kind_article` — every kind has a name (1.0.8) — lives in
+// `parse_decl.npk` since 1.5.1, beside the declaration accessors it reads,
+// so the resolver can name what a `limit<name>` wrongly resolved to without
+// importing this module.
 
 // `Channel<T, LEVEL, CAP>` — a type and two constants (D-072/D-182). The
 // element may not contain a borrow: `send` transfers ownership across a

@@ -1,0 +1,38 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 21
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 25
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 29
+// expect-error: NITPICK-RESOLVE-011
+// expect-error-at: 32
+// expect-error: NITPICK-RESOLVE-011
+// expect-error-at: 36
+//
+// D-220 (1.5.1): a `limit<name>` RESOLVES. Until then a misspelled rule name
+// passed in silence -- the surface parsed, nothing looked the name up, and the
+// backend refused the construct as a rung whatever the name said. A name found
+// nowhere is RESOLVE-002 with the identifier's own sentence (one lookup rule
+// for every name in the language); a name that is something other than a
+// `Rules` block is RESOLVE-011, and the message says what it is instead.
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:on_a_local = int32(int32:seed) {
+    limit<r_poz> int32:x = seed;
+    pass x;
+};
+
+func:on_a_param = int32(limit<r_nope> int32:n) {
+    pass n;
+};
+
+Rules<int32>:r_refined = { limit<r_missing>, $ < 100i32 };
+
+// A function is not a rule set, and neither is a struct.
+func:not_rules = int32(limit<on_a_param> int32:n) {
+    pass n;
+};
+
+Rules<int32>:r_struct = { limit<Point>, $ > 1i32 };
+
+struct:Point = { int32:x; int32:y; };

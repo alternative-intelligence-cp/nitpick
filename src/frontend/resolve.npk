@@ -352,6 +352,9 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
         // `int32:x = x;` does not silently bind to itself. A local is in scope
         // from its declaration onward, not from the start of the block.
         drop resolve_expr(r, raw stmt_decl_init(r.ast, s), scope);
+        // The declaration's `limit<Rule>` names a `Rules` block (1.5.1,
+        // D-220) — resolved like any other name, from this scope.
+        drop resolve_limit(r, raw stmt_decl_limit(r.ast, s), scope);
         discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
                             raw SYM_STMT(), id.index, 0i32));
         pass NIL;
@@ -583,6 +586,9 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
             DeclNode:pn = raw ast_decl(r.ast, pd);
             discard(raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
                                 raw SYM_DECL(), pd.index, 0i32));
+            // A parameter's `limit<Rule>` names a `Rules` block (1.5.1,
+            // D-220), looked up from the function's own scope.
+            drop resolve_limit(r, raw param_limit(pn), fn);
             pi = pi + 1i32;
         }
 
@@ -673,6 +679,16 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
     }
 
     if (d.kind == DeclKind.DeclRuleDecl) {
+        // The refinements name other `Rules` blocks (1.5.1, D-220): each
+        // resolves from the module scope like the clauses' own names, and a
+        // cycle among them is `check_rule_cycles`'s question once every
+        // module has bound.
+        int32:rn = raw rule_refine_count(r.ast, d);
+        int32:ri = 0i32;
+        while (ri < rn) {
+            drop resolve_limit(r, raw rule_refine(r.ast, d, ri), scope);
+            ri = ri + 1i32;
+        }
         int32:n = raw rule_clause_count(r.ast, d);
         int32:i = 0i32;
         while (i < n) {
@@ -815,6 +831,20 @@ pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
         }
         i = i + 1i32;
     }
+    // EVERY `limit<name>` IS BOUND OR PRODUCED A DIAGNOSTIC (1.5.1, D-220):
+    // the same three-outcome rule, for the one node that carries a name
+    // without being an identifier. This surface went unresolved for eleven
+    // cycles precisely because no audit asked about it.
+    int32:v = 1i32;
+    while (v < (raw ast_verify_count(ast))) {
+        VerifyNode:vn = raw ast_verify(ast, VerifyId{ index: v });
+        if (vn.kind == VerifyKind.VerifyLimitNode) {
+            if (vn.a == 0i32) {
+                unbound = unbound + 1i32;
+            }
+        }
+        v = v + 1i32;
+    }
     pass unbound;
 };
 
@@ -949,6 +979,107 @@ pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) nev
                     drop diaglist_push(r.diags,
                         raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
                 }
+            }
+        }
+    }
+    pass NIL;
+};
+
+// --- `limit<name>` (1.5.1, D-220) ------------------------------------------------------
+//
+// A RULE NAME RESOLVES, through the same lookup an identifier gets, from the
+// scope of the site — a local's block, a parameter's function scope, a `Rules`
+// body's module scope. A miss is the identifier's own miss (RESOLVE-002, the
+// same sentence): one lookup rule for every name in the language, so a typo in
+// `limit<…>` is the same mistake as a typo anywhere and gets the same answer.
+// A hit that is anything but a `Rules` block is RESOLVE-011, and the message
+// says what the name is instead. The resolved declaration is written onto the
+// node exactly once (`limit_target`), the way an identifier's symbol is written
+// onto `ExprNode.a`, so the checker, the obligation walk and the emitter read a
+// binding and never look a name up again.
+//
+// Until 1.5.1 nothing looked the name up at all: `limit<r_poz>` parsed, bound
+// nothing, and was refused by the backend as a rung whatever it said — which
+// is D-085's shape with a hole in it, since a rung refusal covers a typo as
+// completely as it covers the construct.
+pub func:resolve_limit = NIL(Resolver->:r, VerifyId:id, int32:scope) never fails {
+    if (raw verify_is_none(id)) { pass NIL; }
+    VerifyNode:v = raw ast_verify(r.ast, id);
+    if (v.kind != VerifyKind.VerifyLimitNode) { pass NIL; }
+    int32:name = raw limit_rule(v);
+    string:text = raw intern_get(r.interns, name);
+    int32:sym = raw scope_lookup(r.tab, scope, name);
+    if (sym == 0i32) {
+        string:m1 = string_concat("cannot find `", text);
+        string:m2 = string_concat(m1, "` in this scope");
+        drop diaglist_push(r.diags,
+            raw diag_error(raw RESOLVE_UNKNOWN(), move(m2), v.span));
+        pass NIL;
+    }
+    Symbol:s = raw symtab_get(r.tab, sym);
+    bool:is_rules = false;
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclNode:dn = raw ast_decl(r.ast, DeclId{ index: s.origin });
+        if (dn.kind == DeclKind.DeclRuleDecl) { is_rules = true; }
+    }
+    if (!is_rules) {
+        string:what = "a local binding";
+        if (s.origin_kind == (raw SYM_DECL())) {
+            DeclNode:dn2 = raw ast_decl(r.ast, DeclId{ index: s.origin });
+            what = raw decl_kind_article(dn2);
+        }
+        string:n1 = string_concat("`limit<", text);
+        string:n2 = string_concat(n1, ">` names ");
+        string:n3 = string_concat(n2, what);
+        string:n4 = string_concat(n3, ", and `limit` takes a `Rules` block");
+        drop diaglist_push(r.diags,
+            raw diag_error(raw RESOLVE_NOT_RULES(), move(n4), v.span));
+        pass NIL;
+    }
+    drop ast_set_verify_a(r.ast, id, s.origin);
+    pass NIL;
+};
+
+// Does the `Rules` block `d` reach the declaration `target` by following its
+// refinements? Fuel-bounded like `init_reaches`, for the same reason: the walk
+// runs on the bindings resolve just wrote, before any refusal has pruned the
+// graph, so a cycle it has not yet reported must not be able to spin it.
+func:rule_reaches = bool(Resolver->:r, DeclNode:d, int32:target, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    int32:n = raw rule_refine_count(r.ast, d);
+    for (int32:i in 0i32...n) {
+        VerifyNode:v = raw ast_verify(r.ast, raw rule_refine(r.ast, d, i));
+        DeclId:t = raw limit_target(v);
+        if (raw decl_is_none(t)) { continue; }
+        if (t.index == target) { pass true; }
+        DeclNode:dn = raw ast_decl(r.ast, t);
+        if (dn.kind != DeclKind.DeclRuleDecl) { continue; }
+        if (raw rule_reaches(r, dn, target, fuel - 1i32)) { pass true; }
+    }
+    pass false;
+};
+
+// Report every `Rules` block that refines itself, directly or through a chain
+// (1.5.1, D-220) — D-086's unresolvable-cycle rule, third instance. 1.5.2
+// discharges a `limit` by expanding its refinements into one conjunction and
+// subsumption by an implication over the same expansion; a cycle would never
+// finish expanding, and refusing the shape here is cheaper and clearer than a
+// fuel counter deep in the encoder. Declaration order, like
+// `check_global_cycles`, so the output is identical on every run.
+pub func:check_rule_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:_~scope) never fails {
+    DeclNode:m = raw ast_decl(r.ast, mod_id);
+    int32:n = raw item_member_count(r.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclId:item = raw item_member(r.ast, m, i);
+        DeclNode:d = raw ast_decl(r.ast, item);
+        if (d.kind == DeclKind.DeclRuleDecl) {
+            if (raw rule_reaches(r, d, item.index, 64i32)) {
+                string:nm = raw intern_get(r.interns, raw decl_name(d));
+                string:m1 = string_concat("`", nm);
+                string:m2 = string_concat(m1,
+                    "` refines itself through its `limit<…>` chain, so its clauses can never be expanded");
+                drop diaglist_push(r.diags,
+                    raw diag_error(raw RESOLVE_CYCLE(), move(m2), d.span));
             }
         }
     }

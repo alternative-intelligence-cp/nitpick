@@ -28,6 +28,8 @@ exists to demonstrate.
 | `no_such_name.npk` | `NITPICK-RESOLVE-007` — importing a name the module lacks |
 | `shadowed.npk` | `NITPICK-RESOLVE-008` — a wildcard colliding with a local |
 | `owned_names.npk` | `NITPICK-RESOLVE-001` — a name the compiler (`Error`) or the prelude owns, declared by the program: at module scope, as an associated type, as a generic parameter (D-239) |
+| `limit_names.npk` | `NITPICK-RESOLVE-002` and `NITPICK-RESOLVE-011` — a `limit<name>` naming nothing (on a local, on a parameter, in a `Rules` refinement) and one naming a function or a struct instead of a `Rules` block (D-220, 1.5.1) |
+| `rule_cycle.npk` | `NITPICK-RESOLVE-006` — a `Rules` block refining itself, directly or through a chain (D-220, 1.5.1) |
 
 Eight codes, nine files (RESOLVE-001 has two: the plain duplicate, and the
 owned name — one code, because each is "this name already means something

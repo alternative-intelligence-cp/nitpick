@@ -3910,6 +3910,20 @@ def check_parity(tmp, tools):
                                 (" / " + theirs[k][1][:200]) if theirs[k][1] else ""))
     if differ > 20:
         fails.append("parity: %d verdict(s) differ (first 20 listed)" % differ)
+    # ANY NONZERO EXIT IS A PARITY FAILURE (S-13, 1.5.1). The verdict diff sees
+    # only verdict lines; a runner self-check case or a toolchain-pin refusal
+    # inside `npkg test` is a `note_failure`, not a verdict, and until 1.5.1 a
+    # plain exit 1 was read as "the verdicts will say" -- which is how npkg's
+    # copy of the `right_verdict` filename bug (1.5.0's gate run) stayed
+    # invisible behind a green parity while the Python self-check caught its
+    # twin. Listed AFTER the verdict diff so a failure the verdicts explain is
+    # read with them, and a failure they do not explain stands alone.
+    if r.returncode != 0:
+        fails.append("parity: `npkg test` exited %d -- a failure the verdict "
+                     "lines do not carry (a self-check case, a pin, a suite the "
+                     "runner refused) or one they do; either way npkg did not "
+                     "report a green tree:\n%s"
+                     % (r.returncode, (r.stdout + r.stderr).strip()[-2000:]))
     # THE ARTIFACT: `npkg build`'s compiler is this run's compiler, byte for byte.
     built = os.path.join(ROOT, "build", "npkc")
     if not os.path.exists(built):

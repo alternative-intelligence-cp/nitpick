@@ -37,3 +37,10 @@ pub func:RESOLVE_INTERNAL = string() never fails    { pass "NITPICK-RESOLVE-009"
 // forged or collide. And the code, where it may appear, is a bare integer
 // literal — a computed code would be an identity decided at runtime.
 pub func:RESOLVE_ERROR_DECL = string() never fails  { pass "NITPICK-RESOLVE-010"; };
+
+// 1.5.1 (D-220): `limit<name>` names something that is not a `Rules` block —
+// a function, a struct, a local, anything the scope holds under that name.
+// A name found NOWHERE is RESOLVE-002 with the identifier's own sentence (one
+// lookup rule for every name); this is the other way a limit's name can be
+// wrong, and the message says what the name is instead.
+pub func:RESOLVE_NOT_RULES = string() never fails   { pass "NITPICK-RESOLVE-011"; };
