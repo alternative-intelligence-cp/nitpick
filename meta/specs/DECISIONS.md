@@ -11232,6 +11232,12 @@ naming the statement:
 | the `async` modifier | the executor can fail a task independently of its body (deadline, D-056) |
 | the clause on `main` / `failsafe` | they return no `Result`; the claim is vacuous |
 
+> **[D-241, 2026-09-03] The contract row above is RETIRED.** It delegated the
+> violation channel to C-15/C-16, and D-220/D-221 chose the trap route — the
+> channel this same list permits two lines below (`?!`). `never fails` may
+> carry `requires`, `ensures` and `limit<Rules>`; the row's other entries
+> stand. The table is kept as written, D-085's pattern.
+
 Permitted, because none of them *returns* an error: `?|` with a default, `?!`
 (a trap is Layer 3, a different channel, and already greppable), `drop` and
 `raw` of `never fails` callees, `is_err` branches, `pick` with an `ERR:` arm.
@@ -14920,6 +14926,17 @@ refuses); `Rules` bodies TYPE (`$` = subject's type, clauses `bool`).
 Subsumption is a Z3 implication obligation. The runtime residue traps
 through D-142's route with its own code.
 
+> **LANDED — the typing half (1.5.1, 2026-09-03; `meta/roadmap/1.5/1.5.1.md`).**
+> A `limit<name>` resolves through the ordinary scope lookup at all three
+> sites (a local, a parameter, a `Rules` refinement): a miss is the
+> identifier's own RESOLVE-002, a non-`Rules` hit RESOLVE-011, and the
+> resolved declaration is written onto the node (`limit_target`). A
+> refinement cycle refuses at resolve (RESOLVE-006). A `Rules` body types
+> eagerly: `$` is the subject, every clause a `bool`, every refinement over
+> the same subject; a limited binding's declared type is the subject by
+> IDENTITY — no widening, no wrap, no type parameter (TYPE-059). The check
+> at the three write points and subsumption are 1.5.2's.
+
 ## D-221 — contract runtime semantics — **SETTLED (user-ratified early; C-16)**
 
 A contract violation is a program-invalid state: the violation channel
@@ -14931,6 +14948,22 @@ name. Contract expressions admit calls only to `never fails` PURE
 functions (no allocation, no I/O, no suspension). D-014's injected
 `ensures result > 0` on `failsafe` and the non-empty-body check are
 implemented at 1.5.3.
+
+> **LANDED — the typing half (1.5.1, 2026-09-03; `meta/roadmap/1.5/1.5.1.md`).**
+> Every proposition is a `bool` (`requires`, `ensures`, each `invariant`
+> conjunct, `prove`, `assert_static` — TYPE-007, the sentence every `if`
+> gets). A contract expression is typed under a CONTEXT that refuses, by
+> kind, what a proposition cannot evaluate anywhere (TYPE-060): `await`,
+> `move`, `relay`/`?!`/`?|`/`drop`, a `pick` expression, a bare user call
+> (the one form is `raw f(…)`; the licence checks `never fails`), a may-fail
+> or `effect` builtin, a callee that is not NAMED (a function value, a field,
+> a `dyn` — the verifier encodes a call as an uninterpreted function per
+> KNOWN symbol), a method on a shared-state receiver, a manufactured view.
+> `is_err` is a predicate and passes. `result` and `old(expr)` are keywords
+> with their own nodes (D-245, D-243); purity is declared (D-242); `main`
+> and `failsafe` carry no contract (D-244); `never fails` may carry a
+> contract (D-241). The trap route, the D-014 injection and the obligations
+> are 1.5.3's.
 
 ## D-222 — `const` retires; `fixed` is the one immutability keyword — **SETTLED (user decision, 2026-08-29)**
 
@@ -15993,3 +16026,93 @@ value, which is the only case where the sentence is true; a `..^` argument the
 TYPE-054 refusal named is not also measured against the register it cannot
 become, though its contents are still typed. The principle binds every future
 pair of rules the same way.
+
+## D-241 — `never fails` may carry `requires`/`ensures`/`limit<Rules>`: D-163 rule 2's contract row retires — **SETTLED (user decision, 2026-09-03; 1.5.1 S-14)**
+
+D-163 rule 2 refused a contract or a `limit` on a `never fails` function
+because "a contract that can be violated at runtime is a failure channel.
+C-15/C-16 decide *which*" — the row delegated the channel to two decisions
+that had not been taken. D-220 and D-221 took them: a `limit` residue and a
+contract violation take the TRAP route (a D-141-space code through D-142's
+`npk_trap`, reaching `failsafe`), never a `Result`. A `never fails` body
+already admits that channel — `?!`, D-210's overflow trap, D-007's division
+trap — so the row's basis is gone, and keeping it would bar contracts from
+exactly the functions a contract may CALL (D-242: a contract's callees are
+`never fails` and `pure`).
+
+**The decision.** The row retires; `TYPE_NEVER_FAILS_CAN_FAIL` keeps its
+other rows (`fail`/`relay`/`return`, `async`, the clause on `main`/`failsafe`).
+`never fails ensures result >= 0i32` is legal, and is the shape a contract's
+helper takes. Landed at 1.5.1 step 5.
+
+## D-242 — purity is DECLARED: `pure` is a contract clause, checked in the body, read by name at call sites — **SETTLED (user decision, 2026-09-03; 1.5.1 S-15)**
+
+D-221 says a contract expression admits calls only to `never fails` PURE
+functions — "no allocation, no I/O, no suspension — the checker's question".
+The question was whether the checker DECIDES purity by walking callees or
+READS it from a declaration. Inference is what D-163 rejected for `never
+fails`, and the reasons transfer word for word: implicit (a store added deep
+in a callee silently changes which distant contracts are legal, with the
+error far from the cause), non-modular (a fixpoint to verify instead of a
+walk over kinds; a function value or a `dyn` can never be licensed), and
+unreadable at the declaration.
+
+**The decision.** `pure` is a marker clause in the contract window (`never
+fails`'s shape: a keyword, `VerifyPure`, `fn_declares_pure`), orthogonal to
+`never fails` — a pure function may `fail`, and a contract writes both words.
+A `pure` body may not contain: `pure` on `async`/`thread`/`main`/`failsafe`;
+a `move` parameter (a consumed owner is dropped at exit); a call to a callee
+not declared `pure`, to a builtin the reference's `Pure` column marks
+`effect`, or through a value (a function pointer, a field, a `dyn`); a method
+on a lock, an atomic, a channel endpoint or an arena; `wild`/`wildx` storage
+or an owning local (its drop frees); a store that reaches memory the caller
+can see (through a pointer, a slice, a handle, a `<-` dereference, or a local
+holding a borrow); `#wild_ptr`/`#wild_slice`. An impl keeps its trait
+method's `pure`. Builtins carry a `Pure` column in BUILTIN_REFERENCE's marked
+region, generated into `builtin_pure` (D-163 rule 9's shape), classified by
+each row's floor body: five are `pure` (the string views and comparisons),
+the rest `effect`. **Purity never rides a function TYPE**: an indirect callee
+is refused where purity matters, so D-163 rule 8's identity question does not
+reopen — and 1.5.3 can encode a contract call as an uninterpreted function
+per KNOWN symbol, which is sound exactly because the body is a function of
+its arguments. `NITPICK-TYPE-061`. Landed at 1.5.1 step 4.
+
+## D-243 — `old(expr)` is a keyword operator with its own node; an `invariant` admits it — **SETTLED (user decision, 2026-09-03; 1.5.1 S-16)**
+
+D-221 admitted `old(expr)` in `ensures` for copyable values and said nothing
+about its spelling. The language already answered the shape question for
+`is_err` (D-096): a call that is not a call confuses every reader and every
+tool. **The decision.** `old` is a keyword (VerificationKeyword), `old(expr)`
+an `ExprOldExpr` with the operand in slot `a` (`move(place)`'s shape), legal
+in `ensures` AND in an `invariant` with one meaning — the operand's value at
+the FUNCTION's entry (Dafny's rule; a loop invariant relating a running total
+to the entry value is the textbook use) — never nested, never of `result`,
+and only of a COPYABLE value: neither owning (`type_drops`) nor
+address-bearing (`type_holds_address`, the layout table's pointer predicate
+made public). Its type is its operand's. Measured before adding: two locals
+named `old` in the tree, both renamed. Landed at 1.5.1 step 3.
+
+## D-244 — `main` and `failsafe` carry no contract — **SETTLED (user decision, 2026-09-03; 1.5.1 S-17)**
+
+Nobody calls them, so a `requires` has no caller to hold to it and its
+violation would name the operating system; their exit is not a return, so
+`ensures result` names nothing; and D-014's positive-return postcondition on
+`failsafe` is the COMPILER's (1.5.3 injects it) and is never spelled by the
+author. The same shape as D-163's terminal row. `NITPICK-TYPE-060`. Landed at
+1.5.1 step 5.
+
+## D-245 — `result` is a keyword with a leaf node, in `ensures` alone — **SETTLED (user decision, 2026-09-03; 1.5.1 S-18)**
+
+`result` was "an ordinary identifier here, given meaning by the verifier"
+(D-002's parse note): the resolver exempted an UNBOUND `result` inside
+`ensures`, so a parameter named `result` bound first and meant the parameter
+in its own postcondition — one spelling, two meanings by what else was
+declared — and 1.5.3's encoder would have met a nameless identifier to
+re-match by context. The prototype reserved `result`. **The decision.**
+`result` is a keyword, `ExprResultValueExpr` a leaf like `$`, typed as the
+function's SUCCESS type under `ensures` and refused anywhere else; the
+resolver has nothing to exempt. Its token is `KwResultValue`, the one keyword
+whose token name is not its spelling (`Result` owns `KwResult`); the
+generator carries a one-entry map for it. Measured before adding: one field
+name in about a hundred and ten places, all renamed, and the dead `fails on
+result` extern spelling (D-002) still parses. Landed at 1.5.1 step 3.

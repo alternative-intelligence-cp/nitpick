@@ -126,7 +126,7 @@ the builtin surface is typed from a signature table.
 
 ## 2e. Questions the instruments raised (owner: the user)
 
-**S-13 (1.5.0, 2026-09-03): parity does not surface a non-verdict `npkg` failure.** The harness's `check_parity` diffs verdict lines and byte-compares the artifacts, but reads npkg's exit code only for a trap (3) or could-not-run (2), not a plain failure (1) -- and a `npkg test` self-check or toolchain-pin failure is a `note_failure`, not a verdict, so it is invisible to parity (found when npkg's `right-verdict` self-check bug, identical to the Python one the gate caught, did not fail parity). Recommendation: `check_parity` fails on any nonzero npkg exit; a full `npkg test` in the parity path already runs the self-check, so surfacing its exit is the whole fix. Small, and it strengthens what a green parity means.
+~~**S-13**~~ **CLOSED at 1.5.1 step 1 (2026-09-03, V-22): `check_parity` fails on any nonzero `npkg test` exit, listed after the verdict diff.** ~~(1.5.0, 2026-09-03): parity does not surface a non-verdict `npkg` failure.~~ The harness's `check_parity` diffs verdict lines and byte-compares the artifacts, but reads npkg's exit code only for a trap (3) or could-not-run (2), not a plain failure (1) -- and a `npkg test` self-check or toolchain-pin failure is a `note_failure`, not a verdict, so it is invisible to parity (found when npkg's `right-verdict` self-check bug, identical to the Python one the gate caught, did not fail parity). Recommendation: `check_parity` fails on any nonzero npkg exit; a full `npkg test` in the parity path already runs the self-check, so surfacing its exit is the whole fix. Small, and it strengthens what a green parity means.
 
 | id | proposed | question | needed by | source |
 |---|---|---|---|---|
@@ -351,6 +351,8 @@ Three riders from the reporter (2026-09-03), each binding on 1.5.1b:
 
 ## 4. Decisions blocking 1.5 (verification) and 1.6 (the analyzer evidence — "Astrée" until D-233)
 
+> **1.5.1 LANDED (2026-09-03)** — the verification surface TYPES (D-220/D-221's typing halves; `meta/roadmap/1.5/1.5.1.md`): `limit<R>` names resolve, `Rules` bodies type over `$`, every proposition is a `bool`, contract expressions admit only what a proposition can evaluate anywhere and call only named `never fails` `pure` functions; the five questions it raised were ratified as **D-241** (D-163's contract row retires), **D-242** (purity is a declared `pure` clause with a `Pure` column on every builtin), **D-243** (`old(expr)` a keyword operator, admitted in invariants), **D-244** (`main`/`failsafe` carry no contract) and **D-245** (`result` a keyword with a leaf node); S-13 closed at its step 1. Found on the way: macro expansion SHARED verify nodes across expansions (the last expansion resolved won — a miscompile the day 1.5.3 lowered a contract in a macro-emitted function; expansion clones them now).
+>
 > **1.5.0 LANDED (2026-09-03)** — the skeleton with the D-007 division pair end to end (D-218/D-219; `meta/roadmap/1.5/1.5.0.md`). C-17→D-218's items (1)–(11) are all implemented or scoped: the SMT emitter, the determinism profile, per-function processes, the integer encoding, the ownership-trusting memory model, the content-hash identity, `llvm.assume` elision, the `undef` ban, and TCB.md. The catalogue's remaining kinds land 1.5.1–1.5.8.
 
 The 1.5 surface (grammar/AST/resolution of contracts, Rules, invariants) is built;

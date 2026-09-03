@@ -3,13 +3,14 @@
 // expect-error: NITPICK-TYPE-037
 // expect-error: NITPICK-TYPE-037
 // expect-error: NITPICK-TYPE-037
-// expect-error: NITPICK-TYPE-037
 //
 // D-163: `never fails` is a CHECKED claim. A marked function may not `fail`,
 // `relay`, or `return Result{…}` — each is a way an error could leave it — and
-// may not combine the clause with `requires`/`ensures` (a verifier obligation),
-// the `async` modifier (cancellation is an error), or sit on `main`/`failsafe`
-// (terminal functions return no `Result`, so the claim says nothing).
+// may not combine the clause with the `async` modifier (cancellation is an
+// error), or sit on `main`/`failsafe` (terminal functions return no `Result`,
+// so the claim says nothing). A contract or a `limit` on a `never fails`
+// function was refused here too until D-241 (1.5.1): a violation takes the
+// trap route, which a never-fails body already admits.
 mod:never_fails;
 error:E3;
 error:E4;
@@ -33,9 +34,10 @@ func:with_return = int32(int32:v) never fails {
     return Result{ value: v };
 };
 
-func:with_requires = int32(int32:v) never fails requires v >= 0i32 {
-    pass v;
-};
+// (`with_requires` stood here until 1.5.1 step 5: D-241 retired D-163's
+// contract row — a `never fails` function may carry `requires`/`ensures`/
+// `limit`, since D-221's trap route is the channel a never-fails body
+// already admits. The accepted shape is in `tests/accept/never_fails.npk`.)
 
 async func:with_async = int32(int32:v) never fails {
     pass v;

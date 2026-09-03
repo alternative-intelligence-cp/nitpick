@@ -33,7 +33,7 @@ of merely discouraged.
 The primary goal of Nitpick is to shift as much error handling as possible to compile-time using the **Z3 SMT Solver**.
 
 *   **`limit<Rules>` & Value Constraints**: Instead of checking bounds manually, developers declare structural constraints (`Rules`) and bind them to types (e.g., `limit<r_positive> int32:x`). The compiler mathematically proves these constraints are never violated. 
-*   **Design by Contract (`requires` / `ensures`)**: Functions declare preconditions and postconditions. The Z3 solver verifies that all callers satisfy the `requires` contract and that the function body satisfies the `ensures` contract.
+*   **Design by Contract (`requires` / `ensures`)**: Functions declare preconditions and postconditions. The Z3 solver verifies that all callers satisfy the `requires` contract and that the function body satisfies the `ensures` contract. *(Typed since 1.5.1, D-221: a contract is a `bool` proposition that admits only what can be evaluated anywhere — no suspension, no consumption, no outcome operator, no store — and calls only NAMED `never fails` `pure` functions, purity being a declared, checked contract clause (D-242); `result` and `old(expr)` are keywords with their own nodes (D-245, D-243).)*
 *   **Formal Proofs (`prove` & `assert_static`)**: Developers can force the solver to construct mathematical proofs of arbitrary expressions (`prove(x != 0)`), which accumulate path conditions (like being inside an `if(x > 0)` block).
 
 **Architectural Impact**: The compiler must tightly integrate with an SMT solver (Z3) during the type-checking/semantic analysis phase. Path condition accumulation must be a core part of the AST walk.

@@ -544,6 +544,45 @@ part re-homed; `1.4.9.md` has the map), and archived the folder. **Next: cycle
 `meta/roadmap/1.5/README.md` is the map (its opening says where to start), and
 1.5.0 is the skeleton: the SMT-LIB2 writer, z3 spawned through `lib/nproc.npk`
 under the determinism profile, the obligation manifest, `TCB.md` drafted.
+**1.5.0 IS COMPLETE (2026-09-03)**: the pipeline is real — obligations as
+SMT-LIB2 text, the pinned z3 one process per function under the determinism
+profile, `nitpick.obligations` committed (141 rows, 116 discharged), `llvm.assume`
+elision, the D-007 division pair proven end to end, the verified compiler
+rebuilding itself, the `undef` ban a check, TCB.md drafted.
+**1.5.1 IS COMPLETE (2026-09-03) — the verification surface TYPES**
+(`meta/roadmap/1.5/1.5.1.md`, five steps, each under a full harness). A
+`limit<name>` RESOLVES at all three sites (a typo is the identifier's own
+RESOLVE-002, a non-`Rules` name RESOLVE-011, a refinement cycle RESOLVE-006,
+and the resolved rule is written onto the node); a `Rules` body types over `$`
+(the same node as a counted loop's counter: the value under consideration),
+every clause a `bool`, and a limited binding's declared type is the rule's
+subject BY IDENTITY (TYPE-059 — no widening, no type parameter). Every
+proposition is a `bool` — `requires`, `ensures`, each `invariant` conjunct,
+`prove`, `assert_static` — and a contract expression admits only what a
+proposition can evaluate anywhere (TYPE-060): no `await`, `move`,
+`relay`/`?!`/`?|`/`drop`, `pick` expression, store or manufactured view, and a
+call only to a NAMED `never fails` `pure` function (`raw f(…)`; a builtin bare
+by its Fails and Pure columns) — a function value, a field or a `dyn` is
+refused because 1.5.3 encodes a contract call as an uninterpreted function per
+KNOWN symbol. **Five decisions landed with it**: D-241 (D-163's contract row
+retires — `never fails` may carry `requires`/`ensures`/`limit`, since D-221's
+trap route is the channel a never-fails body already admits), D-242 (purity is
+DECLARED: `pure` is a contract clause checked in the body — TYPE-061: no
+`async`/`thread`, no `move` parameter, no impure/indirect callee, no
+shared-state receiver, no `wild`, no owning local, no store the caller sees —
+and every builtin row carries a `Pure` column generated into `builtin_pure`;
+purity never rides a function type), D-243 (`old(expr)` is a keyword operator
+with its own node: the value at the function's entry, in `ensures` and
+`invariant`, never nested, only of a copyable value), D-244 (`main`/`failsafe`
+carry no contract), D-245 (`result` is a keyword with a leaf node — a
+parameter could shadow the identifier it used to be, inside its own
+postcondition). **Found**: macro expansion SHARED its verify nodes across
+expansions, so the last expansion resolved won — invisible while the backend
+refused the family, a miscompile the day 1.5.3 lowered a contract in a
+macro-emitted function; `clone_verify` now. S-13 closed (parity fails on any
+nonzero `npkg test` exit). No obligation rows moved (141), no rung retired
+(1.5.2/1.5.3/1.5.4 own them), no snapshot refresh (frontend only; `src/`
+adopts none of it until a snapshot understands it — D-205).
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -735,6 +774,7 @@ parse failure some lines away from the mistake:
 | `oflags`, `prot`, `mflags`, `fmode` | the four flag-family TYPE keywords (D-044/D-230, 1.4.8) — `prot` and `fmode` in particular read like the most ordinary locals in any file code; their members (`O_RDONLY`, `PROT_READ`, `MAP_SHARED`, `S_IRUSR`, …) are prelude constants, so those names are taken too |
 | `fails`, `end` | the `never fails` contract clause's second word (D-002/D-163) and the `when`/`then`/`end` control-flow family's terminator (LEXICAL_REFERENCE's keyword table) — each cost the 1.4.8 executor a build |
 | `in`, `mod` | the `for … in` keyword and the module-declaration keyword (`mod:name;`) — each cost the 1.5.0 executor a build, as a local named `in` (a byte source) and one named `mod` (a module name) |
+| `old`, `result`, `pure` | the verification keywords 1.5.1 added (D-243, D-245, D-242): `old(expr)` is a keyword operator (the value at entry), `result` a leaf keyword (the success value, `ensures` only — `Result` with a capital R is the type, and `result`'s token is `KwResultValue` for that reason), `pure` a contract clause. `old` was a local in the SMT encoder and a test, `result` a field in `FnSig` and four unit-test fixtures — every one renamed; each reads like the most ordinary local name there is |
 
 The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
 literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,

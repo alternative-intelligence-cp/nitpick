@@ -1710,42 +1710,21 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     }
     if (e.fn_never_fails) {
         // A terminal function returns no `Result`, so `never fails` says nothing
-        // there; and `never fails` may not combine with the verification
-        // contracts, which are the verifier's obligations, not this one (D-163).
+        // there (D-163). The clause MAY combine with `requires`/`ensures` and
+        // `limit<Rules>` since D-241 (1.5.1): D-163's row delegated the
+        // violation channel to C-15/C-16, D-220/D-221 chose the trap route,
+        // and a never-fails body already admits that channel (`?!`, an
+        // overflow, a division) — so a contract is not a failure channel, and
+        // the functions a contract may CALL are exactly the never-failing ones.
         if (e.fn_terminal) {
             discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                 "`main`/`failsafe` return no `Result`, so `never fails` says nothing there (D-163)",
                 d.span));
         }
-        int32:nci = 0i32;
-        while (nci < (raw fn_contract_count(e.ast, d))) {
-            VerifyNode:ncv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, nci));
-            if (ncv.kind == VerifyKind.VerifyContractNode) {
-                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
-                    "a `never fails` function may not also state `requires`/`ensures` (D-163)",
-                    ncv.span));
-            }
-            if (ncv.kind == VerifyKind.VerifyLimitNode) {
-                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
-                    "a `never fails` function may not carry `limit<Rules>` (D-163): the limit is a verifier obligation this contract cannot hold",
-                    ncv.span));
-            }
-            nci = nci + 1i32;
-        }
         if (raw decl_has(d, raw DECL_ASYNC())) {
             discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
                 "an `async` function may not be `never fails` (D-163): a suspended task can be cancelled, and cancellation is an error the contract would deny",
                 d.span));
-        }
-        int32:npi = 0i32;
-        while (npi < (raw fn_param_count(e.ast, d))) {
-            DeclNode:npd = raw ast_decl(e.ast, raw fn_param(e.ast, d, npi));
-            if (!(raw verify_is_none(raw param_limit(npd)))) {
-                discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),
-                    "a `never fails` function may not carry `limit<Rules>` on a parameter (D-163): the limit is a verifier obligation this contract cannot hold",
-                    npd.span));
-            }
-            npi = npi + 1i32;
         }
     }
 
@@ -1767,7 +1746,19 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
             if (ck == (raw CONTRACT_REQUIRES())) { cctx = raw CTX_REQUIRES(); }
             if (ck == (raw CONTRACT_ENSURES()))  { cctx = raw CTX_ENSURES(); }
             if (cctx != 0i32) {
-                drop check_proposition(e, raw contract_cond(ccv), cctx);
+                // `main` AND `failsafe` CARRY NO CONTRACT (D-244, 1.5.1 step
+                // 5): nobody calls them, so a `requires` has no caller to hold
+                // to it; their exit is not a return, so `ensures result` names
+                // nothing; and D-014's postcondition on `failsafe` is the
+                // COMPILER's (1.5.3), never the author's. Refused at the clause
+                // and not typed, so one mistake is one sentence.
+                if (e.fn_terminal) {
+                    discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                        "`main` and `failsafe` carry no contract (D-244): nobody calls them, their exit is not a return, and `failsafe`'s positive-return postcondition is the compiler's own (D-014)",
+                        ccv.span));
+                } else {
+                    drop check_proposition(e, raw contract_cond(ccv), cctx);
+                }
             }
         }
         cci = cci + 1i32;

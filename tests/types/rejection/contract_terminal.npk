@@ -1,0 +1,13 @@
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 12
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 13
+//
+// D-244 (1.5.1, S-17): `main` and `failsafe` carry no contract. Nobody calls
+// them, so a `requires` has no caller to hold to it and its violation would
+// name the operating system; their exit is not a return, so `ensures result`
+// names nothing; and D-014's positive-return postcondition on `failsafe` is
+// the COMPILER's (1.5.3 injects it), never spelled by the author.
+mod:contract_terminal;
+func:main = int32(cstring[]:_~argv) requires 1i32 == 1i32 { exit 0i32; };
+func:failsafe = int32(Error:_~e) ensures result > 0i32 { exit 1i32; };

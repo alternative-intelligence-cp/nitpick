@@ -59,6 +59,17 @@ func:main = int32() {
 };
 ```
 
+> **Typed since 1.5.1 (D-220; `meta/roadmap/1.5/1.5.1.md`).** The rule name in
+> `limit<…>` RESOLVES like any name — a typo is `NITPICK-RESOLVE-002`, a
+> name that is not a `Rules` block `NITPICK-RESOLVE-011` — at a local, a
+> parameter, and a refinement. A `Rules` body types eagerly: `$` is the
+> subject's type, every clause a `bool`. A limited binding's declared type is
+> the rule's subject BY IDENTITY — `limit<r_positive> int64:x` refuses
+> (`NITPICK-TYPE-059`), and so does a type parameter: the check runs on the
+> binding's own value at every write, so the two are one type. A `Rules`
+> clause is a contract expression and follows §3's rules for what it may
+> contain.
+
 **`limit<Rules>` is enforced in every build.** `--verify` decides only whether a
 given check is *discharged statically and therefore elided*, never whether it
 exists (D-068). With `--verify`, the integrated Z3 solver proves that the assigned
@@ -117,6 +128,14 @@ Rules<int32>:r_small_positive = { limit<r_positive>, $ < 100i32 };
 
 The Z3 solver can prove that one Rules block subsumes another (e.g., `r_small_positive` mathematically implies `r_positive`), enabling safe narrowing at call sites without redundant checks.
 
+> **Since 1.5.1 (D-220):** a refinement names a rule over the SAME subject —
+> a `Rules<int64>` refining a `Rules<int32>` is `NITPICK-TYPE-059`, since a
+> refinement is a conjunction and a conjunction has one subject — and a
+> `Rules` block that refines itself, directly or through a chain, is refused
+> at resolve (`NITPICK-RESOLVE-006`): 1.5.2 discharges a `limit` by
+> expanding its refinements into one conjunction, and a cycle would never
+> finish expanding.
+
 ---
 
 ## 3. Function Contracts: `requires` and `ensures`
@@ -136,6 +155,41 @@ func:divide = int32(int32:a, int32:b)
 ```
 
 When you compile with the `--verify-contracts` flag, the compiler translates these contracts into Z3 assertions to prove they are mathematically valid. If you don't use the static verifier, Nitpick automatically enforces these contracts at runtime.
+
+> **Typed since 1.5.1 (D-221, D-241…D-245; `meta/roadmap/1.5/1.5.1.md`).**
+> Every proposition — `requires`, `ensures`, each `invariant` conjunct,
+> `prove`, `assert_static` — is a `bool` (`NITPICK-TYPE-007`). **`result`**
+> is a keyword with its own node: the SUCCESS value, typed `T`, legal in
+> `ensures` alone, so no binding can shadow it. **`old(expr)`** is a keyword
+> operator: the operand's value at the function's ENTRY, legal in `ensures`
+> and in an `invariant` with that one meaning, never nested, never of
+> `result`, and only of a COPYABLE value — neither an owner (a `string`, a
+> `buffer`, an arena) nor an address (a pointer, a slice) — refused by name
+> otherwise. `main` and `failsafe` carry no contract (D-244); a `never
+> fails` function may (D-241).
+>
+> **A contract expression admits only what a proposition can evaluate
+> anywhere** (`NITPICK-TYPE-060`, the message names which): no `await`, no
+> `move`, no `relay`/`?!`/`?|`/`drop`, no `pick` expression, no store, no
+> manufactured view (`#wild_ptr`/`#wild_slice`), no method on a lock, an
+> atomic, a channel endpoint or an arena. A call is to a NAMED function —
+> a user function spelled `raw f(…)` (the licence checks `never fails`) or a
+> never-fails builtin bare — that is **`pure`**; a function value, a field
+> or a `dyn` is refused, because the verifier encodes a contract call as an
+> uninterpreted function per KNOWN symbol, which is sound only of a body
+> that is a function of its arguments. `is_err(x)` is a predicate and passes.
+>
+> **Purity is declared** (D-242): `pure` is a marker clause in the contract
+> window, orthogonal to `never fails` (a pure function may `fail`; a
+> contract's helper writes both words), checked in the body
+> (`NITPICK-TYPE-061`): no `async`/`thread`, no `move` parameter, no callee
+> that is not itself a named `pure` function or a `pure` builtin (the
+> reference's `Pure` column: the string views and comparisons; everything
+> that allocates, touches a descriptor, the clock, the environment or a
+> registry, suspends, or aliases a cell is `effect`), no method on a
+> shared-state receiver, no `wild`/`wildx` storage, no owning local, no
+> store that reaches memory the caller can see, no manufactured view. An
+> impl keeps its trait method's `pure`. Purity never rides a function type.
 
 ### 3.1 The `Result<T>` Intercept
 
@@ -182,6 +236,12 @@ func:sum_range = int32(int32:n)
 ```
 
 When compiled with `--verify-contracts`, the Z3 solver verifies the inductive step: if the invariant holds at the start of an iteration and the loop condition is true, then the invariant still holds at the end of the iteration.
+
+> **Typed since 1.5.1:** each conjunct is a `bool` under §3's contract
+> rules; a counted loop's invariant may name `$`, and an invariant may name
+> `old(expr)` — the value at the FUNCTION's entry (D-243), the textbook
+> relation between a running total and the bound it started from. The
+> inductive obligation is 1.5.3's.
 
 ---
 
