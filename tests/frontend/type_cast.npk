@@ -34,7 +34,7 @@ use "../../src/frontend/type_expr.npk".*;
 struct:Cx = {
     TypeTable:types;
     DiagList:diags;
-    int32:result;
+    int32:ty;
     int64:parse_errs;
 };
 
@@ -69,7 +69,7 @@ func:cx = Cx(string:src, InternTable->:it) never fails {
                                   @inst, @fninsts, @ets);
     int32:t = raw type_of_expr(@e, node);
 
-    Cx:out = Cx{ types: types, diags: diags, result: t,
+    Cx:out = Cx{ types: types, diags: diags, ty: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -113,11 +113,11 @@ func:main = int32(cstring[]:_~argv) {
     // whether ordinary arithmetic is writable at all.
     Cx:w = raw cx("(1i32 => int64) + 2i64", @it);
     if (raw errs(@w) != 0i64)                                { exit 10i32; }
-    if ((raw type_int_bits(@w.types, w.result)) != 64i32)    { exit 11i32; }
+    if ((raw type_int_bits(@w.types, w.ty)) != 64i32)    { exit 11i32; }
 
     // A cast has the type it names, whatever the operand was.
     Cx:c0 = raw cx("1i64 =>! int8", @it);
-    if ((raw type_int_bits(@c0.types, c0.result)) != 8i32)   { exit 12i32; }
+    if ((raw type_int_bits(@c0.types, c0.ty)) != 8i32)   { exit 12i32; }
 
     // An unsuffixed literal takes the TARGET's type: the one place a programmer
     // states a type outright should not be the one place a bare literal fails.

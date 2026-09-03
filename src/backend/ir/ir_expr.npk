@@ -1177,6 +1177,18 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw iv_is_ok(dv))) { pass dv; }
         pass (raw emit_fit(x, raw exprtypes_get(x.et, id), move(dv), n.span));
     }
+    // THE VERIFICATION SURFACE'S TWO EXPRESSION KINDS (1.5.1, D-221) refuse
+    // by name until 1.5.3 lowers contracts: `result` reads the return slot the
+    // seam stores before the unwind, `old` reads an entry snapshot the frame
+    // will hold. Neither can be reached today — the contract that holds them
+    // refuses first (ir_stmt.npk) — and each is named here so a kind never
+    // falls to the fail-closed default below.
+    if (n.kind == ExprKind.ExprResultValueExpr) {
+        pass (raw iv_rung("`result`", "1.5", n.span));
+    }
+    if (n.kind == ExprKind.ExprOldExpr) {
+        pass (raw iv_rung("`old(…)`", "1.5", n.span));
+    }
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
     // node it does not know turns that into a lie.

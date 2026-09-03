@@ -884,32 +884,32 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         int32:name = tn.payload =>! int32;
         if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
         // Compound: the current value op the right-hand side.
-        Term:old = raw enc_expr(e, target);
+        Term:prior = raw enc_expr(e, target);
         int64:bi = raw bind_find(e, name);
         int32:lt = 0i32;
         if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
         if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
         if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
-            drop record_division(e, lt, old, rhs, target.index, s.span);
-            if (!(old.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+            drop record_division(e, lt, prior, rhs, target.index, s.span);
+            if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
             if (!(raw term_is_numeral(rhs))) { e.nonlinear = true; }
             if (raw type_is_signed(e.types, lt)) {
                 e.uses_sdiv = true;
                 e.nonlinear = true;
-                if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("npk_sdiv", old, rhs, false)); }
-                else { drop bind_assign(e, name, raw term_app2("npk_srem", old, rhs, false)); }
+                if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("npk_sdiv", prior, rhs, false)); }
+                else { drop bind_assign(e, name, raw term_app2("npk_srem", prior, rhs, false)); }
                 pass NIL;
             }
-            if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", old, rhs, false)); }
-            else { drop bind_assign(e, name, raw term_app2("mod", old, rhs, false)); }
+            if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", prior, rhs, false)); }
+            else { drop bind_assign(e, name, raw term_app2("mod", prior, rhs, false)); }
             pass NIL;
         }
-        if (!(old.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
-        if (op == TokenKind.OpPlusAssign)  { drop bind_assign(e, name, raw term_app2("+", old, rhs, false)); pass NIL; }
-        if (op == TokenKind.OpMinusAssign) { drop bind_assign(e, name, raw term_app2("-", old, rhs, false)); pass NIL; }
+        if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+        if (op == TokenKind.OpPlusAssign)  { drop bind_assign(e, name, raw term_app2("+", prior, rhs, false)); pass NIL; }
+        if (op == TokenKind.OpMinusAssign) { drop bind_assign(e, name, raw term_app2("-", prior, rhs, false)); pass NIL; }
         if (op == TokenKind.OpStarAssign) {
-            if (!((raw term_is_numeral(old)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
-            drop bind_assign(e, name, raw term_app2("*", old, rhs, false));
+            if (!((raw term_is_numeral(prior)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
+            drop bind_assign(e, name, raw term_app2("*", prior, rhs, false));
             pass NIL;
         }
         drop bind_assign(e, name, raw term_none());

@@ -21,8 +21,8 @@ func:main = int32(cstring[]:_~argv) {
     if ((<-cell) != 100i64) { exit 12i32; }
 
     // swap and compare_exchange, the ring's index moves
-    int64:old = atomic_from_ptr::<int64>(cell).swap(7i64);
-    if (old != 100i64)  { exit 13i32; }
+    int64:was = atomic_from_ptr::<int64>(cell).swap(7i64);
+    if (was != 100i64)  { exit 13i32; }
     if ((<-cell) != 7i64) { exit 14i32; }
     // CAS returns the OBSERVED value (D-182): equal to `expected` means it
     // swapped. Success: cell holds 7, expect 7 -> writes 9, returns 7.

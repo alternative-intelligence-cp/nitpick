@@ -1,0 +1,39 @@
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 27
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 28
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 29
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 30
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 33
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 34
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 35
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 36
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 37
+//
+// D-221 (1.5.1, S-16/S-18): `result` is the success value and exists in
+// `ensures` alone; `old(expr)` is the value at the function's entry, legal in
+// `ensures` and `invariant`, never nested, never of `result`, and only of a
+// COPYABLE value -- neither an owner nor an address. Both are keywords with
+// their own nodes, so a parameter cannot shadow the one and a call cannot
+// impersonate the other; the body case used to be the resolver's refusal.
+mod:contract_names;
+func:r_requires = int32(int32:a) requires result > 0i32 { pass a; };
+func:r_body = int32(int32:a) { pass result; };
+func:r_inv = int32(int32:n) { int32:t = 0i32; while (t < n) invariant result >= 0i32 { t = t + 1i32; } pass t; };
+Rules<int32>:r_rule = { result > 0i32 };
+// `old`: placement, nesting, `result`, and copyability -- an owner, an address.
+// (the `ensures` cases below are the legal placement; each fails for its own reason)
+func:o_requires = int32(int32:a) requires old(a) > 0i32 { pass a; };
+func:o_nested = int32(int32:a) ensures old(old(a)) == a { pass a; };
+func:o_result = int32(int32:a) ensures old(result) == a { pass a; };
+func:o_string = int32(string:s) ensures old(s).len > 0i64 { pass 1i32; };
+func:o_ptr = int32(int8->:p) ensures old(p) == p { pass 1i32; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

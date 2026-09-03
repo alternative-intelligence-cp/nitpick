@@ -452,6 +452,8 @@ nothing can refuse.
 | `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
 | `DynCastExpr` | `expr`, `traits: TypeNode[]`, `quals` — `dyn A & B` (D-029). **A `=>` whose target is a `dyn` type is this node, not a `CastExpr`** — building a fat pointer is not the same operation as a checked scalar conversion, and giving them one node would hide that at every use |
 | `PickExpr` | `selector: Expr`, `arms: PickArm[]` — a `pick` whose arms `give` (D-059) |
+| `OldExpr` | `operand` — **`old(expr)`**, the operand's value at the function's ENTRY (D-221, 1.5.1): legal in `ensures` and `invariant`, never nested, its operand COPYABLE (neither owning nor address-bearing) |
+| `ResultValueExpr` | — **`result`**, the SUCCESS value, legal in `ensures` alone (D-221, 1.5.1): a keyword with a leaf node, so a binding can never shadow it and the verifier binds it by kind |
 
 > **`PickExpr` was missing.** D-059 settled that `pick` is **both** a statement
 > and an expression and that the arms decide which, but only `PickStmt` ever got
@@ -547,7 +549,10 @@ D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
 | `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
 | `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |
 
-`ensures` may reference the special `result` identifier.
+`ensures` may reference **`result`** (the success value) and **`old(expr)`** (a
+value at entry); an `invariant` may reference `old` too. Both are keywords with
+their own expression nodes since 1.5.1 (D-221; §3.6), not identifiers a
+context gives meaning to.
 
 ---
 

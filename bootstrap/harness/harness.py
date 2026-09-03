@@ -1453,6 +1453,8 @@ KIND_STATUS = {
     "ExprIterationVarExpr": "lowered",  # 0.9.7
     "ExprDynCastExpr": "lowered",  # 1.0.9b — the fit to the dyn target
     "ExprPickExpr": "lowered",  # 0.9.7
+    "ExprOldExpr": "rung",          # 1.5.1 (D-221) -- 1.5.3 lowers the entry snapshot
+    "ExprResultValueExpr": "rung",  # 1.5.1 (D-221) -- 1.5.3 reads the return slot
     # --- StmtKind ---------------------------------------------------------
     "StmtBlockStmt": "lowered", "StmtVarDeclStmt": "lowered",
     "StmtAssignStmt": "lowered", "StmtExprStmt": "lowered",

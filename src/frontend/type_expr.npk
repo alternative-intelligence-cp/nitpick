@@ -123,6 +123,9 @@ pub struct:ExprTyper = {
     int32:contract_ctx;
     int32:rules_subject;
     int32:contract_raw_operand;
+    // Inside an `old(…)` operand (1.5.1 step 3): `old` does not nest, and
+    // `result` does not exist at entry.
+    bool:in_old;
 
     // THE MODULE'S `impl` BLOCKS. A method call resolves through this rather than
     // through the scope, because an `impl` declares nothing at module scope
@@ -197,7 +200,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
-                             contract_raw_operand: 0i32,
+                             contract_raw_operand: 0i32, in_old: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -1947,19 +1950,12 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
 func:type_ident = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:sym = n.a;
     if (sym == 0i32) {
-        // `result` INSIDE `ensures` IS THE SUCCESS VALUE (1.5.1, D-221): the
-        // resolver leaves the name unbound there on purpose. This
-        // name-in-context arm is 1.5.1 step 2's; step 3 replaces it with the
-        // keyword's own node (`ExprResultValueExpr`, S-18), which is what
-        // 1.5.3's encoder reads.
-        if (e.contract_ctx == (raw CTX_ENSURES())) {
-            if (raw string_eq(raw intern_get(e.interns, (raw expr_name(n)) =>! int32),
-                              "result")) {
-                pass e.fn_success;
-            }
-        }
         // A bare-name builtin resolves to no symbol and that is correct
         // (AST_REFERENCE 3.3). Its signature arrives with call checking.
+        // (`result` is not a name any more — 1.5.1 step 3 made it a keyword
+        // with its own node, `ExprResultValueExpr`, typed in
+        // `type_of_expr_inner`; the step-2 name-in-context arm that stood
+        // here is gone with the resolver's exemption.)
         pass 0i32;
     }
     Symbol:s = raw symtab_get(e.tab, sym);
@@ -2640,7 +2636,7 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:start = raw pickx_arm_start(n);
     int32:cnt = raw pickx_arm_count(n);
     int32:want = raw expected_value(e);
-    int32:result = want;
+    int32:given = want;
 
     for (int32:i in 0i32...cnt) {
         StmtId:arm = StmtId{ index: raw ast_id_at(e.ast, start, i) };
@@ -2651,15 +2647,15 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
         // reported; the `give` is then looked for on top of that rather than
         // instead of it.
         drop check_stmt(e, raw arm_body(a));
-        result = raw arm_give_type(e, raw arm_body(a), result, n.span);
+        given = raw arm_give_type(e, raw arm_body(a), given, n.span);
     }
 
-    if (result == 0i32) {
+    if (given == 0i32) {
         pass (raw te_error(e, raw TYPE_CANNOT_INFER(),
             "this `pick` is used as a value and no arm gives one; an arm that falls off its end has nothing to produce",
             n.span));
     }
-    pass result;
+    pass given;
 };
 
 // THE `give` IN AN ARM'S BODY, CHECKED AGAINST WHAT THE OTHERS GAVE.
@@ -3126,6 +3122,61 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
 
     if (n.kind == ExprKind.ExprSentinelLiteral) {
         pass (raw type_sentinel(e, n));
+    }
+
+    // `result` IS THE SUCCESS VALUE, IN `ensures` ALONE (1.5.1 step 3, D-221,
+    // S-18): a keyword with a leaf node, so a parameter can no longer shadow
+    // it and 1.5.3's encoder binds it by KIND to the function's return term.
+    if (n.kind == ExprKind.ExprResultValueExpr) {
+        if (e.contract_ctx != (raw CTX_ENSURES())) {
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "`result` is the return value, and only `ensures` has one (D-221)",
+                n.span));
+        }
+        if (e.in_old) {
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "`old(result)` snapshots nothing: `result` does not exist at entry (D-221)",
+                n.span));
+        }
+        pass e.fn_success;
+    }
+    // `old(expr)` IS THE OPERAND'S VALUE AT THE FUNCTION'S ENTRY (1.5.1 step 3,
+    // D-221, S-16): legal in `ensures` and — with the same meaning — in an
+    // `invariant`; not nested; its operand COPYABLE, neither owning
+    // (`type_drops`) nor address-bearing (`type_holds_address`), because a
+    // snapshot of an owner is a second owner and a snapshot of an address is
+    // an address to something that has since moved on. Its type is its
+    // operand's.
+    if (n.kind == ExprKind.ExprOldExpr) {
+        bool:looks_back = e.contract_ctx == (raw CTX_ENSURES());
+        if (e.contract_ctx == (raw CTX_INVARIANT())) { looks_back = true; }
+        if (!looks_back) {
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "`old(…)` is the value at the function's entry, and only `ensures` and `invariant` look back to it (D-221)",
+                n.span));
+        }
+        if (e.in_old) {
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "`old(old(…))` names the same entry twice: `old` does not nest (D-221)",
+                n.span));
+        }
+        e.in_old = true;
+        int32:ot = raw type_of_expr(e, raw expr_operand(n));
+        e.in_old = false;
+        if (ot == 0i32) { pass 0i32; }
+        if (raw type_is_invalid(e.types, ot)) { pass 0i32; }
+        TypeResolver:orr = raw etyper_resolver(e);
+        bool:copyable = true;
+        if (raw type_drops(@orr, ot, e.scope, 64i32)) { copyable = false; }
+        if (raw type_holds_address(@orr, ot)) { copyable = false; }
+        if (!copyable) {
+            string:o1 = string_concat("`old` snapshots a COPYABLE value at entry, and `",
+                                      raw type_display(e.types, e.interns, ot));
+            string:o2 = string_concat(o1,
+                "` is not one (D-221): it owns storage or carries an address — snapshot the scalar you mean (a length, a count, a field)");
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(), move(o2), n.span));
+        }
+        pass ot;
     }
 
     // `$` inside `loop`/`till` — a counter with a type and no declaration.

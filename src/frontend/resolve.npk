@@ -43,11 +43,11 @@ pub struct:Resolver = {
     DiagList->:diags;
     int32:module_scope;
 
-    // `ensures result > 0i32` names the function's return value, which is
-    // declared nowhere (AST_REFERENCE section 5). Set only while a contract is
-    // being walked, so `result` is an ordinary name everywhere else and a
-    // variable may still be called that.
-    bool:in_ensures;
+    // (`in_ensures` stood here until 1.5.1 step 3: `result` was an ordinary
+    // identifier the walk exempted inside `ensures`, so a parameter of that
+    // name bound first and shadowed the return value in its own
+    // postcondition. `result` is a keyword with its own node now, D-221/S-18,
+    // and the resolver has nothing to exempt.)
 
     // WHERE THE INVOCATION WAS, while a macro expansion is being resolved.
     //
@@ -78,7 +78,7 @@ pub struct:Resolver = {
 pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                                   InternTable->:interns, DiagList->:diags) never fails {
     Resolver:r = Resolver{ ast: ast, tab: tab, interns: interns, diags: diags,
-                           module_scope: 0i32, in_ensures: false,
+                           module_scope: 0i32,
                            caller_scope: 0i32,
                            in_prelude: false, module_name: 0i32,
                            ecodes: raw list_init::<int32>(16i64),
@@ -129,13 +129,6 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) never fails {
     // operators with their own nodes (D-096).
     if (raw is_builtin_name(text)) {
         pass NIL;
-    }
-
-    // `result` inside an `ensures` clause is the return value.
-    if (r.in_ensures) {
-        if (raw string_eq(text, "result")) {
-            pass NIL;
-        }
     }
 
     string:m1 = string_concat("cannot find `", text);
@@ -535,14 +528,9 @@ func:resolve_contract = NIL(Resolver->:r, VerifyId:id, int32:scope) never fails 
         pass NIL;
     }
     VerifyNode:v = raw ast_verify(r.ast, id);
-    // `result` is only a name inside `ensures` (AST_REFERENCE section 5), so the
-    // exemption is scoped to exactly that and a variable may still be called
-    // `result` anywhere else.
-    if ((raw contract_kind(v)) == (raw CONTRACT_ENSURES())) {
-        r.in_ensures = true;
-    }
+    // `result` and `old(…)` are keywords with their own nodes (1.5.1, D-221),
+    // so the condition resolves like any expression: nothing to exempt.
     drop resolve_expr(r, raw contract_cond(v), scope);
-    r.in_ensures = false;
     pass NIL;
 };
 
@@ -823,7 +811,6 @@ pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
                 string:text = raw intern_get(interns,
                                                (raw expr_name(e)) =>! int32);
                 bool:excused = raw is_builtin_name(text);
-                if (raw string_eq(text, "result")) { excused = true; }
                 if (!excused) {
                     unbound = unbound + 1i32;
                 }

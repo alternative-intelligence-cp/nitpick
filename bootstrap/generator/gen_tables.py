@@ -541,7 +541,15 @@ def terminals(spec, header):
     return re.findall(r'"([^"]+)"', m.group(1))
 
 
+# A KEYWORD WHOSE TOKEN NAME IS NOT ITS SPELLING (1.5.1, D-221, S-18): `result`
+# would derive `KwResult`, which `Result` -- the type -- already owns. The one
+# entry; a second would want a reason as good.
+KW_EXPLICIT = {"result": "KwResultValue"}
+
+
 def kw_variant(k):
+    if k in KW_EXPLICIT:
+        return KW_EXPLICIT[k]
     return "Kw" + (k if k[0].isupper() else k.capitalize())
 
 

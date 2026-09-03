@@ -223,8 +223,9 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
                 }
             }
 
-            // `ensures` may name `result`, which is an ordinary identifier here
-            // and is given meaning by the verifier, not by the grammar.
+            // `ensures` may name `result` and `old(…)` — keywords with their own
+            // expression nodes since 1.5.1 (D-221, S-16/S-18); the checker says
+            // where each is legal, the grammar never restricts (D-085).
             ExprId:cond = raw p_parse_expr(p);
             VerifyId:c = raw ast_add_verify(p.ast, VerifyKind.VerifyContractNode, sp,
                                               kind, cond.index, flags, 0i64);

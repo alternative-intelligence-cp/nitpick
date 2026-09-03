@@ -157,9 +157,14 @@ func:main = int32(cstring[]:_~argv) {
         "func:f = int32(int32:a) requires a > 0i32 ensures result > 0i32 { pass a; };",
         @it);
     if (raw errors(@rg) != 0i64)                          { exit 60i32; }
-    // …and nowhere else, so the exemption cannot hide a typo in a body.
+    // …and since 1.5.1 step 3 (D-221, S-18) `result` is a KEYWORD with its own
+    // node, so a stray one is not a resolve question at all: it parses and
+    // resolves clean here, and the CHECKER refuses it outside `ensures`
+    // (`tests/types/rejection/contract_names.npk`). Until then this case
+    // expected one resolve error -- the exemption's boundary -- and the
+    // resolver has no exemption left to bound.
     Run:rh = raw run("func:f = int32() { pass result; };", @it);
-    if (raw errors(@rh) != 1i64)                          { exit 61i32; }
+    if (raw errors(@rh) != 0i64)                          { exit 61i32; }
 
     // --- member access resolves the BASE and stops -------------------------------------
     // `p.x` needs `p`'s type to say anything about `x`, and that is cycle 0.4.

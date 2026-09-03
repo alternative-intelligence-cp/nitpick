@@ -40,7 +40,7 @@ pub func:fn_is_terminal = bool(InternTable->:interns, int32:name) never fails {
 
 pub struct:FnSig = {
     int32:success;    // the declared type — what `pass` must produce
-    int32:result;     // `Result<success>`, or the same as `success` for main/failsafe
+    int32:wrapped;    // `Result<success>`, or the same as `success` for main/failsafe
     bool:terminal;    // main or failsafe: no `Result`, and no `relay`
 };
 
@@ -91,7 +91,7 @@ func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
     // annotation, one diagnostic: the same rule index 0 of the type table exists
     // for (0.4.0), applied one layer up.
     if (raw check_not_result_return(r, ret_id, scope)) {
-        FnSig:bad = FnSig{ success: 0i32, result: 0i32,
+        FnSig:bad = FnSig{ success: 0i32, wrapped: 0i32,
                            terminal: raw fn_is_terminal(r.interns, name) };
         pass bad;
     }
@@ -100,13 +100,13 @@ func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
     bool:terminal = raw fn_is_terminal(r.interns, name);
 
     if (terminal) {
-        FnSig:s = FnSig{ success: success, result: success, terminal: true };
+        FnSig:s = FnSig{ success: success, wrapped: success, terminal: true };
         pass s;
     }
     int32:wrapped = raw tt_result(r.types, success,
                                   raw type_size(r.types, success),
                                   raw type_align(r.types, success));
-    FnSig:s = FnSig{ success: success, result: wrapped, terminal: false };
+    FnSig:s = FnSig{ success: success, wrapped: wrapped, terminal: false };
     pass s;
 };
 
@@ -155,7 +155,7 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
         // spells its return the way a declaration does — the success type,
         // with Result implicit (D-069's one rule) — so the type built FROM a
         // declaration must encode the same slot the annotation encodes, or the
-        // two spellings of one type never unify. Storing `s.result` here was
+        // two spellings of one type never unify. Storing `s.wrapped` here was
         // exactly that mismatch, invisible until function values existed.
         pass (raw tt_func(r.types, s.success, w.start, w.count, nf));
     }

@@ -666,6 +666,31 @@ func:p_primary = ExprId(Parser->:p) never fails {
         pass (raw ast_add_expr(p.ast, ExprKind.ExprIterationVarExpr, sp,
                                  0i32, 0i32, 0i32, 0i64));
     }
+    // `result` — the SUCCESS value, a keyword with a leaf node (1.5.1, D-221,
+    // S-18), `$`'s shape. Legal in `ensures` alone, which the CHECKER says;
+    // the grammar never restricts (D-085). Until 1.5.1 this was an ordinary
+    // identifier the resolver exempted inside `ensures`, so a parameter named
+    // `result` bound first and shadowed the return value in its own
+    // postcondition.
+    if (k == TokenKind.KwResultValue) {
+        discard(raw p_advance(p));
+        pass (raw ast_add_expr(p.ast, ExprKind.ExprResultValueExpr, sp,
+                                 0i32, 0i32, 0i32, 0i64));
+    }
+
+    // `old(expr)` — the operand's value at the function's ENTRY (1.5.1, D-221,
+    // S-16): a keyword operator with a parenthesised operand, `move`'s shape
+    // below and `is_err`'s reason (D-096: a call that is not a call confuses
+    // every reader and every tool). Where it is legal is the checker's
+    // question; the grammar never restricts (D-085).
+    if (k == TokenKind.KwOld) {
+        discard(raw p_advance(p));
+        discard(raw p_expect(p, TokenKind.PLParen));
+        ExprId:oo = raw p_parse_expr(p);
+        discard(raw p_expect(p, TokenKind.PRParen));
+        pass (raw ast_add_expr(p.ast, ExprKind.ExprOldExpr, sp,
+                                 oo.index, 0i32, 0i32, 0i64));
+    }
 
     // `move(place)` and `comptime(expr)` are KEYWORD OPERATORS with a
     // parenthesised operand, not calls (D-065). `move`'s operand is a place,

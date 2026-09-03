@@ -31,7 +31,7 @@ use "../../src/frontend/type_expr.npk".*;
 struct:Ex = {
     TypeTable:types;
     DiagList:diags;
-    int32:result;
+    int32:ty;
     int64:parse_errs;
 };
 
@@ -67,7 +67,7 @@ func:ex = Ex(string:src, InternTable->:it) never fails {
                                   @inst, @fninsts, @ets);
     int32:t = raw type_of_expr(@e, node);
 
-    Ex:out = Ex{ types: types, diags: diags, result: t,
+    Ex:out = Ex{ types: types, diags: diags, ty: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -104,12 +104,12 @@ func:main = int32(cstring[]:_~argv) {
     // without it every literal would look contextually typed.
     Ex:a = raw ex("42i32", @it);
     if (raw errs(@a) != 0i64)                                  { exit 10i32; }
-    if ((raw type_int_bits(@a.types, a.result)) != 32i32)      { exit 11i32; }
-    if (!(raw type_is_signed(@a.types, a.result)))             { exit 12i32; }
+    if ((raw type_int_bits(@a.types, a.ty)) != 32i32)      { exit 11i32; }
+    if (!(raw type_is_signed(@a.types, a.ty)))             { exit 12i32; }
 
     Ex:b = raw ex("42u64", @it);
-    if ((raw type_int_bits(@b.types, b.result)) != 64i32)      { exit 13i32; }
-    if (raw type_is_signed(@b.types, b.result))                { exit 14i32; }
+    if ((raw type_int_bits(@b.types, b.ty)) != 64i32)      { exit 13i32; }
+    if (raw type_is_signed(@b.types, b.ty))                { exit 14i32; }
 
     // An UNSUFFIXED literal with no context is an ERROR, not a silent int32
     // (D-092). A default would be a type nobody wrote, chosen by a rule nobody
@@ -120,11 +120,11 @@ func:main = int32(cstring[]:_~argv) {
     // …but one beside a typed operand takes that operand's type.
     Ex:d = raw ex("42i64 + 1", @it);
     if (raw errs(@d) != 0i64)                                  { exit 16i32; }
-    if ((raw type_int_bits(@d.types, d.result)) != 64i32)      { exit 17i32; }
+    if ((raw type_int_bits(@d.types, d.ty)) != 64i32)      { exit 17i32; }
     // …in either order.
     Ex:d2 = raw ex("1 + 42i64", @it);
     if (raw errs(@d2) != 0i64)                                 { exit 18i32; }
-    if ((raw type_int_bits(@d2.types, d2.result)) != 64i32)    { exit 19i32; }
+    if ((raw type_int_bits(@d2.types, d2.ty)) != 64i32)    { exit 19i32; }
 
     // --- EVERY NUMERIC FAMILY HAS A SUFFIX, and each names its own type -------
     //
@@ -135,20 +135,20 @@ func:main = int32(cstring[]:_~argv) {
     // with the floats — a literal silently becoming a different type.
     Ex:nt = raw ex("1tbb8", @it);
     if (raw errs(@nt) != 0i64)                                 { exit 200i32; }
-    if ((raw type_kind(@nt.types, nt.result)) != (raw TY_TBB())) { exit 201i32; }
-    if ((raw type_int_bits(@nt.types, nt.result)) != 8i32)     { exit 202i32; }
+    if ((raw type_kind(@nt.types, nt.ty)) != (raw TY_TBB())) { exit 201i32; }
+    if ((raw type_int_bits(@nt.types, nt.ty)) != 8i32)     { exit 202i32; }
 
     Ex:nc = raw ex("65char8", @it);
     if (raw errs(@nc) != 0i64)                                 { exit 203i32; }
-    if ((raw type_kind(@nc.types, nc.result)) != (raw TY_CHAR())) { exit 204i32; }
+    if ((raw type_kind(@nc.types, nc.ty)) != (raw TY_CHAR())) { exit 204i32; }
 
     // A `tfp` literal TYPES since 1.3.2 (D-195): exactly folded at check
     // time, the family's own kind — the "no rung supplies it yet" era this
     // case once pinned ended with the tier.
     Ex:nf = raw ex("1.5tfp256", @it);
     if (raw errs(@nf) != 0i64)                                 { exit 205i32; }
-    if ((raw type_kind(@nf.types, nf.result)) != (raw TY_TFP())) { exit 206i32; }
-    if ((raw type_int_bits(@nf.types, nf.result)) != 256i32)   { exit 207i32; }
+    if ((raw type_kind(@nf.types, nf.ty)) != (raw TY_TFP())) { exit 206i32; }
+    if ((raw type_int_bits(@nf.types, nf.ty)) != 256i32)   { exit 207i32; }
 
     // `tbb` ARITHMETIC TYPES AS THE `tbb` (D-008, 0.7.7): saturation, ERR and
     // stickiness are the 0.9 LOWERING's, but the type was always the language's.
@@ -157,7 +157,7 @@ func:main = int32(cstring[]:_~argv) {
     // rung refusal.
     Ex:na = raw ex("1tbb32 + 2tbb32", @it);
     if (raw errs(@na) != 0i64)                                 { exit 207i32; }
-    if ((raw type_kind(@na.types, na.result)) != (raw TY_TBB())) { exit 208i32; }
+    if ((raw type_kind(@na.types, na.ty)) != (raw TY_TBB())) { exit 208i32; }
 
     // An unsuffixed literal takes a context type of its OWN family only: `42`
     // becomes an `int64` and never a `flt64`, because `42` and `42.0` are
@@ -195,7 +195,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and a real bool expression is fine.
     Ex:t3 = raw ex("(1i32 < 2i32) && (3i32 > 2i32)", @it);
     if (raw errs(@t3) != 0i64)                                 { exit 33i32; }
-    if (t3.result != t3.types.t_bool)                          { exit 34i32; }
+    if (t3.ty != t3.types.t_bool)                          { exit 34i32; }
 
     // --- THERE IS NO IMPLICIT WIDENING (D-092) --------------------------------------
     //
@@ -237,7 +237,7 @@ func:main = int32(cstring[]:_~argv) {
     // A comparison yields a bool whatever it compared.
     Ex:c1 = raw ex("1i32 < 2i32", @it);
     if (raw errs(@c1) != 0i64)                                 { exit 50i32; }
-    if (c1.result != c1.types.t_bool)                          { exit 51i32; }
+    if (c1.ty != c1.types.t_bool)                          { exit 51i32; }
 
     // `==` on a bool is ordinary…
     Ex:c2 = raw ex("true == false", @it);
@@ -281,16 +281,16 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- strings and characters type as themselves ------------------------------------------
     Ex:s1 = raw ex("\"hello\"", @it);
-    if (s1.result != s1.types.t_string)                        { exit 80i32; }
+    if (s1.ty != s1.types.t_string)                        { exit 80i32; }
     Ex:s2 = raw ex("`a &{1i32} b`", @it);
-    if (s2.result != s2.types.t_string)                        { exit 81i32; }
+    if (s2.ty != s2.types.t_string)                        { exit 81i32; }
     Ex:s3 = raw ex("'x'", @it);
-    if ((raw type_kind(@s3.types, s3.result)) != (raw TY_CHAR())) { exit 82i32; }
+    if ((raw type_kind(@s3.types, s3.ty)) != (raw TY_CHAR())) { exit 82i32; }
 
     // --- floats follow the literal rule, in their own family --------------------------------
     Ex:f1 = raw ex("1.5f64", @it);
     if (raw errs(@f1) != 0i64)                                 { exit 90i32; }
-    if ((raw type_kind(@f1.types, f1.result)) != (raw TY_FLOAT())) { exit 91i32; }
+    if ((raw type_kind(@f1.types, f1.ty)) != (raw TY_FLOAT())) { exit 91i32; }
     // An unsuffixed float has no context here either.
     Ex:f2 = raw ex("1.5", @it);
     if (raw errs(@f2) != 1i64)                                 { exit 92i32; }
@@ -304,10 +304,10 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- THE THREE SENTINELS ------------------------------------------------------------------
     Ex:n1 = raw ex("NIL", @it);
-    if (n1.result != n1.types.t_nil)                           { exit 100i32; }
+    if (n1.ty != n1.types.t_nil)                           { exit 100i32; }
     // `ERR` is the `tbb` taint value (D-008), so it types as one.
     Ex:n2 = raw ex("ERR", @it);
-    if (n2.result != n2.types.t_tbb32)                         { exit 101i32; }
+    if (n2.ty != n2.types.t_tbb32)                         { exit 101i32; }
     // `NULL` is valid only in a pointer context (TYPE_REFERENCE §27), and with
     // nothing to say WHICH pointer it is an error rather than some default — a
     // null `int32->` and a null `Frame->` are not the same value downstream.
@@ -353,15 +353,15 @@ func:main = int32(cstring[]:_~argv) {
     // --- RANGES ARE VALUES WITH A TYPE (D-093) ------------------------------------------------
     Ex:r1 = raw ex("1i32..10i32", @it);
     if (raw errs(@r1) != 0i64)                                 { exit 120i32; }
-    if ((raw type_kind(@r1.types, r1.result)) != (raw TY_RANGE())) { exit 121i32; }
+    if ((raw type_kind(@r1.types, r1.ty)) != (raw TY_RANGE())) { exit 121i32; }
     // The element type is the endpoints', so `for` and `pick` can read it off.
-    if ((raw type_int_bits(@r1.types, raw type_elem(@r1.types, r1.result))) != 32i32) {
+    if ((raw type_int_bits(@r1.types, raw type_elem(@r1.types, r1.ty))) != 32i32) {
         exit 122i32;
     }
     // `..` is INCLUSIVE and `...` EXCLUSIVE (the reverse of Rust), and both are
     // the same type: the bound belongs to the value, not to the type.
     Ex:r2 = raw ex("1i32...10i32", @it);
-    if (r2.result != r1.result)                                { exit 123i32; }
+    if (r2.ty != r1.ty)                                { exit 123i32; }
 
     // A character range is legitimate — code-point order is a real ordering, and
     // `'a'..'z'` asks a question about letters, not about numbers.
@@ -385,7 +385,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- the ternary, which is `is (c) : a : b` and NOT `? :` ---------------------------------
     Ex:tn1 = raw ex("is (true) : 1i32 : 2i32", @it);
     if (raw errs(@tn1) != 0i64)                                { exit 140i32; }
-    if ((raw type_int_bits(@tn1.types, tn1.result)) != 32i32)  { exit 141i32; }
+    if ((raw type_int_bits(@tn1.types, tn1.ty)) != 32i32)  { exit 141i32; }
 
     // The condition is a strict `bool` like every other condition in the language.
     Ex:tn2 = raw ex("is (1i32) : 1i32 : 2i32", @it);
@@ -399,7 +399,7 @@ func:main = int32(cstring[]:_~argv) {
     // …and an unsuffixed literal in one arm takes the other arm's type.
     Ex:tn4 = raw ex("is (true) : 1i64 : 2", @it);
     if (raw errs(@tn4) != 0i64)                                { exit 144i32; }
-    if ((raw type_int_bits(@tn4.types, tn4.result)) != 64i32)  { exit 145i32; }
+    if ((raw type_int_bits(@tn4.types, tn4.ty)) != 64i32)  { exit 145i32; }
 
     // --- a bare `?` and `defaults` are struck; the `Result` fallback is `?|` (D-175) ---
     // D-167 kept the wrong survivor; `?` reads as Rust's error-propagation while

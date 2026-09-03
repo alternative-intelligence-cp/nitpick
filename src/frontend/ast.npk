@@ -770,6 +770,7 @@ pub func:expr_shape = int32(ExprKind:k) never fails {
     if (k == ExprKind.ExprSentinelLiteral)   { pass (raw EXPR_SHAPE_LEAF()); }
     if (k == ExprKind.ExprIdentifierExpr)    { pass (raw EXPR_SHAPE_LEAF()); }
     if (k == ExprKind.ExprIterationVarExpr)  { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprResultValueExpr)   { pass (raw EXPR_SHAPE_LEAF()); }   // `result` (1.5.1)
 
     // One operand in slot `a`.
     if (k == ExprKind.ExprUnaryExpr)         { pass (raw EXPR_SHAPE_ONE()); }
@@ -785,6 +786,7 @@ pub func:expr_shape = int32(ExprKind:k) never fails {
     if (k == ExprKind.ExprDropExpr)          { pass (raw EXPR_SHAPE_ONE()); }
     if (k == ExprKind.ExprRelayExpr)         { pass (raw EXPR_SHAPE_ONE()); }
     if (k == ExprKind.ExprAwaitExpr)         { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprOldExpr)           { pass (raw EXPR_SHAPE_ONE()); }   // `old(expr)` (1.5.1)
     // The cast family carries a TYPE in slot `b`, not an expression, so it is
     // one-operand here and the type is walked by the type resolver.
     if (k == ExprKind.ExprCastExpr)          { pass (raw EXPR_SHAPE_ONE()); }

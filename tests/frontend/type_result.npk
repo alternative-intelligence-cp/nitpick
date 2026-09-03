@@ -37,7 +37,7 @@ use "../../src/frontend/type_expr.npk".*;
 struct:Rx = {
     TypeTable:types;
     DiagList:diags;
-    int32:result;
+    int32:ty;
     int64:parse_errs;
 };
 
@@ -78,7 +78,7 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) never fails {
     e.fn_success = raw tt_int(@types, 32i32, true);
     int32:t = raw type_of_expr(@e, node);
 
-    Rx:out = Rx{ types: types, diags: diags, result: t,
+    Rx:out = Rx{ types: types, diags: diags, ty: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -100,7 +100,7 @@ func:code0 = string(Rx->:x) never fails {
 };
 
 // --- resolving a `Result<T>` ANNOTATION -------------------------------------------
-struct:Ty = { TypeTable:types; DiagList:diags; int32:result; };
+struct:Ty = { TypeTable:types; DiagList:diags; int32:ty; };
 
 func:ty = Ty(string:text, InternTable->:it) never fails {
     DiagList:ld = raw diaglist_init();
@@ -118,7 +118,7 @@ func:ty = Ty(string:text, InternTable->:it) never fails {
     InstanceTable:inst = raw insttable_init();
     TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     int32:t = raw resolve_type(@r, node, 0i32);
-    Ty:out = Ty{ types: types, diags: diags, result: t };
+    Ty:out = Ty{ types: types, diags: diags, ty: t };
     pass out;
 };
 
@@ -170,24 +170,24 @@ func:main = int32(cstring[]:_~argv) {
     // "there is no type named" against whatever string sat there.
     Ty:r1 = raw ty("Result<int32>", @it);
     if ((raw diaglist_count(@r1.diags)) != 0i64)               { exit 10i32; }
-    if ((raw type_kind(@r1.types, r1.result)) != (raw TY_RESULT())) { exit 11i32; }
+    if ((raw type_kind(@r1.types, r1.ty)) != (raw TY_RESULT())) { exit 11i32; }
     // `{T, tbb32}` and NO stored `is_error` (D-069).
-    if ((raw type_size(@r1.types, r1.result)) != 8i64)         { exit 12i32; }
+    if ((raw type_size(@r1.types, r1.ty)) != 8i64)         { exit 12i32; }
 
     Ty:r2 = raw ty("Optional<int32>", @it);
-    if ((raw type_kind(@r2.types, r2.result)) != (raw TY_OPTIONAL())) { exit 13i32; }
+    if ((raw type_kind(@r2.types, r2.ty)) != (raw TY_OPTIONAL())) { exit 13i32; }
 
     // `Result<NIL>` is `{i32}` — NIL contributes nothing (D-084) — and is the
     // most common return type in the language, since void functions do not exist.
     Ty:r3 = raw ty("Result<NIL>", @it);
-    if ((raw type_size(@r3.types, r3.result)) != 4i64)         { exit 14i32; }
+    if ((raw type_size(@r3.types, r3.ty)) != 4i64)         { exit 14i32; }
 
     // `Handle<T>` LOWERS since 0.10.2 (D-152): sixteen bytes, an index and a
     // generation — and not a pointer.
     Ty:r4 = raw ty("Handle<int32>", @it);
     if ((raw diaglist_count(@r4.diags)) != 0i64)               { exit 15i32; }
-    if ((raw type_kind(@r4.types, r4.result)) != (raw TY_HANDLE())) { exit 25i32; }
-    if ((raw type_size(@r4.types, r4.result)) != 16i64)        { exit 26i32; }
+    if ((raw type_kind(@r4.types, r4.ty)) != (raw TY_HANDLE())) { exit 25i32; }
+    if ((raw type_size(@r4.types, r4.ty)) != 16i64)        { exit 26i32; }
 
     // A constructor whose kind arrives at a later rung still NAMES THE RUNG
     // rather than claiming the type does not exist (D-085).
@@ -221,7 +221,7 @@ func:main = int32(cstring[]:_~argv) {
     // one since the flip: `drop` takes a CALL (TYPE-042); the yield stays NIL.
     Rx:u4 = raw rx("drop (Result{value: 1i32 })", false, @it);
     if (raw errs(@u4) != 1i64)                                 { exit 24i32; }
-    if (u4.result != u4.types.t_nil)                           { exit 25i32; }
+    if (u4.ty != u4.types.t_nil)                           { exit 25i32; }
 
     // …so using one as a number is caught.
     Rx:u5 = raw rx("(drop (Result{value: 1i32 })) + 1i32", false, @it);
@@ -247,7 +247,7 @@ func:main = int32(cstring[]:_~argv) {
     // pinned rather than assumed.
     Rx:q1 = raw rx("(Result{value: 1i32 }) ?| 0i32", false, @it);
     if (raw errs(@q1) != 0i64)                                 { exit 40i32; }
-    if ((raw type_int_bits(@q1.types, q1.result)) != 32i32)    { exit 41i32; }
+    if ((raw type_int_bits(@q1.types, q1.ty)) != 32i32)    { exit 41i32; }
 
     // The fallback must be the SUCCESS type: a default of another type would make
     // the expression's type depend on which way it went at runtime.
@@ -272,7 +272,7 @@ func:main = int32(cstring[]:_~argv) {
     // `func:failsafe = int32(Error:err)` — rather than being chosen.
     Rx:b1 = raw rx("(Result{value: 1i32 }) ?! E99", false, @it);
     if (raw errs(@b1) != 0i64)                                 { exit 50i32; }
-    if ((raw type_int_bits(@b1.types, b1.result)) != 32i32)    { exit 51i32; }
+    if ((raw type_int_bits(@b1.types, b1.ty)) != 32i32)    { exit 51i32; }
 
     Rx:b2 = raw rx("(Result{value: 1i32 }) ?! 99i32", false, @it);
     if (raw errs(@b2) != 1i64)                                 { exit 52i32; }
@@ -284,15 +284,15 @@ func:main = int32(cstring[]:_~argv) {
     // truth about one fact, and two sources of truth eventually differ.
     Rx:m1 = raw rx("(Result{value: 1i32 }).value", false, @it);
     if (raw errs(@m1) != 0i64)                                 { exit 60i32; }
-    if ((raw type_int_bits(@m1.types, m1.result)) != 32i32)    { exit 61i32; }
+    if ((raw type_int_bits(@m1.types, m1.ty)) != 32i32)    { exit 61i32; }
 
     Rx:m2 = raw rx("(Result{value: 1i32 }).err", false, @it);
     if (raw errs(@m2) != 0i64)                                 { exit 62i32; }
-    if ((raw type_kind(@m2.types, m2.result)) != (raw TY_ERROR())) { exit 63i32; }
+    if ((raw type_kind(@m2.types, m2.ty)) != (raw TY_ERROR())) { exit 63i32; }
 
     Rx:m3 = raw rx("(Result{value: 1i32 }).is_error", false, @it);
     if (raw errs(@m3) != 0i64)                                 { exit 64i32; }
-    if (m3.result != m3.types.t_bool)                          { exit 65i32; }
+    if (m3.ty != m3.types.t_bool)                          { exit 65i32; }
 
     // …and it is a `bool`, so it is usable as a condition WITHOUT truthiness.
     Rx:m4 = raw rx("(Result{value: 1i32 }).is_error && true", false, @it);
@@ -302,7 +302,7 @@ func:main = int32(cstring[]:_~argv) {
     // `.is_error` already answers. The message says which one was meant.
     Rx:ie1 = raw rx("is_err(1tbb32)", false, @it);
     if (raw errs(@ie1) != 0i64)                                { exit 100i32; }
-    if (ie1.result != ie1.types.t_bool)                        { exit 101i32; }
+    if (ie1.ty != ie1.types.t_bool)                        { exit 101i32; }
 
     Rx:ie2 = raw rx("is_err(Result{value: 1i32 })", false, @it);
     if (raw errs(@ie2) != 1i64)                                { exit 102i32; }
@@ -312,14 +312,14 @@ func:main = int32(cstring[]:_~argv) {
     // type, which is what makes `pass(v)` and `fail(e)` sugar over this form.
     Rx:cl1 = raw rx("Result{value: 1i32 }", false, @it);
     if (raw errs(@cl1) != 0i64)                                { exit 110i32; }
-    if ((raw type_kind(@cl1.types, cl1.result)) != (raw TY_RESULT())) { exit 111i32; }
+    if ((raw type_kind(@cl1.types, cl1.ty)) != (raw TY_RESULT())) { exit 111i32; }
 
     // FIELD ORDER DOES NOT MATTER — the names are matched, so the node's slots
     // mean one thing however it was written. The spec's own desugar table writes
     // `error` first and its examples write `value` first.
     Rx:cl2 = raw rx("Result{value: 1i32}", false, @it);
     if (raw errs(@cl2) != 0i64)                                { exit 112i32; }
-    if (cl2.result != cl1.result)                              { exit 113i32; }
+    if (cl2.ty != cl1.ty)                              { exit 113i32; }
 
     // ONE FIELD IS ENOUGH, which is exactly what the desugars produce: `pass`
     // writes `value` and leaves `err`, `fail` writes `err` and leaves `value`.
@@ -371,7 +371,7 @@ func:main = int32(cstring[]:_~argv) {
     // The size assertion that would catch a stored flag being added: `{int32,
     // tbb32}` is 8 bytes, and a third field could not hide in it.
     Rx:clc = raw rx("Result{value: 1i32 }", false, @it);
-    if ((raw type_size(@clc.types, clc.result)) != 8i64)       { exit 119i32; }
+    if ((raw type_size(@clc.types, clc.ty)) != 8i64)       { exit 119i32; }
 
     // A member a `Result` does not have is named.
     Rx:m5 = raw rx("(Result{value: 1i32 }).ok", false, @it);
@@ -379,14 +379,14 @@ func:main = int32(cstring[]:_~argv) {
 
     // The size assertion is the one that would catch a stored flag being added:
     // `{int32, tbb32}` is 8 bytes, and a third field could not hide in it.
-    if ((raw type_size(@m3.types, m3.result)) != 1i64)         { exit 68i32; }
+    if ((raw type_size(@m3.types, m3.ty)) != 1i64)         { exit 68i32; }
 
     // --- THE RETURN TYPE IS THE SUCCESS TYPE (D-013, D-091) --------------------
     // `func:f = int32()` returns `Result<int32>`. The wrapping happens in the
     // checker rather than the parser, because the AST records what was written
     // and this records what it means.
     FnSig2:s1 = raw sig("func:f = int32() { pass 1i32; };", "f", @it);
-    if ((raw type_kind(@s1.types, s1.sig.result)) != (raw TY_RESULT())) { exit 70i32; }
+    if ((raw type_kind(@s1.types, s1.sig.wrapped)) != (raw TY_RESULT())) { exit 70i32; }
     if ((raw type_int_bits(@s1.types, s1.sig.success)) != 32i32)  { exit 71i32; }
     if (s1.sig.terminal)                                          { exit 72i32; }
 
@@ -395,7 +395,7 @@ func:main = int32(cstring[]:_~argv) {
     // return a `Result` to.
     FnSig2:s2 = raw sig("func:main = int32(cstring[]:a) { exit 0i32; };", "main", @it);
     if (!s2.sig.terminal)                                         { exit 73i32; }
-    if (s2.sig.result != s2.sig.success)                          { exit 74i32; }
+    if (s2.sig.wrapped != s2.sig.success)                          { exit 74i32; }
     FnSig2:s3 = raw sig("func:failsafe = int32(Error:e) { exit 1i32; };",
                        "failsafe", @it);
     if (!s3.sig.terminal)                                         { exit 75i32; }

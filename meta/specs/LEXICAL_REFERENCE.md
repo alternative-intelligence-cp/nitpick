@@ -62,6 +62,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "acquires" | "gives"
                       | "invariant" | "fails" | "on" | "with" | "never"
+                      | "old" | "result"
 
 ; the contract position after a parameter list (D-163, D-181):
 ;   Contracts ::= ( "requires" Expr | "ensures" Expr
@@ -147,6 +148,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
 | `NIL` added to `BuiltinType` | It is a type as well as a value — `func:reset = NIL(Ast->:a)` — and was listed only among the sentinels, so the type parser refused a spelling the compiler's own sources use on nearly every mutating function (0.2.5) |
 | `cstring` added to `BuiltinType` | D-049 — `AST_REFERENCE.md` §4 declares a `CStringType` node and `TYPE_REFERENCE.md` §3.2.1 writes `cstring:cs = "Hello";`, but the production never listed it, so `cstring` lexed as an identifier, the node was unreachable, and a user type of that name would have silently shadowed the builtin (0.2.8) |
+| `old`, `result` added to `VerificationKeyword` | D-221 (1.5.1, S-16/S-18) — `old(expr)` is the operand's value at the function's ENTRY, a keyword operator with a parenthesised operand (`move(place)`'s shape, `is_err`'s reason: a call that is not a call confuses every reader, D-096), legal in `ensures` and `invariant`; `result` is the SUCCESS value in `ensures`, a leaf like `$`. The prototype reserved `result`; this grammar had left it an identifier "given meaning by the verifier", so a parameter named `result` shadowed the return value inside its own postcondition, and 1.5.3's encoder would have met an unbound name to re-match by context. `result`'s token is `KwResultValue`, the one keyword whose token name is not its spelling (`Result` owns `KwResult`). Measured before adding: `old` was two locals and `result` one field name, all renamed. |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 
 ## 5. Operators and Punctuation

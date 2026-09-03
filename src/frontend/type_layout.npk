@@ -257,6 +257,17 @@ func:field_holds_ptr = bool(TypeResolver->:r, int32:t) never fails {
     pass true;
 };
 
+// CAN A VALUE OF THIS TYPE CARRY AN ADDRESS? The same table, public (1.5.1,
+// D-221): `old(expr)` snapshots a COPYABLE value at a function's entry, and a
+// snapshot of an address is an address to something that has since moved on
+// — so the checker asks this beside `type_drops` (an owner) to decide what
+// `old` may take. One table, two callers; a kind that gains an answer gains
+// it in both.
+pub func:type_holds_address = bool(TypeResolver->:r, int32:t) never fails {
+    if (t == 0i32) { pass true; }
+    pass (raw field_holds_ptr(r, t));
+};
+
 // FUEL, as a belt to the loader's braces. A by-value containment cycle is refused
 // before this runs, so the walk is acyclic — but "acyclic because something else
 // checked" is exactly the assumption worth bounding, since the cost of being

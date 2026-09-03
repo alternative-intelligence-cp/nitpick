@@ -38,6 +38,14 @@ func:calls = int32(int32:a) requires (raw helper(a)) >= 0i32 ensures result == (
 
 func:sound = int32(tbb32:t) requires !is_err(t) { pass 1i32; };
 
+// `old(n)` is `n` at entry -- in `ensures`, and with the same meaning in an
+// `invariant` (S-16): the running count against the entry bound.
+func:entry = int32(int32:n) ensures result >= old(n) {
+    int32:i = 0i32;
+    while (i < n) invariant i <= old(n) { i = i + 1i32; }
+    pass i;
+};
+
 func:view = int32(int8->:p, int64:n) requires (string_from_bytes(p, n)).len == n { pass 1i32; };
 
 func:main = int32(cstring[]:_~argv) {

@@ -31,7 +31,7 @@ struct:Fix = {
     SymbolTable:tab;
     DiagList:diags;
     int32:scope;
-    int32:result;
+    int32:ty;
 };
 
 // Parse a bare TYPE and resolve it, in a scope holding whatever `decls` declares.
@@ -62,7 +62,7 @@ func:ty = Fix(string:decls, string:type_text, InternTable->:it) never fails {
     int32:resolved = raw resolve_type(@r, node, scope);
 
     Fix:f = Fix{ ast: ast, types: types, tab: tab, diags: diags,
-                 scope: scope, result: resolved };
+                 scope: scope, ty: resolved };
     pass f;
 };
 
@@ -84,46 +84,46 @@ func:main = int32(cstring[]:_~argv) {
     // --- the builtin scalars, from the GENERATED table -------------------------
     Fix:a = raw ty("", "int32", @it);
     if (raw errs(@a) != 0i64)                                  { exit 10i32; }
-    if ((raw type_kind(@a.types, a.result)) != (raw TY_INT()))  { exit 11i32; }
-    if ((raw type_int_bits(@a.types, a.result)) != 32i32)      { exit 12i32; }
-    if (!(raw type_is_signed(@a.types, a.result)))             { exit 13i32; }
+    if ((raw type_kind(@a.types, a.ty)) != (raw TY_INT()))  { exit 11i32; }
+    if ((raw type_int_bits(@a.types, a.ty)) != 32i32)      { exit 12i32; }
+    if (!(raw type_is_signed(@a.types, a.ty)))             { exit 13i32; }
 
     Fix:b = raw ty("", "uint64", @it);
-    if ((raw type_int_bits(@b.types, b.result)) != 64i32)      { exit 14i32; }
-    if (raw type_is_signed(@b.types, b.result))                { exit 15i32; }
+    if ((raw type_int_bits(@b.types, b.ty)) != 64i32)      { exit 14i32; }
+    if (raw type_is_signed(@b.types, b.ty))                { exit 15i32; }
 
     // `bool` and `char8` are one byte each and are NOT integers.
     Fix:c = raw ty("", "bool", @it);
-    if ((raw type_kind(@c.types, c.result)) != (raw TY_BOOL())) { exit 16i32; }
-    if (raw type_is_numeric(@c.types, c.result))               { exit 17i32; }
+    if ((raw type_kind(@c.types, c.ty)) != (raw TY_BOOL())) { exit 16i32; }
+    if (raw type_is_numeric(@c.types, c.ty))               { exit 17i32; }
     Fix:d = raw ty("", "char8", @it);
-    if ((raw type_kind(@d.types, d.result)) != (raw TY_CHAR())) { exit 18i32; }
-    if (raw type_is_numeric(@d.types, d.result))               { exit 19i32; }
+    if ((raw type_kind(@d.types, d.ty)) != (raw TY_CHAR())) { exit 18i32; }
+    if (raw type_is_numeric(@d.types, d.ty))               { exit 19i32; }
 
     // `fd` is its own type, not an integer (D-042).
     Fix:e = raw ty("", "fd", @it);
-    if ((raw type_kind(@e.types, e.result)) != (raw TY_KERNEL())) { exit 20i32; }
-    if (raw type_is_numeric(@e.types, e.result))               { exit 21i32; }
+    if ((raw type_kind(@e.types, e.ty)) != (raw TY_KERNEL())) { exit 20i32; }
+    if (raw type_is_numeric(@e.types, e.ty))               { exit 21i32; }
 
     // `oflags` is a flag family — one kind, the family in the window, not an
     // integer and not ordered (D-044/D-230, 1.4.8); `fmode` is another family.
     Fix:fl = raw ty("", "oflags", @it);
-    if ((raw type_kind(@fl.types, fl.result)) != (raw TY_FLAGS())) { exit 90i32; }
-    if (raw type_is_numeric(@fl.types, fl.result))                { exit 91i32; }
-    if (raw type_is_ordered(@fl.types, fl.result))                { exit 92i32; }
-    if ((raw type_elem(@fl.types, fl.result)) != (raw FLAGS_OFLAGS())) { exit 93i32; }
+    if ((raw type_kind(@fl.types, fl.ty)) != (raw TY_FLAGS())) { exit 90i32; }
+    if (raw type_is_numeric(@fl.types, fl.ty))                { exit 91i32; }
+    if (raw type_is_ordered(@fl.types, fl.ty))                { exit 92i32; }
+    if ((raw type_elem(@fl.types, fl.ty)) != (raw FLAGS_OFLAGS())) { exit 93i32; }
     // `range<int32>` is D-093's type, spellable since 1.4.8 (S-8).
     Fix:rg = raw ty("", "range<int32>", @it);
-    if ((raw type_kind(@rg.types, rg.result)) != (raw TY_RANGE())) { exit 96i32; }
-    if ((raw type_kind(@rg.types, raw type_elem(@rg.types, rg.result))) != (raw TY_INT())) { exit 97i32; }
+    if ((raw type_kind(@rg.types, rg.ty)) != (raw TY_RANGE())) { exit 96i32; }
+    if ((raw type_kind(@rg.types, raw type_elem(@rg.types, rg.ty))) != (raw TY_INT())) { exit 97i32; }
     Fix:fm = raw ty("", "fmode", @it);
-    if ((raw type_kind(@fm.types, fm.result)) != (raw TY_FLAGS())) { exit 94i32; }
-    if ((raw type_elem(@fm.types, fm.result)) != (raw FLAGS_FMODE())) { exit 95i32; }
+    if ((raw type_kind(@fm.types, fm.ty)) != (raw TY_FLAGS())) { exit 94i32; }
+    if ((raw type_elem(@fm.types, fm.ty)) != (raw FLAGS_FMODE())) { exit 95i32; }
 
     // --- `cstring` is its own type, reachable since 0.2.8 -----------------------
     Fix:cs = raw ty("", "cstring", @it);
     if (raw errs(@cs) != 0i64)                                 { exit 25i32; }
-    if ((raw type_kind(@cs.types, cs.result)) != (raw TY_CSTRING())) { exit 26i32; }
+    if ((raw type_kind(@cs.types, cs.ty)) != (raw TY_CSTRING())) { exit 26i32; }
 
     // --- `any` IS LEGAL ONLY UNDER `->` (TYPE_REFERENCE §27) ---------------------
     // A bare one is refused rather than silently promoted: a checker that
@@ -135,8 +135,8 @@ func:main = int32(cstring[]:_~argv) {
 
     Fix:ptr = raw ty("", "any->", @it);
     if (raw errs(@ptr) != 0i64)                                { exit 32i32; }
-    if ((raw type_kind(@ptr.types, ptr.result)) != (raw TY_POINTER())) { exit 33i32; }
-    int32:pointee = raw type_elem(@ptr.types, ptr.result);
+    if ((raw type_kind(@ptr.types, ptr.ty)) != (raw TY_POINTER())) { exit 33i32; }
+    int32:pointee = raw type_elem(@ptr.types, ptr.ty);
     if ((raw type_kind(@ptr.types, pointee)) != (raw TY_ANY())) { exit 34i32; }
 
     // …and it is legal at every DEPTH, not only at the top. A struct field's
@@ -146,14 +146,14 @@ func:main = int32(cstring[]:_~argv) {
 
     // --- ONE NODE, TWO TYPES: `T[]` and `T[N]` (D-070) ----------------------------
     Fix:sl = raw ty("", "int32[]", @it);
-    if ((raw type_kind(@sl.types, sl.result)) != (raw TY_SLICE())) { exit 40i32; }
+    if ((raw type_kind(@sl.types, sl.ty)) != (raw TY_SLICE())) { exit 40i32; }
     // A slice is {ptr, len} whatever it points at.
-    if ((raw type_size(@sl.types, sl.result)) != 16i64)        { exit 41i32; }
+    if ((raw type_size(@sl.types, sl.ty)) != 16i64)        { exit 41i32; }
 
     Fix:ar = raw ty("", "int32[4]", @it);
-    if ((raw type_kind(@ar.types, ar.result)) != (raw TY_ARRAY())) { exit 42i32; }
+    if ((raw type_kind(@ar.types, ar.ty)) != (raw TY_ARRAY())) { exit 42i32; }
     // An array CONTAINS its elements, so its size depends on theirs.
-    if ((raw type_size(@ar.types, ar.result)) != 16i64)        { exit 43i32; }
+    if ((raw type_size(@ar.types, ar.ty)) != 16i64)        { exit 43i32; }
 
     // An array size that is not constant is refused BY NAME rather than taking
     // whatever number happened to be lying around -- which is what 0.2.8 found
@@ -165,7 +165,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- a NAMED type resolves to its declaration (D-090) --------------------------
     Fix:st = raw ty("struct:Point = { int32:x; };", "Point", @it);
     if (raw errs(@st) != 0i64)                                 { exit 50i32; }
-    if ((raw type_kind(@st.types, st.result)) != (raw TY_STRUCT())) { exit 51i32; }
+    if ((raw type_kind(@st.types, st.ty)) != (raw TY_STRUCT())) { exit 51i32; }
 
     // Two structs with the same shape are DIFFERENT TYPES.
     Fix:two = raw ty("struct:Meters = { int32:v; }; struct:Seconds = { int32:v; };",
@@ -179,7 +179,7 @@ func:main = int32(cstring[]:_~argv) {
     Parser:sp = raw parser_init(@sk, @two.ast, @pd2, @it);
     TypeId:snode = raw p_parse_type(@sp);
     int32:seconds = raw resolve_type(@r2, snode, two.scope);
-    if (two.result == seconds)                                 { exit 52i32; }
+    if (two.ty == seconds)                                 { exit 52i32; }
 
     // --- a name that is NOT a type says what it IS ------------------------------------
     // "unknown type `helper`" would send the reader hunting for a declaration
@@ -196,10 +196,10 @@ func:main = int32(cstring[]:_~argv) {
     // --- `func RetType(Params)` (D-087) -------------------------------------------------
     Fix:ft = raw ty("", "func int32(int32, int64)", @it);
     if (raw errs(@ft) != 0i64)                                 { exit 70i32; }
-    if ((raw type_kind(@ft.types, ft.result)) != (raw TY_FUNC())) { exit 71i32; }
+    if ((raw type_kind(@ft.types, ft.ty)) != (raw TY_FUNC())) { exit 71i32; }
     // One word: a code address with no captured environment, because closures
     // are removed (D-018).
-    if ((raw type_size(@ft.types, ft.result)) != 8i64)         { exit 72i32; }
+    if ((raw type_size(@ft.types, ft.ty)) != 8i64)         { exit 72i32; }
 
     // --- `Self` is valid only inside a trait or impl (D-030) -----------------------------
     Fix:sf = raw ty("", "Self", @it);
@@ -210,23 +210,23 @@ func:main = int32(cstring[]:_~argv) {
     Fix:dy = raw ty("trait:Drawable = { }; trait:Printable = { };",
                     "dyn Drawable & Printable", @it);
     if (raw errs(@dy) != 0i64)                                 { exit 90i32; }
-    if ((raw type_kind(@dy.types, dy.result)) != (raw TY_DYN())) { exit 91i32; }
+    if ((raw type_kind(@dy.types, dy.ty)) != (raw TY_DYN())) { exit 91i32; }
     // ONE VTABLE WORD PER TRAIT, PLUS THE DATA WORD (D-159, 1.0.5). This
     // asserted a flat 16 bytes, which is right for `dyn A` and wrong for every
     // wider one -- two bounds need three words, and the second vtable pointer
     // had nowhere to live.
-    if ((raw type_size(@dy.types, dy.result)) != 24i64)        { exit 92i32; }
+    if ((raw type_size(@dy.types, dy.ty)) != 24i64)        { exit 92i32; }
 
     // A SINGLE BOUND IS STILL THE SPEC'S FAT POINTER.
     Fix:dy1 = raw ty("trait:Drawable = { };", "dyn Drawable", @it);
     if (raw errs(@dy1) != 0i64)                                { exit 95i32; }
-    if ((raw type_size(@dy1.types, dy1.result)) != 16i64)      { exit 96i32; }
+    if ((raw type_size(@dy1.types, dy1.ty)) != 16i64)      { exit 96i32; }
 
     // AND THREE BOUNDS ARE FOUR WORDS.
     Fix:dy3 = raw ty("trait:Aa = { }; trait:Bb = { }; trait:Cc = { };",
                      "dyn Aa & Bb & Cc", @it);
     if (raw errs(@dy3) != 0i64)                                { exit 97i32; }
-    if ((raw type_size(@dy3.types, dy3.result)) != 32i64)      { exit 98i32; }
+    if ((raw type_size(@dy3.types, dy3.ty)) != 32i64)      { exit 98i32; }
 
     // `dyn A & B` AND `dyn B & A` ARE ONE TYPE (D-159). Interning keys on the
     // window, so without a canonical order these were two interned types with
@@ -235,7 +235,7 @@ func:main = int32(cstring[]:_~argv) {
     Fix:dyx = raw ty("trait:Drawable = { }; trait:Printable = { };",
                      "dyn Printable & Drawable", @it);
     if (raw errs(@dyx) != 0i64)                                { exit 99i32; }
-    if (dyx.result != dy.result)                               { exit 100i32; }
+    if (dyx.ty != dy.ty)                               { exit 100i32; }
 
     // `dyn int32` is not a dynamic anything, and catching it here means 0.4.6 can
     // assume a `dyn` has traits.
@@ -248,7 +248,7 @@ func:main = int32(cstring[]:_~argv) {
     // not resolve is still a pointer, so nothing downstream cascades.
     Fix:cascade = raw ty("", "Nowhere->", @it);
     if (raw errs(@cascade) != 1i64)                            { exit 100i32; }
-    if ((raw type_kind(@cascade.types, cascade.result)) != (raw TY_POINTER())) {
+    if ((raw type_kind(@cascade.types, cascade.ty)) != (raw TY_POINTER())) {
         exit 101i32;
     }
 
