@@ -318,3 +318,15 @@ pub func:TYPE_RULES_SUBJECT = string() never fails { pass "NITPICK-TYPE-059"; };
 // and never one it cannot. One code, several ways to fail it; the message
 // names which. (`is_err` is a predicate, not an outcome, and is admitted.)
 pub func:TYPE_CONTRACT_RULES = string() never fails { pass "NITPICK-TYPE-060"; };
+
+// 1.5.1 (D-221, S-15): the `pure` BODY rules — a `pure` function is a
+// function of its arguments and nothing else. Refused, the message naming
+// which: `pure` on an `async`/`thread` function or on `main`/`failsafe`; a
+// `move` parameter; a call to a callee not declared `pure`, to a builtin the
+// reference's Pure column marks `effect`, or through a value (a function
+// pointer, a field, a `dyn`); a method on a lock, an atomic, a channel
+// endpoint or an arena; `wild`/`wildx` storage or an owning local; a store
+// that reaches memory the caller can see; `#wild_ptr`/`#wild_slice`; and an
+// impl dropping the `pure` its trait declares. One code, several ways to fail
+// it (TYPE-054's convention).
+pub func:TYPE_PURE_RULES = string() never fails { pass "NITPICK-TYPE-061"; };

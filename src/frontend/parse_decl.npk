@@ -212,6 +212,21 @@ pub func:fn_declares_gives = bool(Ast->:ast, DeclNode:d) never fails {
     }
     pass false;
 };
+
+// Does this function declare `pure` (D-221, 1.5.1)? Same window, same walk.
+// Read by NAME at a call site — a contract's, or a `pure` body's — which is
+// why purity never rides a function type: a callee whose declaration is not
+// in hand (a function value, a `dyn`) is refused where purity matters.
+pub func:fn_declares_pure = bool(Ast->:ast, DeclNode:d) never fails {
+    int32:c = 0i32;
+    int32:cn = raw fn_contract_count(ast, d);
+    while (c < cn) {
+        VerifyNode:v = raw ast_verify(ast, raw fn_contract(ast, d, c));
+        if (v.kind == VerifyKind.VerifyPure) { pass true; }
+        c = c + 1i32;
+    }
+    pass false;
+};
 pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) never fails {
     int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
                  + (raw fn_param_count(ast, d)) + (raw fn_contract_count(ast, d));

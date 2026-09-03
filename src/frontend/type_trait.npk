@@ -1336,6 +1336,23 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
             pass NIL;
         }
     }
+    // `pure` IS PART OF THE CONTRACT TOO (1.5.1 step 4, D-221): a `dyn` call
+    // and a bound call read the TRAIT's word, so an impl may not drop the
+    // `pure` its trait method declares — the same direction as `never fails`,
+    // compared by declaration rather than by a type flag, because purity
+    // never rides a function type.
+    if (raw fn_declares_pure(r.ast, tf)) {
+        if (!(raw fn_declares_pure(r.ast, f))) {
+            string:pu1 = string_concat("`",
+                raw intern_get(r.interns, raw decl_name(f)));
+            drop diaglist_push(r.diags,
+                raw diag_error(raw TYPE_PURE_RULES(),
+                    string_concat(pu1,
+                        "` drops the `pure` its trait declares (D-221); the impl must keep the contract"),
+                    im.span));
+            pass NIL;
+        }
+    }
     // ASYNCNESS IS PART OF THE CONTRACT (1.1.12b). An `await` through a
     // bound resolves the TRAIT method's word and, when it is `async`, drives
     // the impl through the coroutine frame protocol — a sync impl there is

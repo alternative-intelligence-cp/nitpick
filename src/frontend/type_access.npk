@@ -52,9 +52,13 @@ pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         int32:mt = raw type_method_call(e, id, n);
         // INSIDE A CONTRACT the call rule is asked once the receiver's type
-        // and the resolved method are recorded (1.5.1, D-221).
+        // and the resolved method are recorded (1.5.1, D-221); inside a
+        // `pure` body the purity rule, the same way (step 4).
         if (e.contract_ctx != 0i32) {
             if (raw contract_method_refused(e, id, n)) { pass 0i32; }
+        }
+        if (e.fn_pure) {
+            if (e.contract_ctx == 0i32) { drop pure_method_rules(e, id, n); }
         }
         pass mt;
     }
@@ -610,6 +614,13 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (e.contract_ctx != 0i32) {
         if (raw contract_call_refused(e, id, n, d)) { pass 0i32; }
     }
+    // A CALL INSIDE A `pure` BODY (1.5.1 step 4, D-221): a NAMED `pure` callee
+    // or a `pure` builtin, else refused by name — and typed anyway, so the
+    // licence and the argument checks see what they always see (one report).
+    // A contract's own calls are the contract rule's, above.
+    if (e.fn_pure) {
+        if (e.contract_ctx == 0i32) { drop pure_call_rules(e, n, d); }
+    }
     if (d.kind == DeclKind.DeclFunctionDecl) {
         // AN `async` CALLEE HAS NO DIRECT SYMBOL (D-177): the machine runs
         // only under `await`, or as the spawn form `drop f(…)` (D-058). A
@@ -1113,23 +1124,44 @@ func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) never fails {
 // True when it reported; the caller answers the silent 0.
 func:contract_call_refused = bool(ExprTyper->:e, ExprId:id, ExprNode:n, DeclNode:d) never fails {
     if (d.kind == DeclKind.DeclFunctionDecl) {
-        if (id.index == e.contract_raw_operand) { pass false; }
-        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
-            "a call in a contract is spelled `raw f(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so — a bare call is a `Result`, which is not a proposition",
-            n.span));
-        pass true;
+        if (id.index != e.contract_raw_operand) {
+            discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "a call in a contract is spelled `raw f(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so — a bare call is a `Result`, which is not a proposition",
+                n.span));
+            pass true;
+        }
+        // AND `pure` (1.5.1 step 4, S-15): the verifier encodes the call as a
+        // function of its arguments, which is only sound of a body that IS one.
+        if (!(raw fn_declares_pure(e.ast, d))) {
+            string:p1 = string_concat("a contract calls only `never fails` `pure` functions (D-221), and `",
+                                      raw intern_get(e.interns, raw decl_name(d)));
+            discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                string_concat(p1, "` is not declared `pure`: the verifier encodes a call as a function of its arguments, which is sound only of a body that is one"),
+                n.span));
+            pass true;
+        }
+        pass false;
     }
     ExprNode:cn = raw ast_expr(e.ast, raw expr_callee(n));
     if (cn.kind == ExprKind.ExprIdentifierExpr) {
         if (cn.a == 0i32) {
             string:bn = raw intern_get(e.interns, cn.payload =>! int32);
             if (raw is_builtin_name(bn)) {
-                if (raw builtin_never_fails(bn)) { pass false; }
-                string:b1 = string_concat("`", bn);
-                string:b2 = string_concat(b1,
-                    "` may fail, and a contract calls only `never fails` functions (D-221): a proposition has no error path");
-                discard(raw te_error(e, raw TYPE_CONTRACT_RULES(), move(b2), n.span));
-                pass true;
+                if (!(raw builtin_never_fails(bn))) {
+                    string:b1 = string_concat("`", bn);
+                    string:b2 = string_concat(b1,
+                        "` may fail, and a contract calls only `never fails` functions (D-221): a proposition has no error path");
+                    discard(raw te_error(e, raw TYPE_CONTRACT_RULES(), move(b2), n.span));
+                    pass true;
+                }
+                if (!(raw builtin_pure(bn))) {
+                    string:e1 = string_concat("`", bn);
+                    string:e2 = string_concat(e1,
+                        "` has an effect — it allocates, does I/O, suspends, or reads shared state — and a contract calls only `pure` builtins (D-221)");
+                    discard(raw te_error(e, raw TYPE_CONTRACT_RULES(), move(e2), n.span));
+                    pass true;
+                }
+                pass false;
             }
             // An unresolved name: resolution already said so.
             pass false;
@@ -1156,16 +1188,123 @@ func:contract_method_refused = bool(ExprTyper->:e, ExprId:id, ExprNode:n) never 
                 n.span));
             pass true;
         }
+        if (raw receiver_has_effects(e, rt)) {
+            discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "a contract reads no shared state (D-221): a lock, an atomic, a channel endpoint or an arena answers by what other tasks did, which is not a proposition about the arguments",
+                n.span));
+            pass true;
+        }
     }
     int32:md = raw exprtypes_callee(e.expr_types, id);
     if (md != 0i32) {
-        if (id.index == e.contract_raw_operand) { pass false; }
-        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
-            "a method call in a contract is spelled `raw recv.method(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so",
-            n.span));
-        pass true;
+        if (id.index != e.contract_raw_operand) {
+            discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "a method call in a contract is spelled `raw recv.method(…)` (D-221): the callee must be `never fails`, and `raw` is the checked unwrap that says so",
+                n.span));
+            pass true;
+        }
+        DeclNode:mdn = raw ast_decl(e.ast, DeclId{ index: md });
+        if (mdn.kind == DeclKind.DeclFunctionDecl) {
+            if (!(raw fn_declares_pure(e.ast, mdn))) {
+                string:p1 = string_concat("a contract calls only `never fails` `pure` functions (D-221), and `",
+                                          raw intern_get(e.interns, raw decl_name(mdn)));
+                discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                    string_concat(p1, "` is not declared `pure`"), n.span));
+                pass true;
+            }
+        }
+        pass false;
     }
     pass false;
+};
+
+// A RECEIVER WHOSE METHODS READ OR CHANGE SHARED STATE (1.5.1 step 4, D-221):
+// a lock, an atomic, a channel endpoint, an arena — directly or through a
+// pointer. A read of one is a read of what other tasks did; a call on one is
+// an effect they can see. Neither is a function of the arguments.
+func:receiver_has_effects = bool(ExprTyper->:e, int32:rt) never fails {
+    int32:t = rt;
+    if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) {
+        t = raw type_elem(e.types, t);
+    }
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_ATOMIC()))       { pass true; }
+    if (k == (raw TY_CHANNEL()))      { pass true; }
+    if (k == (raw TY_MUTEX()))        { pass true; }
+    if (k == (raw TY_RWLOCK()))       { pass true; }
+    if (k == (raw TY_CONDVAR()))      { pass true; }
+    if (k == (raw TY_BARRIER()))      { pass true; }
+    if (k == (raw TY_ARENA()))        { pass true; }
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
+    pass false;
+};
+
+// THE `pure` BODY'S CALL RULE (1.5.1 step 4, D-221, S-15): a NAMED `pure`
+// callee, or a `pure` builtin, else refused by name. Reports and returns —
+// the call is still typed, so the licence and the argument checks answer as
+// they always do and one mistake gets one sentence (D-240).
+func:pure_call_rules = NIL(ExprTyper->:e, ExprNode:n, DeclNode:d) never fails {
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        if (raw fn_declares_pure(e.ast, d)) { pass NIL; }
+        string:p1 = string_concat("a `pure` body calls only `pure` functions (D-221), and `",
+                                  raw intern_get(e.interns, raw decl_name(d)));
+        discard(raw te_error(e, raw TYPE_PURE_RULES(),
+            string_concat(p1, "` is not declared one"), n.span));
+        pass NIL;
+    }
+    ExprNode:cn = raw ast_expr(e.ast, raw expr_callee(n));
+    if (cn.kind == ExprKind.ExprIdentifierExpr) {
+        if (cn.a == 0i32) {
+            string:bn = raw intern_get(e.interns, cn.payload =>! int32);
+            if (raw is_builtin_name(bn)) {
+                if (raw builtin_pure(bn)) { pass NIL; }
+                string:b1 = string_concat("`", bn);
+                discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                    string_concat(b1, "` has an effect — it allocates, does I/O, suspends, or reads shared state — and a `pure` body calls only `pure` builtins (D-221)"),
+                    n.span));
+                pass NIL;
+            }
+            // An unresolved name: resolution already said so.
+            pass NIL;
+        }
+    }
+    discard(raw te_error(e, raw TYPE_PURE_RULES(),
+        "a `pure` body calls only NAMED `pure` functions (D-221): this callee is a value — a function pointer, a field, a `dyn` — whose purity nothing declares",
+        n.span));
+    pass NIL;
+};
+
+// The same rule for a method call in a `pure` body: no receiver with effects,
+// no `dyn` dispatch, and a resolved method must itself be `pure`.
+func:pure_method_rules = NIL(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    int32:rt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+    if (rt != 0i32) {
+        if ((raw type_kind(e.types, rt)) == (raw TY_DYN())) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "a `pure` body calls only NAMED `pure` functions (D-221): a call through a `dyn` dispatches at run time, and nothing declares what runs",
+                n.span));
+            pass NIL;
+        }
+        if (raw receiver_has_effects(e, rt)) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "a `pure` body reads no shared state (D-221): a lock, an atomic, a channel endpoint or an arena answers by what other tasks did, and a call on one is an effect they can see",
+                n.span));
+            pass NIL;
+        }
+    }
+    int32:md = raw exprtypes_callee(e.expr_types, id);
+    if (md != 0i32) {
+        DeclNode:mdn = raw ast_decl(e.ast, DeclId{ index: md });
+        if (mdn.kind == DeclKind.DeclFunctionDecl) {
+            if (!(raw fn_declares_pure(e.ast, mdn))) {
+                string:p1 = string_concat("a `pure` body calls only `pure` functions (D-221), and `",
+                                          raw intern_get(e.interns, raw decl_name(mdn)));
+                discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                    string_concat(p1, "` is not declared one"), n.span));
+            }
+        }
+    }
+    pass NIL;
 };
 
 // --- a generic call (TRAITS_REFERENCE 3.3, D-064 section 3) -------------------------------

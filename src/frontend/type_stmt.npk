@@ -688,6 +688,60 @@ func:check_refine_subject = NIL(ExprTyper->:e, VerifyId:ref, int32:subject) neve
     pass NIL;
 };
 
+// IS THIS PLACE ROOTED IN THE FRAME'S OWN STORAGE (1.5.1 step 4, D-221)? A
+// local, a `pick` binding, or a parameter — the callee's own copy — reached
+// through fields and array elements of VALUE types; never through a pointer,
+// a slice, a handle (arena storage), a `<-` dereference, or a local that
+// holds a borrow of someone else's storage. Reassigning a local that HOLDS a
+// pointer is a local store (the address changes, nothing behind it does); a
+// store THROUGH it is the member, index or dereference arm's refusal.
+func:place_is_local = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:s = raw symtab_get(e.tab, n.a);
+        if (s.origin_kind == (raw SYM_PAT())) { pass true; }
+        if (s.origin_kind == (raw SYM_STMT())) {
+            // A local initialised from a borrow or an address IS that storage.
+            StmtNode:sn = raw ast_stmt(e.ast, StmtId{ index: s.origin });
+            ExprId:init = raw stmt_decl_init(e.ast, sn);
+            if (!(raw expr_is_none(init))) {
+                ExprNode:inn = raw ast_expr(e.ast, init);
+                if (inn.kind == ExprKind.ExprBorrowExpr)    { pass false; }
+                if (inn.kind == ExprKind.ExprAddressOfExpr) { pass false; }
+            }
+            pass true;
+        }
+        if (s.origin_kind == (raw SYM_DECL())) {
+            DeclNode:dn = raw ast_decl(e.ast, DeclId{ index: s.origin });
+            if (dn.kind == DeclKind.DeclParamDecl) { pass true; }
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_is_local(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_lhs(n));
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_SLICE()))   { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_is_local(e, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass false;
+};
+
 // `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
@@ -700,6 +754,28 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // A LOCAL'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
     // declared type, by identity.
     drop check_limit_subject(e, raw stmt_decl_limit(e.ast, s), want, s.span);
+
+    // A `pure` BODY DECLARES NO MANUAL MEMORY AND NO OWNER (1.5.1, D-221):
+    // `wild`/`wildx` storage is an effect by definition, and an owning local's
+    // scope-exit drop is generated code that frees.
+    if (e.fn_pure) {
+        int32:pq = raw stmt_quals(e.ast, s);
+        if ((pq & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "a `pure` body declares no `wild`/`wildx` storage (D-221): manual memory is an effect by definition",
+                s.span));
+        } else {
+            if (want != 0i32) {
+                if (!(raw type_is_invalid(e.types, want))) {
+                    if (raw type_drops(@r, want, e.scope, 64i32)) {
+                        discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                            "a `pure` body declares no owning local (D-221): its scope-exit drop frees storage, an effect — read the owners passed in, and compute scalars",
+                            s.span));
+                    }
+                }
+            }
+        }
+    }
 
     // AN OWNING DECL IS RECORDED FOR THE SUSPEND WALK (D-183, 1.2.4b): its
     // drop at scope exit is a use the source text does not show, so a local
@@ -772,6 +848,17 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     int32:want = raw type_of_expr(e, target);
     drop require_place(e, target, s.span);
+    // A `pure` BODY STORES ONLY INTO ITS OWN LOCALS (1.5.1, D-221): a store
+    // through a pointer, a borrow, a slice, a handle — anything rooted
+    // outside this frame — is the effect the caller can see. Asked after the
+    // target is typed, so its parts' types are recorded.
+    if (e.fn_pure) {
+        if (!(raw place_is_local(e, target, 64i32))) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "a `pure` body stores only into its own locals (D-221): this target reaches memory the caller can see — through a pointer, a borrow, a slice or a handle",
+                s.span));
+        }
+    }
     // A SHARED HOLD IS READ-ONLY (D-056, 1.1.11b): writing through an
     // `RGuard.value` would be the unsynchronized mutation the write lock
     // exists to serialize — acquire `write` for a `Guard` instead.
@@ -1480,6 +1567,38 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     e.fn_never_fails = raw fn_declares_never_fails(e.ast, d);
     e.fn_is_async = raw decl_has(d, raw DECL_ASYNC());
     e.fn_gives = raw fn_declares_gives(e.ast, d);
+    e.fn_pure = raw fn_declares_pure(e.ast, d);
+    // `pure` (1.5.1, D-221, S-15): a function of its arguments and nothing
+    // else. Its header rules: not `async` or `thread` (an executor deciding
+    // when a body runs is an effect, and so is a suspension inside it), not
+    // `main`/`failsafe` (their exit is the program's), and no `move`
+    // parameter (a consumed owner is dropped at exit — a deallocation the
+    // caller can see). The body rules are read in the arms that already
+    // exist for calls, declarations and assignment.
+    if (e.fn_pure) {
+        bool:runs_on_executor = e.fn_is_async;
+        if (raw decl_has(d, raw DECL_THREAD())) { runs_on_executor = true; }
+        if (runs_on_executor) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "a `pure` function is not `async` or `thread` (D-221): an executor deciding when a body runs, and a suspension inside it, are effects a function of its arguments cannot have",
+                d.span));
+        }
+        if (e.fn_terminal) {
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                "`main` and `failsafe` are not `pure` (D-221): their exit is the program's, which is the largest effect there is",
+                d.span));
+        }
+        int32:ppi = 0i32;
+        while (ppi < (raw fn_param_count(e.ast, d))) {
+            DeclNode:ppd = raw ast_decl(e.ast, raw fn_param(e.ast, d, ppi));
+            if (((raw param_quals(ppd)) & (raw QUAL_MOVE())) != 0i32) {
+                discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                    "a `pure` function takes no `move` parameter (D-221): a consumed owner is dropped at its exit, and a deallocation is an effect the caller can see",
+                    ppd.span));
+            }
+            ppi = ppi + 1i32;
+        }
+    }
     // `gives` STATES A HAND-OFF (D-183, 1.2.6): the return carries channels
     // whose reclaim becomes the caller's. A `gives` with no channel in the
     // return is a claim about nothing; and the channels must sit at the TOP

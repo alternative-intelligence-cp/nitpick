@@ -138,6 +138,10 @@ pub func:staged<comptime int32:LEVEL> = int32() { pass LEVEL; };
 
 pub func:constrained = int32(limit<r_positive> int32:n) { pass n; };
 
+// `pure`: the marker contract clause (D-221, 1.5.1), in the contract window
+// beside `never fails`.
+pub func:total = int32(int32:a, int32:b) never fails pure { pass (a + b); };
+
 pub func:variadic_call = int32(int32:first, ..*int64[]:rest) { pass first; };
 
 inline func:hot = int32() { pass 1i32; };

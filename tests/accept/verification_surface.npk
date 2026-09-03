@@ -13,7 +13,9 @@ Rules<int32>:r_pos = { $ > 0i32 };
 Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };
 Rules<tbb32>:r_sound = { !is_err($) };
 
-func:helper = int32(int32:v) never fails { pass v; };
+// `never fails pure`: what a contract may call (D-221, S-15). Two words, two
+// claims, both checked -- and orthogonal: a pure function may `fail`.
+func:helper = int32(int32:v) never fails pure { pass v; };
 
 func:clamp = int32(limit<r_pos> int32:n)
     requires n < 50i32
@@ -46,6 +48,35 @@ func:entry = int32(int32:n) ensures result >= old(n) {
     pass i;
 };
 
+// A `pure` BODY THAT DOES EVERYTHING A PURE BODY MAY (D-221, S-15): locals of
+// value types written and rewritten, a field and an element of a local
+// aggregate stored, a read through a pointer parameter, arithmetic (its trap
+// is Layer 3), a `pick`, a `defer` whose body is pure, and calls to `pure`
+// functions and `pure` builtins. It may also `fail`: purity says nothing
+// about the error channel.
+struct:Pair = { int32:a; int32:b; };
+error:ENeg;
+
+func:peek = int32(int32->:p) never fails pure { pass (<-p); };
+
+func:clamp_pure = int32(int32:v, int32:lo, int32:hi, int32->:extra, string:name) pure {
+    if (v < 0i32) { fail ENeg; }
+    int32:r = v;
+    if (r < lo) { r = lo; }
+    if (r > hi) { r = hi; }
+    Pair:pr = Pair{ a: r, b: 0i32 };
+    pr.b = raw peek(extra);
+    int32[2]:arr = [pr.a, pr.b];
+    arr[1i64] = arr[1i64] + 1i32;
+    int32:acc = pick (r) {
+        (0i32) { give 1i32; },
+        (*) { give arr[1i64]; }
+    };
+    defer { acc = acc + 0i32; }
+    if (string_is_empty(name)) { acc = acc + 1i32; }
+    pass (raw helper(acc));
+};
+
 func:view = int32(int8->:p, int64:n) requires (string_from_bytes(p, n)).len == n { pass 1i32; };
 
 func:main = int32(cstring[]:_~argv) {
@@ -54,7 +85,9 @@ func:main = int32(cstring[]:_~argv) {
 
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (ENeg) { exit 1i32; },
         (BadStep) { exit 1i32; },
+        (OutOfBounds) { exit 1i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
         (IntOverflow) { exit 1i32; },

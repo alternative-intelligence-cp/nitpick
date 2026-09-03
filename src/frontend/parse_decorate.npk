@@ -187,6 +187,16 @@ pub func:p_parse_contracts = IdSpan(Parser->:p) never fails {
                 drop ast_scratch_push(p.ast, gv.index);
                 continue;
             }
+            // `pure` (1.5.1, D-221, S-15) — a marker clause: the body is a
+            // function of its arguments and nothing else. Checked in the
+            // body (TYPE-061), read by name where a contract calls it.
+            if (raw p_at(p, TokenKind.KwPure)) {
+                discard(raw p_advance(p));
+                VerifyId:pv = raw ast_add_verify(p.ast, VerifyKind.VerifyPure, sp,
+                                                   0i32, 0i32, 0i32, 0i64);
+                drop ast_scratch_push(p.ast, pv.index);
+                continue;
+            }
             // `joins <const Duration>` (D-181) — a thread's join deadline,
             // stated where its executor is created (D-083). A marker-plus-
             // expression clause: the deadline is an ordinary constant

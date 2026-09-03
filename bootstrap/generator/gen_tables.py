@@ -154,9 +154,10 @@ class Param(object):
 
 
 class Row(object):
-    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi")
+    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure")
 
-    def __init__(self, name, params, ret, never_fails, special, abi):
+    def __init__(self, name, params, ret, never_fails, special, abi, pure=False):
+        self.pure = pure
         self.name, self.params, self.ret = name, params, ret
         self.never_fails, self.special, self.abi = never_fails, special, abi
 
@@ -276,10 +277,18 @@ def builtin_rows(path):
         name = m.group(1)
         where = "`%s`" % name
         cells = line.split("|")
-        if len(cells) != 6:
+        if len(cells) != 7:
             raise SystemExit("BUILTIN_REFERENCE.md: %s's row has %d cells, not the "
-                             "four of `| name | signature | notes | fails |`"
+                             "five of `| name | signature | notes | fails | pure |`"
                              % (where, len(cells) - 2))
+        # THE PURE COLUMN (1.5.1, D-221): `pure` or `effect`, nothing else --
+        # a row that says neither is unreadable, like a Fails cell that says
+        # neither. Generated into `builtin_pure`, read by the contract rule
+        # and the `pure` body rule.
+        purity = cells[5].strip()
+        if purity not in ("pure", "effect"):
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's Pure column says %r, not "
+                             "`pure` or `effect`" % (where, purity))
         sig = cells[2].strip()
         if not (sig.startswith("`") and sig.endswith("`")):
             raise SystemExit("BUILTIN_REFERENCE.md: %s's Signature cell is not one "
@@ -311,7 +320,7 @@ def builtin_rows(path):
         if name in rows:
             raise SystemExit("BUILTIN_REFERENCE.md: %s has two rows" % where)
         rows[name] = Row(name, params, ret, never, special,
-                         parse_abi(cells[3], where))
+                         parse_abi(cells[3], where), purity == "pure")
     missing = sorted(SPECIALS - set(rows))
     if missing:
         raise SystemExit("the generator's SPECIALS names builtins the reference "
@@ -1215,6 +1224,21 @@ pub func:is_keyword = bool(string:text) {
     bl.append("// decides the CALL'S TYPE: bare value here, `Result<T>` otherwise.")
     bl.append("pub func:builtin_never_fails = bool(string:name) {")
     for n in nf:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
+    # THE PURE COLUMN (1.5.1, D-221). A `pure` body and a contract expression
+    # admit a builtin only if the reference's Pure column says so -- no
+    # allocation, no syscall, no store outside the frame, no suspension, no read
+    # of mutable shared state -- and the classification is a claim about the
+    # floor body, which is why it lives in the reference and not here.
+    pu = [n for n in names if rows[n].pure]
+    bl.append("")
+    bl.append("// Which bare-name builtins are `pure` (D-221, 1.5.1) -- the reference's Pure")
+    bl.append("// column, generated. A `pure` body (TYPE-061) and a contract expression")
+    bl.append("// (TYPE-060) admit these and refuse every other builtin by name.")
+    bl.append("pub func:builtin_pure = bool(string:name) {")
+    for n in pu:
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")

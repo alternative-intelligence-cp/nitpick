@@ -1,0 +1,51 @@
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 36
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 37
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 38
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 39
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 40
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 41
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 43
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 44
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 45
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 46
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 49
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 50
+//
+// D-221 (1.5.1, S-15): a `pure` body is a function of its arguments and
+// nothing else. One line per rule, and the message names which: the header
+// (`async`, a `move` parameter, `main`), the callee (not `pure`, an effect
+// builtin, not named), a receiver whose methods read or change shared state,
+// manual memory, an owning local, a store the caller can see, a manufactured
+// view of memory, and an impl dropping its trait's word.
+mod:pure_rules;
+func:impure = int32(int32:v) never fails { pass v; };
+async func:p_async = int32(int32:a) pure { pass a; };
+func:p_move = int32(move string:s) pure { pass 1i32; };
+func:p_call = int32(int32:a) pure { pass (raw impure(a)); };
+func:p_effect = int32(int32:a) pure { int64:t = mono_now(); pass a; };
+func:p_indirect = int32(func int32(int32) never fails:f, int32:a) pure { pass (raw f(a)); };
+func:p_atomic = int32(int32:a) pure { atomic<int32>:c = 0i32; int32:v = c.load(); pass v; };
+func:p_wild = int32(int32:a) pure { wild int8->:p = NULL; pass a; };
+func:p_owner = int32(int32:a) pure { string:s = "x"; pass a; };
+func:p_store = int32(int32->:p) pure { <-p = 1i32; pass 1i32; };
+func:p_slice = int32(int32[]:s) pure { s[0i64] = 1i32; pass 1i32; };
+func:p_view = int32(int64:addr) pure { pass (<-(#wild_ptr<int32>(addr))); };
+trait:Shape = { func:area = int32(Self->:self) never fails pure; };
+struct:Sq = { int32:side; };
+impl:Sq:Shape = { func:area = int32(Sq->:self) never fails { pass self.side; }; };
+func:main = int32(cstring[]:_~argv) pure { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

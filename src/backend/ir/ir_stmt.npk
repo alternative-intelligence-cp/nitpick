@@ -2825,7 +2825,12 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // `never fails` (D-163) is NOT a 1.4 contract: it is checked entirely
         // by the frontend and changes no emitted byte — the backend owes it
         // nothing, so it passes through where `requires`/`ensures` still rung.
-        if (cv.kind != VerifyKind.VerifyNeverFails) {
+        // `pure` (D-221, 1.5.1) is a marker the body owes nothing: the
+        // checker held the body to it, and the obligation walk reads it by
+        // name at the CALL sites that name this function.
+        bool:marker = cv.kind == VerifyKind.VerifyNeverFails;
+        if (cv.kind == VerifyKind.VerifyPure) { marker = true; }
+        if (!marker) {
             // `joins <fixed Duration>` (D-181) is read by the THREAD SPAWN,
             // not by the body — it states the executor's join deadline, and
             // the body owes it nothing.

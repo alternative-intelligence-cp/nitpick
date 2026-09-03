@@ -1,0 +1,16 @@
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 13
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 14
+//
+// D-221 (1.5.1, S-15): a contract calls only `never fails` PURE functions --
+// a callee that cannot fail but has an effect is still not a function of its
+// arguments, and the verifier encodes a contract call as exactly that. The
+// user function is `never fails` (the licence passes); the builtin is bare
+// (never fails, D-201); each is refused for purity alone -- one report each.
+mod:contract_purity;
+func:impure = int32(int32:v) never fails { pass v; };
+func:c_impure = int32(int32:a) requires (raw impure(a)) > 0i32 { pass a; };
+func:c_effect = int32(int32:a) requires mono_now() > 0i64 { pass a; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

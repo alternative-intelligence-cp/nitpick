@@ -31,7 +31,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 |---|---|---|
 | `ModuleDecl` | `name`, `visibility`, `items: Decl[]` | file scope, **`mod:name = { … };`**, or **`mod:name;`** for a file (D-088) |
 | `ImportDecl` | `path`, `kind`, `names: Ident[]`, `alias` | `kind` ∈ wildcard / single / selective / namespace |
-| `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: (ContractNode \| NeverFails)[]`, `body: BlockStmt?` | see §1.1; the contracts window holds `requires`/`ensures`/`acquires` and the `never fails` marker (D-163) |
+| `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: (ContractNode \| NeverFails)[]`, `body: BlockStmt?` | see §1.1; the contracts window holds `requires`/`ensures`/`acquires`, the `never fails` marker (D-163), `joins`, `gives`, and the `pure` marker (D-221, 1.5.1) |
 | `StructDecl` | `name`, `visibility`, `generics`, `fields: FieldDecl[]`, `attributes` | |
 | `EnumDecl` | `name`, `visibility`, `generics`, `variants: EnumVariant[]` | variants may carry payloads |
 | `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
@@ -55,7 +55,7 @@ FunctionDecl
   params       : ParamDecl[]
   variadic     : VariadicSpec?         // see below
   return_type  : TypeNode              // the SUCCESS type; Result<T> is implicit
-  contracts    : (ContractNode | NeverFails)[]   // requires / ensures / never fails (D-163)
+  contracts    : (ContractNode | NeverFails | JoinsWithin | Gives | Pure)[]   // requires / ensures / acquires / never fails (D-163) / joins / gives / pure (D-221)
   body         : BlockStmt?            // absent in trait declarations
 ```
 
@@ -548,6 +548,7 @@ D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
 | `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
 | `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |
+| `Pure` | *(no fields)* — the **`pure`** marker clause (D-221, 1.5.1): the body is a function of its arguments and nothing else — no allocation, no I/O, no suspension, no store the caller can see, no callee that is not itself `pure` and NAMED — checked in the body (`NITPICK-TYPE-061`) and read by name at call sites inside contracts, which admit only `never fails` `pure` callees. An impl keeps its trait method's `pure`. Orthogonal to `never fails`: a pure function may `fail`; a contract writes both words. |
 
 `ensures` may reference **`result`** (the success value) and **`old(expr)`** (a
 value at entry); an `invariant` may reference `old` too. Both are keywords with

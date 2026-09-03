@@ -120,6 +120,7 @@ KEYWORDS = {
     "prot",
     "prove",
     "pub",
+    "pure",
     "range",
     "raw",
     "relaxed",

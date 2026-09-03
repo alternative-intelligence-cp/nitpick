@@ -126,6 +126,10 @@ pub struct:ExprTyper = {
     // Inside an `old(…)` operand (1.5.1 step 3): `old` does not nest, and
     // `result` does not exist at entry.
     bool:in_old;
+    // The function being checked is declared `pure` (1.5.1 step 4, D-221,
+    // S-15): its body may contain no effect — the rules are read in the
+    // arms that already exist for calls, declarations and assignment.
+    bool:fn_pure;
 
     // THE MODULE'S `impl` BLOCKS. A method call resolves through this rather than
     // through the scope, because an `impl` declares nothing at module scope
@@ -201,6 +205,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
+                             fn_pure: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -2238,6 +2243,29 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
 // `#wild_ptr<int8>(a)` is an `int8->` and `#wild_slice<int8>(p, n)` is an `int8[]`,
 // which is the reading that makes the two consistent rather than one naming the
 // pointee and the other the pointer.
+// `#wild_ptr` AND `#wild_slice` MANUFACTURE A VIEW OF ARBITRARY MEMORY (1.5.1,
+// D-221): no proposition can reason about one, and a `pure` body is a
+// function of its arguments alone. Refused by name in both places; the four
+// other `#` forms (`#size_of`, `#ptr_add`, `#sqrt`, `#unreachable`) compute
+// from their operands and pass.
+func:view_refused = bool(ExprTyper->:e, ExprNode:n, string:name) never fails {
+    if (e.contract_ctx != 0i32) {
+        string:c1 = string_concat("`#", name);
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            string_concat(c1, "` manufactures a view of arbitrary memory, which no proposition can reason about (D-221)"),
+            n.span));
+        pass true;
+    }
+    if (e.fn_pure) {
+        string:p1 = string_concat("`#", name);
+        discard(raw te_error(e, raw TYPE_PURE_RULES(),
+            string_concat(p1, "` manufactures a view of arbitrary memory, and a `pure` body is a function of its arguments alone (D-221)"),
+            n.span));
+        pass true;
+    }
+    pass false;
+};
+
 func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     string:name = raw intern_get(e.interns, raw builtin_name(n));
     int32:gc = raw builtin_generic_count(n);
@@ -2296,6 +2324,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
 
     if (raw string_eq(name, "wild_ptr")) {
+        if (raw view_refused(e, n, "wild_ptr")) { pass 0i32; }
         if (gc != 1i32) {
             pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#wild_ptr` takes exactly one type argument, the type it points at",
@@ -2353,6 +2382,7 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     }
 
     if (raw string_eq(name, "wild_slice")) {
+        if (raw view_refused(e, n, "wild_slice")) { pass 0i32; }
         if (gc != 1i32) {
             pass (raw te_error(e, raw TYPE_GENERIC_ARITY(),
                 "`#wild_slice` takes exactly one type argument, the element type",

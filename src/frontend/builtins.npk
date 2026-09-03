@@ -121,6 +121,18 @@ pub func:builtin_never_fails = bool(string:name) never fails {
     pass false;
 };
 
+// Which bare-name builtins are `pure` (D-221, 1.5.1) -- the reference's Pure
+// column, generated. A `pure` body (TYPE-061) and a contract expression
+// (TYPE-060) admit these and refuse every other builtin by name.
+pub func:builtin_pure = bool(string:name) never fails {
+    if (raw string_eq(name, "string_byte_length")) { pass true; }
+    if (raw string_eq(name, "string_bytes")) { pass true; }
+    if (raw string_eq(name, "string_equals")) { pass true; }
+    if (raw string_eq(name, "string_from_bytes")) { pass true; }
+    if (raw string_eq(name, "string_is_empty")) { pass true; }
+    pass false;
+};
+
 // The irregulars (D-201): typed by a bespoke `type_call` arm, because no
 // signature can state what they do -- `sys` is variadic, `atomic_from_ptr`
 // reads its element from a turbofish, and the seven constructors read
