@@ -334,31 +334,56 @@ even for edits at the very bottom of the language.
 | Command | Behaviour |
 |---|---|
 | `npkg build` | reads lock + vendored source; never resolves, never fetches |
-| `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every suite the tree holds: the `[[test]]` targets and the built-in sweeps — the real-parser sweep, the five rejection suites, the backend programs with their `opt -O2` re-run, the runtime floor's tests, the acceptance suite (their declaration is **S-10**). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. `--only SUBSTR` narrows to the `[[test]]` files whose path holds it and skips the sweeps, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
+| `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every `[[test]]` entry in manifest order — the real-parser sweep, the five rejection suites, the fixtures, the backend programs with their `opt -O2` re-run, the runtime floor's tests and the acceptance suite are entries, not code (D-238). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. `--only SUBSTR` narrows to the compile-stage `[[test]]` files whose path holds it and skips every other stage, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
 | `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
 | `npkg verify` | a clean build with `[verify]` enforced, ending in the stage-1/stage-2 comparison for the compiler itself |
 
 ### 7.1 Test targets
 
-Declared in the manifest as an array of tables:
+EVERY suite either runner runs is declared in the manifest as an array of
+tables, in run order, and both runners read the one table (D-238, 1.4.8b) — a
+manifest that declared four of fourteen suites was a document a reader could
+not trust to say what ran, the stale-document shape D-204 refused for flags. An
+entry a runner cannot honour is refused BY NAME before anything runs (exit 2),
+never skipped: a stage it does not know, a `kind` on a stage that has none, a
+compile entry with no kind, no `paths`/`path` (or both), a key the schema lacks.
 
 ```toml
 [[test]]
-name = "conformance"
-kind = "positive"
-path = "tests/conformance"
+name = "conformance"          # the suite's label in every verdict line and stage line
+stage = "compile"             # the tool that judges the suite (the table below); compile is the default
+kind = "positive"             # compile only: positive | negative | diagnostic
+path = "tests/conformance"    # or `paths = [...]`; `recursive = true` sweeps subdirectories
 
 [[test]]
-name = "rejection"
-kind = "negative"
-path = "tests/rejection"
+name = "types"
+stage = "check"
+recursive = true
+path = "tests/types/rejection"
+
+[[test]]
+name = "programs"
+stage = "program"
+paths = ["tests/backend/programs", "tests/conformance"]
 ```
 
-| Kind | Passes when |
-|---|---|
-| `positive` | compiles, links, runs, and exits with the expected code |
-| `negative` | **fails to compile, emitting exactly the expected diagnostics** |
-| `diagnostic` | compiles, emitting exactly the expected warnings |
+| Stage | Judged by | Passes when |
+|---|---|---|
+| `compile` (the default) | the compiler under test | held to `kind`: `positive` compiles, links, runs, and exits with the expected code; `negative` **fails to compile, emitting exactly the expected diagnostics**; `diagnostic` compiles, emitting exactly the expected warnings |
+| `parse` | `tools/parse_check` | accepted with no diagnostic — D-085's sweep, every source in the tree, each once |
+| `resolve` | `tools/resolve_check` | refused by the LOADER with exactly the expected codes |
+| `check` | `tools/check` | refused by the frontend — the type checker, a static analysis, expansion, derive, whichever the suite's directory names — with exactly the expected codes |
+| `accept` | `tools/check` | accepted in silence |
+| `fixture` | the compiler under test | built like a program and never run; its uppercased stem becomes an `// argv:` token (a `.c` here is a reference driver built with the system C compiler — test tooling outside the TCB, D-149) |
+| `program` | the compiler under test | emitted, scanned, assembled, linked, run at -O0 and again through `opt -O2`, the same exit required |
+| `runtime` | `llc` + `ld.lld` | a hand-written `.ll` assembled, linked against the floor, run, its `expect-exit:` met |
+
+Membership stays with the stage: a `resolve`/`check` file with no `expect-error`
+is a fixture another file imports and is skipped; a `compile`/`program` file
+some other file in its suite imports is skipped. A suite runs in manifest
+order — `fixtures` before `programs`, since the second reads the map the first
+fills. `--only SUBSTR` narrows the `compile`-stage entries to the files whose
+path holds it and skips every other stage, saying so.
 
 **Expectations live in the test file**, next to the code, so a test and its
 expectation cannot drift apart:

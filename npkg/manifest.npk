@@ -1,5 +1,5 @@
 // manifest -- `nitpick.toml` as `npkg` reads it (1.4.8; D-077 for the schema,
-// D-204 for `[toolchain]`, BUILD_REFERENCE §8 for `[[test]]`).
+// D-204 for `[toolchain]`, BUILD_REFERENCE §7.1 and D-238 for `[[test]]`).
 //
 // READ ONCE, STRICTLY. One schema, every key named: a key the schema does not
 // have refuses the manifest by line, because a setting nobody reads is the
@@ -15,7 +15,29 @@ use "../src/frontend/list.npk".*;
 use "./text.npk".*;
 use "./toml.npk".*;
 
-pub struct:TestTarget = { string:name; string:kind; string:path; };
+// One `[[test]]` entry (BUILD_REFERENCE §7.1, D-238): EVERY suite `npkg test`
+// runs is one of these, in declaration order, and the harness reads the same
+// table. `stage` names the tool that judges the suite and what it must say;
+// `compile` is the default and the only stage with a `kind`.
+pub struct:TestTarget = {
+    string:name;
+    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime
+    string:kind;             // compile only: positive | negative | diagnostic; "" otherwise
+    List<string>:paths;      // relative to the root, in declaration order
+    bool:recursive;          // sweep subdirectories too
+};
+
+func:stage_known = bool(string:s) never fails {
+    if (raw text_eq(s, "compile")) { pass true; }
+    if (raw text_eq(s, "parse"))   { pass true; }
+    if (raw text_eq(s, "resolve")) { pass true; }
+    if (raw text_eq(s, "check"))   { pass true; }
+    if (raw text_eq(s, "accept"))  { pass true; }
+    if (raw text_eq(s, "fixture")) { pass true; }
+    if (raw text_eq(s, "program")) { pass true; }
+    if (raw text_eq(s, "runtime")) { pass true; }
+    pass false;
+};
 
 pub struct:Manifest = {
     string:root;             // the directory holding nitpick.toml, absolute
@@ -76,9 +98,12 @@ func:schema_allows = bool(string:section, string:key) never fails {
     }
     if (raw text_eq(section, "dependencies")) { pass true; }
     if (raw text_eq(section, "test")) {
-        if (raw text_eq(key, "name")) { pass true; }
-        if (raw text_eq(key, "kind")) { pass true; }
-        if (raw text_eq(key, "path")) { pass true; }
+        if (raw text_eq(key, "name"))      { pass true; }
+        if (raw text_eq(key, "stage"))     { pass true; }
+        if (raw text_eq(key, "kind"))      { pass true; }
+        if (raw text_eq(key, "path"))      { pass true; }
+        if (raw text_eq(key, "paths"))     { pass true; }
+        if (raw text_eq(key, "recursive")) { pass true; }
         pass false;
     }
     if (raw text_eq(section, "verify")) {
@@ -157,26 +182,77 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
     if (f4.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] lld-flags is missing or is not an array of strings")); }
     m.lld_flags = f4.value;
 
+    // THE TEST TABLE (D-238). An entry the runner cannot honour is refused BY
+    // NAME before anything runs, never skipped: a stage this runner does not
+    // know, a `kind` on a stage that has none, a compile entry with no kind,
+    // no `paths`/`path` (or both), a `recursive` that is not a boolean. (A key
+    // outside the schema was refused by line above.)
     int64:n = raw toml_array_count(d, "test");
     for (int64:t in 0i64...n) {
         Result<string>:name = toml_string(d, "test", t, "name");
-        Result<string>:kind = toml_string(d, "test", t, "kind");
-        Result<string>:path = toml_string(d, "test", t, "path");
-        if (name.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
-        if (kind.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
-        if (path.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, `kind` and `path`, each a string (BUILD_REFERENCE §8)")); }
-        bool:known = false;
-        if (raw text_eq(kind.value, "positive"))   { known = true; }
-        if (raw text_eq(kind.value, "negative"))   { known = true; }
-        if (raw text_eq(kind.value, "diagnostic")) { known = true; }
-        if (!known) {
-            string:w3 = string_concat("nitpick.toml: [[test]] `", name.value);
-            w3 = string_concat(w3, "` has kind `");
-            w3 = string_concat(w3, kind.value);
-            w3 = string_concat(w3, "`; the kinds are positive, negative and diagnostic (BUILD_REFERENCE §8)");
-            pass (raw refuse(root, w3));
+        if (name.is_error) { pass (raw refuse(root, "nitpick.toml: every [[test]] needs `name`, a string (BUILD_REFERENCE §7.1)")); }
+        string:who = string_concat("nitpick.toml: [[test]] `", name.value);
+        who = string_concat(who, "`");
+        string:stage = "compile";
+        if (raw toml_has(d, "test", t, "stage")) {
+            Result<string>:st = toml_string(d, "test", t, "stage");
+            if (st.is_error) { pass (raw refuse(root, string_concat(who, ": `stage` must be a string"))); }
+            stage = move(st.value);
         }
-        TestTarget:tt = TestTarget{ name: move(name.value), kind: move(kind.value), path: move(path.value) };
+        if (!(raw stage_known(stage))) {
+            string:w5 = string_concat(who, ": stage `");
+            w5 = string_concat(w5, stage);
+            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime (D-238); a stage the runner cannot judge is refused, not skipped");
+            pass (raw refuse(root, w5));
+        }
+        string:kind = "";
+        bool:has_kind = raw toml_has(d, "test", t, "kind");
+        if (raw text_eq(stage, "compile")) {
+            if (!has_kind) { pass (raw refuse(root, string_concat(who, ": a compile-stage target needs `kind` positive, negative or diagnostic"))); }
+            Result<string>:kd = toml_string(d, "test", t, "kind");
+            if (kd.is_error) { pass (raw refuse(root, string_concat(who, ": `kind` must be a string"))); }
+            kind = move(kd.value);
+            bool:known = false;
+            if (raw text_eq(kind, "positive"))   { known = true; }
+            if (raw text_eq(kind, "negative"))   { known = true; }
+            if (raw text_eq(kind, "diagnostic")) { known = true; }
+            if (!known) {
+                string:w3 = string_concat(who, " has kind `");
+                w3 = string_concat(w3, kind);
+                w3 = string_concat(w3, "`; the kinds are positive, negative and diagnostic (BUILD_REFERENCE §7.1)");
+                pass (raw refuse(root, w3));
+            }
+        } else {
+            if (has_kind) {
+                string:w4 = string_concat(who, ": `kind` belongs to the compile stage only; stage `");
+                w4 = string_concat(w4, stage);
+                w4 = string_concat(w4, "` judges every file one way");
+                pass (raw refuse(root, w4));
+            }
+        }
+        bool:has_paths = raw toml_has(d, "test", t, "paths");
+        bool:has_path = raw toml_has(d, "test", t, "path");
+        if (has_paths && has_path) { pass (raw refuse(root, string_concat(who, ": `paths` or `path`, not both"))); }
+        List<string>:paths = raw list_init::<string>(2i64);
+        if (has_paths) {
+            Result<List<string>>:ps = toml_strings(d, "test", t, "paths");
+            if (ps.is_error) { pass (raw refuse(root, string_concat(who, ": `paths` must be an array of strings"))); }
+            paths = ps.value;
+            if (paths.count == 0i64) { pass (raw refuse(root, string_concat(who, ": `paths` must name at least one directory"))); }
+        } else {
+            if (!has_path) { pass (raw refuse(root, string_concat(who, " needs `paths` (or its one-element shorthand `path`)"))); }
+            Result<string>:p1 = toml_string(d, "test", t, "path");
+            if (p1.is_error) { pass (raw refuse(root, string_concat(who, ": `path` must be a string"))); }
+            drop list_push(@paths, move(p1.value));
+        }
+        bool:recursive = false;
+        if (raw toml_has(d, "test", t, "recursive")) {
+            Result<bool>:rc = toml_bool(d, "test", t, "recursive");
+            if (rc.is_error) { pass (raw refuse(root, string_concat(who, ": `recursive` must be true or false"))); }
+            recursive = rc.value;
+        }
+        TestTarget:tt = TestTarget{ name: move(name.value), stage: move(stage), kind: move(kind),
+                                    paths: paths, recursive: recursive };
         drop list_push(@m.tests, move(tt));
     }
     pass m;

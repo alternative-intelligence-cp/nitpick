@@ -3,15 +3,18 @@
 // the Python harness's, unit for unit, so the parity stage can diff the two
 // runners' verdicts run-for-run).
 //
-// WHAT RUNS, IN ORDER: the manifest's `[[test]]` targets (each file compiled
-// by the compiler under test and held to its kind), then -- unless `--only`
-// narrowed the run to iterate on one file -- the real-parser sweep over
-// every source, the five rejection suites (each refused by the STAGE its
-// directory names: the loader, the type checker, an analysis, expansion,
-// derive), the real-backend programs and their `opt -O2` re-run, the
-// runtime floor's own `.ll` tests, and the acceptance suite. The
-// whole-tree instruments stay the Python harness's until the switch
-// (`meta/SWITCH.md`); this runs suites.
+// WHAT RUNS IS THE MANIFEST'S TABLE, IN ITS ORDER (D-238, 1.4.8b): every
+// `[[test]]` entry names a `stage` -- the tool that judges the suite and what
+// it must say -- and this module has one function per stage: `compile` (each
+// file compiled by the compiler under test and held to its kind), `parse`
+// (the real parser over every source, each once), `resolve` and `check` (a
+// rejection suite refused by the loader or by the frontend with EXACTLY the
+// expected codes), `accept` (silence), `fixture` (built, never run),
+// `program` (the real backend, -O0 and the `opt -O2` re-run) and `runtime`
+// (the floor's own `.ll` tests). `--only` narrows the compile-stage entries
+// and skips every other stage, saying so. The harness reads the same table,
+// so the parity diff covers the full tree; the whole-tree instruments stay
+// the Python harness's until the switch (`meta/SWITCH.md`).
 //
 // THE IMPORT GROUPING IS THE LEXER'S ANSWER (D-206 §3, the self-hosting
 // dividend). Which files are fixtures another test imports -- and so are
@@ -39,10 +42,10 @@ use "./build.npk".*;
 
 // --- discovery ---------------------------------------------------------------------
 
-// `glob("<dir>/*.npk")`, sorted: the regular files (a symlink counts) named
-// `*.npk` directly under `dir`, as absolute paths. A missing directory is
-// an empty listing, as the glob's is.
-pub func:list_npk = List<string>(string:dir) {
+// `glob("<dir>/*<suffix>")`, sorted: the regular files (a symlink counts)
+// with that suffix directly under `dir`, as absolute paths. A missing
+// directory is an empty listing, as the glob's is.
+pub func:list_suffix = List<string>(string:dir, string:suffix) {
     List<string>:out = raw list_init::<string>(16i64);
     Result<Path>:p = path_parse(dir);
     if (p.is_error) { pass out; }
@@ -54,7 +57,7 @@ pub func:list_npk = List<string>(string:dir) {
         string:name = relay dir_name(@d, i);
         DirKind:k = relay dir_kind(@d, i);
         if (name.ptr[0i64] == 46u8) { continue; }
-        if (!(raw text_ends_with(name, ".npk"))) { continue; }
+        if (!(raw text_ends_with(name, suffix))) { continue; }
         if ((k == DirKind.File) || (k == DirKind.Link)) {
             drop strlist_push(@out, raw path_join(dir, name));
         }
@@ -537,108 +540,138 @@ func:matches_only = bool(string:rel, List<string>:only) never fails {
     pass false;
 };
 
-// The `[[test]]` targets. `all_sources` collects every file they hold (the
-// grammar sweep's first list).
-pub async func:run_targets = NIL(Ctx->:c, List<string>:only, List<string>->:all_sources) {
-    bool:filtering = (only.count > 0i64);
-    for (int64:t in 0i64...c.m.tests.count) {
-        string:tname = string_from_bytes(c.m.tests.items[t].name.ptr, c.m.tests.items[t].name.len);
-        string:kind = string_from_bytes(c.m.tests.items[t].kind.ptr, c.m.tests.items[t].kind.len);
-        string:tpath = string_from_bytes(c.m.tests.items[t].path.ptr, c.m.tests.items[t].path.len);
-        List<string>:paths = relay list_npk(raw in_root(c, tpath));
-        StrSet:skip = raw imported_by_others(paths);
-        List<string>:run_paths = raw list_init::<string>(paths.count + 1i64);
-        for (int64:i in 0i64...paths.count) {
-            string:p = raw strlist_view(paths, i);
-            if (raw strset_has(skip, p)) { continue; }
-            drop strlist_push(@run_paths, p);
+// Every file with `suffix` under the entry's paths, EACH ONCE, in manifest
+// path order and sorted within a path -- `list_suffix` per path, or the
+// recursive walk when the entry says so. (The hardcoded sweeps concatenated
+// their lists and parsed six files twice; a table sweeps a file once.)
+func:files_of = List<string>(Ctx->:c, List<string>:paths, bool:recursive, string:suffix) {
+    List<string>:out = raw list_init::<string>(32i64);
+    StrSet:seen = raw strset_init(64i64);
+    for (int64:i in 0i64...paths.count) {
+        string:dir = raw in_root(c, raw strlist_view(paths, i));
+        List<string>:found = raw list_init::<string>(1i64);
+        if (recursive) { found = relay walk_files(dir, suffix); }
+        else { found = relay list_suffix(dir, suffix); }
+        for (int64:k in 0i64...found.count) {
+            string:p = raw strlist_view(found, k);
+            if (raw strset_add(@seen, raw path_normalise(p))) { drop strlist_push(@out, p); }
         }
-        drop strset_free(@skip);
-        c.available = c.available + run_paths.count;
-        List<string>:chosen = raw list_init::<string>(run_paths.count + 1i64);
-        for (int64:j in 0i64...run_paths.count) {
-            string:p2 = raw strlist_view(run_paths, j);
-            if (filtering) {
-                if (!(raw matches_only(raw rel_to_root(c, p2), only))) { continue; }
-            }
-            drop strlist_push(@chosen, p2);
-        }
-        for (int64:s in 0i64...paths.count) { drop strlist_push(all_sources, raw strlist_view(paths, s)); }
-        if (filtering && (chosen.count == 0i64)) { continue; }
-        for (int64:k in 0i64...chosen.count) {
-            string:p3 = raw strlist_view(chosen, k);
-            c.total = c.total + 1i64;
-            string:name = raw rel_to_root(c, p3);
-            string:text = relay read_text(p3);
-            Expect:exp = raw expect_read(text);
-            List<string>:fl = raw list_init::<string>(1i64);
-            if (raw text_eq(kind, "positive"))   { fl = relay await check_positive(c, name, p3, exp); }
-            if (raw text_eq(kind, "negative"))   { fl = relay await check_negative(c, name, p3, exp); }
-            if (raw text_eq(kind, "diagnostic")) { fl = relay await check_diagnostic(c, name, p3, exp); }
-            drop record(c, tname, name, fl);
-        }
-        string:rest = string_concat(kind, " test(s)");
-        drop say(raw stage_line(tname, chosen.count, rest));
     }
+    drop strset_free(@seen);
+    pass out;
+};
+
+// The tool a stage judges with -- `tools/<which>.npk` built by the builder --
+// once, on first use, and kept in the Ctx ("" not yet asked, "!" it did not
+// build, else its path). A tool that did not build is one recorded failure,
+// and every stage that needs it skips. Returns "" when there is no tool.
+async func:tool_for = string(Ctx->:c, string:which) {
+    string:have = "";
+    if (raw text_eq(which, "parse_check"))   { have = string_from_bytes(c.parse_check.ptr, c.parse_check.len); }
+    if (raw text_eq(which, "resolve_check")) { have = string_from_bytes(c.resolve_check.ptr, c.resolve_check.len); }
+    if (raw text_eq(which, "check"))         { have = string_from_bytes(c.check.ptr, c.check.len); }
+    if (have.len > 0i64) {
+        if (raw text_eq(have, "!")) { pass ""; }
+        pass (raw text_copy(have));
+    }
+    string:src = raw in_root(c, string_concat(string_concat("tools/", which), ".npk"));
+    Result<Step>:st = await build_tool(c, src, which);
+    if (st.is_error) { fail st.err; }
+    Step:s = move(st.value);
+    string:got = "!";
+    if (s.ok) {
+        got = raw text_copy(s.text);
+    } else {
+        string:m = string_concat(string_concat("tools/", which), ".npk did not build: ");
+        drop note_failure(c, string_concat(m, s.text));
+    }
+    if (raw text_eq(which, "parse_check"))   { c.parse_check = raw text_copy(got); }
+    if (raw text_eq(which, "resolve_check")) { c.resolve_check = raw text_copy(got); }
+    if (raw text_eq(which, "check"))         { c.check = raw text_copy(got); }
+    if (raw text_eq(got, "!")) { pass ""; }
+    pass got;
+};
+
+// The entry's label, a view.
+func:entry_name = string(Ctx->:c, int64:t) never fails {
+    pass (string_from_bytes(c.m.tests.items[t].name.ptr, c.m.tests.items[t].name.len));
+};
+
+// --- the stages (D-238): one function per stage, the entry decides the files ----------
+
+// `compile`: the compiler under test over every standalone file, held to the
+// entry's kind. A file some other file in the suite imports is a fixture and
+// is not run. `--only` narrows here and nowhere else; the counts are these.
+async func:run_compile = NIL(Ctx->:c, int64:t, List<string>:only) {
+    string:tname = raw entry_name(c, t);
+    string:kind = string_from_bytes(c.m.tests.items[t].kind.ptr, c.m.tests.items[t].kind.len);
+    bool:filtering = (only.count > 0i64);
+    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    StrSet:skip = raw imported_by_others(paths);
+    List<string>:run_paths = raw list_init::<string>(paths.count + 1i64);
+    for (int64:i in 0i64...paths.count) {
+        string:p = raw strlist_view(paths, i);
+        if (raw strset_has(skip, p)) { continue; }
+        drop strlist_push(@run_paths, p);
+    }
+    drop strset_free(@skip);
+    c.available = c.available + run_paths.count;
+    List<string>:chosen = raw list_init::<string>(run_paths.count + 1i64);
+    for (int64:j in 0i64...run_paths.count) {
+        string:p2 = raw strlist_view(run_paths, j);
+        if (filtering) {
+            if (!(raw matches_only(raw rel_to_root(c, p2), only))) { continue; }
+        }
+        drop strlist_push(@chosen, p2);
+    }
+    if (filtering && (chosen.count == 0i64)) { pass NIL; }
+    for (int64:k in 0i64...chosen.count) {
+        string:p3 = raw strlist_view(chosen, k);
+        c.total = c.total + 1i64;
+        string:name = raw rel_to_root(c, p3);
+        string:text = relay read_text(p3);
+        Expect:exp = raw expect_read(text);
+        List<string>:fl = raw list_init::<string>(1i64);
+        if (raw text_eq(kind, "positive"))   { fl = relay await check_positive(c, name, p3, exp); }
+        if (raw text_eq(kind, "negative"))   { fl = relay await check_negative(c, name, p3, exp); }
+        if (raw text_eq(kind, "diagnostic")) { fl = relay await check_diagnostic(c, name, p3, exp); }
+        drop record(c, tname, name, fl);
+    }
+    drop say(raw stage_line(tname, chosen.count, string_concat(kind, " test(s)")));
     pass NIL;
 };
 
-// The real parser over every source: the targets' files, the fixed list
-// (grammar, modules, types, analysis, expansion, derive, the prelude,
-// accept, backend), then the compiler's own tree -- `sorted(set(all_sources))
-// + grammar + sorted(set(compiler))`, duplicates and all.
-pub async func:run_grammar = NIL(Ctx->:c, List<string>:all_sources) {
-    Result<Step>:pc = await build_tool(c, raw in_root(c, "tools/parse_check.npk"), "parse_check");
-    if (pc.is_error) { fail pc.err; }
-    Step:st = move(pc.value);
-    if (!st.ok) {
-        drop note_failure(c, string_concat("tools/parse_check.npk did not build: ", st.text));
-        pass NIL;
-    }
-    List<string>:sweep = raw strlist_sorted_unique(all_sources);
-    List<string>:g0 = relay list_npk(raw in_root(c, "tests/grammar"));
-    for (int64:a in 0i64...g0.count) { drop strlist_push(@sweep, raw strlist_view(g0, a)); }
-    List<string>:g1 = relay walk_files(raw in_root(c, "tests/modules"), ".npk");
-    for (int64:b in 0i64...g1.count) { drop strlist_push(@sweep, raw strlist_view(g1, b)); }
-    List<string>:g2 = relay walk_files(raw in_root(c, "tests/types"), ".npk");
-    for (int64:d in 0i64...g2.count) { drop strlist_push(@sweep, raw strlist_view(g2, d)); }
-    List<string>:g3 = relay walk_files(raw in_root(c, "tests/analysis"), ".npk");
-    for (int64:e in 0i64...g3.count) { drop strlist_push(@sweep, raw strlist_view(g3, e)); }
-    List<string>:g4 = relay walk_files(raw in_root(c, "tests/expansion"), ".npk");
-    for (int64:f in 0i64...g4.count) { drop strlist_push(@sweep, raw strlist_view(g4, f)); }
-    List<string>:g5 = relay walk_files(raw in_root(c, "tests/derive"), ".npk");
-    for (int64:g in 0i64...g5.count) { drop strlist_push(@sweep, raw strlist_view(g5, g)); }
-    List<string>:g6 = relay list_npk(raw in_root(c, "src/prelude"));
-    for (int64:h in 0i64...g6.count) { drop strlist_push(@sweep, raw strlist_view(g6, h)); }
-    List<string>:g7 = relay walk_files(raw in_root(c, "tests/accept"), ".npk");
-    for (int64:i in 0i64...g7.count) { drop strlist_push(@sweep, raw strlist_view(g7, i)); }
-    List<string>:g8 = relay walk_files(raw in_root(c, "tests/backend"), ".npk");
-    for (int64:j in 0i64...g8.count) { drop strlist_push(@sweep, raw strlist_view(g8, j)); }
-    List<string>:comp = relay walk_files(raw in_root(c, "src"), ".npk");
-    List<string>:c1 = relay list_npk(raw in_root(c, "tools"));
-    for (int64:k in 0i64...c1.count) { drop strlist_push(@comp, raw strlist_view(c1, k)); }
-    List<string>:c2 = relay walk_files(raw in_root(c, "lib"), ".npk");
-    for (int64:l in 0i64...c2.count) { drop strlist_push(@comp, raw strlist_view(c2, l)); }
-    List<string>:c3 = relay walk_files(raw in_root(c, "npkg"), ".npk");
-    for (int64:m in 0i64...c3.count) { drop strlist_push(@comp, raw strlist_view(c3, m)); }
-    List<string>:compu = raw strlist_sorted_unique(comp);
-    for (int64:n in 0i64...compu.count) { drop strlist_push(@sweep, raw strlist_view(compu, n)); }
+// `parse`: the real parser over every source under the entry's paths, each
+// once, accepted with no diagnostic. A rejection test the real parser cannot
+// read is testing the wrong stage (D-085); the compiler's own tree is the
+// file set that matters most -- stage 1 must parse it to build stage 2.
+async func:run_parse = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    string:pc = relay await tool_for(c, "parse_check");
+    if (pc.len == 0i64) { pass NIL; }
+    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
     int64:count = 0i64;
-    for (int64:q in 0i64...sweep.count) {
-        string:p = raw strlist_view(sweep, q);
+    for (int64:q in 0i64...files.count) {
+        string:p = raw strlist_view(files, q);
         string:name = raw rel_to_root(c, p);
-        List<string>:fl = relay await check_parses(c, st.text, p, name);
-        drop record(c, "grammar", name, fl);
+        List<string>:fl = relay await check_parses(c, pc, p, name);
+        drop record(c, tname, name, fl);
         count = count + 1i64;
     }
-    drop say(raw stage_line("grammar", count, "real-parser check(s)"));
+    drop say(raw stage_line(tname, count, "real-parser check(s)"));
     pass NIL;
 };
 
-// One rejection sweep: every `.npk` under `dir`, recursively; a file with
-// no `expect-error:` is a fixture another one imports, not a test.
-async func:run_sweep = NIL(Ctx->:c, string:binary, string:dir, string:suite, string:what) {
-    List<string>:files = relay walk_files(raw in_root(c, dir), ".npk");
+// `resolve` / `check`: whole programs refused with EXACTLY the expected codes
+// by the tool the stage names -- the loader (`resolve_check`) or the frontend
+// (`check`: the type checker, an analysis, expansion, derive, whichever the
+// suite's directory says). A file with no `expect-error:` is a fixture another
+// one imports, not a test.
+async func:run_rejection = NIL(Ctx->:c, int64:t, string:which) {
+    string:tname = raw entry_name(c, t);
+    string:tool = relay await tool_for(c, which);
+    if (tool.len == 0i64) { pass NIL; }
+    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
     int64:count = 0i64;
     for (int64:i in 0i64...files.count) {
         string:p = raw strlist_view(files, i);
@@ -646,52 +679,46 @@ async func:run_sweep = NIL(Ctx->:c, string:binary, string:dir, string:suite, str
         Expect:exp = raw expect_read(text);
         if (exp.errors.count == 0i64) { continue; }
         string:name = raw rel_to_root(c, p);
-        List<string>:fl = relay await check_rejection(c, binary, p, name, exp);
-        drop record(c, suite, name, fl);
+        List<string>:fl = relay await check_rejection(c, tool, p, name, exp);
+        drop record(c, tname, name, fl);
         count = count + 1i64;
     }
-    drop say(raw stage_line(suite, count, what));
+    string:by = "the frontend";
+    if (raw text_eq(which, "resolve_check")) { by = "the loader"; }
+    drop say(raw stage_line(tname, count, string_concat("rejection test(s), refused by ", by)));
     pass NIL;
 };
 
-pub async func:run_rejections = NIL(Ctx->:c) {
-    Result<Step>:rc = await build_tool(c, raw in_root(c, "tools/resolve_check.npk"), "resolve_check");
-    if (rc.is_error) { fail rc.err; }
-    Step:rs = move(rc.value);
-    if (!rs.ok) {
-        drop note_failure(c, string_concat("tools/resolve_check.npk did not build: ", rs.text));
-    } else {
-        Result<NIL>:m = await run_sweep(c, rs.text, "tests/modules/rejection", "modules", "module-rejection test(s)");
-        if (m.is_error) { fail m.err; }
+// `accept`: whole programs the frontend must ACCEPT, in full silence -- the
+// counterweight to the rejection suites. One suite, not one per stage:
+// silence has no stage.
+async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    string:check = relay await tool_for(c, "check");
+    if (check.len == 0i64) { pass NIL; }
+    List<string>:files = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    int64:count = 0i64;
+    for (int64:i in 0i64...files.count) {
+        string:p = raw strlist_view(files, i);
+        string:name = raw rel_to_root(c, p);
+        List<string>:fl = relay await check_accept(c, check, p, name);
+        drop record(c, tname, name, fl);
+        count = count + 1i64;
     }
-    Result<Step>:tc = await build_tool(c, raw in_root(c, "tools/check.npk"), "check");
-    if (tc.is_error) { fail tc.err; }
-    Step:ts = move(tc.value);
-    if (!ts.ok) {
-        drop note_failure(c, string_concat("tools/check.npk did not build: ", ts.text));
-        pass NIL;
-    }
-    Result<NIL>:r1 = await run_sweep(c, ts.text, "tests/types/rejection", "types", "type-rejection test(s)");
-    if (r1.is_error) { fail r1.err; }
-    Result<NIL>:r2 = await run_sweep(c, ts.text, "tests/analysis/rejection", "analysis", "analysis-rejection test(s)");
-    if (r2.is_error) { fail r2.err; }
-    Result<NIL>:r3 = await run_sweep(c, ts.text, "tests/expansion/rejection", "expansion", "expansion-rejection test(s)");
-    if (r3.is_error) { fail r3.err; }
-    Result<NIL>:r4 = await run_sweep(c, ts.text, "tests/derive/rejection", "derive", "derive-rejection test(s)");
-    if (r4.is_error) { fail r4.err; }
+    drop say(raw stage_line(tname, count, "acceptance test(s)"));
     pass NIL;
 };
 
-// The real backend: the fixtures first (built like programs, never run --
-// a test names one in `// argv:`), then every standalone program under
-// `tests/backend/programs/` and `tests/conformance/`, each through the -O0
-// run and the -O2 re-run.
-pub async func:run_programs = NIL(Ctx->:c) {
+// `fixture`: helper binaries a test spawns, built like programs and never run;
+// a program names one in `// argv:` by its uppercased stem, and the map this
+// fills is read by the `program` stage (so this entry comes first). A `.c` is
+// a reference DRIVER (1.1.13c): TEST TOOLING, never in the artifact, built
+// with the system C compiler exactly as the harness builds them.
+async func:run_fixture = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
     string:fixdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "fixtures");
-    List<string>:fix_keys = raw list_init::<string>(4i64);
-    List<string>:fix_paths = raw list_init::<string>(4i64);
-    List<string>:fixtures = relay list_npk(raw in_root(c, "tests/backend/fixtures"));
-    List<string>:cfixtures = relay walk_files(raw in_root(c, "tests/backend/fixtures"), ".c");
+    List<string>:fixtures = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    List<string>:cfixtures = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".c");
     if ((fixtures.count > 0i64) || (cfixtures.count > 0i64)) {
         Result<NIL>:d = ensure_dir(fixdir);
         if (d.is_error) { fail d.err; }
@@ -703,13 +730,11 @@ pub async func:run_programs = NIL(Ctx->:c) {
         string:fbase = raw path_join(fixdir, stem);
         string:name = raw rel_to_root(c, p);
         List<string>:fl = relay await emit_and_link(c, string_from_bytes(c.npkc.ptr, c.npkc.len), p, name, fbase);
-        drop record(c, "fixtures", name, fl);
+        drop record(c, tname, name, fl);
         if (fl.count > 0i64) { continue; }
-        drop strlist_push(@fix_keys, raw text_upper(stem));
-        drop strlist_push(@fix_paths, fbase);
+        drop strlist_push(@c.fix_keys, raw text_upper(stem));
+        drop strlist_push(@c.fix_paths, fbase);
     }
-    // The C reference drivers (1.1.13c): TEST TOOLING, never in the artifact,
-    // built with the system C compiler exactly as the harness builds them.
     for (int64:j in 0i64...cfixtures.count) {
         string:cp = raw strlist_view(cfixtures, j);
         string:cname = raw text_file_name(cp);
@@ -735,46 +760,45 @@ pub async func:run_programs = NIL(Ctx->:c) {
                 drop list_push(@cfails, move(m));
             }
         }
-        drop record(c, "fixtures", crel, cfails);
+        drop record(c, tname, crel, cfails);
         if (cfails.count > 0i64) { continue; }
-        drop strlist_push(@fix_keys, raw text_upper(cstem));
-        drop strlist_push(@fix_paths, cbase);
+        drop strlist_push(@c.fix_keys, raw text_upper(cstem));
+        drop strlist_push(@c.fix_paths, cbase);
     }
+    drop say(raw stage_line(tname, fixtures.count + cfixtures.count, "fixture(s) built, never run"));
+    pass NIL;
+};
 
-    List<string>:progs0 = relay list_npk(raw in_root(c, "tests/backend/programs"));
-    StrSet:skip0 = raw imported_by_others(progs0);
-    List<string>:conf0 = relay list_npk(raw in_root(c, "tests/conformance"));
-    StrSet:skip1 = raw imported_by_others(conf0);
-    List<string>:all = raw list_init::<string>(progs0.count + conf0.count + 1i64);
-    for (int64:a in 0i64...progs0.count) {
-        string:p0 = raw strlist_view(progs0, a);
-        if (!(raw strset_has(skip0, p0))) { drop strlist_push(@all, p0); }
-    }
-    for (int64:b in 0i64...conf0.count) {
-        string:p1 = raw strlist_view(conf0, b);
-        if (!(raw strset_has(skip1, p1))) { drop strlist_push(@all, p1); }
-    }
-    drop strset_free(@skip0);
-    drop strset_free(@skip1);
+// `program`: the real backend over every standalone program under the entry's
+// paths -- the -O0 run and the -O2 re-run -- with `// argv:` fixture names
+// substituted from the map the `fixture` stage filled. A file another one in
+// the suite imports is a fixture, not a program.
+async func:run_program = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    List<string>:paths = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    StrSet:skip = raw imported_by_others(paths);
     int64:count = 0i64;
-    for (int64:k in 0i64...all.count) {
-        string:p2 = raw strlist_view(all, k);
+    for (int64:k in 0i64...paths.count) {
+        string:p2 = raw strlist_view(paths, k);
+        if (raw strset_has(skip, p2)) { continue; }
         string:text = relay read_text(p2);
         Expect:exp = raw expect_read(text);
         string:name = raw rel_to_root(c, p2);
-        List<string>:fl = relay await check_program(c, p2, name, exp, fix_keys, fix_paths);
-        drop record(c, "programs", name, fl);
+        List<string>:fl = relay await check_program(c, p2, name, exp, c.fix_keys, c.fix_paths);
+        drop record(c, tname, name, fl);
         count = count + 1i64;
     }
-    drop say(raw stage_line("programs", count, "real-backend program(s)"));
+    drop strset_free(@skip);
+    drop say(raw stage_line(tname, count, "real-backend program(s)"));
     drop say(raw stage_text("opt-O2", "every program re-run through opt -O2 + llc -O2, same exit required"));
     pass NIL;
 };
 
-// The runtime floor's own `.ll` tests: assembled, linked against the floor,
-// run; `expect-exit:` read from the first 400 bytes.
-pub async func:run_runtime = NIL(Ctx->:c) {
-    List<string>:tests = relay walk_files(raw in_root(c, "runtime/tests"), ".ll");
+// `runtime`: the floor's own `.ll` tests, assembled, linked against the
+// floor, run; `expect-exit:` read from the first 400 bytes.
+async func:run_runtime_stage = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    List<string>:tests = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".ll");
     int64:count = 0i64;
     for (int64:i in 0i64...tests.count) {
         string:rp = raw strlist_view(tests, i);
@@ -811,7 +835,7 @@ pub async func:run_runtime = NIL(Ctx->:c) {
             string:m1 = string_concat(name, ": llc failed: ");
             m1 = string_concat(m1, raw text_head(raw text_trim(st1.text), 120i64));
             drop list_push(@fl, move(m1));
-            drop record(c, "runtime", name, fl);
+            drop record(c, tname, name, fl);
             continue;
         }
         Result<Step>:s2 = await lld_link(c, rbase, robj);
@@ -821,7 +845,7 @@ pub async func:run_runtime = NIL(Ctx->:c) {
             string:m2 = string_concat(name, ": link failed: ");
             m2 = string_concat(m2, raw text_head(raw text_trim(st2.text), 120i64));
             drop list_push(@fl, move(m2));
-            drop record(c, "runtime", name, fl);
+            drop record(c, tname, name, fl);
             continue;
         }
         List<string>:noargs = raw list_init::<string>(1i64);
@@ -841,29 +865,63 @@ pub async func:run_runtime = NIL(Ctx->:c) {
                 drop list_push(@fl, move(m3));
             }
         }
-        drop record(c, "runtime", name, fl);
+        drop record(c, tname, name, fl);
         count = count + 1i64;
     }
-    if (count > 0i64) { drop say(raw stage_line("runtime", count, "runtime-floor test(s)")); }
+    drop say(raw stage_line(tname, count, "runtime-floor test(s)"));
     pass NIL;
 };
 
-// Whole programs that must be ACCEPTED, in full silence -- one suite, not
-// one per stage: silence has no stage. `check` is the tool, built above.
-pub async func:run_accept = NIL(Ctx->:c) {
-    string:check = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "check");
-    Result<cstring>:cc = to_cstring(check);
-    if (cc.is_error) { fail cc.err; }
-    if (!(path_exists(cc.value))) { pass NIL; }
-    List<string>:files = relay walk_files(raw in_root(c, "tests/accept"), ".npk");
-    int64:count = 0i64;
-    for (int64:i in 0i64...files.count) {
-        string:p = raw strlist_view(files, i);
-        string:name = raw rel_to_root(c, p);
-        List<string>:fl = relay await check_accept(c, check, p, name);
-        drop record(c, "accept", name, fl);
-        count = count + 1i64;
+// EVERY SUITE, IN MANIFEST ORDER (D-238). A filtered run touches the
+// compile-stage entries only: the other stages ask questions about the
+// sources as a set -- does every file parse, is every rejection exact --
+// which a subset cannot answer. `manifest_load` refused any stage not named
+// below before anything ran.
+pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
+    bool:filtering = (only.count > 0i64);
+    for (int64:t in 0i64...c.m.tests.count) {
+        string:stage = string_from_bytes(c.m.tests.items[t].stage.ptr, c.m.tests.items[t].stage.len);
+        if (raw text_eq(stage, "compile")) {
+            Result<NIL>:r0 = await run_compile(c, t, only);
+            if (r0.is_error) { fail r0.err; }
+            continue;
+        }
+        if (filtering) { continue; }
+        if (raw text_eq(stage, "parse")) {
+            Result<NIL>:r1 = await run_parse(c, t);
+            if (r1.is_error) { fail r1.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "resolve")) {
+            Result<NIL>:r2 = await run_rejection(c, t, "resolve_check");
+            if (r2.is_error) { fail r2.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "check")) {
+            Result<NIL>:r3 = await run_rejection(c, t, "check");
+            if (r3.is_error) { fail r3.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "accept")) {
+            Result<NIL>:r4 = await run_accept_stage(c, t);
+            if (r4.is_error) { fail r4.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "fixture")) {
+            Result<NIL>:r5 = await run_fixture(c, t);
+            if (r5.is_error) { fail r5.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "program")) {
+            Result<NIL>:r6 = await run_program(c, t);
+            if (r6.is_error) { fail r6.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "runtime")) {
+            Result<NIL>:r7 = await run_runtime_stage(c, t);
+            if (r7.is_error) { fail r7.err; }
+            continue;
+        }
     }
-    drop say(raw stage_line("accept", count, "acceptance test(s)"));
     pass NIL;
 };

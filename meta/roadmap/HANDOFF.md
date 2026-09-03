@@ -37,10 +37,17 @@
 > tree was green in every stage, 58/58, with the `parity` stage's first
 > result — 902 verdicts agree between the two runners, npkc byte-identical.
 > S-9 and S-10 were ratified the same day as **D-237** and **D-238**.
-> **NEXT: 1.4.8b** (`meta/roadmap/1.4/1.4.8b.md`, execution-grade: the eight
-> files resolved as pre-settled, exact matching in both runners with the
-> self-check's new case, then the manifest-declared suites with the parity
-> stage proving the move verdict-identical), then 1.4.9, the close.
+> **1.4.8b IS CLOSED (2026-09-02)**: D-237 (exact diagnostic matching in both
+> runners; the eight files resolved, two of them against their pre-settlement
+> — the record in `meta/roadmap/1.4/1.4.8b.md` says why — and the self-check's
+> `unasserted-extra` case) and D-238 (every suite a `[[test]]` entry with a
+> `stage`, one table both runners read, the hardcoded loops gone from both, the
+> move proven by the before/after verdict lists). Two new questions for the user
+> in `OPEN_DECISIONS.md` §2e: **S-11** (`Error` joining the names a program
+> cannot declare; `assoc` held to RESOLVE-001) and **S-12** (a sharper refusal
+> suppressing the generic one). **NEXT: 1.4.9, the close** — self-hosting
+> declared against D-202's criterion, the snapshot refreshed, docs synced, the
+> cycle to `done/`.
 
 **1.4.7 IS COMPLETE (closed 2026-09-01)**: steps 1–3, D-229, OWED-8 and
 OWED-1 landed; the fixpoint is declared under D-202 and the snapshot is

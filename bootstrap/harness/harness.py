@@ -252,8 +252,9 @@ def verdicts_text():
 
 def read_verdicts(text):
     """The verdict lines as a dict {(suite, name): (ok, message)} -- a repeated
-    unit (the grammar sweep parses some files twice) keeps its FIRST verdict,
-    which is what both runners produce for it."""
+    unit keeps its FIRST verdict. (The hardcoded grammar sweep parsed six files
+    twice; since 1.4.8b the table sweeps each file once, and a repeat here
+    would be a runner judging one unit twice.)"""
     out = {}
     for line in text.splitlines():
         parts = line.split("\t", 3)
@@ -1837,17 +1838,6 @@ RESOLVE_CHECK = os.path.join(ROOT, "tools", "resolve_check.npk")
 TYPE_CHECK = os.path.join(ROOT, "tools", "check.npk")
 
 
-def build_parse_check(tmp, tools):
-    """Compile tools/parse_check.npk.
-
-    Everything above tests the SEED's parser. This builds the REAL one, so the
-    rule D-085 states -- every file in tests/rejection/ must PARSE and be refused
-    later -- can be checked against the parser it was written about instead of
-    the throwaway one that happens to be running.
-    """
-    return build_tool(tmp, tools, PARSE_CHECK, "parse_check")
-
-
 def check_parses(binary, path, name):
     """The real parser must accept this file with no diagnostics at all.
 
@@ -2242,19 +2232,371 @@ def check_toolchain_pin():
 
 # --- driver ------------------------------------------------------------------
 
+# THE STAGES A `[[test]]` ENTRY MAY NAME (D-238, 1.4.8b): the tool that judges
+# the suite and what it must say. `compile` is the default and the only stage
+# with a `kind`. Both runners carry this list and refuse anything outside it.
+STAGES = ("compile", "parse", "resolve", "check", "accept", "fixture",
+          "program", "runtime")
+TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
+
+
 def load_targets():
-    # ONE read of the manifest, at import (D-204, 1.4.5): the toolchain pin
-    # needs it before any test runs, and two readers of one file is two
-    # chances to disagree about it.
-    return MANIFEST.get("test", [])
+    """Every `[[test]]` entry, validated and normalised (D-238, 1.4.8b).
+
+    ONE read of the manifest, at import (D-204, 1.4.5): the toolchain pin
+    needs it before any test runs, and two readers of one file is two chances
+    to disagree about it. EVERY suite either runner runs is declared here -- a
+    manifest that declared four of fourteen suites was a document a reader
+    could not trust to say what ran (the stale-document shape D-204 refused
+    for flags) -- so an entry the runner cannot honour is refused BY NAME
+    before anything runs, never skipped: a stage this runner does not know, a
+    `kind` on a stage that has none, a compile entry with no kind, no
+    `paths`/`path` (or both), a `recursive` that is not a boolean, a key the
+    schema lacks. Returns (targets, problem); `problem` is the one sentence to
+    print before exiting 2. Paths come back absolute."""
+    out = []
+    for i, t in enumerate(MANIFEST.get("test", [])):
+        where = "nitpick.toml [[test]] #%d" % (i + 1)
+        if not isinstance(t, dict):
+            return None, "%s is not a table" % where
+        name = t.get("name")
+        if not isinstance(name, str) or not name:
+            return None, "%s needs a `name` (a string)" % where
+        where += " (`%s`)" % name
+        for k in t:
+            if k not in TEST_KEYS:
+                return None, ("%s: `%s` is not a key a [[test]] entry has; the "
+                              "keys are name, stage, kind, paths (or path), "
+                              "recursive (BUILD_REFERENCE §7.1, D-238)"
+                              % (where, k))
+        stage = t.get("stage", "compile")
+        if stage not in STAGES:
+            return None, ("%s: stage `%s` is not one this runner knows -- the "
+                          "stages are %s (D-238); a stage the runner cannot "
+                          "judge is refused, not skipped"
+                          % (where, stage, ", ".join(STAGES)))
+        kind = t.get("kind")
+        if stage == "compile":
+            if kind not in KINDS:
+                return None, ("%s: a compile-stage target needs `kind` "
+                              "positive, negative or diagnostic" % where)
+        elif kind is not None:
+            return None, ("%s: `kind` belongs to the compile stage only; stage "
+                          "`%s` judges every file one way" % (where, stage))
+        if "paths" in t and "path" in t:
+            return None, "%s: `paths` or `path`, not both" % where
+        if "paths" in t:
+            paths = t["paths"]
+            if (not isinstance(paths, list) or not paths
+                    or not all(isinstance(q, str) and q for q in paths)):
+                return None, ("%s: `paths` must be a non-empty array of "
+                              "strings" % where)
+        elif "path" in t:
+            if not isinstance(t["path"], str) or not t["path"]:
+                return None, "%s: `path` must be a string" % where
+            paths = [t["path"]]
+        else:
+            return None, ("%s needs `paths` (or its one-element shorthand "
+                          "`path`)" % where)
+        recursive = t.get("recursive", False)
+        if not isinstance(recursive, bool):
+            return None, "%s: `recursive` must be true or false" % where
+        out.append({"name": name, "stage": stage, "kind": kind,
+                    "paths": [os.path.join(ROOT, q) for q in paths],
+                    "recursive": recursive})
+    return out, None
+
+
+def files_of(t, suffix=".npk"):
+    """Every file with `suffix` under the entry's paths, EACH ONCE, in manifest
+    path order and sorted within a path -- `glob` per path, `**` when the
+    entry says `recursive`. The hardcoded sweeps concatenated their lists, so
+    the grammar sweep parsed six files twice; a table sweeps a file once."""
+    seen = set()
+    out = []
+    for d in t["paths"]:
+        if t["recursive"]:
+            found = glob.glob(os.path.join(d, "**", "*" + suffix), recursive=True)
+        else:
+            found = glob.glob(os.path.join(d, "*" + suffix))
+        for p in sorted(found):
+            ap = os.path.abspath(p)
+            if ap not in seen:
+                seen.add(ap)
+                out.append(p)
+    return out
+
+
+class Session:
+    """What one run carries between stages: the temp dir and tool availability,
+    the tools built so far (once each, kept), the fixture map the `fixture`
+    stage fills and the `program` stage reads, the counts and the failures."""
+    def __init__(self, tmp, tools):
+        self.tmp = tmp
+        self.tools = tools
+        self.built = {}
+        self.fixture_map = {}
+        self.total = 0
+        self.available = 0
+        self.failures = []
+
+
+TOOL_SOURCES = {"parse_check": os.path.join(ROOT, "tools", "parse_check.npk"),
+                "resolve_check": os.path.join(ROOT, "tools", "resolve_check.npk"),
+                "check": os.path.join(ROOT, "tools", "check.npk")}
+
+
+def tool_for(s, which):
+    """The tool a stage judges with, built on first use and kept. A tool that
+    did not build is one recorded failure and every stage that needs it
+    skips; None also when llc/ld.lld are absent (nothing built, as today)."""
+    if which not in s.built:
+        made = build_tool(s.tmp, s.tools, TOOL_SOURCES[which], which)
+        if made is None:
+            s.built[which] = None
+        elif isinstance(made, str) and not os.path.exists(made):
+            s.failures.append("tools/%s.npk did not build: %s" % (which, made))
+            s.built[which] = None
+        else:
+            s.built[which] = made
+    return s.built[which]
+
+
+# --- the stages (D-238): one function per stage, the entry decides the files ----
+
+def stage_compile(t, s, only):
+    """The compiler under test over every standalone file, held to the entry's
+    kind. A file some other file in the suite imports is a fixture and is not
+    run. `--only` narrows here and nowhere else; the counts are these."""
+    kind = t["kind"]
+    paths = files_of(t)
+    skip = imported_by_others(paths)
+    run_paths = [p for p in paths if os.path.abspath(p) not in skip]
+    s.available += len(run_paths)
+    if only:
+        run_paths = [p for p in run_paths
+                     if any(sub in os.path.relpath(p, ROOT) for sub in only)]
+        if not run_paths:
+            return
+    for p in run_paths:
+        s.total += 1
+        name = os.path.relpath(p, ROOT)
+        exp = read_expectations(p)
+        s.failures += record_verdict(t["name"], name,
+                                     KINDS[kind](name, p, exp, s.tmp, s.tools))
+    print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
+
+
+def stage_parse(t, s):
+    """Every source under the entry's paths through the REAL parser, accepted
+    with no diagnostic.
+
+    A rejection test the real parser cannot read is not testing D-085's rule.
+    tests/grammar/ is never compiled and never run -- it exists only to be
+    parsed, which is what lets it use the whole language. The prelude and the
+    compiler's own source are here too, and the latter is the file set that
+    matters most: when the sweep first reached it (0.7.3), 22 OF 62 FILES WERE
+    REJECTED AND FIVE CRASHED THE PARSER -- a qualifier never learned on a
+    field, `dn`/`bn`/`cn`/`tt` used as names when the grammar made them
+    numeric literals, an out-of-bounds read in `ralloc` past about 511
+    declarations -- and every one was invisible for as long as nobody asked.
+    Stage 1 must parse these files to build stage 2, so a source the real
+    parser cannot read is a source that never self-hosts. `npkg/` is source
+    the parser must read for the same reason (1.4.8)."""
+    pc = tool_for(s, "parse_check")
+    if not pc:
+        return
+    n = 0
+    for p in files_of(t):
+        name = os.path.relpath(p, ROOT)
+        s.failures += record_verdict(t["name"], name, check_parses(pc, p, name))
+        n += 1
+    print("  %-11s %2d real-parser check(s)" % (t["name"], n))
+
+
+def stage_rejection(t, s, which):
+    """Whole programs that must be refused with EXACTLY the expected codes by
+    the tool the stage names: `resolve` is the LOADER (tools/resolve_check),
+    `check` is the whole frontend (tools/check -- the type checker, an
+    analysis, expansion, derive, whichever the suite's directory says). The
+    split is the point (see `check_type_rejection`): a file that stops earlier
+    would satisfy a test written about a later stage. A file with no
+    `expect-error:` is a fixture another one imports, not a test."""
+    tool = tool_for(s, which)
+    if not tool:
+        return
+    judge = check_module_rejection if which == "resolve_check" else check_type_rejection
+    n = 0
+    for p in files_of(t):
+        exp = read_expectations(p)
+        if not exp.errors:
+            continue
+        name = os.path.relpath(p, ROOT)
+        s.failures += record_verdict(t["name"], name, judge(tool, p, name, exp))
+        n += 1
+    print("  %-11s %2d rejection test(s), refused by %s"
+          % (t["name"], n, "the loader" if which == "resolve_check" else "the frontend"))
+
+
+def stage_accept(t, s):
+    """Whole programs the frontend must ACCEPT, in full silence. A rejection
+    suite cannot tell a correct checker from one that refuses everything, and
+    cycle 0.5's analyses fail closed by design, so over-refusal is the failure
+    mode they are likeliest to have. One suite, not one per stage: silence has
+    no stage."""
+    tc = tool_for(s, "check")
+    if not tc:
+        return
+    n = 0
+    for p in files_of(t):
+        name = os.path.relpath(p, ROOT)
+        s.failures += record_verdict(t["name"], name, check_type_accept(tc, p, name))
+        n += 1
+    print("  %-11s %2d acceptance test(s)" % (t["name"], n))
+
+
+def stage_fixture(t, s):
+    """Helper binaries a test spawns (1.1.13a): every `.npk` here is built by
+    the same real-backend pipeline as a program -- and held to the same checks
+    -- but never run by the harness itself; a test names one in `// argv:` by
+    its uppercased stem (MOCK_DRIVER) and receives the built binary's absolute
+    path in its own argv (`Path` refuses relative paths by design). Built into
+    .internal/ so the path is stable across runs. A `.c` here is a reference
+    DRIVER (1.1.13c), built with the system C compiler: TEST TOOLING, never in
+    the artifact -- the zero-dependency rule governs what ships, and a driver
+    is outside the TCB by definition (D-149)."""
+    fixdir = os.path.join(ROOT, ".internal", "fixtures")
+    npks = files_of(t, ".npk")
+    cs = files_of(t, ".c")
+    if npks or cs:
+        os.makedirs(fixdir, exist_ok=True)
+    for p in npks:
+        stem = os.path.basename(p)[:-4]
+        fbase = os.path.join(fixdir, stem)
+        fails = record_verdict(t["name"], os.path.relpath(p, ROOT),
+                               emit_and_link(COMPILER, p, os.path.relpath(p, ROOT),
+                                             fbase, s.tmp))
+        if fails:
+            s.failures += fails
+            continue
+        s.fixture_map[stem.upper()] = fbase
+    for p in cs:
+        stem = os.path.basename(p)[:-2]
+        fbase = os.path.join(fixdir, stem)
+        r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
+                           capture_output=True, text=True)
+        cfails = []
+        if r.returncode != 0:
+            cfails = ["%s: cc failed: %s"
+                      % (os.path.relpath(p, ROOT), r.stderr.strip()[:160])]
+        record_verdict(t["name"], os.path.relpath(p, ROOT), cfails)
+        if cfails:
+            s.failures += cfails
+            continue
+        s.fixture_map[stem.upper()] = fbase
+    print("  %-11s %2d fixture(s) built, never run" % (t["name"], len(npks) + len(cs)))
+
+
+def stage_program(t, s):
+    """Whole programs COMPILED BY THE REAL BACKEND, linked against the runtime,
+    RUN at -O0 and again through `opt -O2`. A byte-pin proves the text is
+    stable; only execution proves the text means what the source said. The
+    conformance suite is in this stage, which is the self-hosting goal
+    sentence made a test. A file another one imports is a fixture (same_name_a/b,
+    D-162, were the first multi-file programs). Fixtures named in `// argv:`
+    resolve through the map the `fixture` stage filled -- so that entry runs
+    first in the manifest."""
+    paths = files_of(t)
+    skip = imported_by_others(paths)
+    n = 0
+    for p in paths:
+        if os.path.abspath(p) in skip:
+            continue
+        exp = read_expectations(p)
+        name = os.path.relpath(p, ROOT)
+        s.failures += record_verdict(t["name"], name,
+                                     check_emitted_program(COMPILER, p, name, exp,
+                                                           s.tmp, s.fixture_map))
+        n += 1
+    print("  %-11s %2d real-backend program(s)" % (t["name"], n))
+    print("  %-11s every program re-run through opt -O2 + llc -O2, "
+          "same exit required" % "opt-O2")
+
+
+def stage_runtime(t, s):
+    """Hand-written .ll drivers for runtime families with NO surface syntax
+    (0.10.3; the frame allocator is the coroutine machinery's, not a
+    program's). Each defines main + npk_failsafe, links against the same
+    npkrt.o everything else does, runs, and asserts an exit code read from
+    `expect-exit:` in its first 400 bytes -- the same execution standard the
+    program suite holds."""
+    n = 0
+    for rp in files_of(t, ".ll"):
+        rexp = 0
+        with open(rp, encoding="utf-8") as fh:
+            rhead = fh.read(400)
+        rm = re.search(r"expect-exit:\s*(\d+)", rhead)
+        if rm:
+            rexp = int(rm.group(1))
+        rbase = os.path.join(s.tmp, "rt_" + os.path.basename(rp)[:-3])
+        rname = os.path.relpath(rp, ROOT)
+        r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            s.failures += record_verdict(t["name"], rname,
+                                         ["%s: llc failed: %s"
+                                          % (rname, r.stderr.strip()[:120])])
+            continue
+        r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
+                            rbase + ".o", os.path.join(s.tmp, "npkrt.o")],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            s.failures += record_verdict(t["name"], rname,
+                                         ["%s: link failed: %s"
+                                          % (rname, r.stderr.strip()[:120])])
+            continue
+        r = subprocess.run([rbase], capture_output=True)
+        rfails = []
+        if r.returncode != rexp:
+            rfails = ["%s: exited %d, expected %d" % (rname, r.returncode, rexp)]
+        s.failures += record_verdict(t["name"], rname, rfails)
+        n += 1
+    print("  %-11s %2d runtime-floor test(s)" % (t["name"], n))
+
+
+def run_stage(t, s, only):
+    """Dispatch on the entry's stage. `compile` is the only stage `--only` can
+    select; a filtered run skips every other stage, saying so -- today's
+    behaviour, by stage rather than by position in this file."""
+    stage = t["stage"]
+    if stage == "compile":
+        stage_compile(t, s, only)
+    elif stage == "parse":
+        stage_parse(t, s)
+    elif stage == "resolve":
+        stage_rejection(t, s, "resolve_check")
+    elif stage == "check":
+        stage_rejection(t, s, "check")
+    elif stage == "accept":
+        stage_accept(t, s)
+    elif stage == "fixture":
+        stage_fixture(t, s)
+    elif stage == "program":
+        stage_program(t, s)
+    elif stage == "runtime":
+        stage_runtime(t, s)
+    else:
+        # load_targets refused everything else before any test ran.
+        raise AssertionError("unknown stage reached run_stage: %s" % stage)
 
 
 USAGE = """usage: python3 bootstrap/harness/harness.py [--only SUBSTR]...
 
   (no arguments)    run everything -- the only run whose result means the suite
                     is green, and the only kind to commit on
-  --only SUBSTR     run only tests whose repo-relative path contains SUBSTR.
-                    Repeatable. Skips every whole-suite check, and says so.
+  --only SUBSTR     run only the compile-stage tests whose repo-relative path
+                    contains SUBSTR. Repeatable. Skips every other stage and
+                    every whole-suite check, and says so.
   --verdicts PATH   also write every unit's verdict, one
                     `STATUS<TAB>suite<TAB>name<TAB>message` per line -- the
                     list the parity stage diffs against `npkg test --verdicts`
@@ -2316,7 +2658,10 @@ def main(argv):
         return 0
     filtering = bool(opts.only)
 
-    targets = load_targets()
+    targets, problem = load_targets()
+    if problem:
+        print(problem)
+        return 2
     if not targets:
         print("no [[test]] targets in nitpick.toml")
         return 2
@@ -2352,29 +2697,31 @@ def main(argv):
             return 1
         print("  %-11s snapshot -> builder -> npkc (D-205)" % "builder")
 
-    total = 0
-    available = 0
-    failures = []
-    all_sources = []
+    s = Session(tmp, tools)
+    failures = s.failures
+
+    # THE TOOLCHAIN FIRST (D-204, 1.4.5). It gates everything below that
+    # assembles or links, and a version mismatch explains a byte-difference
+    # that would otherwise look like a compiler defect -- so it is worth
+    # knowing before an hour of evidence gets collected under the wrong tools.
+    # (It stood after the compile targets until 1.4.8b; the table put every
+    # suite in one loop, and the pin belongs before the loop.)
+    if not filtering:
+        failures += check_toolchain_pin()
+
+    # EVERY SUITE, IN MANIFEST ORDER (D-238, 1.4.8b). The table in nitpick.toml
+    # is the one list of what runs; `npkg test` reads the same table, and the
+    # parity stage below diffs the two runners' verdicts unit for unit. A
+    # filtered run touches the compile-stage entries only: the other stages
+    # ask questions about the sources as a set -- does every file parse, is
+    # every rejection exact -- which a subset cannot answer, so `--only` skips
+    # them and says so.
     for t in targets:
-        kind = t["kind"]
-        paths = sorted(glob.glob(os.path.join(ROOT, t["path"], "*.npk")))
-        skip = imported_by_others(paths)
-        run_paths = [p for p in paths if os.path.abspath(p) not in skip]
-        available += len(run_paths)
-        if filtering:
-            run_paths = [p for p in run_paths
-                         if any(s in os.path.relpath(p, ROOT) for s in opts.only)]
-            if not run_paths:
-                continue
-        for p in run_paths:
-            total += 1
-            name = os.path.relpath(p, ROOT)
-            exp = read_expectations(p)
-            failures += record_verdict(t["name"], name,
-                                       KINDS[kind](name, p, exp, tmp, tools))
-        all_sources += paths
-        print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
+        if filtering and t["stage"] != "compile":
+            continue
+        run_stage(t, s, opts.only)
+    total = s.total
+    available = s.available
 
     # A FILTER THAT MATCHES NOTHING IS AN ERROR, not a pass. `--only tpye_stmt`
     # otherwise reports `ok 0 test(s) passed` and reads exactly like success --
@@ -2391,23 +2738,9 @@ def main(argv):
     # them over whatever `--only` happened to match would give an answer to a
     # question nobody asked, so a filtered run does not run them at all.
     #
-    # They are also where most of the minutes go: each builds a whole tool through
-    # the seed, which is the cost `--only` exists to avoid.
+    # They are also where most of the minutes go, which is the cost `--only`
+    # exists to avoid.
     if not filtering:
-        # Every source in every suite, plus tests/grammar/, through the REAL
-        # parser. A rejection test the real parser cannot read is not testing
-        # D-085's rule; it is testing that the seed and the real parser happen to
-        # disagree.
-        #
-        # tests/grammar/ is NEVER compiled and never run. It exists only to be
-        # parsed, which is what lets it use the whole language rather than
-        # subset 1.
-        # THE TOOLCHAIN FIRST (D-204, 1.4.5). It gates everything below that
-        # assembles or links, and a version mismatch explains a byte-difference
-        # that would otherwise look like a compiler defect -- so it is worth
-        # knowing before twenty minutes of evidence gets collected under the
-        # wrong tools.
-        failures += check_toolchain_pin()
         failures += check_kinds_reachable()
         failures += check_kinds_typed()
         failures += check_kinds_lowered_or_refused()
@@ -2449,245 +2782,13 @@ def main(argv):
             for c in stale:
                 print("    ~ %s" % c)
 
-        pc = build_parse_check(tmp, tools)
-        if isinstance(pc, str) and not os.path.exists(pc):
-            failures.append("tools/parse_check.npk did not build: %s" % pc)
-        elif pc:
-            # tests/grammar/ is parse-only by design; tests/modules/ holds
-            # fixtures that a test loads through the real loader. Neither is
-            # compiled, and both must still PARSE -- a broken fixture would
-            # otherwise surface as a confusing failure inside whichever test
-            # loads it.
-            grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "modules", "**", "*.npk"),
-                                        recursive=True))
-            # tests/types/ likewise: every file there must PARSE, because a type
-            # rejection test that tripped the parser would be testing the wrong
-            # stage and passing for the wrong reason.
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "types", "**", "*.npk"),
-                                        recursive=True))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "analysis", "**", "*.npk"),
-                                        recursive=True))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "expansion", "**", "*.npk"),
-                                        recursive=True))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "derive", "**", "*.npk"),
-                                        recursive=True))
-            # THE PRELUDE IS REAL SOURCE AND IS CHECKED AS SUCH. It is put through
-            # the real parser at the start of every `check` run anyway; sweeping it
-            # here says so, and catches a syntax error in it as a parse failure of
-            # its own file rather than as a diagnostic in every test at once.
-            grammar += sorted(glob.glob(os.path.join(ROOT, "src", "prelude", "*.npk")))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
-                                        recursive=True))
-            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "backend", "**", "*.npk"),
-                                        recursive=True))
-
-            # THE COMPILER'S OWN SOURCE, which is the file set that matters most
-            # and the one this sweep did not cover until 0.7.3.
-            #
-            # `src/prelude/` was here from the start and the other fifty-eight
-            # modules were not, so the parser was asked about every test in the
-            # tree and never about the thing it is part of. WHEN IT WAS FINALLY
-            # ASKED, 22 OF 62 FILES WERE REJECTED AND FIVE CRASHED IT -- a
-            # qualifier the parser never learned to read on a field or a
-            # parameter, `dn`/`bn`/`cn`/`tt` used as names when the grammar makes
-            # them NUMERIC LITERALS, and an out-of-bounds read in `ralloc` that
-            # took the process down on any file past about 511 declarations.
-            #
-            # This is not a nicety. STAGE 1 IS BUILT BY THE SEED AND MUST THEN
-            # PARSE THESE FILES to build stage 2, so a source the real parser
-            # cannot read is a source that never self-hosts -- and every one of
-            # the three causes was invisible for as long as nobody asked.
-            compiler = sorted(glob.glob(os.path.join(ROOT, "src", "**", "*.npk"),
-                                        recursive=True))
-            compiler += sorted(glob.glob(os.path.join(ROOT, "tools", "*.npk")))
-            compiler += sorted(glob.glob(os.path.join(ROOT, "lib", "**", "*.npk"),
-                                         recursive=True))
-            # `npkg/` is source the real parser must read too (1.4.8): the
-            # build tool is built by the compiler under test.
-            compiler += sorted(glob.glob(os.path.join(ROOT, "npkg", "**", "*.npk"),
-                                         recursive=True))
-
-            n = 0
-            for p in sorted(set(all_sources)) + grammar + sorted(set(compiler)):
-                name = os.path.relpath(p, ROOT)
-                failures += record_verdict("grammar", name, check_parses(pc, p, name))
-                n += 1
-            print("  %-11s %2d real-parser check(s)" % ("grammar", n))
-
-        # Whole programs that must be refused BY THE LOADER. A file here with no
-        # `expect-error:` is a fixture another one imports, not a test.
-        rc = build_tool(tmp, tools, RESOLVE_CHECK, "resolve_check")
-        if isinstance(rc, str) and not os.path.exists(rc):
-            failures.append("tools/resolve_check.npk did not build: %s" % rc)
-        elif rc:
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "modules",
-                                                   "rejection", "**", "*.npk"),
-                                      recursive=True)):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += record_verdict("modules", os.path.relpath(p, ROOT),
-                                           check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp))
-                n += 1
-            print("  %-11s %2d module-rejection test(s)" % ("modules", n))
-
-        # Whole programs that LOAD and RESOLVE and must be refused BY THE TYPE
-        # CHECKER. A file here with no `expect-error:` is a fixture, not a test.
-        tc = build_tool(tmp, tools, TYPE_CHECK, "check")
-        if isinstance(tc, str) and not os.path.exists(tc):
-            failures.append("tools/check.npk did not build: %s" % tc)
-        elif tc:
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "types",
-                                                   "rejection", "**", "*.npk"),
-                                      recursive=True)):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += record_verdict("types", os.path.relpath(p, ROOT),
-                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
-                n += 1
-            print("  %-11s %2d type-rejection test(s)" % ("types", n))
-
-            # Whole programs that TYPE-CHECK and are refused by a STATIC ANALYSIS.
-            #
-            # A FOURTH SUITE FOR A FOURTH STAGE, and the split is the same argument
-            # the other three rest on: a file that stops earlier would satisfy a
-            # test written about a later stage. The analyses run only over a program
-            # the type checker accepted, so a case here that failed to type would
-            # never reach the rule it was written for.
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "analysis",
-                                                   "rejection", "**", "*.npk"),
-                                      recursive=True)):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += record_verdict("analysis", os.path.relpath(p, ROOT),
-                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
-                n += 1
-            print("  %-11s %2d analysis-rejection test(s)" % ("analysis", n))
-
-            # Whole programs refused during MACRO EXPANSION, before a name is
-            # bound. A fifth stage and a fifth suite, for the reason the other four
-            # are separate: expansion runs before resolution, so a case here that
-            # failed to parse would never reach the rule it was written for.
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "expansion",
-                                                   "rejection", "**", "*.npk"),
-                                      recursive=True)):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += record_verdict("expansion", os.path.relpath(p, ROOT),
-                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
-                n += 1
-            print("  %-11s %2d expansion-rejection test(s)" % ("expansion", n))
-
-            # Whole programs refused while reading `#[derive]`, which runs in the
-            # expansion phase but is a different stage for the reason its codes have
-            # a different prefix: a reader filtering for derive failures is asking a
-            # different question from one filtering for expansion failures.
-            n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "derive",
-                                                   "rejection", "**", "*.npk"),
-                                      recursive=True)):
-                exp = read_expectations(p)
-                if not exp.errors:
-                    continue
-                failures += record_verdict("derive", os.path.relpath(p, ROOT),
-                                           check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp))
-                n += 1
-            print("  %-11s %2d derive-rejection test(s)" % ("derive", n))
-
-        # --- the REAL BACKEND (0.7.7) ------------------------------------------
-        #
-        # A `rungs` STAGE STOOD HERE and has retired (1.4.6). It walked
-        # `tests/rejection/` with the real compiler because, while the seed was
-        # the builder, the `[[test]] rejection` target could only test the
-        # SEED's rungs -- two runs of one suite against two tools. The switch
-        # made the seed a non-builder, `check_negative` moved to the compiler
-        # under test, and the two collapsed into the one nitpick.toml declares.
+        # THE SUITES RAN ABOVE, from the manifest (D-238). What follows are the
+        # whole-tree instruments that are not suites and stay the harness's
+        # until the SWITCH: the `never fails` twins, the fixpoint, the
+        # reproducibility legs, the absent-fact flip, and parity with npkg.
         ec = COMPILER
 
-        # Whole programs COMPILED BY THE REAL BACKEND, linked against the
-        # runtime, and RUN. A byte-pin proves the text is stable; only
-        # execution proves the text means what the source said.
-        #
-        # THE CONFORMANCE SUITE IS IN THIS SWEEP, which is the cycle's goal
-        # sentence made a test: subset 1 compiles and runs under THIS
-        # compiler, with the same expectations the seed meets. A file another
-        # one imports is a fixture here exactly as it is for the seed.
-        # HELPER BINARIES A TEST SPAWNS (1.1.13a): everything under
-        # tests/backend/fixtures/ is built by the same real-backend
-        # pipeline -- and held to the same checks -- but never run by the
-        # harness itself. A test names one in `// argv:` by its uppercased
-        # stem (MOCK_DRIVER), and receives the built binary's absolute
-        # path in its own argv; `Path` refuses relative paths by design,
-        # so the path travels through argv rather than being spelled in
-        # the source. Built into .internal/ so the path is stable across
-        # runs (a spawned child outlives no test, but a stable home keeps
-        # failures reproducible by hand).
-        fixture_map = {}
-        fixdir = os.path.join(ROOT, ".internal", "fixtures")
-        fixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                 "fixtures", "*.npk")))
-        cfixtures = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                  "fixtures", "*.c")))
-        if fixtures or cfixtures:
-            os.makedirs(fixdir, exist_ok=True)
-        for p in fixtures:
-            stem = os.path.basename(p)[:-4]
-            fbase = os.path.join(fixdir, stem)
-            fails = record_verdict("fixtures", os.path.relpath(p, ROOT),
-                                   emit_and_link(ec, p, os.path.relpath(p, ROOT), fbase, tmp))
-            if fails:
-                failures += fails
-                continue
-            fixture_map[stem.upper()] = fbase
-        # C fixtures -- the conformance suite's reference DRIVERS
-        # (1.1.13c), built with the system C compiler. TEST TOOLING,
-        # NEVER IN THE ARTIFACT: the same standing as valgrind and this
-        # harness itself -- the zero-dependency rule governs what ships,
-        # and a driver is outside the TCB by definition (D-149). The
-        # protocol is the contract; sdk/npkdrv.h is its C rendering.
-        for p in cfixtures:
-            stem = os.path.basename(p)[:-2]
-            fbase = os.path.join(fixdir, stem)
-            r = subprocess.run(["cc", "-O1", "-Wall", "-o", fbase, p],
-                               capture_output=True, text=True)
-            cfails = []
-            if r.returncode != 0:
-                cfails = ["%s: cc failed: %s"
-                          % (os.path.relpath(p, ROOT), r.stderr.strip()[:160])]
-            record_verdict("fixtures", os.path.relpath(p, ROOT), cfails)
-            if cfails:
-                failures += cfails
-                continue
-            fixture_map[stem.upper()] = fbase
 
-        progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                              "programs", "*.npk")))
-        # A program's imported halves are fixtures, not standalone programs
-        # (they have no `main`) -- filter them out, the same rule the
-        # conformance sweep already applies. same_name_a/b (D-162, 1.0.1)
-        # are the first multi-file programs and the first to need it.
-        progs = [p for p in progs if p not in imported_by_others(progs)]
-        conf = sorted(glob.glob(os.path.join(ROOT, "tests", "conformance",
-                                             "*.npk")))
-        conf = [p for p in conf if p not in imported_by_others(conf)]
-        n = 0
-        for p in progs + conf:
-            exp = read_expectations(p)
-            failures += record_verdict("programs", os.path.relpath(p, ROOT),
-                                       check_emitted_program(ec, p, os.path.relpath(p, ROOT),
-                                                             exp, tmp, fixture_map))
-            n += 1
-        print("  %-11s %2d real-backend program(s)" % ("programs", n))
-        print("  %-11s every program re-run through opt -O2 + llc -O2, "
-              "same exit required" % "opt-O2")
 
         # D-163 IS INERT IN THE BACKEND (1.1.0): the twin programs under
         # conformance/nf_twin/ differ only in their `never fails` clauses
@@ -2728,48 +2829,6 @@ def main(argv):
             print("  %-11s the `never fails` twins emit byte-identical IR"
                   % "nf-inert")
 
-        # --- RUNTIME-FLOOR UNIT TESTS (0.10.3) --------------------------
-        #
-        # Hand-written .ll drivers for runtime families with NO surface
-        # syntax (the frame allocator is 1.1's coroutine machinery's, not a
-        # program's). Each defines main + npk_failsafe, links against the
-        # same npkrt.o everything else does, runs, and asserts an exit
-        # code -- the same execution standard the program suite holds.
-        rtests = sorted(glob.glob(os.path.join(ROOT, "runtime",
-                                               "tests", "*.ll")))
-        rn = 0
-        for rp in rtests:
-            rexp = 0
-            with open(rp, encoding="utf-8") as fh:
-                rhead = fh.read(400)
-            rm = re.search(r"expect-exit:\s*(\d+)", rhead)
-            if rm:
-                rexp = int(rm.group(1))
-            rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
-            rname = os.path.relpath(rp, ROOT)
-            r = subprocess.run(["llc"] + LLC_FLAGS + [rp, "-o", rbase + ".o"],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                failures += record_verdict("runtime", rname,
-                                           ["%s: llc failed: %s"
-                                            % (rname, r.stderr.strip()[:120])])
-                continue
-            r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", rbase,
-                                rbase + ".o", os.path.join(tmp, "npkrt.o")],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                failures += record_verdict("runtime", rname,
-                                           ["%s: link failed: %s"
-                                            % (rname, r.stderr.strip()[:120])])
-                continue
-            r = subprocess.run([rbase], capture_output=True)
-            rfails = []
-            if r.returncode != rexp:
-                rfails = ["%s: exited %d, expected %d" % (rname, r.returncode, rexp)]
-            failures += record_verdict("runtime", rname, rfails)
-            rn += 1
-        if rn:
-            print("  %-11s %2d runtime-floor test(s)" % ("runtime", rn))
 
         # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
         #
@@ -3123,27 +3182,6 @@ def main(argv):
                             print("  %-11s an uncomputed layout fact is never "
                                   "read" % ("absent-fact",))
 
-        # And whole programs that must be ACCEPTED, in full silence.
-        #
-        # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
-        # REFUSES EVERYTHING. Every negative test above passes trivially for an
-        # analysis that answers "violation" to every question, and cycle 0.5's
-        # analyses are deliberately conservative -- they fail closed on fuel
-        # exhaustion, on an unclassified node, on anything undecidable -- so
-        # over-refusal is the failure mode they are most likely to have.
-        #
-        # ONE SUITE, NOT ONE PER STAGE. Silence has no stage: a program the
-        # whole frontend accepts is accepted by every part of it, so splitting
-        # this the way the rejections are split would be four directories
-        # asserting the same thing.
-        n = 0
-        for p in sorted(glob.glob(os.path.join(ROOT, "tests", "accept",
-                                               "**", "*.npk"),
-                                  recursive=True)):
-            failures += record_verdict("accept", os.path.relpath(p, ROOT),
-                                       check_type_accept(tc, p, os.path.relpath(p, ROOT)))
-            n += 1
-        print("  %-11s %2d acceptance test(s)" % ("accept", n))
 
         # --- PARITY WITH `npkg test` (1.4.8, D-206 §5) --------------------
         #

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b and 1.4.8 (`npkg`, D-206) CLOSED; 1.4.8b (D-237 exact matching, D-238 manifest-declared suites) is NEXT
+## Status: PHASE C UNDERWAY — cycle 1.4 (self-hosting): 1.4.7, 1.4.7b, 1.4.8 (`npkg`, D-206) and 1.4.8b (D-237, D-238) CLOSED; 1.4.9 (the close) is NEXT
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 238 settled decisions. The **plan is in `meta/roadmap/`**,
@@ -493,6 +493,31 @@ and a hung tool killed at a deadline — exiting 0 so D-151/D-188 assert nothing
 leaked. The user settled D-230's families and S-8 on 2026-09-02 (the
 recommendations as written).
 **Steps 2b–6 landed (2026-09-02), validated under D-228's cumulative-prefix protocol after a mid-step-6 UI freeze the recovery lost nothing to.** `range<T>` is spellable (2b, S-8/D-093); the snapshot was refreshed mid-cycle so `src/` and the library it imports may spell the flag families (3); every `open` caller crosses its `oflags`/`fmode` to the floor's word with `=> int32`, `open` itself staying `int64` — the floor is the syscall surface (4); `lib/nfs.npk` is the file-system surface — a sorted listing over `getdents64`, containment answered by OPENING not by string checks, restrictive creation defaults and the at-family (D-213's three riders), with `sys_cwd` and three named errnos in the prelude (5); and **D-236** renders every source path relative to the manifest root the driver finds by walking up from the main file, so the `selfhost` stage's new assertion measures H9 green — zero absolute site rows where 1,479 of 1,637 leaked before (6). Four full harnesses (main plus three cumulative-prefix worktrees) came back 58/58; main is byte-identical to the fully-merged `w456`, and a confirmatory harness on committed main followed. **Part D LANDED (2026-09-02): `npkg/` exists** — twelve modules of Nitpick built by the compiler under test, over the compiler's own path code, list and lexer. `npkg build` runs the README's ladder and produces a compiler BYTE-IDENTICAL to the harness's; `npkg test` builds, runs the runner self-check (§7.1, also `--selfcheck` alone), then every suite the harness runs unit for unit — 908 verdicts on the first full run, every suite count the harness's — with `--only`, `--verdicts PATH`, and `update`/`verify` refusing by name. The undefined-symbol scan reads the object's ELF64 symbol table itself (`npkg/elf.npk`) rather than spawning an unpinned `llvm-readelf`; the harness keeps spawning it and the new **`parity` stage** builds `npkg`, runs `npkg test --verdicts` from the manifest root, diffs the two verdict lists unit for unit and byte-compares `build/npkc` — every per-file harness site now records a verdict. Three things the port found: BUILD_REFERENCE §7.1's "unexpected diagnostics fail a test" is a rule NEITHER runner enforces (subset matching since 0.8; 17 of 131 rejection files carry unasserted extras — **S-9**), nine of those seventeen were `tools/resolve_check.npk` never naming the prelude module (fixed), and the tool runner's capture was quadratic (a `string_concat` per 8 KB read; `npkg test`'s first full run spent 17 of 56 minutes in the kernel — `lib/nproc.npk` accumulates linearly now, and `proc_wait` CONSUMES its `Proc`, which D-004's conservative borrow rule required for the captured text to leave the frame). Whether every suite should be a manifest `[[test]]` entry is **S-10**. Both runners run until `meta/SWITCH.md`; the harness remains the run whose result means the suite is green. **The concluding harness run on the final tree: every stage green, 58/58, and the `parity` stage's first result — 902 verdicts agree between the two runners, npkc byte-identical.** 1.4.8 is closed; S-9 and S-10 were ratified the same day as **D-237** (exact diagnostic matching in both runners) and **D-238** (every suite a `[[test]]` entry with a `stage`, one table both runners read), and land as **1.4.8b** (`meta/roadmap/1.4/1.4.8b.md`, execution-grade).
+**1.4.8b IS COMPLETE (2026-09-02)**, two commits each under a full harness with
+`parity` green. **D-237**: on the error channel the SET of codes a rejection test
+reports must EQUAL the set its expectations name — `check_module_rejection`
+(harness) and `check_rejection` (npkg) fail every unnamed code by name, the
+runner self-check's `unasserted-extra` case proves the rule bites (a negative
+control shows the old subset rule accepting it), and 131 of 131 rejection files
+pass under it after the eight resolutions. Two of the eight contradicted their
+pre-settlement on reading: `definite_assignment.npk` MEANS its `PICK-003` (named,
+not wildcarded away), and `assoc.npk`'s `TYPE-014` was a stale-text collision —
+its default assoc was named `Error` at 1.0.6, D-179 later made `Error` the
+compiler-known type resolved by name ahead of every lookup, and the checker read
+the word two ways (the builtin in signature comparison, the trait's assoc in the
+object-safety walk); the test spells `Fault`, and whether `Error` joins the names
+a program cannot declare — a module-level `struct:Error` is ACCEPTED today where
+`struct:Duration` is refused, and an `assoc` shadows a prelude type inside its
+trait — is **S-11**; three sites where two rules report one mistake are **S-12**.
+**D-238**: every suite is a `[[test]]` entry with a `stage` (`compile` with its
+`kind`, `parse`, `resolve`, `check`, `accept`, `fixture`, `program`, `runtime`),
+`paths`/`path` and `recursive`; both runners read the one table and refuse an
+entry they cannot honour BY NAME before anything runs; the hardcoded loops are
+gone from both (the harness dispatches from `run_stage`, npkg from
+`run_targets`, each stage a function, each tool built once on first use); the
+before/after verdict lists differ in exactly the two recorded ways — the six
+duplicated grammar units collapse and the two `nf_twin` twins the old
+non-recursive glob missed are swept — and nothing is judged differently.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

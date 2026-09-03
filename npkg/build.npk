@@ -47,6 +47,11 @@ pub struct:Ctx = {
     string:builder;          // <root>/build/builder, once linked
     string:npkc;             // the artifact, absolute, once built
     List<string>:allow;      // the runtime allowlist (npkrt.ll's defines + main)
+    string:parse_check;      // the stage tools, built once on first use (D-238):
+    string:resolve_check;    //   "" not yet asked, "!" did not build (recorded once
+    string:check;            //   as a failure), else the binary's path
+    List<string>:fix_keys;   // the fixture map the `fixture` stage fills and
+    List<string>:fix_paths;  //   `program` reads: uppercased stem -> built path
     List<Verdict>:verdicts;  // every unit's verdict, in run order
     List<string>:failures;   // every failure message, in run order
     int64:total;             // [[test]] files run
@@ -65,6 +70,9 @@ pub func:ctx_init = Ctx(move Manifest:m, move Tools:t) never fails {
     pass Ctx{ m: move(m), t: move(t), bdir: move(bdir), tdir: move(tdir),
               rt_obj: "", builder: "", npkc: "",
               allow: raw list_init::<string>(1i64),
+              parse_check: "", resolve_check: "", check: "",
+              fix_keys: raw list_init::<string>(4i64),
+              fix_paths: raw list_init::<string>(4i64),
               verdicts: raw list_init::<Verdict>(64i64),
               failures: raw list_init::<string>(8i64),
               total: 0i64, available: 0i64 };

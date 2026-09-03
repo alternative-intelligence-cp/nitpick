@@ -4,14 +4,15 @@
 // growable list, the lexer that finds a test's imports -- the self-hosting
 // dividend. Built by the compiler under test; runs the ladder BUILD_REFERENCE
 // §4 and `bootstrap/seed/README.md` spell out (the committed snapshot builds
-// `src/`, D-205), links closed-world (D-206 §4, D-011), and runs the test
-// suites the Python harness runs, unit for unit, so parity between the two
-// runners is a diff of verdicts (D-206 §5: succession, not replacement --
-// the harness keeps running suites and instruments until `meta/SWITCH.md`).
+// `src/`, D-205), links closed-world (D-206 §4, D-011), and runs every
+// suite `nitpick.toml` declares (D-238: the one table both runners read),
+// unit for unit with the Python harness, so parity between the two runners
+// is a diff of verdicts (D-206 §5: succession, not replacement -- the
+// harness keeps running suites and instruments until `meta/SWITCH.md`).
 //
 //   npkg build                 the ladder: floor, builder, `[build] entry` -> `[build] output`
-//   npkg test                  build, the runner self-check, every suite
-//   npkg test --only SUBSTR    the `[[test]]` files whose path holds SUBSTR, and nothing else
+//   npkg test                  build, the runner self-check, every `[[test]]` suite in manifest order (D-238)
+//   npkg test --only SUBSTR    the compile-stage `[[test]]` files whose path holds SUBSTR, and nothing else
 //   npkg test --selfcheck      the runner self-check alone (BUILD_REFERENCE §7.1)
 //   npkg test --verdicts PATH  also write one `STATUS<TAB>suite<TAB>name<TAB>message` per unit
 //   npkg update                refused by name: a single-repo world has nothing to resolve
@@ -199,8 +200,7 @@ async func:main = int32(cstring[]:argv) {
             drop say(raw stage_text("selfcheck", "the runner reports failures as well as passes (§7.1)"));
         }
     }
-    List<string>:all_sources = raw list_init::<string>(64i64);
-    Result<NIL>:rt = await run_targets(@c, only, @all_sources);
+    Result<NIL>:rt = await run_targets(@c, only);
     if (rt.is_error) { drop say_err("npkg: the test targets could not be run (a spawn or a read failed)"); exit 2i32; }
     if (filtering && (c.total == 0i64)) {
         string:names = "";
@@ -213,18 +213,6 @@ async func:main = int32(cstring[]:argv) {
         drop say(string_concat(string_concat("\nno test matched ", names), " -- nothing ran"));
         wild_release_all();
         exit 2i32;
-    }
-    if (!filtering) {
-        Result<NIL>:g = await run_grammar(@c, all_sources);
-        if (g.is_error) { drop say_err("npkg: the grammar sweep could not run"); exit 2i32; }
-        Result<NIL>:rj = await run_rejections(@c);
-        if (rj.is_error) { drop say_err("npkg: the rejection suites could not run"); exit 2i32; }
-        Result<NIL>:pg = await run_programs(@c);
-        if (pg.is_error) { drop say_err("npkg: the program suite could not run"); exit 2i32; }
-        Result<NIL>:ru = await run_runtime(@c);
-        if (ru.is_error) { drop say_err("npkg: the runtime tests could not run"); exit 2i32; }
-        Result<NIL>:ac = await run_accept(@c);
-        if (ac.is_error) { drop say_err("npkg: the acceptance suite could not run"); exit 2i32; }
     }
     if (verdicts_path.len > 0i64) {
         Result<cstring>:vc = to_cstring(verdicts_path);

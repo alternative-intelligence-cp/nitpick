@@ -53,40 +53,154 @@ lld-flags     = ["-static"]
 # and needs to be argued as one.
 [dependencies]
 
-# Test targets. Closes BUILD_REFERENCE section 8's first open item.
+# TEST TARGETS (BUILD_REFERENCE §7.1; D-238). EVERY suite `npkg test` and the
+# harness run is declared here, in run order, and both runners read this one
+# table -- a manifest that declared four of fourteen suites was a document a
+# reader could not trust to say what ran, the stale-document shape the
+# [toolchain] block refused for flags. Both runners refuse an entry they
+# cannot honour BY NAME before anything runs: a stage they do not know, a
+# `kind` on a stage that has none, no paths. Keys:
 #
-# Three kinds:
-#   positive    compiles, links, runs, exits with the expected code
-#   negative    FAILS to compile, emitting exactly the expected diagnostics
-#   diagnostic  compiles, emitting exactly the expected warnings
+#   name       the suite's label, in every verdict line and stage line
+#   stage      the tool that judges the suite and what it must say:
+#                compile   the compiler under test, held to `kind`:
+#                            positive    compiles, links, runs, exits with the expected code
+#                            negative    FAILS to compile, emitting exactly the expected diagnostics
+#                            diagnostic  compiles, emitting exactly the expected warnings
+#                parse     tools/parse_check: accepted with no diagnostic (D-085's sweep)
+#                resolve   tools/resolve_check: refused with exactly the expected codes (the LOADER)
+#                check     tools/check: refused with exactly the expected codes (the frontend)
+#                accept    tools/check: accepted in silence
+#                fixture   built like a program and never run; its uppercased stem is an `// argv:` token
+#                program   emitted, scanned, assembled, linked, run at -O0 and again through opt -O2
+#                runtime   a hand-written .ll assembled, linked against the floor, run
+#              (`compile` is the default; it is the only stage with a `kind`)
+#   paths      the directories swept, an array; `path` is its one-element shorthand
+#   recursive  sweep subdirectories too (default false)
 #
-# Expectations live in the test file itself, next to the code, so a test and its
-# expectation cannot drift apart -- and they assert on stable CODES and spans,
-# never on message text.
+# Membership stays with the stage: a `resolve`/`check` file with no
+# `expect-error` is a fixture another file imports and is skipped; a
+# `compile`/`program` file some other file in its suite imports is skipped.
+# Expectations live in the test file itself, next to the code, so a test and
+# its expectation cannot drift apart -- and they assert on stable CODES and
+# spans, never on message text (§7.1 has the marker grammar).
 
 [[test]]
 name = "conformance"
+stage = "compile"
 kind = "positive"
 path = "tests/conformance"
 
 [[test]]
 name = "frontend"
+stage = "compile"
 kind = "positive"
 path = "tests/frontend"
 
 [[test]]
 name = "rejection"
+stage = "compile"
 kind = "negative"
 path = "tests/rejection"
 
 # The BACKEND's own unit tests (cycle 0.7). Positive, like `frontend`: they link the
 # emitter, run it, and assert on what it produced. A backend test cannot be a
-# rejection case — the thing it is checking is the IR, and IR that is wrong in a way
+# rejection case -- the thing it is checking is the IR, and IR that is wrong in a way
 # that still assembles produces no diagnostic at all.
 [[test]]
 name = "backend"
+stage = "compile"
 kind = "positive"
 path = "tests/backend"
+
+# The REAL parser over every source in the tree, each file once. A rejection
+# test the real parser cannot read is testing the wrong stage (D-085);
+# tests/grammar/ is parse-only by design and exists to be swept here; the
+# prelude is real source; and the compiler's own tree is the file set that
+# matters most -- stage 1 must parse it to build stage 2, so a source the real
+# parser cannot read is a source that never self-hosts. `npkg/` is built by
+# the compiler under test, so it is here for the same reason.
+[[test]]
+name = "grammar"
+stage = "parse"
+recursive = true
+paths = ["tests", "src", "tools", "lib", "npkg"]
+
+# FIVE REJECTION SUITES, ONE PER STAGE THAT REFUSES, and the split is the
+# point: a file that stops earlier would satisfy a test written about a later
+# stage. `modules` is refused by the LOADER and never reaches a checker; the
+# other four load and resolve and are refused by the type checker, a static
+# analysis, macro expansion, or the `#[derive]` reader (whose codes carry
+# their own prefix because a reader filtering for one is asking a different
+# question). A file here with no `expect-error:` is a fixture another one
+# imports, not a test. (The BACKEND's rejections -- correct programs at a rung
+# that cannot lower them yet -- are the `rejection` compile target above.)
+[[test]]
+name = "modules"
+stage = "resolve"
+recursive = true
+path = "tests/modules/rejection"
+
+[[test]]
+name = "types"
+stage = "check"
+recursive = true
+path = "tests/types/rejection"
+
+[[test]]
+name = "analysis"
+stage = "check"
+recursive = true
+path = "tests/analysis/rejection"
+
+[[test]]
+name = "expansion"
+stage = "check"
+recursive = true
+path = "tests/expansion/rejection"
+
+[[test]]
+name = "derive"
+stage = "check"
+recursive = true
+path = "tests/derive/rejection"
+
+# Helper binaries a test spawns (1.1.13a): built by the real-backend pipeline
+# and held to its checks, never run by the runner; a program names one in
+# `// argv:` by its uppercased stem. A `.c` here is a reference DRIVER
+# (1.1.13c) built with the system C compiler -- test tooling outside the
+# TCB, never in the artifact (D-149). Declared BEFORE `programs`, which
+# consumes the map this stage fills.
+[[test]]
+name = "fixtures"
+stage = "fixture"
+path = "tests/backend/fixtures"
+
+# Whole programs COMPILED BY THE REAL BACKEND, linked against the runtime and
+# RUN -- at -O0 and again through opt -O2 with the same exit required (1.3.8:
+# the optimiser once removed a load-bearing guarantee, so it is tested, not
+# trusted). The conformance suite is here too: subset 1 compiles and runs
+# under THIS compiler, the self-hosting goal sentence made a test.
+[[test]]
+name = "programs"
+stage = "program"
+paths = ["tests/backend/programs", "tests/conformance"]
+
+# The runtime floor's own tests (0.10.3): hand-written .ll for families with
+# no surface syntax, assembled, linked against npkrt.o, run, exit asserted.
+[[test]]
+name = "runtime"
+stage = "runtime"
+path = "runtime/tests"
+
+# Whole programs the frontend must ACCEPT in full silence -- the counterweight
+# to the rejection suites, since a checker that refused every program would
+# pass every one of them. One suite, not one per stage: silence has no stage.
+[[test]]
+name = "accept"
+stage = "accept"
+recursive = true
+path = "tests/accept"
 
 # Verification configuration belongs to the project, not to whoever typed the
 # command (D-077). These are the settings this project must be verified under.
