@@ -47,7 +47,7 @@ deliver it are all **compile-time and structural**, with no runtime checks:
 
 | Property | Mechanism |
 |---|---|
-| no dangling references | **second-class borrows** — a borrow passes down the call stack and never up (D-004) |
+| no dangling references | **second-class borrows** — a borrow passes down the call stack and never up (D-004); a VIEW is a borrow of what it views (D-249): `string_bytes`, `string_from_bytes` and the range-view are `@` of their operand to the escape analysis, by the reference's `Views` column |
 | no use-after-free in arenas | **generation-counted `Handle<T>`** — a stale handle fails safely through `Result<T>` rather than dangling |
 | no data races | borrows cannot cross a thread spawn or `await` (D-004); tasks do not migrate (D-032); shared arenas never move memory or reuse slots (D-017) |
 | leaks are detected, not silent | the **K-semantics `exit` rule** — reaching `exit` with live `wild`/`wildx` memory traps to `failsafe` instead of returning |

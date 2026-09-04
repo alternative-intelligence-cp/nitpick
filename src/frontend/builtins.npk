@@ -134,6 +134,16 @@ pub func:builtin_pure = bool(string:name) never fails {
     pass false;
 };
 
+// Which argument a bare-name builtin's result VIEWS (D-249, 1.5.1b step 2)
+// -- the reference's Views column, generated: 0 for none, else the 1-based
+// index of the argument whose storage the result aliases. The escape
+// analysis treats such a call as `@` written at that argument.
+pub func:builtin_views = int32(string:name) never fails {
+    if (raw string_eq(name, "string_bytes")) { pass 1i32; }
+    if (raw string_eq(name, "string_from_bytes")) { pass 1i32; }
+    pass 0i32;
+};
+
 // The irregulars (D-201): typed by a bespoke `type_call` arm, because no
 // signature can state what they do -- `sys` is variadic, `atomic_from_ptr`
 // reads its element from a turbofish, and the seven constructors read

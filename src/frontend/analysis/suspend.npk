@@ -59,6 +59,7 @@ use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
 use "../types.npk".*;
 use "../expr_types.npk".*;
+use "../builtins.npk".*;     // builtin_views (D-249)
 use "./analysis_codes.npk".*;
 
 pub func:SUSPEND_DEPTH = int32() never fails { pass 256i32; };
@@ -642,6 +643,30 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         drop suspend_expr(x, raw expr_callee(n), fuel - 1i32);
         drop suspend_expr_window(x, (raw expr_list_start(n)) + gc,
                                  (raw expr_list_count(n)) - gc, fuel);
+        // A VIEW-MAKER ALIASES ITS OPERAND (D-249, 1.5.1b step 2), as the
+        // range view below aliases its array: the viewed local stays live to
+        // the function's end like any address-taken one, so a view seeded into
+        // an awaited child never points into a dead resume stack. A bare
+        // builtin is a call whose callee resolution left unbound.
+        ExprNode:vcal = raw ast_expr(x.ast, raw expr_callee(n));
+        if (vcal.kind == ExprKind.ExprIdentifierExpr) {
+            if (vcal.a == 0i32) {
+                int32:vk = raw builtin_views(raw intern_get(x.interns, vcal.payload =>! int32));
+                if (vk >= 1i32) {
+                    if (vk <= ((raw expr_list_count(n)) - gc)) {
+                        PlaceRoot:vr2 = raw place_root(x.ast,
+                            ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + gc, vk - 1i32) },
+                            raw SUSPEND_DEPTH());
+                        if (!(raw expr_is_none(vr2.id))) {
+                            ExprNode:vrn2 = raw ast_expr(x.ast, vr2.id);
+                            if (vrn2.kind == ExprKind.ExprIdentifierExpr) {
+                                drop reg_extend(x, vrn2.a, x.fn_end);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // THE BARE SUSPENSION PRIMITIVES ARE SUSPENSION POINTS (1.3.8).
         // `suspend_io`/`suspend_until` park the machine exactly as an
         // `await` does — their lowering ends the segment with a resume —

@@ -230,6 +230,9 @@ pub func:srcmgr_resolved_proven = string(SourceManager->:m, int32:file) never fa
 // exit — every interned identifier then pointed into freed memory, and the
 // compiler segfaulted lexing its second file.
 pub func:srcmgr_text_proven = string(SourceManager->:m, int32:file) never fails {
+    // `srcmgr_text` already hands back the cap-0 view; re-viewing it here was
+    // a view of a LOCAL under D-249 (1.5.1b step 2), and the local IS the
+    // view, so it travels up as itself.
     string:t = srcmgr_text(m, file) ?! FileUnknown;
-    pass (string_from_bytes(t.ptr, t.len));
+    pass t;
 };

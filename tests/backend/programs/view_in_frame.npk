@@ -1,0 +1,53 @@
+// expect-exit: 0
+//
+// CASE 6 — THE SHAPE THE LIBRARY IS ALLOWED TO WRITE, and the reason the house
+// rule costs nothing.
+//
+// A view PASSED DOWN is legal under D-004 and always was: the callee's frame is
+// strictly inner, so the storage outlives the call. Every parser in `src/fmt/`
+// is this shape, and none of them needs to return one -- a parser returns a
+// VALUE and a new offset, not a slice of its input.
+//
+// This file is here so that the ask in README.md is unambiguous. `ntime` is not
+// asking for a capability it lacks; it is asking for a rule it already obeys to
+// be enforced, so that obeying it is checked rather than remembered.
+mod:view_in_frame;
+
+// A scanner step: takes the view, returns a value and never the view.
+func:count_digits = int64(uint8[]:src, int64:from) never fails {
+    int64:i = from;
+    int64:n = 0i64;
+    while (i < src.len) {
+        if (src[i] < 48u8) { i = src.len; }
+        else {
+            if (src[i] > 57u8) { i = src.len; }
+            else { n = n + 1i64; i = i + 1i64; }
+        }
+    }
+    pass n;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = string_concat("2026", "-09-03");
+    uint8[]:v = string_bytes(s);            // the owner is ALIVE for the call
+    if (v.len != 10i64)                                 { exit 10i32; }
+    if ((raw count_digits(v, 0i64)) != 4i64)            { exit 11i32; }
+    if ((raw count_digits(v, 5i64)) != 2i64)            { exit 12i32; }
+    // ...and the bytes are the ones that were written, because nothing died.
+    if (v[0i64] != 50u8)                                { exit 13i32; }   // '2'
+    if (v[9i64] != 51u8)                                { exit 14i32; }   // '3'
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

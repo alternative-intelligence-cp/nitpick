@@ -1,0 +1,75 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 33:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 39:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 45:23
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 51:28
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 57:14
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 68:16
+// expect-error: NITPICK-BORROW-012
+// expect-error-at: 74:23
+//
+// The workbench's DEF-3 (OPEN_DECISIONS §2f; their O-N9, `nitpick-time`
+// 0667ecb's six-case contrast set): a `uint8[]` view of a local string
+// returned out of its frame compiled at exit 0 and the caller read the
+// allocator's 0xAA poison. The rule existed beside it -- returning `@x` or a
+// struct literal holding `@local` was BORROW-001 -- and a view-maker's result
+// was simply not a borrow to the analysis. Under D-249 (1.5.1b step 2) a call
+// whose builtin VIEWS an argument, and the range-view `arr[lo...hi]`, is a
+// borrow rooted where that argument is rooted -- as if `@` had been written
+// there -- so every rule that refuses `@local` refuses the view the same way.
+mod:view_escape;
+
+struct:Holder = { int32->:p; };
+struct:Viewer = { uint8[]:view; };
+
+// (1) the rule that always existed: `@x` returned
+func:esc_addr = int32->() never fails {
+    int32:x = 5i32;
+    pass (@x);
+};
+
+// (2) and a struct literal holding `@local`
+func:esc_struct = Holder() never fails {
+    int32:x = 5i32;
+    pass Holder{ p: @x };
+};
+
+// (3) NEW: the reporter's case -- a view of a local string, returned
+func:esc_view = uint8[]() never fails {
+    string:s = string_concat("abcd", "efgh");
+    pass (string_bytes(s));
+};
+
+// (4) NEW: the other view-maker, over the local's own pointer and length
+func:esc_from_bytes = string() never fails {
+    string:s = string_concat("abcd", "efgh");
+    pass (string_from_bytes(s.ptr, s.len));
+};
+
+// (5) NEW: the range view of a local array (the emitter takes addr_of of it)
+func:esc_range = int32[]() never fails {
+    stack int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    pass (arr[1...3]);
+};
+
+// (6) NEW: a view stored into an outer struct through a pointer parameter --
+// rule B: a local-rooted borrow beside a destination that can hold it
+func:stash = NIL(Viewer->:h, uint8[]:v) never fails {
+    h.view = v;
+    pass NIL;
+};
+func:leak_view = NIL(Viewer->:h) never fails {
+    string:s = string_concat("ab", "cd");
+    drop stash(h, string_bytes(s));
+    pass NIL;
+};
+
+// (7) NEW: a view of a TEMPORARY -- no name, dead at the statement's end
+func:esc_temp = uint8[]() never fails {
+    pass (string_bytes(string_concat("ab", "cd")));
+};

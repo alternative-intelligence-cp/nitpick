@@ -34,8 +34,11 @@ Silence has no stage.
 | `BORROW-002` | D-004 rule 3 — nor be stored in something longer-lived | `borrows.npk` |
 | `BORROW-003` | D-004 rule 4 — nor cross an `extern` call | `borrows.npk`, `path_shapes.npk` |
 | `BORROW-007` | the derivation walk ran out of fuel | `too_deep.npk` |
-| `BORROW-009` | a borrow reaches a binding the analysis cannot follow | `borrows.npk` |
+| `BORROW-009` | a borrow reaches a binding the analysis cannot follow — a `for` binding, when the iterated element type can carry a pointer (a range's integers or a `uint8[]`'s bytes cannot, whatever the bound's operands hold; 1.5.1b step 2) | `borrows.npk` |
 | `BORROW-010` | the marking fixpoint did not settle | `unsettled.npk` |
+| `BORROW-011` | D-223 — a borrow entering a `wild` slot | `wild_store.npk` |
+| `BORROW-012` | D-249 — a view of a temporary (1.5.1b step 2) | `view_escape.npk` |
+| `BORROW-001`, `BORROW-002` | D-249 — a view (`string_bytes`, `string_from_bytes`, `arr[lo...hi]`) returned, held in a literal, or stored through a pointer parameter, as `@` of its operand (1.5.1b step 2; the workbench's DEF-3 contrast set) | `view_escape.npk` |
 | `ASSIGN-001` | D-010 — read before written | `definite_assignment.npk`, ten forms |
 | `ASSIGN-002` | `fixed` / `const` assigned twice | `definite_assignment.npk` |
 | `ASSIGN-003` | the walk ran out of depth | `too_deep.npk` |

@@ -1,0 +1,118 @@
+// The legal shapes beside `tests/analysis/rejection/view_escape.npk` (D-249,
+// 1.5.1b step 2): a view is a parameter, never a return value -- unless what it
+// views is the CALLER's, which is exactly when `@param` may travel up too.
+mod:views;
+
+struct:Named = { string:name; int32:n; };
+
+// a view of a by-value parameter's storage returned: the caller owns the string
+func:tail = uint8[](string:s) never fails {
+    pass (string_bytes(s));
+};
+
+// a view through a `->` parameter's field: the pointee is the caller's or older
+func:name_bytes = uint8[](Named->:h) never fails {
+    pass (string_bytes(h.name));
+};
+func:name_view = string(Named->:h) never fails {
+    pass (string_from_bytes(h.name.ptr, h.name.len));
+};
+
+// a range view of a SLICE parameter: the slice is a pointer to storage elsewhere
+func:middle = int32[](int32[]:xs) never fails {
+    pass (xs[1...3]);
+};
+
+// a view of a wild pointer's pointee: the block outlives the frame (esc_byte's shape)
+func:one_byte = string(uint8:b) never fails {
+    wild int8->:one = alloc(1i64);
+    one[0i64] = b =>! int8;
+    pass (string_from_bytes(one, 1i64));
+};
+
+// a view of a string literal: static storage
+func:lit = uint8[]() never fails {
+    pass (string_bytes("abc"));
+};
+
+// a view used INSIDE its frame and passed down (the workbench's case 6)
+func:count_digits = int64(uint8[]:src, int64:from) never fails {
+    int64:i = from;
+    int64:n = 0i64;
+    while (i < src.len) {
+        if (src[i] < 48u8) { i = src.len; }
+        else {
+            if (src[i] > 57u8) { i = src.len; }
+            else { n = n + 1i64; i = i + 1i64; }
+        }
+    }
+    pass n;
+};
+func:in_frame = int64() never fails {
+    string:s = string_concat("2026", "-09-03");
+    uint8[]:v = string_bytes(s);
+    pass ((raw count_digits(v, 0i64)) + (raw count_digits(v, 5i64)));
+};
+
+// an owned copy of a view is owned: rule A does not taint a builtin's result
+func:copy_of_view = string() never fails {
+    string:s = string_concat("ab", "cd");
+    string:c = string_concat(string_from_bytes(s.ptr, s.len), "");
+    pass (move(c));
+};
+
+// THE FIRST SWEEP'S THREE SHAPES (1.5.1b step 2), each legal and each
+// refused by the rule's first draft:
+
+// a view over POINTER ARITHMETIC on a parameter's bytes -- the tree's
+// substring idiom -- aliases what the pointer reaches, not a temporary
+func:inner = string(string:s) never fails {
+    pass (string_from_bytes(#ptr_add<uint8>(s.ptr =>! wild uint8->, 1i64), 2i64));
+};
+
+// a `for` whose range bound reads a view-holding local's `.len`: the loop
+// binding is an integer and can carry no borrow, whatever the bound mentions
+func:count_lower = int64(string:s) never fails {
+    string:ln = string_from_bytes(s.ptr, s.len);
+    uint8[]:bs = string_bytes(ln);
+    int64:n = 0i64;
+    for (int64:j in 0i64...ln.len) {
+        if (bs[j] >= 97u8) { if (bs[j] <= 122u8) { n = n + 1i64; } }
+    }
+    pass n;
+};
+
+// a struct literal holding a view of a by-value parameter, returned directly
+// (the lexer's shape): rooted where its field values are
+struct:Cursor = { string:text; int64:pos; };
+func:cursor = Cursor(string:text) never fails {
+    pass Cursor{ text: string_from_bytes(text.ptr, text.len), pos: 0i64 };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = string_concat("hello", "!");
+    if ((raw tail(s)).len != 6i64) { exit 1i32; }
+    Named:nm = Named{ name: string_concat("a", "b"), n: 1i32 };
+    if ((raw name_bytes(@nm)).len != 2i64) { exit 2i32; }
+    if ((raw name_view(@nm)).len != 2i64) { exit 3i32; }
+    stack int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    if ((raw middle(arr[0...4])).len != 2i64) { exit 4i32; }
+    if ((raw one_byte(65u8)).len != 1i64) { exit 5i32; }
+    if ((raw lit()).len != 3i64) { exit 6i32; }
+    if ((raw in_frame()) != 6i64) { exit 7i32; }
+    if ((raw copy_of_view()).len != 4i64) { exit 8i32; }
+    string:w = string_concat("ab", "cd");
+    if ((raw inner(w)).len != 2i64) { exit 10i32; }
+    if ((raw count_lower(w)) != 4i64) { exit 11i32; }
+    if ((raw cursor(w)).text.len != 4i64) { exit 12i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

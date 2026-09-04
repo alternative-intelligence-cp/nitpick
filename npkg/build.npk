@@ -64,7 +64,11 @@ pub func:step_ok = Step(string:text) never fails { pass Step{ ok: true, text: ra
 pub func:step_bad = Step(string:text) never fails { pass Step{ ok: false, text: raw text_copy(text) }; };
 
 pub func:ctx_init = Ctx(move Manifest:m, move Tools:t) never fails {
-    string:root = string_from_bytes(m.root.ptr, m.root.len);
+    // AN OWNED COPY, not a view (1.5.1b step 2): `m` is this frame's own (a
+    // `move` parameter), so a view of it is a borrow of a local under D-249,
+    // and what `path_join` builds from a borrow is a borrow to the analysis
+    // (D-004's conservative rule) -- the `Ctx` could not leave the frame.
+    string:root = string_concat(string_from_bytes(m.root.ptr, m.root.len), "");
     string:bdir = raw path_join(root, "build");
     string:tdir = raw path_join(bdir, "test");
     pass Ctx{ m: move(m), t: move(t), bdir: move(bdir), tdir: move(tdir),

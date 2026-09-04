@@ -41,11 +41,14 @@ pub struct:Lexer = {
 // The text is a cap-0 VIEW of the source manager's body (D-183): the Lexer
 // holds it, the Lexer's own drop skips it, and the manager stays the one
 // owner for the process's life.
+// RETURNED AS THE LITERAL (1.5.1b step 2): under D-249 the re-view of `text`
+// is a borrow of the PARAMETER, legal one frame up exactly as `@text` would
+// be -- but only where the analysis can see the root, which a local binding
+// of the literal hides (a binding records THAT it holds a borrow, not whose).
 pub func:lexer_init = Lexer(int32:file, string:text) never fails {
-    Lexer:lx = Lexer{ text: string_from_bytes(text.ptr, text.len), file: file, pos: 0i64, line: 1i32, col: 1i32,
-                      in_template: false, interp_depth: 0i32, brace_depth: 0i32,
-                      interp_brace: [] };
-    pass lx;
+    pass Lexer{ text: string_from_bytes(text.ptr, text.len), file: file, pos: 0i64, line: 1i32, col: 1i32,
+                in_template: false, interp_depth: 0i32, brace_depth: 0i32,
+                interp_brace: [] };
 };
 
 pub func:lexer_at_end = bool(Lexer->:lx) never fails {

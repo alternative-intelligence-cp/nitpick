@@ -13398,7 +13398,7 @@ the allocator's trap posture, as `string_concat`'s does.
 **`string_from_bytes` deliberately stays the VIEW primitive**: it wraps a
 buffer the CALLER owns (the lexer's decode buffer, a writer's live sink),
 which is a different contract, stated at its definition — the one
-remaining view-maker, explicit and greppable.
+remaining view-maker, explicit and greppable. *(1.5.1b step 2, D-249: `string_bytes` (1.1.12c) is the other view-maker, and both are borrows to the escape analysis now, by the reference's `Views` column.)*
 
 **The overwrite.** Simplifying the prelude's slice-copy dances exposed
 D-183's recorded partial-place item as a LIVE leak: `tr.acc =
@@ -16181,3 +16181,57 @@ said less than `npkc` does. Both runner self-checks' generated
 cases took identifier names and a header; the ecosystem's libraries already
 led every file with its header by house rule, so the re-pin costs them
 nothing.
+
+## D-249 — a view-maker's result borrows its operand: the `Views` column — **SETTLED (user decision, 2026-09-03; 1.5.1b S-22)**
+
+The workbench reported (their O-N9, DEF-3 in OPEN_DECISIONS §2f) that a
+`uint8[]` view of a local string returned out of its frame compiled at exit 0
+and the caller read the allocator's 0xAA poison — while returning `@x`, or a
+struct literal holding `@local`, was `NITPICK-BORROW-001` beside it (D-004
+rule 2). The escape analysis knew `@` and (in the suspend walk only, D-191)
+the range-view `arr[lo...hi]`; it named neither `string_bytes` nor
+`string_from_bytes`, D-186's one remaining view-maker, anywhere: a call's
+argument passed by value is no borrow, so the call's result was not one.
+**The decision.** BUILTIN_REFERENCE's marked regions carry a `Views` column
+beside `Pure` (the 1.5.1 step-4 shape, the same generator, hard-failing on a
+cell it cannot read): `—`, or the 1-based index of the argument whose storage
+the result aliases — `string_bytes` 1, `string_from_bytes` 1, every other
+row `—` — generated into `builtin_views`. The escape analysis treats a call
+whose builtin has an index, and the range-view by kind, AS IF `@` HAD BEEN
+WRITTEN AT THAT ARGUMENT: a borrow rooted where the argument is rooted, so
+rule 2 (return), rule 3 (store), rule A (launder through a call) and rule B
+(a destination among the arguments) apply to it with no arm of their own.
+The column is the one authority on a builtin's aliasing — a hard-coded pair
+of names in the analysis would be a parallel authority beside the 1.4.2
+table, which is what the alternative was and why it was refused. **Landed at
+1.5.1b step 2**, with the refinement the compiler's own idioms required: `@`
+borrows the FRAME storage under a place, and a view does too when that
+storage dies at the frame's exit (a `string`, a `buffer`, an array, a struct
+by value), but a view whose place roots at a POINTER-SHAPED binding (a wild
+pointer, a slice, a `cstring`, a `Handle`) aliases the pointee, which lives
+where the pointer's provenance says — the wild-store rules already govern
+that, and a binding that holds a borrow is carried by the identifier rule as
+before. A view of a string literal views static storage. A view of a
+TEMPORARY is refused outright (`NITPICK-BORROW-012`): `@` of one cannot be
+spelled, and the value dies at its statement's end (D-246). Two consequences
+fell out: a builtin's result is borrowy only as the column says — rule A had
+been ready to call `string_concat` of a view a borrow, which would have
+refused every owned copy of one — and a `move` parameter is the callee's own,
+so `root_is_param` no longer counts it as the caller's storage; `@` of one
+had the same hole. `tests/analysis/rejection/view_escape.npk` carries the
+reporter's contrast set (their `0667ecb`), `tests/accept/views.npk` the legal
+shapes, and `view_in_frame.npk` their case 6 as a program.
+*(Landing note, 2026-09-03: the rule's first pass over the compiler, `npkg`,
+the tools and the libraries reported eight sites, and reading them refined it
+three times — a view over `#ptr_add`/`#wild_slice` is a view of what the
+pointer reaches (the substring idiom), never a temporary, while `#wild_ptr`
+roots nothing; a `for`'s BORROW-009 asks whether the iterated ELEMENT type
+can carry a pointer, since a range's integers cannot carry a borrow whatever
+the bound's operands hold; and the return and rooting walks look through a
+struct or array literal to its values, so a literal holding a view of a
+parameter travels up as `@param` does. Rule B learned that a view is stored
+AS ITSELF — a `uint8[]` or `string` slot is a destination for a view of
+exactly its type — which is what the reporter's case 6 needed to fire.
+Three programs changed hands: `srcmgr_text_proven` returns the view it
+already held, `lexer_init` returns its literal directly, and `npkg`'s
+`ctx_init` copies the root of its `move` parameter instead of viewing it.)*

@@ -154,10 +154,11 @@ class Param(object):
 
 
 class Row(object):
-    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure")
+    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure", "views")
 
-    def __init__(self, name, params, ret, never_fails, special, abi, pure=False):
+    def __init__(self, name, params, ret, never_fails, special, abi, pure=False, views=0):
         self.pure = pure
+        self.views = views
         self.name, self.params, self.ret = name, params, ret
         self.never_fails, self.special, self.abi = never_fails, special, abi
 
@@ -277,10 +278,22 @@ def builtin_rows(path):
         name = m.group(1)
         where = "`%s`" % name
         cells = line.split("|")
-        if len(cells) != 7:
+        if len(cells) != 8:
             raise SystemExit("BUILTIN_REFERENCE.md: %s's row has %d cells, not the "
-                             "five of `| name | signature | notes | fails | pure |`"
+                             "six of `| name | signature | notes | fails | pure | views |`"
                              % (where, len(cells) - 2))
+        # THE VIEWS COLUMN (1.5.1b step 2, D-249): `—`, or the 1-based index of
+        # the argument whose storage the result aliases -- nothing else is a
+        # readable cell. Generated into `builtin_views`, read by the escape
+        # analysis, which treats such a call as `@` of that argument.
+        views_cell = cells[6].strip()
+        if views_cell == "—":
+            views_n = 0
+        elif views_cell.isdigit() and int(views_cell) >= 1:
+            views_n = int(views_cell)
+        else:
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's Views column says %r, not "
+                             "`—` or a 1-based argument index" % (where, views_cell))
         # THE PURE COLUMN (1.5.1, D-221): `pure` or `effect`, nothing else --
         # a row that says neither is unreadable, like a Fails cell that says
         # neither. Generated into `builtin_pure`, read by the contract rule
@@ -294,6 +307,9 @@ def builtin_rows(path):
             raise SystemExit("BUILTIN_REFERENCE.md: %s's Signature cell is not one "
                              "backticked signature: %r" % (where, sig))
         params, ret = parse_signature(sig[1:-1].strip(), where)
+        if views_n > len(params):
+            raise SystemExit("BUILTIN_REFERENCE.md: %s's Views column names argument %d "
+                             "and the signature has %d" % (where, views_n, len(params)))
         fails = cells[4]
         never = "never fails" in fails
         if not never and "may fail" not in fails:
@@ -320,7 +336,7 @@ def builtin_rows(path):
         if name in rows:
             raise SystemExit("BUILTIN_REFERENCE.md: %s has two rows" % where)
         rows[name] = Row(name, params, ret, never, special,
-                         parse_abi(cells[3], where), purity == "pure")
+                         parse_abi(cells[3], where), purity == "pure", views_n)
     missing = sorted(SPECIALS - set(rows))
     if missing:
         raise SystemExit("the generator's SPECIALS names builtins the reference "
@@ -1242,6 +1258,20 @@ pub func:is_keyword = bool(string:text) {
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")
+    # THE VIEWS COLUMN (1.5.1b step 2, D-249). The escape analysis treats a call
+    # whose builtin views an argument as `@` of that argument; the index is the
+    # reference's, never a name list here.
+    bl.append("")
+    bl.append("// Which argument a bare-name builtin's result VIEWS (D-249, 1.5.1b step 2)")
+    bl.append("// -- the reference's Views column, generated: 0 for none, else the 1-based")
+    bl.append("// index of the argument whose storage the result aliases. The escape")
+    bl.append("// analysis treats such a call as `@` written at that argument.")
+    bl.append("pub func:builtin_views = int32(string:name) {")
+    for n in names:
+        if rows[n].views:
+            bl.append('    if (raw string_eq(name, "%s")) { pass %di32; }' % (n, rows[n].views))
+    bl.append("    pass 0i32;")
+    bl.append("};")
     # THE NINE IRREGULARS (D-201.3). `sys` is variadic, `atomic_from_ptr` reads
     # its element from a turbofish, and the seven annotation-directed
     # constructors read theirs from the type the call is given -- none of which a
@@ -1440,6 +1470,19 @@ def write(name, text):
     # so a regeneration can never silently strip the licence the tree relies on.
     text = NF_SIG.sub(lambda m: m.group(1) + " never fails" + m.group(2) + "{"
                       if "never fails" not in m.group(1) else m.group(0), text)
+    # EVERY FILE'S FIRST DECLARATION IS ITS HEADER (D-248, 1.5.1b step 1): the
+    # sweep gave the ten generated files theirs by hand, and a regeneration
+    # that dropped them again would make "a second run is a no-op" false --
+    # found at step 2, the first regeneration after the sweep. Inserted before
+    # the first non-comment line, exactly where the sweep put it.
+    header = "mod:%s;" % name[:-4]
+    if ("\n" + header + "\n") not in ("\n" + text):
+        parts = text.split("\n")
+        k = 0
+        while k < len(parts) and (not parts[k].strip() or parts[k].lstrip().startswith("//")):
+            k += 1
+        parts.insert(k, header)
+        text = "\n".join(parts)
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as fh:
         fh.write(text)
 

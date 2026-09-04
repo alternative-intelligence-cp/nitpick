@@ -1795,8 +1795,7 @@ level, because `q.x` does.
 | `^` | bitwise XOR | `xor` | |
 | `~` | bitwise NOT | `xor %v, -1` | |
 | `<<` | left shift | `shl` | |
-| `>>` | right shift (signed) | `ashr` | |
-| `>>>` | right shift (unsigned) | `lshr` | |
+| `>>` | right shift | `ashr` / `lshr` | Arithmetic on a SIGNED operand, logical on an UNSIGNED one — the operand's signedness decides (`ir_expr.npk`'s one shift arm), so there is no separate logical-shift spelling. This table listed a `>>>` row until 1.5.1b (the workbench's O-N12): it never lexed, and a reader who saw `>>` called "signed" reached for the spelling that did not exist. |
 
 ### Comparison
 | Operator | Meaning | IR | Notes |

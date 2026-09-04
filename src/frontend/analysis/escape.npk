@@ -345,8 +345,19 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
-        drop escape_untracked(x, raw stmt_for_iter(x.ast, s),
-            "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        // ONLY AN ELEMENT THAT CAN CARRY A POINTER CAN CARRY A BORROW (1.5.1b
+        // step 2, found by the first sweep). The refusal guards the loop
+        // BINDING, which the analysis does not track; a range's elements are
+        // integers and a `uint8[]`'s are bytes, so nothing a borrow could
+        // ride reaches the binding however borrowed the bound's operands are
+        // -- and under D-249 a view-holding local's `.len` in a bound is
+        // exactly that (`for (j in 0...ln.len)` over a viewed line). An
+        // unknown or pointer-carrying element keeps the refusal: fail closed.
+        ExprId:fit = raw stmt_for_iter(x.ast, s);
+        if (raw for_binding_can_carry(x, fit)) {
+            drop escape_untracked(x, fit,
+                "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        }
         drop escape_stmt(x, raw stmt_for_body(x.ast, s));
         pass NIL;
     }
@@ -481,6 +492,14 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
         pass (raw root_is(x, raw expr_operand(n), sym));
     }
     if (n.kind == ExprKind.ExprCallExpr) {
+        // A BARE BUILTIN (D-249): its result is rooted where its viewed place
+        // is rooted, and an owned result carries nothing.
+        if ((raw bare_builtin_name(x, n)).len > 0i64) {
+            ExprId:vpb = raw view_place(x, n);
+            if (raw expr_is_none(vpb)) { pass true; }
+            if (raw view_is_frame_borrow(x, vpb)) { pass (raw root_is(x, raw view_root_ident(x, vpb), sym)); }
+            pass (raw borrows_all_rooted_at(x, vpb, sym, d));
+        }
         int32:gcount = raw expr_generic_count(n);
         int32:start = (raw expr_list_start(n)) + gcount;
         int32:count = (raw expr_list_count(n)) - gcount;
@@ -490,16 +509,65 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
         }
         pass true;
     }
+    // A VIEW (D-249) is rooted where its viewed place is rooted; an owned
+    // builtin result carries nothing.
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        ExprId:vp = raw view_place(x, n);
+        if (raw expr_is_none(vp)) {
+            // NOT A VIEW: carries what its arguments carry (see the second look).
+            int32:bgc2 = raw builtin_generic_count(n);
+            int32:bstart = (raw expr_list_start(n)) + bgc2;
+            int32:bcount = (raw expr_list_count(n)) - bgc2;
+            for (int32:bi in 0i32...bcount) {
+                ExprId:ba = ExprId{ index: raw ast_id_at(x.ast, bstart, bi) };
+                if (!(raw borrows_all_rooted_at(x, ba, sym, d))) { pass false; }
+            }
+            pass true;
+        }
+        if (raw view_is_frame_borrow(x, vp)) { pass (raw root_is(x, raw view_root_ident(x, vp), sym)); }
+        pass (raw borrows_all_rooted_at(x, vp, sym, d));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprId:vp2 = raw view_place(x, n);
+        if (raw expr_is_none(vp2)) { pass false; }
+        if (raw view_is_frame_borrow(x, vp2)) { pass (raw root_is(x, raw view_root_ident(x, vp2), sym)); }
+        pass (raw borrows_all_rooted_at(x, vp2, sym, d));
+    }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         // A plain name: safe unless the binding itself holds a borrow from
         // somewhere else, which the holds-table already knows.
         pass (!(raw ident_holds(x, n.a)));
     }
-    if (n.kind == ExprKind.ExprIntLiteral)    { pass true; }
-    if (n.kind == ExprKind.ExprStringLiteral) { pass true; }
-    if (n.kind == ExprKind.ExprBoolLiteral)   { pass true; }
+    if (n.kind == ExprKind.ExprIntLiteral)         { pass true; }
+    if (n.kind == ExprKind.ExprFloatLiteral)       { pass true; }
+    if (n.kind == ExprKind.ExprCharLiteral)        { pass true; }
+    if (n.kind == ExprKind.ExprStringLiteral)      { pass true; }
+    if (n.kind == ExprKind.ExprRawStringLiteral)   { pass true; }
+    if (n.kind == ExprKind.ExprBlockStringLiteral) { pass true; }
+    if (n.kind == ExprKind.ExprBoolLiteral)        { pass true; }
+    if (n.kind == ExprKind.ExprSentinelLiteral)    { pass true; }
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
         pass (raw root_is(x, id, sym));
+    }
+    // A LITERAL IS ROOTED WHERE ITS VALUES ARE (1.5.1b step 2): the struct
+    // window alternates NAME, VALUE; the array's is all values.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:scnt = raw expr_list_count(n);
+        int32:si = 1i32;
+        while (si < scnt) {
+            ExprId:sv = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) };
+            if (!(raw borrows_all_rooted_at(x, sv, sym, d))) { pass false; }
+            si = si + 2i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr) {
+        int32:acnt = raw expr_list_count(n);
+        for (int32:ai in 0i32...acnt) {
+            ExprId:av = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), ai) };
+            if (!(raw borrows_all_rooted_at(x, av, sym, d))) { pass false; }
+        }
+        pass true;
     }
     pass false;
 };
@@ -535,6 +603,15 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
         pass (raw root_is_param(x, raw expr_operand(n)));
     }
     if (n.kind == ExprKind.ExprCallExpr) {
+        // A BARE BUILTIN (D-249): a view of a PARAMETER's storage may travel
+        // up one frame, as `@param` may; a view of a local may not; an owned
+        // result carries nothing.
+        if ((raw bare_builtin_name(x, n)).len > 0i64) {
+            ExprId:vpb = raw view_place(x, n);
+            if (raw expr_is_none(vpb)) { pass true; }
+            if (raw view_is_frame_borrow(x, vpb)) { pass (raw root_is_param(x, raw view_root_ident(x, vpb))); }
+            pass (raw borrows_only_param_rooted(x, vpb, d));
+        }
         int32:gcount = raw expr_generic_count(n);
         int32:start = (raw expr_list_start(n)) + gcount;
         int32:count = (raw expr_list_count(n)) - gcount;
@@ -544,27 +621,256 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
         }
         pass true;
     }
+    // A VIEW (D-249): a view of a PARAMETER's storage may travel up one frame,
+    // as `@param` may; a view of a local may not; an owned builtin result
+    // carries nothing.
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        ExprId:vp = raw view_place(x, n);
+        if (raw expr_is_none(vp)) {
+            // NOT A VIEW: `#ptr_add<T>(p, k)` carries what `p` carries -- a
+            // pointer local holding `@x`, reached through arithmetic, is still
+            // that borrow -- and `#sqrt(x)`, `#size_of<T>` carry nothing.
+            int32:bgc2 = raw builtin_generic_count(n);
+            int32:bstart = (raw expr_list_start(n)) + bgc2;
+            int32:bcount = (raw expr_list_count(n)) - bgc2;
+            for (int32:bi in 0i32...bcount) {
+                ExprId:ba = ExprId{ index: raw ast_id_at(x.ast, bstart, bi) };
+                if (!(raw borrows_only_param_rooted(x, ba, d))) { pass false; }
+            }
+            pass true;
+        }
+        if (raw view_is_frame_borrow(x, vp)) { pass (raw root_is_param(x, raw view_root_ident(x, vp))); }
+        pass (raw borrows_only_param_rooted(x, vp, d));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprId:vp2 = raw view_place(x, n);
+        if (raw expr_is_none(vp2)) { pass false; }
+        if (raw view_is_frame_borrow(x, vp2)) { pass (raw root_is_param(x, raw view_root_ident(x, vp2))); }
+        pass (raw borrows_only_param_rooted(x, vp2, d));
+    }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         pass (!(raw ident_holds(x, n.a)));
     }
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
         pass (raw root_is_param(x, id));
     }
-    if (n.kind == ExprKind.ExprIntLiteral)    { pass true; }
-    if (n.kind == ExprKind.ExprStringLiteral) { pass true; }
-    if (n.kind == ExprKind.ExprBoolLiteral)   { pass true; }
+    // A LITERAL IS ROOTED WHERE ITS VALUES ARE (1.5.1b step 2, found by the
+    // first sweep): `pass Lexer{ text: string_from_bytes(text.ptr, text.len),
+    // file: file, ... }` returns a view of the PARAMETER `text` -- legal one
+    // frame up, as `@param` is -- beside plain values that carry nothing.
+    // The struct window alternates NAME, VALUE; the array's is all values.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:scnt = raw expr_list_count(n);
+        int32:si = 1i32;
+        while (si < scnt) {
+            ExprId:sv = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), si) };
+            if (!(raw borrows_only_param_rooted(x, sv, d))) { pass false; }
+            si = si + 2i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr) {
+        int32:acnt = raw expr_list_count(n);
+        for (int32:ai in 0i32...acnt) {
+            ExprId:av = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), ai) };
+            if (!(raw borrows_only_param_rooted(x, av, d))) { pass false; }
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprIntLiteral)         { pass true; }
+    if (n.kind == ExprKind.ExprFloatLiteral)       { pass true; }
+    if (n.kind == ExprKind.ExprCharLiteral)        { pass true; }
+    if (n.kind == ExprKind.ExprStringLiteral)      { pass true; }
+    if (n.kind == ExprKind.ExprRawStringLiteral)   { pass true; }
+    if (n.kind == ExprKind.ExprBlockStringLiteral) { pass true; }
+    if (n.kind == ExprKind.ExprBoolLiteral)        { pass true; }
+    if (n.kind == ExprKind.ExprSentinelLiteral)    { pass true; }
     pass false;
 };
 
 // Does this place root at a parameter — a name whose symbol's origin is a
 // ParamDecl? A parameter's target outlives the frame by construction.
+// --- D-249 (1.5.1b step 2): a VIEW-MAKER'S RESULT BORROWS ITS OPERAND ---------
+//
+// `string_bytes(s)` hands out `s`'s bytes as `{ptr, len}`; `string_from_bytes(p,
+// n)` wraps the bytes `p` names; `arr[lo...hi]` hands out `arr`'s address (the
+// emitter takes addr_of of the place, D-191). None of them was a borrow to this
+// analysis: an argument passed by value is no borrow, so a view of a LOCAL
+// walked out of its frame at exit 0 and the caller read freed memory -- the
+// workbench's DEF-3 (OPEN_DECISIONS §2f), a use-after-free every parser in the
+// ecosystem could reach. The reference's `Views` column (D-249, generated into
+// `builtin_views`) names, per builtin, the argument whose storage the result
+// aliases; this walk treats such a call -- and the range-view, by kind -- AS
+// IF `@` HAD BEEN WRITTEN AT THAT ARGUMENT, so rule 2 (return), rule 3
+// (store), rule A (launder through a call) and rule B (a destination among
+// the arguments) apply to it with no arm of their own.
+//
+// ONE REFINEMENT, and it is what keeps the compiler's own idioms legal: `@`
+// of a place borrows the FRAME storage under it, and so does a view when that
+// storage is what dies at the frame's exit -- a `string`, a `buffer`, an
+// array, a struct held by value. A view whose place roots at a POINTER-SHAPED
+// binding (`wild int8->:buf`, a `uint8[]` slice, a `cstring`, a `Handle`)
+// aliases the POINTEE, which lives wherever the pointer's provenance says: the
+// wild-store rules already govern that, and the binding itself may HOLD a
+// borrow, which the identifier rule already carries. A view of a string
+// literal views static storage. A view of a TEMPORARY -- a call's result, an
+// operator's -- is refused outright (BORROW-012), as `@` of one cannot be
+// spelled at all: the value dies at its statement's end (D-246).
+
+// A BARE BUILTIN CALL -- `string_bytes(s)`, `alloc(n)` -- is an ordinary call
+// whose callee is an identifier RESOLUTION LEFT UNBOUND (`a == 0`), the shape
+// `wild_provenance` already keys on; the `#` forms are `ExprBuiltinExpr`. Its
+// name, or "" for any other call.
+func:bare_builtin_name = string(Escape->:x, ExprNode:n) never fails {
+    if (n.kind != ExprKind.ExprCallExpr) { pass ""; }
+    ExprId:cal = raw expr_callee(n);
+    if (raw expr_is_none(cal)) { pass ""; }
+    ExprNode:cn = raw ast_expr(x.ast, cal);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass ""; }
+    if (cn.a != 0i32) { pass ""; }
+    pass (raw intern_get(x.tr.interns, cn.payload =>! int32));
+};
+
+// The place a view-maker views, or none: the `Views` argument of a bare
+// builtin call, or the array under a range index.
+func:view_place = ExprId(Escape->:x, ExprNode:n) never fails {
+    if (n.kind == ExprKind.ExprCallExpr) {
+        string:bn = raw bare_builtin_name(x, n);
+        if (bn.len == 0i64) { pass (raw expr_none()); }
+        int32:vk = raw builtin_views(bn);
+        if (vk <= 0i32) { pass (raw expr_none()); }
+        int32:gc = raw expr_generic_count(n);
+        int32:vcount = (raw expr_list_count(n)) - gc;
+        if (vk > vcount) { pass (raw expr_none()); }
+        pass ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + gc, vk - 1i32) };
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:k = raw builtin_views(raw intern_get(x.tr.interns, raw builtin_name(n)));
+        if (k <= 0i32) { pass (raw expr_none()); }
+        int32:bgc = raw builtin_generic_count(n);
+        int32:count = (raw expr_list_count(n)) - bgc;
+        if (k > count) { pass (raw expr_none()); }
+        pass ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + bgc, k - 1i32) };
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        ExprNode:rix = raw ast_expr(x.ast, raw expr_rhs(n));
+        if (rix.kind == ExprKind.ExprRangeExpr) { pass (raw expr_lhs(n)); }
+    }
+    pass (raw expr_none());
+};
+
+// What a view of `place` aliases: 0 -- nothing of this frame (a pointer-shaped
+// binding's pointee, a string literal, NULL); 1 -- the FRAME storage under a
+// binding of a value type (a local, a parameter, a pattern binding); 2 -- a
+// TEMPORARY, which has no name and dies at its statement's end. Exhaustion
+// and an unresolved root answer 1: the closed direction.
+// THE ROOT OF A VIEWED PLACE: its kind (0 -- not a frame borrow: static
+// storage, `NULL`, a pointer-shaped name's pointee, `#wild_ptr`; 1 -- the
+// frame storage under a name of value type, a borrow rooted THERE; 2 -- a
+// temporary, refused) and the identifier reached, when one was (so every
+// rooting question -- parameter or local, this symbol or another -- is asked
+// of the same name the classifier found, through the same steps).
+struct:ViewRoot = { ExprId:id; int32:kind; };
+
+func:view_root = ViewRoot(Escape->:x, ExprId:place) never fails {
+    if (raw expr_is_none(place)) { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }
+    ExprId:cur = place;
+    int32:fuel = raw BORROW_FUEL();
+    while (fuel > 0i32) {
+        fuel = fuel - 1i32;
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass ViewRoot{ id: raw expr_none(), kind: 1i32 }; }
+        if (raw expr_is_none(r.id)) { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        // a cast views the same bytes as its operand
+        if (rn.kind == ExprKind.ExprCastExpr)          { cur = raw expr_operand(rn); continue; }
+        if (rn.kind == ExprKind.ExprUncheckedCastExpr) { cur = raw expr_operand(rn); continue; }
+        if (rn.kind == ExprKind.ExprStringLiteral)     { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }   // static storage
+        if (rn.kind == ExprKind.ExprSentinelLiteral)   { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }   // NULL views nothing
+        if (rn.kind == ExprKind.ExprBuiltinExpr) {
+            // POINTER ARITHMETIC IS TRANSPARENT (1.5.1b step 2, found by the
+            // first sweep): `#ptr_add<T>(p, k)` addresses the storage `p`
+            // addresses and `#wild_slice<T>(p, n)` spans it, so a view over
+            // either is a view of whatever `p` reaches --
+            // `string_from_bytes(#ptr_add<uint8>(s.ptr, lo), n)` is the tree's
+            // substring idiom, and it views `s`, not a temporary.
+            // `#wild_ptr<T>(addr)` is minted from an integer: no provenance,
+            // nothing to root. Every other `#` form yields a temporary value.
+            string:bnm = raw intern_get(x.tr.interns, raw builtin_name(rn));
+            if (raw string_eq(bnm, "ptr_add"))    { cur = raw builtin_first_arg(x, rn); continue; }
+            if (raw string_eq(bnm, "wild_slice")) { cur = raw builtin_first_arg(x, rn); continue; }
+            if (raw string_eq(bnm, "wild_ptr"))   { pass ViewRoot{ id: raw expr_none(), kind: 0i32 }; }
+            pass ViewRoot{ id: raw expr_none(), kind: 2i32 };
+        }
+        if (rn.kind != ExprKind.ExprIdentifierExpr)    { pass ViewRoot{ id: raw expr_none(), kind: 2i32 }; }   // a temporary, or `<-p`: fails closed
+        if (rn.a == 0i32) { pass ViewRoot{ id: r.id, kind: 1i32 }; }
+        int32:ty = raw exprtypes_get(x.etypes, r.id);
+        int32:k = raw type_kind(x.types, ty);
+        if (k == (raw TY_POINTER())) { pass ViewRoot{ id: r.id, kind: 0i32 }; }
+        if (k == (raw TY_SLICE()))   { pass ViewRoot{ id: r.id, kind: 0i32 }; }
+        if (k == (raw TY_CSTRING())) { pass ViewRoot{ id: r.id, kind: 0i32 }; }
+        if (k == (raw TY_HANDLE()))  { pass ViewRoot{ id: r.id, kind: 0i32 }; }
+        pass ViewRoot{ id: r.id, kind: 1i32 };
+    }
+    pass ViewRoot{ id: raw expr_none(), kind: 1i32 };
+};
+
+func:view_root_kind = int32(Escape->:x, ExprId:place) never fails {
+    ViewRoot:vr = raw view_root(x, place);
+    pass vr.kind;
+};
+
+// The identifier at the root of a viewed place, or none (a literal, `NULL`,
+// `#wild_ptr`, a temporary, or the walk exhausted).
+func:view_root_ident = ExprId(Escape->:x, ExprId:place) never fails {
+    ViewRoot:vr = raw view_root(x, place);
+    pass vr.id;
+};
+
+// The first argument of a `#` builtin after its generic arguments, or none.
+func:builtin_first_arg = ExprId(Escape->:x, ExprNode:n) never fails {
+    int32:bgc = raw builtin_generic_count(n);
+    if (((raw expr_list_count(n)) - bgc) <= 0i32) { pass (raw expr_none()); }
+    pass ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + bgc, 0i32) };
+};
+
+func:view_is_frame_borrow = bool(Escape->:x, ExprId:place) never fails {
+    pass ((raw view_root_kind(x, place)) == 1i32);
+};
+
+// The verdict a view expression gets in `escape_expr`: what its viewed place
+// yields, else the frame it borrows; a temporary is REPORTED here, once, and
+// answers "nothing more to say" (D-240: one mistake, one report).
+func:view_verdict = bool(Escape->:x, ExprId:place, Span:at) never fails {
+    if (raw escape_yields(x, place)) { pass true; }
+    ViewRoot:vr = raw view_root(x, place);
+    int32:vk = vr.kind;
+    // THE ROOT NAME MAY HOLD A BORROW of its own: a pointer local `p = @x`
+    // reached through `#ptr_add` or a cast, where `place_root` stops short of
+    // the name -- the view is then of `x`'s storage, and travels as `p` does.
+    if (!(raw expr_is_none(vr.id))) { if (raw escape_yields(x, vr.id)) { pass true; } }
+    if (vk == 2i32) {
+        drop escape_err(x, raw BORROW_VIEW_OF_TEMPORARY(),
+            "a view of a temporary: the value viewed here has no name and dies when its statement ends (D-246), so bind it first -- the view is then a borrow of that binding, checked like any other (D-249)",
+            at);
+        pass false;
+    }
+    pass (vk == 1i32);
+};
+
 func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
     int32:sym = raw root_symbol(x, id);
     if (sym == 0i32) { pass false; }
     Symbol:sy = raw symtab_get(x.tab, sym);
     if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
     DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sy.origin });
-    pass (d.kind == DeclKind.DeclParamDecl);
+    if (d.kind != DeclKind.DeclParamDecl) { pass false; }
+    // A `move` PARAMETER IS THE CALLEE'S OWN (1.5.1b step 2): consumed at the
+    // call and dropped at this frame's exit, so a borrow of it travels up
+    // into freed storage exactly as a borrow of a local would. Found writing
+    // the view rule; `@` of one had the same hole.
+    if (((raw param_quals(d)) & (raw QUAL_MOVE())) != 0i32) { pass false; }
+    pass true;
 };
 
 // The SYMBOL at a place's root, or 0 — `f.g.ast` roots at `f`.
@@ -1021,6 +1327,12 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // being a borrow says nothing about the element — but a rule broken
         // inside `i` is still broken, so it is walked and its answer discarded.
         discard(raw escape_expr(x, raw expr_rhs(n), d));
+        // A RANGE INDEX IS A VIEW (D-249, 1.5.1b step 2): `arr[lo...hi]` hands
+        // out `arr`'s address as `@arr` does, so it borrows the frame storage
+        // under `arr` -- or carries what `arr` holds.
+        if (!(raw expr_is_none(raw view_place(x, n)))) {
+            if (raw view_verdict(x, raw expr_lhs(n), n.span)) { pass true; }
+        }
         pass base;
     }
 
@@ -1067,10 +1379,22 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // enforcement now, wire-vocabulary-shaped rather than call-shaped.)
     if (n.kind == ExprKind.ExprCallExpr) {
         int32:gc = raw expr_generic_count(n);
-        pass (raw escape_call_like(x, id, raw expr_none(),
-                                     (raw expr_list_start(n)) + gc,
-                                     (raw expr_list_count(n)) - gc,
-                                     raw expr_callee(n), d));
+        bool:ra = raw escape_call_like(x, id, raw expr_none(),
+                                         (raw expr_list_start(n)) + gc,
+                                         (raw expr_list_count(n)) - gc,
+                                         raw expr_callee(n), d);
+        // A BARE BUILTIN (D-249, 1.5.1b step 2): every argument was walked
+        // and rule B applied above as for any call, but the rule-A verdict is
+        // a USER function's and is discarded -- a builtin's result aliases an
+        // argument only as the reference's `Views` column says, never by
+        // merely carrying a pointer: `string_concat` of a view is an owned
+        // copy, and rule A would have called it a borrow.
+        if ((raw bare_builtin_name(x, n)).len > 0i64) {
+            ExprId:vp = raw view_place(x, n);
+            if (raw expr_is_none(vp)) { pass false; }
+            pass (raw view_verdict(x, vp, n.span));
+        }
+        pass ra;
     }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         pass (raw escape_call_like(x, id, raw expr_operand(n),
@@ -1161,6 +1485,20 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
 // was BUILT with one in this frame, which is the narrow case this catches. Modelling
 // the pattern properly belongs with 0.5.4, where the pattern-to-type machinery is
 // built; refusing until then is a decision, not a gap left open.
+// Can the binding a `for` makes over `iter` carry a pointer at all? A range
+// binds its element type, an array or slice its element; anything else, or an
+// untyped node, answers true (fail closed).
+func:for_binding_can_carry = bool(Escape->:x, ExprId:iter) never fails {
+    if (raw expr_is_none(iter)) { pass true; }
+    int32:t = raw exprtypes_get(x.etypes, iter);
+    if (t == 0i32) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_RANGE())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
+    if (k == (raw TY_SLICE())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
+    if (k == (raw TY_ARRAY())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
+    pass true;
+};
+
 func:escape_untracked = NIL(Escape->:x, ExprId:id, move string:msg) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (raw escape_expr(x, id, raw ESCAPE_DEPTH())) {
@@ -1374,6 +1712,13 @@ func:arg_root_is_local = bool(Escape->:x, ExprId:a) never fails {
     ExprNode:top = raw ast_expr(x.ast, a);
     if (top.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(top); }
     if (top.kind == ExprKind.ExprBorrowExpr)    { pl = raw expr_operand(top); }
+    // a view (D-249) roots at the identifier the view walk finds -- through
+    // casts and pointer arithmetic, the steps `place_root` does not take
+    ExprId:vpa = raw view_place(x, top);
+    if (!(raw expr_is_none(vpa))) {
+        pl = raw view_root_ident(x, vpa);
+        if (raw expr_is_none(pl)) { pass false; }
+    }
     PlaceRoot:r = raw place_root(x.ast, pl, raw BORROW_FUEL());
     if (r.exhausted)            { pass false; }
     if (raw expr_is_none(r.id)) { pass false; }
@@ -1442,6 +1787,15 @@ func:arg_pointee_ty = int32(Escape->:x, ExprId:a) never fails {
     if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) {
         pass (raw type_elem(x.types, t));
     }
+    // A VIEW IS STORED AS ITSELF (D-249): a `uint8[]` slot holds the
+    // `uint8[]` that `string_bytes(s)` made, a `string` slot the header
+    // `string_from_bytes` made -- so for the destination question a view's
+    // "pointee type" is its own type. Without this a view beside a
+    // destination connected to nothing (`stash(h, string_bytes(s))` with
+    // `h.view = v` in the callee walked straight through -- the second
+    // sweep's case 6).
+    ExprNode:an = raw ast_expr(x.ast, a);
+    if (!(raw expr_is_none(raw view_place(x, an)))) { pass t; }
     pass 0i32;
 };
 
@@ -1554,6 +1908,12 @@ func:can_connect = bool(Escape->:x, int32:holder, int32:src,
         if ((raw type_kind(x.types, el)) == (raw TY_ANY())) { pass true; }
         if (raw type_reachable_in(x, el, src, fuel - 1i32)) { pass true; }
         pass (raw can_connect(x, el, src, fuel - 1i32));
+    }
+    // A VIEW IS STORED AS ITSELF (D-249): a slice or string slot is a
+    // destination for a view of exactly its own type.
+    if (holder == src) {
+        if (k == (raw TY_SLICE()))  { pass true; }
+        if (k == (raw TY_STRING())) { pass true; }
     }
     if (k == (raw TY_SLICE()))    { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
     if (k == (raw TY_ARRAY()))    { pass (raw can_connect(x, raw type_elem(x.types, holder), src, fuel - 1i32)); }
@@ -1669,6 +2029,17 @@ func:escape_mark_place = NIL(Escape->:x, ExprId:place) never fails {
 // a borrow somewhere inside it: rule B needs a place it can name, and
 // `Holder{ inner: @x }` carries a borrow without being one.
 func:escape_yields = bool(Escape->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    // A VIEW (D-249) yields what its viewed place yields, else the frame it
+    // borrows -- asked of the expression itself, before the place walk, since
+    // `place_root` steps through a range index to the array under it.
+    ExprId:vt = raw view_place(x, raw ast_expr(x.ast, id));
+    if (!(raw expr_is_none(vt))) {
+        if (raw escape_yields(x, vt)) { pass true; }
+        ExprId:vri = raw view_root_ident(x, vt);
+        if (!(raw expr_is_none(vri))) { if (raw escape_yields(x, vri)) { pass true; } }
+        pass (raw view_is_frame_borrow(x, vt));
+    }
     PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
     if (r.exhausted) { pass true; }
     if (raw expr_is_none(r.id)) { pass false; }
