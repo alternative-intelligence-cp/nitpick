@@ -622,6 +622,29 @@ refreshed the snapshot and set `tests/cost/self.toml`'s ceiling; its first
 harness found the diagnostic sort reading slots it had moved out of (DEF-13,
 step 5c: byte identity of the fixpoint is not behavioural identity — the
 refresh's own harness is the proof, and the seed README says so).
+**1.5.2 (`limit<Rules>` live) IS PLANNED and UNDERWAY (2026-09-04;
+`meta/roadmap/1.5/1.5.2.md`, execution-grade, L-0…L-30; every question
+ratified the same day — S-24…S-30 as D-251…D-255, a D-247 note and the
+README's 1.5.4b row).** Its step 0 is **DEF-14**, a soundness defect found by
+planning: the 1.5.0 encoder gave an address-taken local a stable symbol and
+withheld only its definition, so a definition of ANOTHER local in terms of it
+outlived a call that wrote through the pointer, z3 discharged a `div-zero` row
+the program then defeats, and the elided build died with a floating-point
+exception where the plain build reaches `failsafe` — proven end to end on
+`8dbef43` with a twelve-line program. The fix: an escaped name is never NAMED
+(every read a fresh opaque term), the escape set computed before the parameter
+loop. Then, in order: TYPE-063 (a limited binding has no address — `@`, `$$m`,
+`$$i` and a move out of a sub-place refuse) and TYPE-064 (a `limit` where no
+write point exists — a trait signature, `wild`, `comptime`; `main`/`failsafe`
+under D-244) with `LimitViolated` (−4111) armed by REACH; the check in EVERY
+build (one generated `i1` predicate per `Rules`, the check AFTER every write
+over the binding's whole value — initialiser, every assignment to it or any
+part of it, the callee's entry — the rung retired); the `limit` rows with the
+rule as a HYPOTHESIS on every later version and `limit-subsume` rows at every
+direct call, elision into ONE `llvm.assume` over the rule's range clauses;
+the caller-side bypass (D-252); the docs. 1.5.2b (D-253, derived comparisons
+over a generic-parameter field) follows; 1.5.4b (the remaining theories) is
+in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

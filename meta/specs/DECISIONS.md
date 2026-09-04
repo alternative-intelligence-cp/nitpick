@@ -10437,7 +10437,7 @@ nothing: it was a real hole until this cycle.
 **The compiler compiles under its own rule.** `src/main.npk` and the three
 tools call `wild_release_all()` before their successful exits — the honest
 *(1.5.1b step 5, 2026-09-04: THE STATEMENT AFTER `wild_release_all()` IS
-`exit`, refused otherwise as TYPE-062 (S-27). Three unit tests released the
+`exit`, refused otherwise as TYPE-062 (S-27; ratified 2026-09-04 as D-255). Three unit tests released the
 heap and then RETURNED from `main`; the day `List<T>` began to own, their
 scope-exit drops ran over unmapped memory, the runtime refused the free, and
 the refusal's own trap route died on the same released heap — an
@@ -13455,7 +13455,7 @@ a SIGSEGV out of `npk_heap_bad`'s trap route over a corrupted heap). Now the
 moved-out field owns nothing, the overwrite drops nothing, the scope-exit
 drop releases the siblings, and a vacant List grows from zero
 (`list_reserve`, which doubled from zero forever). `partial_move.npk` pins
-the three shapes; raised for ratification as S-26.)*
+the three shapes; raised for ratification as S-26 — **ratified 2026-09-04 as D-254**, with D-251's one exception: no move out of a sub-place of a LIMITED binding.)*
 
 What REMAINS of D-183's partial-place item after this: destructuring
 ownership and statement-end temporaries, unchanged; the field/element
@@ -16401,3 +16401,139 @@ type drops — every owning local returned by one of its copyable fields had
 leaked since 1.2.3, and the suite's descriptor-exhaustion proofs could not
 see it under the session's descriptor limit. Both are fixed in the same step
 (`pass_field.npk`, `fd_ceiling.npk`, `[limits] nofile`).
+
+> **[2026-09-04, S-25 ratified by the user ("ratify all seven as
+> recommended").]** The second half as landed at step 5b: the struct AND its
+> functions (`list_init`, `list_push`, `list_reserve`) live in the PRELUDE —
+> a compiler-known owning type whose operations need an import is one
+> spelling in the prelude and another at every use, the context-dependent
+> shape the blueprint rule refuses — through the bridging build the seed
+> README documents; `src/frontend/list.npk` and its forty-odd imports are
+> gone.
+
+## D-251 — `limit<Rules>` live: the check after every write, `LimitViolated`, a limited binding has no address, a `limit` where no write point exists refuses — **SETTLED (user decision, 2026-09-04: "ratify all seven as recommended"; 1.5.2 S-28; lands at 1.5.2 steps 1–3)**
+
+D-220's three write points made precise, and the two rules the first
+measurement of the surface showed were missing (`meta/roadmap/1.5/1.5.2.md`
+§3 L-3, L-4, L-5, L-10, L-14; §4.2 the probes). **(a) The check runs AFTER
+the write, over the binding's WHOLE current value**, at its initialiser (a
+declaration without one is not a write point — D-225's vacant value is
+never read, by definite assignment), at every assignment to the binding or
+to any part of it (a field or element store re-checks the root; the
+arithmetic's own guards run first on a compound assignment), and at the
+callee's entry for a limited parameter — sync and coroutine alike, where a
+coroutine checks once per task at the body's start. One helper, one shape,
+the division guard's: the value loaded, the rule's generated predicate
+called, a branch, `npk_chain_reset`, `npk_trap`. A rule is ONE generated
+function per `Rules` declaration (`define i1 @"npk.<module>.<name>"(T)`),
+refinements then clauses in source order, short-circuit, so a clause's own
+guard sites exist once and have one row each. **(b) The residue is
+`LimitViolated`, −4111**, through D-142's route; REACH arms it wherever a
+function has a write point and walks the rule's clauses for their own arms;
+1.5.3's three are `RequiresViolated`, `EnsuresViolated`,
+`InvariantViolated` at −4112, −4113, −4114, reserved here. **(c) A limited
+binding has no address**: `@`, `$$m` and `$$i` of a place rooted at a
+limited local or parameter refuse (NITPICK-TYPE-063), and so does a
+`move`/`pass` out of a proper sub-place of one (D-254's vacate is a write
+no rule can be asked to admit); a limited value passes by plain argument
+(D-183 §4) and a whole-binding move is a read. Measured before the
+decision: all three spellings and a store through each were ACCEPTED — a
+write no write point sees, LIVE-1's exact shape. The relaxation considered
+and decided OUT: an address as a direct call argument of a call whose
+result holds no address, the call then a write point whose row is always
+`open` — a second write-point class, a result-shape rule and per-read
+hypotheses for escaped names, for a case a by-value rewrite covers. **(d)
+A `limit` where no write point exists refuses** (NITPICK-TYPE-064): a
+trait signature's parameter (accepted and silently dropped by the impl
+before this), a `wild`/`wildx` binding (its writes are the manual
+regime's), a `comptime` function's parameters and locals (the folder is a
+second evaluator); `main`/`failsafe`'s parameters refuse under D-244's arm.
+A `stack` binding, a `move` parameter and an impl method's own parameters
+are ordinary. **(e) `limit-subsume` rows are one per DIRECT call site** of
+a callee with limited parameters — the caller's knowledge of every
+argument against the callee's rules, guard `no`, elision `none` as the
+catalogue ratified them (D-252 is the step that gives them a guard). The
+rule is a HYPOTHESIS on every version of a limited binding after the
+site's own obligation (never inside its own cone), which is what lets a
+`div-zero` under a limited divisor discharge, after a loop included.
+
+## D-252 — the caller-side bypass: a discharged `limit-subsume` row lets a direct call skip the callee's entry check — **SETTLED (user decision, 2026-09-04; 1.5.2 S-29; lands at 1.5.2 step 4)**
+
+D-220's "caller discharge is an elision like any other" made real
+(`1.5.2.md` L-13). A SYNC function with at least one limited parameter
+emits its body under `@"<sym>.body"` and the ordinary symbol as the CHECKED
+ENTRY — the entry checks over the arguments, then a `tail call` of the body.
+Every non-call reference (a function value, a vtable slot, a spawn or thread
+entry, a derive or bridge stub) names the ordinary symbol by construction;
+a DIRECT call whose `limit-subsume` row is discharged calls the body; every
+other call, and every call of a coroutine (its parameters arrive in a frame
+the await site builds, and its check runs at state 0), calls the checked
+entry. The row's elision reads `elided` when the call names the body,
+`retained` otherwise; D-218.7's catalogue row for `limit-subsume` changes
+its guard column from `no` to `yes (the callee's entry check, at that
+call)`. A belt in both runners: every `.body` occurrence in an emission is
+the callee of a `call`/`tail call` or its own `define`, and the count of
+`.body` callees equals the discharged `limit-subsume` rows. Why: without
+it, nothing a caller proves ever removes a limited PARAMETER's check — the
+common placement pays the full price in every build, and D-068's
+"constrained code reaches the speed of unconstrained code" is false for
+it; the mechanism is modular (no whole-program elision, no caller-dependent
+callee row) and its one hazard class is closed by construction plus one
+grep.
+
+## D-253 — derived comparisons over a generic-parameter field take the method form under a synthesized bound; the prelude implements `Eq`/`Ord`/`PartialOrd` for every scalar — **SETTLED (user decision, 2026-09-04; 1.5.1b S-24; scheduled as 1.5.2b)**
+
+D-250 made a derived comparison follow the operand's spelling — a named
+type through its own `eq`/`cmp`/`partial_cmp` — and left a GENERIC
+PARAMETER field comparing by operator (D-161's no-bound story), so
+`#[derive(Eq)] struct:Box<T>` works and `#[derive(Ord)]` on the same is
+refused inside `<derived-1>` (`<` on an opaque `T`, D-107). **The
+decision**: the prelude implements the three traits for every scalar (an
+`impl` per width, generated from the width ladder as the `Hash` impls are
+— about thirty impls), a derived impl whose subject is generic carries a
+synthesized `T: Eq`/`T: Ord`/`T: PartialOrd` bound, and a parameter field
+compares by the method form — one rule for every named spelling. The cost
+is the truthful one: a bound on a derived impl changes which instantiations
+compile (`Box<Point>` needs `Point: Ord`). Nothing is blocked today (the
+workbench, asked, wants no order over a parameter yet); it lands as
+**1.5.2b**, frontend and prelude only, after 1.5.2 and before 1.5.3, with
+no snapshot refresh (the prelude is source the old builder reads).
+
+## D-254 — a `move` or `pass` out of a FIELD or an ELEMENT leaves the type's canonical vacant value; the aggregate stays live — **SETTLED (user decision, 2026-09-04; 1.5.1b S-26; landed at 1.5.1b step 5 as the fix)**
+
+D-183's recorded partial-move item, closed both ways. A `move(place)` or
+`pass place` out of a field or an element of an owning aggregate leaves the
+type's canonical VACANT value (D-225) in the place; the aggregate stays
+live, its later overwrite drops nothing (D-186's unconditional field drop
+is then correct), its scope-exit drop releases the remaining fields, and
+only a WHOLE-binding move clears a drop flag (D-183). Before it, a field
+move cleared the whole root's flag (every sibling leaked) and, because the
+field overwrite drops unconditionally, a field moved out and then
+reassigned freed the moved-out value a second time — `saved = move(r.env);
+r.env = move(frame);` in the resolver's constant folding, invisible to the
+compiler (its `main` exits without drops) and a heap fault in three unit
+tests the day `List<T>` began to own. A vacant List grows from zero on its
+first reservation. The checker's D-065 whole-binding invalidation is
+unchanged (conservative). One rule — "after `move`, the source owns
+nothing" — for both spellings, no new syntax, no field-granular flags; the
+alternative, refusing partial moves, would strike the resolver's own idiom.
+`partial_move.npk`; D-183's dated note of 2026-09-04 is this decision's
+first record. D-251 adds the one exception: a proper sub-place of a
+LIMITED binding may not be moved out of, since the vacate is a write no
+rule can admit.
+
+## D-255 — the statement after `wild_release_all()` must be `exit` — **SETTLED (user decision, 2026-09-04; 1.5.1b S-27; landed at 1.5.1b step 5 as the fix, NITPICK-TYPE-062)**
+
+The call unmaps every chunk of both regimes (D-151), so no drop, no
+allocation and not even the trap route (which allocates its origin chain)
+can run after it; a `main` that released and then RETURNED ran its
+scope-exit drops over unmapped memory the day `List<T>` began to own, and
+the runtime's refusal then died in its own trap route — an uncontrolled
+stop. TYPE-062 requires the statement after `wild_release_all()` in its
+block to be `exit`; what must be measured after the release goes into
+`exit`'s operand, which is evaluated after the call
+(`argv_after_release.npk`, `leak_cleanup.npk`; 45 test files that carried a
+stray second call were collapsed). One shape, greppable, and the only one
+under which "controlled shutdown" survives the release. The main thread's
+TLS block became a raw mapping in the same step so that a trap raised
+inside `exit`'s operand after the release reaches `failsafe` (DEF-12).
