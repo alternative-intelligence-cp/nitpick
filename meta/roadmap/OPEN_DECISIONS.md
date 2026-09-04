@@ -506,8 +506,14 @@ template's `T`, and the gate's first build freed every `List<string>`
 element twice. `move(h.n)` and a nested `pass w.inner.n` gate the same way;
 `pass_field.npk` pins all three under descriptor exhaustion. The
 whole-binding rule for an OWNING projection is unchanged (its sibling leak
-stays D-183's open partial-move item). Blocks nothing of the workbench's:
-their recipes pass values, not fields, out of owning locals.
+stays D-183's open partial-move item). Blocks nothing of the workbench's, and the reason is narrower than
+first stated (their O-N16, 2026-09-04): their recipes DO pass copyable fields out
+of locals (`pass self.count` out of a by-value `Vec<T>`), but a library's
+hand-written container never drops — a `wild T->` and two counts own nothing to
+the layout; only the prelude's `List<T>` is recognised as owning — so the local
+whose flag the old clear cleared had no drop to skip. They are untouched
+because their containers are outside the recognition, not because they do not
+write the shape.
 
 **DEF-9 (found the same day, by the reproduction of DEF-8 passing before the
 fix) — every descriptor-exhaustion proof in the suite depended on the
