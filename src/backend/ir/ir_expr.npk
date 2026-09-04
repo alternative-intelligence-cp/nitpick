@@ -47,6 +47,8 @@ use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_names.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/builtins.npk".*;  // builtin_views, builtin_sig_param_move (D-246)
+use "../../frontend/parser.npk".*;    // QUAL_MOVE (D-246)
 use "../../frontend/parse_decorate.npk".*;
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
@@ -455,7 +457,154 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     if (xn.kind == ExprKind.ExprAwaitExpr) {
         drop stash_gives_result(x, id, xn, @v);
     }
+    // A TEMPORARY IS REGISTERED WHERE IT IS PRODUCED (D-246, 1.5.1b step 4):
+    // a fresh owning value -- a call's result, a literal, a moved-out value,
+    // an unwrap, a coercion, never a place -- is listed for its statement to
+    // drop, unless a consumer takes it. The type is read through the
+    // specialization's binding (D-107), as the drop symbol must be.
+    if (v.type_id != 0i32) {
+        if (raw temp_producer(x, xn)) {
+            int32:tt = raw subst_emitted_type(x.fe.ctx, v.type_id);
+            if (raw type_drops_recorded(x.fe.ctx.types, tt, 64i32)) {
+                drop temp_register(x, tt, v.ll, v.ref);
+            }
+        }
+    }
     pass v;
+};
+
+// --- statement-end temporaries (D-246, 1.5.1b step 4) -----------------------------
+//
+// Is this expression one that PRODUCES a fresh value rather than reading a
+// place? A place is somebody's -- a binding's, a field's, an element's -- and
+// the move analysis already refuses copying an owning one; a fresh value is
+// nobody's until a consumer takes it, which is what makes it a temporary.
+func:temp_producer = bool(ExprEmitter->:x, ExprNode:n) never fails {
+    if (n.kind == ExprKind.ExprCallExpr) { pass (!(raw temp_is_view_call(x, n))); }
+    if (n.kind == ExprKind.ExprMethodCallExpr)     { pass true; }
+    if (n.kind == ExprKind.ExprAwaitExpr)          { pass true; }
+    if (n.kind == ExprKind.ExprBuiltinExpr)        { pass true; }
+    if (n.kind == ExprKind.ExprPipeExpr)           { pass true; }
+    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass true; }
+    if (n.kind == ExprKind.ExprStructLiteralExpr)  { pass true; }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr)   { pass true; }
+    if (n.kind == ExprKind.ExprResultLiteralExpr)  { pass true; }
+    if (n.kind == ExprKind.ExprMoveExpr)           { pass true; }
+    if (n.kind == ExprKind.ExprTernaryExpr)        { pass true; }
+    if (n.kind == ExprKind.ExprPickExpr)           { pass true; }
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr)     { pass true; }
+    if (n.kind == ExprKind.ExprNullCoalesceExpr)   { pass true; }
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) { pass true; }
+    if (n.kind == ExprKind.ExprRawUnwrapExpr)      { pass true; }
+    if (n.kind == ExprKind.ExprRelayExpr)          { pass true; }
+    if (n.kind == ExprKind.ExprDynCastExpr)        { pass true; }
+    pass false;
+};
+
+// A view-making builtin's result is somebody else's bytes (D-249's `Views`
+// column): not a temporary, whatever its type says -- `string_from_bytes`
+// hands back a cap-0 header whose drop would free nothing, and registering
+// one per view would cost a slot and a guarded call for no release.
+func:temp_is_view_call = bool(ExprEmitter->:x, ExprNode:n) never fails {
+    ExprId:cal = raw expr_callee(n);
+    if (raw expr_is_none(cal)) { pass false; }
+    ExprNode:cn = raw ast_expr(x.ast, cal);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cn.a != 0i32) { pass false; }
+    pass ((raw builtin_views(raw intern_get(x.interns, cn.payload =>! int32))) > 0i32);
+};
+
+// REGISTER: the value stored to a slot of its own, its flag set. In a sync body
+// (and in an async one outside an await's operand) the slot and flag are
+// hoisted allocas, the flag zeroed in the entry block so a path the
+// statement did not take reads "not produced"; while an await's operand is
+// being evaluated the pair lives in the frame's temporary region, zeroed by
+// the first resume (`fnem_close`), because it must outlive the suspension.
+func:temp_register = NIL(ExprEmitter->:x, int32:ttid, string:ll, string:ref) never fails {
+    string:slot = "";
+    string:flag = "";
+    if (x.fe.is_async) {
+        if (x.fe.in_await_args) {
+            int64:base = raw fnem_temp_frame_add(x.fe, string_concat(ll, ""));
+            slot = raw fnem_frame_gep(x.fe, x.fe.frame_ty, "%fr", base);
+            flag = raw fnem_frame_gep(x.fe, x.fe.frame_ty, "%fr", base + 1i64);
+            drop fnem_temp_frame_flag(x.fe, string_concat(flag, ""));
+        }
+    }
+    if (slot.len == 0i64) {
+        slot = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, slot, ll);
+        flag = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, flag, "i8");
+        drop irw_entry(x.fe.w, raw cat3("store i8 0, ptr ", flag, ""));
+    }
+    drop irw_line(x.fe.w, raw cat5("store ", ll, " ", ref, string_concat(", ptr ", slot)));
+    drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", flag, ""));
+    discard(raw fnem_temp_push(x.fe, ttid, move(slot), move(flag), string_concat(ref, "")));
+    pass NIL;
+};
+
+// TAKE: the consumer that keeps the value says so, by the value's own name.
+pub func:temp_take = NIL(ExprEmitter->:x, string:ref) never fails {
+    drop fnem_temp_take(x.fe, ref);
+    pass NIL;
+};
+
+// A TRANSFER (a coercion, a wrap): the source's temporary is taken and the
+// result, if it owns, is a temporary in its place -- the `dyn` cell holds
+// what the concrete held, the `Optional` what the `T` did.
+func:temp_transfer = NIL(ExprEmitter->:x, string:src_ref, int32:ttid, IrVal:out) never fails {
+    if (out.state != (raw LL_OK())) { pass NIL; }
+    drop temp_take(x, src_ref);
+    int32:tt = raw subst_emitted_type(x.fe.ctx, ttid);
+    if (raw type_drops_recorded(x.fe.ctx.types, tt, 64i32)) {
+        drop temp_register(x, tt, out.ll, out.ref);
+    }
+    pass NIL;
+};
+
+// Is the callee's parameter at `idx` declared `move`? The checker's own rule
+// (`param_is_move`), asked of the declaration the checker recorded for the
+// call; 0 -- a function value, an erased method -- answers no, as there.
+pub func:emit_param_is_move = bool(ExprEmitter->:x, int32:cdecl, int32:idx) never fails {
+    if (cdecl == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: cdecl });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (idx < 0i32) { pass false; }
+    if (idx >= (raw fn_param_count(x.ast, d))) { pass false; }
+    DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, idx));
+    pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
+};
+
+// THE CALLEE'S DECLARATION, from the call node: a direct call's identifier
+// resolves to its symbol's declaration (the template's, for a generic call --
+// the qualifiers live there); a method or qualified call has the declaration
+// the checker recorded (`exprtypes_callee`, which it records for THOSE calls
+// only -- the first draft asked it for every call and no direct call's `move`
+// parameter took anything, so `diaglist_push(@l, diag_error(...))` freed the
+// diagnostic it had just stored); a function value has none.
+func:call_decl_index = int32(ExprEmitter->:x, ExprId:cid, ExprNode:cn) never fails {
+    if (cn.kind == ExprKind.ExprCallExpr) {
+        ExprId:cal = raw expr_callee(cn);
+        if (!(raw expr_is_none(cal))) {
+            ExprNode:cal_n = raw ast_expr(x.ast, cal);
+            if (cal_n.kind == ExprKind.ExprIdentifierExpr) {
+                if (cal_n.a != 0i32) {
+                    Symbol:cs = raw symtab_get(x.tab, cal_n.a);
+                    if (cs.origin_kind == (raw SYM_DECL())) { pass cs.origin; }
+                }
+            }
+        }
+    }
+    pass (raw exprtypes_callee(x.et, cid));
+};
+
+// Does the argument at `idx` of call `cid` leave this statement's hands? A
+// `move` parameter takes it; a spawn takes every argument for the child's
+// life (join-bounded, D-180).
+func:call_arg_taken = bool(ExprEmitter->:x, ExprId:cid, ExprNode:cn, int32:idx) never fails {
+    if (x.fe.spawn_args) { pass true; }
+    pass (raw emit_param_is_move(x, raw call_decl_index(x, cid, cn), idx));
 };
 
 // THE BACKEND'S HALF OF `fits` (1.0.6e). The checker's `fits` is the one place
@@ -491,19 +640,30 @@ pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, move IrVal:v, Span:at) ne
     if (w == g) { pass v; }
     int32:wk = raw type_kind(x.fe.ctx.types, w);
     if (wk == (raw TY_DYN())) {
+        // A COERCION IS A TRANSFER (D-246): the cell takes what the concrete
+        // held, and the cell is the temporary now -- dropped by the statement
+        // unless the slot it is fit to keeps it (D-183's 1.2.4a note).
+        string:dsrc = string_concat(v.ref, "");
         if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_DYN())) {
-            pass (raw emit_dyn_from(x, w, v, at));
+            IrVal:cell = raw emit_dyn_from(x, w, v, at);
+            drop temp_transfer(x, dsrc, w, cell);
+            pass cell;
         }
         // `dyn A & B` TO `dyn A` IS A REBUILD, not a store: the shapes differ
         // by a word per dropped bound (D-159).
-        pass (raw emit_dyn_widen(x, w, v, at));
+        IrVal:wide = raw emit_dyn_widen(x, w, v, at);
+        drop temp_transfer(x, dsrc, w, wide);
+        pass wide;
     }
     // A BARE `T` INTO AN `Optional<T>` SLOT IS WRAPPED (D-099, 1.0.7): the one
     // implicit conversion in the language, and the only way an `Optional`
     // holding a value is built, since there is no constructor to write.
     if (wk == (raw TY_OPTIONAL())) {
         if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_OPTIONAL())) {
-            pass (raw emit_opt_wrap(x, w, v, at));
+            string:osrc = string_concat(v.ref, "");
+            IrVal:wrapped = raw emit_opt_wrap(x, w, v, at);
+            drop temp_transfer(x, osrc, w, wrapped);
+            pass wrapped;
         }
     }
     pass v;
@@ -785,6 +945,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // THE DEFAULT IS A SLOT (1.0.6e), of the Result's `T`.
         qdv = raw emit_fit(x, qtid, move(qdv), n.span);
         if (!(raw iv_is_ok(qdv))) { pass qdv; }
+        // THE RESULT AND THE DEFAULT ARE TAKEN (D-246): whichever the slot
+        // holds is this expression's value, registered as its temporary.
+        drop temp_take(x, qv.ref);
+        drop temp_take(x, qdv.ref);
         drop irw_line(x.fe.w, raw cat5("store ", qdv.ll, " ", qdv.ref,
                           string_concat(", ptr ", qslot)));
         drop irw_line(x.fe.w, raw cat3("br label %", qj_l, ""));
@@ -800,6 +964,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // the operator is the site saying what this failure means here.
         IrVal:ev2 = raw emit_expr(x, raw expr_lhs(n));
         if (!(raw iv_is_ok(ev2))) { pass ev2; }
+        drop temp_take(x, ev2.ref);   // the Result is taken; its value is the temporary (D-246)
         IrVal:ec2 = raw emit_expr(x, raw expr_rhs(n));
         if (!(raw iv_is_ok(ec2))) { pass ec2; }
         // `Result<NIL>` is `{ i32 }` — the error rides slot 0 and there is no
@@ -937,12 +1102,14 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw iv_is_ok(tv))) { pass tv; }
         drop irw_line(x.fe.w, raw cat5("store ", tv.ll, " ", tv.ref,
                           string_concat(", ptr ", slot)));
+        drop temp_take(x, tv.ref);   // the slot keeps it; the load is the temporary (D-246)
         drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
         drop irw_label(x.fe.w, else_l);
         IrVal:ev = raw emit_expr(x, ExprId{ index: n.c });
         if (!(raw iv_is_ok(ev))) { pass ev; }
         drop irw_line(x.fe.w, raw cat5("store ", ev.ll, " ", ev.ref,
                           string_concat(", ptr ", slot)));
+        drop temp_take(x, ev.ref);
         drop irw_line(x.fe.w, raw cat3("br label %", done_l, ""));
         drop irw_label(x.fe.w, done_l);
         string:out = raw irw_temp(x.fe.w);
@@ -4377,6 +4544,7 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
             IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
             if (rv.state != (raw LL_OK())) { pass rv; }
             rv = raw emit_fit(x, cp0w, move(rv), at);
+            if (raw call_arg_taken(x, cid, cn, 0i32)) { drop temp_take(x, rv.ref); }
             if (rv.state != (raw LL_OK())) { pass rv; }
             string:rg = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32);
             drop irw_line(x.fe.w, raw cat5("store ", rv.ll, " ", rv.ref,
@@ -4397,6 +4565,9 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         IrVal:av = raw emit_expr(x, aid);
         if (av.state != (raw LL_OK())) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, cft, base + i), move(av), at);
+        if (av.state == (raw LL_OK())) {
+            if (raw call_arg_taken(x, cid, cn, base + i)) { drop temp_take(x, av.ref); }
+        }
         if (av.state != (raw LL_OK())) { pass av; }
         string:ag = raw fnem_slot_gep(x.fe, cfr_ty, fr, 12i32 + base + i);
         drop irw_line(x.fe.w, raw cat5("store ", av.ll, " ", av.ref,
@@ -4535,7 +4706,9 @@ func:emit_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     }
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
     string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
+    x.fe.spawn_args = true;   // the child's for its life (D-246, D-180)
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    x.fe.spawn_args = false;
     if (cfv.state != (raw LL_OK())) { pass cfv; }
     string:hdr = raw fnem_hdr_ty();
     string:sg = raw fnem_slot_gep(x.fe, hdr, cfv.ref, 5i32);
@@ -4577,7 +4750,9 @@ func:emit_thread_spawn = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:n,
     }
     string:cfr_ty = raw frame_ty_sym(x.fe.ctx, ac.qual, ac.name);
     string:crs = raw resume_fn_sym(x.fe.ctx, ac.qual, ac.name);
+    x.fe.spawn_args = true;   // the child's for its life (D-246, D-180)
     IrVal:cfv = raw emit_child_frame(x, cid, cn, cfr_ty, crs, n.span);
+    x.fe.spawn_args = false;
     if (cfv.state != (raw LL_OK())) { pass cfv; }
 
     // The deadline: the clause's constant, or the executor's default.
@@ -5732,6 +5907,7 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         // storing it raw writes the argument's bytes into a slot sized and
         // shaped for something else. `emit_fit` is what builds it.
         sv = raw emit_fit(x, elem, move(sv), at);
+        if (raw iv_is_ok(sv)) { drop temp_take(x, sv.ref); }   // the channel keeps it (D-246)
         if (sv.state != (raw LL_OK())) { pass sv; }
         drop irw_line(x.fe.w, raw cat5("store ", ell.text, " ", sv.ref,
                           string_concat(", ptr ", slot)));
@@ -6100,7 +6276,19 @@ func:dynfr_inner_name = string(string:sym) never fails {
     pass (string_concat(cut.value, ""));
 };
 
+// THE AWAIT'S OPERAND IS EVALUATED IN THE FRAME (D-246, D-178): every
+// temporary it produces outlives the suspension, so `in_await_args` sends
+// each to the frame's temporary region for the statement to drop after the
+// resume. The flag is set around the whole dispatch: the operand is the
+// first evaluation of its statement (SUSPEND-002), so nothing else is inside.
 func:emit_await = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    x.fe.in_await_args = true;
+    IrVal:aw = raw emit_await_kind(x, id, n);
+    x.fe.in_await_args = false;
+    pass aw;
+};
+
+func:emit_await_kind = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // The one pick position that still refuses (D3): a `where` guard. The
     // compare CHAIN re-reads the selector value after a failed guard to test
     // the next arm, and that value cannot survive a suspension inside the
@@ -6444,6 +6632,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         if (av.state != (raw LL_OK())) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, cft, i), move(av), n.span);
         if (av.state != (raw LL_OK())) { pass av; }
+        if (raw call_arg_taken(x, id, n, i)) { drop temp_take(x, av.ref); }
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
     }
@@ -6631,6 +6820,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         IrVal:riv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (riv.state != (raw LL_OK())) { pass riv; }
         riv = raw emit_fit(x, rel, move(riv), n.span);
+        if (raw iv_is_ok(riv)) { drop temp_take(x, riv.ref); }   // the cell keeps it (D-246)
         if (riv.state != (raw LL_OK())) { pass riv; }
         string:rep = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(rep, " = getelementptr i8, ptr ",
@@ -6755,6 +6945,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         IrVal:miv = raw emit_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, 0i32) });
         if (miv.state != (raw LL_OK())) { pass miv; }
         miv = raw emit_fit(x, mel, move(miv), n.span);
+        if (raw iv_is_ok(miv)) { drop temp_take(x, miv.ref); }   // the cell keeps it (D-246)
         if (miv.state != (raw LL_OK())) { pass miv; }
         string:mep = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(mep, " = getelementptr i8, ptr ",
@@ -7249,6 +7440,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         int32:atid = av.type_id;
         string:ref = string_concat(av.ref, "");
         string:ll = move(av.ll);
+        if (raw builtin_sig_param_move(name, i)) { drop temp_take(x, ref); }   // D-246
         if (i < sig.argc) {
             if (!(raw string_eq(ll, want))) {
                 if (raw ll_text_is_scalar_int(ll)) {
@@ -7331,6 +7523,10 @@ pub func:x_site = int32(ExprEmitter->:x, Span:sp) never fails {
 func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
+    // THE RESULT IS TAKEN (D-246): on the ok path its value half becomes this
+    // expression's temporary; on the error path the value half is vacant and
+    // the error is what leaves.
+    drop temp_take(x, v.ref);
     int32:my_t = raw exprtypes_get(x.et, id);
     // Type-driven, flag as fallback — the same repair `emit_raw` records.
     int32:ot = raw exprtypes_get(x.et, raw expr_operand(n));
@@ -7379,8 +7575,10 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_push(i32 ",
                       int_to_string((raw x_site(x, n.span)) => int64), ")"));
     // EVERY frame runs — relay exits the whole function, so its error path owes
-    // the same cleanup a `fail` here would owe.
+    // the same cleanup a `fail` here would owe: the live temporaries first
+    // (D-246, after the store and before the unwind), then the unwind.
     drop fnem_ret_fail(x.fe, code);
+    drop emit_temp_drops(x, 0i64);
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_done(x.fe);
@@ -7394,6 +7592,7 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     IrVal:v = raw emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
+    drop temp_take(x, v.ref);   // the Result is taken; its value is the temporary (D-246)
     int32:my_t = raw exprtypes_get(x.et, id);
 
     // THE OPERAND'S RECORDED TYPE DECIDES. The first version asked the
@@ -7613,6 +7812,7 @@ func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     if (!(raw iv_is_ok(vv))) { pass vv; }
     // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
     vv = raw emit_fit(x, elem, move(vv), n.span);
+    if (raw iv_is_ok(vv)) { drop temp_take(x, vv.ref); }   // the arena keeps it (D-246)
     if (!(raw iv_is_ok(vv))) { pass vv; }
     string:pslot = raw irw_temp(x.fe.w);
     drop irw_alloca(x.fe.w, pslot, "{ i32 }");
@@ -7678,6 +7878,7 @@ func:emit_sarena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         if (!(raw iv_is_ok(vv))) { pass vv; }
         // THE ARENA'S ELEMENT IS A SLOT (1.0.6e).
         vv = raw emit_fit(x, elem, move(vv), n.span);
+        if (raw iv_is_ok(vv)) { drop temp_take(x, vv.ref); }   // the arena keeps it (D-246)
         if (!(raw iv_is_ok(vv))) { pass vv; }
         string:idx = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(idx,
@@ -8122,6 +8323,7 @@ func:emit_qualified_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never f
         if (!(raw iv_is_ok(av))) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, mft, i), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
+        if (raw call_arg_taken(x, id, n, i)) { drop temp_take(x, av.ref); }   // D-246
         if (i > 0i32) { args = string_concat(args, ", "); }
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
     }
@@ -8290,6 +8492,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
             // the receiver IS the `dyn`, and the thunk loads the concrete value.
             rv = raw emit_fit(x, p0w, move(rv), n.span);
             if (!(raw iv_is_ok(rv))) { pass rv; }
+            if (raw call_arg_taken(x, id, n, 0i32)) { drop temp_take(x, rv.ref); }
             args = raw cat3(rv.ll, " ", rv.ref);
         }
     }
@@ -8305,6 +8508,7 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
         if (!(raw iv_is_ok(av))) { pass av; }
         av = raw emit_fit(x, raw call_param_want(x, mft, i + 1i32), move(av), n.span);
         if (!(raw iv_is_ok(av))) { pass av; }
+        if (raw call_arg_taken(x, id, n, i + 1i32)) { drop temp_take(x, av.ref); }
         args = string_concat(args, ", ");
         args = raw cat3(args, av.ll, string_concat(" ", av.ref));
     }
@@ -8964,6 +9168,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
                                                                 etid), x.scope);
         int32:ptid = raw resolve_type(x.tr, vi.payload_ty, phome);
         av = raw emit_fit(x, ptid, move(av), at);
+        if (raw iv_is_ok(av)) { drop temp_take(x, av.ref); }   // the variant keeps it (D-246)
         if (!(raw iv_is_ok(av))) { pass av; }
         string:pp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pp, " = getelementptr ", ell.text,
@@ -8985,6 +9190,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
             IrVal:cav = raw emit_expr(x, cad);
             if (!(raw iv_is_ok(cav))) { pass cav; }
             cav = raw emit_fit(x, pslot.type_id, move(cav), at);
+            if (raw iv_is_ok(cav)) { drop temp_take(x, cav.ref); }   // the variant keeps it (D-246)
             if (!(raw iv_is_ok(cav))) { pass cav; }
             LlType:cpll = raw ll_type(x.fe.ctx, pslot.type_id);
             if (!(raw ll_is_ok(cpll))) {
@@ -9053,6 +9259,9 @@ func:emit_coalesce = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // THE DEFAULT IS A SLOT, of the inner type (D-099's list names it).
     cdv = raw emit_fit(x, ctid, move(cdv), n.span);
     if (!(raw iv_is_ok(cdv))) { pass cdv; }
+    // THE OPTIONAL AND THE DEFAULT ARE TAKEN (D-246).
+    drop temp_take(x, cv.ref);
+    drop temp_take(x, cdv.ref);
     drop irw_line(x.fe.w, raw cat5("store ", cdv.ll, " ", cdv.ref,
                       string_concat(", ptr ", cslot)));
     drop irw_line(x.fe.w, raw cat3("br label %", cj_l, ""));
@@ -9553,6 +9762,7 @@ func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         if (!(raw iv_is_ok(v))) { pass v; }
         // A FIELD IS A SLOT (1.0.6e): `Holder{ s: d }` with `dyn Speaks:s`.
         v = raw emit_fit(x, fi.type_id, move(v), n.span);
+        if (raw iv_is_ok(v)) { drop temp_take(x, v.ref); }   // the literal keeps it (D-246)
         if (!(raw iv_is_ok(v))) { pass v; }
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", sll.text, " ",
@@ -9582,6 +9792,7 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
         if (!(raw iv_is_ok(v))) { pass v; }
         // AN ELEMENT IS A SLOT (1.0.6e), of the array's element type.
         v = raw emit_fit(x, raw type_elem(x.fe.ctx.types, atid), move(v), n.span);
+        if (raw iv_is_ok(v)) { drop temp_take(x, v.ref); }   // the literal keeps it (D-246)
         if (!(raw iv_is_ok(v))) { pass v; }
         string:r = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(r, " = insertvalue ", all.text, " ",
@@ -9627,6 +9838,7 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
         if (!(raw iv_is_ok(vv))) { pass vv; }
         // THE VALUE HALF IS A SLOT (1.0.6e), of the Result's `T`.
         vv = raw emit_fit(x, inner, move(vv), n.span);
+        if (raw iv_is_ok(vv)) { drop temp_take(x, vv.ref); }   // the literal keeps it (D-246)
         if (!(raw iv_is_ok(vv))) { pass vv; }
         vref = move(vv.ref);
     }

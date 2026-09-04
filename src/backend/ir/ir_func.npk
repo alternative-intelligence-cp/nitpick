@@ -91,6 +91,33 @@ pub struct:FnEmitter = {
     // its exit, unless the body moved it onward.
     List<int32>:pmoves;
 
+    // STATEMENT-END TEMPORARIES (D-246, 1.5.1b step 4). An owning value no
+    // place takes is registered where it is PRODUCED -- stored to a slot of
+    // its own beside an i8 flag that says the producing path ran -- and
+    // dropped, flag-guarded, when its statement ends; the one consumer that
+    // KEEPS it (a binding, a `move` parameter, a literal's slot, a return, a
+    // send) marks it taken and no drop is ever emitted for it. Parallel
+    // lists, LIFO like the locals; `cur_tmark` is the open statement's floor.
+    List<int32>:ttypes;
+    List<string>:tslots;
+    List<string>:tflags;
+    List<string>:trefs;
+    List<int32>:tlive;
+    int64:cur_tmark;
+    // A temporary produced while an `await`'s operand is evaluated lives
+    // across the suspension (D-178's one exception) and so in the FRAME: a
+    // region appended after the flag bytes, one value slot and one i8 flag
+    // per temporary, the flags zeroed by the resume that starts the body.
+    // A spawn's arguments are the child's for its life: taken, never dropped
+    // by the statement that spawned it.
+    bool:in_await_args;
+    bool:spawn_args;
+    List<string>:tframe_lls;
+    List<string>:tframe_flags;
+    // The temporary count at each loop's entry, parallel to `loop_heads`: a
+    // `break` or `continue` drops what the body registered above it.
+    List<int64>:loop_tmarks;
+
     // --- control-flow state (0.7.6) ------------------------------------------
     //
     // HERE rather than in the statement walker, because `relay` needs it too:
@@ -237,6 +264,16 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         ptypes: raw list_init::<int32>(8i64),
         plls: raw list_init::<string>(8i64),
         pmoves: raw list_init::<int32>(8i64),
+        ttypes: raw list_init::<int32>(16i64),
+        tslots: raw list_init::<string>(16i64),
+        tflags: raw list_init::<string>(16i64),
+        trefs: raw list_init::<string>(16i64),
+        tlive: raw list_init::<int32>(16i64),
+        cur_tmark: 0i64,
+        in_await_args: false, spawn_args: false,
+        tframe_lls: raw list_init::<string>(8i64),
+        tframe_flags: raw list_init::<string>(8i64),
+        loop_tmarks: raw list_init::<int64>(8i64),
         lnames: raw list_init::<int32>(32i64),
         lslots: raw list_init::<string>(32i64),
         ltypes: raw list_init::<int32>(32i64),
@@ -303,6 +340,17 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.ptypes.count = 0i64;
     fe.plls.count = 0i64;
     fe.pmoves.count = 0i64;
+    fe.ttypes.count = 0i64;
+    fe.tslots.count = 0i64;
+    fe.tflags.count = 0i64;
+    fe.trefs.count = 0i64;
+    fe.tlive.count = 0i64;
+    fe.cur_tmark = 0i64;
+    fe.in_await_args = false;
+    fe.spawn_args = false;
+    fe.tframe_lls.count = 0i64;
+    fe.tframe_flags.count = 0i64;
+    fe.loop_tmarks.count = 0i64;
     fe.lnames.count = 0i64;
     fe.lslots.count = 0i64;
     fe.ltypes.count = 0i64;
@@ -570,43 +618,11 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     // deadline. `owner` is the executor the task is pinned to (D-032), which
     // the waker needs and could not otherwise find: `thread_tls` is non-null
     // only on a THREAD's root task, so it answers a different question.
-    string:slots = string_concat("ptr, i32, i32, ", fe.ret_ll);
-    slots = string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
+    // THE FRAME TYPE IS WRITTEN AT CLOSE (1.5.1b step 4, `fnem_frame_type_write`):
+    // its temporary region is known only once the body has been emitted, and
+    // the type goes to the sink that splices ahead of every function, so the
+    // order of writing never mattered. The fixed part's layout is unchanged.
     int32:i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
-        slots = raw cat3(slots, ", ", fe.plls.items[i => int64]);
-        i = i + 1i32;
-    }
-    i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
-        slots = raw cat3(slots, ", ", fe.cross_lls.items[i => int64]);
-        i = i + 1i32;
-    }
-    // DROP-FLAG SLOTS (D-183, 1.2.4b): one i8 per owning `move` parameter,
-    // then one per owning crossing var-decl (role 0) — appended AFTER the
-    // crossing region so every established index keeps its meaning. A flag
-    // is the byte that says the binding still owns its value; a crossing
-    // local's byte must cross with it, because an alloca dies between
-    // `resume` calls exactly like the value slot it guards would have.
-    i = 0i32;
-    while ((i => int64) < fe.pnames.count) {
-        if (fe.pmoves.items[i => int64] != 0i32) {
-            if (raw type_drops_recorded(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
-                slots = string_concat(slots, ", i8");
-            }
-        }
-        i = i + 1i32;
-    }
-    i = 0i32;
-    while ((i => int64) < fe.cross_stmts.count) {
-        if (fe.cross_roles.items[i => int64] == 0i32) {
-            if (raw type_drops_recorded(fe.ctx.types, fe.cross_types.items[i => int64], 64i32)) {
-                slots = string_concat(slots, ", i8");
-            }
-        }
-        i = i + 1i32;
-    }
-    drop irw_frame_type(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
     // THE FRAME'S SIZE, AS A SYMBOL (D-185, 1.1.12d): the vtable's size tail
     // references this global rather than the frame type directly — a global
     // forward-references freely, where a gep constant over a named type
@@ -1062,7 +1078,12 @@ pub func:fnem_loop_push = NIL(FnEmitter->:fe, move string:head, move string:done
     drop list_push(@fe.loop_depths, fe.dframes.count);
     drop list_push(@fe.loop_labels, label);
     drop list_push(@fe.loop_iters, move(iter));
+    drop list_push(@fe.loop_tmarks, fe.ttypes.count);
     pass NIL;
+};
+
+pub func:fnem_loop_tmark_at = int64(FnEmitter->:fe, int64:i) never fails {
+    pass (fe.loop_tmarks.items[i]);
 };
 
 // The stack index a labelled `break`/`continue` targets: the nearest frame
@@ -1164,12 +1185,107 @@ pub func:fnem_loop_depth_at = int64(FnEmitter->:fe, int64:i) never fails {
 };
 
 pub func:fnem_loop_pop = NIL(FnEmitter->:fe) never fails {
-    int64:n = fe.loop_heads.count - 1i64;   // ALL FIVE
+    int64:n = fe.loop_heads.count - 1i64;   // ALL SIX
     fe.loop_heads.count = n;
     fe.loop_dones.count = n;
     fe.loop_depths.count = n;
     fe.loop_labels.count = n;
     fe.loop_iters.count = n;
+    fe.loop_tmarks.count = n;
+    pass NIL;
+};
+
+// --- statement-end temporaries (D-246, 1.5.1b step 4) --------------------------
+
+pub func:fnem_temp_mark = int64(FnEmitter->:fe) never fails { pass fe.ttypes.count; };
+
+pub func:fnem_temp_count = int64(FnEmitter->:fe) never fails { pass fe.ttypes.count; };
+
+pub func:fnem_temp_release = NIL(FnEmitter->:fe, int64:mark) never fails {
+    fe.ttypes.count = mark;
+    fe.tslots.count = mark;
+    fe.tflags.count = mark;
+    fe.trefs.count = mark;
+    fe.tlive.count = mark;
+    pass NIL;
+};
+
+pub func:fnem_temp_push = int64(FnEmitter->:fe, int32:ttid, move string:slot,
+                                move string:flag, move string:ref) never fails {
+    int64:i = fe.ttypes.count;
+    drop list_push(@fe.ttypes, ttid);
+    drop list_push(@fe.tslots, move(slot));
+    drop list_push(@fe.tflags, move(flag));
+    drop list_push(@fe.trefs, move(ref));
+    drop list_push(@fe.tlive, 1i32);
+    pass i;
+};
+
+// THE TEMPORARY WHOSE VALUE IS `ref` IS TAKEN: a consumer keeps it, so no drop
+// is emitted for it anywhere. A value that is nobody's temporary is left
+// alone -- every consumer says "take" without asking, and only a registered
+// SSA name answers. Newest first: the same name never names two live ones.
+pub func:fnem_temp_take = NIL(FnEmitter->:fe, string:ref) never fails {
+    int64:i = fe.ttypes.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (fe.tlive.items[i] != 0i32) {
+            if (raw string_eq(fe.trefs.items[i], ref)) {
+                fe.tlive.items[i] = 0i32;
+                pass NIL;
+            }
+        }
+    }
+    pass NIL;
+};
+
+pub func:fnem_temp_live_at = int32(FnEmitter->:fe, int64:i) never fails { pass (fe.tlive.items[i]); };
+pub func:fnem_temp_type_at = int32(FnEmitter->:fe, int64:i) never fails { pass (fe.ttypes.items[i]); };
+// Views of container-owned storage (D-183): cap 0, drops free nothing.
+pub func:fnem_temp_slot_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.tslots.items[i].ptr, fe.tslots.items[i].len));
+};
+pub func:fnem_temp_flag_at = string(FnEmitter->:fe, int64:i) never fails {
+    pass (string_from_bytes(fe.tflags.items[i].ptr, fe.tflags.items[i].len));
+};
+
+// THE FRAME'S FIXED SLOT COUNT: the header, the parameters, the crossing
+// region and the flag bytes, counted exactly as `fnem_frame_slots_text` lays
+// them out -- the temporary region begins at this index.
+pub func:fnem_frame_fixed_slots = int64(FnEmitter->:fe) never fails {
+    int64:n = 12i64 + fe.pnames.count + fe.cross_stmts.count;
+    int32:i = 0i32;
+    while ((i => int64) < fe.pnames.count) {
+        if (fe.pmoves.items[i => int64] != 0i32) {
+            if (raw type_drops_recorded(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
+                n = n + 1i64;
+            }
+        }
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while ((i => int64) < fe.cross_stmts.count) {
+        if (fe.cross_roles.items[i => int64] == 0i32) {
+            if (raw type_drops_recorded(fe.ctx.types, fe.cross_types.items[i => int64], 64i32)) {
+                n = n + 1i64;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass n;
+};
+
+// A FRAME-RESIDENT TEMPORARY'S TWO SLOTS (the value, then its i8 flag),
+// appended to the region; the caller computes their GEPs from the index.
+pub func:fnem_temp_frame_add = int64(FnEmitter->:fe, move string:ll) never fails {
+    int64:idx = (raw fnem_frame_fixed_slots(fe)) + fe.tframe_lls.count;
+    drop list_push(@fe.tframe_lls, move(ll));
+    drop list_push(@fe.tframe_lls, "i8");
+    pass idx;
+};
+
+pub func:fnem_temp_frame_flag = NIL(FnEmitter->:fe, move string:gep) never fails {
+    drop list_push(@fe.tframe_flags, move(gep));
     pass NIL;
 };
 
@@ -1242,6 +1358,57 @@ pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) never fails {
 // Close the body. A function that falls off its end still terminates — subset-1
 // sources always return explicitly, and this keeps the IR well-formed regardless,
 // which is the seed's rule too.
+// THE FRAME TYPE, in the layout `fnem_open_async` documents: the header, one
+// slot per parameter, the crossing region, the flag bytes, then (1.5.1b step
+// 4) the TEMPORARY region -- a value slot and an i8 flag per temporary that
+// crossed an `await`, appended last so every established index keeps its
+// meaning (`fnem_frame_fixed_slots` counts to its start).
+func:fnem_frame_type_write = NIL(FnEmitter->:fe) never fails {
+    string:slots = string_concat("ptr, i32, i32, ", fe.ret_ll);
+    slots = string_concat(slots, ", ptr, ptr, ptr, ptr, i64, ptr, ptr, ptr");
+    int32:i = 0i32;
+    while ((i => int64) < fe.pnames.count) {
+        slots = raw cat3(slots, ", ", fe.plls.items[i => int64]);
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while ((i => int64) < fe.cross_stmts.count) {
+        slots = raw cat3(slots, ", ", fe.cross_lls.items[i => int64]);
+        i = i + 1i32;
+    }
+    // DROP-FLAG SLOTS (D-183, 1.2.4b): one i8 per owning `move` parameter,
+    // then one per owning crossing var-decl (role 0) — appended AFTER the
+    // crossing region so every established index keeps its meaning. A flag
+    // is the byte that says the binding still owns its value; a crossing
+    // local's byte must cross with it, because an alloca dies between
+    // `resume` calls exactly like the value slot it guards would have.
+    i = 0i32;
+    while ((i => int64) < fe.pnames.count) {
+        if (fe.pmoves.items[i => int64] != 0i32) {
+            if (raw type_drops_recorded(fe.ctx.types, fe.ptypes.items[i => int64], 64i32)) {
+                slots = string_concat(slots, ", i8");
+            }
+        }
+        i = i + 1i32;
+    }
+    i = 0i32;
+    while ((i => int64) < fe.cross_stmts.count) {
+        if (fe.cross_roles.items[i => int64] == 0i32) {
+            if (raw type_drops_recorded(fe.ctx.types, fe.cross_types.items[i => int64], 64i32)) {
+                slots = string_concat(slots, ", i8");
+            }
+        }
+        i = i + 1i32;
+    }
+    int64:t = 0i64;
+    while (t < fe.tframe_lls.count) {
+        slots = raw cat3(slots, ", ", fe.tframe_lls.items[t]);
+        t = t + 1i64;
+    }
+    drop irw_frame_type(fe.w, raw cat5(fe.frame_ty, " = type { ", slots, " }", ""));
+    pass NIL;
+};
+
 pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
     if (!terminated) {
         if (fe.bare) {
@@ -1276,10 +1443,29 @@ pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) never fails {
         drop irw_line(fe.w, raw cat3("call void @npk_exit(i32 ", bt, ")"));
         drop irw_line(fe.w, "unreachable");
 
+        drop fnem_frame_type_write(fe);
+
         // The entry block's tail, appended after every hoisted alloca and
         // frame GEP: load the state, dispatch to its segment.
         string:st = raw irw_temp(fe.w);
         drop irw_entry(fe.w, raw cat3(st, " = load i32, ptr ", fe.state_gep));
+        // THE FIRST RESUME ZEROES THE TEMPORARY FLAGS (1.5.1b step 4): a frame
+        // is not zeroed at birth, and a temporary's flag must read "not
+        // produced" on every path its statement did not take -- so state 0,
+        // and only state 0, stores the zeros before the dispatch.
+        if (fe.tframe_flags.count > 0i64) {
+            string:is0 = raw irw_temp(fe.w);
+            drop irw_entry(fe.w, raw cat3(is0, " = icmp eq i32 ", string_concat(st, ", 0")));
+            drop irw_entry(fe.w, raw cat3("br i1 ", is0, ", label %coro.tinit, label %coro.go"));
+            drop irw_entry_label(fe.w, "coro.tinit");
+            int64:tf = 0i64;
+            while (tf < fe.tframe_flags.count) {
+                drop irw_entry(fe.w, raw cat3("store i8 0, ptr ", fe.tframe_flags.items[tf], ""));
+                tf = tf + 1i64;
+            }
+            drop irw_entry(fe.w, "br label %coro.go");
+            drop irw_entry_label(fe.w, "coro.go");
+        }
         string:cases = "";
         int32:k = 0i32;
         while ((k => int64) < fe.seg_labels.count) {

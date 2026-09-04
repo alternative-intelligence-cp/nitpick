@@ -179,6 +179,15 @@ pub func:irw_entry = NIL(IrWriter->:w, string:text) never fails {
     pass NIL;
 };
 
+// A LABEL IN THE ENTRY STREAM (1.5.1b step 4): the coroutine's first-resume
+// block that zeroes its frame-resident temporary flags sits between the
+// state load and the switch, so it is written here, at column zero.
+pub func:irw_entry_label = NIL(IrWriter->:w, string:name) never fails {
+    drop sink_write(@w.allocas, name);
+    drop sink_write(@w.allocas, ":\n");
+    pass NIL;
+};
+
 // One stamp site, registered: its id, minting the row on first sight.
 pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fails {
     int32:i = 0i32;

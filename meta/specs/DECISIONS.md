@@ -16273,3 +16273,42 @@ than generated" comment goes. **Landed at 1.5.1b step 3b**: `derive_payload.npk`
 pins the reporter's 321 (Less, Equal, Less) and the struct-through-`Inner`
 shapes; `payload_owning.npk` the three refusals; `deriving.npk` the accepted
 shapes. A payload-less enum's derived bodies are byte-identical to before.
+
+## D-246 — statement-end temporaries: an owning value no place takes is dropped when its statement ends — **SETTLED (ratified with 1.5.1b; landed at step 4, 2026-09-04)**
+
+The workbench's DEF-1 measured it and D-183's open item named it: an owning
+value that no place takes — a call's result lent to a parameter, a receiver,
+an operand, a discarded result, a `dyn` cell built for a borrowing slot — was
+never dropped, so `t = string_concat(string_concat(t, "b"), "c")` leaked the
+inner result every iteration (the nested probe peaked at 9 992× the bound
+form). **The decision.** Such a value is a TEMPORARY OF THE STATEMENT THAT
+PRODUCED IT: dropped when that statement ends, on every path it leaves by —
+its normal end, `relay`, `pass`, `fail`, `return`, `give`, `break`,
+`continue` — in reverse order of creation and after the statement's own
+effect (a returned value is stored before its statement's temporaries drop:
+D-207's seam is store, drop the temporaries, unwind, return). A temporary is
+TAKEN, and not dropped by its statement, when a declaration binds it, an
+assignment stores it, a `move` parameter or a spawn's argument consumes it, a
+struct, array, `Result` or variant literal's slot holds it, an arena or a
+channel or a lock cell takes it, a `pass`/`return`/`give` carries it out, or
+a consuming `pick (move(v))` takes it apart. A temporary lent to a plain
+parameter, a receiver or an operand is borrowed and dropped after; a
+condition's temporaries drop where the condition is decided (the verdict is
+a copied bit and the branches may run for a long time; a `while`'s every
+iteration); a coercion or wrap transfers — the `dyn` cell or the `Optional`
+holds what the source held and is the temporary in its place. A trap runs no
+drops (D-014). In a coroutine the only temporary alive across a suspension is
+an `await`'s own operand (D-178); it lives in a frame region appended after
+the flag bytes and drops after the resume. **The lowering** registers a
+temporary where it is PRODUCED (`emit_expr`'s one seam: a fresh owning
+value of a producing kind, never a place, never a view-maker's result) —
+stored to a slot of its own beside an i8 flag that says the producing path
+ran, zeroed in the entry block (the first resume, for a frame temporary) so
+a path the statement did not take reads "not produced" — and every drop is
+flag-guarded and clears the flag, so a second exit path or a loop's next
+iteration cannot free it twice; a keeping consumer marks it taken by its SSA
+name and no drop is emitted. `temp_drops.npk` runs every shape 2 000 times;
+`temp_fd.npk` proves the drop by the descriptor table (2 000 opens lent and
+closed); `temp_relay.npk` the relay's error path; `temp_await.npk` the frame
+region under `// stress: 40`; the `cost` stage's temporaries probe holds the
+nested form to 2× the bound form's peak.

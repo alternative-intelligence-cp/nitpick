@@ -1,0 +1,72 @@
+// expect-exit: 0
+//
+// STATEMENT-END TEMPORARIES (D-246, 1.5.1b step 4): an owning value no place
+// takes is the statement's, dropped when the statement ends -- borrowed by a
+// callee, a receiver, an operand, discarded, chosen by a ternary or a `?|`
+// default -- and TAKEN, never dropped by the statement, when a binding, a
+// literal's slot, a `move` parameter or a return keeps it. Every shape here
+// ran leaked until this step; each is checked by its value, and the two
+// probes in tests/cost/ check the memory.
+mod:temp_drops;
+error:E9;
+
+struct:Named = { string:name; int32:n; };
+trait:Speaks = { func:say = int32(Self:self); };
+struct:Loud = { string:name; int32:v; };
+impl:Loud:Speaks = { func:say = int32(Loud:self) { pass self.v; }; };
+
+func:mk = string(int32:i) never fails { pass (string_concat("abc", int_to_string(i => int64))); };
+func:mk_named = Named(int32:i) never fails { pass Named{ name: raw mk(i), n: i }; };
+func:mk_dyn = dyn Speaks(int32:v) never fails {
+    Loud:l = Loud{ name: raw mk(v), v: v };
+    dyn Speaks:d = move(l);
+    pass d;
+};
+func:len_of = int64(string:s) never fails { pass s.len; };
+func:named_n = int32(Named:x) never fails { pass x.n; };
+func:report = int32(dyn Speaks:d) { pass (d.say() ?! E9); };
+func:keep = int64(move string:s) never fails { pass s.len; };
+func:maybe = string(int32:i) { if (i < 0i32) { fail E9; } pass (raw mk(i)); };
+
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int32:i in 0i32...2000i32) {
+        // borrowed by a callee: dropped after the call
+        acc = acc + (raw len_of(raw mk(i)));
+        // an operand on both sides
+        if (!(string_equals(raw mk(i), raw mk(i)))) { exit 1i32; }
+        // a receiver
+        acc = acc + (raw mk(i)).len;
+        // a struct temporary with an owning field, borrowed
+        acc = acc + ((raw named_n(raw mk_named(i))) => int64);
+        // a `dyn` temporary (a cell holding an owning concrete), borrowed
+        acc = acc + ((report(raw mk_dyn(i)) ?! E9) => int64);
+        // discarded outright
+        discard(raw mk(i));
+        // a `move` parameter takes it
+        acc = acc + (raw keep(raw mk(i)));
+        // a `?|` default is a temporary too, and the chosen value is one
+        acc = acc + (maybe(0i32 - 1i32) ?| (raw mk(i))).len;
+        acc = acc + (maybe(i) ?| "").len;
+        // a ternary chooses one temporary; the other arm never ran
+        acc = acc + (is (i > 1000i32) : (raw mk(i)) : (raw mk(i + 1i32))).len;
+        // a temporary in a condition drops where the condition is decided
+        if ((raw mk(i)).len > 3i64) { acc = acc + 1i64; }
+        // a binding TAKES its initialiser, and drops it at scope exit as before
+        string:kept = raw mk(i);
+        acc = acc + kept.len;
+    }
+    if (acc < 2000i64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

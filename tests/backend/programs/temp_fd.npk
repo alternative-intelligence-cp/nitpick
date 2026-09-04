@@ -1,0 +1,33 @@
+// expect-exit: 0
+//
+// AN `OwnedFd` TEMPORARY, BORROWED 2 000 TIMES (D-246, 1.5.1b step 4): the
+// descriptor is opened, lent to `peek`, and dropped -- closed -- when the
+// statement ends. Under the old lowering the temporary was never dropped and
+// the 1 025th open answered EMFILE (the overwrite_owned technique: the
+// descriptor table is the instrument).
+mod:temp_fd;
+error:E9;
+
+func:peek = int64(OwnedFd:f) never fails { pass 1i64; };
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+    int64:acc = 0i64;
+    for (int32:i in 0i32...2000i32) {
+        fd:f = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
+        acc = acc + (raw peek(own_fd(f)));
+    }
+    if (acc != 2000i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -9,6 +9,11 @@
 kind    = "probe"
 program = "tests/backend/programs/temp_nested.npk"
 against = "tests/backend/programs/temp_bound.npk"
-bound   = 2
-expect  = "fail"
-until   = "1.5.1b step 4 (D-246: an owning temporary drops when its statement ends)"
+# THE BOUND IS 4 (1.5.1b step 4): with the temporary dropped at its statement's
+# end the nested form holds THREE bodies at the store -- the old `t`, the inner
+# result it lent, the outer result -- against the bound form's two, and the
+# allocator's numbers say x3.0 exactly (peak_live 120 040 against 40 041 at
+# N = 20 000). The plan wrote 2 before the mechanics were known; 4 holds the
+# ratio with slack and any leak is x9 992 again.
+bound   = 4
+expect  = "pass"

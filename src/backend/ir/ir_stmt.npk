@@ -523,7 +523,56 @@ pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 
 // --- statements ---------------------------------------------------------------------
 
+// THE STATEMENT'S TEMPORARIES (D-246, 1.5.1b step 4): a floor at entry, the
+// live ones above it dropped at the statement's normal end -- an exit path
+// (`pass`, `fail`, `return`, `relay`, `give`, `break`, `continue`) drops what
+// it must before it leaves -- and the entries released, LIFO like the locals.
+// A statement inside a statement has its own floor.
 pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
+    int64:tm = raw fnem_temp_mark(x.fe);
+    int64:outer_tm = x.fe.cur_tmark;
+    x.fe.cur_tmark = tm;
+    IrVal:r = raw emit_stmt_kind(x, sid);
+    if (raw iv_is_ok(r)) {
+        if (!x.fe.terminated) { drop emit_temp_drops(x, tm); }
+    }
+    drop fnem_temp_release(x.fe, tm);
+    x.fe.cur_tmark = outer_tm;
+    pass r;
+};
+
+// THE STATEMENT'S TEMPORARIES, DROPPED (D-246): every live entry above `from`,
+// newest first, flag-guarded exactly as a local's scope-exit drop is -- the
+// flag says the producing path ran -- and the flag cleared after, so a loop's
+// next iteration and a second exit path cannot free it again. Nothing is
+// marked dead here: an exit path emits these too, and the cleared flag makes
+// a second emission a no-op at run time.
+pub func:emit_temp_drops = NIL(ExprEmitter->:x, int64:from) never fails {
+    int64:i = raw fnem_temp_count(x.fe);
+    while (i > from) {
+        i = i - 1i64;
+        if ((raw fnem_temp_live_at(x.fe, i)) == 0i32) { continue; }
+        string:fl = raw fnem_temp_flag_at(x.fe, i);
+        string:lf = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(lf, " = load i8, ptr ", fl));
+        string:lb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(lb, " = icmp ne i8 ", string_concat(lf, ", 0")));
+        string:dl = raw irw_new_label(x.fe.w, "tmp.drop");
+        string:nl = raw irw_new_label(x.fe.w, "tmp.done");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", lb, ", label %", dl,
+                          string_concat(", label %", nl)));
+        drop s_start(x, dl);
+        drop irw_line(x.fe.w, raw cat3("call void ",
+                          raw drop_fn_sym(x.fe.ctx, raw fnem_temp_type_at(x.fe, i)),
+                          raw cat3("(ptr ", raw fnem_temp_slot_at(x.fe, i), ")")));
+        drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", fl, ""));
+        drop s_br(x, nl);
+        drop s_start(x, nl);
+    }
+    pass NIL;
+};
+
+func:emit_stmt_kind = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     StmtNode:s = raw ast_stmt(x.ast, sid);
     // Each statement opens a fresh temp mark (D-177): `emit_await` refuses to
     // suspend past an SSA value this statement already minted.
@@ -648,6 +697,7 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         // is the one place now, and this is one of its sites.
         v = raw emit_fit(x, dty, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
+        drop temp_take(x, v.ref);   // the binding keeps it (D-246)
         drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
                           string_concat(", ptr ", slot)));
     } else {
@@ -752,6 +802,7 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // pointer and dispatched through the remains.
         v = raw emit_fit(x, place.type_id, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
+        drop temp_take(x, v.ref);   // the place keeps it (D-246)
         // OVERWRITING AN OWNED VALUE RELEASES IT FIRST (D-183, 1.2.3): the
         // RHS is already computed — `s = string_concat(s, "x")` has loaned
         // the old body and finished with it — so the old value's drop sits
@@ -860,8 +911,13 @@ func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     bool:has_else = !(raw stmt_is_none(raw stmt_else(s)));
     if (has_else) { else_l = raw irw_new_label(x.fe.w, "if.else"); }
 
+    int64:ctm = raw fnem_temp_mark(x.fe);
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
+    // A CONDITION'S TEMPORARIES DROP WHERE IT IS DECIDED (D-246): the verdict
+    // is a copied bit, and the branches may run for a long time.
+    drop emit_temp_drops(x, ctm);
+    drop fnem_temp_release(x.fe, ctm);
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", then_l,
                       string_concat(", label %", else_l)));
     x.fe.terminated = true;
@@ -1026,8 +1082,11 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    int64:ctm = raw fnem_temp_mark(x.fe);
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
+    drop emit_temp_drops(x, ctm);   // D-246: decided here, every iteration
+    drop fnem_temp_release(x.fe, ctm);
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
                       string_concat(", label %", junc_l)));
     x.fe.terminated = true;
@@ -1392,8 +1451,13 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    int64:ctm = raw fnem_temp_mark(x.fe);
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
+    // A CONDITION'S TEMPORARIES DROP WHERE IT IS DECIDED (D-246), every
+    // iteration -- the head block is re-entered.
+    drop emit_temp_drops(x, ctm);
+    drop fnem_temp_release(x.fe, ctm);
     drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", body_l,
                       string_concat(", label %", done_l)));
     x.fe.terminated = true;
@@ -1417,6 +1481,9 @@ func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) never fails 
     // exactly the unlabelled rule, aimed further out.
     int64:frame = raw fnem_loop_find(x.fe, raw stmt_label(s));
     if (frame < 0i64) { pass (raw iv_broken(s.span)); }
+    // The body's live temporaries above the loop's entry drop before the jump
+    // (D-246): a `pick` selector held across a `break`, for one.
+    drop emit_temp_drops(x, raw fnem_loop_tmark_at(x.fe, frame));
     IrVal:d = raw run_defers_down_to(x, raw fnem_loop_depth_at(x.fe, frame));
     if (!(raw iv_is_ok(d))) { pass d; }
     if (is_break) { drop s_br(x, raw fnem_loop_done_at(x.fe, frame)); }
@@ -1444,10 +1511,13 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // unwind below must not free the body it carries. Cleared BEFORE the
         // defers run, or the scope drop would release the returned value.
         drop clear_root_flag(x, val);
+        drop temp_take(x, vref);   // a returned temporary leaves with it (D-246)
     }
     // THE RETURN SEAM'S TWO HALVES (D-207): build and store, unwind, return.
-    // The unwind's per-scope joins arbitrate against the stored result.
+    // The unwind's per-scope joins arbitrate against the stored result. The
+    // statement's temporaries drop between the two (D-246).
     drop fnem_ret_pass(x.fe, vref);
+    drop emit_temp_drops(x, 0i64);
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_done(x.fe);
@@ -1465,6 +1535,7 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
                       int_to_string((raw x_site(x, s.span)) => int64), ")"));
     drop fnem_ret_fail(x.fe, v.ref);
+    drop emit_temp_drops(x, 0i64);   // D-246: after the store, before the unwind
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_done(x.fe);
@@ -1527,7 +1598,9 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    drop temp_take(x, v.ref);   // a returned temporary leaves with it (D-246)
     drop fnem_ret_agg(x.fe, v.ref);
+    drop emit_temp_drops(x, 0i64);
     IrVal:d = raw run_all_defers(x);
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_done(x.fe);
@@ -1812,6 +1885,10 @@ func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     // THE PICK'S SLOT IS A SLOT (1.0.6e): each arm's `give` is fit to it.
     v = raw emit_fit(x, raw fnem_pick_tid(x.fe), move(v), s.span);
     if (!(raw iv_is_ok(v))) { pass v; }
+    // The given value is the pick expression's (D-246); the give statement's
+    // other temporaries drop here, since it leaves by a branch.
+    drop temp_take(x, v.ref);
+    drop emit_temp_drops(x, x.fe.cur_tmark);
     IrVal:d = raw run_defers_down_to(x, raw fnem_pick_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
     drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref,
@@ -1845,6 +1922,10 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     int32:sel_tid = raw exprtypes_get(x.et, sel_id);
     IrVal:sel = raw emit_expr(x, sel_id);
     if (!(raw iv_is_ok(sel))) { pass sel; }
+    // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246): the arms own the
+    // payloads they bind and drop them at their exits; a borrowing pick's
+    // selector stays the statement's, dropped after the arms.
+    if (raw pick_is_consuming(x, s)) { drop temp_take(x, sel.ref); }
 
     // The discriminant: a payload-carrying enum's tag lives in slot 0; a plain
     // enum, a bool, a char or an integer IS its own discriminant.

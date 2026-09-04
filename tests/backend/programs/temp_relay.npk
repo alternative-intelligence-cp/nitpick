@@ -1,0 +1,45 @@
+// expect-exit: 0
+//
+// A TEMPORARY BEFORE A `relay` THAT FAILS (D-246, 1.5.1b step 4): each
+// iteration lends a fresh descriptor to `use_fd`, which fails on the last
+// call; every earlier iteration's temporary dropped at its statement's end,
+// and the failing one's drops on the relay's error path, before the unwind.
+// With 2 000 iterations a leak would answer EMFILE before `Done`.
+mod:temp_relay;
+error:E9;
+error:Done;
+
+func:use_fd = NIL(OwnedFd:f, int32:i) {
+    if (i == 1999i32) { fail Done; }
+    pass NIL;
+};
+
+func:run = NIL(cstring:path) {
+    for (int32:i in 0i32...2000i32) {
+        fd:f = open(path, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64) ?! E9;
+        relay use_fd(own_fd(f), i);
+    }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+    Result<NIL>:r = run(devnull);
+    if (!r.is_error) { exit 1i32; }
+    pick (r.err) {
+        (Done) { exit 0i32; },
+        (*) { exit 2i32; }
+    }
+    exit 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; }, (Done) { exit 89i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
