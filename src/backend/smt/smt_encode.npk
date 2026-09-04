@@ -25,10 +25,15 @@
 // version for every name either arm assigned); a loop invalidates the names
 // its body assigns before the body is walked and again after it; a `defer`
 // body reads every name as opaque (it runs at an exit the straight line does
-// not see); and a local whose ADDRESS is taken anywhere in the function is
-// never defined at all (a write through the pointer would make a definition
-// stale -- the one aliasing route a value can have here). Path conditions
-// are 1.5.4's; contracts as hypotheses 1.5.3's.
+// not see); and a local or parameter whose ADDRESS is taken anywhere in the
+// function is never NAMED at all -- every read of it is a fresh opaque term
+// (1.5.2 step 0, DEF-14). 1.5.0 gave such a name a symbol and withheld only
+// its DEFINITION, but a stable symbol is itself the fact "every read is the
+// same value", and a call handed the address falsifies it: `int32:a = x +
+// 1i32; raw bump(@x); 100i32 / (x - a)` kept `|a.1| = |x.1| + 1` across the
+// call, z3 proved the divisor -1, and the elided build divided by zero where
+// the plain build reached `failsafe`. Path conditions are 1.5.4's; contracts
+// as hypotheses 1.5.3's.
 //
 // THE CONE (P-4): an obligation's canonical text is the relevance closure of
 // its goal over the hypotheses that DOMINATE it -- recorded before it, in a
@@ -302,15 +307,18 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 };
 
 // A new version of `name` with type `ty`: defined by `t` when the type is
-// int/bool, the name is not address-taken and the term is encodable; opaque
-// (range axiom only) otherwise; symbol-less when the type is neither.
+// int/bool and the term is encodable; opaque (range axiom only) when the
+// term is not; symbol-less when the type is neither -- or when the name is
+// ADDRESS-TAKEN (DEF-14: an escaped name is never named, so every read of it
+// is a fresh opaque term and no fact about it can outlive a call).
 func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t) never fails {
     int32:sym = 0i32 - 1i32;
-    if ((raw is_int(e, ty)) || (raw is_bool(e, ty))) {
+    bool:named = (raw is_int(e, ty)) || (raw is_bool(e, ty));
+    if (raw is_escaped(e, name)) { named = false; }
+    if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
         sym = raw sym_new(e, nm, ty);
         bool:define = t.ok;
-        if (raw is_escaped(e, name)) { define = false; }
         if (define) {
             if (t.is_bool != (raw is_bool(e, ty))) { define = false; }
         }
@@ -325,16 +333,17 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t) never fails {
     pass NIL;
 };
 
-// Assignment to an existing binding: a new version in place (same type).
+// Assignment to an existing binding: a new version in place (same type). An
+// escaped name stays unnamed (DEF-14).
 func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
     int32:ty = e.binds.items[i].type_id;
     if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
+    if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
     int32:sym = raw sym_new(e, nm, ty);
     bool:define = t.ok;
-    if (raw is_escaped(e, name)) { define = false; }
     if (define) { if (t.is_bool != (raw is_bool(e, ty))) { define = false; } }
     if (define) {
         List<int32>:one = raw list_init::<int32>(1i64);
@@ -346,13 +355,15 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
 };
 
 // Every binding named in `names` gets a fresh OPAQUE version (the value after a
-// construct the straight line does not see through).
+// construct the straight line does not see through). An escaped name has no
+// version to refresh (DEF-14).
 func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
     for (int64:k in 0i64...names.count) {
         int64:i = raw bind_find(e, names.items[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds.items[i].type_id;
         if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { continue; }
+        if (raw is_escaped(e, names.items[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
                                 raw version_next(e, names.items[k]));
         e.binds.items[i].sym = raw sym_new(e, nm, ty);
@@ -1039,11 +1050,17 @@ pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty) never fails {
     pass NIL;
 };
 
-pub func:enc_body = NIL(Encoder->:e, StmtId:body) never fails {
+// THE ESCAPE SET FIRST (DEF-14): computed over the whole body BEFORE the
+// parameters are bound, so an address-taken parameter is unnamed from its
+// first read. 1.5.0 collected it inside `enc_body`, after `enc_param` had
+// already given every parameter a stable symbol -- the same hole one line
+// earlier.
+pub func:enc_prepare = NIL(Encoder->:e, StmtId:body) never fails {
     drop collect_escaped(e, body);
-    // An address-taken parameter is opaque from its first definition on: the
-    // parameter bindings made before this were defined symbol-only, which is
-    // already the opaque form.
+    pass NIL;
+};
+
+pub func:enc_body = NIL(Encoder->:e, StmtId:body) never fails {
     drop walk_block(e, body);
     pass NIL;
 };

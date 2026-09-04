@@ -1,0 +1,37 @@
+// expect-exit: 21
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// DEF-14's parameter twin (1.5.2 step 0): the escape set is computed BEFORE
+// the parameters are bound, so an address-taken PARAMETER is unnamed from
+// its first read. 1.5.0 bound the parameters first and collected the escape
+// set inside the body walk, so `x` here had a stable symbol -- the same hole
+// one line earlier than `divz_escaped.npk`'s.
+mod:divz_escaped_param;
+
+func:bump = int32(int32->:p) never fails { <-p = (<-p) + 1i32; pass 0i32; };
+
+func:helper = int32(int32:x) never fails {
+    int32:a = x + 1i32;
+    int32:z = raw bump(@x);
+    pass ((100i32 / (x - a)) + z);   // x - a == 0 at runtime
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw helper(argv.len =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

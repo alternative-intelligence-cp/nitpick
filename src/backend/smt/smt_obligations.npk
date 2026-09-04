@@ -26,6 +26,7 @@ pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
     c.el_kinds.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
+    drop enc_prepare(@en, body);   // the escape set before any name is bound (DEF-14)
     for (int64:i in 0i64...pnames.count) { drop enc_param(@en, pnames.items[i], ptypes.items[i]); }
     drop enc_body(@en, body);
     drop enc_finish(@en);

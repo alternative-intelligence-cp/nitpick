@@ -1,0 +1,38 @@
+// expect-exit: 21
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// DEF-14 (1.5.2 step 0): a local whose ADDRESS a call takes is never NAMED
+// in the encoder -- every read of it is a fresh opaque term. Under 1.5.0's
+// encoding `x` kept one symbol across `bump(@x)`, so `a`'s definition
+// `|a.1| = |x.1| + 1` outlived the write through the pointer, z3 proved the
+// divisor -1, the `div-zero` row was DISCHARGED, and the elided build divided
+// by zero -- SIGFPE, exit 136 -- where this plain build exits 21 through
+// `failsafe`. The row is `open` now and the guard stays; the `div-min` half
+// discharges on its literal dividend either way.
+mod:divz_escaped;
+
+func:bump = int32(int32->:p) never fails { <-p = (<-p) + 1i32; pass 0i32; };
+
+func:main = int32(cstring[]:argv) {
+    int32:x = argv.len =>! int32;
+    int32:a = x + 1i32;
+    int32:z = raw bump(@x);
+    int32:q = 100i32 / (x - a);      // x - a == 0 at runtime: the guard must be there
+    exit (q + z);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
