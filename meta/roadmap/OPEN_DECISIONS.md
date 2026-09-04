@@ -144,6 +144,10 @@ the builtin surface is typed from a signature table.
 | ~~**S-21**~~ | **D-248** | **SETTLED (user, 2026-09-03: the recommendations as written — both halves), lands at 1.5.1b step 1.** The file header is mandatory, and entry points are the root's: every file's first declaration is `mod:<basename>;` (RESOLVE-012, one code, two texts — missing, mismatched), so a header can never load a sibling and the loader can finally say "your header is wrong"; `main`/`failsafe` outside the root module refuse (RESOLVE-013). The sweep is 240 header-less files plus a one-line pin shift D-237 verifies. Alternative (header optional, identified by name) named in §7 and recommended against. Recommendation: ratify both halves. | 1.5.1b step 1 | DEF-2 |
 | ~~**S-22**~~ | **D-249** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 2.** A `Views` column in BUILTIN_REFERENCE (`—` or the 1-based argument whose storage the result aliases; `string_bytes` 1, `string_from_bytes` 1), generated like `Pure`; the escape analysis treats such a call — and the range-view `arr[lo...hi]` — as a borrow rooted where that argument is rooted, so D-004 rule 2 and rules A/B apply unchanged. Recommendation: ratify (a hard-coded pair of names would be a parallel authority beside the 1.4.2 table). | 1.5.1b step 2 | DEF-3 |
 | ~~**S-23**~~ | **D-250** | **SETTLED (user, 2026-09-03: "ratify S-23 as recommended, add step 3b"), lands at 1.5.1b step 3b — and the struct half was measured the same day: `#[derive(Eq, Ord)] struct:Outer = { Inner:i; int32:b; }` with `Inner` derived the same refuses TYPE-034 and TYPE-008 inside `<derived-1>`, because every derived comparison is an operator and operators are refused on named types; the step covers named types in structs and enums alike.** ~~Derived comparisons on an enum WITH A PAYLOAD~~ (DEF-4, §2f). Today `#[derive(Eq)]` on a payload enum refuses inside `<derived-1>` (the generated body is `self == other`, which needs the trait it is writing) and `#[derive(Ord)]`/`PartialOrd` compile to a TAG-ONLY order (`gen_cmp_enum`, by a 1.0.9d design comment that was right for `Hash` and is wrong for an order: `Literal(7).cmp(Literal(9))` is `Equal`). **Recommendation:** (1) a derived `Eq`, `Ord` and `PartialOrd` on an enum compare the TAG first (declaration order, as today) and, for equal tags, the payload of that variant through the payload type's own `==`/`eq` and `cmp` — scalars by operator, user types through their impl, derived or written — generated as a `pick` over both operands per variant; (2) a payload whose type is not `Eq`/`Ord` refuses AT THE DERIVE SITE naming the user's declaration and the payload type (the D-194 simd wording), never inside `<derived-1>`; (3) a payload that OWNS (a `string`, a `List<T>`) refuses the derive by name too — a `pick` over a borrowed enum cannot bind an owning payload without consuming it (S-5/D-216 made the consuming form; no borrowing form exists), so until one does the impl is written by hand and the refusal says so; (4) `Hash` stays tag-only (D-123, legal); (5) `gen_eq_enum`'s stale comment ("that is why `Ord` on an enum is refused rather than generated") goes. Lands as a 1.5.1b step (proposed 3b, between DEF-1's builders and D-246: frontend-only, no emission of `src/` moves) with `tests/derive/` cases deriving all five on a payload enum and a program pinning `Less/Equal/Less` (the reporter's 321). Whether the language wants a BORROWING `pick` form (which would let (3) generate instead of refuse) is a separate question, not needed to close DEF-4. | 1.5.1b step 3b | DEF-4 / O-N10 |
+| **S-24** | — | **OPEN (raised at 1.5.1b step 3b, 2026-09-04).** A derived comparison over a GENERIC PARAMETER field compares by operator (D-161's no-bound story), so `#[derive(Eq)] struct:Box<T>` works and `#[derive(Ord)]` on the same is refused by the checker inside `<derived-1>` (`<` on an opaque `T`, D-107) — before and after step 3b. The method form (`self.v.cmp(other.v)` under a synthesized `T: Ord`) would lift that, and needs the prelude to implement `Eq`/`Ord`/`PartialOrd` for the scalars, which it does for none today (the plan's §5b rule 1 assumed it did). **Recommendation:** implement the three traits for every scalar in the prelude (an `impl` per width, generated from the width ladder like the `Hash` impls), synthesize `T: Eq`/`T: Ord` bounds on a derived impl whose subject is generic, and take the method form for parameter fields — one rule for every named spelling. Costs: a bound on a derived impl changes which instantiations compile (a `Box<Point>` needs `Point: Ord`), which is the truthful requirement; the prelude grows ~30 impls. A 1.5.x step once decided. The workbench, asked: nothing there is blocked today (no library wants an order over a parameter yet); the first to meet it would be `nitpick-regex`'s generic container, ordering a `Vec<T>` of small scalars, and a hand-written comparator serves until then — information, not a request. | — | 1.5.1b step 3b |
+| **S-25** | — | **OPEN (raised at 1.5.1b step 5, 2026-09-04).** Step 5b's scope: `List<T>` moves into the prelude after the close-out refresh — the STRUCT ONLY, or the struct AND its functions (`list_init`, `list_push`, …)? Recommendation: BOTH — a compiler-known owning type whose operations need an import is one spelling in the prelude and another at every use, the context-dependent shape the blueprint rule refuses, and `list_push`'s `move T:v` is the one place the emitter's take-by-`move` (D-246) meets a prelude-declared callee. The move needs a BRIDGING BUILD because the prelude is embedded in a compiler at its own build and `src/` already uses `List` (1.5.1b.md §6, step 5b). |
+| **S-26** | — | **OPEN (raised at 1.5.1b step 5, 2026-09-04; implemented as the fix, pending ratification).** A `move(place)` or `pass place` out of a FIELD or an ELEMENT of an owning aggregate leaves the type's canonical VACANT value (D-225) in the place; the aggregate stays live, its later overwrite drops nothing (D-186's unconditional field drop is then correct), its scope-exit drop releases the remaining fields, and only a WHOLE-binding move clears a drop flag (D-183). This closes D-183's recorded partial-move item both ways: before it, a field move cleared the whole root's flag (every sibling leaked) and, because the field overwrite drops unconditionally, a field moved out and then reassigned freed the moved-out value a second time — `saved = move(r.env); r.env = move(frame);` in the resolver's constant folding, invisible to the compiler (its `main` exits without drops) and a heap fault in three unit tests the day `List<T>` began to own. A vacant List grows from zero on its first reservation. The checker's D-065 whole-binding invalidation is unchanged (conservative). **Recommendation: ratify as the settled meaning of a partial move** — one rule ("after `move`, the source owns nothing") for both spellings, no new syntax, no field-granular flags; the alternative, refusing partial moves, would strike the resolver's own idiom. `partial_move.npk`; DECISIONS D-183's dated note. |
+| **S-27** | — | **OPEN (raised at 1.5.1b step 5, 2026-09-04; implemented as the fix, pending ratification).** The statement after `wild_release_all()` in its block must be `exit` — TYPE-062. The call unmaps every chunk of both regimes (D-151), so no drop, no allocation and not even the trap route (which allocates its origin chain) can run after it; a `main` that released and then RETURNED ran its scope-exit drops over unmapped memory the day `List<T>` began to own, and the runtime's refusal then died in its own trap route — an uncontrolled stop. What must be measured after the release goes into `exit`'s operand, which is evaluated after the call (`argv_after_release.npk`, `leak_cleanup.npk` rewritten so; 45 test files carried a stray second call, collapsed). **Recommendation: ratify** — one shape, greppable, and the only one under which "controlled shutdown" survives the release. |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
 
@@ -417,6 +421,154 @@ real program finds is fixed before planned work.
   allocator's own `peak_live` instead. No document in this tree pairs the two
   as a leak guarantee; the workbench swept its six repositories for the
   pattern (nine sites in `nitpick-parse` alone).
+
+**DEF-5 (their O-N11, raised 2026-09-03; reproduction at `nitpick-time`
+`b092a9e`, `tests/probe/defect/missing_failsafe/`, three cases and a
+transcript; probe 11 at `0f86d6e`) — a root with `main` and no `failsafe`
+compiled at exit 0, and the arm contract was discharged by deleting the
+handler.** The loud half: the emitter wrote every trap path as a call to
+`@npk_failsafe`, which nothing defined, and `llc` refused the result —
+against D-013. The quiet half, the serious one and the same shape as DEF-4:
+`reach_settle` returned at `failsafe_decl == 0` before the named-coverage
+loop, so REACH-002 was asked of programs that had a handler and of nothing
+that had none — import a raiser, call it, omit the `failsafe`, no diagnostic
+at all. Blocks nothing of theirs (every shipped program has a handler; their
+harness stops reading `npkc` exit 0 as well-formed). **Landed as 1.5.1b step
+1b**: `NITPICK-REACH-003` at `main`, listing the identities the absent
+handler owes; a root with neither stays legal; a `failsafe` outside the root
+is step 1's RESOLVE-013.
+
+**DEF-6 (their O-N14, raised 2026-09-04 by `nitpick-regex` 0.0.1, verified
+by an independent verifier there and against this tree's step-3 compiler) —
+a non-root module compiled alone was refused by `llc`.** `npkc` emits
+`call i32 @npk_failsafe(...)` into every unit — the prelude's resume
+scaffolding alone carries seven, so a comment-only module has them — and
+never emitted a `declare` for it; only the program root DEFINES it (D-013).
+So every module that is not a root compiled at `npkc` exit 0 and failed at
+`llc` with `use of undefined value '@npk_failsafe'`, which made
+BUILD_REFERENCE §4.1's "each module compiles to its own object" a model the
+compiler could not deliver, for every library in the ecosystem (W-27: blocks
+per-module objects and separate compilation; touches no rule or API). The
+same subject as DEF-5 from the other end: the root supplies the handler,
+everyone else declares it, and the compiler enforced neither half. **Landed
+as 1.5.1b step 3c**: a unit whose root module does not declare `failsafe`
+emits `declare i32 @npk_failsafe(i32)`, and an `object` stage in both
+runners compiles every module under `tests/backend/objects/` alone to an
+object `llc` must accept (a comment-only module and a library with trap
+sites), its undefined symbols the runtime's and that one handler — §4.1
+measured on every run, never documented alone again.
+
+**DEF-7 (their O-N13, the same report) — a `pub use` after a plain `use` of
+the same path re-exported nothing, silently.** `symtab_bind_import`'s
+idempotent re-import branch returned the prior binding and discarded the
+repeat's flags, `SYM_PUB` among them, so the same two lines meant different
+things in the two orders and the consumer's "cannot find X" pointed a file
+away from the cause (W-27: blocks nothing — the other order works — and costs
+each person who meets it once, expensively; six umbrella modules planned
+there). **Landed as 1.5.1b step 3c**: the prior binding takes the
+visibility the repeat asks for; `tests/accept/reexport/` carries the
+contrast (their §E2 against §E3) as a three-file accept unit, and
+MODULE_REFERENCE's transitivity paragraph says order does not matter.
+
+**O-N12 (raised 2026-09-03 by `nitpick-regex` 0.0.0 against `950bb1d`,
+confirmed by the workbench from this tree; their W-27) — `>>>` and
+`string_repeat` were documented and absent.** TYPE_REFERENCE's bitwise table
+carried a `>>>` row ("right shift (unsigned)", `lshr`) beside `>>` ("signed",
+`ashr`); the lexer has no `>>>`, and `ir_expr.npk`'s one shift arm already
+emits `lshr` for an unsigned operand and `ashr` for a signed one — so the row
+described a synonym that did not exist and mislabelled the operator that does,
+which is what cost the reporter a probe. BUILTIN_REFERENCE §2 listed
+`string_repeat` under a sentence calling the list "fast compiler intrinsics",
+against the section's own header (the planned `nlibc` surface; only the
+marked tables are builtins). Blocks nothing (W-27: `>>` on an unsigned operand
+IS logical, measured at bit 63). **Settled the recommended way — the
+documents, not the implementation — at 1.5.1b step 2**: the `>>>` row is
+struck with a note (one operator; the operand's signedness decides), and §2's
+sentence names the marked-table rows as the only names that resolve, with
+the list kept as the unclaimed library surface it is (their call: no library
+in the ecosystem builds string utilities today, and striking the name would
+trade a fixed problem for a lost intention). Their
+RX-111 (D-070's bounds check does not apply to a `wild T->` block — by D-070's
+own title) is theirs and not a defect here; this tree's own D-070 citations
+(VERIFICATION_REFERENCE's `bounds` row) say array, slice or buffer.
+
+**DEF-8 (found by 1.5.1b step 5 on 2026-09-04, by `list_fds.npk` the day
+`List<T>` began to own; latent since 1.2.3) — `pass` of a COPYABLE field
+cleared the root's drop flag.** `clear_root_flag`, the emitter's half of
+"`pass` moves implicitly" (D-183), cleared the root binding's flag for every
+`pass` rooted at an owning local, whatever the passed value's type: `pass
+h.n` over an `int64` left `h`'s `OwnedFd` undropped on every call; a
+function returning `xs.count` leaked every `List`. The checker's own rule
+(bindings.npk: nothing moves because it was passed) never agreed with it.
+**Fixed in step 5**: the clear is gated on the passed value's type dropping,
+after substitution — inside a generic body the recorded type is the
+template's `T`, and the gate's first build freed every `List<string>`
+element twice. `move(h.n)` and a nested `pass w.inner.n` gate the same way;
+`pass_field.npk` pins all three under descriptor exhaustion. The
+whole-binding rule for an OWNING projection is unchanged (its sibling leak
+stays D-183's open partial-move item). Blocks nothing of the workbench's:
+their recipes pass values, not fields, out of owning locals.
+
+**DEF-9 (found the same day, by the reproduction of DEF-8 passing before the
+fix) — every descriptor-exhaustion proof in the suite depended on the
+machine's soft descriptor limit.** `overwrite_owned.npk` (1.1.12b),
+`list_fds.npk` and `pass_field.npk` open a few thousand times and expect a
+leak to surface as EMFILE, which happens only under a soft `RLIMIT_NOFILE`
+near the Linux default of 1024; the development session sets 1,048,576, so
+each of them passed against a leaking build. **Made an instrument in step
+5**: `nitpick.toml`'s `[limits] nofile` (1024; 64–1048576) is one number
+both runners lower their OWN soft limit to before spawning anything, so every
+tool and program inherits it (`lib/nsys.npk`'s `prlimit64` pair for `npkg`,
+`resource.setrlimit` for the harness); a hard limit below it is refused by
+name before anything runs; both print the ceiling they run under; and
+`fd_ceiling.npk` opens until refused into a `List<OwnedFd>` and requires the
+count under the ceiling — run by hand under the session's default it exits 5,
+measured thirty times. BUILD_REFERENCE §1 and §7.1 carry the table.
+
+**DEF-10 (found by 1.5.1b step 5's first cumulative-prefix harness, 2026-09-04;
+latent since 1.2.3, live since 1.1.12b's overwrite rule) — a `move` out of a
+field dropped the moved-out value at the field's next assignment.** The
+emitter's `move(place)` cleared the ROOT binding's flag (a partial move
+treated as a whole one — every sibling leaked) and, for a root with no flag
+(a pointer parameter), cleared nothing; D-186's field overwrite then dropped
+the old value unconditionally, so `saved = move(r.env); r.env = move(frame);`
+in `type_resolve.npk`'s constant folding freed `saved`'s list at its second
+line and the restore put a freed block back. The compiler never saw it: its
+`main` exits, and `exit` runs no drops. Three frontend unit tests
+(`type_layout`, `type_generic`, `expr_types`) died with SIGSEGV out of
+`npk_heap_bad`'s trap route over the corrupted heap. **Fixed in step 5 as
+S-26**: a `move` or `pass` out of a field or element leaves the type's
+canonical vacant value (D-225), the aggregate stays live, and a vacant List
+grows from zero. `partial_move.npk`. Blocks nothing of the workbench's: a
+library function that moves a field out of a struct it was lent and puts one
+back was freeing the caller's value; their recipes do not do this (their
+before-numbers stand).
+
+**DEF-11 (found by 1.5.1b step 5's first cumulative-prefix harness, 2026-09-04)
+— a `main` that released the heap and then returned.** `type_layout.npk`,
+`type_generic.npk` and `expr_types.npk` ended `main` with `wild_release_all();
+pass 0i32;`; until step 5 nothing in `main` dropped, so the return was inert.
+With `List<T>` owning, the scope-exit drops of their resolvers ran over
+unmapped memory; the runtime refused the free (`npk_small_check`'s live-magic
+edge, the block's chunk gone and remapped) and the trap route then faulted on
+the same heap — SIGSEGV instead of a controlled stop. **Fixed in step 5 as
+S-27**: TYPE-062 requires the statement after `wild_release_all()` to be
+`exit`; the three tests exit, `argv_after_release`/`leak_cleanup` measure
+inside `exit`'s operand, `npkg` decides its code before releasing, and the
+stray second call 45 test files carried is gone. Blocks nothing of the
+workbench's; a library never calls the release.
+
+**DEF-12 (found with DEF-11, 2026-09-04) — the trap route died after
+`wild_release_all()`.** The main thread's TLS block, which `npk_exec` reads
+through `%fs:8` on every trap's way to `failsafe`, was an internal heap
+allocation, so the release unmapped it and any trap raised afterwards — the
+refused free in DEF-11, or D-210's overflow inside `exit`'s own operand, the
+one place TYPE-062 still lets code run after the release — was a
+segmentation fault, an uncontrolled stop. **Fixed in step 5**: the block is a
+raw mapping (`npk_hmap`), in neither table, unmapped by nothing; the process
+ends with it. `release_trap.npk` overflows inside `exit`'s operand after the
+release and expects `failsafe`'s 93 (139 on the old floor, measured). D-151's
+leak accounting never saw the block either way.
 
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 

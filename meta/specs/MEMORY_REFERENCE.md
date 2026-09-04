@@ -12,10 +12,50 @@ implicitly, and there are no collection pauses.
 Variables in Nitpick exist in one of several allocation states. You can use contextual keywords (like `stack`, `wild`) immediately before the type declaration to explicitly control their residency.
 
 ### 1.1 Default Managed Memory (Implicit RAII/Scope-based)
-If no keyword is provided, the allocation is tracked and managed. The compiler will automatically clean up the binding when it falls out of scope, or at its NLL (Non-Lexical Lifetime) last-use point — deterministic destruction in both cases.
+If no keyword is provided, the allocation is tracked and managed. The compiler drops the binding when its scope exits — after the scope's joins and `defer`s, before its channel reclaims (D-183, D-207) — and at no earlier point; a value's last textual use does not shorten its life. *(The sentence here said "or at its NLL last-use point" until 1.5.1b; the compiler never did that.)*
 ```nitpick
 int32:x = 42i32;           // Automatically managed on stack
 ```
+
+### 1.1a Temporaries (D-246, 1.5.1b step 4)
+
+An owning value that no place takes — a call's result passed straight to another
+call, a literal built and bound to nothing, the operand of a comparison — is a
+**temporary**, and it is dropped **when its statement ends**. The rule has one
+shape everywhere: the value is registered where it is produced, taken by the
+place that keeps it (a binding's initialiser, a `move` parameter, a struct or
+array literal's slot, a `pass`), and dropped flag-guarded at the statement's end
+if nothing took it. The same drop runs on every path out of the statement — a
+`fail`, a `relay`, a `?!` trap, a `break` — and a temporary that feeds a loop's
+or an `if`'s condition dies with the condition. Under `await` the temporaries
+of the awaiting statement live in the frame, since the statement spans a
+suspension. `tests/backend/programs/temp_*.npk` and the `cost` stage's
+`temporaries` probe (the nested form held to 4× the bound form's peak,
+measured ×3.0) pin it.
+
+### 1.1b `List<T>` (D-247, 1.5.1b step 5)
+
+`List<T>` — `{ items: wild T->; count; cap }`, the compiler's own growable
+collection — is **compiler-known and owning**: its generated drop releases the
+`count` elements through `T`'s drop where `T` owns and hands the block back, a
+vacant List (`cap == 0`, D-225) owns nothing, and the type is move-only under
+TYPE-046/047 like every owning type — pass it as a plain argument, consume it
+with a `move T:p` parameter, never copy it binding to binding. Until the
+cycle's snapshot refresh the declaration lives in the `list` module and is
+recognised there (D-205: `src/` compiles under the builder, whose prelude has
+no `List`); it moves into the prelude at 1.5.1b step 5b.
+
+### 1.1c What a `pass` or a `move` transfers (D-183 as corrected at 1.5.1b step 5)
+
+`pass` moves the returned value out implicitly, and `move(place)` explicitly;
+in both the ROOT binding of the place stops owning what it held (D-065's
+whole-binding rule: `pass h.name` invalidates `h`). **A value whose type does
+not drop transfers nothing**: `pass h.n` over an `int64` field, or `move(h.n)`,
+copies the number out and leaves every owning sibling where it was, so `h`'s
+drop still runs at scope exit. Until 1.5.1b the emitter cleared the root's
+drop flag for the copyable case too, and an owning local returned by one of
+its copyable fields leaked its owning fields on every call (DEF-8;
+`pass_field.npk`).
 
 ### 1.2 `stack`
 Forces explicit allocation onto the hardware call stack. Extremely fast (just a pointer bump), with memory reclaimed exactly at the scope's exit.

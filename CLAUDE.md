@@ -587,14 +587,37 @@ macro-emitted function; `clone_verify` now. S-13 closed (parity fails on any
 nonzero `npkg test` exit). No obligation rows moved (141), no rung retired
 (1.5.2/1.5.3/1.5.4 own them), no snapshot refresh (frontend only; `src/`
 adopts none of it until a snapshot understands it — D-205).
-**1.5.1b (the workbench's three defects) is UNDERWAY — step 0 landed**: the
-floor keeps four allocator words and prints them under `NPK_HEAP_STATS`, the
-`cost` stage runs in both runners over `tests/cost/`, and the baseline is
-recorded in `1.5.1b.md` §8. Found on the way: the argv/environ arrays lived
-in the releasable heap (a program reading its argv after `wild_release_all()`
-segfaulted; they are their own mapping now), and `npk_aalloc`'s over-aligned
-path took no lock. The workbench's fourth defect, derive on a payload enum, is
-**S-23** for the user.
+**1.5.1b IS COMPLETE (2026-09-04) — the workbench's findings, fixed before
+planned work** (`meta/roadmap/1.5/1.5.1b.md`; nine landings, each a
+cumulative prefix validated by a full harness, D-228). The floor keeps four
+allocator words and prints them under `NPK_HEAP_STATS`, and the `cost` stage
+runs in both runners over `tests/cost/` (step 0); every file's first
+declaration is its header and the entry points are the root's — `main`/
+`failsafe` outside the root refuse, 243 files gained `mod:<basename>;`
+(D-248, step 1); a root with `main` and no `failsafe` refuses at `main`,
+REACH-003 (step 1b); a view-maker's result BORROWS its operand, by the
+reference's `Views` column, and a view of a temporary is BORROW-012 (D-249,
+step 2); the builders write into a `Sink`, each byte once, and the three
+cost axes hold their bound (step 3); derived comparisons follow the operand's
+SPELLING, DERIVE-006 (D-250, step 3b); a unit without `failsafe` declares
+`@npk_failsafe` and compiles to an object — the `object` stage in both
+runners — and `pub use` re-exports after a plain `use` (step 3c); an owning
+value no place takes is a temporary of its statement, dropped when it ends
+and on every exit, frame-resident across `await` (D-246, step 4); and
+`List<T>` is compiler-known and OWNING, move-only, keyed on the `list` module
+until step 5b moves it into the prelude (D-247, step 5). **Step 5 found five
+defects on the way, all fixed in it**: `pass h.n` cleared the root's drop
+flag for a COPYABLE field (an owning local returned by a copyable field leaked
+since 1.2.3); every descriptor-exhaustion proof in the suite depended on the
+session's soft descriptor limit, so both runners now stand under
+`nitpick.toml`'s `[limits] nofile`; a `move` out of a FIELD dropped the
+moved-out value at the field's next assignment (the resolver's own constant
+folder double-freed, masked by `exit`) — a partial move now leaves the type's
+vacant value and the aggregate stays live (S-26); three unit tests released
+the heap and then RETURNED from `main` — TYPE-062 now requires `exit` after
+`wild_release_all()` (S-27); and the trap route after a release died because
+the main thread's TLS block was heap memory — a raw mapping now. Owed: the
+snapshot refresh, a ceiling for `tests/cost/self.toml`, step 5b (S-25).
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -771,6 +794,22 @@ that carried them retired at the cycle close):
   -ex bt` on the built `npkc` names it in one shot.
 - **Never rewrite `done/` archives or settled DECISIONS text** — annotate
   with dated notes (the D-085/D-202 pattern).
+- **Both runners stand under `nitpick.toml`'s `[limits] nofile` (1024; 1.5.1b
+  step 5).** A descriptor-exhaustion proof means something only under one
+  known soft `RLIMIT_NOFILE`; this machine's session sets 1,048,576, and every
+  such proof in the suite passed against a leaking build until the runners
+  lowered their own limit. Running a program BY HAND runs it under the
+  session's limit — `(ulimit -n 1024; ./prog)` is the spelling that matches
+  the runners, and `fd_ceiling.npk` exits 5 without it.
+- **`pass h.n` over a copyable field no longer clears `h`'s drop flag** (DEF-8,
+  since 1.2.3): the clear is gated on the passed value's type dropping.
+- **`wild_release_all()` is followed by `exit`, or TYPE-062** (1.5.1b step 5):
+  nothing may run after the release, and a `main` that released and then
+  RETURNED ran its drops over unmapped memory the day `List<T>` began to own.
+  Measure after the release inside `exit`'s operand.
+- **A `move` or `pass` out of a FIELD leaves the type's vacant value** (S-26):
+  the aggregate stays live and drops its siblings; a vacant `List` grows from
+  zero.
 
 ### Reserved words that read like ordinary names
 
