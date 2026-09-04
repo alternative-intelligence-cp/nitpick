@@ -52,6 +52,9 @@ Silence has no stage.
 | `LOCK-002` | an implementation above its trait's bound | `lock_levels.npk` |
 | `LOCK-003` | an `acquires` level that is not constant | `lock_levels.npk` |
 | `LOCK-004` | the walk ran out of depth | `too_deep.npk` |
+| `REACH-001` | D-179 — a `failsafe` with no `pick` over its `Error` parameter names nothing | `failsafe_nopick.npk` |
+| `REACH-002` | D-179 — a `failsafe` whose `pick` does not name an error that can reach it (`(*)` counts for nothing) | `failsafe_reach.npk` |
+| `REACH-003` | D-013 — a root that declares `main` and no `failsafe`, refused at `main` with the identities the absent handler owes (1.5.1b step 1b, the workbench's DEF-5) | `missing_failsafe.npk` |
 
 ### The five with no test, and why they cannot have one
 

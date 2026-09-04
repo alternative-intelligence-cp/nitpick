@@ -1,0 +1,23 @@
+// expect-error: NITPICK-REACH-003
+// expect-error-at: 20:1
+//
+// The workbench's DEF-5 (OPEN_DECISIONS §2f; their O-N11): a root that declares
+// `main` and no `failsafe`. Until 1.5.1b step 1b this compiled at exit 0 -- the
+// emitter wrote trap paths calling `@npk_failsafe` into nothing and left `llc`
+// to refuse them -- and, worse, the reach walk returned early without a
+// handler, so the arm contract (REACH-002) was discharged by deleting the
+// handler: import a raiser, call it, omit the `failsafe`, no diagnostic at all.
+// Now the walk refuses at `main` and names what the absent handler owes: the
+// four system identities every executable carries (HeapOom, HeapBadRequest,
+// Unreachable, WildLeak), the user identity below, and `IntOverflow` from the
+// guarded `+` (D-210) -- six, in the set's own order.
+mod:missing_failsafe;
+
+error:Wobble;
+
+func:raise = int32(int32:n) { if (n > 3i32) { fail Wobble; } pass (n + 1i32); };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = raise(2i32) ?! Wobble;
+    exit v;
+};

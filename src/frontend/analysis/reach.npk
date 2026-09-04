@@ -71,6 +71,7 @@ pub struct:Reach = {
     // Where failsafe is, once found; and the prelude's own scope, where the
     // system family's symbols live (the pipeline hands it in).
     int32:failsafe_decl;
+    int32:main_decl;         // the root's `main`, or 0 (DEF-5: a `main` without a handler refuses)
     int32:prelude_scope;
 };
 
@@ -85,7 +86,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
-                     failsafe_decl: 0i32, prelude_scope: 0i32 };
+                     failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
     pass x;
 };
 
@@ -145,6 +146,10 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
     if (d.kind == DeclKind.DeclFunctionDecl) {
         if (raw string_eq(raw intern_get(x.interns, raw decl_name(d)), "failsafe")) {
             x.failsafe_decl = id.index;
+        }
+        // the root's `main` -- D-248 admits it at the root's top level only
+        if (raw string_eq(raw intern_get(x.interns, raw decl_name(d)), "main")) {
+            x.main_decl = id.index;
         }
         drop reach_stmt(x, raw fn_body(x.ast, d), raw REACH_DEPTH());
         pass NIL;
@@ -500,7 +505,41 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
     if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
 
-    if (x.failsafe_decl == 0i32) { pass NIL; }
+    if (x.failsafe_decl == 0i32) {
+        // NO HANDLER (DEF-5, 1.5.1b step 1b; D-013): a root that declares
+        // `main` is an executable and owes exactly one `failsafe`. Until this
+        // step the walk RETURNED here, so the arm contract below was asked of
+        // programs that had a handler and of nothing that had none -- deleting
+        // the handler discharged it -- and the emitter went on to emit trap
+        // paths calling `@npk_failsafe` into nothing, which `llc` refused after
+        // an exit 0 (the workbench's O-N11). Refused at `main`, and the set this
+        // walk has just computed is what the absent handler must name. A root
+        // with neither `main` nor `failsafe` is a library checked alone --
+        // nothing to settle against -- and stays silent.
+        if (x.main_decl == 0i32) { pass NIL; }
+        DeclNode:md = raw ast_decl(x.ast, DeclId{ index: x.main_decl });
+        string:owed = "";
+        int32:k = 0i32;
+        while ((k => int64) < x.rdecls.count) {
+            DeclNode:wd = raw ast_decl(x.ast, DeclId{ index: x.rdecls.items[k => int64] });
+            if (k > 0i32) { owed = string_concat(owed, ", "); }
+            if (x.rquals.items[k => int64] != 0i32) {
+                owed = string_concat(owed, raw intern_get(x.interns, x.rquals.items[k => int64]));
+                owed = string_concat(owed, ".");
+            }
+            owed = string_concat(owed, raw intern_get(x.interns, raw decl_name(wd)));
+            k = k + 1i32;
+        }
+        string:m0 = "`main` without `failsafe` (D-013): an executable supplies exactly one handler, the trap route calls it by name, and this program's would have to name every error that can reach it -- ";
+        string:m1 = string_concat(m0, int_to_string(x.rdecls.count));
+        string:m2 = string_concat(m1, " identit");
+        if (x.rdecls.count == 1i64) { m2 = string_concat(m2, "y: "); } else { m2 = string_concat(m2, "ies: "); }
+        string:m3 = string_concat(m2, owed);
+        drop diaglist_push(x.diags, raw diag_error(raw REACH_NO_FAILSAFE(),
+            string_concat(m3, " -- with `(*)` beneath them but not in for them (D-179)"),
+            md.span));
+        pass NIL;
+    }
     DeclNode:fsd = raw ast_decl(x.ast, DeclId{ index: x.failsafe_decl });
 
     // Find the ONE top-level pick over the parameter in failsafe's body.

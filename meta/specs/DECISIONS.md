@@ -965,6 +965,18 @@ This needs settling before `defer` lowering is implemented.
 
 ---
 
+> **Enforced at 1.5.1b step 1b (2026-09-03; DEF-5, the workbench's O-N11).**
+> Until then a root that declared `main` and no `failsafe` compiled at exit 0:
+> the emitter wrote every trap path as a call to `@npk_failsafe` into nothing
+> and left `llc` to refuse the result — and the reach analysis RETURNED EARLY
+> without a handler, so D-179's arm contract (REACH-002) was asked of programs
+> that had one and of nothing that had none; deleting the handler discharged
+> it. The reach analysis now refuses at `main` (`NITPICK-REACH-003`), naming
+> the identities the absent handler would have to name — the set it had just
+> computed at the line it used to return from. A root with neither `main` nor
+> `failsafe` is a library checked alone and stays legal; a `failsafe` in any
+> module but the root is D-248's `RESOLVE-013` (1.5.1b step 1).
+
 ## D-014 — `defer` does not run on a trap; `failsafe` requirements — **SETTLED; D-163 adds what a `defer` BODY may do (checked since 1.1.0)**: `fail`/`relay` are refused inside one (cleanup runs on an exit already decided), and a cleanup call that can fail is handled in the body with `?!`, an `is_err` branch, or an explicit `?| NIL`**
 
 Resolves the open follow-on from D-013.

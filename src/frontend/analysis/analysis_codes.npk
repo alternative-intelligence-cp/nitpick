@@ -272,3 +272,9 @@ pub func:SUSPEND_GUARD = string() never fails { pass "NITPICK-SUSPEND-003"; };
 // nothing — the compile-time force and the defensive floor, both.
 pub func:REACH_NO_PICK = string() never fails  { pass "NITPICK-REACH-001"; };
 pub func:REACH_UNNAMED = string() never fails  { pass "NITPICK-REACH-002"; };
+// 1.5.1b step 1b (DEF-5, D-013): a root that declares `main` and no `failsafe`.
+// The trap route calls `@npk_failsafe` by name, so the emitter had been emitting
+// calls into nothing at exit 0 for `llc` to refuse -- and `reach_settle` returned
+// early with no handler, so the whole arm contract (REACH-002) was discharged by
+// DELETING the handler. Refused at `main`, naming what the absent handler owes.
+pub func:REACH_NO_FAILSAFE = string() never fails { pass "NITPICK-REACH-003"; };

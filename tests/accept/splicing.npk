@@ -123,3 +123,16 @@ func:main = int32(cstring[]:_~argv) {
     if (by.len != 4i64)                           { exit 5i32; }
     exit 0i32;
 };
+
+// THE HANDLER A ROOT OWES (D-013; REACH-003 at 1.5.1b step 1b): this file
+// had a `main` and no `failsafe` from the day it was written, and the reach
+// analysis never asked until the workbench's DEF-5 -- every identity the
+// trap route can hand the handler is named (D-179), `(*)` beneath them.
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (IntOverflow) { exit 93i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};
