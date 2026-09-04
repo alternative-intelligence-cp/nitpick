@@ -154,14 +154,19 @@ pub func:strtab_add = string(StrTable->:t, move string:data) never fails {
 
 // One byte of a `c"…"` constant. Printable ASCII stays itself; `"` and `\` and
 // everything else become `\XX` — two hex digits, uppercase, the seed's encoding.
-pub func:esc_byte = string(uint8:b) never fails {
+// INTO THE SINK (1.5.1b step 3, DEF-1 axis 3): one or three bytes written
+// where they land. This returned a one- or three-byte VIEW of a wild block per
+// byte of every literal -- an allocation per byte, never freed -- and its two
+// callers concatenated those onto a growing prefix, which is where the
+// quadratic time and the 107 GiB of requests for one 480 000-byte literal
+// came from.
+pub func:esc_byte_into = NIL(Sink->:out, uint8:b) never fails {
     if (b >= 32u8) {
         if (b < 127u8) {
             if (b != 34u8) {
                 if (b != 92u8) {
-                    wild int8->:one = alloc(1i64);
-                    one[0i64] = b =>! int8;
-                    pass (string_from_bytes(one, 1i64));
+                    drop sink_write_byte(out, b =>! int8);
+                    pass NIL;
                 }
             }
         }
@@ -174,11 +179,10 @@ pub func:esc_byte = string(uint8:b) never fails {
     // extension rule, which is what "correct" has to mean for code that runs
     // under two compilers until the fixpoint closes.
     int64:wide = (b =>! int64) & 255i64;
-    wild int8->:buf = alloc(3i64);
-    buf[0i64] = 92i8;                                   // backslash
-    buf[1i64] = hex.ptr[(wide / 16i64)] =>! int8;
-    buf[2i64] = hex.ptr[(wide % 16i64)] =>! int8;
-    pass (string_from_bytes(buf, 3i64));
+    drop sink_write_byte(out, 92i8);                    // backslash
+    drop sink_write_byte(out, hex.ptr[(wide / 16i64)] =>! int8);
+    drop sink_write_byte(out, hex.ptr[(wide % 16i64)] =>! int8);
+    pass NIL;
 };
 
 // The whole table, as module-level constants. Called by the driver once the
@@ -187,18 +191,22 @@ pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) never fails {
     int64:i = 0i64;
     while (i < t.v.count) {
         string->:data = $$i t.v.items[i];
-        string:enc = "";
+        // THE LINE AS ITS PIECES (1.5.1b step 3, DEF-1 axis 3): the escaped
+        // bytes go straight into the module stream, never through a growing
+        // `enc` -- the reporter's 480 000-byte literal requested 107 GiB here.
+        drop irw_write(w, "@.str.");
+        drop irw_write(w, int_to_string(i));
+        drop irw_write(w, " = private unnamed_addr constant [");
+        drop irw_write(w, int_to_string(data.len));
+        drop irw_write(w, " x i8] c\"");
+        Sink->:es = raw irw_sink(w);
         int64:j = 0i64;
         while (j < data.len) {
-            enc = string_concat(enc, raw esc_byte(data.ptr[j] => uint8));
+            drop esc_byte_into(es, data.ptr[j] => uint8);
             j = j + 1i64;
         }
-        string:h1 = string_concat("@.str.", int_to_string(i));
-        string:h2 = string_concat(h1, " = private unnamed_addr constant [");
-        string:h3 = string_concat(h2, int_to_string(data.len));
-        string:h4 = string_concat(h3, " x i8] c\"");
-        string:h5 = string_concat(h4, enc);
-        drop irw_raw(w, string_concat(h5, "\""));
+        drop irw_write(w, "\"");
+        drop irw_newline(w);
         i = i + 1i64;
     }
     pass NIL;
@@ -9407,48 +9415,68 @@ func:emit_deref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 // here is a defect). Recurses for struct and array literals; everything the
 // folder handles (scalars, strings, arithmetic, `comptime`, a reference to
 // another module binding) goes through `fold_const`.
-pub func:emit_global_const = string(ExprEmitter->:x, ExprId:eid) never fails {
+// INTO A SINK (1.5.1b step 3, DEF-1 axis 1): the initialiser's pieces are
+// written in order -- a struct in an array in a struct nests into the same
+// sink -- so a 26 838-row table costs its text once, not once per row. True
+// when every piece rendered; false at the first that could not, and the one
+// caller discards its sink then (an unfoldable constant is a defect, not a
+// rung, and nothing half-written reaches the module stream). This RETURNED
+// the text, and its two helpers built it by `out = cat3(out, …)` per field
+// and per row: quadratic in the rows, which is what the reporter's compiled
+// tzdb measured.
+pub func:emit_global_const_into = bool(ExprEmitter->:x, ExprId:eid,
+                                       Sink->:out) never fails {
     ExprNode:n = raw ast_expr(x.ast, eid);
     int32:gcid = raw exprtypes_get(x.et, eid);
 
     if (n.kind == ExprKind.ExprSentinelLiteral) {
         if (n.payload == 0i64) {
             if ((raw type_kind(x.fe.ctx.types, gcid)) == (raw TY_OPTIONAL())) {
-                pass "zeroinitializer";
+                drop sink_write(out, "zeroinitializer");
+                pass true;
             }
-            pass "0";
+            drop sink_write(out, "0");
+            pass true;
         }
-        if (n.payload == 1i64) { pass "null"; }
+        if (n.payload == 1i64) { drop sink_write(out, "null"); pass true; }
         int32:sb = raw type_int_bits(x.fe.ctx.types, gcid);
-        pass (raw tbb_min_decimal(sb));
+        drop sink_write(out, raw tbb_min_decimal(sb));
+        pass true;
     }
 
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
-        pass (raw emit_global_struct_const(x, eid, n, gcid));
+        pass (raw emit_global_struct_into(x, eid, n, gcid, out));
     }
     if (n.kind == ExprKind.ExprArrayLiteralExpr) {
-        pass (raw emit_global_array_const(x, eid, n, gcid));
+        pass (raw emit_global_array_into(x, eid, n, gcid, out));
     }
 
     ConstVal:cv = raw fold_const(x.tr, eid, x.scope);
-    if (!(raw cv_folded(cv))) { pass ""; }
+    if (!(raw cv_folded(cv))) { pass false; }
     if (cv.kind == (raw CV_STRING())) {
         string:g = raw strtab_add(x.strs, string_concat(cv.text, ""));
         string:ln = int_to_string(cv.text.len);
-        pass (raw cat5("{ ptr ", g, ", i64 ",
-                  raw cat5(ln, ", i64 ", ln, " }", ""), ""));
+        drop sink_write(out, "{ ptr ");
+        drop sink_write(out, g);
+        drop sink_write(out, ", i64 ");
+        drop sink_write(out, ln);
+        drop sink_write(out, ", i64 ");
+        drop sink_write(out, ln);
+        drop sink_write(out, " }");
+        pass true;
     }
-    pass (int_to_string(cv.num));
+    drop sink_write(out, int_to_string(cv.num));
+    pass true;
 };
 
 // A struct literal as a constant: every field in DECLARATION order, each
 // typed, so `{ i32 5, { ptr, i64, i64 } {…} }` matches the struct's layout.
-func:emit_global_struct_const = string(ExprEmitter->:x, ExprId:eid,
-                                       ExprNode:n, int32:stid) never fails {
+func:emit_global_struct_into = bool(ExprEmitter->:x, ExprId:eid,
+                                    ExprNode:n, int32:stid, Sink->:out) never fails {
     DeclId:sdid = DeclId{ index: raw type_decl(x.fe.ctx.types, stid) };
     DeclNode:sd = raw ast_decl(x.ast, sdid);
     int32:pairs = (raw expr_list_count(n)) / 2i32;
-    string:out = "{ ";
+    drop sink_write(out, "{ ");
     int32:emitted = 0i32;
     int32:fi = 0i32;
     while (fi < (raw item_member_count(x.ast, sd))) {
@@ -9471,38 +9499,40 @@ func:emit_global_struct_const = string(ExprEmitter->:x, ExprId:eid,
                     pi = pi + 1i32;
                 }
             }
-            if (!found) { pass ""; }
+            if (!found) { pass false; }
             FieldInfo:info = raw struct_field(x.tr, stid, fname, x.scope);
-            if (!info.found) { pass ""; }
+            if (!info.found) { pass false; }
             LlType:fll = raw ll_type(x.fe.ctx, info.type_id);
-            if (!(raw ll_is_ok(fll))) { pass ""; }
-            string:fc = raw emit_global_const(x, vid);
-            if (fc.len == 0i64) { pass ""; }
-            if (emitted > 0i32) { out = string_concat(out, ", "); }
-            out = raw cat3(out, fll.text, string_concat(" ", fc));
+            if (!(raw ll_is_ok(fll))) { pass false; }
+            if (emitted > 0i32) { drop sink_write(out, ", "); }
+            drop sink_write(out, fll.text);
+            drop sink_write(out, " ");
+            if (!(raw emit_global_const_into(x, vid, out))) { pass false; }
             emitted = emitted + 1i32;
         }
         fi = fi + 1i32;
     }
-    pass (string_concat(out, " }"));
+    drop sink_write(out, " }");
+    pass true;
 };
 
 // An array literal as a constant: every element typed the same, in order.
-func:emit_global_array_const = string(ExprEmitter->:x, ExprId:eid,
-                                      ExprNode:n, int32:atid) never fails {
+func:emit_global_array_into = bool(ExprEmitter->:x, ExprId:eid,
+                                   ExprNode:n, int32:atid, Sink->:out) never fails {
     int32:elem = raw type_elem(x.fe.ctx.types, atid);
     LlType:ell = raw ll_type(x.fe.ctx, elem);
-    if (!(raw ll_is_ok(ell))) { pass ""; }
+    if (!(raw ll_is_ok(ell))) { pass false; }
     int32:count = raw expr_list_count(n);
-    string:out = "[ ";
+    drop sink_write(out, "[ ");
     for (int32:i in 0i32...count) {
         ExprId:vid = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
-        string:ec = raw emit_global_const(x, vid);
-        if (ec.len == 0i64) { pass ""; }
-        if (i > 0i32) { out = string_concat(out, ", "); }
-        out = raw cat3(out, ell.text, string_concat(" ", ec));
+        if (i > 0i32) { drop sink_write(out, ", "); }
+        drop sink_write(out, ell.text);
+        drop sink_write(out, " ");
+        if (!(raw emit_global_const_into(x, vid, out))) { pass false; }
     }
-    pass (string_concat(out, " ]"));
+    drop sink_write(out, " ]");
+    pass true;
 };
 
 func:emit_struct_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {

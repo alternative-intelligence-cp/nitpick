@@ -15,6 +15,7 @@
 mod:smt_table;
 
 use "../../frontend/list.npk".*;
+use "../../frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
 
 pub struct:ObTable = {
     bool:want_files;         // --obligations DIR was given
@@ -46,24 +47,27 @@ pub func:file_number = string(int64:n) never fails {
 };
 
 // The index and the row list, as the two files' texts.
+// THROUGH A SINK (1.5.1b step 3): a row per obligation and a line per file
+// are program-sized, and appending each to a growing prefix was quadratic in
+// them; the sink's bytes are copied out once.
 pub func:obl_index_text = string(ObTable->:t) never fails {
-    string:s = "";
+    Sink:s = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...t.files.count) {
-        s = string_concat(s, raw file_number(i + 1i64));
-        s = string_concat(s, "\t");
-        s = string_concat(s, string_from_bytes(t.file_syms.items[i].ptr, t.file_syms.items[i].len));
-        s = string_concat(s, "\t");
-        s = string_concat(s, int_to_string(t.file_checks.items[i]));
-        s = string_concat(s, "\n");
+        drop sink_write(@s, raw file_number(i + 1i64));
+        drop sink_write(@s, "\t");
+        drop sink_write(@s, string_from_bytes(t.file_syms.items[i].ptr, t.file_syms.items[i].len));
+        drop sink_write(@s, "\t");
+        drop sink_write(@s, int_to_string(t.file_checks.items[i]));
+        drop sink_write(@s, "\n");
     }
-    pass s;
+    pass (raw sink_into_string(move(s)));
 };
 
 pub func:obl_rows_text = string(ObTable->:t) never fails {
-    string:s = "";
+    Sink:s = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...t.rows.count) {
-        s = string_concat(s, string_from_bytes(t.rows.items[i].ptr, t.rows.items[i].len));
-        s = string_concat(s, "\n");
+        drop sink_write(@s, string_from_bytes(t.rows.items[i].ptr, t.rows.items[i].len));
+        drop sink_write(@s, "\n");
     }
-    pass s;
+    pass (raw sink_into_string(move(s)));
 };

@@ -28,6 +28,7 @@ mod:verify;
 
 use "../src/frontend/list.npk".*;
 use "../src/frontend/paths.npk".*;
+use "../src/frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
 use "../src/backend/smt/smt_kinds.npk".*;
 use "../src/backend/smt/smt_manifest.npk".*;
 use "../lib/nfs.npk".*;
@@ -211,8 +212,10 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
     }
     List<string>:sorted = raw strlist_sorted_unique(keys);
     string:opts = raw text_join(c.m.z3_options, " ");
-    string:out = raw man_header(string_from_bytes(c.m.z3_version.ptr, c.m.z3_version.len),
-                                string_from_bytes(c.m.z3_sha256.ptr, c.m.z3_sha256.len), opts);
+    // THROUGH A SINK (1.5.1b step 3): a row per obligation is program-sized.
+    Sink:sk = raw sink_to_buffer(4096i64);
+    drop sink_write(@sk, raw man_header(string_from_bytes(c.m.z3_version.ptr, c.m.z3_version.len),
+                                        string_from_bytes(c.m.z3_sha256.ptr, c.m.z3_sha256.len), opts));
     for (int64:j in 0i64...sorted.count) {
         List<string>:f = raw split_tabs(raw strlist_view(sorted, j));
         int32:v = raw ov_of_name(raw strlist_view(f, 3i64));
@@ -224,11 +227,11 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
         if (v == (raw OV_UNENCODED())) { tier = "-"; }
         string:elision = "retained";
         if (v == (raw OV_DISCHARGED())) { elision = "elided"; }
-        out = string_concat(out, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
-                                             raw strlist_view(f, 0i64)));
-        out = string_concat(out, "\n");
+        drop sink_write(@sk, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
+                                         raw strlist_view(f, 0i64)));
+        drop sink_write(@sk, "\n");
     }
-    pass out;
+    pass (raw sink_into_string(move(sk)));
 };
 
 // `hash kind verdict symbol` per row of a parsed manifest, sorted unique --

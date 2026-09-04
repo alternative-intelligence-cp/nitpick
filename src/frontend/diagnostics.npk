@@ -282,6 +282,14 @@ pub func:sink_write = NIL(Sink->:out, string:text) never fails {
     pass NIL;
 };
 
+// ONE BYTE (1.5.1b step 3): the escapers write their one or three bytes
+// straight into the sink they are filling, so a program-sized literal costs
+// its length once and allocates nothing per byte.
+pub func:sink_write_byte = NIL(Sink->:out, int8:b) never fails {
+    drop list_push(@out.v, b);
+    pass NIL;
+};
+
 pub func:sink_length = int64(Sink->:out) never fails {
     pass out.v.count;
 };
@@ -294,6 +302,16 @@ pub func:sink_length = int64(Sink->:out) never fails {
 // 1.4.7 moved the storage.
 pub func:sink_view = string(Sink->:out) never fails {
     pass string_from_bytes(out.v.items, out.v.count);
+};
+
+// THE SINK'S BYTES AS AN OWNED STRING, CONSUMING THE SINK (1.5.1b step 3):
+// the builders that assemble a program-sized text in a sink of their own
+// hand it back this way. A `move` parameter, not a borrow, so no analysis
+// old or new reads the result as a borrow of the caller's local (D-004's
+// conservative rule closes `f(@local)` for every user function, and the
+// SNAPSHOT that builds `src/` applies it to a builtin's result too).
+pub func:sink_into_string = string(move Sink:s) never fails {
+    pass (string_concat(string_from_bytes(s.v.items, s.v.count), ""));
 };
 
 pub func:sink_byte_at = uint8(Sink->:out, int64:i) never fails {

@@ -22,6 +22,7 @@ mod:build;
 
 use "../src/frontend/list.npk".*;
 use "../src/frontend/paths.npk".*;
+use "../src/frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
 use "../lib/nfs.npk".*;
 use "../lib/nio.npk".*;
 use "../lib/nproc.npk".*;
@@ -615,16 +616,18 @@ pub func:note_failure = NIL(Ctx->:c, string:msg) never fails {
 
 // `STATUS<TAB>suite<TAB>name<TAB>message`, one line per verdict.
 pub func:verdicts_text = string(Ctx->:c) never fails {
-    string:out = "";
+    // THROUGH A SINK (1.5.1b step 3): one line per verdict is program-sized
+    // for the runner, and appending each to a growing prefix was quadratic.
+    Sink:sk = raw sink_to_buffer(4096i64);
     for (int64:i in 0i64...c.verdicts.count) {
-        if (c.verdicts.items[i].ok) { out = string_concat(out, "PASS\t"); }
-        else { out = string_concat(out, "FAIL\t"); }
-        out = string_concat(out, string_from_bytes(c.verdicts.items[i].suite.ptr, c.verdicts.items[i].suite.len));
-        out = string_concat(out, "\t");
-        out = string_concat(out, string_from_bytes(c.verdicts.items[i].name.ptr, c.verdicts.items[i].name.len));
-        out = string_concat(out, "\t");
-        out = string_concat(out, raw text_replace_byte(string_from_bytes(c.verdicts.items[i].msg.ptr, c.verdicts.items[i].msg.len), 10u8, 32u8));
-        out = string_concat(out, "\n");
+        if (c.verdicts.items[i].ok) { drop sink_write(@sk, "PASS\t"); }
+        else { drop sink_write(@sk, "FAIL\t"); }
+        drop sink_write(@sk, string_from_bytes(c.verdicts.items[i].suite.ptr, c.verdicts.items[i].suite.len));
+        drop sink_write(@sk, "\t");
+        drop sink_write(@sk, string_from_bytes(c.verdicts.items[i].name.ptr, c.verdicts.items[i].name.len));
+        drop sink_write(@sk, "\t");
+        drop sink_write(@sk, raw text_replace_byte(string_from_bytes(c.verdicts.items[i].msg.ptr, c.verdicts.items[i].msg.len), 10u8, 32u8));
+        drop sink_write(@sk, "\n");
     }
-    pass out;
+    pass (raw sink_into_string(move(sk)));
 };

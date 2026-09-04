@@ -115,8 +115,11 @@ pub func:irw_to_buffer = IrWriter() never fails {
 };
 
 // THE SINK A NON-ALLOCA LINE GOES TO: the body while a function is open, the
-// module stream otherwise.
-func:irw_sink = Sink->(IrWriter->:w) never fails {
+// module stream otherwise. Public since 1.5.1b step 3: the builders that
+// used to RETURN an accumulated string -- a global initialiser, the site
+// tables, an escaped literal -- write their pieces into it in order, and the
+// emitter is single-threaded, so nothing interleaves with a line in progress.
+pub func:irw_sink = Sink->(IrWriter->:w) never fails {
     if (w.in_fn) { pass (@w.body); }
     if (w.seen_fn) { pass (@w.tail); }
     pass (@w.out);
@@ -200,6 +203,28 @@ pub func:irw_site = int32(IrWriter->:w, move string:path, int32:line) never fail
 };
 
 // --- writing --------------------------------------------------------------------
+
+// A PIECE OF A LINE, no newline (1.5.1b step 3, DEF-1): a program-sized line
+// is written as its pieces, each once, instead of assembled by copying an
+// ever-longer prefix. `irw_newline` ends it.
+pub func:irw_write = NIL(IrWriter->:w, string:text) never fails {
+    drop sink_write(raw irw_sink(w), text);
+    pass NIL;
+};
+
+pub func:irw_newline = NIL(IrWriter->:w) never fails {
+    drop sink_write(raw irw_sink(w), "\n");
+    pass NIL;
+};
+
+// A SINK'S BYTES AS ONE RAW LINE: an initialiser is assembled apart, so a
+// failure midway leaves nothing in the module stream.
+pub func:irw_raw_sink = NIL(IrWriter->:w, Sink->:s) never fails {
+    Sink->:d = raw irw_sink(w);
+    drop sink_append(d, s);
+    drop sink_write(d, "\n");
+    pass NIL;
+};
 
 // A line at module level: a type definition, a declaration, a function header.
 pub func:irw_raw = NIL(IrWriter->:w, string:text) never fails {

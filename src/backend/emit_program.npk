@@ -995,15 +995,19 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         drop refuse(diags, raw iv_from_ll_at(x, gll, gt, d.span));
         pass NIL;
     }
-    string:cval = "";
+    // THE INITIALISER INTO ITS OWN SINK (1.5.1b step 3, DEF-1 axis 1), then
+    // the sink onto the module stream as the line's tail: a failure midway
+    // discards the sink and writes nothing.
+    Sink:cs = raw sink_to_buffer(256i64);
+    bool:rendered = true;
     ExprId:init = raw global_init(d);
     if (raw expr_is_none(init)) {
-        cval = "zeroinitializer";
+        drop sink_write(@cs, "zeroinitializer");
     } else {
-        cval = raw emit_global_const(x, init);
+        rendered = raw emit_global_const_into(x, init, @cs);
     }
     x.scope = saved_scope;
-    if (cval.len == 0i64) {
+    if (!rendered) {
         // The checker proved the initialiser constant, so a failure to render is
         // a defect, not a rung.
         drop refuse(diags, raw iv_broken(d.span));
@@ -1016,8 +1020,9 @@ func:emit_one_global = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // same fact than a checker rule alone.
     string:sym = raw mangled_fn_sym(x.fe.ctx, item.index,
                      raw intern_get(x.interns, raw decl_name(d)));
-    drop irw_raw(x.fe.w, raw cat5(sym, " = ", "constant", " ",
-                     raw cat3(gll.text, " ", cval)));
+    drop irw_write(x.fe.w, raw cat5(sym, " = ", "constant", " ",
+                     raw cat3(gll.text, " ", "")));
+    drop irw_raw_sink(x.fe.w, @cs);
     pass NIL;
 };
 
@@ -1980,44 +1985,58 @@ func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) never fails {
 // registration order (D-078).
 func:emit_site_tables = NIL(IrWriter->:w) never fails {
     int32:n = (w.site_lines.count) =>! int32;   // bounded by irw_site's own `i + 1i32`
+    // THE THREE TABLES AS THEIR PIECES (1.5.1b step 3, DEF-1 axis 2): a
+    // site's path bytes, its line, and its header pair go into the module
+    // stream where they land. This built `enc`, `ls` and `ps` by appending
+    // to a growing prefix per byte and per site -- quadratic in the sites,
+    // which is what the reporter's 4 000-statement program measured.
     // the byte constants first
     int32:i = 0i32;
     while (i < n) {
         string->:sp2 = $$i w.site_paths.items[i => int64];
-        string:enc = "";
+        drop irw_write(w, "@npk.sitep.");
+        drop irw_write(w, int_to_string((i + 1i32) => int64));
+        drop irw_write(w, " = internal constant [");
+        drop irw_write(w, int_to_string(sp2.len));
+        drop irw_write(w, " x i8] c\"");
+        Sink->:es = raw irw_sink(w);
         int64:bj = 0i64;
         while (bj < sp2.len) {
-            enc = string_concat(enc, raw esc_byte(sp2.ptr[bj] => uint8));
+            drop esc_byte_into(es, sp2.ptr[bj] => uint8);
             bj = bj + 1i64;
         }
-        drop irw_raw(w, raw cat5("@npk.sitep.", int_to_string((i + 1i32) => int64),
-                          " = internal constant [", int_to_string(sp2.len),
-                          raw cat3(" x i8] c\"", enc, "\"")));
+        drop irw_write(w, "\"");
+        drop irw_newline(w);
         i = i + 1i32;
     }
     // the line table, index 0 = the runtime's reserved site
-    string:ls = "i32 0";
+    drop irw_write(w, "@npk.site.lines = internal constant [");
+    drop irw_write(w, int_to_string((n + 1i32) => int64));
+    drop irw_write(w, " x i32] [i32 0");
     i = 0i32;
     while (i < n) {
-        ls = raw cat3(ls, ", i32 ",
-                 int_to_string(w.site_lines.items[i => int64] => int64));
+        drop irw_write(w, ", i32 ");
+        drop irw_write(w, int_to_string(w.site_lines.items[i => int64] => int64));
         i = i + 1i32;
     }
-    drop irw_raw(w, raw cat5("@npk.site.lines = internal constant [",
-                      int_to_string((n + 1i32) => int64), " x i32] [", ls, "]"));
+    drop irw_write(w, "]");
+    drop irw_newline(w);
     // the path header table: { ptr, i64 } pairs (pointer, byte length)
-    string:ps = "{ ptr, i64 } { ptr null, i64 0 }";
+    drop irw_write(w, "@npk.site.paths = internal constant [");
+    drop irw_write(w, int_to_string((n + 1i32) => int64));
+    drop irw_write(w, " x { ptr, i64 }] [{ ptr, i64 } { ptr null, i64 0 }");
     i = 0i32;
     while (i < n) {
         string->:sp3 = $$i w.site_paths.items[i => int64];
-        ps = raw cat5(ps, ", { ptr, i64 } { ptr @npk.sitep.",
-                 int_to_string((i + 1i32) => int64),
-                 ", i64 ", string_concat(int_to_string(sp3.len), " }"));
+        drop irw_write(w, ", { ptr, i64 } { ptr @npk.sitep.");
+        drop irw_write(w, int_to_string((i + 1i32) => int64));
+        drop irw_write(w, ", i64 ");
+        drop irw_write(w, int_to_string(sp3.len));
+        drop irw_write(w, " }");
         i = i + 1i32;
     }
-    drop irw_raw(w, raw cat5("@npk.site.paths = internal constant [",
-                      int_to_string((n + 1i32) => int64), " x { ptr, i64 }] [",
-                      ps, "]"));
+    drop irw_write(w, "]");
+    drop irw_newline(w);
     // the lookups
     string:cnt = int_to_string((n + 1i32) => int64);
     drop irw_raw(w, "define internal i32 @npk_site_line(i32 %i) {");
