@@ -570,6 +570,23 @@ ends with it. `release_trap.npk` overflows inside `exit`'s operand after the
 release and expects `failsafe`'s 93 (139 on the old floor, measured). D-151's
 leak accounting never saw the block either way.
 
+**DEF-13 (found by the close-out refresh's harness, 2026-09-04; latent since
+1.2.3, exposed by S-26) — the diagnostic sort read slots it had moved out of.**
+`diaglist_sort`'s walk-back read `list.items[k-1]` after the shift had moved
+those elements up, which the old bit-copy `move` tolerated (the bytes stayed)
+and the vacate does not; the first compiler built by the step-5 emitter — the
+refreshed snapshot, compiling `tools/check.npk` — put a zeroed diagnostic in
+second place and lost the last one, and five rejection tests changed their
+verdict at once while every program, the selfhost fixpoint and `repro` stayed
+green. **The lesson is the instrument**: byte identity of stage 2 and stage 3
+proves the compiler compiles ITSELF consistently, not that the tools it builds
+behave as the old builder's did; the refresh's own harness — tools and the
+compiler under test built by the NEW snapshot — is the first run of that
+compiler's semantics over the suite, and it is the proof a refresh needs. The
+seed README says so now. **Fixed as step 5c**: the sort carries its hole the
+way an insertion sort does — one move out, neighbours read through borrows,
+each shift one move up, one fill — correct under either meaning of `move`.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
