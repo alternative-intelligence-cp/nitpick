@@ -16235,3 +16235,41 @@ exactly its type — which is what the reporter's case 6 needed to fire.
 Three programs changed hands: `srcmgr_text_proven` returns the view it
 already held, `lexer_init` returns its literal directly, and `npkg`'s
 `ctx_init` copies the root of its `move` parameter instead of viewing it.)*
+
+## D-250 — derived comparisons over NAMED types and payload enums — **SETTLED (user decision, 2026-09-03: "ratify S-23 as recommended"; 1.5.1b step 3b)**
+
+The workbench's DEF-4 (their O-N10): `#[derive(Ord)]` on an enum with a payload
+compiled to a TAG-ONLY order — `Literal(7).cmp(Literal(9))` was `Equal` — by a
+1.0.9d design comment that was right for `Hash` and wrong for an order; and
+`#[derive(Eq)]` on the same enum, or on a struct holding a derived struct,
+refused with a type error INSIDE `<derived-1>`, a file the user cannot open,
+because every comparison the generator wrote was an operator and an operator
+is refused on a named type. No test in the tree derived over a named type;
+the path was written and never run. **The decision.** (1) A derived `Eq`,
+`Ord` and `PartialOrd` on an enum compare the TAG first (declaration order,
+as before) and, for equal tags, the payload of that variant — generated as a
+`pick` over both operands per variant. (2) An operand's spelling decides how
+it is compared, because the generator sees TYPE NODES and not types (derive
+runs before collection): a builtin spelling by its operator, a NAMED type
+through its own `eq`/`cmp`/`partial_cmp` (relayed — the prelude declares
+the three methods may-fail), a `simd` by the lane-collapsing `.any()` as
+before, and a generic parameter of the subject by operator (D-161's
+no-bound story: the prelude implements `Eq`/`Ord` for no scalar, so
+`Box<int32>` has no method to call — `Eq` over a parameter field derives, an
+order over one stays refused by the checker as before, and whether the
+prelude should implement the traits for the scalars so a synthesized bound
+and the method form could serve is S-24). (3) A member no derived comparison can
+be written for refuses AT THE USER'S DECLARATION, by name (`NITPICK-DERIVE-006`),
+naming the field or variant and its spelling: an OWNING payload (`string`,
+`buffer`, `dyn`, `List<…>`, `OwnedFd`, an arena, a sync primitive, a
+`Channel`), which the `pick` cannot bind without consuming it (S-5/D-216's
+consuming form is the only binding form; a borrowing form is a separate
+question), and an array or slice, which has no `==`. A named USER type is
+admitted and compared through its method — its drop cannot be known before
+collection — so a user type that turns out to own still reports inside
+`<derived-N>`: the one gap left, recorded here. (4) `Hash` stays tag-only
+(D-123; a colliding hash is correct, if weak). (5) The stale "refused rather
+than generated" comment goes. **Landed at 1.5.1b step 3b**: `derive_payload.npk`
+pins the reporter's 321 (Less, Equal, Less) and the struct-through-`Inner`
+shapes; `payload_owning.npk` the three refusals; `deriving.npk` the accepted
+shapes. A payload-less enum's derived bodies are byte-identical to before.

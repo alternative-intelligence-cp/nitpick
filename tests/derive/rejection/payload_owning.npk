@@ -1,0 +1,21 @@
+// A MEMBER NO DERIVED COMPARISON CAN BE WRITTEN FOR refuses at the user's
+// declaration, by name (D-250, 1.5.1b step 3b) -- never as a type error at
+// a `<derived-1>` line nobody wrote. An owning payload cannot be bound by the
+// `pick` a payload comparison needs without consuming it (D-216's is the only
+// binding form); an array has no `==`; a `List` owns.
+mod:payload_owning;
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 10:1
+#[derive(Eq)]
+enum:Msg = { Text(string); Quit; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 15:1
+#[derive(Ord)]
+struct:Row = { int32[4]:cells; int32:n; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 20:1
+#[derive(PartialOrd)]
+struct:Bag = { List<int32>:items; };

@@ -1,0 +1,87 @@
+// expect-exit: 121
+//
+// DERIVED COMPARISONS OVER PAYLOADS AND NAMED TYPES (D-250, 1.5.1b step 3b;
+// the workbench's DEF-4, their `derive_payload_enum`). Until this step a
+// derived `Ord` on an enum compared the TAG alone -- `Literal(7).cmp(Literal(9))`
+// was `Equal` -- and a derived `Eq` on a payload enum, or on a struct holding
+// a named type, refused with a type error inside `<derived-1>`. Now: the tag
+// first, then the payload of equal tags; a named field or payload through its
+// own trait method. The reporter's corrected expectation was 321 = Less (300)
+// + Equal (20) + Less (1); an exit status is one byte, so it is 121 here:
+// Less (100), Equal (20), Less (1).
+mod:derive_payload;
+error:E9;
+
+#[derive(Eq, Ord, PartialOrd)]
+enum:Part = { Literal(uint16); Year4; };
+
+#[derive(Eq, Ord, PartialOrd)]
+struct:Inner = { int32:a; };
+
+#[derive(Eq, Ord, PartialOrd)]
+struct:Outer = { Inner:i; int32:b; };
+
+#[derive(Eq, Ord)]
+enum:Two = { Pair(int32, int32); None; };
+
+#[derive(Eq, Ord)]
+enum:Wrap = { Boxed(Inner); Bare; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:acc = 0i32;
+    Part:l7 = Part.Literal(7u16);
+    Part:l9 = Part.Literal(9u16);
+    Part:l7b = Part.Literal(7u16);
+    Part:y4 = Part.Year4;
+    pick (l7.cmp(l9) ?! E9)  { (Ordering.Less)  { acc = acc + 100i32; }, (*) { exit 1i32; } }
+    pick (l7.cmp(l7b) ?! E9) { (Ordering.Equal) { acc = acc + 20i32; },  (*) { exit 2i32; } }
+    pick (l7.cmp(y4) ?! E9)  { (Ordering.Less)  { acc = acc + 1i32; },   (*) { exit 3i32; } }
+    pick (l9.cmp(l7) ?! E9)  { (Ordering.Greater) { }, (*) { exit 4i32; } }
+    pick (y4.cmp(l7) ?! E9)  { (Ordering.Greater) { }, (*) { exit 5i32; } }
+    if (!(l7.eq(l7b) ?! E9)) { exit 6i32; }
+    if (l7.eq(l9) ?! E9)     { exit 7i32; }
+    if (l7.eq(y4) ?! E9)     { exit 8i32; }
+    if (!(y4.eq(Part.Year4) ?! E9)) { exit 9i32; }
+    Ordering?:p = l7.partial_cmp(l9) ?! E9;
+    pick (p ?? Ordering.Equal) { (Ordering.Less) { }, (*) { exit 10i32; } }
+
+    // a struct holding a named type: through `Inner`'s own derived methods
+    Outer:o1 = Outer{ i: Inner{ a: 1i32 }, b: 9i32 };
+    Outer:o2 = Outer{ i: Inner{ a: 2i32 }, b: 0i32 };
+    Outer:o3 = Outer{ i: Inner{ a: 1i32 }, b: 9i32 };
+    if (!(o1.eq(o3) ?! E9)) { exit 11i32; }
+    if (o1.eq(o2) ?! E9)    { exit 12i32; }
+    pick (o1.cmp(o2) ?! E9) { (Ordering.Less)    { }, (*) { exit 13i32; } }   // the named field decides first
+    pick (o2.cmp(o1) ?! E9) { (Ordering.Greater) { }, (*) { exit 14i32; } }
+    pick (o1.cmp(o3) ?! E9) { (Ordering.Equal)   { }, (*) { exit 15i32; } }
+    Ordering?:q = o1.partial_cmp(o2) ?! E9;
+    pick (q ?? Ordering.Equal) { (Ordering.Less) { }, (*) { exit 16i32; } }
+
+    // two payload fields: the first decides, then the second
+    Two:t1 = Two.Pair(1i32, 5i32);
+    Two:t2 = Two.Pair(1i32, 7i32);
+    Two:t3 = Two.Pair(2i32, 0i32);
+    pick (t1.cmp(t2) ?! E9) { (Ordering.Less)    { }, (*) { exit 17i32; } }
+    pick (t3.cmp(t2) ?! E9) { (Ordering.Greater) { }, (*) { exit 18i32; } }
+    if (!(t1.eq(Two.Pair(1i32, 5i32)) ?! E9)) { exit 19i32; }
+    pick (Two.None.cmp(t1) ?! E9) { (Ordering.Greater) { }, (*) { exit 20i32; } }
+
+    // a named payload: through `Inner`'s method
+    Wrap:w1 = Wrap.Boxed(Inner{ a: 3i32 });
+    Wrap:w2 = Wrap.Boxed(Inner{ a: 4i32 });
+    pick (w1.cmp(w2) ?! E9) { (Ordering.Less) { }, (*) { exit 21i32; } }
+    if (!(w1.eq(Wrap.Boxed(Inner{ a: 3i32 })) ?! E9)) { exit 22i32; }
+    if (w1.eq(Wrap.Bare) ?! E9) { exit 23i32; }
+    exit acc;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

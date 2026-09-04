@@ -94,6 +94,28 @@ impl:Manual:Clone = {
     pub func:clone = Manual(Manual:self) never fails { pass self; };
 };
 
+// DERIVED COMPARISONS OVER A PAYLOAD AND A NAMED TYPE (D-250, 1.5.1b step
+// 3b): a payload enum, a struct holding a derived struct, and a generic
+// subject whose parameter field still compares by operator (D-161) -- under
+// `Eq` alone: `<` on an opaque `T` is refused by the checker (D-107), as it
+// was before this step.
+#[derive(Eq, Ord, PartialOrd)]
+enum:Token = { Num(int64); Sym(uint8); Stop; };
+#[derive(Eq, Ord, PartialOrd)]
+struct:Nest = { Point:p; Token:t; int32:k; };
+#[derive(Eq)]
+struct:Cell<T> = { T:v; int32:n; };
+func:derived_over_named = NIL(Nest:a, Nest:b, Token:x, Token:y, Cell<int32>:c, Cell<int32>:d) {
+    discard(a.eq(b) ?! E9);
+    discard(a.cmp(b) ?! E9);
+    discard(a.partial_cmp(b) ?! E9);
+    discard(x.eq(y) ?! E9);
+    discard(x.cmp(y) ?! E9);
+    discard(x.partial_cmp(y) ?! E9);
+    discard(c.eq(d) ?! E9);
+    pass NIL;
+};
+
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 
 // THE HANDLER A ROOT OWES (D-013; REACH-003 at 1.5.1b step 1b): this file

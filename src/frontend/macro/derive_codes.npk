@@ -40,3 +40,12 @@ pub func:DERIVE_TARGET = string() never fails       { pass "NITPICK-DERIVE-004";
 // point a type error at source nobody wrote. Write the impl by hand and
 // say what a vector means for the type.
 pub func:DERIVE_SIMD_FIELD = string() never fails   { pass "NITPICK-DERIVE-005"; };
+
+// A MEMBER NO DERIVED COMPARISON CAN BE WRITTEN FOR (D-250, 1.5.1b step 3b),
+// refused at the USER'S declaration, naming the field or variant and its
+// spelling: an OWNING payload (`string`, `buffer`, `dyn`, `List<…>`,
+// `OwnedFd`, an arena, a sync primitive, a `Channel`) cannot be bound by the
+// `pick` a payload comparison needs without consuming it (D-216's is the only
+// binding form), and an array or slice has no `==`/`<` to compare with. The
+// impl is written by hand and says what the comparison means.
+pub func:DERIVE_UNCOMPARABLE = string() never fails { pass "NITPICK-DERIVE-006"; };
