@@ -373,6 +373,18 @@ pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
             if (p.origin == origin) {
                 // The same thing, bound again. A re-export chain reaching the
                 // same declaration by two routes is not a conflict.
+                //
+                // ...AND A `pub use` AFTER A PLAIN `use` RE-EXPORTS (1.5.1b
+                // step 3c, the workbench's O-N13). The repeat carried
+                // `SYM_PUB` and this return discarded it, so the same two
+                // lines meant different things in the two orders, and the
+                // consumer's "cannot find X" pointed a file away from the
+                // cause. The prior binding takes the visibility the repeat
+                // asks for; a plain repeat of a `pub use` keeps it.
+                if (((flags & (raw SYM_PUB())) != 0i32) && ((p.flags & (raw SYM_PUB())) == 0i32)) {
+                    p.flags = p.flags | (raw SYM_PUB());
+                    t.syms.items[prior => int64] = p;
+                }
                 pass prior;
             }
         }

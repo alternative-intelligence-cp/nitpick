@@ -21,7 +21,7 @@ use "./toml.npk".*;
 // `compile` is the default and the only stage with a `kind`.
 pub struct:TestTarget = {
     string:name;
-    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime | verify | cost
+    string:stage;            // compile | parse | resolve | check | accept | object | fixture | program | runtime | verify | cost
     string:kind;             // compile only: positive | negative | diagnostic; "" otherwise
     List<string>:paths;      // relative to the root, in declaration order
     bool:recursive;          // sweep subdirectories too
@@ -33,6 +33,7 @@ func:stage_known = bool(string:s) never fails {
     if (raw text_eq(s, "resolve")) { pass true; }
     if (raw text_eq(s, "check"))   { pass true; }
     if (raw text_eq(s, "accept"))  { pass true; }
+    if (raw text_eq(s, "object"))  { pass true; }
     if (raw text_eq(s, "fixture")) { pass true; }
     if (raw text_eq(s, "program")) { pass true; }
     if (raw text_eq(s, "runtime")) { pass true; }

@@ -2090,8 +2090,11 @@ def check_backend_rejection(binary, path, name, exp):
     return check_module_rejection(binary, path, name, exp)
 
 
-def emit_and_link(binary, path, name, base, tmp):
-    """Compile `path` with the REAL backend and link it to the binary at `base`.
+def emit_and_object(binary, path, name, base, allow):
+    """Compile `path` with the REAL backend to the object at `base`.o -- the half
+    every module unit shares (1.5.1b step 3c): a program and a fixture link it
+    next (`emit_and_link`), a NON-ROOT module compiled alone stops here (the
+    `object` stage). `allow` is what the object may leave undefined.
 
     The seed is nowhere in this path: `emit_check` loads, checks and EMITS with
     the real compiler, and what runs is what `emit_program` wrote. Shared by the
@@ -2135,7 +2138,13 @@ def emit_and_link(binary, path, name, base, tmp):
         first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
         return ["%s: llc rejected the REAL BACKEND's IR: %s"
                 % (name, first.strip()[:160])]
-    fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
+    return check_zero_dependency(base + ".o", allow, name)
+
+
+def emit_and_link(binary, path, name, base, tmp):
+    """Compile `path` with the REAL backend and link it to the binary at `base`:
+    `emit_and_object`, then the closed-world link against the runtime."""
+    fails = emit_and_object(binary, path, name, base, runtime_allowlist())
     if fails:
         return fails
     r = subprocess.run(["ld.lld"] + LLD_FLAGS + ["-o", base, base + ".o",
@@ -2405,7 +2414,7 @@ def check_verify_pin():
 # THE STAGES A `[[test]]` ENTRY MAY NAME (D-238, 1.4.8b): the tool that judges
 # the suite and what it must say. `compile` is the default and the only stage
 # with a `kind`. Both runners carry this list and refuse anything outside it.
-STAGES = ("compile", "parse", "resolve", "check", "accept", "fixture",
+STAGES = ("compile", "parse", "resolve", "check", "accept", "object", "fixture",
           "program", "runtime", "verify", "cost")
 TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
 
@@ -2623,6 +2632,28 @@ def stage_accept(t, s):
         s.failures += record_verdict(t["name"], name, check_type_accept(tc, p, name))
         n += 1
     print("  %-11s %2d acceptance test(s)" % (t["name"], n))
+
+
+def stage_object(t, s):
+    """A NON-ROOT MODULE COMPILED ALONE, to an object `llc` accepts (1.5.1b step
+    3c, the workbench's O-N14): BUILD_REFERENCE §4.1's per-module object,
+    measured on every run rather than documented. The unit has no `main` and
+    no `failsafe`, so its IR must DECLARE `@npk_failsafe` -- every trap route
+    calls it, and the prelude's resume scaffolding alone carries seven -- and
+    its undefined symbols are the runtime's and that one handler, which the
+    program root supplies. A comment-only module is a unit here on purpose:
+    it is the smallest module that needs the declare."""
+    objdir = os.path.join(s.tmp, "objects")
+    os.makedirs(objdir, exist_ok=True)
+    allow = runtime_allowlist() | {"npk_failsafe"}
+    n = 0
+    for p in files_of(t):
+        name = os.path.relpath(p, ROOT)
+        base = os.path.join(objdir, os.path.basename(p)[:-4])
+        s.failures += record_verdict(t["name"], name,
+                                     emit_and_object(COMPILER, p, name, base, allow))
+        n += 1
+    print("  %-11s %2d module object(s): non-root modules compiled alone, assembled by llc, needing only the runtime and `npk_failsafe`" % (t["name"], n))
 
 
 def stage_fixture(t, s):
@@ -3465,6 +3496,8 @@ def run_stage(t, s, only):
         stage_rejection(t, s, "check")
     elif stage == "accept":
         stage_accept(t, s)
+    elif stage == "object":
+        stage_object(t, s)
     elif stage == "fixture":
         stage_fixture(t, s)
     elif stage == "program":

@@ -719,6 +719,34 @@ async func:run_accept_stage = NIL(Ctx->:c, int64:t) {
 // fills is read by the `program` stage (so this entry comes first). A `.c` is
 // a reference DRIVER (1.1.13c): TEST TOOLING, never in the artifact, built
 // with the system C compiler exactly as the harness builds them.
+// `object`: a NON-ROOT module compiled alone to an object `llc` accepts
+// (1.5.1b step 3c, the workbench's O-N14): BUILD_REFERENCE §4.1's per-module
+// object, measured. Its undefined symbols are the runtime's and
+// `npk_failsafe`, the handler the program root supplies. A comment-only
+// module is a unit here on purpose: the smallest that needs the declare.
+async func:run_object = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    string:objdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "objects");
+    List<string>:mods = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".npk");
+    if (mods.count > 0i64) {
+        Result<NIL>:d = ensure_dir(objdir);
+        if (d.is_error) { fail d.err; }
+    }
+    List<string>:allow = raw strlist_clone(c.allow);
+    drop strlist_push(@allow, "npk_failsafe");
+    for (int64:i in 0i64...mods.count) {
+        string:p = raw strlist_view(mods, i);
+        string:fname = raw text_file_name(p);
+        string:stem = raw text_slice(fname, 0i64, fname.len - 4i64);
+        string:obase = raw path_join(objdir, stem);
+        string:name = raw rel_to_root(c, p);
+        List<string>:fl = relay await emit_and_object(c, string_from_bytes(c.npkc.ptr, c.npkc.len), p, name, obase, allow);
+        drop record(c, tname, name, fl);
+    }
+    drop say(raw stage_line(tname, mods.count, "module object(s): non-root modules compiled alone, assembled by llc, needing only the runtime and `npk_failsafe`"));
+    pass NIL;
+};
+
 async func:run_fixture = NIL(Ctx->:c, int64:t) {
     string:tname = raw entry_name(c, t);
     string:fixdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "fixtures");
@@ -1684,6 +1712,11 @@ pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
         if (raw text_eq(stage, "accept")) {
             Result<NIL>:r4 = await run_accept_stage(c, t);
             if (r4.is_error) { fail r4.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "object")) {
+            Result<NIL>:r4b = await run_object(c, t);
+            if (r4b.is_error) { fail r4b.err; }
             continue;
         }
         if (raw text_eq(stage, "fixture")) {

@@ -1,0 +1,10 @@
+// A `pub use` AFTER A PLAIN `use` OF THE SAME PATH RE-EXPORTS (1.5.1b step
+// 3c, the workbench's O-N13): the repeat carried `pub`, and the symbol
+// table's idempotent re-import discarded it, so `root.npk` could not find
+// `leaf_value` through this module -- while the same two lines in the
+// opposite order worked. Order does not matter now.
+mod:umbrella;
+use "./leaf.npk".*;
+pub use "./leaf.npk".*;
+
+pub func:twice = int32() never fails { pass ((raw leaf_value()) * 2i32); };

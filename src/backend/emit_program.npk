@@ -844,6 +844,30 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
 };
 
 
+// Does this unit's ROOT module declare `failsafe`? The root is the graph's
+// `root_index` -- the file the driver was given, never module 0, which is the
+// prelude -- and D-248 admits the entry points at its top level only, so a
+// top-level function named `failsafe` there is the program's. (The first
+// draft read module 0 and declared the handler into every root program
+// beside its definition; `llc` refused all 180 of them, and the check that
+// should have caught it printed the count I misread -- 1.5.1b step 3c's
+// own record says so.)
+func:unit_defines_failsafe = bool(ModuleGraph->:g, InternTable->:interns) never fails {
+    if ((raw graph_count(g)) == 0i32) { pass false; }
+    if (g.root_index < 0i32) { pass false; }
+    if (g.root_index >= (raw graph_count(g))) { pass false; }
+    ModuleEntry:me = raw graph_at(g, g.root_index);
+    DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
+    int32:k = raw item_member_count(@g.ast, mn);
+    for (int32:i in 0i32...k) {
+        DeclNode:d = raw ast_decl(@g.ast, raw item_member(@g.ast, mn, i));
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (raw string_eq(raw intern_get(interns, raw decl_name(d)), "failsafe")) { pass true; }
+        }
+    }
+    pass false;
+};
+
 // The runtime floor's declarations, in `rt_name_at` order — which makes the
 // declare block a fixed constant of every module this compiler ever emits.
 func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
@@ -1081,6 +1105,16 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     drop emit_type_headers(w, tr, @c, diags, g);
     int32:headers_before = raw tt_count(c.types);
     drop emit_runtime_declares(w);
+    // THE HANDLER EVERY UNIT CALLS AND ONLY THE ROOT DEFINES (D-013; 1.5.1b
+    // step 3c, the workbench's O-N14): every trap route is a call to
+    // `@npk_failsafe`, in every unit -- the prelude's resume scaffolding alone
+    // carries seven -- so a unit that does not define it must DECLARE it, or
+    // `llc` refuses the module compiled alone and BUILD_REFERENCE §4.1's
+    // per-module object cannot exist. The root supplies it (REACH-003 says
+    // so, from the other end); everyone else declares it.
+    if (!(raw unit_defines_failsafe(g, interns))) {
+        drop irw_raw(w, "declare i32 @npk_failsafe(i32)");
+    }
 
     FnEmitter:fe = raw fnem_init(w, @c);
 

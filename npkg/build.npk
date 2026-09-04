@@ -403,11 +403,13 @@ pub async func:build_artifact = Step(Ctx->:c) {
 
 // --- a program: emit, scan, assemble, scan, link ------------------------------------
 
-// The harness's `emit_and_link`: `compiler <path>` with the IR on stdout,
-// the two text scans, `llc`, the zero-dependency scan, the closed-world
-// link to `<base>`. The list is empty on success.
-pub async func:emit_and_link = List<string>(Ctx->:c, string:compiler, string:path, string:name,
-                                            string:base) {
+// The harness's `emit_and_object` (1.5.1b step 3c): `compiler <path>` with
+// the IR on stdout, the two text scans, `llc`, the zero-dependency scan
+// against `allow` -- the half every module unit shares; a program and a
+// fixture link it next, a NON-ROOT module compiled alone stops here. The list
+// is empty on success.
+pub async func:emit_and_object = List<string>(Ctx->:c, string:compiler, string:path, string:name,
+                                              string:base, List<string>:allow) {
     List<string>:fl = raw list_init::<string>(1i64);
     Result<Run>:r = await compile_stdout(c, compiler, path, raw duration_secs(300i64));
     if (r.is_error) { fail r.err; }
@@ -450,8 +452,16 @@ pub async func:emit_and_link = List<string>(Ctx->:c, string:compiler, string:pat
         drop list_push(@fl, move(m1));
         pass fl;
     }
-    List<string>:zd = raw zero_dep(c, obj, c.allow, name);
-    if (zd.count > 0i64) { pass zd; }
+    pass (raw zero_dep(c, obj, allow, name));
+};
+
+// The harness's `emit_and_link`: `emit_and_object`, then the closed-world
+// link to `<base>`.
+pub async func:emit_and_link = List<string>(Ctx->:c, string:compiler, string:path, string:name,
+                                            string:base) {
+    List<string>:fl = relay await emit_and_object(c, compiler, path, name, base, c.allow);
+    if (fl.count > 0i64) { pass fl; }
+    string:obj = string_concat(base, ".o");
     Result<Step>:s2 = await lld_link(c, base, obj);
     if (s2.is_error) { fail s2.err; }
     Step:st2 = move(s2.value);

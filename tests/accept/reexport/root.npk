@@ -1,0 +1,16 @@
+// The consumer: `leaf_value` reaches it THROUGH the umbrella's re-export.
+mod:root;
+use "./umbrella.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    exit (((raw leaf_value()) + (raw twice())) - 21i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (IntOverflow) { exit 93i32; }, (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

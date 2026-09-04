@@ -194,7 +194,7 @@ boundary.
 
 ### 4.1 Separate compilation, not whole-program
 
-Each module compiles to its own object; `ld.lld` links them. D-064 already assumes
+Each module compiles to its own object; `ld.lld` links them. A unit that does not define `failsafe` DECLARES `@npk_failsafe` — every trap route calls it, and only the program root defines it (D-013) — which is what makes a non-root module's object assemble at all; the `object` stage compiles every module under `tests/backend/objects/` alone and requires `llc` to accept it (1.5.1b step 3c, the workbench's O-N14: until then every non-root unit was refused by `llc` with `use of undefined value '@npk_failsafe'`, and this sentence described a model the compiler could not deliver). D-064 already assumes
 this: a generic's body is exported with its module, instantiation happens in the
 using module, and identical specializations are folded at link time.
 

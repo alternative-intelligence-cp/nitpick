@@ -1,0 +1,12 @@
+// A LIBRARY MODULE with trap sites of its own -- a D-210 overflow guard and a
+// D-007 division guard -- and no `main`, no `failsafe`: compiled alone to an
+// object, its calls to `@npk_failsafe` resolve at the program's link.
+mod:library;
+error:Zero;
+
+pub func:bump = int32(int32:n) never fails { pass (n + 1i32); };
+
+pub func:halve = int32(int32:n) {
+    if (n == 0i32) { fail Zero; }
+    pass (n / 2i32);
+};
