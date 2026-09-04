@@ -2830,6 +2830,10 @@ ok:
 ;   -4097  DIV_BY_ZERO       integer / or % with a zero divisor (D-007)
 ;   -4098  INT_MIN_OVERFLOW  INT_MIN / -1 or INT_MIN % -1 (no defined value;
 ;                            D-008 refused inventing one, so it traps)
+;   -4111  LIMIT_VIOLATED    a limit<Rules> binding was written a value its
+;                            rule refuses, at any of its write points -- its
+;                            initialiser, an assignment to it or to a part of
+;                            it, the callee's entry (D-220, D-251; 1.5.2)
 ;   -4110  INT_OVERFLOW      a plain-integer + - * overflowed its width (D-210,
 ;                            1.4.2b). The DEFAULT integer is the checked one:
 ;                            wrapping was the Therac-255->0 shape sitting under

@@ -16,7 +16,7 @@ type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists*
 `src/npkc.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
 **172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
-since 1.3.8) and asserts 6 `NITPICK-RUNG-001` rejections on every full run (8 until 1.4.7's
+since 1.3.8) and asserts 4 `NITPICK-RUNG-001` rejections on every full run (6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
 OWED-8 moved the two channel-element cases to the type checker as `TYPE-057`), and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
 
@@ -622,29 +622,45 @@ refreshed the snapshot and set `tests/cost/self.toml`'s ceiling; its first
 harness found the diagnostic sort reading slots it had moved out of (DEF-13,
 step 5c: byte identity of the fixpoint is not behavioural identity — the
 refresh's own harness is the proof, and the seed README says so).
-**1.5.2 (`limit<Rules>` live) IS PLANNED and UNDERWAY (2026-09-04;
-`meta/roadmap/1.5/1.5.2.md`, execution-grade, L-0…L-30; every question
-ratified the same day — S-24…S-30 as D-251…D-255, a D-247 note and the
-README's 1.5.4b row).** Its step 0 is **DEF-14**, a soundness defect found by
-planning: the 1.5.0 encoder gave an address-taken local a stable symbol and
-withheld only its definition, so a definition of ANOTHER local in terms of it
-outlived a call that wrote through the pointer, z3 discharged a `div-zero` row
-the program then defeats, and the elided build died with a floating-point
+**1.5.2 (`limit<Rules>` live) IS COMPLETE (2026-09-04; `meta/roadmap/1.5/
+1.5.2.md`, planned and closed the same day, every question ratified the day
+it was asked — S-24…S-30 as D-251…D-255, a D-247 note and the README's
+1.5.4b row; six landings, each a cumulative prefix under a full harness,
+D-228).** **Step 0 was DEF-14**, a soundness defect found by planning: the
+1.5.0 encoder gave an address-taken local a stable symbol and withheld only
+its definition, so a definition of ANOTHER local in terms of it outlived a
+call that wrote through the pointer, z3 discharged a `div-zero` row the
+program then defeats, and the elided build died with a floating-point
 exception where the plain build reaches `failsafe` — proven end to end on
-`8dbef43` with a twelve-line program. The fix: an escaped name is never NAMED
-(every read a fresh opaque term), the escape set computed before the parameter
-loop. Then, in order: TYPE-063 (a limited binding has no address — `@`, `$$m`,
-`$$i` and a move out of a sub-place refuse) and TYPE-064 (a `limit` where no
-write point exists — a trait signature, `wild`, `comptime`; `main`/`failsafe`
-under D-244) with `LimitViolated` (−4111) armed by REACH; the check in EVERY
-build (one generated `i1` predicate per `Rules`, the check AFTER every write
-over the binding's whole value — initialiser, every assignment to it or any
-part of it, the callee's entry — the rung retired); the `limit` rows with the
-rule as a HYPOTHESIS on every later version and `limit-subsume` rows at every
-direct call, elision into ONE `llvm.assume` over the rule's range clauses;
-the caller-side bypass (D-252); the docs. 1.5.2b (D-253, derived comparisons
-over a generic-parameter field) follows; 1.5.4b (the remaining theories) is
-in the map.
+`8dbef43` with a twelve-line program. An escaped name is never NAMED now
+(every read a fresh opaque term, the escape set computed before the
+parameter loop); the compiler's own 141 rows, re-decided with both compilers
+and joined by ordinal, moved not one verdict. Then: TYPE-063 (a limited
+binding has no address — `@`, `$$m`, `$$i` and a move out of an owning
+sub-place refuse) and TYPE-064 (a `limit` where no write point exists — a
+trait signature, `wild`, `comptime`; `main`/`failsafe` under D-244) with
+`LimitViolated` (−4111) armed by REACH, and the runner self-checks' rung
+example moved to `prove`; the check in EVERY build — one generated `i8`
+predicate per `Rules` (`src/backend/ir/ir_rules.npk`), the check AFTER every
+write over the binding's whole value (initialiser, every assignment to it or
+any part of it, the callee's entry — sync and coroutine), the site key's
+SPACE (expression/statement/declaration), the rung retired; the `limit` rows
+encoded with the rule as a HYPOTHESIS on every later version of the binding
+— `limit_loop.npk`'s `div-zero` after a loop is the first cross-kind
+discharge — `limit-subsume` rows at every direct call of a sync callee (the
+checker records a callee only for method calls; a free call's is its
+symbol), elision into ONE `llvm.assume` over the rule's range clauses, both
+runners kind-aware with the `none` elision word, the self-checks' `wrong-`/
+`right-limit`; the caller-side bypass (D-252: a sync function with a limited
+parameter is `<symbol>.body` plus its ordinary symbol as the checked entry,
+`.body` inside the quotes; a direct call whose row is discharged names the
+body; the belt counts defines, tail calls and direct calls in both runners
+— over the SYMBOL text, since the code-only text blanks quoted names and the
+step's first harness found the belt counting nothing — with the
+`bypass-counted`/`-missing`/`-as-value` cases in both self-checks);
+the docs. `nitpick.obligations` never moved. **Next: 1.5.2b (D-253, derived
+comparisons over a generic-parameter field; frontend and prelude only), then
+1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -771,6 +787,18 @@ names its rows with `// expect-obligation: KIND VERDICT N`, exactly) and over
 the compiler itself, and its `parity` stage byte-compares `npkg`'s verified
 compiler with its own. A verdict that moves is a red run, never a rebaseline
 (D-040): run `--record` only in the commit that changes what is proven.
+
+Since 1.5.2 the leg carries `limit<Rules>`: every write point of a limited
+binding is a `limit` row (its rule over the new value, the rule a hypothesis
+on every later version — so a division by a limited divisor discharges), every
+direct call of a sync callee with limited parameters a `limit-subsume` row,
+and the elided build removes a discharged write point's check for one
+`llvm.assume` over the rule's range clauses and lets a discharged call name
+the callee's `.body` past its checked entry. A limited binding has no address
+(TYPE-063) — pass it by value — and a `limit` refuses where no write point
+exists (TYPE-064). Two ways to read a row by hand: `.internal/quickemit/npkc
+FILE --obligations D` then z3 on `D/NNNN.smt2`, and a hand-written manifest
+in `nitpick.obligations`'s shape fed to `--elide` (outside every gate, P-27).
 
 **The cost leg (1.5.1b step 0).** `tests/cost/*.toml` are units judged by the
 allocator's numbers under `NPK_HEAP_STATS` (BUILD_REFERENCE §7.1's `cost`

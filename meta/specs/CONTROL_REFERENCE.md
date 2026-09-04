@@ -174,6 +174,11 @@ for (int64:i in 1..3) {
 ### 2.4 Counted Iteration (`loop` and `till`)
 For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.
 
+> `$` has one other home (1.5.1, V-5; lowered at 1.5.2): inside a `Rules`
+> body it is the SUBJECT — the value the rule is asked of (VERIFICATION §2).
+> The same node, one meaning, "the value under consideration"; the two
+> constructs cannot nest, so no reader has to remember which `$` this is.
+
 **`till(limit, step)`** — the simple form. Counts **up from 0** to `limit`.
 ```nitpick
 till(10i32, 1i32) {

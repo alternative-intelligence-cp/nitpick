@@ -20,7 +20,9 @@ nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-0
 │   │   ├── analysis/       #   static analyses (cycle 0.5)
 │   │   └── macro/          #   expansion + comptime (cycle 0.6)
 │   ├── backend/            # grown rung by rung
-│   │   ├── ir/             #   LLVM IR text emission (cycle 0.7)
+│   │   ├── ir/             #   LLVM IR text emission (cycle 0.7); ir_rules.npk is
+│   │   │                   #   `limit<Rules>` live (1.5.2, D-251/D-252)
+│   │   ├── smt/            #   the SMT-LIB2 emitter and the obligation walk (1.5.0, D-067)
 │   │   └── layout/         #   type layout / ABI
 │   └── driver/             # manifest, module graph, subprocess invocation
 ├── lib/                    # the library tier (0.8.4): ordinary Nitpick over the floor, outside src/

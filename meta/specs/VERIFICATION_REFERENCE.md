@@ -81,6 +81,37 @@ at runtime, and a violation **traps to `failsafe`**.
 > that **proving a constraint removes its runtime check**, so `--verify` is also
 > the mechanism by which constrained code reaches the speed of unconstrained code.
 
+> **Live since 1.5.2 (D-251, D-252; `meta/roadmap/1.5/1.5.2.md`).** THE
+> WRITE POINTS: a limited binding is checked AFTER every write, over its
+> whole current value — its initialiser (a declaration without one is not a
+> write point: the vacant value is never read), every assignment to it or to
+> any part of it (a field or element store re-checks the root), and the
+> callee's entry for a limited parameter, once per call in a sync function
+> and once per task at state 0 in a coroutine. The check is one generated
+> predicate per `Rules` declaration (`@"npk.<module>.<name>"`, the
+> refinements then the clauses in source order, short-circuit) called on the
+> value; a false verdict traps `LimitViolated` (−4111) to `failsafe`. **A
+> limited binding has no address**: `@`, `$$m` and `$$i` of it, and a move
+> out of an owning field or element of it, refuse (NITPICK-TYPE-063) — a
+> write through an alias would be one no write point sees; pass it by value.
+> **A `limit` where no write point exists refuses** (NITPICK-TYPE-064): a
+> trait signature's parameter, a `wild`/`wildx` binding, a `comptime`
+> function; `main`/`failsafe`'s parameters under D-244. THE OBLIGATIONS:
+> every write point is a `limit` row whose goal is the rule over the new
+> value, with the rule asserted as a HYPOTHESIS on every later version of
+> the binding — so a division by a limited divisor discharges, after a loop
+> included; a subject outside the encoder's fragment (§7b's tiers) is an
+> `unencoded` row whose guard stays. Every direct call of a sync callee with
+> limited parameters is a `limit-subsume` row: the caller's knowledge of
+> every argument against the callee's rules — the spec's "one `Rules`
+> implies another at a boundary". ELISION: a discharged write point emits
+> ONE `llvm.assume` over the rule's range clauses (a comparison between `$`
+> and an integer literal, `&&`-composed) and no check; a discharged
+> `limit-subsume` row lets the call name the callee's BODY past its checked
+> entry (D-252): a sync function with a limited parameter is emitted as
+> `<symbol>.body` plus its ordinary symbol as the checked entry, which every
+> function value, vtable slot and spawn names by construction.
+
 > `FORMAL_DRAFT` 12.6.1 says only that constraints are "enforced dynamically at
 > runtime" without saying what a violation *does*. It traps to `failsafe`, as
 > above — stated explicitly here because an unspecified failure mode in a
@@ -134,7 +165,10 @@ The Z3 solver can prove that one Rules block subsumes another (e.g., `r_small_po
 > `Rules` block that refines itself, directly or through a chain, is refused
 > at resolve (`NITPICK-RESOLVE-006`): 1.5.2 discharges a `limit` by
 > expanding its refinements into one conjunction, and a cycle would never
-> finish expanding.
+> finish expanding. *(Landed at 1.5.2: the conjunction is `enc_rule`, the
+> implication is a `limit-subsume` row decided by z3 with the source
+> binding's rule as its hypothesis, and a discharged row is the "narrowing
+> without redundant checks" above — the call names the callee's body.)*
 
 ---
 

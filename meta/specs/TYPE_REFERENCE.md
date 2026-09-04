@@ -56,6 +56,11 @@ br i1 %cond, label %then, label %else
   - Lowers through `llvm.{s,u}{add,sub,mul}.with.overflow.iN`, the overflow bit
     branching to the trap. Signedness picks the family; the intrinsics are legal
     and legalized at every width the language has, `int8` through `int4096`.
+- A `limit<Rules>` binding of an integer type is checked AFTER every write
+  (D-251, 1.5.2): a value its rule refuses traps `LimitViolated` (−4111)
+  through the same route. The integer families are the encoder's fragment,
+  so their `limit` rows are decided by z3; a discharged one elides into one
+  `llvm.assume` over the rule's range clauses.
   - **Unary `-` is `0 - x`** and so traps on the most negative value, whose
     negation has no representation — the `INT_MIN / -1` precedent exactly.
   - **`x += y` traps identically**: both spellings route through one arithmetic

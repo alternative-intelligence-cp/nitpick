@@ -36,7 +36,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 | `EnumDecl` | `name`, `visibility`, `generics`, `variants: EnumVariant[]` | variants may carry payloads |
 | `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
 | `ImplDecl` | `target: TypeNode \| GenericParam`, `trait: TypeNode?`, `items` | **`impl:Type`** or **`impl:Type:Trait`** — type always first, no connector (D-031) |
-| `RuleDecl` | `name`, `subject_type`, `body: Expr`, `refines: Ident[]` | `Rules<int32>:r = { $ > 0i32 }`; `refines` holds `limit<Other>` composition |
+| `RuleDecl` | `name`, `subject_type`, `clauses: Expr[]`, `refines: LimitNode[]` | `Rules<int32>:r = { $ > 0i32 }`; the window holds the refinement count, the clause count, then the refinements' `LimitNode`s (1.5.1, V-2 — the node, not its name, so a resolve error points at it) and the clauses. Lowered at 1.5.2 as one generated predicate function per declaration (D-251) |
 | `MacroDecl` | `name`, `params`, `body_kind`, `body` | invoked as **`#name(args)`** (D-046). The body is declarations, statements, or one expression, and `body_kind` says which — that is what decides where the macro may be invoked (`MACRO_REFERENCE.md` §1) |
 | `MacroSplice` | `invocation: BuiltinExpr` | an invocation standing **where a declaration is expected** — module level, a `struct` body, an `impl` body. Expression position needs no node of its own: there the invocation already *is* a `BuiltinExpr`. Expansion replaces it with whatever the body emits |
 | `ExternBlock` | `library`, `items: ExternFn[]` | **`extern:"libc" = { … };`** (D-088) — the name slot holds a string because a library name is not an identifier |
@@ -544,7 +544,7 @@ D-230; `whence`, `fcmd` and `advice` are the prelude enums `Whence`, `Fcmd` and
 |---|---|
 | `ContractNode` | `kind: requires \| ensures`, `condition: Expr` |
 | `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
-| `LimitNode` | `rule: Ident` — `limit<r_pos>` on a declaration or parameter |
+| `LimitNode` | `rule: Ident`, `target: DeclId` (slot `a`, written once by resolve — `limit_target`, 1.5.1) — `limit<r_pos>` on a declaration, a parameter, or as a refinement inside a `Rules` body |
 | `NeverFails` | *(no fields)* — the `never fails` contract on an ordinary function, trait method, impl method, `comptime` function, or function type (D-163). Distinct from the Decl-side `NeverFails` that `extern` blocks carry (D-002). |
 | `JoinsWithin` | `deadline: Expr` (slot `b`, where every clause's expression lives, so the resolve and type walks reach it) — **`joins <const Duration>`** (D-181): a `thread` function's join deadline, fixed where its executor is created (D-083). Constant-expression only; the program default applies where the clause is absent. |
 | `Gives` | *(no fields)* — the **`gives`** marker clause (D-183, 1.2.6): the function is a factory whose return hands its channels to the caller, which must stash them. A channel-returning function without it is a getter, and creating a channel inside one is refused. |

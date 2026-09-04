@@ -55,7 +55,10 @@ copies the number out and leaves every owning sibling where it was, so `h`'s
 drop still runs at scope exit. Until 1.5.1b the emitter cleared the root's
 drop flag for the copyable case too, and an owning local returned by one of
 its copyable fields leaked its owning fields on every call (DEF-8;
-`pass_field.npk`).
+`pass_field.npk`). **One exception (D-251, 1.5.2)**: a `move` or `pass` out
+of an OWNING field or element of a `limit<Rules>` binding refuses
+(NITPICK-TYPE-063) — the vacant value it would leave (D-254) is a write no
+rule can be asked to admit; move the whole binding, or copy the part.
 
 ### 1.2 `stack`
 Forces explicit allocation onto the hardware call stack. Extremely fast (just a pointer bump), with memory reclaimed exactly at the scope's exit.

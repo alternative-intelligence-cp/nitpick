@@ -4748,6 +4748,14 @@ That is the correct ordering of the project's priorities — performance is a
 first-class requirement, obtained here by proving more rather than by checking
 less.
 
+> **[1.5.2, 2026-09-04; D-251, D-252]** As built: the check runs in every
+> build after every write; the verified build elides a discharged write
+> point into one `llvm.assume` over the rule's range clauses (the channel
+> 1.6's analyzers read), and a discharged `limit-subsume` row lets a direct
+> call skip the callee's entry check by naming its body — so "constrained
+> code reaches the speed of unconstrained code" holds for a limited
+> PARAMETER too, the common placement.
+
 ---
 
 ## D-069 — `Result` stores the error once; `is_error` becomes derived — **SETTLED**
@@ -9907,6 +9915,15 @@ discharge may remove only what it proves. The signed-width MIN table fails
 closed: a width it does not know is an internal `iv_broken`, so a new integer
 width (0.9.3's `i128`) cannot silently ship an unguarded `INT_MIN/-1`.
 
+> **[1.5.2, 2026-09-04; D-220, D-251]** −4111 `LimitViolated` — a
+> `limit<Rules>` binding was written a value its rule refuses, at any of its
+> write points (D-251). The verification family's three contract codes
+> follow at −4112…−4114 (`RequiresViolated`, `EnsuresViolated`,
+> `InvariantViolated`, reserved for 1.5.3). The table above is the region as
+> D-142 registered it; the codes later cycles added (−4103…−4106, −4109,
+> −4110) and this one live in the two registries every build reads: the
+> prelude's `error:` block and `runtime/npkrt.ll`'s table.
+
 ## D-143 — The float family's final form — **SETTLED**
 
 Cycle 0.9.4, resolving the audit's two open float decisions plus the shape of
@@ -14992,6 +15009,22 @@ through D-142's route with its own code.
 > IDENTITY — no widening, no wrap, no type parameter (TYPE-059). The check
 > at the three write points and subsumption are 1.5.2's.
 
+> **LANDED — the check, the obligations, the bypass (1.5.2, 2026-09-04;
+> `meta/roadmap/1.5/1.5.2.md`; D-251, D-252).** One generated predicate
+> function per `Rules` declaration; the check AFTER every write over the
+> binding's whole value — its initialiser, every assignment to it or to any
+> part of it, the callee's entry (sync and coroutine) — trapping
+> `LimitViolated` (−4111) through D-142's route; a limited binding has no
+> address (TYPE-063) and a `limit` where no write point exists refuses
+> (TYPE-064); `limit` rows at every write point with the rule as a
+> HYPOTHESIS on every later version of the binding (a `div-zero` under a
+> limited divisor discharges, after a loop included); `limit-subsume` rows
+> at every direct call of a sync callee; a discharged `limit` row elides into
+> ONE `llvm.assume` over the rule's range clauses; and the caller-side bypass
+> — a sync function with a limited parameter emits its body under `.body` and
+> its ordinary symbol as the checked entry, and a direct call whose row the
+> manifest discharged names the body. The rung is gone.
+
 ## D-221 — contract runtime semantics — **SETTLED (user-ratified early; C-16)**
 
 A contract violation is a program-invalid state: the violation channel
@@ -16457,6 +16490,13 @@ rule is a HYPOTHESIS on every version of a limited binding after the
 site's own obligation (never inside its own cone), which is what lets a
 `div-zero` under a limited divisor discharge, after a loop included.
 
+> **LANDED (1.5.2 steps 1–3, 2026-09-04).** Two amendments taken on
+> contact, both recorded in the plan's record: a coroutine callee's call
+> sites carry no `limit-subsume` row (its check runs at state 0 and nothing
+> at the call could elide it — D-252's reason, applied to the row), and the
+> row's goal carries no per-conjunct `:named` tags (`--explain`'s model
+> assigns the arguments, which names the parameter).
+
 ## D-252 — the caller-side bypass: a discharged `limit-subsume` row lets a direct call skip the callee's entry check — **SETTLED (user decision, 2026-09-04; 1.5.2 S-29; lands at 1.5.2 step 4)**
 
 D-220's "caller discharge is an elision like any other" made real
@@ -16480,6 +16520,12 @@ common placement pays the full price in every build, and D-068's
 it; the mechanism is modular (no whole-program elision, no caller-dependent
 callee row) and its one hazard class is closed by construction plus one
 grep.
+
+> **LANDED (1.5.2 step 4, 2026-09-04).** `.body` sits inside the quotes of a
+> D-156 symbol; the checked entry checks over the argument registers (or
+> assumes, where the manifest discharged the entry row) and `tail call`s the
+> body; `thread` functions keep one symbol with `async` ones; the belt in
+> both runners counts defines, tail calls and direct calls.
 
 ## D-253 — derived comparisons over a generic-parameter field take the method form under a synthesized bound; the prelude implements `Eq`/`Ord`/`PartialOrd` for every scalar — **SETTLED (user decision, 2026-09-04; 1.5.1b S-24; scheduled as 1.5.2b)**
 
