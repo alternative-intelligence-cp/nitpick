@@ -399,10 +399,10 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     }
     Result<List<VRow>>:rows_r = read_rows(obl);
     if (rows_r.is_error) { pass (raw step_bad("the obligation directory could not be read (rows.txt)")); }
-    List<VRow>:rows = rows_r.value;
+    List<VRow>:rows = move(rows_r.value);
     Result<List<VFile>>:files_r = read_index(obl);
     if (files_r.is_error) { pass (raw step_bad("the obligation directory could not be read (index.txt)")); }
-    List<VFile>:files = files_r.value;
+    List<VFile>:files = move(files_r.value);
 
     // 2. z3, one process per function file
     List<string>:zf = raw list_init::<string>(1i64);

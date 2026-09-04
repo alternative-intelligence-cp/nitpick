@@ -115,7 +115,7 @@ func:gx = Gx(string:src, InternTable->:it) never fails {
     // deciding before the bodies are walked would miss every `Container<int32>:c;`
     // written inside one.
     drop check_instantiations(@inst, @im, @bd, @tr);
-    Gx:out = Gx{ types: types, diags: diags,
+    Gx:out = Gx{ types: move(types), diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -707,7 +707,7 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@k11) != 0i64)                                 { exit 124i32; }
 
     wild_release_all();
-    pass 0i32;
+    exit 0i32;
 };
 
 // `struct:C<T> = { T:v; }; func:f = NIL() never fails { C< C< … int32 … > >:x; pass NIL; };`

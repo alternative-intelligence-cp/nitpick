@@ -1283,13 +1283,10 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
     // the transfer, so there is nothing for the IR to add (D-065). Found by
     // the same first run, miscategorized as iv_broken.
     if (n.kind == ExprKind.ExprMoveExpr) {
-        // THE VALUE IS THE OPERAND; THE TRANSFER IS THE FLAG (D-183, 1.2.3).
-        // Reading first, clearing second — the order does not matter to the
-        // bytes (the flag is a separate word) but reads correctly.
-        IrVal:mv = raw emit_expr(x, raw expr_operand(n));
-        if (!(raw iv_is_ok(mv))) { pass mv; }
-        drop clear_root_flag(x, raw expr_operand(n));
-        pass mv;
+        // THE VALUE IS THE OPERAND; THE TRANSFER IS THE FLAG for a whole
+        // binding (D-183, 1.2.3) and THE VACANT VALUE for a field or an
+        // element (1.5.1b step 5) -- `emit_move_out` in ir_stmt.npk says why.
+        pass (raw emit_move_out(x, raw expr_operand(n)));
     }
     // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot.
     if (n.kind == ExprKind.ExprIterationVarExpr) {

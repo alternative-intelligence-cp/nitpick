@@ -177,6 +177,14 @@ func:unreadable = List<string>(string:name, Expect:exp) never fails {
     List<string>:f = raw list_init::<string>(1i64);
     string:m = string_concat(name, ": line ");
     m = string_concat(m, int_to_string(exp.bad_line));
+    if (exp.bad_exit != 0i64) {
+        // O-N15 (1.5.1b step 5): the same words as the harness's, byte for byte
+        m = string_concat(m, ": `expect-exit` ");
+        m = string_concat(m, int_to_string(exp.bad_exit));
+        m = string_concat(m, " is not a one-byte status (a run exits 0..255, or -1..-64 for a signal), so no run can satisfy it");
+        drop list_push(@f, move(m));
+        pass f;
+    }
     m = string_concat(m, ": an expectation marker whose number cannot be read");
     drop list_push(@f, move(m));
     pass f;
@@ -983,10 +991,10 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     if (nu.count > 0i64) { pass nu; }
     Result<List<VRow>>:rows_r = read_rows(obl);
     if (rows_r.is_error) { drop strlist_push(@fl, string_concat(name, ": rows.txt could not be read")); pass fl; }
-    List<VRow>:rows = rows_r.value;
+    List<VRow>:rows = move(rows_r.value);
     Result<List<VFile>>:files_r = read_index(obl);
     if (files_r.is_error) { drop strlist_push(@fl, string_concat(name, ": index.txt could not be read")); pass fl; }
-    List<VFile>:files = files_r.value;
+    List<VFile>:files = move(files_r.value);
     Result<NIL>:zr = await z3_decide(c, z3, obl, @rows, files, name, @fl);
     if (zr.is_error) { fail zr.err; }
     if (fl.count > 0i64) { pass fl; }
@@ -1493,7 +1501,7 @@ func:cost_judge = List<string>(CostUnit->:u, bool:held, string:name, string:what
 func:cost_out_bad = CostOut(CostPoint:p, string:report) never fails {
     List<string>:fl = raw list_init::<string>(1i64);
     drop strlist_push(@fl, string_from_bytes(p.problem.ptr, p.problem.len));
-    pass CostOut{ faults: fl, report: raw text_copy(report) };
+    pass CostOut{ faults: move(fl), report: raw text_copy(report) };
 };
 
 async func:cost_recipe_point = CostPoint(Ctx->:c, string:recipe, int64:n, string:cdir,
@@ -1628,7 +1636,7 @@ async func:run_cost_self = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:
     List<string>:fl = raw list_init::<string>(1i64);
     if (u.ceiling == 0i64) {
         report = string_concat(report, " (reported; no ceiling yet)");
-        pass CostOut{ faults: fl, report: move(report) };
+        pass CostOut{ faults: move(fl), report: move(report) };
     }
     report = string_concat(report, " (ceiling ");
     report = string_concat(report, int_to_string(u.ceiling));
@@ -1643,7 +1651,7 @@ async func:run_cost_self = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:
         m = string_concat(m, " -- a memory regression in the compiler's own build");
         drop list_push(@fl, move(m));
     }
-    pass CostOut{ faults: fl, report: move(report) };
+    pass CostOut{ faults: move(fl), report: move(report) };
 };
 
 // `cost`: the allocator's own numbers, per unit file, as verdicts; the numbers

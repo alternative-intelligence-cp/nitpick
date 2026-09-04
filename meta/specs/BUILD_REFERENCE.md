@@ -24,7 +24,8 @@ Two tools:
 
 ## 1. The manifest
 
-One schema (D-077). Four tables.
+One schema (D-077). Six tables — `[project]`, `[build]`, `[toolchain]`,
+`[dependencies]`, `[verify]` and `[limits]` — and the `[[test]]` array (§7.1).
 
 ```toml
 [project]
@@ -57,6 +58,9 @@ z3-options = ["smt.random_seed=0", "sat.random_seed=0", "rlimit=20000000"]
 
 [verify.nikos]
 domain = "interval"
+
+[limits]                         # 1.5.1b step 5
+nofile = 1024                    # the soft RLIMIT_NOFILE both runners stand under (§7.1)
 ```
 
 - **`[project]` is identity, `[build]` is settings.** `npkg`'s split is adopted;
@@ -506,6 +510,18 @@ The harness's `parity` stage builds `npkg` with the compiler under test, runs
 unit for unit — the same suites, the same files, the same pass or fail — then
 byte-compares `npkg build`'s compiler with its own. The harness retires only
 under `meta/SWITCH.md`, after parity has held through cycle 1.5.
+
+**The descriptor ceiling (1.5.1b step 5).** A runner lowers its OWN soft
+`RLIMIT_NOFILE` to the manifest's `[limits] nofile` (1024 when the table is
+absent; 64 to 1048576 otherwise) before it spawns anything, and every tool and
+every program under test inherits it across clone and execve. A hard limit
+below the ceiling is refused by name before anything runs. The reason is a
+class of proof: a program that opens a few thousand times and expects a leak
+to surface as `EMFILE` proves something only under one known ceiling, and on
+a session whose soft limit is 1,048,576 every such proof in the suite passed
+against a build that leaked. `tests/backend/programs/fd_ceiling.npk` measures
+that the number reached the program; both runners print the ceiling they run
+under.
 
 ---
 

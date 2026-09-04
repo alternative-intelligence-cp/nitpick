@@ -41,7 +41,7 @@ func:collect = Built(string:src, InternTable->:it) never fails {
     DiagList:diags = raw diaglist_init();
     int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
-    Built:b = Built{ ast: ast, tab: tab, diags: diags, scope: scope };
+    Built:b = Built{ ast: move(ast), tab: move(tab), diags: diags, scope: scope };
     pass b;
 };
 
@@ -167,8 +167,6 @@ func:main = int32(cstring[]:_~argv) {
     if (raw diaglist_count(@b8.diags) != 0i64)              { exit 70i32; }
     int32:second = raw intern_add(@it, "second");
     if ((raw scope_lookup(@b8.tab, b8.scope, second)) == 0i32) { exit 71i32; }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

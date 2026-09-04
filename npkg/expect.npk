@@ -49,6 +49,11 @@ pub struct:Expect = {
     bool:obligations_none;        // `expect-obligation: none`
     bool:ok;
     int64:bad_line;
+    // AN `expect-exit` NO RUN CAN PRODUCE (1.5.1b step 5, the workbench's
+    // O-N15): a status is one byte (0..255) or a signal (-1..-64), and an
+    // expectation outside that range fails forever with a true, useless
+    // mismatch -- so it is refused at read time, by name, the value here.
+    int64:bad_exit;
 };
 
 func:push_expected = NIL(List<Expected>->:l, string:code) never fails {
@@ -93,7 +98,7 @@ pub func:expect_read = Expect(string:text) never fails {
                        no_parse_error: false,
                        obligations: raw list_init::<ObExpect>(2i64),
                        obligations_none: false,
-                       ok: true, bad_line: 0i64 };
+                       ok: true, bad_line: 0i64, bad_exit: 0i64 };
     List<string>:lines = raw text_lines(text);
     for (int64:li in 0i64...lines.count) {
         string:s = raw text_trim(raw strlist_view(lines, li));
@@ -128,6 +133,9 @@ pub func:expect_read = Expect(string:text) never fails {
         if (raw text_starts_with(body, "expect-exit:")) {
             Result<int64>:x = text_int(raw after_colon(body));
             if (x.is_error) { e.ok = false; e.bad_line = li + 1i64; pass e; }
+            if ((x.value > 255i64) || (x.value < (0i64 - 64i64))) {
+                e.ok = false; e.bad_line = li + 1i64; e.bad_exit = x.value; pass e;
+            }
             e.exit_code = x.value;
             continue;
         }

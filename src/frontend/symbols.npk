@@ -120,6 +120,14 @@ pub struct:SymbolTable = {
     // A SPARSE MAP, not an append: the count is the high-water mark and the
     // caller's DeclId is the index. See `symtab_set_home`.
     List<int32>:decl_home;
+
+    // THE LIST MODULE'S SCOPE (D-247, 1.5.1b step 5), or 0: the file module
+    // named `list`, whose `struct:List<T>` the compiler knows as OWNING. The
+    // loader records it; the layout and the drop generator ask. Keyed on the
+    // module until the snapshot refresh lets the declaration move into the
+    // prelude (D-205: the builder's embedded prelude has no `List`, so `src/`
+    // cannot yet use one there), where D-239 makes the name unique.
+    int32:list_scope;
 };
 
 pub func:symtab_init = SymbolTable() never fails {
@@ -127,7 +135,8 @@ pub func:symtab_init = SymbolTable() never fails {
     SymbolTable:t = SymbolTable{
         syms:   raw list_init::<Symbol>(n),
         scopes: raw list_init::<Scope>(n),
-        decl_home: raw list_init::<int32>(256i64)
+        decl_home: raw list_init::<int32>(256i64),
+        list_scope: 0i32
     };
 
     // Index 0 is reserved in BOTH arrays, matching the AST's convention: a zeroed

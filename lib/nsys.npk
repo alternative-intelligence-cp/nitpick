@@ -34,6 +34,7 @@ pub func:SYS_PIPE2 = int64() never fails        { pass 293i64; };
 pub func:SYS_MEMFD_CREATE = int64() never fails { pass 319i64; };
 pub func:SYS_PIDFD_SEND_SIGNAL = int64() never fails { pass 424i64; };
 pub func:SYS_GETCWD = int64() never fails       { pass 79i64; };
+pub func:SYS_PRLIMIT64 = int64() never fails    { pass 302i64; };
 
 // --- the constants those calls take ------------------------------------------
 //
@@ -177,4 +178,42 @@ pub func:open_devnull = int64() {
     Result<int64>:rf = sys(raw SYS_OPENAT(), raw AT_FDCWD(), dp, ofl, 0i64);
     if (rf.is_error) { fail rf.err; }
     pass (relay fd_above_std(rf.value));
+};
+
+// THE DESCRIPTOR CEILING (1.5.1b step 5). A program's descriptor-exhaustion
+// proof -- open a few thousand times, expect the leak to surface as EMFILE --
+// means something only under a soft RLIMIT_NOFILE near the Linux default of
+// 1024; a session that sets 1,048,576 lets every such proof pass against a
+// build that leaks, which is how `pass_field.npk`'s defect sat unseen from
+// 1.2.3 to 1.5.1b. Both runners lower THEIR OWN soft limit to the manifest's
+// `[limits] nofile` before anything is spawned (the limit is inherited across
+// clone and execve), so every tool and every program under test stands under
+// one number. `prlimit64` with pid 0 acts on the caller; a NULL new pair
+// reads, a NULL old pair writes. Lowering a soft limit needs no privilege;
+// raising it past the hard limit refuses with EINVAL, which the caller turns
+// into its own sentence after reading the pair first.
+pub func:RLIMIT_NOFILE = int64() never fails    { pass 7i64; };
+
+pub struct:RLimitPair = { int64:cur; int64:max; };
+
+pub func:sys_nofile_limits = RLimitPair() {
+    wild int8->:rb = calloc(1i64, 16i64);
+    defer { dalloc(rb); }
+    Result<int64>:r = sys(raw SYS_PRLIMIT64(), 0i64, raw RLIMIT_NOFILE(), 0i64, rb);
+    if (r.is_error) { fail r.err; }
+    wild RLimitPair->:rl = rb =>! wild RLimitPair->;
+    pass RLimitPair{ cur: rl.cur, max: rl.max };
+};
+
+pub func:sys_nofile_soft = NIL(int64:soft) {
+    Result<RLimitPair>:now = sys_nofile_limits();
+    if (now.is_error) { fail now.err; }
+    wild int8->:rb = calloc(1i64, 16i64);
+    defer { dalloc(rb); }
+    wild RLimitPair->:rl = rb =>! wild RLimitPair->;
+    rl.cur = soft;
+    rl.max = now.value.max;
+    Result<int64>:r = sys(raw SYS_PRLIMIT64(), 0i64, raw RLIMIT_NOFILE(), rb, 0i64);
+    if (r.is_error) { fail r.err; }
+    pass NIL;
 };

@@ -1,0 +1,37 @@
+// `wild_release_all()` IS FOLLOWED BY `exit` (TYPE-062, 1.5.1b step 5): the
+// call unmaps every chunk of both regimes (D-151), so nothing may run after
+// it -- not a drop, not an allocation, not even the trap route. Three shapes
+// that used to compile: a `main` that releases and then RETURNS (its
+// scope-exit drops ran over unmapped memory the day `List<T>` began to own),
+// a measurement taken as a statement after the release, and a release that
+// ends an inner block. The fourth is the legal shape.
+mod:release_then_exit;
+
+// expect-error: NITPICK-TYPE-062
+// expect-error-at: 16:9
+// expect-error: NITPICK-TYPE-062
+// expect-error-at: 18:5
+func:main = int32(cstring[]:argv) {
+    if (argv.len > 9i64) {
+        wild_release_all();
+    }
+    wild_release_all();
+    int64:n = wild_live_count();
+    if (n != 0i64) { exit 4i32; }
+    wild_release_all();
+    exit 0i32;
+};
+
+// expect-error: NITPICK-TYPE-062
+// expect-error-at: 35:5
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapOom)        { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (Unreachable)    { exit 9i32; },
+        (WildLeak)       { exit 9i32; },
+        (*)              { exit 9i32; }
+    }
+    wild_release_all();
+    pass 1i32;
+};

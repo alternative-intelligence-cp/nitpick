@@ -67,7 +67,7 @@ func:lx = Lx(string:src, InternTable->:it) never fails {
     drop resolve_module(@rs, mod_id, scope);
 
     TypeTable:types = raw typetable_init();
-    Lx:out = Lx{ types: types, diags: diags, ast: ast, tab: tab, scope: scope };
+    Lx:out = Lx{ types: move(types), diags: diags, ast: move(ast), tab: move(tab), scope: scope };
     pass out;
 };
 
@@ -204,7 +204,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw type_size(@v8.types, sl)) != 16i64)           { exit 45i32; }
 
     wild_release_all();
-    pass 0i32;
+    exit 0i32;
 };
 
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the

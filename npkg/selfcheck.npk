@@ -65,7 +65,7 @@ func:EXTRA = string() never fails {
     pass "func:noisy = int32() { pass 1i32; };\nfunc:one = buffer() never fails {\n    buffer:b = buffer_new(16i32);\n    pass (move(b));\n};\nfunc:two = NIL() {\n    noisy();\n    pass NIL;\n};\n";
 };
 
-func:CASE_COUNT = int64() never fails { pass 9i64; };
+func:CASE_COUNT = int64() never fails { pass 10i64; };
 
 // IDENTIFIERS, because each case is written as `<name>.npk` and its header
 // is `mod:<name>;` (D-248, 1.5.1b step 1); the Python self-check's names are
@@ -79,7 +79,8 @@ func:case_name = string(int64:i) never fails {
     if (i == 5i64) { pass "unasserted_extra"; }
     if (i == 6i64) { pass "wrong_exit"; }
     if (i == 7i64) { pass "right_exit"; }
-    pass "parse_error_not_backend";
+    if (i == 8i64) { pass "parse_error_not_backend"; }
+    pass "exit_out_of_range";
 };
 
 // The header every case carries, after its directives (D-248).
@@ -90,6 +91,7 @@ func:case_head = string(int64:i) never fails {
 func:case_negative = bool(int64:i) never fails {
     if (i == 6i64) { pass false; }
     if (i == 7i64) { pass false; }
+    if (i == 9i64) { pass false; }
     pass true;
 };
 
@@ -108,7 +110,8 @@ func:case_why = string(int64:i) never fails {
     if (i == 5i64) { pass "a diagnostic no expectation names must fail"; }
     if (i == 6i64) { pass "a positive test exiting with the wrong code must fail"; }
     if (i == 7i64) { pass "a positive test exiting as expected must pass"; }
-    pass "a parse error where a backend rejection was expected must fail";
+    if (i == 8i64) { pass "a parse error where a backend rejection was expected must fail"; }
+    pass "an expect-exit above a byte can never be satisfied and must fail by name";
 };
 
 func:case_source = string(int64:i) never fails {
@@ -125,6 +128,9 @@ func:case_source = string(int64:i) never fails {
     if (i == 5i64) { pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-TYPE-007\n", head), raw EXTRA()), tail)); }
     if (i == 6i64) { pass (string_concat(string_concat("// expect-exit: 3\n", head), tail)); }
     if (i == 7i64) { pass (string_concat(head, tail)); }
+    // AN EXIT NO RUN CAN PRODUCE (O-N15, 1.5.1b step 5): a status is one
+    // byte, so `expect-exit: 321` fails forever -- refused at read time.
+    if (i == 9i64) { pass (string_concat(string_concat("// expect-exit: 321\n", head), tail)); }
     // The one that guards D-085: a file meant to reach the backend but
     // tripping the PARSER instead must be reported, not accepted as "it
     // failed, close enough".

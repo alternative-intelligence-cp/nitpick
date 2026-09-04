@@ -1,0 +1,88 @@
+// partial_move: A MOVE OUT OF A FIELD LEAVES THE VACANT VALUE (1.5.1b step 5,
+// D-065 with D-225). Three shapes, each of which either leaked or freed twice
+// before the fix. (1) `move(p.a)` out of a pair of descriptors: the pair's
+// drop must still close `b` (the sibling leak D-183 recorded open) and must
+// NOT close `a` again. (2) The resolver's own idiom through a pointer --
+// `saved = move(r.env); r.env = move(frame); ... r.env = move(saved);` -- where
+// the second line's overwrite used to drop the list `saved` had just taken,
+// so the restore put a freed block back (a heap fault in every unit test that
+// let a resolver drop; the compiler's `main` exits without drops and never
+// saw it). (3) `pass n.name` out of a struct with a descriptor sibling: the
+// sibling still closes. Four thousand rounds under the runners' descriptor
+// ceiling; exit 0 also asserts every list block came back (D-151).
+// expect-exit: 0
+mod:partial_move;
+use "../../../src/frontend/list.npk".*;
+error:E9;
+
+struct:Pair = { OwnedFd:a; OwnedFd:b; };
+struct:Env = { List<string>:names; };
+struct:Res = { Env:env; int64:depth; };
+struct:Named = { OwnedFd:h; string:name; };
+
+func:shape1 = int64(cstring:devnull) never fails {
+    Result<fd>:f0 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (f0.is_error) { pass -1i64; }
+    Result<fd>:f1 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (f1.is_error) { pass -1i64; }
+    Pair:p = Pair{ a: own_fd(f0.value), b: own_fd(f1.value) };
+    OwnedFd:x = move(p.a);
+    pass 1i64;
+};
+
+func:enter = NIL(Res->:r, move Env:frame) never fails {
+    Env:saved = move(r.env);
+    r.env = move(frame);
+    drop list_push(@r.env.names, string_concat("in-", int_to_string(r.depth)));
+    r.depth = r.depth + 1i64;
+    r.env = move(saved);
+    pass NIL;
+};
+
+func:shape2 = int64() never fails {
+    Res:r = Res{ env: Env{ names: raw list_init::<string>(2i64) }, depth: 0i64 };
+    drop list_push(@r.env.names, string_concat("outer-", "0"));
+    for (int64:i in 0i64...4i64) {
+        Env:frame = Env{ names: raw list_init::<string>(2i64) };
+        drop enter(@r, move(frame));
+    }
+    if (r.env.names.count != 1i64) { pass -2i64; }
+    pass r.depth;
+};
+
+func:shape3 = string(cstring:devnull) never fails {
+    Result<fd>:f0 = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (f0.is_error) { pass string_concat("", ""); }
+    Named:n = Named{ h: own_fd(f0.value), name: string_concat("nm-", "x") };
+    pass n.name;
+};
+
+func:main = int32() {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+    int64:acc = 0i64;
+    for (int32:i in 0i32...4000i32) {
+        int64:a = raw shape1(devnull);
+        if (a < 0i64) { exit 97i32; }
+        int64:b = raw shape2();
+        if (b != 4i64) { exit 98i32; }
+        string:c = raw shape3(devnull);
+        if (c.len != 4i64) { exit 99i32; }
+        acc = acc + a + b;
+    }
+    if (acc != 20000i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 92i32; }
+    }
+    exit 9i32;
+};

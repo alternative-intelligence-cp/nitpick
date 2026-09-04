@@ -1,0 +1,66 @@
+// pass_field: A STRUCT RETURNED BY ONE OF ITS COPYABLE FIELDS STILL DROPS
+// (1.5.1b step 5, found by list_fds.npk). `pass h.n` copies an `int64` out of
+// a local that owns a descriptor; the local's scope-exit drop must still run,
+// or the descriptor leaks once per call. Three thousand rounds on a process
+// whose descriptor table holds one thousand and twenty-four: a leak turns the
+// open into EMFILE and the round reports 97. The same shape through
+// `move(h.n)` — a copyable move transfers nothing either — and through a
+// nested field, `pass w.inner.n`, whose root is two projections up.
+// expect-exit: 0
+mod:pass_field;
+error:E9;
+
+struct:Holder = { OwnedFd:h; int64:n; };
+struct:Wrap = { Holder:inner; int64:tag; };
+
+func:round = int64(cstring:devnull) never fails {
+    Result<fd>:r = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (r.is_error) { pass -97i64; }
+    Holder:h = Holder{ h: own_fd(r.value), n: 7i64 };
+    pass h.n;
+};
+
+func:round_move = int64(cstring:devnull) never fails {
+    Result<fd>:r = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (r.is_error) { pass -97i64; }
+    Holder:h = Holder{ h: own_fd(r.value), n: 8i64 };
+    int64:n = move(h.n);
+    pass n;
+};
+
+func:round_nested = int64(cstring:devnull) never fails {
+    Result<fd>:r = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+    if (r.is_error) { pass -97i64; }
+    Wrap:w = Wrap{ inner: Holder{ h: own_fd(r.value), n: 9i64 }, tag: 1i64 };
+    pass w.inner.n;
+};
+
+func:main = int32() {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+    int64:acc = 0i64;
+    for (int32:i in 0i32...3000i32) {
+        int64:a = raw round(devnull);
+        if (a < 0i64) { exit 97i32; }
+        int64:b = raw round_move(devnull);
+        if (b < 0i64) { exit 98i32; }
+        int64:c = raw round_nested(devnull);
+        if (c < 0i64) { exit 99i32; }
+        acc = acc + a + b + c;
+    }
+    if (acc != 72000i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 92i32; }
+    }
+    exit 9i32;
+};

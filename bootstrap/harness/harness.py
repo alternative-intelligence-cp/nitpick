@@ -54,6 +54,7 @@ import sys
 import glob
 import shutil
 import tempfile
+import resource
 import subprocess
 import time
 import tomllib
@@ -161,6 +162,11 @@ class Expect:
         # among its `expect-error`s would be asserting the wrong kind of thing.
         self.notes = []         # [(code, line|None, col|None)]
         self.exit = 0
+        # AN `expect-exit` NO RUN CAN PRODUCE (1.5.1b step 5, the workbench's
+        # O-N15): a status is one byte (0..255) or a signal (-1..-64); an
+        # expectation outside that fails forever with a true, useless
+        # mismatch, so the reader refuses it by name and the judges report it.
+        self.bad = ""
         self.no_parse_error = False
         self.obligations = []      # (kind, verdict, n) -- the `verify` stage's rows (1.5.0)
         self.obligations_none = False
@@ -190,8 +196,10 @@ class Expect:
 def read_expectations(path):
     e = Expect()
     pending_at = None
+    lineno = 0
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
+            lineno += 1
             s = line.strip()
             if not s.startswith("//"):
                 if e.errors or e.exit or e.no_parse_error:
@@ -217,6 +225,10 @@ def read_expectations(path):
                 e.notes.append((body.split(":", 1)[1].strip(), None, None))
             elif body.startswith("expect-exit:"):
                 e.exit = int(body.split(":", 1)[1].strip())
+                if e.exit > 255 or e.exit < -64:
+                    e.bad = ("line %d: `expect-exit` %d is not a one-byte status (a run exits "
+                             "0..255, or -1..-64 for a signal), so no run can satisfy it"
+                             % (lineno, e.exit))
             elif body.startswith("stress:"):
                 e.stress = int(body.split(":", 1)[1].strip())
             elif body.startswith("argv:"):
@@ -333,6 +345,8 @@ def imported_by_others(paths):
 # --- checking a single test --------------------------------------------------
 
 def check_positive(name, entry, exp, tmp, tools):
+    if exp.bad:
+        return ["%s: %s" % (name, exp.bad)]
     """Compiles, links, runs, exits as expected -- WITH THE COMPILER UNDER TEST.
 
     Until 1.4.6 this ran the Python seed. Two reasons it could not stay there,
@@ -2155,6 +2169,8 @@ def emit_and_link(binary, path, name, base, tmp):
 
 
 def check_emitted_program(binary, path, name, exp, tmp, fixture_map=None):
+    if exp.bad:
+        return ["%s: %s" % (name, exp.bad)]
     """A program COMPILED BY THIS COMPILER'S BACKEND, run, and its exit compared.
 
     A byte-pin proves the text is stable; only execution proves the text means
@@ -2417,6 +2433,52 @@ def check_verify_pin():
 STAGES = ("compile", "parse", "resolve", "check", "accept", "object", "fixture",
           "program", "runtime", "verify", "cost")
 TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
+
+
+NOFILE_DEFAULT = 1024      # the Linux default; what the manifest means when silent
+NOFILE_MIN, NOFILE_MAX = 64, 1048576
+
+
+def load_nofile_ceiling():
+    """`[limits] nofile` (1.5.1b step 5): the soft RLIMIT_NOFILE this runner and
+    everything it spawns stand under. A program's descriptor-exhaustion proof
+    -- open a few thousand times and expect the leak to surface as EMFILE --
+    means something only under a soft limit near the Linux default of 1024; a
+    session that sets 1,048,576 let every such proof in this suite pass
+    against a build that leaked, from 1.2.3 to 1.5.1b. One number, read by
+    both runners from the one table (D-238's shape). Returns (n, problem)."""
+    lim = MANIFEST.get("limits")
+    if lim is None:
+        return NOFILE_DEFAULT, None
+    if not isinstance(lim, dict):
+        return None, "nitpick.toml: [limits] is not a table"
+    for k in lim:
+        if k != "nofile":
+            return None, ("nitpick.toml: [limits] `%s` is not a key this "
+                          "manifest schema has (D-077)" % k)
+    n = lim.get("nofile", NOFILE_DEFAULT)
+    if isinstance(n, bool) or not isinstance(n, int):
+        return None, "nitpick.toml: [limits] nofile is not an integer"
+    if n < NOFILE_MIN or n > NOFILE_MAX:
+        return None, ("nitpick.toml: [limits] nofile must be between %d and %d "
+                      "-- below %d the runner cannot hold its own capture "
+                      "pipes, above %d no default hard limit can honour it"
+                      % (NOFILE_MIN, NOFILE_MAX, NOFILE_MIN, NOFILE_MAX))
+    return n, None
+
+
+def apply_nofile_ceiling(n):
+    """Lower THIS process's soft RLIMIT_NOFILE to `n`; every child inherits
+    it across fork and exec. A hard limit below `n` cannot be raised from
+    here and is refused by name. Returns the one sentence to print, or None."""
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if hard != resource.RLIM_INFINITY and hard < n:
+        return ("the hard RLIMIT_NOFILE of this session (%d) is below "
+                "nitpick.toml's [limits] nofile of %d -- a runner cannot raise "
+                "a hard limit; raise the session's or lower the manifest's"
+                % (hard, n))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (n, hard))
+    return None
 
 
 def load_targets():
@@ -3588,6 +3650,14 @@ def main(argv):
     if not targets:
         print("no [[test]] targets in nitpick.toml")
         return 2
+    nofile, problem = load_nofile_ceiling()
+    if problem:
+        print(problem)
+        return 2
+    problem = apply_nofile_ceiling(nofile)
+    if problem:
+        print(problem)
+        return 2
 
     if filtering:
         print("PARTIAL RUN -- matching %s" % ", ".join(repr(s) for s in opts.only))
@@ -3619,6 +3689,9 @@ def main(argv):
                   % COMPILER)
             return 1
         print("  %-11s snapshot -> builder -> npkc (D-205)" % "builder")
+        print("  %-11s soft RLIMIT_NOFILE %d (nitpick.toml [limits] nofile): "
+              "every tool and program this run spawns inherits it"
+              % ("limits", nofile))
 
     s = Session(tmp, tools)
     failures = s.failures

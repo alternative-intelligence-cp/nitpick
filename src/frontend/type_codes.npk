@@ -331,3 +331,14 @@ pub func:TYPE_CONTRACT_RULES = string() never fails { pass "NITPICK-TYPE-060"; }
 // impl dropping the `pure` its trait declares. One code, several ways to fail
 // it (TYPE-054's convention).
 pub func:TYPE_PURE_RULES = string() never fails { pass "NITPICK-TYPE-061"; };
+
+// 1.5.1b step 5 (D-151, D-224; S-27): `wild_release_all()` unmaps every chunk
+// of BOTH regimes, so nothing may run after it but `exit` -- not a drop, not
+// an allocation, not even the trap route, which allocates its chain. The
+// statement after the call, in the same block, must be `exit`; what has to
+// be measured after the release goes into `exit`'s operand, which is
+// evaluated after the call and before the process ends. Found by three unit
+// tests whose `main` released the heap and then RETURNED, running the
+// scope-exit drops step 5 made real over unmapped memory; the runtime
+// refused, and the refusal's own trap route then died on the same heap.
+pub func:TYPE_RELEASE_THEN_EXIT = string() never fails { pass "NITPICK-TYPE-062"; };

@@ -1,0 +1,36 @@
+// expect-exit: 0
+//
+// `List<T>` OWNS ITS ELEMENTS AND ITS BLOCK (D-247, 1.5.1b step 5): a
+// `List<string>` of 10 000 owned strings is built and dropped at scope exit
+// 100 times over. Under the old regime the block and every string leaked
+// (the compiler's own tables were a minute's worth of this); the `cost`
+// stage's `lists` probe holds this program's peak to 2x `list_once.npk`'s.
+mod:list_drop;
+use "../../../src/frontend/list.npk".*;
+
+func:build = int64() never fails {
+    List<string>:l = raw list_init::<string>(16i64);
+    for (int32:i in 0i32...10000i32) {
+        drop list_push(@l, string_concat("item-", int_to_string(i => int64)));
+    }
+    int64:total = 0i64;
+    for (int64:j in 0i64...l.count) { total = total + l.items[j].len; }
+    pass total;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int32:r in 0i32...100i32) { acc = acc + (raw build()); }
+    if (acc != 8889000i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

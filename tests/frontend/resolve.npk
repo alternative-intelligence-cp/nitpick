@@ -51,7 +51,7 @@ func:run = Run(string:src, InternTable->:it) never fails {
     Resolver:r = raw resolver_init(@ast, @tab, it, @diags);
     drop resolve_module(@r, mod_id, scope);
 
-    Run:out = Run{ ast: ast, tab: tab, diags: diags, scope: scope };
+    Run:out = Run{ ast: move(ast), tab: move(tab), diags: diags, scope: scope };
     pass out;
 };
 
@@ -231,8 +231,6 @@ func:main = int32(cstring[]:_~argv) {
 
     if (raw diaglist_count(@ad) != 0i64)                  { exit 100i32; }
     if ((raw resolve_audit(@ag.ast, @ag.tab, @it)) != 0i32) { exit 101i32; }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

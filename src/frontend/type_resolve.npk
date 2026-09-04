@@ -1198,12 +1198,15 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
         pass (raw cv_none());
     }
 
-    FoldEnv:saved = r.env;
+    // THE ENVIRONMENT IS SWAPPED, NOT COPIED (D-247, 1.5.1b step 5): a
+    // `FoldEnv` owns its list now, so the save and the restore are transfers,
+    // and the restore's overwrite drops the callee's frame.
+    FoldEnv:saved = move(r.env);
     int32:saved_depth = r.fold_depth;
-    r.env = frame;
+    r.env = move(frame);
     r.fold_depth = saved_depth + 1i32;
     FoldFlow:flow = raw fold_stmt(r, raw fn_body(r.ast, fndecl), sym.scope, fuel - 1i32);
-    r.env = saved;
+    r.env = move(saved);
     r.fold_depth = saved_depth;
 
     if (flow.failed) { pass (raw cv_none()); }

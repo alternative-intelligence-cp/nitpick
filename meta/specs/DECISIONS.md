@@ -10436,6 +10436,14 @@ nothing: it was a real hole until this cycle.
 
 **The compiler compiles under its own rule.** `src/main.npk` and the three
 tools call `wild_release_all()` before their successful exits — the honest
+*(1.5.1b step 5, 2026-09-04: THE STATEMENT AFTER `wild_release_all()` IS
+`exit`, refused otherwise as TYPE-062 (S-27). Three unit tests released the
+heap and then RETURNED from `main`; the day `List<T>` began to own, their
+scope-exit drops ran over unmapped memory, the runtime refused the free, and
+the refusal's own trap route died on the same released heap — an
+uncontrolled stop, the class D-013 exists to prevent. Nothing can run after
+the release but the exit itself; a measurement that must follow it goes into
+`exit`'s operand, evaluated after the call. `release_then_exit.npk`.)*
 run-once shutdown — and 69 executed tests gained the same line before
 their success exits (the heap/leak demonstrations excluded: their explicit
 frees ARE the assertion). The seed learned the two builtins
@@ -13413,6 +13421,41 @@ through a pointer base is exempt. Proven observably by the b-stage
 machinery in `overwrite_owned.npk`: 2000 overwrites of an `OwnedFd` field
 and 2000 of an `OwnedFd[2]` element survive only because every old
 descriptor's drop closed it — without the drop, EMFILE near 1024.
+*(1.5.1b step 5, 2026-09-04, two corrections to the paragraphs above. First,
+THE `pass` CLEAR IS GATED ON THE VALUE'S TYPE: the emitter's half of "`pass`
+moves implicitly" cleared the root binding's drop flag for every `pass`
+rooted at an owning local, `x.f` included — the whole-binding rule the
+partial-move text states — but it did so for a COPYABLE `f` too, so `pass
+h.n` over an `int64` field left `h`'s `OwnedFd` undropped on every call, from
+1.2.3 until `List<T>` began to own and a function returning `xs.count` leaked
+every list (`list_fds.npk`). The clear now asks whether the passed value's
+type drops — substituted first, since inside a generic body the recorded
+type is the template's `T` and the first build of the gate freed every
+`List<string>` element twice — and a value that does not drop transfers
+nothing, so the root keeps its flag; `move(h.n)` and a nested `pass
+w.inner.n` are gated the same way (`pass_field.npk`). The whole-binding rule
+for an OWNING projection is unchanged and its sibling-leak item stays open.
+Second, "EMFILE near 1024" was true of the machine in 1.1.12b and not of the
+one in 1.5.1b, whose session sets a soft descriptor limit of 1,048,576 —
+every descriptor-exhaustion proof in the suite, `overwrite_owned.npk`
+included, passed against the leaking build. Both runners now lower their own
+soft `RLIMIT_NOFILE` to `nitpick.toml`'s `[limits] nofile` before spawning
+anything (BUILD_REFERENCE §7.1), and `fd_ceiling.npk` measures that the
+number reaches a program. Third, THE PARTIAL-MOVE ITEM CLOSES: a `move` or a
+`pass` out of a FIELD or an ELEMENT leaves the type's canonical VACANT value
+(D-225) in the place, and the aggregate stays live. Until this step the
+emitter cleared the whole root's flag for a field move — every sibling
+leaked — and, since the field overwrite above drops unconditionally, a field
+moved out and then reassigned was dropped a second time: `saved =
+move(r.env); r.env = move(frame);` in the resolver's own constant folding
+freed `saved`'s list at its second line, a double free the compiler never
+saw because its `main` exits without drops, found by the first unit tests
+that let a resolver drop (`type_layout`, `type_generic`, `expr_types`, each
+a SIGSEGV out of `npk_heap_bad`'s trap route over a corrupted heap). Now the
+moved-out field owns nothing, the overwrite drops nothing, the scope-exit
+drop releases the siblings, and a vacant List grows from zero
+(`list_reserve`, which doubled from zero forever). `partial_move.npk` pins
+the three shapes; raised for ratification as S-26.)*
 
 What REMAINS of D-183's partial-place item after this: destructuring
 ownership and statement-end temporaries, unchanged; the field/element
@@ -16311,4 +16354,50 @@ name and no drop is emitted. `temp_drops.npk` runs every shape 2 000 times;
 `temp_fd.npk` proves the drop by the descriptor table (2 000 opens lent and
 closed); `temp_relay.npk` the relay's error path; `temp_await.npk` the frame
 region under `// stress: 40`; the `cost` stage's temporaries probe holds the
-nested form to 2× the bound form's peak.
+nested form to 4× the bound form's peak — measured ×3.0, three live bodies at
+the store against two (the plan wrote 2 before the mechanics were known; the
+probe's comment carries the count).
+
+## D-247 — `List<T>` is compiler-known and OWNING — **SETTLED (ratified with 1.5.1b; landed at step 5, 2026-09-04)**
+
+The compiler's own growable collection (`src/frontend/list.npk`, 1.4.7's
+twenty-two families made one) was a `wild T->` block with a count and a
+capacity that nothing ever freed: every pass's tables leaked to process exit,
+which is where the compiler's 10 GiB peak over itself came from (the `cost`
+stage's `self` unit at the 1.5.1 close), and a by-value copy of a `List`
+aliased one block under two headers — the next `list_push` that `ralloc`ed
+left the other dangling. **The decision.** `List<T>` is compiler-known and
+owning: `type_drops` answers true for it unconditionally (as for `dyn`),
+whatever its `wild` field says; its generated drop body drops the `count`
+elements it holds through `T`'s drop where `T` owns, then hands the block back
+through `npk_dalloc` (`cap == 0` is the vacant List, D-225, which owns
+nothing); it is therefore move-only under TYPE-046, which also refuses the
+aliasing copy. A struct holding a List drops it through its own generated
+body; a List that must outlive its scope is moved, like any owner; growth
+stays `ralloc` on the block, and the drop frees whichever block is current.
+The precedent is `OwnedFd` (TY 39): a compiler-known type whose drop does the
+manual thing on the author's behalf, by decision. **Why not the
+alternatives**: a `buffer`-backed List frees its block and leaks its owning
+elements; a user-declared drop hook is a destructor design the language does
+not have; manual `list_free` + `defer` at 153 holders is the regime the
+managed lowering exists to replace. **Landed at 1.5.1b step 5, keyed on the
+`list` module** — the loader records the scope of the file module named
+`list` and the layout marks a struct there named `List` with exactly the
+shape `{ items: a pointer; count; cap }` as owning — because the declaration
+cannot move into the prelude until a snapshot carries it (D-205: the builder's
+embedded prelude has no `List`, and `src/` must compile under the builder); the
+move to the prelude, where D-239 makes the name unique, follows the cycle's
+snapshot refresh as step 5b, and `generic_list.npk`'s own same-named test
+struct is renamed then. `list_drop.npk` (100 rounds of 10 000 strings, the
+`lists` probe holding it to 2× `list_once.npk`'s peak), `list_nested.npk` (a
+List in a struct in a List), `list_fds.npk` (1 500 descriptors in three
+dropped lists, against a table of 1 024) and `list_moved.npk` (TYPE-046,
+TYPE-047) carry it.
+
+The first program to drop a List found the defect recorded under D-183's
+landing note of the same day: `pass xs.count` cleared the list's drop flag,
+because the emitter's `pass` clear never asked whether the passed value's
+type drops — every owning local returned by one of its copyable fields had
+leaked since 1.2.3, and the suite's descriptor-exhaustion proofs could not
+see it under the session's descriptor limit. Both are fixed in the same step
+(`pass_field.npk`, `fd_ceiling.npk`, `[limits] nofile`).

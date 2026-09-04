@@ -1,0 +1,45 @@
+// expect-exit: 0
+//
+// NESTED DROPS (D-247, 1.5.1b step 5): a `List` inside a struct inside a
+// `List` -- the outer list's drop runs each row's generated drop, which runs
+// the inner list's, which frees each cell. Fifty rounds; the values prove the
+// rows were built, the process's survival that nothing was freed twice.
+mod:list_nested;
+use "../../../src/frontend/list.npk".*;
+
+struct:Row = { List<string>:cells; int32:id; };
+
+func:make_row = Row(int32:id) never fails {
+    List<string>:cells = raw list_init::<string>(4i64);
+    for (int32:k in 0i32...10i32) {
+        drop list_push(@cells, string_concat("c", int_to_string((id * 10i32 + k) => int64)));
+    }
+    pass Row{ cells: move(cells), id: id };
+};
+
+func:round = int64() never fails {
+    List<Row>:rows = raw list_init::<Row>(8i64);
+    for (int32:i in 0i32...100i32) { drop list_push(@rows, raw make_row(i)); }
+    int64:sum = 0i64;
+    for (int64:r in 0i64...rows.count) {
+        sum = sum + (rows.items[r].id => int64) + rows.items[r].cells.count;
+    }
+    pass sum;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int32:n in 0i32...50i32) { acc = acc + (raw round()); }
+    if (acc != 297500i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (IntOverflow) { exit 93i32; }, (OutOfBounds) { exit 94i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,37 @@
+// release_trap: A TRAP AFTER THE RELEASE IS STILL A CONTROLLED STOP (1.5.1b
+// step 5). TYPE-062 leaves exactly one place where code runs after
+// `wild_release_all()`: the operand of the `exit` that must follow it. A trap
+// raised there -- here D-210's overflow -- travels to `failsafe` through the
+// executor, which `npk_exec` reads from the thread's TLS block; until this
+// step that block was a heap allocation the release had just unmapped, and
+// the trap route died with SIGSEGV. The TLS block is a raw mapping now, in no
+// table, so the route reaches `failsafe` and the process stops as the handler
+// says: 93.
+// expect-exit: 93
+mod:release_trap;
+error:E9;
+
+func:boom = int32(int32:a) never fails {
+    int32:x = a * 2000000i32;
+    pass x;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:seed = (argv.len =>! int32) + 2000i32;
+    wild_release_all();
+    exit (raw boom(seed));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 92i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 92i32; }
+    }
+    exit 9i32;
+};

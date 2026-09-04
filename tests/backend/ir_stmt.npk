@@ -114,8 +114,8 @@ func:fx = Fx(string:src, InternTable->:it) never fails {
         i = i + 1i32;
     }
 
-    Fx:out = Fx{ ast: ast, types: types, tab: tab, diags: diags, ets: ets,
-                 inst: inst, scope: scope, mod_id: mod_id,
+    Fx:out = Fx{ ast: move(ast), types: move(types), tab: move(tab), diags: diags, ets: move(ets),
+                 inst: move(inst), scope: scope, mod_id: mod_id,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -190,8 +190,6 @@ func:main = int32(cstring[]:_~argv) {
     string:t4 = raw emitted(@f, @it, 4i32, @st, @w4);
     if (!(raw string_eq(t4,
         "define i32 @main({ ptr, i64 } %a0) {\nentry:\n  %t0 = alloca { ptr, i64 }\n  store { ptr, i64 } %a0, ptr %t0\n  ret i32 0\n}\n\n"))) { exit 14i32; }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

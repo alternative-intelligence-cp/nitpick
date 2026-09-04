@@ -70,7 +70,7 @@ func:cx = Cx(string:src, InternTable->:it) never fails {
                                   @inst, @fninsts, @ets);
     int32:t = raw type_of_expr(@e, node);
 
-    Cx:out = Cx{ types: types, diags: diags, ty: t,
+    Cx:out = Cx{ types: move(types), diags: diags, ty: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -296,8 +296,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw float_significand_bits(128i32)) != 113i32)      { exit 102i32; }
     if ((raw float_significand_bits(256i32)) != 237i32)      { exit 103i32; }
     if ((raw float_significand_bits(512i32)) != 489i32)      { exit 104i32; }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

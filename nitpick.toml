@@ -91,6 +91,13 @@ lld-flags     = ["-static"]
 # its expectation cannot drift apart -- and they assert on stable CODES and
 # spans, never on message text (§7.1 has the marker grammar).
 
+[limits]                         # 1.5.1b step 5: the soft RLIMIT_NOFILE both runners stand under
+nofile = 1024                    # a descriptor-exhaustion proof (overwrite_owned, list_fds, pass_field)
+                                 # means the same thing on every machine only under ONE ceiling: each
+                                 # runner lowers its own soft limit to this before spawning anything,
+                                 # and every tool and program under test inherits it; fd_ceiling.npk
+                                 # measures that the number arrived
+
 [[test]]
 name = "conformance"
 stage = "compile"

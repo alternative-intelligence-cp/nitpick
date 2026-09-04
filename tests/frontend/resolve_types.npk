@@ -62,7 +62,7 @@ func:ty = Fix(string:decls, string:type_text, InternTable->:it) never fails {
     TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     int32:resolved = raw resolve_type(@r, node, scope);
 
-    Fix:f = Fix{ ast: ast, types: types, tab: tab, diags: diags,
+    Fix:f = Fix{ ast: move(ast), types: move(types), tab: move(tab), diags: diags,
                  scope: scope, ty: resolved };
     pass f;
 };
@@ -252,8 +252,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw type_kind(@cascade.types, cascade.ty)) != (raw TY_POINTER())) {
         exit 101i32;
     }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

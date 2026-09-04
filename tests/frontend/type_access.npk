@@ -138,7 +138,7 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) never fails {
     // deciding before the bodies are walked would miss every `Container<int32>:c;`
     // written inside one.
     drop check_instantiations(@inst, @im, @bd, @tr);
-    Ax:out = Ax{ types: types, diags: diags,
+    Ax:out = Ax{ types: move(types), diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -805,8 +805,6 @@ func:main = int32(cstring[]:_~argv) {
         Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) never fails { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) never fails { pass 2i32; }; };",
                         "", @it);
         if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
-
-        wild_release_all();
 
         wild_release_all();
         exit 0i32;

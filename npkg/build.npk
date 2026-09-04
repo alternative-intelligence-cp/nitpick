@@ -216,7 +216,7 @@ pub func:zero_dep = List<string>(Ctx->:c, string:obj, List<string>:allow, string
         drop list_push(@out, move(m0));
         pass out;
     }
-    List<string>:undef = u.value;
+    List<string>:undef = move(u.value);
     List<string>:extra = raw strlist_minus(undef, allow);
     if (extra.count == 0i64) { pass out; }
     string:m = string_concat(name, ": needs symbol(s) the project does not provide: ");
@@ -236,7 +236,7 @@ pub async func:build_floor = Step(Ctx->:c) {
     string:rt = raw in_root(c, "runtime/npkrt.ll");
     Result<List<string>>:al = runtime_allowlist(rt);
     if (al.is_error) { pass (raw step_bad("runtime/npkrt.ll could not be read for the allowlist")); }
-    c.allow = al.value;
+    c.allow = move(al.value);
     // THE FLOOR IS HELD TO THE SAME BAN as every emission (D-218.10): it is
     // linked into every artifact, including the one that ships.
     Result<cstring>:flc = to_cstring(rt);

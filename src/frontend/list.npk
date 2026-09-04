@@ -76,6 +76,19 @@ pub func:list_init<T> = List<T>(int64:cap) never fails {
 pub func:list_reserve<T> = NIL(List<T>->:l, int64:need) never fails {
     int64:want = l.count + need;
     if (want <= l.cap) { pass NIL; }
+    // A VACANT LIST GROWS FROM ZERO (1.5.1b step 5): `cap == 0` is the
+    // canonical vacant value a moved-out field or an uninitialised binding
+    // holds (D-225), and it owns no block -- so the first reservation
+    // allocates instead of doubling, which from zero would never end.
+    if (l.cap == 0i64) {
+        int64:n0 = need;
+        if (n0 < 1i64) { n0 = 1i64; }
+        wild int8->:fresh = alloc(n0 * #size_of<T>());
+        l.items = fresh =>! wild T->;
+        l.cap = n0;
+        l.count = 0i64;
+        pass NIL;
+    }
     int64:nc = l.cap;
     while (nc < want) { nc = nc * 2i64; }
     wild int8->:bigger = ralloc(l.items =>! wild int8->, nc * #size_of<T>());

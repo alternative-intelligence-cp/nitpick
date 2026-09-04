@@ -57,6 +57,7 @@ pub struct:Manifest = {
     string:z3_version;       // [verify] z3-version: what `z3 -version` must report (D-218.1)
     string:z3_sha256;        // [verify] z3-sha256: the binary's sha256, 64 lowercase hex
     List<string>:z3_options; // [verify] z3-options: the determinism profile, passed verbatim (D-218.2)
+    int64:nofile;            // [limits] nofile: the soft RLIMIT_NOFILE the runner and everything it spawns stand under (1.5.1b step 5); 1024 when absent
     bool:ok;
     string:problem;          // when !ok, the one sentence to print
 };
@@ -70,6 +71,7 @@ func:blank = Manifest(string:root) never fails {
                    tests: raw list_init::<TestTarget>(4i64),
                    z3: false, z3_version: "", z3_sha256: "",
                    z3_options: raw list_init::<string>(4i64),
+                   nofile: 1024i64,
                    ok: true, problem: "" };
 };
 
@@ -106,6 +108,10 @@ func:schema_allows = bool(string:section, string:key) never fails {
         pass false;
     }
     if (raw text_eq(section, "dependencies")) { pass true; }
+    if (raw text_eq(section, "limits")) {
+        if (raw text_eq(key, "nofile")) { pass true; }
+        pass false;
+    }
     if (raw text_eq(section, "test")) {
         if (raw text_eq(key, "name"))      { pass true; }
         if (raw text_eq(key, "stage"))     { pass true; }
@@ -177,22 +183,35 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
     if ((m.opt_level != 0i64) && (m.opt_level != 2i64)) {
         pass (raw refuse(root, "nitpick.toml: [build] opt-level must be 0 (no `opt`, `llc-flags`) or 2 (`opt-flags` then `llc-opt-flags`) -- those are the two flag sets [toolchain] pins, and a level with no pinned flags is a build nobody can reproduce (D-204)"));
     }
+    // THE DESCRIPTOR CEILING (1.5.1b step 5): one number both runners lower
+    // their own soft RLIMIT_NOFILE to before spawning anything, so a program's
+    // descriptor-exhaustion proof means the same thing on every machine. The
+    // Linux default when the manifest is silent; the bounds keep the runner's
+    // own pipes possible and the number one a default hard limit can honour.
+    if (raw toml_has(d, "limits", 0i64 - 1i64, "nofile")) {
+        Result<int64>:nf = toml_int(d, "limits", 0i64 - 1i64, "nofile");
+        if (nf.is_error) { pass (raw refuse(root, "nitpick.toml: [limits] nofile is not an integer")); }
+        if ((nf.value < 64i64) || (nf.value > 1048576i64)) {
+            pass (raw refuse(root, "nitpick.toml: [limits] nofile must be between 64 and 1048576 -- below 64 the runner cannot hold its own capture pipes, above 1048576 no default hard limit can honour it"));
+        }
+        m.nofile = nf.value;
+    }
 
     Result<string>:llvm = need_string(d, "toolchain", "llvm");
     if (llvm.is_error) { pass (raw refuse(root, "nitpick.toml has no [toolchain] llvm pin -- D-204 makes the toolchain a build INPUT, and an unpinned input is not one")); }
     m.llvm = move(llvm.value);
     Result<List<string>>:f1 = need_strings(d, "toolchain", "llc-flags");
     if (f1.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] llc-flags is missing or is not an array of strings")); }
-    m.llc_flags = f1.value;
+    m.llc_flags = move(f1.value);
     Result<List<string>>:f2 = need_strings(d, "toolchain", "llc-opt-flags");
     if (f2.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] llc-opt-flags is missing or is not an array of strings")); }
-    m.llc_opt_flags = f2.value;
+    m.llc_opt_flags = move(f2.value);
     Result<List<string>>:f3 = need_strings(d, "toolchain", "opt-flags");
     if (f3.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] opt-flags is missing or is not an array of strings")); }
-    m.opt_flags = f3.value;
+    m.opt_flags = move(f3.value);
     Result<List<string>>:f4 = need_strings(d, "toolchain", "lld-flags");
     if (f4.is_error) { pass (raw refuse(root, "nitpick.toml: [toolchain] lld-flags is missing or is not an array of strings")); }
-    m.lld_flags = f4.value;
+    m.lld_flags = move(f4.value);
 
     // THE SOLVER PIN (D-218.1/D-218.2, 1.5.0). `z3 = true` declares the
     // project verified; then the version, the sha256 and the options list are
@@ -214,7 +233,7 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         if (m.z3_sha256.len != 64i64) { pass (raw refuse(root, "nitpick.toml: [verify] z3-sha256 must be 64 hex characters")); }
         Result<List<string>>:zo = need_strings(d, "verify", "z3-options");
         if (zo.is_error) { pass (raw refuse(root, "nitpick.toml: [verify] z3 is true but z3-options is missing or is not an array of strings -- the determinism profile is READ from here, never assumed (D-218.2)")); }
-        m.z3_options = zo.value;
+        m.z3_options = move(zo.value);
     }
 
     // THE TEST TABLE (D-238). An entry the runner cannot honour is refused BY
@@ -272,7 +291,7 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         if (has_paths) {
             Result<List<string>>:ps = toml_strings(d, "test", t, "paths");
             if (ps.is_error) { pass (raw refuse(root, string_concat(who, ": `paths` must be an array of strings"))); }
-            paths = ps.value;
+            paths = move(ps.value);
             if (paths.count == 0i64) { pass (raw refuse(root, string_concat(who, ": `paths` must name at least one directory"))); }
         } else {
             if (!has_path) { pass (raw refuse(root, string_concat(who, " needs `paths` (or its one-element shorthand `path`)"))); }
@@ -287,7 +306,7 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
             recursive = rc.value;
         }
         TestTarget:tt = TestTarget{ name: move(name.value), stage: move(stage), kind: move(kind),
-                                    paths: paths, recursive: recursive };
+                                    paths: move(paths), recursive: recursive };
         drop list_push(@m.tests, move(tt));
     }
     pass m;

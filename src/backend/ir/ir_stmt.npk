@@ -754,8 +754,25 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 // `x.f` alike; the sibling-leak that field granularity would fix is the
 // partial-move item recorded open on D-183. A root that is not a flagged
 // local — a pointer parameter, a global, a temporary — clears nothing.
+//
+// A VALUE THAT DOES NOT DROP TRANSFERS NOTHING (1.5.1b step 5): `pass h.n`
+// over an `int64` field copies the number out and leaves every owning
+// sibling exactly where it was, so the root KEEPS its flag and its scope-exit
+// drop still runs. Until this line the clear was unconditional, and a struct
+// returned by one of its copyable fields leaked its owning fields on every
+// call — found the day `List<T>` began to drop, by `list_fds.npk`'s
+// descriptor exhaustion, and pinned by `pass_field.npk`. The checker's own
+// rule agrees: nothing moves because it was passed (bindings.npk).
 pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (raw expr_is_none(vid)) { pass NIL; }
+    // The recorded type is the TEMPLATE's inside a generic body -- `move(v)`
+    // over a `move T:v` records `T`, which drops for no instance -- so it is
+    // substituted before it is asked, as every drop decision here is (the
+    // first build of this gate freed every `List<string>` element twice).
+    int32:vt = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, vid));
+    if (vt > 0i32) {
+        if (!(raw type_drops(x.tr, vt, x.scope, 64i32))) { pass NIL; }
+    }
     PlaceRoot:r = raw place_root(x.ast, vid, raw BORROW_FUEL());
     if (r.exhausted) { pass NIL; }
     if (raw expr_is_none(r.id)) { pass NIL; }
@@ -767,6 +784,50 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (fl.len == 0i64) { pass NIL; }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", <-fl, ""));
     pass NIL;
+};
+
+// A VALUE LEAVING ITS PLACE, AND WHAT THE PLACE KEEPS (D-065; 1.5.1b step 5).
+// `move(place)` and `pass place` transfer the value out. For a WHOLE binding
+// the transfer is the drop flag (D-183, above): cleared, so the scope-exit
+// drop skips it. For a FIELD or an ELEMENT of an owning aggregate that flag
+// is the whole aggregate's, and clearing it leaked every sibling (the
+// partial-move item D-183 recorded open) -- while leaving it set dropped the
+// moved-out value a second time, because D-186's field overwrite drops the
+// old value unconditionally: `saved = move(r.env); r.env = move(frame);`
+// freed `saved`'s list at its second line, and the compiler never noticed
+// because its own `main` exits without drops; the first unit test that let a
+// resolver drop found it. So a moved-out place KEEPS THE TYPE'S CANONICAL
+// VACANT VALUE (D-225): the value is loaded, the vacant written into the
+// place, and the aggregate stays live -- its overwrite drops nothing, its
+// scope-exit drop releases the siblings, and the moved-out field owns
+// nothing, which is what a move means. The place is evaluated ONCE: its
+// address is taken and the value loaded from it. A value whose type does not
+// drop, or a place with no address, takes the old path.
+pub func:emit_move_out = IrVal(ExprEmitter->:x, ExprId:vid) never fails {
+    ExprNode:opn = raw ast_expr(x.ast, vid);
+    if (opn.kind != ExprKind.ExprIdentifierExpr) {
+        int32:vt = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, vid));
+        if (vt > 0i32) {
+            if (raw type_drops(x.tr, vt, x.scope, 64i32)) {
+                PlaceVal:place = raw addr_of(x, vid);
+                if (place.state == (raw LL_OK())) {
+                    LlType:ll = raw ll_type(x.fe.ctx, place.type_id);
+                    if (raw ll_is_ok(ll)) {
+                        string:t = raw irw_temp(x.fe.w);
+                        drop irw_line(x.fe.w, raw cat5(t, " = load ", ll.text, ", ptr ", place.addr));
+                        drop irw_line(x.fe.w, raw cat5("store ", ll.text, " zeroinitializer, ptr ", place.addr, ""));
+                        drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, place.type_id),
+                                          "(ptr ", place.addr, ")"));
+                        pass (raw iv(string_concat(ll.text, ""), move(t), place.type_id));
+                    }
+                }
+            }
+        }
+    }
+    IrVal:v = raw emit_expr(x, vid);
+    if (!(raw iv_is_ok(v))) { pass v; }
+    drop clear_root_flag(x, vid);
+    pass v;
 };
 
 func:compound_op = TokenKind(TokenKind:k) never fails {
@@ -1500,17 +1561,18 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     string:vref = "";
     ExprId:val = raw stmt_operand(s);
     if (!(raw expr_is_none(val))) {
-        IrVal:v = raw emit_expr(x, val);
+        // `pass` MOVES IMPLICITLY (D-183): the value leaves the frame, so the
+        // unwind below must not free the body it carries -- a whole binding's
+        // flag cleared, a field or element left VACANT (1.5.1b step 5), both
+        // BEFORE the defers run, or the scope drop would release the returned
+        // value.
+        IrVal:v = raw emit_move_out(x, val);
         if (!(raw iv_is_ok(v))) { pass v; }
         // THE DECLARED `T` IS A SLOT (1.0.6e): `pass d;` from a function
         // returning `dyn Speaks` builds the fat pointer here.
         v = raw emit_fit(x, x.fe.ret_type, move(v), s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         vref = move(v.ref);
-        // `pass` MOVES IMPLICITLY (D-183): the value leaves the frame, so the
-        // unwind below must not free the body it carries. Cleared BEFORE the
-        // defers run, or the scope drop would release the returned value.
-        drop clear_root_flag(x, val);
         drop temp_take(x, vref);   // a returned temporary leaves with it (D-246)
     }
     // THE RETURN SEAM'S TWO HALVES (D-207): build and store, unwind, return.

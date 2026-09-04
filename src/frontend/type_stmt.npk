@@ -332,8 +332,39 @@ pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) never 
     for (int32:i in 0i32...count) {
         StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         drop check_stmt(e, x);
+        // `wild_release_all()` IS FOLLOWED BY `exit` (TYPE-062, 1.5.1b step 5):
+        // the call unmaps every chunk of both regimes (D-151), so no drop, no
+        // allocation and not even the trap route can run after it. The next
+        // statement of the same block must be `exit`; a measurement that has
+        // to happen after the release goes into `exit`'s operand.
+        if (raw stmt_is_release_all(e, x)) {
+            bool:ok = false;
+            if ((i + 1i32) < count) {
+                StmtId:nx = StmtId{ index: raw ast_id_at(e.ast, start, i + 1i32) };
+                if ((raw ast_stmt(e.ast, nx)).kind == StmtKind.StmtExitStmt) { ok = true; }
+            }
+            if (!ok) {
+                drop diaglist_push(e.diags, raw diag_error(raw TYPE_RELEASE_THEN_EXIT(),
+                    "`wild_release_all()` unmaps every chunk of both regimes (D-151), so nothing may run after it but `exit` -- not a drop, not an allocation, not even the trap route; the next statement in this block must be `exit`, and what has to be measured after the release goes into its operand",
+                    (raw ast_stmt(e.ast, x)).span));
+            }
+        }
     }
     pass NIL;
+};
+
+// Is this statement the bare call `wild_release_all();`? The callee is the
+// builtin's own name -- no declaration may take it -- read off the identifier.
+func:stmt_is_release_all = bool(ExprTyper->:e, StmtId:id) never fails {
+    StmtNode:s = raw ast_stmt(e.ast, id);
+    if (s.kind != StmtKind.StmtExprStmt) { pass false; }
+    ExprId:eid = raw stmt_expr(s);
+    if (raw expr_is_none(eid)) { pass false; }
+    ExprNode:c = raw ast_expr(e.ast, eid);
+    if (c.kind != ExprKind.ExprCallExpr) { pass false; }
+    ExprNode:cal = raw ast_expr(e.ast, raw expr_callee(c));
+    if (cal.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    pass (raw string_eq(raw intern_get(e.interns, cal.payload =>! int32), "wild_release_all"));
 };
 
 // AN ARM MAY NOT BIND AN OWNING PAYLOAD UNLESS THE PICK CONSUMES (D-216).

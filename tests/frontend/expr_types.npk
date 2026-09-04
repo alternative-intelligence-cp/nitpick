@@ -76,7 +76,7 @@ func:ex = Ex(string:src, InternTable->:it) never fails {
                                   @inst, @fninsts, @ets);
     drop check_module(@e, mod_id, scope);
 
-    Ex:out = Ex{ ast: ast, types: types, ets: ets, diags: diags,
+    Ex:out = Ex{ ast: move(ast), types: move(types), ets: move(ets), diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -111,7 +111,7 @@ func:px = Px(string:src, InternTable->:it) never fails {
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
     Parser:p = raw parser_init(@tk, @ast, @pd, it);
     ExprId:id = raw p_parse_expr(@p);
-    Px:out = Px{ ast: ast, id: id };
+    Px:out = Px{ ast: move(ast), id: id };
     pass out;
 };
 
@@ -282,7 +282,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw expr_is_borrow(@d1.ast, d1.id, 1i32)))          { exit 43i32; }
 
     wild_release_all();
-    pass 0i32;
+    exit 0i32;
 };
 
 // Mandatory since the runtime's trap route landed (D-142): `npk_trap` calls the

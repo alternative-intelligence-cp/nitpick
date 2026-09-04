@@ -153,6 +153,21 @@ async func:main = int32(cstring[]:argv) {
         drop say_err(m.problem);
         exit 2i32;
     }
+    // THE DESCRIPTOR CEILING (1.5.1b step 5): lowered on THIS process before
+    // anything is spawned, so every tool and every program under test inherits
+    // it -- one number from the manifest on every machine, or the
+    // descriptor-exhaustion proofs in the suite (`overwrite_owned`,
+    // `list_fds`, `pass_field`) prove nothing under a generous session limit.
+    // A hard limit below the ceiling cannot be raised from here and is refused
+    // by name; `fd_ceiling.npk` measures that the number reached the programs.
+    Result<RLimitPair>:lim0 = sys_nofile_limits();
+    if (lim0.is_error) { drop say_err("npkg: the process's descriptor limits cannot be read (prlimit64)"); exit 2i32; }
+    if (lim0.value.max < m.nofile) {
+        drop say_err(string_concat("npkg: the hard RLIMIT_NOFILE of this session is below nitpick.toml's [limits] nofile of ", string_concat(int_to_string(m.nofile), " -- a runner cannot raise a hard limit; raise the session's or lower the manifest's")));
+        exit 2i32;
+    }
+    Result<NIL>:lim1 = sys_nofile_soft(m.nofile);
+    if (lim1.is_error) { drop say_err("npkg: the soft RLIMIT_NOFILE could not be set (prlimit64)"); exit 2i32; }
     Result<Tools>:tr = tools_find();
     if (tr.is_error) { drop say_err("npkg: the environment cannot be read (PATH, the working directory)"); exit 2i32; }
     Tools:t = move(tr.value);
@@ -165,7 +180,7 @@ async func:main = int32(cstring[]:argv) {
                                                           string_from_bytes(t.lld.ptr, t.lld.len),
                                                           t.env, m.llvm);
     if (pin.is_error) { drop say_err("npkg: the toolchain could not be asked its version"); exit 2i32; }
-    List<string>:pins = pin.value;
+    List<string>:pins = move(pin.value);
     if (pins.count > 0i64) {
         for (int64:i in 0i64...pins.count) { drop say_err(raw strlist_view(pins, i)); }
         exit 2i32;
@@ -203,11 +218,13 @@ async func:main = int32(cstring[]:argv) {
     if (selfcheck) {
         Result<int64>:bad0 = await selfcheck_run(@c, true);
         if (bad0.is_error) { drop say_err("npkg: the self-check could not run (a spawn failed)"); exit 2i32; }
+        int32:code = 0i32;
+        if (bad0.value > 0i64) { code = 1i32; }
         wild_release_all();
-        if (bad0.value > 0i64) { exit 1i32; }
-        exit 0i32;
+        exit code;
     }
     bool:filtering = (only.count > 0i64);
+    drop say(raw stage_text("limits", string_concat("soft RLIMIT_NOFILE ", string_concat(int_to_string(c.m.nofile), " (nitpick.toml [limits] nofile): every tool and program this run spawns inherits it"))));
     if (!filtering) {
         Result<int64>:bad = await selfcheck_run(@c, false);
         if (bad.is_error) { drop say_err("npkg: the self-check could not run (a spawn failed)"); exit 2i32; }

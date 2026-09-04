@@ -8,16 +8,23 @@ mod:argv_after_release;
 // memory. Found by the NPK_HEAP_STATS report, whose first version walked the
 // environment at exit and faulted in the compiler's own build. `argv.len` is
 // a register value and proves nothing; reading an ENTRY is the test.
+// EVERYTHING MEASURED AFTER THE RELEASE RUNS INSIDE `exit`'S OPERAND
+// (TYPE-062, 1.5.1b step 5): the statement after `wild_release_all()` must be
+// `exit`, and the operand is evaluated after the call, before the process
+// ends -- which is exactly the window this program exists to look into.
+func:after = int32(cstring[]:argv, int64:n) never fails {
+    if (argv.len != n) { pass 1i32; }
+    if (argv[0i64].len == 0i64) { pass 2i32; }
+    cstring[]:env = environ();
+    if (env.len > 0i64) {
+        if (env[0i64].len == 0i64) { pass 3i32; }
+    }
+    pass 0i32;
+};
 func:main = int32(cstring[]:argv) {
     int64:n = argv.len;
     wild_release_all();
-    if (argv.len != n) { exit 1i32; }
-    if (argv[0i64].len == 0i64) { exit 2i32; }
-    cstring[]:env = environ();
-    if (env.len > 0i64) {
-        if (env[0i64].len == 0i64) { exit 3i32; }
-    }
-    exit 0i32;
+    exit (raw after(argv, n));
 };
 func:failsafe = int32(Error:e) {
     pick (e) {

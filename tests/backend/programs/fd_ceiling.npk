@@ -1,0 +1,50 @@
+// fd_ceiling: THE RUNNER'S DESCRIPTOR CEILING REACHED THIS PROGRAM (1.5.1b
+// step 5). Every descriptor-exhaustion proof in this suite -- overwrite_owned,
+// list_fds, pass_field -- opens a few thousand times and expects a leak to
+// surface as EMFILE, which happens only under a soft RLIMIT_NOFILE near the
+// Linux default of 1024. On a session that sets 1,048,576 each of them passed
+// against a build that leaked, from 1.2.3 (the `pass h.n` clear) to 1.5.1b.
+// Both runners now lower their own soft limit to nitpick.toml's
+// `[limits] nofile` before spawning anything, and this program measures that
+// the number arrived: it opens /dev/null until open refuses, holding every
+// descriptor in a List<OwnedFd> that the function's exit drops (so exit 0 also
+// asserts the block and every descriptor came back), and requires the count to
+// sit under the ceiling. Run by hand under the session's default it exits 5.
+// expect-exit: 0
+mod:fd_ceiling;
+use "../../../src/frontend/list.npk".*;
+error:E9;
+
+func:fill = int64(cstring:devnull) never fails {
+    List<OwnedFd>:held = raw list_init::<OwnedFd>(64i64);
+    int64:n = 0i64;
+    while (n < 5000i64) {
+        Result<fd>:r = open(devnull, (O_RDONLY => int32) => int64, (S_NONE => int32) => int64);
+        if (r.is_error) { break; }
+        drop list_push(@held, own_fd(r.value));
+        n = n + 1i64;
+    }
+    pass n;
+};
+
+func:main = int32() {
+    cstring:devnull = to_cstring("/dev/null") ?! E9;
+    int64:n = raw fill(devnull);
+    if (n > 1024i64) { exit 5i32; }    // the ceiling never reached this process
+    if (n < 900i64)  { exit 6i32; }    // something else holds most of the table
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 91i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 96i32; },
+        (HeapBadRequest) { exit 95i32; },
+        (HeapOom)        { exit 95i32; },
+        (Unreachable)    { exit 93i32; },
+        (WildLeak)       { exit 94i32; },
+        (*)              { exit 92i32; }
+    }
+    exit 9i32;
+};

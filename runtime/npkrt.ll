@@ -360,7 +360,16 @@ entry:
   ; blocks in the <wild-live> set (D-151), so the runtime's own TLS and
   ; executor would be reported as leaks at a clean exit — which is exactly
   ; what the leak tests said the first time this ran.
-  %tls = call ptr @npk_alloc_internal(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
+  ;
+  ; AND NOT A HEAP BLOCK AT ALL (1.5.1b step 5): `wild_release_all()` unmaps
+  ; every chunk, and a trap raised after it — by `exit`'s own operand, the one
+  ; statement TYPE-062 still admits there — reads `%fs:8` on its way to
+  ; `failsafe`. With this block in a chunk that read faulted, and a refused
+  ; free became SIGSEGV instead of a controlled stop (found by the first unit
+  ; tests to drop a resolver after their release). One raw mapping, in no
+  ; table, unmapped by nothing: the process ends with it.
+  %tlsa = call i64 @npk_hmap(i64 ptrtoint (ptr getelementptr (%npk.tls, ptr null, i32 1) to i64))
+  %tls = inttoptr i64 %tlsa to ptr
   %self = getelementptr %npk.tls, ptr %tls, i32 0, i32 0
   store ptr %tls, ptr %self
   %ex = getelementptr %npk.tls, ptr %tls, i32 0, i32 1

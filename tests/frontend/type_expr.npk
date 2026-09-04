@@ -68,7 +68,7 @@ func:ex = Ex(string:src, InternTable->:it) never fails {
                                   @inst, @fninsts, @ets);
     int32:t = raw type_of_expr(@e, node);
 
-    Ex:out = Ex{ types: types, diags: diags, ty: t,
+    Ex:out = Ex{ types: move(types), diags: diags, ty: t,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
 };
@@ -421,8 +421,6 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@pp2) != (0i64 - 1i64))                       { exit 161i32; }
     Ex:pp3 = raw ex("true--", @it);
     if (raw errs(@pp3) != (0i64 - 1i64))                       { exit 162i32; }
-
-    wild_release_all();
 
     wild_release_all();
     exit 0i32;

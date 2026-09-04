@@ -1,0 +1,10 @@
+# D-247 (1.5.1b step 5): `List<T>` owns its elements and its block, measured.
+# `list_drop.npk` builds and drops a 10 000-string list 100 times over;
+# `list_once.npk` builds one. Under NPK_HEAP_STATS the hundred rounds' peak
+# must stay within `bound` times the one list's -- a list that leaked would
+# peak at a hundred times it.
+kind    = "probe"
+program = "tests/backend/programs/list_drop.npk"
+against = "tests/backend/programs/list_once.npk"
+bound   = 2
+expect  = "pass"

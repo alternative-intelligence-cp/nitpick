@@ -1729,6 +1729,63 @@ func:emit_one_drop = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
 
     // A STRUCT DROPS ITS FIELDS IN REVERSE DECLARATION ORDER (D-183), and
     // only the ones that own something.
+    // `List<T>` OWNS ITS ELEMENTS AND ITS BLOCK (D-247, 1.5.1b step 5): the
+    // `count` elements dropped through `T`'s body where `T` owns, then the
+    // block handed back through `npk_dalloc` -- `cap == 0` is the vacant List
+    // (D-225), which owns nothing. The precedent is `OwnedFd`: a compiler-
+    // known type whose drop does the manual thing on the author's behalf.
+    if (raw type_is_list(tr, dty)) {
+        DeclId:ldid = DeclId{ index: raw type_decl(c.types, dty) };
+        DeclNode:ld = raw ast_decl(ast, ldid);
+        int32:lhome = raw symtab_home_scope(tab, ldid.index, 0i32);
+        int32:lel = 0i32;
+        int32:lm = 0i32;
+        while (lm < (raw item_member_count(ast, ld))) {
+            DeclNode:lfm = raw ast_decl(ast, raw item_member(ast, ld, lm));
+            if (lfm.kind == DeclKind.DeclFieldDecl) {
+                // field 0 is `items`, a pointer to T (`decl_is_list` checked)
+                FieldInfo:ifi = raw struct_field(tr, dty, raw decl_name(lfm), lhome);
+                if (ifi.found) { lel = raw type_elem(c.types, ifi.type_id); }
+                lm = raw item_member_count(ast, ld);
+            } else {
+                lm = lm + 1i32;
+            }
+        }
+        drop irw_raw(w, raw cat3("  %cp = getelementptr ", t.text, ", ptr %v, i32 0, i32 2"));
+        drop irw_raw(w, "  %cap = load i64, ptr %cp");
+        drop irw_raw(w, "  %own = icmp ne i64 %cap, 0");
+        drop irw_raw(w, "  br i1 %own, label %walk, label %done");
+        drop irw_raw(w, "walk:");
+        drop irw_raw(w, raw cat3("  %ip = getelementptr ", t.text, ", ptr %v, i32 0, i32 0"));
+        drop irw_raw(w, "  %items = load ptr, ptr %ip");
+        bool:elems = false;
+        if (lel != 0i32) {
+            if (raw type_drops_recorded(c.types, lel, 64i32)) { elems = true; }
+        }
+        if (elems) {
+            LlType:ell = raw ll_type(c, lel);
+            drop irw_raw(w, raw cat3("  %np = getelementptr ", t.text, ", ptr %v, i32 0, i32 1"));
+            drop irw_raw(w, "  %n = load i64, ptr %np");
+            drop irw_raw(w, "  br label %loop");
+            drop irw_raw(w, "loop:");
+            drop irw_raw(w, "  %i = phi i64 [ 0, %walk ], [ %ni, %body ]");
+            drop irw_raw(w, "  %at_end = icmp uge i64 %i, %n");
+            drop irw_raw(w, "  br i1 %at_end, label %free, label %body");
+            drop irw_raw(w, "body:");
+            drop irw_raw(w, raw cat3("  %ep = getelementptr ", ell.text, ", ptr %items, i64 %i"));
+            drop irw_raw(w, raw cat3("  call void ", raw drop_fn_sym(c, lel), "(ptr %ep)"));
+            drop irw_raw(w, "  %ni = add i64 %i, 1");
+            drop irw_raw(w, "  br label %loop");
+            drop irw_raw(w, "free:");
+        }
+        drop irw_raw(w, "  call void @npk_dalloc(ptr %items)");
+        drop irw_raw(w, "  br label %done");
+        drop irw_raw(w, "done:");
+        drop irw_raw(w, "  ret void");
+        drop irw_raw(w, "}");
+        pass NIL;
+    }
+
     if (k == (raw TY_STRUCT())) {
         DeclId:did = DeclId{ index: raw type_decl(c.types, dty) };
         DeclNode:d = raw ast_decl(ast, did);

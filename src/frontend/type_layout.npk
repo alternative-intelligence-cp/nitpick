@@ -117,6 +117,43 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
     pass (raw fi_none());
 };
 
+// IS THIS STRUCT THE COMPILER-KNOWN `List<T>` (D-247, 1.5.1b step 5)? Its
+// declaration sits in the `list` module the loader recorded, is named `List`,
+// and has exactly the shape the generated drop reads: `items` (a pointer),
+// `count`, `cap`, in that order. A same-named struct anywhere else (a test's
+// own `List`) is an ordinary struct.
+pub func:decl_is_list = bool(TypeResolver->:r, DeclId:did) never fails {
+    if (r.tab.list_scope == 0i32) { pass false; }
+    if ((raw symtab_home_scope(r.tab, did.index, 0i32)) != r.tab.list_scope) { pass false; }
+    DeclNode:d = raw ast_decl(r.ast, did);
+    if (d.kind != DeclKind.DeclStructDecl) { pass false; }
+    if (!(raw string_eq(raw intern_get(r.interns, raw decl_name(d)), "List"))) { pass false; }
+    int32:nf = 0i32;
+    int32:i = 0i32;
+    while (i < (raw item_member_count(r.ast, d))) {
+        DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            string:fname = raw intern_get(r.interns, raw decl_name(m));
+            if (nf == 0i32) {
+                if (!(raw string_eq(fname, "items"))) { pass false; }
+                if ((raw ast_type(r.ast, raw field_type(m))).kind != TypeKind.TypePointerType) { pass false; }
+            }
+            if (nf == 1i32) { if (!(raw string_eq(fname, "count"))) { pass false; } }
+            if (nf == 2i32) { if (!(raw string_eq(fname, "cap")))   { pass false; } }
+            nf = nf + 1i32;
+        }
+        i = i + 1i32;
+    }
+    pass (nf == 3i32);
+};
+
+pub func:type_is_list = bool(TypeResolver->:r, int32:lt) never fails {
+    if ((raw type_kind(r.types, lt)) != (raw TY_STRUCT())) { pass false; }
+    int32:di = raw type_decl(r.types, lt);
+    if (di <= 0i32) { pass false; }
+    pass (raw decl_is_list(r, DeclId{ index: di }));
+};
+
 // The whole struct: size rounded up to its own alignment, which is the widest
 // alignment any field wanted.
 //
@@ -183,6 +220,11 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
         }
         i = i + 1i32;
     }
+    // `List<T>` OWNS (D-247, 1.5.1b step 5): its block, and its `count`
+    // elements through `T`'s drop -- unconditionally, as `dyn` does, whatever
+    // its `wild` field says. Move-only follows (TYPE-046), which also refuses
+    // the aliasing copy the wild block permitted.
+    if (raw decl_is_list(r, did)) { drops = true; haspt = true; }
     drop tt_set_haspt(r.types, struct_type, haspt);
     drop tt_set_drops(r.types, struct_type, drops);
     drop tt_set_haschan(r.types, struct_type, haschan);

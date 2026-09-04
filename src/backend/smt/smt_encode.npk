@@ -176,8 +176,8 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, TypeTable->:types,
                   ver_name: raw list_init::<int32>(16i64),
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
-                  anon: 0i32, ordinals: ords, nonlinear: false, uses_sdiv: false,
-                  region_parent: rp, cur_region: 0i32 };
+                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
+                  region_parent: move(rp), cur_region: 0i32 };
 };
 
 // --- types -----------------------------------------------------------------------------
@@ -202,7 +202,7 @@ func:is_bool = bool(Encoder->:e, int32:ty) never fails {
 func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
     for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
-    SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: copy, region: e.cur_region };
+    SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: move(copy), region: e.cur_region };
     drop list_push(@e.hyps, move(h));
     pass NIL;
 };
@@ -234,7 +234,7 @@ func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
     int32:idx = raw sym_new(e, nm, ty);
     List<int32>:one = raw list_init::<int32>(1i64);
     drop list_push(@one, idx);
-    pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(nm), syms: one };
+    pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(nm), syms: move(one) };
 };
 
 func:term_none = Term() never fails {
@@ -393,7 +393,7 @@ func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:
     e.ordinals.items[kind => int64] = ord;
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
     for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
-    SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: copy,
+    SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: move(copy),
                        hyps: e.hyps.count, site: site, ordinal: ord,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
                        cone_syms: raw list_init::<int32>(1i64),
@@ -428,7 +428,7 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
 func:term_copy = Term(Term:t) never fails {
     List<int32>:s = raw list_init::<int32>(t.syms.count + 1i64);
     for (int64:i in 0i64...t.syms.count) { drop list_push(@s, t.syms.items[i]); }
-    pass Term{ ok: t.ok, is_bool: t.is_bool, text: string_concat(t.text, ""), syms: s };
+    pass Term{ ok: t.ok, is_bool: t.is_bool, text: string_concat(t.text, ""), syms: move(s) };
 };
 
 // A simd division: the any-lane guard's site, `unencoded` (P-12).
@@ -547,7 +547,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                 List<int32>:one = raw list_init::<int32>(1i64);
                 drop list_push(@one, si);
                 pass Term{ ok: true, is_bool: e.syms.items[si => int64].is_bool,
-                           text: raw sym_text(e, si), syms: one };
+                           text: raw sym_text(e, si), syms: move(one) };
             }
         }
         pass (raw term_opaque(e, ty));
@@ -1130,8 +1130,8 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
         hin = string_concat(hin, "\n");
         e.obls.items[oi].hash = raw sha256_hex(hin);
         e.obls.items[oi].canon = move(canon);
-        e.obls.items[oi].cone_syms = sorted;
-        e.obls.items[oi].cone_hyps = hl;
+        e.obls.items[oi].cone_syms = move(sorted);
+        e.obls.items[oi].cone_hyps = move(hl);
     }
     pass NIL;
 };

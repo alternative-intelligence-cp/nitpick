@@ -136,6 +136,12 @@ CASES = [
           "// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\n",
           "func:main = int32() { this is not nitpick };\n" + FAILSAFE,
           True, "a parse error where a backend rejection was expected must fail"),
+
+    # AN EXIT NO RUN CAN PRODUCE (O-N15, 1.5.1b step 5): a status is one byte,
+    # so `expect-exit: 321` fails forever -- refused at read time, by name.
+    _case("exit_out_of_range", "positive",
+          "// expect-exit: 321\n", MAIN_OK + FAILSAFE,
+          True, "an expect-exit above a byte can never be satisfied and must fail by name"),
 ]
 
 

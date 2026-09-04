@@ -151,7 +151,9 @@ it is reclaimed wholesale by `wild_release_all()` or process exit.
   with `-4105`. A failure exit keeps its code — hijacking an error report
   with a leak trap would destroy the error, and error paths carry no
   cleanup obligation (the defer-does-not-run-on-trap reasoning, D-014).
-  `failsafe` may call **`wild_release_all()`** — drops every chunk and
+  `failsafe` may call **`wild_release_all()`** — followed by `exit` and by
+  nothing else (TYPE-062, 1.5.1b step 5: a `main` that released and then
+  RETURNED ran its scope-exit drops over unmapped memory) — drops every chunk and
   large mapping, both regimes, leaving the allocator usable — and exit
   positive; its own exit passes because the in-failsafe flag is set. The
   same flag makes a trap RAISED INSIDE failsafe exit 70 directly instead
