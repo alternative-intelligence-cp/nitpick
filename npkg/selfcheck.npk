@@ -257,9 +257,16 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     // snapshot does only after the next refresh.
     string:vdiv = "func:main = int32(cstring[]:argv) {\n    int32:zero = (argv.len =>! int32) - 1i32;\n    int32:q = 10i32 / zero;\n    exit q;\n};\n";
     string:vfs = "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (DivByZero) { exit 21i32; },\n        (DivOverflow) { exit 22i32; },\n        (HeapBadRequest) { exit 9i32; },\n        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n        (OutOfBounds) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n";
-    for (int64:vi in 0i64...2i64) {
+    // AND A LIMIT'S ROWS (1.5.2 step 3): a limited parameter's entry row is
+    // `open` and the call site's `limit-subsume` row over an opaque argument
+    // is `open` too; expecting the entry `discharged` must fail. The texts
+    // are the harness's, byte for byte.
+    string:vlim = "Rules<int32>:r_pos = { $ > 0i32 };\nfunc:limited = int32(limit<r_pos> int32:x) { pass x; };\nfunc:main = int32(cstring[]:argv) {\n    int32:v = limited(argv.len =>! int32) ?! E9;\n    exit (v - 1i32);\n};\nerror:E9;\n";
+    string:vlfs = "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (E9) { exit 8i32; },\n        (LimitViolated) { exit 31i32; },\n        (HeapBadRequest) { exit 9i32; },\n        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n";
+    for (int64:vi in 0i64...4i64) {
         string:vname = "wrong-verdict";
         string:vhead = "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\nmod:wrong_verdict;\n";
+        string:vbody = string_concat(vdiv, vfs);
         bool:vmust_fail = true;
         string:vwhy = "a verify test expecting `discharged` for an opaque divisor must fail";
         if (vi == 1i64) {
@@ -268,7 +275,21 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             vmust_fail = false;
             vwhy = "a verify test naming its rows exactly must pass";
         }
-        string:vsrc = string_concat(string_concat(vhead, vdiv), vfs);
+        if (vi == 2i64) {
+            vname = "wrong-limit";
+            vhead = "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\nmod:wrong_limit;\n";
+            vbody = string_concat(vlim, vlfs);
+            vmust_fail = true;
+            vwhy = "a verify test expecting `discharged` for a limited parameter's entry must fail";
+        }
+        if (vi == 3i64) {
+            vname = "right-limit";
+            vhead = "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\nmod:right_limit;\n";
+            vbody = string_concat(vlim, vlfs);
+            vmust_fail = false;
+            vwhy = "a verify test naming a limit's rows exactly must pass";
+        }
+        string:vsrc = string_concat(vhead, vbody);
         // THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005): the
         // hyphen in the display name becomes an underscore in the file.
         string:vfile = raw text_replace_byte(vname, 45u8, 95u8);

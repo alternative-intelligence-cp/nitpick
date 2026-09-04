@@ -1,10 +1,11 @@
 // expect-exit: 31
-// expect-obligation: limit unencoded 2
+// expect-obligation: limit discharged 1
+// expect-obligation: limit open 1
 //
 // A FRAMED LIMITED LOCAL (D-251): declared before a suspension and assigned
 // after it, so its slot is frame-resident and the second write point runs in
 // a later resume -- the assignment of one minus five traps there. Two rows:
-// the initialiser and the assignment.
+// the initialiser (discharged, a literal) and the assignment (open).
 mod:limit_async_local;
 error:E9;
 Rules<int32>:r_pos = { $ > 0i32 };

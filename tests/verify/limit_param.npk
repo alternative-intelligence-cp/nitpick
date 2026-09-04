@@ -1,11 +1,13 @@
 // expect-exit: 0
-// expect-obligation: limit unencoded 1
+// expect-obligation: limit open 1
+// expect-obligation: limit-subsume discharged 1
 //
 // A parameter's `limit<Rules>` is enforced in EVERY build (D-068) -- the rung
 // test of 0.9.0 became this program at 1.5.2 step 2: the callee's ENTRY is a
 // write point (D-251), checked over the parameter's slot before the body
-// runs. `limited(3i32)` satisfies `r_pos`; the row is the entry's, `unencoded`
-// until step 3 gives it a goal.
+// runs. `limited(3i32)` satisfies `r_pos`; the entry's row is `open` (the
+// callee knows nothing of its argument) and the call site's `limit-subsume`
+// row discharges on an empty cone -- the literal is its own proof.
 mod:limit_param;
 error:E9;
 

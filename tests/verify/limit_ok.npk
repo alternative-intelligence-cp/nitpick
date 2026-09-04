@@ -1,5 +1,9 @@
 // expect-exit: 0
-// expect-obligation: limit unencoded 14
+// expect-obligation: limit discharged 3
+// expect-obligation: limit open 5
+// expect-obligation: limit unencoded 6
+// expect-obligation: limit-subsume discharged 2
+// expect-obligation: limit-subsume unencoded 1
 //
 // EVERY SHAPE SATISFIED (D-251): the counterweight -- a program whose every
 // write point passes its rule, in full silence at run time. A refinement
@@ -8,7 +12,14 @@
 // `move` string parameter, a struct's field store, an array's element store,
 // a limited local reassigned by a loop, a generic function's limited concrete
 // parameter at two instances, and a limited value passed by value. Fourteen
-// rows -- the count is the inventory rule (P-12) made visible.
+// `limit` rows -- the inventory rule (P-12) made visible: three discharged
+// (`b = a` under a stronger rule, `acc`'s literal, and `acc = acc + one` in
+// the loop, because `a = one` under `r_small` makes `one > 0` a fact the cone
+// reaches through the definition chain), five open, six
+// `unencoded` (the string, the struct and the array subjects, L-6); and the
+// three calls with limited parameters are `limit-subsume` rows -- `bump(b)`
+// and `scale(7, acc)` discharged by the arguments' own rules, `owns` over a
+// string `unencoded`.
 mod:limit_ok;
 error:E9;
 Rules<int32>:r_pos = { $ > 0i32 };

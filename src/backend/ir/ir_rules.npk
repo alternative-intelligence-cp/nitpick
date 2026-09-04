@@ -30,6 +30,7 @@ mod:ir_rules;
 
 use "../../frontend/source_location.npk".*;
 use "../../frontend/intern.npk".*;
+use "../../frontend/token_kind.npk".*;   // the range clauses' operators (step 3)
 use "../../frontend/ast_kind.npk".*;
 use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
@@ -45,6 +46,7 @@ use "./ir_func.npk".*;
 use "./ir_expr.npk".*;
 use "./ir_stmt.npk".*;
 use "../smt/smt_obligations.npk".*;
+use "../smt/smt_kinds.npk".*;   // OK_LIMIT, the elision question (step 3)
 
 // The predicate's symbol: the declaration's own, by the ordinary mangling.
 pub func:rule_fn_sym = string(ExprEmitter->:x, DeclId:rd) never fails {
@@ -129,6 +131,18 @@ pub func:emit_limit_check = IrVal(ExprEmitter->:x, string:slot, int32:type_id,
     if (!(raw ll_is_ok(ll))) { pass (raw iv_from_ll_at(x, ll, type_id, at)); }
     string:v = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v, " = load ", ll.text, ", ptr ", slot));
+    // ELIDED (D-218.9, L-11): the manifest discharged this site, so the
+    // guard is gone -- no call, no branch, no trap -- and ONE `llvm.assume`
+    // states the rule's RANGE clauses over the value in register (the
+    // channel 1.6's analyzers read); `true` when the rule has none. Sound
+    // because the discharge proved the rule on every continuing execution
+    // (L-7) and the value loaded is the value written.
+    if (raw llctx_elided(x.fe.ctx, space, site, raw OK_LIMIT())) {
+        string:fact = raw rule_range_i1(x, rule, v, ll, type_id, 64i32);
+        if (fact.len == 0i64) { fact = "true"; }
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", fact, ")"));
+        pass (raw iv_nil());
+    }
     LlType:bt = raw ll_type(x.fe.ctx, x.fe.ctx.types.t_bool);
     if (!(raw ll_is_ok(bt))) { pass (raw iv_from_ll_at(x, bt, x.fe.ctx.types.t_bool, at)); }
     string:vd = raw irw_temp(x.fe.w);
@@ -148,6 +162,87 @@ pub func:emit_limit_check = IrVal(ExprEmitter->:x, string:slot, int32:type_id,
     drop irw_line(x.fe.w, "unreachable");
     drop irw_label(x.fe.w, good);
     pass (raw iv_nil());
+};
+
+// THE RANGE CLAUSES OF A RULE AS ONE `i1` (L-11), or "" when it has none: a
+// clause that is a comparison between `$` and an integer literal, either
+// side, or an `&&` of such -- refinements expanded -- each one `icmp` over
+// the value in register, `and`-chained. Nothing else qualifies: a call or a
+// division in a clause can trap or cost, and an elided site emits neither.
+// Integer subjects only; a literal is the parser's non-negative payload.
+func:rule_range_i1 = string(ExprEmitter->:x, DeclId:rule, string:v, LlType:ll,
+                            int32:type_id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass ""; }
+    DeclNode:d = raw ast_decl(x.ast, rule);
+    if (d.kind != DeclKind.DeclRuleDecl) { pass ""; }
+    if ((raw type_kind(x.fe.ctx.types, type_id)) != (raw TY_INT())) { pass ""; }
+    string:acc = "";
+    int32:rn = raw rule_refine_count(x.ast, d);
+    for (int32:i in 0i32...rn) {
+        VerifyNode:rv = raw ast_verify(x.ast, raw rule_refine(x.ast, d, i));
+        string:sub = raw rule_range_i1(x, raw limit_target(rv), v, ll, type_id, fuel - 1i32);
+        acc = raw and_i1(x, acc, sub);
+    }
+    int32:cn = raw rule_clause_count(x.ast, d);
+    for (int32:j in 0i32...cn) {
+        string:c = raw clause_range_i1(x, raw rule_clause(x.ast, d, j), v, ll, type_id, 16i32);
+        acc = raw and_i1(x, acc, c);
+    }
+    pass acc;
+};
+
+func:and_i1 = string(ExprEmitter->:x, string:a, string:b) never fails {
+    if (a.len == 0i64) { pass (string_concat(b, "")); }
+    if (b.len == 0i64) { pass (string_concat(a, "")); }
+    string:t = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t, " = and i1 ", a, ", ", b));
+    pass t;
+};
+
+func:clause_range_i1 = string(ExprEmitter->:x, ExprId:id, string:v, LlType:ll,
+                              int32:type_id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass ""; }
+    if (raw expr_is_none(id)) { pass ""; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind != ExprKind.ExprBinaryExpr) { pass ""; }
+    TokenKind:op = raw expr_op(n);
+    if (op == TokenKind.OpAndAnd) {
+        string:l = raw clause_range_i1(x, raw expr_lhs(n), v, ll, type_id, fuel - 1i32);
+        string:r = raw clause_range_i1(x, raw expr_rhs(n), v, ll, type_id, fuel - 1i32);
+        pass (raw and_i1(x, l, r));
+    }
+    ExprNode:a = raw ast_expr(x.ast, raw expr_lhs(n));
+    ExprNode:b = raw ast_expr(x.ast, raw expr_rhs(n));
+    bool:swap = false;
+    int64:lit = 0i64;
+    if ((a.kind == ExprKind.ExprIterationVarExpr) && (b.kind == ExprKind.ExprIntLiteral)) {
+        lit = b.payload;
+    } else {
+        if ((b.kind == ExprKind.ExprIterationVarExpr) && (a.kind == ExprKind.ExprIntLiteral)) {
+            swap = true;
+            lit = a.payload;
+        } else {
+            pass "";
+        }
+    }
+    if (lit < 0i64) { pass ""; }
+    bool:sg = raw type_is_signed(x.fe.ctx.types, type_id);
+    // `lit OP $` is `$ OP' lit` with the order mirrored.
+    string:pred = "";
+    if (op == TokenKind.OpEqEq)  { pred = "eq"; }
+    if (op == TokenKind.OpNotEq) { pred = "ne"; }
+    if (op == TokenKind.OpLt)    { if (swap) { pred = "gt"; } else { pred = "lt"; } }
+    if (op == TokenKind.OpLtEq)  { if (swap) { pred = "ge"; } else { pred = "le"; } }
+    if (op == TokenKind.OpGt)    { if (swap) { pred = "lt"; } else { pred = "gt"; } }
+    if (op == TokenKind.OpGtEq)  { if (swap) { pred = "le"; } else { pred = "ge"; } }
+    if (pred.len == 0i64) { pass ""; }
+    if (!((raw string_eq(pred, "eq")) || (raw string_eq(pred, "ne")))) {
+        if (sg) { pred = string_concat("s", pred); } else { pred = string_concat("u", pred); }
+    }
+    string:t = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(t, " = icmp ", pred, " ",
+                                     raw cat5(ll.text, " ", v, ", ", int_to_string(lit))));
+    pass t;
 };
 
 // THE LOCAL A PLACE IS ROOTED AT, as its index in the local table, or -1:

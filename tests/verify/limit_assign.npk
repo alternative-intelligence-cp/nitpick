@@ -1,12 +1,14 @@
 // expect-exit: 31
-// expect-obligation: limit unencoded 3
+// expect-obligation: limit discharged 1
+// expect-obligation: limit open 2
 //
 // THE SECOND WRITE POINT (D-251): every assignment to a limited binding is
 // checked after the store -- the compound spelling through the shared
 // arithmetic core (its overflow guard first), the plain one after its store.
 // 8 is in `r_small`; 8 + argv.len (one argument) is 9, still in; 9 + 1 is 10,
 // and the rule's upper bound is exclusive, so the third write traps. Three
-// rows: the initialiser and the two assignments.
+// rows: the initialiser (discharged: a literal) and the two assignments
+// (open: `argv.len` is opaque, and 9 + 1 is the counterexample z3 finds).
 mod:limit_assign;
 error:E9;
 Rules<int32>:r_small = { $ >= 0i32, $ < 10i32 };

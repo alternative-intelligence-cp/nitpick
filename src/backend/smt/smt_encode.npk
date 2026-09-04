@@ -59,6 +59,7 @@ use "../../frontend/parse_decorate.npk".*;   // limit_target (1.5.2 step 2, D-25
 use "../../frontend/parse_pick.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
+use "../../frontend/symbols.npk".*;   // a free call's callee, by its symbol (1.5.2 step 3)
 use "../../frontend/type_resolve.npk".*;
 use "../../../lib/nhash.npk".*;
 use "../ir/ir_types.npk".*;
@@ -120,6 +121,7 @@ struct:Term = {
 pub struct:Encoder = {
     Ast->:ast;
     ExprTypes->:et;
+    SymbolTable->:tab;         // a free call's callee is its identifier's symbol (1.5.2 step 3)
     TypeTable->:types;
     InternTable->:interns;
     LlCtx->:ctx;
@@ -139,6 +141,14 @@ pub struct:Encoder = {
     bool:uses_sdiv;            // a signed division term appeared (the define-funs are needed)
     List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
     int32:cur_region;          // the region the walk is in
+    // THE RULE'S SUBJECT (1.5.2 step 3, L-8): the term `$` stands for while a
+    // `Rules` body is being instantiated by `enc_rule`; `term_none` outside.
+    Term:subject;
+    // QUIET (1.5.2 step 3): nonzero while `enc_rule` encodes a rule's clauses,
+    // so a guard site INSIDE a clause -- a division -- records no row of the
+    // instantiating function's: the guard is the predicate function's own,
+    // and the row is recorded there, once (L-1).
+    int32:quiet;
 };
 
 // Branch regions (the dominance rule): a then-arm, an else-arm, a loop body,
@@ -167,14 +177,14 @@ func:region_dominates = bool(Encoder->:e, int32:h, int32:o) never fails {
     pass false;
 };
 
-pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, TypeTable->:types,
+pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTable->:types,
                             InternTable->:interns, LlCtx->:ctx, TypeResolver->:tr,
                             int32:scope, string:symbol) never fails {
     List<int32>:ords = raw list_init::<int32>(((raw OK_COUNT()) => int64) + 1i64);
     for (int64:i in 0i64...(((raw OK_COUNT()) => int64) + 1i64)) { drop list_push(@ords, 0i32); }
     List<int32>:rp = raw list_init::<int32>(8i64);
     drop list_push(@rp, 0i32 - 1i32);   // the root region
-    pass Encoder{ ast: ast, et: et, types: types, interns: interns, ctx: ctx, tr: tr,
+    pass Encoder{ ast: ast, et: et, tab: tab, types: types, interns: interns, ctx: ctx, tr: tr,
                   scope: scope, symbol: string_concat(symbol, ""),
                   syms: raw list_init::<SmtSym>(32i64),
                   hyps: raw list_init::<SmtHyp>(32i64),
@@ -184,7 +194,8 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, TypeTable->:types,
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
                   anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
-                  region_parent: move(rp), cur_region: 0i32 };
+                  region_parent: move(rp), cur_region: 0i32,
+                  subject: raw term_none(), quiet: 0i32 };
 };
 
 // --- types -----------------------------------------------------------------------------
@@ -370,6 +381,10 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
                                 raw version_next(e, names.items[k]));
         e.binds.items[i].sym = raw sym_new(e, nm, ty);
+        // A LIMITED NAME KEEPS ITS RULE ACROSS A MERGE (L-7): the fresh
+        // version is "the value after the construct", and every write inside
+        // was guarded by the rule -- the hypothesis, no obligation.
+        drop assert_rule(e, i);
     }
     pass NIL;
 };
@@ -402,6 +417,7 @@ func:scope_release = NIL(Encoder->:e, int64:mark) never fails { e.binds.count = 
 
 func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:space,
                   int32:site, Span:at, bool:encoded) never fails {
+    if (e.quiet > 0i32) { pass NIL; }
     int32:ord = e.ordinals.items[kind => int64] + 1i32;
     e.ordinals.items[kind => int64] = ord;
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
@@ -453,11 +469,11 @@ func:limit_rule_of = int32(Encoder->:e, VerifyId:v) never fails {
     pass ((raw limit_target(raw ast_verify(e.ast, v))).index);
 };
 
-// The rule limiting the LOCAL a place is rooted at (1.5.2 step 2, D-251), or
-// 0: through member and index bases whose type is not a pointer, slice or
+// The NAME of the local a place is rooted at (1.5.2 step 2, D-251), or 0:
+// through member and index bases whose type is not a pointer, slice or
 // handle (that storage is not the binding's own) to the identifier -- the
 // emitter's `place_root_local`, in the walk's terms.
-func:limited_root_rule = int32(Encoder->:e, ExprId:id) never fails {
+func:limited_root_name = int32(Encoder->:e, ExprId:id) never fails {
     ExprId:cur = id;
     int32:fuel = 64i32;
     while (fuel > 0i32) {
@@ -467,7 +483,7 @@ func:limited_root_rule = int32(Encoder->:e, ExprId:id) never fails {
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             int64:bi = raw bind_find(e, n.payload =>! int32);
             if (bi < 0i64) { pass 0i32; }
-            pass e.binds.items[bi].rule;
+            pass n.payload =>! int32;
         }
         ExprId:base = ExprId{ index: 0i32 };
         if (n.kind == ExprKind.ExprMemberAccessExpr) {
@@ -489,6 +505,231 @@ func:limited_root_rule = int32(Encoder->:e, ExprId:id) never fails {
         cur = base;
     }
     pass 0i32;
+};
+
+// A binding's current version as a term; `term_none` when it has no symbol
+// (an address-taken name, or a type outside the fragment).
+func:bind_term = Term(Encoder->:e, int64:bi) never fails {
+    int32:sym = e.binds.items[bi].sym;
+    if (sym < 0i32) { pass (raw term_none()); }
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, sym);
+    pass Term{ ok: true, is_bool: e.syms.items[sym => int64].is_bool,
+               text: raw sym_text(e, sym), syms: move(one) };
+};
+
+// A CLAUSE THE ENCODER CANNOT EXPRESS (L-8): a fresh opaque Bool named for
+// the rule and the clause (`|r_call.c1.7|`, P-5's shape with the anonymous
+// counter as k). As a goal conjunct it makes the row `open`; as a hypothesis
+// it asserts nothing usable -- fail-closed either way (P-8).
+func:clause_opaque = Term(Encoder->:e, DeclNode:d, int32:j) never fails {
+    e.anon = e.anon + 1i32;
+    string:base = string_concat(raw intern_get(e.interns, raw decl_name(d)), ".c");
+    base = string_concat(base, int_to_string((j + 1i32) => int64));
+    string:nm = raw smt_sym(base, e.anon => int64);
+    int32:idx = raw sym_new(e, nm, e.types.t_bool);
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, idx);
+    pass Term{ ok: true, is_bool: true, text: move(nm), syms: move(one) };
+};
+
+// THE RULE OVER A TERM (1.5.2 step 3, L-8): the conjunction, in source order,
+// of every refinement's rule (recursively -- resolve refused cycles,
+// RESOLVE-006; the fuel is a belt) and every clause encoded with `$` bound
+// to the subject. `term_none` only when the SUBJECT has no term (a type
+// outside the fragment); an inexpressible clause is an opaque conjunct. The
+// clauses are encoded QUIET: a guard inside one is the predicate function's
+// own site and is recorded there (L-1), never here.
+func:enc_rule = Term(Encoder->:e, int32:rule, Term:subject, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass (raw term_none()); }
+    if (!subject.ok) { pass (raw term_none()); }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: rule });
+    if (d.kind != DeclKind.DeclRuleDecl) { pass (raw term_none()); }
+    Term:acc = raw term_none();
+    bool:first = true;
+    int32:rn = raw rule_refine_count(e.ast, d);
+    for (int32:i in 0i32...rn) {
+        VerifyNode:rv = raw ast_verify(e.ast, raw rule_refine(e.ast, d, i));
+        Term:sub = raw enc_rule(e, (raw limit_target(rv)).index, raw term_copy(subject), fuel - 1i32);
+        if (!sub.ok) { pass (raw term_none()); }
+        if (first) { acc = move(sub); first = false; }
+        else { acc = raw term_app2("and", acc, sub, true); }
+    }
+    int32:cn = raw rule_clause_count(e.ast, d);
+    for (int32:j in 0i32...cn) {
+        Term:saved = raw term_copy(e.subject);
+        e.subject = raw term_copy(subject);
+        e.quiet = e.quiet + 1i32;
+        Term:c = raw enc_expr(e, raw rule_clause(e.ast, d, j));
+        e.quiet = e.quiet - 1i32;
+        e.subject = move(saved);
+        if (!(c.ok && c.is_bool)) { c = raw clause_opaque(e, d, j); }
+        if (first) { acc = move(c); first = false; }
+        else { acc = raw term_app2("and", acc, c, true); }
+    }
+    if (first) { pass (raw term_lit("true", true)); }
+    pass acc;
+};
+
+// THE RULE AS A HYPOTHESIS on a binding's current version (L-7): pushed
+// after a write point's own obligation (so the goal is never in its own
+// cone) and at every invalidation. Sound because every write to the binding
+// is guarded by this rule or discharged under these same hypotheses (P-8).
+func:assert_rule = NIL(Encoder->:e, int64:bi) never fails {
+    int32:rule = e.binds.items[bi].rule;
+    if (rule == 0i32) { pass NIL; }
+    Term:v = raw bind_term(e, bi);
+    if (!v.ok) { pass NIL; }
+    Term:r = raw enc_rule(e, rule, v, 64i32);
+    if (!r.ok) { pass NIL; }
+    drop hyp_push(e, r.text, r.syms);
+    pass NIL;
+};
+
+// A `limit` ROW at a write point of binding `bi`: the rule over the new
+// version, encoded; `unencoded` when the version has no term (L-6).
+func:record_limit = NIL(Encoder->:e, int64:bi, int32:space, int32:site, Span:at) never fails {
+    int32:rule = e.binds.items[bi].rule;
+    if (rule == 0i32) { pass NIL; }
+    Term:v = raw bind_term(e, bi);
+    if (!v.ok) { drop record_limit_unencoded(e, space, site, at); pass NIL; }
+    Term:g = raw enc_rule(e, rule, v, 64i32);
+    if (!g.ok) { drop record_limit_unencoded(e, space, site, at); pass NIL; }
+    drop record(e, raw OK_LIMIT(), g.text, g.syms, space, site, at, true);
+    pass NIL;
+};
+
+// AFTER A WRITE to `name` (L-7's order): the site's obligation, then the rule
+// as a hypothesis. Nothing for an unlimited or unbound name.
+func:after_write = NIL(Encoder->:e, int32:name, int32:space, int32:site, Span:at) never fails {
+    if (name == 0i32) { pass NIL; }
+    int64:bi = raw bind_find(e, name);
+    if (bi < 0i64) { pass NIL; }
+    if (e.binds.items[bi].rule == 0i32) { pass NIL; }
+    drop record_limit(e, bi, space, site, at);
+    drop assert_rule(e, bi);
+    pass NIL;
+};
+
+// A CALL's `limit-subsume` ROW (L-10): the receiver or callee expression and
+// every argument encoded once (their sites recorded, their terms kept); then,
+// for a callee the checker recorded whose declaration has limited
+// parameters, ONE row per call site -- the conjunction over those parameters
+// of their rules over the argument terms, with the caller's cone as the
+// hypotheses (a limited-binding argument brings its rule: the spec's "one
+// `Rules` implies another at a boundary"). An argument the encoder cannot
+// name is opaque (the row is `open`); one whose type is outside the fragment
+// makes the row `unencoded`. A `dyn` or function-value call has no recorded
+// declaration and no row, and a coroutine callee has none either: their
+// entry checks cover them (L-3, D-252). The row's elision is `none` until
+// D-252's bypass (step 4).
+func:record_subsume = NIL(Encoder->:e, ExprId:id, ExprNode:n) never fails {
+    if (n.a != 0i32) { Term:rcv = raw enc_expr(e, ExprId{ index: n.a }); }
+    int32:g = 0i32;
+    if (n.kind == ExprKind.ExprCallExpr) { g = raw expr_generic_count(n); }
+    int32:argc = n.c - g;
+    List<Term>:terms = raw list_init::<Term>((argc => int64) + 1i64);
+    for (int32:i in 0i32...argc) {
+        drop list_push(@terms, raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, n.b, g + i) }));
+    }
+    // THE CALLEE: a method call's declaration is the one the checker recorded
+    // (`exprtypes_set_callee`); a free call's is its identifier's symbol, as
+    // `emit_call` resolves it -- a local or parameter holding a function value
+    // is an indirect call and has no row (its entry check covers it).
+    int32:cd = raw exprtypes_callee(e.et, id);
+    if ((cd == 0i32) && (n.kind == ExprKind.ExprCallExpr) && (n.a != 0i32)) {
+        ExprNode:cn = raw ast_expr(e.ast, ExprId{ index: n.a });
+        if ((cn.kind == ExprKind.ExprIdentifierExpr) && (cn.a != 0i32)) {
+            Symbol:cs = raw symtab_get(e.tab, cn.a);
+            if (cs.origin_kind == (raw SYM_DECL())) { cd = cs.origin; }
+        }
+    }
+    if (cd == 0i32) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    // A COROUTINE CALLEE HAS NO ROW (D-252): its parameters arrive in a frame
+    // the await site builds and its check runs at state 0 -- nothing at the
+    // call site could ever elide it, so a row here would be evidence of a
+    // narrowing no build can use.
+    if (raw decl_has(cdn, raw DECL_ASYNC())) { pass NIL; }
+    if (raw decl_has(cdn, raw DECL_THREAD())) { pass NIL; }
+    int32:pc = raw fn_param_count(e.ast, cdn);
+    int32:off = 0i32;
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        if (pc == (argc + 1i32)) { off = 1i32; }
+        else { if (pc != argc) { pass NIL; } }
+    } else {
+        if (pc != argc) { pass NIL; }
+    }
+    Term:acc = raw term_none();
+    bool:first = true;
+    bool:has_limited = false;
+    bool:broken = false;
+    for (int32:i2 in off...pc) {
+        DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, cdn, i2));
+        VerifyId:pl = raw param_limit(pd);
+        if (raw verify_is_none(pl)) { continue; }
+        has_limited = true;
+        int32:rule = (raw limit_target(raw ast_verify(e.ast, pl))).index;
+        int64:ai = (i2 - off) => int64;
+        Term:a = raw term_copy(terms.items[ai]);
+        if (!a.ok) {
+            a = raw term_opaque(e, raw ty_of(e, ExprId{ index: raw ast_id_at(e.ast, n.b, g + (i2 - off)) }));
+        }
+        if (!a.ok) { broken = true; continue; }
+        Term:c = raw enc_rule(e, rule, a, 64i32);
+        if (!c.ok) { broken = true; continue; }
+        if (first) { acc = move(c); first = false; }
+        else { acc = raw term_app2("and", acc, c, true); }
+    }
+    if (!has_limited) { pass NIL; }
+    if (broken) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record(e, raw OK_LIMIT_SUBSUME(), "", none, raw SITE_EXPR(), id.index, n.span, false);
+        pass NIL;
+    }
+    drop record(e, raw OK_LIMIT_SUBSUME(), acc.text, acc.syms, raw SITE_EXPR(), id.index, n.span, true);
+    pass NIL;
+};
+
+// An assignment to a NAME: the new version, defined by the operator's term
+// where the operands are encodable (the compound spellings through the
+// truncating definitions, P-17; a `/=` or `%=` records its division first).
+// The caller records the write point AFTER this (L-7's order).
+func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
+                        int32:name, Term:rhs) never fails {
+    if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
+    // Compound: the current value op the right-hand side.
+    Term:prior = raw enc_expr(e, target);
+    int64:bi = raw bind_find(e, name);
+    int32:lt = 0i32;
+    if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
+    if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+    if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
+        drop record_division(e, lt, prior, rhs, target.index, s.span);
+        if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+        if (!(raw term_is_numeral(rhs))) { e.nonlinear = true; }
+        if (raw type_is_signed(e.types, lt)) {
+            e.uses_sdiv = true;
+            e.nonlinear = true;
+            if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("npk_sdiv", prior, rhs, false)); }
+            else { drop bind_assign(e, name, raw term_app2("npk_srem", prior, rhs, false)); }
+            pass NIL;
+        }
+        if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", prior, rhs, false)); }
+        else { drop bind_assign(e, name, raw term_app2("mod", prior, rhs, false)); }
+        pass NIL;
+    }
+    if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+    if (op == TokenKind.OpPlusAssign)  { drop bind_assign(e, name, raw term_app2("+", prior, rhs, false)); pass NIL; }
+    if (op == TokenKind.OpMinusAssign) { drop bind_assign(e, name, raw term_app2("-", prior, rhs, false)); pass NIL; }
+    if (op == TokenKind.OpStarAssign) {
+        if (!((raw term_is_numeral(prior)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
+        drop bind_assign(e, name, raw term_app2("*", prior, rhs, false));
+        pass NIL;
+    }
+    drop bind_assign(e, name, raw term_none());
+    pass NIL;
 };
 
 func:term_copy = Term(Term:t) never fails {
@@ -714,6 +955,21 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (mt.ok) { pass mt; }
         pass (raw term_opaque(e, ty));
     }
+    // `$` -- THE RULE'S SUBJECT (1.5.2 step 3, L-8): inside `enc_rule` it is
+    // the term the rule is being instantiated over; outside one it is a
+    // counted loop's counter, which has no term until 1.5.4.
+    if (n.kind == ExprKind.ExprIterationVarExpr) {
+        if (e.subject.ok) { pass (raw term_copy(e.subject)); }
+        pass (raw term_opaque(e, ty));
+    }
+    // A CALL (1.5.2 step 3, L-10): the value is opaque (1.5.3 encodes a
+    // known callee as an uninterpreted function); the receiver and every
+    // argument are sites, encoded ONCE; and a callee with limited parameters
+    // gets its `limit-subsume` row over the argument terms.
+    if ((n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr)) {
+        drop record_subsume(e, id, n);
+        pass (raw term_opaque(e, ty));
+    }
     // Everything else: the value is opaque, the children are still sites.
     drop walk_children(e, n);
     pass (raw term_opaque(e, ty));
@@ -926,10 +1182,14 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
         int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
         drop bind_define(e, name, dty, t, vrule);
-        // THE FIRST WRITE POINT (1.5.2 step 2, D-251): an initialised limited
-        // declaration is a row -- unencoded until step 3 gives it a goal.
+        // THE FIRST WRITE POINT (1.5.2 step 3, D-251, L-7): after the new
+        // version and its definition, the site's obligation -- the rule over
+        // the version -- and THEN the rule as a hypothesis, so the goal is
+        // never in its own cone. A declaration without an initialiser is not
+        // a write point and gets no hypothesis: its vacant value is never
+        // read (definite assignment); its first assignment is the write.
         if ((vrule != 0i32) && (!(raw expr_is_none(init)))) {
-            drop record_limit_unencoded(e, raw SITE_STMT(), sid.index, s.span);
+            drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
         }
         pass NIL;
     }
@@ -939,12 +1199,6 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         ExprId:target = raw stmt_target(s);
         ExprNode:tn = raw ast_expr(e.ast, target);
         Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
-        // THE SECOND WRITE POINT (1.5.2 step 2, D-251): an assignment to a
-        // limited binding, or to any part of one, is a row -- unencoded until
-        // step 3 gives it a goal.
-        if ((raw limited_root_rule(e, target)) != 0i32) {
-            drop record_limit_unencoded(e, raw SITE_STMT(), sid.index, s.span);
-        }
         if (tn.kind != ExprKind.ExprIdentifierExpr) {
             // A field, element or pointee write: its own subexpressions are
             // sites; no local symbol changes (an address-taken local is never
@@ -957,40 +1211,18 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
                     drop record_division(e, pt, cur, rhs, target.index, s.span);
                 }
             }
+            // THE SECOND WRITE POINT through a field or element (D-251): the
+            // ROOT's rule over the root's whole value -- `unencoded` while the
+            // root's type is outside the fragment (L-6), and no hypothesis
+            // (the root has no symbol to assert over).
+            drop after_write(e, raw limited_root_name(e, target), raw SITE_STMT(), sid.index, s.span);
             pass NIL;
         }
         int32:name = tn.payload =>! int32;
-        if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
-        // Compound: the current value op the right-hand side.
-        Term:prior = raw enc_expr(e, target);
-        int64:bi = raw bind_find(e, name);
-        int32:lt = 0i32;
-        if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
-        if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
-        if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
-            drop record_division(e, lt, prior, rhs, target.index, s.span);
-            if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
-            if (!(raw term_is_numeral(rhs))) { e.nonlinear = true; }
-            if (raw type_is_signed(e.types, lt)) {
-                e.uses_sdiv = true;
-                e.nonlinear = true;
-                if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("npk_sdiv", prior, rhs, false)); }
-                else { drop bind_assign(e, name, raw term_app2("npk_srem", prior, rhs, false)); }
-                pass NIL;
-            }
-            if (op == TokenKind.OpSlashAssign) { drop bind_assign(e, name, raw term_app2("div", prior, rhs, false)); }
-            else { drop bind_assign(e, name, raw term_app2("mod", prior, rhs, false)); }
-            pass NIL;
-        }
-        if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
-        if (op == TokenKind.OpPlusAssign)  { drop bind_assign(e, name, raw term_app2("+", prior, rhs, false)); pass NIL; }
-        if (op == TokenKind.OpMinusAssign) { drop bind_assign(e, name, raw term_app2("-", prior, rhs, false)); pass NIL; }
-        if (op == TokenKind.OpStarAssign) {
-            if (!((raw term_is_numeral(prior)) || (raw term_is_numeral(rhs)))) { e.nonlinear = true; }
-            drop bind_assign(e, name, raw term_app2("*", prior, rhs, false));
-            pass NIL;
-        }
-        drop bind_assign(e, name, raw term_none());
+        drop assign_ident(e, s, op, target, name, rhs);
+        // THE SECOND WRITE POINT (D-251, L-7), AFTER the new version: the
+        // site's obligation, then the rule as a hypothesis.
+        drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);
         pass NIL;
     }
 
@@ -1120,7 +1352,10 @@ pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
     // check at the callee's entry is a row -- unencoded until step 3.
     if (rule != 0i32) {
         DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: decl_index });
-        drop record_limit_unencoded(e, raw SITE_DECL(), decl_index, pd.span);
+        // THE ENTRY WRITE POINT (D-251, L-7): the obligation over the
+        // parameter's opaque first version -- `open` unless the type implies
+        // the rule -- then the rule as the hypothesis every later read has.
+        drop after_write(e, name, raw SITE_DECL(), decl_index, pd.span);
     }
     pass NIL;
 };

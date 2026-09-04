@@ -1,5 +1,5 @@
 // expect-exit: 31
-// expect-obligation: limit unencoded 1
+// expect-obligation: limit open 1
 // expect-obligation: div-zero open 1
 // expect-obligation: div-min discharged 1
 //
@@ -11,7 +11,7 @@
 // `open` (no path conditions until 1.5.4 -- the first clause is not yet a
 // hypothesis of the second; the conservative answer `divz_after_branch.npk`
 // pins for branches), `div-min` discharged by its literal dividend. One
-// `limit` row: the initialiser.
+// `limit` row: the initialiser, `open` over an opaque `argv.len`.
 mod:limit_clause_trap;
 error:E9;
 Rules<int32>:r_div = { $ != 0i32, 100i32 / $ > 1i32 };

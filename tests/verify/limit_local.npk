@@ -1,13 +1,13 @@
 // expect-exit: 0
-// expect-obligation: limit unencoded 1
+// expect-obligation: limit open 1
 //
 // The probe that opened 0.9.0 (LIVE-1): a declaration's `limit<Rules>` lowered
 // to a bare alloca+store with the rule absent from the IR, and from 0.9.0 to
 // 1.5.2 step 2 the backend refused it as a rung. Now the initialiser is a
 // WRITE POINT (D-251): the store, then the rule over the slot's value, then
 // the trap or the fall-through. `build(5i32)` satisfies `r_pos`, so the
-// program runs to `exit 0` -- with the guard in its IR, since the row is
-// `unencoded` until step 3 gives it a goal.
+// program runs to `exit 0` -- with the guard in its IR: the row is `open`,
+// since `seed` is a parameter the callee knows nothing about.
 mod:limit_local;
 error:E9;
 

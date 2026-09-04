@@ -4,8 +4,10 @@
 //
 // A LOOP-CARRIED DIVISOR: the counter is invalidated at the body's entry
 // (its value there is any iteration's), so `100 / i` is `open` although the
-// guard `i > 0` would prove it -- loop guards and invariants are 1.5.4's and
-// 1.5.2's. The dividend is a literal, so the INT_MIN/-1 half discharges.
+// guard `i > 0` would prove it -- loop guards and invariants are 1.5.4's
+// (1.5.2 gave a LIMITED divisor its rule across the loop instead:
+// `limit_loop.npk`). The dividend is a literal, so the INT_MIN/-1 half
+// discharges.
 mod:divz_loop;
 
 func:main = int32(cstring[]:_~argv) {

@@ -1,0 +1,44 @@
+// expect-exit: 20
+// expect-obligation: limit discharged 2
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+//
+// THE CROSS-KIND DISCHARGE (L-7): a limited binding's rule is a hypothesis on
+// EVERY version of it -- including the opaque versions a loop makes at its
+// entry and its exit -- because every write to it is guarded by that rule.
+// So `d = d + 1i32` inside the loop discharges (`d > 0` implies `d + 1 > 0`),
+// and `100i32 / d` after the loop discharges its `div-zero` although `d`'s
+// value there is any iteration's: the first obligation of one kind proven by
+// a hypothesis of another. `divz_loop.npk` pins the `open` the same shape
+// has WITHOUT a limit.
+mod:limit_loop;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_pos> int32:d = 1i32;
+    int32:n = argv.len =>! int32;
+    while (n < 5i32) {
+        d = d + 1i32;
+        n = n + 1i32;
+    }
+    int32:q = 100i32 / d;
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

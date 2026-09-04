@@ -1,0 +1,53 @@
+// expect-exit: 0
+// expect-obligation: limit discharged 1
+// expect-obligation: limit open 4
+// expect-obligation: limit-subsume discharged 3
+// expect-obligation: limit-subsume open 1
+//
+// SUBSUMPTION (D-220, D-251, L-7, L-10): "one `Rules` implies another at a
+// boundary", decided by z3 with the source binding's rule as the hypothesis.
+// Inside `f`, `m` and `p` are opaque parameters known only by their rules:
+// `a = m` under `r_pos` discharges (`r_small` refines `r_pos`), `b = p` under
+// `r_small` stays open (`r_pos` says nothing about an upper bound); the calls
+// `narrow(m)` and `narrow(p)` are `limit-subsume` rows discharged by the same
+// hypotheses. In `main`, `f(k + 4i32, k)` over an opaque `k` is open, and
+// `narrow(5i32)` discharges on an empty cone. The four `open` limit rows are
+// the three entries and `b`.
+mod:limit_subsume;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };
+
+func:narrow = int32(limit<r_pos> int32:n) { pass n; };
+
+func:f = int32(limit<r_small> int32:m, limit<r_pos> int32:p) {
+    limit<r_pos> int32:a = m;
+    limit<r_small> int32:b = p;
+    int32:c = narrow(m) ?! E9;
+    int32:d = narrow(p) ?! E9;
+    pass (a + b + c + d);
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;
+    int32:r = f(k + 4i32, k) ?! E9;
+    int32:five = narrow(5i32) ?! E9;
+    exit (r + five - 17i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -226,6 +226,8 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
         if (v == (raw OV_UNENCODED())) { tier = "-"; }
         string:elision = "retained";
         if (v == (raw OV_DISCHARGED())) { elision = "elided"; }
+        // A GUARD-LESS KIND'S ROW READS `none` (1.5.2 step 3; D-218.7's column).
+        if (!(raw ok_has_guard(kind))) { elision = "none"; }
         drop sink_write(@sk, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
                                          raw strlist_view(f, 0i64)));
         drop sink_write(@sk, "\n");
@@ -308,8 +310,13 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     int64:limit_left = 0i64;
     for (int64:i in 0i64...rows.count) {
         bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
-        if (d) { disch = disch + 1i64; }
         string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
+        // ONE `llvm.assume` PER DISCHARGED ROW OF AN ASSUME KIND (P-19, L-11):
+        // a guard-less kind's discharge emits nothing.
+        if (d) {
+            bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit"));
+            if (assume_kind) { disch = disch + 1i64; }
+        }
         if ((!d) && (raw text_eq(k, "div-zero"))) { zero_left = zero_left + 1i64; }
         if ((!d) && (raw text_eq(k, "div-min")))  { min_left = min_left + 1i64; }
         if ((!d) && (raw text_eq(k, "limit")))    { limit_left = limit_left + 1i64; }

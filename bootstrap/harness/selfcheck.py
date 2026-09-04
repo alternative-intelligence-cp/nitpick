@@ -274,17 +274,36 @@ def main():
            "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
            "        (OutOfBounds) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n"
            "        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
-    for name, head, must_fail, why in (
+    # AND A LIMIT'S ROWS (1.5.2 step 3): a limited parameter's entry row is
+    # `open` (nothing is known of the argument at the callee) and the call
+    # site's `limit-subsume` row over an opaque argument is `open` too; a test
+    # expecting the entry `discharged` must fail. The texts are npkg's, byte
+    # for byte.
+    VLIM = ("Rules<int32>:r_pos = { $ > 0i32 };\n"
+            "func:limited = int32(limit<r_pos> int32:x) { pass x; };\n"
+            "func:main = int32(cstring[]:argv) {\n"
+            "    int32:v = limited(argv.len =>! int32) ?! E9;\n    exit (v - 1i32);\n};\n"
+            "error:E9;\n")
+    VLFS = ("func:failsafe = int32(Error:e) {\n    pick (e) {\n        (E9) { exit 8i32; },\n"
+            "        (LimitViolated) { exit 31i32; },\n        (HeapBadRequest) { exit 9i32; },\n"
+            "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
+            "        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n"
+            "        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
+    for name, head, body, must_fail, why in (
             ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n",
-             True, "a verify test expecting `discharged` for an opaque divisor must fail"),
+             VDIV + VFS, True, "a verify test expecting `discharged` for an opaque divisor must fail"),
             ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n",
-             False, "a verify test naming its rows exactly must pass")):
+             VDIV + VFS, False, "a verify test naming its rows exactly must pass"),
+            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n",
+             VLIM + VLFS, True, "a verify test expecting `discharged` for a limited parameter's entry must fail"),
+            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n",
+             VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass")):
         # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
         # hyphen in the case name becomes an underscore in both.
         modname = name.replace("-", "_")
         path = os.path.join(tmp, modname + ".npk")
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(head + "mod:" + modname + ";\n" + VDIV + VFS)
+            fh.write(head + "mod:" + modname + ";\n" + body)
         fails = harness.check_verify_program(path, name, harness.read_expectations(path), tmp) if tools else []
         ok = (bool(fails) == must_fail)
         if not ok:

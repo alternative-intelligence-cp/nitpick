@@ -1,0 +1,39 @@
+// expect-exit: 0
+// expect-obligation: limit discharged 1
+// expect-obligation: limit-subsume discharged 1
+//
+// A RULE THE TYPE IMPLIES (L-7, §4.4 d): `$ >= 0u8` over a `uint8` holds by
+// the range axiom alone, so the entry row of a limited parameter -- `open`
+// for every other rule, since nothing is known of the argument at the callee
+// -- discharges here, and the elided IR of `keep` holds no `-4111` trap: the
+// check is one `llvm.assume` over the range clause. The call site's
+// `limit-subsume` row discharges the same way; being guard-less it emits
+// nothing.
+mod:limit_tautology;
+error:E9;
+Rules<uint8>:r_nonneg = { $ >= 0u8 };
+
+func:keep = int32(limit<r_nonneg> uint8:b) { pass (b => int32); };
+
+func:main = int32(cstring[]:argv) {
+    uint8:v = argv.len =>! uint8;
+    int32:r = keep(v) ?! E9;
+    exit (r - 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -2845,6 +2845,14 @@ Z3_KINDS = ("div-zero", "div-min", "overflow", "bounds", "cast-range", "exhausti
             "requires", "ensures", "invariant", "limit", "limit-subsume", "terminate",
             "stack-depth", "err-exit", "failsafe-post", "prove", "assert-static")
 VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
+# THE KINDS WITH NO RUNTIME GUARD (D-218.7's `guard` column; `ok_has_guard`'s
+# twin, 1.5.2 step 3): their rows read `none` in the elision column and their
+# discharge emits nothing into the IR. Diffed against the catalogue's column
+# by `check_obligation_kinds_agree`.
+GUARDLESS_KINDS = frozenset(("exhaustive", "limit-subsume", "terminate", "stack-depth",
+                             "failsafe-post", "prove", "assert-static"))
+# The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
+ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit"))
 
 
 def z3_verdicts(obl_dir, name):
@@ -2900,7 +2908,10 @@ def manifest_text(full):
              "# options " + " ".join(Z3_OPTIONS)]
     for sym, h, kind, v in sorted(set((f[5], f[3], f[2], f[4]) for f in full)):
         tier = "-" if v == "unencoded" else "int"
-        elision = "elided" if v == "discharged" else "retained"
+        if kind in GUARDLESS_KINDS:
+            elision = "none"
+        else:
+            elision = "elided" if v == "discharged" else "retained"
         lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision, sym))
     return "\n".join(lines) + "\n"
 
@@ -2966,7 +2977,7 @@ def elided_ir_checks(full, ir_text, name):
     # CODE ONLY: the compiler's own emission carries these very spellings as
     # STRING CONSTANTS (its source writes them), and a constant is not a site.
     ir_text = _ir_code_part_all(ir_text)
-    disch = sum(1 for f in full if f[4] == "discharged")
+    disch = sum(1 for f in full if f[4] == "discharged" and f[2] in ASSUME_KINDS)
     got = len(re.findall(r"call void @llvm\.assume\(", ir_text))
     if got != disch:
         fails.append("%s: the verified IR holds %d `llvm.assume` for %d discharged sites" % (name, got, disch))
@@ -3085,7 +3096,14 @@ def check_obligation_kinds_agree():
     if not m:
         return ["kinds-agree: VERIFICATION_REFERENCE.md has no marked obligation-catalogue region"]
     doc = set(re.findall(r"^\| `([a-z-]+)` \|", m.group(1), re.M))
+    # THE GUARD COLUMN TOO (1.5.2 step 3): the kinds the catalogue marks
+    # guard-less are the runners' GUARDLESS_KINDS, or a row's elision word
+    # would be a guess.
+    doc_guardless = set(re.findall(r"^\| `([a-z-]+)` \|[^|]*\| no \|", m.group(1), re.M))
     fails = []
+    if doc_guardless != set(GUARDLESS_KINDS):
+        fails.append("kinds-agree: the catalogue's guard column marks %s guard-less; the runners' GUARDLESS_KINDS is %s"
+                     % (sorted(doc_guardless), sorted(GUARDLESS_KINDS)))
     for k in sorted(code - doc):
         fails.append("kinds-agree: `smt_kinds.npk` spells kind `%s`, which the catalogue table does not list" % k)
     for k in sorted(doc - code):

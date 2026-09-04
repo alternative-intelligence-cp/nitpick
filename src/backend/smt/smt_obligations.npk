@@ -31,7 +31,7 @@ pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
-    Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
+    Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_prepare(@en, body);   // the escape set before any name is bound (DEF-14)
     for (int64:i in 0i64...pnames.count) {
         drop enc_param(@en, pnames.items[i], ptypes.items[i], prules.items[i], pdecls.items[i]);
@@ -54,7 +54,7 @@ pub func:obl_rule = NIL(ExprEmitter->:x, string:symbol, int32:subject_name,
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
-    Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
+    Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_param(@en, subject_name, subject_type, 0i32, 0i32);
     DeclNode:d = raw ast_decl(x.ast, rd);
     int32:cn = raw rule_clause_count(x.ast, d);

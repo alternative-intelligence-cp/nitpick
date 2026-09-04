@@ -254,9 +254,12 @@ written in the meantime so no row is silent.
    solver right.
 4. That the encoding the compiler writes (`src/backend/smt/`) is sound: every
    hypothesis it asserts is a fact on every execution reaching the site
-   (P-8's claim, stated in `smt_encode.npk`'s header). 1.5.6 reads this
-   claim against the floor's specification; K (VERIFICATION_REFERENCE §6.2)
-   is the metatheoretic check on the language the encoding assumes.
+   (P-8's claim, stated in `smt_encode.npk`'s header) -- and, since 1.5.2,
+   that a limited binding's rule holds on every execution past each of its
+   write points, because each is guarded by that rule or discharged under
+   these same hypotheses (D-251, L-7). 1.5.6 reads this claim against the
+   floor's specification; K (VERIFICATION_REFERENCE §6.2) is the
+   metatheoretic check on the language the encoding assumes.
 5. That the committed snapshot (`bootstrap/seed/stage1.ll`) is what its STAMP
    says: D-085's diverse double-compilation is the Thompson-attack mitigation,
    and the fixpoint re-derives the snapshot from source on every full run.
