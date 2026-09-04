@@ -342,3 +342,30 @@ pub func:TYPE_PURE_RULES = string() never fails { pass "NITPICK-TYPE-061"; };
 // scope-exit drops step 5 made real over unmapped memory; the runtime
 // refused, and the refusal's own trap route then died on the same heap.
 pub func:TYPE_RELEASE_THEN_EXIT = string() never fails { pass "NITPICK-TYPE-062"; };
+
+// 1.5.2 step 1 (D-251, S-28): A LIMITED BINDING HAS NO ADDRESS. `@`, `$$m`
+// and `$$i` of a place rooted at a `limit<Rules>` local or parameter refuse,
+// and so does a `move`/`pass` out of a proper sub-place of one whose type
+// owns (D-254's vacate is a write). Every write to a limited binding is a
+// write point the emitter checks -- its initialiser, every assignment to it
+// or to any part of it, the callee's entry -- and a write through an alias
+// is a write no write point sees: LIVE-1's exact shape, a rule the program
+// claims and nothing checks. The pointer type carries no mutability, so the
+// borrow of either kind is refused with the address; a limited value passes
+// by plain argument (D-183 s4) and a whole-binding move is a read. Measured
+// before the decision: all three spellings and a store through each were
+// accepted in silence.
+pub func:TYPE_LIMIT_ADDRESS = string() never fails { pass "NITPICK-TYPE-063"; };
+
+// 1.5.2 step 1 (D-251, S-28): A `limit` WHERE NO WRITE POINT EXISTS refuses
+// -- a parameter of a declaration without a body (a trait signature, an
+// `extern` method: no entry to check at; the impl's own parameters may carry
+// limits, and a `dyn` call reaches the impl's checked entry), a
+// `wild`/`wildx` binding (its writes are the manual regime's, through
+// pointers), and a `comptime` function's parameters and locals (the frontend
+// folder is a second evaluator, and a second implementation of the check is
+// what 1.3.3's compound-assignment drift teaches against). One code, several
+// ways to fail it (TYPE-054's convention); the message says which. A limit
+// on `main`/`failsafe`'s parameters is D-244's refusal (TYPE-060): nobody
+// but the runtime calls them.
+pub func:TYPE_LIMIT_NO_WRITE_POINT = string() never fails { pass "NITPICK-TYPE-064"; };

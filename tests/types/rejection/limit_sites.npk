@@ -1,0 +1,73 @@
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 41
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 42
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 43
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 49
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 55
+// expect-error: NITPICK-TYPE-064
+// expect-error-at: 59
+// expect-error: NITPICK-TYPE-064
+// expect-error-at: 63
+// expect-error: NITPICK-TYPE-064
+// expect-error-at: 67
+// expect-error: NITPICK-TYPE-064
+// expect-error-at: 68
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 72
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 73
+//
+// D-251 (1.5.2 step 1): A LIMITED BINDING HAS NO ADDRESS -- `@`, `$$m` and
+// `$$i` of a place rooted at one refuse (TYPE-063), and so does a `move` or
+// `pass` out of a field or element whose type owns (D-254's vacate is a
+// write no rule sees). And a `limit` WHERE NO WRITE POINT EXISTS refuses
+// (TYPE-064): a trait signature's parameter, a `wild` binding, a `comptime`
+// function's parameter and local; `main`/`failsafe`'s parameters are D-244's
+// refusal (TYPE-060). Every shape below was accepted in silence before.
+mod:limit_sites;
+Rules<int32>:r_pos = { $ > 0i32 };
+struct:Named = { string:name; int32:v; };
+Rules<Named>:r_named = { $.v > 0i32 };
+Rules<string[2]>:r_two = { $[0i64].len > 0i64 };
+Rules<cstring[]>:r_args = { $.len > 0i64 };
+Rules<Error>:r_any = { true };
+
+func:addresses = int32(int32:seed) {
+    limit<r_pos> int32:x = seed;
+    int32->:p = @x;
+    int32->:q = $$m x;
+    int32->:v = $$i x;
+    pass x;
+};
+
+func:moved_field = string(int32:seed) {
+    limit<r_named> Named:n = Named{ name: "abc", v: seed };
+    string:s = move(n.name);
+    pass (move(s));
+};
+
+func:passed_element = string(int32:seed) {
+    limit<r_two> string[2]:a = ["ab", "cd"];
+    pass a[0i64];
+};
+
+trait:Scaler = {
+    func:scale = int32(Self:self, limit<r_pos> int32:k);
+};
+
+func:manual = int32(int32:seed) {
+    wild limit<r_pos> int32:w = seed;
+    pass w;
+};
+
+comptime func:twice = int32(limit<r_pos> int32:n) {
+    limit<r_pos> int32:m = n * 2i32;
+    pass m;
+};
+
+func:main = int32(limit<r_args> cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(limit<r_any> Error:_~e) { exit 1i32; };

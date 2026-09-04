@@ -44,8 +44,8 @@ import harness      # noqa: E402
 # anything outside subset 1 -- so `trait:T = { };` was a convenient RUNG-001.
 # The cases run through the compiler under test now, which supports traits,
 # checks failsafe's coverage (D-179) and demands a `main`. The rung the
-# negative cases lean on is `limit<Rules>`, one of the eight the real backend
-# still refuses; it is a rung rather than a type error on purpose, because the
+# negative cases lean on is `prove` (1.5.4's; `limit<Rules>` until 1.5.2
+# lowered it), one the real backend still refuses; it is a rung rather than a type error on purpose, because the
 # property under test is D-085's -- the parser reads it, the backend refuses
 # it.
 FAILSAFE = """func:failsafe = int32(Error:e) {
@@ -60,15 +60,14 @@ FAILSAFE = """func:failsafe = int32(Error:e) {
 };
 """
 MAIN_OK = "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n"
-# The refused construct, at line 2 of whatever it is spliced into. The rule it
-# names is DECLARED, after it (1.5.1, D-220): a `limit<name>` resolves now, and
-# an undeclared `r_pos` would refuse at resolve -- before the backend rung these
-# cases exist to lean on -- with a code none of them expects.
+# The refused construct, at line 2 of whatever it is spliced into: `prove`,
+# 1.5.4's rung -- the LAST verification rung to retire (1.5.2 step 1 moved the
+# cases off `limit<Rules>`, which it lowers, so the example moves exactly once
+# more, when 1.5.4 chooses the permanent one).
 RUNG = """func:build = int32(int32:seed) {
-    limit<r_pos> int32:x = seed;
-    pass x;
+    prove(seed > 0i32);
+    pass seed;
 };
-Rules<int32>:r_pos = { $ > 0i32 };
 """
 # Two findings from two statements, neither a consequence of the other
 # (D-237): a narrower integer where `buffer_new` takes `int64` (TYPE-007) and

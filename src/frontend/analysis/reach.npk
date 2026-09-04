@@ -31,6 +31,7 @@ use "../parse_expr.npk".*;
 use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
+use "../parse_decorate.npk".*;   // limit_target (1.5.2, D-251)
 use "../types.npk".*;
 use "../expr_types.npk".*;
 use "./analysis_codes.npk".*;
@@ -66,6 +67,7 @@ pub struct:Reach = {
     bool:saw_counted;
     bool:saw_arena;
     bool:saw_deadline;
+    bool:saw_limit;          // a write point of a limited binding (1.5.2, D-251)
 
     // Where failsafe is, once found; and the prelude's own scope, where the
     // system family's symbols live (the pipeline hands it in).
@@ -85,6 +87,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
+                     saw_limit: false,
                      failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
     pass x;
 };
@@ -150,6 +153,20 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
         if (raw string_eq(raw intern_get(x.interns, raw decl_name(d)), "main")) {
             x.main_decl = id.index;
         }
+        // A LIMITED PARAMETER IS A WRITE POINT (1.5.2, D-251): the callee's
+        // entry checks it, so the trap identity is armed here, and the rule's
+        // own clauses are walked for THEIR arms -- a division inside one
+        // arms DivByZero for every function that writes under the rule.
+        int32:pn = raw fn_param_count(x.ast, d);
+        for (int32:pi in 0i32...pn) {
+            DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, pi));
+            VerifyId:pl = raw param_limit(pd);
+            if (!(raw verify_is_none(pl))) {
+                x.saw_limit = true;
+                drop reach_rule(x, raw limit_target(raw ast_verify(x.ast, pl)),
+                                raw REACH_DEPTH());
+            }
+        }
         drop reach_stmt(x, raw fn_body(x.ast, d), raw REACH_DEPTH());
         pass NIL;
     }
@@ -174,6 +191,27 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
     pass NIL;
 };
 
+// THE RULE'S OWN ARMS (1.5.2, D-251): a `Rules` body is evaluated at every
+// write point of every binding it limits, so its clauses are walked as the
+// writing function's own expressions, through refinements -- fuel-bounded,
+// though resolve refused every cycle (RESOLVE-006).
+func:reach_rule = NIL(Reach->:x, DeclId:rd, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass NIL; }
+    if (raw decl_is_none(rd)) { pass NIL; }
+    DeclNode:d = raw ast_decl(x.ast, rd);
+    if (d.kind != DeclKind.DeclRuleDecl) { pass NIL; }
+    int32:rn = raw rule_refine_count(x.ast, d);
+    for (int32:i in 0i32...rn) {
+        VerifyNode:rv = raw ast_verify(x.ast, raw rule_refine(x.ast, d, i));
+        drop reach_rule(x, raw limit_target(rv), fuel - 1i32);
+    }
+    int32:cn = raw rule_clause_count(x.ast, d);
+    for (int32:j in 0i32...cn) {
+        drop reach_expr(x, raw rule_clause(x.ast, d, j), fuel - 1i32);
+    }
+    pass NIL;
+};
+
 func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
     if (fuel <= 0i32) { pass NIL; }
@@ -189,6 +227,14 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
     }
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         drop reach_expr(x, raw stmt_decl_init(x.ast, s), fuel - 1i32);
+        // A LIMITED LOCAL IS A WRITE POINT (1.5.2, D-251): its initialiser
+        // and every assignment to it are checked, so the trap identity is
+        // armed and the rule's clauses walked for their own arms.
+        VerifyId:vl = raw stmt_decl_limit(x.ast, s);
+        if (!(raw verify_is_none(vl))) {
+            x.saw_limit = true;
+            drop reach_rule(x, raw limit_target(raw ast_verify(x.ast, vl)), fuel - 1i32);
+        }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
@@ -503,6 +549,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }
     if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
     if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
+    if (x.saw_limit)    { drop reach_add_system(x, "LimitViolated"); }
 
     if (x.failsafe_decl == 0i32) {
         // NO HANDLER (DEF-5, 1.5.1b step 1b; D-013): a root that declares

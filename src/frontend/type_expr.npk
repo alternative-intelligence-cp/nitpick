@@ -127,6 +127,10 @@ pub struct:ExprTyper = {
     // Inside an `old(…)` operand (1.5.1 step 3): `old` does not nest, and
     // `result` does not exist at entry.
     bool:in_old;
+    // The function being checked is `comptime` (1.5.2 step 1, D-251): its
+    // locals and parameters can carry no `limit`, since the frontend folder
+    // evaluates it and the check is the emitter's.
+    bool:fn_comptime;
     // The function being checked is declared `pure` (1.5.1 step 4, D-221,
     // S-15): its body may contain no effect — the rules are read in the
     // arms that already exist for calls, declarations and assignment.
@@ -206,7 +210,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
-                             fn_pure: false,
+                             fn_pure: false, fn_comptime: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
@@ -311,6 +315,26 @@ pub func:refuse_pass_of_pointee_owned = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                     raw type_display(e.types, e.interns, ty));
     discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
         string_concat(m1, "` is owned by what this pointer reaches, and `pass` would hand the caller a copy that eventually drops it — freeing the container's storage from a frame that never owned it (D-183). Return a view (`string_from_bytes(p.ptr, p.len)` for a string) or an explicit `.clone()`"),
+        at));
+    pass NIL;
+};
+
+// A `move` OR `pass` OUT OF A PROPER SUB-PLACE OF A LIMITED BINDING (1.5.2
+// step 1, D-251): D-254 leaves the type's vacant value in the place, which is
+// a write no rule can be asked to admit -- refused when the sub-place's type
+// OWNS (a copyable field is copied out and nothing is written). The whole
+// binding may be moved: it dies. Asked after the operand is typed.
+pub func:refuse_move_out_of_limited = NIL(ExprTyper->:e, ExprId:id, int32:ty,
+                                          Span:at) never fails {
+    if (ty == 0i32) { pass NIL; }
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (!(raw place_limited(e, id, 64i32))) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    if (!(raw type_drops(@r, ty, e.scope, 64i32))) { pass NIL; }
+    discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
+        "a field or element of a limited binding cannot be moved out (D-251): the vacant value it leaves behind (D-254) is a write no rule sees -- move the whole binding, or copy the part",
         at));
     pass NIL;
 };
@@ -3530,6 +3554,16 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop require_place_operand(e, raw expr_operand(n), "@");
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A LIMITED BINDING HAS NO ADDRESS (1.5.2 step 1, D-251): every
+        // write to it is a write point the emitter checks, and a write
+        // through the pointer would be one no rule sees. The invalid type
+        // comes back so no second sentence follows (D-240).
+        if (raw place_limited(e, raw expr_operand(n), 64i32)) {
+            discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
+                "a limited binding has no address (D-251): every write to it is a write point the emitter checks, and a write through `@` would be one no rule sees -- pass it by value",
+                n.span));
+            pass 0i32;
+        }
         pass (raw tt_pointer(e.types, t));
     }
     if (n.kind == ExprKind.ExprDerefExpr) {
@@ -3542,6 +3576,15 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop require_place_operand(e, raw expr_operand(n), "a borrow");
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        // A LIMITED BINDING HAS NO ADDRESS (1.5.2 step 1, D-251) -- the
+        // borrow of either kind included, since the pointer type carries no
+        // mutability and a write through it is one no rule sees.
+        if (raw place_limited(e, raw expr_operand(n), 64i32)) {
+            discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
+                "a limited binding cannot be borrowed (D-251): `$$i` and `$$m` are one pointer type, a write through it is one no rule sees, and every write to a limited binding is a checked write point -- pass it by value",
+                n.span));
+            pass 0i32;
+        }
         pass (raw tt_pointer(e.types, t));
     }
 
@@ -3561,6 +3604,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop require_place_operand(e, raw expr_operand(n), "move");
         int32:mvt = raw type_of_expr(e, raw expr_operand(n));
         drop refuse_move_of_borrowed(e, raw expr_operand(n), mvt, n.span);
+        drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
         pass mvt;
     }
 

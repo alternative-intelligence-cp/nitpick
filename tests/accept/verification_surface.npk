@@ -79,6 +79,20 @@ func:clamp_pure = int32(int32:v, int32:lo, int32:hi, int32->:extra, string:name)
 
 func:view = int32(int8->:p, int64:n) requires (string_from_bytes(p, n)).len == n { pass 1i32; };
 
+// D-251 (1.5.2 step 1): what a limited binding MAY do -- a `stack` local, a
+// `move` parameter, passing by value, moving the WHOLE binding out (it dies).
+// The rule refuses addresses and borrows of it and moves out of its parts.
+Rules<string>:r_ne = { $.len > 0i64 };
+func:reads = int32(int32:v) never fails pure { pass v; };
+func:owns = int64(move limit<r_ne> string:s) { pass s.len; };
+func:shapes = int64(int32:seed) {
+    stack limit<r_pos> int32:k = seed;
+    int32:r = raw reads(k);
+    limit<r_ne> string:s = "abc";
+    int64:n = owns(move(s)) ?! ENeg;
+    pass (n + (r => int64));
+};
+
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
@@ -91,6 +105,7 @@ func:failsafe = int32(Error:e) {
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
         (IntOverflow) { exit 1i32; },
+        (LimitViolated) { exit 1i32; },
         (TbbErr) { exit 1i32; },
         (Unreachable) { exit 1i32; },
         (WildLeak) { exit 1i32; },

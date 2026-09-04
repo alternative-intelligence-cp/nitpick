@@ -774,6 +774,53 @@ func:place_is_local = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
     pass false;
 };
 
+// A PLACE ROOTED AT A LIMITED BINDING (1.5.2 step 1, D-251): the root
+// identifier's declaration -- a local's `StmtVarDeclStmt` or a parameter's
+// `DeclParamDecl` -- carries a `limit<Rules>`. Walks member and index
+// operands exactly as `place_is_local` does and never through a pointer,
+// slice or handle base, where the storage is not the binding's own. Asked
+// AFTER the operand is typed, so the bases' recorded types are there to read.
+pub func:place_limited = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:s = raw symtab_get(e.tab, n.a);
+        if (s.origin_kind == (raw SYM_STMT())) {
+            StmtNode:sn = raw ast_stmt(e.ast, StmtId{ index: s.origin });
+            if (sn.kind != StmtKind.StmtVarDeclStmt) { pass false; }
+            pass (!(raw verify_is_none(raw stmt_decl_limit(e.ast, sn))));
+        }
+        if (s.origin_kind == (raw SYM_DECL())) {
+            DeclNode:dn = raw ast_decl(e.ast, DeclId{ index: s.origin });
+            if (dn.kind != DeclKind.DeclParamDecl) { pass false; }
+            pass (!(raw verify_is_none(raw param_limit(dn))));
+        }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_limited(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:bt = raw exprtypes_get(e.expr_types, raw expr_lhs(n));
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass false; }
+            if (bk == (raw TY_SLICE()))   { pass false; }
+            if (bk == (raw TY_HANDLE()))  { pass false; }
+        }
+        pass (raw place_limited(e, raw expr_lhs(n), fuel - 1i32));
+    }
+    pass false;
+};
+
 // `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
 // the annotation is also what an unsuffixed literal in the initialiser takes its
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
@@ -786,6 +833,25 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // A LOCAL'S `limit<Rules>` (1.5.1, D-220): the rule's subject is the
     // declared type, by identity.
     drop check_limit_subject(e, raw stmt_decl_limit(e.ast, s), want, s.span);
+
+    // A `limit` WHERE NO WRITE POINT EXISTS (1.5.2 step 1, D-251): a
+    // `wild`/`wildx` binding is written through pointers, by the manual
+    // regime, where no write point sees it; a `comptime` function's local is
+    // evaluated by the frontend folder, and the check is the emitter's.
+    VerifyId:vlim = raw stmt_decl_limit(e.ast, s);
+    if (!(raw verify_is_none(vlim))) {
+        int32:lq = raw stmt_quals(e.ast, s);
+        if ((lq & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32) {
+            discard(raw te_error(e, raw TYPE_LIMIT_NO_WRITE_POINT(),
+                "a `wild`/`wildx` binding cannot carry a `limit` (D-251): its writes are the manual regime's, through pointers, and no write point sees them",
+                s.span));
+        }
+        if (e.fn_comptime) {
+            discard(raw te_error(e, raw TYPE_LIMIT_NO_WRITE_POINT(),
+                "a `comptime` function's local cannot carry a `limit` (D-251): the frontend folder evaluates it, and the check is the emitter's",
+                s.span));
+        }
+    }
 
     // A `pure` BODY DECLARES NO MANUAL MEMORY AND NO OWNER (1.5.1, D-221):
     // `wild`/`wildx` storage is an effect by definition, and an owning local's
@@ -1129,6 +1195,8 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // permuting WITHIN a container; `pass` LEAVES, so it gets no exemption.
     // The fix at the site is a view (`string_from_bytes`) or a clone.
     drop refuse_pass_of_pointee_owned(e, v, got, s.span);
+    // AND OUT OF A LIMITED BINDING'S FIELD OR ELEMENT (1.5.2 step 1, D-251).
+    drop refuse_move_out_of_limited(e, v, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
@@ -1600,6 +1668,7 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     e.fn_is_async = raw decl_has(d, raw DECL_ASYNC());
     e.fn_gives = raw fn_declares_gives(e.ast, d);
     e.fn_pure = raw fn_declares_pure(e.ast, d);
+    e.fn_comptime = raw decl_has(d, raw DECL_COMPTIME());
     // `pure` (1.5.1, D-221, S-15): a function of its arguments and nothing
     // else. Its header rules: not `async` or `thread` (an executor deciding
     // when a body runs is an effect, and so is a suspension inside it), not
@@ -1805,6 +1874,27 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
             TypeResolver:lpr = raw etyper_resolver(e);
             int32:lpt = raw resolve_type(@lpr, raw param_type(lpd), scope);
             drop check_limit_subject(e, lpl, lpt, lpd.span);
+            // WHERE NO WRITE POINT EXISTS (1.5.2 step 1, D-251): a declaration
+            // without a body has no entry to check at, and a `comptime`
+            // function's entry is the folder's, not the emitter's.
+            if (raw stmt_is_none(raw fn_body(e.ast, d))) {
+                discard(raw te_error(e, raw TYPE_LIMIT_NO_WRITE_POINT(),
+                    "a parameter of a declaration without a body cannot carry a `limit` (D-251): a trait signature has no entry to check at -- the impl's own parameter may",
+                    lpd.span));
+            }
+            if (raw decl_has(d, raw DECL_COMPTIME())) {
+                discard(raw te_error(e, raw TYPE_LIMIT_NO_WRITE_POINT(),
+                    "a `comptime` function's parameter cannot carry a `limit` (D-251): the frontend folder evaluates the call, and the check is the emitter's",
+                    lpd.span));
+            }
+            // `main` AND `failsafe` CARRY NO CONTRACT (D-244), a parameter's
+            // `limit` included: nobody but the runtime calls them, and a trap
+            // at `failsafe`'s own entry re-enters the route.
+            if (e.fn_terminal) {
+                discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                    "`main` and `failsafe` carry no contract (D-244), a parameter's `limit` included: nobody but the runtime calls them",
+                    lpd.span));
+            }
         }
         lpi = lpi + 1i32;
     }
