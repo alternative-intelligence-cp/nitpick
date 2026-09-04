@@ -1,0 +1,42 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 2
+//
+// A FRAMED LIMITED LOCAL (D-251): declared before a suspension and assigned
+// after it, so its slot is frame-resident and the second write point runs in
+// a later resume -- the assignment of one minus five traps there. Two rows:
+// the initialiser and the assignment.
+mod:limit_async_local;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+async func:work = int32(int32:seed) {
+    limit<r_pos> int32:m = 5i32;
+    Result<NIL>:z = await sleep(raw duration_ns(1000i64));
+    if (z.is_error) { fail E9; }
+    m = seed;
+    pass m;
+};
+
+async func:main = int32(cstring[]:argv) {
+    Result<int32>:r = await work((argv.len =>! int32) - 5i32);
+    if (r.is_error) { exit 8i32; }
+    exit r.value;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (DeadlineExceeded) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

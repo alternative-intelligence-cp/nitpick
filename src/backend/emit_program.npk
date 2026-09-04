@@ -38,6 +38,7 @@ use "./ir/ir_runtime.npk".*;
 use "./ir/ir_func.npk".*;
 use "./ir/ir_expr.npk".*;
 use "./ir/ir_stmt.npk".*;
+use "./ir/ir_rules.npk".*;   // emit_rule_fn (1.5.2 step 2, D-251)
 
 // One refusal, as the diagnostic SUBSET_1 §3 specifies: the construct, and the
 // rung that enables it.
@@ -1061,6 +1062,10 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
                 if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
             }
         }
+        if (d.kind == DeclKind.DeclRuleDecl) {
+            IrVal:rr = raw emit_rule_fn(x, item);
+            if (!(raw iv_is_ok(rr))) { drop refuse(diags, rr); }
+        }
         if (d.kind == DeclKind.DeclImplDecl) {
             drop emit_impl_block(x, diags, item, d);
         }
@@ -1167,6 +1172,14 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             // silently sheds declared code is a rung whose output stops meaning
             // the source. A `trait` is different: erased by design, generating
             // nothing at ANY rung, so there is genuinely nothing to refuse.
+            // A `Rules` DECLARATION IS ONE GENERATED PREDICATE (1.5.2 step 2,
+            // D-251): emitted whether or not anything limits by it, so a
+            // defect in a clause is found before the rule has a user (V-6's
+            // eager typing, for the same reason).
+            if (d.kind == DeclKind.DeclRuleDecl) {
+                IrVal:rr = raw emit_rule_fn(@x, item);
+                if (!(raw iv_is_ok(rr))) { drop refuse(diags, rr); }
+            }
             if (d.kind == DeclKind.DeclImplDecl) {
                 drop emit_impl_block(@x, diags, item, d);
             }

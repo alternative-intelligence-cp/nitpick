@@ -305,12 +305,14 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     int64:disch = 0i64;
     int64:zero_left = 0i64;
     int64:min_left = 0i64;
+    int64:limit_left = 0i64;
     for (int64:i in 0i64...rows.count) {
         bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
         if (d) { disch = disch + 1i64; }
         string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
         if ((!d) && (raw text_eq(k, "div-zero"))) { zero_left = zero_left + 1i64; }
         if ((!d) && (raw text_eq(k, "div-min")))  { min_left = min_left + 1i64; }
+        if ((!d) && (raw text_eq(k, "limit")))    { limit_left = limit_left + 1i64; }
     }
     int64:assumes = raw count_of(ir, "call void @llvm.assume(");
     if (assumes != disch) {
@@ -338,6 +340,16 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         m2 = string_concat(m2, int_to_string(min_left));
         m2 = string_concat(m2, " retained rows");
         drop list_push(@fl, move(m2));
+    }
+    // THE LIMIT GUARDS (1.5.2 step 2, D-251): one `-4111` trap per retained row.
+    int64:lm = raw count_of(ir, "@npk_trap(i32 -4111)");
+    if (lm != limit_left) {
+        string:m3 = string_concat(name, ": the verified IR holds ");
+        m3 = string_concat(m3, int_to_string(lm));
+        m3 = string_concat(m3, " limit traps for ");
+        m3 = string_concat(m3, int_to_string(limit_left));
+        m3 = string_concat(m3, " retained rows");
+        drop list_push(@fl, move(m3));
     }
     pass fl;
 };

@@ -50,6 +50,7 @@ use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
 use "./ir_expr.npk".*;
+use "./ir_rules.npk".*;
 use "../smt/smt_obligations.npk".*;
 
 // A `br` or a block start, through the terminated flag — mirrors the seed's
@@ -637,14 +638,12 @@ func:emit_stmt_kind = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 // --- declarations and assignment ----------------------------------------------------
 
 func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
-    // LIVE-1's repair (0.9.0): a `limit<Rules>` that lowered to a bare alloca
-    // told the program its rule held while nothing checked it — the worst
-    // outcome D-068 names. Refused until 1.4 emits the real check; the same
-    // shape `prove` has had since 0.7.
+    // THE FIRST WRITE POINT (1.5.2 step 2; D-220, D-251, D-068): a
+    // `limit<Rules>` local's initialiser is checked AFTER the store, over the
+    // slot's whole value, at the end of this function. The rung that stood
+    // here from 0.9.0 (LIVE-1's repair: a limit that lowered to a bare alloca
+    // told the program its rule held while nothing checked it) is retired.
     VerifyId:lim = raw stmt_decl_limit(x.ast, s);
-    if (!(raw verify_is_none(lim))) {
-        pass (raw iv_rung("a `limit<Rules>` constraint", "1.5", s.span));
-    }
     int32:dty = raw resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
     LlType:ll = raw ll_type(x.fe.ctx, dty);
     if (!(raw ll_is_ok(ll))) { pass (raw iv_from_ll_at(x, ll, dty, s.span)); }
@@ -742,6 +741,20 @@ func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
             drop irw_alloca(x.fe.w, dfl, "i8");
             drop irw_line(x.fe.w, raw cat3(seed, dfl, ""));
             drop fnem_flag_last(x.fe, move(dfl));
+        }
+    }
+    // THE FIRST WRITE POINT (1.5.2 step 2, D-251): the rule rides the
+    // binding, and an initialised declaration is checked here, after the
+    // store, over the slot; a declaration without an initialiser is not a
+    // write point (D-225's vacant value is never read, by definite
+    // assignment) and its first assignment is.
+    if (!(raw verify_is_none(lim))) {
+        DeclId:lrule = raw limit_target(raw ast_verify(x.ast, lim));
+        drop fnem_rule_last(x.fe, lrule.index);
+        if (!(raw expr_is_none(init))) {
+            IrVal:lc = raw emit_limit_check(x, slot, dty, lrule, raw SITE_STMT(),
+                                            sid.index, s.span);
+            if (!(raw iv_is_ok(lc))) { pass lc; }
         }
     }
     pass (raw iv_nil());
@@ -844,6 +857,9 @@ func:compound_op = TokenKind(TokenKind:k) never fails {
 };
 
 func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+    // The statement's id, taken before the right-hand side's own statements
+    // (a `pick` expression's arms) can move `cur_stmt` (1.5.2 step 2, L-9).
+    int32:asite = x.fe.cur_stmt;
     // A PLACE, whatever shape it takes: a name's slot, a field through layout,
     // an element through a bound, a pointee through `<-` (0.7.7).
     PlaceVal:place = raw addr_of(x, raw stmt_target(s));
@@ -933,6 +949,9 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         if (aflag.len > 0i64) {
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", aflag, ""));
         }
+        // THE SECOND WRITE POINT (1.5.2 step 2, D-251), after the store.
+        IrVal:lc = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
+        if (!(raw iv_is_ok(lc))) { pass lc; }
         pass (raw iv_nil());
     }
 
@@ -959,6 +978,10 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(res))) { pass res; }
     drop irw_line(x.fe.w, raw cat5("store ", res.ll, " ", res.ref,
                       string_concat(", ptr ", place.addr)));
+    // THE SECOND WRITE POINT (1.5.2 step 2, D-251): the arithmetic's own
+    // guards ran above; the rule is asked of the stored result.
+    IrVal:lc2 = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
+    if (!(raw iv_is_ok(lc2))) { pass lc2; }
     pass (raw iv_nil());
 };
 
@@ -3012,7 +3035,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // named the impl's. A free function qualifies by its own declaration.
     int32:qual = did.index;
     if (x.cur_impl != 0i32) { qual = x.cur_impl; }
-    LlType:rt = raw fnem_begin(x.fe, fname, qual, succ);
+    LlType:rt = raw fnem_begin(x.fe, fname, qual, succ, false);
     if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
     x.fe.is_gives = raw fn_declares_gives(x.ast, d);
     if (fn_async) {
@@ -3043,14 +3066,22 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // names and the same resolved types the slots below get.
     List<int32>:obl_pn = raw list_init::<int32>(8i64);
     List<int32>:obl_pt = raw list_init::<int32>(8i64);
+    // ... and their rules (a `Rules` declaration index, 0 for none) and
+    // declaration ids -- the entry checks' inputs (1.5.2 step 2, D-251).
+    List<int32>:obl_pr = raw list_init::<int32>(8i64);
+    List<int32>:obl_pd = raw list_init::<int32>(8i64);
     int32:i = 0i32;
     int32:n = raw fn_param_count(x.ast, d);
     while (i < n) {
         DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, i));
-        // A parameter's `limit` is the same dropped guarantee (LIVE-1).
+        // A parameter's `limit` is THE THIRD WRITE POINT (1.5.2 step 2,
+        // D-251): checked at the entry, below, once the slots exist and the
+        // walk has run. The rung that stood here from 0.9.0 (LIVE-1's repair)
+        // is retired.
         VerifyId:plim = raw param_limit(pd);
+        int32:prule = 0i32;
         if (!(raw verify_is_none(plim))) {
-            pass (raw iv_rung("a `limit<Rules>` constraint", "1.5", pd.span));
+            prule = (raw limit_target(raw ast_verify(x.ast, plim))).index;
         }
         // UNDER THE INSTANTIATION'S BINDING (1.0.2b): `T:x` resolves to the
         // argument, not to "there is no type named T". The scope is pushed
@@ -3079,6 +3110,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, pt, pd.span)); }
         drop list_push(@obl_pn, raw decl_name(pd));
         drop list_push(@obl_pt, pt);
+        drop list_push(@obl_pr, prule);
+        drop list_push(@obl_pd, (raw fn_param(x.ast, d, i)).index);
         i = i + 1i32;
     }
 
@@ -3107,6 +3140,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         if (!(raw ll_is_ok(vl))) { pass (raw iv_from_ll_at(x, vl, vt, vn.span)); }
         drop list_push(@obl_pn, raw decl_name(vn));
         drop list_push(@obl_pt, vt);
+        drop list_push(@obl_pr, 0i32);
+        drop list_push(@obl_pd, vspec.index);
     }
 
     drop fnem_open(x.fe);
@@ -3127,7 +3162,21 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // rows by construction. It fills the elision answers the division sites
     // below consult, and the program's solver files when asked.
     drop obl_function(x, raw mangled_fn_sym(x.fe.ctx, qual, fname), obl_pn, obl_pt,
-                      raw fn_body(x.ast, d));
+                      obl_pr, obl_pd, raw fn_body(x.ast, d));
+    // THE ENTRY CHECKS (1.5.2 step 2, D-251): each limited parameter over its
+    // slot -- an alloca in a sync function, the frame GEP at state 0 in a
+    // coroutine (the parameters are the first bindings in both skeletons) --
+    // after the walk, so the elision answers exist, and before the body.
+    for (int64:pi in 0i64...obl_pr.count) {
+        if (obl_pr.items[pi] == 0i32) { continue; }
+        drop fnem_rule_at(x.fe, pi, obl_pr.items[pi]);
+        DeclNode:ppd = raw ast_decl(x.ast, DeclId{ index: obl_pd.items[pi] });
+        IrVal:pc = raw emit_limit_check(x, raw fnem_local_slot_at(x.fe, pi),
+                                        obl_pt.items[pi],
+                                        DeclId{ index: obl_pr.items[pi] },
+                                        raw SITE_DECL(), obl_pd.items[pi], ppd.span);
+        if (!(raw iv_is_ok(pc))) { pass pc; }
+    }
     IrVal:b = raw emit_block(x, raw fn_body(x.ast, d));
     x.tr.generics = bsaved;
     x.tr.enclosing = besaved;

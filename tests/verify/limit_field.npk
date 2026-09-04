@@ -1,0 +1,35 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 2
+//
+// A RULE OVER AN AGGREGATE (D-251): a store to a FIELD of a limited struct is
+// a write to the binding, and the root's whole value is re-checked after it.
+// The initialiser satisfies `r_q1`; the field store of one minus five does
+// not. Two rows, both `unencoded`: a struct subject is outside the 1.5.0
+// fragment (L-6), so the guard stays whatever step 3 does.
+mod:limit_field;
+error:E9;
+struct:Point = { int32:x; int32:y; };
+Rules<Point>:r_q1 = { $.x >= 0i32, $.y >= 0i32 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_q1> Point:p = Point{ x: 1i32, y: 2i32 };
+    p.x = (argv.len =>! int32) - 5i32;
+    exit (p.x + p.y);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

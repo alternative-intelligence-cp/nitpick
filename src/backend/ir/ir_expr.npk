@@ -1287,8 +1287,18 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         // element (1.5.1b step 5) -- `emit_move_out` in ir_stmt.npk says why.
         pass (raw emit_move_out(x, raw expr_operand(n)));
     }
-    // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot.
+    // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot;
+    // or, inside a generated `Rules` predicate, THE SUBJECT (1.5.2 step 2,
+    // D-251): its slot, of its type. The two constructs cannot nest (V-5), so
+    // a non-empty `rule_slot` decides.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
+        if (x.fe.rule_slot.len > 0i64) {
+            string:rv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(rv, " = load ", x.fe.rule_ll, ", ptr ",
+                                             x.fe.rule_slot));
+            pass (raw iv(string_concat(x.fe.rule_ll, ""), move(rv),
+                         raw exprtypes_get(x.et, id)));
+        }
         string:islot = raw fnem_iter_slot(x.fe);
         if (islot.len == 0i64) { pass (raw iv_broken(n.span)); }
         string:iv2 = raw irw_temp(x.fe.w);
@@ -2577,8 +2587,8 @@ pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
     if (op == TokenKind.OpSlash)   { divlike = true; }
     if (op == TokenKind.OpPercent) { divlike = true; }
     if (divlike) {
-        bool:el_zero = raw llctx_elided(x.fe.ctx, site, raw OK_DIV_ZERO());
-        bool:el_min = raw llctx_elided(x.fe.ctx, site, raw OK_DIV_MIN());
+        bool:el_zero = raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_DIV_ZERO());
+        bool:el_min = raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_DIV_MIN());
         string:ok_l = raw irw_new_label(x.fe.w, "div.ok");
         string:next_l = string_concat(ok_l, "");
         if (signed) {
@@ -8761,6 +8771,17 @@ func:builtin_field_index = int32(ExprEmitter->:x, int32:kind, int32:name) never 
 // The address of a place expression: a name, a field, an element, or a pointee.
 pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     ExprNode:n = raw ast_expr(x.ast, id);
+
+    // THE SUBJECT'S PLACE (1.5.2 step 2, D-251): inside a generated `Rules`
+    // predicate `$` is local 0 -- the subject stored to its own slot by
+    // `fnem_open` -- so `$.x` and `$[i]` reach the value the way a local's
+    // field and element do. Outside one, `$` is a loop counter and no place.
+    if (n.kind == ExprKind.ExprIterationVarExpr) {
+        if (x.fe.rule_slot.len > 0i64) {
+            pass (raw pv(raw fnem_local_slot_at(x.fe, 0i64),
+                         raw fnem_local_type_at(x.fe, 0i64)));
+        }
+    }
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);

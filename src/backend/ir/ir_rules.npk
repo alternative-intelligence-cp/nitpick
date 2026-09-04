@@ -1,0 +1,202 @@
+// ir_rules — `limit<Rules>` LIVE (1.5.2 step 2; D-220, D-251, D-068). One
+// generated predicate function per `Rules` declaration, and the one check
+// every write point of a limited binding runs.
+//
+// THE PREDICATE: `define i8 @"npk.<module>.<name>"(<T> %a0)` -- the ordinary
+// mangling (a `Rules` name lives in the module's one declaration namespace,
+// so the symbol is free), the subject the single parameter, the verdict
+// returned BARE (the function is the emitter's own, never callable from
+// source, so it owes no envelope; its `bool` is the language's byte, D-036).
+// The body is the refinements then the
+// clauses in SOURCE ORDER, short-circuit: each refinement a call to its
+// rule's function, each clause `emit_cond` with `$` bound to the subject's
+// slot; the first false ends the evaluation with `ret i1 false`. Every
+// declaration is emitted whether or not anything limits by it (V-6's eager
+// rule: a defect in a clause is found before the rule has a user). A clause's
+// own guard sites -- a division inside `{ $ != 0i32, 100i32 / $ > 1i32 }` --
+// therefore exist ONCE, in one function instance, with ONE row each; inline
+// expansion at every write point would give one clause node several sites in
+// one function, and `llctx_elided`, keyed by node id per function, would
+// answer one site's elision for all of them. D-183: the subject arrives by
+// value and is a LENT parameter -- no flag, no drop. D-246: each clause is a
+// condition -- its temporaries drop where the verdict is decided.
+//
+// THE CHECK, after the write, over the binding's WHOLE current value: the
+// slot loaded, the predicate called, a branch, `npk_chain_reset`,
+// `npk_trap(-4111)` -- the division guard's shape. Emitted in EVERY build
+// (D-068); step 3 elides what the manifest discharged.
+
+mod:ir_rules;
+
+use "../../frontend/source_location.npk".*;
+use "../../frontend/intern.npk".*;
+use "../../frontend/ast_kind.npk".*;
+use "../../frontend/ast.npk".*;
+use "../../frontend/parse_expr.npk".*;
+use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_decorate.npk".*;
+use "../../frontend/types.npk".*;
+use "../../frontend/expr_types.npk".*;
+use "../../frontend/symbols.npk".*;
+use "../../frontend/type_resolve.npk".*;
+use "./ir_writer.npk".*;
+use "./ir_types.npk".*;
+use "./ir_func.npk".*;
+use "./ir_expr.npk".*;
+use "./ir_stmt.npk".*;
+use "../smt/smt_obligations.npk".*;
+
+// The predicate's symbol: the declaration's own, by the ordinary mangling.
+pub func:rule_fn_sym = string(ExprEmitter->:x, DeclId:rd) never fails {
+    DeclNode:d = raw ast_decl(x.ast, rd);
+    pass (raw mangled_fn_sym(x.fe.ctx, rd.index,
+                             raw intern_get(x.interns, raw decl_name(d))));
+};
+
+// ONE `Rules` DECLARATION, ONE FUNCTION.
+pub func:emit_rule_fn = IrVal(ExprEmitter->:x, DeclId:rd) never fails {
+    DeclNode:d = raw ast_decl(x.ast, rd);
+    if (d.kind != DeclKind.DeclRuleDecl) { pass (raw iv_broken(d.span)); }
+    int32:subject = raw resolve_type(x.tr, raw rule_subject(d),
+                        raw symtab_home_scope(x.tab, rd.index, x.scope));
+    LlType:sl = raw ll_type(x.fe.ctx, subject);
+    if (!(raw ll_is_ok(sl))) { pass (raw iv_from_ll_at(x, sl, subject, d.span)); }
+    string:rname = raw intern_get(x.interns, raw decl_name(d));
+    LlType:rt = raw fnem_begin(x.fe, rname, rd.index, x.fe.ctx.types.t_bool, true);
+    if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, x.fe.ctx.types.t_bool, d.span)); }
+    // THE VERDICT IS THE LANGUAGE'S `bool` -- a byte (D-036), never a bare
+    // `i1`: the define line says what `ll_type` says, and so do the returns.
+    string:bl = string_concat(rt.text, "");
+    int32:dollar = raw intern_add(x.interns, "$");
+    LlType:pl = raw fnem_param(x.fe, dollar, subject, false);
+    if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, subject, d.span)); }
+    drop fnem_open(x.fe);
+    x.fe.rule_slot = raw fnem_local_slot_at(x.fe, 0i64);
+    x.fe.rule_ll = string_concat(sl.text, "");
+    // THE WALK (P-3), over the clauses under the same binding, before they
+    // are lowered: a clause's own guards get their rows and their elision
+    // answers exactly as a body's do.
+    drop obl_rule(x, raw mangled_fn_sym(x.fe.ctx, rd.index, rname), dollar, subject, rd);
+
+    string:no_l = raw irw_new_label(x.fe.w, "rule.no");
+    int32:rn = raw rule_refine_count(x.ast, d);
+    for (int32:i in 0i32...rn) {
+        VerifyNode:rv = raw ast_verify(x.ast, raw rule_refine(x.ast, d, i));
+        DeclId:sub = raw limit_target(rv);
+        string:v = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(v, " = load ", sl.text, ", ptr ", x.fe.rule_slot));
+        string:r = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(r, " = call ", bl, " ",
+                                         raw cat5(raw rule_fn_sym(x, sub), "(", sl.text,
+                                                  " ", string_concat(v, ")"))));
+        string:rb = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(rb, " = icmp ne ", bl, " ", string_concat(r, ", 0")));
+        string:nx = raw irw_new_label(x.fe.w, "rule.c");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", rb, ", label %", nx,
+                                         string_concat(", label %", no_l)));
+        drop s_start(x, nx);
+    }
+    int32:cn = raw rule_clause_count(x.ast, d);
+    for (int32:j in 0i32...cn) {
+        int64:ctm = raw fnem_temp_mark(x.fe);
+        IrVal:c = raw emit_cond(x, raw rule_clause(x.ast, d, j));
+        if (!(raw iv_is_ok(c))) { pass c; }
+        drop emit_temp_drops(x, ctm);
+        drop fnem_temp_release(x.fe, ctm);
+        string:nx2 = raw irw_new_label(x.fe.w, "rule.c");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", nx2,
+                                         string_concat(", label %", no_l)));
+        drop s_start(x, nx2);
+    }
+    drop irw_line(x.fe.w, raw cat3("ret ", bl, " 1"));
+    x.fe.terminated = true;
+    drop s_start(x, no_l);
+    drop irw_line(x.fe.w, raw cat3("ret ", bl, " 0"));
+    x.fe.terminated = true;
+    drop fnem_close(x.fe, true);
+    x.fe.rule_slot = "";
+    x.fe.rule_ll = "";
+    pass (raw iv_nil());
+};
+
+// THE CHECK AT A WRITE POINT: the binding's slot and type, the rule, the
+// site's key (`space`, `site` -- read by step 3's elision), the span the
+// trap's origin chain names.
+pub func:emit_limit_check = IrVal(ExprEmitter->:x, string:slot, int32:type_id,
+                                  DeclId:rule, int32:space, int32:site,
+                                  Span:at) never fails {
+    LlType:ll = raw ll_type(x.fe.ctx, type_id);
+    if (!(raw ll_is_ok(ll))) { pass (raw iv_from_ll_at(x, ll, type_id, at)); }
+    string:v = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(v, " = load ", ll.text, ", ptr ", slot));
+    LlType:bt = raw ll_type(x.fe.ctx, x.fe.ctx.types.t_bool);
+    if (!(raw ll_is_ok(bt))) { pass (raw iv_from_ll_at(x, bt, x.fe.ctx.types.t_bool, at)); }
+    string:vd = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(vd, " = call ", bt.text, " ",
+                                     raw cat5(raw rule_fn_sym(x, rule), "(", ll.text,
+                                              " ", string_concat(v, ")"))));
+    string:vb = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(vb, " = icmp ne ", bt.text, " ", string_concat(vd, ", 0")));
+    string:good = raw irw_new_label(x.fe.w, "limit.ok");
+    string:bad = raw irw_new_label(x.fe.w, "limit.bad");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", vb, ", label %", good,
+                                     string_concat(", label %", bad)));
+    drop irw_label(x.fe.w, bad);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4111)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, good);
+    pass (raw iv_nil());
+};
+
+// THE LOCAL A PLACE IS ROOTED AT, as its index in the local table, or -1:
+// through member and index bases whose type is not a pointer, slice or
+// handle (that storage is not the binding's own) to the identifier. The
+// checker's `place_limited` walks the same way (TYPE-063 refuses the
+// addresses that would make the walk incomplete).
+pub func:place_root_local = int64(ExprEmitter->:x, ExprId:id) never fails {
+    ExprId:cur = id;
+    int32:fuel = 64i32;
+    while (fuel > 0i32) {
+        fuel = fuel - 1i32;
+        if (raw expr_is_none(cur)) { pass (0i64 - 1i64); }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            pass (raw fnem_lookup_idx(x.fe, n.payload =>! int32));
+        }
+        ExprId:base = ExprId{ index: 0i32 };
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            base = raw expr_operand(n);
+        } else {
+            if (n.kind == ExprKind.ExprIndexExpr) {
+                base = raw expr_lhs(n);
+            } else {
+                pass (0i64 - 1i64);
+            }
+        }
+        int32:bt = raw exprtypes_get(x.et, base);
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(x.fe.ctx.types, bt);
+            if (bk == (raw TY_POINTER())) { pass (0i64 - 1i64); }
+            if (bk == (raw TY_SLICE()))   { pass (0i64 - 1i64); }
+            if (bk == (raw TY_HANDLE()))  { pass (0i64 - 1i64); }
+        }
+        cur = base;
+    }
+    pass (0i64 - 1i64);
+};
+
+// THE SECOND WRITE POINT (D-251): an assignment to a limited local or
+// parameter, or to any part of one, re-checks the ROOT's whole value after
+// the store. Nothing to do for a root that is not a limited local.
+pub func:emit_assign_limit = IrVal(ExprEmitter->:x, ExprId:target, int32:site,
+                                   Span:at) never fails {
+    int64:ri = raw place_root_local(x, target);
+    if (ri < 0i64) { pass (raw iv_nil()); }
+    int32:rr = raw fnem_local_rule_at(x.fe, ri);
+    if (rr == 0i32) { pass (raw iv_nil()); }
+    pass (raw emit_limit_check(x, raw fnem_local_slot_at(x.fe, ri),
+                               raw fnem_local_type_at(x.fe, ri),
+                               DeclId{ index: rr }, raw SITE_STMT(), site, at));
+};

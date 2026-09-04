@@ -55,6 +55,7 @@ use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
 use "../../frontend/parse_stmt.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_decorate.npk".*;   // limit_target (1.5.2 step 2, D-251)
 use "../../frontend/parse_pick.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
@@ -85,7 +86,8 @@ pub struct:SmtObl = {
     string:goal;             // the property to prove (the file asserts its negation)
     List<int32>:syms;        // the goal's symbols
     int64:hyps;              // hypotheses recorded before it: the cone draws from [0, hyps)
-    int32:site;              // the ExprId that identifies the site (the emitter's key)
+    int32:site;              // the node index that identifies the site (the emitter's key) ...
+    int32:space;             // ... in this id space (L-9): SITE_EXPR, SITE_STMT or SITE_DECL
     int32:ordinal;           // the k-th of its kind in this function
     int32:line;
     int32:col;
@@ -104,6 +106,7 @@ struct:Bind = {
     int32:name;
     int32:sym;
     int32:type_id;
+    int32:rule;      // the `Rules` declaration limiting the name (1.5.2, D-251); 0 for none
 };
 
 // A term: encodable or not; when encodable, its text, sort and symbols.
@@ -311,7 +314,7 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 // term is not; symbol-less when the type is neither -- or when the name is
 // ADDRESS-TAKEN (DEF-14: an escaped name is never named, so every read of it
 // is a fresh opaque term and no fact about it can outlive a call).
-func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t) never fails {
+func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule) never fails {
     int32:sym = 0i32 - 1i32;
     bool:named = (raw is_int(e, ty)) || (raw is_bool(e, ty));
     if (raw is_escaped(e, name)) { named = false; }
@@ -328,7 +331,7 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t) never fails {
             drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
         }
     }
-    Bind:b = Bind{ name: name, sym: sym, type_id: ty };
+    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule };
     drop list_push(@e.binds, move(b));
     pass NIL;
 };
@@ -397,14 +400,14 @@ func:scope_release = NIL(Encoder->:e, int64:mark) never fails { e.binds.count = 
 
 // --- obligations ---------------------------------------------------------------------------
 
-func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:site,
-                  Span:at, bool:encoded) never fails {
+func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:space,
+                  int32:site, Span:at, bool:encoded) never fails {
     int32:ord = e.ordinals.items[kind => int64] + 1i32;
     e.ordinals.items[kind => int64] = ord;
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
     for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
     SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: move(copy),
-                       hyps: e.hyps.count, site: site, ordinal: ord,
+                       hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
@@ -424,15 +427,68 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
     if (!ta.ok) { ta = raw term_opaque(e, lt); }
     if (!tb.ok) { tb = raw term_opaque(e, lt); }
     string:zero = raw smt_app1("not", raw smt_app2("=", tb.text, "0"));
-    drop record(e, raw OK_DIV_ZERO(), zero, tb.syms, site, at, true);
+    drop record(e, raw OK_DIV_ZERO(), zero, tb.syms, raw SITE_EXPR(), site, at, true);
     if (raw type_is_signed(e.types, lt)) {
         string:mn = raw smt_int_min(raw type_int_bits(e.types, lt));
         string:both = raw smt_app2("and", raw smt_app2("=", ta.text, mn),
                                    raw smt_app2("=", tb.text, "(- 1)"));
         drop record(e, raw OK_DIV_MIN(), raw smt_app1("not", both),
-                    raw syms_union(ta.syms, tb.syms), site, at, true);
+                    raw syms_union(ta.syms, tb.syms), raw SITE_EXPR(), site, at, true);
     }
     pass NIL;
+};
+
+// A `limit` write point whose rule the encoder does not yet express (1.5.2
+// step 2; P-12): the row exists from the first commit that emits the guard,
+// so the manifest stays an inventory of guards; step 3 gives it a goal.
+func:record_limit_unencoded = NIL(Encoder->:e, int32:space, int32:site, Span:at) never fails {
+    List<int32>:none = raw list_init::<int32>(1i64);
+    drop record(e, raw OK_LIMIT(), "", none, space, site, at, false);
+    pass NIL;
+};
+
+// The `Rules` declaration a limit node resolved to, as an index; 0 for none.
+func:limit_rule_of = int32(Encoder->:e, VerifyId:v) never fails {
+    if (raw verify_is_none(v)) { pass 0i32; }
+    pass ((raw limit_target(raw ast_verify(e.ast, v))).index);
+};
+
+// The rule limiting the LOCAL a place is rooted at (1.5.2 step 2, D-251), or
+// 0: through member and index bases whose type is not a pointer, slice or
+// handle (that storage is not the binding's own) to the identifier -- the
+// emitter's `place_root_local`, in the walk's terms.
+func:limited_root_rule = int32(Encoder->:e, ExprId:id) never fails {
+    ExprId:cur = id;
+    int32:fuel = 64i32;
+    while (fuel > 0i32) {
+        fuel = fuel - 1i32;
+        if (raw expr_is_none(cur)) { pass 0i32; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            int64:bi = raw bind_find(e, n.payload =>! int32);
+            if (bi < 0i64) { pass 0i32; }
+            pass e.binds.items[bi].rule;
+        }
+        ExprId:base = ExprId{ index: 0i32 };
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            base = raw expr_operand(n);
+        } else {
+            if (n.kind == ExprKind.ExprIndexExpr) {
+                base = raw expr_lhs(n);
+            } else {
+                pass 0i32;
+            }
+        }
+        int32:bt = raw ty_of(e, base);
+        if (bt != 0i32) {
+            int32:bk = raw type_kind(e.types, bt);
+            if (bk == (raw TY_POINTER())) { pass 0i32; }
+            if (bk == (raw TY_SLICE()))   { pass 0i32; }
+            if (bk == (raw TY_HANDLE()))  { pass 0i32; }
+        }
+        cur = base;
+    }
+    pass 0i32;
 };
 
 func:term_copy = Term(Term:t) never fails {
@@ -444,10 +500,10 @@ func:term_copy = Term(Term:t) never fails {
 // A simd division: the any-lane guard's site, `unencoded` (P-12).
 func:record_unencoded_division = NIL(Encoder->:e, int32:elem, int32:site, Span:at) never fails {
     List<int32>:none = raw list_init::<int32>(1i64);
-    drop record(e, raw OK_DIV_ZERO(), "", none, site, at, false);
+    drop record(e, raw OK_DIV_ZERO(), "", none, raw SITE_EXPR(), site, at, false);
     if (raw is_int(e, elem)) {
         if (raw type_is_signed(e.types, elem)) {
-            drop record(e, raw OK_DIV_MIN(), "", none, site, at, false);
+            drop record(e, raw OK_DIV_MIN(), "", none, raw SITE_EXPR(), site, at, false);
         }
     }
     pass NIL;
@@ -817,14 +873,14 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
 func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
     if (p.kind == PatKind.PatStructDestructure) {
         for (int32:i in 0i32...(raw pat_bind_count(p))) {
-            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32 };
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32 };
             drop list_push(@e.binds, move(b));
         }
         pass NIL;
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
-            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32 };
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32 };
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;
@@ -868,7 +924,13 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         ExprId:init = raw stmt_decl_init(e.ast, s);
         Term:t = raw term_none();
         if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
-        drop bind_define(e, name, dty, t);
+        int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
+        drop bind_define(e, name, dty, t, vrule);
+        // THE FIRST WRITE POINT (1.5.2 step 2, D-251): an initialised limited
+        // declaration is a row -- unencoded until step 3 gives it a goal.
+        if ((vrule != 0i32) && (!(raw expr_is_none(init)))) {
+            drop record_limit_unencoded(e, raw SITE_STMT(), sid.index, s.span);
+        }
         pass NIL;
     }
 
@@ -877,6 +939,12 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         ExprId:target = raw stmt_target(s);
         ExprNode:tn = raw ast_expr(e.ast, target);
         Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
+        // THE SECOND WRITE POINT (1.5.2 step 2, D-251): an assignment to a
+        // limited binding, or to any part of one, is a row -- unencoded until
+        // step 3 gives it a goal.
+        if ((raw limited_root_rule(e, target)) != 0i32) {
+            drop record_limit_unencoded(e, raw SITE_STMT(), sid.index, s.span);
+        }
         if (tn.kind != ExprKind.ExprIdentifierExpr) {
             // A field, element or pointee write: its own subexpressions are
             // sites; no local symbol changes (an address-taken local is never
@@ -961,7 +1029,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         int64:mark = raw scope_mark(e);
         DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
         int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
-        drop bind_define(e, raw decl_name(bd), bt, raw term_none());
+        drop bind_define(e, raw decl_name(bd), bt, raw term_none(), 0i32);
         drop walk_loop_body(e, raw stmt_for_body(e.ast, s));
         drop scope_release(e, mark);
         pass NIL;
@@ -1045,8 +1113,22 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 // Parameters are the first bindings; the escaped set is collected before the
 // body is walked, since an address taken late in the body still aliases the
 // name from its first definition.
-pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty) never fails {
-    drop bind_define(e, name, ty, raw term_none());
+pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
+                         int32:decl_index) never fails {
+    drop bind_define(e, name, ty, raw term_none(), rule);
+    // THE THIRD WRITE POINT (1.5.2 step 2, D-251): a limited parameter's
+    // check at the callee's entry is a row -- unencoded until step 3.
+    if (rule != 0i32) {
+        DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: decl_index });
+        drop record_limit_unencoded(e, raw SITE_DECL(), decl_index, pd.span);
+    }
+    pass NIL;
+};
+
+// A `Rules` body's clause, walked for its own sites (1.5.2 step 2): the
+// predicate function is an instance like any other (P-3).
+pub func:enc_clause = NIL(Encoder->:e, ExprId:clause) never fails {
+    Term:t = raw enc_expr(e, clause);
     pass NIL;
 };
 
@@ -1163,10 +1245,10 @@ pub func:enc_mark_discharged = NIL(Encoder->:e, List<string>:hashes) never fails
 };
 
 // Is the site (an ExprId index) of kind `kind` discharged? The emitter's question.
-pub func:enc_site_discharged = bool(Encoder->:e, int32:site, int32:kind) never fails {
+pub func:enc_site_discharged = bool(Encoder->:e, int32:space, int32:site, int32:kind) never fails {
     for (int64:oi in 0i64...e.obls.count) {
         if ((e.obls.items[oi].site == site) && (e.obls.items[oi].kind == kind)) {
-            pass e.obls.items[oi].discharged;
+            if (e.obls.items[oi].space == space) { pass e.obls.items[oi].discharged; }
         }
     }
     pass false;

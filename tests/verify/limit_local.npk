@@ -1,0 +1,43 @@
+// expect-exit: 0
+// expect-obligation: limit unencoded 1
+//
+// The probe that opened 0.9.0 (LIVE-1): a declaration's `limit<Rules>` lowered
+// to a bare alloca+store with the rule absent from the IR, and from 0.9.0 to
+// 1.5.2 step 2 the backend refused it as a rung. Now the initialiser is a
+// WRITE POINT (D-251): the store, then the rule over the slot's value, then
+// the trap or the fall-through. `build(5i32)` satisfies `r_pos`, so the
+// program runs to `exit 0` -- with the guard in its IR, since the row is
+// `unencoded` until step 3 gives it a goal.
+mod:limit_local;
+error:E9;
+
+func:build = int32(int32:seed) {
+    limit<r_pos> int32:x = seed;
+    pass x;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = build(5i32) ?! E9;
+    exit (v - 5i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
+
+// D-220 (1.5.1): the rule name RESOLVES, so the rule this file leans on is
+// declared -- after the construct, as the rung test that became this one had it.
+Rules<int32>:r_pos = { $ > 0i32 };

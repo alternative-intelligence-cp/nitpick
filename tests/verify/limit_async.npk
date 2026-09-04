@@ -1,0 +1,38 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 1
+//
+// A COROUTINE'S ENTRY (D-251): an `async` callee's limited parameter arrives
+// in a frame the await site builds, and its check runs once per task at the
+// body's start (state 0) -- the argument here is one minus five, so the first
+// resume traps before the body runs.
+mod:limit_async;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+async func:step = int32(limit<r_pos> int32:n) {
+    pass (n + 1i32);
+};
+
+async func:main = int32(cstring[]:argv) {
+    Result<int32>:r = await step((argv.len =>! int32) - 5i32);
+    if (r.is_error) { exit 8i32; }
+    exit r.value;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (DeadlineExceeded) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

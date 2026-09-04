@@ -1,0 +1,34 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 2
+//
+// AN OWNING SUBJECT (D-251): a limited string is passed to its predicate by
+// value -- lent, never owned there (D-183) -- and reassigning it drops the
+// old body (D-186), stores, then checks. `"abc"` satisfies `r_ne`; the empty
+// string does not. Two rows, `unencoded` (a string subject is outside the
+// 1.5.0 fragment).
+mod:limit_string;
+error:E9;
+Rules<string>:r_ne = { $.len > 0i64 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_ne> string:s = "abc";
+    if (argv.len > 0i64) { s = ""; }
+    exit (s.len =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

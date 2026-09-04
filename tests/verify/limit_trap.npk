@@ -1,0 +1,38 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 1
+//
+// THE RESIDUE (D-220, D-251): a limited local initialised with a value its
+// rule refuses traps `LimitViolated` (-4111) through D-142's route, and
+// `failsafe`'s arm answers 31. The value comes from `argv.len`, so nothing
+// folds it away: one argument is one, and one minus five is not positive.
+mod:limit_trap;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:build = int32(int32:seed) {
+    limit<r_pos> int32:x = seed;
+    pass x;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:n = (argv.len =>! int32) - 5i32;
+    int32:v = build(n) ?! E9;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

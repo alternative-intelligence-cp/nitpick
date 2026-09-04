@@ -1,0 +1,38 @@
+// expect-exit: 0
+// expect-obligation: limit unencoded 1
+//
+// A parameter's `limit<Rules>` is enforced in EVERY build (D-068) -- the rung
+// test of 0.9.0 became this program at 1.5.2 step 2: the callee's ENTRY is a
+// write point (D-251), checked over the parameter's slot before the body
+// runs. `limited(3i32)` satisfies `r_pos`; the row is the entry's, `unencoded`
+// until step 3 gives it a goal.
+mod:limit_param;
+error:E9;
+
+func:limited = int32(limit<r_pos> int32:x) {
+    pass x;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = limited(3i32) ?! E9;
+    exit (v - 3i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
+
+Rules<int32>:r_pos = { $ > 0i32 };

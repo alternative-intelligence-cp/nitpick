@@ -1497,7 +1497,7 @@ KIND_STATUS = {
     "DeclModuleDecl": "lowered",   # 0.9.6 — emit_all descends; the hole closed
     "DeclImportDecl": "inert: resolved by the loader; nothing to emit",
     "DeclTraitDecl": "inert: a signature set; code arrives via impls (1.0)",
-    "DeclRuleDecl": "inert: consumed by the verifier (1.3), never emitted",
+    "DeclRuleDecl": "lowered",   # 1.5.2 step 2 -- one generated predicate function per declaration (D-251)
     "DeclMacroDecl": "inert: expansion consumed it before the backend",
     "DeclMacroSplice": "inert: expansion consumed it before the backend",
     "DeclOpaqueDecl": "inert: a type assertion; layout answers, no code",
@@ -1519,8 +1519,8 @@ KIND_STATUS = {
 # refusals); this list keeps them read: each name must appear in src/backend/**
 # or the regression is named on the next full run.
 BACKEND_CARRIER_READS = {
-    "stmt_decl_limit":      "a vardecl's limit<Rules> (refused until 1.3)",
-    "param_limit":          "a parameter's limit<Rules> (refused until 1.3)",
+    "stmt_decl_limit":      "a vardecl's limit<Rules> (the first write point, 1.5.2)",
+    "param_limit":          "a parameter's limit<Rules> (the entry check, 1.5.2)",
     "fn_contract_count":    "a function's requires/ensures (refused until 1.3)",
     "stmt_while_invariant": "a while loop's invariant (refused until 1.3)",
 }
@@ -2970,7 +2970,7 @@ def elided_ir_checks(full, ir_text, name):
     got = len(re.findall(r"call void @llvm\.assume\(", ir_text))
     if got != disch:
         fails.append("%s: the verified IR holds %d `llvm.assume` for %d discharged sites" % (name, got, disch))
-    for code, kind in (("-4097", "div-zero"), ("-4098", "div-min")):
+    for code, kind in (("-4097", "div-zero"), ("-4098", "div-min"), ("-4111", "limit")):
         left = sum(1 for f in full if f[2] == kind and f[4] != "discharged")
         traps = len(re.findall(r"@npk_trap\(i32 %s\)" % code, ir_text))
         if traps != left:

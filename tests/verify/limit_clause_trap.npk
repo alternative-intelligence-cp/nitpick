@@ -1,0 +1,39 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+//
+// A RULE'S OWN GUARDS (D-251, L-1): the clauses are evaluated in SOURCE
+// ORDER, short-circuit, inside ONE generated predicate function -- so `$ !=
+// 0i32` ends the evaluation at zero and the division in the second clause
+// never runs: the trap is `LimitViolated` (31), never `DivByZero` (21). The
+// division has its own rows in the predicate's own file: `div-zero` is
+// `open` (no path conditions until 1.5.4 -- the first clause is not yet a
+// hypothesis of the second; the conservative answer `divz_after_branch.npk`
+// pins for branches), `div-min` discharged by its literal dividend. One
+// `limit` row: the initialiser.
+mod:limit_clause_trap;
+error:E9;
+Rules<int32>:r_div = { $ != 0i32, 100i32 / $ > 1i32 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_div> int32:x = (argv.len =>! int32) - 1i32;
+    exit x;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

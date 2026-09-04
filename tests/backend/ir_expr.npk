@@ -217,7 +217,7 @@ func:main = int32(cstring[]:_~argv) {
     FnInstTable:fninsts = raw fninst_init();
     SourceManager:sm = raw srcmgr_init();
     ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f1, "calc", 0i32, i32t));
+    discard(raw fnem_begin(@f1, "calc", 0i32, i32t, false));
     discard(raw fnem_param(@f1, nx, i32t, false));
     discard(raw fnem_param(@f1, ny, i32t, false));
     drop fnem_open(@f1);
@@ -233,7 +233,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w2 = raw irw_to_buffer();
     FnEmitter:f2 = raw fnem_init(@w2, @c);
     ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f2, "cmp", 0i32, types.t_bool));
+    discard(raw fnem_begin(@f2, "cmp", 0i32, types.t_bool, false));
     discard(raw fnem_param(@f2, nc1, c8t, false));
     discard(raw fnem_param(@f2, nc2, c8t, false));
     discard(raw fnem_param(@f2, nx, i32t, false));
@@ -250,7 +250,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w3 = raw irw_to_buffer();
     FnEmitter:f3 = raw fnem_init(@w3, @c);
     ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f3, "casts", 0i32, i32t));
+    discard(raw fnem_begin(@f3, "casts", 0i32, i32t, false));
     discard(raw fnem_param(@f3, nu, u32t, false));
     discard(raw fnem_param(@f3, nx, i32t, false));
     discard(raw fnem_param(@f3, ny, i64t, false));
@@ -266,7 +266,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w4 = raw irw_to_buffer();
     FnEmitter:f4 = raw fnem_init(@w4, @c);
     ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f4, "andand", 0i32, types.t_bool));
+    discard(raw fnem_begin(@f4, "andand", 0i32, types.t_bool, false));
     discard(raw fnem_param(@f4, nb, types.t_bool, false));
     discard(raw fnem_param(@f4, nb2, types.t_bool, false));
     drop fnem_open(@f4);
@@ -279,7 +279,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w5 = raw irw_to_buffer();
     FnEmitter:f5 = raw fnem_init(@w5, @c);
     ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f5, "unary", 0i32, i32t));
+    discard(raw fnem_begin(@f5, "unary", 0i32, i32t, false));
     discard(raw fnem_param(@f5, nx, i32t, false));
     discard(raw fnem_param(@f5, nb, types.t_bool, false));
     drop fnem_open(@f5);
@@ -296,7 +296,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
     ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f6, "calls", 0i32, i32t));
+    discard(raw fnem_begin(@f6, "calls", 0i32, i32t, false));
     drop fnem_open(@f6);
     IrVal:va2 = raw emit_expr(@x6, alloc_call);
     if (!(raw iv_is_ok(va2)))                                { exit 60i32; }
@@ -319,7 +319,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
     ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st, @sm, @tr, @fninsts, 0i32);
-    discard(raw fnem_begin(@f7, "hello", 0i32, i32t));
+    discard(raw fnem_begin(@f7, "hello", 0i32, i32t, false));
     drop fnem_open(@f7);
     IrVal:vs = raw emit_expr(@x7, s_lit);
     if (!(raw iv_is_ok(vs)))                                 { exit 70i32; }

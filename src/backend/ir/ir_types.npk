@@ -122,6 +122,7 @@ pub struct:LlCtx = {
     wild ObTable->:obl;
     List<int32>:el_sites;
     List<int32>:el_kinds;
+    List<int32>:el_spaces;   // the site's id space (1.5.2 step 2, L-9): SITE_EXPR/STMT/DECL
 
     // THE IMPL TABLE, or NULL. The backend re-substitutes a specialization's
     // signature when it emits one, and `T.Item` becomes what the impl bound
@@ -157,6 +158,7 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      obl: NULL,
                      el_sites: raw list_init::<int32>(8i64),
                      el_kinds: raw list_init::<int32>(8i64),
+                     el_spaces: raw list_init::<int32>(8i64),
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
@@ -253,12 +255,24 @@ pub func:llctx_set_obl = NIL(LlCtx->:c, wild ObTable->:t) never fails {
     pass NIL;
 };
 
-// Did the manifest discharge the obligation of kind `kind` at `site` (an
-// ExprId index) in the function being emitted? The division emitter's one
-// question (D-218.9); false whenever no `--elide` was given.
-pub func:llctx_elided = bool(LlCtx->:c, int32:site, int32:kind) never fails {
+// THE SITE'S ID SPACE (1.5.2 step 2, L-9). Three id spaces meet at one
+// table: a division's site is its EXPRESSION, a limit's initialiser or
+// assignment its STATEMENT, a limited parameter's entry its DECLARATION. A
+// statement and a declaration with equal indices would otherwise answer one
+// site's elision for the other -- the silent wrongness P-3's "identical by
+// construction" exists to exclude. Every 1.5.0 site is SITE_EXPR.
+pub func:SITE_EXPR = int32() never fails { pass 0i32; };
+pub func:SITE_STMT = int32() never fails { pass 1i32; };
+pub func:SITE_DECL = int32() never fails { pass 2i32; };
+
+// Did the manifest discharge the obligation of kind `kind` at `site` (a node
+// index in the id space `space`) in the function being emitted? The guard
+// emitters' one question (D-218.9); false whenever no `--elide` was given.
+pub func:llctx_elided = bool(LlCtx->:c, int32:space, int32:site, int32:kind) never fails {
     for (int64:i in 0i64...c.el_sites.count) {
-        if ((c.el_sites.items[i] == site) && (c.el_kinds.items[i] == kind)) { pass true; }
+        if ((c.el_sites.items[i] == site) && (c.el_kinds.items[i] == kind)) {
+            if (c.el_spaces.items[i] == space) { pass true; }
+        }
     }
     pass false;
 };

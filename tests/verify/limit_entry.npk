@@ -1,0 +1,36 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 1
+//
+// THE THIRD WRITE POINT (D-220, D-251): a limited parameter is checked at the
+// CALLEE'S entry, whoever calls -- the argument here is one minus five, and
+// the body never runs. The row is the entry's; the caller's own knowledge of
+// the argument is step 3's `limit-subsume` row.
+mod:limit_entry;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:limited = int32(limit<r_pos> int32:x) {
+    pass (x + 100i32);
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:v = limited((argv.len =>! int32) - 5i32) ?! E9;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

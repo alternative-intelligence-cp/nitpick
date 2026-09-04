@@ -1,0 +1,67 @@
+// expect-exit: 0
+// expect-obligation: limit unencoded 14
+//
+// EVERY SHAPE SATISFIED (D-251): the counterweight -- a program whose every
+// write point passes its rule, in full silence at run time. A refinement
+// chain, a local, a compound assignment, a parameter (and the parameter
+// reassigned inside its callee: a write point too), a `stack` local, a
+// `move` string parameter, a struct's field store, an array's element store,
+// a limited local reassigned by a loop, a generic function's limited concrete
+// parameter at two instances, and a limited value passed by value. Fourteen
+// rows -- the count is the inventory rule (P-12) made visible.
+mod:limit_ok;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };
+Rules<string>:r_ne = { $.len > 0i64 };
+struct:Point = { int32:x; int32:y; };
+Rules<Point>:r_q1 = { $.x >= 0i32, $.y >= 0i32 };
+Rules<int32[2]>:r_pair = { $[0i64] > 0i32, $[1i64] > 0i32 };
+
+func:reads = int32(int32:v) never fails pure { pass v; };
+
+func:bump = int32(limit<r_small> int32:n) {
+    n = n + 1i32;
+    pass n;
+};
+
+func:owns = int64(move limit<r_ne> string:s) { pass s.len; };
+
+func:scale<T> = T(T:v, limit<r_pos> int32:k) { pass v; };
+
+func:main = int32(cstring[]:argv) {
+    int32:one = argv.len =>! int32;
+    limit<r_small> int32:a = one;
+    a += 2i32;
+    stack limit<r_pos> int32:b = a;
+    int32:c = bump(b) ?! E9;
+    limit<r_ne> string:s = "abc";
+    int64:n = owns(move(s)) ?! E9;
+    limit<r_q1> Point:p = Point{ x: one, y: 1i32 };
+    p.y = c;
+    limit<r_pair> int32[2]:pr = [one, 2i32];
+    pr[1i64] = c;
+    limit<r_pos> int32:acc = 1i32;
+    for (int32:i in 0i32...3i32) { acc = acc + one; }
+    int64:w = scale::<int64>(7i64, acc) ?! E9;
+    int32:r = raw reads(acc);
+    int32:sum = c + p.y + pr[1i64] + acc + r + (n =>! int32) + (w =>! int32);
+    exit (sum - 30i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

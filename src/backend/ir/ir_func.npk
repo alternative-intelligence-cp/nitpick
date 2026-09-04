@@ -84,6 +84,10 @@ pub struct:FnEmitter = {
     // pick-arm and loop bindings are BITWISE COPIES of storage a container
     // still owns, and are safe precisely because they are never dropped.
     List<string>:lflags;
+    // THE RULE A LOCAL IS LIMITED BY (1.5.2 step 2, D-251): the `Rules`
+    // declaration's index, 0 for none -- parallel to the four above; read by
+    // every write point rooted at the binding (`emit_limit_check`).
+    List<int32>:lrules;
 
     // Which parameters are `move` (consuming) — parallel to pnames. A lent
     // parameter is the CALLER's to drop; a `move` one is this function's, at
@@ -176,6 +180,11 @@ pub struct:FnEmitter = {
     // counted forms, and the innermost counted loop wins).
     List<int32>:loop_labels;
     List<string>:loop_iters;
+    // THE GENERATED PREDICATE'S SUBJECT (1.5.2 step 2, D-251): inside a
+    // `Rules` function `$` is the subject's slot, of the subject's type; ""
+    // everywhere else, where `$` is the innermost counted loop's counter.
+    string:rule_slot;
+    string:rule_ll;
 
     // THE PICK STACK (0.9.7): the frame `give` and `fall` resolve against.
     // Scalar columns only — arm body labels are DERIVED ("pk<seq>.arm<i>"),
@@ -277,6 +286,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         lslots: raw list_init::<string>(32i64),
         ltypes: raw list_init::<int32>(32i64),
         lflags: raw list_init::<string>(32i64),
+        lrules: raw list_init::<int32>(32i64),
         dstmts: raw list_init::<int32>(16i64),
         dframes: raw list_init::<int64>(16i64),
         dlmarks: raw list_init::<int64>(16i64),
@@ -288,6 +298,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         loop_depths: raw list_init::<int64>(8i64),
         loop_labels: raw list_init::<int32>(8i64),
         loop_iters: raw list_init::<string>(8i64),
+        rule_slot: "", rule_ll: "",
         pick_dones: raw list_init::<string>(8i64),
         pick_slots: raw list_init::<string>(8i64),
         pick_lls: raw list_init::<string>(8i64),
@@ -317,9 +328,13 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
 //
 // Mirrors the seed's `fn_sig`: bare for `main`/`failsafe`, `Result<T>` otherwise.
 pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
-                             int32:ret_type) never fails {
+                             int32:ret_type, bool:pred) never fails {
     fe.sym = raw mangled_fn_sym(fe.ctx, decl_index, name);
     fe.bare = raw fn_is_bare(name);
+    // A GENERATED PREDICATE IS BARE TOO (1.5.2 step 2, D-251): a `Rules`
+    // declaration's function returns its `i1` verdict directly -- it is the
+    // emitter's own, never callable from source, so it owes no envelope.
+    if (pred) { fe.bare = true; }
     fe.ret_type = ret_type;
     fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));
     // EVERY LIST OF EVERY RESET GROUP, LISTED RATHER THAN FOLDED. Each
@@ -354,6 +369,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.lslots.count = 0i64;
     fe.ltypes.count = 0i64;
     fe.lflags.count = 0i64;
+    fe.lrules.count = 0i64;
     fe.terminated = false;
     fe.dstmts.count = 0i64;
     fe.dframes.count = 0i64;
@@ -367,6 +383,8 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.loop_depths.count = 0i64;
     fe.loop_labels.count = 0i64;
     fe.loop_iters.count = 0i64;
+    fe.rule_slot = "";
+    fe.rule_ll = "";
     fe.is_async = false;
     fe.is_gives = false;
     fe.frame_ty = "";
@@ -895,6 +913,7 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
     drop list_push(@fe.lslots, move(slot));
     drop list_push(@fe.ltypes, type_id);
     drop list_push(@fe.lflags, "");
+    drop list_push(@fe.lrules, 0i32);
     pass NIL;
 };
 
@@ -938,6 +957,7 @@ pub func:fnem_release = NIL(FnEmitter->:fe, int64:mark) never fails {
     fe.lslots.count = mark;
     fe.ltypes.count = mark;
     fe.lflags.count = mark;
+    fe.lrules.count = mark;
     pass NIL;
 };
 
@@ -1063,6 +1083,21 @@ pub func:fnem_flag_at = NIL(FnEmitter->:fe, int64:i, move string:flag) never fai
 };
 pub func:fnem_local_flag_at = string->(FnEmitter->:fe, int64:i) never fails {
     pass ($$i fe.lflags.items[i => int64]);
+};
+
+// THE RULE A LOCAL IS LIMITED BY (1.5.2 step 2, D-251), attached to the most
+// recent binding (`emit_vardecl`) or by index (a parameter's, bound in
+// `fnem_open`), and read at every write point rooted at the binding. 0: none.
+pub func:fnem_rule_last = NIL(FnEmitter->:fe, int32:rule) never fails {
+    fe.lrules.items[(fe.lnames.count - 1i64) => int64] = rule;
+    pass NIL;
+};
+pub func:fnem_rule_at = NIL(FnEmitter->:fe, int64:i, int32:rule) never fails {
+    fe.lrules.items[i => int64] = rule;
+    pass NIL;
+};
+pub func:fnem_local_rule_at = int32(FnEmitter->:fe, int64:i) never fails {
+    pass fe.lrules.items[i => int64];
 };
 pub func:fnem_param_is_move = bool(FnEmitter->:fe, int64:i) never fails {
     if (i < 0i64) { pass false; }

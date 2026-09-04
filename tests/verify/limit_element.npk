@@ -1,0 +1,33 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 2
+//
+// A RULE OVER AN ARRAY (D-251): a store to an ELEMENT of a limited array is a
+// write to the binding, and the whole array is re-checked after it (the
+// bounds check first, as always). Two rows, `unencoded` (an array subject is
+// outside the 1.5.0 fragment).
+mod:limit_element;
+error:E9;
+Rules<int32[3]>:r_all_pos = { $[0i64] > 0i32, $[1i64] > 0i32, $[2i64] > 0i32 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_all_pos> int32[3]:a = [1i32, 2i32, 3i32];
+    a[1i64] = (argv.len =>! int32) - 5i32;
+    exit (a[0i64] + a[1i64] + a[2i64]);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

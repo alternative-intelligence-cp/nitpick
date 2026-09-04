@@ -1,14 +1,17 @@
 // smt_obligations — THE WALK'S GLUE INTO THE EMITTER (1.5.0; P-3): one call
 // per function instance, from `emit_function_body_subst`, after the
 // parameters are bound and before the body is lowered, inside the instance's
-// generic window. It runs the walk (`smt_encode.npk`), fills the elision
-// answers the division emitter consults (`LlCtx.el_sites`/`el_kinds`,
-// cleared per function), and appends the function's solver file and rows to
-// the program's table (`smt_table.npk`) when `--obligations` asked for them.
+// generic window -- and, since 1.5.2 step 2, one call per `Rules` declaration
+// from `emit_rule_fn`, over its clauses. It runs the walk (`smt_encode.npk`),
+// fills the elision answers the guard emitters consult (`LlCtx.el_sites`/
+// `el_kinds`/`el_spaces`, cleared per function), and appends the function's
+// solver file and rows to the program's table (`smt_table.npk`) when
+// `--obligations` asked for them.
 
 mod:smt_obligations;
 
 use "../../frontend/ast.npk".*;
+use "../../frontend/parse_decl.npk".*;
 use "../ir/ir_types.npk".*;
 use "../ir/ir_expr.npk".*;
 use "./smt_kinds.npk".*;
@@ -18,32 +21,69 @@ use "./smt_encode.npk".*;
 // THE CALL PER FUNCTION INSTANCE, from `emit_function_body_subst` after the
 // parameters are bound and before the body is lowered, inside the instance's
 // generic window. `pnames`/`ptypes` are the parameters as the emitter
-// resolved them (the same types its slots have).
+// resolved them (the same types its slots have); `prules`/`pdecls` their
+// `Rules` (0 for none) and declaration ids (1.5.2 step 2, D-251).
 pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
-                            List<int32>:ptypes, StmtId:body) never fails {
+                            List<int32>:ptypes, List<int32>:prules,
+                            List<int32>:pdecls, StmtId:body) never fails {
     LlCtx->:c = x.fe.ctx;
     c.el_sites.count = 0i64;
     c.el_kinds.count = 0i64;
+    c.el_spaces.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_prepare(@en, body);   // the escape set before any name is bound (DEF-14)
-    for (int64:i in 0i64...pnames.count) { drop enc_param(@en, pnames.items[i], ptypes.items[i]); }
+    for (int64:i in 0i64...pnames.count) {
+        drop enc_param(@en, pnames.items[i], ptypes.items[i], prules.items[i], pdecls.items[i]);
+    }
     drop enc_body(@en, body);
-    drop enc_finish(@en);
+    drop obl_finish(x, symbol, @en);
+    pass NIL;
+};
+
+// THE CALL PER `Rules` DECLARATION (1.5.2 step 2, D-251), from `emit_rule_fn`
+// after the subject is bound and before the clauses are lowered: the subject
+// is the one parameter (opaque -- its range axiom is all the walk knows), and
+// each clause is walked for its own sites. A rule body has no write point, so
+// no `limit` row of its own; refinements are calls to their own functions,
+// whose clauses are walked there.
+pub func:obl_rule = NIL(ExprEmitter->:x, string:symbol, int32:subject_name,
+                        int32:subject_type, DeclId:rd) never fails {
+    LlCtx->:c = x.fe.ctx;
+    c.el_sites.count = 0i64;
+    c.el_kinds.count = 0i64;
+    c.el_spaces.count = 0i64;
+    if (c.obl == NULL) { pass NIL; }
+    Encoder:en = raw enc_init(x.ast, x.et, c.types, x.interns, c, x.tr, x.scope, symbol);
+    drop enc_param(@en, subject_name, subject_type, 0i32, 0i32);
+    DeclNode:d = raw ast_decl(x.ast, rd);
+    int32:cn = raw rule_clause_count(x.ast, d);
+    for (int32:j in 0i32...cn) { drop enc_clause(@en, raw rule_clause(x.ast, d, j)); }
+    drop obl_finish(x, symbol, @en);
+    pass NIL;
+};
+
+// THE SHARED TAIL: the cones and hashes, the elision answers (a row that is
+// both discharged and encoded), and -- when files were asked for -- the
+// function's solver file and its `rows.txt` lines.
+func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails {
+    LlCtx->:c = x.fe.ctx;
+    drop enc_finish(en);
     if (en.obls.count == 0i64) { pass NIL; }
     if (c.obl.elide.count > 0i64) {
-        drop enc_mark_discharged(@en, c.obl.elide);
+        drop enc_mark_discharged(en, c.obl.elide);
         for (int64:oi in 0i64...en.obls.count) {
             if (en.obls.items[oi].discharged && en.obls.items[oi].encoded) {
                 drop list_push(@c.el_sites, en.obls.items[oi].site);
                 drop list_push(@c.el_kinds, en.obls.items[oi].kind);
+                drop list_push(@c.el_spaces, en.obls.items[oi].space);
             }
         }
     }
     if (!c.obl.want_files) { pass NIL; }
     int64:checks = 0i64;
     for (int64:oi2 in 0i64...en.obls.count) { if (en.obls.items[oi2].encoded) { checks = checks + 1i64; } }
-    drop list_push(@c.obl.files, raw enc_file_text(@en));
+    drop list_push(@c.obl.files, raw enc_file_text(en));
     drop list_push(@c.obl.file_syms, string_concat(symbol, ""));
     drop list_push(@c.obl.file_checks, checks);
     string:fno = raw file_number(c.obl.files.count);
@@ -63,4 +103,3 @@ pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
     }
     pass NIL;
 };
-

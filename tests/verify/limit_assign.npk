@@ -1,0 +1,36 @@
+// expect-exit: 31
+// expect-obligation: limit unencoded 3
+//
+// THE SECOND WRITE POINT (D-251): every assignment to a limited binding is
+// checked after the store -- the compound spelling through the shared
+// arithmetic core (its overflow guard first), the plain one after its store.
+// 8 is in `r_small`; 8 + argv.len (one argument) is 9, still in; 9 + 1 is 10,
+// and the rule's upper bound is exclusive, so the third write traps. Three
+// rows: the initialiser and the two assignments.
+mod:limit_assign;
+error:E9;
+Rules<int32>:r_small = { $ >= 0i32, $ < 10i32 };
+
+func:main = int32(cstring[]:argv) {
+    limit<r_small> int32:c = 8i32;
+    c += (argv.len =>! int32);
+    c = c + 1i32;
+    exit c;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
