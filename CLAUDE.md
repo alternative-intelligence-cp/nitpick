@@ -13,7 +13,7 @@ cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 the module/symbol/visibility passes, the type system, the static analyses, macros
 with `comptime` and `#[derive]`, IR emission, `nlibc` and the runtime floor, full
 type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists**:
-`src/main.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
+`src/npkc.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
 **172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
 since 1.3.8) and asserts 6 `NITPICK-RUNG-001` rejections on every full run (8 until 1.4.7's
@@ -467,7 +467,7 @@ missed by 1.4.2b's collapse, is gone — 175 of 176 backend programs emit
 byte-identical IR, the 176th differing by exactly that body), the fixpoint is
 declared under D-202, and **the snapshot is refreshed from the adopted tree**
 (stage2 == stage3, 15,450,688 bytes). The refresh's dry run found that an
-absolute `src/main.npk` argument embeds the build path into 1,489 of 1,647
+absolute `src/npkc.npk` argument embeds the build path into 1,489 of 1,647
 site-table rows — D-078 held by one README line — so the `repro` stage now
 refuses an absolute site path in the committed snapshot, and whether the
 source manager should record manifest-root-relative paths is **S-7** (the
@@ -665,7 +665,7 @@ python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 ```
 
 It assembles the committed snapshot (`bootstrap/seed/stage1.ll`) into the
-BUILDER, has the builder compile `src/main.npk` into the compiler under test
+BUILDER, has the builder compile `src/npkc.npk` into the compiler under test
 (D-205 — the Python seed in `bootstrap/generator/` retired as a builder at
 1.4.6), compiles each suite with that compiler, links against
 `runtime/npkrt.ll` via `llc` and `ld.lld`, runs the result, and compares the
@@ -816,7 +816,7 @@ Three more shapes that are not what a C or Rust habit expects:
 - **A file's `mod:` name must match its basename**, or the loader reports
   `NITPICK-RESOLVE-005` at line 1 rather than anything about the name.
 
-**`npkc` now means `src/main.npk`** — the harness builds and runs it for every
+**`npkc` now means `src/npkc.npk`** — the harness builds and runs it for every
 backend stage (IR on stdout; `llc` and `ld.lld` after, per BUILD_REFERENCE §4).
 The `npkc` on PATH (`/usr/local/bin/npkc`) is still the *installed* C/C++
 prototype's compiler, not this project's output; nothing installs ours yet.

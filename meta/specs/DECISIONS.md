@@ -16116,3 +16116,56 @@ whose token name is not its spelling (`Result` owns `KwResult`); the
 generator carries a one-entry map for it. Measured before adding: one field
 name in about a hundred and ten places, all renamed, and the dead `fails on
 result` extern spelling (D-002) still parses. Landed at 1.5.1 step 3.
+
+## D-248 — every file's first declaration is its header, and the entry points are the root module's — **SETTLED (user decision, 2026-09-03; 1.5.1b S-21)**
+
+The workbench reported (their O-N8, DEF-2 in OPEN_DECISIONS §2f) that a root
+file whose `mod:` named a SIBLING that existed compiled at exit 0 with two
+`define i32 @main`, which `llc` then refused. The loader's own comment said why:
+a file's header and an import written first are the same shape — a member-less
+`mod:name;` — so the header was resolved like any import; when the name was the
+file's own it found the file itself and returned, and when it was a sibling's
+it loaded the sibling and merged it. Measured at planning: 525 source files,
+240 with no header at all (`src/main.npk`, the tools, `npkg/main.npk`, most of
+`tests/rejection/`), three whose first `mod:` was not the basename, all
+legitimate then. **The decision, both halves.** (1) The header is mandatory:
+every file's FIRST declaration is `mod:<basename>;` (`mod:<dir>;` for a
+`dir/mod.npk`), member-less, binding nothing and loading nothing; anything else
+first, or a `mod:` naming another module, is `NITPICK-RESOLVE-012` at that
+declaration (line 1 for a file with none), one code, two texts. The loader
+skips the header slot as an import, so a wrong header can no longer load a
+sibling, and RESOLVE-005's 1.0.8 "if this line is the file's own header" hint
+retires: the loader says it directly now. (2) `main` and `failsafe` are declared
+in the ROOT module only, at its top level; in any other module, or inside an
+inline module, either is `NITPICK-RESOLVE-013`, checked in the whole-graph pass
+beside D-239's owned names — a library cannot smuggle an entry point, and the
+emitter's four by-name `@main`/`@npk_failsafe` sites are safe by the rule
+upstream. The alternative — header optional, identified by name — cost no
+sweep and closed the reported defect through (2) alone, but left a mismatched
+header a silent import whenever the sibling declared no `main`, and left the
+loader unable to say "your header is wrong", which cost a cycle at 1.0.8.
+Explicit over implicit: every file says what it is. **Landed at 1.5.1b step
+1**: the sweep gave 228 files their header by script (`meta/roadmap/1.5/tools/
+add_headers.py`, kept for the record) and shifted every pinned line in them by
+one, D-237's exact matching proving the shift complete; the fifteen conformance
+files numbered `00_…`–`14_…` took a `c` in front, because a module name is an
+identifier, and six files whose basename was a KEYWORD — which is why none of
+them ever had a header: `mod:derive;` is a parse error — were renamed
+(`src/frontend/macro/derive.npk` → `derive_gen.npk`, the programs `arena`/
+`shared_arena` → `arena_basic`/`shared_arena_basic`, the rejection tests
+`arena`/`assoc`/`wildx` → `arena_rules`/`assoc_rules`/`wildx_rules`); the
+sweep script refuses both shapes by name. And four compiler files were renamed
+for the SNAPSHOT'S sake (D-205): the committed builder's collector binds a
+header as a module symbol in the file's own scope, so a header naming a
+function the file declares or imports clashes under it — `src/main.npk`
+(its own `main`) is `src/npkc.npk`, the compiler's entry by name;
+`resolve_type.npk` (its own `resolve_type`) is `type_resolve.npk`;
+`type_access.npk` is `type_members.npk`; `type_decl.npk` (`types.npk`'s
+exported `type_decl`) is `type_decls.npk`. Every compiler built from this
+source skips the header slot in collection (`collect_file_module`), so the
+header binds nothing and a file may declare a function named after itself;
+the renames stay, since a file called `main` for a function called `main`
+said less than `npkc` does. Both runner self-checks' generated
+cases took identifier names and a header; the ecosystem's libraries already
+led every file with its header by house rule, so the re-pin costs them
+nothing.

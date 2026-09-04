@@ -1,0 +1,8 @@
+// A FIXTURE for entry_in_module.npk: a module of the program, imported on
+// purpose, that declares the two entry points. Each is RESOLVE-013 (D-248):
+// `main` and `failsafe` are the root's alone, so a library cannot smuggle an
+// entry point into every program that imports it.
+mod:entry_lib;
+pub func:helper = int32() never fails { pass 1i32; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 1i32; };

@@ -53,15 +53,15 @@ llc -O0 -filetype=obj -relocation-model=static bootstrap/seed/stage1.ll -o /tmp/
 ld.lld -static -o /tmp/builder /tmp/b.o /tmp/npkrt.o
 
 # 2. the builder compiles the CURRENT compiler
-/tmp/builder src/main.npk -o /tmp/stage1.new.ll
+/tmp/builder src/npkc.npk -o /tmp/stage1.new.ll
 
 # 3. THE FIXPOINT: stage2 == stage3, and INSTALL STAGE 2
 llc -O0 -filetype=obj -relocation-model=static /tmp/stage1.new.ll -o /tmp/s2.o
 ld.lld -static -o /tmp/npkc2 /tmp/s2.o /tmp/npkrt.o
-/tmp/npkc2 src/main.npk > /tmp/stage2.ll
+/tmp/npkc2 src/npkc.npk > /tmp/stage2.ll
 llc -O0 -filetype=obj -relocation-model=static /tmp/stage2.ll -o /tmp/s3.o
 ld.lld -static -o /tmp/npkc3 /tmp/s3.o /tmp/npkrt.o
-/tmp/npkc3 src/main.npk > /tmp/stage3.ll
+/tmp/npkc3 src/npkc.npk > /tmp/stage3.ll
 cmp /tmp/stage2.ll /tmp/stage3.ll            # MUST be silent
 
 # 4. install, and stamp what you installed
@@ -74,7 +74,7 @@ Step 3 is not optional. A snapshot that compiles the compiler but whose output
 does not rebuild itself is a snapshot that works exactly once, and the next
 refresh from it produces something else again.
 
-**Run it from the tree root with `src/main.npk` spelled relatively, exactly as
+**Run it from the tree root with `src/npkc.npk` spelled relatively, exactly as
 written.** Until 1.4.8 D-179's site table recorded each source path AS GIVEN,
 so a builder handed an absolute path embedded the machine's path into every
 one of its ~1,500 site constants — and neither the fixpoint nor the STAMP

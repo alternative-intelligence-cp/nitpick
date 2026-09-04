@@ -20,6 +20,7 @@
 // declares it privately — the code is the FNV of `module.Name`, so identity
 // is unforgeable and no import rides along. `Bounds*` are the D-061-family
 // index guards; the rest are named for the invariant they hold.
+mod:module_graph;
 error:BoundsIndex;
 error:ProvenSlice;
 
@@ -69,6 +70,11 @@ pub struct:ModuleGraph = {
     // it that differs from every other module — so it is one index rather than a
     // flag on every entry.
     int32:prelude;
+
+    // WHICH ENTRY IS THE ROOT -- the file the driver was given -- or -1 before
+    // `graph_load_all` (D-248, 1.5.1b): the one module that may declare `main`
+    // and `failsafe`, which `graph_check_entry_points` reads.
+    int32:root_index;
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
@@ -82,6 +88,7 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         roots: roots,
         stdlib: move(stdlib),
         prelude: 0i32 - 1i32,
+        root_index: 0i32 - 1i32,
         v: raw list_init::<ModuleEntry>(16i64)
     };
     pass g;
@@ -147,6 +154,7 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never f
     TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
     DeclId:root = raw p_parse_module(@p);
+    drop check_file_header(g, file, root);
 
     // COLLECTION USED TO RUN HERE, per module as it was loaded. It moved out to
     // `graph_collect_all`, and the reason is macro expansion:
@@ -167,6 +175,63 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never f
     int32:index = raw graph_id(g.v.count);
     drop list_push(@g.v, e);
     pass index;
+};
+
+// THE FILE'S FIRST DECLARATION IS ITS HEADER (D-248, 1.5.1b step 1): a
+// member-less `mod:<basename>;` -- `mod:<dir>;` for a `dir/mod.npk`, since the
+// module a `mod.npk` supplies is named by its directory (MODULE_REFERENCE 1.1).
+// The header binds nothing and loads nothing; `graph_load_imports` skips the
+// slot. Until this rule a header was INDISTINGUISHABLE from an import written
+// first -- both are a member-less `mod:name;` -- so the loader resolved it like
+// any import, found the file itself, and returned; and when the name was WRONG
+// and a sibling carried it, the sibling was loaded and merged, two `main`s were
+// emitted at exit 0, and `llc` refused the result (the workbench's DEF-2,
+// OPEN_DECISIONS §2f). Every file now says what it is, and the loader says so
+// when it does not: one code, two texts. A file with no declarations at all is
+// refused at its first line.
+func:check_file_header = NIL(ModuleGraph->:g, int32:file, DeclId:root) never fails {
+    string:path = raw srcmgr_resolved_proven(@g.sm, file);
+    string:want = raw path_basename(path);
+    string:shown = string_concat(want, ".npk");
+    if (raw string_eq(want, "mod")) {
+        want = raw path_basename(raw path_dirname(path));
+        shown = string_concat(want, "/mod.npk");
+    }
+    DeclNode:m = raw ast_decl(@g.ast, root);
+    int32:n = raw item_member_count(@g.ast, m);
+    if (n == 0i32) {
+        string:e1 = string_concat("file `", shown);
+        string:e2 = string_concat(e1, "` has no header: its first declaration must be `mod:");
+        string:e3 = string_concat(e2, want);
+        drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_NO_HEADER(),
+            string_concat(e3, ";` (D-248)"), raw span_point(file, 0i32, 1i32, 1i32)));
+        pass NIL;
+    }
+    DeclNode:d0 = raw ast_decl(@g.ast, raw item_member(@g.ast, m, 0i32));
+    bool:header_shape = false;
+    if (d0.kind == DeclKind.DeclModuleDecl) {
+        if ((raw item_member_count(@g.ast, d0)) == 0i32) { header_shape = true; }
+    }
+    if (!header_shape) {
+        string:m1 = string_concat("file `", shown);
+        string:m2 = string_concat(m1, "` has no header: its first declaration must be `mod:");
+        string:m3 = string_concat(m2, want);
+        drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_NO_HEADER(),
+            string_concat(m3, ";` (D-248)"), d0.span));
+        pass NIL;
+    }
+    string:name = raw intern_get(g.interns, raw decl_name(d0));
+    if (raw string_eq(name, want)) { pass NIL; }
+    string:w1 = string_concat("file `", shown);
+    string:w2 = string_concat(w1, "` declares `mod:");
+    string:w3 = string_concat(w2, name);
+    string:w4 = string_concat(w3, ";` first: a file's header names the file -- `mod:");
+    string:w5 = string_concat(w4, want);
+    string:w6 = string_concat(w5, ";` -- and an import of `");
+    string:w7 = string_concat(w6, name);
+    drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_NO_HEADER(),
+        string_concat(w7, "` is written after it (D-248)"), d0.span));
+    pass NIL;
 };
 
 // THE PRELUDE, LOADED LIKE ANY OTHER MODULE AND COLLECTED UNLIKE ONE.
@@ -207,7 +272,8 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
     while ((i => int64) < g.v.count) {
         ModuleEntry:e = g.v.items[i => int64];
         DeclId:root = DeclId{ index: e.root };
-        e.scope = raw collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
+        // past the header slot: a file's `mod:name;` binds nothing (D-248)
+        e.scope = raw collect_file_module(@g.tab, @g.ast, g.diags, root, 0i32);
         g.v.items[i => int64] = e;
         i = i + 1i32;
     }
@@ -289,7 +355,7 @@ func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) neve
 // declaration named after a prelude export since 0.3 ("a local one would silently
 // take over"), and 1.4.8b's exact matching found the two places that rule did not
 // reach. `Error` (D-179) is compiler-known -- resolved BY NAME ahead of every user
-// lookup (`resolve_type.npk`), declared by no module -- so the prelude clash never
+// lookup (`type_resolve.npk`), declared by no module -- so the prelude clash never
 // saw a `struct:Error`, and a program could declare one that nothing would ever
 // resolve to. An ASSOCIATED TYPE or a GENERIC PARAMETER is a trait member or a
 // window entry, not a scope symbol, so `assoc:Duration = int32;` shadowed the
@@ -317,6 +383,61 @@ pub func:graph_check_owned_names = NIL(ModuleGraph->:g) never fails {
             drop owned_names_in_module(g, DeclId{ index: e.root }, pscope);
         }
         mi = mi + 1i32;
+    }
+    pass NIL;
+};
+
+// --- entry points (D-248, 1.5.1b step 1) ---------------------------------------------
+//
+// `main` AND `failsafe` ARE THE ROOT MODULE'S, at its top level. They are the two
+// functions the runtime calls by NAME (`@main` from `_start`, `@npk_failsafe`
+// from the trap route), and the emitter names them by name alone -- so a second
+// declaration anywhere in the program is a second `define` of one symbol, which
+// `llc` refuses after an exit 0 (DEF-2's shape), and a library that declared one
+// would smuggle an entry point into every program importing it. The rule is
+// upstream, here, so the four by-name sites downstream are safe by construction:
+// only the file the driver was given, at its top level, declares either.
+pub func:graph_check_entry_points = NIL(ModuleGraph->:g) never fails {
+    int32:mi = 0i32;
+    while ((mi => int64) < g.v.count) {
+        if (mi != g.prelude) {
+            ModuleEntry:e = raw graph_at(g, mi);
+            string:path = raw srcmgr_resolved_proven(@g.sm, e.file);
+            string:holder = string_concat(raw path_basename(path), ".npk");
+            drop entry_points_in(g, DeclId{ index: e.root }, mi == g.root_index, holder);
+        }
+        mi = mi + 1i32;
+    }
+    pass NIL;
+};
+
+func:entry_points_in = NIL(ModuleGraph->:g, DeclId:mod_id, bool:allowed, string:holder) never fails {
+    DeclNode:m = raw ast_decl(@g.ast, mod_id);
+    int32:n = raw item_member_count(@g.ast, m);
+    for (int32:i in 0i32...n) {
+        DeclId:item = raw item_member(@g.ast, m, i);
+        DeclNode:d = raw ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (allowed) { continue; }
+            string:nm = raw intern_get(g.interns, raw decl_name(d));
+            bool:entry = false;
+            if (raw string_eq(nm, "main"))     { entry = true; }
+            if (raw string_eq(nm, "failsafe")) { entry = true; }
+            if (!entry) { continue; }
+            string:m1 = string_concat("`", nm);
+            string:m2 = string_concat(m1, "` is an entry point and is declared at the root module's top level -- the file the driver was given; `");
+            string:m3 = string_concat(m2, holder);
+            drop diaglist_push(g.diags, raw diag_error(raw RESOLVE_ENTRY_OUTSIDE_ROOT(),
+                string_concat(m3, "` is a module of this program (D-248)"), d.span));
+            continue;
+        }
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            if ((raw item_member_count(@g.ast, d)) > 0i32) {
+                // an inline module is a module inside the file, never the root
+                string:inner = string_concat("mod:", raw intern_get(g.interns, raw decl_name(d)));
+                drop entry_points_in(g, item, false, inner);
+            }
+        }
     }
     pass NIL;
 };
@@ -442,6 +563,7 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) never fails {
     if (first < 0i32) {
         pass first;
     }
+    g.root_index = first;
 
     // The list grows as imports are discovered, so this walks past its own tail.
     //
@@ -479,16 +601,13 @@ func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) never fails {
         // `mod:name = { … };` has its members already and loads nothing.
         if (d.kind == DeclKind.DeclModuleDecl) {
             if ((raw item_member_count(@g.ast, d)) == 0i32) {
-                // THE FILE'S OWN HEADER IS THE FIRST ITEM, and a header that
-                // does not match the basename is the commonest way to reach
-                // "cannot find module `bar`" — which told the reader to create
-                // `bar.npk` when the fix is the name (1.0.8; CLAUDE.md lists
-                // this as a trap it cost a cycle to learn). Said as what it is.
-                // THE FILE'S OWN HEADER IS INDISTINGUISHABLE FROM AN IMPORT
-                // written first — both are a member-less `mod:name;` — so the
-                // loader cannot say "your header is wrong"; what it can do is
-                // name that reading when the file is not found (1.0.8).
-                drop graph_load_file_module(g, from, d, i == 0i32);
+                // THE FIRST ITEM IS THE HEADER SLOT (D-248, 1.5.1b step 1):
+                // `check_file_header` judged it when the file was parsed, and
+                // whatever it says it loads NOTHING -- a wrong header used to
+                // load the sibling it named. A member-less `mod:name;` anywhere
+                // after it is the import it always was.
+                if (i == 0i32) { continue; }
+                drop graph_load_file_module(g, from, d);
             }
         }
     }
@@ -517,8 +636,7 @@ func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fai
 // declaring file. FINDING BOTH IS AN ERROR by the same rule as 0.3.2: two files
 // can supply one module, and picking one silently makes the answer depend on
 // something the reader cannot see.
-func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
-                                  bool:first_item) never fails {
+func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) never fails {
     string:name = raw intern_get(g.interns, raw decl_name(d));
     string:dir = raw path_dirname(from);
 
@@ -562,18 +680,10 @@ func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d,
     string:n3 = string_concat(n2, flat);
     string:n4 = string_concat(n3, " nor ");
     string:n5 = string_concat(n4, nested);
-    // THE COMMONEST WAY HERE IS A FILE WHOSE HEADER DOES NOT MATCH ITS NAME
-    // (1.0.8; CLAUDE.md lists it as a trap that cost a cycle) — and a header is
-    // the file's first item. The message names that reading rather than
-    // sending the reader to create a file.
-    if (first_item) {
-        string:base = raw path_basename(from);
-        if (!(raw string_eq(name, base))) {
-            string:h1 = string_concat(n5, "; if this line is the file's own header, note that this file is `");
-            string:h2 = string_concat(h1, base);
-            n5 = string_concat(h2, ".npk` and a file's module name must match its basename");
-        }
-    }
+    // The "if this line is the file's own header" hint (1.0.8) retired at
+    // 1.5.1b step 1: a header is checked directly now (`check_file_header`,
+    // D-248), so a member-less `mod:` that reaches here is an import and the
+    // file it names is what is missing.
     drop diaglist_push(g.diags,
         raw diag_error(raw RESOLVE_NO_SUCH_FILE(), move(n5), d.span));
     pass NIL;

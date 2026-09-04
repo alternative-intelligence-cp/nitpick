@@ -30,7 +30,11 @@ exists to demonstrate.
 | `owned_names.npk` | `NITPICK-RESOLVE-001` — a name the compiler (`Error`) or the prelude owns, declared by the program: at module scope, as an associated type, as a generic parameter (D-239) |
 | `limit_names.npk` | `NITPICK-RESOLVE-002` and `NITPICK-RESOLVE-011` — a `limit<name>` naming nothing (on a local, on a parameter, in a `Rules` refinement) and one naming a function or a struct instead of a `Rules` block (D-220, 1.5.1) |
 | `rule_cycle.npk` | `NITPICK-RESOLVE-006` — a `Rules` block refining itself, directly or through a chain (D-220, 1.5.1) |
+| `header_missing.npk` | `NITPICK-RESOLVE-012` — a file with no header: its first declaration is not `mod:<basename>;` (D-248, 1.5.1b) |
+| `header_mismatch.npk` (+ `header_sibling.npk`) | `NITPICK-RESOLVE-012` — a header naming a SIBLING that exists: refused at the header, and the sibling is NOT loaded (the workbench's DEF-2; D-248) |
+| `entry_in_module.npk` (+ `entry_lib.npk`) | `NITPICK-RESOLVE-013` — `main`/`failsafe` declared in an imported module, and in an inline module of the root: entry points are the root's top level alone (D-248) |
 
-Eight codes, nine files (RESOLVE-001 has two: the plain duplicate, and the
+Ten codes, fourteen files (RESOLVE-001 has two: the plain duplicate, and the
 owned name — one code, because each is "this name already means something
-here"). A code with no test is a diagnostic nobody has ever seen produced.
+here"; two of the fourteen are fixtures another file imports). A code with no
+test is a diagnostic nobody has ever seen produced.

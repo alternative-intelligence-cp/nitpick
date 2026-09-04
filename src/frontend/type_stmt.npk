@@ -12,6 +12,7 @@
 //   * EVERY CONDITION IS A STRICT `bool`. There is no truthiness, and a condition
 //     is where a tainted or mistyped value would otherwise steer a decision.
 
+mod:type_stmt;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -28,12 +29,12 @@ use "./parse_pick.npk".*;
 use "./parse_decl.npk".*;
 use "./parse_decorate.npk".*;
 use "./symbols.npk".*;
-use "./resolve_type.npk".*;
-use "./type_decl.npk".*;
+use "./type_resolve.npk".*;
+use "./type_decls.npk".*;
 use "./type_layout.npk".*;
 use "./expr_types.npk".*;
 use "./type_expr.npk".*;
-use "./type_access.npk".*;
+use "./type_members.npk".*;
 use "./type_trait.npk".*;   // assoc_binding_of (D-166)
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
@@ -1220,7 +1221,7 @@ func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
 //     cycle. A method written exactly where TRAITS_REFERENCE 2.4 puts it had its
 //     names resolved and its types never looked at.
 //   * A DECLARATION NOTHING REACHES WAS NEVER TYPE-RESOLVED. `tests/frontend/
-//     type_access.npk` says so in a comment — "a case testing a bad signature has
+//     type_members.npk` says so in a comment — "a case testing a bad signature has
 //     to CALL the function" — so a bad return type in an uncalled function, or a
 //     bound violation in an unused global's annotation, went unreported.
 //   * A TRAIT'S DEFAULT METHOD BODY was in neither set.

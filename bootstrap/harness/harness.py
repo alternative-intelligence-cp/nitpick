@@ -557,7 +557,7 @@ UNTESTED_CODES = {
     # BUILD-MODE -- emitted only under `--extra-picky=no-wildx`, which the
     # flagless rejection suites do not pass. Exercised directly against npkc
     # with the flag (0.10.5); the state-machine codes WILDX-001/002 that the
-    # DEFAULT build enforces are both in rejection/wildx.npk.
+    # DEFAULT build enforces are both in analysis/rejection/wildx_rules.npk.
     "NITPICK-WILDX-003":   "build-mode -- only under --extra-picky=no-wildx",
 }
 
@@ -1140,7 +1140,7 @@ def check_one_renderer():
     catches the construction site that writes the code and forgets the rest.
     """
     fails = []
-    drivers = [os.path.join(ROOT, "src", "main.npk")] + sorted(
+    drivers = [os.path.join(ROOT, "src", "npkc.npk")] + sorted(
         glob.glob(os.path.join(ROOT, "tools", "*.npk")))
     for p in drivers:
         with open(p, encoding="utf-8") as fh:
@@ -1283,7 +1283,7 @@ def check_builtin_sig_texts():
 
     D-201 (1.4.2) made BUILTIN_REFERENCE.md's Signature column load-bearing:
     `builtins.npk` carries the parameter and return types as TEXT and
-    `builtin_text_type` in `type_access.npk` interns them. The generator cannot
+    `builtin_text_type` in `type_members.npk` interns them. The generator cannot
     check the second half -- it has no idea what the compiler can resolve -- so
     without this a builtin added with a type nobody taught the resolver would
     generate cleanly, build cleanly, and refuse at its first CALL SITE with
@@ -1301,12 +1301,12 @@ def check_builtin_sig_texts():
             return ["check_builtin_sig_texts found no `%s` in builtins.npk -- "
                     "the check has stopped checking" % fn]
         used |= {t for t in re.findall(r'pass "([^"]*)";', m.group(1)) if t}
-    acc = open(os.path.join(ROOT, "src", "frontend", "type_access.npk"),
+    acc = open(os.path.join(ROOT, "src", "frontend", "type_members.npk"),
                encoding="utf-8").read()
     m = re.search(r'func:builtin_text_type = [^{]*\{(.*?)\n\};', acc, re.S)
     if m is None:
         return ["check_builtin_sig_texts found no `builtin_text_type` in "
-                "type_access.npk -- the check has stopped checking"]
+                "type_members.npk -- the check has stopped checking"]
     known = set(re.findall(r'string_eq\(t, "([^"]*)"\)', m.group(1)))
     for t in sorted(used - known):
         fails.append("the generated signature table uses the type text `%s` and "
@@ -1890,10 +1890,10 @@ def check_parses(binary, path, name):
     return []
 
 
-# The COMPILER ITSELF: src/main.npk is npkc's entry (nitpick.toml [build]), and
+# The COMPILER ITSELF: src/npkc.npk is npkc's entry (nitpick.toml [build]), and
 # the harness builds and runs it the way a build system will -- IR on stdout,
 # llc and ld.lld after.
-EMIT_CHECK = os.path.join(ROOT, "src", "main.npk")
+EMIT_CHECK = os.path.join(ROOT, "src", "npkc.npk")
 
 
 def undefined_symbols(obj):
@@ -3011,7 +3011,7 @@ def check_verify_compiler(tmp, stage1_ir):
     fails = []
     vdir = os.path.join(tmp, "verify")
     os.makedirs(vdir, exist_ok=True)
-    src = os.path.join(ROOT, "src", "main.npk")
+    src = os.path.join(ROOT, "src", "npkc.npk")
     obl = os.path.join(vdir, "obl")
     r = subprocess.run([COMPILER, src, "--obligations", obl, "-o", os.path.join(vdir, "plain.ll")],
                        capture_output=True, timeout=900)
@@ -3580,7 +3580,7 @@ def main(argv):
             return 1
         COMPILER = build_tool(tmp, tools, EMIT_CHECK, "npkc")
         if not COMPILER or not os.path.exists(str(COMPILER)):
-            print("the snapshot could not build src/main.npk -- D-205: `src/` "
+            print("the snapshot could not build src/npkc.npk -- D-205: `src/` "
                   "may not use a construct its builder cannot compile. "
                   "Refresh the snapshot first (bootstrap/seed/README.md): %s"
                   % COMPILER)
@@ -3747,7 +3747,7 @@ def main(argv):
         # its most important consumer — and stage 2 through stdout, so both
         # delivery paths are exercised and then compared byte-for-byte.
         s1 = os.path.join(tmp, "stage1")
-        r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk"),
+        r = subprocess.run([ec, os.path.join(ROOT, "src", "npkc.npk"),
                             "-o", s1 + ".ll"],
                            capture_output=True, timeout=600)
         if r.returncode != 0 or not os.path.exists(s1 + ".ll"):
@@ -3763,7 +3763,7 @@ def main(argv):
                 stage1_ir = fh.read()
             ok = True
             # THE EMISSION IS PATH-FREE (D-236, 1.4.8). This compiler was
-            # invoked with an ABSOLUTE `src/main.npk`, and every source path
+            # invoked with an ABSOLUTE `src/npkc.npk`, and every source path
             # in its site table must still render relative to the manifest
             # root. Before D-236 this leaked 1,479 of 1,637 rows, and the
             # `repro` stage below could not see it -- its two cwds agree by
@@ -3830,7 +3830,7 @@ def main(argv):
                                     % rr.stderr.strip()[:160])
                     ok = False
             if ok:
-                rr = subprocess.run([s1, os.path.join(ROOT, "src", "main.npk")],
+                rr = subprocess.run([s1, os.path.join(ROOT, "src", "npkc.npk")],
                                     capture_output=True, timeout=600)
                 if rr.returncode != 0:
                     # THE RETURNCODE IS PART OF THE EVIDENCE: a negative one
@@ -3882,7 +3882,7 @@ def main(argv):
                 rdir = os.path.join(tmp, "repro-cwd")
                 os.makedirs(rdir, exist_ok=True)
                 rr = subprocess.run(
-                    [ec, os.path.join(ROOT, "src", "main.npk")],
+                    [ec, os.path.join(ROOT, "src", "npkc.npk")],
                     capture_output=True, timeout=600, cwd=rdir)
                 rok = True
                 if rr.returncode != 0:
@@ -3984,7 +3984,7 @@ def main(argv):
                     # THE SITE TABLE IS PATH-FREE (D-078; D-204's H9). D-179's
                     # site table records each source path AS GIVEN, so a
                     # refresh whose builder was handed an absolute
-                    # `src/main.npk` embeds the machine's path into every one
+                    # `src/npkc.npk` embeds the machine's path into every one
                     # of its ~1,500 site constants -- and the fixpoint and the
                     # STAMP both pass, because each compares the emission with
                     # itself. Found at 1.4.7's close by doing exactly that in a
@@ -3999,7 +3999,7 @@ def main(argv):
                             "source paths in its site table -- it was refreshed "
                             "with an absolute path argument; bootstrap/seed/"
                             "README.md: run from the tree root with "
-                            "`src/main.npk` spelled relatively" % absn)
+                            "`src/npkc.npk` spelled relatively" % absn)
                         rok = False
                     # AND THE SNAPSHOT CARRIES NO `undef` (D-218.10, 1.5.0):
                     # it is an emission like any other, and the builder of
@@ -4044,7 +4044,7 @@ def main(argv):
             # under D-226 lands on every `failsafe` in the tree -- and turns a
             # regression into a broken compile rather than a failed stage.
             if ok:
-                # THE COPY KEEPS THE LAYOUT, because `src/main.npk` imports
+                # THE COPY KEEPS THE LAYOUT, because `src/npkc.npk` imports
                 # `../lib/nio.npk` -- the one import in `src/` that leaves it.
                 # Copying `src/` alone produces a tree whose entry cannot
                 # resolve, and this check's own negative control is what found
@@ -4073,14 +4073,14 @@ def main(argv):
                     with open(tp, "w", encoding="utf-8") as fh:
                         fh.write(txt)
                     sb = build_tool(tmp, True,
-                                    os.path.join(strict, "src", "main.npk"),
+                                    os.path.join(strict, "src", "npkc.npk"),
                                     "npkc-strict")
                     if not sb or not os.path.exists(str(sb)):
                         failures.append("absent-fact: could not build the "
                                         "flipped compiler: %s" % sb)
                     else:
                         rr = subprocess.run(
-                            [sb, os.path.join(ROOT, "src", "main.npk")],
+                            [sb, os.path.join(ROOT, "src", "npkc.npk")],
                             capture_output=True, timeout=600)
                         if rr.returncode != 0:
                             failures.append(

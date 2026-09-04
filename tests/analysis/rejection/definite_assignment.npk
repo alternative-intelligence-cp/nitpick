@@ -9,6 +9,7 @@
 // THE MERGE IS WHERE THE CASES ARE. Straight-line definite assignment is a loop
 // over statements and is not where analyses go wrong.
 
+mod:definite_assignment;
 func:sink = NIL(int32->:slot) never fails { pass NIL; };
 
 // --- nothing assigned it at all ------------------------------------------------
@@ -70,7 +71,7 @@ func:for_may_not_run = int32(int64:n) never fails {
 // `accept/exhaustiveness.npk` is where that case now passes.
 // expect-error: NITPICK-ASSIGN-001
 // expect-error: NITPICK-PICK-003
-// expect-error-at: 76:5
+// expect-error-at: 77:5
 func:pick_not_total = int32(int32:n) never fails {
     int32:x;
     pick (n) {

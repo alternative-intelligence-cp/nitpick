@@ -67,16 +67,24 @@ func:EXTRA = string() never fails {
 
 func:CASE_COUNT = int64() never fails { pass 9i64; };
 
+// IDENTIFIERS, because each case is written as `<name>.npk` and its header
+// is `mod:<name>;` (D-248, 1.5.1b step 1); the Python self-check's names are
+// these, byte for byte.
 func:case_name = string(int64:i) never fails {
-    if (i == 0i64) { pass "correct-expectation"; }
-    if (i == 1i64) { pass "wrong-code"; }
-    if (i == 2i64) { pass "compiles-anyway"; }
-    if (i == 3i64) { pass "no-expectation"; }
-    if (i == 4i64) { pass "wrong-line"; }
-    if (i == 5i64) { pass "unasserted-extra"; }
-    if (i == 6i64) { pass "wrong-exit"; }
-    if (i == 7i64) { pass "right-exit"; }
-    pass "parse-error-not-backend";
+    if (i == 0i64) { pass "correct_expectation"; }
+    if (i == 1i64) { pass "wrong_code"; }
+    if (i == 2i64) { pass "compiles_anyway"; }
+    if (i == 3i64) { pass "no_expectation"; }
+    if (i == 4i64) { pass "wrong_line"; }
+    if (i == 5i64) { pass "unasserted_extra"; }
+    if (i == 6i64) { pass "wrong_exit"; }
+    if (i == 7i64) { pass "right_exit"; }
+    pass "parse_error_not_backend";
+};
+
+// The header every case carries, after its directives (D-248).
+func:case_head = string(int64:i) never fails {
+    pass (string_concat(string_concat("mod:", raw case_name(i)), ";\n"));
 };
 
 func:case_negative = bool(int64:i) never fails {
@@ -105,21 +113,22 @@ func:case_why = string(int64:i) never fails {
 
 func:case_source = string(int64:i) never fails {
     string:tail = string_concat(raw MAIN_OK(), raw FAILSAFE());
-    if (i == 0i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n", raw RUNG()), tail)); }
-    if (i == 1i64) { pass (string_concat(string_concat("// expect-error: NITPICK-CHECK-001\n", raw RUNG()), tail)); }
-    if (i == 2i64) { pass (string_concat("// expect-error: NITPICK-RUNG-001\n", tail)); }
-    if (i == 3i64) { pass (string_concat(raw RUNG(), tail)); }
-    if (i == 4i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n", raw RUNG()), tail)); }
+    string:head = raw case_head(i);
+    if (i == 0i64) { pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n", head), raw RUNG()), tail)); }
+    if (i == 1i64) { pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-CHECK-001\n", head), raw RUNG()), tail)); }
+    if (i == 2i64) { pass (string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n", head), tail)); }
+    if (i == 3i64) { pass (string_concat(string_concat(head, raw RUNG()), tail)); }
+    if (i == 4i64) { pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n", head), raw RUNG()), tail)); }
     // A SECOND CODE NOBODY ASSERTED (D-237): the subset rule accepted this
     // shape from 0.8 to 1.4.8; under set equality it fails, which is what
     // makes an unasserted extra a finding rather than a noise floor.
-    if (i == 5i64) { pass (string_concat(string_concat("// expect-error: NITPICK-TYPE-007\n", raw EXTRA()), tail)); }
-    if (i == 6i64) { pass (string_concat("// expect-exit: 3\n", tail)); }
-    if (i == 7i64) { pass tail; }
+    if (i == 5i64) { pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-TYPE-007\n", head), raw EXTRA()), tail)); }
+    if (i == 6i64) { pass (string_concat(string_concat("// expect-exit: 3\n", head), tail)); }
+    if (i == 7i64) { pass (string_concat(head, tail)); }
     // The one that guards D-085: a file meant to reach the backend but
     // tripping the PARSER instead must be reported, not accepted as "it
     // failed, close enough".
-    pass (string_concat("// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\nfunc:main = int32() { this is not nitpick };\n", raw FAILSAFE()));
+    pass (string_concat(string_concat(string_concat("// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\n", head), "func:main = int32() { this is not nitpick };\n"), raw FAILSAFE()));
 };
 
 func:case_line = string(string:name, bool:ok, string:why) never fails {

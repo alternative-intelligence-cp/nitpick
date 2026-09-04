@@ -23,6 +23,7 @@
 // declares it privately — the code is the FNV of `module.Name`, so identity
 // is unforgeable and no import rides along. `Bounds*` are the D-061-family
 // index guards; the rest are named for the invariant they hold.
+mod:type_trait;
 error:BoundsBound;
 error:BoundsImpl;
 
@@ -38,13 +39,13 @@ use "./types.npk".*;
 // A DECLARED CYCLE with type_access (0.8.1): an impl check reads a
 // function type's parameter window through `type_param_at_of`, and access
 // checking consults the impl table. Same shape as type_expr <-> type_stmt.
-use "./type_access.npk".*;
+use "./type_members.npk".*;
 use "./type_names.npk".*;
 use "./parse_decl.npk".*;
 use "./parse_type.npk".*;
 use "./symbols.npk".*;
-use "./resolve_type.npk".*;
-use "./type_decl.npk".*;
+use "./type_resolve.npk".*;
+use "./type_decls.npk".*;
 
 // One `impl` block. The TARGET IS ALWAYS SLOT ONE (D-031), with or without a
 // trait, so `inherent` is `trait_id == 0` rather than a different shape.

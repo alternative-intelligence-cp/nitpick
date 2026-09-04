@@ -15,6 +15,7 @@
 // return a `Result` to — routing an error out of them would have nowhere to go,
 // which is precisely the uncontrolled stop the discipline exists to prevent.
 
+mod:type_decls;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -27,12 +28,14 @@ use "./type_names.npk".*;
 use "./parse_decl.npk".*;
 use "./parse_type.npk".*;
 use "./symbols.npk".*;
-use "./resolve_type.npk".*;
+use "./type_resolve.npk".*;
 
 // The two names whose signature is fixed by the runtime rather than by the
 // programmer. Checked by NAME, which is what the spec fixes them by.
 pub func:fn_is_terminal = bool(InternTable->:interns, int32:name) never fails {
     string:t = raw intern_get(interns, name);
+    // BY NAME ALONE, and safe by the rule upstream (D-248, 1.5.1b): the loader
+    // admits both at the root module's top level only (`graph_check_entry_points`).
     if (raw string_eq(t, "main"))     { pass true; }
     if (raw string_eq(t, "failsafe")) { pass true; }
     pass false;

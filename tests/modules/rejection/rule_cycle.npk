@@ -1,14 +1,15 @@
 // expect-error: NITPICK-RESOLVE-006
-// expect-error-at: 12
-// expect-error: NITPICK-RESOLVE-006
 // expect-error-at: 13
 // expect-error: NITPICK-RESOLVE-006
-// expect-error-at: 16
+// expect-error-at: 14
+// expect-error: NITPICK-RESOLVE-006
+// expect-error-at: 17
 //
 // D-220 (1.5.1): a `Rules` block may not refine itself, directly or through a
 // chain. 1.5.2 discharges a `limit` by expanding its refinements into one
 // conjunction, and a cycle would never finish expanding -- the same rule a
 // `fixed` initialised from itself breaks (D-086), reported the same way.
+mod:rule_cycle;
 Rules<int32>:r_a = { limit<r_b>, $ > 0i32 };
 Rules<int32>:r_b = { limit<r_a>, $ < 100i32 };
 

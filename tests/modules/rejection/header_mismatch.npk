@@ -1,0 +1,13 @@
+// expect-error: NITPICK-RESOLVE-012
+// expect-error-at: 11:1
+//
+// The workbench's DEF-2 (OPEN_DECISIONS §2f; their O-N8): a root file whose
+// `mod:` names a SIBLING that exists. Until D-248 the loader read the header
+// as an import, loaded `header_sibling.npk`, merged both files into one
+// program and emitted two `@main` at exit 0, which `llc` then refused. Now
+// the header is refused where it stands and the sibling is NOT loaded -- its
+// own `main` would be RESOLVE-013 under step 1's entry-point rule, and D-237's
+// exact set proves no second diagnostic appears.
+mod:header_sibling;
+func:main = int32(cstring[]:_~argv) { exit 1i32; };
+func:failsafe = int32(Error:e) { exit 9i32; };

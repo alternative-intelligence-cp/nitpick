@@ -12,6 +12,7 @@
 // name as an associated type or a generic parameter, where the nearer binding
 // would otherwise win in silence. One code: every case is "this name already
 // means something here".
+mod:resolve_codes;
 pub func:RESOLVE_DUPLICATE = string() never fails   { pass "NITPICK-RESOLVE-001"; };
 pub func:RESOLVE_UNKNOWN = string() never fails     { pass "NITPICK-RESOLVE-002"; };
 pub func:RESOLVE_PRIVATE = string() never fails     { pass "NITPICK-RESOLVE-003"; };
@@ -44,3 +45,18 @@ pub func:RESOLVE_ERROR_DECL = string() never fails  { pass "NITPICK-RESOLVE-010"
 // lookup rule for every name); this is the other way a limit's name can be
 // wrong, and the message says what the name is instead.
 pub func:RESOLVE_NOT_RULES = string() never fails   { pass "NITPICK-RESOLVE-011"; };
+
+// 1.5.1b (D-248): a file's FIRST declaration is its header, `mod:<basename>;`
+// (`mod:<dir>;` for a `dir/mod.npk`). A file with no header, or one whose first
+// declaration is a `mod:` naming something else, is refused at that declaration
+// -- the loader can finally say "your header is wrong" instead of loading a
+// sibling that happens to carry the name (the workbench's DEF-2: two `main`s at
+// exit 0). One code, two texts: missing, mismatched.
+pub func:RESOLVE_NO_HEADER = string() never fails   { pass "NITPICK-RESOLVE-012"; };
+
+// 1.5.1b (D-248): `main` and `failsafe` are entry points and belong to the ROOT
+// module -- the file the driver was given -- at its top level. Declared in any
+// other module of the program, or inside an inline module, they are refused
+// here, so a library cannot smuggle an entry point and the emitter's by-name
+// `@main`/`@npk_failsafe` is the root's by construction.
+pub func:RESOLVE_ENTRY_OUTSIDE_ROOT = string() never fails { pass "NITPICK-RESOLVE-013"; };

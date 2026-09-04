@@ -18,6 +18,7 @@
 // To LLVM all four are `iN`. Nothing downstream will object. This file is the
 // only place that can.
 
+mod:type_expr;
 use "./source_location.npk".*;
 use "./intern.npk".*;
 use "./token_kind.npk".*;
@@ -35,11 +36,11 @@ use "./parse_stmt.npk".*;
 use "./type_layout.npk".*;
 use "./parse_decl.npk".*;
 use "./symbols.npk".*;
-use "./resolve_type.npk".*;
+use "./type_resolve.npk".*;
 use "./type_names.npk".*;
 use "./type_cast.npk".*;
-use "./type_decl.npk".*;
-use "./type_access.npk".*;
+use "./type_decls.npk".*;
+use "./type_members.npk".*;
 // A `use` CYCLE, DECLARED ON PURPOSE. `type_stmt.npk` uses this module because a
 // statement contains expressions; this module uses it because an EXPRESSION contains
 // statements — an expression-`pick`s arms are statement bodies (D-059). The language
@@ -3582,7 +3583,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         pass (raw type_ident(e, n));
     }
 
-    // Member access, indexing and calls live in `type_access.npk` — they are one
+    // Member access, indexing and calls live in `type_members.npk` — they are one
     // subject ("reaching into a value") and they all need the layout rules. The
     // hook keeps this module from depending on that one, since the traffic runs
     // the other way.

@@ -21,6 +21,7 @@
 // and this pass only knows what names EXIST. Guessing across that line is how a
 // resolver ends up half a type checker.
 
+mod:resolve;
 use "./list.npk".*;
 use "./source_location.npk".*;
 use "./intern.npk".*;
@@ -700,6 +701,11 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
     // declarations fixed it. An analysis whose result depends on declaration
     // order is the failure `symtab_set_inner` was added to prevent.
     if (d.kind == DeclKind.DeclModuleDecl) {
+        // A MEMBER-LESS `mod:name;` -- a file's header (D-248, 1.5.1b step 1)
+        // or an external-file import -- has nothing inside it to resolve, and
+        // the header declares no symbol at all (`collect_file_module`), so the
+        // opened-no-scope check below is an inline module's alone.
+        if ((raw item_member_count(r.ast, d)) == 0i32) { pass NIL; }
         int32:inner = raw nested_module_scope(r.tab, d, scope);
         if (inner == 0i32) {
             // COLLECTION OPENS THE SCOPE, so a module symbol without one is a

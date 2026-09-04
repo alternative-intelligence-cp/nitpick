@@ -1,0 +1,20 @@
+// expect-error: NITPICK-RESOLVE-013
+// expect-error-at: 7:1
+// expect-error: NITPICK-RESOLVE-013
+// expect-error-at: 8:1
+// expect-error: NITPICK-RESOLVE-013
+// expect-error-at: 17:5
+//
+// D-248 (1.5.1b step 1): `main` and `failsafe` are the ROOT module's, at its
+// top level. `entry_lib.npk` is imported on purpose and declares both -- two
+// findings, at ITS lines 7 and 8 (a pin names a line, never a file) -- and
+// the inline module below declares a third `main`, at line 17. The root's own
+// pair is legal and reported nowhere.
+mod:entry_in_module;
+mod:entry_lib;
+mod:inner = {
+    pub func:one = int32() never fails { pass 1i32; };
+    func:main = int32(cstring[]:_~argv) { exit 3i32; };
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) { exit 1i32; };

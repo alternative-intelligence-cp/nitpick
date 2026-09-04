@@ -23,6 +23,25 @@ Modules can be defined inline or exist in external files.
     ```
     The compiler searches for `network.npk` or `network/mod.npk` relative to the declaring file.
 
+*   **The header (D-248, 1.5.1b).** Every source file's FIRST declaration is its
+    header, `mod:<basename>;` — `mod:<dir>;` for a `dir/mod.npk`, since the
+    module a `mod.npk` supplies is named by its directory. The header binds
+    nothing and loads nothing: it says what the file is. A file whose first
+    declaration is anything else, or a `mod:` naming another module, is refused
+    at that declaration (`NITPICK-RESOLVE-012`; a file with no declarations at
+    all is refused at its first line). A member-less `mod:name;` written AFTER
+    the header is the external-file import above. Before this rule a header
+    and an import written first were the same shape, so a header naming a
+    sibling that existed loaded the sibling into the program — two `main`s at
+    exit 0, refused only by `llc`.
+
+*   **The entry points (D-248, 1.5.1b).** `main` and `failsafe` are declared in
+    the ROOT module only — the file the compiler was given — at its top level.
+    Declared in any other module of the program, or inside an inline module,
+    either is refused (`NITPICK-RESOLVE-013`): the runtime calls both by name,
+    the emitter names them by name alone, and a library must not be able to
+    smuggle an entry point into every program that imports it.
+
 *   **Nested Modules**: Modules can be arbitrarily nested (e.g., `mod:core = { mod:math = { … }; };`).
 *   **Visibility**: Modules are private by default. Use `pub mod` to expose them to outer scopes.
 

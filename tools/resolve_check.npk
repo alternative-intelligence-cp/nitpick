@@ -24,6 +24,7 @@
 // Output is codes and spans only. The harness asserts on those and never on
 // message text, so messages stay free to improve (0.1.6).
 
+mod:resolve_check;
 use "../src/frontend/source_location.npk".*;
 use "../src/frontend/source.npk".*;
 use "../src/frontend/token_kind.npk".*;
@@ -111,6 +112,9 @@ async func:main = int32(cstring[]:argv) {
     // the loader's rule, so the loader's tool reports it -- the pipeline calls
     // the same check at the same point.
     drop graph_check_owned_names(@g);
+    // `main`/`failsafe` outside the root module, or inside an inline one
+    // (D-248, 1.5.1b step 1): the loader's rule, so the loader's tool reports it.
+    drop graph_check_entry_points(@g);
     int32:k = 0i32;
     while (k < (raw graph_count(@g))) {
         ModuleEntry:e2 = raw graph_at(@g, k);

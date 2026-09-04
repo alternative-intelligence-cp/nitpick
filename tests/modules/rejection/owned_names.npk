@@ -1,21 +1,21 @@
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 33:5
+// expect-error-at: 34:5
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 36:5
+// expect-error-at: 37:5
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 39:5
+// expect-error-at: 40:5
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 45:5
+// expect-error-at: 46:5
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 53:5
+// expect-error-at: 54:5
 // expect-error: NITPICK-RESOLVE-001
-// expect-error-at: 58:11
+// expect-error-at: 59:11
 //
 // A NAME THE COMPILER OR THE PRELUDE OWNS CANNOT BE DECLARED BY A PROGRAM (D-239,
 // 1.4.8c) -- at ANY type-namespace declaration, not only at module scope, where
 // the prelude clash has refused it since 0.3 (`duplicate.npk`'s code, the same
 // rule: this name already means something here). Found by 1.4.8b's exact
-// matching: `types/rejection/assoc.npk` had named its default assoc `Error`
+// matching: `types/rejection/assoc.npk` (now `assoc_rules.npk`) had named its default assoc `Error`
 // before D-179 made that the compiler's error type, and one checker then read
 // the word two ways -- the signature comparison saw the builtin, the
 // object-safety walk saw the assoc. Six shapes, each in its own scope so no plain
@@ -29,6 +29,7 @@
 //   D-160's nearer-binding rule let the trait or the function shadow it in
 //   silence.
 
+mod:owned_names;
 mod:as_struct = {
     struct:Error = { int32:x; };
 };

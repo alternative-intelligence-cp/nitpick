@@ -1,0 +1,9 @@
+// expect-error: NITPICK-RESOLVE-012
+// expect-error-at: 9:1
+//
+// D-248 (1.5.1b step 1): a file's FIRST declaration is its header,
+// `mod:<basename>;`. This file has none -- its first declaration is a
+// function -- so the loader refuses it there, before anything resolves. The
+// sweep script (`meta/roadmap/1.5/tools/add_headers.py`) skips this file by
+// name: it is the one that must not have a header.
+pub func:orphan = int32() never fails { pass 1i32; };

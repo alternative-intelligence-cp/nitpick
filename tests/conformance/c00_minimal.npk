@@ -1,13 +1,9 @@
-// Subset 1 — the importing half.
-// One form only: wildcard, relative path. No selective imports, no aliases, no
-// logical paths. Sufficient to write a multi-file compiler, and a fraction of
-// the resolution logic in MODULE_REFERENCE 2.3.
+// Subset 1 — the smallest legal program.
+// Every executable must define failsafe (D-013): it must exist, must not be
+// empty, and must return a positive value (D-014).
 
-use "./module_lib.npk".*;
-
+mod:c00_minimal;
 func:main = int32(cstring[]:_~argv) {
-    Token:t = Token{ kind: 7i32, start: 0i32 };
-    int32:k = raw token_kind(t);
     wild_release_all();
     exit 0i32;
 };

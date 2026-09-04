@@ -291,6 +291,7 @@ pub func:irw_clean_since_mark = bool(IrWriter->:w) never fails {
 // 1 is built by the seed and calls into the same runtime, so a different prefix
 // would be two compilers emitting calls to two different symbols.
 pub func:ir_symbol = string(string:name) never fails {
+    // by name alone: D-248 makes `main` the root module's, so this is the program's
     if (raw string_eq(name, "main")) { pass "@main"; }
     pass (string_concat("@npk_", name));
 };

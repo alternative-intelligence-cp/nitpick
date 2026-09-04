@@ -40,7 +40,7 @@ use "../../frontend/parse_decl.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/type_names.npk".*;   // type_display, for D-156's method names
 use "../../frontend/type_trait.npk".*;   // ImplTable, for D-164 normalisation
-use "../../frontend/resolve_type.npk".*;
+use "../../frontend/type_resolve.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_generic.npk".*;
@@ -289,6 +289,9 @@ pub func:mod_canonical = string(LlCtx->:c, int32:decl_index) never fails {
 // through the rt table, not here, so the fallback is only ever hit by a
 // symbol the modmap did not cover, which stays linkable.
 pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) never fails {
+    // BY NAME ALONE, and safe by the rule upstream (D-248, 1.5.1b): the loader
+    // admits `main`/`failsafe` at the root module's top level only, so the bare
+    // name is the whole program's (`graph_check_entry_points`).
     if (raw string_eq(name, "main"))     { pass "@main"; }
     if (raw string_eq(name, "failsafe")) { pass "@npk_failsafe"; }
     string:canon = raw mod_canonical(c, decl_index);

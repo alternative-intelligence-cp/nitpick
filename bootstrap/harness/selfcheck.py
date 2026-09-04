@@ -85,49 +85,57 @@ func:two = NIL() {
 };
 """
 
+# EVERY CASE CARRIES ITS HEADER after its directives (D-248, 1.5.1b step 1: a
+# file's first declaration is `mod:<basename>;`), which is also why the names
+# are identifiers now -- the file is written as `<name>.npk`. `npkg/selfcheck.npk`
+# writes the same nine texts, byte for byte.
+def _case(name, kind, directives, body, must_fail, why):
+    return (name, kind, directives + "mod:" + name + ";\n" + body, must_fail, why)
+
+
 CASES = [
     # (name, kind, source, must_fail, why)
-    ("correct-expectation", "negative",
-     "// expect-error: NITPICK-RUNG-001\n" + RUNG + MAIN_OK + FAILSAFE,
-     False, "a correct expectation must pass"),
+    _case("correct_expectation", "negative",
+          "// expect-error: NITPICK-RUNG-001\n", RUNG + MAIN_OK + FAILSAFE,
+          False, "a correct expectation must pass"),
 
-    ("wrong-code", "negative",
-     "// expect-error: NITPICK-CHECK-001\n" + RUNG + MAIN_OK + FAILSAFE,
-     True, "expecting the wrong code must fail"),
+    _case("wrong_code", "negative",
+          "// expect-error: NITPICK-CHECK-001\n", RUNG + MAIN_OK + FAILSAFE,
+          True, "expecting the wrong code must fail"),
 
-    ("compiles-anyway", "negative",
-     "// expect-error: NITPICK-RUNG-001\n" + MAIN_OK + FAILSAFE,
-     True, "a negative test that compiles must fail"),
+    _case("compiles_anyway", "negative",
+          "// expect-error: NITPICK-RUNG-001\n", MAIN_OK + FAILSAFE,
+          True, "a negative test that compiles must fail"),
 
-    ("no-expectation", "negative", RUNG + MAIN_OK + FAILSAFE,
-     True, "a negative test with no expect-error must fail"),
+    _case("no_expectation", "negative", "", RUNG + MAIN_OK + FAILSAFE,
+          True, "a negative test with no expect-error must fail"),
 
-    ("wrong-line", "negative",
-     "// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n"
-     + RUNG + MAIN_OK + FAILSAFE,
-     True, "expecting the wrong line must fail"),
+    _case("wrong_line", "negative",
+          "// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n",
+          RUNG + MAIN_OK + FAILSAFE,
+          True, "expecting the wrong line must fail"),
 
     # A SECOND CODE NOBODY ASSERTED (D-237, 1.4.8b): the subset rule accepted
     # this shape from 0.8 to 1.4.8; under set equality it fails, which is what
     # makes an unasserted extra a finding rather than a noise floor.
-    ("unasserted-extra", "negative",
-     "// expect-error: NITPICK-TYPE-007\n" + EXTRA + MAIN_OK + FAILSAFE,
-     True, "a diagnostic no expectation names must fail"),
+    _case("unasserted_extra", "negative",
+          "// expect-error: NITPICK-TYPE-007\n", EXTRA + MAIN_OK + FAILSAFE,
+          True, "a diagnostic no expectation names must fail"),
 
-    ("wrong-exit", "positive",
-     "// expect-exit: 3\n" + MAIN_OK + FAILSAFE,
-     True, "a positive test exiting with the wrong code must fail"),
+    _case("wrong_exit", "positive",
+          "// expect-exit: 3\n", MAIN_OK + FAILSAFE,
+          True, "a positive test exiting with the wrong code must fail"),
 
-    ("right-exit", "positive", MAIN_OK + FAILSAFE,
-     False, "a positive test exiting as expected must pass"),
+    _case("right_exit", "positive", "", MAIN_OK + FAILSAFE,
+          False, "a positive test exiting as expected must pass"),
 
     # The one that guards D-085. A file meant to reach the backend but tripping
     # the PARSER instead must be reported, not quietly accepted as "it failed,
     # close enough".
-    ("parse-error-not-backend", "negative",
-     "// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\n"
-     "func:main = int32() { this is not nitpick };\n" + FAILSAFE,
-     True, "a parse error where a backend rejection was expected must fail"),
+    _case("parse_error_not_backend", "negative",
+          "// expect-error: NITPICK-RUNG-001\n// expect-no-parse-error\n",
+          "func:main = int32() { this is not nitpick };\n" + FAILSAFE,
+          True, "a parse error where a backend rejection was expected must fail"),
 ]
 
 

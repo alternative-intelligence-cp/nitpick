@@ -21,6 +21,7 @@
 // declares it privately — the code is the FNV of `module.Name`, so identity
 // is unforgeable and no import rides along. `Bounds*` are the D-061-family
 // index guards; the rest are named for the invariant they hold.
+mod:symbols;
 error:BoundsId;
 
 use "./source_location.npk".*;
@@ -434,6 +435,39 @@ pub func:collect_module = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
 
     int32:n = raw item_member_count(ast, m);
     for (int32:i in 0i32...n) {
+        DeclId:item = raw item_member(ast, m, i);
+        drop collect_decl(t, ast, diags, item, scope);
+    }
+    pass scope;
+};
+
+// THE HEADER SLOT: 1 when a module's first item is a member-less `mod:name;`
+// -- a FILE's header under D-248 (1.5.1b step 1) -- else 0. A file root's
+// walk starts past it; an inline module's does not, since only a file has one.
+pub func:header_slot = int32(Ast->:ast, DeclId:mod_id) never fails {
+    DeclNode:m = raw ast_decl(ast, mod_id);
+    if ((raw item_member_count(ast, m)) == 0i32) { pass 0i32; }
+    DeclNode:d0 = raw ast_decl(ast, raw item_member(ast, m, 0i32));
+    if (d0.kind != DeclKind.DeclModuleDecl) { pass 0i32; }
+    if ((raw item_member_count(ast, d0)) != 0i32) { pass 0i32; }
+    pass 1i32;
+};
+
+// A FILE's root module: `collect_module` past the header slot. THE HEADER BINDS
+// NOTHING (D-248): until 1.5.1b step 1 a file's `mod:foo;` was collected like
+// any member-less module declaration -- a symbol `foo` in the file's own scope
+// -- which is what made a file unable to declare a function named after itself
+// (`resolve_type.npk`'s `resolve_type` is why that file had no header). The
+// snapshot that builds `src/` still binds it, so the two such files were
+// renamed rather than exempted; every compiler built from this source skips.
+pub func:collect_file_module = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
+                                     DeclId:mod_id, int32:parent_scope) never fails {
+    DeclNode:m = raw ast_decl(ast, mod_id);
+    int32:scope = raw scope_open(t, parent_scope, raw SCOPE_MODULE());
+
+    int32:n = raw item_member_count(ast, m);
+    int32:first = raw header_slot(ast, mod_id);
+    for (int32:i in first...n) {
         DeclId:item = raw item_member(ast, m, i);
         drop collect_decl(t, ast, diags, item, scope);
     }

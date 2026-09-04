@@ -15,4 +15,8 @@ That second property is what makes this suite worth keeping after the seed is
 gone: it is a regression suite against the language accidentally narrowing.
 
 Files are numbered by construct group rather than by dependency — `09` and `10`
-are the two halves of the module test and belong together.
+are the two halves of the module test and belong together. The `c` in front
+of every number is D-248's (1.5.1b step 1): a file's first declaration is
+`mod:<basename>;`, a module name is an identifier, and an identifier cannot
+begin with a digit — so `00_minimal.npk` became `c00_minimal.npk` and keeps
+its place in the reading order.
