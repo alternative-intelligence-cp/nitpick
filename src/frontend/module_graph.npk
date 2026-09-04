@@ -27,7 +27,6 @@ error:ProvenSlice;
 use "./source_location.npk".*;
 use "./source.npk".*;
 use "./intern.npk".*;
-use "./list.npk".*;
 use "./token_kind.npk".*;
 use "./token.npk".*;
 use "./ast_kind.npk".*;
@@ -274,11 +273,9 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) never fails {
         DeclId:root = DeclId{ index: e.root };
         // past the header slot: a file's `mod:name;` binds nothing (D-248)
         e.scope = raw collect_file_module(@g.tab, @g.ast, g.diags, root, 0i32);
-        // THE LIST MODULE (D-247, 1.5.1b step 5): `List<T>` is compiler-known
-        // and owning, and this is the scope its declaration is found in.
-        if (raw string_eq(raw path_basename(raw srcmgr_resolved_proven(@g.sm, e.file)), "list")) {
-            g.tab.list_scope = e.scope;
-        }
+        // THE PRELUDE'S SCOPE (D-247; 1.5.1b step 5b): module 0 is the prelude,
+        // and `List<T>` -- compiler-known and owning -- is declared there.
+        if (i == 0i32) { g.tab.prelude_scope = e.scope; }
         g.v.items[i => int64] = e;
         i = i + 1i32;
     }

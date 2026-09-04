@@ -40,10 +40,10 @@ collection — is **compiler-known and owning**: its generated drop releases the
 `count` elements through `T`'s drop where `T` owns and hands the block back, a
 vacant List (`cap == 0`, D-225) owns nothing, and the type is move-only under
 TYPE-046/047 like every owning type — pass it as a plain argument, consume it
-with a `move T:p` parameter, never copy it binding to binding. Until the
-cycle's snapshot refresh the declaration lives in the `list` module and is
-recognised there (D-205: `src/` compiles under the builder, whose prelude has
-no `List`); it moves into the prelude at 1.5.1b step 5b.
+with a `move T:p` parameter, never copy it binding to binding. It is declared
+in the PRELUDE with its functions (`list_init`, `list_push`, `list_reserve`)
+since 1.5.1b step 5b, through the bridging refresh the seed README describes;
+until then it lived in `src/frontend/list.npk`.
 
 ### 1.1c What a `pass` or a `move` transfers (D-183 as corrected at 1.5.1b step 5)
 

@@ -1654,3 +1654,70 @@ impl:complex<tfp64>:ToString = { func:to_string = string(complex<tfp64>:self) ne
     string:h = string_concat(`&{self.re()}`, sign);
     pass (string_concat(h, string_concat(`&{im2}`, "i")));
 }; };
+
+// THE COMPILER'S OWN GROWABLE COLLECTION, COMPILER-KNOWN AND OWNING (D-247;
+// 1.5.1b step 5b). `List<T>` lived in `src/frontend/list.npk` until the
+// snapshot could carry a prelude that declares it (D-205): the layout marks
+// the struct declared HERE, named `List`, with exactly this shape as owning,
+// and its generated drop releases the `count` elements through `T`'s drop and
+// hands the block back. Vacant (`cap == 0`, D-225) it owns nothing and grows
+// from zero on its first reservation. The functions are here too (S-25): a
+// compiler-known type whose operations needed an import was one spelling in
+// the prelude and another at every use.
+pub struct:List<T> = {
+    wild T->:items;
+    int64:count;
+    int64:cap;
+};
+
+// A capacity of zero would make the doubling in `list_reserve` a no-op
+// forever, so the floor is one. Callers asking for a specific starting size
+// still get it.
+pub func:list_init<T> = List<T>(int64:cap) never fails {
+    int64:n = cap;
+    if (n < 1i64) { n = 1i64; }
+    wild int8->:mem = alloc(n * #size_of<T>());
+    pass List{ items: mem =>! wild T->, count: 0i64, cap: n };
+};
+
+// Room for `need` MORE elements beyond the current count. The count is a
+// parameter rather than a fixed one because the families that append in bulk
+// need it — `Sink` grows by however many bytes the write is — and a
+// one-element `reserve` would silently under-allocate for them. It is also
+// why this doubles in a LOOP: one doubling of a capacity-8 list does not hold
+// a bulk append of ten thousand, and the version that only doubled once would
+// have been correct for exactly the families that never exercised it.
+pub func:list_reserve<T> = NIL(List<T>->:l, int64:need) never fails {
+    int64:want = l.count + need;
+    if (want <= l.cap) { pass NIL; }
+    // A VACANT LIST GROWS FROM ZERO (1.5.1b step 5): `cap == 0` is the
+    // canonical vacant value a moved-out field or an uninitialised binding
+    // holds (D-225), and it owns no block -- so the first reservation
+    // allocates instead of doubling, which from zero would never end.
+    if (l.cap == 0i64) {
+        int64:n0 = need;
+        if (n0 < 1i64) { n0 = 1i64; }
+        wild int8->:fresh = alloc(n0 * #size_of<T>());
+        l.items = fresh =>! wild T->;
+        l.cap = n0;
+        l.count = 0i64;
+        pass NIL;
+    }
+    int64:nc = l.cap;
+    while (nc < want) { nc = nc * 2i64; }
+    wild int8->:bigger = ralloc(l.items =>! wild int8->, nc * #size_of<T>());
+    l.items = bigger =>! wild T->;
+    l.cap = nc;
+    pass NIL;
+};
+
+// `move T:v` — the parameter is consuming (D-208), which is what an OWNING
+// element needs and what a scalar one is indifferent to. Both instantiations
+// are exercised: `List<Root>` carries two strings per element, `List<int32>`
+// carries no ownership at all.
+pub func:list_push<T> = NIL(List<T>->:l, move T:v) never fails {
+    drop list_reserve(l, 1i64);
+    l.items[l.count] = move(v);
+    l.count = l.count + 1i64;
+    pass NIL;
+};

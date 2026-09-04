@@ -31,7 +31,6 @@ use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./resolve_codes.npk".*;
 use "./parse_decl.npk".*;
-use "./list.npk".*;
 
 // --- what introduced a name ------------------------------------------------------
 //
@@ -127,7 +126,7 @@ pub struct:SymbolTable = {
     // module until the snapshot refresh lets the declaration move into the
     // prelude (D-205: the builder's embedded prelude has no `List`, so `src/`
     // cannot yet use one there), where D-239 makes the name unique.
-    int32:list_scope;
+    int32:prelude_scope;   // the scope module 0 (the prelude) collected into; `List<T>` is found there (D-247)
 };
 
 pub func:symtab_init = SymbolTable() never fails {
@@ -136,7 +135,7 @@ pub func:symtab_init = SymbolTable() never fails {
         syms:   raw list_init::<Symbol>(n),
         scopes: raw list_init::<Scope>(n),
         decl_home: raw list_init::<int32>(256i64),
-        list_scope: 0i32
+        prelude_scope: 0i32
     };
 
     // Index 0 is reserved in BOTH arrays, matching the AST's convention: a zeroed

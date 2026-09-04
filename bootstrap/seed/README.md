@@ -88,6 +88,32 @@ snapshot installed — that run is the first time the new compiler's semantics
 compile the suite's tools — and a red there is a `src/` defect written against
 the old semantics, never a reason to keep the old snapshot.
 
+### The bridging variant: a prelude addition `src/` already uses (1.5.1b step 5b)
+
+The prelude is EMBEDDED in a compiler when that compiler is built
+(`prelude_source.npk` is a string constant), so a compiler resolves prelude
+names against the prelude it was built with, never against the tree it is
+compiling. A name the prelude gains that `src/` ALREADY uses through one of
+its own modules — `List<T>` at 1.5.1b step 5b — therefore has no single tree
+that both compiles under the committed snapshot and stops declaring the name:
+the snapshot's prelude lacks it, and D-239 refuses the module's declaration
+the moment a compiler's prelude owns it. The refresh runs in two hops inside
+ONE commit's preparation:
+
+1. **The bridge, never committed.** The prelude carries the addition AND the
+   module still declares it. The committed snapshot compiles this tree (its
+   own prelude lacks the name, so nothing is refused; the module supplies it)
+   into a compiler whose embedded prelude HAS the name.
+2. **The commit.** The module's declaration and every `use` of it are gone.
+   The bridge compiler compiles this tree; the result rebuilds itself
+   byte-identically (step 3 above, unchanged); it is installed with a STAMP
+   whose `source-commit` line says so — the snapshot and the `src/` it builds
+   land together, so the line names the commit's own tree, and the sha256 is
+   the claim as always.
+
+The 1.4.8 flag-families refresh was the one-hop form of the same rule:
+`src/` began using the families only after a snapshot carried them.
+
 **Run it from the tree root with `src/npkc.npk` spelled relatively, exactly as
 written.** Until 1.4.8 D-179's site table recorded each source path AS GIVEN,
 so a builder handed an absolute path embedded the machine's path into every

@@ -604,8 +604,9 @@ SPELLING, DERIVE-006 (D-250, step 3b); a unit without `failsafe` declares
 runners — and `pub use` re-exports after a plain `use` (step 3c); an owning
 value no place takes is a temporary of its statement, dropped when it ends
 and on every exit, frame-resident across `await` (D-246, step 4); and
-`List<T>` is compiler-known and OWNING, move-only, keyed on the `list` module
-until step 5b moves it into the prelude (D-247, step 5). **Step 5 found five
+`List<T>` is compiler-known and OWNING, move-only, and lives in the PRELUDE
+with its functions since step 5b's bridging refresh (D-247, step 5; S-25 as
+recommended, pending the user). **Step 5 found five
 defects on the way, all fixed in it**: `pass h.n` cleared the root's drop
 flag for a COPYABLE field (an owning local returned by a copyable field leaked
 since 1.2.3); every descriptor-exhaustion proof in the suite depended on the
@@ -616,8 +617,11 @@ folder double-freed, masked by `exit`) — a partial move now leaves the type's
 vacant value and the aggregate stays live (S-26); three unit tests released
 the heap and then RETURNED from `main` — TYPE-062 now requires `exit` after
 `wild_release_all()` (S-27); and the trap route after a release died because
-the main thread's TLS block was heap memory — a raw mapping now. Owed: the
-snapshot refresh, a ceiling for `tests/cost/self.toml`, step 5b (S-25).
+the main thread's TLS block was heap memory — a raw mapping now. The close-out
+refreshed the snapshot and set `tests/cost/self.toml`'s ceiling; its first
+harness found the diagnostic sort reading slots it had moved out of (DEF-13,
+step 5c: byte identity of the fixpoint is not behavioural identity — the
+refresh's own harness is the proof, and the seed README says so).
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

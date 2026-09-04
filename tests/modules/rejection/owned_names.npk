@@ -60,3 +60,11 @@ func:wait<Duration> = int32(Duration:d) never fails {
     discard(d);
     pass 1i32;
 };
+
+// THE PRELUDE'S OWN COLLECTION (D-247; 1.5.1b step 5b): `List` is a prelude
+// name now, refused at a program's declaration like every other.
+// expect-error: NITPICK-RESOLVE-001
+// expect-error-at: 69:5
+mod:as_list = {
+    struct:List = { int64:n; };
+};

@@ -6,20 +6,20 @@
 // collections will need when they convert (C-13, at 1.2), proven in one file:
 //
 //   * `#size_of<T>()` and `wild T->` INSIDE a generic body, per specialization;
-//   * a generic struct BUILT AS A VALUE inside a generic body (`List{ … }` in
-//     `list_make<T>` reaches lowering recorded as `List<T>`, D-107, and must
-//     be named, laid out and headed as `List<int32>`; `List<int64>` below is
+//   * a generic struct BUILT AS A VALUE inside a generic body (`Growable{ … }` in
+//     `list_make<T>` reaches lowering recorded as `Growable<T>`, D-107, and must
+//     be named, laid out and headed as `Growable<int32>`; `Growable<int64>` below is
 //     named by no annotation at all and gets its header after the bodies);
-//   * `T` inferred through `List<T>->` against `List<int32>->` (D-064's
+//   * `T` inferred through `Growable<T>->` against `Growable<int32>->` (D-064's
 //     structural unification) — the turbofish only where nothing mentions `T`;
-//   * a trait impl over the family (`impl:<T>:List<T>:…`) reached through a
+//   * a trait impl over the family (`impl:<T>:Growable<T>:…`) reached through a
 //     bound, and an `Optional`-returning accessor, where this subcycle's two
 //     halves meet.
 //
 // WHAT IS NOT HERE, AND WHY. The mutators are free functions taking
-// `List<T>->`, not methods: an INHERENT impl over a family cannot be spelled
-// (D-161's segment rule reads `impl:<T>:List<T>` as a blanket impl of a trait
-// named `List<T>` — raised as T-7), and a TRAIT method cannot take its
+// `Growable<T>->`, not methods: an INHERENT impl over a family cannot be spelled
+// (D-161's segment rule reads `impl:<T>:Growable<T>` as a blanket impl of a trait
+// named `Growable<T>` — raised as T-7), and a TRAIT method cannot take its
 // receiver by pointer (`Self->` is refused by the one-level substitution in
 // `check_signature`), so no method of a generic struct can mutate it today.
 // That is the shape `src/` already has by hand (`tokenlist_push(@l, t)`), and
@@ -29,14 +29,14 @@ mod:generic_list;
 error:E4;
 error:E9;
 
-struct:List<T> = { wild T->:items; int64:count; int64:cap; };
+struct:Growable<T> = { wild T->:items; int64:count; int64:cap; };
 
-func:list_make<T> = List<T>(int64:cap) {
+func:list_make<T> = Growable<T>(int64:cap) {
     wild int8->:mem = alloc(cap * #size_of<T>());
-    pass List{ items: mem =>! wild T->, count: 0i64, cap: cap };
+    pass Growable{ items: mem =>! wild T->, count: 0i64, cap: cap };
 };
 
-func:list_push<T> = NIL(List<T>->:l, T:v) {
+func:growable_push<T> = NIL(Growable<T>->:l, T:v) {
     if (l.count >= l.cap) {
         int64:newcap = l.cap * 2i64;
         wild int8->:bigger = ralloc(l.items =>! wild int8->,
@@ -49,7 +49,7 @@ func:list_push<T> = NIL(List<T>->:l, T:v) {
     pass NIL;
 };
 
-func:list_at<T> = T(List<T>->:l, int64:i) {
+func:list_at<T> = T(Growable<T>->:l, int64:i) {
     if (i < 0i64)     { fail E4; }
     if (i >= l.count) { fail E4; }
     pass l.items[i];
@@ -57,46 +57,46 @@ func:list_at<T> = T(List<T>->:l, int64:i) {
 
 // THE OPTIONAL ACCESSOR: out of range is `NIL`, not an error — the caller asked
 // a question, not for a guarantee.
-func:list_get<T> = T?(List<T>->:l, int64:i) {
+func:growable_get<T> = T?(Growable<T>->:l, int64:i) {
     if (i < 0i64)     { pass NIL; }
     if (i >= l.count) { pass NIL; }
     pass l.items[i];
 };
 
 // A generic struct built inside a generic body and RETURNED, at a type no
-// annotation in this program names (`List<int64>` appears only here).
-func:pair_of<T> = List<T>(T:a, T:b) {
-    List<T>:l = list_make::<T>(1i64) ?! E9;
-    list_push(@l, a) ?! E9;
-    list_push(@l, b) ?! E9;
+// annotation in this program names (`Growable<int64>` appears only here).
+func:pair_of<T> = Growable<T>(T:a, T:b) {
+    Growable<T>:l = list_make::<T>(1i64) ?! E9;
+    growable_push(@l, a) ?! E9;
+    growable_push(@l, b) ?! E9;
     pass l;
 };
 
 trait:Sized = { func:size = int64(Self:self); };
-impl:<T>:List<T>:Sized = {
-    func:size = int64(List<T>:self) { pass self.count; };
+impl:<T>:Growable<T>:Sized = {
+    func:size = int64(Growable<T>:self) { pass self.count; };
 };
 
 // A bound, so the family impl is reached through a parameter.
 func:total<S: Sized> = int64(S:s) { pass (s.size()) ?! E9; };
 
 func:main = int32(cstring[]:_~argv) {
-    List<int32>:li = list_make::<int32>(2i64) ?! E9;
-    list_push(@li, 10i32) ?! E9;
-    list_push(@li, 20i32) ?! E9;
-    list_push(@li, 12i32) ?! E9;               // grows past a capacity of 2
+    Growable<int32>:li = list_make::<int32>(2i64) ?! E9;
+    growable_push(@li, 10i32) ?! E9;
+    growable_push(@li, 20i32) ?! E9;
+    growable_push(@li, 12i32) ?! E9;               // grows past a capacity of 2
     if (li.count != 3i64)                     { exit 10i32; }
     if (li.cap != 4i64)                       { exit 11i32; }
     if ((list_at(@li, 2i64) ?! E9) != 12i32)    { exit 12i32; }
 
     // the Optional accessor, present and absent
-    if ((list_get(@li, 1i64) ?! E9 ?? 0i32) != 20i32) { exit 13i32; }
-    int32?:none = list_get(@li, 7i64) ?! E9;
+    if ((growable_get(@li, 1i64) ?! E9 ?? 0i32) != 20i32) { exit 13i32; }
+    int32?:none = growable_get(@li, 7i64) ?! E9;
     if (none != NIL)                          { exit 14i32; }
 
     // a second element type in the same program, its instance named nowhere
     // but inside `pair_of<int64>`'s body
-    List<int64>:ll = pair_of(40i64, 2i64) ?! E9;
+    Growable<int64>:ll = pair_of(40i64, 2i64) ?! E9;
     if ((list_at(@ll, 0i64) ?! E9) + (list_at(@ll, 1i64) ?! E9) != 42i64) { exit 15i32; }
 
     // the family impl through a bound, at both instantiations

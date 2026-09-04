@@ -3,10 +3,9 @@
 // a moved-from list is invalid until assigned again (TYPE-047) -- the rules
 // every owner already lives under, reaching the compiler's own collection.
 mod:list_moved;
-use "../../../src/frontend/list.npk".*;
 
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 12:5
+// expect-error-at: 11:5
 func:copies = int64() never fails {
     List<int32>:a = raw list_init::<int32>(4i64);
     List<int32>:b = a;
@@ -18,7 +17,7 @@ struct:Holder = { List<int32>:kept; };
 // A LENT list cannot be moved (TYPE-047): the caller still owns it. Storing
 // it needs a `move` parameter, at which point the callers transfer too.
 // expect-error: NITPICK-TYPE-047
-// expect-error-at: 23:14
+// expect-error-at: 22:14
 func:keeps_what_it_borrowed = NIL(Holder->:h, List<int32>:l) never fails {
     h.kept = move(l);
     pass NIL;

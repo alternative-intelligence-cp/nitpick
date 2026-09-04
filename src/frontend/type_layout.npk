@@ -117,14 +117,13 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
     pass (raw fi_none());
 };
 
-// IS THIS STRUCT THE COMPILER-KNOWN `List<T>` (D-247, 1.5.1b step 5)? Its
-// declaration sits in the `list` module the loader recorded, is named `List`,
-// and has exactly the shape the generated drop reads: `items` (a pointer),
-// `count`, `cap`, in that order. A same-named struct anywhere else (a test's
-// own `List`) is an ordinary struct.
+// IS THIS STRUCT THE COMPILER-KNOWN `List<T>` (D-247, 1.5.1b step 5; in the
+// prelude since step 5b)? Its declaration sits in the prelude's scope, is
+// named `List`, and has exactly the shape the generated drop reads: `items`
+// (a pointer), `count`, `cap`, in that order. No other declaration can carry
+// the name (D-239), so the shape check is a belt over the prelude's own text.
 pub func:decl_is_list = bool(TypeResolver->:r, DeclId:did) never fails {
-    if (r.tab.list_scope == 0i32) { pass false; }
-    if ((raw symtab_home_scope(r.tab, did.index, 0i32)) != r.tab.list_scope) { pass false; }
+    if ((raw symtab_home_scope(r.tab, did.index, 0i32)) != r.tab.prelude_scope) { pass false; }
     DeclNode:d = raw ast_decl(r.ast, did);
     if (d.kind != DeclKind.DeclStructDecl) { pass false; }
     if (!(raw string_eq(raw intern_get(r.interns, raw decl_name(d)), "List"))) { pass false; }
