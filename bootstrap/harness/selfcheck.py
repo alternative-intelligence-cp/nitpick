@@ -341,6 +341,45 @@ def main():
             else:
                 print("      check_no_undef rejected prose: %s" % fails[0])
 
+    # THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
+    # `.body` symbol is a D-156 name, quoted, and the code-only text the other
+    # counts run over blanks every quoted span -- the belt's first full run
+    # counted no `.body` use in any emission and failed five programs for it.
+    # One IR text, three shapes over one discharged `limit-subsume` row: the
+    # direct call names the body (must pass; a comment spelling the suffix is
+    # prose); the call names the entry instead (the defect's own report, "0
+    # bypass calls for 1 discharged" row); the body taken as a function VALUE
+    # beside a proper call (a `.body` where it may not appear). The texts are
+    # npkg's, byte for byte.
+    B_HEAD = ('@s = constant [7 x i8] c".body\\22\\00"\n'
+              'define i32 @"npk.m.f.body"(i32 %a0) {\nentry:\n  ret i32 %a0\n}\n'
+              'define i32 @"npk.m.f"(i32 %a0) {\nentry:\n'
+              '  %ok = call i8 @"npk.m.r_pos"(i32 %a0)\n  %p = icmp ne i8 %ok, 0\n'
+              '  br i1 %p, label %go, label %trap\ntrap:\n  call void @npk_chain_reset()\n'
+              '  call void @npk_trap(i32 -4111)\n  unreachable\ngo:\n'
+              '  %r = tail call i32 @"npk.m.f.body"(i32 %a0)\n  ret i32 %r\n}\n'
+              'define i32 @main() {\nentry:\n')
+    B_TAIL = "  ret i32 %v\n}\n"
+    B_ROWS = [("0001", "1", "limit", "h1", "open", '@"npk.m.f"'),
+              ("0002", "1", "limit-subsume", "h2", "discharged", "@main")]
+    for name, mid, must_fail, why in (
+            ("bypass-counted", '  %v = call i32 @"npk.m.f.body"(i32 3) ; prose may spell @"x.body"( too\n', False,
+             "a direct call naming the body, counted through the quotes, must pass"),
+            ("bypass-missing", '  %v = call i32 @"npk.m.f"(i32 3)\n', True,
+             "a discharged limit-subsume row whose call names the entry must fail"),
+            ("bypass-as-value", '  %v = call i32 @"npk.m.f.body"(i32 3)\n  %fp = ptrtoint ptr @"npk.m.f.body" to i64\n', True,
+             "a `.body` taken as a function value must fail")):
+        fails = harness.elided_ir_checks(B_ROWS, B_HEAD + mid + B_TAIL, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      elided_ir_checks accepted it; it should not have")
+            else:
+                print("      elided_ir_checks rejected it: %s" % fails[0])
+
     shutil.rmtree(tmp, ignore_errors=True)
     if bad:
         print("\n%d case(s) wrong -- the harness cannot be trusted to report "

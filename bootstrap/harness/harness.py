@@ -2050,6 +2050,39 @@ def _ir_code_part_all(text):
     return "\n".join(_ir_code_part(l) for l in text.splitlines())
 
 
+def _ir_symbol_part(line):
+    """The line's code with its SYMBOL NAMES intact: the comment stripped and
+    only a `c"…"` string constant's contents blanked. `_ir_code_part` blanks
+    every quoted span, which is right for the `undef` ban and wrong for a
+    count of a spelling INSIDE a D-156 symbol: `@"npk.m.f.body"` reaches it
+    as `@"            "`, and the bypass belt (1.5.2 step 4) counted no
+    `.body` use in any emission on its first full run -- five programs red
+    for "0 bypass calls" while the hand count over the raw text held. The
+    self-check's `bypass-*` cases are the pair that would have caught it. A
+    quote inside either kind of span is spelled `\22`, so a raw `"` always
+    toggles."""
+    out = []
+    in_q = False
+    blank = False
+    for i, ch in enumerate(line):
+        if ch == '"':
+            if not in_q:
+                blank = i > 0 and line[i - 1] == "c"
+            in_q = not in_q
+            out.append(ch)
+        elif in_q:
+            out.append(" " if blank else ch)
+        elif ch == ";":
+            break
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _ir_symbol_part_all(text):
+    return "\n".join(_ir_symbol_part(l) for l in text.splitlines())
+
+
 def check_no_undef(ll_text, name):
     """No `undef` in any IR this project holds or emits (D-218.10, 1.5.0).
 
@@ -2849,7 +2882,7 @@ VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
 # twin, 1.5.2 step 3): their rows read `none` in the elision column and their
 # discharge emits nothing into the IR. Diffed against the catalogue's column
 # by `check_obligation_kinds_agree`.
-GUARDLESS_KINDS = frozenset(("exhaustive", "limit-subsume", "terminate", "stack-depth",
+GUARDLESS_KINDS = frozenset(("exhaustive", "terminate", "stack-depth",
                              "failsafe-post", "prove", "assert-static"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit"))
@@ -2974,6 +3007,10 @@ def elided_ir_checks(full, ir_text, name):
     a trap per retained site of each guarded kind -- the cross-check that
     makes the manifest an inventory of guards (P-12)."""
     fails = []
+    # THE SYMBOL TEXT FIRST: the bypass belt below counts a spelling inside
+    # QUOTED symbol names, which the code-only text blanks (its first full run
+    # counted nothing for that reason).
+    syms = _ir_symbol_part_all(ir_text)
     # CODE ONLY: the compiler's own emission carries these very spellings as
     # STRING CONSTANTS (its source writes them), and a constant is not a site.
     ir_text = _ir_code_part_all(ir_text)
@@ -2986,6 +3023,19 @@ def elided_ir_checks(full, ir_text, name):
         traps = len(re.findall(r"@npk_trap\(i32 %s\)" % code, ir_text))
         if traps != left:
             fails.append("%s: the verified IR holds %d %s traps for %d retained rows" % (name, traps, kind, left))
+    # THE BYPASS (D-252, 1.5.2 step 4): every `.body` symbol is its own define,
+    # its checked entry's tail call, or the callee of a direct call -- and the
+    # direct calls equal the discharged `limit-subsume` rows.
+    bodies = len(re.findall(r'@"[^"\n]*\.body"', syms))
+    bcalls = len(re.findall(r'= call [^\n]*@"[^"\n]*\.body"\(', syms))
+    btails = len(re.findall(r'= tail call [^\n]*@"[^"\n]*\.body"\(', syms))
+    bdefs = len(re.findall(r'^define [^\n]*@"[^"\n]*\.body"\(', syms, re.M))
+    if bodies != bcalls + btails + bdefs or btails != bdefs:
+        fails.append("%s: a `.body` symbol appears where it may not (%d uses: %d calls, %d tail calls, %d defines)"
+                     % (name, bodies, bcalls, btails, bdefs))
+    subs = sum(1 for f in full if f[2] == "limit-subsume" and f[4] == "discharged")
+    if bcalls != subs:
+        fails.append("%s: the verified IR holds %d bypass calls for %d discharged limit-subsume rows" % (name, bcalls, subs))
     return fails
 
 

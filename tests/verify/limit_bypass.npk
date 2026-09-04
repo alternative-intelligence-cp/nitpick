@@ -1,0 +1,41 @@
+// expect-exit: 31
+// expect-obligation: limit open 1
+// expect-obligation: limit-subsume discharged 1
+//
+// THE CALLER-SIDE BYPASS (D-252): `limited` has a limited parameter, so its
+// body is emitted under `@"npk.limit_bypass.limited.body"` and its ordinary
+// symbol is the checked entry. `limited(5i32)` is a direct call whose
+// `limit-subsume` row discharges on an empty cone, so the verified build
+// calls the body -- one bypass call for one discharged row, the runners'
+// belt. The FUNCTION VALUE `limited`, stored in a struct field and called
+// with one minus five, names the checked entry by construction: the argument
+// is checked there and the program traps 31. The entry row is `open` (the
+// callee knows nothing of its argument), so the entry keeps its trap.
+mod:limit_bypass;
+error:E9;
+Rules<int32>:r_pos = { $ > 0i32 };
+
+func:limited = int32(limit<r_pos> int32:x) { pass (x + 1i32); };
+
+struct:Ops = { func int32(int32):op; };
+
+func:main = int32(cstring[]:argv) {
+    int32:a = limited(5i32) ?! E9;
+    Ops:o = Ops{ op: limited };
+    int32:b = (o.op)((argv.len =>! int32) - 5i32) ?! E9;
+    exit (a + b);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (IntOverflow) { exit 23i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

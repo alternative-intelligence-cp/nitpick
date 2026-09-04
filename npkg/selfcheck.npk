@@ -39,6 +39,8 @@ use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./suites.npk".*;
 use "./irscan.npk".*;
+use "./verify.npk".*;                          // elided_ir_checks, VRow (the bypass cases)
+use "../src/backend/smt/smt_kinds.npk".*;      // OV_OPEN / OV_DISCHARGED
 
 func:FAILSAFE = string() never fails {
     pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 1i32; },\n        (HeapOom) { exit 1i32; },\n        (Unreachable) { exit 1i32; },\n        (WildLeak) { exit 1i32; },\n        (*) { exit 1i32; }\n    }\n    exit 1i32;\n};\n";
@@ -326,6 +328,51 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     if (!ok5) { bad = bad + 1i64; }
     drop strlist_push(@report, raw case_line("undef-in-comment", ok5, "the word in a comment or a string constant must pass"));
     if (!ok5) { drop strlist_push(@report, string_concat("      the undef ban rejected prose: ", raw strlist_view(u2, 0i64))); }
+
+    // THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
+    // `.body` symbol is a D-156 name, quoted, and the code-only text the
+    // other counts run over blanks every quoted span -- the belt's first full
+    // run counted no `.body` use in any emission and failed five programs for
+    // it. One IR text, three shapes over one discharged `limit-subsume` row:
+    // the direct call names the body (must pass; a comment spelling the
+    // suffix is prose); the call names the entry instead (the defect's own
+    // report, "0 bypass calls for 1 discharged" row); the body taken as a
+    // function VALUE beside a proper call (a `.body` where it may not
+    // appear). The texts are the harness's, byte for byte.
+    string:b_head = "@s = constant [7 x i8] c\".body\\22\\00\"\ndefine i32 @\"npk.m.f.body\"(i32 %a0) {\nentry:\n  ret i32 %a0\n}\ndefine i32 @\"npk.m.f\"(i32 %a0) {\nentry:\n  %ok = call i8 @\"npk.m.r_pos\"(i32 %a0)\n  %p = icmp ne i8 %ok, 0\n  br i1 %p, label %go, label %trap\ntrap:\n  call void @npk_chain_reset()\n  call void @npk_trap(i32 -4111)\n  unreachable\ngo:\n  %r = tail call i32 @\"npk.m.f.body\"(i32 %a0)\n  ret i32 %r\n}\ndefine i32 @main() {\nentry:\n";
+    string:b_tail = "  ret i32 %v\n}\n";
+    for (int64:bi in 0i64...3i64) {
+        string:bname = "bypass-counted";
+        string:bmid = "  %v = call i32 @\"npk.m.f.body\"(i32 3) ; prose may spell @\"x.body\"( too\n";
+        bool:bmust_fail = false;
+        string:bwhy = "a direct call naming the body, counted through the quotes, must pass";
+        if (bi == 1i64) {
+            bname = "bypass-missing";
+            bmid = "  %v = call i32 @\"npk.m.f\"(i32 3)\n";
+            bmust_fail = true;
+            bwhy = "a discharged limit-subsume row whose call names the entry must fail";
+        }
+        if (bi == 2i64) {
+            bname = "bypass-as-value";
+            bmid = "  %v = call i32 @\"npk.m.f.body\"(i32 3)\n  %fp = ptrtoint ptr @\"npk.m.f.body\" to i64\n";
+            bmust_fail = true;
+            bwhy = "a `.body` taken as a function value must fail";
+        }
+        List<VRow>:brows = raw list_init::<VRow>(2i64);
+        VRow:r1 = VRow{ fno: "0001", k: 1i64, kind: "limit", hash: "h1", encoded: true, symbol: "@\"npk.m.f\"", verdict: raw OV_OPEN() };
+        drop list_push(@brows, move(r1));
+        VRow:r2 = VRow{ fno: "0002", k: 1i64, kind: "limit-subsume", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED() };
+        drop list_push(@brows, move(r2));
+        string:btext = string_concat(string_concat(b_head, bmid), b_tail);
+        List<string>:bfl = raw elided_ir_checks(brows, btext, bname);
+        bool:bok = ((bfl.count > 0i64) == bmust_fail);
+        if (!bok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(bname, bok, bwhy));
+        if (!bok) {
+            if (bmust_fail) { drop strlist_push(@report, "      elided_ir_checks accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      elided_ir_checks rejected it: ", raw strlist_view(bfl, 0i64))); }
+        }
+    }
 
     if (verbose || (bad > 0i64)) {
         drop say("runner self-check");

@@ -3144,6 +3144,22 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         drop list_push(@obl_pd, vspec.index);
     }
 
+    // THE CALLER-SIDE BYPASS (D-252, 1.5.2 step 4): a SYNC function with a
+    // limited parameter emits its body under `<sym>.body`, and the ordinary
+    // symbol becomes the CHECKED ENTRY emitted after it -- the entry checks,
+    // then a tail call of the body. A coroutine (`async` or `thread`) keeps
+    // one symbol: its parameters arrive in a frame the await site builds,
+    // and its check runs at state 0. Every non-call reference -- a function
+    // value, a vtable slot, a spawn -- names the ordinary symbol, because the
+    // paths that mint those never learn of `.body`.
+    bool:split = false;
+    if ((!fn_async) && (!(raw decl_has(d, raw DECL_THREAD())))) {
+        for (int64:si in 0i64...obl_pr.count) {
+            if (obl_pr.items[si] != 0i32) { split = true; }
+        }
+    }
+    string:plain_sym = string_concat(x.fe.sym, "");
+    if (split) { x.fe.sym = raw body_sym(x.fe.sym); }
     drop fnem_open(x.fe);
     // The BODY too: a local `T:tmp = x;` inside a generic resolves against the
     // instantiation, and every expression's recorded type already is the
@@ -3170,6 +3186,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     for (int64:pi in 0i64...obl_pr.count) {
         if (obl_pr.items[pi] == 0i32) { continue; }
         drop fnem_rule_at(x.fe, pi, obl_pr.items[pi]);
+        // A split function's checks live in its checked entry (D-252).
+        if (split) { continue; }
         DeclNode:ppd = raw ast_decl(x.ast, DeclId{ index: obl_pd.items[pi] });
         IrVal:pc = raw emit_limit_check(x, raw fnem_local_slot_at(x.fe, pi),
                                         obl_pt.items[pi],
@@ -3182,6 +3200,11 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     x.tr.enclosing = besaved;
     if (!(raw iv_is_ok(b))) { pass b; }
     drop fnem_close(x.fe, x.fe.terminated);
+    // THE CHECKED ENTRY (D-252), after the body: the ordinary symbol.
+    if (split) {
+        IrVal:ce = raw emit_checked_entry(x, plain_sym, obl_pr, obl_pd, obl_pt);
+        if (!(raw iv_is_ok(ce))) { pass ce; }
+    }
     if (fn_async) {
         if (x.fe.bare) {
             // `async main`: the resume function above answered to

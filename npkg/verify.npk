@@ -304,6 +304,10 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     List<string>:fl = raw list_init::<string>(1i64);
     // CODE ONLY (the compiler's own emission spells these calls as string constants).
     string:ir = raw ir_code_all(ir_text);
+    // THE SYMBOL TEXT TOO: the bypass belt counts a spelling inside QUOTED
+    // symbol names, which the code-only text blanks (its first full run
+    // counted nothing for that reason).
+    string:syms = raw ir_symbol_all(ir_text);
     int64:disch = 0i64;
     int64:zero_left = 0i64;
     int64:min_left = 0i64;
@@ -357,6 +361,47 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         m3 = string_concat(m3, int_to_string(limit_left));
         m3 = string_concat(m3, " retained rows");
         drop list_push(@fl, move(m3));
+    }
+    // THE BYPASS (D-252, 1.5.2 step 4): every `.body` symbol is its own define,
+    // its checked entry's tail call, or the callee of a direct call -- and the
+    // direct calls equal the discharged `limit-subsume` rows.
+    int64:bodies = raw count_of(syms, ".body\"");
+    int64:bcalls = 0i64;
+    int64:btails = 0i64;
+    int64:bdefs = 0i64;
+    List<string>:blines = raw text_lines(syms);
+    for (int64:bi in 0i64...blines.count) {
+        string:line = raw strlist_view(blines, bi);
+        if ((raw count_of(line, ".body\"(")) == 0i64) { continue; }
+        if ((raw count_of(line, "define ")) > 0i64) { bdefs = bdefs + 1i64; continue; }
+        if ((raw count_of(line, "= tail call ")) > 0i64) { btails = btails + 1i64; continue; }
+        if ((raw count_of(line, "= call ")) > 0i64) { bcalls = bcalls + 1i64; continue; }
+    }
+    bool:placed = (bodies == (bcalls + btails + bdefs)) && (btails == bdefs);
+    if (!placed) {
+        string:m4 = string_concat(name, ": a `.body` symbol appears where it may not (");
+        m4 = string_concat(m4, int_to_string(bodies));
+        m4 = string_concat(m4, " uses: ");
+        m4 = string_concat(m4, int_to_string(bcalls));
+        m4 = string_concat(m4, " calls, ");
+        m4 = string_concat(m4, int_to_string(btails));
+        m4 = string_concat(m4, " tail calls, ");
+        m4 = string_concat(m4, int_to_string(bdefs));
+        m4 = string_concat(m4, " defines)");
+        drop list_push(@fl, move(m4));
+    }
+    int64:subs = 0i64;
+    for (int64:si in 0i64...rows.count) {
+        string:sk = string_from_bytes(rows.items[si].kind.ptr, rows.items[si].kind.len);
+        if ((rows.items[si].verdict == (raw OV_DISCHARGED())) && (raw text_eq(sk, "limit-subsume"))) { subs = subs + 1i64; }
+    }
+    if (bcalls != subs) {
+        string:m5 = string_concat(name, ": the verified IR holds ");
+        m5 = string_concat(m5, int_to_string(bcalls));
+        m5 = string_concat(m5, " bypass calls for ");
+        m5 = string_concat(m5, int_to_string(subs));
+        m5 = string_concat(m5, " discharged limit-subsume rows");
+        drop list_push(@fl, move(m5));
     }
     pass fl;
 };

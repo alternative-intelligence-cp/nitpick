@@ -131,6 +131,14 @@ pub func:emit_limit_check = IrVal(ExprEmitter->:x, string:slot, int32:type_id,
     if (!(raw ll_is_ok(ll))) { pass (raw iv_from_ll_at(x, ll, type_id, at)); }
     string:v = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(v, " = load ", ll.text, ", ptr ", slot));
+    pass (raw emit_limit_check_value(x, v, ll, type_id, rule, space, site, at));
+};
+
+// THE CHECK OVER A VALUE IN REGISTER: the write points load their slot first;
+// a checked entry (D-252) has the argument register itself.
+pub func:emit_limit_check_value = IrVal(ExprEmitter->:x, string:v, LlType:ll,
+                                        int32:type_id, DeclId:rule, int32:space,
+                                        int32:site, Span:at) never fails {
     // ELIDED (D-218.9, L-11): the manifest discharged this site, so the
     // guard is gone -- no call, no branch, no trap -- and ONE `llvm.assume`
     // states the rule's RANGE clauses over the value in register (the
@@ -243,6 +251,75 @@ func:clause_range_i1 = string(ExprEmitter->:x, ExprId:id, string:v, LlType:ll,
     drop irw_line(x.fe.w, raw cat5(t, " = icmp ", pred, " ",
                                      raw cat5(ll.text, " ", v, ", ", int_to_string(lit))));
     pass t;
+};
+
+// THE CHECKED ENTRY (D-252): the ordinary symbol of a split function -- the
+// parameter list verbatim, each limited parameter checked over its argument
+// register (or, for a discharged entry row, assumed), then a tail call of
+// the body under `.body`. Emitted after the body's close, straight into the
+// module stream: outside an open function the writer's lines go there.
+pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:prules,
+                                    List<int32>:pdecls, List<int32>:ptypes) never fails {
+    string:params = "";
+    string:args = "";
+    for (int64:i in 0i64...x.fe.plls.count) {
+        if (i > 0i64) {
+            params = string_concat(params, ", ");
+            args = string_concat(args, ", ");
+        }
+        string:an = string_concat("%a", int_to_string(i));
+        params = raw cat3(params, x.fe.plls.items[i], string_concat(" ", an));
+        args = raw cat3(args, x.fe.plls.items[i], string_concat(" ", an));
+    }
+    drop irw_raw(x.fe.w, raw cat5("define ", x.fe.ret_ll, " ", sym,
+                                    raw cat3("(", params, ") {")));
+    drop irw_label(x.fe.w, "entry");
+    for (int64:pi in 0i64...prules.count) {
+        if (prules.items[pi] == 0i32) { continue; }
+        DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: pdecls.items[pi] });
+        LlType:pl = raw ll_type(x.fe.ctx, ptypes.items[pi]);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes.items[pi], pd.span)); }
+        IrVal:c = raw emit_limit_check_value(x, string_concat("%a", int_to_string(pi)), pl,
+                                             ptypes.items[pi], DeclId{ index: prules.items[pi] },
+                                             raw SITE_DECL(), pdecls.items[pi], pd.span);
+        if (!(raw iv_is_ok(c))) { pass c; }
+    }
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = tail call ", x.fe.ret_ll, " ",
+                                     raw cat4(x.fe.sym, "(", args, ")")));
+    drop irw_line(x.fe.w, raw cat4("ret ", x.fe.ret_ll, " ", r));
+    drop irw_raw(x.fe.w, "}");
+    drop irw_blank(x.fe.w);
+    pass (raw iv_nil());
+};
+
+// THE BODY'S SYMBOL: `.body` INSIDE the quotes of a D-156 symbol
+// (`@"npk.m.f"` becomes `@"npk.m.f.body"`); a bare symbol takes it plainly.
+pub func:body_sym = string(string:sym) never fails {
+    if (sym.len == 0i64) { pass ""; }
+    if (sym.ptr[sym.len - 1i64] == 34u8) {
+        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".body\""));
+    }
+    pass (string_concat(sym, ".body"));
+};
+
+// DOES THIS DIRECT CALL BYPASS THE CALLEE'S ENTRY CHECK (D-252)? A sync
+// callee with a limited parameter, and this call's `limit-subsume` row
+// discharged by the manifest -- false whenever no `--elide` was given.
+pub func:callee_bypasses = bool(ExprEmitter->:x, int32:decl_index, ExprId:call) never fails {
+    if (decl_index == 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: decl_index });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    if (raw decl_has(d, raw DECL_ASYNC())) { pass false; }
+    if (raw decl_has(d, raw DECL_THREAD())) { pass false; }
+    bool:limited = false;
+    int32:pn = raw fn_param_count(x.ast, d);
+    for (int32:i in 0i32...pn) {
+        DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, i));
+        if (!(raw verify_is_none(raw param_limit(pd)))) { limited = true; }
+    }
+    if (!limited) { pass false; }
+    pass (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), call.index, raw OK_LIMIT_SUBSUME()));
 };
 
 // THE LOCAL A PLACE IS ROOTED AT, as its index in the local table, or -1:

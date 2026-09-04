@@ -243,6 +243,54 @@ pub func:ir_code_all = string(string:ir) never fails {
     pass (raw text_join(code, "\n"));
 };
 
+// The line's SYMBOL part: the comment stripped and only a `c"…"` constant's
+// contents blanked -- a quoted symbol name (`@"npk.m.f.body"`) survives
+// whole, so a count of a spelling INSIDE a D-156 symbol can read it.
+// `ir_code_part` blanks every quoted span, which is right for the `undef`
+// ban and wrong for the bypass belt: 1.5.2 step 4's first full run counted
+// no `.body` use in any emission because the names were blanks. A quote
+// inside either kind of span is spelled `\22`, so a raw quote always toggles.
+func:ir_symbol_part = string(string:line) never fails {
+    wild int8->:buf = alloc(line.len + 1i64);
+    int64:n = 0i64;
+    bool:in_str = false;
+    bool:blank = false;
+    for (int64:i in 0i64...line.len) {
+        uint8:c = line.ptr[i];
+        if (c == 34u8) {
+            if (!in_str) {
+                blank = false;
+                if (i > 0i64) { if (line.ptr[i - 1i64] == 99u8) { blank = true; } }   // c"
+            }
+            in_str = !in_str;
+            buf[n] = c =>! int8;
+            n = n + 1i64;
+            continue;
+        }
+        if (in_str) {
+            if (blank) { buf[n] = 32i8; } else { buf[n] = c =>! int8; }
+            n = n + 1i64;
+            continue;
+        }
+        if (c == 59u8) { break; }
+        buf[n] = c =>! int8;
+        n = n + 1i64;
+    }
+    string:out = string_concat(string_from_bytes(buf, n), "");
+    dalloc(buf);
+    pass out;
+};
+
+// Every line's symbol part, joined: what the bypass belt runs over.
+pub func:ir_symbol_all = string(string:ir) never fails {
+    List<string>:lines = raw text_lines(ir);
+    List<string>:syms = raw list_init::<string>(lines.count + 1i64);
+    for (int64:i in 0i64...lines.count) {
+        drop list_push(@syms, raw ir_symbol_part(raw strlist_view(lines, i)));
+    }
+    pass (raw text_join(syms, "\n"));
+};
+
 // How many `undef` tokens a code line holds.
 func:undef_tokens = int64(string:code) never fails {
     int64:n = 0i64;

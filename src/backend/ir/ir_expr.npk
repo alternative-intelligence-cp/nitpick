@@ -61,6 +61,7 @@ use "./ir_runtime.npk".*;
 // which runs the defer stack, which emits statements. Same shape, same reason,
 // as `type_expr` ↔ `type_stmt` (0.4.2).
 use "./ir_stmt.npk".*;
+use "./ir_rules.npk".*;   // callee_bypasses (D-252, 1.5.2 step 4)
 
 // An emitted value. `ll` and `ref` are what an instruction writes; `type_id` is
 // the frontend's answer, 0 where the frontend deliberately has none (a builtin
@@ -6675,6 +6676,10 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
                       raw intern_get(x.interns, spec));
         }
     }
+    // THE CALLER-SIDE BYPASS (D-252, 1.5.2 step 4): a direct call whose
+    // `limit-subsume` row the manifest discharged names the callee's BODY,
+    // past its checked entry; every other call names the entry.
+    if (raw callee_bypasses(x, s.origin, id)) { sym = raw body_sym(sym); }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
         pass (raw iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
@@ -8606,6 +8611,11 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fail
     // An erased call names the LOADED slot rather than a symbol: behind the
     // vtable there is no one definition to name, which is the whole point.
     if (via_dyn) { sym = move(dyn_fn); }
+    // THE CALLER-SIDE BYPASS (D-252): a static method call whose row the
+    // manifest discharged names the body; an erased call never does.
+    if (!via_dyn) {
+        if (raw callee_bypasses(x, decl, id)) { sym = raw body_sym(sym); }
+    }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
         pass (raw iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));

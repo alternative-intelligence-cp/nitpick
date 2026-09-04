@@ -420,7 +420,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `ensures` | a body's postcondition holds at its return (D-221) | yes | 1.5.3 |
 | `invariant` | a loop invariant holds at entry and is preserved (D-221) | yes | 1.5.3 |
 | `limit` | a `limit<Rules>` binding satisfies its rule at every write point (D-220) | yes | 1.5.2 |
-| `limit-subsume` | one `Rules` implies another at a boundary (D-220) | no | 1.5.2 |
+| `limit-subsume` | one `Rules` implies another at a boundary (D-220): the caller's knowledge of every argument against the callee's rules, at a direct call of a sync callee | yes | 1.5.2 |
 | `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8 |
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
 | `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
@@ -428,6 +428,19 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 <!-- END obligation-catalogue -->
+
+> **[D-252, 1.5.2 step 4 (2026-09-04).]** `limit-subsume`'s guard column
+> read `no` as ratified. The guard a discharged row elides is the CALLEE's
+> entry check, at that call: a sync function with a limited parameter emits
+> its body under `<symbol>.body` and its ordinary symbol as the checked entry
+> (the entry checks, then a tail call of the body); a direct call whose row
+> the manifest discharged names the body, every other call -- and every
+> function value, vtable slot and spawn, which never learn of `.body` -- names
+> the entry. A coroutine callee keeps one symbol and its call sites carry no
+> row: its check runs at state 0 and nothing at the call could elide it. The
+> runners hold the belt: every `.body` occurrence in an emission is its own
+> define, the wrapper's tail call, or the callee of a direct call, and the
+> direct calls equal the discharged rows.
 
 The verdict column is `discharged` (unsat), `open` (sat — a counterexample
 exists under the encoding's hypotheses; not a refutation of the program, a

@@ -70,6 +70,9 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     if (k == 8i32)  { pass true; }
     if (k == 9i32)  { pass true; }
     if (k == 10i32) { pass true; }
+    // `limit-subsume` (D-252, 1.5.2 step 4): the guard it elides is the
+    // CALLEE's entry check, at that call -- a discharged row names the body.
+    if (k == 11i32) { pass true; }
     if (k == 14i32) { pass true; }
     pass false;
 };
