@@ -181,44 +181,33 @@ pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
 // Insertion sort by span. Diagnostics are sorted before rendering so that two
 // runs over the same input produce byte-identical output (D-078) -- discovery
 // order is not a property of the program being compiled.
+//
+// WRITTEN FOR A `move` THAT LEAVES THE PLACE VACANT (1.5.1b step 5c). Until
+// step 5 `move(list.items[k])` left the element's bytes in the slot, and this
+// sort's walk-back read slots the shift had already moved out of. The first
+// compiler built by the step-5 emitter -- the close-out refresh -- found a
+// zeroed diagnostic in second place and the last one gone, in five rejection
+// tests at once. Now the sort carries the HOLE the way an insertion sort
+// does: the element under consideration is moved out once, its neighbours are
+// read through borrows (`$$i`), each shift moves one element up into the
+// hole, and the hole is filled once at the insertion point. No slot is read
+// after it was moved out of, under either meaning of `move`. Stable: an equal
+// span never shifts.
 pub func:diaglist_sort = NIL(DiagList->:list) never fails {
     int64:i = 1i64;
     while (i < list.count) {
-        Diagnostic:cur = move(list.items[i]);
+        Diagnostic:cur = move(list.items[i]);      // the hole is at i
         int64:j = i;
         while (j > 0i64) {
-            Diagnostic:prev = move(list.items[j - 1i64]);
+            Diagnostic->:prev = $$i list.items[j - 1i64];
             if (raw span_before(cur.span, prev.span)) {
-                list.items[j] = move(prev);
+                list.items[j] = move(list.items[j - 1i64]);   // the hole moves to j-1
                 j = j - 1i64;
             } else {
-                // PUT IT BACK. `prev` was moved OUT of slot j-1, so leaving on
-                // this branch without returning it drops a Diagnostic's two
-                // owned strings while the slot still points at them -- every
-                // later read of that slot reads freed memory. It was invisible
-                // because this function had one caller (`diaglist_render`,
-                // the tests' walk, since retired into `diag_report`) reached
-                // by a single test, until D-229 put the sort on the driver
-                // path and the corruption appeared immediately as garbage
-                // bytes in the compiler's own diagnostics.
-                list.items[j - 1i64] = move(prev);
-                j = 0i64 - 1i64;
+                j = 0i64 - j;                                 // stop: the hole stays at j
             }
         }
-        if (j < 0i64) {
-            j = 0i64;
-            // walk back to the insertion point
-            int64:k = i;
-            while (k > 0i64) {
-                Diagnostic->:p2 = $$i list.items[k - 1i64];
-                if (raw span_before(cur.span, p2.span)) {
-                    k = k - 1i64;
-                } else {
-                    j = k;
-                    k = 0i64;
-                }
-            }
-        }
+        if (j < 0i64) { j = 0i64 - j; }
         list.items[j] = move(cur);
         i = i + 1i64;
     }

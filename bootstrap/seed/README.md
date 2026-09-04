@@ -74,6 +74,20 @@ Step 3 is not optional. A snapshot that compiles the compiler but whose output
 does not rebuild itself is a snapshot that works exactly once, and the next
 refresh from it produces something else again.
 
+**The fixpoint is not the proof; the refresh's harness is (1.5.1b step 5c).**
+Step 3's `stage2 == stage3` says the compiler compiles ITSELF consistently. It
+says nothing about whether the tools and the compiler the NEW snapshot builds
+BEHAVE as the old builder's did — a semantic change in the emitter (a moved-out
+field left vacant, a temporary dropped at its statement's end) can leave every
+byte of the fixpoint in place and change what `tools/check.npk` reports. The
+first refresh after 1.5.1b's step 5 did exactly that: five rejection tests
+changed verdict under the refreshed snapshot while every program stage was
+green, because a sort in the compiler's own diagnostics read slots it had moved
+out of. So a refresh is landed only under a full harness run WITH the refreshed
+snapshot installed — that run is the first time the new compiler's semantics
+compile the suite's tools — and a red there is a `src/` defect written against
+the old semantics, never a reason to keep the old snapshot.
+
 **Run it from the tree root with `src/npkc.npk` spelled relatively, exactly as
 written.** Until 1.4.8 D-179's site table recorded each source path AS GIVEN,
 so a builder handed an absolute path embedded the machine's path into every
