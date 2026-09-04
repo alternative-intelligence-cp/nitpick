@@ -1,0 +1,25 @@
+// expect-exit: 0
+mod:temp_nested;
+// The INNER string_concat is an unbound temporary passed as an argument.
+// If temporaries are dropped, peak memory stays near 20 KB; if they leak
+// until scope exit, this reaches ~200 MB (N^2/2 bytes).
+func:main = int32(cstring[]:_~argv) {
+    string:t = "a";
+    for (int32:i in 0i32...20000i32) {
+        t = string_concat(string_concat(t, "b"), "c");
+    }
+    if (t.len != 40001i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

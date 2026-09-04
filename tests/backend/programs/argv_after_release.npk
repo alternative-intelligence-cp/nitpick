@@ -1,0 +1,33 @@
+// expect-exit: 0
+mod:argv_after_release;
+// The argv and environ arrays are built at `_start` in a MAPPING OUTSIDE the
+// releasable heap (1.5.1b step 0). Before it they were internal heap blocks
+// documented as "never freed" -- but `wild_release_all()` unmaps every chunk
+// wholesale, so a program that released and then read its own argv (npkc's
+// `main` releases before every exit; a `failsafe` may do both) read unmapped
+// memory. Found by the NPK_HEAP_STATS report, whose first version walked the
+// environment at exit and faulted in the compiler's own build. `argv.len` is
+// a register value and proves nothing; reading an ENTRY is the test.
+func:main = int32(cstring[]:argv) {
+    int64:n = argv.len;
+    wild_release_all();
+    if (argv.len != n) { exit 1i32; }
+    if (argv[0i64].len == 0i64) { exit 2i32; }
+    cstring[]:env = environ();
+    if (env.len > 0i64) {
+        if (env[0i64].len == 0i64) { exit 3i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

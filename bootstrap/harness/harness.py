@@ -55,6 +55,7 @@ import glob
 import shutil
 import tempfile
 import subprocess
+import time
 import tomllib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -2405,7 +2406,7 @@ def check_verify_pin():
 # the suite and what it must say. `compile` is the default and the only stage
 # with a `kind`. Both runners carry this list and refuse anything outside it.
 STAGES = ("compile", "parse", "resolve", "check", "accept", "fixture",
-          "program", "runtime", "verify")
+          "program", "runtime", "verify", "cost")
 TEST_KEYS = ("name", "stage", "kind", "path", "paths", "recursive")
 
 
@@ -3148,6 +3149,307 @@ def check_tcb_floor_current():
     return fails
 
 
+# --- the cost stage (1.5.1b step 0): the allocator's numbers as verdicts -------
+#
+# WALL-CLOCK IS NEVER A VERDICT (the verify stage's rule for z3, one level
+# up). Every number here is the runtime's own count under NPK_HEAP_STATS --
+# bytes requested in total, the peak of bytes live, allocations -- which is a
+# function of the program's allocation sequence and of nothing else, so the
+# same input gives the same numbers on every machine and every run. That is
+# what makes "the fix must be a number" checkable: DEF-1 (OPEN_DECISIONS
+# §2f) was reported as seconds and resident kilobytes, which move with load.
+#
+# A unit is one `.toml` under the entry's paths, and its expectation lives
+# INSIDE it as everywhere else in the tree (§7.1):
+#   kind = "recipe"  one of DEF-1's three shapes, regenerated at N and at
+#                    N*scale, compiled by the compiler under test; both ratios
+#                    (allocated, peak_live) held to `bound` -- linear is 4
+#                    with slack, quadratic is 16
+#   kind = "probe"   two programs compiled, linked and RUN; the first's
+#                    peak_live held to `bound` times the second's
+#   kind = "self"    the compiler's own entry compiled and REPORTED; held to
+#                    `ceiling` bytes of peak_live when one is set (0 reports)
+# `expect = "fail"` is the NEGATIVE CONTROL, the runner self-check's
+# discipline (D-237): the bound must be VIOLATED, which proves the instrument
+# bites before the fix exists -- and the day the fix lands the unit fails,
+# loudly, until its row is removed in the commit that made it pass. `until`
+# names that commit. Every compile and run must exit 0: a fast failure looks
+# like a fast compile (the reporter's own trap), so a point is a point only
+# at exit 0. Seconds print beside the numbers as colour, never as a verdict.
+
+COST_KINDS = ("recipe", "probe", "self")
+COST_RECIPES = ("fixed-array", "statements", "literal")
+COST_KEYS = {"recipe": ("kind", "recipe", "n", "scale", "bound", "expect", "until"),
+             "probe": ("kind", "program", "against", "bound", "expect", "until"),
+             "self": ("kind", "entry", "ceiling", "expect")}
+HEAP_LINE_RE = re.compile(r"^heap: allocated=(\d+) peak_live=(\d+) count=(\d+)$")
+
+# The wrapper every recipe carries: a `failsafe` naming every reachable
+# identity (REACH-002 otherwise) and still carrying `(*)` (PICK-003).
+COST_FAILSAFE = """func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
+"""
+
+
+def cost_recipe_text(recipe, n, modname):
+    """DEF-1's three shapes, byte for byte the workbench's recipes
+    (`nitpick-time/tests/probe/defect/README.md`, commit 8066e62) inside the
+    program wrapper. `npkg/suites.npk`'s `cost_recipe` writes the same text."""
+    if recipe == "fixed-array":
+        # N rows of `{ int64; int32 }` in one module-level `fixed` array --
+        # TM-007's compiled tzdb shape; `main` never reads it (the cost is in
+        # the declaration, measured).
+        e = -2208988800
+        rows = ",\n".join("    R{ a: %di64, b: %di32 }"
+                          % (e + i * 604800 + (i % 97) * 3600, i % 13)
+                          for i in range(n))
+        decl = "struct:R = { int64:a; int32:b; };\nfixed R[%d]:T = [\n%s\n];\n" % (n, rows)
+        main = "func:main = int32(cstring[]:_~argv) {\n    exit 0i32;\n};\n"
+    elif recipe == "statements":
+        # N statements in one body; every `+` is a D-210 overflow guard and
+        # so a D-179 trap site -- the site table grows with N.
+        body = "\n".join("    acc = acc + %di64;" % (i % 7) for i in range(n))
+        decl = ""
+        main = ("func:main = int32(cstring[]:_~argv) {\n    int64:acc = 0i64;\n%s\n"
+                "    if (acc < 0i64) { exit 1i32; }\n    exit 0i32;\n};\n" % body)
+    else:
+        # N bytes in one string literal (the escaper walks every byte).
+        blob = "ab" * (n // 2)
+        decl = 'fixed string:BLOB = "%s";\n' % blob
+        main = ("func:main = int32(cstring[]:_~argv) {\n"
+                "    if (BLOB.len != %di64) { exit 1i32; }\n    exit 0i32;\n};\n" % len(blob))
+    return "mod:%s;\n%s%s%s" % (modname, decl, main, COST_FAILSAFE)
+
+
+def read_cost_unit(path):
+    """One unit, validated STRICTLY (the manifest's discipline: a key the
+    schema lacks, a kind or recipe nobody implements, a bound that is not a
+    positive integer, an expected failure with no `until`, an `until` on an
+    expected pass -- each refused by name). Returns (unit, problem)."""
+    try:
+        with open(path, "rb") as fh:
+            d = tomllib.load(fh)
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        return None, "not a readable TOML unit: %s" % e
+    kind = d.get("kind")
+    if kind not in COST_KINDS:
+        return None, "`kind` must be one of %s" % ", ".join(COST_KINDS)
+    keys = COST_KEYS[kind]
+    for k in d:
+        if k not in keys:
+            return None, ("`%s` is not a key a %s unit has; the keys are %s"
+                          % (k, kind, ", ".join(keys)))
+    for k in keys:
+        if k != "until" and k not in d:
+            return None, "a %s unit needs `%s`" % (kind, k)
+
+    def positive(k):
+        v = d[k]
+        return isinstance(v, int) and not isinstance(v, bool) and v > 0
+    if kind == "recipe":
+        if d["recipe"] not in COST_RECIPES:
+            return None, "`recipe` must be one of %s" % ", ".join(COST_RECIPES)
+        for k in ("n", "scale", "bound"):
+            if not positive(k):
+                return None, "`%s` must be a positive integer" % k
+    elif kind == "probe":
+        for k in ("program", "against"):
+            if not isinstance(d[k], str) or not d[k]:
+                return None, "`%s` must be a repo-relative program path" % k
+        if not positive("bound"):
+            return None, "`bound` must be a positive integer"
+    else:
+        if not isinstance(d["entry"], str) or not d["entry"]:
+            return None, "`entry` must be a repo-relative source path"
+        c = d["ceiling"]
+        if not isinstance(c, int) or isinstance(c, bool) or c < 0:
+            return None, "`ceiling` must be a non-negative integer (bytes of peak_live; 0 reports only)"
+    if d["expect"] not in ("pass", "fail"):
+        return None, "`expect` must be \"pass\" or \"fail\""
+    if kind == "self" and d["expect"] != "pass":
+        return None, "a self unit reports and holds a ceiling; a designed violation is not a thing it has"
+    if d["expect"] == "fail" and not (isinstance(d.get("until"), str) and d.get("until")):
+        return None, "an expected failure names, in `until`, the commit that removes it"
+    if d["expect"] == "pass" and "until" in d:
+        return None, "`until` belongs to an expected failure"
+    return d, None
+
+
+def heap_stats_of(stderr_text):
+    """The runtime's `heap:` line as (allocated, peak_live, count), or None."""
+    for line in reversed(stderr_text.splitlines()):
+        m = HEAP_LINE_RE.match(line.strip())
+        if m:
+            return tuple(int(x) for x in m.groups())
+    return None
+
+
+def run_under_stats(argv, timeout):
+    """Run `argv` from the tree root with NPK_HEAP_STATS in the environment,
+    stdout discarded. Returns (returncode or None on a timeout, the stats or
+    None, stderr text, seconds)."""
+    env = dict(os.environ)
+    env["NPK_HEAP_STATS"] = "1"
+    t0 = time.monotonic()
+    try:
+        r = subprocess.run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                           cwd=ROOT, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None, None, "did not terminate in %d s" % timeout, time.monotonic() - t0
+    err = r.stderr.decode("utf-8", "replace")
+    return r.returncode, heap_stats_of(err), err, time.monotonic() - t0
+
+
+def cost_point(argv, name, what, timeout):
+    """One measured point: exit 0 and a `heap:` line, or the reason it is not
+    a point. Returns (fails, stats, seconds)."""
+    rc, stats, err, secs = run_under_stats(argv, timeout)
+    if rc is None:
+        return ["%s: %s: %s" % (name, what, err)], None, secs
+    if rc == 3:
+        return ["%s: %s: TRAPPED (exit 3) -- a defect, not a measurement: %s"
+                % (name, what, err.strip().replace("\n", ", ")[:200])], None, secs
+    if rc != 0:
+        first = next((l for l in err.splitlines() if l.strip()), "")
+        return ["%s: %s: exited %d (%s) -- a fast failure looks like a fast "
+                "compile, so a point is only a point at exit 0"
+                % (name, what, rc, first.strip()[:160])], None, secs
+    if stats is None:
+        return ["%s: %s: exit 0 but no `heap:` line on stderr -- the floor this "
+                "binary was linked against carries no NPK_HEAP_STATS instrument"
+                % (name, what)], None, secs
+    return [], stats, secs
+
+
+def cost_stats_text(stats, secs):
+    return "allocated=%d peak_live=%d count=%d (%.2fs)" % (stats[0], stats[1], stats[2], secs)
+
+
+def cost_judge(u, held, name, what):
+    """The verdict against the unit's expectation. `held` is whether the bound
+    held; `what` says what was measured, for the message."""
+    if u["expect"] == "pass":
+        if held:
+            return []
+        return ["%s: the bound (x%d) is VIOLATED: %s" % (name, u["bound"], what)]
+    if held:
+        return ["%s: expected the bound (x%d) to be violated until %s, and it HELD "
+                "(%s) -- the fix has landed, or the instrument stopped biting: remove "
+                "`expect = \"fail\"` in the commit that made it pass"
+                % (name, u["bound"], u["until"], what)]
+    return []
+
+
+def run_cost_recipe(u, name, tmp):
+    points = []
+    for n in (u["n"], u["n"] * u["scale"]):
+        mod = "cost_%s_%d" % (u["recipe"].replace("-", "_"), n)
+        cdir = os.path.join(tmp, "cost")
+        os.makedirs(cdir, exist_ok=True)
+        path = os.path.join(cdir, mod + ".npk")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(cost_recipe_text(u["recipe"], n, mod))
+        fails, stats, secs = cost_point([COMPILER, path], name,
+                                        "%s at N=%d" % (u["recipe"], n), 1800)
+        if fails:
+            return fails, "%s: %s at N=%d did not measure" % (name, u["recipe"], n)
+        points.append((n, stats, secs))
+    (n1, s1, t1), (n2, s2, t2) = points
+    ra = s2[0] / float(s1[0]) if s1[0] else float("inf")
+    rp = s2[1] / float(s1[1]) if s1[1] else float("inf")
+    held = s2[0] <= u["bound"] * s1[0] and s2[1] <= u["bound"] * s1[1]
+    what = ("N=%d -> %d: allocated x%.2f, peak_live x%.2f" % (n1, n2, ra, rp))
+    report = ("%s: %s N=%d %s; N=%d %s; %s (bound x%d, expect %s%s)"
+              % (name, u["recipe"], n1, cost_stats_text(s1, t1), n2, cost_stats_text(s2, t2),
+                 what[what.index(":") + 2:], u["bound"], u["expect"],
+                 (" until " + u["until"]) if u["expect"] == "fail" else ""))
+    return cost_judge(u, held, name, what), report
+
+
+def run_cost_probe(u, name, tmp):
+    measured = []
+    for key in ("program", "against"):
+        rel = u[key]
+        path = os.path.join(ROOT, rel)
+        if not os.path.exists(path):
+            return ["%s: `%s` names %s, which does not exist" % (name, key, rel)], name
+        base = os.path.join(tmp, "cost_" + os.path.basename(rel).replace(".", "_"))
+        fails = emit_and_link(COMPILER, path, name + " (" + rel + ")", base, tmp)
+        if fails:
+            return fails, "%s: %s did not build" % (name, rel)
+        fails, stats, secs = cost_point([base], name, rel + " (run)", 600)
+        if fails:
+            return fails, "%s: %s did not measure" % (name, rel)
+        measured.append((rel, stats, secs))
+    (r1, s1, t1), (r2, s2, t2) = measured
+    rp = s1[1] / float(s2[1]) if s2[1] else float("inf")
+    held = s1[1] <= u["bound"] * s2[1]
+    what = "peak_live(%s) is x%.2f peak_live(%s)" % (r1, rp, r2)
+    report = ("%s: %s %s; %s %s; %s (bound x%d, expect %s%s)"
+              % (name, r1, cost_stats_text(s1, t1), r2, cost_stats_text(s2, t2), what,
+                 u["bound"], u["expect"],
+                 (" until " + u["until"]) if u["expect"] == "fail" else ""))
+    return cost_judge(u, held, name, what), report
+
+
+def run_cost_self(u, name, tmp):
+    # ABSOLUTE, as npkg's `in_root` passes it: the two runners then hand the
+    # compiler the same spelling and report the same words (D-236 renders the
+    # site paths relative either way; the argument's length still reaches the
+    # source manager's own strings).
+    fails, stats, secs = cost_point([COMPILER, os.path.join(ROOT, u["entry"])], name,
+                                    "the compiler over " + u["entry"], 3600)
+    if fails:
+        return fails, "%s: %s did not measure" % (name, u["entry"])
+    report = "%s: %s %s" % (name, u["entry"], cost_stats_text(stats, secs))
+    if u["ceiling"] == 0:
+        return [], report + " (reported; no ceiling yet)"
+    report += " (ceiling %d)" % u["ceiling"]
+    if stats[1] > u["ceiling"]:
+        return ["%s: the compiler over %s peaks at %d bytes live, over its ceiling of %d "
+                "-- a memory regression in the compiler's own build"
+                % (name, u["entry"], stats[1], u["ceiling"])], report
+    return [], report
+
+
+def stage_cost(t, s):
+    """`cost`: the allocator's own numbers, per unit file, as verdicts; the
+    numbers themselves print here so the run's log carries the measurement."""
+    units = files_of(t, suffix=".toml")
+    n = 0
+    confirmed = 0
+    for p in units:
+        name = os.path.relpath(p, ROOT)
+        u, problem = read_cost_unit(p)
+        n += 1
+        if problem:
+            s.failures += record_verdict(t["name"], name, ["%s: %s" % (name, problem)])
+            continue
+        if u["kind"] == "recipe":
+            fails, report = run_cost_recipe(u, name, s.tmp)
+        elif u["kind"] == "probe":
+            fails, report = run_cost_probe(u, name, s.tmp)
+        else:
+            fails, report = run_cost_self(u, name, s.tmp)
+        s.failures += record_verdict(t["name"], name, fails)
+        print("  %-11s %s" % (t["name"], report))
+        if u["expect"] == "fail" and not fails:
+            confirmed += 1
+    print("  %-11s %2d cost unit(s) under NPK_HEAP_STATS -- the allocator's own "
+          "numbers, never the clock; %d designed failure(s) confirmed (the instrument bites)"
+          % (t["name"], n, confirmed))
+
+
 def run_stage(t, s, only):
     """Dispatch on the entry's stage. `compile` is the only stage `--only` can
     select; a filtered run skips every other stage, saying so -- today's
@@ -3171,6 +3473,8 @@ def run_stage(t, s, only):
         stage_runtime(t, s)
     elif stage == "verify":
         stage_verify(t, s)
+    elif stage == "cost":
+        stage_cost(t, s)
     else:
         # load_targets refused everything else before any test ran.
         raise AssertionError("unknown stage reached run_stage: %s" % stage)

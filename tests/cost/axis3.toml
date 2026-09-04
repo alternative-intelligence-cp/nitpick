@@ -1,0 +1,12 @@
+# DEF-1, axis 3 (OPEN_DECISIONS §2f; 1.5.1b): bytes in ONE string literal.
+# The reporter measured this axis as quadratic in TIME with memory flat --
+# the escaper re-concatenates a bound accumulator per byte, so the old body
+# is freed each time (peak_live flat) while the bytes REQUESTED grow as
+# N^2/2: `allocated` is the number that carries the time pathology.
+kind   = "recipe"
+recipe = "literal"
+n      = 30000
+scale  = 4
+bound  = 6
+expect = "fail"
+until  = "1.5.1b step 3 (strtab_add's escaper writes into a Sink sized 4 x len)"

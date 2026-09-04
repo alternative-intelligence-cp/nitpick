@@ -33,10 +33,12 @@ use "../src/frontend/token_kind.npk".*;
 use "../src/frontend/token.npk".*;
 use "../src/frontend/lexer.npk".*;
 use "../lib/nfs.npk".*;
+use "../lib/nproc.npk".*;
 use "./text.npk".*;
 use "./strset.npk".*;
 use "./expect.npk".*;
 use "./manifest.npk".*;
+use "./toml.npk".*;
 use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./irscan.npk".*;
@@ -1101,6 +1103,559 @@ async func:run_verify = NIL(Ctx->:c, int64:t) {
 // sources as a set -- does every file parse, is every rejection exact --
 // which a subset cannot answer. `manifest_load` refused any stage not named
 // below before anything ran.
+// --- the cost stage (1.5.1b step 0): the allocator's numbers as verdicts ---------------
+//
+// The harness's `stage_cost`, unit for unit. WALL-CLOCK IS NEVER A VERDICT:
+// every number is the runtime's own count under NPK_HEAP_STATS -- bytes
+// requested in total, the peak of bytes live, allocations -- a function of the
+// program's allocation sequence and of nothing else, so the same input gives
+// the same numbers on every machine and every run. A unit is one `.toml`
+// under the entry's paths, its expectation inside it: a `recipe` unit
+// regenerates one of DEF-1's three shapes at N and at N*scale and holds both
+// ratios to `bound`; a `probe` unit runs two programs and holds the first's
+// peak_live to `bound` times the second's; a `self` unit compiles the
+// compiler's own entry and reports, held to `ceiling` when one is set.
+// `expect = "fail"` is the NEGATIVE CONTROL (D-237's discipline): the bound
+// must be VIOLATED until the commit `until` names lands, and the day it holds
+// the unit fails until its row is removed. Every compile and run must exit 0:
+// a fast failure looks like a fast compile. Seconds print as colour only.
+
+struct:CostUnit = {
+    string:kind;      // recipe | probe | self
+    string:recipe;    // fixed-array | statements | literal
+    int64:n;
+    int64:scale;
+    int64:bound;
+    string:program;
+    string:against;
+    string:entry;
+    int64:ceiling;
+    string:expect;    // pass | fail
+    string:until;
+};
+
+struct:CostRead = { bool:ok; string:problem; CostUnit:u; };
+struct:HeapStats = { bool:ok; int64:allocated; int64:peak; int64:count; };
+struct:CostPoint = { bool:ok; string:problem; int64:allocated; int64:peak; int64:count; int64:ns; };
+struct:CostOut = { List<string>:faults; string:report; };
+
+func:cost_unit_blank = CostUnit() never fails {
+    pass CostUnit{ kind: "", recipe: "", n: 0i64, scale: 0i64, bound: 0i64, program: "", against: "",
+                   entry: "", ceiling: 0i64, expect: "", until: "" };
+};
+
+func:cost_refuse = CostRead(string:msg) never fails {
+    pass CostRead{ ok: false, problem: raw text_copy(msg), u: raw cost_unit_blank() };
+};
+
+func:cost_key_allowed = bool(string:kind, string:key) never fails {
+    if (raw text_eq(key, "kind"))   { pass true; }
+    if (raw text_eq(key, "expect")) { pass true; }
+    if (raw text_eq(kind, "recipe")) {
+        if (raw text_eq(key, "recipe")) { pass true; }
+        if (raw text_eq(key, "n"))      { pass true; }
+        if (raw text_eq(key, "scale"))  { pass true; }
+        if (raw text_eq(key, "bound"))  { pass true; }
+        if (raw text_eq(key, "until"))  { pass true; }
+        pass false;
+    }
+    if (raw text_eq(kind, "probe")) {
+        if (raw text_eq(key, "program")) { pass true; }
+        if (raw text_eq(key, "against")) { pass true; }
+        if (raw text_eq(key, "bound"))   { pass true; }
+        if (raw text_eq(key, "until"))   { pass true; }
+        pass false;
+    }
+    if (raw text_eq(key, "entry"))   { pass true; }
+    if (raw text_eq(key, "ceiling")) { pass true; }
+    pass false;
+};
+
+func:cost_keys_text = string(string:kind) never fails {
+    if (raw text_eq(kind, "recipe")) { pass "kind, recipe, n, scale, bound, expect, until"; }
+    if (raw text_eq(kind, "probe"))  { pass "kind, program, against, bound, expect, until"; }
+    pass "kind, entry, ceiling, expect";
+};
+
+// A required root-level string key, or "" (the caller refuses by name).
+func:cost_str = string(TomlDoc:d, string:key) never fails {
+    if (!(raw toml_has(d, "", 0i64 - 1i64, key))) { pass ""; }
+    Result<string>:r = toml_string(d, "", 0i64 - 1i64, key);
+    if (r.is_error) { pass ""; }
+    pass (move(r.value));
+};
+
+// A root-level integer key, or -1 when absent or not an integer.
+func:cost_int = int64(TomlDoc:d, string:key) never fails {
+    if (!(raw toml_has(d, "", 0i64 - 1i64, key))) { pass (0i64 - 1i64); }
+    Result<int64>:r = toml_int(d, "", 0i64 - 1i64, key);
+    if (r.is_error) { pass (0i64 - 1i64); }
+    pass r.value;
+};
+
+// One unit, validated STRICTLY (the manifest's discipline): a key the schema
+// lacks, a kind or recipe nobody implements, a bound that is not a positive
+// integer, an expected failure with no `until`, an `until` on an expected
+// pass -- each refused by name.
+func:read_cost_unit = CostRead(string:text) never fails {
+    TomlDoc:d = raw toml_parse(text);
+    if (!d.ok) {
+        pass (raw cost_refuse(string_concat("not a readable TOML unit: line ", int_to_string(d.bad_line))));
+    }
+    CostUnit:u = raw cost_unit_blank();
+    u.kind = raw cost_str(d, "kind");
+    bool:known = false;
+    if (raw text_eq(string_from_bytes(u.kind.ptr, u.kind.len), "recipe")) { known = true; }
+    if (raw text_eq(string_from_bytes(u.kind.ptr, u.kind.len), "probe"))  { known = true; }
+    if (raw text_eq(string_from_bytes(u.kind.ptr, u.kind.len), "self"))   { known = true; }
+    if (!known) { pass (raw cost_refuse("`kind` must be one of recipe, probe, self")); }
+    string:kind = string_from_bytes(u.kind.ptr, u.kind.len);
+    int64:ne = raw toml_entry_count(d);
+    for (int64:i in 0i64...ne) {
+        string:key = string_from_bytes(d.entries.items[i].key.ptr, d.entries.items[i].key.len);
+        if (d.entries.items[i].section.len > 0i64) {
+            key = string_from_bytes(d.entries.items[i].section.ptr, d.entries.items[i].section.len);
+        }
+        bool:allowed = raw cost_key_allowed(kind, key);
+        if (d.entries.items[i].section.len > 0i64) { allowed = false; }
+        if (!allowed) {
+            string:m = string_concat("`", key);
+            m = string_concat(m, "` is not a key a ");
+            m = string_concat(m, kind);
+            m = string_concat(m, " unit has; the keys are ");
+            m = string_concat(m, raw cost_keys_text(kind));
+            pass (raw cost_refuse(m));
+        }
+    }
+    if (raw text_eq(kind, "recipe")) {
+        u.recipe = raw cost_str(d, "recipe");
+        bool:rk = false;
+        if (raw text_eq(string_from_bytes(u.recipe.ptr, u.recipe.len), "fixed-array")) { rk = true; }
+        if (raw text_eq(string_from_bytes(u.recipe.ptr, u.recipe.len), "statements"))  { rk = true; }
+        if (raw text_eq(string_from_bytes(u.recipe.ptr, u.recipe.len), "literal"))     { rk = true; }
+        if (!rk) { pass (raw cost_refuse("`recipe` must be one of fixed-array, statements, literal")); }
+        u.n = raw cost_int(d, "n");
+        u.scale = raw cost_int(d, "scale");
+        u.bound = raw cost_int(d, "bound");
+        if (u.n <= 0i64)     { pass (raw cost_refuse("`n` must be a positive integer")); }
+        if (u.scale <= 0i64) { pass (raw cost_refuse("`scale` must be a positive integer")); }
+        if (u.bound <= 0i64) { pass (raw cost_refuse("`bound` must be a positive integer")); }
+    }
+    if (raw text_eq(kind, "probe")) {
+        u.program = raw cost_str(d, "program");
+        u.against = raw cost_str(d, "against");
+        if (u.program.len == 0i64) { pass (raw cost_refuse("`program` must be a repo-relative program path")); }
+        if (u.against.len == 0i64) { pass (raw cost_refuse("`against` must be a repo-relative program path")); }
+        u.bound = raw cost_int(d, "bound");
+        if (u.bound <= 0i64) { pass (raw cost_refuse("`bound` must be a positive integer")); }
+    }
+    if (raw text_eq(kind, "self")) {
+        u.entry = raw cost_str(d, "entry");
+        if (u.entry.len == 0i64) { pass (raw cost_refuse("`entry` must be a repo-relative source path")); }
+        if (!(raw toml_has(d, "", 0i64 - 1i64, "ceiling"))) { pass (raw cost_refuse("a self unit needs `ceiling`")); }
+        u.ceiling = raw cost_int(d, "ceiling");
+        if (u.ceiling < 0i64) { pass (raw cost_refuse("`ceiling` must be a non-negative integer (bytes of peak_live; 0 reports only)")); }
+    }
+    u.expect = raw cost_str(d, "expect");
+    bool:ep = raw text_eq(string_from_bytes(u.expect.ptr, u.expect.len), "pass");
+    bool:ef = raw text_eq(string_from_bytes(u.expect.ptr, u.expect.len), "fail");
+    if (!(ep || ef)) { pass (raw cost_refuse("`expect` must be \"pass\" or \"fail\"")); }
+    if (raw text_eq(kind, "self")) {
+        if (!ep) { pass (raw cost_refuse("a self unit reports and holds a ceiling; a designed violation is not a thing it has")); }
+    }
+    bool:has_until = raw toml_has(d, "", 0i64 - 1i64, "until");
+    if (has_until) { u.until = raw cost_str(d, "until"); }
+    if (ef && (u.until.len == 0i64)) { pass (raw cost_refuse("an expected failure names, in `until`, the commit that removes it")); }
+    if (ep && has_until) { pass (raw cost_refuse("`until` belongs to an expected failure")); }
+    pass CostRead{ ok: true, problem: "", u: move(u) };
+};
+
+// The wrapper every recipe carries: a `failsafe` naming every reachable
+// identity (REACH-002 otherwise) and still carrying `(*)` (PICK-003).
+func:cost_failsafe = string() never fails {
+    pass "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (HeapBadRequest) { exit 91i32; },\n        (HeapOom)        { exit 92i32; },\n        (IntOverflow)    { exit 93i32; },\n        (OutOfBounds)    { exit 94i32; },\n        (Unreachable)    { exit 95i32; },\n        (WildLeak)       { exit 96i32; },\n        (*)              { exit 99i32; }\n    }\n    exit 9i32;\n};\n";
+};
+
+// DEF-1's three shapes, byte for byte the harness's `cost_recipe_text` (and
+// the workbench's recipes, nitpick-time commit 8066e62), written into a Sink
+// -- the linear idiom, since a recipe at 4N is a quarter of a megabyte and
+// this runner is compiled by the compiler whose temporaries do not yet drop.
+func:cost_recipe = Sink(string:recipe, int64:n, string:modname) never fails {
+    Sink:out = raw sink_to_buffer(65536i64);
+    drop sink_write(@out, "mod:");
+    drop sink_write(@out, modname);
+    drop sink_write(@out, ";\n");
+    if (raw text_eq(recipe, "fixed-array")) {
+        drop sink_write(@out, "struct:R = { int64:a; int32:b; };\nfixed R[");
+        drop sink_write(@out, int_to_string(n));
+        drop sink_write(@out, "]:T = [\n");
+        for (int64:i in 0i64...n) {
+            if (i > 0i64) { drop sink_write(@out, ",\n"); }
+            drop sink_write(@out, "    R{ a: ");
+            drop sink_write(@out, int_to_string((0i64 - 2208988800i64) + (i * 604800i64) + ((i % 97i64) * 3600i64)));
+            drop sink_write(@out, "i64, b: ");
+            drop sink_write(@out, int_to_string(i % 13i64));
+            drop sink_write(@out, "i32 }");
+        }
+        drop sink_write(@out, "\n];\nfunc:main = int32(cstring[]:_~argv) {\n    exit 0i32;\n};\n");
+    }
+    if (raw text_eq(recipe, "statements")) {
+        drop sink_write(@out, "func:main = int32(cstring[]:_~argv) {\n    int64:acc = 0i64;\n");
+        for (int64:j in 0i64...n) {
+            if (j > 0i64) { drop sink_write(@out, "\n"); }
+            drop sink_write(@out, "    acc = acc + ");
+            drop sink_write(@out, int_to_string(j % 7i64));
+            drop sink_write(@out, "i64;");
+        }
+        drop sink_write(@out, "\n    if (acc < 0i64) { exit 1i32; }\n    exit 0i32;\n};\n");
+    }
+    if (raw text_eq(recipe, "literal")) {
+        int64:pairs = n / 2i64;
+        drop sink_write(@out, "fixed string:BLOB = \"");
+        for (int64:k in 0i64...pairs) { drop sink_write(@out, "ab"); }
+        drop sink_write(@out, "\";\nfunc:main = int32(cstring[]:_~argv) {\n    if (BLOB.len != ");
+        drop sink_write(@out, int_to_string(pairs * 2i64));
+        drop sink_write(@out, "i64) { exit 1i32; }\n    exit 0i32;\n};\n");
+    }
+    drop sink_write(@out, raw cost_failsafe());
+    pass out;
+};
+
+// `heap: allocated=<n> peak_live=<n> count=<n>`, the LAST such line on stderr.
+func:cost_field = int64(string:part, string:prefix) never fails {
+    if (!(raw text_starts_with(part, prefix))) { pass (0i64 - 1i64); }
+    Result<int64>:v = text_int(raw text_slice(part, prefix.len, part.len));
+    if (v.is_error) { pass (0i64 - 1i64); }
+    pass v.value;
+};
+
+func:heap_stats_of = HeapStats(string:err) never fails {
+    HeapStats:hs = HeapStats{ ok: false, allocated: 0i64, peak: 0i64, count: 0i64 };
+    List<string>:lines = raw text_lines(err);
+    for (int64:i in 0i64...lines.count) {
+        string:ln = raw text_trim(raw strlist_view(lines, i));
+        if (!(raw text_starts_with(ln, "heap: "))) { continue; }
+        List<string>:parts = raw text_split_ws(ln);
+        if (parts.count != 4i64) { continue; }
+        int64:a = raw cost_field(raw strlist_view(parts, 1i64), "allocated=");
+        int64:p = raw cost_field(raw strlist_view(parts, 2i64), "peak_live=");
+        int64:k = raw cost_field(raw strlist_view(parts, 3i64), "count=");
+        if ((a < 0i64) || (p < 0i64) || (k < 0i64)) { continue; }
+        hs.ok = true;
+        hs.allocated = a;
+        hs.peak = p;
+        hs.count = k;
+    }
+    pass hs;
+};
+
+// This process's environment plus NPK_HEAP_STATS, in the block a spawn takes.
+func:cost_env = ProcArgs() {
+    ProcArgs:e = relay env_capture();
+    Result<NIL>:r = args_push(@e, "NPK_HEAP_STATS=1");
+    if (r.is_error) { drop args_free(@e); fail r.err; }
+    pass e;
+};
+
+func:cost_point_bad = CostPoint(string:name, string:what, string:why) never fails {
+    string:m = string_concat(name, ": ");
+    m = string_concat(m, what);
+    m = string_concat(m, ": ");
+    m = string_concat(m, why);
+    pass CostPoint{ ok: false, problem: move(m), allocated: 0i64, peak: 0i64, count: 0i64, ns: 0i64 };
+};
+
+// One measured point: exit 0 and a `heap:` line, or the reason it is not one.
+async func:cost_point = CostPoint(Ctx->:c, string:exe, List<string>:args, ProcArgs:env,
+                                  string:name, string:what, int64:secs) {
+    int64:t0 = mono_now();
+    Result<Run>:r = await run_argv(exe, args, env, raw duration_secs(secs));
+    if (r.is_error) { fail r.err; }
+    Run:run = move(r.value);
+    int64:ns = (mono_now()) - t0;
+    if (run.timed_out) {
+        string:w = string_concat("did not terminate in ", int_to_string(secs));
+        w = string_concat(w, " s");
+        pass (raw cost_point_bad(name, what, w));
+    }
+    int64:rc = run.x.status;
+    if (!run.x.exited) { rc = 0i64 - run.x.signal; }
+    if (rc == 3i64) {
+        string:t = string_concat("TRAPPED (exit 3) -- a defect, not a measurement: ", raw text_head(raw text_replace_all(raw text_trim(run.x.err), "\n", ", "), 200i64));
+        pass (raw cost_point_bad(name, what, t));
+    }
+    if (rc != 0i64) {
+        string:x = string_concat("exited ", int_to_string(rc));
+        x = string_concat(x, " (");
+        x = string_concat(x, raw text_head(raw first_line_with(run.x.err, "", 160i64), 160i64));
+        x = string_concat(x, ") -- a fast failure looks like a fast compile, so a point is only a point at exit 0");
+        pass (raw cost_point_bad(name, what, x));
+    }
+    HeapStats:hs = raw heap_stats_of(run.x.err);
+    if (!hs.ok) {
+        pass (raw cost_point_bad(name, what, "exit 0 but no `heap:` line on stderr -- the floor this binary was linked against carries no NPK_HEAP_STATS instrument"));
+    }
+    pass CostPoint{ ok: true, problem: "", allocated: hs.allocated, peak: hs.peak, count: hs.count, ns: ns };
+};
+
+// `x14.32` -- two places, truncated (the harness rounds; the verdict is the
+// integer comparison, never this text).
+func:cost_ratio_text = string(int64:num, int64:den) never fails {
+    if (den == 0i64) { pass "x(inf)"; }
+    int64:r100 = (num * 100i64) / den;
+    string:s = string_concat("x", int_to_string(r100 / 100i64));
+    s = string_concat(s, ".");
+    int64:frac = r100 % 100i64;
+    if (frac < 10i64) { s = string_concat(s, "0"); }
+    pass (string_concat(s, int_to_string(frac)));
+};
+
+func:cost_stats_text = string(CostPoint:p) never fails {
+    string:s = string_concat("allocated=", int_to_string(p.allocated));
+    s = string_concat(s, " peak_live=");
+    s = string_concat(s, int_to_string(p.peak));
+    s = string_concat(s, " count=");
+    s = string_concat(s, int_to_string(p.count));
+    s = string_concat(s, " (");
+    int64:cs = p.ns / 10000000i64;
+    s = string_concat(s, int_to_string(cs / 100i64));
+    s = string_concat(s, ".");
+    int64:cf = cs % 100i64;
+    if (cf < 10i64) { s = string_concat(s, "0"); }
+    s = string_concat(s, int_to_string(cf));
+    pass (string_concat(s, "s)"));
+};
+
+func:cost_expect_text = string(CostUnit->:u) never fails {
+    string:s = string_concat(" (bound x", int_to_string(u.bound));
+    s = string_concat(s, ", expect ");
+    s = string_concat(s, string_from_bytes(u.expect.ptr, u.expect.len));
+    if (u.until.len > 0i64) {
+        s = string_concat(s, " until ");
+        s = string_concat(s, string_from_bytes(u.until.ptr, u.until.len));
+    }
+    pass (string_concat(s, ")"));
+};
+
+// The verdict against the unit's expectation.
+func:cost_judge = List<string>(CostUnit->:u, bool:held, string:name, string:what) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    if (raw text_eq(string_from_bytes(u.expect.ptr, u.expect.len), "pass")) {
+        if (held) { pass fl; }
+        string:m = string_concat(name, ": the bound (x");
+        m = string_concat(m, int_to_string(u.bound));
+        m = string_concat(m, ") is VIOLATED: ");
+        m = string_concat(m, what);
+        drop list_push(@fl, move(m));
+        pass fl;
+    }
+    if (held) {
+        string:m2 = string_concat(name, ": expected the bound (x");
+        m2 = string_concat(m2, int_to_string(u.bound));
+        m2 = string_concat(m2, ") to be violated until ");
+        m2 = string_concat(m2, string_from_bytes(u.until.ptr, u.until.len));
+        m2 = string_concat(m2, ", and it HELD (");
+        m2 = string_concat(m2, what);
+        m2 = string_concat(m2, ") -- the fix has landed, or the instrument stopped biting: remove `expect = \"fail\"` in the commit that made it pass");
+        drop list_push(@fl, move(m2));
+    }
+    pass fl;
+};
+
+func:cost_out_bad = CostOut(CostPoint:p, string:report) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    drop strlist_push(@fl, string_from_bytes(p.problem.ptr, p.problem.len));
+    pass CostOut{ faults: fl, report: raw text_copy(report) };
+};
+
+async func:cost_recipe_point = CostPoint(Ctx->:c, string:recipe, int64:n, string:cdir,
+                                         string:name, ProcArgs:env) {
+    string:modname = string_concat("cost_", raw text_replace_byte(recipe, 45u8, 95u8));
+    modname = string_concat(modname, "_");
+    modname = string_concat(modname, int_to_string(n));
+    string:path = raw path_join(cdir, string_concat(modname, ".npk"));
+    Result<cstring>:pc = to_cstring(path);
+    if (pc.is_error) { fail pc.err; }
+    Sink:src = raw cost_recipe(recipe, n, modname);
+    Result<NIL>:w = write_file(pc.value, raw sink_view(@src));
+    if (w.is_error) { fail w.err; }
+    List<string>:args = raw list_init::<string>(1i64);
+    drop strlist_push(@args, path);
+    string:what = string_concat(recipe, " at N=");
+    what = string_concat(what, int_to_string(n));
+    pass (relay await cost_point(c, string_from_bytes(c.npkc.ptr, c.npkc.len), args, env, name, what, 1800i64));
+};
+
+async func:run_cost_recipe = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:env) {
+    string:cdir = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len), "cost");
+    Result<NIL>:d = ensure_dir(cdir);
+    if (d.is_error) { fail d.err; }
+    string:recipe = string_from_bytes(u.recipe.ptr, u.recipe.len);
+    int64:n1 = u.n;
+    int64:n2 = u.n * u.scale;
+    CostPoint:p1 = relay await cost_recipe_point(c, recipe, n1, cdir, name, env);
+    if (!p1.ok) {
+        string:r1 = string_concat(name, ": ");
+        r1 = string_concat(r1, recipe);
+        r1 = string_concat(r1, " at N=");
+        r1 = string_concat(r1, int_to_string(n1));
+        r1 = string_concat(r1, " did not measure");
+        pass (raw cost_out_bad(p1, r1));
+    }
+    CostPoint:p2 = relay await cost_recipe_point(c, recipe, n2, cdir, name, env);
+    if (!p2.ok) {
+        string:r2 = string_concat(name, ": ");
+        r2 = string_concat(r2, recipe);
+        r2 = string_concat(r2, " at N=");
+        r2 = string_concat(r2, int_to_string(n2));
+        r2 = string_concat(r2, " did not measure");
+        pass (raw cost_out_bad(p2, r2));
+    }
+    bool:held = (p2.allocated <= (u.bound * p1.allocated)) && (p2.peak <= (u.bound * p1.peak));
+    string:what = string_concat("N=", int_to_string(n1));
+    what = string_concat(what, " -> ");
+    what = string_concat(what, int_to_string(n2));
+    what = string_concat(what, ": allocated ");
+    what = string_concat(what, raw cost_ratio_text(p2.allocated, p1.allocated));
+    what = string_concat(what, ", peak_live ");
+    what = string_concat(what, raw cost_ratio_text(p2.peak, p1.peak));
+    string:report = string_concat(name, ": ");
+    report = string_concat(report, recipe);
+    report = string_concat(report, " N=");
+    report = string_concat(report, int_to_string(n1));
+    report = string_concat(report, " ");
+    report = string_concat(report, raw cost_stats_text(p1));
+    report = string_concat(report, "; N=");
+    report = string_concat(report, int_to_string(n2));
+    report = string_concat(report, " ");
+    report = string_concat(report, raw cost_stats_text(p2));
+    report = string_concat(report, "; ");
+    report = string_concat(report, what);
+    report = string_concat(report, raw cost_expect_text(u));
+    pass CostOut{ faults: raw cost_judge(u, held, name, what), report: move(report) };
+};
+
+async func:cost_probe_point = CostPoint(Ctx->:c, string:rel, string:name, ProcArgs:env) {
+    string:path = raw in_root(c, rel);
+    Result<cstring>:pc = to_cstring(path);
+    if (pc.is_error) { fail pc.err; }
+    if (!(path_exists(pc.value))) {
+        string:m = string_concat("`", rel);
+        m = string_concat(m, "` does not exist");
+        pass (raw cost_point_bad(name, rel, m));
+    }
+    string:base = raw path_join(string_from_bytes(c.tdir.ptr, c.tdir.len),
+                                string_concat("cost_", raw text_replace_byte(raw text_file_name(rel), 46u8, 95u8)));
+    string:pname = string_concat(name, " (");
+    pname = string_concat(pname, rel);
+    pname = string_concat(pname, ")");
+    List<string>:fl = relay await emit_and_link(c, string_from_bytes(c.npkc.ptr, c.npkc.len), path, pname, base);
+    if (fl.count > 0i64) {
+        pass (raw cost_point_bad(name, rel, raw text_join(fl, " | ")));
+    }
+    List<string>:noargs = raw list_init::<string>(1i64);
+    string:what = string_concat(rel, " (run)");
+    pass (relay await cost_point(c, base, noargs, env, name, what, 600i64));
+};
+
+async func:run_cost_probe = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:env) {
+    string:r1 = string_from_bytes(u.program.ptr, u.program.len);
+    string:r2 = string_from_bytes(u.against.ptr, u.against.len);
+    CostPoint:p1 = relay await cost_probe_point(c, r1, name, env);
+    if (!p1.ok) { pass (raw cost_out_bad(p1, string_concat(string_concat(name, ": "), string_concat(r1, " did not measure")))); }
+    CostPoint:p2 = relay await cost_probe_point(c, r2, name, env);
+    if (!p2.ok) { pass (raw cost_out_bad(p2, string_concat(string_concat(name, ": "), string_concat(r2, " did not measure")))); }
+    bool:held = (p1.peak <= (u.bound * p2.peak));
+    string:what = string_concat("peak_live(", r1);
+    what = string_concat(what, ") is ");
+    what = string_concat(what, raw cost_ratio_text(p1.peak, p2.peak));
+    what = string_concat(what, " peak_live(");
+    what = string_concat(what, r2);
+    what = string_concat(what, ")");
+    string:report = string_concat(name, ": ");
+    report = string_concat(report, r1);
+    report = string_concat(report, " ");
+    report = string_concat(report, raw cost_stats_text(p1));
+    report = string_concat(report, "; ");
+    report = string_concat(report, r2);
+    report = string_concat(report, " ");
+    report = string_concat(report, raw cost_stats_text(p2));
+    report = string_concat(report, "; ");
+    report = string_concat(report, what);
+    report = string_concat(report, raw cost_expect_text(u));
+    pass CostOut{ faults: raw cost_judge(u, held, name, what), report: move(report) };
+};
+
+async func:run_cost_self = CostOut(Ctx->:c, CostUnit->:u, string:name, ProcArgs:env) {
+    string:entry = string_from_bytes(u.entry.ptr, u.entry.len);
+    List<string>:args = raw list_init::<string>(1i64);
+    drop strlist_push(@args, raw in_root(c, entry));
+    string:what = string_concat("the compiler over ", entry);
+    CostPoint:p = relay await cost_point(c, string_from_bytes(c.npkc.ptr, c.npkc.len), args, env, name, what, 3600i64);
+    if (!p.ok) { pass (raw cost_out_bad(p, string_concat(string_concat(name, ": "), string_concat(entry, " did not measure")))); }
+    string:report = string_concat(name, ": ");
+    report = string_concat(report, entry);
+    report = string_concat(report, " ");
+    report = string_concat(report, raw cost_stats_text(p));
+    List<string>:fl = raw list_init::<string>(1i64);
+    if (u.ceiling == 0i64) {
+        report = string_concat(report, " (reported; no ceiling yet)");
+        pass CostOut{ faults: fl, report: move(report) };
+    }
+    report = string_concat(report, " (ceiling ");
+    report = string_concat(report, int_to_string(u.ceiling));
+    report = string_concat(report, ")");
+    if (p.peak > u.ceiling) {
+        string:m = string_concat(name, ": the compiler over ");
+        m = string_concat(m, entry);
+        m = string_concat(m, " peaks at ");
+        m = string_concat(m, int_to_string(p.peak));
+        m = string_concat(m, " bytes live, over its ceiling of ");
+        m = string_concat(m, int_to_string(u.ceiling));
+        m = string_concat(m, " -- a memory regression in the compiler's own build");
+        drop list_push(@fl, move(m));
+    }
+    pass CostOut{ faults: fl, report: move(report) };
+};
+
+// `cost`: the allocator's own numbers, per unit file, as verdicts; the numbers
+// print here so the run's log carries the measurement.
+async func:run_cost = NIL(Ctx->:c, int64:t) {
+    string:tname = raw entry_name(c, t);
+    List<string>:units = relay files_of(c, c.m.tests.items[t].paths, c.m.tests.items[t].recursive, ".toml");
+    ProcArgs:env = relay cost_env();
+    defer { drop args_free(@env); }
+    int64:count = 0i64;
+    int64:confirmed = 0i64;
+    for (int64:i in 0i64...units.count) {
+        string:p = raw strlist_view(units, i);
+        string:name = raw rel_to_root(c, p);
+        string:text = relay read_text(p);
+        CostRead:cr = raw read_cost_unit(text);
+        count = count + 1i64;
+        if (!cr.ok) {
+            List<string>:fl0 = raw list_init::<string>(1i64);
+            drop strlist_push(@fl0, string_concat(string_concat(name, ": "), string_from_bytes(cr.problem.ptr, cr.problem.len)));
+            drop record(c, tname, name, fl0);
+            continue;
+        }
+        string:kind = string_from_bytes(cr.u.kind.ptr, cr.u.kind.len);
+        CostOut:o = CostOut{ faults: raw list_init::<string>(1i64), report: "" };
+        if (raw text_eq(kind, "recipe")) { o = relay await run_cost_recipe(c, @cr.u, name, env); }
+        if (raw text_eq(kind, "probe"))  { o = relay await run_cost_probe(c, @cr.u, name, env); }
+        if (raw text_eq(kind, "self"))   { o = relay await run_cost_self(c, @cr.u, name, env); }
+        drop record(c, tname, name, o.faults);
+        drop say(raw stage_text(tname, string_from_bytes(o.report.ptr, o.report.len)));
+        if (raw text_eq(string_from_bytes(cr.u.expect.ptr, cr.u.expect.len), "fail")) {
+            if (o.faults.count == 0i64) { confirmed = confirmed + 1i64; }
+        }
+    }
+    string:tail = string_concat("cost unit(s) under NPK_HEAP_STATS -- the allocator's own numbers, never the clock; ", int_to_string(confirmed));
+    tail = string_concat(tail, " designed failure(s) confirmed (the instrument bites)");
+    drop say(raw stage_line(tname, count, tail));
+    pass NIL;
+};
+
 pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
     bool:filtering = (only.count > 0i64);
     for (int64:t in 0i64...c.m.tests.count) {
@@ -1149,6 +1704,11 @@ pub async func:run_targets = NIL(Ctx->:c, List<string>:only) {
         if (raw text_eq(stage, "verify")) {
             Result<NIL>:r8 = await run_verify(c, t);
             if (r8.is_error) { fail r8.err; }
+            continue;
+        }
+        if (raw text_eq(stage, "cost")) {
+            Result<NIL>:r9 = await run_cost(c, t);
+            if (r9.is_error) { fail r9.err; }
             continue;
         }
     }

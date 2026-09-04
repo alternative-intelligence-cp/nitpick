@@ -1,0 +1,25 @@
+// expect-exit: 0
+mod:temp_bound;
+// Does reassigning an owning string local free the old body? If it does,
+// this program's peak memory stays near the final string (20 KB); if the
+// old bodies leak until scope exit, it reaches ~200 MB (N^2/2 bytes).
+func:main = int32(cstring[]:_~argv) {
+    string:t = "a";
+    for (int32:i in 0i32...20000i32) {
+        t = string_concat(t, "b");
+    }
+    if (t.len != 20001i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

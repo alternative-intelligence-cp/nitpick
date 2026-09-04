@@ -1,0 +1,10 @@
+# The compiler's own build (OPEN_DECISIONS §2f; 1.5.1b): `npkc src/main.npk`
+# under NPK_HEAP_STATS, REPORTED on every full run -- allocated, peak_live,
+# count -- and held to `ceiling` bytes of peak_live once one is set (0 reports
+# only). The ceiling is set at 1.5.1b's close from the measured value with
+# 2x headroom, so an 11 GiB regression fails loudly instead of freezing the
+# machine.
+kind    = "self"
+entry   = "src/main.npk"
+ceiling = 0
+expect  = "pass"

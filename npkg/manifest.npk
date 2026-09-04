@@ -21,7 +21,7 @@ use "./toml.npk".*;
 // `compile` is the default and the only stage with a `kind`.
 pub struct:TestTarget = {
     string:name;
-    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime | verify
+    string:stage;            // compile | parse | resolve | check | accept | fixture | program | runtime | verify | cost
     string:kind;             // compile only: positive | negative | diagnostic; "" otherwise
     List<string>:paths;      // relative to the root, in declaration order
     bool:recursive;          // sweep subdirectories too
@@ -37,6 +37,7 @@ func:stage_known = bool(string:s) never fails {
     if (raw text_eq(s, "program")) { pass true; }
     if (raw text_eq(s, "runtime")) { pass true; }
     if (raw text_eq(s, "verify"))  { pass true; }
+    if (raw text_eq(s, "cost"))    { pass true; }
     pass false;
 };
 
@@ -235,7 +236,7 @@ pub func:manifest_load = Manifest(string:root, string:text) never fails {
         if (!(raw stage_known(stage))) {
             string:w5 = string_concat(who, ": stage `");
             w5 = string_concat(w5, stage);
-            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime, verify (D-238); a stage the runner cannot judge is refused, not skipped");
+            w5 = string_concat(w5, "` is not one this runner knows -- the stages are compile, parse, resolve, check, accept, fixture, program, runtime, verify, cost (D-238); a stage the runner cannot judge is refused, not skipped");
             pass (raw refuse(root, w5));
         }
         string:kind = "";

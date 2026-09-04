@@ -143,6 +143,7 @@ the builtin surface is typed from a signature table.
 | ~~**S-20**~~ | **D-247** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 5.** `List<T>` is compiler-known and OWNING: declared in the prelude, `type_drops` true, its generated drop drops the `count` elements through `T`'s drop then frees the block; move-only under TYPE-046 (which also refuses the aliasing copy a `wild` block permits). Alternatives decided out: `buffer`-backed (leaks the elements), a user drop hook (a destructor design), manual `list_free` + `defer` at 153 holders. Recommendation: ratify. | 1.5.1b step 5 | `npkc src/main.npk` at 11.0 GiB |
 | ~~**S-21**~~ | **D-248** | **SETTLED (user, 2026-09-03: the recommendations as written — both halves), lands at 1.5.1b step 1.** The file header is mandatory, and entry points are the root's: every file's first declaration is `mod:<basename>;` (RESOLVE-012, one code, two texts — missing, mismatched), so a header can never load a sibling and the loader can finally say "your header is wrong"; `main`/`failsafe` outside the root module refuse (RESOLVE-013). The sweep is 240 header-less files plus a one-line pin shift D-237 verifies. Alternative (header optional, identified by name) named in §7 and recommended against. Recommendation: ratify both halves. | 1.5.1b step 1 | DEF-2 |
 | ~~**S-22**~~ | **D-249** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 2.** A `Views` column in BUILTIN_REFERENCE (`—` or the 1-based argument whose storage the result aliases; `string_bytes` 1, `string_from_bytes` 1), generated like `Pure`; the escape analysis treats such a call — and the range-view `arr[lo...hi]` — as a borrow rooted where that argument is rooted, so D-004 rule 2 and rules A/B apply unchanged. Recommendation: ratify (a hard-coded pair of names would be a parallel authority beside the 1.4.2 table). | 1.5.1b step 2 | DEF-3 |
+| ~~**S-23**~~ | **D-250** | **SETTLED (user, 2026-09-03: "ratify S-23 as recommended, add step 3b"), lands at 1.5.1b step 3b — and the struct half was measured the same day: `#[derive(Eq, Ord)] struct:Outer = { Inner:i; int32:b; }` with `Inner` derived the same refuses TYPE-034 and TYPE-008 inside `<derived-1>`, because every derived comparison is an operator and operators are refused on named types; the step covers named types in structs and enums alike.** ~~Derived comparisons on an enum WITH A PAYLOAD~~ (DEF-4, §2f). Today `#[derive(Eq)]` on a payload enum refuses inside `<derived-1>` (the generated body is `self == other`, which needs the trait it is writing) and `#[derive(Ord)]`/`PartialOrd` compile to a TAG-ONLY order (`gen_cmp_enum`, by a 1.0.9d design comment that was right for `Hash` and is wrong for an order: `Literal(7).cmp(Literal(9))` is `Equal`). **Recommendation:** (1) a derived `Eq`, `Ord` and `PartialOrd` on an enum compare the TAG first (declaration order, as today) and, for equal tags, the payload of that variant through the payload type's own `==`/`eq` and `cmp` — scalars by operator, user types through their impl, derived or written — generated as a `pick` over both operands per variant; (2) a payload whose type is not `Eq`/`Ord` refuses AT THE DERIVE SITE naming the user's declaration and the payload type (the D-194 simd wording), never inside `<derived-1>`; (3) a payload that OWNS (a `string`, a `List<T>`) refuses the derive by name too — a `pick` over a borrowed enum cannot bind an owning payload without consuming it (S-5/D-216 made the consuming form; no borrowing form exists), so until one does the impl is written by hand and the refusal says so; (4) `Hash` stays tag-only (D-123, legal); (5) `gen_eq_enum`'s stale comment ("that is why `Ord` on an enum is refused rather than generated") goes. Lands as a 1.5.1b step (proposed 3b, between DEF-1's builders and D-246: frontend-only, no emission of `src/` moves) with `tests/derive/` cases deriving all five on a payload enum and a program pinning `Less/Equal/Less` (the reporter's 321). Whether the language wants a BORROWING `pick` form (which would let (3) generate instead of refuse) is a separate question, not needed to close DEF-4. | 1.5.1b step 3b | DEF-4 / O-N10 |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
 
@@ -334,6 +335,88 @@ Three riders from the reporter (2026-09-03), each binding on 1.5.1b:
   landing message so the re-pin needs no second round trip.
 - No schedule pressure: O-N4 blocks their 0.0.5 and 0.5, not 0.0.1–0.0.4,
   and the workbench works the nine probes it does not touch meanwhile.
+
+**DEF-3's reproduction is committed** (2026-09-03, `nitpick-time` `0667ecb`,
+`tests/probe/defect/view_escape/`, six cases and a verbatim `TRANSCRIPT.txt`,
+independently verified PASS at `9113487`): `case1_borrow_returned` (`@x`
+returned — REFUSED, BORROW-001), `case2_borrow_in_struct` (a struct literal
+holding `@local` — REFUSED), `case3_view_returned` (`string_bytes(local)`
+returned — NOT refused, exit 0), `case4_view_in_struct`, `case5_read_after_free`
+(the caller reads the freed bytes and asserts the allocator's 0xAA poison —
+deterministic `exit 170`, not "usually garbage"), `case6_view_param_legal` (the
+legal shape, so a fix cannot over-refuse). Cases 1 and 2 make it
+under-enforcement rather than a design question; 1.5.1b step 2's
+`view_escape.npk` carries the same six shapes.
+
+**Blocking status, stated by the workbench's author (2026-09-03, their W-27:
+an escalation says what it blocks):** DEF-1 BLOCKS `nitpick-time` 0.0.5 and
+0.5 (the tzdb table at 26 838 rows: 281 s and 30.9 GiB, so no 16 GiB machine
+and no CI builds the library in its shipping shape). DEF-3 BLOCKS all of their
+`src/fmt/` and probes 09–10, by the author's explicit ruling against the
+workbench's own "conformance" reading — a rule enforced only by a harness
+check the library writes for itself is a thin guarantee for a use-after-free
+and protects no consumer. DEF-2 blocks nothing (raised for correctness). DEF-4
+below blocks nothing of theirs. The order DEF-2 → DEF-3 → DEF-1 is the one
+that unblocks them fastest and is the order 1.5.1b already has.
+
+**DEF-4 (their O-N10, raised 2026-09-03; reproduction at `nitpick-time`
+`eb8d6b4`, `tests/probe/defect/derive_payload_enum/`, three cases and a
+transcript) — `#[derive]` on an enum WITH A PAYLOAD: `Eq` does not compile,
+`Ord` compiles to a tag-only order.** On `enum:Part = { Literal(uint16);
+Year4; }`, `#[derive(Eq)]` is refused `NITPICK-TYPE-034` inside `<derived-1>`
+("`Part` has no built-in `==`: derive or implement `Eq`" — the derived body
+`pass (self == other);` needs the trait it is writing, and the span names a
+synthetic file the user cannot open); `#[derive(Ord)]` on the same
+declaration compiles, and `Literal(7).cmp(Literal(9))` answers `Equal` at
+exit 0 with no diagnostic anywhere (their case 2 exits 221 — one digit per
+comparison — where 321 is right). The loud half is inconvenient; the quiet
+half is a wrong answer a sort or a binary search believes. Read against the
+tree: `gen_eq_enum` (`src/frontend/macro/derive.npk:427`) writes `self ==
+other` for every enum, which is the built-in tag equality a payload-less enum
+has and a payload enum does not; `gen_cmp_enum` (316) compares `self =>!
+int32` — the tag — BY DESIGN, its comment saying "a payload is not compared;
+the order is over the variants, which is what deriving `Ord` on an enum has
+always meant" (D-123's reasoning for `Hash`, which is legal for a hash and
+wrong for an order). No file in the compiler's tree derives anything on a
+payload enum (`enum:Season`/`Tag`/`Level` are payload-less), so the payload
+path was written and never run — coverage, not regression. **What is asked:**
+a derived `Eq` that compiles and compares tag then payload; `Ord`/`PartialOrd`
+that compare the payload after the tag rather than stopping at it; and a test
+in this tree that derives on a payload enum. `Hash` hashing the tag only is
+NOT asked (a colliding hash is correct, if weak; D-123 stands). **Not
+blocking them** (`nitpick-time` exposes one payload enum, `FmtPart.Literal`,
+and no rule needs a derive on it); it blocks the first library that wants a
+derived comparison on a payload enum. **Proposed as S-23 below, and as a step
+of 1.5.1b for the user to ratify** — the standing rule is that a defect a
+real program finds is fixed before planned work.
+
+**Found by 1.5.1b step 0 itself, both fixed in it (runtime only):**
+- **The argv and environ arrays lived in the releasable heap.**
+  `npk_cstr_slice` built both `{ptr, len}` arrays with `npk_alloc_internal`
+  and the comment said "never freed" — but `wild_release_all` unmaps every
+  chunk wholesale, so a program that released and then read an ENTRY of its
+  own argv or `environ()` read unmapped memory: `src/main.npk` releases
+  before every exit, and a `failsafe` may do both. Found because the first
+  version of the NPK_HEAP_STATS report walked the environment slice at exit
+  and the compiler's own build faulted; `tests/backend/programs/
+  argv_after_release.npk` exits 0 on the step-0 runtime and segfaults (139)
+  on the 1.5.1-close runtime. The arrays are a page-rounded `npk_hmap`
+  mapping outside the chunk and large tables now, which is what "outlives
+  everything" required all along. BUILTIN_REFERENCE's `environ` and
+  `wild_release_all` rows say so.
+- **`npk_aalloc`'s over-aligned path took no lock.** Since the heap mutex
+  arrived (1.2.5b) `npk_alloc_impl` has locked around `npk_large_new`, whose
+  `npk_lg_insert` mutates the large table; `npk_aalloc`'s `wide:` path called
+  the same function unlocked. Two threads asking for an over-aligned block
+  could race the table. Found placing the accounting, which needs the lock
+  too; locked now.
+- **D-151 and D-188 see no managed body** (the workbench's note, 2026-09-03,
+  confirmed): D-151 counts `wild` blocks, D-188 counts live drivers; a leaked
+  `string` body passes both at exit 0, which is why "exit 0 proves no leak"
+  was never a gate for managed memory and why step 0's instrument reads the
+  allocator's own `peak_live` instead. No document in this tree pairs the two
+  as a leak guarantee; the workbench swept its six repositories for the
+  pattern (nine sites in `nitpick-parse` alone).
 
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 

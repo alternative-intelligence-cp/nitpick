@@ -96,10 +96,17 @@ declare i32 @main({ ptr, i64 })
 ; A NUL-terminated pointer array -- argv, envp -- as the `cstring[]` slice the
 ; language sees. Every entry's length is measured exactly once, HERE, at the
 ; boundary (D-049): a cstring carries its length, and nothing downstream scans
-; for a NUL again. Allocated from the untracked heap and never freed -- both
-; arrays outlive everything, and the first allocation is also what draws the
-; heap secret. ONE builder for both (1.4.8, D-206): the environment used to be
-; left on the stack here, and `npkg` needs `PATH`.
+; for a NUL again. ONE builder for both (1.4.8, D-206): the environment used to
+; be left on the stack here, and `npkg` needs `PATH`.
+;
+; THE ARRAY IS ITS OWN MAPPING, never a heap block (1.5.1b step 0). It was an
+; internal heap allocation "never freed" -- but `wild_release_all` unmaps
+; every chunk wholesale, so a program that released and then read its own
+; argv (npkc's `main` releases before every exit; a `failsafe` may do both)
+; read unmapped memory: found by this step's exit-time report, which walked
+; the environment after the compiler's release and faulted. A page-rounded
+; `npk_hmap` outside the chunk and large tables is what "outlives everything"
+; actually requires. The strings themselves are the kernel's, on the stack.
 define internal { ptr, i64 } @npk_cstr_slice(ptr %base) {
 entry:
   br label %count
@@ -114,7 +121,12 @@ count:                                            ; preds = %entry, %count
 
 sized:                                            ; preds = %count
   %bytes = mul i64 %n, 16                         ; sizeof(cstring) = {ptr,i64}
-  %buf = call ptr @npk_alloc_internal(i64 %bytes)
+  %b4095 = add i64 %bytes, 4095
+  %msz0 = and i64 %b4095, -4096
+  %empty = icmp eq i64 %msz0, 0
+  %msz = select i1 %empty, i64 4096, i64 %msz0    ; an empty array is still a page
+  %bufa = call i64 @npk_hmap(i64 %msz)
+  %buf = inttoptr i64 %bufa to ptr
   br label %loop
 
 loop:                                             ; preds = %sized, %next
@@ -156,6 +168,54 @@ ready:                                            ; preds = %loop
 ; once before `main` and read-only after, so no thread ever races it.
 @npk_environ_slice = internal global { ptr, i64 } zeroinitializer
 
+; NPK_HEAP_STATS IS DECIDED HERE, before `main`, by one walk of the kernel's
+; raw envp on the stack (1.5.1b step 0): the report at `npk_exit` then reads
+; a flag and touches no memory the program could have released. The name is
+; matched exactly -- `NPK_HEAP_STATS` alone or `NPK_HEAP_STATS=<anything>` --
+; so no value spelling is a second way to switch it on.
+@npk_hs_on = internal global i64 0
+@npk_hs_key = internal constant [14 x i8] c"NPK_HEAP_STATS"
+
+define internal void @npk_hs_arm(ptr %base) {
+entry:
+  br label %scan
+scan:
+  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
+  %ep = getelementptr ptr, ptr %base, i64 %i
+  %s = load ptr, ptr %ep
+  %atend = icmp eq ptr %s, null
+  br i1 %atend, label %done, label %cmp
+cmp:
+  %k = phi i64 [ 0, %scan ], [ %k1, %cmpstep ]
+  %kdone = icmp eq i64 %k, 14
+  br i1 %kdone, label %tail, label %cmpstep
+cmpstep:
+  ; the key has no NUL, so a shorter entry mismatches at its NUL and no byte
+  ; past an entry's end is ever read
+  %cp = getelementptr i8, ptr %s, i64 %k
+  %c = load i8, ptr %cp
+  %kp = getelementptr [14 x i8], ptr @npk_hs_key, i64 0, i64 %k
+  %kc = load i8, ptr %kp
+  %eq = icmp eq i8 %c, %kc
+  %k1 = add i64 %k, 1
+  br i1 %eq, label %cmp, label %next
+tail:
+  %tp = getelementptr i8, ptr %s, i64 14
+  %tc = load i8, ptr %tp
+  %isnul = icmp eq i8 %tc, 0
+  %iseq = icmp eq i8 %tc, 61
+  %hit = or i1 %isnul, %iseq
+  br i1 %hit, label %arm, label %next
+arm:
+  store i64 1, ptr @npk_hs_on
+  br label %done
+next:
+  %i1 = add i64 %i, 1
+  br label %scan
+done:
+  ret void
+}
+
 define internal void @npk_start(i64 %sp) noreturn {
 entry:
   ; the executor's TLS block first: every allocation, trap and error chain
@@ -170,6 +230,7 @@ entry:
   %envpp = getelementptr ptr, ptr %argvp, i64 %envoff
   %env = call { ptr, i64 } @npk_cstr_slice(ptr %envpp)
   store { ptr, i64 } %env, ptr @npk_environ_slice
+  call void @npk_hs_arm(ptr %envpp)
   %rc = call i32 @main({ ptr, i64 } %argv)
   call void @npk_exit(i32 %rc)
   unreachable
@@ -2855,6 +2916,106 @@ run:
   unreachable
 }
 
+; NPK_HEAP_STATS, the report (1.5.1b step 0). Allocation-free and
+; heap-free by construction -- a stack buffer, four globals and one
+; `write(2)` -- because it runs at exit, after a trap's failsafe as well as
+; after a clean `exit`, and after the program may have released its heap
+; wholesale: a heap the trap was ABOUT must not be asked for memory on the
+; way out (a second trap in failsafe is the uncatchable exit 70), and a
+; released heap must not be read (the first version of this walked the
+; environment slice here and faulted in the compiler's own build). The
+; counters are read without the heap mutex: a thread that trapped inside
+; the allocator still holds it, and this line is a diagnostic, never a
+; verdict.
+;
+; The line: `heap: allocated=<n> peak_live=<n> count=<n>`, decimal, one
+; newline, on fd 2. Whether it prints was decided at `_start` (`npk_hs_arm`).
+
+@npk_hs_t0 = internal constant [16 x i8] c"heap: allocated="
+@npk_hs_t1 = internal constant [11 x i8] c" peak_live="
+@npk_hs_t2 = internal constant [7 x i8] c" count="
+
+; Append %n bytes of %s to the line at %pos; the new position.
+define internal i64 @npk_hs_put_str(ptr %line, i64 %pos, ptr %s, i64 %n) {
+entry:
+  br label %loop
+loop:
+  %k = phi i64 [ 0, %entry ], [ %k1, %body ]
+  %more = icmp ult i64 %k, %n
+  br i1 %more, label %body, label %done
+body:
+  %sp = getelementptr i8, ptr %s, i64 %k
+  %c = load i8, ptr %sp
+  %p = add i64 %pos, %k
+  %tp = getelementptr i8, ptr %line, i64 %p
+  store i8 %c, ptr %tp
+  %k1 = add i64 %k, 1
+  br label %loop
+done:
+  %end = add i64 %pos, %n
+  ret i64 %end
+}
+
+; Append %v in decimal to the line at %pos; the new position. The digits are
+; formed backwards in a 24-byte scratch (enough for any i64 read unsigned)
+; and copied forward.
+define internal i64 @npk_hs_put_dec(ptr %line, i64 %pos, i64 %v) {
+entry:
+  %tmp = alloca [24 x i8]
+  br label %loop
+loop:
+  %i = phi i64 [ 24, %entry ], [ %i1, %loop ]
+  %u = phi i64 [ %v, %entry ], [ %q, %loop ]
+  %i1 = sub i64 %i, 1
+  %q = udiv i64 %u, 10
+  %m = urem i64 %u, 10
+  %d = trunc i64 %m to i8
+  %ch = add i8 %d, 48
+  %dp = getelementptr [24 x i8], ptr %tmp, i64 0, i64 %i1
+  store i8 %ch, ptr %dp
+  %more = icmp ne i64 %q, 0
+  br i1 %more, label %loop, label %copy
+copy:
+  %j = phi i64 [ %i1, %loop ], [ %j1, %copy ]
+  %p = phi i64 [ %pos, %loop ], [ %p1, %copy ]
+  %sp = getelementptr [24 x i8], ptr %tmp, i64 0, i64 %j
+  %c = load i8, ptr %sp
+  %tp = getelementptr i8, ptr %line, i64 %p
+  store i8 %c, ptr %tp
+  %j1 = add i64 %j, 1
+  %p1 = add i64 %p, 1
+  %left = icmp ult i64 %j1, 24
+  br i1 %left, label %copy, label %done
+done:
+  ret i64 %p1
+}
+
+define internal void @npk_hs_report() {
+entry:
+  %line = alloca [128 x i8]
+  %on = load i64, ptr @npk_hs_on
+  %off = icmp eq i64 %on, 0
+  br i1 %off, label %done, label %print
+print:
+  %p0 = call i64 @npk_hs_put_str(ptr %line, i64 0, ptr @npk_hs_t0, i64 16)
+  %a = load i64, ptr @npk_hs_allocated
+  %p1 = call i64 @npk_hs_put_dec(ptr %line, i64 %p0, i64 %a)
+  %p2 = call i64 @npk_hs_put_str(ptr %line, i64 %p1, ptr @npk_hs_t1, i64 11)
+  %pk = load i64, ptr @npk_hs_peak
+  %p3 = call i64 @npk_hs_put_dec(ptr %line, i64 %p2, i64 %pk)
+  %p4 = call i64 @npk_hs_put_str(ptr %line, i64 %p3, ptr @npk_hs_t2, i64 7)
+  %cn = load i64, ptr @npk_hs_count
+  %p5 = call i64 @npk_hs_put_dec(ptr %line, i64 %p4, i64 %cn)
+  %nlp = getelementptr i8, ptr %line, i64 %p5
+  store i8 10, ptr %nlp
+  %len = add i64 %p5, 1
+  %la = ptrtoint ptr %line to i64
+  %w = call i64 @npk_sys6(i64 1, i64 2, i64 %la, i64 %len, i64 0, i64 0, i64 0)
+  br label %done
+done:
+  ret void
+}
+
 define void @npk_exit(i32 %code) noreturn {
   ; THE K-SEMANTICS EXIT RULE (0.10.1, D-151): a SUCCESSFUL exit -- code 0,
   ; exactly as CONTROL_REFERENCE 4.6 scopes it -- requires the <wild-live>
@@ -2905,6 +3066,10 @@ leave:
   ; shut down at all — it has abandoned them, and with actuators live that is
   ; the uncontrolled stop the safety case exists to prevent. The status the
   ; parent reads being wrong is the mildest of its consequences.
+  ; NPK_HEAP_STATS reports HERE, exactly once per process: this block is the
+  ; one every exit leaves by, and a leak-trap's failsafe exit re-enters above
+  ; and reaches it once (1.5.1b step 0).
+  call void @npk_hs_report()
   %c = sext i32 %code to i64
   %r = call i64 @npk_sys6(i64 231, i64 %c, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
@@ -4357,6 +4522,10 @@ stamp:
 define internal void @npk_small_free(i64 %ip) {
 entry:
   %ch = call i64 @npk_small_check(i64 %ip)
+  %hsb = add i64 %ip, -16
+  %hsp = inttoptr i64 %hsb to ptr
+  %hsn = load i64, ptr %hsp
+  call void @npk_hs_note_free(i64 %hsn)
   %cia = add i64 %ch, 8
   %cip = inttoptr i64 %cia to ptr
   %ci = load i64, ptr %cip
@@ -4526,6 +4695,85 @@ done:
   ret void
 }
 
+; --- NPK_HEAP_STATS (1.5.1b step 0): the allocator's own numbers ------------
+;
+; A debug instrument that stays, beside the 0xAA poisoning and the quarantine.
+; Four words, kept under the heap mutex like the rest of the bookkeeping:
+; the bytes REQUESTED in total, the bytes live now, the peak of live, and the
+; count of allocations. `npk_exit` prints them as one line on fd 2 when the
+; environment carries `NPK_HEAP_STATS` (`npk_hs_report` below) and is silent
+; otherwise, so a program's behaviour never depends on the variable -- the
+; line is data for a harness stage, never a verdict inside the program.
+;
+; WHY THE ALLOCATOR'S NUMBER AND NOT THE PROCESS'S: resident memory is the
+; kernel's answer and moves with page reuse and load; a wall-clock is a
+; measurement of the machine. These counters are a function of the program's
+; own allocation sequence, so the same input gives the same numbers on every
+; machine and every run -- what makes "the fix must be a number" checkable.
+; The cost on the hot path is the adds and one compare, inside the lock the
+; path already holds.
+;
+; SIZES ARE THE REQUESTED SIZES the headers already carry (a block's `n` at
+; payload-16, a large entry's at e+24), never the rounded class sizes, so an
+; `alloc(1)` counts as 1 and a resize counts its difference. A free reads its
+; size AFTER the header has been validated (`npk_small_check`,
+; `npk_large_check`), never before: a bogus pointer must still reach the
+; heap-integrity trap it reaches today, not a fault on the read.
+
+@npk_hs_allocated = internal global i64 0
+@npk_hs_live      = internal global i64 0
+@npk_hs_peak      = internal global i64 0
+@npk_hs_count     = internal global i64 0
+
+define internal void @npk_hs_note_alloc(i64 %n) {
+entry:
+  %a = load i64, ptr @npk_hs_allocated
+  %a1 = add i64 %a, %n
+  store i64 %a1, ptr @npk_hs_allocated
+  %c = load i64, ptr @npk_hs_count
+  %c1 = add i64 %c, 1
+  store i64 %c1, ptr @npk_hs_count
+  %l = load i64, ptr @npk_hs_live
+  %l1 = add i64 %l, %n
+  store i64 %l1, ptr @npk_hs_live
+  %p = load i64, ptr @npk_hs_peak
+  %up = icmp ugt i64 %l1, %p
+  %p1 = select i1 %up, i64 %l1, i64 %p
+  store i64 %p1, ptr @npk_hs_peak
+  ret void
+}
+
+define internal void @npk_hs_note_free(i64 %n) {
+entry:
+  %l = load i64, ptr @npk_hs_live
+  %l1 = sub i64 %l, %n
+  store i64 %l1, ptr @npk_hs_live
+  ret void
+}
+
+; An in-place resize: live moves by the difference; growth is new bytes
+; requested and may set a new peak; a shrink requests nothing.
+define internal void @npk_hs_note_resize(i64 %old, i64 %new) {
+entry:
+  %d = sub i64 %new, %old
+  %l = load i64, ptr @npk_hs_live
+  %l1 = add i64 %l, %d
+  store i64 %l1, ptr @npk_hs_live
+  %grew = icmp sgt i64 %d, 0
+  br i1 %grew, label %grow, label %done
+grow:
+  %a = load i64, ptr @npk_hs_allocated
+  %a1 = add i64 %a, %d
+  store i64 %a1, ptr @npk_hs_allocated
+  %p = load i64, ptr @npk_hs_peak
+  %up = icmp ugt i64 %l1, %p
+  %p1 = select i1 %up, i64 %l1, i64 %p
+  store i64 %p1, ptr @npk_hs_peak
+  br label %done
+done:
+  ret void
+}
+
 ; --- the four builtins, plus aalloc -----------------------------------------
 
 define internal ptr @npk_alloc_impl(i64 %n, i64 %wild) {
@@ -4565,10 +4813,12 @@ bigger:
   br label %pick
 small:
   %sp = call ptr @npk_small_alloc(i64 %n1, i64 %ci, i64 %wild)
+  call void @npk_hs_note_alloc(i64 %n1)
   call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %sp
 large:
   %lp = call ptr @npk_large_new(i64 %n1, i64 16, i64 %wild)
+  call void @npk_hs_note_alloc(i64 %n1)
   call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %lp
 }
@@ -4703,6 +4953,7 @@ inplace:
   %szslot = inttoptr i64 %b to ptr
   store i64 %n, ptr %szslot
   store i64 %n, ptr %oszp
+  call void @npk_hs_note_resize(i64 %osz, i64 %n)
   %fa = add i64 %ip, %rn
   %g0 = call i64 @npk_m_guard(i64 %fa)
   %gp0 = inttoptr i64 %fa to ptr
@@ -4745,6 +4996,7 @@ sm:
   br i1 %fitscls, label %inplace2, label %move2
 inplace2:
   store i64 %n, ptr %oszp2
+  call void @npk_hs_note_resize(i64 %osz2, i64 %n)
   call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %old
 move2:
@@ -4798,6 +5050,10 @@ lg:
   %msza = add i64 %e, 16
   %mszp = inttoptr i64 %msza to ptr
   %msz = load i64, ptr %mszp
+  %dsza = add i64 %e, 24
+  %dszp = inttoptr i64 %dsza to ptr
+  %dsz = load i64, ptr %dszp
+  call void @npk_hs_note_free(i64 %dsz)
   call void @npk_lg_remove(i64 %lgidx)
   call void @npk_hunmap(i64 %base, i64 %msz)
   call void @npk_mx_unlock(ptr @npk_heap_mx)
@@ -4840,7 +5096,15 @@ plain:
   %p = call ptr @npk_alloc(i64 %n1)
   ret ptr %p
 wide:
+  ; UNDER THE HEAP MUTEX (1.5.1b step 0). This path called `npk_large_new` --
+  ; which inserts into the large table -- with no lock since the mutex arrived
+  ; at 1.2.5b: `npk_alloc_impl` locks around the same call, and this one did
+  ; not. Two threads asking for an over-aligned block could race the table.
+  ; Found while placing the accounting, which needs the lock too.
+  call void @npk_mx_lock(ptr @npk_heap_mx)
   %q = call ptr @npk_large_new(i64 %n1, i64 %align, i64 1)
+  call void @npk_hs_note_alloc(i64 %n1)
+  call void @npk_mx_unlock(ptr @npk_heap_mx)
   ret ptr %q
 }
 
@@ -5014,6 +5278,7 @@ lbody:
   br label %lhead
 done:
   store i64 0, ptr @npk_lgtab_len
+  store i64 0, ptr @npk_hs_live
   ret void
 }
 

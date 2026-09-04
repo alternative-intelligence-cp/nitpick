@@ -1,0 +1,13 @@
+# DEF-1, axis 1 (OPEN_DECISIONS §2f; 1.5.1b): elements of ONE module-level
+# `fixed` array of `{ int64; int32 }` -- TM-007's compiled tzdb shape. The
+# recipe is regenerated at N and at N*scale and compiled under NPK_HEAP_STATS;
+# both ratios must stay within `bound` (linear is 4 with slack, quadratic 16).
+kind   = "recipe"
+recipe = "fixed-array"
+n      = 1000
+scale  = 4
+bound  = 6
+# THE NEGATIVE CONTROL: the bound is violated today by design. Remove these
+# two lines in the commit that makes the builders linear.
+expect = "fail"
+until  = "1.5.1b step 3 (emit_global_array_const and emit_global_struct_const write into a Sink)"

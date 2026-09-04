@@ -1,0 +1,10 @@
+# DEF-1, axis 2 (OPEN_DECISIONS §2f; 1.5.1b): statements in ONE function body.
+# Every `acc = acc + k;` is a D-210 overflow guard and so a D-179 trap site,
+# so the site table (`emit_site_tables`) grows with N.
+kind   = "recipe"
+recipe = "statements"
+n      = 1000
+scale  = 4
+bound  = 6
+expect = "fail"
+until  = "1.5.1b step 3 (emit_site_tables writes its three table lines piecewise)"

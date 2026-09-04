@@ -77,6 +77,9 @@ lld-flags     = ["-static"]
 #                verify    the compiler under test with `--obligations`, z3 under the pinned
 #                            profile, the module's (kind, verdict) counts exact, the verified
 #                            build (`--elide`) cross-checked, linked and run at -O0 and -O2
+#                cost      the compiler under test under NPK_HEAP_STATS: each `.toml` unit's
+#                            recipe, probe pair or self-build measured by the allocator's own
+#                            numbers and held to the unit's bound (an expected failure must fail)
 #              (`compile` is the default; it is the only stage with a `kind`)
 #   paths      the directories swept, an array; `path` is its one-element shorthand
 #   recursive  sweep subdirectories too (default false)
@@ -216,6 +219,19 @@ name = "accept"
 stage = "accept"
 recursive = true
 path = "tests/accept"
+
+# THE COST STAGE (1.5.1b step 0; OPEN_DECISIONS §2f): the allocator's own
+# numbers as verdicts. Each unit under tests/cost/ is a `.toml` naming what is
+# measured -- one of DEF-1's three recipes regenerated at N and 4N, two probe
+# programs run against each other, or the compiler's own build -- and the
+# bound it is held to, under NPK_HEAP_STATS (runtime/npkrt.ll): bytes
+# requested, peak bytes live, allocations, which a machine's load cannot
+# move. A unit whose `expect` is "fail" is the negative control: its bound
+# must be VIOLATED until the commit its `until` names lands.
+[[test]]
+name = "cost"
+stage = "cost"
+path = "tests/cost"
 
 # Verification configuration belongs to the project, not to whoever typed the
 # command (D-077). These are the settings this project must be verified under.

@@ -149,6 +149,7 @@ written in the meantime so no row is silent.
 | `@npk_heap_init` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_heap_oom` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_hmap` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
+| `@npk_hs_report` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_hunmap` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_int_to_string` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
 | `@npk_io_unwatch` | syscall | specified at the syscall boundary (1.5.6); the kernel is trusted |
@@ -214,6 +215,12 @@ written in the meantime so no row is silent.
 | `@npk_frame_bucket` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_frame_drain` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_frozen_get` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_arm` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_note_alloc` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_note_free` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_note_resize` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_put_dec` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
+| `@npk_hs_put_str` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_lg_entry` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_lg_find` | pure | pure IR: Z3-specified at 1.5.6 where feasible |
 | `@npk_lg_remove` | pure | pure IR: Z3-specified at 1.5.6 where feasible |

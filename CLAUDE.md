@@ -35,7 +35,11 @@ consuming parameters, and scope-exit drops LIVE for strings, structs and enums
 — the compiler drops its own locals and still rebuilds itself byte-identically.
 Debug instruments that stay: 0xAA free-poisoning, and `@npk_quarantine`
 (npkrt.ll, ships 0) — a never-reuse mode that makes any use-after-free
-deterministic, with a poisoned-source tripwire in `npk_string_concat`.
+deterministic, with a poisoned-source tripwire in `npk_string_concat`, and **`NPK_HEAP_STATS`** (1.5.1b step 0): a program whose environment carries
+that name prints `heap: allocated=<n> peak_live=<n> count=<n>` — the
+allocator's own words, deterministic for a given input — on fd 2 at exit; the
+harness's `cost` stage and `npkg test` read it, and a wall-clock is never a
+verdict.
 **Cycle 1.2 is COMPLETE** (`meta/roadmap/done/1.2/`): drops are live for
 strings, structs, enums, `dyn` (which owns a heap cell and drops through
 the vtable's slot 0) and arenas, in sync AND async bodies (frame-resident
@@ -583,6 +587,14 @@ macro-emitted function; `clone_verify` now. S-13 closed (parity fails on any
 nonzero `npkg test` exit). No obligation rows moved (141), no rung retired
 (1.5.2/1.5.3/1.5.4 own them), no snapshot refresh (frontend only; `src/`
 adopts none of it until a snapshot understands it — D-205).
+**1.5.1b (the workbench's three defects) is UNDERWAY — step 0 landed**: the
+floor keeps four allocator words and prints them under `NPK_HEAP_STATS`, the
+`cost` stage runs in both runners over `tests/cost/`, and the baseline is
+recorded in `1.5.1b.md` §8. Found on the way: the argv/environ arrays lived
+in the releasable heap (a program reading its argv after `wild_release_all()`
+segfaulted; they are their own mapping now), and `npk_aalloc`'s over-aligned
+path took no lock. The workbench's fourth defect, derive on a payload enum, is
+**S-23** for the user.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -709,6 +721,17 @@ names its rows with `// expect-obligation: KIND VERDICT N`, exactly) and over
 the compiler itself, and its `parity` stage byte-compares `npkg`'s verified
 compiler with its own. A verdict that moves is a red run, never a rebaseline
 (D-040): run `--record` only in the commit that changes what is proven.
+
+**The cost leg (1.5.1b step 0).** `tests/cost/*.toml` are units judged by the
+allocator's numbers under `NPK_HEAP_STATS` (BUILD_REFERENCE §7.1's `cost`
+row): DEF-1's three recipes at N and 4N, the two temporaries probes, and the
+compiler's own build. A unit marked `expect = "fail"` must FAIL its bound until
+the commit its `until` names lands; the day it holds, the unit fails until
+those two lines are removed in the same change. By hand:
+
+```
+NPK_HEAP_STATS=1 .internal/quickemit/npkc file.npk > /dev/null   # the line is the last on stderr
+```
 
 Neither is a substitute for the harness; both skip every whole-suite check.
 `quickcheck` watches nothing — rebuild it after every edit to `src/`, since a

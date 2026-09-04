@@ -1,0 +1,14 @@
+# D-183's statement-end temporaries, measured (OPEN_DECISIONS §2f; 1.5.1b):
+# `t = string_concat(string_concat(t, "b"), "c")` 20 000 times against
+# `t = string_concat(t, "b")` 20 000 times. The inner call's result is an
+# unbound temporary passed as an argument and nothing frees it until D-246
+# lands; the bound form frees its old body at the overwrite (D-186). Both
+# are ordinary programs in tests/backend/programs/ as well; here they are RUN
+# under NPK_HEAP_STATS and the nested form's peak_live is held to `bound`
+# times the bound form's.
+kind    = "probe"
+program = "tests/backend/programs/temp_nested.npk"
+against = "tests/backend/programs/temp_bound.npk"
+bound   = 2
+expect  = "fail"
+until   = "1.5.1b step 4 (D-246: an owning temporary drops when its statement ends)"
