@@ -139,6 +139,201 @@ the builtin surface is typed from a signature table.
 | ~~**S-11**~~ | **D-239** | **SETTLED (user, 2026-09-02: the recommendation as written), LANDED at 1.4.8c: `Error` and the prelude's names refused at every type-namespace declaration, `assoc` and generic parameters included, by the loader under RESOLVE-001; `owned_names.npk` pins six shapes.** ~~Should `Error` — D-179's compiler-known error type, resolved by name ahead of every user lookup so that it "cannot be shadowed into meaning less" (`resolve_type.npk`) — join the names a program cannot declare, and should an `assoc` declaration be held to RESOLVE-001 like every other declaration?** (1.4.8b step 1.) Found resolving `tests/types/rejection/assoc.npk` under D-237: its trait declared `assoc:Error = int32;` at 1.0.6, before D-179 made `Error` a type, and the checker then read the word two ways — the impl-signature comparison resolved the method's `Error` to the builtin (so the impl's `int32` mismatched, `TYPE-014`, even with `assoc:Error = int32;` written in the impl), while the object-safety walk matched it by name as the trait's assoc ("returns an associated type"). Hidden by the subset rule since 1.1. Measured with the built checker: a module-level `struct:Error = { … };` is ACCEPTED where `struct:Duration` is refused — RESOLVE-001 protects prelude-DECLARED names and `Error` is compiler-known, not declared — and `assoc:Duration = int32;` is accepted and shadows the prelude's `Duration` inside its trait (D-160's nearer-binding rule), where a module-level `Duration` is refused. **Recommendation:** one rule, no exception by declaration kind — a name the compiler or the prelude owns cannot be declared by a program anywhere, `assoc` included — under RESOLVE-001's own rationale ("a local one would silently take over") and blueprint facet 1 (`Error` means one thing in every scope); `Error` joins the protected set explicitly, since it is the one type name that is neither a keyword nor a prelude declaration; a rejection test pins `struct:Error`, `error:Error`, `trait:Error`, `assoc:Error` and `assoc:Duration`; the object-safety walk's by-name assoc match then agrees with resolution by construction. Until decided the test spells its default `Fault` and says why. | before 1.5 reads the suites as evidence | 1.4.8b step 1 |
 | ~~**S-12**~~ | **D-240** | **SETTLED (user, 2026-09-02: the recommendation as written), LANDED at 1.4.8c at the three sites, each at its emitter, the second expectations removed.** ~~Should a sharper refusal suppress the generic one it was written to replace?~~ (1.4.8b step 1.) D-237's exact matching surfaced three sites where two rules report one mistake: `builtin_args.npk` 36:27 (`TYPE-054` for `..^` into a builtin AND `TYPE-007` for the spread argument's type), `builtin_args.npk` 95:5 (`TYPE-007` "`drop` needs a `Result`" AND `TYPE-042` "`drop` discards a VALUE"), and `impl_old_blanket.npk` 22 (`TYPE-012`, whose header says it exists so the reader is not left with the generic "is a trait, not a value type" — AND that generic `TYPE-002`). All three are named in their tests now, so nothing is hidden; the question is diagnostics quality. D-157's rules 1 and 2 are the precedent for one mistake, one report, and `type_trait.npk`'s no-binding branch cites it. **Recommendation:** yes, where the sharper rule fires the generic one stays silent, each site fixed at its emitter with the test's second expectation removed in the same commit; a small, self-contained item for the 1.4.9 close or the first 1.5 subcycle that touches the checker. | 1.4.9 or early 1.5 | 1.4.8b step 1 |
 | ~~**S-5**~~ | **D-216** | **SETTLED (user-ratified): the consuming `pick (move(v))` — ownership transfers into the matched arm; lands at 1.4.3b.** ~~An owning enum payload cannot be read back out — enums with owning payloads are write-only containers.~~ TYPE-046 correctly refuses a `pick` arm binding an owning payload (the binding is a copy; two owners, one double free), and no move-binding form exists in patterns — so `enum:Res = { Note(string); }` can be constructed and dropped but its string can never be recovered. The missing form is a CONSUMING destructure: a `pick` over `move(v)` whose arms receive ownership of what they bind (the enum's own drop then does not run — the arm took the payload). Spelling and semantics are a language decision. Natural home: beside S-2's loop-carried move work (1.4.3), which is already in the move analysis. | 1.4.3 (or its own slot) | 1.4.1 |
+| ~~**S-19**~~ | **D-246** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 4.** Statement-end temporaries. An owning value no place takes is a temporary of the statement that produced it, dropped when that statement ends on every path (relay/pass/fail/return included; a trap runs none, D-014); TAKEN — and not dropped — when bound, assigned, passed to a `move` parameter, stored into a literal slot, sent, or returned; a coroutine's only cross-suspension temporary is an `await` argument, frame-resident (D-178). Closes D-183's recorded item. Recommendation: ratify as `1.5.1b.md` §6 step 4 states it. | 1.5.1b step 4 | §2f's probes: 260 KiB vs 429 740 KiB |
+| ~~**S-20**~~ | **D-247** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 5.** `List<T>` is compiler-known and OWNING: declared in the prelude, `type_drops` true, its generated drop drops the `count` elements through `T`'s drop then frees the block; move-only under TYPE-046 (which also refuses the aliasing copy a `wild` block permits). Alternatives decided out: `buffer`-backed (leaks the elements), a user drop hook (a destructor design), manual `list_free` + `defer` at 153 holders. Recommendation: ratify. | 1.5.1b step 5 | `npkc src/main.npk` at 11.0 GiB |
+| ~~**S-21**~~ | **D-248** | **SETTLED (user, 2026-09-03: the recommendations as written — both halves), lands at 1.5.1b step 1.** The file header is mandatory, and entry points are the root's: every file's first declaration is `mod:<basename>;` (RESOLVE-012, one code, two texts — missing, mismatched), so a header can never load a sibling and the loader can finally say "your header is wrong"; `main`/`failsafe` outside the root module refuse (RESOLVE-013). The sweep is 240 header-less files plus a one-line pin shift D-237 verifies. Alternative (header optional, identified by name) named in §7 and recommended against. Recommendation: ratify both halves. | 1.5.1b step 1 | DEF-2 |
+| ~~**S-22**~~ | **D-249** | **SETTLED (user, 2026-09-03: the recommendations as written), lands at 1.5.1b step 2.** A `Views` column in BUILTIN_REFERENCE (`—` or the 1-based argument whose storage the result aliases; `string_bytes` 1, `string_from_bytes` 1), generated like `Pure`; the escape analysis treats such a call — and the range-view `arr[lo...hi]` — as a borrow rooted where that argument is rooted, so D-004 rule 2 and rules A/B apply unchanged. Recommendation: ratify (a hard-coded pair of names would be a parallel authority beside the 1.4.2 table). | 1.5.1b step 2 | DEF-3 |
+
+## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
+
+Raised 2026-09-03 by the `nitpick-libs` orchestrator (`nitpick-time` cycle
+0.0.0, probe 04) against compiler commit `950bb1d`, under ORCHESTRATION R6 —
+recorded, stopped, escalated; nothing in the library is shaped around either.
+The reproduction, the curves and the recipes:
+`REPOS/nitpick-libs/nitpick-time/tests/probe/defect/README.md` (their O-N4);
+`big_fixed_array_cost.npk` beside it is the four-second case and becomes the
+regression test when the defect closes.
+
+**DEF-1 — compile time and memory are QUADRATIC in the size of one
+declaration, on three independent axes.** (1) elements of one module-level
+`fixed` array of `{ int64; int32 }`: 4 000 rows 4.19 s / 473 MiB, 8 000 rows
+15.83 s / 1.73 GiB, 30 000 rows 281 s / 30.9 GiB — a ratio approaching 4 per
+doubling in both columns; the cost is in the DECLARATION (a `main` that never
+reads the table costs the same), not struct-specific (`int64[4000]` 1.41 s),
+and not "many constants" (4 000 separate `fixed int64` bindings cost 0.61 s /
+58 MiB) — it is the size of ONE declaration. (2) statements in one function
+body (`acc = acc + k;` ×N): 1 000 0.87 s / 134 MiB, 4 000 7.03 s / 1.27 GiB.
+(3) bytes in one string literal: 60 k 5.2 s, 480 k 308 s, memory FLAT — a
+separate pathology (quadratic time, linear space) from the other two. What it
+costs: TM-007 compiles the IANA tzdb (26 838 rows) into the binary as `fixed`
+module state; a 16 GiB machine cannot build the library and every consumer
+pays it. **The ask is on `npkc` alone, no language change**: the
+array-initialiser and function-body paths linear (or near enough that 30 000
+rows is seconds and hundreds of megabytes), the string-literal path linear in
+time. Suspects to measure first, from the tree's own history: an accumulating
+`string_concat` per element or per byte (the 1.4.8 `lib/nproc.npk` capture
+was exactly this shape and spent 17 of 56 minutes in the kernel), a per-node
+window copy in the AST scratch pool, and a per-statement re-walk in the
+checker or the obligation walk. Measurement discipline the reporter learned
+the hard way: every timing must be paired with `npkc` exit 0 — a `failsafe`
+missing an arm fails fast and looks like a fast compile.
+
+**DEF-1's cause, measured 2026-09-03 (this session, read-only — no `src/`
+edit while the 1.5.1 prefix harnesses run):**
+- **Stage bisection: the frontend is linear on all three axes.**
+  `tools/check.npk` on the 8 000-row table 0.32 s / 26 MiB where `npkc`
+  costs 17.5 s / 1.9 GiB; on 4 000 statements 0.41 s where `npkc` costs
+  7.3 s / 1.33 GiB; on the 480 k-byte literal 0.07 s where `npkc` costs 23 s.
+  The emitted IR is linear in size on every axis (8 000 rows is one 482 KB
+  constant line). So it is not "total source bytes" (the reporter's second
+  theory) and not a checker re-walk: it is the BUILDING of three pieces of
+  text in `src/backend/`, three loops of one shape — an accumulator
+  re-concatenated per element. Axis 1: `emit_global_array_const`
+  (`src/backend/ir/ir_expr.npk:9479`, `out = cat3(out, ell.text, …)` per
+  row; `emit_global_struct_const` beside it, per field). Axis 2:
+  `emit_site_tables` (`src/backend/emit_program.npk:1981`, `ls = cat3(ls, …)`
+  and `ps = cat5(ps, …)` per D-179 trap site — a statement with an overflow
+  check IS a trap site, so 4 000 statements are 4 141 rows of
+  `@npk.site.paths`). Axis 3: the string-literal escaper
+  (`src/backend/ir/ir_expr.npk:193`, `enc = string_concat(enc, esc_byte(b))`
+  per BYTE — 480 k iterations each copying the whole prefix is the whole of
+  axis 3). The writer already owns the linear idiom: `Sink`
+  (`src/frontend/diagnostics.npk:268`, `sink_to_buffer`/`sink_write`) grows
+  geometrically and is what every `irw_line` writes through. The fix writes
+  the pieces into a sink instead of returning an accumulated string; the
+  emitted bytes do not change, and the harness's `selfhost`/`nf-inert`/`repro`
+  stages say so.
+- **Why the memory is quadratic on axes 1 and 2 and flat on axis 3: an owning
+  TEMPORARY is never dropped.** Two probes, built with the 1.5.1 worktree's
+  compiler, exit 0 both: `t = string_concat(t, "b")` 20 000 times peaks at
+  260 KiB — the old body is freed when the binding is overwritten; `t =
+  string_concat(string_concat(t, "b"), "c")` 20 000 times peaks at
+  429 740 KiB — the inner call's result is an unbound temporary passed as an
+  argument, and nothing ever frees it: it lives until the process ends.
+  `cat3`/`cat4`/`cat5` (`src/backend/ir/ir_writer.npk:305`) are exactly that
+  shape, so the accumulators above leak their whole prefix once (`cat3`) or
+  three times (`cat5`) per element: 8 000² / 2 × ~60 B ≈ 1.9 GiB, the
+  measured 1.86 GiB; 3 × 4 141² / 2 × ~47 B ≈ 1.2 GiB, the measured
+  1.33 GiB; the escaper's bound reassignment frees and stays flat. This is
+  D-183's recorded "statement-end temporaries" item — DECISIONS, written at
+  1.2.4a for `dyn`: "temporaries do not drop yet — that cell rides the
+  recorded statement-end-drops debt" — never scheduled since. A
+  managed-regime defect, not an emitter shape: every Nitpick program pays it
+  at every `f(g(x))` whose inner result owns memory.
+- **The compiler's own footprint is the same two facts at scale.** `npkc
+  src/main.npk` peaks at 11 516 824 KiB (11.0 GiB) of resident memory for
+  15.6 MB of output; `check src/main.npk` — the frontend alone — at
+  10 956 716 KiB; `parse_check` on the one file at 584 KiB (it parses one
+  file, so it attributes nothing — the ten gigabytes are loading,
+  resolution, checking and the analyses). Two causes, both by
+  construction: the temporaries above, and `List<T>`
+  (`src/frontend/list.npk`, 1.4.7) is a `wild` block whose own comment says
+  "nothing here drops" — 148 struct fields across 28 files hold Lists that
+  are never freed, so every per-function analysis table lives until exit.
+  The compiler is a bump allocator that happens to build itself; a 16 GiB
+  machine builds it with no margin, and four harnesses in parallel do not
+  fit (the 1.4.8 UI freeze has a candidate cause). A `wild` block behind a
+  copyable struct is also an aliasing hazard the checker cannot see: two
+  copies of one List, one `list_push` that `ralloc`s, and the other copy's
+  `items` dangles.
+
+**DEF-2 (their O-N8) — a root file whose `mod:` name differs from its basename
+is ACCEPTED when a sibling carries that basename**: the loader compiles the sibling too,
+merges both files into one module, and emits two `define i32 @main` at exit 0;
+`llc` refuses the result. Delete the sibling and the refusal is exemplary
+(RESOLVE-005 names the rule and anticipates the self-header case), so the
+loader knows the rule and skips it when the given name resolves to a
+different file. Silent invalid IR at exit 0 is the "silence is not success"
+class; the fix is a basename check at the ROOT before the name is resolved as
+a module, with a two-file case in `tests/modules/rejection/` (the reporter's
+six-line reproduction is in the README above).
+
+**DEF-3 (their O-N9, raised 2026-09-03) — a `uint8[]` view returned out of
+the frame that owns its string compiles clean and reads freed memory.**
+`string_bytes` on a local `string` (1.1.12c), returned: exit 0, and the
+caller's byte 0 is not what was written — measured by the reporter. The
+rule exists and is enforced beside it: returning `@x`, or a struct literal
+holding `@local`, is `NITPICK-BORROW-001` (D-004 rule 2). The slice view a
+view-maker returns is a borrow of its source and is not treated as one:
+`src/frontend/analysis/` names neither `string_bytes` nor `string_from_bytes`
+(D-186's "one remaining view-maker") anywhere — the only view the analyses
+know is the range-view `arr[lo...hi]`, and only the suspend walk knows it
+(D-191). An under-enforcement, no language change: the borrow walk learns
+that a view-maker's result borrows its operand, on every path a borrow is
+refused today (return, struct literal, channel, store into an outer place,
+the launder-through-a-call rule), with the reporter's reproduction as the
+case in `tests/analysis/rejection/`. It bites every parser in the ecosystem
+(any function taking `uint8[]`). The reporter's disposition — obey "a view
+is a parameter, never a return value", enforced by their own harness check —
+is conformance with a written rule, so nothing of theirs is stalled.
+
+**Recommendation (revised 2026-09-03 after the bisection):** a dedicated
+subcycle **1.5.1b** immediately after 1.5.1 closes and before 1.5.2 (the
+user's call, 2026-09-03: "finish up 1.5.1b before we move on") — `src/` work
+under the one-writer rule, FIVE commits, each under a full harness, in this
+order, DEF-1 measured before it is touched (the three axes and the two
+probes as programs with a wall-clock and a peak-RSS belt) so every fix is a
+number and not a claim:
+1. **DEF-2**, the loader's basename check at the root — six lines,
+   deterministic, independent of everything else.
+2. **DEF-3**, the view-makers as borrows in the escape analysis — a
+   refusal, the reporter's reproduction as its case.
+3. **DEF-1's three builders through a `Sink`** — emitted bytes
+   byte-identical; this alone makes the reported curves linear in time AND
+   memory (a sink creates no prefix-sized temporaries).
+4. **Statement-end temporaries** (proposed **D-246**, the user's): an owning
+   temporary no consumer takes is dropped at the end of the statement that
+   created it, on every path out of the statement (`?|`/`?!` relays
+   included); the coroutine case is bounded by D-178 (an `await` is its
+   statement's first evaluation, so the only temporaries alive across a
+   suspension are the await's own arguments, which take frame slots). An
+   emission change under `selfhost`, `nf-inert`, opt-O2 and the stress
+   loops, with the two probes as its programs. D-183's debt, closed.
+5. **`List<T>` becomes an owning managed structure** (proposed **D-247**):
+   its block a `buffer` (D-200's owning byte cell; growth is
+   `buffer_new(2n)` + copy + the field-overwrite drop), so a List drops with
+   its holder and is move-only under TYPE-046 — which also refuses the
+   aliasing copy today's `wild` block permits — and the 148 holders are
+   swept under the checker's own refusals. With 4, this is what brings the
+   compiler's own build from 11 GiB to whatever the live data actually is,
+   measured per stage before and after.
+The library re-pins its toolchain when it lands; the landing message states
+whether `build/` was written after the fix commit (rider below).
+
+Three riders from the reporter (2026-09-03), each binding on 1.5.1b:
+- **The reproduction is citable at a commit**: `nitpick-time`
+  `8066e6229c77aed28be7ab471209962a03534b0f` on `main` carries the 4 000-row
+  case, the README with all three curves, the recipes, and the probe-04
+  verdict. The curve is ONE measurement by one agent until their
+  independent verifier (dispatched to regenerate the axis-1 points at
+  1 000 / 2 000 / 4 000 rows, each checked for exit 0) reports; the
+  reporter first wrote "verified" before the answer existed and corrected
+  it within the hour — the same trap one layer up, named by them. This
+  session's own data point at the 1.5.1 tree is recorded below; if the
+  verifier contradicts the curve, DEF-1 waits and DEF-2 (six lines,
+  deterministic) does not.
+- **Reproduced here, independently, 2026-09-03** — the compiler built from
+  `efd6a4d` plus 1.5.1's steps 2–5 (the worktree's `quickemit` binary), on
+  a machine running four harnesses, the reporter's committed 4 000-row file
+  and three files regenerated from its shape (`mod:` renamed to the
+  basename — the first attempt kept the original header and every point
+  "compiled" in 0.04 s at exit 1, RESOLVE-005: the reporter's trap, met on
+  the first try), every point at exit 0: 1 000 rows 0.49 s / 56 MiB,
+  2 000 rows 1.31 s / 148 MiB, 4 000 rows 5.88 s / 580 MiB, 8 000 rows
+  17.49 s / 1.86 GiB — ×2.7 / ×4.5 / ×3.0 in time and ×2.6 / ×3.9 / ×3.3 in
+  memory per doubling. Quadratic, on a second build of a second tree.
+- **The baseline is taken at the commit the fix starts from** — 1.5.1's
+  close — with the README's recipes, never against the reporter's numbers,
+  which are at `950bb1d`: measuring against those would conflate the fix
+  with everything 1.5.1 changed in the frontend. The recipes are
+  parameterised by N and regenerate in seconds at small N.
+- **The re-pin needs one fact beside the fix commit**: whether `build/` was
+  written AFTER it (the workbench pins `build/npkc` and `build/npkrt.o` and
+  records whether the tree was clean, because a dirty tree makes the binary's
+  label the nearest commit rather than its provenance). State it in the
+  landing message so the re-pin needs no second round trip.
+- No schedule pressure: O-N4 blocks their 0.0.5 and 0.5, not 0.0.1–0.0.4,
+  and the workbench works the nine probes it does not touch meanwhile.
 
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
