@@ -1,0 +1,30 @@
+// A FAMILY IMPL'S BOUND IS ENFORCED WHERE THE IMPL IS USED (D-256, 1.5.2b step 1;
+// OPEN_DECISIONS DEF-15). `impl:<T: Ord>:Box<T>:Ord` was matched to `Box<Point>`
+// by declaration alone: the checker admitted `a.cmp(b)` for a `Point` without
+// `Ord`, the emitter named `Point:Ord.cmp`, and `llc` refused the module. The
+// call is refused now -- TYPE-017, naming the impl, the parameter and the bound,
+// and never TYPE-019 beside it (D-240) -- and a function bound that reaches the
+// same impl is refused with `bound_unmet`'s wording. The unsatisfying
+// INSTANTIATION itself is fine: `Box<Point>:a` below is declared and built and
+// refuses nothing, because the check is not eager.
+
+mod:family_bound;
+error:E9;
+struct:Point = { int32:x; };
+struct:Box<T> = { T:v; };
+impl:<T: Ord>:Box<T>:Ord = { pub func:cmp = Ordering(Box<T>:self, Box<T>:other) {
+    pass (relay self.v.cmp(other.v)); }; };
+func:g<S: Ord> = int32(S:a, S:b) never fails { pass 0i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    Box<Point>:a = Box{ v: Point{ x: 1i32 } };
+    Box<Point>:b = Box{ v: Point{ x: 2i32 } };
+    // expect-error: NITPICK-TYPE-017
+    // expect-error-at: 24:19
+    Ordering:o = a.cmp(b) ?! E9;
+    // expect-error: NITPICK-TYPE-017
+    // expect-error-at: 27:20
+    int32:z = raw g::<Box<Point>>(a, b);
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) { pick (e) { (E9) { exit 90i32; }, (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (*) { exit 99i32; } } exit 9i32; };

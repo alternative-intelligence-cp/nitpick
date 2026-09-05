@@ -1,5 +1,8 @@
 // Coherence: at most one implementation of a trait for a type (4.1), and at most
-// one blanket impl per trait (D-111).
+// one blanket impl per trait (D-111). Since 1.5.2b step 1 (D-257's rider) the
+// report carries a NOTE at the earlier impl, so the walk prints its file -- "at
+// line 11" is a line of a file the sentence does not name, the prelude's once a
+// program implements a pair it already covers.
 
 mod:coherence;
 trait:Tagged = { func:tag = int32(Self:self); };
@@ -10,6 +13,8 @@ struct:Item = { int32:v; };
 // purpose.
 impl:Item:Tagged = { func:tag = int32(Item:self) { pass 1i32; }; };
 // expect-error: NITPICK-TYPE-013
+// expect-note: NITPICK-TYPE-013
+// expect-note-at: 14:1
 impl:Item:Tagged = { func:tag = int32(Item:self) { pass 2i32; }; };
 
 trait:Alpha = { func:a = int32(Self:self); };
@@ -21,6 +26,8 @@ trait:Logged = { func:log = int32(Self:self); };
 // specialization there is no rule to choose by.
 impl:<T: Alpha>:T:Logged = { func:log = int32(T:self) { pass 1i32; }; };
 // expect-error: NITPICK-TYPE-013
+// expect-note: NITPICK-TYPE-013
+// expect-note-at: 27:1
 impl:<U: Beta>:U:Logged = { func:log = int32(U:self) { pass 2i32; }; };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };

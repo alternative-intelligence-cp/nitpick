@@ -124,7 +124,24 @@ func:gx = Gx(string:src, InternTable->:it) never fails {
 // parse error as a type error would make every count below mean two things.
 func:errs = int64(Gx->:x) never fails {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
-    pass (raw diaglist_count(@x.diags));
+    // ERRORS ONLY (1.5.2b step 1). A NOTE is a pointer, not a finding (D-237),
+    // and a coherence report now carries one at the earlier impl; counting it
+    // here would make every count below mean two things, which is the failure
+    // the parse-count rule above is written against. `notes` counts them.
+    int64:n = 0i64;
+    for (int64:i in 0i64...(raw diaglist_count(@x.diags))) {
+        Diagnostic:d = raw diaglist_at(@x.diags, i);
+        if (d.severity == 2i32) { n = n + 1i64; }
+    }
+    pass n;
+};
+func:notes = int64(Gx->:x) never fails {
+    int64:n = 0i64;
+    for (int64:i in 0i64...(raw diaglist_count(@x.diags))) {
+        Diagnostic:d = raw diaglist_at(@x.diags, i);
+        if (d.severity == 0i32) { n = n + 1i64; }
+    }
+    pass n;
 };
 // AN EXPLICIT COPY, not a view of the list (D-004 rule A). `diaglist_at` takes
 // a borrow and hands back a `Diagnostic`, which carries a string — so the
@@ -656,6 +673,9 @@ func:main = int32(cstring[]:_~argv) {
         @it);
     if (raw errs(@k5) != 1i64)                                  { exit 115i32; }
     if (!(raw string_eq(raw code0(@k5), raw TYPE_COHERENCE())))  { exit 116i32; }
+    // ...and the report carries ONE NOTE at the earlier impl (D-257's rider,
+    // 1.5.2b step 1), so the walk can print its file.
+    if (raw notes(@k5) != 1i64)                                 { exit 143i32; }
 
     // …while a blanket impl beside a CONCRETE one is not a conflict (D-105).
     // Overlapping is the point; §2.6 already says which wins.
@@ -705,6 +725,104 @@ func:main = int32(cstring[]:_~argv) {
         "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = Pr & { func:l = int32(Self:self) never fails; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 1i32; }; };",
         @it);
     if (raw errs(@k11) != 0i64)                                 { exit 124i32; }
+
+    // --- A FAMILY IMPL APPLIES ONLY WHEN ITS BOUNDS HOLD (D-256, 1.5.2b) -----
+    //
+    // `impl:<T: Pr>:Box<T>:Lo` was matched to `Box<Point>` by DECLARATION alone
+    // and its bound never read (OPEN_DECISIONS DEF-15): the checker admitted
+    // `Box<Point>.l()` for a `Point` without `Pr`, and `llc` refused the method
+    // the emitter then named. The impl is a candidate only when the bound
+    // holds, decided where it is USED.
+    //
+    // Satisfied: the method resolves.
+    Gx:f1 = raw gx(
+        "error:E9; trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:f = NIL(Box<Point>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f1) != 0i64)                                  { exit 125i32; }
+
+    // Unsatisfied and CALLED: one report, and it is the bound (TYPE-017), never
+    // "no method" (TYPE-019) beside it -- one mistake, one report (D-240).
+    Gx:f2 = raw gx(
+        "error:E9; trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:<T: Pr>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:f = NIL(Box<Point>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f2) != 1i64)                                  { exit 126i32; }
+    if (!(raw string_eq(raw code0(@f2), raw TYPE_BOUND_UNMET()))) { exit 127i32; }
+
+    // Unsatisfied and NEVER called: nothing. The check is not eager -- an
+    // instantiation is never refused for an impl it does not reach, which is
+    // what lets one derived impl per trait carry its own bound (D-258).
+    Gx:f3 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:<T: Pr>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:f = NIL(Box<Point>:q) never fails { pass NIL; };",
+        @it);
+    if (raw errs(@f3) != 0i64)                                  { exit 128i32; }
+
+    // A PATTERN THAT DOES NOT UNIFY IS NOT A MEMBER OF THE FAMILY, and failed no
+    // bound: `Pair<T, T>` against `Pair<Point, int32>` binds `T` twice to two
+    // types, so the report is the plain "no method" (TYPE-019)...
+    Gx:f4 = raw gx(
+        "error:E9; trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Pair<A, B> = { A:a; B:b; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:Pair<T, T>:Lo = { func:l = int32(Pair<T, T>:self) never fails { pass 2i32; }; }; func:f = NIL(Pair<Point, int32>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f4) != 1i64)                                  { exit 129i32; }
+    if (!(raw string_eq(raw code0(@f4), raw TYPE_NO_METHOD())))  { exit 130i32; }
+
+    // ...while `Pair<Point, Point>` is a member.
+    Gx:f5 = raw gx(
+        "error:E9; trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Pair<A, B> = { A:a; B:b; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:Pair<T, T>:Lo = { func:l = int32(Pair<T, T>:self) never fails { pass 2i32; }; }; func:f = NIL(Pair<Point, Point>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f5) != 0i64)                                  { exit 131i32; }
+
+    // A FUNCTION BOUND asks the same question through `type_implements`, and
+    // keeps `bound_unmet`'s wording: TYPE-017 naming the function's parameter.
+    Gx:f6 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:<T: Pr>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:g<S: Lo> = NIL(S:x) never fails { pass NIL; }; func:f = NIL(Box<Point>:q) never fails { drop g::<Box<Point>>(q); pass NIL; };",
+        @it);
+    if (raw errs(@f6) != 1i64)                                  { exit 132i32; }
+    if (!(raw string_eq(raw code0(@f6), raw TYPE_BOUND_UNMET()))) { exit 133i32; }
+
+    // ...and is satisfied through the family impl when the bound holds.
+    Gx:f7 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Pr>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:g<S: Lo> = NIL(S:x) never fails { pass NIL; }; func:f = NIL(Box<Point>:q) never fails { drop g::<Box<Point>>(q); pass NIL; };",
+        @it);
+    if (raw errs(@f7) != 0i64)                                  { exit 134i32; }
+
+    // NESTED: `Box<Box<Point>>` under `impl:<T: Lo>:Box<T>:Lo` needs
+    // `Box<Point>: Lo`, which needs `Point: Lo` -- the same question asked of
+    // the same impl one level down, fuel-bounded (the prelude's
+    // `LineBufWriter<ByteWriter>` as a `Writer` is this shape).
+    Gx:f8 = raw gx(
+        "error:E9; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:Point:Lo = { func:l = int32(Point:self) never fails { pass 1i32; }; }; impl:<T: Lo>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:f = NIL(Box<Box<Point>>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f8) != 0i64)                                  { exit 135i32; }
+    Gx:f9 = raw gx(
+        "error:E9; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; struct:Box<T> = { T:v; }; impl:<T: Lo>:Box<T>:Lo = { func:l = int32(Box<T>:self) never fails { pass 2i32; }; }; func:f = NIL(Box<Box<Point>>:q) never fails { discard(q.l() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f9) != 1i64)                                  { exit 136i32; }
+    if (!(raw string_eq(raw code0(@f9), raw TYPE_BOUND_UNMET()))) { exit 137i32; }
+
+    // THE PATTERN IS UNIFIED, NOT READ POSITIONALLY. Measured at 1.5.2b step 1:
+    // the three shapes below were admitted at their declaration and refused at
+    // the call with a receiver mismatch, `T` having been bound to the FIRST
+    // argument whatever the pattern said. The parameters in the other order...
+    Gx:f10 = raw gx(
+        "struct:Pair<T, U> = { T:a; U:b; }; impl:<T, U>:Pair<U, T> = { func:second = T(Pair<U, T>:self) never fails { pass self.b; }; }; func:f = NIL(Pair<int32, int64>:p) never fails { int64:s = raw p.second(); pass NIL; };",
+        @it);
+    if (raw errs(@f10) != 0i64)                                 { exit 138i32; }
+    // ...a concrete argument beside a parameter, matched...
+    Gx:f11 = raw gx(
+        "struct:Pair<T, U> = { T:a; U:b; }; impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>:self) never fails { pass self.b; }; }; func:f = NIL(Pair<int32, int64>:p) never fails { int64:s = raw p.tail(); pass NIL; };",
+        @it);
+    if (raw errs(@f11) != 0i64)                                 { exit 139i32; }
+    // ...and not matched (not a member: TYPE-019, no bound failed)...
+    Gx:f12 = raw gx(
+        "error:E9; struct:Pair<T, U> = { T:a; U:b; }; impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>:self) never fails { pass self.b; }; }; func:f = NIL(Pair<int64, int64>:q) never fails { discard(q.tail() ?! E9); pass NIL; };",
+        @it);
+    if (raw errs(@f12) != 1i64)                                 { exit 140i32; }
+    if (!(raw string_eq(raw code0(@f12), raw TYPE_NO_METHOD()))) { exit 141i32; }
+    // ...and a parameter nested inside another instance.
+    Gx:f13 = raw gx(
+        "struct:Pair<T, U> = { T:a; U:b; }; struct:Box<X> = { X:v; }; impl:<T>:Box<Pair<T, int32>> = { func:inner = T(Box<Pair<T, int32>>:self) never fails { pass self.v.a; }; }; func:f = NIL(Box<Pair<int64, int32>>:b) never fails { int64:s = raw b.inner(); pass NIL; };",
+        @it);
+    if (raw errs(@f13) != 0i64)                                 { exit 142i32; }
 
     wild_release_all();
     exit 0i32;

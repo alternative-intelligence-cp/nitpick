@@ -1735,6 +1735,55 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
         int32:sym = 0i32;
         if (!opaque_recv) { sym = raw scope_lookup(e.tab, e.scope, name); }
         if (sym == 0i32) {
+            // A FAMILY IMPL THAT MATCHED BY DECLARATION AND FAILED ITS BOUND IS
+            // REPORTED AS THAT (D-256, 1.5.2b step 1). "`Box<Point>` has no method
+            // `cmp`" is true and useless when `impl:<T: Ord>:Box<T>:Ord` is right
+            // there and the fix is `Point: Ord`; the reader is told which impl,
+            // which parameter and which bound. TYPE-017, because it is a bound
+            // that was unmet — and one report for one mistake (D-240), so
+            // TYPE-019 does not follow it. A DERIVED impl is named by its derive:
+            // its own text is a file nobody wrote (D-250), and its line means
+            // nothing to the reader.
+            if (found.unmet_impl != 0i32) {
+                DeclNode:ud = raw ast_decl(e.ast, DeclId{ index: found.unmet_impl });
+                DeclNode:up = raw ast_decl(e.ast, DeclId{ index: found.unmet_param });
+                string:u1 = string_concat("`", raw type_display(e.types, e.interns, recv));
+                string:u2 = string_concat(u1, "` reaches `");
+                string:u3 = string_concat(u2, raw intern_get(e.interns, name));
+                string:u4 = string_concat(u3, "` only through the `");
+                string:u5 = string_concat(u4,
+                                raw type_display(e.types, e.interns, found.unmet_trait));
+                string:via = "";
+                if (raw decl_has(ud, raw DECL_DERIVED())) {
+                    string:d1 = string_concat(u5, "` that `#[derive(");
+                    string:d2 = string_concat(d1,
+                                    raw type_display(e.types, e.interns, found.unmet_trait));
+                    string:d3 = string_concat(d2, ")]` generates for `");
+                    DeclNode:sdn = raw ast_decl(e.ast,
+                                       DeclId{ index: raw type_decl_of(e.types, recv) });
+                    string:d4 = string_concat(d3,
+                                    raw intern_get(e.interns, raw decl_name(sdn)));
+                    via = string_concat(d4, "`, and `");
+                } else {
+                    string:h1 = string_concat(u5, "` implemented for `");
+                    string:h2 = string_concat(h1,
+                                    raw type_display(e.types, e.interns,
+                                        raw impl_pattern_of(e.impls, found.unmet_impl)));
+                    string:h3 = string_concat(h2, "` at line ");
+                    string:h4 = string_concat(h3, int_to_string(ud.span.line => int64));
+                    via = string_concat(h4, ", and `");
+                }
+                string:u6 = string_concat(via,
+                                raw type_display(e.types, e.interns, found.unmet_arg));
+                string:u7 = string_concat(u6, "` does not implement `");
+                string:u8 = string_concat(u7,
+                                raw type_display(e.types, e.interns, found.unmet_need));
+                string:u9 = string_concat(u8, "`, which its parameter `");
+                string:u10 = string_concat(u9, raw intern_get(e.interns, raw decl_name(up)));
+                pass (raw te_error(e, raw TYPE_BOUND_UNMET(),
+                    string_concat(u10, "` requires"), n.span));
+            }
+
             // THE MESSAGE NAMES THE TYPE IT WAS SOUGHT ON. "unknown function
             // `magnitude`" would send the reader looking for a free function when
             // what they wrote was a method call.
@@ -2201,36 +2250,48 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
 //            are the receiver's own type ARGUMENTS: `Box<int32>` binds
 //            `T` = `int32`, positionally.
 //
-// The family case takes the arguments positionally rather than unifying the
-// target's shape against the receiver's, which is right for the form the
-// grammar admits — `Box<T>` with the declaration's parameters in order. A
-// target like `Box<Pair<T, U>>` would need real unification, and that is a
-// decision to raise rather than to guess at here; the positional read is exact
-// for what can be written today and refuses nothing that used to work.
+// The family case UNIFIES the target pattern with the receiver (D-256, 1.5.2b
+// step 1) — the same walk that decided the impl applies, so the two cannot
+// disagree. From 1.0.4b to 1.5.2b it copied the receiver's arguments
+// POSITIONALLY, which is the pattern `Box<T>` and no other: `Pair<U, T>`,
+// `Pair<int32, T>` and `Box<Pair<T, int32>>` were admitted at their
+// declaration and refused at every call by the receiver check, with a message
+// naming the type positional binding had invented (measured at the step).
 func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) never fails {
     DeclId:bid = DeclId{ index: impl_decl };
     DeclNode:bd = raw ast_decl(e.ast, bid);
     IdSpan:pw = raw decl_generic_window(e.ast, bd);
-    int32:mark = raw ast_scratch_mark(e.ast);
 
     // A BLANKET IMPL'S PARAMETER IS THE RECEIVER (D-171): `impl:<T: P>:T:Trait`
     // called on a `Point` binds `T` = `Point`. A FAMILY impl's parameters are
-    // the receiver's own type ARGUMENTS: `Box<int32>` binds `T` = `int32`,
-    // positionally. The two are told apart by the target's shape, not by
-    // whether a target was written (both write one now).
+    // bound from the receiver's own type ARGUMENTS by the pattern: `Box<int32>`
+    // against `Box<T>` binds `T` = `int32`. The two are told apart by the
+    // target's shape, not by whether a target was written (both write one now).
     if (raw impl_is_blanket(e.ast, bd)) {
+        int32:mark = raw ast_scratch_mark(e.ast);
         drop ast_scratch_push(e.ast, recv);
-    } else {
-        int32:rargs = raw type_args_start_of(e.types, recv);
-        int32:rn = raw type_args_count_of(e.types, recv);
-        for (int32:i in 0i32...rn) {
-            drop ast_scratch_push(e.ast, raw ast_id_at(e.ast, rargs, i));
-        }
+        IdSpan:bw = raw ast_scratch_commit(e.ast, mark);
+        GenericScope:bg = GenericScope{ params_start: pw.start, params_count: pw.count,
+                                        args_start: bw.start, args_count: bw.count };
+        pass bg;
     }
 
-    IdSpan:aw = raw ast_scratch_commit(e.ast, mark);
+    FamilyBind:fb = raw family_bind(e.ast, e.types, impl_decl,
+                                    raw impl_pattern_of(e.impls, impl_decl), recv);
+    if (!fb.ok) {
+        // UNREACHABLE FOR AN ADMITTED CALL: `find_method` and
+        // `find_family_impl_for` hand over only an impl that applies, and one
+        // that applies unifies. Left as the EMPTY window rather than a trap,
+        // because an empty window leaves the parameters opaque and the receiver
+        // check then refuses the call truthfully — the failure mode this
+        // function had for every non-positional pattern before the unifier.
+        IdSpan:none = raw idspan_empty();
+        GenericScope:ng = GenericScope{ params_start: pw.start, params_count: pw.count,
+                                        args_start: none.start, args_count: none.count };
+        pass ng;
+    }
     GenericScope:g = GenericScope{ params_start: pw.start, params_count: pw.count,
-                                   args_start: aw.start, args_count: aw.count };
+                                   args_start: fb.args.start, args_count: fb.args.count };
     pass g;
 };
 
@@ -2259,7 +2320,16 @@ func:find_family_impl_for = int32(ExprTyper->:e, int32:got, int32:tr_id) never f
                              raw ast_decl(e.ast, DeclId{ index: en.decl })))
                                 > 0i32) {
                         if ((raw type_decl_of(e.types, en.target)) == gd) {
-                            pass (en.decl);
+                            // …WHEN IT APPLIES (D-256, 1.5.2b step 1). A family
+                            // impl beside a BLANKET impl of one trait is not an
+                            // overlap (`check_coherence`), so `dyn_accepts` may
+                            // have been satisfied by the blanket while this
+                            // pattern does not fit the value; recording ITS
+                            // methods would bind parameters nothing unifies.
+                            if (raw family_applies(e.impls, e.bounds, e.ast, e.types,
+                                                   en, got, raw IMPL_FUEL())) {
+                                pass (en.decl);
+                            }
                         }
                     }
                 }

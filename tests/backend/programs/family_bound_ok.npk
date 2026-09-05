@@ -1,0 +1,53 @@
+// expect-exit: 0
+//
+// A FAMILY IMPL'S BOUND HOLDS HERE, AND THE CALL RUNS (D-256, 1.5.2b step 1; the
+// other half of `tests/types/rejection/family_bound.npk`). `Box<Point>` reaches
+// `cmp` through `impl:<T: Ord>:Box<T>:Ord` because `Point: Ord`; `Box<Plain>`,
+// `Plain` implementing nothing, is a fine type that never calls `cmp` -- the
+// check is not eager, so an instantiation is never refused for an impl it does
+// not reach; and three family impls whose target is NOT the parameters in
+// declaration order -- `Pair<U, T>`, `Pair<int32, T>`, `Cell<Pair<T, int32>>` --
+// bind by UNIFICATION on the checking side and the emitting side alike and run
+// to their answers. Until this step each of the three was refused at the call by
+// the receiver check, `T` having been bound to the first argument whatever the
+// pattern said (measured at the step).
+
+mod:family_bound_ok;
+error:E9;
+struct:Point = { int32:x; };
+impl:Point:Ord = { pub func:cmp = Ordering(Point:self, Point:other) never fails {
+    if (self.x < other.x) { pass Ordering.Less; }
+    if (self.x > other.x) { pass Ordering.Greater; }
+    pass Ordering.Equal; }; };
+struct:Plain = { int32:y; };
+struct:Box<T> = { T:v; };
+impl:<T: Ord>:Box<T>:Ord = { pub func:cmp = Ordering(Box<T>:self, Box<T>:other) {
+    pass (relay self.v.cmp(other.v)); }; };
+
+struct:Pair<T, U> = { T:a; U:b; };
+// The parameters in the OTHER order: `second` is the struct's `b`, of type `T`.
+impl:<T, U>:Pair<U, T> = { func:second = T(Pair<U, T>:self) never fails { pass self.b; }; };
+// A concrete first argument: a member of `Pair<int32, _>` and of nothing else.
+impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>:self) never fails { pass self.b; }; };
+// A parameter nested inside another instance.
+struct:Cell<X> = { X:v; };
+impl:<T>:Cell<Pair<T, int32>> = { func:inner = T(Cell<Pair<T, int32>>:self) never fails { pass self.v.a; }; };
+
+func:main = int32(cstring[]:_~argv) {
+    Box<Point>:a = Box{ v: Point{ x: 1i32 } };
+    Box<Point>:b = Box{ v: Point{ x: 2i32 } };
+    pick (a.cmp(b) ?! E9) { (Ordering.Less) { }, (*) { exit 2i32; } }
+    pick (b.cmp(a) ?! E9) { (Ordering.Greater) { }, (*) { exit 3i32; } }
+    pick (a.cmp(a) ?! E9) { (Ordering.Equal) { }, (*) { exit 4i32; } }
+
+    Box<Plain>:p = Box{ v: Plain{ y: 7i32 } };
+    if (p.v.y != 7i32) { exit 5i32; }
+
+    Pair<int32, int64>:q = Pair{ a: 1i32, b: 7i64 };
+    if ((raw q.second()) != 7i64) { exit 6i32; }
+    if ((raw q.tail()) != 7i64) { exit 7i32; }
+    Cell<Pair<int64, int32>>:c = Cell{ v: Pair{ a: 5i64, b: 1i32 } };
+    if ((raw c.inner()) != 5i64) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) { pick (e) { (E9) { exit 90i32; }, (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (*) { exit 99i32; } } exit 9i32; };

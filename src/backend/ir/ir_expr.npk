@@ -8714,16 +8714,19 @@ func:note_family_instance = NIL(ExprEmitter->:x, int32:conc, int32:trait_ty,
                             }
                             if (mdecl == 0i32) { pass NIL; }
                             IdSpan:pw = raw decl_generic_window(x.ast, idn);
-                            int32:mark = raw ast_scratch_mark(x.ast);
-                            int32:rargs = raw type_args_start_of(x.fe.ctx.types, conc);
-                            int32:rn = raw type_args_count_of(x.fe.ctx.types, conc);
-                            for (int32:k in 0i32...rn) {
-                                drop ast_scratch_push(x.ast,
-                                    raw ast_id_at(x.ast, rargs, k));
-                            }
-                            IdSpan:aw = raw ast_scratch_commit(x.ast, mark);
-                            drop fninst_record(x.fninsts, x.ast, mdecl, aw.start,
-                                               aw.count, pw.start, pw.count,
+                            // BOUND BY UNIFYING THE IMPL'S TARGET PATTERN WITH
+                            // THE CONCRETE RECEIVER (D-256, 1.5.2b step 1), as
+                            // `bind_blanket` binds them on the checking side --
+                            // one unifier, so the two cannot disagree. The
+                            // positional copy this replaced was right for
+                            // `Box<T>` and for no other pattern. A pattern that
+                            // does not unify is not this impl: the checker
+                            // admitted the call through one that applies.
+                            FamilyBind:fb = raw family_bind(x.ast, x.fe.ctx.types,
+                                                            e.decl, e.target, conc);
+                            if (!fb.ok) { pass NIL; }
+                            drop fninst_record(x.fninsts, x.ast, mdecl, fb.args.start,
+                                               fb.args.count, pw.start, pw.count,
                                                e.decl, 0i32, at);
                             pass NIL;
                         }

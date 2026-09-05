@@ -1939,6 +1939,18 @@ pub func:type_chan_cap = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).c);
 };
 
+// A `simd<T, N>`'s LANE COUNT (D-194) and a `Mutex<T, LEVEL>`'s or
+// `RwLock<T, LEVEL>`'s LEVEL (D-056): slot `b` on each, named for the reason
+// every accessor above is -- read raw, `.b` is a lane count here, a lock level
+// there, and an argument start on an instance. Added at 1.5.2b step 1 for the
+// family-impl unifier, which compares a pattern's constant with an instance's.
+pub func:type_simd_lanes = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).b);
+};
+pub func:type_lock_level = int32(TypeTable->:t, int32:id) never fails {
+    pass ((raw tt_get(t, id)).b);
+};
+
 // AN INSTANTIATION'S ARGUMENT WINDOW. Slots `b` and `c` again, and reading one
 // through `type_param_start_of` would return a struct's arguments as a function's
 // parameters — which is the whole reason these are named accessors rather than a

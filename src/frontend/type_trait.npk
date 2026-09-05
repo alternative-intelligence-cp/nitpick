@@ -379,6 +379,7 @@ func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) n
         string_concat(m9,
             " — with no specialization there is no rule to choose by (D-064 §7), so the two overlap rather than one winning"),
         second_d.span));
+    drop note_earlier_impl(r, first_d);
     pass NIL;
 };
 
@@ -399,6 +400,19 @@ func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
         string_concat(m3,
             "; a blanket impl applies to every type satisfying its bound, and nothing stops a type satisfying both bounds — with no specialization there is no rule to choose by (D-064)"),
         second_d.span));
+    drop note_earlier_impl(r, first_d);
+    pass NIL;
+};
+
+// THE EARLIER IMPL, AS A NOTE (D-257's coherence rider, 1.5.2b step 1). Every
+// overlap report below says "at line N", and N is a line of a file the
+// sentence does not name -- the prelude's, once it implements `int32:Ord` and a
+// program writes its own. The walk prints a note's span WITH its file
+// (`prelude.npk:N:1`), so the note is the pointer the sentence cannot be. Notes
+// are not findings (D-237): no expectation changes, and a test may assert one.
+func:note_earlier_impl = NIL(TypeResolver->:r, DeclNode:first_d) never fails {
+    drop diaglist_push(r.diags, raw diag_note(raw TYPE_COHERENCE(),
+        "the earlier implementation", first_d.span));
     pass NIL;
 };
 
@@ -433,6 +447,7 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
     drop diaglist_push(r.diags,
         raw diag_error(raw TYPE_COHERENCE(), string_concat(m5, tail),
                        second_d.span));
+    drop note_earlier_impl(r, first_d);
     pass NIL;
 };
 
@@ -783,12 +798,31 @@ pub struct:MethodFind = {
     // symbol is it?". Two questions, two slots — folding them would make the
     // non-parameterised case indistinguishable from no impl at all.
     int32:owner_impl;
+
+    // THE FIRST FAMILY IMPL THAT MATCHED BY DECLARATION AND FAILED A BOUND
+    // (D-256, 1.5.2b step 1), or 0s. `impl:<T: Ord>:Box<T>:Ord` matched to
+    // `Box<Point>` is not a candidate when `Point` lacks `Ord` -- but "`Box<Point>`
+    // has no method `cmp`" is true and useless when the impl is right there. So
+    // the miss carries WHY: the impl, the trait it implements, the parameter
+    // whose bound failed, the trait that bound required, and the instance type
+    // bound to the parameter (`Point`) -- the last named because the parameter is
+    // bound by unification, not by position, so the caller cannot read it off
+    // the receiver's argument list. Read by `type_members.npk`'s no-method
+    // branch, which reports TYPE-017 from them instead of TYPE-019.
+    int32:unmet_impl;
+    int32:unmet_trait;
+    int32:unmet_param;
+    int32:unmet_need;
+    int32:unmet_arg;
 };
 
 func:method_none = MethodFind() never fails {
     MethodFind:m = MethodFind{ found: false, ambiguous: false,
                                decl: 0i32, owner: 0i32, other: 0i32,
-                               blanket_impl: 0i32, owner_impl: 0i32 };
+                               blanket_impl: 0i32, owner_impl: 0i32,
+                               unmet_impl: 0i32, unmet_trait: 0i32,
+                               unmet_param: 0i32, unmet_need: 0i32,
+                               unmet_arg: 0i32 };
     pass m;
 };
 
@@ -834,7 +868,10 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                 MethodFind:sf = MethodFind{ found: true, ambiguous: false,
                                             decl: sm, owner: 0i32,
                                             other: 0i32, blanket_impl: 0i32,
-                                            owner_impl: 0i32 };
+                                            owner_impl: 0i32,
+                               unmet_impl: 0i32, unmet_trait: 0i32,
+                               unmet_param: 0i32, unmet_need: 0i32,
+                               unmet_arg: 0i32 };
                 pass sf;
             }
         }
@@ -851,7 +888,10 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                 MethodFind:sm = MethodFind{ found: true, ambiguous: false,
                                             decl: m, owner: target,
                                             other: 0i32, blanket_impl: 0i32,
-                                            owner_impl: 0i32 };
+                                            owner_impl: 0i32,
+                               unmet_impl: 0i32, unmet_trait: 0i32,
+                               unmet_param: 0i32, unmet_need: 0i32,
+                               unmet_arg: 0i32 };
                 pass sm;
             }
         }
@@ -885,6 +925,10 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
         // the same shape `blanket_applies` uses for the blanket form, one step
         // less general.
         bool:hit = (e.target == target);
+        // MATCHED BY DECLARATION ONLY, so far: the pattern must still unify with
+        // the instance and every bound hold before the impl is a candidate
+        // (D-256, below).
+        bool:family = false;
         if (!hit) {
             if ((raw impl_generic_count(ast, raw ast_decl(ast,
                      DeclId{ index: e.decl }))) > 0i32) {
@@ -893,6 +937,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     if (ed != 0i32) {
                         if (ed == (raw type_decl_of(types, target))) {
                             hit = true;
+                            family = true;
                         }
                     }
                 }
@@ -916,6 +961,39 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                                 e.trait_id, name);
                 }
             }
+
+            // A FAMILY IMPL IS A CANDIDATE ONLY WHEN IT APPLIES (D-256, 1.5.2b
+            // step 1; DEF-15). Declaration identity said `impl:<T: Ord>:Box<T>:Ord`
+            // covers `Box<Point>`, and it does -- when `Point: Ord`. Until this
+            // line the bound was never read: the checker recorded the callee, the
+            // emitter named `Point:Ord.cmp`, and `llc` refused the module. The
+            // pattern is unified with the instance (which also settles
+            // `Pair<T, T>` against `Pair<int32, int64>`: not a member) and every
+            // bound is asked of what its parameter bound to. An impl that does
+            // not apply is NOT a candidate -- the search goes on, and if nothing
+            // else answers the FIRST failed bound rides out on the miss so the
+            // call site can say which bound, rather than "no method". Decided
+            // HERE, where the impl is used, never at the instantiation: a
+            // `Box<flt64>` under a derived `Ord` is a fine type until something
+            // calls `cmp`.
+            if (mdecl != 0i32) {
+                if (family) {
+                    FamilyFit:ff = raw family_fit(t, bt, ast, types, e, target,
+                                                  raw IMPL_FUEL());
+                    if (!ff.applies) {
+                        if (ff.param != 0i32) {
+                            if (best.unmet_impl == 0i32) {
+                                best.unmet_impl = e.decl;
+                                best.unmet_trait = e.trait_id;
+                                best.unmet_param = ff.param;
+                                best.unmet_need = ff.need;
+                                best.unmet_arg = ff.arg;
+                            }
+                        }
+                        mdecl = 0i32;
+                    }
+                }
+            }
             if (mdecl != 0i32) {
                 if (e.trait_id == 0i32) {
                     // An inherent method ends the search: nothing outranks it,
@@ -937,7 +1015,10 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     MethodFind:m = MethodFind{ found: true, ambiguous: false,
                                                decl: mdecl, owner: 0i32,
                                                other: 0i32, blanket_impl: inh_bl,
-                                               owner_impl: e.decl };
+                                               owner_impl: e.decl,
+                                               unmet_impl: 0i32, unmet_trait: 0i32,
+                                               unmet_param: 0i32, unmet_need: 0i32,
+                                               unmet_arg: 0i32 };
                     pass m;
                 }
                 if (best.found) {
@@ -1647,7 +1728,13 @@ pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
                         int32:ed = raw type_decl_of(types, e.target);
                         if (ed != 0i32) {
                             if (ed == (raw type_decl_of(types, target))) {
-                                pass true;
+                                // ...AND ONLY WHEN IT APPLIES (D-256, 1.5.2b
+                                // step 1): the pattern unifies and every bound
+                                // holds, else the search goes on.
+                                if (raw family_applies(t, bt, ast, types, e,
+                                                       target, fuel)) {
+                                    pass true;
+                                }
                             }
                         }
                     }
@@ -1698,6 +1785,219 @@ pub func:blanket_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
         i = i + 1i32;
     }
     pass true;
+};
+
+// --- family impls: applicability by unification (D-256, 1.5.2b step 1) ----------------
+//
+// A FAMILY IMPL'S TARGET IS A PATTERN, and an instance is a member of the
+// family when the pattern UNIFIES with it: a pattern argument that is one of
+// the impl's own parameters binds the instance's argument -- and binds ONE type
+// wherever it recurs, so `Pair<T, T>` does not match `Pair<int32, int64>` -- a
+// concrete pattern argument must be identical, and a nested instance or
+// container unifies element-wise by the walk `type_subst` makes, one kind at a
+// time. Until this landed the match was DECLARATION identity alone
+// (`type_decl_of(pattern) == type_decl_of(instance)`), the impl's bounds were
+// never read (DEF-15: `impl:<T: Ord>:Box<T>:Ord` admitted for a `Point` without
+// `Ord`, and `llc` refused the IR the emitter wrote), and the parameters were
+// then bound POSITIONALLY from the instance's arguments -- right for `Box<T>`,
+// wrong for `Pair<U, T>`, `Pair<int32, T>` and `Box<Pair<T, int32>>`, each
+// admitted by `collect_one_impl` and then refused at the call by the receiver
+// check with a message about a type positional binding had invented (measured
+// at 1.5.2b step 1). One unifier now answers all three questions -- does the
+// impl apply, what does each parameter stand for, which bound failed -- for the
+// checker (`find_method`, `type_implements`, `bind_blanket`) and the emitter
+// (`note_family_instance`) alike, which is what keeps them from disagreeing.
+//
+// THE BINDINGS LIVE ON THE AST SCRATCH: `pw.count` slots pushed at `mark`
+// (0 = unbound), read and written through the bounds-checked accessors, then
+// either committed as the impl's argument window (`family_bind`) or dropped
+// (`family_fit`). Nothing else is pushed during a unification, so the slots
+// stay where they were pushed; a nested `type_implements` pushes and drops its
+// own frame above them.
+
+// The slot of `param_decl` in the impl's generic window, or -1 for a parameter
+// that is not this impl's.
+func:family_slot = int32(Ast->:ast, IdSpan:pw, int32:param_decl) never fails {
+    for (int32:i in 0i32...pw.count) {
+        if ((raw ast_id_at(ast, pw.start, i)) == param_decl) { pass i; }
+    }
+    pass (0i32 - 1i32);
+};
+
+pub func:family_unify = bool(Ast->:ast, TypeTable->:types, IdSpan:pw, int32:mark,
+                             int32:pat, int32:inst, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (pat == inst) { pass true; }
+    if (pat == 0i32) { pass false; }
+    if (inst == 0i32) { pass false; }
+    int32:kp = raw type_kind(types, pat);
+
+    // THE LEAF: one of the impl's parameters binds what it meets, once.
+    if (kp == (raw TY_PARAM())) {
+        int32:slot = raw family_slot(ast, pw, raw type_decl_of(types, pat));
+        if (slot < 0i32) { pass false; }
+        int32:cur = raw ast_scratch_at(ast, mark, slot);
+        if (cur == 0i32) {
+            drop ast_scratch_set(ast, mark, slot, inst);
+            pass true;
+        }
+        pass (cur == inst);
+    }
+    if (kp != (raw type_kind(types, inst))) { pass false; }
+
+    // AN INSTANCE: the same declaration, every argument unified in order. Two
+    // argument-less instances of one declaration are one interned type, and
+    // these differ, so a zero count is a miss.
+    if ((kp == (raw TY_STRUCT())) || (kp == (raw TY_ENUM())) || (kp == (raw TY_TRAIT()))) {
+        if ((raw type_decl_of(types, pat)) != (raw type_decl_of(types, inst))) { pass false; }
+        int32:n = raw type_args_count_of(types, pat);
+        if (n != (raw type_args_count_of(types, inst))) { pass false; }
+        if (n == 0i32) { pass false; }
+        int32:ps = raw type_args_start_of(types, pat);
+        int32:qs = raw type_args_start_of(types, inst);
+        for (int32:i in 0i32...n) {
+            if (!(raw family_unify(ast, types, pw, mark,
+                                   raw ast_id_at(ast, ps, i),
+                                   raw ast_id_at(ast, qs, i), fuel - 1i32))) {
+                pass false;
+            }
+        }
+        pass true;
+    }
+
+    // A CONTAINER: its element, and the constant it carries where it carries
+    // one -- the kinds `type_subst` rebuilds around an element, and the same
+    // constants it carries through unchanged.
+    bool:by_elem = false;
+    if (kp == (raw TY_POINTER()))      { by_elem = true; }
+    if (kp == (raw TY_SLICE()))        { by_elem = true; }
+    if (kp == (raw TY_OPTIONAL()))     { by_elem = true; }
+    if (kp == (raw TY_RESULT()))       { by_elem = true; }
+    if (kp == (raw TY_RANGE()))        { by_elem = true; }
+    if (kp == (raw TY_ARENA()))        { by_elem = true; }
+    if (kp == (raw TY_SHARED_ARENA())) { by_elem = true; }
+    if (kp == (raw TY_HANDLE()))       { by_elem = true; }
+    if (kp == (raw TY_ATOMIC()))       { by_elem = true; }
+    if (kp == (raw TY_GUARD()))        { by_elem = true; }
+    if (kp == (raw TY_RGUARD()))       { by_elem = true; }
+    if (kp == (raw TY_ARRAY())) {
+        if ((raw type_array_count(types, pat)) != (raw type_array_count(types, inst))) { pass false; }
+        by_elem = true;
+    }
+    if (kp == (raw TY_SIMD())) {
+        if ((raw type_simd_lanes(types, pat)) != (raw type_simd_lanes(types, inst))) { pass false; }
+        by_elem = true;
+    }
+    if (kp == (raw TY_CHANNEL())) {
+        if ((raw type_chan_level(types, pat)) != (raw type_chan_level(types, inst))) { pass false; }
+        if ((raw type_chan_cap(types, pat)) != (raw type_chan_cap(types, inst))) { pass false; }
+        by_elem = true;
+    }
+    if ((kp == (raw TY_MUTEX())) || (kp == (raw TY_RWLOCK()))) {
+        if ((raw type_lock_level(types, pat)) != (raw type_lock_level(types, inst))) { pass false; }
+        by_elem = true;
+    }
+    if (by_elem) {
+        pass (raw family_unify(ast, types, pw, mark,
+                               raw type_elem(types, pat),
+                               raw type_elem(types, inst), fuel - 1i32));
+    }
+
+    // EVERYTHING ELSE -- a scalar, a function, a `dyn`, a projection, the
+    // constant-only sync kinds -- is its own pattern and matches only itself,
+    // which the identity test above already asked.
+    pass false;
+};
+
+// THE IMPL'S PARAMETERS BOUND FROM AN INSTANCE AND COMMITTED as its argument
+// window, in parameter order (0 for a parameter the pattern never mentions,
+// which `subst_param` leaves as itself) -- what `bind_blanket` and the emitter's
+// `note_family_instance` substitute the impl's methods with. `ok` is false when
+// the pattern does not unify, and then nothing was committed.
+pub struct:FamilyBind = { bool:ok; IdSpan:args; };
+
+pub func:family_bind = FamilyBind(Ast->:ast, TypeTable->:types, int32:impl_decl,
+                                  int32:pattern, int32:inst) never fails {
+    DeclNode:d = raw ast_decl(ast, DeclId{ index: impl_decl });
+    IdSpan:pw = raw decl_generic_window(ast, d);
+    int32:mark = raw ast_scratch_mark(ast);
+    for (int32:i in 0i32...pw.count) { drop ast_scratch_push(ast, 0i32); }
+    if (!(raw family_unify(ast, types, pw, mark, pattern, inst, raw IMPL_FUEL()))) {
+        drop ast_scratch_drop(ast, mark);
+        pass FamilyBind{ ok: false, args: raw idspan_empty() };
+    }
+    IdSpan:w = raw ast_scratch_commit(ast, mark);
+    pass FamilyBind{ ok: true, args: w };
+};
+
+// The resolved target of the impl declared at `impl_decl` -- the PATTERN -- or 0.
+pub func:impl_pattern_of = int32(ImplTable->:t, int32:impl_decl) never fails {
+    int32:i = 0i32;
+    while ((i => int64) < t.v.count) {
+        ImplEntry:e = raw impl_at(t, i);
+        if (e.decl == impl_decl) { pass e.target; }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+// DOES THIS FAMILY IMPL APPLY TO THIS INSTANCE, and if not, which bound failed?
+// `applies` false with `param` 0 is a pattern that did not unify (not a member
+// of the family at all -- no bound was asked); with `param` set it is the FIRST
+// bound that failed: the impl's parameter, the trait it required, and the type
+// the parameter bound to. Fuel as `blanket_applies`: a bound may be satisfied
+// by another parameterised impl, and a program can write that chain.
+pub struct:FamilyFit = {
+    bool:applies;
+    int32:param;
+    int32:need;
+    int32:arg;
+};
+
+pub func:family_fit = FamilyFit(ImplTable->:t, BoundTable->:bt, Ast->:ast,
+                                TypeTable->:types, ImplEntry:e, int32:target,
+                                int32:fuel) never fails {
+    FamilyFit:no = FamilyFit{ applies: false, param: 0i32, need: 0i32, arg: 0i32 };
+    if (fuel <= 0i32) { pass no; }
+    DeclNode:d = raw ast_decl(ast, DeclId{ index: e.decl });
+    IdSpan:pw = raw decl_generic_window(ast, d);
+    int32:mark = raw ast_scratch_mark(ast);
+    for (int32:i in 0i32...pw.count) { drop ast_scratch_push(ast, 0i32); }
+    if (!(raw family_unify(ast, types, pw, mark, e.target, target, fuel))) {
+        drop ast_scratch_drop(ast, mark);
+        pass no;
+    }
+    for (int32:i in 0i32...pw.count) {
+        int32:bound = raw ast_scratch_at(ast, mark, i);
+        if (bound != 0i32) {
+            int32:gp = raw ast_id_at(ast, pw.start, i);
+            BoundEntry:b = raw bound_entry_of(bt, gp);
+            // A `comptime` VALUE parameter has a type and no bounds (as
+            // `check_arg_bounds` says); nothing to ask of it here.
+            if (b.value_type == 0i32) {
+                int32:j = 0i32;
+                while (j < b.count) {
+                    int32:need = raw ast_id_at(ast, b.start, j);
+                    if (!(raw type_implements(t, bt, ast, types, bound, need,
+                                              fuel - 1i32))) {
+                        drop ast_scratch_drop(ast, mark);
+                        pass FamilyFit{ applies: false, param: gp, need: need,
+                                        arg: bound };
+                    }
+                    j = j + 1i32;
+                }
+            }
+        }
+    }
+    drop ast_scratch_drop(ast, mark);
+    pass FamilyFit{ applies: true, param: 0i32, need: 0i32, arg: 0i32 };
+};
+
+pub func:family_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
+                               TypeTable->:types, ImplEntry:e, int32:target,
+                               int32:fuel) never fails {
+    FamilyFit:f = raw family_fit(t, bt, ast, types, e, target, fuel);
+    pass f.applies;
 };
 
 // MAY A VALUE OF TYPE `got` BE STORED IN A `dyn` SLOT? Two cases, and the second
