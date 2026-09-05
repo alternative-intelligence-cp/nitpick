@@ -3299,9 +3299,14 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         e.contract_raw_operand = ropid.index;
         int32:rres = raw type_unwrap(e, n, "raw");
         e.contract_raw_operand = cro_saved;
-        if (e.contract_ctx != 0i32) {
-            if (rres == 0i32) { pass 0i32; }
-        }
+        // A REFUSED OPERAND ANSWERED WITH ITS OWN SENTENCE, everywhere (D-240;
+        // 1.5.2b step 4 widened the contract-only rule below to every `raw`):
+        // a call whose method does not resolve has no callee whose contract
+        // the licence could read, and "`raw` is licensed only by a `never
+        // fails` callee" beside "`bool` has no method `cmp`" was two reports
+        // of one mistake -- visible at last at a derive's own declaration,
+        // where D-259 re-homes the pair.
+        if (rres == 0i32) { pass 0i32; }
         int32:rlic = raw unwrap_licence_of(e, ropn, ropid);
         if (rlic == 2i32) {
             discard(raw te_error(e, raw TYPE_RAW_UNLICENSED(),

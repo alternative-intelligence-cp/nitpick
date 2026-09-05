@@ -163,7 +163,19 @@ func:front_set_root = NIL(Front->:f, string:root_path) never fails {
     pass NIL;
 };
 
+// THE FRONT HALF, THEN THE RE-HOMING (D-259, 1.5.2b step 4). Every return
+// path of `front_run_passes` -- expansion refused, resolution refused, the
+// checks -- comes back through here, and `rehome_derived` rewrites every
+// diagnostic whose span lies in a `<derived-N>` file to the derive's own
+// declaration, naming the derive and the member. A wrapper rather than a
+// call before each `pass`, so a new return path cannot forget it.
 pub func:front_run = int32(Front->:f, string:root) never fails {
+    int32:rc = raw front_run_passes(f, root);
+    drop rehome_derived(@f.g);
+    pass rc;
+};
+
+func:front_run_passes = int32(Front->:f, string:root) never fails {
     f.it = raw intern_init();
     f.diags = raw diaglist_init();
     f.roots = raw rootlist_init();

@@ -1777,6 +1777,63 @@ def build_tool(tmp, tools, source, name):
     return base
 
 
+def parse_findings(stderr):
+    """`CODE path:line:col: message` lines -> (got, notes, derived).
+
+    `got` and `notes` are `(code, line, col)` per finding (a note is its own
+    channel, D-237); `derived` lists every finding whose path is a
+    `<derived-N>` synthetic file -- a line nobody wrote (D-259), which fails
+    the unit that produced it. Factored out of `check_module_rejection` at
+    1.5.2b step 4 so the self-check can hand it a canned line in both
+    directions.
+
+    KEYED ON POSITION, NOT ON TOKEN COUNT. This accepted a line only when it
+    split into exactly two tokens -- `CODE path:line:col` -- so the day the
+    message was appended (1.0.8) every line grew past two tokens, matched
+    nothing, and every rejection test failed at once with "expected [CODE],
+    got []", which reads like the checker broke rather than like the printer
+    changed. The code is token 0, the span is token 1 (its trailing colon is
+    the separator before the message), and everything after is the message,
+    which expectations deliberately never assert -- codes are stable
+    identifiers, wording stays free to improve.
+    """
+    got = []
+    notes = []
+    derived = []
+    for line in stderr.splitlines():
+        parts = line.split()
+        into = got
+        if parts and parts[0] == "note":
+            parts = parts[1:]
+            into = notes
+        elif parts and parts[0] == "warning":
+            parts = parts[1:]
+        if len(parts) >= 2 and ":" in parts[1]:
+            # `CODE path:line:col` since 0.8.0 (`CODE line:col` before a module
+            # graph made bare line numbers ambiguous across sixty files). The
+            # span is the LAST two fields; everything before them is the path,
+            # which expectations deliberately do not assert -- except that a
+            # `<derived-` path is refused (D-259).
+            span = parts[1].rstrip(":")
+            pieces = span.rsplit(":", 2)
+            if len(pieces) == 3:
+                fpath, ln, cl = pieces
+            else:
+                fpath = ""
+                ln, _, cl = span.partition(":")
+            try:
+                into.append((parts[0], int(ln), int(cl)))
+            except ValueError:
+                # A line whose second token is not `path:line:col` -- the
+                # `<unknown file>` fallback -- is not a positioned finding, as
+                # `CODE <no span>: …` never was (its second token has no colon
+                # and never reached here).
+                continue
+            if fpath.startswith("<derived-"):
+                derived.append("%s at `%s`" % (parts[0], span))
+    return got, notes, derived
+
+
 def check_module_rejection(binary, path, name, exp):
     """A whole program that must be refused BY THE LOADER, with these codes.
 
@@ -1814,39 +1871,21 @@ def check_module_rejection(binary, path, name, exp):
     # the separator before the message), and everything after is the message,
     # which expectations deliberately never assert -- codes are stable
     # identifiers, wording stays free to improve.
-    got = []
-    notes = []
     # Diagnostics arrive on STDERR since 0.8.5 (D-141): stdout is the product
     # channel, and the report must survive a redirect of it.
-    for line in r.stderr.decode("utf-8", "replace").splitlines():
-        parts = line.split()
-        into = got
-        if parts and parts[0] == "note":
-            parts = parts[1:]
-            into = notes
-        elif parts and parts[0] == "warning":
-            parts = parts[1:]
-        if len(parts) >= 2 and ":" in parts[1]:
-            # `CODE path:line:col` since 0.8.0 (`CODE line:col` before a module
-            # graph made bare line numbers ambiguous across sixty files). The
-            # span is the LAST two fields; everything before them is the path,
-            # which expectations deliberately do not assert.
-            span = parts[1].rstrip(":")
-            pieces = span.rsplit(":", 2)
-            if len(pieces) == 3:
-                _, ln, cl = pieces
-            else:
-                ln, _, cl = span.partition(":")
-            try:
-                into.append((parts[0], int(ln), int(cl)))
-            except ValueError:
-                # A line whose second token is not `path:line:col` -- the
-                # `<unknown file>` fallback -- is not a positioned finding, as
-                # `CODE <no span>: …` never was (its second token has no colon
-                # and never reached here).
-                continue
+    got, notes, derived = parse_findings(r.stderr.decode("utf-8", "replace"))
 
     fails = []
+    # A LINE NOBODY WROTE FAILS THE UNIT (D-259, 1.5.2b step 4): a finding at
+    # `<derived-1>:6:12` used to satisfy an `expect-error-at: 6:12` by
+    # coincidence, since the path was never read. The compiler re-homes every
+    # derived diagnostic to the derive's declaration; this is the belt that
+    # says so on every run, and `selfcheck.py`'s `derived-path` case is the
+    # proof it bites.
+    for what in derived:
+        fails.append("%s: reported %s -- a line nobody wrote (D-259: a derived "
+                     "diagnostic is re-homed to the derive's declaration, and one "
+                     "that was not is a compiler defect)" % (name, what))
     for code, line, col in exp.errors:
         hit = [g for g in got if g[0] == code]
         if not hit:

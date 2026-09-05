@@ -193,6 +193,26 @@ def main():
             else:
                 print("      the harness rejected this: %s" % fails[0])
 
+    # A `<derived-` PATH FAILS A UNIT (D-259, 1.5.2b step 4), in the direction
+    # of the defect: the parser handed a canned finding at `<derived-1>:6:12`
+    # must flag it, and the same finding at a real path must not. Unit calls
+    # on `parse_findings`, no compiler involved; `npkg/selfcheck.npk` carries
+    # the same two cases by name.
+    _, _, flagged = harness.parse_findings(
+        "NITPICK-TYPE-019 <derived-1>:6:12: `bool` has no method `cmp`\n")
+    okd = len(flagged) == 1
+    if not okd:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("derived-path", "ok" if okd else "BAD",
+                                "a finding at a `<derived-N>` line nobody wrote must be flagged"))
+    _, _, unflagged = harness.parse_findings(
+        "NITPICK-TYPE-019 p.npk:6:12: `bool` has no method `cmp`\n")
+    okc = len(unflagged) == 0
+    if not okc:
+        bad += 1
+    print("  %-26s %-4s  %s" % ("derived-path-control", "ok" if okc else "BAD",
+                                "the same finding at a real path must not be flagged"))
+
     # THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     # value is its failure path, and a check that has only ever been seen to
     # PASS is a check nobody has tested -- the same reasoning that put every

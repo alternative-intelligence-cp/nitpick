@@ -257,8 +257,11 @@ func:main = int32(cstring[]:_~argv) {
     Gx:v8 = raw gx(
         "trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; func:f<T: Ta & Tb> = NIL(T:x) never fails { discard(raw x.tag()); pass NIL; };",
         @it);
-    // two since the flip: ambiguous, and the unresolvable callee is unlicensed.
-    if (raw errs(@v8) != 2i64)                                  { exit 20i32; }
+    // ONE REPORT (D-240; 1.5.2b step 4): the ambiguity is the mistake, and the
+    // `raw` over a callee that never resolved is not asked a second question --
+    // it was, from the 1.1.2 flip until this step ("ambiguous, and the
+    // unresolvable callee is unlicensed" counted two).
+    if (raw errs(@v8) != 1i64)                                  { exit 20i32; }
     // AMBIGUITY IS NOT A MISMATCH. The program is well-formed and the compiler
     // declines to choose, which is a different finding with a different fix —
     // call the one you mean by its function form.
@@ -645,8 +648,11 @@ func:main = int32(cstring[]:_~argv) {
     Gx:k2 = raw gx(
         "trait:Pr = { func:p = int32(Self:self) never fails; }; trait:Lo = { func:l = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:<T: Pr>:T:Lo = { func:l = int32(T:self) never fails { pass 2i32; }; }; func:f = NIL(Point:q) never fails { int32:v = raw q.l(); pass NIL; };",
         @it);
-    // two since the flip: no method (blanket inapplicable) + unlicensed callee.
-    if (raw errs(@k2) != 2i64)                                  { exit 111i32; }
+    // ONE REPORT (D-240; 1.5.2b step 4): no method, and the `raw` over the
+    // unresolved callee is not asked a second question (two from the 1.1.2
+    // flip until this step: "no method (blanket inapplicable) + unlicensed
+    // callee").
+    if (raw errs(@k2) != 1i64)                                  { exit 111i32; }
     if (!(raw string_eq(raw code0(@k2), raw TYPE_NO_METHOD())))  { exit 112i32; }
 
     // A BLANKET IMPL SATISFIES A BOUND, which is the same fact asked the other

@@ -53,6 +53,22 @@ pub struct:ModuleEntry = {
     int32:scope;     // its module scope in the symbol table
 };
 
+// WHERE A DERIVED LINE CAME FROM (D-259, 1.5.2b step 4): one row per line of
+// every `<derived-N>` synthetic file -- the subject declaration the derive sits
+// on, the trait it derives, and the member (a field or a variant, or 0 for a
+// header line) the line reaches. `rehome_derived` reads it after the front
+// half has run: a diagnostic whose span lies in a derived file is rewritten to
+// the subject's span with the derive and the member named, so no report ever
+// points at a line nobody wrote.
+pub struct:DerivedOrigin = {
+    int32:file;
+    int32:line;
+    int32:subject;
+    int32:trait_name;
+    int32:member;
+    bool:is_variant;
+};
+
 pub struct:ModuleGraph = {
     SourceManager:sm;
     Ast:ast;
@@ -74,6 +90,9 @@ pub struct:ModuleGraph = {
     // `graph_load_all` (D-248, 1.5.1b): the one module that may declare `main`
     // and `failsafe`, which `graph_check_entry_points` reads.
     int32:root_index;
+
+    // The derived-line registry (D-259) -- see `DerivedOrigin`.
+    List<DerivedOrigin>:origins;
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
@@ -88,7 +107,8 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         stdlib: move(stdlib),
         prelude: 0i32 - 1i32,
         root_index: 0i32 - 1i32,
-        v: raw list_init::<ModuleEntry>(16i64)
+        v: raw list_init::<ModuleEntry>(16i64),
+        origins: raw list_init::<DerivedOrigin>(16i64)
     };
     pass g;
 };

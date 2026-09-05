@@ -1,0 +1,32 @@
+// A DERIVED DIAGNOSTIC IS REPORTED AT THE DERIVE (D-259, 1.5.2b step 4). The
+// generator refuses by name what it can see (DERIVE-006); what only the
+// checker can know -- a named type that lacks the trait, a builtin the
+// prelude has no impl for under it -- was a type error inside `<derived-N>`,
+// a file nobody can open (D-250's recorded gap). Now the report is re-homed
+// to the derive's own declaration with the derive and the member named:
+// "in the `Ord` that `#[derive(Ord)]` generates for `Outer` (at the field
+// `p`): `Point` has no method `cmp`". Three residues, each TYPE-019 at its
+// declaration line: a named type without `Ord`, a `bool` (the prelude gives
+// it no order -- `false < true` is an accident of representation), and a
+// `flt64` (a float has `PartialOrd` and never `Ord`: a total `cmp` over
+// `nan` would have to lie).
+mod:rehomed;
+struct:Point = { int32:x; };
+
+// expect-error: NITPICK-TYPE-019
+// expect-error-at: 18:1
+#[derive(Ord)]
+struct:Outer = { Point:p; };
+
+// expect-error: NITPICK-TYPE-019
+// expect-error-at: 23:1
+#[derive(Ord)]
+struct:Flags = { bool:lit; };
+
+// expect-error: NITPICK-TYPE-019
+// expect-error-at: 28:1
+#[derive(Ord)]
+struct:Pos = { flt64:x; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

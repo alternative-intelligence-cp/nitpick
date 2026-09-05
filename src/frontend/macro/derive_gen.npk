@@ -237,6 +237,70 @@ func:dvc5 = string(string:a, string:b, string:c, string:d, string:e) never fails
     pass (string_concat(string_concat(raw dvc3(a, b, c), d), e));
 };
 
+// --- the sink every generated line goes through (D-259, 1.5.2b step 4) -----------
+//
+// ONE SEAM. Every piece of generated text is written by `dv_put`, which counts
+// the newlines it appends and records, per line, the subject declaration, the
+// trait being derived and the member the line reaches (`DerivedOrigin`). The
+// generated module's header `mod:derived;` is line 1, so the sink starts at 2.
+// `rehome_derived` reads the table after the front half ran; a diagnostic that
+// reports inside `<derived-N>` -- a named field whose type turns out to lack the
+// trait or to own, a builtin the prelude has no impl for under this trait -- is
+// moved to the subject's declaration with the derive and the member named. The
+// residue after D-258's classes is exactly those checker verdicts, each with a
+// good message that only needs the right span; a table in the generator of
+// what the checker will say would be the two-places-that-must-agree shape.
+pub struct:DvSink = {
+    string:text;
+    int32:line;
+    int32:subject;
+    int32:trait_name;
+    int32:member;
+    bool:is_variant;
+    List<DerivedOrigin>:origins;
+};
+
+func:dv_sink_init = DvSink() never fails {
+    pass DvSink{ text: "", line: 2i32, subject: 0i32, trait_name: 0i32,
+                 member: 0i32, is_variant: false,
+                 origins: raw list_init::<DerivedOrigin>(64i64) };
+};
+
+func:dv_put = NIL(DvSink->:out, string:chunk) never fails {
+    int64:i = 0i64;
+    while (i < chunk.len) {
+        if (chunk.ptr[i] == 10u8) {
+            DerivedOrigin:o = DerivedOrigin{ file: 0i32, line: out.line,
+                                             subject: out.subject,
+                                             trait_name: out.trait_name,
+                                             member: out.member,
+                                             is_variant: out.is_variant };
+            drop list_push(@out.origins, o);
+            out.line = out.line + 1i32;
+        }
+        i = i + 1i64;
+    }
+    out.text = string_concat(out.text, chunk);
+    pass NIL;
+};
+
+// The member the next lines reach, and the end of it.
+func:dv_at_field = NIL(DvSink->:out, DeclNode:m) never fails {
+    out.member = raw decl_name(m);
+    out.is_variant = false;
+    pass NIL;
+};
+func:dv_at_variant = NIL(DvSink->:out, DeclNode:m) never fails {
+    out.member = raw decl_name(m);
+    out.is_variant = true;
+    pass NIL;
+};
+func:dv_at_none = NIL(DvSink->:out) never fails {
+    out.member = 0i32;
+    out.is_variant = false;
+    pass NIL;
+};
+
 // --- member classes (D-258, 1.5.2b step 3) --------------------------------------
 //
 // ONE RULE FOR EVERY MEMBER: a derived body reaches each member through the
@@ -622,60 +686,50 @@ func:dv_pattern = string(Ast->:ast, InternTable->:interns, string:bare, DeclNode
 
 // `impl:Point:Eq = { pub func:eq = bool(Point:self, Point:other) { … }; };`
 // FIELD BY FIELD, IN DECLARATION ORDER, each through its class (D-258).
-func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                            string:tn, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Eq = { pub func:eq = bool(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self, ");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":other) {\n");
-
+func:gen_eq_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                         string:tn, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Eq = { pub func:eq = bool(", tn, ":self, "));
+    drop dv_put(out, string_concat(tn, ":other) {\n"));
     int32:n = raw item_member_count(ast, d);
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            s = string_concat(s, raw dv_eq_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
+            drop dv_at_field(out, m);
+            drop dv_put(out, raw dv_eq_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
                                      string_concat("self.", f), string_concat("other.", f)));
+            drop dv_at_none(out);
         }
     }
-    pass (string_concat(s, "pass true; }; };\n"));
+    drop dv_put(out, "pass true; }; };\n");
+    pass NIL;
 };
 
 // LEXICOGRAPHIC, IN DECLARATION ORDER (D-123). The cost is stated rather than
 // hidden: reordering a struct's fields becomes a semantic change.
-func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                             string:tn, bool:partial, string:head) never fails {
+func:gen_cmp_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                          string:tn, bool:partial, string:head, DvSink->:out) never fails {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
     if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
-
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":");
-    s = string_concat(s, tr);
-    s = string_concat(s, " = { pub func:");
-    s = string_concat(s, mn);
-    s = string_concat(s, " = ");
-    s = string_concat(s, rt);
-    s = string_concat(s, "(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self, ");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":other) {\n");
-
+    drop dv_put(out, raw dvc5(head, tn, ":", tr, " = { pub func:"));
+    drop dv_put(out, raw dvc5(mn, " = ", rt, "(", tn));
+    drop dv_put(out, raw dvc3(":self, ", tn, ":other) {\n"));
     int32:n = raw item_member_count(ast, d);
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            s = string_concat(s, raw dv_cmp_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
+            drop dv_at_field(out, m);
+            drop dv_put(out, raw dv_cmp_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
                                      string_concat("self.", f), string_concat("other.", f),
                                      partial, int_to_string(i => int64)));
+            drop dv_at_none(out);
         }
     }
-    pass (string_concat(s, "pass Ordering.Equal; }; };\n"));
+    drop dv_put(out, "pass Ordering.Equal; }; };\n");
+    pass NIL;
 };
 
 // ORD / PARTIALORD ON AN ENUM ORDER BY TAG FIRST (D-123, 1.0.9d): `enum =>!
@@ -686,175 +740,171 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // A payload-less enum keeps the body it always had, byte for byte. The same
 // body serves `PartialOrd`: `pass Ordering.Less` wraps into `Ordering?`
 // (D-099), so a total order reads as an always-present one.
-func:gen_cmp_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                           string:tn, string:bare, bool:partial, string:head) never fails {
+func:gen_cmp_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                        string:tn, string:bare, bool:partial, string:head,
+                        DvSink->:out) never fails {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
     if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":");
-    s = string_concat(s, tr);
-    s = string_concat(s, " = { pub func:");
-    s = string_concat(s, mn);
-    s = string_concat(s, " = ");
-    s = string_concat(s, rt);
-    s = string_concat(s, "(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self, ");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":other) {\n");
-    s = string_concat(s, "int32:a = self =>! int32;\n");
-    s = string_concat(s, "int32:b = other =>! int32;\n");
-    s = string_concat(s, "if (a < b) { pass Ordering.Less; }\n");
-    s = string_concat(s, "if (a > b) { pass Ordering.Greater; }\n");
+    drop dv_put(out, raw dvc5(head, tn, ":", tr, " = { pub func:"));
+    drop dv_put(out, raw dvc5(mn, " = ", rt, "(", tn));
+    drop dv_put(out, raw dvc3(":self, ", tn, ":other) {\n"));
+    drop dv_put(out, "int32:a = self =>! int32;\n");
+    drop dv_put(out, "int32:b = other =>! int32;\n");
+    drop dv_put(out, "if (a < b) { pass Ordering.Less; }\n");
+    drop dv_put(out, "if (a > b) { pass Ordering.Greater; }\n");
     if (raw dv_enum_has_payload(ast, d)) {
-        s = string_concat(s, "pick (self) {\n");
+        drop dv_put(out, "pick (self) {\n");
         int32:n = raw item_member_count(ast, d);
         bool:first = true;
         for (int32:i in 0i32...n) {
             DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
             if (m.kind == DeclKind.DeclEnumVariant) {
-                if (!first) { s = string_concat(s, ",\n"); }
+                if (!first) { drop dv_put(out, ",\n"); }
                 first = false;
-                s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
+                drop dv_at_variant(out, m);
+                drop dv_put(out, raw dv_pattern(ast, interns, bare, m, 0i32));
                 int32:pc = raw variant_payload_count(m);
                 if (pc == 0i32) {
-                    s = string_concat(s, " { pass Ordering.Equal; }");
+                    drop dv_put(out, " { pass Ordering.Equal; }");
                 } else {
-                    s = string_concat(s, " { pick (other) {\n");
-                    s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 1i32));
-                    s = string_concat(s, " {\n");
+                    drop dv_put(out, " { pick (other) {\n");
+                    drop dv_put(out, raw dv_pattern(ast, interns, bare, m, 1i32));
+                    drop dv_put(out, " {\n");
                     for (int32:k in 0i32...pc) {
                         TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
-                        s = string_concat(s, raw dv_cmp_stmt(raw dv_class(ast, interns, d, pt),
+                        drop dv_put(out, raw dv_cmp_stmt(raw dv_class(ast, interns, d, pt),
                                                  raw dv_bind(0i32, k), raw dv_bind(1i32, k), partial,
                                                  raw dvc3(int_to_string(i => int64), "_", int_to_string(k => int64))));
                     }
-                    s = string_concat(s, "pass Ordering.Equal; },\n(*) { pass Ordering.Equal; } } }");
+                    drop dv_put(out, "pass Ordering.Equal; },\n(*) { pass Ordering.Equal; } } }");
                 }
+                drop dv_at_none(out);
             }
         }
-        s = string_concat(s, "\n}\n");
+        drop dv_put(out, "\n}\n");
     }
-    pass (string_concat(s, "pass Ordering.Equal; }; };\n"));
+    drop dv_put(out, "pass Ordering.Equal; }; };\n");
+    pass NIL;
 };
 
 // A DERIVED STRUCT HASH COMBINES ITS FIELDS' HASHES (D-123, FNV-1a): each field
 // mixes its own hash into the running one, so the whole is FNV-1a over the
 // parts -- each field through its class (D-258): the prelude's rows for a
 // scalar or a `string` (`raw`), a nested type's or a parameter's own (`relay`).
-func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                              string:tn, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Hash = { pub func:hash = uint64(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self) {\n");
-    s = string_concat(s, "uint64:h = raw fnv_offset();\n");
+func:gen_hash_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                           string:tn, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Hash = { pub func:hash = uint64(", tn, ":self) {\n"));
+    drop dv_put(out, "uint64:h = raw fnv_offset();\n");
     int32:n = raw item_member_count(ast, d);
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            s = string_concat(s, "h = raw fnv_mix(h, ");
-            s = string_concat(s, raw dv_lic(raw dv_class(ast, interns, d, raw field_type(m)), false));
-            s = string_concat(s, "self.");
-            s = string_concat(s, f);
-            s = string_concat(s, ".hash());\n");
+            drop dv_at_field(out, m);
+            drop dv_put(out, raw dvc5("h = raw fnv_mix(h, ",
+                                      raw dv_lic(raw dv_class(ast, interns, d, raw field_type(m)), false),
+                                      "self.", f, ".hash());\n"));
+            drop dv_at_none(out);
         }
     }
-    pass (string_concat(s, "pass h; }; };\n"));
+    drop dv_put(out, "pass h; }; };\n");
+    pass NIL;
 };
 
 // A DERIVED ENUM HASH HASHES THE TAG (D-123). A payload is not mixed, so two
 // values of one variant collide — which a hash is allowed to do (equal implies
 // equal hash, not the reverse); the identity a `pick` sees is the tag.
-func:gen_hash_enum = string(string:tn, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Hash = { pub func:hash = uint64(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self) {\n");
-    s = string_concat(s, "int32:t = self =>! int32;\n");
-    pass (string_concat(s,
-        "pass (raw fnv_mix(raw fnv_offset(), t =>! uint64)); }; };\n"));
+func:gen_hash_enum = NIL(string:tn, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Hash = { pub func:hash = uint64(", tn, ":self) {\n"));
+    drop dv_put(out, "int32:t = self =>! int32;\n");
+    drop dv_put(out, "pass (raw fnv_mix(raw fnv_offset(), t =>! uint64)); }; };\n");
+    pass NIL;
 };
 
 // A DERIVED STRUCT CLONE IS MEMBER-WISE (D-258; closes DEF-17's `Clone` half
-// and DEF-18): `pass Subject{ f: <clone of f>, … }` -- every field listed,
-// the BARE literal for a generic subject (1.3.7: `Subject<T>{ … }` does not
-// parse), each member through its class. `pass self` was the body since
-// 0.6.5, and `pass self` of a lent owner is TYPE-047 inside `<derived-1>`
-// for a struct with a `string` field, and for `Box<string>` -- checked with
-// `T` opaque -- an ALIAS: two headers over one body, freed twice. A struct
-// with no fields keeps `pass self`: there is nothing to copy member-wise.
-func:gen_clone_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                               string:tn, string:bare, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Clone = { pub func:clone = ");
-    s = string_concat(s, tn);
-    s = string_concat(s, "(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self) {\n");
+// and DEF-18): `pass Subject{ f: <clone of f>, … }` -- every field listed, one
+// per line so a refusal names it, the BARE literal for a generic subject
+// (1.3.7: `Subject<T>{ … }` does not parse), each member through its class.
+// `pass self` was the body since 0.6.5, and `pass self` of a lent owner is
+// TYPE-047 for a struct with a `string` field, and for `Box<string>` -- checked
+// with `T` opaque -- an ALIAS: two headers over one body, freed twice. A
+// struct with no fields keeps `pass self`: there is nothing to copy.
+func:gen_clone_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                            string:tn, string:bare, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Clone = { pub func:clone = ", tn, "("));
+    drop dv_put(out, string_concat(tn, ":self) {\n"));
     int32:n = raw item_member_count(ast, d);
     bool:has_field = false;
-    string:lit = string_concat(bare, "{ ");
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) { has_field = true; }
+    }
+    if (!has_field) {
+        drop dv_put(out, "pass self; }; };\n");
+        pass NIL;
+    }
+    drop dv_put(out, raw dvc3("pass ", bare, "{\n"));
     bool:first = true;
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            has_field = true;
-            string:f = raw intern_get(interns, raw decl_name(m));
-            if (!first) { lit = string_concat(lit, ", "); }
+            if (!first) { drop dv_put(out, ",\n"); }
             first = false;
-            lit = string_concat(lit, raw dvc3(f, ": ",
+            string:f = raw intern_get(interns, raw decl_name(m));
+            drop dv_at_field(out, m);
+            drop dv_put(out, raw dvc3(f, ": ",
                       raw dv_clone_of(raw dv_class(ast, interns, d, raw field_type(m)),
                                       string_concat("self.", f))));
         }
     }
-    if (!has_field) { pass (string_concat(s, "pass self; }; };\n")); }
-    pass (raw dvc5(s, "pass ", lit, " };", " }; };\n"));
+    drop dv_put(out, "\n");
+    drop dv_at_none(out);
+    drop dv_put(out, "}; }; };\n");
+    pass NIL;
 };
 
 // A DERIVED ENUM CLONE REBUILDS THE VARIANT (D-258): a `pick` per variant,
 // each payload through its class; a payload-less enum keeps `pass self`,
 // byte for byte (the tag is the value). An owning payload is refused before
 // this is written, as under `Eq` (the `pick` rule).
-func:gen_clone_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                             string:tn, string:bare, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Clone = { pub func:clone = ");
-    s = string_concat(s, tn);
-    s = string_concat(s, "(");
-    s = string_concat(s, tn);
+func:gen_clone_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                          string:tn, string:bare, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Clone = { pub func:clone = ", tn, "("));
     if (!(raw dv_enum_has_payload(ast, d))) {
-        pass (string_concat(s, ":self) { pass self; }; };\n"));
+        drop dv_put(out, string_concat(tn, ":self) { pass self; }; };\n"));
+        pass NIL;
     }
-    s = string_concat(s, ":self) {\npick (self) {\n");
+    drop dv_put(out, string_concat(tn, ":self) {\npick (self) {\n"));
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
-            if (!first) { s = string_concat(s, ",\n"); }
+            if (!first) { drop dv_put(out, ",\n"); }
             first = false;
-            s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
+            drop dv_at_variant(out, m);
+            drop dv_put(out, raw dv_pattern(ast, interns, bare, m, 0i32));
             string:v = raw intern_get(interns, raw decl_name(m));
             int32:pc = raw variant_payload_count(m);
             if (pc == 0i32) {
-                s = string_concat(s, raw dvc5(" { pass ", bare, ".", v, "; }"));
+                drop dv_put(out, raw dvc5(" { pass ", bare, ".", v, "; }"));
             } else {
-                s = string_concat(s, raw dvc5(" { pass ", bare, ".", v, "("));
+                drop dv_put(out, raw dvc5(" { pass ", bare, ".", v, "("));
                 for (int32:k in 0i32...pc) {
-                    if (k > 0i32) { s = string_concat(s, ", "); }
+                    if (k > 0i32) { drop dv_put(out, ", "); }
                     TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
-                    s = string_concat(s, raw dv_clone_of(raw dv_class(ast, interns, d, pt),
-                                                         raw dv_bind(0i32, k)));
+                    drop dv_put(out, raw dv_clone_of(raw dv_class(ast, interns, d, pt),
+                                                     raw dv_bind(0i32, k)));
                 }
-                s = string_concat(s, "); }");
+                drop dv_put(out, "); }");
             }
+            drop dv_at_none(out);
         }
     }
-    pass (string_concat(s, "\n}\n}; };\n"));
+    drop dv_put(out, "\n}\n}; };\n");
+    pass NIL;
 };
 
 // `Point { x: &{self.x}, y: &{self.y} }`, built with interpolation (D-053) because
@@ -865,23 +915,15 @@ func:gen_clone_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // `debug` (D-258 -- the trait derived is the trait reached; until this step a
 // nested field rendered through its `ToString`), hoisted into locals so the
 // licence word sits outside the template; a `string` field renders as itself.
-func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                   string:tn, bool:dbg, string:head) never fails {
+func:gen_to_string_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                                string:tn, bool:dbg, string:head, DvSink->:out) never fails {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
+    drop dv_put(out, raw dvc5(head, tn, ":", tr, " = { pub func:"));
+    drop dv_put(out, raw dvc5(mn, " = string(", tn, ":self) {\n", ""));
 
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":");
-    s = string_concat(s, tr);
-    s = string_concat(s, " = { pub func:");
-    s = string_concat(s, mn);
-    s = string_concat(s, " = string(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self) {\n");
-
-    string:body = string_concat("pass `", tn);
-    body = string_concat(body, " { ");
+    string:body = raw dvc3("pass `", tn, " { ");
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
     for (int32:i in 0i32...n) {
@@ -896,16 +938,19 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             if (cls == (raw DVC_STRING())) { own_debug = false; }
             if (own_debug) {
                 string:loc = string_concat("dvs", int_to_string(i => int64));
-                s = string_concat(s, raw dvc5("string:", loc, " = ", raw dv_lic(cls, false),
-                                              raw dvc3("self.", f, ".debug();\n")));
+                drop dv_at_field(out, m);
+                drop dv_put(out, raw dvc5("string:", loc, " = ", raw dv_lic(cls, false),
+                                          raw dvc3("self.", f, ".debug();\n")));
+                drop dv_at_none(out);
                 body = string_concat(body, raw dvc3(": &{", loc, "}"));
             } else {
                 body = string_concat(body, raw dvc3(": &{self.", f, "}"));
             }
         }
     }
-    s = string_concat(s, body);
-    pass (string_concat(s, " }`; }; };\n"));
+    drop dv_put(out, body);
+    drop dv_put(out, " }`; }; };\n");
+    pass NIL;
 };
 
 // EQ ON AN ENUM: the tag first, then the payloads of equal tags (D-250,
@@ -913,45 +958,45 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // payload-less enum has always compiled to and keeps, byte for byte; an enum
 // with a payload has no built-in `==`, so the body is a `pick` per variant
 // comparing the bound payloads.
-func:gen_eq_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                          string:tn, string:bare, string:head) never fails {
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":Eq = { pub func:eq = bool(");
-    s = string_concat(s, tn);
-    s = string_concat(s, ":self, ");
-    s = string_concat(s, tn);
+func:gen_eq_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                       string:tn, string:bare, string:head, DvSink->:out) never fails {
+    drop dv_put(out, raw dvc5(head, tn, ":Eq = { pub func:eq = bool(", tn, ":self, "));
     if (!(raw dv_enum_has_payload(ast, d))) {
-        pass (string_concat(s, ":other) { pass (self == other); }; };\n"));
+        drop dv_put(out, string_concat(tn, ":other) { pass (self == other); }; };\n"));
+        pass NIL;
     }
-    s = string_concat(s, ":other) {\n");
-    s = string_concat(s, "if ((self =>! int32) != (other =>! int32)) { pass false; }\n");
-    s = string_concat(s, "pick (self) {\n");
+    drop dv_put(out, string_concat(tn, ":other) {\n"));
+    drop dv_put(out, "if ((self =>! int32) != (other =>! int32)) { pass false; }\n");
+    drop dv_put(out, "pick (self) {\n");
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
-            if (!first) { s = string_concat(s, ",\n"); }
+            if (!first) { drop dv_put(out, ",\n"); }
             first = false;
-            s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
+            drop dv_at_variant(out, m);
+            drop dv_put(out, raw dv_pattern(ast, interns, bare, m, 0i32));
             int32:pc = raw variant_payload_count(m);
             if (pc == 0i32) {
-                s = string_concat(s, " { pass true; }");
+                drop dv_put(out, " { pass true; }");
             } else {
-                s = string_concat(s, " { pick (other) {\n");
-                s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 1i32));
-                s = string_concat(s, " {\n");
+                drop dv_put(out, " { pick (other) {\n");
+                drop dv_put(out, raw dv_pattern(ast, interns, bare, m, 1i32));
+                drop dv_put(out, " {\n");
                 for (int32:k in 0i32...pc) {
                     TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
-                    s = string_concat(s, raw dv_eq_stmt(raw dv_class(ast, interns, d, pt),
+                    drop dv_put(out, raw dv_eq_stmt(raw dv_class(ast, interns, d, pt),
                                              raw dv_bind(0i32, k), raw dv_bind(1i32, k)));
                 }
-                s = string_concat(s, "pass true; },\n(*) { pass false; } } }");
+                drop dv_put(out, "pass true; },\n(*) { pass false; } } }");
             }
+            drop dv_at_none(out);
         }
     }
-    s = string_concat(s, "\n}\n");
-    pass (string_concat(s, "pass true; }; };\n"));
+    drop dv_put(out, "\n}\n");
+    drop dv_put(out, "pass true; }; };\n");
+    pass NIL;
 };
 
 // THE VARIANT'S NAME, through a `pick` — which is expressible, exhaustive by
@@ -959,46 +1004,34 @@ func:gen_eq_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 //
 // NOT `&{self}`: interpolation is what CALLS `to_string`, so a body built out of it
 // would call itself.
-func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                 string:tn, string:bare, bool:dbg, string:head) never fails {
+func:gen_to_string_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
+                              string:tn, string:bare, bool:dbg, string:head,
+                              DvSink->:out) never fails {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
-
-    string:s = string_concat(head, tn);
-    s = string_concat(s, ":");
-    s = string_concat(s, tr);
-    s = string_concat(s, " = { pub func:");
-    s = string_concat(s, mn);
-    s = string_concat(s, " = string(");
-    s = string_concat(s, tn);
+    drop dv_put(out, raw dvc5(head, tn, ":", tr, " = { pub func:"));
     // `pick (selector) { (pattern) { … }, … }` — THE SELECTOR IS PARENTHESISED and
     // THE ARMS ARE COMMA-SEPARATED. Written from memory the first time and neither
     // was right, which is what the generated source being real source catches: it
     // failed to parse, loudly, instead of building a tree nobody could have read.
-    s = string_concat(s, ":self) {\npick (self) {\n");
-
+    drop dv_put(out, raw dvc5(mn, " = string(", tn, ":self) {\npick (self) {\n", ""));
     int32:n = raw item_member_count(ast, d);
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             string:v = raw intern_get(interns, raw decl_name(m));
-            s = string_concat(s, "(");
-            s = string_concat(s, bare);
-            s = string_concat(s, ".");
-            s = string_concat(s, v);
-            s = string_concat(s, ") { pass \"");
-            if (dbg) {
-                s = string_concat(s, bare);
-                s = string_concat(s, ".");
-            }
-            s = string_concat(s, v);
-            s = string_concat(s, "\"; }");
-            if (i < (n - 1i32)) { s = string_concat(s, ","); }
-            s = string_concat(s, "\n");
+            drop dv_at_variant(out, m);
+            drop dv_put(out, raw dvc5("(", bare, ".", v, ") { pass \""));
+            if (dbg) { drop dv_put(out, raw dvc3(bare, ".", "")); }
+            drop dv_put(out, raw dvc3(v, "\"; }", ""));
+            if (i < (n - 1i32)) { drop dv_put(out, ","); }
+            drop dv_put(out, "\n");
+            drop dv_at_none(out);
         }
     }
-    pass (string_concat(s, "}\n}; };\n"));
+    drop dv_put(out, "}\n}; };\n");
+    pass NIL;
 };
 
 // --- the walk -------------------------------------------------------------------
@@ -1026,18 +1059,26 @@ pub func:derive_apply = NIL(ModuleGraph->:g) never fails {
 func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never fails {
     drop derive_module(@g.ast, g.interns, g.diags, mod_id);
 
-    string:src = raw derive_text(@g.ast, g.interns, g.diags, mod_id);
-    if (src.len == 0i64) { pass NIL; }
+    DvSink:out = raw derive_text(@g.ast, g.interns, g.diags, mod_id);
+    if (out.text.len == 0i64) { pass NIL; }
 
     // THE GENERATED TEXT IS A MODULE, PARSED LIKE ANY OTHER. Its own name is
     // irrelevant — only its members are taken — but it needs one, because a source
     // file without a `mod:` line is not a source file.
     string:path = string_concat("<derived-",
                       string_concat(int_to_string(index => int64), ">"));
-    string:full = string_concat("mod:derived;\n", src);
+    string:full = string_concat("mod:derived;\n", out.text);
     // The manager OWNS the derived source (D-183); the lexer takes the
     // manager's cap-0 view, like every real file.
     int32:file = raw srcmgr_add_synthetic(@g.sm, move(path), move(full));
+    // THE ORIGINS LEARN THEIR FILE (D-259): the sink counted lines before the
+    // manager issued the id, so every row of this module's derived text is
+    // stamped with it here and appended to the graph's registry.
+    for (int64:oi in 0i64...out.origins.count) {
+        DerivedOrigin:o = out.origins.items[oi];
+        o.file = file;
+        drop list_push(@g.origins, o);
+    }
     string:dtext = raw srcmgr_text_proven(@g.sm, file);
     TokenList:toks = raw lex_all(file, dtext, g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
@@ -1087,10 +1128,10 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
 // EVERY DERIVE IN ONE MODULE, AS ONE SOURCE. One parse rather than one per type,
 // because a parse is a lexer, a token list and a parser, and the number of them is
 // not something the number of `#[derive]`s in a file should decide.
-func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
+func:derive_text = DvSink(Ast->:ast, InternTable->:interns, DiagList->:diags,
                           DeclId:mod_id) never fails {
     DeclNode:m = raw ast_decl(ast, mod_id);
-    string:out = "";
+    DvSink:out = raw dv_sink_init();
     int32:n = raw item_member_count(ast, m);
     for (int32:i in 0i32...n) {
         DeclId:id = raw item_member(ast, m, i);
@@ -1101,16 +1142,17 @@ func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
             DeriveSet:want = raw read_derives(ast, interns, diags, d,
                                               raw item_attr_count(ast, d), true);
             if (want.count > 0i32) {
-                out = string_concat(out,
-                          raw derive_one(ast, interns, diags, d, want, is_enum));
+                out.subject = id.index;
+                drop derive_one(ast, interns, diags, d, want, is_enum, @out);
+                out.subject = 0i32;
             }
         }
     }
-    pass out;
+    pass (move(out));
 };
 
-func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                         DeclNode:d, DeriveSet:want, bool:is_enum) never fails {
+func:derive_one = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
+                      DeclNode:d, DeriveSet:want, bool:is_enum, DvSink->:out) never fails {
     string:bare = raw intern_get(interns, raw decl_name(d));
 
     // A GENERIC SUBJECT DERIVES THE FAMILY FORM (D-161, 1.0.4c): `impl:<T>:Box<T>:Eq`,
@@ -1140,20 +1182,20 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
         tn = string_concat(bare, params);
     }
 
-    string:s = "";
-
     if (raw derive_wants(want, raw DERIVE_CLONE())) {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_CLONE(), "Clone")) {
+            out.trait_name = raw intern_add(interns, "Clone");
             string:hc = raw dv_head(ast, interns, d, is_enum, raw DERIVE_CLONE(), "Clone");
-            if (is_enum) { s = string_concat(s, raw gen_clone_enum(ast, interns, d, tn, bare, hc)); }
-            else { s = string_concat(s, raw gen_clone_struct(ast, interns, d, tn, bare, hc)); }
+            if (is_enum) { drop gen_clone_enum(ast, interns, d, tn, bare, hc, out); }
+            else { drop gen_clone_struct(ast, interns, d, tn, bare, hc, out); }
         }
     }
     if (raw derive_wants(want, raw DERIVE_EQ())) {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_EQ(), "Eq")) {
+            out.trait_name = raw intern_add(interns, "Eq");
             string:he = raw dv_head(ast, interns, d, is_enum, raw DERIVE_EQ(), "Eq");
-            if (is_enum) { s = string_concat(s, raw gen_eq_enum(ast, interns, d, tn, bare, he)); }
-            else { s = string_concat(s, raw gen_eq_struct(ast, interns, d, tn, he)); }
+            if (is_enum) { drop gen_eq_enum(ast, interns, d, tn, bare, he, out); }
+            else { drop gen_eq_struct(ast, interns, d, tn, he, out); }
         }
     }
     // THE FIVE DERIVES A `simd` FIELD REFUSES (D-194): an order over a
@@ -1169,9 +1211,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 d.span));
         } else {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_TO_STRING(), "ToString")) {
+            out.trait_name = raw intern_add(interns, "ToString");
             string:ht = raw dv_head(ast, interns, d, is_enum, raw DERIVE_TO_STRING(), "ToString");
-            if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, bare, false, ht)); }
-            else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, false, ht)); }
+            if (is_enum) { drop gen_to_string_enum(ast, interns, d, tn, bare, false, ht, out); }
+            else { drop gen_to_string_struct(ast, interns, d, tn, false, ht, out); }
         }
         }
     }
@@ -1182,9 +1225,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 d.span));
         } else {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_DEBUG(), "Debug")) {
+            out.trait_name = raw intern_add(interns, "Debug");
             string:hd = raw dv_head(ast, interns, d, is_enum, raw DERIVE_DEBUG(), "Debug");
-            if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, bare, true, hd)); }
-            else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, true, hd)); }
+            if (is_enum) { drop gen_to_string_enum(ast, interns, d, tn, bare, true, hd, out); }
+            else { drop gen_to_string_struct(ast, interns, d, tn, true, hd, out); }
         }
         }
     }
@@ -1201,9 +1245,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 d.span));
         } else {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_ORD(), "Ord")) {
+            out.trait_name = raw intern_add(interns, "Ord");
             string:ho = raw dv_head(ast, interns, d, is_enum, raw DERIVE_ORD(), "Ord");
-            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, bare, false, ho)); }
-            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, false, ho)); }
+            if (is_enum) { drop gen_cmp_enum(ast, interns, d, tn, bare, false, ho, out); }
+            else { drop gen_cmp_struct(ast, interns, d, tn, false, ho, out); }
         }
         }
     }
@@ -1214,9 +1259,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 d.span));
         } else {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_PARTIAL_ORD(), "PartialOrd")) {
+            out.trait_name = raw intern_add(interns, "PartialOrd");
             string:hp = raw dv_head(ast, interns, d, is_enum, raw DERIVE_PARTIAL_ORD(), "PartialOrd");
-            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, bare, true, hp)); }
-            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, true, hp)); }
+            if (is_enum) { drop gen_cmp_enum(ast, interns, d, tn, bare, true, hp, out); }
+            else { drop gen_cmp_struct(ast, interns, d, tn, true, hp, out); }
         }
         }
     }
@@ -1228,13 +1274,65 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 d.span));
         } else {
         if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_HASH(), "Hash")) {
+            out.trait_name = raw intern_add(interns, "Hash");
             string:hh = raw dv_head(ast, interns, d, is_enum, raw DERIVE_HASH(), "Hash");
-            if (is_enum) { s = string_concat(s, raw gen_hash_enum(tn, hh)); }
-            else { s = string_concat(s, raw gen_hash_struct(ast, interns, d, tn, hh)); }
+            if (is_enum) { drop gen_hash_enum(tn, hh, out); }
+            else { drop gen_hash_struct(ast, interns, d, tn, hh, out); }
         }
         }
     }
-    pass s;
+    out.trait_name = 0i32;
+    pass NIL;
+};
+
+// A DERIVED DIAGNOSTIC IS REPORTED AT THE DERIVE (D-259, 1.5.2b step 4). After
+// the front half has run, every diagnostic whose span lies in a `<derived-N>`
+// synthetic file -- the registry says which files those are -- is rewritten in
+// place: its span becomes the subject declaration's (the span DERIVE-006
+// already uses), its message is prefixed "in the `Ord` that `#[derive(Ord)]`
+// generates for `Box` (at the field `v`): ", its code and severity stay, so
+// D-237's set equality reads the same finding. The residue D-258 leaves --
+// a named user type without the trait or owning, a builtin the prelude has no
+// impl for under this trait -- is exactly a checker verdict with a good
+// message that needed the right span. A line no row covers (the header, or a
+// parse error in generated text -- a generator defect) is left where it is,
+// and both runners refuse a `<derived-` path by name, so it fails loudly.
+pub func:rehome_derived = NIL(ModuleGraph->:g) never fails {
+    int64:n = raw diaglist_count(g.diags);
+    for (int64:i in 0i64...n) {
+        Diagnostic:d = raw diaglist_at(g.diags, i);
+        int64:best = 0i64 - 1i64;
+        int32:best_line = 0i32;
+        for (int64:k in 0i64...g.origins.count) {
+            DerivedOrigin:o = g.origins.items[k];
+            if (o.file == d.span.file) {
+                if (o.line <= d.span.line) {
+                    if ((best < 0i64) || (o.line >= best_line)) {
+                        best = k;
+                        best_line = o.line;
+                    }
+                }
+            }
+        }
+        if (best < 0i64) { continue; }
+        DerivedOrigin:src = g.origins.items[best];
+        DeclNode:sd = raw ast_decl(@g.ast, DeclId{ index: src.subject });
+        string:p1 = string_concat("in the `", raw intern_get(g.interns, src.trait_name));
+        string:p2 = string_concat(p1, "` that `#[derive(");
+        string:p3 = string_concat(p2, raw intern_get(g.interns, src.trait_name));
+        string:p4 = string_concat(p3, ")]` generates for `");
+        string:p5 = string_concat(p4, raw intern_get(g.interns, raw decl_name(sd)));
+        string:p6 = string_concat(p5, "`");
+        if (src.member != 0i32) {
+            string:kind = " (at the field `";
+            if (src.is_variant) { kind = " (at the variant `"; }
+            string:m1 = string_concat(p6, kind);
+            string:m2 = string_concat(m1, raw intern_get(g.interns, src.member));
+            p6 = string_concat(m2, "`)");
+        }
+        drop diaglist_rehome(g.diags, i, sd.span, string_concat(p6, ": "));
+    }
+    pass NIL;
 };
 
 pub func:derive_module = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,

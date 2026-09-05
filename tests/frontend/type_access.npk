@@ -308,10 +308,11 @@ func:main = int32(cstring[]:_~argv) {
         Ax:c4 = raw ax("int32:v = raw add2(1i32, true);", @it);
         if (raw errs(@c4) != 1i64)                                 { exit 73i32; }
 
-        // Calling something that is not a function.
-        // two since the flip: not-a-function, and the licence (TYPE-042).
+        // Calling something that is not a function. ONE REPORT (D-240; 1.5.2b
+        // step 4): the licence is not asked about a callee that never resolved
+        // (two from the 1.1.2 flip until this step: not-a-function, and TYPE-042).
         Ax:c5 = raw ax("int32:v = raw pt(1i32);", @it);
-        if (raw errs(@c5) != 2i64)                                 { exit 74i32; }
+        if (raw errs(@c5) != 1i64)                                 { exit 74i32; }
 
         // A call's result is a `Result`, so using it unwrapped is caught.
         Ax:c6 = raw ax("int32:v = add2(1i32, 2i32);", @it);
@@ -329,9 +330,10 @@ func:main = int32(cstring[]:_~argv) {
         // A METHOD THAT DOES NOT EXIST NAMES THE TYPE it was sought on. "unknown
         // function `nope`" would send the reader looking for a free function when
         // what they wrote was a method call.
-        // two since the flip: no-method, and the unresolved callee is unlicensed.
+        // ONE REPORT (D-240; 1.5.2b step 4): the licence is not asked about a
+        // callee that never resolved (two from the 1.1.2 flip until this step).
         Ax:u2 = raw ax("int32:v = raw pt.nope();", @it);
-        if (raw errs(@u2) != 2i64)                                 { exit 81i32; }
+        if (raw errs(@u2) != 1i64)                                 { exit 81i32; }
 
         // The receiver is checked as the first parameter, so a method of another type
         // is refused rather than silently accepted.
@@ -529,8 +531,9 @@ func:main = int32(cstring[]:_~argv) {
         // A method on ANOTHER type is not found on this one.
         Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) never fails { pass 1i32; }; };",
                         "int32:v = raw pt.only_wrap();", @it);
-        // two since the flip: no-method, and the unresolved callee is unlicensed.
-        if (raw errs(@i4) != 2i64)                                 { exit 143i32; }
+        // ONE REPORT (D-240; 1.5.2b step 4): the licence is not asked about a
+        // callee that never resolved (two from the 1.1.2 flip until this step).
+        if (raw errs(@i4) != 1i64)                                 { exit 143i32; }
 
         // A TRAIT IMPL'S METHOD IS REACHED THE SAME WAY. Nothing about the call site
         // says which impl a method came from, and nothing should.
@@ -547,8 +550,9 @@ func:main = int32(cstring[]:_~argv) {
         // silent choice between two things somebody wrote on purpose.
         Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self) never fails; }; trait:Tb = { func:tag = int32(Self:self) never fails; }; impl:Point:Ta = { func:tag = int32(Point:self) never fails { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) never fails { pass 2i32; }; };",
                         "int32:v = raw pt.tag();", @it);
-        // two since the flip: ambiguous, and an unresolvable callee is unlicensed.
-        if (raw errs(@i7) != 2i64)                                 { exit 146i32; }
+        // ONE REPORT (D-240; 1.5.2b step 4): the licence is not asked about a
+        // callee that never resolved (two from the 1.1.2 flip until this step).
+        if (raw errs(@i7) != 1i64)                                 { exit 146i32; }
 
         // …and an INHERENT METHOD OUTRANKS a trait one, which is the same rule
         // TRAITS_REFERENCE 2.6 states for blanket impls: concrete wins.

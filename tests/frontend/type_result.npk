@@ -207,14 +207,17 @@ func:main = int32(cstring[]:_~argv) {
     // APPLYING ONE TO A PLAIN VALUE IS AN ERROR, not a no-op. A permissive `raw`
     // would survive a refactor after the operand stopped being a call, and the
     // next reader would believe there is error handling there.
-    // TWO diagnostics since the flip: the licence (`raw` takes a CALL,
-    // TYPE-042) and the operand rule (`raw` needs a `Result`, TYPE-007).
+    // ONE diagnostic (D-240; 1.5.2b step 4): the operand rule (`raw` needs a
+    // `Result`, TYPE-007) -- the licence is not asked about an operand that
+    // was refused (two from the 1.1.2 flip until this step, the licence's
+    // "`raw` takes a CALL" beside it).
     Rx:u2 = raw rx("raw 1i32", false, @it);
-    if (raw errs(@u2) != 2i64)                                 { exit 21i32; }
+    if (raw errs(@u2) != 1i64)                                 { exit 21i32; }
     if (!(raw string_eq(raw code0(@u2), raw TYPE_MISMATCH())))  { exit 22i32; }
 
+    // `_!` desugars to `raw` (OP_REFERENCE level 2), so it is the same one report.
     Rx:u3 = raw rx("_! 1i32", false, @it);
-    if (raw errs(@u3) != 2i64)                                 { exit 23i32; }
+    if (raw errs(@u3) != 1i64)                                 { exit 23i32; }
 
     // `drop` YIELDS NOTHING. That it is `NIL` rather than `T` is the point:
     // `drop f()` in a value position is then a type error instead of silently

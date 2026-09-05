@@ -188,6 +188,24 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     }
     c.npkc = move(saved);
 
+    // A `<derived-` PATH FAILS A UNIT (D-259, 1.5.2b step 4), in the
+    // direction of the defect: the parser handed a canned finding at
+    // `<derived-1>:6:12` must flag it, and the same finding at a real path
+    // must not. Unit calls on `findings_of`; the Python self-check carries
+    // the same two cases by name.
+    List<Finding>:dp = raw findings_of("NITPICK-TYPE-019 <derived-1>:6:12: `bool` has no method `cmp`\n");
+    bool:okd = false;
+    if (dp.count == 1i64) { okd = dp.items[0i64].derived; }
+    if (!okd) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("derived-path", okd, "a finding at a `<derived-N>` line nobody wrote must be flagged"));
+    if (!okd) { drop strlist_push(@report, "      the parser did not flag it; it should have"); }
+    List<Finding>:dc = raw findings_of("NITPICK-TYPE-019 p.npk:6:12: `bool` has no method `cmp`\n");
+    bool:okc = false;
+    if (dc.count == 1i64) { okc = !(dc.items[0i64].derived); }
+    if (!okc) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("derived-path-control", okc, "the same finding at a real path must not be flagged"));
+    if (!okc) { drop strlist_push(@report, "      the parser flagged a real path; it should not have"); }
+
     // THE TOOLCHAIN PIN REPORTS A MISMATCH (D-204, 1.4.5). The pin's whole
     // value is its failure path, and a check that has only ever been seen
     // to PASS is a check nobody has tested.

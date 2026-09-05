@@ -166,6 +166,20 @@ func:diag_make_view = Diagnostic(int32:severity, move string:code,
     pass d;
 };
 
+// RE-HOME ONE DIAGNOSTIC (D-259, 1.5.2b step 4): a report whose span lies in
+// a `<derived-N>` file nobody wrote takes the span of the declaration the
+// derive sits on, and its message gains a prefix naming the derive and the
+// member. Code and severity are untouched, so D-237's set equality reads the
+// same finding; only WHERE it points and what it says about why change.
+pub func:diaglist_rehome = NIL(DiagList->:list, int64:i, Span:at,
+                               move string:prefix) never fails {
+    if (i < 0i64) { pass NIL; }
+    if (i >= list.count) { pass NIL; }
+    list.items[i].span = at;
+    list.items[i].message = string_concat(prefix, list.items[i].message);
+    pass NIL;
+};
+
 pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
     int64:i = 0i64;
     while (i < list.count) {

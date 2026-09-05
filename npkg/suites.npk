@@ -194,9 +194,11 @@ func:unreadable = List<string>(string:name, Expect:exp) never fails {
 // `CODE path:line:col: message`, with `note ` / `warning ` in front for
 // those severities: the code is token 0, the span token 1, the message is
 // never asserted. A note goes to its own channel; a warning is a finding.
-struct:Finding = { string:code; int64:line; int64:col; bool:is_note; };
+// `derived` is a finding whose PATH is a `<derived-N>` synthetic file -- a
+// line nobody wrote (D-259, 1.5.2b step 4), which fails the unit.
+pub struct:Finding = { string:code; int64:line; int64:col; bool:is_note; bool:derived; };
 
-func:findings_of = List<Finding>(string:stderr) never fails {
+pub func:findings_of = List<Finding>(string:stderr) never fails {
     List<Finding>:out = raw list_init::<Finding>(8i64);
     List<string>:lines = raw text_lines(stderr);
     for (int64:i in 0i64...lines.count) {
@@ -244,7 +246,9 @@ func:findings_of = List<Finding>(string:stderr) never fails {
         if (li.is_error) { continue; }
         Result<int64>:ci = text_int(cl);
         if (ci.is_error) { continue; }
-        Finding:f = Finding{ code: raw text_copy(code), line: li.value, col: ci.value, is_note: is_note };
+        bool:derived = raw text_starts_with(sp, "<derived-");
+        Finding:f = Finding{ code: raw text_copy(code), line: li.value, col: ci.value,
+                             is_note: is_note, derived: derived };
         drop list_push(@out, move(f));
     }
     pass out;
@@ -395,6 +399,19 @@ pub async func:check_rejection = List<string>(Ctx->:c, string:binary, string:pat
         pass fl;
     }
     List<Finding>:got = raw findings_of(run.x.err);
+    // A LINE NOBODY WROTE FAILS THE UNIT (D-259, 1.5.2b step 4): a finding at
+    // `<derived-1>:6:12` used to satisfy an `expect-error-at: 6:12` by
+    // coincidence, the path never being read. The compiler re-homes every
+    // derived diagnostic to the derive's declaration; this is the belt, and
+    // the self-check's `derived-path` case is the proof it bites.
+    for (int64:g in 0i64...got.count) {
+        if (got.items[g].derived) {
+            string:dm = string_concat(name, ": reported ");
+            dm = string_concat(dm, string_from_bytes(got.items[g].code.ptr, got.items[g].code.len));
+            dm = string_concat(dm, " at a `<derived-N>` line nobody wrote (D-259: a derived diagnostic is re-homed to the derive's declaration, and one that was not is a compiler defect)");
+            drop list_push(@fl, move(dm));
+        }
+    }
     drop match_channel(@fl, name, exp.errors, got, false);
     drop match_channel(@fl, name, exp.notes, got, true);
     drop unexpected_codes(@fl, name, exp.errors, got);
