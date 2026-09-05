@@ -16960,3 +16960,52 @@ could be given.
 > node by hand (a `T` unbound) and now read `variant_payload_slot`. The
 > compiler, `npkg` and the tools check clean under the shared rules;
 > `nitpick.obligations` did not move.
+
+## D-262 — an unreferenced prelude item is not emitted, and the frontend's per-program cost is bounded by the program, not by the prelude — **SETTLED (user decision, 2026-09-05: "lets go with your recommendation"; OPEN_DECISIONS S-38; lands at 1.5.2d)**
+
+Found by the library workbench an hour after the 1.5.2c close, measured on the
+two pinned compilers with the same inputs: a 14-line program that does nothing
+but `exit 0i32` with a `failsafe` emits 845,282 bytes of IR where it emitted
+456,517 at the 1.5.1b close, in 0.85 s where it took 0.10 s, peaking at 102 MB
+where it peaked at 21 MB — a delta constant to the byte across 22 of 30 library
+programs, because D-257's generated scalar impls (348 rows in thirteen families)
+are emitted into every program whether reached or not, and every program pays
+for typing them. 1.5.2b measured the compiler's own build (+2.2% IR, +14%
+frontend) and never the fixed per-program cost, which is what a harness
+compiling many small programs pays. **The measurement the recommendation asked
+for** (on the same probe, this tree): the FRONTEND holds 0.72 s of the 0.82 s
+and emission 0.10 s; 587 of the 608 functions in the emitted IR are prelude
+bodies; and a profile puts the frontend's time not in the prelude's size as such
+but in three scaling defects — the bindings analysis (definite assignment and
+the moved-from state) allocating one state slot per STATEMENT AND DECLARATION
+OF THE WHOLE PROGRAM for every function and copying that state at every branch
+(57% of the run), the type table deduplicating by a linear scan of every type
+(13%), and the string interner deduplicating by a linear scan with a string
+comparison at every identifier the lexer meets (inside the lexer's 12%). Parsing
+the prelude is 16% and typing it 16%.
+
+**The decision, in two parts.** (1) **An unreferenced prelude item is not
+emitted.** The emitter brackets each non-generic PRELUDE function and each
+prelude impl's vtable as an ITEM of the module text; when the module is
+complete, an item is kept only if a symbol it defines is referenced by the
+text outside every item or by a kept item — a fixpoint over the emitted IR
+itself, decided on the artifact and never by an AST walk that would have to
+enumerate every kind of reference (a direct call, a method call, a vtable slot,
+a function value, a spawn, a drop body, an interpolation's `to_string`) and
+would fail open on the kind it missed; the textual rule fails closed, since a
+reference is a token, and it is deterministic. Everything outside the prelude
+is emitted as before, so a program's own IR does not change; generic prelude
+instances are already emitted on demand and stay roots. (2) **The frontend's
+per-program cost is bounded by the program's own size**, which the three
+defects violate as engineering, not as design: the bindings analysis numbers
+each function's locals and parameters densely at resolution (a per-function
+ordinal, recorded in the symbol table) and sizes its state by that count; the
+type table and the string interner each carry a hash index over their keys.
+No verdict, type or name changes — the fixes are measured by every existing
+test reporting exactly what it did and the compiler's own IR staying
+byte-identical. **Out, by decision:** a checked-once (precompiled) prelude. The
+remaining per-compile prelude cost after the fixes is parsing and typing it,
+measured at the landing and recorded; if that residue is ever the bound that
+matters, it is a new question with its own row, not this one. The workbench's
+canary is `nitpick-time/tests/probe/probe11d_floor_only.npk`, 845,282 bytes of
+IR at `0dfddac`; the landing notice carries its after-value.
