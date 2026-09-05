@@ -790,7 +790,10 @@ whole-tree check that every `DECL_*` value is unique, the walkers-total
 shape — a fact two names share is the "absent and false spelled the same"
 class D-227 was written against. **Planned as 1.5.2b step 0 (2026-09-05,
 `1.5.2b.md` L-12): `DECL_THREAD` = 512 and `check_decl_flags_unique` in the
-harness.**
+harness.** **LANDED (2026-09-05, 1.5.2b step 0): `DECL_THREAD` is 512, and
+the harness's `check_decl_flags_unique` reads every `DECL_*` row of
+`parse_decl.npk` on every full run, refusing a shared value, a value that is
+not one bit, and a row it cannot read -- each by name, never a silent skip.**
 
 ---
 

@@ -1088,6 +1088,55 @@ def check_type_walkers_total():
     return fails
 
 
+def check_decl_flags_unique():
+    """Every `DECL_*` flag in parse_decl.npk is a DISTINCT power of two (1.5.2b step 0).
+
+    `DECL_THREAD` and `DECL_DISCARDED` shared 2048 from 1.1.9 (D-181) until
+    1.5.2b -- read on different node kinds, so no program met both, but a
+    fact two names share is the "absent and false spelled the same" class
+    D-227 was written against, and nothing checked the values apart. Every
+    line declaring a `DECL_` function must read as
+    `pub func:DECL_X = int32() never fails { pass Ni32; };`; one that does
+    not is a FAILURE, never a silent skip (the gen_tables.py rule: a row the
+    reader cannot parse is a row the check is not checking).
+    """
+    fails = []
+    rel = os.path.join("src", "frontend", "parse_decl.npk")
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    row_re = re.compile(r"^pub func:(DECL_[A-Z0-9_]+) = int32\(\) never fails"
+                        r"\s*\{ pass (\d+)i32; \};\s*$")
+    by_value = {}
+    rows = 0
+    for n, line in enumerate(lines, 1):
+        if not line.startswith("pub func:DECL_"):
+            continue
+        m = row_re.match(line)
+        if not m:
+            fails.append("decl-flags-unique: %s:%d cannot be read as a flag row "
+                         "(`pub func:DECL_X = int32() never fails { pass Ni32; };`)"
+                         " -- a row the reader cannot parse is a row it is not "
+                         "checking: %s" % (rel, n, line.strip()))
+            continue
+        rows += 1
+        name, value = m.group(1), int(m.group(2))
+        if value <= 0 or value & (value - 1):
+            fails.append("decl-flags-unique: `%s` = %d (%s:%d) is not one bit -- "
+                         "`decl_has` over it would answer for two flags at once"
+                         % (name, value, rel, n))
+            continue
+        if value in by_value:
+            fails.append("decl-flags-unique: `%s` and `%s` share the bit %d "
+                         "(%s:%d) -- one fact under two names, the D-227 class"
+                         % (by_value[value], name, value, rel, n))
+        else:
+            by_value[value] = name
+    if rows == 0:
+        fails.append("decl-flags-unique: no `pub func:DECL_` row in %s -- the "
+                     "reader is looking in the wrong place" % rel)
+    return fails
+
+
 def check_slot_sites_agree():
     """Every `fits` site has an `emit_fit` partner, by the table above.
 
@@ -3815,6 +3864,7 @@ def main(argv):
         failures += check_identity_by_decl()
         failures += check_slot_sites_agree()
         failures += check_type_walkers_total()
+        failures += check_decl_flags_unique()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
         failures += check_runtime_sigs_agree()

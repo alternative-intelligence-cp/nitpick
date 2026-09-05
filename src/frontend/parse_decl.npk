@@ -44,6 +44,14 @@ use "./parse_stmt.npk".*;
 // absent: FFI functions are `ExternFn` inside an `ExternBlock`, not ordinary
 // functions wearing a modifier, because they carry failure contracts that
 // ordinary functions do not (D-002).
+//
+// EVERY VALUE BELOW IS A DISTINCT POWER OF TWO, AND THE HARNESS CHECKS IT
+// (`check_decl_flags_unique`, 1.5.2b step 0). `DECL_THREAD` and `DECL_DISCARDED`
+// shared 2048 from 1.1.9 to 1.5.2b -- read on different node kinds, so no
+// program met both, but a fact two names share is the "absent and false
+// spelled the same" class D-227 was written against, and nothing checked the
+// values apart. A new flag takes the next free bit; the check refuses a shared
+// value, a value that is not one bit, and a row it cannot read, by name.
 
 pub func:DECL_PUB = int32() never fails       { pass 1i32; };
 pub func:DECL_INLINE = int32() never fails    { pass 2i32; };
@@ -74,8 +82,9 @@ pub func:DECL_RET_FIXED = int32() never fails { pass 1024i32; };
 // `thread` (D-181): this function is a THREAD BODY — it owns an executor and
 // the arena its task frames come from (D-034), which is what makes it a
 // different kind of function from a task rather than the same one used
-// differently (D-032's pinning).
-pub func:DECL_THREAD = int32() never fails    { pass 2048i32; };
+// differently (D-032's pinning). 512 since 1.5.2b step 0: from 1.1.9 it was
+// 2048, the bit `DECL_DISCARDED` holds (OPEN_DECISIONS §6's 1.5.2 item).
+pub func:DECL_THREAD = int32() never fails    { pass 512i32; };
 
 func:p_return_quals = int32(Parser->:p) never fails {
     int32:q = 0i32;
