@@ -697,10 +697,12 @@ returning-function shape as the regression. No program in the tree writes
 the shape today. **FIXED at 1.5.2b step 3 (2026-09-05, D-258)**: the
 returning-function shape sums to 8 where it exited 95.
 
-**DEF-19 (found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
-the `src/` writer, a DECISION first) — a `pick` over an `Optional` whose arms
-are the INNER type's patterns is admitted by the checker and refused by the
-emitter.** Eight lines reproduce it: `func:pc = Ordering?(int32:a, int32:b)
+**DEF-19 — SETTLED by the user as D-260 (2026-09-05: "lets go with your
+recommendations on those"), the recommendation as written; lands at 1.5.2c
+step 0.** ~~(found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
+the `src/` writer, a DECISION first)~~ — a `pick` over an `Optional` whose
+arms are the INNER type's patterns is admitted by the checker and refused by
+the emitter. Eight lines reproduce it: `func:pc = Ordering?(int32:a, int32:b)
 never fails { if (a < b) { pass Ordering.Less; } pass Ordering.Equal; };`
 and in `main` `Ordering?:o = raw pc(1i32, 2i32); pick (o) { (Ordering.Less)
 { exit 0i32; }, (*) { exit 3i32; } }` — `tools/check` accepts the program
@@ -717,8 +719,11 @@ with a mandatory `(NIL)` arm (then the emitter lowers it and PICK's
 exhaustiveness counts the arm). The first is the smaller language and the
 one the suite already writes; the plan's recommendation is the first.
 
-**DEF-20 (found by 1.5.2b step 3's tests on `a9fff07`, 2026-09-05; owner:
-the user, a DECISION first) — a GENERIC ENUM parses and means nothing.**
+**DEF-20 — SETTLED by the user as D-261 (2026-09-05: "lets go with your
+recommendations on those"), the recommendation as written: generic enums are
+IN; lands at 1.5.2c step 1.** ~~(found by 1.5.2b step 3's tests on `a9fff07`,
+2026-09-05; owner: the user, a DECISION first)~~ — a GENERIC ENUM parses and
+means nothing.
 `enum:Opt<T> = { Some(T); None; };` is admitted by the parser (the generics
 window is the item's, as a struct's is) and then `T` in the payload is
 "there is no type named `T`" (TYPE-001): the resolver binds a struct's own

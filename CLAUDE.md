@@ -706,7 +706,11 @@ ENUM parses and means nothing (no `T` in its payloads resolves, a variant
 constructor is the bare enum), never decided in or out. Measured and
 recorded, not failures: the compiler's own IR grows 2.2% (every prelude impl
 body is emitted whether reached or not) and the frontend over `src/npkc.npk`
-takes 14% longer; `nitpick.obligations` never moved. **Next: 1.5.3 (contracts
+takes 14% longer; `nitpick.obligations` never moved. **The two findings were
+ratified the same day as D-260 (a `pick` does not select on an `Optional`,
+TYPE-065) and D-261 (generic enums are IN, a family as a generic struct is)
+and are 1.5.2c (`meta/roadmap/1.5/1.5.2c.md`, execution-grade: the refusal,
+then generic enums live, then the docs). Next: 1.5.2c, then 1.5.3 (contracts
 live).** 1.5.4b (the remaining theories) is in
 the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in

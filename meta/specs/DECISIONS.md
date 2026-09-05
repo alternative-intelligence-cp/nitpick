@@ -16854,3 +16854,71 @@ later; recorded as owed, not done.
 > so D-240's contract-only rule ("a refused operand answered with its own
 > sentence") now holds for every `raw`; six frontend unit cases that had
 > counted the pair since the 1.1.2 flip count one.
+
+## D-260 — a `pick` does not select on an `Optional` — **SETTLED (user decision, 2026-09-05: "lets go with your recommendations on those"; OPEN_DECISIONS DEF-19; lands at 1.5.2c step 0)**
+
+Found by 1.5.2b step 2's probes: `pick (o) { (Ordering.Less) { … }, (*) { … } }`
+with `o: Ordering?` was admitted by the checker and refused by the emitter
+(EMIT-002, "the emitter could not lower this, although the frontend accepted
+it"). The checker judges a `pick` by its SELECTOR's kind — a frac and a
+complex are refused there by name (D-198, D-199) — and never types a value
+pattern's expression against the selector (the emitter's `pattern_const` and
+the exhaustiveness pass read the arms), so an `Optional` selector had no arm
+and fell through to a switch the emitter cannot build over `{ i8, T }`. **The
+decision.** A `pick`'s selector may not be an `Optional`, in the statement
+form and in the expression form: refused by name, TYPE-065
+(`TYPE_PICK_OPTIONAL`), with the two spellings the language has — the value
+is reached through `??` (`pick (o ?? default) { … }`, which is what the suite
+writes) or tested with `== NIL`. An `Optional` has no arms of its own (D-099:
+no constructor, no readable members, one implicit wrap); admitting the bare
+form with a mandatory `(NIL)` arm would be a second binding form for a type
+whose one form is `??` — two spellings for one thing, the cost the blueprint
+rule exists to avoid — and the emitter would owe it a lowering it has never
+had. Not a soundness defect (the compiler refused, it did not miscompile);
+the recommendation and the ratification are the small language.
+
+## D-261 — a generic enum is a family, exactly as a generic struct is — **SETTLED (user decision, 2026-09-05: "lets go with your recommendations on those"; OPEN_DECISIONS DEF-20; lands at 1.5.2c step 1)**
+
+Found by 1.5.2b step 3's tests: `enum:Opt<T> = { Some(T); None; };` parsed
+and meant nothing. The parser gives an enum the item generics window a struct
+has, and no reader of a variant's payload type bound it — the layout, the
+pattern bindings, the constructor's payload checks, the emitter's payload
+slots and the drop bodies all resolved the payload node in the enum's home
+scope with no parameters bound ("there is no type named `T`", TYPE-001) —
+and a variant constructor or a bare variant reference yielded the BARE
+declaration type ("found `Opt`", TYPE-007). No generic enum existed in
+`tests/`, `src/`, `lib/`, `npkg/` or `tools/`, and none in TYPE_REFERENCE,
+TRAITS_REFERENCE or AST_REFERENCE: the form had never been decided in or
+out, D-085's "parses and means nothing" shape. **The decision.** Generic
+enums are IN. `Opt<T>` is a template and `Opt<int32>` an instance — D-090's
+identity with its arguments, its bounds judged by `check_one_instance` as a
+struct's are, its header emitted by the instance walk that already admits
+the kind — and EVERY read of a variant's payload type binds the instance's
+arguments to the declaration's parameters through the one binding a struct's
+field walk already uses (`bind_instance`, `type_layout.npk`): the layout, per
+instance, so `Opt<string>` owns and `Opt<int32>` does not; the pattern
+bindings; the constructor's payload checks; and the emitter's payload slots,
+which construction, `pick` binding and the drop body read from one function
+(`variant_payload_slot_at`) — in a generic body the enum type is substituted
+through the specialization first, as `ll_type` substitutes it. **The
+instance of a constructor or a bare variant reference** (`Opt.Some(3i32)`,
+`Opt.None`) is the EXPECTED type when that is an instance of the same
+declaration — an annotated binding, a parameter, a return, a payload, a
+field — else INFERRED from the payload arguments by the generic call's own
+unifier (`unify_into`: `Some(T)` against an `int32` argument teaches `T`,
+`Some(Box<T>)` against `Box<int32>` teaches it too, and an argument that
+takes its type from context teaches nothing, as for a call), and a parameter
+neither supplies is `TYPE_CANNOT_INFER` naming it with the advice to
+annotate the binding — the rule a generic function call has had since D-108,
+applied to the one other generic value a program builds. A payload-less
+variant of a generic enum (`Opt.None`) therefore needs the expected type,
+which its common spelling gives (`Opt<int32>:o = Opt.None;`); in pattern
+position a bare variant is read against the selector and is never typed as a
+value. A non-generic enum binds an empty window, so no existing program
+changes. Derive over a generic enum works as D-258's generator already writes
+it (bare variant patterns and constructors under the impl's parameter bound);
+the test 1.5.2b dropped returns. Why in and not out: an enum with a payload of
+a parameter type is the shape every `Optional`/`Result`-like user type takes,
+the struct machinery it needs is small and already written, and deciding it
+out would mean refusing the window on an enum by name for no reason a reader
+could be given.
