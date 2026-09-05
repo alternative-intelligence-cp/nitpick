@@ -16566,6 +16566,13 @@ workbench, asked, wants no order over a parameter yet); it lands as
 **1.5.2b**, frontend and prelude only, after 1.5.2 and before 1.5.3, with
 no snapshot refresh (the prelude is source the old builder reads).
 
+> **LANDED (1.5.2b, 2026-09-05), as D-256…D-259 refined it.** The three traits
+> became seven, generated for every scalar family the prelude can name (D-257);
+> the method form became the rule for every member class (D-258); and the
+> bound is enforced where the impl is used (D-256), which the planning found
+> the language had never done for any family impl. "About thirty impls" is 348
+> rows in thirteen families, the hand list's width problem being exactly why.
+
 ## D-254 — a `move` or `pass` out of a FIELD or an ELEMENT leaves the type's canonical vacant value; the aggregate stays live — **SETTLED (user decision, 2026-09-04; 1.5.1b S-26; landed at 1.5.1b step 5 as the fix)**
 
 D-183's recorded partial-move item, closed both ways. A `move(place)` or
@@ -16640,6 +16647,22 @@ elsewhere (a function bound, a `dyn` coercion) keeps `bound_unmet`'s
 wording. The emitter is untouched: it mirrors the frontend's match and is
 reached only for what the frontend admitted.
 
+> **LANDED (1.5.2b step 1, 2026-09-05).** One unifier (`family_unify`,
+> `type_trait.npk`) answers three questions — does the impl apply, what does
+> each parameter stand for, which bound failed — for `find_method`,
+> `type_implements`, `bind_blanket`, the `dyn`-coercion lookup and the
+> emitter's `note_family_instance`. The measurement widened the step: nothing
+> restricted a family impl's target shape, `bind_blanket` and the emitter bound
+> the parameters POSITIONALLY, and `Pair<U, T>`, `Pair<int32, T>` and
+> `Box<Pair<T, int32>>` were admitted at their declaration and refused at
+> every call by the receiver check with a message about a type positional
+> binding had invented — no miscompile was reachable, but the plan's "no
+> backend change" did not survive it. `MethodFind` carries five fields, not
+> four (`unmet_arg`: what the failing parameter bound to, which a call site
+> cannot read positionally). The earlier-impl note is pushed by all three
+> overlap reporters, not `coherence_error` alone. The frontend unit files'
+> diagnostic counts count errors only, a note being a pointer.
+
 ## D-257 — the prelude implements the derivable traits for every scalar it can name, as a GENERATED region — **SETTLED (user decision, 2026-09-05; 1.5.2b S-31, S-34, S-36 and D-253's three; lands at 1.5.2b step 2)**
 
 D-253 said "generated from the width ladder as the `Hash` impls are"; the
@@ -16695,6 +16718,27 @@ of a pair the prelude covers** is the coherence violation it always was
 span so the walk prints its FILE (`prelude.npk:N`); a pair the prelude does
 not cover (`impl:bool:Ord`) stays admitted — whether an orphan rule should
 close that is OPEN_DECISIONS S-37, for the library era.
+
+> **LANDED (1.5.2b step 2, 2026-09-05).** 348 rows in thirteen families;
+> `Debug` exactly where a `ToString` row exists (which is how the generator
+> learned `frac` has one); `dim256` per DISTINCT NON-ZERO unit vector, not per
+> name — the first generation refused itself with TYPE-013, unit identity
+> being the vector: `Hertz`/`Becquerels`, `Grays`/`Sieverts`, `Candela`/
+> `Lumens` one type each, `Radians`/`Steradians` the zero vector, which is
+> `tfp256` and already had rows; the generator evaluates the unit algebra and
+> the compiler checks the mirror on every build (25 vectors, 100 rows). Found
+> on both sides of the compiler: the method-call dispatch for `tfp`/`dim256`,
+> the ternary family, `complex` and `simd` refused EVERY name outside each
+> type's fixed set — in the checker before any impl lookup and in the emitter,
+> whose `emit_tfp_method` lowered `self.to_string()` as `.floor()` and handed
+> `llc` an `i32` where a string envelope was expected — so the prelude's rows
+> could exist and never be called; both now send a name outside the type's own
+> set to the impl table, one predicate per kind in `types.npk`. Measured: the
+> compiler's own IR grows 2.2% (every prelude impl body is emitted whether
+> reached or not — the emitter's reachability question, recorded), the
+> frontend over `src/npkc.npk` takes 14% longer (348 more impls parsed and
+> scanned per compile). `string`'s three are `never fails`, so a derived body
+> reaches them with `raw`; `Clone` alone stays may-fail.
 
 ## D-258 — one rule for every member of a derived body, and the synthesized bound on exactly the parameters the body reaches — **SETTLED (user decision, 2026-09-05; 1.5.2b S-32, S-33 and D-253's method form; amends D-250 clause 2, D-161's no-bound story and D-123's `Clone`/`Debug` bodies; lands at 1.5.2b step 3)**
 
@@ -16758,6 +16802,21 @@ derived `Ord` over a float field, admitted today by operator, is refused.
 `derive_payload.npk` keeps 121; payload-less enums' bodies stay
 byte-identical.
 
+> **LANDED (1.5.2b step 3, 2026-09-05).** `dv_class` classes every member
+> spelling through `builtin_scalar_family` (the one classification the region
+> is written from) and `dv_lic` gives the licence word; `dv_head` synthesizes
+> the bound from the members each derive reaches; `Clone` is member-wise;
+> `Debug` hoists each member's `debug` into a local and interpolates it. Found
+> and fixed: the emitter's `emit_tostring` matched an impl by the RECORDED type
+> over per-type impls alone, so interpolating a bound parameter (`func:show<T:
+> ToString>`'s `&{v}`) or any value whose `ToString` is a family impl was
+> admitted by the checker and refused by the emitter (EMIT-002); it substitutes
+> through the specialization and asks `impl_decl_for` now. Found and RECORDED
+> (OPEN_DECISIONS DEF-20, the user's decision): a generic enum parses and
+> means nothing, so the plan's `Opt<T>` derive test is dropped with the note
+> and the generator is written for the form. Derived `ToString`/`Debug` over a
+> payload enum keep the `(V)` arm form (measured admitted).
+
 ## D-259 — a derived diagnostic is reported at the derive; a `<derived-` path fails a unit in both runners — **SETTLED (user decision, 2026-09-05; 1.5.2b S-35; closes D-250's recorded gap; lands at 1.5.2b step 4)**
 
 D-250 recorded "the one gap left": a named user type that turns out to
@@ -16781,3 +16840,17 @@ message that only needs the right span and the derive named; a table in the
 generator of what the checker will say is the two-places-that-must-agree
 shape. The `<extern-N>` files of `bridge_stubs.npk` may adopt the seam
 later; recorded as owed, not done.
+
+> **LANDED (1.5.2b step 4, 2026-09-05).** Every generated line goes through
+> `dv_put`, which records a `DerivedOrigin` per line (subject, trait, member)
+> into `ModuleGraph.origins`; the struct `Clone` literal is written one field
+> per line so a refusal names the field; `front_run` is a wrapper that runs
+> `rehome_derived` on every return path of the pass sequence; a parse error in
+> generated text re-homes too (the step's first run proved it on a field named
+> `on`, a keyword). The belt is `parse_findings` (harness) and `Finding.derived`
+> (npkg), with `derived-path`/`derived-path-control` in both self-checks by
+> name. The first re-homed residues showed TWO codes for one mistake — TYPE-019
+> and TYPE-042, the `raw` licence asked about a callee that never resolved —
+> so D-240's contract-only rule ("a refused operand answered with its own
+> sentence") now holds for every `raw`; six frontend unit cases that had
+> counted the pair since the 1.1.2 flip count one.

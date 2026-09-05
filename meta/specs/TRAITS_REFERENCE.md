@@ -179,13 +179,34 @@ A refusal **names the field that blocks it**, not the type.
 what a person would write — rather than the bare `impl:Box:Eq`, which was
 neither valid nor reportable against source the author could see.
 
-**No bound is synthesized**, and the omission is deliberate rather than an
-oversight: a derived body compares and formats fields with the **operators**,
-never by calling a trait method, so what it asks of `T` is what those operators
-ask. Mirroring the derived trait onto the parameter — `<T: Eq>` — would refuse
-`Box<int32>` for failing to implement a trait its own `int32` field does not
-implement either. The requirement a derived impl really carries is on the
-FIELDS, and it is enforced where the generated body is checked.
+**A derived body reaches every member through the trait it is deriving, and a
+generic subject's derive carries that trait as a bound** (D-258, 1.5.2b; this
+ended D-161's no-bound story and D-250's operator form for builtins). A builtin
+scalar member is reached through the PRELUDE's impl (D-257: the prelude
+implements the seven for every scalar it can name, as a generated region —
+`raw`, the region's bodies being `never fails`), a named type or a parameter
+through its own (`relay`), a `string` field through the prelude's four, a
+`simd` by `.any()` under `Eq` and by copy under `Clone`, a pointer by address
+under `Eq` and by copy under `Clone`. The head is `impl:<A: Eq, B>:Pair<A,
+B>:Eq` — `: Eq` on exactly the parameters a member the body reaches mentions (a
+named member's arguments are walked into; a pointer, a `simd`, an array or a
+builtin stops the walk), so `Tagged<T> = { int32:id; }` derives `Eq` for every
+`T`, and an enum's tag-only `Hash` and name-only `ToString`/`Debug` carry no
+bound at all. The subject's own bounds are not copied: its instantiation
+checks them. The bound is enforced where the impl is USED (D-256, §3.2):
+`Box<Point>` is a fine type under `#[derive(Ord)]` until something calls `cmp`,
+and then `Point: Ord` is asked at the call — refused naming the derive, the
+parameter and the bound (TYPE-017). `Clone` is member-wise (`pass Box{ v: relay
+self.v.clone() }`, the bare literal), so `Box<string>.clone()` owns a second
+body; `Debug` reaches a member through its `debug`; `ToString` through
+interpolation, which IS the member's `to_string`.
+
+> The old story — "what a derived body asks of `T` is what the operators ask"
+> — ended with the measurements in `meta/roadmap/1.5/1.5.2b.md` §4: the checker
+> admitted `!=` on an opaque `T` and the emitter met it at `Box<Point>`
+> (EMIT-002), a derived `partial_cmp` over a float answered `Equal` for `nan`,
+> and a derived `Clone` over `Box<string>` aliased one body under two headers,
+> freed twice.
 
 ### What each one is
 
@@ -197,6 +218,28 @@ associated type, or as a generic parameter (D-239, 1.4.8c: the nearer binding
 would otherwise take the name over inside its own scope in silence), and the
 compiler's own `Error` type (D-179) is protected the same way at every
 declaration kind.
+
+**And the prelude IMPLEMENTS them for every scalar it can name** (D-257,
+1.5.2b): a generated region of `prelude.npk` (`scalar-impls:begin/end`, written
+by `bootstrap/generator/gen_tables.py` from LEXICAL_REFERENCE's BuiltinType
+production and held current by `--check` on every full run) gives every integer
+width, the characters, `tfp`, the ternary family, `frac`, the floats, `tbb`,
+`bool`, the kernel identifiers, the flag families, the four `complex`
+instances and `dim256` over every distinct unit vector their `Eq`, their
+`Clone`, the two orders where the kind is ordered (a float has `PartialOrd`
+only, answering `NIL` for `nan` — the one place that answer lives), `Debug`
+wherever a `ToString` row exists, and `Hash` for the mechanical rest of the
+ladder (the value truncated to 64 bits; never the floats, `tfp`, `frac` or
+`complex`); `string` has `Eq`, `Ord` (byte-lexicographic, the shorter prefix
+`Less`), `PartialOrd`, `Clone` and `Hash` by hand. A twisted scalar's
+`eq`/`cmp` trap on ERR as the operator does (D-008 §5). A program's own impl
+of a pair the prelude covers is TYPE-013 with a note at the prelude's row; a
+pair it does not cover (`impl:bool:Ord`) is admitted — the orphan question is
+OPEN_DECISIONS S-37. The tier scalars' own method sets (`tfp`'s
+`floor`/`trunc`, the ternary digits, `complex`'s five, `simd`'s five) come
+first and the impl table second — a struct's inherent-then-trait order; until
+1.5.2b those intercepts refused every other name, in the checker and in the
+emitter, so an impl on a tier scalar could exist and never be called.
 
 | Trait | Method |
 |---|---|
@@ -220,14 +263,38 @@ over one would have to lie.
 
 ### What is generated today, and what is refused
 
-`Eq`, `Ord`, `PartialOrd`, `Clone`, `ToString` and `Debug` generate for a struct;
-`Eq`, `Clone`, `ToString` and `Debug` generate for an enum. Two are refused with the
-reason rather than guessed at (D-133):
+All seven generate for a struct and for an enum (D-123, D-250, D-258): a
+struct's derives read its fields; an enum's `Eq`, `Ord`, `PartialOrd` and
+`Clone` compare or rebuild the payloads of equal tags through a `pick` per
+variant (the tag first, in declaration order), its `Hash` is the tag's and its
+`ToString`/`Debug` the variant's name. What refuses, by name at the user's
+declaration:
 
-- **`Ord`/`PartialOrd` on an enum** — ordering a variant means comparing its tag,
-  and `<` on an enum is refused by the type checker.
-- **`Hash`** — FNV-1a folds bytes, and nothing exposes a `string`'s bytes to Nitpick
-  source. A derived hash that skipped string fields would vary with data it ignored.
+- **DERIVE-005** — a `simd` field under anything but `Eq` (which collapses the
+  lane verdicts with `.any()`) and `Clone` (a copy): an order over a vector has
+  no scalar verdict, a hash and a rendering have no impls to call (D-194).
+- **DERIVE-006** — a member no derived body can be written for (D-258): an
+  owning or erased builtin (`buffer`, `dyn`, `List<…>`, `OwnedFd`, an arena, a
+  sync primitive, a `Channel`, an `Optional`, a `Result`, `cstring`, `any`, a
+  function type, `complex` over a parameter); a `string` PAYLOAD under the four
+  that bind it (a `pick` cannot bind an owning payload without consuming it —
+  D-216's is the only binding form; a `string` FIELD derives through the
+  prelude's impls); a pointer under anything but `Eq` and `Clone` (identity and
+  nothing else); an array under anything but `Clone` over scalar elements. The
+  message names the member, its spelling, the reason, and what a hand-written
+  impl decides.
+
+What only the checker can know — a named type that lacks the trait, a builtin
+the prelude has no impl for under it (`bool` under `Ord`, a float under `Ord`, a
+`tfp` under `Hash`) — is the checker's own verdict, RE-HOMED to the derive's
+declaration with the derive and the member named (D-259): "in the `Ord` that
+`#[derive(Ord)]` generates for `Flags` (at the field `lit`): `bool` has no
+method `cmp`". No diagnostic ever points into a `<derived-N>` file, and both
+runners fail a unit that reports one (BUILD_REFERENCE §7.1).
+
+> Until 1.0.9d this section listed `Ord`/`PartialOrd` on an enum and `Hash` as
+> refused; both have generated since (D-123), and the text stood stale until
+> 1.5.2b's doc pass.
 
 > **`Default` and `Display` were listed here and are removed (D-123).**
 >
@@ -420,6 +487,28 @@ binding. The diagnostic for an undeclared capability **names the bounds the
 parameter does declare**, because the fix is either the call or the bound list and
 the compiler already knows which are possible.
 
+**A FAMILY impl's bounds are enforced where the impl is used** (D-256, 1.5.2b).
+`impl:<T: Ord>:Box<T>:Ord` applies to an instance only when its target PATTERN
+unifies with the instance — a pattern argument that is one of the impl's own
+parameters binds the instance's argument and binds ONE type wherever it recurs
+(`Pair<T, T>` does not match `Pair<int32, int64>`), a concrete pattern argument
+must be identical (`Pair<int32, T>` matches `Pair<int32, _>` and nothing else),
+a nested instance or container unifies element-wise — and every bound of a
+bound parameter holds for what it bound. An impl that does not apply is not a
+candidate, in method lookup and in bound satisfaction alike; the same unifier
+binds the impl's parameters for the call and for the emitter's specialization,
+so `Pair<U, T>` and `Box<Pair<T, int32>>` are family targets that work (they
+were admitted at their declaration and refused at every call before 1.5.2b,
+the parameters having been bound positionally). Decided where the impl is
+USED, never eagerly: an instantiation is never refused for an impl it does not
+reach (`Box<flt64>` under a derived `Ord` is a fine type until something calls
+`cmp`), which is what lets one derived impl per trait carry its own bound. The
+call site's report is TYPE-017 naming the impl (or the derive that wrote it),
+the parameter and the bound. From 1.0.4b to 1.5.2b the match was declaration
+identity alone and the bound was never read (OPEN_DECISIONS DEF-15: the
+checker accepted `Box<Point>.cmp` with `Point` implementing nothing, and `llc`
+refused the module).
+
 ### 3.3 Instantiation
 
 Type arguments are **inferred** at the overwhelming majority of call sites, and
@@ -531,6 +620,15 @@ construct does not change meaning with context.
 The diagnostic names both impls and says which covers the family and which
 covers the member — read off the impls themselves, never off which was written
 first.
+
+**Every overlap report carries a NOTE at the earlier impl** (D-257's rider,
+1.5.2b), because "at line N" is a line of a file the sentence does not name —
+the prelude's, once a program writes `impl:int32:Ord` beside the prelude's
+generated one. A program's own impl of a (type, trait) pair the prelude covers
+is the overlap it always was; a pair the prelude does NOT cover
+(`impl:bool:Ord`) is admitted, and whether an orphan rule should close that —
+an impl naming at least one type or trait declared in its own tree — is
+OPEN_DECISIONS S-37, the library era's question.
 
 ### 4.2 Object Safety
 

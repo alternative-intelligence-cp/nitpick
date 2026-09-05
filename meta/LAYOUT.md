@@ -16,7 +16,10 @@ nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-0
 ├── meta/                   # specs, roadmap, audits — not shipped
 ├── src/                    # THE COMPILER. Nitpick source only.
 │   ├── main.npk            # entry; [build] entry points here
-│   ├── frontend/           # built once, in full
+│   ├── frontend/           # built once, in full; its GENERATED tables (token_kind, keywords,
+│   │   │                   #   builtin_types, flags_families, scalar_table, prelude_source, …) are
+│   │   │                   #   written by bootstrap/generator/gen_tables.py and held current by its
+│   │   │                   #   `--check` on every full run (D-257, 1.5.2b)
 │   │   ├── analysis/       #   static analyses (cycle 0.5)
 │   │   └── macro/          #   expansion + comptime (cycle 0.6)
 │   ├── backend/            # grown rung by rung

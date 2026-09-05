@@ -13,9 +13,11 @@ error:E9;
 
 // --- a struct: the six that generate ---------------------------------------------
 //
-// `Eq` compares field by field with `!=` rather than through each field's own `Eq`,
-// because the language has the operator and a derived implementation that went
-// through a trait would need `int32` to implement one.
+// `Eq` compares field by field THROUGH EACH FIELD'S OWN `eq` (D-258, 1.5.2b): an
+// `int32` field reaches the prelude's `int32:Eq` (D-257's generated region, `raw`
+// -- the body is `never fails`), a named field its own. Until 1.5.2b the body
+// wrote `!=`, "because a derived implementation that went through a trait would
+// need `int32` to implement one" -- which the prelude now does for every scalar.
 //
 // `Ord` compares LEXICOGRAPHICALLY IN DECLARATION ORDER (D-123). The cost is stated
 // rather than hidden: reordering these two fields is a semantic change.

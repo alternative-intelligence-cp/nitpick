@@ -653,7 +653,12 @@ impl applies to an instance only when its bounds hold, decided where the
 impl is USED (never eagerly — an instantiation is not refused for an impl
 it does not use), and the call site reports TYPE-017 naming the impl and
 the bound (the derive, when the impl is derived). Without it D-253's
-synthesized bound is a comment.
+synthesized bound is a comment. **FIXED at 1.5.2b step 1 (2026-09-05,
+D-256)**: `family_unify`/`family_fit` in `type_trait.npk`, read by
+`find_method`, `type_implements`, `bind_blanket`, the `dyn`-coercion lookup
+and the emitter's `note_family_instance`; `tests/types/rejection/family_bound.npk`
+and `tests/backend/programs/family_bound_ok.npk` pin both directions, and the
+non-positional target shapes positional binding could never serve run.
 
 **DEF-16 (the same planning; latent since 1.0.4c) — the no-bound operator
 story admits programs the emitter cannot lower.** `#[derive(Eq)]
@@ -662,7 +667,9 @@ opaque `T`, and at `Box<Point>` the emitter meets `!=` on a struct:
 `NITPICK-EMIT-002 <derived-1>:3:12` — "a defect in the compiler", reported
 against source nobody wrote. **Fixed by 1.5.2b step 3 (L-4, L-5)**: the
 body reaches `T` through `eq`, the impl carries `T: Eq`, and `Box<Point>`
-needs `Point: Eq` at the frontend.
+needs `Point: Eq` at the frontend. **FIXED at 1.5.2b step 3 (2026-09-05,
+D-258)**: P7 is refused at the call, TYPE-017 naming the derive
+(`tests/types/rejection/derive_bound.npk`).
 
 **DEF-17 (the same planning; the D-250 class, wider than comparisons) —
 derived `Hash` over a NAMED field is TYPE-042 inside `<derived-1>` (`raw`
@@ -671,7 +678,11 @@ on the field's may-fail `hash`; `derive_hash.npk` never nests), derived
 of a lent owner), and derived `Hash`/`ToString`/`Debug` over a generic
 subject are TYPE-019/036 inside `<derived-1>`.** **Fixed by 1.5.2b step 3
 (L-4, L-5, L-6)** — one rule for every member — and step 4 (L-7) re-homes
-whatever still reports inside a derived file.
+whatever still reports inside a derived file. **FIXED at 1.5.2b steps 3 and 4
+(2026-09-05, D-258/D-259)**: `derive_hash` over a named field, `Clone` over a
+`string` field (`derive_clone_owning.npk`) and the seven derives over
+`Box<int32>`/`Box<Point>` (`derive_generic.npk`) run; what remains a checker
+verdict reports at the derive (`tests/derive/rejection/rehomed.npk`).
 
 **DEF-18 (the same planning; a soundness hole) — a derived `Clone` over a
 generic subject aliases an owner.** `impl:<T>:Box<T>:Clone` is `pass self`
@@ -683,7 +694,8 @@ allocator's instrument caught the second free. In `main` before `exit` it
 is invisible (`exit` runs no drops). **Fixed by 1.5.2b step 3 (L-6)**: a
 member-wise clone under `T: Clone`; `derive_generic.npk` carries the
 returning-function shape as the regression. No program in the tree writes
-the shape today.
+the shape today. **FIXED at 1.5.2b step 3 (2026-09-05, D-258)**: the
+returning-function shape sums to 8 where it exited 95.
 
 **DEF-19 (found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
 the `src/` writer, a DECISION first) — a `pick` over an `Optional` whose arms

@@ -658,26 +658,56 @@ body; the belt counts defines, tail calls and direct calls in both runners
 — over the SYMBOL text, since the code-only text blanks quoted names and the
 step's first harness found the belt counting nothing — with the
 `bypass-counted`/`-missing`/`-as-value` cases in both self-checks);
-the docs. `nitpick.obligations` never moved. **1.5.2b is PLANNED
-(`meta/roadmap/1.5/1.5.2b.md`, 2026-09-05; D-253): derived impls over
-generic subjects — the prelude's scalar impls as a generated region, the
-synthesized bound on exactly the parameters a derived body reaches, and one
-rule for every member (a scalar through the prelude's impl, a named type or
-parameter through its own). Planning measured four defects it fixes first:
-a family impl's bound is DECLARED AND NEVER ENFORCED (DEF-15 — the checker
-admits `impl:<T: Ord>:Box<T>:Ord` for a `Point` without `Ord` and `llc`
-refuses the IR), the no-bound operator story admits programs the emitter
-cannot lower (DEF-16, EMIT-002), the D-250 class for `Hash`/`Clone`/
-`ToString`/`Debug` (DEF-17), and a derived `Clone` over a generic subject
-aliasing an owner (DEF-18, a double free). Its §9's seven questions were
-ratified as recommended the same day — D-256 (a family impl applies only
-when its bounds hold, decided where it is used), D-257 (the prelude's
-generated scalar region: the seven derivable traits for every scalar it can
-name, `string`'s three), D-258 (one rule for every member of a derived body
-and the synthesized bound on exactly the parameters it reaches; amends
-D-250, D-161, D-123), D-259 (a derived diagnostic is reported at the
-derive; a `<derived-` path fails a unit in both runners) — so every step
-may start. Then 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
+the docs. `nitpick.obligations` never moved. **1.5.2b (derived impls over generic subjects) IS COMPLETE
+(2026-09-05; `meta/roadmap/1.5/1.5.2b.md`, planned, ratified — D-256…D-259 — and
+closed the same day; six landings, each a cumulative prefix under a full
+harness, D-228).** Step 0: `DECL_THREAD` is 512 and `check_decl_flags_unique`
+refuses a shared `DECL_*` value, a value that is not one bit, or a row it
+cannot read (L-12). Step 1 (D-256, DEF-15): a family impl APPLIES to an
+instance only when its target pattern unifies with it and every bound holds —
+ONE unifier (`family_unify`, `type_trait.npk`) read by `find_method`,
+`type_implements`, `bind_blanket`, the `dyn`-coercion lookup and the emitter's
+`note_family_instance`; the measurement found the parameters had been bound
+POSITIONALLY on both sides, so `Pair<U, T>`, `Pair<int32, T>` and
+`Box<Pair<T, int32>>` — admitted at their declaration since 1.0.4b — now run;
+the call site reports TYPE-017 naming the impl (or the derive), the parameter
+and the bound; every overlap report carries a note at the earlier impl. Step 2
+(D-257): the prelude's `scalar-impls` GENERATED region — 348 rows in thirteen
+families from LEXICAL_REFERENCE's BuiltinType production, `Debug` exactly
+where a `ToString` exists, `Hash` for the mechanical rest of the ladder,
+`dim256` per DISTINCT unit vector (per NAME the prelude refused itself:
+`Hertz`/`Becquerels`, `Grays`/`Sieverts`, `Candela`/`Lumens`, and
+`Radians`/`Steradians` ARE `tfp256`), `string`'s `Eq`/`Ord`/`PartialOrd` by
+hand, `gen_tables.py --check` and the harness's `check_generated_current`;
+found: the tier scalars' method intercepts (`tfp`, `dim256`, the ternary
+family, `complex`, `simd`) refused EVERY name outside their fixed sets in the
+checker AND the emitter (whose `emit_tfp_method` lowered `to_string` as
+`floor`), so the region could exist and never be called — both sides now send
+a name outside the type's own set to the impl table through one predicate per
+kind. Step 3 (D-258; DEF-16, DEF-17, DEF-18 closed): `dv_class` reaches every
+member through the trait being derived — a scalar through the prelude's impl
+(`raw`), a named type or parameter through its own (`relay`), a `string`
+field through the prelude's four, a `simd`/pointer by `.any()`/address under
+`Eq` and copy under `Clone`, the rest refused by name (DERIVE-006 per derive)
+— the head synthesized on exactly the parameters the body reaches,
+`Clone` member-wise, `Debug` through `debug`; found and fixed: the emitter's
+`emit_tostring` could not lower an interpolated bound parameter or a
+family-impl `ToString` (EMIT-002 where the checker admitted). Step 4 (D-259):
+every generated line goes through one sink recording (subject, trait,
+member), `front_run` re-homes every diagnostic in a `<derived-N>` file to the
+derive's declaration with the derive and the member named, both runners refuse
+a `<derived-` path with `derived-path`/`derived-path-control` in both
+self-checks, and D-240 widened: a `raw` over a refused operand is not asked a
+second question (six unit cases counted the pair since 1.1.2). **Recorded for
+the user (OPEN_DECISIONS §2f)**: DEF-19 — a `pick` over an `Optional` enum
+with variant patterns is admitted by the checker and refused by the emitter
+(`pick (o ?? Ordering.Equal)` is the suite's spelling); DEF-20 — a GENERIC
+ENUM parses and means nothing (no `T` in its payloads resolves, a variant
+constructor is the bare enum), never decided in or out. Measured and
+recorded, not failures: the compiler's own IR grows 2.2% (every prelude impl
+body is emitted whether reached or not) and the frontend over `src/npkc.npk`
+takes 14% longer; `nitpick.obligations` never moved. **Next: 1.5.3 (contracts
+live).** 1.5.4b (the remaining theories) is in
 the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
@@ -883,6 +913,20 @@ that carried them retired at the cycle close):
 - **A `move` or `pass` out of a FIELD leaves the type's vacant value** (S-26):
   the aggregate stays live and drops its siblings; a vacant `List` grows from
   zero.
+- **A derived body reaches every member through the trait it derives** (D-258,
+  1.5.2b): a scalar through the PRELUDE's generated impl, a named type or a
+  parameter through its own, so a generic subject's derive is
+  `impl:<T: Eq>:Box<T>:Eq` and `Box<Point>.eq` needs `Point: Eq` — asked at the
+  CALL (D-256), never at the instantiation. A family impl's bound is enforced
+  where the impl is used, its parameters bound by UNIFYING the target pattern
+  (`Pair<int32, T>` is a legal family target). A derived diagnostic reports at
+  the derive's declaration (D-259); a `<derived-` path in any runner's output is
+  a compiler defect and fails the unit. A program's own `impl:int32:Ord` is
+  TYPE-013 against the prelude's; `impl:bool:Ord` is still admitted (S-37).
+- **A builtin kind's fixed method set lives in the checker AND the emitter**
+  (1.5.2b step 2): both intercepts are gated on the type's own names through
+  one predicate in `types.npk`, and every other name goes to the impl table.
+  A new builtin kind with methods owes the same gate on both sides.
 
 ### Reserved words that read like ordinary names
 

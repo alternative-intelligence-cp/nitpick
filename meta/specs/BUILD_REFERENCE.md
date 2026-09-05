@@ -446,6 +446,14 @@ Three rules make this worth having rather than decorative:
   harness reads the code as the first token and the span as the second,
   ignoring everything after; the format's shape is pinned once, in
   `tests/frontend/diagnostics.npk`.
+- **A finding at a `<derived-N>` line fails the unit** (D-259, 1.5.2b): the
+  compiler re-homes every diagnostic raised inside a derive's generated text to
+  the derive's own declaration, so a runner that sees a `<derived-` path is
+  looking at a compiler defect, and both runners say so by name rather than
+  letting `<derived-1>:6:12` satisfy an `expect-error-at: 6:12` by coincidence
+  (the path was never read before 1.5.2b). The parsers are `parse_findings`
+  (harness) and `findings_of` (npkg); the runner self-checks' `derived-path`
+  and `derived-path-control` cases prove the rule bites in both directions.
 - **A negative test with no `expect-error` is a failing test.** Asserting only
   *"it did not compile"* stops noticing when a test starts failing for a
   different reason than the one it was written to guard.
