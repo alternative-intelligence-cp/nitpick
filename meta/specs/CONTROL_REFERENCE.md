@@ -27,6 +27,8 @@ Nitpick's equivalent to `switch` or `match`. Cases are evaluated against the tar
 *   Cases must be separated by commas `,`
 *   The default/catch-all case is designated by `(*)`
 *   **Fallthrough:** Nitpick does not implicitly fall through. To fall through to another case, you must label the target case and use the `fall label;` keyword.
+*   **The selector may not be an `Optional`** (D-260, 1.5.2c; `NITPICK-TYPE-065`): an `Optional` has no arms of its own. Reach the value with `??` — `pick (o ?? default) { … }` — or test it with `== NIL`. A frac (D-198) and a complex (D-199) are refused at the selector by the same rule.
+*   **One rule set for both spellings** (1.5.2c): the statement form and the expression form (`int32:v = pick (s) { (A) { give 1i32; }, (*) { give 0i32; } };`) apply the same selector rules, type their arm bindings the same way, refuse an owning binding in a lending `pick` alike (D-216: `pick (move(v))` is the consuming form), and refuse `move` of a selector that owns nothing alike. Until 1.5.2c the expression form typed no arm binding at all.
 
 ```nitpick
 pick (x) {

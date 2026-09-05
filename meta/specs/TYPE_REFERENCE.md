@@ -960,6 +960,32 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 ; payload extraction does not cause unaligned reads/segfaults on strict architectures.
 ```
 
+**A generic enum is a family, exactly as a generic struct is (D-261, 1.5.2c).**
+`enum:Opt<T> = { Some(T); None; };` is a template; `Opt<int32>` and
+`Opt<string>` are instances, each with its own identity (D-090), its own
+header (`%"…Opt<int32>" = type { i32, [1 x i32] }`), its own layout and its own
+owning bit — `Opt<string>` owns and drops its payload, `Opt<int32>` is a tag
+and four bytes — because EVERY read of a variant's payload type binds the
+instance's arguments to the declaration's parameters through the one binding a
+struct's field walk uses (`bind_instance`): the layout, the pattern bindings, the
+constructor's payload checks and the emitter's payload slots, which
+construction, `pick` binding and the generated drop body read from one function.
+**The instance of a constructor or a bare variant reference** (`Opt.Some(3i32)`,
+`Opt.None`) is the EXPECTED type when that is an instance of the same
+declaration — an annotated binding, a parameter, a return, a payload, a field,
+a `give` — else INFERRED from the payload arguments by the generic call's own
+unifier (`Some(T)` against an `int64` teaches `T`; an argument that takes its
+type from context, an unsuffixed literal say, teaches nothing — D-108's rule),
+else refused: `NITPICK-TYPE-022` naming the parameter, with the advice to
+annotate. A payload-less variant of a generic enum therefore takes its
+instance from the annotation — `Opt<int32>:o = Opt.None;` — having nothing to
+infer from. An inferred instance is recorded and judged exactly as an
+annotated one (TRAITS_REFERENCE §3.3: `Opt<Point>` under `enum:Opt<T: Pr>` is
+TYPE-017 where `Point` lacks `Pr`). In pattern position a bare variant is read
+against the selector and is never typed as a value. A non-generic enum binds an
+empty window, so nothing about it changed. Until 1.5.2c the form parsed and
+meant nothing (OPEN_DECISIONS DEF-20).
+
 ---
 
 ## 10. Pointer & Reference Types (Tier 0)
@@ -1032,6 +1058,16 @@ the authority on both.
 | `a == NIL`, `a != NIL` | the test |
 | `a ?? d` | the value, or `d` |
 | `a?.f` | the field, still wrapped |
+| `pick (a ?? d) { … }` | the arms, over the value or the default — a `pick` never selects on the `Optional` itself (D-260, TYPE-065) |
+
+**No `pick` selects on an `Optional` (D-260, 1.5.2c; `NITPICK-TYPE-065`).** An
+`Optional` has no arms of its own — no constructor, no readable members, one
+implicit wrap — so `pick (o) { (Ordering.Less) { … } }` over an `Ordering?` is
+refused by name at the selector, in the statement form and in the expression
+form, before the arms are read. The value is reached with `??` (`pick (o ??
+Ordering.Equal) { … }`) or tested with `== NIL`. Until 1.5.2c the checker
+admitted the bare form and the emitter met it as an internal defect
+(OPEN_DECISIONS DEF-19).
 
 `T?` and `Optional<T>` are **one type with two spellings**, so every rule below
 applies to both — a rule written at one of them could be stepped around by using

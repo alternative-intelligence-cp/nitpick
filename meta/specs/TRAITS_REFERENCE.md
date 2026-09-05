@@ -267,8 +267,12 @@ All seven generate for a struct and for an enum (D-123, D-250, D-258): a
 struct's derives read its fields; an enum's `Eq`, `Ord`, `PartialOrd` and
 `Clone` compare or rebuild the payloads of equal tags through a `pick` per
 variant (the tag first, in declaration order), its `Hash` is the tag's and its
-`ToString`/`Debug` the variant's name. What refuses, by name at the user's
-declaration:
+`ToString`/`Debug` the variant's name. **A generic enum derives as a generic
+struct does** (D-261, 1.5.2c): `#[derive(Eq)] enum:Opt<T> = { Some(T); None; }`
+writes `impl:<T: Eq>:Opt<T>:Eq`, whose picks read the payload with the
+instance's arguments bound — `Opt<int32>` compares through the prelude's
+`int32:Eq`, `Opt<string>.clone()` owns a second string. What refuses, by name
+at the user's declaration:
 
 - **DERIVE-005** — a `simd` field under anything but `Eq` (which collapses the
   lane verdicts with `.any()`) and `Clone` (a copy): an order over a vector has
@@ -530,6 +534,16 @@ int32:val = extract_value::<int32>(my_container);
 | Type | bare brackets — `Handle<Node<int64>>:h;`, `struct:Container<T>` |
 | Expression | turbofish, always — `extract_value::<int32>(c)` |
 | `#`-builtin | bare brackets — `#size_of<int32>()`, `#wild_ptr<T>(addr)` (D-020) |
+
+**An enum instance is judged exactly as a struct's is (D-261, 1.5.2c).**
+`enum:Opt<T: Pr> = { Some(T); None; }` instantiated as `Opt<Point>` — at an
+annotation, or INFERRED from a constructor's payload (`Opt.Some(q)` with `q: Point`
+where nothing is expected) — is recorded like any other instantiation and judged
+by the same walk: `Point` without `Pr` is refused at the instance, TYPE-017
+naming the argument, the bound and the parameter. A variant constructor's
+instance is the expected type when that is an instance of the declaration, else
+inferred from its payload by the same unifier a generic call uses, else refused
+naming the parameter (TYPE-022) — TYPE_REFERENCE §9.3.
 
 > The earlier form — implicit `f<int32>(x)` with the turbofish as a *"fallback
 > where ambiguous"*, resolved by unspecified *"lookahead"* — is **struck**. A

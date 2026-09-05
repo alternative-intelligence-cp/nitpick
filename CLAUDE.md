@@ -709,9 +709,33 @@ body is emitted whether reached or not) and the frontend over `src/npkc.npk`
 takes 14% longer; `nitpick.obligations` never moved. **The two findings were
 ratified the same day as D-260 (a `pick` does not select on an `Optional`,
 TYPE-065) and D-261 (generic enums are IN, a family as a generic struct is)
-and are 1.5.2c (`meta/roadmap/1.5/1.5.2c.md`, execution-grade: the refusal,
-then generic enums live, then the docs). Next: 1.5.2c, then 1.5.3 (contracts
-live).** 1.5.4b (the remaining theories) is in
+and landed as 1.5.2c.** **1.5.2c IS COMPLETE (2026-09-05;
+`meta/roadmap/1.5/1.5.2c.md`, planned, ratified and closed the same day; three
+landings, each a cumulative prefix under a full harness, D-228).** Step 0
+(D-260): a `pick`'s selector may not be an `Optional` — TYPE-065 at the
+selector, statement and expression form, before the arms are read; `pick (o ??
+default)` and `== NIL` are the spellings. Step 1 (D-261): a generic enum is a
+family — `bind_instance` is `pub` and binds a struct's OR an enum's window, and
+every payload-type read goes through it (the layout per instance, so
+`Opt<string>` owns and `Opt<int32>` does not; the pattern bindings; the
+constructor's fit; the emitter's `variant_payload_slot_at`, which construction,
+`pick` binding and the drop body share); `enum_instance_for` supplies a
+constructor's or a bare variant's instance — the expected type, else inferred
+from the payload by `unify_into`, else TYPE-022 naming the parameter — built
+through `make_instance` and recorded so `check_instantiations` judges it; the
+emitter substitutes a generic body's enum at `emit_ctor` and through
+`pick_sel_tid` at every `pick` reader. **Found on the way, fixed in step 1**:
+the `pick` EXPRESSION form typed NO arm binding — only the statement form
+called the binding typer and the lending-form refusal — so `give t.x` over a
+bound `t` was accepted unchecked and died as EMIT-002 on a PLAIN enum, a struct
+given where an `int32` was expected passed the fit check against nothing, and
+an owning payload could be copied out of a lending pick expression (1.4.3b's
+hole, open in one of the two spellings); the statement form's whole prelude is
+ONE function now, `type_pick_rules`, called by both forms
+(`pick_expr_bindings.npk` pins the four rules that became live). Two `pick`
+binding sites in `ir_stmt.npk` that resolved the payload node by hand read
+`variant_payload_slot` now. Step 2: the docs. `nitpick.obligations` never
+moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
 the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
@@ -931,6 +955,17 @@ that carried them retired at the cycle close):
   (1.5.2b step 2): both intercepts are gated on the type's own names through
   one predicate in `types.npk`, and every other name goes to the impl table.
   A new builtin kind with methods owes the same gate on both sides.
+- **A generic enum's payload-less variant needs the annotation** (D-261,
+  1.5.2c): `Opt<int32>:o = Opt.None;` — a bare `Opt.None` where nothing is
+  expected has nothing to infer from and is TYPE-022 naming `T`. A constructor
+  infers from its payload (`pick (Opt.Some(big))` is `Opt<int64>`), an
+  unsuffixed literal teaches nothing. A `pick` over an `Optional` spells `??`:
+  `pick (o ?? Ordering.Equal) { … }` (D-260, TYPE-065).
+- **A rule written for one spelling of a construct is owed to the other.** The
+  `pick` expression form typed no arm binding from 1.0.9c until 1.5.2c while
+  the statement form did (`type_pick_rules` is the one function now). When a
+  construct has two spellings — statement and expression `pick`, `=>`/`=>!`,
+  `?!`/`?|` — grep for the twin before calling a rule landed.
 
 ### Reserved words that read like ordinary names
 

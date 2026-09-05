@@ -16817,6 +16817,12 @@ byte-identical.
 > and the generator is written for the form. Derived `ToString`/`Debug` over a
 > payload enum keep the `(V)` arm form (measured admitted).
 
+> **1.5.2c step 1 (2026-09-05).** The generic-enum derive test 1.5.2b dropped
+> (OPEN_DECISIONS DEF-20) returned with D-261: `derive_generic.npk`'s `Opt<T>`
+> section derives `Eq`, `Ord`, `PartialOrd` and `Clone` over `Opt<int32>` and an
+> owning `Opt<string>`, the generator's bare variant patterns and constructors
+> reading the payload with the instance's arguments bound.
+
 ## D-259 — a derived diagnostic is reported at the derive; a `<derived-` path fails a unit in both runners — **SETTLED (user decision, 2026-09-05; 1.5.2b S-35; closes D-250's recorded gap; lands at 1.5.2b step 4)**
 
 D-250 recorded "the one gap left": a named user type that turns out to
@@ -16877,6 +16883,13 @@ rule exists to avoid — and the emitter would owe it a lowering it has never
 had. Not a soundness defect (the compiler refused, it did not miscompile);
 the recommendation and the ratification are the small language.
 
+> **LANDED (1.5.2c step 0, 2026-09-05).** `TYPE_PICK_OPTIONAL` is
+> `NITPICK-TYPE-065`, reported at the selector in the statement form and the
+> expression form before the arms are read (`tests/types/rejection/
+> pick_optional.npk`: both forms refused, the `??` form accepted). At step 1 the
+> refusal moved into `type_pick_rules`, the ONE function both spellings of a
+> `pick` call (see D-261's note) — the rule is written once.
+
 ## D-261 — a generic enum is a family, exactly as a generic struct is — **SETTLED (user decision, 2026-09-05: "lets go with your recommendations on those"; OPEN_DECISIONS DEF-20; lands at 1.5.2c step 1)**
 
 Found by 1.5.2b step 3's tests: `enum:Opt<T> = { Some(T); None; };` parsed
@@ -16922,3 +16935,28 @@ a parameter type is the shape every `Optional`/`Result`-like user type takes,
 the struct machinery it needs is small and already written, and deciding it
 out would mean refusing the window on an enum by name for no reason a reader
 could be given.
+
+> **LANDED (1.5.2c step 1, 2026-09-05).** As written: `bind_instance` is `pub`
+> and binds a struct's OR an enum's window; the layout's enum arm, the pattern
+> bindings (`type_enum_bindings`), the constructor's payload checks
+> (`check_ctor_args`) and the emitter's `variant_payload_slot_at` read every
+> payload type under it; `enum_instance_for` (`type_members.npk`) supplies a
+> constructor's or a bare variant's instance — expected, else inferred through
+> `unify_into`, else `NITPICK-TYPE-022` naming the parameter — and builds it
+> through `make_instance` (the tail `subst_instance` always had, factored) so
+> `check_instantiations` judges it; the emitter substitutes a generic body's
+> enum type at `emit_ctor` and through `pick_sel_tid` at every `pick` reader.
+> Tests: `generic_enum.npk`, `generic_enum_infer.npk`, `derive_generic.npk`'s
+> returned section, `type_generic.npk` ge1..ge3. **Found on the way, fixed in
+> the step:** the `pick` EXPRESSION form typed no arm binding — only the
+> statement form called the binding typer and the lending-form refusal — so a
+> bound payload's member read was accepted unchecked and died as EMIT-002 (on a
+> PLAIN enum), a struct given where an `int32` was expected passed the fit
+> check against nothing, and an owning payload could be copied out of a lending
+> pick expression (1.4.3b's hole, open in one of the two spellings). The
+> statement form's whole prelude is ONE function now, `type_pick_rules`, called
+> by both forms (`pick_expr_bindings.npk` pins the four rules that became live).
+> Also fixed: two `pick` binding sites in `ir_stmt.npk` resolved the payload
+> node by hand (a `T` unbound) and now read `variant_payload_slot`. The
+> compiler, `npkg` and the tools check clean under the shared rules;
+> `nitpick.obligations` did not move.

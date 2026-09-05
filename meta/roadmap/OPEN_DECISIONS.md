@@ -698,8 +698,9 @@ the shape today. **FIXED at 1.5.2b step 3 (2026-09-05, D-258)**: the
 returning-function shape sums to 8 where it exited 95.
 
 **DEF-19 — SETTLED by the user as D-260 (2026-09-05: "lets go with your
-recommendations on those"), the recommendation as written; lands at 1.5.2c
-step 0.** ~~(found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
+recommendations on those"), the recommendation as written; LANDED at 1.5.2c
+step 0 (2026-09-05): `NITPICK-TYPE-065` at the selector in both forms,
+`tests/types/rejection/pick_optional.npk`.** ~~(found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
 the `src/` writer, a DECISION first)~~ — a `pick` over an `Optional` whose
 arms are the INNER type's patterns is admitted by the checker and refused by
 the emitter. Eight lines reproduce it: `func:pc = Ordering?(int32:a, int32:b)
@@ -721,7 +722,11 @@ one the suite already writes; the plan's recommendation is the first.
 
 **DEF-20 — SETTLED by the user as D-261 (2026-09-05: "lets go with your
 recommendations on those"), the recommendation as written: generic enums are
-IN; lands at 1.5.2c step 1.** ~~(found by 1.5.2b step 3's tests on `a9fff07`,
+IN; LANDED at 1.5.2c step 1 (2026-09-05): `generic_enum.npk`,
+`generic_enum_infer.npk`, `derive_generic.npk`'s returned `Opt<T>` section,
+`type_generic.npk` ge1..ge3. Found and fixed in the same step: the `pick`
+EXPRESSION form typed no arm binding (both spellings now run one
+`type_pick_rules`; `pick_expr_bindings.npk`).** ~~(found by 1.5.2b step 3's tests on `a9fff07`,
 2026-09-05; owner: the user, a DECISION first)~~ — a GENERIC ENUM parses and
 means nothing.
 `enum:Opt<T> = { Some(T); None; };` is admitted by the parser (the generics
