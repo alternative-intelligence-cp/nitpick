@@ -658,9 +658,21 @@ body; the belt counts defines, tail calls and direct calls in both runners
 — over the SYMBOL text, since the code-only text blanks quoted names and the
 step's first harness found the belt counting nothing — with the
 `bypass-counted`/`-missing`/`-as-value` cases in both self-checks);
-the docs. `nitpick.obligations` never moved. **Next: 1.5.2b (D-253, derived
-comparisons over a generic-parameter field; frontend and prelude only), then
-1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in the map.
+the docs. `nitpick.obligations` never moved. **1.5.2b is PLANNED
+(`meta/roadmap/1.5/1.5.2b.md`, 2026-09-05; D-253): derived impls over
+generic subjects — the prelude's scalar impls as a generated region, the
+synthesized bound on exactly the parameters a derived body reaches, and one
+rule for every member (a scalar through the prelude's impl, a named type or
+parameter through its own). Planning measured four defects it fixes first:
+a family impl's bound is DECLARED AND NEVER ENFORCED (DEF-15 — the checker
+admits `impl:<T: Ord>:Box<T>:Ord` for a `Point` without `Ord` and `llc`
+refuses the IR), the no-bound operator story admits programs the emitter
+cannot lower (DEF-16, EMIT-002), the D-250 class for `Hash`/`Clone`/
+`ToString`/`Debug` (DEF-17), and a derived `Clone` over a generic subject
+aliasing an owner (DEF-18, a double free). Its §9 carries seven questions
+for the user, each with the recommendation the plan follows; ratify before
+step 2. Then 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
+the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type

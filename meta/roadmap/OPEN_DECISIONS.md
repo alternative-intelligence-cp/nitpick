@@ -151,6 +151,13 @@ the builtin surface is typed from a signature table.
 | ~~**S-29**~~ | **D-252** | **SETTLED (user, 2026-09-04: "ratify all seven as recommended"), LANDED at 1.5.2 step 4 the same day.** ~~OPEN (raised at 1.5.2 planning, 2026-09-04; `1.5.2.md` §9.2 and L-13 — needed by step 4 only).~~ The caller-side bypass D-220 names ("caller discharge is an elision like any other"): a SYNC function with a limited parameter emits its body under `@"<sym>.body"` and the ordinary symbol as the CHECKED ENTRY (the entry checks, then a `tail call` of the body); every non-call reference — function values, vtable slots, spawn entries, stubs — names the ordinary symbol by construction; a DIRECT call whose `limit-subsume` row is discharged calls the body, every other call and every call of a coroutine the checked entry; the row's elision reads `elided`/`retained` and D-218.7's catalogue changes the `limit-subsume` guard column from `no` to `yes (the callee's entry check, at that call)` with a dated note; a belt in both runners: every `.body` occurrence is a `call`/`tail call` callee or its own `define`, and the count of `.body` callees equals the discharged `limit-subsume` rows. **Recommendation: ratify.** Without it nothing a caller proves ever removes a limited PARAMETER's check — the common placement pays the full price in every build, and D-068's "constrained code reaches the speed of unconstrained code" is false for it. Struck, steps 0–3 stand unchanged and the row is evidence only. | 1.5.2 step 4 | 1.5.2 planning |
 | ~~**S-30**~~ | — (a README row) | **SETTLED (user, 2026-09-04: "ratify all seven as recommended"): 1.5.4b "the remaining theories" is in the README's map, planned when 1.5.4 closes.** ~~OPEN (raised at 1.5.2 planning, 2026-09-04; `1.5.2.md` §9.3).~~ D-218.4/5 ratified the QF_BV crossing for bitwise operations, the scaled unbounded-Int encoding with ERR-sentinel rows for `tbb`/`tfp` (and `dim256` through it), and the two float tiers — and the 1.5 subcycle map assigns none of them to a subcycle; 1.5.8's `err-exit` rows presuppose the twisted encoding. Until they land every `limit` over such a subject, and every division or overflow in those families, is `unencoded` or absent (its guard retained — safe, unproven). **Recommendation: a new subcycle 1.5.4b, "the remaining theories", between 1.5.4 and 1.5.5**, planned when 1.5.4 closes so the path-condition machinery exists first; the README's map gains the row on ratification. | before 1.5.8 | 1.5.2 planning |
 | ~~**S-27**~~ | **D-255** | **SETTLED (user, 2026-09-04: "ratify all seven as recommended"), LANDED at 1.5.1b step 5.** ~~OPEN (raised at 1.5.1b step 5, 2026-09-04; implemented as the fix, pending ratification).~~ The statement after `wild_release_all()` in its block must be `exit` — TYPE-062. The call unmaps every chunk of both regimes (D-151), so no drop, no allocation and not even the trap route (which allocates its origin chain) can run after it; a `main` that released and then RETURNED ran its scope-exit drops over unmapped memory the day `List<T>` began to own, and the runtime's refusal then died in its own trap route — an uncontrolled stop. What must be measured after the release goes into `exit`'s operand, which is evaluated after the call (`argv_after_release.npk`, `leak_cleanup.npk` rewritten so; 45 test files carried a stray second call, collapsed). **Recommendation: ratify** — one shape, greppable, and the only one under which "controlled shutdown" survives the release. |
+| **S-31** | — | **OPEN (raised by 1.5.2b's planning, 2026-09-05; `1.5.2b.md` §9 Q1).** Should the prelude implement `Clone` and `Debug` for every scalar beside D-253's three? A derived `Clone` over a generic subject is a double free waiting for an owner (DEF-18) and the fix — a member-wise clone under `T: Clone` — needs `int32.clone()` for `Box<int32>` to keep working; `Debug` under its truthful bound needs `int32.debug()` the same way. **Recommendation:** ratify both — `Clone` as `pass self` for every scalar, `Debug` as the scalar's `ToString` (one meaning) for every scalar that has one; generated with the region. | 1.5.2b step 2 | 1.5.2b planning |
+| **S-32** | — | **OPEN (1.5.2b §9 Q2).** Amend D-250 clause 2: a builtin SCALAR member of a derived body is reached through the prelude's impl of the trait being derived, not by operator — so the float `nan` answer and the twisted ERR trap live in one place, and a derived `Ord` over a `bool`, a kernel identifier or a float is a refusal at the user's declaration instead of a lie (`partial_cmp` over a `flt64` field answers `Equal` for `nan` today) or a `<derived-N>` type error. **Recommendation:** ratify; the alternative special-cases floats in the generator, a second home for float semantics. | 1.5.2b step 3 | 1.5.2b planning |
+| **S-33** | — | **OPEN (1.5.2b §9 Q3).** Should a derived `Debug` reach a named or parameter member through `debug` (bound `T: Debug`) rather than through `ToString` as it does today for named fields? **Recommendation:** ratify — the trait being derived is the trait reached, one rule; it changes what a nested named field renders as under a derived `Debug`, which no test pins. | 1.5.2b step 3 | 1.5.2b planning |
+| **S-34** | — | **OPEN (1.5.2b §9 Q4).** Should `string` implement `Eq`/`Ord`/`PartialOrd` in the prelude (byte-lexicographic order), and a `string` FIELD derive through them while a `string` PAYLOAD stays refused by the pick rule? **Recommendation:** ratify — without it `Box<string>` can never derive `Eq`, and no program can supply `string: Eq` for everyone. | 1.5.2b step 2 | 1.5.2b planning |
+| **S-35** | — | **OPEN (1.5.2b §9 Q5).** Should every diagnostic that lands inside a `<derived-N>` file be RE-HOMED to the subject's declaration with the derive named, and both runners refuse a `<derived-` path as a belt? **Recommendation:** ratify — one mechanism for every residual case of D-250's recorded gap, and the class becomes unreintroducible. | 1.5.2b step 4 | 1.5.2b planning |
+| **S-36** | — | **OPEN (1.5.2b §9 Q6).** `Hash` for the rest of the ladder: the hand-listed impls stop at 64 bits. **Recommendation:** generate the mechanical set (the wide ints, `tbb128/256`, the ternary four, the flags — the value truncated to 64 bits, as the existing rows do) in step 2 and decide the floats (`-0.0 == 0.0` must hash equal), `tfp`, `frac` and `complex` (canonical ERR) OUT — a program writes those and says what they mean. | 1.5.2b step 2 | 1.5.2b planning |
+| **S-37** | — | **OPEN (1.5.2b §9 Q7).** An orphan rule: a program may implement a prelude trait for a builtin the prelude does not cover (`impl:bool:Ord`, measured admitted), and two libraries doing it collide under coherence. **Recommendation:** not this subcycle; recorded for the library era with the shape "an impl names at least one type or trait declared in its own manifest's tree" — the workbench is the first to meet it. | — (the library era) | 1.5.2b planning |
 
 ## 2f. Compiler defects reported by the library workbench (owner: the `src/` writer — scheduled as 1.5.1b, before 1.5.2)
 
@@ -628,6 +635,56 @@ byte-identical and no `--record` was needed. Blocks nothing of the
 workbench's (no library runs the verified build); `1.5.2.md` §4.3 carries
 the full measurement and the record its numbers.
 
+**DEF-15 (found by 1.5.2b's PLANNING on `20976d1`, 2026-09-05, by a
+fourteen-line probe; latent since 1.0.4b, when family impls landed) — a
+family impl's bound is DECLARED AND NEVER ENFORCED.** `find_method` and
+`type_implements` (`type_trait.npk`) match `impl:<T: Ord>:Box<T>:Ord` to
+`Box<Point>` by DECLARATION identity and never ask whether `Point: Ord`
+holds; `blanket_applies` is the only place an impl's bounds are read, and
+only for the blanket form. The checker accepts `Box<Point>.cmp(…)` with
+`Point` implementing nothing; the emitter's `impl_decl_for` finds no impl,
+qualifies the method by the trait's module and emits a call to
+`@npk.prelude.Point:Ord.cmp`, which nothing defines — **`llc` refuses the
+IR** ("use of undefined value"). An accepted program the compiler cannot
+compile, and D-064 §1's promise broken on the instantiation side. The
+prelude's two bounded family impls never met an unsatisfying argument, so
+nothing noticed. **Fix scheduled as 1.5.2b step 1 (L-1, L-2)**: a family
+impl applies to an instance only when its bounds hold, decided where the
+impl is USED (never eagerly — an instantiation is not refused for an impl
+it does not use), and the call site reports TYPE-017 naming the impl and
+the bound (the derive, when the impl is derived). Without it D-253's
+synthesized bound is a comment.
+
+**DEF-16 (the same planning; latent since 1.0.4c) — the no-bound operator
+story admits programs the emitter cannot lower.** `#[derive(Eq)]
+struct:Box<T>` writes `self.v != other.v`, the checker admits `!=` on an
+opaque `T`, and at `Box<Point>` the emitter meets `!=` on a struct:
+`NITPICK-EMIT-002 <derived-1>:3:12` — "a defect in the compiler", reported
+against source nobody wrote. **Fixed by 1.5.2b step 3 (L-4, L-5)**: the
+body reaches `T` through `eq`, the impl carries `T: Eq`, and `Box<Point>`
+needs `Point: Eq` at the frontend.
+
+**DEF-17 (the same planning; the D-250 class, wider than comparisons) —
+derived `Hash` over a NAMED field is TYPE-042 inside `<derived-1>` (`raw`
+on the field's may-fail `hash`; `derive_hash.npk` never nests), derived
+`Clone` over an OWNING field is TYPE-047 inside `<derived-1>` (`pass self`
+of a lent owner), and derived `Hash`/`ToString`/`Debug` over a generic
+subject are TYPE-019/036 inside `<derived-1>`.** **Fixed by 1.5.2b step 3
+(L-4, L-5, L-6)** — one rule for every member — and step 4 (L-7) re-homes
+whatever still reports inside a derived file.
+
+**DEF-18 (the same planning; a soundness hole) — a derived `Clone` over a
+generic subject aliases an owner.** `impl:<T>:Box<T>:Clone` is `pass self`
+checked with `T` opaque, so TYPE-046/047 cannot see the `string` inside
+`Box<string>`; the specialization copies the header and both drops free
+one body. Measured: a clone inside a returning function exits 95
+(`Unreachable` reached `failsafe`) where the arithmetic answer was 0 — the
+allocator's instrument caught the second free. In `main` before `exit` it
+is invisible (`exit` runs no drops). **Fixed by 1.5.2b step 3 (L-6)**: a
+member-wise clone under `T: Clone`; `derive_generic.npk` carries the
+returning-function shape as the regression. No program in the tree writes
+the shape today.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
@@ -731,7 +788,9 @@ values are distinct. Owed to 1.5.2b, the next subcycle to touch the
 frontend: a bit of its own for `DECL_THREAD` (512 is unused) and a
 whole-tree check that every `DECL_*` value is unique, the walkers-total
 shape — a fact two names share is the "absent and false spelled the same"
-class D-227 was written against.
+class D-227 was written against. **Planned as 1.5.2b step 0 (2026-09-05,
+`1.5.2b.md` L-12): `DECL_THREAD` = 512 and `check_decl_flags_unique` in the
+harness.**
 
 ---
 
