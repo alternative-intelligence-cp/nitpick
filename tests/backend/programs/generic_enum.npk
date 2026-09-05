@@ -1,0 +1,94 @@
+// expect-exit: 0
+//
+// A GENERIC ENUM IS A FAMILY (D-261, 1.5.2c step 1), exactly as a generic
+// struct is: `enum:Opt<T> = { Some(T); None; }` is a template, every value of
+// it an INSTANCE with its own layout (`Opt<string>` owns and drops its payload;
+// `Opt<int32>` is a tag and four bytes), and a variant's payload type is read
+// with the instance's arguments bound -- by the layout, the pattern binding, the
+// constructor's fit and the emitter's payload slots, ONE binding
+// (`bind_instance`, the struct rule applied to a payload). Until this step the
+// form parsed and meant nothing (OPEN_DECISIONS DEF-20).
+//
+// Where the instance comes from: the ANNOTATION (`Opt<int32>:a = Opt.Some(3i32)`,
+// and `Opt.None`, which has no payload to teach anything); the PAYLOAD when
+// nothing is expected (`pick (Opt.Some(big))` infers `T = int64` from `big`, by
+// the generic call's own unifier); a FIELD's type inside a generic struct
+// (`Box<int32>`'s `Opt<T>:inner`); a generic function's RETURN (`wrapg<T>`
+// returning `Opt<T>`, the constructor substituted per specialization); a
+// `give`'s expectation. Nested (`Opt<Opt<int32>>`), two parameters
+// (`Either<L, R>`), payload-less (`Tag<T>`, an `i32`), and consuming picks over
+// owning instances whose bindings drop at the arm's end -- exit 0, so D-151
+// asserts nothing leaked.
+
+mod:generic_enum;
+error:E9;
+
+enum:Opt<T> = { Some(T); None; };
+enum:Either<L, R> = { Left(L); Right(R); };
+enum:Tag<T> = { A; B; };
+struct:Box<T> = { Opt<T>:inner; int32:n; };
+
+func:wrapg<T> = Opt<T>(T:v) { pass Opt.Some(v); };
+
+func:main = int32(cstring[]:_~argv) {
+    // from the annotation, both variants
+    Opt<int32>:a = Opt.Some(3i32);
+    Opt<int32>:n = Opt.None;
+    int32:va = pick (a) { (Opt.Some(v)) { give v; }, (Opt.None) { give 0i32; } };
+    if (va != 3i32) { exit 2i32; }
+    int32:vn = pick (n) { (Opt.Some(v)) { give v; }, (Opt.None) { give 7i32; } };
+    if (vn != 7i32) { exit 3i32; }
+
+    // inferred from the payload where nothing is expected
+    int64:big = 9i64;
+    int64:vi = pick (Opt.Some(big)) { (Opt.Some(v)) { give v; }, (Opt.None) { give 0i64; } };
+    if (vi != 9i64) { exit 4i32; }
+
+    // an owning payload: consumed by the pick, the binding dropped at the arm's
+    // end; a second one never consumed, dropped at scope exit
+    Opt<string>:s = Opt.Some(string_concat("ab", "cd"));
+    int64:len = pick (move(s)) { (Opt.Some(t)) { give t.len; }, (Opt.None) { give 0i64; } };
+    if (len != 4i64) { exit 5i32; }
+    Opt<string>:s2 = Opt.Some(string_concat("x", "y"));
+
+    // nested: the inner constructor's instance is the outer payload's type
+    Opt<Opt<int32>>:nn = Opt.Some(Opt.Some(5i32));
+    Opt<int32>:mid = pick (nn) { (Opt.Some(o)) { give o; }, (Opt.None) { give Opt.None; } };
+    int32:inner = pick (mid) { (Opt.Some(w)) { give w; }, (Opt.None) { give 0i32; } };
+    if (inner != 5i32) { exit 6i32; }
+
+    // two parameters, an owning right payload consumed
+    Either<int32, string>:l = Either.Left(1i32);
+    Either<int32, string>:r = Either.Right(string_concat("r", "s"));
+    int32:wl = pick (move(l)) { (Either.Left(x)) { give x; }, (Either.Right(y)) { give 0i32; } };
+    if (wl != 1i32) { exit 7i32; }
+    int32:wr = pick (move(r)) { (Either.Left(x)) { give x; }, (Either.Right(y)) { give (y.len =>! int32); } };
+    if (wr != 2i32) { exit 8i32; }
+
+    // a generic enum inside a generic struct: the field's instance is the struct's argument
+    Box<int32>:bx = Box{ inner: Opt.Some(11i32), n: 1i32 };
+    int32:bv = pick (bx.inner) { (Opt.Some(v)) { give v; }, (Opt.None) { give 0i32; } };
+    if (bv != 11i32) { exit 9i32; }
+
+    // payload-less: a tag alone, and the tag IS the value (1.0.9c)
+    Tag<int32>:tg = Tag.B;
+    if ((tg =>! int32) != 1i32) { exit 10i32; }
+
+    // through a generic function's return, the argument teaching `T`
+    Opt<int32>:w = wrapg(4i32) ?! E9;
+    int32:wv = pick (w) { (Opt.Some(v)) { give v; }, (Opt.None) { give 0i32; } };
+    if (wv != 4i32) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

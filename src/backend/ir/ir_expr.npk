@@ -9043,33 +9043,45 @@ pub func:variant_payload_slot_at = PayloadSlot(TypeResolver->:tr, TypeTable->:ty
     DeclId:did = DeclId{ index: raw type_decl(types, enum_tid) };
     int32:phome = raw symtab_home_scope(tab, did.index, scope);
     DeclNode:d = raw ast_decl(ast, did);
+    // THE INSTANCE'S ARGUMENTS BOUND (D-261, 1.5.2c step 1): `Opt<string>`'s
+    // `Some(T)` is a string here and `Opt<int32>`'s an int32 -- the one
+    // binding the checker's layout and pattern typing use, so construction,
+    // the `pick` binding, the drop body and the frontend read one answer. The
+    // caller hands a CONCRETE instance: inside a generic body the enum type is
+    // substituted through the specialization first (`emit_ctor`, `emit_pick`).
+    GenericScope:vsaved = raw bind_instance(tr, enum_tid);
+    PayloadSlot:found = bad;
+    bool:done = false;
     int32:i = 0i32;
     while (i < (raw item_member_count(ast, d))) {
+        if (done) { break; }
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclEnumVariant) {
             if ((raw decl_name(m)) == vname) {
+                done = true;
                 int32:pc = raw variant_payload_count(m);
-                if (j >= pc) { pass bad; }
-                int32:pstart = raw variant_payload_start(m);
-                int64:off = 0i64;
-                int32:k = 0i32;
-                while (k <= j) {
-                    int32:pt = raw resolve_type(tr,
-                                   TypeId{ index: raw ast_id_at(ast, pstart, k) },
-                                   phome);
-                    off = raw align_up(off, raw type_align(types, pt));
-                    if (k == j) {
-                        pass (PayloadSlot{ ok: true, offset: off,
-                                          type_id: pt });
+                if (j < pc) {
+                    int32:pstart = raw variant_payload_start(m);
+                    int64:off = 0i64;
+                    int32:k = 0i32;
+                    while (k <= j) {
+                        int32:pt = raw resolve_type(tr,
+                                       TypeId{ index: raw ast_id_at(ast, pstart, k) },
+                                       phome);
+                        off = raw align_up(off, raw type_align(types, pt));
+                        if (k == j) {
+                            found = PayloadSlot{ ok: true, offset: off, type_id: pt };
+                        }
+                        off = off + (raw type_size(types, pt));
+                        k = k + 1i32;
                     }
-                    off = off + (raw type_size(types, pt));
-                    k = k + 1i32;
                 }
             }
         }
         i = i + 1i32;
     }
-    pass bad;
+    tr.generics = vsaved;
+    pass found;
 };
 
 pub func:variant_payload_slot = PayloadSlot(ExprEmitter->:x, int32:enum_tid,
@@ -9187,6 +9199,13 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         // UNREACHABLE, as in `emit_enum_ctor`: only a confirmed enum ctor calls in.
         pass (raw iv_broken(at));
     }
+    // A GENERIC BODY'S ENUM IS SUBSTITUTED FIRST (D-261, 1.5.2c step 1): the
+    // recorded type inside `impl:<T: Clone>:Opt<T>:Clone` is `Opt<T>`, and the
+    // payload slots below want `Opt<int32>` -- what `ll_type` substitutes for
+    // the text, done here for the type the slots are read from.
+    if (raw type_mentions_param(x.fe.ctx.types, x.ast, etid, 64i32)) {
+        etid = raw subst_emitted_type(x.fe.ctx, etid);
+    }
     VariantInfo:vi = raw variant_info(x, etid, vname);
     if (!vi.found) { pass (raw iv_broken(at)); }
     LlType:ell = raw ll_type(x.fe.ctx, etid);
@@ -9218,10 +9237,12 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         IrVal:av = raw emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
         // THE PAYLOAD IS A SLOT (1.0.6e), of the variant's declared payload type
-        // — resolved in the ENUM's home scope, as `check_ctor_args` resolved it.
-        int32:phome = raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
-                                                                etid), x.scope);
-        int32:ptid = raw resolve_type(x.tr, vi.payload_ty, phome);
+        // — through `variant_payload_slot`, the ONE payload-type rule (D-261,
+        // 1.5.2c: it binds the instance's arguments; the by-hand resolution
+        // this replaced read `T` unbound).
+        PayloadSlot:ps1 = raw variant_payload_slot(x, etid, vname, 0i32);
+        if (!ps1.ok) { pass (raw iv_broken(at)); }
+        int32:ptid = ps1.type_id;
         av = raw emit_fit(x, ptid, move(av), at);
         if (raw iv_is_ok(av)) { drop temp_take(x, av.ref); }   // the variant keeps it (D-246)
         if (!(raw iv_is_ok(av))) { pass av; }

@@ -1881,14 +1881,17 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) { pass (raw iv_nil()); }
 
     int32:segs = raw pat_enum_segment_count(x.ast, pn);
-    VariantInfo:vi = raw variant_info(x, sel_tid,
-                         raw pat_enum_segment(x.ast, pn, segs - 1i32));
+    int32:vname1 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
+    VariantInfo:vi = raw variant_info(x, sel_tid, vname1);
     if (!vi.found) { pass (raw iv_broken(at)); }
     if (vi.payload_count == 0i32) { pass (raw iv_nil()); }
 
-    int32:pty = raw resolve_type(x.tr, vi.payload_ty,
-                     raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
-                                               sel_tid), x.scope));
+    // THE PAYLOAD'S TYPE THROUGH `variant_payload_slot` (D-261, 1.5.2c step
+    // 1): the instance's arguments bound, as construction and the drop body
+    // read it -- the by-hand resolution this replaced read `T` unbound.
+    PayloadSlot:ps0 = raw variant_payload_slot(x, sel_tid, vname1, 0i32);
+    if (!ps0.ok) { pass (raw iv_broken(at)); }
+    int32:pty = ps0.type_id;
     LlType:pll = raw ll_type(x.fe.ctx, pty);
     if (!(raw ll_is_ok(pll))) { pass (raw iv_from_ll_at(x, pll, pty, at)); }
 
@@ -2001,9 +2004,22 @@ func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     pass (raw iv_broken(s.span));
 };
 
+// THE SELECTOR'S TYPE AS THE INSTANCE THE BODY IS EMITTED FOR (D-261, 1.5.2c
+// step 1): `pick (self)` inside `impl:<T: Eq>:Opt<T>:Eq` records `Opt<T>`, and
+// the payload slots the arms bind are read from the specialization's instance
+// -- `Opt<int32>`. One spelling for the emitter's three readers of a
+// selector's type (the pick, and the two frame-slot scans).
+pub func:pick_sel_tid = int32(ExprEmitter->:x, ExprId:sel) never fails {
+    int32:t = raw exprtypes_get(x.et, sel);
+    if (raw type_mentions_param(x.fe.ctx.types, x.ast, t, 64i32)) {
+        t = raw subst_emitted_type(x.fe.ctx, t);
+    }
+    pass t;
+};
+
 func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     ExprId:sel_id = raw pick_selector(s);
-    int32:sel_tid = raw exprtypes_get(x.et, sel_id);
+    int32:sel_tid = raw pick_sel_tid(x, sel_id);
     IrVal:sel = raw emit_expr(x, sel_id);
     if (!(raw iv_is_ok(sel))) { pass sel; }
     // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246): the arms own the
@@ -2658,14 +2674,17 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                                      raw pat_enum_segment(x.ast, pn, segs - 1i32));
                 if (vi.found) { if (vi.payload_count > 0i32) {
                     if ((raw pat_enum_bind_count(x.ast, pn)) == 1i32) {
-                        int32:pty = raw resolve_type(x.tr, vi.payload_ty,
-                                        raw symtab_home_scope(x.tab,
-                                            raw type_decl(x.fe.ctx.types,
-                                                sel_tid), x.scope));
-                        LlType:pll = raw ll_type(x.fe.ctx, pty);
-                        if (raw ll_is_ok(pll)) {
-                            drop fnem_cross_add(x.fe, armid.index, 7i32,
-                                                pty, move(pll.text));
+                        // The ONE payload rule (D-261), mirroring `bind_payload`.
+                        PayloadSlot:bs0 = raw variant_payload_slot(x, sel_tid,
+                                              raw pat_enum_segment(x.ast, pn, segs - 1i32),
+                                              0i32);
+                        if (bs0.ok) {
+                            int32:pty = bs0.type_id;
+                            LlType:pll = raw ll_type(x.fe.ctx, pty);
+                            if (raw ll_is_ok(pll)) {
+                                drop fnem_cross_add(x.fe, armid.index, 7i32,
+                                                    pty, move(pll.text));
+                            }
                         }
                     } else {
                         int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
@@ -2703,8 +2722,7 @@ func:scan_expr = IrVal(ExprEmitter->:x, ExprId:id, int32:fuel) never fails {
                                      a: n.a, b: n.b, c: n.c, payload: 0i64 };
         IrVal:sr = raw scan_expr(x, raw pick_selector(as_stmt), fuel - 1i32);
         if (!(raw iv_is_ok(sr))) { pass sr; }
-        drop scan_pick_binds(x, raw exprtypes_get(x.et,
-                                 raw pick_selector(as_stmt)),
+        drop scan_pick_binds(x, raw pick_sel_tid(x, raw pick_selector(as_stmt)),
                              raw pick_arm_start(as_stmt),
                              raw pick_arm_count(as_stmt));
         int32:j = 0i32;
@@ -2939,7 +2957,7 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
     if (s.kind == StmtKind.StmtPickStmt) {
         IrVal:rs = raw scan_expr(x, raw pick_selector(s), fuel - 1i32);
         if (!(raw iv_is_ok(rs))) { pass rs; }
-        drop scan_pick_binds(x, raw exprtypes_get(x.et, raw pick_selector(s)),
+        drop scan_pick_binds(x, raw pick_sel_tid(x, raw pick_selector(s)),
                              raw pick_arm_start(s), raw pick_arm_count(s));
         int32:j = 0i32;
         while (j < (raw pick_arm_count(s))) {

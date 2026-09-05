@@ -1,0 +1,50 @@
+// A `pick` MEANS THE SAME THING IN BOTH OF ITS SPELLINGS (1.5.2c step 1). The
+// rules the statement form applied since 1.0.9c and 1.4.3b -- the arm
+// bindings' TYPES, the lending form's refusal of an owning binding (D-183,
+// D-216) and the meaningless `move` of a selector that owns nothing -- now run
+// for the EXPRESSION form through the one function both forms call
+// (`type_pick_rules`). Until this step the expression form typed no binding at
+// all: a bound `t` was an unknown the checker asked nothing of, so `give
+// t.nope` was ACCEPTED and met the emitter as EMIT-002, a bound owning payload
+// was copied out of a lending pick unrefused, and a struct given where an
+// `int32` was expected passed the fit check against nothing. Found by 1.5.2c's
+// first generic-enum program, on a plain enum.
+mod:pick_expr_bindings;
+
+struct:Pt = { int32:x; };
+enum:OptP = { Some(Pt); None; };
+enum:OptS = { Some(string); None; };
+
+// The binding is typed, so a member it does not have is refused.
+// expect-error: NITPICK-TYPE-019
+func:no_such_member = int32(OptP:s) never fails {
+    int32:v = pick (s) { (OptP.Some(t)) { give t.nope; }, (OptP.None) { give 0i32; } };
+    pass v;
+};
+
+// ...and a `give` of the binding is fit to the pick's slot like any other.
+// expect-error: NITPICK-TYPE-007
+func:wrong_give = int32(OptP:s) never fails {
+    int32:v = pick (s) { (OptP.Some(t)) { give t; }, (OptP.None) { give 0i32; } };
+    pass v;
+};
+
+// A LENDING pick may not bind an owning payload (D-216's refusal, 1.4.3b):
+// the binding would be a second owner of the string's body that outlives the
+// enum. `pick (move(s))` is the form that may.
+// expect-error: NITPICK-TYPE-046
+func:lending_bind = int64(OptS:s) never fails {
+    int64:n = pick (s) { (OptS.Some(t)) { give t.len; }, (OptS.None) { give 0i64; } };
+    pass n;
+};
+
+// `move` on a selector that owns nothing is the same meaningless move it is
+// in the statement form.
+// expect-error: NITPICK-TYPE-046
+func:consume_nonowner = int32(int32:v) never fails {
+    int32:r = pick (move(v)) { (0i32) { give 1i32; }, (*) { give 2i32; } };
+    pass r;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

@@ -29,6 +29,11 @@ struct:Point = { int32:x; int32:y; };
 #[derive(Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug)]
 struct:Box<T> = { T:v; };
 
+// A GENERIC ENUM (D-261, 1.5.2c step 1): the same family form, the derived
+// bodies picking over `self` and `other` with the instance's payload bound.
+#[derive(Eq, Ord, PartialOrd, Clone)]
+enum:Opt<T> = { Some(T); None; };
+
 #[derive(Eq, Ord, Clone, Hash)]
 struct:Pair<A, B> = { A:a; B:b; int32:n; };
 
@@ -83,10 +88,23 @@ func:main = int32(cstring[]:_~argv) {
     if (!(r3.eq(r1) ?! E9)) { exit 32i32; }
     if ((r1.hash() ?! E9) == (r2.hash() ?! E9)) { exit 33i32; }
 
-    // (A GENERIC ENUM -- `Opt<T> = { Some(T); None; }` under `Eq`/`Ord`/`Clone`
-    // -- was planned here and is NOT written: the form parses and means
-    // nothing today, OPEN_DECISIONS DEF-20. The generator is ready for it: a
-    // variant pattern and constructor use the bare enum name.)
+    // Opt<int32> under Eq/Ord/PartialOrd/Clone (D-261; DEF-20 closed): variants
+    // order by declaration, so `None.cmp(Some(3))` is Greater
+    Opt<int32>:o1 = Opt.Some(3i32);
+    Opt<int32>:o2 = Opt.Some(4i32);
+    Opt<int32>:o3 = Opt.None;
+    if (o1.eq(o2) ?! E9) { exit 40i32; }
+    if (!(o1.eq(o1) ?! E9)) { exit 41i32; }
+    pick (o1.cmp(o2) ?! E9) { (Ordering.Less) { }, (*) { exit 43i32; } }
+    pick (o3.cmp(o1) ?! E9) { (Ordering.Greater) { }, (*) { exit 44i32; } }
+    pick ((o2.partial_cmp(o1) ?! E9) ?? Ordering.Less) { (Ordering.Greater) { }, (*) { exit 45i32; } }
+    Opt<int32>:o4 = o1.clone() ?! E9;
+    if (!(o4.eq(o1) ?! E9)) { exit 46i32; }
+    // Opt<string>: an OWNING instance cloned -- two payloads, the clone's
+    // consumed by the pick and dropped at the arm's end, the original at exit
+    Opt<string>:os = Opt.Some(string_concat("ab", "c"));
+    Opt<string>:oc = os.clone() ?! E9;
+    pick (move(oc)) { (Opt.Some(t)) { if (t.len != 3i64) { exit 47i32; } }, (Opt.None) { exit 48i32; } }
 
     // Box<flt64>: nan has no order, and the answer lives in the prelude
     flt64:zero = 0.0f64;

@@ -830,6 +830,25 @@ func:main = int32(cstring[]:_~argv) {
         @it);
     if (raw errs(@f13) != 0i64)                                 { exit 142i32; }
 
+    // A GENERIC ENUM'S INSTANCE IS JUDGED LIKE A STRUCT'S (D-261, 1.5.2c step
+    // 1): `Opt<Point>` under `enum:Opt<T: Pr>` is refused where `Point` lacks
+    // `Pr` and admitted where it has it, and an instance INFERRED from a
+    // constructor's payload is recorded and judged the same way.
+    Gx:ge1 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; struct:Point = { int32:x; }; enum:Opt<T: Pr> = { Some(T); None; }; func:f = NIL() never fails { Opt<Point>:o; pass NIL; };",
+        @it);
+    if (raw errs(@ge1) != 1i64)                                  { exit 144i32; }
+    if (!(raw string_eq(raw code0(@ge1), raw TYPE_BOUND_UNMET()))) { exit 145i32; }
+    Gx:ge2 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; struct:Point = { int32:x; }; impl:Point:Pr = { func:p = int32(Point:self) never fails { pass 1i32; }; }; enum:Opt<T: Pr> = { Some(T); None; }; func:f = NIL() never fails { Opt<Point>:o; pass NIL; };",
+        @it);
+    if (raw errs(@ge2) != 0i64)                                  { exit 146i32; }
+    Gx:ge3 = raw gx(
+        "trait:Pr = { func:p = int32(Self:self) never fails; }; struct:Point = { int32:x; }; enum:Opt<T: Pr> = { Some(T); None; }; func:f = NIL(Point:q) never fails { pick (Opt.Some(q)) { (*) { } } pass NIL; };",
+        @it);
+    if (raw errs(@ge3) != 1i64)                                  { exit 147i32; }
+    if (!(raw string_eq(raw code0(@ge3), raw TYPE_BOUND_UNMET()))) { exit 148i32; }
+
     wild_release_all();
     exit 0i32;
 };

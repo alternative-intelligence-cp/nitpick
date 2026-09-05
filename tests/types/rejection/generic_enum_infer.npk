@@ -1,0 +1,22 @@
+// A GENERIC ENUM'S INSTANCE IS KNOWN OR REFUSED (D-261, 1.5.2c step 1). A
+// value of `Opt<T>` has to be SOME instance: the expected type when that is
+// one of `Opt`, else what the payload teaches, else a refusal naming the
+// parameter. A bare payload-less variant with nothing expected has nothing to
+// infer from, and a constructor whose payload takes its type from context (an
+// unsuffixed literal) teaches nothing -- both TYPE-022, with the advice to
+// annotate. Against an annotated instance the payload is fit-checked against
+// the instance's ARGUMENT, not an opaque `T`: TYPE-007.
+mod:generic_enum_infer;
+
+enum:Opt<T> = { Some(T); None; };
+
+func:main = int32(cstring[]:_~argv) {
+    // expect-error: NITPICK-TYPE-022
+    pick (Opt.None) { (*) { } }
+    // expect-error: NITPICK-TYPE-022
+    pick (Opt.Some(5)) { (*) { } }
+    // expect-error: NITPICK-TYPE-007
+    Opt<int32>:o = Opt.Some(2i64);
+    exit 0i32;
+};
+func:failsafe = int32(Error:_~e) { exit 1i32; };

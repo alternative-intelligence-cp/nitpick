@@ -122,67 +122,11 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     // writes a symbol onto an identifier, and `type_ident` reads it back.
     if (s.kind == StmtKind.StmtPickStmt) {
         int32:selt = raw type_of_expr(e, raw pick_selector(s));
-        // A FRAC SELECTOR IS REFUSED BY NAME (D-198, 1.3.5): a frac has no
-        // enumerable cases beyond ERR — `is_err` is the look, comparisons
-        // are the decisions — and the scalar pick machinery compares one
-        // register where a frac is three.
-        if (selt != 0i32) {
-            if ((raw type_kind(e.types, selt)) == (raw TY_FRAC())) {
-                drop diaglist_push(e.diags, raw diag_error(raw TYPE_FRAC_RULES(),
-                    "a `pick` does not select on a frac (D-198): its only nameable case is ERR — `is_err` is the look, and comparisons are the decisions",
-                    s.span));
-                pass NIL;
-            }
-            // The same posture for a complex (D-199): equality is the one
-            // decision, and its cases are not enumerable.
-            if ((raw type_kind(e.types, selt)) == (raw TY_COMPLEX())) {
-                drop diaglist_push(e.diags, raw diag_error(raw TYPE_COMPLEX_RULES(),
-                    "a `pick` does not select on a complex (D-199): equality is its one comparison, and `is_err` looks at tfp elements",
-                    s.span));
-                pass NIL;
-            }
-            // AND AN `Optional` (D-260, 1.5.2c step 0): it has no arms of its
-            // own, and the emitter switches on a selector as its own
-            // discriminant -- `{ i8, T }` is not one. `??` reaches the value,
-            // `== NIL` tests it; the arms are not walked, having no selector
-            // to be read against.
-            if ((raw type_kind(e.types, selt)) == (raw TY_OPTIONAL())) {
-                drop diaglist_push(e.diags, raw diag_error(raw TYPE_PICK_OPTIONAL(),
-                    "a `pick` does not select on an `Optional` (D-260): an `Optional` has no arms of its own — reach the value with `??` (`pick (o ?? default) { … }`) or test it with `== NIL`",
-                    s.span));
-                pass NIL;
-            }
-        }
-        // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
-        // apart, so its arms may bind owning payloads — that is the whole
-        // point of the form. `move(v)` already parses as a selector
-        // expression; nothing in the grammar changed.
-        bool:consuming = false;
-        ExprId:selid = raw pick_selector(s);
-        if (!(raw expr_is_none(selid))) {
-            if ((raw ast_expr(e.ast, selid)).kind == ExprKind.ExprMoveExpr) {
-                consuming = true;
-            }
-        }
-        // ...and `move` on a selector that owns NOTHING is the same meaningless
-        // move it is anywhere else.
-        if (consuming) {
-            if (selt != 0i32) {
-                // THE DROP FLAG IS MEMOISED BY THE LAYOUT PASS, and an enum's
-                // is 0 until something asks for its layout — so the question
-                // has to make sure it has been computed before reading the
-                // answer, or every consuming pick is told its selector owns
-                // nothing.
-                TypeResolver:lr = raw etyper_resolver(e);
-                if (!(raw type_drops(@lr, selt, e.scope, 64i32))) {
-                    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
-                        "`pick (move(v))` consumes a value that OWNS something (D-216); this selector's type owns nothing, so there is nothing to transfer — select on it directly",
-                        s.span));
-                }
-            }
-        }
-        drop type_pick_bindings(e, s, selt);
-        drop check_pick_owning_binds(e, s, selt, consuming);
+        // THE RULES BOTH SPELLINGS SHARE (`type_pick_rules`), then the arms.
+        PickRules:pr = raw type_pick_rules(e, raw pick_selector(s), selt,
+                                           raw pick_arm_start(s),
+                                           raw pick_arm_count(s), s.span);
+        if (!pr.ok) { pass NIL; }
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
     }
@@ -394,14 +338,13 @@ func:stmt_is_release_all = bool(ExprTyper->:e, StmtId:id) never fails {
 //
 // `pick (move(v))` is the way to bind one, and the message says so — a refusal
 // with no legal alternative is a wall, not a rule.
-func:check_pick_owning_binds = NIL(ExprTyper->:e, StmtNode:s, int32:selt,
-                                   bool:consuming) never fails {
+func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
+                                   int32:start, int32:count) never fails {
     if (consuming) { pass NIL; }
     if (selt == 0i32) { pass NIL; }
     int32:i = 0i32;
-    while (i < (raw pick_arm_count(s))) {
-        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast,
-                                          raw pick_arm_start(s), i));
+    while (i < count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:pid3 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid3))) {
             PatNode:pn3 = raw ast_pat(e.ast, pid3);
@@ -452,16 +395,16 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, StmtNode:s, int32:selt,
 // One binding, one payload, one recorded type. A variant carrying MORE than one
 // payload is 0.9's — the backend rungs it, and its multi-binding typing lands
 // with that lift; until then those bindings stay unknown exactly as before.
-func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) never fails {
+func:type_pick_bindings = NIL(ExprTyper->:e, int32:selt, int32:start,
+                              int32:count) never fails {
     if (selt == 0i32) { pass NIL; }
     int32:sk = raw type_kind(e.types, selt);
     if (sk != (raw TY_ENUM())) {
         if (sk != (raw TY_STRUCT())) { pass NIL; }
     }
     int32:i = 0i32;
-    while (i < (raw pick_arm_count(s))) {
-        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast,
-                                          raw pick_arm_start(s), i));
+    while (i < count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         PatId:pid2 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid2))) {
             PatNode:pn = raw ast_pat(e.ast, pid2);
@@ -475,6 +418,88 @@ func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) never fails
         i = i + 1i32;
     }
     pass NIL;
+};
+
+// THE RULES A `pick` SHARES BETWEEN ITS TWO SPELLINGS (1.5.2c step 1): the
+// selector kinds that have no arms of their own (a frac, D-198; a complex,
+// D-199; an `Optional`, D-260), the consuming `move(v)` selector (D-216) and
+// its meaningless-move refusal, the arm bindings' TYPES, and the lending
+// form's refusal of an owning binding (1.4.3b). Until this step only the
+// STATEMENT form applied them: the EXPRESSION form typed no binding at all,
+// so a bound `t` in `pick (s) { (Some(t)) { give t.x; } … }` was an unknown
+// the checker asked nothing of, and the emitter met its member read as
+// EMIT-002 -- found by this step's first generic-enum program, on a PLAIN
+// enum. One function, called by both forms with their own arm window and
+// span: a construct means the same thing in both of its spellings.
+//
+// `ok` is false when the selector was refused and the arms must not be read
+// against it; `consuming` says whether the selector is `move(v)`.
+pub struct:PickRules = { bool:ok; bool:consuming; };
+
+pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
+                                     int32:start, int32:count, Span:at) never fails {
+    PickRules:refused = PickRules{ ok: false, consuming: false };
+    // A FRAC SELECTOR IS REFUSED BY NAME (D-198, 1.3.5): a frac has no
+    // enumerable cases beyond ERR — `is_err` is the look, comparisons
+    // are the decisions — and the scalar pick machinery compares one
+    // register where a frac is three.
+    if (selt != 0i32) {
+        if ((raw type_kind(e.types, selt)) == (raw TY_FRAC())) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_FRAC_RULES(),
+                "a `pick` does not select on a frac (D-198): its only nameable case is ERR — `is_err` is the look, and comparisons are the decisions",
+                at));
+            pass refused;
+        }
+        // The same posture for a complex (D-199): equality is the one
+        // decision, and its cases are not enumerable.
+        if ((raw type_kind(e.types, selt)) == (raw TY_COMPLEX())) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_COMPLEX_RULES(),
+                "a `pick` does not select on a complex (D-199): equality is its one comparison, and `is_err` looks at tfp elements",
+                at));
+            pass refused;
+        }
+        // AND AN `Optional` (D-260, 1.5.2c step 0): it has no arms of its
+        // own, and the emitter switches on a selector as its own
+        // discriminant -- `{ i8, T }` is not one. `??` reaches the value,
+        // `== NIL` tests it; the arms are not walked, having no selector
+        // to be read against.
+        if ((raw type_kind(e.types, selt)) == (raw TY_OPTIONAL())) {
+            drop diaglist_push(e.diags, raw diag_error(raw TYPE_PICK_OPTIONAL(),
+                "a `pick` does not select on an `Optional` (D-260): an `Optional` has no arms of its own — reach the value with `??` (`pick (o ?? default) { … }`) or test it with `== NIL`",
+                at));
+            pass refused;
+        }
+    }
+    // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
+    // apart, so its arms may bind owning payloads — that is the whole
+    // point of the form. `move(v)` already parses as a selector
+    // expression; nothing in the grammar changed.
+    bool:consuming = false;
+    if (!(raw expr_is_none(selid))) {
+        if ((raw ast_expr(e.ast, selid)).kind == ExprKind.ExprMoveExpr) {
+            consuming = true;
+        }
+    }
+    // ...and `move` on a selector that owns NOTHING is the same meaningless
+    // move it is anywhere else.
+    if (consuming) {
+        if (selt != 0i32) {
+            // THE DROP FLAG IS MEMOISED BY THE LAYOUT PASS, and an enum's
+            // is 0 until something asks for its layout — so the question
+            // has to make sure it has been computed before reading the
+            // answer, or every consuming pick is told its selector owns
+            // nothing.
+            TypeResolver:lr = raw etyper_resolver(e);
+            if (!(raw type_drops(@lr, selt, e.scope, 64i32))) {
+                drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
+                    "`pick (move(v))` consumes a value that OWNS something (D-216); this selector's type owns nothing, so there is nothing to transfer — select on it directly",
+                    at));
+            }
+        }
+    }
+    drop type_pick_bindings(e, selt, start, count);
+    drop check_pick_owning_binds(e, selt, consuming, start, count);
+    pass (PickRules{ ok: true, consuming: consuming });
 };
 
 // A WINDOW OF BINDING TYPES, one per binding in binding order, its start on the
@@ -495,6 +520,11 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     DeclNode:d = raw ast_decl(e.ast, did);
     int32:home = raw symtab_home_scope(e.tab, did.index, e.scope);
     TypeResolver:r = raw etyper_resolver(e);
+    // THE INSTANCE'S ARGUMENTS BOUND (D-261, 1.5.2c): a binding in
+    // `(Opt.Some(v))` over an `Opt<string>` selector is a `string`, over an
+    // `Opt<T>` inside a generic body the parameter -- the struct rule
+    // (`struct_field`) applied to a payload.
+    GenericScope:bsaved = raw bind_instance(@r, selt);
     int32:vi = 0i32;
     while (vi < (raw item_member_count(e.ast, d))) {
         DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
@@ -513,11 +543,13 @@ func:type_enum_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
                 }
                 IdSpan:w = raw ast_scratch_commit(e.ast, mark);
                 drop ast_set_pat_payload(e.ast, pid2, w.start => int64);
+                r.generics = bsaved;
                 pass NIL;
             }
         }
         vi = vi + 1i32;
     }
+    r.generics = bsaved;
     pass NIL;
 };
 

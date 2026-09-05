@@ -185,11 +185,19 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
     TypeResolver:r = raw etyper_resolver(e);
 
     if (d.kind == DeclKind.DeclEnumDecl) {
-        int32:et = raw tt_enum(e.types, did.index, s.name, 0i64, 1i32);
-        FieldInfo:v = raw enum_variant(@r, et, name);
-        if (v.found) { pass (raw ns_yes(v.type_id)); }
+        int32:bare = raw tt_enum(e.types, did.index, s.name, 0i64, 1i32);
+        FieldInfo:v = raw enum_variant(@r, bare, name);
+        if (v.found) {
+            // THE INSTANCE (D-261, 1.5.2c step 1): a generic enum's bare
+            // variant takes its instance from the expected type -- nothing
+            // else can supply it -- and a non-generic enum is its bare type.
+            int32:et = raw enum_instance_for(e, did.index, s.name, name,
+                                             0i32, 0i32, false, n.span);
+            if (et == 0i32) { pass (raw ns_yes(0i32)); }
+            pass (raw ns_yes(et));
+        }
         // A variant that does not exist names the ENUM, not "unknown name".
-        discard(raw te_no_member(e, et, name, n.span));
+        discard(raw te_no_member(e, bare, name, n.span));
         pass (raw ns_yes(0i32));
     }
 
@@ -1053,9 +1061,11 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
     }
     TypeResolver:r = raw etyper_resolver(e);
     // The payload's type resolves in the ENUM's home scope — the declaration
-    // means what it meant where it was written (0.8.1).
+    // means what it meant where it was written (0.8.1) — WITH THE INSTANCE'S
+    // ARGUMENTS BOUND (D-261, 1.5.2c): `Opt<int32>.Some` expects an `int32`.
     int32:home = raw symtab_home_scope(e.tab, raw type_decl(e.types, enum_ty),
                                        e.scope);
+    GenericScope:csaved = raw bind_instance(@r, enum_ty);
     for (int32:i in 0i32...count) {
         int32:pt = raw resolve_type(@r,
                        TypeId{ index: raw ast_id_at(e.ast,
@@ -1082,7 +1092,102 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
             }
         }
     }
+    r.generics = csaved;
     pass enum_ty;
+};
+
+// THE INSTANCE A VARIANT CONSTRUCTOR OR A BARE VARIANT REFERENCE BUILDS
+// (D-261, 1.5.2c step 1). A non-generic enum is its bare type, as always. A
+// generic one is a TEMPLATE, and a value of it has to be SOME instance: the
+// EXPECTED type when that is an instance of this declaration (an annotated
+// binding, a parameter, a return, a payload, a field), else INFERRED from the
+// payload arguments by the generic call's own unifier (`unify_into`: `Some(T)`
+// against an `int32` argument teaches `T`, `Some(Box<T>)` against `Box<int32>`
+// teaches it too; an argument that takes its type from context teaches
+// nothing, as for a call -- D-108's rule), else refused: TYPE_CANNOT_INFER
+// naming the parameter, with the advice to annotate. A payload-less variant
+// (`Opt.None`) has nothing to infer from and needs the annotation, which its
+// common spelling gives. A variant that does not exist is left to the caller
+// (the bare type is returned, and its "no member" is the one report). Built
+// and recorded through `make_instance`, so `check_one_instance` judges the
+// inferred instance exactly as an annotated one. Returns 0 after reporting.
+func:enum_instance_for = int32(ExprTyper->:e, int32:decl, int32:ename, int32:vname,
+                               int32:start, int32:count, bool:is_ctor,
+                               Span:at) never fails {
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: decl });
+    IdSpan:gw = raw decl_generic_window(e.ast, d);
+    int32:bare = raw tt_enum(e.types, decl, ename, 0i64, 1i32);
+    if (gw.count == 0i32) { pass bare; }
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_ENUM())) {
+            if ((raw type_decl_of(e.types, want)) == decl) {
+                if ((raw type_args_count_of(e.types, want)) > 0i32) { pass want; }
+            }
+        }
+    }
+    // The variant, or the caller's "no member".
+    int32:vidx = 0i32 - 1i32;
+    int32:vi = 0i32;
+    while (vi < (raw item_member_count(e.ast, d))) {
+        DeclNode:m = raw ast_decl(e.ast, raw item_member(e.ast, d, vi));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw decl_name(m)) == vname) { vidx = vi; }
+        }
+        vi = vi + 1i32;
+    }
+    if (vidx < 0i32) { pass bare; }
+    DeclNode:vm = raw ast_decl(e.ast, raw item_member(e.ast, d, vidx));
+
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:mark = raw ast_scratch_mark(e.ast);
+    for (int32:z in 0i32...gw.count) { drop ast_scratch_push(e.ast, 0i32); }
+    if (is_ctor) {
+        // The payload nodes resolved under the declaration's OWN window, so
+        // `T` is the parameter type the unifier learns through.
+        int32:home = raw symtab_home_scope(e.tab, decl, e.scope);
+        GenericScope:osaved = raw bind_own_generics(@r, d);
+        int32:pc = raw variant_payload_count(vm);
+        for (int32:j in 0i32...count) {
+            if (j < pc) {
+                ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, j) };
+                if (!(raw takes_type_from_context(e, a))) {
+                    int32:saved = e.expected;
+                    e.expected = 0i32;
+                    int32:got = raw type_of_expr(e, a);
+                    e.expected = saved;
+                    if (got != 0i32) {
+                        int32:declared = raw resolve_type(@r,
+                            TypeId{ index: raw ast_id_at(e.ast,
+                                        raw variant_payload_start(vm), j) },
+                            home);
+                        drop unify_into(e, declared, got, gw, mark, 32i32);
+                    }
+                }
+            }
+        }
+        r.generics = osaved;
+    }
+    for (int32:i in 0i32...gw.count) {
+        if ((raw ast_scratch_at(e.ast, mark, i)) == 0i32) {
+            DeclNode:gpn = raw ast_decl(e.ast,
+                               DeclId{ index: raw ast_id_at(e.ast, gw.start, i) });
+            string:m1 = string_concat("`", raw intern_get(e.interns, raw decl_name(gpn)));
+            string:m2 = string_concat(m1, "` cannot be inferred for `");
+            string:m3 = string_concat(m2, raw intern_get(e.interns, ename));
+            string:m4 = string_concat(m3, ".");
+            string:m5 = string_concat(m4, raw intern_get(e.interns, vname));
+            string:tail = "` here (D-261): a generic enum's instance comes from the annotation (`Opt<int32>:o = …`) or from the payload it is built with, and this payload teaches nothing about it";
+            if (!is_ctor) {
+                tail = "` (D-261): a payload-less variant of a generic enum has nothing to infer from, so its instance comes from the annotation -- write the binding's type (`Opt<int32>:o = Opt.None;`)";
+            }
+            discard(raw te_error(e, raw TYPE_CANNOT_INFER(), string_concat(m5, tail), at));
+            drop ast_scratch_drop(e.ast, mark);
+            pass 0i32;
+        }
+    }
+    IdSpan:w = raw ast_scratch_commit(e.ast, mark);
+    pass (raw make_instance(@r, raw TY_ENUM(), decl, w, at));
 };
 
 // WHICH DECLARATION IS BEING CALLED, when one can be named at all.
@@ -1571,7 +1676,13 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if (rs.origin_kind == (raw SYM_DECL())) {
                 DeclNode:rd = raw ast_decl(e.ast, DeclId{ index: rs.origin });
                 if (rd.kind == DeclKind.DeclEnumDecl) {
-                    int32:ety = raw tt_enum(e.types, rs.origin, rs.name, 0i64, 1i32);
+                    // THE INSTANCE (D-261, 1.5.2c step 1): the expected type
+                    // when it is one of this declaration, else inferred from
+                    // the payload, else refused naming the parameter.
+                    int32:ety = raw enum_instance_for(e, rs.origin, rs.name,
+                                    n.payload =>! int32, raw expr_list_start(n),
+                                    raw expr_list_count(n), true, n.span);
+                    if (ety == 0i32) { pass 0i32; }
                     pass (raw type_ctor_named(e, n, ety, n.payload =>! int32,
                               raw expr_list_start(n), raw expr_list_count(n)));
                 }

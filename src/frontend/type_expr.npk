@@ -2687,19 +2687,17 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
 // type would need a widening rule, and D-092 says there is not one.
 func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:pselt = raw type_of_expr(e, raw pickx_selector(n));
-    // AN `Optional` SELECTOR IS REFUSED BY NAME (D-260, 1.5.2c step 0), as the
-    // statement form refuses it: an `Optional` has no arms of its own, and
-    // `??` is how its value reaches a `pick`.
-    if (pselt != 0i32) {
-        if ((raw type_kind(e.types, pselt)) == (raw TY_OPTIONAL())) {
-            pass (raw te_error(e, raw TYPE_PICK_OPTIONAL(),
-                "a `pick` does not select on an `Optional` (D-260): an `Optional` has no arms of its own — reach the value with `??` (`pick (o ?? default) { … }`) or test it with `== NIL`",
-                n.span));
-        }
-    }
-
     int32:start = raw pickx_arm_start(n);
     int32:cnt = raw pickx_arm_count(n);
+    // THE RULES BOTH SPELLINGS SHARE (`type_pick_rules`, 1.5.2c step 1): the
+    // selector kinds with no arms of their own (D-198, D-199, D-260), the
+    // consuming selector (D-216), the arm bindings' TYPES, and the lending
+    // form's owning-binding refusal -- until this step the expression form
+    // typed no binding, and a bound payload's member read reached the emitter
+    // unchecked. A refused selector ends the question; the arms are not read.
+    PickRules:pr = raw type_pick_rules(e, raw pickx_selector(n), pselt, start, cnt, n.span);
+    if (!pr.ok) { pass 0i32; }
+
     int32:want = raw expected_value(e);
     int32:given = want;
 

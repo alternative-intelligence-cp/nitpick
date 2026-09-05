@@ -260,14 +260,23 @@ func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
         pass t;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    pass (raw make_instance(r, raw type_kind(r.types, t), decl, w, at));
+};
 
+// AN INSTANCE FROM A DECLARATION AND AN ARGUMENT WINDOW (D-261, 1.5.2c step
+// 1): the tail `subst_instance` always had, factored so a constructor's
+// INFERRED instance -- `Opt.Some(3i32)` teaching `T = int32` -- is built by
+// the same three lines an annotation's or a substitution's is: mangled by the
+// declaration's name, interned by (declaration, arguments), and RECORDED like
+// any other instantiation so `check_one_instance` judges its bounds. A
+// `Container<T>` that becomes `Container<Point>` at a call site is exactly as
+// much an instantiation as one somebody wrote down.
+pub func:make_instance = int32(TypeResolver->:r, int32:kind, int32:decl,
+                               IdSpan:w, Span:at) never fails {
     int32:mangled = raw intern_add(r.interns,
                         raw mangle_instance(r, raw type_name_of_decl(r, decl), w));
-    int32:out = raw tt_instance(r.types, r.ast, raw type_kind(r.types, t), decl,
+    int32:out = raw tt_instance(r.types, r.ast, kind, decl,
                                 mangled, w.start, w.count, 0i64, 1i32);
-    // RECORDED LIKE ANY OTHER INSTANTIATION, so its bounds are judged. A
-    // `Container<T>` that becomes `Container<Point>` at a call site is exactly as
-    // much an instantiation as one somebody wrote down.
     drop inst_record(r.instances, out, at);
     pass out;
 };

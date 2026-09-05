@@ -71,15 +71,23 @@ pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
 // matters: leaving the caller's binding in place would let a `T` from the
 // surrounding generic function leak into an unrelated struct's field types and
 // resolve to something plausible.
-func:bind_instance = GenericScope(TypeResolver->:r, int32:struct_type) never fails {
+//
+// A STRUCT'S OR AN ENUM'S (D-261, 1.5.2c step 1): the binding reads the
+// declaration and the argument window, which both kinds carry the same way,
+// and a generic enum's variant payloads are resolved under it exactly as a
+// generic struct's fields are -- by the layout, the pattern bindings, the
+// constructor's payload checks and the emitter's payload slots. Until 1.5.2c
+// only the struct walk bound it, and `enum:Opt<T> = { Some(T); None; }` parsed
+// and meant nothing.
+pub func:bind_instance = GenericScope(TypeResolver->:r, int32:inst_type) never fails {
     GenericScope:saved = r.generics;
-    DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
+    DeclId:did = DeclId{ index: raw type_decl(r.types, inst_type) };
     DeclNode:d = raw ast_decl(r.ast, did);
     IdSpan:gp = raw decl_generic_window(r.ast, d);
     GenericScope:g = GenericScope{
         params_start: gp.start, params_count: gp.count,
-        args_start: raw type_args_start_of(r.types, struct_type),
-        args_count: raw type_args_count_of(r.types, struct_type) };
+        args_start: raw type_args_start_of(r.types, inst_type),
+        args_count: raw type_args_count_of(r.types, inst_type) };
     r.generics = g;
     pass saved;
 };
@@ -487,6 +495,11 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
             DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
             DeclNode:d = raw ast_decl(r.ast, did);
             int32:home = raw symtab_home_scope(r.tab, did.index, scope);
+            // THE INSTANCE'S ARGUMENTS BOUND (D-261, 1.5.2c): `Opt<string>`'s
+            // `Some(T)` is a string here and `Opt<int32>`'s an int32, so each
+            // instance gets its own size, alignment and owning bit -- the
+            // struct rule, `struct_field`'s binding, applied to a payload.
+            GenericScope:esaved = raw bind_instance(r, t);
             int64:wsize = 0i64;
             int32:walign = 1i32;
             int32:i = 0i32;
@@ -534,6 +547,7 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                 }
                 i = i + 1i32;
             }
+            r.generics = esaved;
             if (wsize > 0i64) {
                 discard(raw lay_field(@l, raw align_up(wsize, walign), walign));
             }
