@@ -669,9 +669,15 @@ admits `impl:<T: Ord>:Box<T>:Ord` for a `Point` without `Ord` and `llc`
 refuses the IR), the no-bound operator story admits programs the emitter
 cannot lower (DEF-16, EMIT-002), the D-250 class for `Hash`/`Clone`/
 `ToString`/`Debug` (DEF-17), and a derived `Clone` over a generic subject
-aliasing an owner (DEF-18, a double free). Its §9 carries seven questions
-for the user, each with the recommendation the plan follows; ratify before
-step 2. Then 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
+aliasing an owner (DEF-18, a double free). Its §9's seven questions were
+ratified as recommended the same day — D-256 (a family impl applies only
+when its bounds hold, decided where it is used), D-257 (the prelude's
+generated scalar region: the seven derivable traits for every scalar it can
+name, `string`'s three), D-258 (one rule for every member of a derived body
+and the synthesized bound on exactly the parameters it reaches; amends
+D-250, D-161, D-123), D-259 (a derived diagnostic is reported at the
+derive; a `<derived-` path fails a unit in both runners) — so every step
+may start. Then 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
 the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical

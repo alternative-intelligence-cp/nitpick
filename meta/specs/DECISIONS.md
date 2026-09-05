@@ -9063,6 +9063,13 @@ for a second `impl` they never wrote.
 
 ---
 
+> **[D-258, 2026-09-05]** A derived `Clone` is member-wise (a struct
+> literal of each field's clone; an enum's `pick` per variant), never `pass
+> self` over a subject that may own — the generic form aliased an owner
+> (OPEN_DECISIONS DEF-18) — and a derived `Debug` reaches a named or
+> parameter member through `debug`. The prelude implements the seven for
+> every scalar it can name (D-257). `Hash`'s tag-only enum rule is unchanged.
+
 ## D-124 — A macro's reach is exactly its module, and hygiene is what decides it — **SETTLED**
 
 D-057 flipped hygiene: an identifier in a macro body resolves in the scope the
@@ -11140,6 +11147,13 @@ was changed to emit one.
 is inherited by every impl that omits it; `find_method` falls back to the
 trait's default when the impl lacks the name — concrete receivers at
 1.0.4, `dyn` via the vtable filling the slot with the default's thunk.
+
+> **[D-258, 2026-09-05]** The no-bound story ends: a derived impl over a
+> generic subject carries the derived trait as a bound on exactly the
+> parameters its body reaches, and the body reaches a parameter through the
+> trait's method — the operator form admitted programs the emitter could
+> not lower (OPEN_DECISIONS DEF-16), and a family impl's bound is enforced
+> where the impl is used (D-256).
 
 ## D-162 — A struct literal is typed by the declaration its name resolves to — **SETTLED**
 
@@ -16350,6 +16364,13 @@ pins the reporter's 321 (Less, Equal, Less) and the struct-through-`Inner`
 shapes; `payload_owning.npk` the three refusals; `deriving.npk` the accepted
 shapes. A payload-less enum's derived bodies are byte-identical to before.
 
+> **[D-258, 2026-09-05]** Clause 2's operator for a builtin spelling is
+> amended: a builtin SCALAR member is reached through the PRELUDE's impl of
+> the trait being derived (D-257), a `string` FIELD through its own, and
+> the float answers the operator got wrong (`Equal` for `nan` under
+> `partial_cmp`; a total `cmp` over a float) are the prelude's now. The gap
+> this decision recorded closes under D-259.
+
 ## D-246 — statement-end temporaries: an owning value no place takes is dropped when its statement ends — **SETTLED (ratified with 1.5.1b; landed at step 4, 2026-09-04)**
 
 The workbench's DEF-1 measured it and D-183's open item named it: an owning
@@ -16583,3 +16604,180 @@ stray second call were collapsed). One shape, greppable, and the only one
 under which "controlled shutdown" survives the release. The main thread's
 TLS block became a raw mapping in the same step so that a trap raised
 inside `exit`'s operand after the release reaches `failsafe` (DEF-12).
+
+## D-256 — a family impl applies to an instance only when its bounds hold, decided where the impl is USED — **SETTLED (user decision, 2026-09-05: "I say go with those"; 1.5.2b L-1/L-2, DEF-15; lands at 1.5.2b step 1)**
+
+Found by 1.5.2b's planning (OPEN_DECISIONS DEF-15): `find_method` and
+`type_implements` matched a family impl (`impl:<T: Ord>:Box<T>:Ord`, 1.0.4b)
+to an instance (`Box<Point>`) by DECLARATION identity alone and read no
+bound; only the blanket form (`blanket_applies`, D-111) ever had its bounds
+consulted. The checker accepted `Box<Point>.cmp(…)` with `Point`
+implementing nothing, the emitter named a method nobody defined, and `llc`
+refused the module — an accepted program the compiler could not compile,
+D-064 §1's promise broken on the instantiation side. The prelude's two
+bounded family impls (`TextWriter<W: Writer>`, `LineBufWriter<BW: Writer>`)
+never met an unsatisfying argument, so nothing noticed for a year. **The
+decision.** A family impl APPLIES to an instance only when its target
+pattern unifies with the instance positionally — a pattern argument that is
+one of the impl's own parameters binds the instance's argument and every
+bound of that parameter must hold for it (`type_implements`, fuel-bounded
+as `blanket_applies` is), a parameter bound twice must bind ONE type
+(`Pair<int32, int64>` does not match `Pair<T, T>`), a concrete pattern
+argument must be identical, and a nested instance or container unifies
+element-wise — and an impl that does not apply is NOT a candidate, in
+method lookup and in bound satisfaction alike (`family_applies`). **It is
+decided where the impl is used, never eagerly**: an instantiation is never
+refused for an impl it does not reach, so `Box<flt64>` under a derived
+`Eq` and `Ord` is a fine type until something calls `cmp` — which is what
+makes one derived impl per trait, each with its own bound, the right shape
+rather than one impl carrying the union. The struct's OWN bounds stay
+eager (`check_one_instance`, as since 0.4.7). **The report** is at the call
+site under TYPE-017: the impl the call reaches, the parameter and the bound
+it fails — and, when the impl carries `DECL_DERIVED`, the derive that wrote
+it ("only through the `Ord` that `#[derive(Ord)]` generates for `Box`") —
+one report for one mistake (D-240). A bound met through `type_implements`
+elsewhere (a function bound, a `dyn` coercion) keeps `bound_unmet`'s
+wording. The emitter is untouched: it mirrors the frontend's match and is
+reached only for what the frontend admitted.
+
+## D-257 — the prelude implements the derivable traits for every scalar it can name, as a GENERATED region — **SETTLED (user decision, 2026-09-05; 1.5.2b S-31, S-34, S-36 and D-253's three; lands at 1.5.2b step 2)**
+
+D-253 said "generated from the width ladder as the `Hash` impls are"; the
+`Hash` impls are hand-listed, which is exactly why they stop at 64 bits
+(`int128`…`uint4096`, `tbb128/256`, `tfp`, `frac`, the ternary four, the
+floats and the flags have none). About two hundred one-line impls is where
+a hand list loses a width. **The decision.** `bootstrap/generator/gen_tables.py`
+writes them between `// --- scalar-impls:begin` and `// --- scalar-impls:end`
+in `src/prelude/prelude.npk` — the flags region's mechanism (D-230) — from
+the `BuiltinType` production it already reads, classifying EVERY terminal
+into a scalar family or the named non-scalar list, and hard-failing on one
+it cannot place (the walkers-total shape at the generator). The families
+and what each gets: `Eq` (`self == other`) for every scalar but `flt128`
+(a storage format, D-143); `Ord` and `PartialOrd` (three-way by `<`/`>`;
+`pass Ordering.Less` wraps into `Ordering?` by D-099) for the ORDERED kinds
+exactly as `type_is_ordered` says — the twenty `int`/`uint` widths, the
+three `char`s, `tfp`, the ternary four, `frac` — and `PartialOrd` ALONE for
+`flt32`/`flt64`, with the `nan` clause first (`if (!(self == self)) { pass
+NIL; }`, both operands): a float has no `Ord` because a total `cmp` over
+one would have to lie, the reason the trait's own comment gives; `tbb`
+(codes, not sorted), `bool`, the kernel identifiers, the flag families and
+`complex` get no order, as `why_not_ordered` already says; `Clone` (`pass
+self`) for every scalar, `flt128` included; `Debug` as the scalar's
+`ToString` (`pass (raw self.to_string())`) for every scalar that has one —
+one meaning, and the generator reads the `impl:X:ToString` targets out of
+the prelude text so the two sets cannot drift; `Hash` for the mechanical
+rest of the ladder — the wide ints, `tbb128/256`, the ternary four, the
+flags, by the existing rows' rule (the value truncated to 64 bits: equal
+values hash equal, collisions allowed) — and NOT for the floats (`-0.0 ==
+0.0` must hash equal, which needs a bits primitive and a rule), `tfp`,
+`frac` or `complex` (a canonical-ERR rule): a program that hashes those
+writes the impl and says what it means. `complex` per instance (the four
+`ToString` lists); `dim256` for every `unit:` the prelude declares and the
+seven base units, if `impl:dim256<Meters>:Eq` resolves as a target
+(measured at the step; otherwise decided out and a `dim256` member compares
+by operator, the one recorded exception to D-258). A twisted or exact
+family compares through the operator, so its `eq`/`cmp` on an ERR operand
+TRAPS (D-008 §5 as amended at 1.3.2) — the language's rule, inherited,
+REACH arming it as at any operator site. Every generated body is `never
+fails` (the `Hash` precedent; the trait declarations stay may-fail).
+**`string`** implements `Eq` (`string_eq`), `Ord` (byte-lexicographic — the
+shorter prefix is `Less`; the one order a byte string has without a
+locale) and `PartialOrd`, hand-written beside its `Clone` and `Hash`: no
+program can supply `string: Eq` for everyone, and without it `Box<string>`
+could never derive `Eq`. Also generated: `src/frontend/scalar_table.npk`
+(`builtin_scalar_family(TokenKind)`), so the derive reader (D-258) and the
+region are two consumers of ONE classification; `gen_tables.py --check`
+regenerates in memory and names the first file that would change, and the
+harness's `check_generated_current` runs it (until now "run the generator
+and `git status` clean" was a habit, not a check). **A program's own impl
+of a pair the prelude covers** is the coherence violation it always was
+(TYPE-013), and `coherence_error` now adds a NOTE at the earlier impl's
+span so the walk prints its FILE (`prelude.npk:N`); a pair the prelude does
+not cover (`impl:bool:Ord`) stays admitted — whether an orphan rule should
+close that is OPEN_DECISIONS S-37, for the library era.
+
+## D-258 — one rule for every member of a derived body, and the synthesized bound on exactly the parameters the body reaches — **SETTLED (user decision, 2026-09-05; 1.5.2b S-32, S-33 and D-253's method form; amends D-250 clause 2, D-161's no-bound story and D-123's `Clone`/`Debug` bodies; lands at 1.5.2b step 3)**
+
+Planning measured the no-bound story's end (OPEN_DECISIONS DEF-16: a
+derived `Eq` over `Box<T>` writes `!=` on an opaque `T`, the checker admits
+it, and the emitter dies with EMIT-002 at `Box<Point>`), the D-250 class
+beyond comparisons (DEF-17: derived `Hash` over a NAMED field, derived
+`Clone` over an OWNING field, derived `Hash`/`ToString`/`Debug` over a
+generic subject — every one a refusal at a line nobody wrote), a soundness
+hole (DEF-18: `impl:<T>:Box<T>:Clone` is `pass self` checked with `T`
+opaque, so `Box<string>.clone()` aliases one body under two headers and the
+second drop frees it twice — the allocator's instrument caught it), and
+D-250's operator form answering `Equal` for `nan` under a derived
+`partial_cmp` over a float field. **The rule.** *A derived body reaches
+every member through the trait it is deriving — `eq`, `cmp`, `partial_cmp`,
+`hash`, `to_string`, `debug`, `clone` — a builtin SCALAR through the
+PRELUDE's impl (D-257; `raw`, the region's bodies being `never fails`), a
+NAMED type or a PARAMETER of the subject through its own (`relay`, the
+trait declaring may-fail); a `simd` by `.any()` under `Eq` and DERIVE-005
+under the rest (D-194, unchanged); a POINTER by `!=` under `Eq` (address
+identity) and by copy under `Clone`, refused by name under the rest; and a
+member no derived body can be written for — the owning builtins D-250
+lists, `List`, `dyn`, an array or slice, `Optional`, `Result`, `cstring`,
+`any`, `range`, `func`, `NIL`, `complex` over a parameter — refuses at the
+user's declaration by name (DERIVE-006, one message per derive).* A
+`string` FIELD is a named spelling (the prelude gives it all four, D-257);
+a `string` PAYLOAD stays refused, because a `pick` cannot bind an owning
+payload (D-216's is the only binding form; D-250 rule 3) — two mechanisms,
+not one meaning varying by context. The rule replaces the operator for
+scalars, which puts the float `nan` answer and the twisted ERR trap in ONE
+place, and makes a derived `Ord` over a `bool`, a kernel identifier or a
+float a refusal instead of a lie or a `<derived-N>` type error (`bool` has
+no `cmp` to reach; D-259 re-homes the report). **The bound.** A derived
+trait X over a generic subject writes `impl:<P1: X, P2, …>:Subject<P1, P2,
+…>:X` with `: X` on EXACTLY the parameters that occur in a member the body
+reaches through X: a named node that IS a parameter names it, a named node
+WITH type arguments is walked into them (`Box<T>` as a member needs
+`Box<T>: Eq`, whose impl needs `T: Eq` — conservative, and the checker will
+ask), a pointer or a `simd` stops the walk; a parameter no reached member
+mentions gets no bound (`Tagged<T> = { int32:id; }` derives `Eq` for every
+`T`), and an enum's tag-only `Hash` (D-123) reaches no member. The subject's
+own bounds are not copied (its instantiation checks them). **`Debug`**
+reaches a named or parameter member through `debug`, bound `T: Debug` —
+the trait derived is the trait reached — where today a named field under a
+derived `Debug` renders through its `ToString`; the scalars' generated
+`Debug` (D-257) is what keeps `Box<int32>` deriving it. **`Clone`** is
+member-wise: a struct is `pass Subject{ f: <clone of f>, … }` (every field
+listed; the BARE literal for a generic subject, since `Subject<T>{ … }` does
+not parse — 1.3.7), an enum with payloads a `pick (self)` per variant
+rebuilding it (`(Tn.V(dv0_0)) { pass Tn.V(relay dv0_0.clone()); }`; an
+owning payload refused as under `Eq`), a payload-less enum `pass self` byte
+for byte; `<clone of f>` by the rule above — `raw`/`relay` `.clone()`, a
+copy for a pointer, a `simd` or an array of scalars, DERIVE-006 for an
+array of anything else and for an owning builtin that is not `string`. The
+bound `T: Clone` is what turns `Box<string>.clone()` into a second body;
+a struct with a `string` field derives `Clone` from this step on. **Costs
+named**: a call per member at `-O0` (inlined at `-O2` by the harness's opt
+leg; the `cost` stage's allocations do not move); a nested named field's
+rendering under a derived `Debug` changes (unpinned by any test); a
+derived `Ord` over a float field, admitted today by operator, is refused.
+`derive_payload.npk` keeps 121; payload-less enums' bodies stay
+byte-identical.
+
+## D-259 — a derived diagnostic is reported at the derive; a `<derived-` path fails a unit in both runners — **SETTLED (user decision, 2026-09-05; 1.5.2b S-35; closes D-250's recorded gap; lands at 1.5.2b step 4)**
+
+D-250 recorded "the one gap left": a named user type that turns out to
+own, or to lack the trait, still reports inside `<derived-N>`, a file the
+user cannot open; D-258 leaves the same residue (a builtin with no prelude
+impl under the derived trait, a user type without it). **The decision.**
+The generator emits every line through one seam that records `(line,
+subject, member, trait)` into `ModuleGraph.origins`, and `front_run`, on
+every return path, RE-HOMES every diagnostic whose span lies in a
+`<derived-N>` synthetic file: its span becomes the subject declaration's
+(the span DERIVE-006 already uses), its message is prefixed with the derive
+and the member ("in the `Ord` that `#[derive(Ord)]` generates for `Box` (at
+the field `v`): "), its code and severity are unchanged, so D-237's set
+equality is unaffected. No diagnostic may then name `<derived-`, and BOTH
+runners' finding parsers refuse one by name as a belt ("a line nobody
+wrote"), each with a self-check case in the DIRECTION of the defect
+(1.5.2's lesson): the parser handed a canned `<derived-1>:6:12` finding must
+report, the same finding at a real path must not. Why re-homing rather than
+a wider generator refusal: the residue is a checker verdict with a good
+message that only needs the right span and the derive named; a table in the
+generator of what the checker will say is the two-places-that-must-agree
+shape. The `<extern-N>` files of `bridge_stubs.npk` may adopt the seam
+later; recorded as owed, not done.
