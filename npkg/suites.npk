@@ -1005,6 +1005,8 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     }
     List<string>:nu = raw ir_no_undef(ptext.value, name);
     if (nu.count > 0i64) { pass nu; }
+    List<string>:ptr1 = raw ir_prelude_trimmed(ptext.value, name);
+    if (ptr1.count > 0i64) { pass ptr1; }
     Result<List<VRow>>:rows_r = read_rows(obl);
     if (rows_r.is_error) { drop strlist_push(@fl, string_concat(name, ": rows.txt could not be read")); pass fl; }
     List<VRow>:rows = move(rows_r.value);
@@ -1114,6 +1116,8 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     if (vir.is_error) { fail vir.err; }
     List<string>:nu2 = raw ir_no_undef(vir.value, string_concat(name, " (verified)"));
     if (nu2.count > 0i64) { pass nu2; }
+    List<string>:ptr2 = raw ir_prelude_trimmed(vir.value, string_concat(name, " (verified)"));
+    if (ptr2.count > 0i64) { pass ptr2; }
     List<string>:xc = raw elided_ir_checks(rows, vir.value, name);
     if (xc.count > 0i64) { pass xc; }
     string:vobj = string_concat(vbase, ".o");

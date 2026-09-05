@@ -2191,6 +2191,34 @@ def _ir_symbol_part_all(text):
     return "\n".join(_ir_symbol_part(l) for l in text.splitlines())
 
 
+_PRELUDE_DEFINE_RE = re.compile(r'^define\b[^@\n]*(@"npk\.prelude\.[^"\n]*")', re.M)
+_DEFINE_SYM_RE = re.compile(r'^define\b[^@\n]*(@"[^"\n]+"|@[-A-Za-z0-9$._]+)', re.M)
+
+
+def check_prelude_trimmed(ll_text, name):
+    """Every prelude `define` is referenced somewhere else in the module
+    (1.5.2d, D-262 section 1).
+
+    The emitter brackets each non-generic prelude function and each prelude
+    impl's vtable as an item and keeps an item only when the module's text
+    references a symbol it defines, so a prelude define nobody names is the
+    trim not running, or an emission path that bypassed its brackets. The
+    count is over the whole text, quoted spans included: the symbols are
+    D-156 names, quoted (the D-252 lesson -- the code-only text blanks them).
+    """
+    loose = []
+    for m in _PRELUDE_DEFINE_RE.finditer(ll_text):
+        sym = m.group(1)
+        if ll_text.count(sym) < 2:
+            loose.append(sym)
+    if not loose:
+        return []
+    return ["%s: %d prelude define(s) referenced nowhere else in the module "
+            "(first: %s) -- an unreferenced prelude item was emitted (D-262 "
+            "section 1): the trim did not run, or an emission path bypassed its "
+            "brackets" % (name, len(loose), loose[0])]
+
+
 def check_no_undef(ll_text, name):
     """No `undef` in any IR this project holds or emits (D-218.10, 1.5.0).
 
@@ -2286,6 +2314,9 @@ def emit_and_object(binary, path, name, base, allow):
     nu = check_no_undef(ir_text, name)
     if nu:
         return nu
+    pt = check_prelude_trimmed(ir_text, name)
+    if pt:
+        return pt
     r = subprocess.run(["llc"] + LLC_FLAGS + [
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
@@ -3110,11 +3141,37 @@ def row_in_module(sym, mod):
     return sym == "@main" or sym == "@npk_failsafe" or sym.startswith('@"npk.%s.' % mod)
 
 
+def _row_function_held(sym, defined):
+    """Does the emission hold the function a manifest row names? Its symbol
+    defined -- or, for an ASYNC function, its resume (`@"npk.resume.M.f"` is
+    the define of `@"npk.M.f"`, D-177), or its checked entry's `.body` twin
+    (D-252). r2's first harness run dropped every async row (two `limit_async`
+    tests, "1 limit traps for 0 retained rows") for want of the first of these.
+    """
+    if sym in defined:
+        return True
+    if sym.startswith('@"npk.'):
+        if ('@"npk.resume.' + sym[len('@"npk.'):]) in defined:
+            return True
+        if (sym[:-1] + '.body"') in defined:
+            return True
+    return False
+
+
 def elided_ir_checks(full, ir_text, name):
     """The verified emission carries an `llvm.assume` per discharged SITE and
     a trap per retained site of each guarded kind -- the cross-check that
     makes the manifest an inventory of guards (P-12)."""
     fails = []
+    # A ROW COUNTS ONLY FOR A FUNCTION THE EMISSION HOLDS (1.5.2d, D-262
+    # section 1): the obligation walk covers every function of the module
+    # graph, the prelude's included, and the trim drops a prelude function
+    # nothing references together with its guards -- a discharged row of a
+    # dropped function has no `llvm.assume` to hold and a retained one no trap,
+    # by construction, not by omission. The define set is read from the text
+    # before its quoted names are blanked.
+    defined = set(_DEFINE_SYM_RE.findall(ir_text))
+    full = [f for f in full if _row_function_held(f[5], defined)]
     # THE SYMBOL TEXT FIRST: the bypass belt below counts a spelling inside
     # QUOTED symbol names, which the code-only text blanks (its first full run
     # counted nothing for that reason).
@@ -3165,6 +3222,9 @@ def check_verify_program(path, name, exp, tmp):
     if r2.stdout != plain:
         return ["%s: `--obligations` changed the emitted IR -- the walk must never touch the writer (P-3)" % name]
     fails = check_no_undef(plain.decode("utf-8", "replace"), name)
+    if fails:
+        return fails
+    fails = check_prelude_trimmed(plain.decode("utf-8", "replace"), name)
     if fails:
         return fails
     full, fails = z3_verdicts(obl, name)
@@ -4141,6 +4201,18 @@ def main(argv):
                 print("  %-11s no `undef` in any emitted .ll, the floor or "
                       "its tests; %d `poison` in the compiler's own emission"
                       % ("undef-ban", npoison))
+                # EVERY PRELUDE DEFINE IN THE COMPILER'S OWN IR IS REFERENCED
+                # (1.5.2d, D-262 section 1): the trim ran over the compiler
+                # itself, and the count it left is the stage's number.
+                s1_text = stage1_ir.decode("utf-8", "replace")
+                pt = check_prelude_trimmed(s1_text, "the compiler's own IR")
+                if pt:
+                    failures.append(pt[0])
+                else:
+                    print("  %-11s every prelude define in the compiler's own "
+                          "IR is referenced; %d prelude function(s) kept"
+                          % ("prelude-trim",
+                             len(_PRELUDE_DEFINE_RE.findall(s1_text))))
 
             # --- REPRODUCIBILITY, TESTED (D-204, 1.4.5) --------------
             #

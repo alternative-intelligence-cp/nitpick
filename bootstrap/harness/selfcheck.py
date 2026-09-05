@@ -361,6 +361,30 @@ def main():
             else:
                 print("      check_no_undef rejected prose: %s" % fails[0])
 
+    # THE TRIM BELT (1.5.2d, D-262 section 1): a prelude `define` referenced
+    # nowhere else in the module is an unreferenced item the trim should have
+    # dropped -- reported; one the module calls passes.
+    untrimmed_ir = ('define i32 @"npk.prelude.unused"() {\nentry:\n  ret i32 0\n}\n'
+                    'define i32 @main() {\nentry:\n  ret i32 0\n}\n')
+    trimmed_ir = ('define i32 @"npk.prelude.used"() {\nentry:\n  ret i32 0\n}\n'
+                  'define i32 @main() {\nentry:\n'
+                  '  %t = call i32 @"npk.prelude.used"()\n  ret i32 %t\n}\n')
+    for name, text, must_fail, why in (
+            ("prelude-untrimmed", untrimmed_ir, True,
+             "a prelude define nothing references must fail"),
+            ("prelude-trimmed-control", trimmed_ir, False,
+             "a prelude define the module calls must pass")):
+        fails = harness.check_prelude_trimmed(text, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      check_prelude_trimmed accepted it; it should not have")
+            else:
+                print("      check_prelude_trimmed rejected a referenced define: %s" % fails[0])
+
     # THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
     # `.body` symbol is a D-156 name, quoted, and the code-only text the other
     # counts run over blanks every quoted span -- the belt's first full run

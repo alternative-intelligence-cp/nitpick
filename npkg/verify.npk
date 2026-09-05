@@ -37,6 +37,7 @@ use "./manifest.npk".*;
 use "./toolchain.npk".*;
 use "./build.npk".*;
 use "./irscan.npk".*;
+use "./strset.npk".*;
 use "./elf.npk".*;
 
 // One row of rows.txt, with its verdict once decided.
@@ -298,10 +299,35 @@ func:count_of = int64(string:ir, string:needle) never fails {
     pass n;
 };
 
+// DOES THE EMISSION HOLD THE FUNCTION A ROW NAMES? Its symbol defined -- or,
+// for an ASYNC function, its resume (`@"npk.resume.M.f"` is the define of
+// `@"npk.M.f"`, D-177), or its checked entry's `.body` twin (D-252). The
+// harness's `_row_function_held`, byte for byte.
+func:row_function_held = bool(StrSet:defined, string:sym) never fails {
+    if (raw strset_has(defined, sym)) { pass true; }
+    if (raw text_starts_with(sym, "@\"npk.")) {
+        string:rest = raw text_slice(sym, 6i64, sym.len);
+        if (raw strset_has(defined, string_concat("@\"npk.resume.", rest))) { pass true; }
+        string:stem = raw text_slice(sym, 0i64, sym.len - 1i64);
+        if (raw strset_has(defined, string_concat(stem, ".body\""))) { pass true; }
+    }
+    pass false;
+};
+
 // An `llvm.assume` per discharged SITE, a trap per retained site of each
 // guarded kind (P-12): the manifest is an inventory of guards.
 pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string:name) never fails {
     List<string>:fl = raw list_init::<string>(1i64);
+    // A ROW COUNTS ONLY FOR A FUNCTION THE EMISSION HOLDS (1.5.2d, D-262 §1):
+    // the trim drops a prelude function nothing references with its guards, so
+    // a discharged row of a dropped function has no `llvm.assume` to hold and a
+    // retained one no trap -- the harness's rule, byte for byte.
+    StrSet:defined = raw strset_init(1024i64);
+    List<string>:dlines = raw text_lines(ir_text);
+    for (int64:di in 0i64...dlines.count) {
+        string:dsym = raw ir_define_sym(raw strlist_view(dlines, di));
+        if (dsym.len > 0i64) { discard(raw strset_add(@defined, dsym)); }
+    }
     // CODE ONLY (the compiler's own emission spells these calls as string constants).
     string:ir = raw ir_code_all(ir_text);
     // THE SYMBOL TEXT TOO: the bypass belt counts a spelling inside QUOTED
@@ -313,6 +339,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     int64:min_left = 0i64;
     int64:limit_left = 0i64;
     for (int64:i in 0i64...rows.count) {
+        if (!(raw row_function_held(defined, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len)))) { continue; }
         bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
         string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
         // ONE `llvm.assume` PER DISCHARGED ROW OF AN ASSUME KIND (P-19, L-11):
@@ -393,7 +420,9 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     int64:subs = 0i64;
     for (int64:si in 0i64...rows.count) {
         string:sk = string_from_bytes(rows.items[si].kind.ptr, rows.items[si].kind.len);
-        if ((rows.items[si].verdict == (raw OV_DISCHARGED())) && (raw text_eq(sk, "limit-subsume"))) { subs = subs + 1i64; }
+        if (raw row_function_held(defined, string_from_bytes(rows.items[si].symbol.ptr, rows.items[si].symbol.len))) {   // a dropped function's row is not counted (D-262 §1)
+            if ((rows.items[si].verdict == (raw OV_DISCHARGED())) && (raw text_eq(sk, "limit-subsume"))) { subs = subs + 1i64; }
+        }
     }
     if (bcalls != subs) {
         string:m5 = string_concat(name, ": the verified IR holds ");
@@ -539,6 +568,8 @@ pub async func:verify_run = Step(Ctx->:c, bool:record, bool:explain) {
     if (s2.count > 0i64) { pass (raw step_bad(raw strlist_view(s2, 0i64))); }
     List<string>:s3 = raw ir_no_undef(vir.value, "npkc.v.ll");
     if (s3.count > 0i64) { pass (raw step_bad(raw strlist_view(s3, 0i64))); }
+    List<string>:s3b = raw ir_prelude_trimmed(vir.value, "npkc.v.ll");
+    if (s3b.count > 0i64) { pass (raw step_bad(raw strlist_view(s3b, 0i64))); }
     List<string>:s4 = raw elided_ir_checks(rows, vir.value, "verify");
     if (s4.count > 0i64) { pass (raw step_bad(raw strlist_view(s4, 0i64))); }
     string:vobj = raw path_join(vdir, "npkc.v.o");

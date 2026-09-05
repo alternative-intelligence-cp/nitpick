@@ -347,6 +347,22 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     drop strlist_push(@report, raw case_line("undef-in-comment", ok5, "the word in a comment or a string constant must pass"));
     if (!ok5) { drop strlist_push(@report, string_concat("      the undef ban rejected prose: ", raw strlist_view(u2, 0i64))); }
 
+    // THE TRIM BELT (1.5.2d, D-262 §1): a prelude `define` referenced nowhere
+    // else in the module is an unreferenced item the trim should have dropped
+    // -- reported; one the module calls passes.
+    string:untrimmed_ir = "define i32 @\"npk.prelude.unused\"() {\nentry:\n  ret i32 0\n}\ndefine i32 @main() {\nentry:\n  ret i32 0\n}\n";
+    string:trimmed_ir = "define i32 @\"npk.prelude.used\"() {\nentry:\n  ret i32 0\n}\ndefine i32 @main() {\nentry:\n  %t = call i32 @\"npk.prelude.used\"()\n  ret i32 %t\n}\n";
+    List<string>:p1 = raw ir_prelude_trimmed(untrimmed_ir, "prelude-untrimmed");
+    bool:okp1 = (p1.count > 0i64);
+    if (!okp1) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("prelude-untrimmed", okp1, "a prelude define nothing references must fail"));
+    if (!okp1) { drop strlist_push(@report, "      the trim belt accepted it; it should not have"); }
+    List<string>:p2 = raw ir_prelude_trimmed(trimmed_ir, "prelude-trimmed-control");
+    bool:okp2 = (p2.count == 0i64);
+    if (!okp2) { bad = bad + 1i64; }
+    drop strlist_push(@report, raw case_line("prelude-trimmed-control", okp2, "a prelude define the module calls must pass"));
+    if (!okp2) { drop strlist_push(@report, string_concat("      the trim belt rejected a referenced define: ", raw strlist_view(p2, 0i64))); }
+
     // THE BYPASS BELT COUNTS THROUGH THE QUOTES (D-252, 1.5.2 step 4): a
     // `.body` symbol is a D-156 name, quoted, and the code-only text the
     // other counts run over blanks every quoted span -- the belt's first full

@@ -96,6 +96,20 @@ pub struct:IrWriter = {
     // discipline is unchanged.
     List<string>:site_paths;
     List<int32>:site_lines;
+
+    // ITEMS (1.5.2d, D-262 §1): ranges of one module sink the emitter
+    // brackets — a non-generic PRELUDE function, a prelude impl's vtable with
+    // its thunks — kept at the close of emission only if a symbol they define
+    // is referenced from outside every item or from a kept item.
+    // `irw_trim_items` decides over the TEXT: a reference is an `@` token,
+    // wherever it stands, so no kind of use has to be enumerated and a kind
+    // nobody anticipated keeps its item. Everything outside an item is a root.
+    List<int32>:item_sink;     // 0 = `out`, 2 = `tail`
+    List<int64>:item_start;
+    List<int64>:item_end;
+    bool:item_open;
+    int32:item_open_sink;
+    int64:item_open_start;
 };
 
 pub func:irw_to_buffer = IrWriter() never fails {
@@ -109,8 +123,278 @@ pub func:irw_to_buffer = IrWriter() never fails {
                            next_temp: 0i32, next_label: 0i32,
                            stmt_mark: 0i32, alloca_since: 0i32,
                            site_paths: raw list_init::<string>(16i64),
-                           site_lines: raw list_init::<int32>(16i64) };
+                           site_lines: raw list_init::<int32>(16i64),
+                           item_sink: raw list_init::<int32>(64i64),
+                           item_start: raw list_init::<int64>(64i64),
+                           item_end: raw list_init::<int64>(64i64),
+                           item_open: false, item_open_sink: 0i32,
+                           item_open_start: 0i64 };
     pass w;
+};
+
+// --- items, and the trim (1.5.2d, D-262 §1) --------------------------------------------
+
+// Which MODULE sink is current, as a number: 0 `out`, 2 `tail`. An item begins
+// and ends outside a function, where `irw_sink` answers one of those two.
+func:irw_sink_id = int32(IrWriter->:w) never fails {
+    if (w.seen_fn) { pass 2i32; }
+    pass 0i32;
+};
+
+pub func:irw_item_begin = NIL(IrWriter->:w) never fails {
+    // FROM THE FIRST ITEM ON, THE MODULE STREAM IS THE TAIL: a function's
+    // `define` switches it there anyway (`irw_begin_function`), and an item
+    // that began in the head and ended in the tail could not be recorded --
+    // the first prelude function of every module stayed unrecorded, hence
+    // kept, until this line. The head holds what was written before.
+    if (!w.seen_fn) { w.seen_fn = true; }
+    w.item_open = true;
+    w.item_open_sink = raw irw_sink_id(w);
+    w.item_open_start = raw sink_length(raw irw_sink(w));
+    pass NIL;
+};
+
+// An item that straddled the switch from `out` to `tail` (the first function
+// of the module began inside it) is not recorded: not recorded is kept.
+pub func:irw_item_end = NIL(IrWriter->:w) never fails {
+    if (!w.item_open) { pass NIL; }
+    w.item_open = false;
+    if ((raw irw_sink_id(w)) != w.item_open_sink) { pass NIL; }
+    int64:fin = raw sink_length(raw irw_sink(w));   // (`end` is a keyword)
+    if (fin <= w.item_open_start) { pass NIL; }
+    drop list_push(@w.item_sink, w.item_open_sink);
+    drop list_push(@w.item_start, w.item_open_start);
+    drop list_push(@w.item_end, fin);
+    pass NIL;
+};
+
+// An LLVM symbol byte: `[-a-zA-Z$._0-9]`.
+func:trim_sym_byte = bool(uint8:u) never fails {
+    if ((u >= 97u8) && (u <= 122u8)) { pass true; }
+    if ((u >= 65u8) && (u <= 90u8))  { pass true; }
+    if ((u >= 48u8) && (u <= 57u8))  { pass true; }
+    if (u == 95u8) { pass true; }    // _
+    if (u == 46u8) { pass true; }    // .
+    if (u == 36u8) { pass true; }    // $
+    if (u == 45u8) { pass true; }    // -
+    pass false;
+};
+
+// The symbol token at `text[p]` (an `@`): its NAME interned into `syms` —
+// quotes stripped, so `@"x"` and `@x` are one symbol as they are to LLVM —
+// and the index just past the token. −1 when the `@` begins no token.
+pub struct:TrimTok = { int32:sym; int64:next; };
+
+func:trim_token = TrimTok(InternTable->:syms, string:text, int64:p) never fails {
+    TrimTok:none = TrimTok{ sym: 0i32 - 1i32, next: p + 1i64 };
+    if ((p + 1i64) >= text.len) { pass none; }
+    if (text.ptr[p + 1i64] == 34u8) {   // a quoted name
+        int64:q = p + 2i64;
+        while (q < text.len) {
+            if (text.ptr[q] == 34u8) {
+                if (q == (p + 2i64)) { pass none; }
+                string:name = string_from_bytes(#ptr_add<uint8>(text.ptr =>! wild uint8->, p + 2i64), q - (p + 2i64));
+                pass (TrimTok{ sym: raw intern_add(syms, string_concat(name, "")), next: q + 1i64 });
+            }
+            q = q + 1i64;
+        }
+        pass none;
+    }
+    int64:e = p + 1i64;
+    while (e < text.len) {
+        if (!(raw trim_sym_byte(text.ptr[e]))) { break; }
+        e = e + 1i64;
+    }
+    if (e == (p + 1i64)) { pass none; }
+    string:bare = string_from_bytes(#ptr_add<uint8>(text.ptr =>! wild uint8->, p + 1i64), e - (p + 1i64));
+    pass (TrimTok{ sym: raw intern_add(syms, string_concat(bare, "")), next: e });
+};
+
+// Every symbol token in `text[lo, hi)`, pushed on `into`.
+func:trim_scan_refs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
+                          List<int32>->:into) never fails {
+    int64:p = lo;
+    while (p < hi) {
+        if (text.ptr[p] == 64u8) {   // @
+            TrimTok:t = raw trim_token(syms, text, p);
+            if (t.sym >= 0i32) { drop list_push(into, t.sym); }
+            p = t.next;
+        } else {
+            p = p + 1i64;
+        }
+    }
+    pass NIL;
+};
+
+// Does `text` carry `word` at `at`?
+func:trim_has_at = bool(string:text, int64:at, string:word) never fails {
+    if ((at + word.len) > text.len) { pass false; }
+    int64:i = 0i64;
+    while (i < word.len) {
+        if (text.ptr[at + i] != word.ptr[i]) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+// Every symbol an item DEFINES: the first token of a line beginning `define`,
+// and the token beginning a line `@name = …`. Lines begin at `lo` and after
+// every newline inside the range.
+func:trim_scan_defs = NIL(InternTable->:syms, string:text, int64:lo, int64:hi,
+                          List<int32>->:into) never fails {
+    int64:p = lo;
+    bool:at_line_start = true;
+    while (p < hi) {
+        if (at_line_start) {
+            if (raw trim_has_at(text, p, "define")) {
+                int64:q = p + 6i64;
+                while ((q < hi) && (text.ptr[q] != 64u8) && (text.ptr[q] != 10u8)) { q = q + 1i64; }
+                if ((q < hi) && (text.ptr[q] == 64u8)) {
+                    TrimTok:t = raw trim_token(syms, text, q);
+                    if (t.sym >= 0i32) { drop list_push(into, t.sym); }
+                }
+            } else {
+                if (text.ptr[p] == 64u8) {
+                    TrimTok:t2 = raw trim_token(syms, text, p);
+                    if (t2.sym >= 0i32) { drop list_push(into, t2.sym); }
+                }
+            }
+        }
+        at_line_start = (text.ptr[p] == 10u8);
+        p = p + 1i64;
+    }
+    pass NIL;
+};
+
+// The bytes of `s[lo, hi)` appended to `dst`.
+func:trim_copy = NIL(Sink->:dst, Sink->:s, int64:lo, int64:hi) never fails {
+    if (hi <= lo) { pass NIL; }
+    drop sink_write(dst, string_from_bytes(#ptr_add<int8>(s.v.items, lo), hi - lo));
+    pass NIL;
+};
+
+// A VIEW of one module sink's text by its number (0 `out`, 1 `types`, 2 `tail`)
+// — a fresh view at every use, since a `string` binding is move-only (TYPE-046)
+// and a view of container-owned bytes drops nothing (D-183).
+func:trim_sink_text = string(IrWriter->:w, int32:sid) never fails {
+    if (sid == 1i32) { pass (raw sink_view(@w.types)); }
+    if (sid == 2i32) { pass (raw sink_view(@w.tail)); }
+    pass (raw sink_view(@w.out));
+};
+
+// THE TRIM. Items are recorded in emission order, so within one sink their
+// ranges ascend and do not overlap.
+pub func:irw_trim_items = NIL(IrWriter->:w) never fails {
+    int64:n = w.item_sink.count;
+    if (n == 0i64) { pass NIL; }
+    InternTable:syms = raw intern_init();
+
+    // Each item's definitions and references, as windows into two flat lists.
+    List<int32>:defs = raw list_init::<int32>(1024i64);
+    List<int64>:def_lo = raw list_init::<int64>(n);
+    List<int64>:def_hi = raw list_init::<int64>(n);
+    List<int32>:refs = raw list_init::<int32>(4096i64);
+    List<int64>:ref_lo = raw list_init::<int64>(n);
+    List<int64>:ref_hi = raw list_init::<int64>(n);
+    List<int32>:roots = raw list_init::<int32>(4096i64);
+    int64:i = 0i64;
+    while (i < n) {
+        string:t = raw trim_sink_text(w, w.item_sink.items[i]);
+        drop list_push(@def_lo, defs.count);
+        drop trim_scan_defs(@syms, t, w.item_start.items[i], w.item_end.items[i], @defs);
+        drop list_push(@def_hi, defs.count);
+        drop list_push(@ref_lo, refs.count);
+        drop trim_scan_refs(@syms, t, w.item_start.items[i], w.item_end.items[i], @refs);
+        drop list_push(@ref_hi, refs.count);
+        i = i + 1i64;
+    }
+    // The roots: every token outside the items, in all three sinks.
+    int32:sid = 0i32;
+    while (sid <= 2i32) {
+        string:t = raw trim_sink_text(w, sid);
+        int64:cursor = 0i64;
+        int64:k = 0i64;
+        while (k < n) {
+            if (w.item_sink.items[k] == sid) {
+                drop trim_scan_refs(@syms, t, cursor, w.item_start.items[k], @roots);
+                cursor = w.item_end.items[k];
+            }
+            k = k + 1i64;
+        }
+        drop trim_scan_refs(@syms, t, cursor, t.len, @roots);
+        sid = sid + 1i32;
+    }
+    // Which item defines a symbol (−1: none, a root's own or an external).
+    int64:nsyms = (raw intern_count(@syms)) => int64;
+    List<int32>:owner = raw list_init::<int32>(nsyms + 1i64);
+    int64:z = 0i64;
+    while (z < nsyms) { drop list_push(@owner, 0i32 - 1i32); z = z + 1i64; }
+    i = 0i64;
+    while (i < n) {
+        int64:d = def_lo.items[i];
+        while (d < def_hi.items[i]) {
+            owner.items[defs.items[d] => int64] = i =>! int32;
+            d = d + 1i64;
+        }
+        i = i + 1i64;
+    }
+    // The fixpoint: from the roots, through kept items' references.
+    List<int32>:kept = raw list_init::<int32>(n);
+    i = 0i64;
+    while (i < n) { drop list_push(@kept, 0i32); i = i + 1i64; }
+    List<int64>:work = raw list_init::<int64>(n);
+    int64:r = 0i64;
+    while (r < roots.count) {
+        int32:o = owner.items[roots.items[r] => int64];
+        if (o >= 0i32) { if (kept.items[o => int64] == 0i32) {
+            kept.items[o => int64] = 1i32;
+            drop list_push(@work, o => int64);
+        } }
+        r = r + 1i64;
+    }
+    while (work.count > 0i64) {
+        int64:it = work.items[work.count - 1i64];
+        work.count = work.count - 1i64;
+        int64:q = ref_lo.items[it];
+        while (q < ref_hi.items[it]) {
+            int32:o2 = owner.items[refs.items[q] => int64];
+            if (o2 >= 0i32) { if (kept.items[o2 => int64] == 0i32) {
+                kept.items[o2 => int64] = 1i32;
+                drop list_push(@work, o2 => int64);
+            } }
+            q = q + 1i64;
+        }
+    }
+    // Rebuild `out` and `tail` from their non-item bytes and the kept items.
+    sid = 0i32;
+    while (sid <= 2i32) {
+        if (sid != 1i32) {
+            Sink->:src = @w.out;
+            if (sid == 2i32) { src = @w.tail; }
+            Sink:fresh = raw sink_to_buffer(raw sink_length(src));
+            int64:cursor2 = 0i64;
+            int64:k2 = 0i64;
+            while (k2 < n) {
+                if (w.item_sink.items[k2] == sid) {
+                    drop trim_copy(@fresh, src, cursor2, w.item_start.items[k2]);
+                    if (kept.items[k2] != 0i32) {
+                        drop trim_copy(@fresh, src, w.item_start.items[k2], w.item_end.items[k2]);
+                    }
+                    cursor2 = w.item_end.items[k2];
+                }
+                k2 = k2 + 1i64;
+            }
+            drop trim_copy(@fresh, src, cursor2, raw sink_length(src));
+            drop sink_reset(src);
+            drop sink_append(src, @fresh);
+        }
+        sid = sid + 1i32;
+    }
+    // The items are spent; a second trim would find nothing to do.
+    w.item_sink.count = 0i64;
+    w.item_start.count = 0i64;
+    w.item_end.count = 0i64;
+    pass NIL;
 };
 
 // THE SINK A NON-ALLOCA LINE GOES TO: the body while a function is open, the

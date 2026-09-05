@@ -371,6 +371,10 @@ pub async func:build_artifact = Step(Ctx->:c) {
     if (hoist.count > 0i64) { pass (raw step_bad(raw strlist_view(hoist, 0i64))); }
     List<string>:nu = raw ir_no_undef(ir.value, "npkc.ll");
     if (nu.count > 0i64) { pass (raw step_bad(raw strlist_view(nu, 0i64))); }
+    // NOT THE TRIM BELT HERE: this IR is the BUILDER's emission of the
+    // compiler (the committed snapshot's, D-205), and the snapshot carries the
+    // trim only after a refresh. The belt runs where the compiler under test
+    // emits -- every program, and the verified compiler (`verify.npk`).
     string:to_llc = raw text_copy(ll);
     if (c.m.opt_level == 2i64) {
         if (c.t.opt.len == 0i64) { pass (raw step_bad("[build] opt-level is 2 and `opt` is not on PATH")); }
@@ -441,6 +445,15 @@ pub async func:emit_and_object = List<string>(Ctx->:c, string:compiler, string:p
     if (hoist.count > 0i64) { pass hoist; }
     List<string>:nu = raw ir_no_undef(run.x.out, name);
     if (nu.count > 0i64) { pass nu; }
+    // THE TRIM BELT (1.5.2d, D-262 §1) judges what the compiler UNDER TEST
+    // emitted. The runner self-check compiles its cases with the BUILDER --
+    // the committed snapshot, which carries the trim only after a refresh --
+    // so an emission by the builder is not asked (the harness's shape: its
+    // snapshot-compiled tools are not asked either).
+    if (!(raw text_eq(compiler, string_from_bytes(c.builder.ptr, c.builder.len)))) {
+        List<string>:pt = raw ir_prelude_trimmed(run.x.out, name);
+        if (pt.count > 0i64) { pass pt; }
+    }
     string:obj = string_concat(base, ".o");
     Result<Step>:s1 = await llc_obj(c, c.m.llc_flags, ll, obj);
     if (s1.is_error) { fail s1.err; }

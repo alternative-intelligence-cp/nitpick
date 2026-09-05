@@ -1,0 +1,32 @@
+// expect-exit: 0
+//
+// AN UNREFERENCED PRELUDE ITEM IS NOT EMITTED (D-262 §1, 1.5.2d step 2). This
+// program reaches one prelude function, `int_to_string`, and nothing else of
+// the prelude's 348 generated impls and its other bodies. The emitter brackets
+// each non-generic prelude function and each prelude impl's vtable as an item
+// of the module text and keeps an item only when a symbol it defines is
+// referenced -- from outside every item or from a kept item -- decided over
+// the emitted IR itself, never by an AST walk that would have to enumerate
+// every kind of use. Both runners assert the property on every emitted module
+// (`check_prelude_trimmed` / `ir_prelude_trimmed`): a prelude `define`
+// referenced nowhere else fails the unit. Before 1.5.2d this program's IR was
+// 845 KB and 608 functions; the floor-only probe it descends from is 57 KB and
+// 19 functions after.
+mod:prelude_trim;
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = int_to_string(42i64);
+    if (s.len != 2i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

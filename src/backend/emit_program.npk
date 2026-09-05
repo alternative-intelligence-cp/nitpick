@@ -146,6 +146,7 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // a generic function follows (1.0.2b), and the same reason: `T` is not a type
 // until something binds it.
 func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
+                           bool:pre,
                            DeclNode:d) never fails {
     TypeId:tgt = raw impl_target(x.ast, d);
     if (raw type_is_none(tgt)) { pass NIL; }
@@ -188,8 +189,10 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
         DeclNode:m = raw ast_decl(x.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
             if (!(raw decl_has(m, raw DECL_COMPTIME()))) {
+                if (pre) { drop irw_item_begin(x.fe.w); }
                 IrVal:r = raw emit_function_named(x, mid,
                     raw impl_method_sym(x, self_ty, impl_trait_ty, m));
+                if (pre) { drop irw_item_end(x.fe.w); }
                 if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
             }
         }
@@ -223,8 +226,10 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                             // where the emission stands, or every implementor
                             // renders the same symbol and `llc` refuses the
                             // module.
+                            if (pre) { drop irw_item_begin(x.fe.w); }
                             IrVal:r2 = raw emit_function_named(x, tmid,
                                 raw impl_method_sym(x, self_ty, trait_ty, tm));
+                            if (pre) { drop irw_item_end(x.fe.w); }
                             if (!(raw iv_is_ok(r2))) { drop refuse(diags, r2); }
                         }
                     }
@@ -237,7 +242,12 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     // AND ITS VTABLE (D-158, 1.0.5c). Emitted here because this is where `Self`
     // is bound and the trait is known — the same reason the methods are.
     if (impl_trait_ty != 0i32) {
+        // The vtable and its thunks are one item (D-262 §1): kept when a
+        // `dyn` coercion references the table, and with it every method the
+        // thunks name.
+        if (pre) { drop irw_item_begin(x.fe.w); }
         drop emit_vtable(x, diags, item, self_ty, impl_trait_ty);
+        if (pre) { drop irw_item_end(x.fe.w); }
     }
 
     x.cur_trait = saved_trait;
@@ -1067,7 +1077,7 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) nev
             if (!(raw iv_is_ok(rr))) { drop refuse(diags, rr); }
         }
         if (d.kind == DeclKind.DeclImplDecl) {
-            drop emit_impl_block(x, diags, item, d);
+            drop emit_impl_block(x, diags, item, false, d);   // a nested module is never the prelude
         }
         if (d.kind == DeclKind.DeclExternBlock) {
             // EMITS NOTHING, BY DESIGN (D-190, 1.1.13c): the block is the
@@ -1141,7 +1151,11 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             int32:fvhs = raw impl_scope_of(impls, fvi.owner_impl);
             ExprEmitter:fvx = raw exprem_init(@fe, @g.ast, ets, @g.tab,
                                   interns, @st, @g.sm, tr, fninsts, fvhs);
+            // A PRELUDE impl's family vtable is an item (D-262 §1).
+            bool:pv = (fvhs == g.tab.prelude_scope);
+            if (pv) { drop irw_item_begin(w); }
             drop emit_family_vtable(@fvx, diags, fvi);
+            if (pv) { drop irw_item_end(w); }
         }
         fv = fv + 1i32;
     }
@@ -1149,6 +1163,10 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     int32:m = 0i32;
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
+        // THE PRELUDE'S ITEMS (1.5.2d, D-262 §1): each non-generic function
+        // and each impl's methods and vtable are bracketed, and
+        // `irw_trim_items` keeps only what the module's text references.
+        bool:pre = (m == g.prelude);
         ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st, @g.sm,
                                         tr, fninsts, me.scope);
         DeclNode:mn = raw ast_decl(@g.ast, DeclId{ index: me.root });
@@ -1160,7 +1178,9 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                 // A `comptime func:` was CONSUMED at fold time (0.6.4); nothing
                 // remains to lower, and emitting it would be emitting a phase.
                 if (!(raw decl_has(d, raw DECL_COMPTIME()))) {
+                    if (pre) { drop irw_item_begin(w); }
                     IrVal:r = raw emit_function(@x, item);
+                    if (pre) { drop irw_item_end(w); }
                     if (!(raw iv_is_ok(r))) {
                         drop refuse(diags, r);
                     }
@@ -1181,7 +1201,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                 if (!(raw iv_is_ok(rr))) { drop refuse(diags, rr); }
             }
             if (d.kind == DeclKind.DeclImplDecl) {
-                drop emit_impl_block(@x, diags, item, d);
+                drop emit_impl_block(@x, diags, item, pre, d);
             }
             if (d.kind == DeclKind.DeclExternBlock) {
                 // Emits nothing (D-190): the interface record — the stubs
@@ -1232,16 +1252,27 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             int32:ihs = raw impl_scope_of(impls, inst.owner_impl);
             ExprEmitter:xf = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns,
                                              @st, @g.sm, tr, fninsts, ihs);
+            // A PRELUDE impl's instance is an item (D-262 §1): recorded by a
+            // call site that may itself be in a dropped prelude body.
+            bool:pim = (ihs == g.tab.prelude_scope);
+            if (pim) { drop irw_item_begin(w); }
             drop emit_family_instance(@xf, diags, inst);
+            if (pim) { drop irw_item_end(w); }
             fi = fi + 1i32;
         } else {
         int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
         ExprEmitter:xi = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
                                          @g.sm, tr, fninsts, hs);
+        // A PRELUDE generic function's instance is an item (D-262 §1): the
+        // frontend records one at every call site, reached or not, so the
+        // instance follows its callers' fate.
+        bool:pfi = (hs == g.tab.prelude_scope);
+        if (pfi) { drop irw_item_begin(w); }
         IrVal:ir = raw emit_fn_instance(@xi, DeclId{ index: inst.decl },
                                           inst.args_start, inst.args_count,
                                           inst.params_start, inst.params_count,
                                           raw fninst_symbol(@g.ast, @c, inst));
+        if (pfi) { drop irw_item_end(w); }
         if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
         fi = fi + 1i32;
         }
@@ -1262,6 +1293,10 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     // because `list_make<int64>`'s body built one. Textual IR resolves a named
     // type wherever its definition appears, so the late ones go at the end.
     drop emit_late_headers(w, tr, @c, diags, g, headers_before);
+    // AN UNREFERENCED PRELUDE ITEM IS NOT EMITTED (1.5.2d, D-262 §1): decided
+    // last, over the whole module's text, so every reference — a call, a
+    // vtable slot, a function value, a drop body, a spawn — has been written.
+    drop irw_trim_items(w);
     pass ((raw diaglist_count(diags)) == before);
 };
 

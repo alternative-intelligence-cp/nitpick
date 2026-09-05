@@ -140,6 +140,42 @@ pub func:ir_symbols_unique = List<string>(string:ir, string:name) never fails {
     pass fl;
 };
 
+// EVERY PRELUDE DEFINE IS REFERENCED SOMEWHERE ELSE IN THE MODULE (1.5.2d,
+// D-262 §1) -- the harness's `check_prelude_trimmed`, byte for byte. The
+// emitter brackets each non-generic prelude function, each prelude impl's
+// vtable and each prelude generic instance as an item and keeps an item only
+// when the module's text references a symbol it defines; a prelude `define`
+// nobody names is the trim not running, or an emission path that bypassed
+// its brackets. The count is over the WHOLE text, quoted spans included: the
+// symbols are D-156 names, quoted (the D-252 lesson).
+pub func:ir_prelude_trimmed = List<string>(string:ir, string:name) never fails {
+    List<string>:fl = raw list_init::<string>(1i64);
+    List<string>:lines = raw text_lines(ir);
+    List<string>:loose = raw list_init::<string>(2i64);
+    for (int64:i in 0i64...lines.count) {
+        string:sym = raw ir_define_sym(raw strlist_view(lines, i));
+        if (sym.len == 0i64) { continue; }
+        if (!(raw text_starts_with(sym, "@\"npk.prelude."))) { continue; }
+        int64:hits = 0i64;
+        int64:from = 0i64;
+        while (hits < 2i64) {
+            int64:at = raw text_index_from(ir, sym, from);
+            if (at < 0i64) { break; }
+            hits = hits + 1i64;
+            from = at + sym.len;
+        }
+        if (hits < 2i64) { drop strlist_push(@loose, raw text_copy(sym)); }
+    }
+    if (loose.count == 0i64) { pass fl; }
+    string:m = string_concat(name, ": ");
+    m = string_concat(m, int_to_string(loose.count));
+    m = string_concat(m, " prelude define(s) referenced nowhere else in the module (first: ");
+    m = string_concat(m, raw strlist_view(loose, 0i64));
+    m = string_concat(m, ") -- an unreferenced prelude item was emitted (D-262 §1): the trim did not run, or an emission path bypassed its brackets");
+    drop list_push(@fl, move(m));
+    pass fl;
+};
+
 // Every `alloca` is in its function's entry block (D-173).
 pub func:ir_allocas_hoisted = List<string>(string:ir, string:name) never fails {
     List<string>:bad = raw list_init::<string>(1i64);
