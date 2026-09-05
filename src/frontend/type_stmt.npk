@@ -141,6 +141,17 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                     s.span));
                 pass NIL;
             }
+            // AND AN `Optional` (D-260, 1.5.2c step 0): it has no arms of its
+            // own, and the emitter switches on a selector as its own
+            // discriminant -- `{ i8, T }` is not one. `??` reaches the value,
+            // `== NIL` tests it; the arms are not walked, having no selector
+            // to be read against.
+            if ((raw type_kind(e.types, selt)) == (raw TY_OPTIONAL())) {
+                drop diaglist_push(e.diags, raw diag_error(raw TYPE_PICK_OPTIONAL(),
+                    "a `pick` does not select on an `Optional` (D-260): an `Optional` has no arms of its own — reach the value with `??` (`pick (o ?? default) { … }`) or test it with `== NIL`",
+                    s.span));
+                pass NIL;
+            }
         }
         // THE CONSUMING SELECTOR (D-216): `pick (move(v))` takes the value
         // apart, so its arms may bind owning payloads — that is the whole

@@ -1,0 +1,27 @@
+// A `pick` DOES NOT SELECT ON AN `Optional` (D-260, 1.5.2c step 0; OPEN_DECISIONS
+// DEF-19). An `Optional` has no arms of its own (D-099: no constructor, no
+// readable members, one implicit wrap), so its value reaches a `pick` through
+// `??` -- `pick (o ?? Ordering.Equal) { … }`, the suite's own spelling -- or is
+// tested with `== NIL`. The bare form was admitted by the checker (which judges a
+// `pick` by its selector's kind and had no `Optional` arm) and refused by the
+// emitter as EMIT-002, a report against nothing the reader can fix; it refuses
+// here now, by name, in the statement form and in the expression form.
+mod:pick_optional;
+func:pc = Ordering?(int32:a, int32:b) never fails {
+    if (a < b) { pass Ordering.Less; }
+    pass Ordering.Equal;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Ordering?:o = raw pc(1i32, 2i32);
+    // expect-error: NITPICK-TYPE-065
+    // expect-error-at: 19:5
+    pick (o) { (Ordering.Less) { }, (*) { } }
+    // expect-error: NITPICK-TYPE-065
+    // expect-error-at: 22:15
+    int32:v = pick (o) { (Ordering.Less) { give 1i32; }, (*) { give 0i32; } };
+    // The spelling: the value, or the default, is what the arms match.
+    pick (o ?? Ordering.Equal) { (Ordering.Less) { }, (*) { } }
+    exit v;
+};
+func:failsafe = int32(Error:_~e) { exit 1i32; };

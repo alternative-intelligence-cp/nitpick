@@ -369,3 +369,15 @@ pub func:TYPE_LIMIT_ADDRESS = string() never fails { pass "NITPICK-TYPE-063"; };
 // on `main`/`failsafe`'s parameters is D-244's refusal (TYPE-060): nobody
 // but the runtime calls them.
 pub func:TYPE_LIMIT_NO_WRITE_POINT = string() never fails { pass "NITPICK-TYPE-064"; };
+
+// A `pick` DOES NOT SELECT ON AN `Optional` (D-260, 1.5.2c step 0). An
+// `Optional` has no arms of its own (D-099: no constructor, no readable
+// members, one implicit wrap), so its value is reached through `??` --
+// `pick (o ?? default) { … }` -- or tested with `== NIL`. The checker judges
+// a `pick` by its SELECTOR's kind and never types a value pattern against it
+// (the emitter's `pattern_const` and the exhaustiveness pass read the arms),
+// which is how `pick (o) { (Ordering.Less) { … } }` over an `Ordering?` was
+// admitted and then refused by the emitter as EMIT-002 (OPEN_DECISIONS
+// DEF-19): a frac and a complex are refused here by name, and now so is an
+// `Optional`. Both the statement form and the expression form.
+pub func:TYPE_PICK_OPTIONAL = string() never fails { pass "NITPICK-TYPE-065"; };

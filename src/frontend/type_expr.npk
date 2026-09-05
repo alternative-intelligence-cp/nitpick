@@ -2686,7 +2686,17 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
 // same rule the array literal uses, and for the same reason: choosing a "common"
 // type would need a widening rule, and D-092 says there is not one.
 func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
-    discard(raw type_of_expr(e, raw pickx_selector(n)));
+    int32:pselt = raw type_of_expr(e, raw pickx_selector(n));
+    // AN `Optional` SELECTOR IS REFUSED BY NAME (D-260, 1.5.2c step 0), as the
+    // statement form refuses it: an `Optional` has no arms of its own, and
+    // `??` is how its value reaches a `pick`.
+    if (pselt != 0i32) {
+        if ((raw type_kind(e.types, pselt)) == (raw TY_OPTIONAL())) {
+            pass (raw te_error(e, raw TYPE_PICK_OPTIONAL(),
+                "a `pick` does not select on an `Optional` (D-260): an `Optional` has no arms of its own — reach the value with `??` (`pick (o ?? default) { … }`) or test it with `== NIL`",
+                n.span));
+        }
+    }
 
     int32:start = raw pickx_arm_start(n);
     int32:cnt = raw pickx_arm_count(n);
