@@ -1,0 +1,23 @@
+// A DERIVED IMPL'S SYNTHESIZED BOUND IS ENFORCED WHERE THE IMPL IS USED (D-258
+// with D-256, 1.5.2b step 3). `#[derive(Ord)] struct:Box<T>` writes
+// `impl:<T: Ord>:Box<T>:Ord`; `Box<Plain>` is a fine type, and `a.cmp(b)` on
+// one is refused at the CALL -- TYPE-017 naming the derive, the parameter and
+// the bound -- because `Plain` implements no `Ord`. Until this step the body
+// compared `self.v < other.v` on an opaque `T`, which the checker refused
+// inside `<derived-1>` (TYPE-008), a file nobody wrote.
+
+mod:derive_bound;
+error:E9;
+struct:Plain = { int32:q; };
+#[derive(Ord)]
+struct:Box<T> = { T:v; };
+
+func:main = int32(cstring[]:_~argv) {
+    Box<Plain>:a = Box{ v: Plain{ q: 1i32 } };
+    Box<Plain>:b = Box{ v: Plain{ q: 2i32 } };
+    // expect-error: NITPICK-TYPE-017
+    // expect-error-at: 20:19
+    Ordering:o = a.cmp(b) ?! E9;
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) { pick (e) { (E9) { exit 90i32; }, (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (*) { exit 99i32; } } exit 9i32; };

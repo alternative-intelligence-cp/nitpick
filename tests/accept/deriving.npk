@@ -99,14 +99,17 @@ impl:Manual:Clone = {
 
 // DERIVED COMPARISONS OVER A PAYLOAD AND A NAMED TYPE (D-250, 1.5.1b step
 // 3b): a payload enum, a struct holding a derived struct, and a generic
-// subject whose parameter field still compares by operator (D-161) -- under
-// `Eq` alone: `<` on an opaque `T` is refused by the checker (D-107), as it
-// was before this step.
+// subject. Since 1.5.2b step 3 (D-258) the generic subject's parameter field
+// compares through `T`'s OWN method under a synthesized bound -- so `Cell<T>`
+// derives `Ord` too, and `Cell<int32>` orders through the prelude's
+// `int32:Ord` (D-257); until then `<` on an opaque `T` was refused by the
+// checker inside `<derived-1>`, and D-161's no-bound story kept `Ord` off a
+// generic subject.
 #[derive(Eq, Ord, PartialOrd)]
 enum:Token = { Num(int64); Sym(uint8); Stop; };
 #[derive(Eq, Ord, PartialOrd)]
 struct:Nest = { Point:p; Token:t; int32:k; };
-#[derive(Eq)]
+#[derive(Eq, Ord)]
 struct:Cell<T> = { T:v; int32:n; };
 func:derived_over_named = NIL(Nest:a, Nest:b, Token:x, Token:y, Cell<int32>:c, Cell<int32>:d) {
     discard(a.eq(b) ?! E9);
@@ -116,6 +119,21 @@ func:derived_over_named = NIL(Nest:a, Nest:b, Token:x, Token:y, Cell<int32>:c, C
     discard(x.cmp(y) ?! E9);
     discard(x.partial_cmp(y) ?! E9);
     discard(c.eq(d) ?! E9);
+    discard(c.cmp(d) ?! E9);
+    pass NIL;
+};
+
+// A DERIVED `Debug` REACHES A NAMED FIELD THROUGH ITS OWN `debug` (D-258) --
+// the trait derived is the trait reached -- so `Tree`'s `Leaf` must derive or
+// implement `Debug`; until this step it rendered through the field's
+// `ToString`.
+#[derive(Debug)]
+struct:Leaf = { int32:v; };
+#[derive(Debug)]
+struct:Tree = { Leaf:l; int32:h; };
+func:derived_debug_nested = NIL(Tree:t) {
+    string:s = t.debug() ?! E9;
+    discard(s);
     pass NIL;
 };
 

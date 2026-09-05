@@ -1,34 +1,109 @@
 // expect-exit: 42
 //
-// `#[derive]` ON A GENERIC SUBJECT synthesizes the FAMILY form (D-161, 1.0.4c).
-// Before this it emitted `impl:Box:Eq` — the bare declaration with no type
-// argument — and the author was shown three "generic arity" errors pointing at
-// `<derived-1>`, synthesized source they never wrote. Now it writes
-// `impl:<T>:Box<T>:Eq`, which is what a person would write, and which family
-// impls made real at 1.0.4b.
+// `#[derive]` ON A GENERIC SUBJECT synthesizes the FAMILY form with a BOUND
+// (D-161 as amended by D-258, 1.5.2b step 3): `#[derive(Eq)] struct:Box<T>`
+// writes `impl:<T: Eq>:Box<T>:Eq`, whose body reaches `v` through `T`'s own
+// `eq` -- so `Box<int32>` compares through the prelude's `int32:Eq` (D-257),
+// `Box<Point>` through `Point`'s derived one, and a `Box<Plain>` whose
+// `Plain` implements nothing is refused at the CALL naming the derive
+// (`tests/types/rejection/derive_bound.npk`). Until this step the body was
+// `self.v != other.v` on an opaque `T`, which the checker admitted and the
+// emitter met at `Box<Point>` and could not lower (OPEN_DECISIONS DEF-16).
 //
-// NO BOUND IS SYNTHESIZED, deliberately: the generated body compares fields
-// with the OPERATOR (`!=`), never by calling a trait method, so what it needs
-// of `T` is what the operator needs — the same rule that let a derived `Eq`
-// work on an `int32` field, which implements no trait at all.
-//
-// This also exercises the half of generic-body lowering that 1.0.2b's
-// `identity<T>` test could not reach: `self.v != other.v` is an EXPRESSION
-// whose recorded type is the bare parameter (the checker walked the body with
-// `T` opaque, D-107), so lowering it needs the specialization's binding.
+// The other things this pins: every one of the seven derives over `Box<T>`;
+// a head with a bounded AND a bare parameter (`Pair<A, B>` under `Eq` binds
+// both, under nothing binds none); `PartialOrd` over
+// `Box<flt64>` answering `NIL` for `nan` because the prelude's
+// `flt64:PartialOrd` does; a derived `Clone` over `Box<string>` inside a
+// function that RETURNS -- DEF-18's regression: `pass self` checked with `T`
+// opaque aliased one body under two headers and the two drops freed it twice
+// (exit 95 where the arithmetic answer was 8); and `Tagged<T>` whose body
+// reaches no `T`, deriving `Eq` for every `T` with no bound at all.
 
 mod:derive_generic;
 error:E9;
 
-#[derive(Eq)]
+#[derive(Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug)]
+struct:Point = { int32:x; int32:y; };
+
+#[derive(Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug)]
 struct:Box<T> = { T:v; };
 
+#[derive(Eq, Ord, Clone, Hash)]
+struct:Pair<A, B> = { A:a; B:b; int32:n; };
+
+struct:Plain = { int32:q; };
+#[derive(Eq)]
+struct:Tagged<T> = { int32:id; };
+
+func:dup = int64(int64:n) {
+    Box<string>:a = Box{ v: "abcd" };
+    Box<string>:b = a.clone() ?! E9;
+    pass (a.v.len + b.v.len + n);
+};
+
 func:main = int32(cstring[]:_~argv) {
+    // Box<int32>: the seven, through the prelude's rows
     Box<int32>:a = Box{ v: 5i32 };
     Box<int32>:b = Box{ v: 5i32 };
     Box<int32>:c = Box{ v: 9i32 };
     if (!(a.eq(b) ?! E9)) { exit 10i32; }
     if (a.eq(c) ?! E9)    { exit 11i32; }
+    pick (a.cmp(c) ?! E9) { (Ordering.Less) { }, (*) { exit 12i32; } }
+    pick ((a.partial_cmp(b) ?! E9) ?? Ordering.Greater) { (Ordering.Equal) { }, (*) { exit 13i32; } }
+    Box<int32>:ac = a.clone() ?! E9;
+    if (ac.v != 5i32) { exit 14i32; }
+    if ((a.hash() ?! E9) != (b.hash() ?! E9)) { exit 15i32; }
+    if ((a.hash() ?! E9) == (c.hash() ?! E9)) { exit 16i32; }
+    string:s1 = a.to_string() ?! E9;
+    if (s1.len == 0i64) { exit 17i32; }
+    string:d1 = a.debug() ?! E9;
+    if (d1.len == 0i64) { exit 18i32; }
+
+    // Box<Point>: the seven, through Point's derived impls
+    Box<Point>:p = Box{ v: Point{ x: 1i32, y: 2i32 } };
+    Box<Point>:q = Box{ v: Point{ x: 1i32, y: 3i32 } };
+    if (p.eq(q) ?! E9) { exit 20i32; }
+    pick (p.cmp(q) ?! E9) { (Ordering.Less) { }, (*) { exit 21i32; } }
+    pick ((q.partial_cmp(p) ?! E9) ?? Ordering.Equal) { (Ordering.Greater) { }, (*) { exit 22i32; } }
+    Box<Point>:pc = p.clone() ?! E9;
+    if (!(pc.eq(p) ?! E9)) { exit 23i32; }
+    if ((p.hash() ?! E9) == (q.hash() ?! E9)) { exit 24i32; }
+    string:s2 = p.to_string() ?! E9;
+    if (s2.len == 0i64) { exit 25i32; }
+    string:d2 = p.debug() ?! E9;
+    if (d2.len == 0i64) { exit 26i32; }
+
+    // Pair<int32, Point>: one head, both parameters bound under Eq/Ord/Clone/Hash
+    Pair<int32, Point>:r1 = Pair{ a: 1i32, b: Point{ x: 1i32, y: 1i32 }, n: 0i32 };
+    Pair<int32, Point>:r2 = Pair{ a: 1i32, b: Point{ x: 1i32, y: 2i32 }, n: 0i32 };
+    if (r1.eq(r2) ?! E9) { exit 30i32; }
+    pick (r1.cmp(r2) ?! E9) { (Ordering.Less) { }, (*) { exit 31i32; } }
+    Pair<int32, Point>:r3 = r1.clone() ?! E9;
+    if (!(r3.eq(r1) ?! E9)) { exit 32i32; }
+    if ((r1.hash() ?! E9) == (r2.hash() ?! E9)) { exit 33i32; }
+
+    // (A GENERIC ENUM -- `Opt<T> = { Some(T); None; }` under `Eq`/`Ord`/`Clone`
+    // -- was planned here and is NOT written: the form parses and means
+    // nothing today, OPEN_DECISIONS DEF-20. The generator is ready for it: a
+    // variant pattern and constructor use the bare enum name.)
+
+    // Box<flt64>: nan has no order, and the answer lives in the prelude
+    flt64:zero = 0.0f64;
+    Box<flt64>:f1 = Box{ v: zero / zero };
+    Box<flt64>:f2 = Box{ v: 1.0f64 };
+    Ordering?:fo = f1.partial_cmp(f2) ?! E9;
+    if (fo != NIL) { exit 50i32; }
+    pick ((f2.partial_cmp(f2) ?! E9) ?? Ordering.Less) { (Ordering.Equal) { }, (*) { exit 51i32; } }
+
+    // Box<string> cloned where both drop (DEF-18): two bodies, one answer
+    int64:sum = dup(0i64) ?! E9;
+    if (sum != 8i64) { exit 60i32; }
+
+    // Tagged<Plain>: no member reaches T, so no bound is asked of Plain
+    Tagged<Plain>:t1 = Tagged{ id: 7i32 };
+    Tagged<Plain>:t2 = Tagged{ id: 7i32 };
+    if (!(t1.eq(t2) ?! E9)) { exit 70i32; }
     exit 42i32;
 };
 
@@ -37,8 +112,11 @@ func:failsafe = int32(Error:e) {
         (E9) { exit 1i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom) { exit 1i32; },
-        (Unreachable) { exit 1i32; },
-        (WildLeak) { exit 1i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (IntOverflow) { exit 1i32; },
+        (DivByZero) { exit 1i32; },
+        (DivOverflow) { exit 1i32; },
         (*) { exit 1i32; }
     }
     exit 1i32;

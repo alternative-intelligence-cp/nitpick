@@ -705,6 +705,30 @@ with a mandatory `(NIL)` arm (then the emitter lowers it and PICK's
 exhaustiveness counts the arm). The first is the smaller language and the
 one the suite already writes; the plan's recommendation is the first.
 
+**DEF-20 (found by 1.5.2b step 3's tests on `a9fff07`, 2026-09-05; owner:
+the user, a DECISION first) — a GENERIC ENUM parses and means nothing.**
+`enum:Opt<T> = { Some(T); None; };` is admitted by the parser (the generics
+window is the item's, as a struct's is) and then `T` in the payload is
+"there is no type named `T`" (TYPE-001): the resolver binds a struct's own
+parameters before reading its fields and never an enum's before reading its
+variants; and `Opt<int32>:o = Opt.Some(3i32)` finds "found `Opt`", the bare
+declaration -- a variant constructor never instantiates (TYPE-007). No
+generic enum exists in `tests/`, `src/`, `lib/`, `npkg/` or `tools/`, and
+none is mentioned in TYPE_REFERENCE, TRAITS_REFERENCE or AST_REFERENCE: the
+form was never decided in or out, which is D-085's "parses and means
+nothing" shape. 1.5.2b's plan wrote a generic-enum derive test (`Opt<T>`
+under `Eq`/`Ord`/`Clone`) on the assumption that the form exists; the derive
+generator is written for it (a variant pattern and constructor use the BARE
+enum name, 1.3.7's rule), the test item is dropped with this note, and the
+first generic enum to be written will exercise it. **Recommendation:** decide
+it IN -- an enum with a payload of a parameter type is the shape every
+`Optional`/`Result`-like user type takes, and the struct machinery it needs
+(the own-generics binding at resolution, instantiation of the constructor
+from the annotation's arguments; `check_one_instance` already accepts a
+TY_ENUM instance) is small -- and schedule it before 1.5.3 lowers contracts
+over enums; deciding it OUT means the parser refuses the window on an enum
+by name.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |

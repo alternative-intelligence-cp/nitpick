@@ -41,11 +41,16 @@ pub func:DERIVE_TARGET = string() never fails       { pass "NITPICK-DERIVE-004";
 // say what a vector means for the type.
 pub func:DERIVE_SIMD_FIELD = string() never fails   { pass "NITPICK-DERIVE-005"; };
 
-// A MEMBER NO DERIVED COMPARISON CAN BE WRITTEN FOR (D-250, 1.5.1b step 3b),
-// refused at the USER'S declaration, naming the field or variant and its
-// spelling: an OWNING payload (`string`, `buffer`, `dyn`, `List<…>`,
-// `OwnedFd`, an arena, a sync primitive, a `Channel`) cannot be bound by the
-// `pick` a payload comparison needs without consuming it (D-216's is the only
-// binding form), and an array or slice has no `==`/`<` to compare with. The
-// impl is written by hand and says what the comparison means.
+// A MEMBER NO DERIVED BODY CAN BE WRITTEN FOR (D-250, 1.5.1b step 3b; widened
+// to every derive by D-258, 1.5.2b step 3), refused at the USER'S declaration,
+// naming the field or variant, its spelling and why: an OWNING or ERASED
+// builtin (`buffer`, `dyn`, `List<…>`, `OwnedFd`, an arena, a sync primitive,
+// a `Channel`, an `Optional`, a `Result`, `cstring`, `any`, a function type,
+// `complex` over a parameter) is compared, hashed, rendered or copied by a
+// rule only its author can choose; a `string` PAYLOAD cannot be bound by the
+// `pick` a payload body needs without consuming it (D-216's is the only
+// binding form); a pointer has identity and nothing else (`Eq` and `Clone`
+// derive over one, the rest do not); an array has no `==`, order, hash or
+// rendering, and copies only when its elements are scalars. The impl is
+// written by hand and says what the comparison, hash, rendering or copy means.
 pub func:DERIVE_UNCOMPARABLE = string() never fails { pass "NITPICK-DERIVE-006"; };

@@ -1489,25 +1489,30 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
     Symbol:tss = raw symtab_get(x.tab, ts_sym);
     if (tss.origin_kind != (raw SYM_DECL())) { pass (raw iv_broken(at)); }
 
-    int32:impl_decl = 0i32;
-    int32:trait_ty = 0i32;
-    int32:j = 0i32;
-    while (j < (raw impl_count(x.fe.ctx.impls))) {
-        ImplEntry:e = raw impl_at(x.fe.ctx.impls, j);
-        if (!e.blanket) {
-            if (e.target == itype) {
-                if ((raw type_decl_of(x.fe.ctx.types, e.trait_id)) == tss.origin) {
-                    impl_decl = e.decl;
-                    trait_ty = e.trait_id;
-                    j = raw impl_count(x.fe.ctx.impls);
-                } else { j = j + 1i32; }
-            } else { j = j + 1i32; }
-        } else { j = j + 1i32; }
+    // THE CONCRETE TYPE, THEN THE IMPL THE WAY A METHOD CALL FINDS IT (1.5.2b
+    // step 3). The recorded type may be a bound PARAMETER (`func:show<T:
+    // ToString>` interpolating its `T`) or an instance mentioning one
+    // (`Box<T>` inside a derived body) -- substituted through the
+    // specialization being emitted, as the method-call path substitutes its
+    // receiver -- and the impl may be a FAMILY impl (`impl:<T: ToString>:Box<T>:
+    // ToString`, which every derived `ToString` on a generic subject is,
+    // D-258), whose body is a template: the instance is recorded here, as a
+    // bound call records it, so the loop after this body emits it. Until this
+    // step the match was `e.target == itype` over per-type impls alone, and
+    // both shapes -- admitted by the checker, which asks `type_implements` --
+    // died here as EMIT-002.
+    int32:ts_name = raw intern_add(x.interns, "to_string");
+    int32:conc = itype;
+    if (raw type_mentions_param(x.fe.ctx.types, x.ast, conc, 64i32)) {
+        conc = raw subst_emitted_type(x.fe.ctx, conc);
     }
+    int32:trait_ty = raw tt_trait(x.fe.ctx.types, tss.origin,
+                         raw intern_add(x.interns, "ToString"));
+    int32:impl_decl = raw impl_decl_for(x, conc, trait_ty);
     if (impl_decl == 0i32) { pass (raw iv_broken(at)); }
+    drop note_family_instance(x, conc, trait_ty, ts_name, at);
 
     DeclNode:idecl = raw ast_decl(x.ast, DeclId{ index: impl_decl });
-    int32:ts_name = raw intern_add(x.interns, "to_string");
     int32:m_decl = 0i32;
     int32:mi = 0i32;
     while (mi < (raw impl_member_count(x.ast, idecl))) {
@@ -1522,7 +1527,7 @@ func:emit_tostring = IrVal(ExprEmitter->:x, ExprId:item, int32:itype) never fail
     // QUALIFIED BY THE IMPL (1.4.7; the rule is at `cur_impl`) -- the module
     // the definition took, wherever the impl sits.
     string:sym = raw mangled_fn_sym(x.fe.ctx, impl_decl,
-                     raw method_symbol_name(x.fe.ctx.types, x.interns, itype,
+                     raw method_symbol_name(x.fe.ctx.types, x.interns, conc,
                          trait_ty, "to_string"));
 
     IrVal:av = raw emit_expr(x, item);

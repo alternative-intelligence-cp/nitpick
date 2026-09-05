@@ -1,0 +1,36 @@
+// expect-exit: 0
+//
+// A STRUCT WITH A `string` FIELD DERIVES `Clone` (D-258, 1.5.2b step 3; closes
+// OPEN_DECISIONS DEF-17's `Clone` half): the body is member-wise --
+// `pass Named{ s: relay self.s.clone(), n: raw self.n.clone() }` -- so the
+// clone owns a second body and the two are independent. Until this step the
+// body was `pass self`, which is TYPE-047 ("lent, not given") on a lent owner,
+// reported inside `<derived-1>`.
+
+mod:derive_clone_owning;
+error:E9;
+
+#[derive(Clone)]
+struct:Named = { string:s; int32:n; };
+
+func:main = int32(cstring[]:_~argv) {
+    Named:a = Named{ s: "hello", n: 1i32 };
+    Named:b = a.clone() ?! E9;
+    b.s = string_concat(b.s, "!!");
+    if (a.s.len != 5i64) { exit 2i32; }
+    if (b.s.len != 7i64) { exit 3i32; }
+    if (b.n != 1i32) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 95i32; },
+        (WildLeak) { exit 96i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

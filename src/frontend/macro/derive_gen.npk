@@ -34,6 +34,7 @@ use "../parser.npk".*;
 use "../source.npk".*;
 use "../module_graph.npk".*;
 use "./derive_codes.npk".*;
+use "../scalar_table.npk".*;   // builtin_scalar_family -- the one classification (D-257, D-258)
 
 // --- the seven ------------------------------------------------------------------
 //
@@ -236,86 +237,206 @@ func:dvc5 = string(string:a, string:b, string:c, string:d, string:e) never fails
     pass (string_concat(string_concat(raw dvc3(a, b, c), d), e));
 };
 
-// HOW A DERIVED COMPARISON READS A TYPE NODE (D-250, 1.5.1b step 3b). The
-// generator sees SPELLINGS, not types -- derive runs before collection -- so
-// the spelling decides: 0, a builtin compared by its operator (a scalar, a
-// pointer, `simd` -- whose lanes collapse as before); 1, a NAMED type compared
-// through its own trait method (`a.eq(b)`, `a.cmp(b)`, `a.partial_cmp(b)`),
-// which is what makes a derived `Eq` over a struct holding a derived struct
-// compile at all -- an operator is refused on a named type, inside
-// `<derived-1>`, which the user cannot open; 2, a GENERIC PARAMETER of the
-// subject, compared by operator as D-161's no-bound story requires (the
-// prelude implements `Eq`/`Ord` for no scalar, so `Box<int32>` has no
-// `int32.eq` to call); 3, a spelling no derived comparison can be written
-// for, refused by name at the declaration (DERIVE-006): OWNING (`string`,
-// `buffer`, `dyn`, `List<…>`, `OwnedFd`, the arenas, the sync primitives, a
-// `Channel`), which the `pick` a payload comparison needs cannot bind without
-// consuming, or OPERATOR-LESS (an array, a slice). A named USER type that
-// owns is admitted -- its drop cannot be known here -- and compares through
-// its method; if it turns out to own, the checker's refusal stays in
-// `<derived-N>` (the plan's rule 4 gap, recorded at the step).
-func:dv_spelling = int32(Ast->:ast, InternTable->:interns, DeclNode:subject,
-                         TypeId:t) never fails {
+// --- member classes (D-258, 1.5.2b step 3) --------------------------------------
+//
+// ONE RULE FOR EVERY MEMBER: a derived body reaches each member through the
+// trait it is deriving -- a builtin SCALAR through the PRELUDE's impl (D-257;
+// `raw`, the region's bodies being `never fails`), a NAMED type or a PARAMETER
+// of the subject through its own (`relay`, the trait declaring may-fail), a
+// `string` FIELD through the prelude's four (`raw` but for `clone`, which
+// allocates), a `simd` by `.any()` under `Eq` and by copy under `Clone`
+// (D-194), a POINTER by `!=` under `Eq` (address identity) and by copy under
+// `Clone`, an array of scalars by copy under `Clone` -- and a member no
+// derived body can be written for refuses at the USER's declaration by name
+// (DERIVE-006), never as a type error at a `<derived-N>` line nobody wrote.
+//
+// The generator sees SPELLINGS, not types -- derive runs before collection --
+// so the spelling decides, through `builtin_scalar_family`: the one
+// classification the prelude's generated region is also written from, so a
+// scalar the prelude implements the trait for is a scalar this reaches. What
+// the prelude does NOT implement (`bool` under `Ord`, a float under `Ord`, a
+// `tfp` under `Hash`) is the checker's "no method", re-homed to the derive
+// (D-259).
+//
+// This replaces D-250's operator form for builtins (D-161's no-bound story
+// with it): a derived `partial_cmp` over a `flt64` field answered `Equal` for
+// `nan` and a derived `cmp` presented a total order the type does not have;
+// the answer lives in the prelude's one `flt64:PartialOrd` now, and a `Box<T>`
+// under `#[derive(Eq)]` carries `T: Eq` instead of an `!=` on an opaque `T`
+// that the emitter met at `Box<Point>` (DEF-16).
+func:DVC_SCALAR = int32() never fails  { pass 1i32; };
+func:DVC_NAMED = int32() never fails   { pass 2i32; };
+func:DVC_PARAM = int32() never fails   { pass 3i32; };
+func:DVC_STRING = int32() never fails  { pass 4i32; };
+func:DVC_SIMD = int32() never fails    { pass 5i32; };
+func:DVC_POINTER = int32() never fails { pass 6i32; };
+func:DVC_ARRAY = int32() never fails   { pass 7i32; };
+func:DVC_REFUSED = int32() never fails { pass 8i32; };
+
+func:dv_kw = TokenKind(TypeNode:tn) never fails {
+    pass (((raw type_name_index(tn)) =>! int32) =>! TokenKind);
+};
+
+// Is this spelled type a builtin scalar keyword -- one with a row in the
+// prelude's region? `complex<X>` counts for a builtin element and for
+// nothing else (the prelude implements the four ratified instances, D-199;
+// over a parameter there is no impl to reach).
+func:dv_is_scalar_node = bool(Ast->:ast, TypeNode:tn) never fails {
+    if (tn.kind != TypeKind.TypeNamedType) { pass false; }
+    if (!(raw type_name_is_builtin(tn))) { pass false; }
+    TokenKind:k = raw dv_kw(tn);
+    if (k == TokenKind.KwString) { pass false; }
+    if (k == TokenKind.KwSimd)   { pass false; }
+    int32:fam = raw builtin_scalar_family(k);
+    if (fam == (raw SCALAR_NONE())) { pass false; }
+    if (fam == (raw SCALAR_COMPLEX())) {
+        if ((raw type_args_count(tn)) != 1i32) { pass false; }
+        TypeNode:an = raw ast_type(ast, TypeId{ index: raw ast_id_at(ast, raw type_args_start(tn), 0i32) });
+        if (an.kind != TypeKind.TypeNamedType) { pass false; }
+        if (!(raw type_name_is_builtin(an))) { pass false; }
+    }
+    pass true;
+};
+
+func:dv_class = int32(Ast->:ast, InternTable->:interns, DeclNode:subject,
+                      TypeId:t) never fails {
     TypeNode:tn = raw ast_type(ast, t);
-    if (tn.kind == TypeKind.TypeArrayType) { pass 3i32; }
-    if (tn.kind == TypeKind.TypeDynType)   { pass 3i32; }
-    if (tn.kind != TypeKind.TypeNamedType) { pass 0i32; }
+    if (tn.kind == TypeKind.TypePointerType) { pass (raw DVC_POINTER()); }
+    if (tn.kind == TypeKind.TypeArrayType)   { pass (raw DVC_ARRAY()); }
+    if (tn.kind != TypeKind.TypeNamedType)   { pass (raw DVC_REFUSED()); }
     if (raw type_name_is_builtin(tn)) {
-        int64:k = raw type_name_index(tn);
-        if (k == ((TokenKind.KwString =>! int32) =>! int64))       { pass 3i32; }
-        if (k == ((TokenKind.KwBuffer =>! int32) =>! int64))       { pass 3i32; }
-        if (k == ((TokenKind.KwDyn =>! int32) =>! int64))          { pass 3i32; }
-        if (k == ((TokenKind.KwOwnedFd =>! int32) =>! int64))      { pass 3i32; }
-        if (k == ((TokenKind.KwArena =>! int32) =>! int64))        { pass 3i32; }
-        if (k == ((TokenKind.KwShared_arena =>! int32) =>! int64)) { pass 3i32; }
-        if (k == ((TokenKind.KwMutex =>! int32) =>! int64))        { pass 3i32; }
-        if (k == ((TokenKind.KwGuard =>! int32) =>! int64))        { pass 3i32; }
-        if (k == ((TokenKind.KwRwLock =>! int32) =>! int64))       { pass 3i32; }
-        if (k == ((TokenKind.KwRGuard =>! int32) =>! int64))       { pass 3i32; }
-        if (k == ((TokenKind.KwCondVar =>! int32) =>! int64))      { pass 3i32; }
-        if (k == ((TokenKind.KwBarrier =>! int32) =>! int64))      { pass 3i32; }
-        if (k == ((TokenKind.KwChannel =>! int32) =>! int64))      { pass 3i32; }
-        pass 0i32;
+        TokenKind:k = raw dv_kw(tn);
+        if (k == TokenKind.KwString) { pass (raw DVC_STRING()); }
+        if (k == TokenKind.KwSimd)   { pass (raw DVC_SIMD()); }
+        if (raw dv_is_scalar_node(ast, tn)) { pass (raw DVC_SCALAR()); }
+        pass (raw DVC_REFUSED());
     }
     string:nm = raw intern_get(interns, (raw type_name_index(tn)) =>! int32);
-    if (raw string_eq(nm, "List")) { pass 3i32; }
+    // `List<T>` is compiler-known and OWNING (D-247): a name, not a keyword.
+    if (raw string_eq(nm, "List")) { pass (raw DVC_REFUSED()); }
     IdSpan:gw = raw decl_generic_window(ast, subject);
     for (int32:gi in 0i32...gw.count) {
         DeclNode:gp = raw ast_decl(ast, DeclId{ index: raw ast_id_at(ast, gw.start, gi) });
-        if (raw string_eq(nm, raw intern_get(interns, raw decl_name(gp)))) { pass 2i32; }
+        if (raw string_eq(nm, raw intern_get(interns, raw decl_name(gp)))) { pass (raw DVC_PARAM()); }
     }
-    pass 1i32;
+    pass (raw DVC_NAMED());
 };
 
-// The spelled text of a type node's name, for a refusal that names it.
+// THE LICENCE WORD a member's method call carries (D-163): the prelude's
+// scalar rows and `string`'s comparisons and hash are `never fails` (`raw`); a
+// named type's or a parameter's method is the trait's may-fail declaration,
+// and `string:Clone` allocates (`relay`).
+func:dv_lic = string(int32:cls, bool:is_clone) never fails {
+    if (cls == (raw DVC_SCALAR())) { pass "raw "; }
+    if (cls == (raw DVC_STRING())) {
+        if (is_clone) { pass "relay "; }
+        pass "raw ";
+    }
+    pass "relay ";
+};
+
+// An array whose element is spelled with a scalar keyword copies under `Clone`.
+func:dv_array_of_scalars = bool(Ast->:ast, TypeId:t) never fails {
+    TypeNode:tn = raw ast_type(ast, t);
+    if (tn.kind != TypeKind.TypeArrayType) { pass false; }
+    pass (raw dv_is_scalar_node(ast, raw ast_type(ast, raw type_element(tn))));
+};
+
+// The spelled text of a type node, for a refusal that names it.
 func:dv_type_text = string(Ast->:ast, InternTable->:interns, TypeId:t) never fails {
     TypeNode:tn = raw ast_type(ast, t);
-    if (tn.kind == TypeKind.TypeArrayType) { pass "an array or slice"; }
-    if (tn.kind == TypeKind.TypeDynType)   { pass "a `dyn`"; }
-    if (tn.kind != TypeKind.TypeNamedType) { pass "this type"; }
+    if (tn.kind == TypeKind.TypePointerType)  { pass "a pointer"; }
+    if (tn.kind == TypeKind.TypeArrayType)    { pass "an array or slice"; }
+    if (tn.kind == TypeKind.TypeOptionalType) { pass "an `Optional`"; }
+    if (tn.kind == TypeKind.TypeDynType)      { pass "a `dyn`"; }
+    if (tn.kind == TypeKind.TypeFuncType)     { pass "a function type"; }
+    if (tn.kind == TypeKind.TypeCStringType)  { pass "a `cstring`"; }
+    if (tn.kind == TypeKind.TypeAnyType)      { pass "`any`"; }
+    if (tn.kind != TypeKind.TypeNamedType)    { pass "this type"; }
     if (raw type_name_is_builtin(tn)) {
-        pass (raw dvc3("`", raw token_kind_name(((raw type_name_index(tn)) =>! int32) =>! TokenKind), "`"));
+        pass (raw dvc3("`", raw token_kind_name(raw dv_kw(tn)), "`"));
     }
     pass (raw dvc3("`", raw intern_get(interns, (raw type_name_index(tn)) =>! int32), "`"));
 };
 
-// EVERY MEMBER A COMPARISON DERIVE WOULD READ IS CHECKED FIRST (D-250): a
-// struct's fields, an enum's payloads. One refusal per derive, at the user's
-// declaration, naming the first member it cannot compare -- never a type
-// error at a `<derived-N>` line nobody wrote. True when the derive may be
-// generated.
-func:dv_comparable = bool(Ast->:ast, InternTable->:interns, DiagList->:diags,
-                          DeclNode:d, bool:is_enum, string:trait_name) never fails {
+// Does this derive's body reach the members at all? A struct's every derive
+// reads its fields; an enum's `Hash` is the tag's (D-123) and its `ToString`/
+// `Debug` the variant's name, so a payload is never read by those three.
+func:dv_reaches_members = bool(bool:is_enum, int32:which) never fails {
+    if (!is_enum) { pass true; }
+    if (which == (raw DERIVE_HASH()))      { pass false; }
+    if (which == (raw DERIVE_TO_STRING())) { pass false; }
+    if (which == (raw DERIVE_DEBUG()))     { pass false; }
+    pass true;
+};
+
+// WHY A DERIVE CANNOT BE WRITTEN OVER A MEMBER, by class and by derive -- or
+// "" when it can. The classes the checker decides (a scalar, a named type, a
+// parameter) are never refused here: what they lack is the checker's "no
+// method", re-homed to the derive (D-259).
+func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
+                         bool:payload) never fails {
+    bool:comparison = false;
+    if (which == (raw DERIVE_EQ()))          { comparison = true; }
+    if (which == (raw DERIVE_ORD()))         { comparison = true; }
+    if (which == (raw DERIVE_PARTIAL_ORD())) { comparison = true; }
+    bool:is_clone = (which == (raw DERIVE_CLONE()));
+    if (cls == (raw DVC_REFUSED())) {
+        pass "no derived body can be written for that spelling -- an owning or erased type is compared, hashed, rendered or copied by a rule only its author can choose";
+    }
+    if (cls == (raw DVC_STRING())) {
+        if (payload) {
+            if (comparison || is_clone) {
+                pass "a `pick` cannot bind an owning payload without consuming it (D-216's is the only binding form)";
+            }
+        }
+        pass "";
+    }
+    if (cls == (raw DVC_POINTER())) {
+        if (which == (raw DERIVE_EQ())) { pass ""; }
+        if (is_clone) { pass ""; }
+        pass "a pointer has identity and nothing else to derive from: it compares and copies by address, and has no order, hash or rendering of its own";
+    }
+    if (cls == (raw DVC_ARRAY())) {
+        if (is_clone) {
+            if (raw dv_array_of_scalars(ast, t)) { pass ""; }
+            pass "an array copies under `Clone` only when its elements are scalars; anything else needs its own clone rule";
+        }
+        pass "an array has no `==`, no order, no hash and no rendering of its own";
+    }
+    pass "";
+};
+
+// What the refused derive would have had to decide -- the message's last clause.
+func:dv_meaning = string(int32:which) never fails {
+    if (which == (raw DERIVE_CLONE()))     { pass "the copy"; }
+    if (which == (raw DERIVE_HASH()))      { pass "the hash"; }
+    if (which == (raw DERIVE_TO_STRING())) { pass "the rendering"; }
+    if (which == (raw DERIVE_DEBUG()))     { pass "the rendering"; }
+    pass "the comparison";
+};
+
+// EVERY MEMBER A DERIVE WOULD READ IS CHECKED FIRST (D-258): a struct's fields,
+// an enum's payloads where the derive binds them. One refusal per derive, at
+// the user's declaration, naming the first member it cannot serve and why.
+// True when the derive may be generated.
+func:dv_admissible = bool(Ast->:ast, InternTable->:interns, DiagList->:diags,
+                          DeclNode:d, bool:is_enum, int32:which,
+                          string:trait_name) never fails {
+    if (!(raw dv_reaches_members(is_enum, which))) { pass true; }
     int32:n = raw item_member_count(ast, d);
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
-            if ((raw dv_spelling(ast, interns, d, raw field_type(m))) == 3i32) {
+            TypeId:ft = raw field_type(m);
+            string:why = raw dv_refusal(ast, raw dv_class(ast, interns, d, ft), ft, which, false);
+            if (why.len > 0i64) {
                 drop diaglist_push(diags, raw diag_error(raw DERIVE_UNCOMPARABLE(),
                     raw dvc5("`", trait_name, "` cannot be derived over the field `",
                              raw intern_get(interns, raw decl_name(m)),
-                             raw dvc3("` of ", raw dv_type_text(ast, interns, raw field_type(m)),
-                                      " (D-250): no derived comparison can be written for that spelling -- an owning type cannot be compared by an operator or bound by a `pick`, and an array has no `==`; write the impl and say what the comparison means")),
+                             raw dvc5("` of ", raw dv_type_text(ast, interns, ft),
+                                      " (D-258): ", why,
+                                      raw dvc3("; write the impl and say what ", raw dv_meaning(which), " means"))),
                     d.span));
                 pass false;
             }
@@ -324,12 +445,14 @@ func:dv_comparable = bool(Ast->:ast, InternTable->:interns, DiagList->:diags,
             int32:pc = raw variant_payload_count(m);
             for (int32:pi in 0i32...pc) {
                 TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), pi) };
-                if ((raw dv_spelling(ast, interns, d, pt)) == 3i32) {
+                string:pwhy = raw dv_refusal(ast, raw dv_class(ast, interns, d, pt), pt, which, true);
+                if (pwhy.len > 0i64) {
                     drop diaglist_push(diags, raw diag_error(raw DERIVE_UNCOMPARABLE(),
                         raw dvc5("`", trait_name, "` cannot be derived over the payload of `",
                                  raw intern_get(interns, raw decl_name(m)),
-                                 raw dvc3("`, ", raw dv_type_text(ast, interns, pt),
-                                          " (D-250): a `pick` cannot bind an owning payload without consuming it (D-216's is the only binding form), and an array has no `==`; write the impl and say what the comparison means")),
+                                 raw dvc5("`, ", raw dv_type_text(ast, interns, pt),
+                                          " (D-258): ", pwhy,
+                                          raw dvc3("; write the impl and say what ", raw dv_meaning(which), " means"))),
                         d.span));
                     pass false;
                 }
@@ -337,6 +460,83 @@ func:dv_comparable = bool(Ast->:ast, InternTable->:interns, DiagList->:diags,
         }
     }
     pass true;
+};
+
+// THE PARAMETERS A MEMBER'S SPELLING REACHES (D-258): a parameter names
+// itself; a named type WITH arguments is walked into them (`Box<T>` as a
+// member needs `Box<T>: Eq`, whose derived impl needs `T: Eq` -- conservative,
+// and the checker will ask); a pointer, a `simd`, an array or any builtin stops
+// the walk. One slot per subject parameter on the scratch at `mark`, set to 1
+// when reached.
+func:dv_mark_params = NIL(Ast->:ast, InternTable->:interns, DeclNode:subject,
+                          TypeId:t, int32:mark) never fails {
+    TypeNode:tn = raw ast_type(ast, t);
+    if (tn.kind != TypeKind.TypeNamedType) { pass NIL; }
+    if (raw type_name_is_builtin(tn)) { pass NIL; }
+    string:nm = raw intern_get(interns, (raw type_name_index(tn)) =>! int32);
+    IdSpan:gw = raw decl_generic_window(ast, subject);
+    for (int32:gi in 0i32...gw.count) {
+        DeclNode:gp = raw ast_decl(ast, DeclId{ index: raw ast_id_at(ast, gw.start, gi) });
+        if (raw string_eq(nm, raw intern_get(interns, raw decl_name(gp)))) {
+            drop ast_scratch_set(ast, mark, gi, 1i32);
+            pass NIL;
+        }
+    }
+    int32:n = raw type_args_count(tn);
+    int32:start = raw type_args_start(tn);
+    for (int32:i in 0i32...n) {
+        drop dv_mark_params(ast, interns, subject,
+                            TypeId{ index: raw ast_id_at(ast, start, i) }, mark);
+    }
+    pass NIL;
+};
+
+// THE HEAD OF ONE DERIVED IMPL (D-258): `impl:` for a plain subject;
+// `impl:<T: X, U>:` for a generic one, with `: X` on EXACTLY the parameters
+// that occur in a member the body reaches through X -- a parameter no reached
+// member mentions gets no bound (`Tagged<T> = { int32:id; }` derives `Eq` for
+// every `T`), and an enum's tag-only `Hash` reaches no member. The subject's
+// OWN bounds are not copied: its instantiation already checks them.
+func:dv_head = string(Ast->:ast, InternTable->:interns, DeclNode:d, bool:is_enum,
+                      int32:which, string:trait_name) never fails {
+    IdSpan:gw = raw decl_generic_window(ast, d);
+    if (gw.count == 0i32) { pass "impl:"; }
+    int32:mark = raw ast_scratch_mark(ast);
+    for (int32:z in 0i32...gw.count) { drop ast_scratch_push(ast, 0i32); }
+    if (raw dv_reaches_members(is_enum, which)) {
+        int32:n = raw item_member_count(ast, d);
+        for (int32:i in 0i32...n) {
+            DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
+            if (m.kind == DeclKind.DeclFieldDecl) {
+                TypeId:ft = raw field_type(m);
+                int32:cls = raw dv_class(ast, interns, d, ft);
+                if ((cls == (raw DVC_NAMED())) || (cls == (raw DVC_PARAM()))) {
+                    drop dv_mark_params(ast, interns, d, ft, mark);
+                }
+            }
+            if (m.kind == DeclKind.DeclEnumVariant) {
+                int32:pc = raw variant_payload_count(m);
+                for (int32:pi in 0i32...pc) {
+                    TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), pi) };
+                    int32:pcls = raw dv_class(ast, interns, d, pt);
+                    if ((pcls == (raw DVC_NAMED())) || (pcls == (raw DVC_PARAM()))) {
+                        drop dv_mark_params(ast, interns, d, pt, mark);
+                    }
+                }
+            }
+        }
+    }
+    string:params = "<";
+    for (int32:gi in 0i32...gw.count) {
+        if (gi > 0i32) { params = string_concat(params, ", "); }
+        DeclNode:gp = raw ast_decl(ast, DeclId{ index: raw ast_id_at(ast, gw.start, gi) });
+        params = string_concat(params, raw intern_get(interns, raw decl_name(gp)));
+        if ((raw ast_scratch_at(ast, mark, gi)) != 0i32) {
+            params = string_concat(params, string_concat(": ", trait_name));
+        }
+    }
+    drop ast_scratch_drop(ast, mark);
+    pass (raw dvc3("impl:", params, ">:"));
 };
 
 // Does any variant carry a payload? A payload-less enum keeps the body it
@@ -357,61 +557,59 @@ func:dv_bind = string(int32:operand, int32:k) never fails {
     pass (raw dvc5("dv", int_to_string(operand => int64), "_", int_to_string(k => int64), ""));
 };
 
-// THE EQUALITY OF TWO OPERANDS BY SPELLING (D-250): `a != b` for an
-// operator spelling, `(a != b).any()` for a `simd`, `relay a.eq(b)` for a
-// named type. Emits the statement that passes `false` when they differ.
-func:dv_eq_stmt = string(Ast->:ast, InternTable->:interns, DeclNode:subject,
-                         TypeId:t, string:a, string:b) never fails {
-    int32:sp = raw dv_spelling(ast, interns, subject, t);
-    if (sp == 1i32) {
-        pass (raw dvc5("if (!(relay ", a, ".eq(", b, "))) { pass false; }\n"));
-    }
-    TypeNode:tn = raw ast_type(ast, t);
-    bool:is_simd = false;
-    if (tn.kind == TypeKind.TypeNamedType) {
-        if (raw type_name_is_builtin(tn)) {
-            if ((raw type_name_index(tn)) == ((TokenKind.KwSimd =>! int32) =>! int64)) { is_simd = true; }
-        }
-    }
-    if (is_simd) {
+// THE EQUALITY OF TWO OPERANDS BY CLASS (D-258): `(a != b).any()` for a
+// `simd`, `a != b` for a pointer (address identity), the member's own `eq`
+// with its licence for everything else. Emits the statement that passes
+// `false` when they differ.
+func:dv_eq_stmt = string(int32:cls, string:a, string:b) never fails {
+    if (cls == (raw DVC_SIMD())) {
         pass (raw dvc5("if ((", a, " != ", b, ").any()) { pass false; }\n"));
     }
-    pass (raw dvc5("if (", a, " != ", b, ") { pass false; }\n"));
-};
-
-// THE ORDER OF TWO OPERANDS BY SPELLING (D-250): `<`/`>` for an operator
-// spelling; for a named type the method, with the three-way result passed
-// through when it is not `Equal` -- `Ordering?` under `PartialOrd`, where an
-// absent answer is the whole answer (`pass NIL`). `slot` names the locals.
-func:dv_cmp_stmt = string(Ast->:ast, InternTable->:interns, DeclNode:subject,
-                          TypeId:t, string:a, string:b, bool:partial,
-                          string:slot) never fails {
-    int32:sp = raw dv_spelling(ast, interns, subject, t);
-    if (sp == 1i32) {
-        if (partial) {
-            string:o = string_concat("dvo", slot);
-            string:v = string_concat("dvv", slot);
-            string:s1 = raw dvc5("Ordering?:", o, " = relay ", a, ".partial_cmp(");
-            string:s2 = raw dvc5(b, ");\nif (", o, " == NIL) { pass NIL; }\n", "");
-            string:s3 = raw dvc5("Ordering:", v, " = ", o, " ?? Ordering.Equal;\n");
-            string:s4 = raw dvc5("if (", v, " != Ordering.Equal) { pass ", v, "; }\n");
-            pass (raw dvc5(s1, s2, s3, s4, ""));
-        }
-        string:oo = string_concat("dvo", slot);
-        string:t1 = raw dvc5("Ordering:", oo, " = relay ", a, ".cmp(");
-        string:t2 = raw dvc5(b, ");\nif (", oo, " != Ordering.Equal) { pass ", oo);
-        pass (raw dvc3(t1, t2, "; }\n"));
+    if (cls == (raw DVC_POINTER())) {
+        pass (raw dvc5("if (", a, " != ", b, ") { pass false; }\n"));
     }
-    string:l1 = raw dvc5("if (", a, " < ", b, ") { pass Ordering.Less; }\n");
-    string:l2 = raw dvc5("if (", a, " > ", b, ") { pass Ordering.Greater; }\n");
-    pass (string_concat(l1, l2));
+    pass (raw dvc5("if (!(", raw dv_lic(cls, false), a, ".eq(",
+                   raw dvc3(b, "))) { pass false; }\n", "")));
 };
 
-// `(Enum.Variant(dv0_0, dv0_1))` -- the arm pattern binding a variant's payloads
-// for operand `op`; `(Enum.Variant)` when it carries none.
-func:dv_pattern = string(Ast->:ast, InternTable->:interns, string:tn, DeclNode:m,
+// THE ORDER OF TWO OPERANDS (D-258): the member's own `cmp`/`partial_cmp`
+// with its licence, the three-way result passed through when it is not
+// `Equal` -- `Ordering?` under `PartialOrd`, where an absent answer is the
+// whole answer (`pass NIL`). `slot` names the locals.
+func:dv_cmp_stmt = string(int32:cls, string:a, string:b, bool:partial,
+                          string:slot) never fails {
+    string:lic = raw dv_lic(cls, false);
+    if (partial) {
+        string:o = string_concat("dvo", slot);
+        string:v = string_concat("dvv", slot);
+        string:s1 = raw dvc5("Ordering?:", o, " = ", lic, a);
+        string:s2 = raw dvc5(".partial_cmp(", b, ");\nif (", o, " == NIL) { pass NIL; }\n");
+        string:s3 = raw dvc5("Ordering:", v, " = ", o, " ?? Ordering.Equal;\n");
+        string:s4 = raw dvc5("if (", v, " != Ordering.Equal) { pass ", v, "; }\n");
+        pass (raw dvc5(s1, s2, s3, s4, ""));
+    }
+    string:oo = string_concat("dvo", slot);
+    string:t1 = raw dvc5("Ordering:", oo, " = ", lic, a);
+    string:t2 = raw dvc5(".cmp(", b, ");\nif (", oo, " != Ordering.Equal) { pass ");
+    pass (raw dvc3(t1, t2, raw dvc3(oo, "; }\n", "")));
+};
+
+// THE CLONE OF ONE MEMBER (D-258): the member's own `clone` with its licence;
+// a pointer, a `simd` or an array of scalars is the plain value it is.
+func:dv_clone_of = string(int32:cls, string:a) never fails {
+    if (cls == (raw DVC_POINTER())) { pass (string_concat(a, "")); }
+    if (cls == (raw DVC_SIMD()))    { pass (string_concat(a, "")); }
+    if (cls == (raw DVC_ARRAY()))   { pass (string_concat(a, "")); }
+    pass (raw dvc3(raw dv_lic(cls, true), a, ".clone()"));
+};
+
+// `(Enum.Variant(dv0_0, dv0_1))` -- the arm pattern binding a variant's
+// payloads for operand `op`; `(Enum.Variant)` when it carries none. THE BARE
+// name (1.3.7's rule for a generic struct literal, applied to a variant): the
+// enum's arguments come from the scrutinee, never from the pattern.
+func:dv_pattern = string(Ast->:ast, InternTable->:interns, string:bare, DeclNode:m,
                          int32:op) never fails {
-    string:s = raw dvc5("(", tn, ".", raw intern_get(interns, raw decl_name(m)), "");
+    string:s = raw dvc5("(", bare, ".", raw intern_get(interns, raw decl_name(m)), "");
     int32:pc = raw variant_payload_count(m);
     if (pc == 0i32) { pass (string_concat(s, ")")); }
     s = string_concat(s, "(");
@@ -423,10 +621,7 @@ func:dv_pattern = string(Ast->:ast, InternTable->:interns, string:tn, DeclNode:m
 };
 
 // `impl:Point:Eq = { pub func:eq = bool(Point:self, Point:other) { … }; };`
-//
-// FIELD BY FIELD, IN DECLARATION ORDER, and by `!=` rather than by calling the
-// field's own `eq` — the language has the operator, and a derived implementation
-// that went through a trait would need `int32` to implement one.
+// FIELD BY FIELD, IN DECLARATION ORDER, each through its class (D-258).
 func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
                             string:tn, string:head) never fails {
     string:s = string_concat(head, tn);
@@ -441,11 +636,7 @@ func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            // BY SPELLING (D-250, 1.5.1b step 3b): a `simd` field's `!=` is a
-            // VERDICT VECTOR (D-194) and collapses with `.any()`; a named
-            // type compares through its own `eq`; everything else by the
-            // operator, as always.
-            s = string_concat(s, raw dv_eq_stmt(ast, interns, d, raw field_type(m),
+            s = string_concat(s, raw dv_eq_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
                                      string_concat("self.", f), string_concat("other.", f)));
         }
     }
@@ -479,9 +670,7 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            // BY SPELLING (D-250): a named type's field through its own
-            // `cmp`/`partial_cmp`, the rest by `<`/`>` as always.
-            s = string_concat(s, raw dv_cmp_stmt(ast, interns, d, raw field_type(m),
+            s = string_concat(s, raw dv_cmp_stmt(raw dv_class(ast, interns, d, raw field_type(m)),
                                      string_concat("self.", f), string_concat("other.", f),
                                      partial, int_to_string(i => int64)));
         }
@@ -492,15 +681,13 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // ORD / PARTIALORD ON AN ENUM ORDER BY TAG FIRST (D-123, 1.0.9d): `enum =>!
 // int32` reads a variant's tag (0.8.0), and the tag IS the declaration order —
 // so a later variant is greater. THEN, FOR EQUAL TAGS, THE PAYLOAD (D-250,
-// 1.5.1b step 3b): a `pick` over `self` per variant whose arm picks `other`
-// for the same variant and compares the bound payloads by spelling — until
-// this step a payload was not compared at all, and `Literal(7).cmp(Literal(9))`
-// was `Equal` (the workbench's DEF-4). A payload-less enum keeps the body it
-// always had, byte for byte. The same body serves `PartialOrd`: `pass
-// Ordering.Less` wraps into `Ordering?` (D-099), so a total order reads as an
-// always-present one.
+// 1.5.1b step 3b; D-258's classes): a `pick` over `self` per variant whose
+// arm picks `other` for the same variant and compares the bound payloads.
+// A payload-less enum keeps the body it always had, byte for byte. The same
+// body serves `PartialOrd`: `pass Ordering.Less` wraps into `Ordering?`
+// (D-099), so a total order reads as an always-present one.
 func:gen_cmp_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                           string:tn, bool:partial, string:head) never fails {
+                           string:tn, string:bare, bool:partial, string:head) never fails {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
@@ -530,17 +717,17 @@ func:gen_cmp_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
             if (m.kind == DeclKind.DeclEnumVariant) {
                 if (!first) { s = string_concat(s, ",\n"); }
                 first = false;
-                s = string_concat(s, raw dv_pattern(ast, interns, tn, m, 0i32));
+                s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
                 int32:pc = raw variant_payload_count(m);
                 if (pc == 0i32) {
                     s = string_concat(s, " { pass Ordering.Equal; }");
                 } else {
                     s = string_concat(s, " { pick (other) {\n");
-                    s = string_concat(s, raw dv_pattern(ast, interns, tn, m, 1i32));
+                    s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 1i32));
                     s = string_concat(s, " {\n");
                     for (int32:k in 0i32...pc) {
                         TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
-                        s = string_concat(s, raw dv_cmp_stmt(ast, interns, d, pt,
+                        s = string_concat(s, raw dv_cmp_stmt(raw dv_class(ast, interns, d, pt),
                                                  raw dv_bind(0i32, k), raw dv_bind(1i32, k), partial,
                                                  raw dvc3(int_to_string(i => int64), "_", int_to_string(k => int64))));
                     }
@@ -555,8 +742,8 @@ func:gen_cmp_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 
 // A DERIVED STRUCT HASH COMBINES ITS FIELDS' HASHES (D-123, FNV-1a): each field
 // mixes its own hash into the running one, so the whole is FNV-1a over the
-// parts. Every field type must be `Hash` — the prelude supplies the scalars, a
-// nested struct or enum supplies its own derived one.
+// parts -- each field through its class (D-258): the prelude's rows for a
+// scalar or a `string` (`raw`), a nested type's or a parameter's own (`relay`).
 func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
                               string:tn, string:head) never fails {
     string:s = string_concat(head, tn);
@@ -569,7 +756,9 @@ func:gen_hash_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            s = string_concat(s, "h = raw fnv_mix(h, raw self.");
+            s = string_concat(s, "h = raw fnv_mix(h, ");
+            s = string_concat(s, raw dv_lic(raw dv_class(ast, interns, d, raw field_type(m)), false));
+            s = string_concat(s, "self.");
             s = string_concat(s, f);
             s = string_concat(s, ".hash());\n");
         }
@@ -590,19 +779,92 @@ func:gen_hash_enum = string(string:tn, string:head) never fails {
         "pass (raw fnv_mix(raw fnv_offset(), t =>! uint64)); }; };\n"));
 };
 
-// `pass self` IS THE CLONE. A struct is a value; passing one is a copy, and the
-// prototype's derived `clone` is the same single statement.
-func:gen_clone = string(string:tn, string:head) never fails {
+// A DERIVED STRUCT CLONE IS MEMBER-WISE (D-258; closes DEF-17's `Clone` half
+// and DEF-18): `pass Subject{ f: <clone of f>, … }` -- every field listed,
+// the BARE literal for a generic subject (1.3.7: `Subject<T>{ … }` does not
+// parse), each member through its class. `pass self` was the body since
+// 0.6.5, and `pass self` of a lent owner is TYPE-047 inside `<derived-1>`
+// for a struct with a `string` field, and for `Box<string>` -- checked with
+// `T` opaque -- an ALIAS: two headers over one body, freed twice. A struct
+// with no fields keeps `pass self`: there is nothing to copy member-wise.
+func:gen_clone_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
+                               string:tn, string:bare, string:head) never fails {
     string:s = string_concat(head, tn);
     s = string_concat(s, ":Clone = { pub func:clone = ");
     s = string_concat(s, tn);
     s = string_concat(s, "(");
     s = string_concat(s, tn);
-    pass (string_concat(s, ":self) { pass self; }; };\n"));
+    s = string_concat(s, ":self) {\n");
+    int32:n = raw item_member_count(ast, d);
+    bool:has_field = false;
+    string:lit = string_concat(bare, "{ ");
+    bool:first = true;
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            has_field = true;
+            string:f = raw intern_get(interns, raw decl_name(m));
+            if (!first) { lit = string_concat(lit, ", "); }
+            first = false;
+            lit = string_concat(lit, raw dvc3(f, ": ",
+                      raw dv_clone_of(raw dv_class(ast, interns, d, raw field_type(m)),
+                                      string_concat("self.", f))));
+        }
+    }
+    if (!has_field) { pass (string_concat(s, "pass self; }; };\n")); }
+    pass (raw dvc5(s, "pass ", lit, " };", " }; };\n"));
+};
+
+// A DERIVED ENUM CLONE REBUILDS THE VARIANT (D-258): a `pick` per variant,
+// each payload through its class; a payload-less enum keeps `pass self`,
+// byte for byte (the tag is the value). An owning payload is refused before
+// this is written, as under `Eq` (the `pick` rule).
+func:gen_clone_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
+                             string:tn, string:bare, string:head) never fails {
+    string:s = string_concat(head, tn);
+    s = string_concat(s, ":Clone = { pub func:clone = ");
+    s = string_concat(s, tn);
+    s = string_concat(s, "(");
+    s = string_concat(s, tn);
+    if (!(raw dv_enum_has_payload(ast, d))) {
+        pass (string_concat(s, ":self) { pass self; }; };\n"));
+    }
+    s = string_concat(s, ":self) {\npick (self) {\n");
+    int32:n = raw item_member_count(ast, d);
+    bool:first = true;
+    for (int32:i in 0i32...n) {
+        DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if (!first) { s = string_concat(s, ",\n"); }
+            first = false;
+            s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
+            string:v = raw intern_get(interns, raw decl_name(m));
+            int32:pc = raw variant_payload_count(m);
+            if (pc == 0i32) {
+                s = string_concat(s, raw dvc5(" { pass ", bare, ".", v, "; }"));
+            } else {
+                s = string_concat(s, raw dvc5(" { pass ", bare, ".", v, "("));
+                for (int32:k in 0i32...pc) {
+                    if (k > 0i32) { s = string_concat(s, ", "); }
+                    TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
+                    s = string_concat(s, raw dv_clone_of(raw dv_class(ast, interns, d, pt),
+                                                         raw dv_bind(0i32, k)));
+                }
+                s = string_concat(s, "); }");
+            }
+        }
+    }
+    pass (string_concat(s, "\n}\n}; };\n"));
 };
 
 // `Point { x: &{self.x}, y: &{self.y} }`, built with interpolation (D-053) because
-// that is the only formatting mechanism the language has.
+// that is the only formatting mechanism the language has. `ToString` renders
+// every member by `&{ }`, which IS the member's `to_string` (a parameter's
+// through the `T: ToString` bound the head carries, a `string`'s as itself).
+// `Debug` renders a scalar, a named type or a parameter through its own
+// `debug` (D-258 -- the trait derived is the trait reached; until this step a
+// nested field rendered through its `ToString`), hoisted into locals so the
+// licence word sits outside the template; a `string` field renders as itself.
 func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
                                    string:tn, bool:dbg, string:head) never fails {
     string:tr = "ToString";
@@ -616,37 +878,43 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
     s = string_concat(s, mn);
     s = string_concat(s, " = string(");
     s = string_concat(s, tn);
-    s = string_concat(s, ":self) { pass `");
-    s = string_concat(s, tn);
-    s = string_concat(s, " { ");
+    s = string_concat(s, ":self) {\n");
 
+    string:body = string_concat("pass `", tn);
+    body = string_concat(body, " { ");
     int32:n = raw item_member_count(ast, d);
     bool:first = true;
     for (int32:i in 0i32...n) {
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, d, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             string:f = raw intern_get(interns, raw decl_name(m));
-            if (!first) { s = string_concat(s, ", "); }
+            if (!first) { body = string_concat(body, ", "); }
             first = false;
-            s = string_concat(s, f);
-            s = string_concat(s, ": &{self.");
-            s = string_concat(s, f);
-            s = string_concat(s, "}");
+            body = string_concat(body, f);
+            int32:cls = raw dv_class(ast, interns, d, raw field_type(m));
+            bool:own_debug = dbg;
+            if (cls == (raw DVC_STRING())) { own_debug = false; }
+            if (own_debug) {
+                string:loc = string_concat("dvs", int_to_string(i => int64));
+                s = string_concat(s, raw dvc5("string:", loc, " = ", raw dv_lic(cls, false),
+                                              raw dvc3("self.", f, ".debug();\n")));
+                body = string_concat(body, raw dvc3(": &{", loc, "}"));
+            } else {
+                body = string_concat(body, raw dvc3(": &{self.", f, "}"));
+            }
         }
     }
+    s = string_concat(s, body);
     pass (string_concat(s, " }`; }; };\n"));
 };
 
-// AN ENUM COMPARES BY `==` AND NOTHING ELSE. `<` on an enum is refused by the type
-// checker (measured), so ordering a variant would need its tag, which no operator
-// yields — that is why `Ord` on an enum is refused rather than generated.
 // EQ ON AN ENUM: the tag first, then the payloads of equal tags (D-250,
-// 1.5.1b step 3b) -- `self == other` alone is what a payload-less enum has
-// always compiled to and keeps, byte for byte; an enum with a payload has no
-// built-in `==` (TYPE-034 inside `<derived-1>` until this step), so the body
-// is a `pick` per variant comparing the bound payloads by spelling.
+// 1.5.1b step 3b; D-258's classes) -- `self == other` alone is what a
+// payload-less enum has always compiled to and keeps, byte for byte; an enum
+// with a payload has no built-in `==`, so the body is a `pick` per variant
+// comparing the bound payloads.
 func:gen_eq_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                          string:tn, string:head) never fails {
+                          string:tn, string:bare, string:head) never fails {
     string:s = string_concat(head, tn);
     s = string_concat(s, ":Eq = { pub func:eq = bool(");
     s = string_concat(s, tn);
@@ -665,17 +933,17 @@ func:gen_eq_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         if (m.kind == DeclKind.DeclEnumVariant) {
             if (!first) { s = string_concat(s, ",\n"); }
             first = false;
-            s = string_concat(s, raw dv_pattern(ast, interns, tn, m, 0i32));
+            s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 0i32));
             int32:pc = raw variant_payload_count(m);
             if (pc == 0i32) {
                 s = string_concat(s, " { pass true; }");
             } else {
                 s = string_concat(s, " { pick (other) {\n");
-                s = string_concat(s, raw dv_pattern(ast, interns, tn, m, 1i32));
+                s = string_concat(s, raw dv_pattern(ast, interns, bare, m, 1i32));
                 s = string_concat(s, " {\n");
                 for (int32:k in 0i32...pc) {
                     TypeId:pt = TypeId{ index: raw ast_id_at(ast, raw variant_payload_start(m), k) };
-                    s = string_concat(s, raw dv_eq_stmt(ast, interns, d, pt,
+                    s = string_concat(s, raw dv_eq_stmt(raw dv_class(ast, interns, d, pt),
                                              raw dv_bind(0i32, k), raw dv_bind(1i32, k)));
                 }
                 s = string_concat(s, "pass true; },\n(*) { pass false; } } }");
@@ -692,7 +960,7 @@ func:gen_eq_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // NOT `&{self}`: interpolation is what CALLS `to_string`, so a body built out of it
 // would call itself.
 func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                 string:tn, bool:dbg, string:head) never fails {
+                                 string:tn, string:bare, bool:dbg, string:head) never fails {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
@@ -716,12 +984,12 @@ func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
         if (m.kind == DeclKind.DeclEnumVariant) {
             string:v = raw intern_get(interns, raw decl_name(m));
             s = string_concat(s, "(");
-            s = string_concat(s, tn);
+            s = string_concat(s, bare);
             s = string_concat(s, ".");
             s = string_concat(s, v);
             s = string_concat(s, ") { pass \"");
             if (dbg) {
-                s = string_concat(s, tn);
+                s = string_concat(s, bare);
                 s = string_concat(s, ".");
             }
             s = string_concat(s, v);
@@ -845,22 +1113,17 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                          DeclNode:d, DeriveSet:want, bool:is_enum) never fails {
     string:bare = raw intern_get(interns, raw decl_name(d));
 
-    // A GENERIC SUBJECT DERIVES THE FAMILY FORM (D-161, 1.0.4c). `#[derive(Eq)]`
-    // on `struct:Box<T>` used to synthesize `impl:Box:Eq` — the bare
-    // declaration with no arguments — and the author was shown three
-    // "generic arity" errors pointing at `<derived-1>`, source they never
-    // wrote. Now it writes `impl:<T>:Box<T>:Eq`, which is what a person would
-    // write, and which family impls made real at 1.0.4b.
-    //
-    // NO BOUND IS SYNTHESIZED. `T: Eq` looks right and is not needed: the
-    // generated body compares fields with the OPERATOR (`!=`), never by calling
-    // a trait method, so what it requires of `T` is what the operator requires
-    // — the same rule that let a derived `Eq` work on an `int32` field, which
-    // implements no trait at all. Writing a bound would refuse
-    // `Box<int32>` for failing to implement a trait its own field type does not
-    // implement either.
+    // A GENERIC SUBJECT DERIVES THE FAMILY FORM (D-161, 1.0.4c): `impl:<T>:Box<T>:Eq`,
+    // which is what a person would write. THE BOUND IS SYNTHESIZED (D-258,
+    // 1.5.2b step 3, ending D-161's no-bound story): `dv_head` writes `: X`
+    // on exactly the parameters a member the body reaches through X mentions,
+    // per derive -- `impl:<A: Eq, B: Eq>:Pair<A, B>:Eq` -- so `Box<Point>`
+    // needs `Point: Eq` at the FRONTEND (D-256 asks it where the impl is
+    // used) instead of an `!=` on an opaque `T` that the emitter met at
+    // `Box<Point>` and could not lower (DEF-16). `tn` is the type as the
+    // signatures spell it (`Box<T>`); `bare` is the name a literal, a pattern
+    // or a constructor uses (1.3.7).
     string:tn = string_concat(bare, "");
-    string:head = "impl:";
     IdSpan:gw = raw decl_generic_window(ast, d);
     if (gw.count > 0i32) {
         string:params = "<";
@@ -875,18 +1138,22 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
         }
         params = string_concat(params, ">");
         tn = string_concat(bare, params);
-        head = string_concat("impl:", string_concat(params, ":"));
     }
 
     string:s = "";
 
     if (raw derive_wants(want, raw DERIVE_CLONE())) {
-        s = string_concat(s, raw gen_clone(tn, head));
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_CLONE(), "Clone")) {
+            string:hc = raw dv_head(ast, interns, d, is_enum, raw DERIVE_CLONE(), "Clone");
+            if (is_enum) { s = string_concat(s, raw gen_clone_enum(ast, interns, d, tn, bare, hc)); }
+            else { s = string_concat(s, raw gen_clone_struct(ast, interns, d, tn, bare, hc)); }
+        }
     }
     if (raw derive_wants(want, raw DERIVE_EQ())) {
-        if (raw dv_comparable(ast, interns, diags, d, is_enum, "Eq")) {
-            if (is_enum) { s = string_concat(s, raw gen_eq_enum(ast, interns, d, tn, head)); }
-            else { s = string_concat(s, raw gen_eq_struct(ast, interns, d, tn, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_EQ(), "Eq")) {
+            string:he = raw dv_head(ast, interns, d, is_enum, raw DERIVE_EQ(), "Eq");
+            if (is_enum) { s = string_concat(s, raw gen_eq_enum(ast, interns, d, tn, bare, he)); }
+            else { s = string_concat(s, raw gen_eq_struct(ast, interns, d, tn, he)); }
         }
     }
     // THE FIVE DERIVES A `simd` FIELD REFUSES (D-194): an order over a
@@ -901,8 +1168,11 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 "`ToString` cannot be derived over a `simd` field (D-194): a vector has no built-in rendering — write the impl and say what the lanes mean",
                 d.span));
         } else {
-        if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, false, head)); }
-        else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, false, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_TO_STRING(), "ToString")) {
+            string:ht = raw dv_head(ast, interns, d, is_enum, raw DERIVE_TO_STRING(), "ToString");
+            if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, bare, false, ht)); }
+            else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, false, ht)); }
+        }
         }
     }
     if (raw derive_wants(want, raw DERIVE_DEBUG())) {
@@ -911,8 +1181,11 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 "`Debug` cannot be derived over a `simd` field (D-194): a vector has no built-in rendering — write the impl and say what the lanes mean",
                 d.span));
         } else {
-        if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, true, head)); }
-        else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, true, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_DEBUG(), "Debug")) {
+            string:hd = raw dv_head(ast, interns, d, is_enum, raw DERIVE_DEBUG(), "Debug");
+            if (is_enum) { s = string_concat(s, raw gen_to_string_enum(ast, interns, d, tn, bare, true, hd)); }
+            else { s = string_concat(s, raw gen_to_string_struct(ast, interns, d, tn, true, hd)); }
+        }
         }
     }
 
@@ -927,9 +1200,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 "`Ord` cannot be derived over a `simd` field (D-194): an order over a vector has no scalar verdict — write the impl and say which order you mean",
                 d.span));
         } else {
-        if (raw dv_comparable(ast, interns, diags, d, is_enum, "Ord")) {
-            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, false, head)); }
-            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, false, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_ORD(), "Ord")) {
+            string:ho = raw dv_head(ast, interns, d, is_enum, raw DERIVE_ORD(), "Ord");
+            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, bare, false, ho)); }
+            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, false, ho)); }
         }
         }
     }
@@ -939,9 +1213,10 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 "`PartialOrd` cannot be derived over a `simd` field (D-194): an order over a vector has no scalar verdict — write the impl and say which order you mean",
                 d.span));
         } else {
-        if (raw dv_comparable(ast, interns, diags, d, is_enum, "PartialOrd")) {
-            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, true, head)); }
-            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, true, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_PARTIAL_ORD(), "PartialOrd")) {
+            string:hp = raw dv_head(ast, interns, d, is_enum, raw DERIVE_PARTIAL_ORD(), "PartialOrd");
+            if (is_enum) { s = string_concat(s, raw gen_cmp_enum(ast, interns, d, tn, bare, true, hp)); }
+            else { s = string_concat(s, raw gen_cmp_struct(ast, interns, d, tn, true, hp)); }
         }
         }
     }
@@ -952,8 +1227,11 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                 "`Hash` cannot be derived over a `simd` field (D-194): the lanes have no built-in hash — write the impl and fold them deliberately",
                 d.span));
         } else {
-        if (is_enum) { s = string_concat(s, raw gen_hash_enum(tn, head)); }
-        else { s = string_concat(s, raw gen_hash_struct(ast, interns, d, tn, head)); }
+        if (raw dv_admissible(ast, interns, diags, d, is_enum, raw DERIVE_HASH(), "Hash")) {
+            string:hh = raw dv_head(ast, interns, d, is_enum, raw DERIVE_HASH(), "Hash");
+            if (is_enum) { s = string_concat(s, raw gen_hash_enum(tn, hh)); }
+            else { s = string_concat(s, raw gen_hash_struct(ast, interns, d, tn, hh)); }
+        }
         }
     }
     pass s;

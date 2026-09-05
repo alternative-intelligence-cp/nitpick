@@ -19,3 +19,22 @@ struct:Row = { int32[4]:cells; int32:n; };
 // expect-error-at: 20:1
 #[derive(PartialOrd)]
 struct:Bag = { List<int32>:items; };
+
+// THE RULE IS EVERY DERIVE'S (D-258, 1.5.2b step 3): a `Clone` cannot rebuild
+// an owning payload it cannot bind; a pointer has identity and nothing else,
+// so `Hash` over one refuses (`Eq` and `Clone` derive over it); an `Optional`
+// field is a spelling no derived body can be written for.
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 29:1
+#[derive(Clone)]
+enum:Owned = { Text(string); Quit; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 34:1
+#[derive(Hash)]
+struct:Ref = { int32->:p; };
+
+// expect-error: NITPICK-DERIVE-006
+// expect-error-at: 39:1
+#[derive(Eq)]
+struct:Maybe = { int32?:m; };
