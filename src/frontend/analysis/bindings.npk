@@ -466,15 +466,24 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         // bitmap check (the S-2 finding, whose stated diagnosis — a
         // straight-line analysis missing a LOOP — was the wrong half: the loop
         // machinery has been right since 0.5.3 and the parameter was invisible).
-        AssignState:st = raw state_new((raw ast_stmt_count(x.ast))
-                                       + (raw ast_decl_count(x.ast)));
+        //
+        // SIZED BY THE FUNCTION (1.5.2d, D-262 §2): the resolver numbered this
+        // function's parameters and locals densely as it declared them
+        // (`SymbolTable.local_ord`) and recorded the total on the declaration;
+        // the slot space is that numbering. From 0.5.3 to 1.5.2d the state was
+        // sized by every statement and declaration in the PROGRAM — seven
+        // arrays of tens of thousands of bytes, copied at every branch of
+        // every function, 57% of a floor-only program's compile once the
+        // prelude carried D-257's impls. A slot is −1 for a symbol the
+        // numbering does not cover, exactly as before.
+        AssignState:st = raw state_new(raw symtab_fn_slots(x.tab, id.index));
         // ...and a parameter IS assigned before the body starts, always, which
         // is the half the old comment had right. Marked here so a read of one
-        // is not suddenly a read of the unassigned.
+        // is not suddenly a read of the unassigned. Parameters are numbered
+        // FIRST, in declaration order, so the ordinal is the index.
         int32:ps = 0i32;
         while (ps < (raw fn_param_count(x.ast, d))) {
-            drop state_mark(st, (raw ast_stmt_count(x.ast))
-                                + (raw fn_param(x.ast, d, ps)).index);
+            drop state_mark(st, ps);
             ps = ps + 1i32;
         }
         drop assign_stmt(x, st, body, raw ASSIGN_DEPTH());
@@ -640,7 +649,8 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         ExprId:init = raw stmt_decl_init(x.ast, s);
         if (raw expr_is_none(init)) { pass NIL; }
         drop assign_expr(x, st, init, d);
-        drop state_mark(st, id.index);
+        // The declaring statement's slot, through the resolver's ordinal (1.5.2d).
+        drop state_mark(st, raw symtab_stmt_ord(x.tab, id.index));
         pass NIL;
     }
 
@@ -1057,9 +1067,10 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
     // the branch, and `must` says nothing about it.
     StmtId:decl = StmtId{ index: sym.origin };
     StmtNode:dnode = raw ast_stmt(x.ast, decl);
+    int32:dslot = raw symtab_stmt_ord(x.tab, sym.origin);   // the ordinal, not the statement (1.5.2d)
     if (dnode.kind == StmtKind.StmtVarDeclStmt) {
         if (((raw stmt_quals(x.ast, dnode)) & (raw QUAL_FIXED())) != 0i32) {
-            if (raw state_may(st, sym.origin)) {
+            if (raw state_may(st, dslot)) {
                 drop assign_err(x, raw ASSIGN_IMMUTABLE(),
                     "a `fixed` binding is assigned once and this may be the second time; drop `fixed` if it is meant to change",
                     tn.span);
@@ -1067,7 +1078,7 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
         }
     }
 
-    drop state_mark(st, sym.origin);
+    drop state_mark(st, dslot);
     pass NIL;
 };
 
@@ -1270,7 +1281,7 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     if (n.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, n.a);
 
-    int32:rs = raw symbol_slot(x, s);
+    int32:rs = raw symbol_slot(x, n.a);
     if (rs < 0i32) { pass NIL; }
 
     // MOVED OR FREED IS REPORTED FIRST, because it is the more specific answer to
@@ -1331,7 +1342,7 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
         pass NIL;
     }
     if (rn.a == 0i32) { pass NIL; }
-    drop state_mark(st, raw symbol_slot(x, raw symtab_get(x.tab, rn.a)));
+    drop state_mark(st, raw symbol_slot(x, rn.a));
     pass NIL;
 };
 
@@ -1466,7 +1477,7 @@ func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
-    int32:ms = raw symbol_slot(x, raw symtab_get(x.tab, rn.a));
+    int32:ms = raw symbol_slot(x, rn.a);
     if (ms < 0i32) { pass NIL; }
 
     if (freed) {
@@ -1617,7 +1628,7 @@ func:binding_slot = int32(Assign->:x, ExprId:place) never fails {
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (0i32 - 1i32); }
     if (rn.a == 0i32) { pass (0i32 - 1i32); }
-    pass (raw symbol_slot(x, raw symtab_get(x.tab, rn.a)));
+    pass (raw symbol_slot(x, rn.a));
 };
 
 // THE SLOT A SYMBOL OCCUPIES, or −1 for one this analysis does not track.
@@ -1628,14 +1639,21 @@ func:binding_slot = int32(Assign->:x, ExprId:place) never fails {
 // four quietly excluded parameters from a rule that should always have covered
 // them (1.4.3). One resolver now, so a fifth rule cannot make the same mistake
 // a fifth time.
-pub func:symbol_slot = int32(Assign->:x, Symbol:s) never fails {
-    if (s.origin_kind == (raw SYM_STMT())) { pass s.origin; }
+//
+// THE SLOT IS THE RESOLVER'S ORDINAL (1.5.2d, D-262 §2), dense within the
+// function, for the two kinds this analysis tracks — a local (`SYM_STMT`) and a
+// parameter; every other symbol is −1, as before. Takes the symbol ID, since
+// the ordinal is looked up by it.
+pub func:symbol_slot = int32(Assign->:x, int32:sym) never fails {
+    if (sym <= 0i32) { pass (0i32 - 1i32); }
+    Symbol:s = raw symtab_get(x.tab, sym);
+    if (s.origin_kind == (raw SYM_STMT())) { pass (raw symtab_local_ord(x.tab, sym)); }
     // A parameter's symbol is a `SYM_DECL` like a function's or a struct's, so
     // the kind alone does not identify one — the DECLARATION's kind does.
     if (s.origin_kind == (raw SYM_DECL())) {
         DeclNode:pd = raw ast_decl(x.ast, DeclId{ index: s.origin });
         if (pd.kind == DeclKind.DeclParamDecl) {
-            pass ((raw ast_stmt_count(x.ast)) + s.origin);
+            pass (raw symtab_local_ord(x.tab, sym));
         }
     }
     pass (0i32 - 1i32);

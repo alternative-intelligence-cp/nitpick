@@ -258,6 +258,15 @@ pub struct:TypeTable = {
     // shared `unit_count` is gone.
     List<int32>:unit_decls;
     List<int64>:unit_vecs;
+
+    // THE INDEX (1.5.2d, D-262 §2): open addressing over `tt_intern`'s key —
+    // kind, the three operand slots and the name, and deliberately not the
+    // size, exactly as the scan it replaced compared — in a power-of-two table
+    // of type ids, −1 empty, rebuilt at half load. `tt_intern` walked every
+    // type for every intern until 1.5.2d (13% of a floor-only program's
+    // compile); a type's identity is still what it IS, found in one probe.
+    List<int32>:index;
+    int32:index_mask;
 };
 
 // --- construction ----------------------------------------------------------------------
@@ -273,26 +282,77 @@ func:tt_id = int32(int64:n) never fails {
 
 // THE INTERNING. A type already present returns its existing index, which is what
 // makes equality an integer compare everywhere else.
+// THE KEY'S HASH (1.5.2d): the five fields through the tree's own FNV step
+// (`intern.npk`: wide product, narrowed — D-210 traps nothing here). A
+// negative field hashes as its two's-complement pattern; any deterministic
+// mapping serves, and this one is the same on every run.
+func:tt_hash = int64(int32:kind, int32:a, int32:b, int32:c, int32:name) never fails {
+    uint64:h = raw fnv1a_seed();
+    h = raw fnv1a_step(h, kind =>! uint64);
+    h = raw fnv1a_step(h, a =>! uint64);
+    h = raw fnv1a_step(h, b =>! uint64);
+    h = raw fnv1a_step(h, c =>! uint64);
+    h = raw fnv1a_step(h, name =>! uint64);
+    pass (h =>! int64);
+};
+
+// THE TABLE, EMPTIED TO A CAPACITY (a power of two, at least 16): every slot −1.
+func:tt_index_reset = NIL(TypeTable->:t, int64:cap) never fails {
+    int64:c = 16i64;
+    while (c < cap) { c = c * 2i64; }
+    t.index.count = 0i64;   // an int32 list: truncating drops nothing
+    drop list_reserve(@t.index, c);
+    int64:i = 0i64;
+    while (i < c) { drop list_push(@t.index, 0i32 - 1i32); i = i + 1i64; }
+    t.index_mask = (c - 1i64) =>! int32;
+    pass NIL;
+};
+
+// The slot a key lives in, or the empty slot it would take: linear probing
+// under the mask. The caller compares the entry it finds.
+func:tt_index_slot = int64(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
+                           int32:name) never fails {
+    int64:mask = t.index_mask => int64;
+    int64:slot = (raw tt_hash(kind, a, b, c, name)) & mask;
+    bool:searching = true;
+    while (searching) {
+        int32:e = t.index.items[slot];
+        if (e < 0i32) { searching = false; }
+        else {
+            Type:x = t.items.items[e => int64];
+            if (x.kind == kind) { if (x.a == a) { if (x.b == b) { if (x.c == c) {
+                if (x.name == name) { searching = false; }
+            } } } }
+            if (searching) { slot = (slot + 1i64) & mask; }
+        }
+    }
+    pass slot;
+};
+
+// AT HALF LOAD THE TABLE DOUBLES and every type is re-entered from `items`.
+func:tt_index_grow_if_needed = NIL(TypeTable->:t) never fails {
+    int64:cap = t.index.count;
+    if (((t.items.count + 1i64) * 2i64) <= cap) { pass NIL; }
+    drop tt_index_reset(t, cap * 2i64);
+    int64:i = 0i64;
+    while (i < t.items.count) {
+        Type:x = t.items.items[i];
+        int64:slot = raw tt_index_slot(t, x.kind, x.a, x.b, x.c, x.name);
+        t.index.items[slot] = i =>! int32;
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
 pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
                            int64:size, int32:align, int32:name) never fails {
-    // The dedup counter KEEPS int32: it already is the id this returns, and
-    // D-210 traps its increment. Only the comparison widens -- `=>`, lossless.
-    int32:i = 0i32;
-    while ((i => int64) < t.items.count) {
-        Type:e = t.items.items[i => int64];
-        if (e.kind == kind) {
-            if (e.a == a) {
-                if (e.b == b) {
-                    if (e.c == c) {
-                        if (e.name == name) {
-                            pass i;
-                        }
-                    }
-                }
-            }
-        }
-        i = i + 1i32;
-    }
+    // ONE PROBE (1.5.2d, D-262 §2) where a scan of every type stood: the key is
+    // what the scan compared, kind and the three operand slots and the name —
+    // never the size, for the reason `tt_set_layout`'s comment gives.
+    drop tt_index_grow_if_needed(t);
+    int64:slot = raw tt_index_slot(t, kind, a, b, c, name);
+    int32:found = t.index.items[slot];
+    if (found >= 0i32) { pass found; }
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
     int32:id = raw tt_id(t.items.count);   // BEFORE the push
@@ -305,6 +365,7 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
     drop list_push(@t.hasshared, 0i32);
+    t.index.items[slot] = id;
     pass id;
 };
 
@@ -1270,8 +1331,11 @@ pub func:typetable_init = TypeTable() never fails {
         hasborrow: raw list_init::<int32>(n),
         hasshared: raw list_init::<int32>(n),
         unit_decls: raw list_init::<int32>(16i64),
-        unit_vecs: raw list_init::<int64>(16i64)
+        unit_vecs: raw list_init::<int64>(16i64),
+        index: raw list_init::<int32>(256i64),
+        index_mask: 0i32
     };
+    drop tt_index_reset(@t, 256i64);
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this
     // compiler: a type that failed to resolve is a value rather than an absence,

@@ -18,6 +18,14 @@ error:ProvenSlice;
 
 pub struct:InternTable = {
     List<string>:v;
+
+    // THE INDEX (1.5.2d, D-262 §2): open addressing over the text's FNV-1a
+    // hash in a power-of-two table of intern ids, −1 empty, rebuilt at half
+    // load. `intern_add` compared every interned string at every identifier
+    // the lexer met until 1.5.2d — a scan inside the lexer's 12% of a
+    // floor-only program's compile.
+    List<int32>:index;
+    int32:index_mask;
 };
 
 // Written here rather than added to the runtime floor: it is ordinary Nitpick
@@ -59,7 +67,10 @@ pub func:name_lt = bool(string:a, string:b) never fails {
 };
 
 pub func:intern_init = InternTable() never fails {
-    InternTable:t = InternTable{ v: raw list_init::<string>(64i64) };
+    InternTable:t = InternTable{ v: raw list_init::<string>(64i64),
+                                 index: raw list_init::<int32>(512i64),
+                                 index_mask: 0i32 };
+    drop intern_index_reset(@t, 512i64);
     // INDEX 0 IS RESERVED for the empty string, the same convention the AST node
     // arrays use for their NONE node -- and for the same reason. An AST node
     // records an optional name as an intern index, and without a reserved zero
@@ -94,16 +105,59 @@ func:intern_id = int32(int64:n) never fails {
 // — an already-interned string is NOT stored, and the transferred value is
 // dropped at this function's exit like any owned local. That is correct: the
 // caller gave it up, and the table already has an equal one.
-pub func:intern_add = int32(InternTable->:t, move string:text) never fails {
+// THE TABLE, EMPTIED TO A CAPACITY (a power of two, at least 16): every slot −1.
+func:intern_index_reset = NIL(InternTable->:t, int64:cap) never fails {
+    int64:c = 16i64;
+    while (c < cap) { c = c * 2i64; }
+    t.index.count = 0i64;   // an int32 list: truncating drops nothing
+    drop list_reserve(@t.index, c);
+    int64:i = 0i64;
+    while (i < c) { drop list_push(@t.index, 0i32 - 1i32); i = i + 1i64; }
+    t.index_mask = (c - 1i64) =>! int32;
+    pass NIL;
+};
+
+// The slot a text lives in, or the empty slot it would take: linear probing
+// under the mask, the text compared on every occupied slot met.
+func:intern_index_slot = int64(InternTable->:t, string:text) never fails {
+    int64:mask = t.index_mask => int64;
+    int64:slot = ((raw fnv1a_bytes(text, raw fnv1a_seed())) =>! int64) & mask;
+    bool:searching = true;
+    while (searching) {
+        int32:e = t.index.items[slot];
+        if (e < 0i32) { searching = false; }
+        else {
+            if (raw string_eq(t.v.items[e => int64], text)) { searching = false; }
+            else { slot = (slot + 1i64) & mask; }
+        }
+    }
+    pass slot;
+};
+
+// AT HALF LOAD THE TABLE DOUBLES and every string is re-entered from `v`.
+func:intern_index_grow_if_needed = NIL(InternTable->:t) never fails {
+    int64:cap = t.index.count;
+    if (((t.v.count + 1i64) * 2i64) <= cap) { pass NIL; }
+    drop intern_index_reset(t, cap * 2i64);
     int64:i = 0i64;
     while (i < t.v.count) {
-        if (raw string_eq(t.v.items[i], text)) {
-            pass (raw intern_id(i));
-        }
+        int64:slot = raw intern_index_slot(t, t.v.items[i]);
+        t.index.items[slot] = i =>! int32;
         i = i + 1i64;
     }
+    pass NIL;
+};
+
+pub func:intern_add = int32(InternTable->:t, move string:text) never fails {
+    // ONE PROBE (1.5.2d, D-262 §2) where a scan with a string comparison per
+    // interned string stood.
+    drop intern_index_grow_if_needed(t);
+    int64:slot = raw intern_index_slot(t, text);
+    int32:found = t.index.items[slot];
+    if (found >= 0i32) { pass found; }
     int32:index = raw intern_id(t.v.count);
     drop list_push(@t.v, move(text));
+    t.index.items[slot] = index;
     pass index;
 };
 

@@ -73,6 +73,12 @@ pub struct:Resolver = {
     // `ecount` is gone.
     List<int32>:ecodes;
     List<int32>:edecls;
+
+    // THE NEXT SLOT ORDINAL in the function being resolved (1.5.2d, D-262
+    // §2): reset at a function's entry, handed to each parameter and then to
+    // each local as it is declared, and recorded as the function's total when
+    // its body is done. See `SymbolTable.local_ord`.
+    int32:local_next;
 };
 
 pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
@@ -82,7 +88,8 @@ pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                            caller_scope: 0i32,
                            in_prelude: false, module_name: 0i32,
                            ecodes: raw list_init::<int32>(16i64),
-                           edecls: raw list_init::<int32>(16i64) };
+                           edecls: raw list_init::<int32>(16i64),
+                           local_next: 0i32 };
     pass r;
 };
 
@@ -348,8 +355,14 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
         // The declaration's `limit<Rule>` names a `Rules` block (1.5.1,
         // D-220) — resolved like any other name, from this scope.
         drop resolve_limit(r, raw stmt_decl_limit(r.ast, s), scope);
-        discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
-                            raw SYM_STMT(), id.index, 0i32));
+        int32:vsym = raw symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
+                                        raw SYM_STMT(), id.index, 0i32);
+        // Its slot ordinal in the enclosing function (1.5.2d, D-262 §2).
+        if (vsym > 0i32) {
+            drop symtab_set_local_ord(r.tab, vsym, r.local_next);
+            drop symtab_set_stmt_ord(r.tab, id.index, r.local_next);
+            r.local_next = r.local_next + 1i32;
+        }
         pass NIL;
     }
 
@@ -558,6 +571,13 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
         int32:fn = raw scope_open(r.tab, scope, raw SCOPE_FUNCTION());
+        // THE SLOT NUMBERING STARTS HERE (1.5.2d, D-262 §2): parameters first,
+        // in declaration order, then every local the body declares; the total
+        // is recorded on the declaration when the body is done. Saved and
+        // restored around the function so a declaration resolved from inside
+        // one (none exists today) could not disturb its numbering.
+        int32:saved_next = r.local_next;
+        r.local_next = 0i32;
 
         int32:g = 0i32;
         while (g < (raw fn_generic_count(r.ast, d))) {
@@ -572,8 +592,12 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         while (pi < (raw fn_param_count(r.ast, d))) {
             DeclId:pd = raw fn_param(r.ast, d, pi);
             DeclNode:pn = raw ast_decl(r.ast, pd);
-            discard(raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
-                                raw SYM_DECL(), pd.index, 0i32));
+            int32:psym = raw symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
+                                            raw SYM_DECL(), pd.index, 0i32);
+            if (psym > 0i32) {
+                drop symtab_set_local_ord(r.tab, psym, r.local_next);
+                r.local_next = r.local_next + 1i32;
+            }
             // A parameter's `limit<Rule>` names a `Rules` block (1.5.1,
             // D-220), looked up from the function's own scope.
             drop resolve_limit(r, raw param_limit(pn), fn);
@@ -594,6 +618,8 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) never fails {
         }
 
         drop resolve_stmt(r, raw fn_body(r.ast, d), fn);
+        drop symtab_set_fn_slots(r.tab, id.index, r.local_next);
+        r.local_next = saved_next;
         pass NIL;
     }
 

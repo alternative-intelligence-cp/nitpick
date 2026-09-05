@@ -120,6 +120,23 @@ pub struct:SymbolTable = {
     // caller's DeclId is the index. See `symtab_set_home`.
     List<int32>:decl_home;
 
+    // A FUNCTION'S SLOT NUMBERING (1.5.2d, D-262 §2). The resolver gives each
+    // of a function's parameters, then each of its locals, a dense ordinal as
+    // it declares them (`local_ord`, sparse by SYMBOL id, −1 for a symbol that
+    // has none), and records the function's total on its declaration
+    // (`fn_slots`, sparse by DeclId, 0 for a declaration that is not a
+    // function). The bindings analysis sizes its per-function state by that
+    // total. From 0.5.3 to 1.5.2d it sized the state by every statement and
+    // declaration IN THE PROGRAM and copied that at every branch of every
+    // function — 57% of a floor-only program's compile once the prelude
+    // carried D-257's 348 impls.
+    List<int32>:local_ord;
+    List<int32>:fn_slots;
+    // ...and the same ordinal by the local's DECLARING STATEMENT (sparse by
+    // StmtId, −1 absent), for the two analysis sites that hold the statement
+    // and not the symbol: the declaration's own marking, and a `fixed` check.
+    List<int32>:stmt_ord;
+
     // THE LIST MODULE'S SCOPE (D-247, 1.5.1b step 5), or 0: the file module
     // named `list`, whose `struct:List<T>` the compiler knows as OWNING. The
     // loader records it; the layout and the drop generator ask. Keyed on the
@@ -135,6 +152,9 @@ pub func:symtab_init = SymbolTable() never fails {
         syms:   raw list_init::<Symbol>(n),
         scopes: raw list_init::<Scope>(n),
         decl_home: raw list_init::<int32>(256i64),
+        local_ord: raw list_init::<int32>(256i64),
+        fn_slots: raw list_init::<int32>(256i64),
+        stmt_ord: raw list_init::<int32>(256i64),
         prelude_scope: 0i32
     };
 
@@ -227,6 +247,64 @@ func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) never fails
         t.decl_home.items[decl => int64] = scope;
     }
     pass NIL;
+};
+
+// A SYMBOL'S SLOT ORDINAL within its function (1.5.2d, D-262 §2), written by
+// the resolver as it declares parameters and locals; −1 for a symbol that has
+// none. Sparse by symbol id in `decl_home`'s shape; the fill value is −1, since
+// 0 is a valid ordinal.
+pub func:symtab_set_local_ord = NIL(SymbolTable->:t, int32:sym, int32:ord) never fails {
+    if (sym <= 0i32) { pass NIL; }
+    int64:want = (sym => int64) + 1i64;
+    if (t.local_ord.count < want) {
+        drop list_reserve(@t.local_ord, want - t.local_ord.count);
+        while (t.local_ord.count < want) { drop list_push(@t.local_ord, 0i32 - 1i32); }
+    }
+    t.local_ord.items[sym => int64] = ord;
+    pass NIL;
+};
+
+pub func:symtab_local_ord = int32(SymbolTable->:t, int32:sym) never fails {
+    if (sym <= 0i32) { pass (0i32 - 1i32); }
+    if ((sym => int64) >= t.local_ord.count) { pass (0i32 - 1i32); }
+    pass t.local_ord.items[sym => int64];
+};
+
+pub func:symtab_set_stmt_ord = NIL(SymbolTable->:t, int32:stmt, int32:ord) never fails {
+    if (stmt <= 0i32) { pass NIL; }
+    int64:want = (stmt => int64) + 1i64;
+    if (t.stmt_ord.count < want) {
+        drop list_reserve(@t.stmt_ord, want - t.stmt_ord.count);
+        while (t.stmt_ord.count < want) { drop list_push(@t.stmt_ord, 0i32 - 1i32); }
+    }
+    t.stmt_ord.items[stmt => int64] = ord;
+    pass NIL;
+};
+
+pub func:symtab_stmt_ord = int32(SymbolTable->:t, int32:stmt) never fails {
+    if (stmt <= 0i32) { pass (0i32 - 1i32); }
+    if ((stmt => int64) >= t.stmt_ord.count) { pass (0i32 - 1i32); }
+    pass t.stmt_ord.items[stmt => int64];
+};
+
+// A FUNCTION'S SLOT COUNT — its parameters plus its locals — recorded when its
+// body has been resolved; 0 for a declaration that is not a function or has no
+// body.
+pub func:symtab_set_fn_slots = NIL(SymbolTable->:t, int32:decl, int32:n) never fails {
+    if (decl < 0i32) { pass NIL; }
+    int64:want = (decl => int64) + 1i64;
+    if (t.fn_slots.count < want) {
+        drop list_reserve(@t.fn_slots, want - t.fn_slots.count);
+        while (t.fn_slots.count < want) { drop list_push(@t.fn_slots, 0i32); }
+    }
+    t.fn_slots.items[decl => int64] = n;
+    pass NIL;
+};
+
+pub func:symtab_fn_slots = int32(SymbolTable->:t, int32:decl) never fails {
+    if (decl < 0i32) { pass 0i32; }
+    if ((decl => int64) >= t.fn_slots.count) { pass 0i32; }
+    pass t.fn_slots.items[decl => int64];
 };
 
 // The scope a declaration's OWN annotations resolve in — its module's, however
