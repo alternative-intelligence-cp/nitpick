@@ -2255,10 +2255,36 @@ def check_no_undef(ll_text, name):
             % (name, hits, first[0], first[1][:120])]
 
 
+_GLOBL_RE = re.compile(r'module asm\s+"\s*\.globl\s+([A-Za-z_$.][A-Za-z0-9_$.]*)\s*"')
+
+
+def runtime_exports(src):
+    """The symbols the runtime OBJECT exports, read from the IR text: every
+    non-`internal` `define`, and every `.globl` name the `module asm` block
+    declares (`_start`, `npk_clone_raw` -- hand-written entry points no
+    `define` scan can see). 1.5.2d step 2b, the library workbench's finding
+    (OPEN_DECISIONS DEF-21): the allowlist was every define, `internal` ones
+    included -- 57 names the object does not export, so a program naming one
+    passed the scan and failed at the link, where D-206 wants the named
+    refusal -- and missed the two `.globl` names, refusing a legal program.
+    The object is the authority: 109 non-internal defines plus 2 `.globl`
+    names are exactly its 111 GLOBAL symbols.
+    """
+    out = set()
+    for m in re.finditer(r"^define\s+(internal\s+)?[^@\n]*@([A-Za-z_$.][A-Za-z0-9_$.]*)\(", src, re.M):
+        if not m.group(1):
+            out.add(m.group(2))
+    for m in _GLOBL_RE.finditer(src):
+        out.add(m.group(1))
+    return out
+
+
 def runtime_allowlist():
-    """Every symbol npkrt.ll defines, plus `main` -- which is the one symbol the
-    RUNTIME is allowed to need, because the program provides it."""
-    return set(_npkrt_defines().keys()) | {"main"}
+    """What a program's object may leave undefined: the runtime's EXPORTS
+    (`runtime_exports`), plus `main` -- the one symbol the RUNTIME is allowed to
+    need, because the program provides it."""
+    with open(RUNTIME_LL, encoding="utf-8") as fh:
+        return runtime_exports(fh.read()) | {"main"}
 
 
 def check_backend_rejection(binary, path, name, exp):

@@ -361,6 +361,25 @@ def main():
             else:
                 print("      check_no_undef rejected prose: %s" % fails[0])
 
+    # THE ALLOWLIST IS THE RUNTIME'S EXPORTS (1.5.2d step 2b, DEF-21): a
+    # non-internal define and a `.globl` name are in; an `internal` define is
+    # not. One synthetic floor text, three answers.
+    floor_text = ('module asm ".globl asm_entry"\n'
+                  'module asm "asm_entry:"\n'
+                  'define void @exported() {\nentry:\n  ret void\n}\n'
+                  'define internal void @helper() {\nentry:\n  ret void\n}\n')
+    exports = harness.runtime_exports(floor_text)
+    for name, sym, must_have, why in (
+            ("allowlist-exported", "exported", True, "a non-internal define is an export"),
+            ("allowlist-globl", "asm_entry", True, "a `.globl` name in the module asm is an export"),
+            ("allowlist-internal", "helper", False, "an `internal` define is not an export")):
+        ok = ((sym in exports) == must_have)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            print("      runtime_exports answered %s for %s" % (sym in exports, sym))
+
     # THE TRIM BELT (1.5.2d, D-262 section 1): a prelude `define` referenced
     # nowhere else in the module is an unreferenced item the trim should have
     # dropped -- reported; one the module calls passes.

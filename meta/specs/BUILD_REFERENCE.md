@@ -173,7 +173,11 @@ convention (D-149).
 
 > **The scan's reader is `npkg`'s own** (`npkg/elf.npk`, 1.4.8): the object's
 > ELF64 symbol table read directly — every `SHN_UNDEF` entry with a name —
-> and held to the allowlist derived from `runtime/npkrt.ll`'s own `define`s
+> and held to the allowlist derived from `runtime/npkrt.ll`'s own EXPORTS — its
+> non-`internal` `define`s and the `.globl` names its `module asm` block declares
+> (`_start`, `npk_clone_raw`), exactly the object's GLOBAL symbols (1.5.2d step
+> 2b, DEF-21: until then the list was every `define`, `internal` ones included,
+> and missed the two `.globl` names)
 > plus `main`, the one symbol the runtime may need because the program
 > provides it. Not `llvm-readelf`: a fourth tool outside the `[toolchain]`
 > pin, whose text output nothing checks, is a poor foundation for a rule that

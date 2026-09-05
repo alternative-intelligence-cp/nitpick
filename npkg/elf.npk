@@ -115,82 +115,71 @@ pub func:elf_undefined = List<string>(string:obj_path) {
 // `internal`, a return type, whitespace, `@name(` with a `\w+` name (a
 // quoted name does not match, exactly as its `\w+` never did). Plus `main`,
 // the one symbol the RUNTIME may need because the program provides it.
-pub func:runtime_allowlist = List<string>(string:npkrt_ll) {
+// THE ALLOWLIST IS THE RUNTIME'S EXPORTS (1.5.2d step 2b; OPEN_DECISIONS
+// DEF-21, the library workbench's finding): every non-`internal` `define`,
+// and every `.globl` name the `module asm` block declares (`_start`,
+// `npk_clone_raw` -- hand-written entry points no `define` scan can see).
+// Until this step the list was every define, `internal` ones included -- 57
+// names the object does not export, so a program naming one passed the scan
+// and failed at the link, where D-206 wants the named refusal -- and it
+// missed the two `.globl` names, refusing a legal program. The object is the
+// authority: 109 non-internal defines plus 2 `.globl` names are exactly its
+// 111 GLOBAL symbols. `runtime_exports` reads a text; `runtime_allowlist`
+// reads the file (and `main` is added by the caller, as before).
+// An LLVM symbol byte, `[-a-zA-Z$._0-9]` (the scanner's own copy; `irscan.npk`'s
+// is private to it).
+func:elf_sym_byte = bool(uint8:c) never fails {
+    if ((c >= 97u8) && (c <= 122u8)) { pass true; }
+    if ((c >= 65u8) && (c <= 90u8))  { pass true; }
+    if ((c >= 48u8) && (c <= 57u8))  { pass true; }
+    if (c == 95u8) { pass true; }
+    if (c == 46u8) { pass true; }
+    if (c == 36u8) { pass true; }
+    if (c == 45u8) { pass true; }
+    pass false;
+};
+
+pub func:runtime_exports = List<string>(string:s) never fails {
     List<string>:out = raw list_init::<string>(200i64);
-    Result<cstring>:cp = to_cstring(npkrt_ll);
-    if (cp.is_error) { fail EElf; }
-    string:s = relay read_file(cp.value);
     List<string>:lines = raw text_lines(s);
     for (int64:li in 0i64...lines.count) {
         string:ln = raw strlist_view(lines, li);
-        int64:p = raw text_index_from(ln, "define", 0i64);
-        while (p >= 0i64) {
-            int64:i = p + 6i64;
-            bool:ws = false;
-            if (i < ln.len) { if (raw text_is_ws(ln.ptr[i])) { ws = true; } }
-            if (ws) {
-                while (i < ln.len) {
-                    if (!(raw text_is_ws(ln.ptr[i]))) { break; }
-                    i = i + 1i64;
-                }
-                if (raw text_starts_with(raw text_slice(ln, i, ln.len), "internal")) {
-                    int64:j = i + 8i64;
-                    bool:ws2 = false;
-                    if (j < ln.len) { if (raw text_is_ws(ln.ptr[j])) { ws2 = true; } }
-                    if (ws2) {
-                        while (j < ln.len) {
-                            if (!(raw text_is_ws(ln.ptr[j]))) { break; }
-                            j = j + 1i64;
-                        }
-                        i = j;
-                    }
-                }
-                // `.+?` then `\s+@(\w+)\(`: the first whitespace-run-then-`@`
-                // at or after i + 1 whose name is a word followed by `(`.
-                int64:q = i + 1i64;
-                bool:done = false;
-                while ((q < ln.len) && (!done)) {
-                    if (raw text_is_ws(ln.ptr[q])) {
-                        int64:r = q;
-                        while (r < ln.len) {
-                            if (!(raw text_is_ws(ln.ptr[r]))) { break; }
-                            r = r + 1i64;
-                        }
-                        if (r < ln.len) {
-                            if (ln.ptr[r] == 64u8) {
-                                int64:ns = r + 1i64;
-                                int64:ne = ns;
-                                while (ne < ln.len) {
-                                    uint8:c = ln.ptr[ne];
-                                    bool:w = false;
-                                    if ((c >= 97u8) && (c <= 122u8)) { w = true; }
-                                    if ((c >= 65u8) && (c <= 90u8))  { w = true; }
-                                    if ((c >= 48u8) && (c <= 57u8))  { w = true; }
-                                    if (c == 95u8) { w = true; }
-                                    if (!w) { break; }
-                                    ne = ne + 1i64;
-                                }
-                                if (ne > ns) {
-                                    if (ne < ln.len) {
-                                        if (ln.ptr[ne] == 40u8) {
-                                            drop strlist_push(@out, raw text_slice(ln, ns, ne));
-                                            done = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        q = r;
-                    } else {
-                        q = q + 1i64;
-                    }
-                }
-                p = 0i64 - 1i64;
-            } else {
-                p = raw text_index_from(ln, "define", p + 6i64);
+        // `module asm ".globl NAME"`
+        int64:g = raw text_index_from(ln, ".globl", 0i64);
+        if ((g >= 0i64) && (raw text_starts_with(ln, "module asm"))) {
+            int64:ns = g + 6i64;
+            while ((ns < ln.len) && (raw text_is_ws(ln.ptr[ns]))) { ns = ns + 1i64; }
+            int64:ne = ns;
+            while (ne < ln.len) {
+                if (!(raw elf_sym_byte(ln.ptr[ne]))) { break; }
+                ne = ne + 1i64;
             }
+            if (ne > ns) { drop strlist_push(@out, raw text_slice(ln, ns, ne)); }
+            continue;
         }
+        if (!(raw text_starts_with(ln, "define"))) { continue; }
+        int64:i = 6i64;
+        if (i >= ln.len) { continue; }
+        if (!(raw text_is_ws(ln.ptr[i]))) { continue; }
+        while ((i < ln.len) && (raw text_is_ws(ln.ptr[i]))) { i = i + 1i64; }
+        // An `internal` define is not an export.
+        if (raw text_starts_with(raw text_slice(ln, i, ln.len), "internal ")) { continue; }
+        int64:at = raw text_find_byte(ln, 64u8, i);
+        if (at < 0i64) { continue; }
+        int64:e = at + 1i64;
+        while (e < ln.len) {
+            if (!(raw elf_sym_byte(ln.ptr[e]))) { break; }
+            e = e + 1i64;
+        }
+        if (e == (at + 1i64)) { continue; }
+        drop strlist_push(@out, raw text_slice(ln, at + 1i64, e));
     }
-    drop strlist_push(@out, "main");
     pass out;
+};
+
+pub func:runtime_allowlist = List<string>(string:npkrt_ll) {
+    Result<cstring>:cp = to_cstring(npkrt_ll);
+    if (cp.is_error) { fail EElf; }
+    string:s = relay read_file(cp.value);
+    pass (raw runtime_exports(s));
 };
