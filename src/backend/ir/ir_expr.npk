@@ -848,24 +848,44 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (amk == (raw TY_ATOMIC())) {
             pass (raw emit_atomic_method(x, id, n, amrecv));
         }
+        // A TIER SCALAR'S OWN METHODS LOWER HERE; EVERY OTHER NAME IS AN IMPL'S
+        // (D-257, 1.5.2b step 2) and takes the ordinary method-call path below,
+        // through the callee the checker recorded. Until this step the four
+        // intercepts dispatched on the receiver's KIND alone -- `emit_tfp_method`
+        // lowered `self.to_string()` on a `tfp32` as `.floor()` and handed an
+        // `i32` to a site expecting a string envelope, which `llc` refused
+        // ("extractvalue operand must be aggregate type") the moment the
+        // prelude's generated `tfp32:Debug` body existed. The gate is the
+        // checker's own predicate (types.npk), so the two sides read one set.
+        string:amname = raw intern_get(x.interns, n.payload =>! int32);
         if (amk == (raw TY_SIMD())) {
-            pass (raw emit_simd_method(x, id, n, amrecv));
+            if (raw simd_own_method(amname)) {
+                pass (raw emit_simd_method(x, id, n, amrecv));
+            }
         }
         if (amk == (raw TY_TFP())) {
-            pass (raw emit_tfp_method(x, id, n, amrecv));
+            if (raw tfp_own_method(amname)) {
+                pass (raw emit_tfp_method(x, id, n, amrecv));
+            }
         }
         // `dim256` has exactly the tfp256 method set (D-196): same masked
         // adds at 256 bits; the unit is the checker's alone.
         if (amk == (raw TY_DIM())) {
-            pass (raw emit_tfp_method(x, id, n, amrecv));
+            if (raw tfp_own_method(amname)) {
+                pass (raw emit_tfp_method(x, id, n, amrecv));
+            }
         }
         // The ternary digit extraction (D-197).
         if (amk == (raw TY_TERN())) {
-            pass (raw emit_tern_method(x, id, n, amrecv));
+            if (raw tern_own_method(amname)) {
+                pass (raw emit_tern_method(x, id, n, amrecv));
+            }
         }
         // The complex methods (D-199).
         if (amk == (raw TY_COMPLEX())) {
-            pass (raw emit_complex_method(x, id, n, amrecv));
+            if (raw complex_own_method(amname)) {
+                pass (raw emit_complex_method(x, id, n, amrecv));
+            }
         }
         if (amk == (raw TY_CHANNEL())) {
             pass (raw emit_channel_method(x, id, n, amrecv));

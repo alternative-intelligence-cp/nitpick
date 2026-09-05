@@ -28,6 +28,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SPEC = os.path.join(ROOT, "meta", "specs", "LEXICAL_REFERENCE.md")
 OUT = os.path.join(ROOT, "src", "frontend")
 
+# `--check` (1.5.2b step 2, D-257): regenerate EVERYTHING in memory and write
+# nothing; exit 1 naming every file that would change. The harness's
+# `check_generated_current` runs it on every full run, so "run the generator
+# and `git status` clean" is a check rather than a habit. Every writer in this
+# file goes through `emit_text`, which is what makes the mode total.
+CHECK = "--check" in sys.argv[1:]
+WOULD_CHANGE = []
+
+def emit_text(path, text):
+    rel = os.path.relpath(path, ROOT)
+    if CHECK:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                current = fh.read()
+        except FileNotFoundError:
+            current = None
+        if current != text:
+            WOULD_CHANGE.append(rel)
+        return
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
 KEYWORD_GROUPS = [
     ("memory qualifiers",   "MemoryQualifier"),
     ("memory orderings",    "MemoryOrdering"),
@@ -552,8 +574,7 @@ def write_runtime(rows, rtsyms):
     o.append('    pass (string_concat(s.a3, ""));')
     o.append("};")
     path = os.path.join(ROOT, "src", "backend", "ir", "ir_runtime.npk")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(o) + "\n")
+    emit_text(path, "\n".join(o) + "\n")
     print("runtime floor: %d symbols (%d builtins, %d emitter-only)"
           % (len(names), len(names) - len(rtsyms), len(rtsyms)))
 
@@ -1439,8 +1460,31 @@ pub func:is_keyword = bool(string:text) {
     for fam, mem, v in flag_members:
         body.append("pub fixed %s:%s = %di32 =>! %s;" % (fam, mem, v, fam))
     pre = head + pre[pre.index(fb):head_line_end] + "\n".join(body) + "\n" + tail
-    with open(pre_path, "w", encoding="utf-8") as fh:
-        fh.write(pre)
+
+    # THE SCALAR IMPLS ARE THE PRELUDE'S SECOND GENERATED REGION (D-257,
+    # 1.5.2b step 2): the derivable traits for every scalar the prelude can
+    # name, one line per impl, from the same BuiltinType production the type
+    # table came from, classified by `scalar_family_of` -- the classification
+    # `scalar_table.npk` is generated from, so the region and the derive
+    # reader (D-258) are two consumers of one authority. The rows the prelude
+    # writes BY HAND (its `ToString`, the 64-bit `Hash` ladder, `string`'s
+    # four) are read out of the text outside the region: `Debug` is emitted
+    # exactly where a `ToString` exists, and no generated row duplicates a
+    # hand-written one, so coherence cannot fire on the prelude's own text.
+    sb, se = "// --- scalar-impls:begin", "// --- scalar-impls:end"
+    if sb not in pre or se not in pre:
+        raise SystemExit("src/prelude/prelude.npk: the scalar-impls region markers are missing")
+    s_head = pre[:pre.index(sb)]
+    s_head_line_end = pre.index("\n", pre.index(sb)) + 1
+    s_tail = pre[pre.index(se):]
+    fams = scalar_families(spec, set(FLAGS), NOT_SCALAR)
+    region = scalar_impls_region(s_head + s_tail, fams)
+    pre = s_head + pre[pre.index(sb):s_head_line_end] + "\n".join(region) + "\n" + s_tail
+    emit_text(pre_path, pre)
+    write("scalar_table.npk", scalar_table_text(fams))
+    print("scalar impls: %d rows in %d families"
+          % (sum(1 for l in region if l.startswith("impl:")),
+             len(set(f for _, f in fams if f))))
     esc = pre.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
     pl = ["// The prelude's source, as the compiler carries it.",
           "//",
@@ -1458,7 +1502,325 @@ pub func:is_keyword = bool(string:text) {
 
     print("token kinds: %d  keywords: %d  operators: %d  punctuation: %d  widths: %d"
           % (idx, len(kw_all), len(ops), len(punct), len(sfx)))
+    if CHECK:
+        if WOULD_CHANGE:
+            for rel in WOULD_CHANGE:
+                print("generated-current: %s is not what the generator writes now "
+                      "-- run `python3 bootstrap/generator/gen_tables.py` and commit "
+                      "the result" % rel)
+            return 1
+        print("generated-current: every generated file and region is current")
     return 0
+
+
+# --- THE SCALAR FAMILIES (D-257, 1.5.2b step 2) ---------------------------------
+#
+# EVERY BuiltinType terminal is placed: in a scalar family, or on the named
+# non-scalar list. One it cannot place is a hard failure -- the walkers-total
+# shape at the generator, so a type added to the production cannot be silently
+# missing from the prelude's impls or from the derive reader's classification.
+# The family ORDER is the code `scalar_table.npk` emits (`SCALAR_INT` = 1, ...).
+
+SCALAR_FAMILY_ORDER = ["INT", "CHAR", "TFP", "TERN", "FRAC", "FLOAT",
+                       "FLOAT_STORAGE", "TBB", "BOOL", "KERNEL", "FLAGS",
+                       "COMPLEX", "DIM"]
+
+# Builtin type names that are NOT scalars: constructors, aggregates, the
+# owning builtins, the erased kinds, and the two float widths D-143 struck
+# (they lex, and no value of them exists). Each must be a real terminal, or the
+# list is stale.
+NON_SCALAR_NAMED = {"string", "cstring", "dyn", "any", "Result", "Optional",
+                    "Handle", "arena", "shared_arena", "atomic", "Future",
+                    "Channel", "Mutex", "Guard", "RwLock", "RGuard", "CondVar",
+                    "Barrier", "OwnedFd", "simd", "array", "func", "range",
+                    "buffer", "NIL", "flt256", "flt512"}
+
+# The seven compiler-known SI base units (type_resolve.npk `dim_base_axis`),
+# in axis order; the derived names are the prelude's own `unit:` declarations
+# and are read out of its text.
+BASE_UNITS = ["Kilograms", "Meters", "Seconds", "Amperes", "Kelvin", "Moles",
+              "Candela"]
+
+def scalar_family_of(name, flags):
+    if name in NON_SCALAR_NAMED:
+        return None
+    if name == "bool":
+        return "BOOL"
+    if name in ("fd", "pid", "tid", "uid", "gid"):
+        return "KERNEL"
+    if name in flags:
+        return "FLAGS"
+    if name in ("trit", "tryte", "nit", "nyte"):
+        return "TERN"
+    if name == "complex":
+        return "COMPLEX"
+    if name == "dim256":
+        return "DIM"
+    if name == "flt128":
+        # A storage format (D-143): no comparison exists, so it clones and
+        # nothing else.
+        return "FLOAT_STORAGE"
+    m = re.match(r"^(int|uint|tbb|tfp|flt|frac|char)(\d+)$", name)
+    if m:
+        return {"int": "INT", "uint": "INT", "tbb": "TBB", "tfp": "TFP",
+                "flt": "FLOAT", "frac": "FRAC", "char": "CHAR"}[m.group(1)]
+    raise SystemExit("gen_tables.py: the BuiltinType terminal `%s` is in no "
+                     "scalar family and not on the named non-scalar list -- "
+                     "classify it (D-257), or the prelude's impls and the derive "
+                     "reader silently miss a type" % name)
+
+def scalar_families(spec, flags, not_scalar):
+    """[(terminal, family or None)] over every BuiltinType terminal, checked
+    against the builtin-type table's own NOT_SCALAR set: a scalar family here
+    that the type table files as a constructor (other than `complex` and
+    `dim256`, which are constructors whose instances ARE scalars) is a
+    disagreement between two classifications of one production."""
+    terms = terminals(spec, "BuiltinType")
+    for n in sorted(NON_SCALAR_NAMED):
+        if n not in terms:
+            raise SystemExit("gen_tables.py: NON_SCALAR_NAMED names `%s`, which is "
+                             "not a BuiltinType terminal -- the list is stale" % n)
+    out = []
+    for t in terms:
+        fam = scalar_family_of(t, flags)
+        if fam and t in not_scalar and t not in ("complex", "dim256"):
+            raise SystemExit("gen_tables.py: `%s` is a scalar family here and a "
+                             "constructor in the builtin-type table" % t)
+        if fam is None and t not in not_scalar and t not in ("string", "cstring", "any", "NIL", "OwnedFd", "buffer", "flt256", "flt512", "dyn", "func", "array", "Future"):
+            raise SystemExit("gen_tables.py: `%s` is on neither classification" % t)
+        out.append((t, fam))
+    return out
+
+# WHAT EACH FAMILY GETS (D-257). `Debug` is not a family property: it is
+# emitted for every scalar row that has a hand-written `ToString`, read out of
+# the prelude text. `Hash` is the MECHANICAL rest of the ladder only -- the
+# value truncated to 64 bits; the twisted kinds guard ERR first as the
+# hand-written `tbb` rows do; the flags cross through `int32`, the one cast
+# their family has -- and never the floats (`-0.0 == 0.0` must hash equal),
+# `tfp`, `frac` or `complex` (a canonical-ERR rule): a program that hashes
+# those writes the impl and says what it means.
+FAMILY_TRAITS = {
+    "INT":           ("Eq", "Ord", "PartialOrd", "Clone", "HashMech"),
+    "CHAR":          ("Eq", "Ord", "PartialOrd", "Clone"),
+    "TFP":           ("Eq", "Ord", "PartialOrd", "Clone"),
+    "TERN":          ("Eq", "Ord", "PartialOrd", "Clone", "HashGuarded"),
+    "FRAC":          ("Eq", "Ord", "PartialOrd", "Clone"),
+    "FLOAT":         ("Eq", "PartialOrdNan", "Clone"),
+    "FLOAT_STORAGE": ("Clone",),
+    "TBB":           ("Eq", "Clone", "HashGuarded"),
+    "BOOL":          ("Eq", "Clone"),
+    "KERNEL":        ("Eq", "Clone"),
+    "FLAGS":         ("Eq", "Clone", "HashFlags"),
+    "COMPLEX":       ("Eq", "Clone"),
+    "DIM":           ("Eq", "Ord", "PartialOrd", "Clone"),
+}
+
+FAMILY_NOTE = {
+    "INT":   "the integers: every width, the two orders, `Hash` for the widths the hand-written ladder above stops short of",
+    "CHAR":  "the characters: code-point order is a real order (`type_is_ordered`)",
+    "TFP":   "twisted fixed point: a NUMBER, ordered as one; an ERR operand traps at the operator (D-008 section 5, D-195) -- no `Hash` (a canonical-ERR rule is the program's)",
+    "TERN":  "the balanced ternary and nonary digits: balanced order IS numeric order (D-197); `Hash` guards ERR first, as the `tbb` rows do",
+    "FRAC":  "the exact rationals: ordered exactly through the core (D-198); no `Hash` (a canonical-ERR rule is the program's)",
+    "FLOAT": "the floats: `PartialOrd` and NEVER `Ord` -- a total `cmp` over `nan` would have to lie (the trait's own reason), so `nan` answers `NIL` HERE and in no derived body; no `Hash` (`-0.0 == 0.0` must hash equal, a bits rule)",
+    "FLOAT_STORAGE": "`flt128` is a storage format (D-143): no comparison exists, so it clones and nothing else",
+    "TBB":   "the error-code carriers: codes are compared against named constants, not sorted (`why_not_ordered`); `Hash` for the widths the ladder above lacks",
+    "BOOL":  "`false < true` is an accident of representation (`why_not_ordered`)",
+    "KERNEL": "the kernel identifiers: opaque handles whose order means nothing (D-042)",
+    "FLAGS": "the flag families: bits are names and have no order (D-044); `Hash` crosses through `int32`, the one cast the family has",
+    "COMPLEX": "the complex numbers, per instance the `ToString` rows name: no total order exists (D-199)",
+    "DIM":   "`dim256<Unit>` for every DISTINCT NON-ZERO vector among the seven base units and the prelude's `unit:` declarations (unit identity is the vector, D-196; the zero vector is `tfp256`, whose rows stand above): ordered as its `tfp256` carrier; a user's unit is the user's impl, like any user type",
+}
+
+# THE PRELUDE'S UNITS, BY VECTOR (D-196). Unit identity is the packed 7-exponent
+# vector, not the name: `dim256<Hertz>` and `dim256<Becquerels>` are ONE type
+# (both `1/Seconds`), `Radians` and `Steradians` are the ZERO vector and so are
+# `tfp256` itself, whose rows already exist. One impl per DISTINCT NON-ZERO
+# vector, then, or the prelude's own text is a coherence violation -- which is
+# how the first generation found this (TYPE-013 among the generated rows).
+# The algebra evaluated here mirrors the compiler's `dim_vector_of`; the
+# compiler checks the mirror on every build, since a wrong dedupe is a TYPE-013
+# in the prelude that fails every test loudly.
+UNIT_DECL_RE = re.compile(r"^(?:pub )?unit:([A-Z][A-Za-z0-9]*)\s*=\s*([^;]+);", re.M)
+
+def unit_vector(expr, known):
+    toks = re.findall(r"[A-Za-z][A-Za-z0-9]*|\d+|[*/()^]", expr)
+    pos = [0]
+    def peek():
+        return toks[pos[0]] if pos[0] < len(toks) else None
+    def take():
+        t = toks[pos[0]]; pos[0] += 1; return t
+    def add(a, b, sign):
+        return tuple(x + sign * y for x, y in zip(a, b))
+    def factor():
+        t = take()
+        if t == "(":
+            v = expr_()
+            if take() != ")":
+                raise SystemExit("gen_tables.py: unit algebra: `)` expected in `%s`" % expr)
+            return v
+        if t == "1":
+            return (0,) * 7
+        if t in known:
+            return known[t]
+        raise SystemExit("gen_tables.py: unit algebra: `%s` in `%s` is not a base unit "
+                         "or an earlier `unit:` declaration" % (t, expr))
+    def term():
+        v = factor()
+        if peek() == "^":
+            take()
+            k = int(take())
+            v = tuple(x * k for x in v)
+        return v
+    def expr_():
+        v = term()
+        while peek() in ("*", "/"):
+            op = take()
+            w = term()
+            v = add(v, w, 1 if op == "*" else -1)
+        return v
+    v = expr_()
+    if pos[0] != len(toks):
+        raise SystemExit("gen_tables.py: unit algebra: trailing `%s` in `%s`" % (toks[pos[0]], expr))
+    return v
+
+def dim_unit_representatives(hand_text):
+    """[(representative name, [alias names])] for every distinct NON-ZERO vector
+    among the seven base units and the prelude's `unit:` declarations, in
+    first-seen order (base units first, then declaration order)."""
+    known = {}
+    for i, name in enumerate(BASE_UNITS):
+        v = [0] * 7; v[i] = 1
+        known[name] = tuple(v)
+    order = list(BASE_UNITS)
+    for name, rhs in UNIT_DECL_RE.findall(hand_text):
+        if name in known:
+            raise SystemExit("gen_tables.py: unit `%s` declared twice" % name)
+        known[name] = unit_vector(rhs, known)
+        order.append(name)
+    by_vec = {}
+    reps = []
+    for name in order:
+        v = known[name]
+        if not any(v):
+            continue        # the zero vector IS tfp256 (D-196): its rows exist
+        if v in by_vec:
+            by_vec[v][1].append(name)
+        else:
+            by_vec[v] = (name, [])
+            reps.append(v)
+    return [by_vec[v] for v in reps]
+
+def _impl_line(target, trait, method, ret, body):
+    return ("impl:%s:%s = { func:%s = %s(%s:self%s) never fails { %s }; };"
+            % (target, trait, method, ret, target,
+               "" if trait in ("Clone", "Debug", "Hash") else ", %s:other" % target,
+               body))
+
+def scalar_impl_row(target, kind):
+    three_way = ("if (self < other) { pass Ordering.Less; } "
+                 "if (self > other) { pass Ordering.Greater; } pass Ordering.Equal;")
+    if kind == "Eq":
+        return _impl_line(target, "Eq", "eq", "bool", "pass (self == other);")
+    if kind == "Ord":
+        return _impl_line(target, "Ord", "cmp", "Ordering", three_way)
+    if kind == "PartialOrd":
+        return _impl_line(target, "PartialOrd", "partial_cmp", "Ordering?", three_way)
+    if kind == "PartialOrdNan":
+        return _impl_line(target, "PartialOrd", "partial_cmp", "Ordering?",
+                          "if (!(self == self)) { pass NIL; } if (!(other == other)) { pass NIL; } "
+                          + three_way)
+    if kind == "Clone":
+        return _impl_line(target, "Clone", "clone", target, "pass self;")
+    if kind == "Debug":
+        return _impl_line(target, "Debug", "debug", "string", "pass (raw self.to_string());")
+    if kind == "HashMech":
+        return _impl_line(target, "Hash", "hash", "uint64",
+                          "pass (raw fnv_mix(raw fnv_offset(), self =>! uint64));")
+    if kind == "HashGuarded":
+        return _impl_line(target, "Hash", "hash", "uint64",
+                          "if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } "
+                          "pass (raw fnv_mix(raw fnv_offset(), self =>! uint64));")
+    if kind == "HashFlags":
+        return _impl_line(target, "Hash", "hash", "uint64",
+                          "pass (raw fnv_mix(raw fnv_offset(), (self => int32) =>! uint64));")
+    raise SystemExit("gen_tables.py: unknown scalar impl kind %s" % kind)
+
+TRAIT_OF_KIND = {"Eq": "Eq", "Ord": "Ord", "PartialOrd": "PartialOrd",
+                 "PartialOrdNan": "PartialOrd", "Clone": "Clone", "Debug": "Debug",
+                 "HashMech": "Hash", "HashGuarded": "Hash", "HashFlags": "Hash"}
+
+HAND_IMPL_RE = re.compile(r"^impl:([A-Za-z_][A-Za-z0-9_]*(?:<[A-Za-z0-9_, ]+>)?):"
+                          r"(Eq|Ord|PartialOrd|Clone|Hash|ToString|Debug)\b", re.M)
+
+def scalar_impls_region(hand_text, fams):
+    """The generated rows, from the classification and the hand-written text
+    OUTSIDE the region (its `ToString` targets decide `Debug`; its impls are
+    never duplicated)."""
+    hand = set(HAND_IMPL_RE.findall(hand_text))
+    has_to_string = set(t for t, tr in hand if tr == "ToString")
+    units = dim_unit_representatives(hand_text)
+    out = []
+    for fam in SCALAR_FAMILY_ORDER:
+        members = [t for t, f in fams if f == fam]
+        if fam == "COMPLEX":
+            targets = sorted(t for t in has_to_string if t.startswith("complex<"))
+        elif fam == "DIM":
+            targets = ["dim256<%s>" % u for u, _ in units]
+        else:
+            targets = members
+        if not targets:
+            continue
+        out.append("// -- %s" % FAMILY_NOTE[fam])
+        if fam == "DIM":
+            for u, aliases in units:
+                if aliases:
+                    out.append("// -- `%s` is also %s: one vector, one type, one impl (D-196)"
+                               % (u, ", ".join("`%s`" % a for a in aliases)))
+        for target in targets:
+            kinds = list(FAMILY_TRAITS[fam])
+            if target in has_to_string:
+                kinds.append("Debug")
+            for kind in kinds:
+                if (target, TRAIT_OF_KIND[kind]) in hand:
+                    continue      # the prelude wrote it by hand; coherence would refuse a second
+                out.append(scalar_impl_row(target, kind))
+    return out
+
+def scalar_table_text(fams):
+    tl = ["// The builtin SCALAR families -- one classification (D-257, 1.5.2b step 2).",
+          "//",
+          "// GENERATED by bootstrap/generator/gen_tables.py from LEXICAL_REFERENCE.md's",
+          "// BuiltinType production. Two consumers read it: the prelude's generated",
+          "// `scalar-impls` region (what the prelude implements for each family) and",
+          "// the derive reader (D-258: a member spelled with a scalar keyword is reached",
+          "// through the prelude's impl of the derived trait, `raw`). A terminal the",
+          "// generator cannot place in a family or on the named non-scalar list is a",
+          "// hard failure there, so this table cannot silently miss one. `complex` and",
+          "// `dim256` are constructors whose INSTANCES are the scalars: the reader looks",
+          "// at their argument (a parameter under `complex` refuses by name, D-258).",
+          "",
+          'use "./token_kind.npk".*;',
+          "",
+          "pub func:SCALAR_NONE = int32() never fails { pass 0i32; };"]
+    for i, fam in enumerate(SCALAR_FAMILY_ORDER, start=1):
+        tl.append("pub func:SCALAR_%s = int32() never fails { pass %di32; };" % (fam, i))
+    tl.append("")
+    tl.append("// The family of a builtin type keyword, or SCALAR_NONE for a non-scalar")
+    tl.append("// builtin and for any token that is not a builtin type at all.")
+    tl.append("pub func:builtin_scalar_family = int32(TokenKind:k) never fails {")
+    for t, fam in fams:
+        if fam:
+            tl.append("    if (k == TokenKind.%s) { pass (raw SCALAR_%s()); }" % (kw_variant(t), fam))
+    tl.append("    pass 0i32;")
+    tl.append("};")
+    tl.append("")
+    tl.append("// The family's name, for diagnostics.")
+    tl.append("pub func:scalar_family_name = string(int32:fam) never fails {")
+    for i, fam in enumerate(SCALAR_FAMILY_ORDER, start=1):
+        tl.append('    if (fam == %di32) { pass "%s"; }' % (i, fam.lower().replace("_", " ")))
+    tl.append('    pass "none";')
+    tl.append("};")
+    return "\n".join(tl) + "\n"
 
 
 NF_SIG = re.compile(r'^((?:pub )?func:\w+ = [\w\[\]<>-]+\([^)]*\))(\s*)\{', re.M)
@@ -1483,8 +1845,7 @@ def write(name, text):
             k += 1
         parts.insert(k, header)
         text = "\n".join(parts)
-    with open(os.path.join(OUT, name), "w", encoding="utf-8") as fh:
-        fh.write(text)
+    emit_text(os.path.join(OUT, name), text)
 
 
 if __name__ == "__main__":

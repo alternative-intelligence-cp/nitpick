@@ -1900,6 +1900,56 @@ pub func:type_is_ordered = bool(TypeTable->:t, int32:id) never fails {
     pass false;
 };
 
+// THE TIER SCALARS' OWN METHOD SETS (D-257, 1.5.2b step 2) — one predicate
+// per kind, read by the CHECKER's method-call dispatch and the EMITTER's
+// (each sends these names to its intercept and every other name to the impl
+// path) and by the checker's intercepts for their own refusals, so each set is
+// written exactly once -- here, in the one module both sides import. `builtin_own_set_note`
+// is the same four sets as a sentence, appended to a "no method" miss.
+pub func:tfp_own_method = bool(string:m) never fails {
+    if (raw string_eq(m, "floor")) { pass true; }
+    if (raw string_eq(m, "trunc")) { pass true; }
+    pass false;
+};
+pub func:tern_own_method = bool(string:m) never fails {
+    if (raw string_eq(m, "trit")) { pass true; }
+    if (raw string_eq(m, "nit"))  { pass true; }
+    pass false;
+};
+pub func:complex_own_method = bool(string:m) never fails {
+    if (raw string_eq(m, "re"))   { pass true; }
+    if (raw string_eq(m, "im"))   { pass true; }
+    if (raw string_eq(m, "conj")) { pass true; }
+    if (raw string_eq(m, "abs2")) { pass true; }
+    if (raw string_eq(m, "abs"))  { pass true; }
+    pass false;
+};
+pub func:simd_own_method = bool(string:m) never fails {
+    if (raw string_eq(m, "sum")) { pass true; }
+    if (raw string_eq(m, "min")) { pass true; }
+    if (raw string_eq(m, "max")) { pass true; }
+    if (raw string_eq(m, "all")) { pass true; }
+    if (raw string_eq(m, "any")) { pass true; }
+    pass false;
+};
+pub func:builtin_own_set_note = string(TypeTable->:t, int32:recv) never fails {
+    int32:k = raw type_kind(t, recv);
+    if ((k == (raw TY_TFP())) || (k == (raw TY_DIM()))) {
+        pass "; a `tfp`'s own methods are exactly `floor` and `trunc` (D-195), and no impl supplies this one";
+    }
+    if (k == (raw TY_TERN())) {
+        pass "; a ternary value's own methods are `.trit(i)`/`.nit(i)` with `.len` (D-197), and no impl supplies this one";
+    }
+    if (k == (raw TY_COMPLEX())) {
+        pass "; a complex's own methods are `re`, `im`, `conj`, `abs2`, and `abs` on float elements (D-199), and no impl supplies this one";
+    }
+    if (k == (raw TY_SIMD())) {
+        pass "; `simd<T, N>`'s own methods are `sum`, `min`, `max` on numeric lanes and `all`, `any` on `bool` lanes (D-194), and no impl supplies this one";
+    }
+    pass "";
+};
+
+
 pub func:type_elem = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };

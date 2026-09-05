@@ -685,6 +685,26 @@ member-wise clone under `T: Clone`; `derive_generic.npk` carries the
 returning-function shape as the regression. No program in the tree writes
 the shape today.
 
+**DEF-19 (found by 1.5.2b step 2's probes on `f090e44`, 2026-09-05; owner:
+the `src/` writer, a DECISION first) — a `pick` over an `Optional` whose arms
+are the INNER type's patterns is admitted by the checker and refused by the
+emitter.** Eight lines reproduce it: `func:pc = Ordering?(int32:a, int32:b)
+never fails { if (a < b) { pass Ordering.Less; } pass Ordering.Equal; };`
+and in `main` `Ordering?:o = raw pc(1i32, 2i32); pick (o) { (Ordering.Less)
+{ exit 0i32; }, (*) { exit 3i32; } }` — `tools/check` accepts the program
+and `npkc` answers `NITPICK-EMIT-002 …:5:16: the emitter could not lower
+this, although the frontend accepted it`. The suite's own spelling is `pick
+(o ?? Ordering.Equal)` (`derive_payload.npk:46`), which is what a program
+should write; the hole is that the checker never says so. Not a soundness
+defect (the compiler refuses, it does not miscompile) and outside 1.5.2b's
+scope, so recorded rather than fixed in it. **Recommendation:** decide the
+rule — either a `pick` over `T?` matches `T`'s patterns only through `??`
+(then the checker refuses the bare form by name, TYPE-0xx, "pick over an
+`Optional` needs `??` or a `NIL` arm") or the language admits the bare form
+with a mandatory `(NIL)` arm (then the emitter lowers it and PICK's
+exhaustiveness counts the arm). The first is the smaller language and the
+one the suite already writes; the plan's recommendation is the first.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |

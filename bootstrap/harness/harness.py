@@ -1137,6 +1137,26 @@ def check_decl_flags_unique():
     return fails
 
 
+def check_generated_current():
+    """Every generated file and region is what the generator writes now (1.5.2b step 2).
+
+    `gen_tables.py --check` regenerates everything in memory -- the token
+    tables, the builtin tables, `ir_runtime.npk`, the prelude's two generated
+    regions and `prelude_source.npk`, `scalar_table.npk` -- and names every
+    file that would change. Until this existed "run the generator and `git
+    status` clean" was a habit; a prelude region edited by hand, or a table
+    row added without a regeneration, was two authorities disagreeing until
+    someone next ran it.
+    """
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "bootstrap", "generator",
+                                                     "gen_tables.py"), "--check"],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode != 0:
+        return ["generated-current: gen_tables.py --check exited %d:\n%s"
+                % (r.returncode, (r.stdout + r.stderr).strip())]
+    return []
+
+
 def check_slot_sites_agree():
     """Every `fits` site has an `emit_fit` partner, by the table above.
 
@@ -3865,6 +3885,7 @@ def main(argv):
         failures += check_slot_sites_agree()
         failures += check_type_walkers_total()
         failures += check_decl_flags_unique()
+        failures += check_generated_current()
         failures += check_one_renderer()
         failures += check_rung_names_open_cycle()
         failures += check_runtime_sigs_agree()

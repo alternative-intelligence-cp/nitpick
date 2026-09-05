@@ -489,6 +489,390 @@ impl:tbb16:Hash = { func:hash = uint64(tbb16:self) never fails { if (is_err(self
 impl:tbb32:Hash = { func:hash = uint64(tbb32:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
 impl:tbb64:Hash = { func:hash = uint64(tbb64:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
 
+// THE DERIVABLE TRAITS FOR EVERY SCALAR THE PRELUDE CAN NAME (D-257, 1.5.2b
+// step 2): `Eq`, the two orders, `Clone`, `Debug` wherever a `ToString` row
+// exists, and `Hash` for the mechanical rest of the ladder. GENERATED between
+// the two markers by bootstrap/generator/gen_tables.py from LEXICAL_REFERENCE's
+// BuiltinType production, classified into families by the one authority
+// `scalar_table.npk` is generated from; edit the generator, never these lines.
+// Why generated: the `Hash` rows above are hand-listed, which is exactly why
+// they stop at 64 bits. What a family gets and why not more is the comment
+// line above each block; the two decisions to know: a float has `PartialOrd`
+// and NEVER `Ord` (a total `cmp` over `nan` would have to lie -- the trait's
+// own reason), so `nan` answers `NIL` in ONE place instead of in every derived
+// body (D-258); and a twisted or exact family's `eq`/`cmp` runs through the
+// operator, so an ERR operand TRAPS (D-008 section 5 as amended at 1.3.2) --
+// the language's rule, inherited, REACH arming it as at any operator site.
+// Every body is `never fails`, the `Hash` precedent, so a derived body reaches
+// them with `raw`. A program's own impl of a pair covered here is the
+// coherence violation it always was (TYPE-013, with a note at the row).
+// --- scalar-impls:begin (GENERATED — do not edit between the markers) ---
+// -- the integers: every width, the two orders, `Hash` for the widths the hand-written ladder above stops short of
+impl:int8:Eq = { func:eq = bool(int8:self, int8:other) never fails { pass (self == other); }; };
+impl:int8:Ord = { func:cmp = Ordering(int8:self, int8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int8:PartialOrd = { func:partial_cmp = Ordering?(int8:self, int8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int8:Clone = { func:clone = int8(int8:self) never fails { pass self; }; };
+impl:int8:Debug = { func:debug = string(int8:self) never fails { pass (raw self.to_string()); }; };
+impl:int16:Eq = { func:eq = bool(int16:self, int16:other) never fails { pass (self == other); }; };
+impl:int16:Ord = { func:cmp = Ordering(int16:self, int16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int16:PartialOrd = { func:partial_cmp = Ordering?(int16:self, int16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int16:Clone = { func:clone = int16(int16:self) never fails { pass self; }; };
+impl:int16:Debug = { func:debug = string(int16:self) never fails { pass (raw self.to_string()); }; };
+impl:int32:Eq = { func:eq = bool(int32:self, int32:other) never fails { pass (self == other); }; };
+impl:int32:Ord = { func:cmp = Ordering(int32:self, int32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int32:PartialOrd = { func:partial_cmp = Ordering?(int32:self, int32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int32:Clone = { func:clone = int32(int32:self) never fails { pass self; }; };
+impl:int32:Debug = { func:debug = string(int32:self) never fails { pass (raw self.to_string()); }; };
+impl:int64:Eq = { func:eq = bool(int64:self, int64:other) never fails { pass (self == other); }; };
+impl:int64:Ord = { func:cmp = Ordering(int64:self, int64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int64:PartialOrd = { func:partial_cmp = Ordering?(int64:self, int64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int64:Clone = { func:clone = int64(int64:self) never fails { pass self; }; };
+impl:int64:Debug = { func:debug = string(int64:self) never fails { pass (raw self.to_string()); }; };
+impl:int128:Eq = { func:eq = bool(int128:self, int128:other) never fails { pass (self == other); }; };
+impl:int128:Ord = { func:cmp = Ordering(int128:self, int128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int128:PartialOrd = { func:partial_cmp = Ordering?(int128:self, int128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int128:Clone = { func:clone = int128(int128:self) never fails { pass self; }; };
+impl:int128:Hash = { func:hash = uint64(int128:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int256:Eq = { func:eq = bool(int256:self, int256:other) never fails { pass (self == other); }; };
+impl:int256:Ord = { func:cmp = Ordering(int256:self, int256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int256:PartialOrd = { func:partial_cmp = Ordering?(int256:self, int256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int256:Clone = { func:clone = int256(int256:self) never fails { pass self; }; };
+impl:int256:Hash = { func:hash = uint64(int256:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int512:Eq = { func:eq = bool(int512:self, int512:other) never fails { pass (self == other); }; };
+impl:int512:Ord = { func:cmp = Ordering(int512:self, int512:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int512:PartialOrd = { func:partial_cmp = Ordering?(int512:self, int512:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int512:Clone = { func:clone = int512(int512:self) never fails { pass self; }; };
+impl:int512:Hash = { func:hash = uint64(int512:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int1024:Eq = { func:eq = bool(int1024:self, int1024:other) never fails { pass (self == other); }; };
+impl:int1024:Ord = { func:cmp = Ordering(int1024:self, int1024:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int1024:PartialOrd = { func:partial_cmp = Ordering?(int1024:self, int1024:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int1024:Clone = { func:clone = int1024(int1024:self) never fails { pass self; }; };
+impl:int1024:Hash = { func:hash = uint64(int1024:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int2048:Eq = { func:eq = bool(int2048:self, int2048:other) never fails { pass (self == other); }; };
+impl:int2048:Ord = { func:cmp = Ordering(int2048:self, int2048:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int2048:PartialOrd = { func:partial_cmp = Ordering?(int2048:self, int2048:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int2048:Clone = { func:clone = int2048(int2048:self) never fails { pass self; }; };
+impl:int2048:Hash = { func:hash = uint64(int2048:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:int4096:Eq = { func:eq = bool(int4096:self, int4096:other) never fails { pass (self == other); }; };
+impl:int4096:Ord = { func:cmp = Ordering(int4096:self, int4096:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int4096:PartialOrd = { func:partial_cmp = Ordering?(int4096:self, int4096:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:int4096:Clone = { func:clone = int4096(int4096:self) never fails { pass self; }; };
+impl:int4096:Hash = { func:hash = uint64(int4096:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint8:Eq = { func:eq = bool(uint8:self, uint8:other) never fails { pass (self == other); }; };
+impl:uint8:Ord = { func:cmp = Ordering(uint8:self, uint8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint8:PartialOrd = { func:partial_cmp = Ordering?(uint8:self, uint8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint8:Clone = { func:clone = uint8(uint8:self) never fails { pass self; }; };
+impl:uint8:Debug = { func:debug = string(uint8:self) never fails { pass (raw self.to_string()); }; };
+impl:uint16:Eq = { func:eq = bool(uint16:self, uint16:other) never fails { pass (self == other); }; };
+impl:uint16:Ord = { func:cmp = Ordering(uint16:self, uint16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint16:PartialOrd = { func:partial_cmp = Ordering?(uint16:self, uint16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint16:Clone = { func:clone = uint16(uint16:self) never fails { pass self; }; };
+impl:uint16:Debug = { func:debug = string(uint16:self) never fails { pass (raw self.to_string()); }; };
+impl:uint32:Eq = { func:eq = bool(uint32:self, uint32:other) never fails { pass (self == other); }; };
+impl:uint32:Ord = { func:cmp = Ordering(uint32:self, uint32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint32:PartialOrd = { func:partial_cmp = Ordering?(uint32:self, uint32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint32:Clone = { func:clone = uint32(uint32:self) never fails { pass self; }; };
+impl:uint32:Debug = { func:debug = string(uint32:self) never fails { pass (raw self.to_string()); }; };
+impl:uint64:Eq = { func:eq = bool(uint64:self, uint64:other) never fails { pass (self == other); }; };
+impl:uint64:Ord = { func:cmp = Ordering(uint64:self, uint64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint64:PartialOrd = { func:partial_cmp = Ordering?(uint64:self, uint64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint64:Clone = { func:clone = uint64(uint64:self) never fails { pass self; }; };
+impl:uint64:Debug = { func:debug = string(uint64:self) never fails { pass (raw self.to_string()); }; };
+impl:uint128:Eq = { func:eq = bool(uint128:self, uint128:other) never fails { pass (self == other); }; };
+impl:uint128:Ord = { func:cmp = Ordering(uint128:self, uint128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint128:PartialOrd = { func:partial_cmp = Ordering?(uint128:self, uint128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint128:Clone = { func:clone = uint128(uint128:self) never fails { pass self; }; };
+impl:uint128:Hash = { func:hash = uint64(uint128:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint256:Eq = { func:eq = bool(uint256:self, uint256:other) never fails { pass (self == other); }; };
+impl:uint256:Ord = { func:cmp = Ordering(uint256:self, uint256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint256:PartialOrd = { func:partial_cmp = Ordering?(uint256:self, uint256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint256:Clone = { func:clone = uint256(uint256:self) never fails { pass self; }; };
+impl:uint256:Hash = { func:hash = uint64(uint256:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint512:Eq = { func:eq = bool(uint512:self, uint512:other) never fails { pass (self == other); }; };
+impl:uint512:Ord = { func:cmp = Ordering(uint512:self, uint512:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint512:PartialOrd = { func:partial_cmp = Ordering?(uint512:self, uint512:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint512:Clone = { func:clone = uint512(uint512:self) never fails { pass self; }; };
+impl:uint512:Hash = { func:hash = uint64(uint512:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint1024:Eq = { func:eq = bool(uint1024:self, uint1024:other) never fails { pass (self == other); }; };
+impl:uint1024:Ord = { func:cmp = Ordering(uint1024:self, uint1024:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint1024:PartialOrd = { func:partial_cmp = Ordering?(uint1024:self, uint1024:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint1024:Clone = { func:clone = uint1024(uint1024:self) never fails { pass self; }; };
+impl:uint1024:Hash = { func:hash = uint64(uint1024:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint2048:Eq = { func:eq = bool(uint2048:self, uint2048:other) never fails { pass (self == other); }; };
+impl:uint2048:Ord = { func:cmp = Ordering(uint2048:self, uint2048:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint2048:PartialOrd = { func:partial_cmp = Ordering?(uint2048:self, uint2048:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint2048:Clone = { func:clone = uint2048(uint2048:self) never fails { pass self; }; };
+impl:uint2048:Hash = { func:hash = uint64(uint2048:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:uint4096:Eq = { func:eq = bool(uint4096:self, uint4096:other) never fails { pass (self == other); }; };
+impl:uint4096:Ord = { func:cmp = Ordering(uint4096:self, uint4096:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint4096:PartialOrd = { func:partial_cmp = Ordering?(uint4096:self, uint4096:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:uint4096:Clone = { func:clone = uint4096(uint4096:self) never fails { pass self; }; };
+impl:uint4096:Hash = { func:hash = uint64(uint4096:self) never fails { pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+// -- the characters: code-point order is a real order (`type_is_ordered`)
+impl:char8:Eq = { func:eq = bool(char8:self, char8:other) never fails { pass (self == other); }; };
+impl:char8:Ord = { func:cmp = Ordering(char8:self, char8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char8:PartialOrd = { func:partial_cmp = Ordering?(char8:self, char8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char8:Clone = { func:clone = char8(char8:self) never fails { pass self; }; };
+impl:char8:Debug = { func:debug = string(char8:self) never fails { pass (raw self.to_string()); }; };
+impl:char16:Eq = { func:eq = bool(char16:self, char16:other) never fails { pass (self == other); }; };
+impl:char16:Ord = { func:cmp = Ordering(char16:self, char16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char16:PartialOrd = { func:partial_cmp = Ordering?(char16:self, char16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char16:Clone = { func:clone = char16(char16:self) never fails { pass self; }; };
+impl:char16:Debug = { func:debug = string(char16:self) never fails { pass (raw self.to_string()); }; };
+impl:char32:Eq = { func:eq = bool(char32:self, char32:other) never fails { pass (self == other); }; };
+impl:char32:Ord = { func:cmp = Ordering(char32:self, char32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char32:PartialOrd = { func:partial_cmp = Ordering?(char32:self, char32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:char32:Clone = { func:clone = char32(char32:self) never fails { pass self; }; };
+impl:char32:Debug = { func:debug = string(char32:self) never fails { pass (raw self.to_string()); }; };
+// -- twisted fixed point: a NUMBER, ordered as one; an ERR operand traps at the operator (D-008 section 5, D-195) -- no `Hash` (a canonical-ERR rule is the program's)
+impl:tfp32:Eq = { func:eq = bool(tfp32:self, tfp32:other) never fails { pass (self == other); }; };
+impl:tfp32:Ord = { func:cmp = Ordering(tfp32:self, tfp32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp32:PartialOrd = { func:partial_cmp = Ordering?(tfp32:self, tfp32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp32:Clone = { func:clone = tfp32(tfp32:self) never fails { pass self; }; };
+impl:tfp32:Debug = { func:debug = string(tfp32:self) never fails { pass (raw self.to_string()); }; };
+impl:tfp64:Eq = { func:eq = bool(tfp64:self, tfp64:other) never fails { pass (self == other); }; };
+impl:tfp64:Ord = { func:cmp = Ordering(tfp64:self, tfp64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp64:PartialOrd = { func:partial_cmp = Ordering?(tfp64:self, tfp64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp64:Clone = { func:clone = tfp64(tfp64:self) never fails { pass self; }; };
+impl:tfp64:Debug = { func:debug = string(tfp64:self) never fails { pass (raw self.to_string()); }; };
+impl:tfp128:Eq = { func:eq = bool(tfp128:self, tfp128:other) never fails { pass (self == other); }; };
+impl:tfp128:Ord = { func:cmp = Ordering(tfp128:self, tfp128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp128:PartialOrd = { func:partial_cmp = Ordering?(tfp128:self, tfp128:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp128:Clone = { func:clone = tfp128(tfp128:self) never fails { pass self; }; };
+impl:tfp128:Debug = { func:debug = string(tfp128:self) never fails { pass (raw self.to_string()); }; };
+impl:tfp256:Eq = { func:eq = bool(tfp256:self, tfp256:other) never fails { pass (self == other); }; };
+impl:tfp256:Ord = { func:cmp = Ordering(tfp256:self, tfp256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp256:PartialOrd = { func:partial_cmp = Ordering?(tfp256:self, tfp256:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tfp256:Clone = { func:clone = tfp256(tfp256:self) never fails { pass self; }; };
+impl:tfp256:Debug = { func:debug = string(tfp256:self) never fails { pass (raw self.to_string()); }; };
+// -- the balanced ternary and nonary digits: balanced order IS numeric order (D-197); `Hash` guards ERR first, as the `tbb` rows do
+impl:trit:Eq = { func:eq = bool(trit:self, trit:other) never fails { pass (self == other); }; };
+impl:trit:Ord = { func:cmp = Ordering(trit:self, trit:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:trit:PartialOrd = { func:partial_cmp = Ordering?(trit:self, trit:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:trit:Clone = { func:clone = trit(trit:self) never fails { pass self; }; };
+impl:trit:Hash = { func:hash = uint64(trit:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:trit:Debug = { func:debug = string(trit:self) never fails { pass (raw self.to_string()); }; };
+impl:tryte:Eq = { func:eq = bool(tryte:self, tryte:other) never fails { pass (self == other); }; };
+impl:tryte:Ord = { func:cmp = Ordering(tryte:self, tryte:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tryte:PartialOrd = { func:partial_cmp = Ordering?(tryte:self, tryte:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:tryte:Clone = { func:clone = tryte(tryte:self) never fails { pass self; }; };
+impl:tryte:Hash = { func:hash = uint64(tryte:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tryte:Debug = { func:debug = string(tryte:self) never fails { pass (raw self.to_string()); }; };
+impl:nit:Eq = { func:eq = bool(nit:self, nit:other) never fails { pass (self == other); }; };
+impl:nit:Ord = { func:cmp = Ordering(nit:self, nit:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:nit:PartialOrd = { func:partial_cmp = Ordering?(nit:self, nit:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:nit:Clone = { func:clone = nit(nit:self) never fails { pass self; }; };
+impl:nit:Hash = { func:hash = uint64(nit:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:nit:Debug = { func:debug = string(nit:self) never fails { pass (raw self.to_string()); }; };
+impl:nyte:Eq = { func:eq = bool(nyte:self, nyte:other) never fails { pass (self == other); }; };
+impl:nyte:Ord = { func:cmp = Ordering(nyte:self, nyte:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:nyte:PartialOrd = { func:partial_cmp = Ordering?(nyte:self, nyte:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:nyte:Clone = { func:clone = nyte(nyte:self) never fails { pass self; }; };
+impl:nyte:Hash = { func:hash = uint64(nyte:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:nyte:Debug = { func:debug = string(nyte:self) never fails { pass (raw self.to_string()); }; };
+// -- the exact rationals: ordered exactly through the core (D-198); no `Hash` (a canonical-ERR rule is the program's)
+impl:frac8:Eq = { func:eq = bool(frac8:self, frac8:other) never fails { pass (self == other); }; };
+impl:frac8:Ord = { func:cmp = Ordering(frac8:self, frac8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac8:PartialOrd = { func:partial_cmp = Ordering?(frac8:self, frac8:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac8:Clone = { func:clone = frac8(frac8:self) never fails { pass self; }; };
+impl:frac8:Debug = { func:debug = string(frac8:self) never fails { pass (raw self.to_string()); }; };
+impl:frac16:Eq = { func:eq = bool(frac16:self, frac16:other) never fails { pass (self == other); }; };
+impl:frac16:Ord = { func:cmp = Ordering(frac16:self, frac16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac16:PartialOrd = { func:partial_cmp = Ordering?(frac16:self, frac16:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac16:Clone = { func:clone = frac16(frac16:self) never fails { pass self; }; };
+impl:frac16:Debug = { func:debug = string(frac16:self) never fails { pass (raw self.to_string()); }; };
+impl:frac32:Eq = { func:eq = bool(frac32:self, frac32:other) never fails { pass (self == other); }; };
+impl:frac32:Ord = { func:cmp = Ordering(frac32:self, frac32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac32:PartialOrd = { func:partial_cmp = Ordering?(frac32:self, frac32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac32:Clone = { func:clone = frac32(frac32:self) never fails { pass self; }; };
+impl:frac32:Debug = { func:debug = string(frac32:self) never fails { pass (raw self.to_string()); }; };
+impl:frac64:Eq = { func:eq = bool(frac64:self, frac64:other) never fails { pass (self == other); }; };
+impl:frac64:Ord = { func:cmp = Ordering(frac64:self, frac64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac64:PartialOrd = { func:partial_cmp = Ordering?(frac64:self, frac64:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:frac64:Clone = { func:clone = frac64(frac64:self) never fails { pass self; }; };
+impl:frac64:Debug = { func:debug = string(frac64:self) never fails { pass (raw self.to_string()); }; };
+// -- the floats: `PartialOrd` and NEVER `Ord` -- a total `cmp` over `nan` would have to lie (the trait's own reason), so `nan` answers `NIL` HERE and in no derived body; no `Hash` (`-0.0 == 0.0` must hash equal, a bits rule)
+impl:flt32:Eq = { func:eq = bool(flt32:self, flt32:other) never fails { pass (self == other); }; };
+impl:flt32:PartialOrd = { func:partial_cmp = Ordering?(flt32:self, flt32:other) never fails { if (!(self == self)) { pass NIL; } if (!(other == other)) { pass NIL; } if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:flt32:Clone = { func:clone = flt32(flt32:self) never fails { pass self; }; };
+impl:flt32:Debug = { func:debug = string(flt32:self) never fails { pass (raw self.to_string()); }; };
+impl:flt64:Eq = { func:eq = bool(flt64:self, flt64:other) never fails { pass (self == other); }; };
+impl:flt64:PartialOrd = { func:partial_cmp = Ordering?(flt64:self, flt64:other) never fails { if (!(self == self)) { pass NIL; } if (!(other == other)) { pass NIL; } if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:flt64:Clone = { func:clone = flt64(flt64:self) never fails { pass self; }; };
+impl:flt64:Debug = { func:debug = string(flt64:self) never fails { pass (raw self.to_string()); }; };
+// -- `flt128` is a storage format (D-143): no comparison exists, so it clones and nothing else
+impl:flt128:Clone = { func:clone = flt128(flt128:self) never fails { pass self; }; };
+// -- the error-code carriers: codes are compared against named constants, not sorted (`why_not_ordered`); `Hash` for the widths the ladder above lacks
+impl:tbb8:Eq = { func:eq = bool(tbb8:self, tbb8:other) never fails { pass (self == other); }; };
+impl:tbb8:Clone = { func:clone = tbb8(tbb8:self) never fails { pass self; }; };
+impl:tbb8:Debug = { func:debug = string(tbb8:self) never fails { pass (raw self.to_string()); }; };
+impl:tbb16:Eq = { func:eq = bool(tbb16:self, tbb16:other) never fails { pass (self == other); }; };
+impl:tbb16:Clone = { func:clone = tbb16(tbb16:self) never fails { pass self; }; };
+impl:tbb16:Debug = { func:debug = string(tbb16:self) never fails { pass (raw self.to_string()); }; };
+impl:tbb32:Eq = { func:eq = bool(tbb32:self, tbb32:other) never fails { pass (self == other); }; };
+impl:tbb32:Clone = { func:clone = tbb32(tbb32:self) never fails { pass self; }; };
+impl:tbb32:Debug = { func:debug = string(tbb32:self) never fails { pass (raw self.to_string()); }; };
+impl:tbb64:Eq = { func:eq = bool(tbb64:self, tbb64:other) never fails { pass (self == other); }; };
+impl:tbb64:Clone = { func:clone = tbb64(tbb64:self) never fails { pass self; }; };
+impl:tbb64:Debug = { func:debug = string(tbb64:self) never fails { pass (raw self.to_string()); }; };
+impl:tbb128:Eq = { func:eq = bool(tbb128:self, tbb128:other) never fails { pass (self == other); }; };
+impl:tbb128:Clone = { func:clone = tbb128(tbb128:self) never fails { pass self; }; };
+impl:tbb128:Hash = { func:hash = uint64(tbb128:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+impl:tbb256:Eq = { func:eq = bool(tbb256:self, tbb256:other) never fails { pass (self == other); }; };
+impl:tbb256:Clone = { func:clone = tbb256(tbb256:self) never fails { pass self; }; };
+impl:tbb256:Hash = { func:hash = uint64(tbb256:self) never fails { if (is_err(self)) { pass (raw fnv_mix(raw fnv_offset(), 0u64)); } pass (raw fnv_mix(raw fnv_offset(), self =>! uint64)); }; };
+// -- `false < true` is an accident of representation (`why_not_ordered`)
+impl:bool:Eq = { func:eq = bool(bool:self, bool:other) never fails { pass (self == other); }; };
+impl:bool:Clone = { func:clone = bool(bool:self) never fails { pass self; }; };
+impl:bool:Debug = { func:debug = string(bool:self) never fails { pass (raw self.to_string()); }; };
+// -- the kernel identifiers: opaque handles whose order means nothing (D-042)
+impl:fd:Eq = { func:eq = bool(fd:self, fd:other) never fails { pass (self == other); }; };
+impl:fd:Clone = { func:clone = fd(fd:self) never fails { pass self; }; };
+impl:fd:Debug = { func:debug = string(fd:self) never fails { pass (raw self.to_string()); }; };
+impl:pid:Eq = { func:eq = bool(pid:self, pid:other) never fails { pass (self == other); }; };
+impl:pid:Clone = { func:clone = pid(pid:self) never fails { pass self; }; };
+impl:pid:Debug = { func:debug = string(pid:self) never fails { pass (raw self.to_string()); }; };
+impl:tid:Eq = { func:eq = bool(tid:self, tid:other) never fails { pass (self == other); }; };
+impl:tid:Clone = { func:clone = tid(tid:self) never fails { pass self; }; };
+impl:tid:Debug = { func:debug = string(tid:self) never fails { pass (raw self.to_string()); }; };
+impl:uid:Eq = { func:eq = bool(uid:self, uid:other) never fails { pass (self == other); }; };
+impl:uid:Clone = { func:clone = uid(uid:self) never fails { pass self; }; };
+impl:uid:Debug = { func:debug = string(uid:self) never fails { pass (raw self.to_string()); }; };
+impl:gid:Eq = { func:eq = bool(gid:self, gid:other) never fails { pass (self == other); }; };
+impl:gid:Clone = { func:clone = gid(gid:self) never fails { pass self; }; };
+impl:gid:Debug = { func:debug = string(gid:self) never fails { pass (raw self.to_string()); }; };
+// -- the flag families: bits are names and have no order (D-044); `Hash` crosses through `int32`, the one cast the family has
+impl:oflags:Eq = { func:eq = bool(oflags:self, oflags:other) never fails { pass (self == other); }; };
+impl:oflags:Clone = { func:clone = oflags(oflags:self) never fails { pass self; }; };
+impl:oflags:Hash = { func:hash = uint64(oflags:self) never fails { pass (raw fnv_mix(raw fnv_offset(), (self => int32) =>! uint64)); }; };
+impl:prot:Eq = { func:eq = bool(prot:self, prot:other) never fails { pass (self == other); }; };
+impl:prot:Clone = { func:clone = prot(prot:self) never fails { pass self; }; };
+impl:prot:Hash = { func:hash = uint64(prot:self) never fails { pass (raw fnv_mix(raw fnv_offset(), (self => int32) =>! uint64)); }; };
+impl:mflags:Eq = { func:eq = bool(mflags:self, mflags:other) never fails { pass (self == other); }; };
+impl:mflags:Clone = { func:clone = mflags(mflags:self) never fails { pass self; }; };
+impl:mflags:Hash = { func:hash = uint64(mflags:self) never fails { pass (raw fnv_mix(raw fnv_offset(), (self => int32) =>! uint64)); }; };
+impl:fmode:Eq = { func:eq = bool(fmode:self, fmode:other) never fails { pass (self == other); }; };
+impl:fmode:Clone = { func:clone = fmode(fmode:self) never fails { pass self; }; };
+impl:fmode:Hash = { func:hash = uint64(fmode:self) never fails { pass (raw fnv_mix(raw fnv_offset(), (self => int32) =>! uint64)); }; };
+// -- the complex numbers, per instance the `ToString` rows name: no total order exists (D-199)
+impl:complex<flt32>:Eq = { func:eq = bool(complex<flt32>:self, complex<flt32>:other) never fails { pass (self == other); }; };
+impl:complex<flt32>:Clone = { func:clone = complex<flt32>(complex<flt32>:self) never fails { pass self; }; };
+impl:complex<flt32>:Debug = { func:debug = string(complex<flt32>:self) never fails { pass (raw self.to_string()); }; };
+impl:complex<flt64>:Eq = { func:eq = bool(complex<flt64>:self, complex<flt64>:other) never fails { pass (self == other); }; };
+impl:complex<flt64>:Clone = { func:clone = complex<flt64>(complex<flt64>:self) never fails { pass self; }; };
+impl:complex<flt64>:Debug = { func:debug = string(complex<flt64>:self) never fails { pass (raw self.to_string()); }; };
+impl:complex<tfp32>:Eq = { func:eq = bool(complex<tfp32>:self, complex<tfp32>:other) never fails { pass (self == other); }; };
+impl:complex<tfp32>:Clone = { func:clone = complex<tfp32>(complex<tfp32>:self) never fails { pass self; }; };
+impl:complex<tfp32>:Debug = { func:debug = string(complex<tfp32>:self) never fails { pass (raw self.to_string()); }; };
+impl:complex<tfp64>:Eq = { func:eq = bool(complex<tfp64>:self, complex<tfp64>:other) never fails { pass (self == other); }; };
+impl:complex<tfp64>:Clone = { func:clone = complex<tfp64>(complex<tfp64>:self) never fails { pass self; }; };
+impl:complex<tfp64>:Debug = { func:debug = string(complex<tfp64>:self) never fails { pass (raw self.to_string()); }; };
+// -- `dim256<Unit>` for every DISTINCT NON-ZERO vector among the seven base units and the prelude's `unit:` declarations (unit identity is the vector, D-196; the zero vector is `tfp256`, whose rows stand above): ordered as its `tfp256` carrier; a user's unit is the user's impl, like any user type
+// -- `Candela` is also `Lumens`: one vector, one type, one impl (D-196)
+// -- `Hertz` is also `Becquerels`: one vector, one type, one impl (D-196)
+// -- `Grays` is also `Sieverts`: one vector, one type, one impl (D-196)
+impl:dim256<Kilograms>:Eq = { func:eq = bool(dim256<Kilograms>:self, dim256<Kilograms>:other) never fails { pass (self == other); }; };
+impl:dim256<Kilograms>:Ord = { func:cmp = Ordering(dim256<Kilograms>:self, dim256<Kilograms>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Kilograms>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Kilograms>:self, dim256<Kilograms>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Kilograms>:Clone = { func:clone = dim256<Kilograms>(dim256<Kilograms>:self) never fails { pass self; }; };
+impl:dim256<Meters>:Eq = { func:eq = bool(dim256<Meters>:self, dim256<Meters>:other) never fails { pass (self == other); }; };
+impl:dim256<Meters>:Ord = { func:cmp = Ordering(dim256<Meters>:self, dim256<Meters>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Meters>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Meters>:self, dim256<Meters>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Meters>:Clone = { func:clone = dim256<Meters>(dim256<Meters>:self) never fails { pass self; }; };
+impl:dim256<Seconds>:Eq = { func:eq = bool(dim256<Seconds>:self, dim256<Seconds>:other) never fails { pass (self == other); }; };
+impl:dim256<Seconds>:Ord = { func:cmp = Ordering(dim256<Seconds>:self, dim256<Seconds>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Seconds>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Seconds>:self, dim256<Seconds>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Seconds>:Clone = { func:clone = dim256<Seconds>(dim256<Seconds>:self) never fails { pass self; }; };
+impl:dim256<Amperes>:Eq = { func:eq = bool(dim256<Amperes>:self, dim256<Amperes>:other) never fails { pass (self == other); }; };
+impl:dim256<Amperes>:Ord = { func:cmp = Ordering(dim256<Amperes>:self, dim256<Amperes>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Amperes>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Amperes>:self, dim256<Amperes>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Amperes>:Clone = { func:clone = dim256<Amperes>(dim256<Amperes>:self) never fails { pass self; }; };
+impl:dim256<Kelvin>:Eq = { func:eq = bool(dim256<Kelvin>:self, dim256<Kelvin>:other) never fails { pass (self == other); }; };
+impl:dim256<Kelvin>:Ord = { func:cmp = Ordering(dim256<Kelvin>:self, dim256<Kelvin>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Kelvin>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Kelvin>:self, dim256<Kelvin>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Kelvin>:Clone = { func:clone = dim256<Kelvin>(dim256<Kelvin>:self) never fails { pass self; }; };
+impl:dim256<Moles>:Eq = { func:eq = bool(dim256<Moles>:self, dim256<Moles>:other) never fails { pass (self == other); }; };
+impl:dim256<Moles>:Ord = { func:cmp = Ordering(dim256<Moles>:self, dim256<Moles>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Moles>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Moles>:self, dim256<Moles>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Moles>:Clone = { func:clone = dim256<Moles>(dim256<Moles>:self) never fails { pass self; }; };
+impl:dim256<Candela>:Eq = { func:eq = bool(dim256<Candela>:self, dim256<Candela>:other) never fails { pass (self == other); }; };
+impl:dim256<Candela>:Ord = { func:cmp = Ordering(dim256<Candela>:self, dim256<Candela>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Candela>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Candela>:self, dim256<Candela>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Candela>:Clone = { func:clone = dim256<Candela>(dim256<Candela>:self) never fails { pass self; }; };
+impl:dim256<Hertz>:Eq = { func:eq = bool(dim256<Hertz>:self, dim256<Hertz>:other) never fails { pass (self == other); }; };
+impl:dim256<Hertz>:Ord = { func:cmp = Ordering(dim256<Hertz>:self, dim256<Hertz>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Hertz>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Hertz>:self, dim256<Hertz>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Hertz>:Clone = { func:clone = dim256<Hertz>(dim256<Hertz>:self) never fails { pass self; }; };
+impl:dim256<Newtons>:Eq = { func:eq = bool(dim256<Newtons>:self, dim256<Newtons>:other) never fails { pass (self == other); }; };
+impl:dim256<Newtons>:Ord = { func:cmp = Ordering(dim256<Newtons>:self, dim256<Newtons>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Newtons>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Newtons>:self, dim256<Newtons>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Newtons>:Clone = { func:clone = dim256<Newtons>(dim256<Newtons>:self) never fails { pass self; }; };
+impl:dim256<Pascals>:Eq = { func:eq = bool(dim256<Pascals>:self, dim256<Pascals>:other) never fails { pass (self == other); }; };
+impl:dim256<Pascals>:Ord = { func:cmp = Ordering(dim256<Pascals>:self, dim256<Pascals>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Pascals>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Pascals>:self, dim256<Pascals>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Pascals>:Clone = { func:clone = dim256<Pascals>(dim256<Pascals>:self) never fails { pass self; }; };
+impl:dim256<Joules>:Eq = { func:eq = bool(dim256<Joules>:self, dim256<Joules>:other) never fails { pass (self == other); }; };
+impl:dim256<Joules>:Ord = { func:cmp = Ordering(dim256<Joules>:self, dim256<Joules>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Joules>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Joules>:self, dim256<Joules>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Joules>:Clone = { func:clone = dim256<Joules>(dim256<Joules>:self) never fails { pass self; }; };
+impl:dim256<Watts>:Eq = { func:eq = bool(dim256<Watts>:self, dim256<Watts>:other) never fails { pass (self == other); }; };
+impl:dim256<Watts>:Ord = { func:cmp = Ordering(dim256<Watts>:self, dim256<Watts>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Watts>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Watts>:self, dim256<Watts>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Watts>:Clone = { func:clone = dim256<Watts>(dim256<Watts>:self) never fails { pass self; }; };
+impl:dim256<Coulombs>:Eq = { func:eq = bool(dim256<Coulombs>:self, dim256<Coulombs>:other) never fails { pass (self == other); }; };
+impl:dim256<Coulombs>:Ord = { func:cmp = Ordering(dim256<Coulombs>:self, dim256<Coulombs>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Coulombs>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Coulombs>:self, dim256<Coulombs>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Coulombs>:Clone = { func:clone = dim256<Coulombs>(dim256<Coulombs>:self) never fails { pass self; }; };
+impl:dim256<Volts>:Eq = { func:eq = bool(dim256<Volts>:self, dim256<Volts>:other) never fails { pass (self == other); }; };
+impl:dim256<Volts>:Ord = { func:cmp = Ordering(dim256<Volts>:self, dim256<Volts>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Volts>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Volts>:self, dim256<Volts>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Volts>:Clone = { func:clone = dim256<Volts>(dim256<Volts>:self) never fails { pass self; }; };
+impl:dim256<Farads>:Eq = { func:eq = bool(dim256<Farads>:self, dim256<Farads>:other) never fails { pass (self == other); }; };
+impl:dim256<Farads>:Ord = { func:cmp = Ordering(dim256<Farads>:self, dim256<Farads>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Farads>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Farads>:self, dim256<Farads>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Farads>:Clone = { func:clone = dim256<Farads>(dim256<Farads>:self) never fails { pass self; }; };
+impl:dim256<Ohms>:Eq = { func:eq = bool(dim256<Ohms>:self, dim256<Ohms>:other) never fails { pass (self == other); }; };
+impl:dim256<Ohms>:Ord = { func:cmp = Ordering(dim256<Ohms>:self, dim256<Ohms>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Ohms>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Ohms>:self, dim256<Ohms>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Ohms>:Clone = { func:clone = dim256<Ohms>(dim256<Ohms>:self) never fails { pass self; }; };
+impl:dim256<Siemens>:Eq = { func:eq = bool(dim256<Siemens>:self, dim256<Siemens>:other) never fails { pass (self == other); }; };
+impl:dim256<Siemens>:Ord = { func:cmp = Ordering(dim256<Siemens>:self, dim256<Siemens>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Siemens>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Siemens>:self, dim256<Siemens>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Siemens>:Clone = { func:clone = dim256<Siemens>(dim256<Siemens>:self) never fails { pass self; }; };
+impl:dim256<Webers>:Eq = { func:eq = bool(dim256<Webers>:self, dim256<Webers>:other) never fails { pass (self == other); }; };
+impl:dim256<Webers>:Ord = { func:cmp = Ordering(dim256<Webers>:self, dim256<Webers>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Webers>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Webers>:self, dim256<Webers>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Webers>:Clone = { func:clone = dim256<Webers>(dim256<Webers>:self) never fails { pass self; }; };
+impl:dim256<Teslas>:Eq = { func:eq = bool(dim256<Teslas>:self, dim256<Teslas>:other) never fails { pass (self == other); }; };
+impl:dim256<Teslas>:Ord = { func:cmp = Ordering(dim256<Teslas>:self, dim256<Teslas>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Teslas>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Teslas>:self, dim256<Teslas>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Teslas>:Clone = { func:clone = dim256<Teslas>(dim256<Teslas>:self) never fails { pass self; }; };
+impl:dim256<Henries>:Eq = { func:eq = bool(dim256<Henries>:self, dim256<Henries>:other) never fails { pass (self == other); }; };
+impl:dim256<Henries>:Ord = { func:cmp = Ordering(dim256<Henries>:self, dim256<Henries>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Henries>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Henries>:self, dim256<Henries>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Henries>:Clone = { func:clone = dim256<Henries>(dim256<Henries>:self) never fails { pass self; }; };
+impl:dim256<Lux>:Eq = { func:eq = bool(dim256<Lux>:self, dim256<Lux>:other) never fails { pass (self == other); }; };
+impl:dim256<Lux>:Ord = { func:cmp = Ordering(dim256<Lux>:self, dim256<Lux>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Lux>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Lux>:self, dim256<Lux>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Lux>:Clone = { func:clone = dim256<Lux>(dim256<Lux>:self) never fails { pass self; }; };
+impl:dim256<Grays>:Eq = { func:eq = bool(dim256<Grays>:self, dim256<Grays>:other) never fails { pass (self == other); }; };
+impl:dim256<Grays>:Ord = { func:cmp = Ordering(dim256<Grays>:self, dim256<Grays>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Grays>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Grays>:self, dim256<Grays>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Grays>:Clone = { func:clone = dim256<Grays>(dim256<Grays>:self) never fails { pass self; }; };
+impl:dim256<Katals>:Eq = { func:eq = bool(dim256<Katals>:self, dim256<Katals>:other) never fails { pass (self == other); }; };
+impl:dim256<Katals>:Ord = { func:cmp = Ordering(dim256<Katals>:self, dim256<Katals>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Katals>:PartialOrd = { func:partial_cmp = Ordering?(dim256<Katals>:self, dim256<Katals>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<Katals>:Clone = { func:clone = dim256<Katals>(dim256<Katals>:self) never fails { pass self; }; };
+impl:dim256<MetersPerSecond>:Eq = { func:eq = bool(dim256<MetersPerSecond>:self, dim256<MetersPerSecond>:other) never fails { pass (self == other); }; };
+impl:dim256<MetersPerSecond>:Ord = { func:cmp = Ordering(dim256<MetersPerSecond>:self, dim256<MetersPerSecond>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<MetersPerSecond>:PartialOrd = { func:partial_cmp = Ordering?(dim256<MetersPerSecond>:self, dim256<MetersPerSecond>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<MetersPerSecond>:Clone = { func:clone = dim256<MetersPerSecond>(dim256<MetersPerSecond>:self) never fails { pass self; }; };
+impl:dim256<MetersPerSecondSquared>:Eq = { func:eq = bool(dim256<MetersPerSecondSquared>:self, dim256<MetersPerSecondSquared>:other) never fails { pass (self == other); }; };
+impl:dim256<MetersPerSecondSquared>:Ord = { func:cmp = Ordering(dim256<MetersPerSecondSquared>:self, dim256<MetersPerSecondSquared>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<MetersPerSecondSquared>:PartialOrd = { func:partial_cmp = Ordering?(dim256<MetersPerSecondSquared>:self, dim256<MetersPerSecondSquared>:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:dim256<MetersPerSecondSquared>:Clone = { func:clone = dim256<MetersPerSecondSquared>(dim256<MetersPerSecondSquared>:self) never fails { pass self; }; };
+// --- scalar-impls:end ---
+
 // A string CLONES BY ALLOCATING A FRESH BODY (D-183). This is the language's
 // one spelling for "I genuinely want a second owner": explicit at the call
 // site (`x.clone()`), greppable, and it allocates — which is exactly why it is
@@ -510,6 +894,32 @@ impl:string:Hash = { func:hash = uint64(string:self) never fails {
     }
     pass h;
 }; };
+
+// A string COMPARES ITS BYTES (D-257, 1.5.2b step 2). Equality is
+// `string_equals`; the order is BYTE-LEXICOGRAPHIC, the shorter prefix `Less`
+// -- the one order a byte string has without a locale, and the doc says so;
+// `PartialOrd` is the same answer wrapped, a total order being a partial one.
+// Hand-written beside `Clone` and `Hash` rather than generated: `string` is not
+// a scalar row. Without these `Box<string>` could never derive `Eq` -- no
+// program can supply `string: Eq` for everyone (a second one is TYPE-013).
+// `never fails`, like `Hash`: the loop reads bytes and nothing else, so a
+// derived body reaches them with `raw` (D-258); `Clone` alone stays may-fail,
+// because it allocates.
+impl:string:Eq = { func:eq = bool(string:self, string:other) never fails { pass (string_equals(self, other)); }; };
+impl:string:Ord = { func:cmp = Ordering(string:self, string:other) never fails {
+    int64:n = self.len;
+    if (other.len < n) { n = other.len; }
+    int64:i = 0i64;
+    while (i < n) {
+        if (self.ptr[i] < other.ptr[i]) { pass Ordering.Less; }
+        if (self.ptr[i] > other.ptr[i]) { pass Ordering.Greater; }
+        i = i + 1i64;
+    }
+    if (self.len < other.len) { pass Ordering.Less; }
+    if (self.len > other.len) { pass Ordering.Greater; }
+    pass Ordering.Equal;
+}; };
+impl:string:PartialOrd = { func:partial_cmp = Ordering?(string:self, string:other) never fails { pass (raw self.cmp(other)); }; };
 
 // --- the deadline substrate (D-176, 1.1.3) -----------------------------------
 //

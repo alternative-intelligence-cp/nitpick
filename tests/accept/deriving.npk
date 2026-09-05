@@ -70,7 +70,10 @@ func:a_season_has_four = NIL(Season:a, Season:b) {
 //
 // `Ordering`, and the seven traits, are declared in `src/prelude/prelude.npk` and
 // bound into every module the way `use "prelude.npk".*` would bind them. Nothing
-// here imports anything.
+// here imports anything. Since 1.5.2b step 2 the prelude also implements `Ord`
+// for `int32` itself (D-257's generated region), so this is a free function
+// beside the prelude's `cmp`, not a stand-in for one -- and `impl:int32:Ord`
+// written here would be TYPE-013 (`tests/types/rejection/scalar_impl_taken.npk`).
 func:orders_by_hand = Ordering(int32:a, int32:b) never fails {
     if (a < b) { pass Ordering.Less; }
     if (a > b) { pass Ordering.Greater; }

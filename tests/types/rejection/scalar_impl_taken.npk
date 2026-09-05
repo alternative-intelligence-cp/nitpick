@@ -1,0 +1,16 @@
+// A PROGRAM'S OWN IMPL OF A PAIR THE PRELUDE COVERS IS THE COHERENCE VIOLATION
+// IT ALWAYS WAS (TYPE-013; D-257, 1.5.2b step 2). Since the prelude implements
+// `int32:Ord` itself, `impl:int32:Ord` here is the second implementation -- and
+// the report carries a NOTE at the earlier one, whose FILE the walk prints
+// (`prelude.npk:N`), because "at line N" alone names a line of a file the
+// sentence does not. A pair the prelude does NOT cover (`impl:bool:Ord` below)
+// stays admitted: whether an orphan rule should close that is OPEN_DECISIONS
+// S-37, the library era's question.
+
+mod:scalar_impl_taken;
+// expect-error: NITPICK-TYPE-013
+// expect-note: NITPICK-TYPE-013
+impl:int32:Ord = { func:cmp = Ordering(int32:self, int32:other) never fails { if (self < other) { pass Ordering.Less; } if (self > other) { pass Ordering.Greater; } pass Ordering.Equal; }; };
+impl:bool:Ord = { func:cmp = Ordering(bool:self, bool:other) never fails { pass Ordering.Equal; }; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

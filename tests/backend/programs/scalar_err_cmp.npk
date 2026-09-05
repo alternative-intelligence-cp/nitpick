@@ -1,0 +1,32 @@
+// expect-exit: 90
+//
+// A TWISTED SCALAR'S `eq` RUNS THROUGH THE OPERATOR, SO AN ERR OPERAND TRAPS
+// (D-008 section 5 as amended at 1.3.2; D-257): the prelude's generated
+// `tbb32:Eq` inherits the language's compare-on-ERR rule -- `TbbErr` (-4100)
+// reaches `failsafe`, which exits 90 -- and REACH armed the arm because the
+// prelude body's `==` is a comparison site like any other. `is_err` is the
+// sanctioned look; a derived `Eq` over a tbb field inherits this too (D-258).
+
+mod:scalar_err_cmp;
+func:main = int32(cstring[]:_~argv) {
+    tbb32:v = 5tbb32;
+    tbb32:z = 0tbb32;
+    if (!(raw v.eq(v))) { exit 8i32; }     // a clean compare answers
+    tbb32:e = (v / z);                     // ERR, quietly -- arithmetic degrades
+    if (raw e.eq(v)) { exit 7i32; }        // ...but COMPARING it traps
+    exit 6i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr) { exit 90i32; },
+        (DivByZero) { exit 9i32; },
+        (DivOverflow) { exit 9i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

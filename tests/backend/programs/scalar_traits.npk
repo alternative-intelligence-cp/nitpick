@@ -1,0 +1,130 @@
+// expect-exit: 0
+//
+// THE PRELUDE IMPLEMENTS THE DERIVABLE TRAITS FOR EVERY SCALAR IT CAN NAME
+// (D-257, 1.5.2b step 2): one representative per family calls `eq`, `cmp`,
+// `partial_cmp`, `clone`, `debug` and `hash` DIRECTLY -- the generated
+// region's rows, and `string`'s three hand-written ones beside them. The
+// answers to know: a `flt64` has no `Ord` (a call to `cmp` on one would not
+// compile) and its `partial_cmp` answers `NIL` for `nan` -- the one place that
+// answer lives; a twisted scalar's `eq` traps on ERR (`scalar_err_cmp.npk`);
+// a string orders byte-lexicographically with the shorter prefix `Less`. Exit
+// by accumulated checks: 0 is every answer right, each failure its own code.
+
+mod:scalar_traits;
+func:main = int32(cstring[]:_~argv) {
+    // int32: all six
+    int32:a = 1i32;
+    int32:b = 2i32;
+    if (!(raw a.eq(a))) { exit 2i32; }
+    if (raw a.eq(b)) { exit 3i32; }
+    pick (raw a.cmp(b)) { (Ordering.Less) { }, (*) { exit 4i32; } }
+    pick ((raw b.partial_cmp(a)) ?? Ordering.Equal) { (Ordering.Greater) { }, (*) { exit 5i32; } }
+    int32:c = raw a.clone();
+    if (c != 1i32) { exit 6i32; }
+    string:d = raw a.debug();
+    if (d.len != 1i64) { exit 7i32; }
+    if ((raw a.hash()) == (raw b.hash())) { exit 8i32; }
+
+    // uint64: the high bit orders as a value
+    uint64:u = 1u64 << 63u64;
+    uint64:u0 = 0u64;
+    pick (raw u.cmp(u0)) { (Ordering.Greater) { }, (*) { exit 9i32; } }
+
+    // int256: a wide width, and the mechanical Hash row
+    int256:w = 1i256 << 200i256;
+    int256:w2 = 1i256;
+    pick (raw w2.cmp(w)) { (Ordering.Less) { }, (*) { exit 10i32; } }
+    if ((raw w.hash()) == (raw w2.hash())) { exit 11i32; }
+
+    // char8: code-point order
+    char8:ca = 65char8;
+    char8:cb = 66char8;
+    pick (raw ca.cmp(cb)) { (Ordering.Less) { }, (*) { exit 12i32; } }
+
+    // flt64: PartialOrd, and the nan answer
+    flt64:f1 = 1.0f64;
+    flt64:f2 = 2.0f64;
+    pick ((raw f1.partial_cmp(f2)) ?? Ordering.Equal) { (Ordering.Less) { }, (*) { exit 13i32; } }
+    flt64:zero = 0.0f64;
+    flt64:nan = zero / zero;
+    Ordering?:pn = raw nan.partial_cmp(f1);
+    if (pn != NIL) { exit 14i32; }
+    Ordering?:pn2 = raw f1.partial_cmp(nan);
+    if (pn2 != NIL) { exit 15i32; }
+    if (!(raw f1.eq(f1))) { exit 16i32; }
+    if (raw nan.eq(nan)) { exit 17i32; }
+    flt64:fc = raw f2.clone();
+    if (fc != 2.0f64) { exit 18i32; }
+
+    // tfp32: a number, ordered as one
+    tfp32:t1 = 1.5f64 =>! tfp32;
+    tfp32:t2 = 2.5f64 =>! tfp32;
+    pick (raw t1.cmp(t2)) { (Ordering.Less) { }, (*) { exit 19i32; } }
+    if (!(raw t1.eq(t1))) { exit 20i32; }
+
+    // frac32: exact
+    frac32:q1 = 1i32 => frac32;
+    frac32:q2 = 2i32 => frac32;
+    pick (raw q2.cmp(q1)) { (Ordering.Greater) { }, (*) { exit 21i32; } }
+
+    // tryte: balanced order is numeric order; the guarded Hash row
+    tryte:y1 = 42;
+    tryte:y2 = 43;
+    pick (raw y1.cmp(y2)) { (Ordering.Less) { }, (*) { exit 22i32; } }
+    if (!(raw y1.eq(y1))) { exit 23i32; }
+    if ((raw y1.hash()) == (raw y2.hash())) { exit 24i32; }
+
+    // tbb32: equality and no order
+    tbb32:e1 = 5tbb32;
+    tbb32:e2 = 5tbb32;
+    if (!(raw e1.eq(e2))) { exit 25i32; }
+    string:es = raw e1.debug();
+    if (es.len != 1i64) { exit 26i32; }
+
+    // bool, fd, oflags: equality (and the flags' Hash through int32)
+    bool:bt = true;
+    bool:bf = false;
+    if (raw bt.eq(bf)) { exit 27i32; }
+    fd:f0 = 0i32 =>! fd;
+    fd:f1d = 1i32 =>! fd;
+    if (raw f0.eq(f1d)) { exit 28i32; }
+    oflags:o1 = O_RDONLY | O_CLOEXEC;
+    oflags:o2 = O_RDONLY;
+    oflags:o3 = O_RDONLY | O_CLOEXEC;
+    if (raw o1.eq(o2)) { exit 29i32; }
+    if (!(raw o1.eq(o3))) { exit 30i32; }
+    if ((raw o1.hash()) == (raw o2.hash())) { exit 31i32; }
+
+    // complex<flt64>: equality, clone, debug
+    complex<flt64>:z1 = complex(3.0f64, 4.0f64);
+    complex<flt64>:z2 = complex(3.0f64, 4.0f64);
+    if (!(raw z1.eq(z2))) { exit 32i32; }
+    complex<flt64>:z3 = raw z1.clone();
+    if (!(raw z3.eq(z1))) { exit 33i32; }
+    // `debug` IS the scalar's `to_string` (D-257): one meaning, two names.
+    string:zs = raw z1.debug();
+    string:zt = raw z1.to_string();
+    if (zs.len == 0i64) { exit 34i32; }
+    if (zs.len != zt.len) { exit 44i32; }
+
+    // dim256<Meters>: ordered as its carrier
+    dim256<Meters>:m1 = (1.0f64 =>! tfp256) =>! dim256<Meters>;
+    dim256<Meters>:m2 = (2.0f64 =>! tfp256) =>! dim256<Meters>;
+    pick (raw m1.cmp(m2)) { (Ordering.Less) { }, (*) { exit 35i32; } }
+    if (!(raw m1.eq(m1))) { exit 36i32; }
+
+    // string: bytes, lexicographic, the shorter prefix Less
+    string:s1 = "ab";
+    string:s2 = "abc";
+    string:s3 = "ab";
+    string:s4 = "b";
+    if (!(raw s1.eq(s3))) { exit 37i32; }
+    if (raw s1.eq(s2)) { exit 38i32; }
+    pick (raw s1.cmp(s2)) { (Ordering.Less) { }, (*) { exit 39i32; } }
+    pick (raw s2.cmp(s1)) { (Ordering.Greater) { }, (*) { exit 40i32; } }
+    pick (raw s1.cmp(s3)) { (Ordering.Equal) { }, (*) { exit 41i32; } }
+    pick (raw s1.cmp(s4)) { (Ordering.Less) { }, (*) { exit 42i32; } }
+    pick ((raw s1.partial_cmp(s2)) ?? Ordering.Equal) { (Ordering.Less) { }, (*) { exit 43i32; } }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) { pick (e) { (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (TbbErr) { exit 90i32; }, (IntOverflow) { exit 93i32; }, (DivByZero) { exit 94i32; }, (DivOverflow) { exit 97i32; }, (*) { exit 99i32; } } exit 9i32; };

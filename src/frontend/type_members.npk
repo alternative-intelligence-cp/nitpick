@@ -1613,22 +1613,44 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if ((raw type_kind(e.types, recv)) == (raw TY_ATOMIC())) {
         pass (raw type_atomic_method(e, n, recv, name, start, count));
     }
+    // A TIER SCALAR'S OWN METHODS FIRST, THEN THE IMPL TABLE (D-257, 1.5.2b
+    // step 2) — the order a struct already has: inherent, then trait. Until
+    // this step each of the five intercepts below refused EVERY name outside
+    // its fixed set, so the prelude's `impl:tfp32:Ord` could exist and never
+    // be called — `a.cmp(b)` on a `tfp32` answered "`tfp` has no method
+    // `cmp`", and a generated `Debug` reaching `to_string` on a `tryte` or a
+    // `complex<flt64>` was refused inside the prelude. A name that is one of
+    // the type's own goes to the intercept (which shadows any impl, as an
+    // inherent method does — the arena's rule above); any other name falls
+    // through to the lookup below, and a miss there names the type's own set
+    // in its message (`builtin_own_set_note`). One predicate per kind, read
+    // here and by the intercept, so the set is written once.
     if ((raw type_kind(e.types, recv)) == (raw TY_SIMD())) {
-        pass (raw type_simd_method(e, n, recv, name, count));
+        if (raw simd_own_method(raw intern_get(e.interns, name))) {
+            pass (raw type_simd_method(e, n, recv, name, count));
+        }
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_TFP())) {
-        pass (raw type_tfp_method(e, n, recv, name, count));
+        if (raw tfp_own_method(raw intern_get(e.interns, name))) {
+            pass (raw type_tfp_method(e, n, recv, name, count));
+        }
     }
     // A `dim256` has exactly the tfp256 method set (D-196) — `floor`/`trunc`
     // pass the receiver through, so the UNIT RIDES.
     if ((raw type_kind(e.types, recv)) == (raw TY_DIM())) {
-        pass (raw type_tfp_method(e, n, recv, name, count));
+        if (raw tfp_own_method(raw intern_get(e.interns, name))) {
+            pass (raw type_tfp_method(e, n, recv, name, count));
+        }
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_TERN())) {
-        pass (raw type_tern_method(e, n, recv, name, start, count));
+        if (raw tern_own_method(raw intern_get(e.interns, name))) {
+            pass (raw type_tern_method(e, n, recv, name, start, count));
+        }
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_COMPLEX())) {
-        pass (raw type_complex_method(e, n, recv, name, count));
+        if (raw complex_own_method(raw intern_get(e.interns, name))) {
+            pass (raw type_complex_method(e, n, recv, name, count));
+        }
     }
     if ((raw type_kind(e.types, recv)) == (raw TY_CHANNEL())) {
         pass (raw type_channel_method(e, n, id, recv, name, start, count));
@@ -1798,6 +1820,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if (opaque_recv) {
                 m4 = string_concat(m4, raw bounds_note(e, recv));
             }
+            m4 = string_concat(m4, raw builtin_own_set_note(e.types, recv));
             pass (raw te_error(e, raw TYPE_NO_METHOD(), move(m4), n.span));
         }
         Symbol:s = raw symtab_get(e.tab, sym);
@@ -2947,12 +2970,7 @@ func:type_complex_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                                  int32:name, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
     int32:celem = raw type_elem(e.types, recv);
-    bool:known = false;
-    if (raw string_eq(m, "re"))   { known = true; }
-    if (raw string_eq(m, "im"))   { known = true; }
-    if (raw string_eq(m, "conj")) { known = true; }
-    if (raw string_eq(m, "abs2")) { known = true; }
-    if (raw string_eq(m, "abs"))  { known = true; }
+    bool:known = raw complex_own_method(m);
     if (!known) {
         string:u1 = string_concat("a complex has no method `", m);
         pass (raw te_error(e, raw TYPE_COMPLEX_RULES(),
@@ -2978,9 +2996,7 @@ func:type_complex_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
 func:type_tfp_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
                              int32:name, int32:count) never fails {
     string:m = raw intern_get(e.interns, name);
-    bool:known = false;
-    if (raw string_eq(m, "floor")) { known = true; }
-    if (raw string_eq(m, "trunc")) { known = true; }
+    bool:known = raw tfp_own_method(m);
     if (!known) {
         string:u1 = string_concat("`tfp` has no method `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
@@ -3004,13 +3020,10 @@ func:type_simd_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
     int32:elem = raw type_elem(e.types, recv);
     bool:isbool = false;
     if (elem == e.types.t_bool) { isbool = true; }
-    bool:known = false;
+    bool:known = raw simd_own_method(m);
     bool:boolonly = false;
-    if (raw string_eq(m, "sum")) { known = true; }
-    if (raw string_eq(m, "min")) { known = true; }
-    if (raw string_eq(m, "max")) { known = true; }
-    if (raw string_eq(m, "all")) { known = true; boolonly = true; }
-    if (raw string_eq(m, "any")) { known = true; boolonly = true; }
+    if (raw string_eq(m, "all")) { boolonly = true; }
+    if (raw string_eq(m, "any")) { boolonly = true; }
     if (!known) {
         string:u1 = string_concat("`simd<T, N>` has no method `", m);
         pass (raw te_error(e, raw TYPE_MISMATCH(),
