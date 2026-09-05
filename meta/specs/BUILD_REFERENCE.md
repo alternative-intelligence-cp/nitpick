@@ -171,6 +171,26 @@ may appear in it, **with no relaxing flag** — which is what makes "in-process
 FFI does not exist" a structural guarantee for every program, not a project
 convention (D-149).
 
+**An unreferenced prelude item is not emitted (D-262 §1, 1.5.2d).** The
+emitted module holds the prelude's non-generic functions, its impls' methods
+and vtables and its generic instances only where the module's text references
+a symbol they define: the emitter brackets each as an ITEM, and at the close
+of emission keeps an item only if a token `@name` naming one of its symbols
+stands outside every item or inside a kept item — a fixpoint over the text
+itself, never an AST walk that would have to enumerate every kind of use (a
+call, a vtable slot, a function value, a spawn, a drop body, an
+interpolation's `to_string`) and would fail open on the kind it missed. A
+floor-only program's IR went from 845 KB and 608 functions to 51 KB and 14; the
+compiler's own emission keeps 101 of the prelude's 685 functions. Everything
+outside the prelude is emitted as before. Both runners hold the property on
+every module the compiler under test emits — a prelude `define` referenced
+nowhere else in its module fails the unit (`check_prelude_trimmed`,
+`ir_prelude_trimmed`; the `prelude-trim` line of the `selfhost` stage counts
+the compiler's own kept prelude functions) — and not on the committed
+snapshot's emissions, which carry the trim only after a refresh. A row of
+`nitpick.obligations` counts for the elision cross-check only when the
+emission holds its function.
+
 > **The scan's reader is `npkg`'s own** (`npkg/elf.npk`, 1.4.8): the object's
 > ELF64 symbol table read directly — every `SHN_UNDEF` entry with a name —
 > and held to the allowlist derived from `runtime/npkrt.ll`'s own EXPORTS — its

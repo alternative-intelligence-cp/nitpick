@@ -3,8 +3,13 @@
 # count -- and held to `ceiling` bytes of peak_live once one is set (0 reports
 # only). The ceiling was set at 1.5.1b's close (2026-09-04) from the measured value with
 # 2x headroom, so an 11 GiB regression fails loudly instead of freezing the
-# machine.
+# machine -- 23,258,956,650 over a peak of 11.6 GB. 1.5.2d (2026-09-05) found
+# that peak was the bindings analysis copying the whole program's slot space at
+# every branch of every function; with the state sized by the function the
+# compiler's own build peaks at 112,913,630 bytes (20 s where it took 242), and
+# the ceiling is that with 2x headroom again, so the class of regression that
+# hid for a year fails loudly the day it returns.
 kind    = "self"
 entry   = "src/npkc.npk"
-ceiling = 23258956650
+ceiling = 225827260
 expect  = "pass"

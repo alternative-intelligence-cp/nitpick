@@ -735,8 +735,43 @@ ONE function now, `type_pick_rules`, called by both forms
 (`pick_expr_bindings.npk` pins the four rules that became live). Two `pick`
 binding sites in `ir_stmt.npk` that resolved the payload node by hand read
 `variant_payload_slot` now. Step 2: the docs. `nitpick.obligations` never
-moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
-the map.
+moved. **1.5.2d IS COMPLETE (2026-09-05; `meta/roadmap/1.5/1.5.2d.md`; the
+library workbench's S-38, ratified the same day as D-262; four landings, each
+a cumulative prefix under a full harness).** The workbench measured a fixed
+per-program cost at the 1.5.2c close — a floor-only program at +388,765 bytes
+of IR, 0.10 s → 0.85 s, 21 MB → 102 MB, constant to the byte across its
+programs — and the measurement D-262 asked for first put the frontend's share
+(88%) in three SCALING DEFECTS, not in the prelude's size: the bindings
+analysis allocated one state slot per statement and declaration OF THE WHOLE
+PROGRAM for every function and copied it at every branch (57% of the run), and
+the type table and the string interner deduplicated by linear scan. Step 1: the
+resolver hands each parameter and local a dense per-function ordinal
+(`SymbolTable.local_ord`/`stmt_ord`/`fn_slots`), `state_new` is sized by it,
+and both tables carry hash indexes — the probe's frontend 0.72 s → 0.07 s and
+96 MB → 4.4 MB, the compiler's own build 242 s → 20 s with its peak 13.4 GB →
+113 MB; every rejection file reports the same set and every program compiling
+no changed source emits byte-identical IR. Step 2 (D-262 §1): AN UNREFERENCED
+PRELUDE ITEM IS NOT EMITTED — the writer records each non-generic prelude
+function, each prelude impl's methods and vtable and each prelude generic
+instance as an item, and `irw_trim_items` keeps an item only if a symbol it
+defines is referenced from outside every item or from a kept item, a fixpoint
+over the emitted TEXT (a reference is an `@` token, so no kind of use is
+enumerated and an unanticipated one keeps its item); the probe's IR 845,283 →
+50,561 bytes and 608 → 14 functions, `llc` 0.46 s → 0.02 s, the compiler's own
+IR keeps 101 of 685 prelude functions, all referenced. Found on the way: the
+first prelude function's item straddled the head-to-tail sink switch; the
+prelude's generic instances are recorded by call sites in dropped bodies and are
+items too; `src/frontend/prelude.npk` shared the language prelude's qualifier
+and is `prelude_names.npk`; the elision cross-check counts a row only for a
+function the emission holds. The belt (`check_prelude_trimmed`,
+`ir_prelude_trimmed`, self-check cases in both runners) runs on every module the
+compiler under test emits and NOT on the snapshot's (the tools, `npkg build`'s
+`npkc.ll`, the runner self-check's cases). Step 2b (DEF-21, the workbench's
+finding): the undefined-symbol allowlist is the runtime's EXPORTS — the 57
+`internal` defines out, the `module asm`'s two `.globl` names in. Step 3: the
+docs; `self.toml`'s ceiling tightened to the new peak. `nitpick.obligations`
+never moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories)
+is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -966,6 +1001,20 @@ that carried them retired at the cycle close):
   the statement form did (`type_pick_rules` is the one function now). When a
   construct has two spellings — statement and expression `pick`, `=>`/`=>!`,
   `?!`/`?|` — grep for the twin before calling a rule landed.
+- **A prelude function is in an emitted module because something referenced
+  it** (D-262, 1.5.2d): an assertion on a prelude symbol in emitted IR needs a
+  use in the program, and a belt over emitted IR must know WHICH compiler
+  emitted it — the committed snapshot carries an emitter change only after a
+  refresh, so the tools, `npkg build`'s `npkc.ll` and the runner self-check's
+  cases (compiled with the builder by design) are not asked. An instrument that
+  counts sites (`llvm.assume` per discharged row) counts only the functions the
+  emission holds.
+- **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
+  program read as the price of D-257's 348 impls and was, to five sixths, the
+  bindings analysis sizing its state by the whole program. `perf` cannot open
+  events on this machine; `valgrind --tool=callgrind` on the checker over a
+  floor-only probe answers in 30 s, `callgrind_annotate --inclusive=yes` reads
+  it.
 
 ### Reserved words that read like ordinary names
 

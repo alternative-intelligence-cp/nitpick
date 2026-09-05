@@ -644,6 +644,16 @@ is the overlap it always was; a pair the prelude does NOT cover
 an impl naming at least one type or trait declared in its own tree — is
 OPEN_DECISIONS S-37, the library era's question.
 
+**The prelude's generated impls cost a program only what it reaches** (D-262,
+1.5.2d). 1.5.2b's 348 scalar impls were emitted into every program and typed by
+every compile: the library workbench measured a floor-only program at +388,765
+bytes of IR, 0.10 s → 0.85 s and 21 MB → 102 MB (OPEN_DECISIONS S-38). The
+frontend's share was three scaling defects, fixed as engineering (the bindings
+analysis's program-sized state, the type table's and the interner's linear
+dedup: 0.72 s → 0.07 s on that probe, the compiler's own build 242 s → 20 s);
+the emission's share is the trim of BUILD_REFERENCE §4 — an impl's methods and
+vtable are emitted only where the program references them.
+
 ### 4.2 Object Safety
 
 A trait may be used as `dyn Trait` only if (D-157, restated from three

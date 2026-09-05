@@ -17009,3 +17009,31 @@ measured at the landing and recorded; if that residue is ever the bound that
 matters, it is a new question with its own row, not this one. The workbench's
 canary is `nitpick-time/tests/probe/probe11d_floor_only.npk`, 845,282 bytes of
 IR at `0dfddac`; the landing notice carries its after-value.
+
+> **LANDED (1.5.2d, 2026-09-05; steps 1, 2, 2b and 3, each under a full
+> harness).** §2 first: `SymbolTable.local_ord`/`stmt_ord`/`fn_slots` written
+> by the resolver (`Resolver.local_next`), `state_new` sized by the function,
+> `symbol_slot` answering the ordinal; hash indexes on `TypeTable` and
+> `InternTable`. Measured on the floor-only probe: the frontend 0.72 s → 0.07 s
+> and 95.7 MB → 4.4 MB, the whole compile 0.82 s → 0.145 s; the compiler's own
+> check 210 s → 22 s; its build under the cost stage allocated 355,927,682
+> bytes with a 112,913,630 peak in 20.0 s where it had allocated
+> 13,669,309,722 with a 13,428,902,379 peak in 241.8 s -- the 13 GB was the
+> bindings analysis copying the whole program's slot space. No verdict moved
+> (153 rejection files identical under both checkers) and the IR of every
+> program that compiles no changed source is byte-identical. §1 next: the
+> writer's items and `irw_trim_items`, the emitter's brackets (each non-generic
+> prelude function, each prelude impl's methods and vtable, each prelude
+> generic instance), the trim run last; the probe's IR 845,283 → 50,561 bytes,
+> 608 → 14 functions, 587 → 0 prelude bodies, `llc` 0.46 s → 0.02 s; the
+> compiler's own IR keeps 101 of 685 prelude functions, every one referenced.
+> Found and fixed on the way: the first prelude function's item straddled the
+> head-to-tail switch; the prelude's generic instances are recorded by call
+> sites in dropped bodies and are items too; `src/frontend/prelude.npk`, a
+> compiler module named `prelude`, shared the language prelude's qualifier and
+> is `prelude_names.npk` now; the elision cross-check counts a row only for a
+> function the emission holds. The belts `check_prelude_trimmed` and
+> `ir_prelude_trimmed` in both runners, with self-check cases. Step 2b, found
+> by the workbench meanwhile (DEF-21): the undefined-symbol allowlist is the
+> runtime's EXPORTS. `nitpick.obligations` never moved. The workbench's canary
+> reads about 50 KB after the landing.
