@@ -1,0 +1,40 @@
+// expect-exit: 36
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 14
+//
+// A RANGE `for`'S BINDING AS A TERM (1.5.4 step 3, L-12): the exclusive
+// range `1i32...4i32` gives the body `1 <= k < 4`, so `100 / k` discharges.
+// The inclusive `0i32..4i32` gives `0 <= j < 5`, where `j` can be zero: the
+// row is `open`, its guard stays, and the run traps DivByZero, 36, at the
+// first iteration.
+mod:for_bounds;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:q = 0i32;
+    for (int32:k in 1i32...4i32) { q = q + 100i32 / k; }
+    int32:r = 0i32;
+    for (int32:j in 0i32..4i32) { r = r + 100i32 / j; }
+    exit (q + r);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

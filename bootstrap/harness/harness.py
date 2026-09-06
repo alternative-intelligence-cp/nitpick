@@ -3041,7 +3041,8 @@ def stage_runtime(t, s):
 
 Z3_KINDS = ("div-zero", "div-min", "overflow", "bounds", "cast-range", "exhaustive",
             "requires", "ensures", "invariant", "limit", "limit-subsume", "terminate",
-            "stack-depth", "err-exit", "failsafe-post", "prove", "assert-static")
+            "stack-depth", "err-exit", "failsafe-post", "prove", "assert-static",
+            "loop-step")
 VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
 # THE KINDS WITH NO RUNTIME GUARD (D-218.7's `guard` column; `ok_has_guard`'s
 # twin, 1.5.2 step 3): their rows read `none` in the elision column and their
@@ -3060,7 +3061,7 @@ ROW_ROLES = ("guard", "bypass", "held", "conform")
 # The trap each guarded kind keeps when retained (the runtime's identities).
 TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
                 "requires": "-4112", "ensures": "-4113", "failsafe-post": "-4113",
-                "invariant": "-4114"}
+                "invariant": "-4114", "loop-step": "-4101"}
 BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit"))

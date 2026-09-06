@@ -350,6 +350,7 @@ func:trap_of_kind = string(string:k) never fails {
     if (raw text_eq(k, "ensures"))       { pass "-4113"; }
     if (raw text_eq(k, "failsafe-post")) { pass "-4113"; }
     if (raw text_eq(k, "invariant"))     { pass "-4114"; }
+    if (raw text_eq(k, "loop-step"))     { pass "-4101"; }
     pass "";
 };
 
@@ -360,6 +361,7 @@ func:kinds_of_trap = string(string:code) never fails {
     if (raw text_eq(code, "-4112")) { pass "requires"; }
     if (raw text_eq(code, "-4113")) { pass "ensures/failsafe-post"; }
     if (raw text_eq(code, "-4114")) { pass "invariant"; }
+    if (raw text_eq(code, "-4101")) { pass "loop-step"; }
     pass "?";
 };
 
@@ -462,6 +464,7 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     drop strlist_push(@codes, "-4112");
     drop strlist_push(@codes, "-4113");
     drop strlist_push(@codes, "-4114");
+    drop strlist_push(@codes, "-4101");
     for (int64:ci in 0i64...codes.count) {
         string:code2 = raw strlist_view(codes, ci);
         int64:left = 0i64;

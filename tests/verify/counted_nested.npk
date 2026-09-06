@@ -1,23 +1,25 @@
-// expect-exit: 34
-// expect-obligation: invariant open 2
+// expect-exit: 0
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
 // expect-obligation: failsafe-post discharged 14
 //
-// `$` IN AN INVARIANT has a term (1.5.4 step 3, L-11 -- opaque from 1.5.2's
-// L-19 until then), and both rows are `open` ON THE MERITS: `k` comes from
-// `argv` and nothing bounds it, so `0 < 3 + k` at entry and `$ + 1 < 3 + k`
-// under `$ < 3 + k` both have counterexamples. The head keeps its check,
-// which is what makes the violating iteration (`$` reaching 3 with `k` 0)
-// trap InvariantViolated, 34: recorded, never refused, never silently true.
-mod:inv_counted;
+// NESTED COUNTED LOOPS (L-11): `$` is the innermost loop's counter; the
+// inner loop's limit reads the outer `$` at its entry and is captured
+// there. Inside the inner body `100 / $` discharges from `1 <= $`; back in
+// the outer body, after the inner loop, `$` is the outer counter again and
+// `100 / $` discharges from `1 <= $ < 4`. Exits 0.
+mod:counted_nested;
 error:E9;
 
-func:main = int32(cstring[]:argv) {
-    int64:k = argv.len - 1i64;
+func:main = int32(cstring[]:_~argv) {
     int64:acc = 0i64;
-    loop (0i64, 5i64, 1i64) invariant $ < 3i64 + k {
-        acc = acc + 1i64;
+    loop (1i64, 4i64, 1i64) {
+        loop (1i64, $ + 1i64, 1i64) {
+            acc = acc + 100i64 / $;
+        }
+        acc = acc + 100i64 / $;
     }
-    exit (acc =>! int32);
+    exit ((acc - acc) =>! int32);
 };
 
 func:failsafe = int32(Error:e) {

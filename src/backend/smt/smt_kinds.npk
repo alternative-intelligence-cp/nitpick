@@ -36,7 +36,12 @@ pub func:OK_ERR_EXIT = int32() never fails      { pass 14i32; };
 pub func:OK_FAILSAFE_POST = int32() never fails { pass 15i32; };
 pub func:OK_PROVE = int32() never fails         { pass 16i32; };
 pub func:OK_ASSERT_STATIC = int32() never fails { pass 17i32; };
-pub func:OK_COUNT = int32() never fails         { pass 17i32; };
+// `loop-step` (S-46, 1.5.4 step 3; D-022): a counted loop's COMPUTED step is
+// positive -- the guard at the loop's entry (`BadStep`, -4101) that had no
+// kind, so the manifest was not the inventory P-12 says it is. A literal
+// step is the checker's (TYPE-068) and carries neither guard nor row.
+pub func:OK_LOOP_STEP = int32() never fails     { pass 18i32; };
+pub func:OK_COUNT = int32() never fails         { pass 18i32; };
 
 // The manifest spelling of a kind (P-10's `kind` column).
 pub func:ok_name = string(int32:k) never fails {
@@ -57,6 +62,7 @@ pub func:ok_name = string(int32:k) never fails {
     if (k == 15i32) { pass "failsafe-post"; }
     if (k == 16i32) { pass "prove"; }
     if (k == 17i32) { pass "assert-static"; }
+    if (k == 18i32) { pass "loop-step"; }
     pass "?";
 };
 
@@ -77,6 +83,8 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     // `failsafe-post` (D-267, 1.5.3): the guard is the `exit`'s own check in
     // `failsafe` -- ratified guard-less, given a guard by S-43's decision.
     if (k == 15i32) { pass true; }
+    // `loop-step` (S-46, 1.5.4 step 3): the compare at the counted loop's entry.
+    if (k == 18i32) { pass true; }
     pass false;
 };
 

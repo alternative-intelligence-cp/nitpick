@@ -1063,17 +1063,29 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     if (!(raw iv_is_ok(p0))) { pass p0; }
     string:pv = raw loop_i64(x, p0);
 
-    string:bad = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat3(bad, " = icmp sle i64 ",
-                      string_concat(pv, ", 0")));
-    string:trap_l = raw irw_new_label(x.fe.w, "ct.step");
-    string:go_l = raw irw_new_label(x.fe.w, "ct.go");
-    drop irw_line(x.fe.w, raw cat5("br i1 ", bad, ", label %", trap_l,
-                      string_concat(", label %", go_l)));
-    drop irw_label(x.fe.w, trap_l);
-    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4101)");
-    drop irw_line(x.fe.w, "unreachable");
-    drop irw_label(x.fe.w, go_l);
+    // THE STEP GUARD (D-022; 1.5.4 step 3, L-13): a LITERAL step is the
+    // checker's -- TYPE-068 made it positive -- and gets no compare; a
+    // COMPUTED step's compare is the `loop-step` row's guard, gone when the
+    // manifest discharged the row (no `llvm.assume`: 1.5.3 L-11's rule for a
+    // contract-shaped guard).
+    StepLit:sl = raw counted_step_literal(x.ast, s);
+    bool:guard = !sl.is_lit;
+    if (guard) {
+        if (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_LOOP_STEP())) { guard = false; }
+    }
+    if (guard) {
+        string:bad = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(bad, " = icmp sle i64 ",
+                          string_concat(pv, ", 0")));
+        string:trap_l = raw irw_new_label(x.fe.w, "ct.step");
+        string:go_l = raw irw_new_label(x.fe.w, "ct.go");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", bad, ", label %", trap_l,
+                          string_concat(", label %", go_l)));
+        drop irw_label(x.fe.w, trap_l);
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4101)");
+        drop irw_line(x.fe.w, "unreachable");
+        drop irw_label(x.fe.w, go_l);
+    }
 
     string:slot = raw loop_slot(x, sid, 1i32, "i64");
     if (slot.len == 0i64) { pass (raw iv_broken(s.span)); }

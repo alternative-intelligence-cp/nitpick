@@ -1,21 +1,22 @@
-// expect-exit: 34
-// expect-obligation: invariant open 2
+// expect-exit: 21
+// expect-obligation: invariant discharged 2
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
 // expect-obligation: failsafe-post discharged 14
 //
-// `$` IN AN INVARIANT has a term (1.5.4 step 3, L-11 -- opaque from 1.5.2's
-// L-19 until then), and both rows are `open` ON THE MERITS: `k` comes from
-// `argv` and nothing bounds it, so `0 < 3 + k` at entry and `$ + 1 < 3 + k`
-// under `$ < 3 + k` both have counterexamples. The head keeps its check,
-// which is what makes the violating iteration (`$` reaching 3 with `k` 0)
-// trap InvariantViolated, 34: recorded, never refused, never silently true.
-mod:inv_counted;
+// A DESCENDING LOOP WITH A STEP OF 3 (L-11): `loop (10, 1, 3)` runs `$` = 10,
+// 7, 4 (the body sees `1 < $ <= 10` and `(10 - $) mod 3 = 0`), so the
+// preservation row `$ - 3 >= 1` holds only THROUGH the residue class -- 10,
+// 7, 4 step to 7, 4, 1 -- and the body's `100 / $` discharges from `$ > 1`.
+// Exits 21: 10 + 7 + 4.
+mod:counted_desc;
 error:E9;
 
-func:main = int32(cstring[]:argv) {
-    int64:k = argv.len - 1i64;
+func:main = int32(cstring[]:_~argv) {
     int64:acc = 0i64;
-    loop (0i64, 5i64, 1i64) invariant $ < 3i64 + k {
-        acc = acc + 1i64;
+    loop (10i64, 1i64, 3i64) invariant $ >= 1i64 {
+        int64:q = 100i64 / $;
+        acc = acc + $ + q - q;
     }
     exit (acc =>! int32);
 };

@@ -63,6 +63,20 @@
 // `||` and the ternary are arms too: the right-hand side and the two branches
 // are encoded in regions of their own under `a`, `(not a)`, `c`, `(not c)`.
 //
+// THE COUNTERS (1.5.4 step 3; L-11..L-14): a counted loop's `$` and a range
+// `for`'s binding are TERMS. The bounds and the step are captured at entry
+// (fresh symbols equal to their terms, as the emitter's slots are -- D-234's
+// rule), the direction is `asc = start < limit` as the emitter computes it
+// once; the ENTRY row sees the counter at its start; in the body it is a
+// fresh symbol inside its range (`start <= $ < limit` ascending, `limit < $
+// <= start` descending, and on a numeral step in the right residue class);
+// the PRESERVATION and `continue` rows see the incremented counter the head
+// will see; after a loop nothing `break`s out of, the invariant holds over
+// the EXIT value (past the limit by less than a numeral step; a range's
+// binding exactly at its bound). A computed step's positivity is the
+// `loop-step` row (S-46), its compare the guard; a literal step is the
+// checker's and has neither.
+//
 // THE CONE (P-4): an obligation's canonical text is the relevance closure of
 // its goal over the hypotheses that DOMINATE it -- recorded before it, in a
 // branch region on the path from the function's entry to the site. Later
@@ -187,6 +201,18 @@ pub struct:Encoder = {
     // THE LAST `give` WALKED (L-9): a pick expression's arm ends in one, and
     // the arm's value is its term.
     Term:last_give;
+    // THE COUNTERS (1.5.4 step 3, L-11): `$` of every enclosing counted
+    // loop, innermost last -- the term `$` reads outside a rule -- and, per
+    // loop frame, the counter's kind (0 none, 1 a range `for` binding, 2
+    // `$`), the binding's name, its step and direction terms, and the index
+    // of its `$` entry in `dollars`, so a `continue` can see the incremented
+    // counter of the loop it re-enters.
+    List<Term>:dollars;
+    List<int32>:loop_ckind;
+    List<int32>:loop_cname;
+    List<Term>:loop_cstep;
+    List<Term>:loop_casc;
+    List<int64>:loop_cdollar;
     // THE RULE'S SUBJECT (1.5.2 step 3, L-8): the term `$` stands for while a
     // `Rules` body is being instantiated by `enc_rule`; `term_none` outside.
     Term:subject;
@@ -293,6 +319,12 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
                   region_parent: move(rp), cur_region: 0i32,
                   region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
+                  dollars: raw list_init::<Term>(4i64),
+                  loop_ckind: raw list_init::<int32>(4i64),
+                  loop_cname: raw list_init::<int32>(4i64),
+                  loop_cstep: raw list_init::<Term>(4i64),
+                  loop_casc: raw list_init::<Term>(4i64),
+                  loop_cdollar: raw list_init::<int64>(4i64),
                   subject: raw term_none(), quiet: 0i32,
                   result: raw term_none(), at_entry: false, fn_decl: 0i32, impl_decl: 0i32,
                   trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
@@ -1303,6 +1335,141 @@ func:expr_has_break = bool(Encoder->:e, ExprId:id, int32:label, bool:nested, int
     pass false;
 };
 
+// A LOOP'S COUNTER as `walk_loop` receives it (L-11, L-12): kind 0 none, 1 a
+// `for` binding by name (`ranged` when the iterable is a range: `start` and
+// `limit` its captured bounds, the limit exclusive, the step 1, ascending),
+// 2 a counted loop's `$` (`start`, `limit`, `step` captured, `asc` the
+// direction term, `lit_step` the numeral step's value or 0).
+struct:Counter = {
+    int32:kind;
+    int32:name;
+    bool:ranged;
+    Term:start;
+    Term:limit;
+    Term:step;
+    Term:asc;
+    int64:lit_step;
+};
+
+func:counter_none = Counter() never fails {
+    pass Counter{ kind: 0i32, name: 0i32, ranged: false, start: raw term_none(), limit: raw term_none(),
+                  step: raw term_none(), asc: raw term_none(), lit_step: 0i64 };
+};
+
+// CAPTURE a term at entry (L-11; D-234's rule): a fresh anonymous symbol of
+// the type, defined equal to the term when the term exists -- what the
+// body assigns later cannot move it, exactly as the emitter's slots hold the
+// bound and the step across iterations.
+func:term_capture = Term(Encoder->:e, int32:ty, Term:t) never fails {
+    Term:s = raw term_opaque(e, ty);
+    if (!s.ok) { pass (raw term_none()); }
+    if (t.ok && (t.is_bool == s.is_bool)) {
+        drop hyp_push(e, raw smt_app2("=", s.text, t.text), raw syms_union(s.syms, t.syms));
+    }
+    pass s;
+};
+
+// A fresh `$` symbol (`|$.k|`, the anonymous counter as k), int64 -- the
+// checker's type for a counter.
+func:dollar_fresh = Term(Encoder->:e) never fails {
+    int32:i64t = raw tt_int(e.types, 64i32, true);
+    e.anon = e.anon + 1i32;
+    string:nm = raw smt_sym("$", e.anon => int64);
+    int32:idx = raw sym_new(e, nm, i64t);
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, idx);
+    pass Term{ ok: true, is_bool: false, text: move(nm), syms: move(one) };
+};
+
+func:term_not = Term(Term:t) never fails {
+    pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", t.text),
+               syms: raw syms_union(t.syms, raw list_init::<int32>(1i64)) };
+};
+
+// THE COUNTER'S RANGE IN THE BODY (L-11): `start <= $ < limit` ascending,
+// `limit < $ <= start` descending, each under the direction; on a numeral
+// step the residue class (`mod` by a numeral is linear).
+func:push_dollar_range = NIL(Encoder->:e, Counter:c, Term:d) never fails {
+    if (!(d.ok && c.start.ok && c.limit.ok && c.asc.ok)) { pass NIL; }
+    Term:up = raw term_app2("and", raw term_app2("<=", c.start, d, true), raw term_app2("<", d, c.limit, true), true);
+    Term:down = raw term_app2("and", raw term_app2("<", c.limit, d, true), raw term_app2("<=", d, c.start, true), true);
+    Term:nasc = raw term_not(c.asc);
+    Term:h1 = raw term_app2("=>", c.asc, up, true);
+    Term:h2 = raw term_app2("=>", nasc, down, true);
+    drop hyp_push(e, h1.text, h1.syms);
+    drop hyp_push(e, h2.text, h2.syms);
+    if (c.lit_step > 0i64) {
+        Term:s = raw term_lit(int_to_string(c.lit_step), false);
+        Term:ru = raw term_app2("=", raw term_app2("mod", raw term_app2("-", d, c.start, false), s, false), raw term_lit("0", false), true);
+        Term:rd = raw term_app2("=", raw term_app2("mod", raw term_app2("-", c.start, d, false), s, false), raw term_lit("0", false), true);
+        Term:h3 = raw term_app2("=>", c.asc, ru, true);
+        Term:h4 = raw term_app2("=>", nasc, rd, true);
+        drop hyp_push(e, h3.text, h3.syms);
+        drop hyp_push(e, h4.text, h4.syms);
+    }
+    pass NIL;
+};
+
+// THE COUNTER AFTER THE LOOP (L-11): past the limit -- by less than a numeral
+// step -- and past the start, under the direction; the residue class again.
+// A zero-iteration loop (`start == limit`) exits with the start, which
+// satisfies every one of these.
+func:push_dollar_exit = NIL(Encoder->:e, Counter:c, Term:x) never fails {
+    if (!(x.ok && c.start.ok && c.limit.ok && c.asc.ok)) { pass NIL; }
+    Term:nasc = raw term_not(c.asc);
+    Term:up = raw term_app2("and", raw term_app2(">=", x, c.limit, true), raw term_app2(">=", x, c.start, true), true);
+    Term:down = raw term_app2("and", raw term_app2("<=", x, c.limit, true), raw term_app2("<=", x, c.start, true), true);
+    Term:h1 = raw term_app2("=>", c.asc, up, true);
+    Term:h2 = raw term_app2("=>", nasc, down, true);
+    drop hyp_push(e, h1.text, h1.syms);
+    drop hyp_push(e, h2.text, h2.syms);
+    if (c.lit_step > 0i64) {
+        Term:s = raw term_lit(int_to_string(c.lit_step), false);
+        Term:lu = raw term_app2("<", x, raw term_app2("+", c.limit, s, false), true);
+        Term:ld = raw term_app2(">", x, raw term_app2("-", c.limit, s, false), true);
+        Term:ru = raw term_app2("=", raw term_app2("mod", raw term_app2("-", x, c.start, false), s, false), raw term_lit("0", false), true);
+        Term:rd = raw term_app2("=", raw term_app2("mod", raw term_app2("-", c.start, x, false), s, false), raw term_lit("0", false), true);
+        Term:h3 = raw term_app2("=>", c.asc, raw term_app2("and", lu, ru, true), true);
+        Term:h4 = raw term_app2("=>", nasc, raw term_app2("and", ld, rd, true), true);
+        drop hyp_push(e, h3.text, h3.syms);
+        drop hyp_push(e, h4.text, h4.syms);
+    }
+    pass NIL;
+};
+
+// THE INCREMENTED COUNTER the head will see (L-11): `$ + step` ascending,
+// `$ - step` descending; a range binding's is `i + 1`.
+func:counter_next = Term(Encoder->:e, Term:cur, Term:step, Term:asc) never fails {
+    if (!(cur.ok && step.ok)) { pass (raw term_none()); }
+    Term:up = raw term_app2("+", cur, step, false);
+    if (!asc.ok) { pass up; }
+    Term:down = raw term_app2("-", cur, step, false);
+    pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", asc.text, up.text, down.text),
+               syms: raw syms_union(asc.syms, raw syms_union(up.syms, down.syms)) };
+};
+
+// SUBSTITUTE the incremented counter for a head-visit row (the preservation
+// row, a `continue`'s): `$`'s entry in `dollars` set to the next value, a
+// range binding given a new version equal to `i + 1` (L-11, L-12).
+func:counter_advance = NIL(Encoder->:e, int32:kind, int32:name, Term:step, Term:asc, int64:dollar) never fails {
+    if (kind == 2i32) {
+        if ((dollar >= 0i64) && (dollar < e.dollars.count)) {
+            Term:cur = raw term_copy(e.dollars.items[dollar]);
+            e.dollars.items[dollar] = raw counter_next(e, cur, step, asc);
+        }
+        pass NIL;
+    }
+    if (kind == 1i32) {
+        int64:bi = raw bind_find(e, name);
+        if (bi < 0i64) { pass NIL; }
+        Term:cur = raw bind_term(e, bi);
+        if (!cur.ok) { pass NIL; }
+        drop bind_assign(e, name, raw term_app2("+", cur, raw term_lit("1", false), false));
+        pass NIL;
+    }
+    pass NIL;
+};
+
 // A LOOP (L-8, L-9): the ENTRY row -- kind `invariant`, SITE_STMT the loop
 // statement, the conjunction over the versions before any havoc, LOUD under
 // the loop's clause context (a guard inside a clause is the head's site,
@@ -1317,10 +1484,18 @@ func:expr_has_break = bool(Encoder->:e, ExprId:id, int32:label, bool:nested, int
 // loop's rows share its group and its clause count: the head's check elides
 // only when every one is discharged, and keeps one trap per clause.
 func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:cond,
-                     int32:label) never fails {
+                     int32:label, Counter:ctr) never fails {
     StmtNode:s = raw ast_stmt(e.ast, sid);
     List<int32>:assigned = raw list_init::<int32>(4i64);
     drop collect_assigned(e, body, @assigned);
+    // THE COUNTER (L-11, L-12): a `for` binding is an assigned name of its
+    // loop (havoced with the rest); `$` starts at its start for the entry row.
+    if (ctr.kind == 1i32) { drop list_push(@assigned, ctr.name); }
+    int64:dollar = 0i64 - 1i64;
+    if (ctr.kind == 2i32) {
+        dollar = e.dollars.count;
+        drop list_push(@e.dollars, raw term_copy(ctr.start));
+    }
     int32:nc = raw invariant_clauses(e, inv);
     if (nc > 0i32) {
         e.clause_ctx = sid.index;
@@ -1337,6 +1512,23 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     }
     drop invalidate(e, assigned);
     drop region_enter(e);
+    // THE COUNTER IN THE BODY (L-11, L-12): a fresh `$` inside its range; a
+    // range binding's havoced version inside its bounds.
+    if (ctr.kind == 2i32) {
+        Term:d = raw dollar_fresh(e);
+        e.dollars.items[dollar] = raw term_copy(d);
+        drop push_dollar_range(e, ctr, d);
+    }
+    if ((ctr.kind == 1i32) && ctr.ranged) {
+        int64:bi = raw bind_find(e, ctr.name);
+        if (bi >= 0i64) {
+            Term:iv = raw bind_term(e, bi);
+            if (iv.ok && ctr.start.ok && ctr.limit.ok) {
+                Term:rf = raw term_app2("and", raw term_app2("<=", ctr.start, iv, true), raw term_app2("<", iv, ctr.limit, true), true);
+                drop hyp_push(e, rf.text, rf.syms);
+            }
+        }
+    }
     if (nc > 0i32) {
         e.quiet = e.quiet + 1i32;
         Term:h = raw invariant_conj(e, inv, true);
@@ -1350,12 +1542,26 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     drop list_push(@e.loop_sids, sid.index);
     drop list_push(@e.loop_labels, label);
     drop list_push(@e.loop_invs, inv.index);
+    drop list_push(@e.loop_ckind, ctr.kind);
+    drop list_push(@e.loop_cname, ctr.name);
+    drop list_push(@e.loop_cstep, raw term_copy(ctr.step));
+    drop list_push(@e.loop_casc, raw term_copy(ctr.asc));
+    drop list_push(@e.loop_cdollar, dollar);
     drop walk_block(e, body);
     e.loop_sids.count = e.loop_sids.count - 1i64;
     e.loop_labels.count = e.loop_labels.count - 1i64;
     e.loop_invs.count = e.loop_invs.count - 1i64;
+    e.loop_ckind.count = e.loop_ckind.count - 1i64;
+    e.loop_cname.count = e.loop_cname.count - 1i64;
+    e.loop_cstep.count = e.loop_cstep.count - 1i64;
+    e.loop_casc.count = e.loop_casc.count - 1i64;
+    e.loop_cdollar.count = e.loop_cdollar.count - 1i64;
     if (nc > 0i32) {
         StmtNode:bs = raw ast_stmt(e.ast, body);
+        // THE PRESERVATION ROW SEES THE INCREMENTED COUNTER (L-11, L-12).
+        if ((ctr.kind == 2i32) || ((ctr.kind == 1i32) && ctr.ranged)) {
+            drop counter_advance(e, ctr.kind, ctr.name, ctr.step, ctr.asc, dollar);
+        }
         e.quiet = e.quiet + 1i32;
         Term:gp = raw invariant_conj(e, inv, false);
         e.quiet = e.quiet - 1i32;
@@ -1371,6 +1577,26 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     drop region_leave(e);
     drop invalidate(e, assigned);
     bool:no_break = !(raw loop_has_break(e, body, label, false, 64i32));
+    // THE COUNTER AFTER THE LOOP (L-11, L-12): `$`'s exit value; a range
+    // binding's fresh version exactly at its bound (`ite (< lo hi) hi lo`).
+    if (ctr.kind == 2i32) {
+        Term:x = raw dollar_fresh(e);
+        e.dollars.items[dollar] = raw term_copy(x);
+        drop push_dollar_exit(e, ctr, x);
+    }
+    if ((ctr.kind == 1i32) && ctr.ranged) {
+        int64:bi2 = raw bind_find(e, ctr.name);
+        if (bi2 >= 0i64) {
+            Term:iv2 = raw bind_term(e, bi2);
+            if (iv2.ok && ctr.start.ok && ctr.limit.ok) {
+                Term:xv = Term{ ok: true, is_bool: false,
+                                text: raw smt_app3("ite", raw smt_app2("<", ctr.start.text, ctr.limit.text), ctr.limit.text, ctr.start.text),
+                                syms: raw syms_union(ctr.start.syms, ctr.limit.syms) };
+                Term:xe = raw term_app2("=", iv2, xv, true);
+                drop hyp_push(e, xe.text, xe.syms);
+            }
+        }
+    }
     if (nc > 0i32) {
         if (no_break) {
             e.quiet = e.quiet + 1i32;
@@ -1388,6 +1614,7 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
         e.quiet = e.quiet - 1i32;
         if (wc2.ok && wc2.is_bool) { drop hyp_push(e, raw smt_app1("not", wc2.text), wc2.syms); }
     }
+    if (ctr.kind == 2i32) { e.dollars.count = e.dollars.count - 1i64; }
     pass NIL;
 };
 
@@ -1687,10 +1914,16 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         pass (raw term_opaque(e, ty));
     }
     // `$` -- THE RULE'S SUBJECT (1.5.2 step 3, L-8): inside `enc_rule` it is
-    // the term the rule is being instantiated over; outside one it is a
-    // counted loop's counter, which has no term until 1.5.4.
+    // the term the rule is being instantiated over; outside one it is the
+    // innermost counted loop's counter (1.5.4 step 3, L-11): its start at
+    // the entry row, a fresh in-range symbol in the body, the incremented
+    // value at the preservation and `continue` rows, the exit value after.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
         if (e.subject.ok) { pass (raw term_copy(e.subject)); }
+        if (e.dollars.count > 0i64) {
+            Term:top = raw term_copy(e.dollars.items[e.dollars.count - 1i64]);
+            if (top.ok) { pass top; }
+        }
         pass (raw term_opaque(e, ty));
     }
     // A CALL (1.5.2 step 3, L-10; 1.5.3 step 2, D-268): the receiver and
@@ -2508,28 +2741,110 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 
     if (s.kind == StmtKind.StmtWhileStmt) {
         drop walk_loop(e, sid, raw stmt_while_invariant(e.ast, s), raw stmt_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s));
+                       raw stmt_cond(s), raw stmt_label(s), raw counter_none());
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtForStmt) {
-        Term:it = raw enc_expr(e, raw stmt_for_iter(e.ast, s));
-        int64:mark = raw scope_mark(e);
+        // A RANGE `for` (L-12): the bounds are the range node's two operands
+        // (sites, encoded once here), captured at entry (D-234), the limit
+        // exclusive (`..` adds one); the binding's entry version is the low
+        // bound, its body version a havoc inside the bounds. Any other
+        // iterable: the binding opaque, havoced per body.
+        ExprId:iter = raw stmt_for_iter(e.ast, s);
+        Counter:ctr = raw counter_none();
         DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
         int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
-        drop bind_define(e, raw decl_name(bd), bt, raw term_none(), 0i32, false);
+        ctr.kind = 1i32;
+        ctr.name = raw decl_name(bd);
+        Term:entry = raw term_none();
+        bool:is_range = false;
+        if (!(raw expr_is_none(iter))) {
+            ExprNode:itn = raw ast_expr(e.ast, iter);
+            if (itn.kind == ExprKind.ExprRangeExpr) { is_range = true; }
+        }
+        if (is_range) {
+            ExprNode:rn = raw ast_expr(e.ast, iter);
+            Term:lo = raw enc_expr(e, raw expr_lhs(rn));
+            Term:hi = raw enc_expr(e, raw expr_rhs(rn));
+            if (rn.payload == 1i64) {
+                if (hi.ok && (!hi.is_bool)) { hi = raw term_app2("+", hi, raw term_lit("1", false), false); }
+                else { hi = raw term_none(); }
+            }
+            ctr.ranged = true;
+            ctr.start = raw term_capture(e, bt, lo);
+            ctr.limit = raw term_capture(e, bt, hi);
+            ctr.step = raw term_lit("1", false);
+            ctr.asc = raw term_lit("true", true);
+            entry = raw term_copy(ctr.start);
+        } else {
+            Term:it = raw enc_expr(e, iter);
+        }
+        int64:mark = raw scope_mark(e);
+        drop bind_define(e, raw decl_name(bd), bt, entry, 0i32, false);
         drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s));
+                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr);
         drop scope_release(e, mark);
         pass NIL;
     }
 
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
-        for (int32:ai in 0i32...(raw stmt_counted_argc(e.ast, s))) {
-            Term:at = raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai));
+        // THE HEAD (L-11, L-13): `loop(start, limit, step)` or `till(limit,
+        // step)` -- each argument a site, encoded once; the start (`0` for
+        // `till`), the limit and the step captured; the direction `asc =
+        // start < limit` as the emitter computes it once. A COMPUTED step's
+        // positivity is the `loop-step` row (S-46), its compare the guard,
+        // and `step > 0` is then a fact of every continuing execution (the
+        // guard trapped otherwise); a literal step is the checker's (TYPE-068)
+        // -- no row, no guard -- and positive by construction.
+        int32:argc = raw stmt_counted_argc(e.ast, s);
+        int32:i64t = raw tt_int(e.types, 64i32, true);
+        Counter:ctr = raw counter_none();
+        ctr.kind = 2i32;
+        List<Term>:args = raw list_init::<Term>(4i64);
+        for (int32:ai in 0i32...argc) {
+            drop list_push(@args, raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai)));
+        }
+        Term:st = raw term_lit("0", false);
+        Term:li = raw term_none();
+        Term:sp = raw term_none();
+        if (s.kind == StmtKind.StmtTillStmt) {
+            if (argc == 2i32) { li = raw term_copy(args.items[0i64]); sp = raw term_copy(args.items[1i64]); }
+        } else {
+            if (argc == 3i32) {
+                st = raw term_copy(args.items[0i64]);
+                li = raw term_copy(args.items[1i64]);
+                sp = raw term_copy(args.items[2i64]);
+            }
+        }
+        ctr.start = raw term_capture(e, i64t, st);
+        ctr.limit = raw term_capture(e, i64t, li);
+        ctr.step = raw term_capture(e, i64t, sp);
+        if (ctr.start.ok && ctr.limit.ok) { ctr.asc = raw term_app2("<", ctr.start, ctr.limit, true); }
+        StepLit:sl = raw counted_step_literal(e.ast, s);
+        if (sl.is_lit) {
+            if (argc >= 1i32) {
+                ExprNode:sx = raw ast_expr(e.ast, raw stmt_counted_arg(e.ast, s, argc - 1i32));
+                if (sx.kind == ExprKind.ExprIntLiteral) { ctr.lit_step = sx.payload; }
+            }
+        } else {
+            if (ctr.step.ok) {
+                Term:pos = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
+                drop record_at(e, raw OK_LOOP_STEP(), pos.text, pos.syms, raw SITE_STMT(), sid.index, s.span, true,
+                               raw ROLE_GUARD(), sid.index, 1i32);
+                drop hyp_push(e, pos.text, pos.syms);
+            } else {
+                List<int32>:none = raw list_init::<int32>(1i64);
+                drop record_at(e, raw OK_LOOP_STEP(), "", none, raw SITE_STMT(), sid.index, s.span, false,
+                               raw ROLE_GUARD(), sid.index, 1i32);
+            }
+        }
+        if (sl.is_lit && ctr.step.ok) {
+            Term:pos2 = raw term_app2(">", ctr.step, raw term_lit("0", false), true);
+            drop hyp_push(e, pos2.text, pos2.syms);
         }
         drop walk_loop(e, sid, raw stmt_counted_invariant(e.ast, s), raw stmt_counted_body(s),
-                       ExprId{ index: 0i32 }, raw stmt_label(s));
+                       ExprId{ index: 0i32 }, raw stmt_label(s), ctr);
         pass NIL;
     }
 
@@ -2549,7 +2864,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         bool:has_pre = cpre.ok && cpre.is_bool;
         List<int32>:snap_pre = raw snapshot(e);
         drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
-                       raw stmt_cond(s), raw stmt_label(s));
+                       raw stmt_cond(s), raw stmt_label(s), raw counter_none());
         List<int32>:snap_post = raw snapshot(e);
         Term:npre = raw term_none();
         if (has_pre) {
@@ -2679,6 +2994,13 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
             VerifyId:civ = VerifyId{ index: e.loop_invs.items[fr] };
             int32:cnc = raw invariant_clauses(e, civ);
             if (cnc > 0i32) {
+                // THE HEAD SEES THE INCREMENTED COUNTER (L-11, L-12): a
+                // `continue` re-enters at the increment.
+                int32:ck = e.loop_ckind.items[fr];
+                if (ck != 0i32) {
+                    drop counter_advance(e, ck, e.loop_cname.items[fr], raw term_copy(e.loop_cstep.items[fr]),
+                                         raw term_copy(e.loop_casc.items[fr]), e.loop_cdollar.items[fr]);
+                }
                 e.quiet = e.quiet + 1i32;
                 Term:cg = raw invariant_conj(e, civ, false);
                 e.quiet = e.quiet - 1i32;

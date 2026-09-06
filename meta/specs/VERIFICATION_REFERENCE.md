@@ -520,6 +520,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
 | `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
+| `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 <!-- END obligation-catalogue -->
