@@ -1,0 +1,56 @@
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 39
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 45
+//
+// DEF-24 (1.5.2h step 0; D-251): A LIMITED BINDING HAS NO ADDRESS, AND A
+// POINTER RECEIVER TAKES ONE. `@`, `$$i` and `$$m` of a limited binding have
+// refused since 1.5.2 (TYPE-063, `limit_sites.npk`); the auto-ref a method
+// call performs for a pointer-typed receiver (1.0.9b) did not, so
+// `drop p.bump();` with `bump = NIL(Pt->:p)` wrote a limited `Pt` through the
+// receiver and no rule saw it -- measured on `0ba21ef`: `$.x > 0i32` violated,
+// no `LimitViolated`, exit 7 -- while `drop bump(@p);` was refused at the `@`.
+// Both method spellings refuse now, the UFCS free function and the trait
+// method alike; a by-value receiver is the lend D-065 allows and is accepted.
+mod:limit_receiver;
+
+Rules<Pt>:r_px = { $.x > 0i32 };
+struct:Pt = { int32:x; };
+
+trait:Bumper = {
+    func:bump_to = NIL(Self->:self, int32:v);
+};
+
+impl:Pt:Bumper = {
+    pub func:bump_to = NIL(Pt->:self, int32:v) never fails { self.x = v; pass NIL; };
+};
+
+// A free function taking the struct by address, called in the UFCS spelling.
+func:bump = NIL(Pt->:p) never fails {
+    p.x = 0i32 - 5i32;
+    pass NIL;
+};
+
+// A by-value receiver: the lend, accepted.
+func:peek = int32(Pt:p) never fails { pass p.x; };
+
+func:ufcs_write = int32(int32:seed) {
+    limit<r_px> Pt:p = Pt{ x: seed };
+    drop p.bump();
+    pass p.x;
+};
+
+func:trait_write = int32(int32:seed) {
+    limit<r_px> Pt:p = Pt{ x: seed };
+    drop p.bump_to(0i32 - 5i32);
+    pass p.x;
+};
+
+func:by_value = int32(int32:seed) {
+    limit<r_px> Pt:p = Pt{ x: seed };
+    int32:v = raw p.peek();
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

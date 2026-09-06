@@ -30,6 +30,7 @@ use "./type_resolve.npk".*;
 use "./type_layout.npk".*;
 use "./type_decls.npk".*;
 use "./type_expr.npk".*;
+use "./type_stmt.npk".*;   // place_limited (D-251; DEF-24, 1.5.2h step 0)
 use "./expr_types.npk".*;
 use "./type_trait.npk".*;
 use "./type_generic.npk".*;
@@ -2079,6 +2080,31 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     bool:ptr_recv = false;
     if ((raw type_kind(e.types, p0)) == (raw TY_POINTER())) {
         if ((raw type_elem(e.types, p0)) == recv) { ptr_recv = true; }
+    }
+    // A LIMITED BINDING HAS NO ADDRESS, AND A POINTER RECEIVER TAKES ONE
+    // (DEF-24, 1.5.2h step 0; D-251). `@`, `$$i` and `$$m` of a limited
+    // binding refuse (TYPE-063, 1.5.2 step 1); the auto-ref this shape
+    // performs did not, so `drop p.bump();` with `bump = NIL(Pt->:p)` wrote a
+    // limited `Pt` through the receiver and no rule saw it -- the rule
+    // violated, no trap -- while `drop bump(@p);` was refused at the `@`.
+    // Asked only when the receiver EXPRESSION is the place itself: a
+    // pointer-typed receiver passes its VALUE (the emitter's own test), and
+    // a write through a pointer is the pointee's, not the binding's. The
+    // call types as invalid so no second sentence follows (D-240).
+    if (ptr_recv) {
+        int32:rxt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        bool:rx_is_ptr = false;
+        if (rxt != 0i32) {
+            if ((raw type_kind(e.types, rxt)) == (raw TY_POINTER())) { rx_is_ptr = true; }
+        }
+        if (!rx_is_ptr) {
+            if (raw place_limited(e, raw expr_operand(n), 64i32)) {
+                discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
+                    "a limited binding has no address (D-251), and a method whose receiver is a pointer takes one: a write through `Self->` would be one no rule sees -- call a by-value receiver, or read the fields",
+                    n.span));
+                pass 0i32;
+            }
+        }
     }
     // THE RECEIVER IS OTHERWISE A SLOT LIKE ANY OTHER (1.0.8): `p.f()` and
     // `f(p)` are one call (D-006), so it asks `fits`, as every other slot does.
