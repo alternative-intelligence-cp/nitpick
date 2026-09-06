@@ -15,9 +15,10 @@ Variables in Nitpick exist in one of several allocation states. You can use cont
 
 > **In a generic body a bare `T` is treated as owning (D-264, 1.5.2f):** the
 > body is checked once for every instantiation, so a copy of a `T` place is
-> refused (TYPE-046) unless spelled `move(...)` or `.clone()`, and a lending
-> `pick` may not bind a `T` payload. The `move` of a scalar is its copy; the
-> rule costs nothing where nothing owns.
+> refused (TYPE-046) unless spelled `move(...)` or `.clone()`; a lending
+> `pick` binds a `T` payload as a VIEW in place (D-266, 1.5.2h) and a consuming
+> one moves it. The `move` of a scalar is its copy; the rule costs nothing
+> where nothing owns.
 If no keyword is provided, the allocation is tracked and managed. The compiler drops the binding when its scope exits — after the scope's joins and `defer`s, before its channel reclaims (D-183, D-207) — and at no earlier point; a value's last textual use does not shorten its life. *(The sentence here said "or at its NLL last-use point" until 1.5.1b; the compiler never did that.)*
 ```nitpick
 int32:x = 42i32;           // Automatically managed on stack

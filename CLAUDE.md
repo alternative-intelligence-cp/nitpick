@@ -800,8 +800,8 @@ nothing and still generate). Before it, `T:x = s[i]` at an owning `T` compiled,
 linked and ran with two owners of one heap body — a use-after-free that exited
 0. Seven sites in the tree, all a by-value `T:v` stored into an owning slot,
 say `move T:v` and `move(v)` now; nothing else refuses anew. **Left open:
-S-41**, a borrowing `pick` binding form (the user's), which would let a generic
-enum with payloads derive the four again. **1.5.2g IS COMPLETE (2026-09-06;
+S-41**, a borrowing `pick` binding form — settled the next day as D-266
+(1.5.2h). **1.5.2g IS COMPLETE (2026-09-06;
 `meta/roadmap/1.5/1.5.2g.md`; two landings under full harnesses).** S-42, the
 library workbench's first CI finding — the pinned commit's `build/npkc`
 differed between this machine and GitHub's runner while `npkrt.o` did not —
@@ -813,7 +813,25 @@ machines is the EMISSION (`build/npkc.ll`; a difference there is a compiler
 defect), every `npkg` ladder run prints one `sha256` line per intermediate
 in ladder order with the harness's `parity` stage holding each to an
 independent digest, and every pin notice quotes the lines with the
-emission's named. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining
+emission's named. **1.5.2h IS COMPLETE (2026-09-06;
+`meta/roadmap/1.5/1.5.2h.md`; three landings under full harnesses).** S-41
+ratified as **D-266**: a lending `pick (v)` binds VIEWS — each binding the
+payload in place, read-only, typed as itself, no copy at the bind, no address
+(TYPE-066: an assignment, `@`/`$$i`/`$$m`, a pointer-receiver call, a stateful
+operation, and no view of a stateful kind at all), the selector's root FROZEN
+inside an arm that binds (TYPE-067), a `move` or `pass` of a view TYPE-047; the
+consuming form unchanged. One fact recorded once: the resolver links a pattern
+symbol to its selector and `sym_is_view` reads the spelling. The binding's slot
+holds the payload's ADDRESS in sync and coroutine bodies alike, and the
+selector's root is frame-resident when an arm binds — a view across an
+`await` is sound by residency, as `@x` is. The derive generator's `Eq`/`Ord`/
+`PartialOrd`/`Clone` generate over `string` and `T` payloads again. **DEF-24**,
+found by planning: TYPE-063 refused `@`/`$$i`/`$$m` on a limited binding but
+not the implicit address a pointer-receiver method call takes — a limited
+struct written through `Self->` with no trap — fixed at step 0, the site views
+then mirror. Found on the way: `drop` over a refused operand reported TYPE-042
+as a second sentence; it has the `raw` arm's D-240 short-circuit now.
+**Next: 1.5.3 (contracts live).** 1.5.4b (the remaining
 theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
@@ -1054,7 +1072,8 @@ that carried them retired at the cycle close):
   emission holds.
 - **A `T` is move-only in a generic body** (D-264, 1.5.2f): store a by-value
   `T:v` only as `move T:v` + `move(v)`; read an element out as
-  `move(s.items[i])`; a lending `pick` cannot bind a `T` payload. `move(x)`
+  `move(s.items[i])`; a lending `pick` binds a `T` payload as a VIEW (D-266).
+  `move(x)`
   spends `x` at a scalar too (MOVE-001 on a later read of `x`).
 - **The ladder prints its digests, and the emission's is the one that
   travels** (D-265, 1.5.2g): `npkg build` ends with one `sha256` line per
@@ -1062,6 +1081,14 @@ that carried them retired at the cycle close):
   and the binary's belong to the toolchain build. An emitted `.ll`'s BYTE
   COUNT is path-dependent (D-236's root-relative site paths), so a size
   compared across directories is the object's.
+- **A lending `pick`'s binding is a VIEW, and a view has no address** (D-266,
+  1.5.2h): read it, pass it by value, `give` it if copyable. A method that
+  takes `Self->` on a payload needs the consuming form `pick (move(v))` or a
+  by-value receiver; the selector cannot be written inside an arm that binds
+  (TYPE-067) — assign after the `pick`, or bind `_`; a payload of a stateful
+  kind (an arena, a lock, an atomic, a channel, a `dyn`) cannot be viewed at
+  all. `drop` over a refused operand stays silent (D-240), as `raw` has since
+  1.5.2b — a second sentence there is the checker's defect, not the program's.
 - **`exit` runs joins and defers and no drops** (D-183's amendment, 1.4.4): an
   owning local of `main` is never dropped by a program that exits, so a
   program test with one in `main` measures the storage's REGIME under D-151,

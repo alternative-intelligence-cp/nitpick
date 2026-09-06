@@ -28,7 +28,8 @@ Nitpick's equivalent to `switch` or `match`. Cases are evaluated against the tar
 *   The default/catch-all case is designated by `(*)`
 *   **Fallthrough:** Nitpick does not implicitly fall through. To fall through to another case, you must label the target case and use the `fall label;` keyword.
 *   **The selector may not be an `Optional`** (D-260, 1.5.2c; `NITPICK-TYPE-065`): an `Optional` has no arms of its own. Reach the value with `??` — `pick (o ?? default) { … }` — or test it with `== NIL`. A frac (D-198) and a complex (D-199) are refused at the selector by the same rule.
-*   **One rule set for both spellings** (1.5.2c): the statement form and the expression form (`int32:v = pick (s) { (A) { give 1i32; }, (*) { give 0i32; } };`) apply the same selector rules, type their arm bindings the same way, refuse an owning binding in a lending `pick` alike (D-216: `pick (move(v))` is the consuming form), and refuse `move` of a selector that owns nothing alike. Until 1.5.2c the expression form typed no arm binding at all.
+*   **One rule set for both spellings** (1.5.2c): the statement form and the expression form (`int32:v = pick (s) { (A) { give 1i32; }, (*) { give 0i32; } };`) apply the same selector rules, type their arm bindings the same way, bind views and freeze the selector alike (D-266), and refuse `move` of a selector that owns nothing alike. Until 1.5.2c the expression form typed no arm binding at all.
+*   **Two forms, and what each binds** (D-266, 1.5.2h; `NITPICK-TYPE-066`, `NITPICK-TYPE-067`). A LENDING `pick (v)` binds each pattern name as a **view**: the payload (or destructured field) in place, in the selector's own storage — read-only, typed as the payload, nothing copied at the bind, nothing consumed, no drop of its own. A view is read by value: a field, an element, a plain by-value argument (the lend of D-065), `give`/`pass` of a copyable value; a copy of an owning view is TYPE-046 as everywhere (`.clone()` under a bound is the copy), and a `move` of one, or a `pass` of one out of the function, is TYPE-047 — the value was lent. **A view has no address**: an assignment or compound assignment to it or a part of it, `@`, `$$i`, `$$m`, a call whose receiver is a pointer (the implicit address a method or UFCS call takes), an operation of a stateful kind (an arena, a lock, a guard, an atomic, a channel, a `dyn`), and binding a view of such a kind at all are TYPE-066 — the language has one pointer type and it carries no mutability, so every address of a view is a write path into a lent value. **The selector is frozen while a view of it is live**: inside an arm that binds at least one name (`_` binds nothing), no write may reach the selector's root binding — an assignment to it or any part of it, a `move` of it or a part, `@`/`$$i`/`$$m`, `.destroy()`, a pointer-receiver call, a stateful operation, a nested `pick (move(…))` — TYPE-067; an arm that binds nothing may write it, so `pick (state) { (Idle) { state = Running; } }` stays legal. A CONSUMING `pick (move(v))` (D-216) takes the value apart: its bindings OWN their payloads and drop at the arm's exit, and `v` is moved-from after. A view across an `await` is sound: the selector's root lives to the function's end, exactly as an address-taken local does.
 
 ```nitpick
 pick (x) {
@@ -50,6 +51,9 @@ pick (event) {
     (*) { ... }
 }
 ```
+
+In a lending `pick` these names are views of `event`'s fields and payload
+(D-266); in `pick (move(event))` they own them.
 
 ### 1.2.2 `pick` Control Modifiers
 

@@ -14930,6 +14930,14 @@ the loop-carried move analysis it interacts with.
 > values has no correct spelling yet") reappearing for enums; the deep-view
 > accessor family D-183 records is what answers it.
 
+> **D-266 note (2026-09-06, landed at 1.5.2h).** The lending form BINDS VIEWS
+> now: a binding is the payload in place, read-only, so the consequence above
+> — an owning payload unreadable through a lending pick, a getter over a
+> borrowed enum forced to consume — is lifted; `read_text`'s shape reads
+> through a view. The consuming form is unchanged. The refusal the landed note
+> describes had a COPY to refuse; a view has none, and TYPE-046 at a lending
+> bind retired with it (`move_rules.npk`'s case is a control).
+
 ## D-217 — NIKOS struck from 1.5 — **SETTLED (user-ratified; B-5)**
 
 A decision, not a deferral-by-silence: Astrée IS the
@@ -16471,6 +16479,10 @@ see it under the session's descriptor limit. Both are fixed in the same step
 > README documents; `src/frontend/list.npk` and its forty-odd imports are
 > gone.
 
+> **D-266 note (2026-09-06, landed at 1.5.2h).** The generated `pick` binds
+> views, so a `string` payload derives the four: `payload_owning.npk`'s `Msg`
+> and `Owned` moved to `derive_payload_view.npk` as a program that runs them.
+
 ## D-251 — `limit<Rules>` live: the check after every write, `LimitViolated`, a limited binding has no address, a `limit` where no write point exists refuses — **SETTLED (user decision, 2026-09-04: "ratify all seven as recommended"; 1.5.2 S-28; lands at 1.5.2 steps 1–3)**
 
 D-220's three write points made precise, and the two rules the first
@@ -16523,6 +16535,15 @@ site's own obligation (never inside its own cone), which is what lets a
 > at the call could elide it — D-252's reason, applied to the row), and the
 > row's goal carries no per-conjunct `:named` tags (`--explain`'s model
 > assigns the arguments, which names the parameter).
+
+> **DEF-24 (2026-09-06, fixed at 1.5.2h step 0).** "A limited binding has no
+> address" refused `@`, `$$i` and `$$m` but not the IMPLICIT address a method
+> or UFCS call takes for a pointer-typed receiver: `drop p.bump();` with
+> `bump = NIL(Pt->:p)` wrote a limited `Pt` unchecked — the rule violated, no
+> trap, measured on `0ba21ef` — while `drop bump(@p);` was refused. Found
+> planning D-266, whose views mirror this rule. `type_method_call`'s
+> receiver-by-address decision asks `place_limited` now (TYPE-063);
+> `limit_receiver.npk` holds both spellings and the by-value control.
 
 ## D-252 — the caller-side bypass: a discharged `limit-subsume` row lets a direct call skip the callee's entry check — **SETTLED (user decision, 2026-09-04; 1.5.2 S-29; lands at 1.5.2 step 4)**
 
@@ -17134,6 +17155,12 @@ consuming one.
 > (DERIVE-006 ×2), `generic_owning_move.npk` (exit 0 at `string` and `int32`).
 > Zero new refusals anywhere else, measured before and after.
 
+> **D-266 note (2026-09-06, landed at 1.5.2h).** The two consequences above
+> lift: a lending `pick` binds a `T` payload as a VIEW, and the derive
+> generator's four generate over a `T` payload (`derive_generic.npk`'s `Opt<T>`
+> section derives all seven again). The rule itself stands: a copy of a `T`
+> place is still `move(...)`, a plain copy at a scalar, or `.clone()`;
+> `generic_owning_copy.npk`'s `peek` is a control now.
 
 ## D-265 — the toolchain pin is a version; the emission is the cross-machine identity claim — **SETTLED (user decision, 2026-09-06: "lets go with your recommendation on S-42 and ratify it"; OPEN_DECISIONS S-42; lands at 1.5.2g)**
 
@@ -17258,3 +17285,30 @@ pointer-typed receiver: `drop p.bump();` with `bump = NIL(Pt->:p)` writing
 the rule and traps nothing (exit 7), while `drop bump(@p);` is refused at the
 `@`. Fixed at 1.5.2h step 0 — the site that then refuses a view its address
 (rule 3) is the same site. Mechanics at 1.5.2h.
+
+> **LANDED (1.5.2h steps 0–2, 2026-09-06).** Step 0 closed DEF-24 (TYPE-063 at
+> the receiver). Step 1: `Symbol.link` written by the resolver and `sym_is_view`
+> reading the selector's spelling (`symbols.npk`); the checker's
+> `place_is_view`/`place_frozen`/`refuse_write_path` at every write path — the
+> assignment, `@`/`$$i`/`$$m`, the receiver-by-address decision, the arena
+> operations, the stateful-kind gate at the head of `type_method_call` —
+> `check_pick_view_binds` (a stateful kind refused at the bind,
+> `type_kind_stateful` in `types.npk`), the freeze pushed per binding arm in
+> both spellings (`check_arms`, `type_pick_expr`), TYPE-047's view text;
+> `root_symbol` and `view_root` through views (`escape.npk`),
+> `suspend_pick_views` (the `@x` rule, `suspend.npk`); the emitter's
+> `pick_selector_address` (a place addressed, a temporary spilled — to the
+> frame slot at role 3 on the first arm's statement in a coroutine), view slots
+> holding the payload's address (`fnem_view_last`), `emit_ident` and `addr_of`
+> loading through them, `scan_pick_binds` registering `ptr` slots;
+> `dv_refusal` lifted for `DVC_STRING` and `DVC_PARAM`. Found on the way:
+> `drop` over a refused operand reported TYPE-042 as a second sentence — the
+> `raw` arm's D-240 short-circuit (1.5.2b step 4) is `drop`'s now. Tests:
+> `pick_view.npk` (a view read before and after an `await` included),
+> `derive_payload_view.npk`, `pick_view_rules.npk` (TYPE-066 ×8, TYPE-067 ×6,
+> TYPE-046, TYPE-047 ×2, four controls), `limit_receiver.npk`; the lending
+> binds in `move_rules.npk`, `pick_expr_bindings.npk` and
+> `generic_owning_copy.npk` are controls; `derive_generic_payload.npk` retired.
+> Measured before the harnesses: all 215 backend programs compile, and every
+> rejection file reports the same code set under the step 0 checker and the
+> step 1 checker except the three that flipped by design and the new file.

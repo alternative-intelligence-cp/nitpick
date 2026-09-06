@@ -265,17 +265,16 @@ over one would have to lie.
 
 All seven generate for a struct and for an enum (D-123, D-250, D-258): a
 struct's derives read its fields; an enum's `Eq`, `Ord`, `PartialOrd` and
-`Clone` compare or rebuild the payloads of equal tags through a `pick` per
-variant (the tag first, in declaration order), its `Hash` is the tag's and its
-`ToString`/`Debug` the variant's name. **A generic enum derives what binds no
-payload** (D-261 as narrowed by D-264, 1.5.2f): `Hash`, `ToString` and `Debug`
-generate for `enum:Opt<T> = { Some(T); None; }` as for any enum; `Eq`, `Ord`,
-`PartialOrd` and `Clone` bind the payload in a lending `pick`, and a `T` payload
-is move-only in the body that names it, so those four refuse a `T` payload
-(DERIVE-006) exactly as they refuse a `string`'s — the generated `pick` was the
-same copy the checker refuses in hand-written code. A parameter FIELD is read in
-place and derives all seven. What would lift this is a borrowing `pick` binding
-form, OPEN_DECISIONS S-41. What refuses, by name
+`Clone` compare or rebuild the payloads of equal tags through a lending `pick`
+per variant (the tag first, in declaration order) whose bindings are VIEWS of
+the payloads in place (D-266, 1.5.2h), the comparison and the clone taking
+their operands by value — the lend — so a `string` payload and a bare `T`
+payload derive all seven, `enum:Opt<T> = { Some(T); None; }` included; its
+`Hash` is the tag's and its `ToString`/`Debug` the variant's name. (From D-250
+to D-266 a lending binding was a COPY, and the four that bind refused a
+`string` or a `T` payload as DERIVE-006 — the second owner the checker refuses
+in hand-written code; D-264 had narrowed D-261 to the three that bind
+nothing.) What refuses, by name
 at the user's declaration:
 
 - **DERIVE-005** — a `simd` field under anything but `Eq` (which collapses the
