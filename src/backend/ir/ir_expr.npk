@@ -1382,17 +1382,29 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw iv_is_ok(dv))) { pass dv; }
         pass (raw emit_fit(x, raw exprtypes_get(x.et, id), move(dv), n.span));
     }
-    // THE VERIFICATION SURFACE'S TWO EXPRESSION KINDS (1.5.1, D-221) refuse
-    // by name until 1.5.3 lowers contracts: `result` reads the return slot the
-    // seam stores before the unwind, `old` reads an entry snapshot the frame
-    // will hold. Neither can be reached today — the contract that holds them
-    // refuses first (ir_stmt.npk) — and each is named here so a kind never
-    // falls to the fail-closed default below.
+    // THE VERIFICATION SURFACE'S TWO EXPRESSION KINDS (1.5.1, D-221; lowered
+    // at 1.5.3 step 1): `result` is the value being passed, in register while
+    // the seam evaluates the `ensures` (`emit_ensures_at`, ir_stmt.npk), of
+    // the function's success type; `old(e)` reads the snapshot the entry
+    // stored (`emit_function`), found by the node. A `result` outside a seam
+    // or an `old` the entry did not list is a defect, never a rung.
     if (n.kind == ExprKind.ExprResultValueExpr) {
-        pass (raw iv_rung("`result`", "1.5", n.span));
+        if (x.fe.result_ref.len == 0i64) { pass (raw iv_broken(n.span)); }
+        pass (raw iv(string_concat(x.fe.result_ll, ""), string_concat(x.fe.result_ref, ""),
+                     x.fe.ret_type));
     }
     if (n.kind == ExprKind.ExprOldExpr) {
-        pass (raw iv_rung("`old(…)`", "1.5", n.span));
+        for (int64:oi in 0i64...x.fe.old_ids.count) {
+            if (x.fe.old_ids.items[oi] != id.index) { continue; }
+            int32:otid = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, id));
+            LlType:oll = raw ll_type(x.fe.ctx, otid);
+            if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, n.span)); }
+            string:ov = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(ov, " = load ", oll.text, ", ptr ",
+                                             x.fe.old_slots.items[oi]));
+            pass (raw iv(string_concat(oll.text, ""), move(ov), otid));
+        }
+        pass (raw iv_broken(n.span));
     }
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a

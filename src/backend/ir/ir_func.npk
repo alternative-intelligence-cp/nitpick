@@ -188,6 +188,19 @@ pub struct:FnEmitter = {
     // everywhere else, where `$` is the innermost counted loop's counter.
     string:rule_slot;
     string:rule_ll;
+    // THE CONTRACTS' STATE (1.5.3 step 1; D-221, D-243, D-245, D-267): the
+    // declaration whose `ensures` the return seam checks (`fnem_begin`'s
+    // index is the impl's for a method); `result` while an `ensures` is
+    // evaluated -- the value being passed, in register, and its `ll`; the
+    // `old(...)` snapshots -- each node's id and the slot its entry value
+    // was stored to, parallel; and whether this is `failsafe`, whose `exit`
+    // operand the D-267 guard checks.
+    int32:decl;
+    string:result_ref;
+    string:result_ll;
+    List<int32>:old_ids;
+    List<string>:old_slots;
+    bool:is_failsafe;
 
     // THE PICK STACK (0.9.7): the frame `give` and `fall` resolve against.
     // Scalar columns only — arm body labels are DERIVED ("pk<seq>.arm<i>"),
@@ -303,6 +316,10 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         loop_labels: raw list_init::<int32>(8i64),
         loop_iters: raw list_init::<string>(8i64),
         rule_slot: "", rule_ll: "",
+        decl: 0i32, result_ref: "", result_ll: "",
+        old_ids: raw list_init::<int32>(4i64),
+        old_slots: raw list_init::<string>(4i64),
+        is_failsafe: false,
         pick_dones: raw list_init::<string>(8i64),
         pick_slots: raw list_init::<string>(8i64),
         pick_lls: raw list_init::<string>(8i64),
@@ -390,6 +407,12 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.loop_iters.count = 0i64;
     fe.rule_slot = "";
     fe.rule_ll = "";
+    fe.decl = 0i32;
+    fe.result_ref = "";
+    fe.result_ll = "";
+    fe.old_ids.count = 0i64;
+    fe.old_slots.count = 0i64;
+    fe.is_failsafe = false;
     fe.is_async = false;
     fe.is_gives = false;
     fe.frame_ty = "";

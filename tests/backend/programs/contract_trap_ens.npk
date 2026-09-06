@@ -1,0 +1,32 @@
+// expect-exit: 33
+//
+// An `ensures` FALSE AT THE SEAM traps `EnsuresViolated` (-4113; 1.5.3
+// step 1) with the value in register and nothing published: the caller
+// never sees a value that breaks the promise.
+
+mod:contract_trap_ens;
+error:E9;
+
+func:promised = int32(int32:n) ensures result > 10i32 { pass n; };
+
+func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) - 1i32;   // 0 when run without arguments
+    int32:v = promised(k) ?! E9;
+    exit (v + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

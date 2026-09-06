@@ -1537,8 +1537,8 @@ KIND_STATUS = {
     "ExprIterationVarExpr": "lowered",  # 0.9.7
     "ExprDynCastExpr": "lowered",  # 1.0.9b — the fit to the dyn target
     "ExprPickExpr": "lowered",  # 0.9.7
-    "ExprOldExpr": "rung",          # 1.5.1 (D-221) -- 1.5.3 lowers the entry snapshot
-    "ExprResultValueExpr": "rung",  # 1.5.1 (D-221) -- 1.5.3 reads the return slot
+    "ExprOldExpr": "lowered",          # 1.5.3 step 1 -- the entry snapshot's slot
+    "ExprResultValueExpr": "lowered",  # 1.5.3 step 1 -- the passed value, in register at the seam
     # --- StmtKind ---------------------------------------------------------
     "StmtBlockStmt": "lowered", "StmtVarDeclStmt": "lowered",
     "StmtAssignStmt": "lowered", "StmtExprStmt": "lowered",
@@ -1590,8 +1590,8 @@ KIND_STATUS = {
 BACKEND_CARRIER_READS = {
     "stmt_decl_limit":      "a vardecl's limit<Rules> (the first write point, 1.5.2)",
     "param_limit":          "a parameter's limit<Rules> (the entry check, 1.5.2)",
-    "fn_contract_count":    "a function's requires/ensures (refused until 1.3)",
-    "stmt_while_invariant": "a while loop's invariant (refused until 1.3)",
+    "fn_contract_count":    "a function's requires/ensures (checked at the entry and the seam, 1.5.3)",
+    "stmt_while_invariant": "a while loop's invariant (checked at the loop head, 1.5.3)",
 }
 
 

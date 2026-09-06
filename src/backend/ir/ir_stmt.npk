@@ -52,6 +52,7 @@ use "./ir_func.npk".*;
 use "./ir_expr.npk".*;
 use "./ir_rules.npk".*;
 use "../smt/smt_obligations.npk".*;
+use "../smt/smt_kinds.npk".*;   // OK_REQUIRES/OK_ENSURES/OK_FAILSAFE_POST, the seam checks' elision keys (1.5.3)
 
 // A `br` or a block start, through the terminated flag — mirrors the seed's
 // `br()`/`start_block()`: a branch after a terminator is IR llc rejects, and a
@@ -596,14 +597,14 @@ func:emit_stmt_kind = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
     }
 
     if (s.kind == StmtKind.StmtIfStmt)      { pass (raw emit_if(x, s)); }
-    if (s.kind == StmtKind.StmtWhileStmt)   { pass (raw emit_while(x, s)); }
+    if (s.kind == StmtKind.StmtWhileStmt)   { pass (raw emit_while(x, s, sid)); }
 
     if (s.kind == StmtKind.StmtBreakStmt)   { pass (raw emit_break(x, s, true)); }
     if (s.kind == StmtKind.StmtContinueStmt){ pass (raw emit_break(x, s, false)); }
 
-    if (s.kind == StmtKind.StmtPassStmt)    { pass (raw emit_pass(x, s)); }
+    if (s.kind == StmtKind.StmtPassStmt)    { pass (raw emit_pass(x, s, sid)); }
     if (s.kind == StmtKind.StmtFailStmt)    { pass (raw emit_fail(x, s)); }
-    if (s.kind == StmtKind.StmtExitStmt)    { pass (raw emit_exit(x, s)); }
+    if (s.kind == StmtKind.StmtExitStmt)    { pass (raw emit_exit(x, s, sid)); }
     if (s.kind == StmtKind.StmtTrapStmt)    { pass (raw emit_trap(x, s)); }
 
     if (s.kind == StmtKind.StmtDeferStmt) {
@@ -611,7 +612,7 @@ func:emit_stmt_kind = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
         pass (raw iv_nil());
     }
 
-    if (s.kind == StmtKind.StmtReturnStmt)  { pass (raw emit_return(x, s)); }
+    if (s.kind == StmtKind.StmtReturnStmt)  { pass (raw emit_return(x, s, sid)); }
     if (s.kind == StmtKind.StmtPickStmt)    { pass (raw emit_pick(x, s)); }
 
     // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
@@ -1046,10 +1047,7 @@ func:loop_i64 = string(ExprEmitter->:x, IrVal:v) never fails {
 // and a negative one contradicts bounds it cannot see.
 func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
                           bool:is_till) never fails {
-    VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
-    if (!(raw verify_is_none(cinv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
-    }
+    VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);   // checked at the head (1.5.3)
     string:sv = "0";
     int32:base = 0i32;
     if (!is_till) {
@@ -1102,8 +1100,14 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:body_l = raw irw_new_label(x.fe.w, "ct.body");
     string:incr_l = raw irw_new_label(x.fe.w, "ct.incr");
     string:done_l = raw irw_new_label(x.fe.w, "ct.done");
+    // THE LOOP FRAME IS PUSHED BEFORE THE HEAD (1.5.3 step 1): the head's
+    // invariant reads `$` through it. `continue` re-enters at the INCREMENT,
+    // or the counter would never move.
+    drop fnem_loop_push(x.fe, string_concat(incr_l, ""), string_concat(done_l, ""), raw stmt_label(s), string_concat(slot, ""));
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    IrVal:ivc = raw emit_invariant_checks(x, cinv, sid, raw stmt_counted_body(s), raw stmt_label(s));
+    if (!(raw iv_is_ok(ivc))) { pass ivc; }
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", slot, "", ""));
     string:lvh = raw loop_reread(x, lv_s, "i64");
@@ -1123,8 +1127,6 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
-    // `continue` re-enters at the INCREMENT, or the counter would never move.
-    drop fnem_loop_push(x.fe, string_concat(incr_l, ""), string_concat(done_l, ""), raw stmt_label(s), string_concat(slot, ""));
     IrVal:b = raw emit_block(x, raw stmt_counted_body(s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -1155,10 +1157,7 @@ func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
 // exit, which lands at the same junction — and `end` only when the condition
 // was false from the start. One flag, one junction, never both clauses.
 func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
-    VerifyId:winv = raw stmt_when_invariant(x.ast, s);
-    if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
-    }
+    VerifyId:winv = raw stmt_when_invariant(x.ast, s);   // checked at the head (1.5.3)
     string:flag = raw loop_slot(x, sid, 1i32, "i8");
     if (flag.len == 0i64) { pass (raw iv_broken(s.span)); }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", flag, ""));
@@ -1172,6 +1171,8 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    IrVal:ivc = raw emit_invariant_checks(x, winv, sid, raw stmt_when_body(x.ast, s), raw stmt_label(s));
+    if (!(raw iv_is_ok(ivc))) { pass ivc; }
     int64:ctm = raw fnem_temp_mark(x.fe);
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
@@ -1221,10 +1222,7 @@ func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 // BINDING as the value; a slice or array walks its elements by index, copying
 // each into the binding — a value per iteration, exactly what a binding is.
 func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
-    VerifyId:finv = raw stmt_for_invariant(x.ast, s);
-    if (!(raw verify_is_none(finv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
-    }
+    VerifyId:finv = raw stmt_for_invariant(x.ast, s);   // checked at each head (1.5.3)
     ExprId:iter = raw stmt_for_iter(x.ast, s);
     int32:itid = raw exprtypes_get(x.et, iter);
     int32:ikind = raw type_kind(x.fe.ctx.types, itid);
@@ -1254,6 +1252,8 @@ func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         string:done_l = raw irw_new_label(x.fe.w, "fr.done");
         drop s_br(x, head_l);
         drop s_start(x, head_l);
+        IrVal:ivc = raw emit_invariant_checks(x, finv, sid, raw stmt_for_body(x.ast, s), raw stmt_label(s));
+        if (!(raw iv_is_ok(ivc))) { pass ivc; }
         string:cur = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(cur, " = load ", bll.text, ", ptr ",
                           string_concat(slot, "")));
@@ -1413,6 +1413,9 @@ func:emit_for_iterator = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:done_l = raw irw_new_label(x.fe.w, "fi.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    IrVal:ivc = raw emit_invariant_checks(x, raw stmt_for_invariant(x.ast, s), sid,
+                                          raw stmt_for_body(x.ast, s), raw stmt_label(s));
+    if (!(raw iv_is_ok(ivc))) { pass ivc; }
     string:recvh = raw loop_reread(x, recv_s, "ptr");
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = call ", ret_ll.text, " ",
@@ -1486,6 +1489,9 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     string:done_l = raw irw_new_label(x.fe.w, "fe.done");
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    IrVal:ivc = raw emit_invariant_checks(x, raw stmt_for_invariant(x.ast, s), sid,
+                                          raw stmt_for_body(x.ast, s), raw stmt_label(s));
+    if (!(raw iv_is_ok(ivc))) { pass ivc; }
     string:cur = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(cur, " = load i64, ptr ", idx, "", ""));
     string:lenh = raw loop_reread(x, len_s, "i64");
@@ -1528,19 +1534,19 @@ func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid,
     pass (raw iv_nil());
 };
 
-func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
-    // LIVE-1 (0.9.0): an invariant the backend never read was an obligation
-    // that silently vanished. Refused until 1.4 checks it.
+func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
+    // THE INVARIANT IS CHECKED AT THE HEAD (1.5.3 step 1; D-221, L-8), before
+    // the condition, so it runs at entry and after every iteration -- LIVE-1's
+    // 0.9.0 refusal retires here and at the three other loop shapes.
     VerifyId:winv = raw stmt_while_invariant(x.ast, s);
-    if (!(raw verify_is_none(winv))) {
-        pass (raw iv_rung("a loop `invariant`", "1.5", s.span));
-    }
     string:head_l = raw irw_new_label(x.fe.w, "wh.head");
     string:body_l = raw irw_new_label(x.fe.w, "wh.body");
     string:done_l = raw irw_new_label(x.fe.w, "wh.done");
 
     drop s_br(x, head_l);
     drop s_start(x, head_l);
+    IrVal:ivc = raw emit_invariant_checks(x, winv, sid, raw stmt_body(x.ast, s), raw stmt_label(s));
+    if (!(raw iv_is_ok(ivc))) { pass ivc; }
     int64:ctm = raw fnem_temp_mark(x.fe);
     IrVal:c = raw emit_cond(x, raw stmt_cond(s));
     if (!(raw iv_is_ok(c))) { pass c; }
@@ -1586,7 +1592,7 @@ func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) never fails 
 // VALUE FIRST, THEN DEFERS, THEN THE RETURN (D-136) — for all three. The value a
 // function passes is the value read AT the `pass`, whatever cleanup does after.
 
-func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     string:vref = "";
     ExprId:val = raw stmt_operand(s);
     if (!(raw expr_is_none(val))) {
@@ -1604,6 +1610,11 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         vref = move(v.ref);
         drop temp_take(x, vref);   // a returned temporary leaves with it (D-246)
     }
+    // THE POSTCONDITION AT THE SEAM (1.5.3 step 1; D-221, D-245, L-12):
+    // with the value in register and the parameters and `old` slots still
+    // bound, before the store -- a false clause traps with nothing published.
+    IrVal:ec = raw emit_ensures_at(x, vref, sid, s.span);
+    if (!(raw iv_is_ok(ec))) { pass ec; }
     // THE RETURN SEAM'S TWO HALVES (D-207): build and store, unwind, return.
     // The unwind's per-scope joins arbitrate against the stored result. The
     // statement's temporaries drop between the two (D-246).
@@ -1634,9 +1645,22 @@ func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     pass (raw iv_nil());
 };
 
-func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    // `failsafe`'s POSTCONDITION (D-267, L-14; D-014 §3.3): its exit code is
+    // positive -- the compiler's own `ensures`, checked here with
+    // EnsuresViolated at the `exit`, so a computed 0 (a literal is REACH-004)
+    // never leaves the process reporting success from the trap route. The
+    // trap re-enters `failsafe`, which the runtime's re-entry rule ends at 70.
+    if (x.fe.is_failsafe) {
+        if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_FAILSAFE_POST()))) {
+            string:pos = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(pos, " = icmp sgt i32 ", string_concat(v.ref, ", 0")));
+            IrVal:pc = raw emit_check_i1(x, pos, "-4113", s.span);
+            if (!(raw iv_is_ok(pc))) { pass pc; }
+        }
+    }
     // `exit` MEANS PROCESS EXIT IN EVERY BODY (D-224). It is legal only in
     // `main` and `failsafe` (D-013), so the only coroutine frame one can ever
     // run on is the root task's. In a SYNC body a plain `ret` already IS
@@ -1686,9 +1710,13 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // `return Result{…}` — the one spelling of `return` (type_stmt refused every
 // other), so the operand IS the whole Result and the `ret` takes it verbatim.
 // Value first, then defers, then the return: D-136's rule, the third time.
-func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
+func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    // THE POSTCONDITION OF THE LONG FORM (L-12): a success only -- the
+    // aggregate's error field decides, its value field is `result`.
+    IrVal:ec = raw emit_ensures_agg(x, v.ref, sid, s.span);
+    if (!(raw iv_is_ok(ec))) { pass ec; }
     drop temp_take(x, v.ref);   // a returned temporary leaves with it (D-246)
     drop fnem_ret_agg(x.fe, v.ref);
     drop emit_temp_drops(x, 0i64);
@@ -1696,6 +1724,88 @@ func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(d))) { pass d; }
     drop fnem_ret_done(x.fe);
     x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+// `ensures` AT A RETURN POINT (1.5.3 step 1; L-7, L-12, L-13): the clauses
+// in source order, each `emit_cond` and a branch, every false one to the
+// ONE `ctr.bad` of this point -- one trap per return point -- with `result`
+// bound to the value in register (`x.fe.result_ref`; "" for a bare `pass`,
+// where `result` is NIL). A clause's temporaries drop where its verdict is
+// decided (D-246). Elided when the manifest discharged this point's row.
+func:emit_ensures_at = IrVal(ExprEmitter->:x, string:vref, StmtId:sid, Span:at) never fails {
+    if (x.fe.decl == 0i32) { pass (raw iv_nil()); }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: x.fe.decl });
+    if ((raw fn_ensures_count(x, d)) == 0i32) { pass (raw iv_nil()); }
+    if (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_ENSURES())) {
+        pass (raw iv_nil());
+    }
+    x.fe.result_ref = string_concat(vref, "");
+    x.fe.result_ll = "";
+    if (vref.len > 0i64) {
+        LlType:vl = raw ll_type(x.fe.ctx, x.fe.ret_type);
+        if (!(raw ll_is_ok(vl))) { pass (raw iv_from_ll_at(x, vl, x.fe.ret_type, at)); }
+        x.fe.result_ll = string_concat(vl.text, "");
+    }
+    string:bad = raw irw_new_label(x.fe.w, "ctr.bad");
+    int32:cc = raw fn_contract_count(x.ast, d);
+    for (int32:ci in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) != (raw CONTRACT_ENSURES())) { continue; }
+        int64:ctm = raw fnem_temp_mark(x.fe);
+        IrVal:c = raw emit_cond(x, raw contract_cond(cv));
+        if (!(raw iv_is_ok(c))) { pass c; }
+        drop emit_temp_drops(x, ctm);
+        drop fnem_temp_release(x.fe, ctm);
+        string:nx = raw irw_new_label(x.fe.w, "ctr.ok");
+        drop irw_line(x.fe.w, raw cat5("br i1 ", c.ref, ", label %", nx,
+                                         string_concat(", label %", bad)));
+        drop irw_label(x.fe.w, nx);
+    }
+    string:done = raw irw_new_label(x.fe.w, "ctr.done");
+    drop irw_line(x.fe.w, raw cat3("br label %", done, ""));
+    drop irw_label(x.fe.w, bad);
+    drop emit_contract_trap(x, "-4113", at);
+    drop irw_label(x.fe.w, done);
+    x.fe.result_ref = "";
+    x.fe.result_ll = "";
+    pass (raw iv_nil());
+};
+
+// THE LONG FORM'S SEAM (`return Result{...}`): the aggregate's error field
+// extracted (index 1, or 0 for a `NIL` success whose aggregate is `{ i32 }`);
+// on 0 the value field is `result` and the clauses run, on nonzero nothing
+// -- the postcondition is the SUCCESS value's (D-221).
+func:emit_ensures_agg = IrVal(ExprEmitter->:x, string:agg, StmtId:sid, Span:at) never fails {
+    if (x.fe.decl == 0i32) { pass (raw iv_nil()); }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: x.fe.decl });
+    if ((raw fn_ensures_count(x, d)) == 0i32) { pass (raw iv_nil()); }
+    if (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_ENSURES())) {
+        pass (raw iv_nil());
+    }
+    string:eix = "1";
+    if (x.fe.ret_nil) { eix = "0"; }
+    string:err = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(err, " = extractvalue ", x.fe.ret_ll, " ",
+                                     raw cat3(agg, ", ", eix)));
+    string:okv = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(okv, " = icmp eq i32 ", string_concat(err, ", 0")));
+    string:chk = raw irw_new_label(x.fe.w, "ens.chk");
+    string:skip = raw irw_new_label(x.fe.w, "ens.skip");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", okv, ", label %", chk,
+                                     string_concat(", label %", skip)));
+    drop irw_label(x.fe.w, chk);
+    string:vref = "";
+    if (!x.fe.ret_nil) {
+        vref = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(vref, " = extractvalue ", x.fe.ret_ll, " ",
+                                         string_concat(agg, ", 0")));
+    }
+    IrVal:ec = raw emit_ensures_at(x, vref, sid, at);
+    if (!(raw iv_is_ok(ec))) { pass ec; }
+    drop irw_line(x.fe.w, raw cat3("br label %", skip, ""));
+    drop irw_label(x.fe.w, skip);
     pass (raw iv_nil());
 };
 
@@ -3169,41 +3279,16 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                                       int32:mangled_name, GenericScope:g,
                                       bool:specialize) never fails {
     bool:fn_async = raw decl_has(d, raw DECL_ASYNC());
-    // LIVE-1's repair (0.9.0): a `requires`/`ensures` the backend never read
-    // compiled to a function that claims a contract nothing enforces — the
-    // observed defect was a `requires b != 0i32` body emitting a bare `sdiv`.
-    // `acquires` is NOT refused: the lock-level analysis (0.5.6) enforces it
-    // statically and completely, so it owes emission nothing.
-    int32:ci = 0i32;
-    int32:ccount = raw fn_contract_count(x.ast, d);
-    while (ci < ccount) {
-        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
-        // `never fails` (D-163) is NOT a 1.4 contract: it is checked entirely
-        // by the frontend and changes no emitted byte — the backend owes it
-        // nothing, so it passes through where `requires`/`ensures` still rung.
-        // `pure` (D-221, 1.5.1) is a marker the body owes nothing: the
-        // checker held the body to it, and the obligation walk reads it by
-        // name at the CALL sites that name this function.
-        bool:marker = cv.kind == VerifyKind.VerifyNeverFails;
-        if (cv.kind == VerifyKind.VerifyPure) { marker = true; }
-        if (!marker) {
-            // `joins <fixed Duration>` (D-181) is read by the THREAD SPAWN,
-            // not by the body — it states the executor's join deadline, and
-            // the body owes it nothing.
-            if (cv.kind != VerifyKind.VerifyJoinsWithin) {
-                // `gives` (D-183, 1.2.6) is read by the CALL SITES — the
-                // caller stashes the returned channels — and by this
-                // function's own `channel()` lowerings, which register no
-                // reclaim. The body owes it nothing beyond that bit.
-                if (cv.kind != VerifyKind.VerifyGives) {
-                    if (cv.a != (raw CONTRACT_ACQUIRES())) {
-                        pass (raw iv_rung("a `requires`/`ensures` contract", "1.5", cv.span));
-                    }
-                }
-            }
-        }
-        ci = ci + 1i32;
-    }
+    // THE CONTRACTS ARE LIVE (1.5.3 step 1; D-221; LIVE-1's 0.9.0 rung
+    // retires): a `requires` is checked at the entry -- by the `.req`
+    // predicate the checked entry calls (a sync function; D-252 as amended
+    // by D-268) or at state 0 (a coroutine) -- an `ensures` at every return
+    // seam (`emit_pass`, `emit_return`), a loop `invariant` at every loop
+    // head. `never fails`, `pure`, `joins`, `gives` and `acquires` change no
+    // emitted byte here: the frontend holds the body to the first two, the
+    // thread spawn reads the third, the call sites the fourth, the
+    // lock-level analysis (0.5.6) the fifth.
+    int32:req_n = raw fn_requires_count(x, d);
 
     int32:name = raw decl_name(d);
     string:fname = raw intern_get(x.interns, name);
@@ -3229,6 +3314,19 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     LlType:rt = raw fnem_begin(x.fe, fname, qual, succ, false);
     if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, sg.success, d.span)); }
     x.fe.is_gives = raw fn_declares_gives(x.ast, d);
+    // THE CONTRACTS' STATE (1.5.3 step 1): the declaration the seam reads
+    // its `ensures` from (`qual` is the impl's index for a method), and
+    // whether this is `failsafe` -- whose `exit` the D-267 guard checks.
+    x.fe.decl = did.index;
+    x.fe.is_failsafe = false;
+    if (x.fe.bare) {
+        if (raw string_eq(fname, "failsafe")) { x.fe.is_failsafe = true; }
+    }
+    // EVERY `old(...)` THE SEAM OR A HEAD WILL READ (L-10, D-243), listed
+    // once: a coroutine registers each slot before its frame type is fixed,
+    // and the entry below snapshots each into its slot.
+    List<int32>:olds = raw list_init::<int32>(4i64);
+    drop collect_old(x, d, @olds);
     if (fn_async) {
         // THE COROUTINE (D-177): same walk, different skeleton. The seam
         // (`fnem_ret_agg`), the frame-resident parameters and the entry
@@ -3251,6 +3349,17 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = cssaved;
         x.tr.enclosing = cesaved;
         if (!(raw iv_is_ok(cs))) { pass cs; }
+        // THE `old(...)` SNAPSHOTS ARE FRAME-RESIDENT (1.5.3 step 1): role
+        // 60 + ordinal on the body's block, beside the loop state -- an
+        // alloca would die at the first suspension before the seam reads it.
+        for (int64:oi in 0i64...olds.count) {
+            int32:otid = raw subst_emitted_type(x.fe.ctx,
+                             raw exprtypes_get(x.et, ExprId{ index: olds.items[oi] }));
+            LlType:oll = raw ll_type(x.fe.ctx, otid);
+            if (!(raw ll_is_ok(oll))) { pass (raw iv_from_ll_at(x, oll, otid, d.span)); }
+            drop fnem_cross_add(x.fe, (raw fn_body(x.ast, d)).index,
+                                60i32 + (oi =>! int32), otid, move(oll.text));
+        }
     }
 
     // The parameters as the obligation walk will see them (1.5.0): the same
@@ -3348,6 +3457,9 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         for (int64:si in 0i64...obl_pr.count) {
             if (obl_pr.items[si] != 0i32) { split = true; }
         }
+        // A `requires` SPLITS TOO (1.5.3 step 1, D-268): its predicate is
+        // called from the checked entry, so D-252's bypass serves it.
+        if (req_n > 0i32) { split = true; }
     }
     string:plain_sym = string_concat(x.fe.sym, "");
     if (split) { x.fe.sym = raw body_sym(x.fe.sym); }
@@ -3386,6 +3498,55 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
                                         raw SITE_DECL(), obl_pd.items[pi], ppd.span);
         if (!(raw iv_is_ok(pc))) { pass pc; }
     }
+    // THE `requires` CHECK (1.5.3 step 1; L-1, D-268): the function's
+    // SITE_DECL row decides in place. A coroutine keeps one symbol, so its
+    // predicate is called here, at state 0, with the parameters loaded from
+    // their frame slots; a split function's call lives in its checked entry.
+    bool:req_live = false;
+    if (req_n > 0i32) {
+        if (!(raw llctx_elided(x.fe.ctx, raw SITE_DECL(), did.index, raw OK_REQUIRES()))) {
+            req_live = true;
+        }
+    }
+    if (req_live && (!split)) {
+        LlType:rbt = raw ll_type(x.fe.ctx, x.fe.ctx.types.t_bool);
+        if (!(raw ll_is_ok(rbt))) { pass (raw iv_from_ll_at(x, rbt, x.fe.ctx.types.t_bool, d.span)); }
+        string:rargs = "";
+        for (int64:ri in 0i64...obl_pt.count) {
+            LlType:rpl = raw ll_type(x.fe.ctx, obl_pt.items[ri]);
+            if (!(raw ll_is_ok(rpl))) { pass (raw iv_from_ll_at(x, rpl, obl_pt.items[ri], d.span)); }
+            string:rpv = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(rpv, " = load ", rpl.text, ", ptr ",
+                                             raw fnem_local_slot_at(x.fe, ri)));
+            if (ri > 0i64) { rargs = string_concat(rargs, ", "); }
+            rargs = raw cat3(rargs, rpl.text, string_concat(" ", rpv));
+        }
+        string:rq = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(rq, " = call ", rbt.text, " ",
+                                         raw cat4(raw req_sym(plain_sym), "(", rargs, ")")));
+    }
+    // THE ENTRY SNAPSHOTS (D-243, L-10): each `old(e)` evaluated ONCE, here,
+    // after the entry checks and before the first statement, into its slot
+    // -- an alloca hoisted to the entry block, or the frame slot registered
+    // above -- for the seam's `ensures` and the heads' invariants to read.
+    for (int64:ok in 0i64...olds.count) {
+        ExprId:oid = ExprId{ index: olds.items[ok] };
+        ExprNode:onode = raw ast_expr(x.ast, oid);
+        int32:otid2 = raw subst_emitted_type(x.fe.ctx, raw exprtypes_get(x.et, oid));
+        LlType:oll2 = raw ll_type(x.fe.ctx, otid2);
+        if (!(raw ll_is_ok(oll2))) { pass (raw iv_from_ll_at(x, oll2, otid2, onode.span)); }
+        string:oslot = raw loop_slot(x, raw fn_body(x.ast, d), 60i32 + (ok =>! int32), oll2.text);
+        if (oslot.len == 0i64) { pass (raw iv_broken(onode.span)); }
+        int64:otm = raw fnem_temp_mark(x.fe);
+        IrVal:ov = raw emit_expr(x, raw expr_operand(onode));
+        if (!(raw iv_is_ok(ov))) { pass ov; }
+        drop irw_line(x.fe.w, raw cat5("store ", oll2.text, " ", ov.ref,
+                                         string_concat(", ptr ", oslot)));
+        drop emit_temp_drops(x, otm);
+        drop fnem_temp_release(x.fe, otm);
+        drop list_push(@x.fe.old_ids, oid.index);
+        drop list_push(@x.fe.old_slots, move(oslot));
+    }
     IrVal:b = raw emit_block(x, raw fn_body(x.ast, d));
     x.tr.generics = bsaved;
     x.tr.enclosing = besaved;
@@ -3393,7 +3554,8 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     drop fnem_close(x.fe, x.fe.terminated);
     // THE CHECKED ENTRY (D-252), after the body: the ordinary symbol.
     if (split) {
-        IrVal:ce = raw emit_checked_entry(x, plain_sym, obl_pr, obl_pd, obl_pt);
+        IrVal:ce = raw emit_checked_entry(x, plain_sym, obl_pr, obl_pd, obl_pt,
+                                          req_live, raw req_sym(plain_sym), d.span);
         if (!(raw iv_is_ok(ce))) { pass ce; }
     }
     if (fn_async) {
@@ -3402,6 +3564,21 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
             // `npk.resume.main`; the linkable `@main` is the entry shim.
             drop fnem_emit_main_shim(x.fe);
         }
+    }
+    // THE `requires` PREDICATE (1.5.3 step 1), last: it reuses the one
+    // FnEmitter, and everything above read this function's state from it.
+    // Under the instance's window, as the body was.
+    if (req_live) {
+        GenericScope:rsaved = x.tr.generics;
+        GenericScope:resaved = x.tr.enclosing;
+        if (specialize) {
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+        }
+        IrVal:rf = raw emit_req_fn(x, did, d, fname, qual, plain_sym, obl_pn, obl_pt);
+        x.tr.generics = rsaved;
+        x.tr.enclosing = resaved;
+        if (!(raw iv_is_ok(rf))) { pass rf; }
     }
     pass (raw iv_nil());
 };

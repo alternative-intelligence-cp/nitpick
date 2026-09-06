@@ -1,0 +1,94 @@
+// expect-exit: 0
+//
+// CONTRACTS LIVE (1.5.3 step 1; D-221, D-243, D-245, D-268): every check in
+// this program HOLDS, so it exits 0 -- a `requires` satisfied at three call
+// shapes (direct, through `dyn`, `await` of an `async` callee), an `ensures`
+// over `result` and `old(n)` at a `pass` and at the long-form `return`, and
+// an invariant on each loop form with `$` inside the counted one. A `requires`
+// runs in the callee's `.req` predicate from its checked entry (sync) or at
+// state 0 (async); an `ensures` at the seam with the value in register; an
+// invariant at every loop head, entry and after each iteration.
+
+mod:contracts_run;
+error:E9;
+
+func:half = int32(int32:n) requires n > 0i32 requires n < 1000i32
+                           ensures result >= 0i32 ensures result * 2i32 <= old(n) {
+    pass (n / 2i32);
+};
+
+// The long form: the aggregate's error field decides, its value is `result`;
+// the parameter is written before the seam, so `old(n)` is the snapshot.
+func:bump = int32(int32:n) requires n >= 0i32 ensures result == old(n) + 1i32 {
+    int32:m = n + 1i32;
+    return Result{ value: m };
+};
+
+trait:Sized = { func:size = int32(Self:self, int32:scale); };
+struct:Box = { int32:w; };
+impl:Box:Sized = {
+    func:size = int32(Box:self, int32:scale) requires scale > 0i32 ensures result >= scale {
+        pass (self.w * scale);
+    };
+};
+
+// Through `dyn`: the vtable's slot names the ordinary symbol, the checked entry.
+func:through = int32(dyn Sized:s, int32:k) { pass ((s.size(k)) ?! E9); };
+
+// A coroutine keeps one symbol: its predicate runs at state 0.
+async func:fetch = int32(int32:v) requires v > 0i32 ensures result > old(v) {
+    pass (v + 1i32);
+};
+
+// `never fails` may carry contracts (D-241); `old(n)` in an invariant.
+func:total = int32(int32:n) never fails ensures result == old(n) {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+    while (i < n) invariant acc == i, i <= old(n) {
+        acc = acc + 1i32;
+        i = i + 1i32;
+    }
+    pass acc;
+};
+
+func:counted = int64() never fails {
+    int64:acc = 0i64;
+    loop (0i64, 5i64, 1i64) invariant $ >= 0i64, acc == $ {
+        acc = acc + 1i64;
+    }
+    for (int64:k in 0i64...3i64) invariant k >= 0i64, k <= 3i64 { acc = acc + 1i64; }
+    int32:w = 2i32;
+    when (w > 0i32) invariant w >= 0i32 { w = w - 1i32; } then { w = 0i32; } end { w = 0i32; }
+    pass acc;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((half(9i32) ?! E9) != 4i32)              { exit 10i32; }
+    if ((bump(41i32) ?! E9) != 42i32)            { exit 11i32; }
+    Box:b = Box{ w: 3i32 };
+    if ((through(b, 2i32) ?! E9) != 6i32)        { exit 12i32; }
+    if (((await fetch(7i32)) ?! E9) != 8i32)     { exit 13i32; }
+    if ((raw total(6i32)) != 6i32)               { exit 14i32; }
+    if ((raw counted()) != 8i64)                 { exit 15i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DeadlineExceeded)  { exit 35i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (BadStep)           { exit 38i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

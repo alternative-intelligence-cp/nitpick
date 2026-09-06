@@ -35,6 +35,8 @@ use "../../frontend/ast_kind.npk".*;
 use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_stmt.npk".*;   // the loop and block accessors (1.5.3 step 1)
+use "../../frontend/parse_pick.npk".*;   // the pick arms (1.5.3 step 1)
 use "../../frontend/parse_decorate.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
@@ -255,11 +257,14 @@ func:clause_range_i1 = string(ExprEmitter->:x, ExprId:id, string:v, LlType:ll,
 
 // THE CHECKED ENTRY (D-252): the ordinary symbol of a split function -- the
 // parameter list verbatim, each limited parameter checked over its argument
-// register (or, for a discharged entry row, assumed), then a tail call of
+// register (or, for a discharged entry row, assumed), the `requires`
+// predicate called over the same registers when the function has one and
+// its entry row is retained (1.5.3 step 1, D-268), then a tail call of
 // the body under `.body`. Emitted after the body's close, straight into the
 // module stream: outside an open function the writer's lines go there.
 pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:prules,
-                                    List<int32>:pdecls, List<int32>:ptypes) never fails {
+                                    List<int32>:pdecls, List<int32>:ptypes,
+                                    bool:req, string:rsym, Span:at) never fails {
     string:params = "";
     string:args = "";
     for (int64:i in 0i64...x.fe.plls.count) {
@@ -283,6 +288,16 @@ pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:pru
                                              ptypes.items[pi], DeclId{ index: prules.items[pi] },
                                              raw SITE_DECL(), pdecls.items[pi], pd.span);
         if (!(raw iv_is_ok(c))) { pass c; }
+    }
+    // THE `requires` PREDICATE (1.5.3 step 1; L-1, L-2), after the limit
+    // checks: it traps inside on the first false clause, so its verdict is
+    // not read here.
+    if (req) {
+        LlType:bt = raw ll_type(x.fe.ctx, x.fe.ctx.types.t_bool);
+        if (!(raw ll_is_ok(bt))) { pass (raw iv_from_ll_at(x, bt, x.fe.ctx.types.t_bool, at)); }
+        string:rq = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(rq, " = call ", bt.text, " ",
+                                         raw cat4(rsym, "(", args, ")")));
     }
     string:r = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat5(r, " = tail call ", x.fe.ret_ll, " ",
@@ -318,6 +333,10 @@ pub func:callee_bypasses = bool(ExprEmitter->:x, int32:decl_index, ExprId:call) 
         DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, i));
         if (!(raw verify_is_none(raw param_limit(pd)))) { limited = true; }
     }
+    // A `requires` AT THE CALLEE (1.5.3 step 1): the bypass would skip its
+    // predicate too, and the call-site `requires` row that licenses that is
+    // step 2's -- until it exists, a required callee is never bypassed.
+    if ((raw fn_requires_count(x, d)) > 0i32) { pass false; }
     if (!limited) { pass false; }
     pass (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), call.index, raw OK_LIMIT_SUBSUME()));
 };
@@ -371,4 +390,350 @@ pub func:emit_assign_limit = IrVal(ExprEmitter->:x, ExprId:target, int32:site,
     pass (raw emit_limit_check(x, raw fnem_local_slot_at(x.fe, ri),
                                raw fnem_local_type_at(x.fe, ri),
                                DeclId{ index: rr }, raw SITE_STMT(), site, at));
+};
+
+// --- contracts (1.5.3 step 1; D-221, D-241, D-243, D-245, D-267, D-268) -------
+//
+// ONE SHAPE FOR EVERY CLAUSE CHECK: the proposition lowered as a condition
+// (`emit_cond`, its temporaries dropped where the verdict is decided, D-246),
+// a branch to `ctr.ok` or `ctr.bad`, and in `ctr.bad` `npk_chain_reset` at
+// the clause's site then `npk_trap(<code>)` -- the limit check's shape with
+// the predicate call replaced by the clause. The codes are the prelude's
+// `RequiresViolated` (-4112), `EnsuresViolated` (-4113) and
+// `InvariantViolated` (-4114). `elided` is the caller's answer for the
+// site's row (or rows): a discharged row removes the check and nothing
+// replaces it -- L-11 states no `llvm.assume` for a contract. The
+// accounting is L-13's: one trap per clause at an entry or a loop head, one
+// per return point (`emit_ensures_at`, ir_stmt.npk, chains a return point's
+// clauses into ONE `ctr.bad`).
+pub func:emit_contract_check = IrVal(ExprEmitter->:x, ExprId:cond, string:code,
+                                     bool:elided, Span:at) never fails {
+    if (elided) { pass (raw iv_nil()); }
+    int64:ctm = raw fnem_temp_mark(x.fe);
+    IrVal:c = raw emit_cond(x, cond);
+    if (!(raw iv_is_ok(c))) { pass c; }
+    drop emit_temp_drops(x, ctm);
+    drop fnem_temp_release(x.fe, ctm);
+    pass (raw emit_check_i1(x, c.ref, code, at));
+};
+
+// THE BRANCH AND THE TRAP over a verdict already in register.
+pub func:emit_check_i1 = IrVal(ExprEmitter->:x, string:verdict, string:code,
+                               Span:at) never fails {
+    string:good = raw irw_new_label(x.fe.w, "ctr.ok");
+    string:bad = raw irw_new_label(x.fe.w, "ctr.bad");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", verdict, ", label %", good,
+                                     string_concat(", label %", bad)));
+    drop irw_label(x.fe.w, bad);
+    drop emit_contract_trap(x, code, at);
+    drop irw_label(x.fe.w, good);
+    pass (raw iv_nil());
+};
+
+// THE TRAP BLOCK'S BODY: the origin chain restarted at the site (D-179),
+// the trap, `unreachable`.
+pub func:emit_contract_trap = NIL(ExprEmitter->:x, string:code, Span:at) never fails {
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop irw_line(x.fe.w, raw cat3("call void @npk_trap(i32 ", code, ")"));
+    drop irw_line(x.fe.w, "unreachable");
+    pass NIL;
+};
+
+// The clause counts of a function's `requires` and `ensures` -- 0 for a
+// declaration that is not a function (a `Rules` declaration has no slot 5).
+pub func:fn_requires_count = int32(ExprEmitter->:x, DeclNode:d) never fails {
+    pass (raw fn_contract_kind_count(x, d, raw CONTRACT_REQUIRES()));
+};
+
+pub func:fn_ensures_count = int32(ExprEmitter->:x, DeclNode:d) never fails {
+    pass (raw fn_contract_kind_count(x, d, raw CONTRACT_ENSURES()));
+};
+
+func:fn_contract_kind_count = int32(ExprEmitter->:x, DeclNode:d, int32:kind) never fails {
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+    int32:n = 0i32;
+    int32:cc = raw fn_contract_count(x.ast, d);
+    for (int32:i in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, i));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) == kind) { n = n + 1i32; }
+    }
+    pass n;
+};
+
+// THE PREDICATE'S SYMBOL: `.req` inside the quotes, `body_sym`'s rule.
+pub func:req_sym = string(string:sym) never fails {
+    if (sym.len == 0i64) { pass ""; }
+    if (sym.ptr[sym.len - 1i64] == 34u8) {
+        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".req\""));
+    }
+    pass (string_concat(sym, ".req"));
+};
+
+// THE `requires` PREDICATE (L-1, L-2; D-252 as amended by D-268): `define
+// i8 @"<sym>.req"(<params>)` -- the function's parameter list verbatim,
+// every parameter a LENT binding (no flag, no drop: the predicate borrows
+// what the entry received), each `requires` clause checked in source order
+// with `npk_trap(-4112)` at the clause's own site (L-13: one trap per
+// clause), `ret i8 1` after the last -- a verdict nothing reads, since a
+// false clause never returns. Called from the checked entry (a sync
+// function) or at state 0 (a coroutine; `emit_function` in ir_stmt.npk)
+// with the arguments as they arrived. Not walked for rows: a guard inside
+// a clause is the function's SITE_DECL business (L-5), and its elision
+// answers are the function's, still in the context when this runs. Emitted
+// after the body's close and the checked entry: it reuses the one
+// FnEmitter, and so must come LAST.
+pub func:emit_req_fn = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d, string:fname,
+                             int32:qual, string:plain_sym, List<int32>:pnames,
+                             List<int32>:ptypes) never fails {
+    LlType:rt = raw fnem_begin(x.fe, fname, qual, x.fe.ctx.types.t_bool, true);
+    if (!(raw ll_is_ok(rt))) { pass (raw iv_from_ll_at(x, rt, x.fe.ctx.types.t_bool, d.span)); }
+    x.fe.sym = raw req_sym(plain_sym);
+    x.fe.decl = did.index;
+    string:bl = string_concat(rt.text, "");
+    for (int64:i in 0i64...pnames.count) {
+        LlType:pl = raw fnem_param(x.fe, pnames.items[i], ptypes.items[i], false);
+        if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, ptypes.items[i], d.span)); }
+    }
+    drop fnem_open(x.fe);
+    int32:cc = raw fn_contract_count(x.ast, d);
+    for (int32:ci in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) != (raw CONTRACT_REQUIRES())) { continue; }
+        IrVal:c = raw emit_contract_check(x, raw contract_cond(cv), "-4112", false, cv.span);
+        if (!(raw iv_is_ok(c))) { pass c; }
+    }
+    drop irw_line(x.fe.w, raw cat3("ret ", bl, " 1"));
+    x.fe.terminated = true;
+    drop fnem_close(x.fe, true);
+    pass (raw iv_nil());
+};
+
+// THE INVARIANT AT A LOOP HEAD (L-8, L-13): one check per clause, elided
+// only when EVERY row of the loop is discharged -- the entry row at the
+// loop statement, the preservation row at its body block, and one per
+// `continue` that re-enters this loop (an unlabelled one directly in the
+// body, a labelled one naming this loop anywhere in it; an unlabelled
+// `continue` inside a nested loop is that loop's). The head runs at entry
+// and after every iteration: D-221's "holds at entry and is preserved".
+pub func:emit_invariant_checks = IrVal(ExprEmitter->:x, VerifyId:inv, StmtId:sid,
+                                       StmtId:body, int32:label) never fails {
+    if (raw verify_is_none(inv)) { pass (raw iv_nil()); }
+    bool:elided = raw invariant_elided(x, sid, body, label);
+    VerifyNode:v = raw ast_verify(x.ast, inv);
+    for (int32:i in 0i32...(raw invariant_count(v))) {
+        ExprId:cl = ExprId{ index: raw ast_id_at(x.ast, v.b, i) };
+        ExprNode:cn = raw ast_expr(x.ast, cl);
+        IrVal:c = raw emit_contract_check(x, cl, "-4114", elided, cn.span);
+        if (!(raw iv_is_ok(c))) { pass c; }
+    }
+    pass (raw iv_nil());
+};
+
+pub func:invariant_elided = bool(ExprEmitter->:x, StmtId:sid, StmtId:body,
+                                 int32:label) never fails {
+    if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_INVARIANT()))) { pass false; }
+    if (!(raw llctx_elided(x.fe.ctx, raw SITE_STMT(), body.index, raw OK_INVARIANT()))) { pass false; }
+    pass (raw continues_elided(x, body, label, false, 64i32));
+};
+
+// Every `continue` re-entering the loop whose body this is has its row
+// discharged. `nested` is true inside a nested loop, where an unlabelled
+// `continue` is the inner loop's; a `defer` body cannot `continue`.
+func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nested,
+                             int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass true; }
+    if (fuel <= 0i32) { pass false; }
+    StmtNode:s = raw ast_stmt(x.ast, sid);
+    if (s.kind == StmtKind.StmtContinueStmt) {
+        bool:mine = false;
+        if ((raw stmt_label(s)) == 0i32) {
+            mine = !nested;
+        } else {
+            if ((raw stmt_label(s)) == label) { mine = true; }
+        }
+        if (!mine) { pass true; }
+        pass (raw llctx_elided(x.fe.ctx, raw SITE_STMT(), sid.index, raw OK_INVARIANT()));
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            if (!(raw continues_elided(x, ch, label, nested, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (!(raw continues_elided(x, raw stmt_then(s), label, nested, fuel - 1i32))) { pass false; }
+        pass (raw continues_elided(x, raw stmt_else(s), label, nested, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        pass (raw continues_elided(x, raw stmt_body(x.ast, s), label, true, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        pass (raw continues_elided(x, raw stmt_for_body(x.ast, s), label, true, fuel - 1i32));
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        pass (raw continues_elided(x, raw stmt_counted_body(s), label, true, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        if (!(raw continues_elided(x, raw stmt_when_body(x.ast, s), label, true, fuel - 1i32))) { pass false; }
+        if (!(raw continues_elided(x, raw stmt_when_then(x.ast, s), label, true, fuel - 1i32))) { pass false; }
+        pass (raw continues_elided(x, raw stmt_when_end(x.ast, s), label, true, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:j in 0i32...(raw pick_arm_count(s))) {
+            StmtId:arm = raw pick_arm_at(x.ast, raw pick_arm_start(s), j);
+            if (!(raw continues_elided(x, arm, label, nested, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        pass (raw continues_elided(x, raw arm_body(s), label, nested, fuel - 1i32));
+    }
+    pass true;
+};
+
+// EVERY `old(...)` NODE the function's seam or heads will read (L-10,
+// D-243): the `ensures` clauses' in order, then the body's loop invariants'
+// in source order -- listed once so the entry can snapshot each (a
+// coroutine registers each slot before its frame type is fixed).
+pub func:collect_old = NIL(ExprEmitter->:x, DeclNode:d, List<int32>->:out) never fails {
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    int32:cc = raw fn_contract_count(x.ast, d);
+    for (int32:ci in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) != (raw CONTRACT_ENSURES())) { continue; }
+        drop collect_old_expr(x, raw contract_cond(cv), out, 64i32);
+    }
+    drop collect_old_stmt(x, raw fn_body(x.ast, d), out, 64i32);
+    pass NIL;
+};
+
+func:collect_old_inv = NIL(ExprEmitter->:x, VerifyId:inv, List<int32>->:out,
+                           int32:fuel) never fails {
+    if (raw verify_is_none(inv)) { pass NIL; }
+    VerifyNode:v = raw ast_verify(x.ast, inv);
+    for (int32:i in 0i32...(raw invariant_count(v))) {
+        drop collect_old_expr(x, ExprId{ index: raw ast_id_at(x.ast, v.b, i) }, out, fuel);
+    }
+    pass NIL;
+};
+
+func:collect_old_stmt = NIL(ExprEmitter->:x, StmtId:sid, List<int32>->:out,
+                            int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    StmtNode:s = raw ast_stmt(x.ast, sid);
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            drop collect_old_stmt(x, ch, out, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop collect_old_stmt(x, raw stmt_then(s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_else(s), out, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop collect_old_inv(x, raw stmt_while_invariant(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_body(x.ast, s), out, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop collect_old_inv(x, raw stmt_for_invariant(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_for_body(x.ast, s), out, fuel - 1i32);
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        drop collect_old_inv(x, raw stmt_counted_invariant(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_counted_body(s), out, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop collect_old_inv(x, raw stmt_when_invariant(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_when_body(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_when_then(x.ast, s), out, fuel - 1i32);
+        drop collect_old_stmt(x, raw stmt_when_end(x.ast, s), out, fuel - 1i32);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:j in 0i32...(raw pick_arm_count(s))) {
+            StmtId:arm = raw pick_arm_at(x.ast, raw pick_arm_start(s), j);
+            drop collect_old_stmt(x, arm, out, fuel - 1i32);
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop collect_old_stmt(x, raw arm_body(s), out, fuel - 1i32);
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// An expression's `old` nodes in source order -- `scan_expr`'s descent
+// (ir_stmt.npk): the call and builtin windows past their generic arguments,
+// a struct literal's values at the odd positions, the rest by shape.
+func:collect_old_expr = NIL(ExprEmitter->:x, ExprId:id, List<int32>->:out,
+                            int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprOldExpr) {
+        drop list_push(out, id.index);   // never nested (D-243)
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop collect_old_expr(x, raw expr_callee(n), out, fuel - 1i32);
+        drop collect_old_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                                (raw expr_list_count(n)) - (raw expr_generic_count(n)),
+                                out, fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop collect_old_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                                (raw expr_list_count(n)) - (raw builtin_generic_count(n)),
+                                out, fuel);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            drop collect_old_expr(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) },
+                                  out, fuel - 1i32);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop collect_old_window(x, raw expr_list_start(n), raw expr_list_count(n), out, fuel);
+        pass NIL;
+    }
+    drop collect_old_expr(x, raw expr_lhs(n), out, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop collect_old_window(x, raw expr_list_start(n), raw expr_list_count(n), out, fuel);
+        pass NIL;
+    }
+    drop collect_old_expr(x, raw expr_rhs(n), out, fuel - 1i32);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop collect_old_expr(x, raw expr_third(n), out, fuel - 1i32);
+    pass NIL;
+};
+
+func:collect_old_window = NIL(ExprEmitter->:x, int32:start, int32:count,
+                              List<int32>->:out, int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        drop collect_old_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, out, fuel - 1i32);
+    }
+    pass NIL;
 };

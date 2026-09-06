@@ -1,0 +1,35 @@
+// expect-exit: 70
+//
+// `failsafe`'s POSTCONDITION (D-267, 1.5.3 step 1): its exit code is
+// positive. A literal 0 is REACH-004 at the checker; a COMPUTED 0 reaches the
+// guard at the `exit`, which traps `EnsuresViolated` -- and a trap inside
+// `failsafe` re-enters it, which the runtime's re-entry rule ends at 70
+// (VERIFICATION §4.6). So the process never reports success from the trap
+// route: 70, not 0.
+
+mod:failsafe_exit_trap;
+error:E3;
+error:E9;
+
+func:broken = int32() { fail E3; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = broken() ?! E9;
+    exit (v + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    int32:z = 0i32;
+    pick (e) {
+        (E9)                { exit z; },
+        (E3)                { exit 21i32; },
+        (IntOverflow)       { exit 93i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

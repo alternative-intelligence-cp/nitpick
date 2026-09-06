@@ -1,0 +1,37 @@
+// expect-exit: 34
+//
+// An `invariant` FALSE AT A LOOP HEAD traps `InvariantViolated` (-4114;
+// 1.5.3 step 1): it holds at entry and after the first iteration, and the
+// head after the second finds it false -- the check runs at EVERY head.
+
+mod:contract_trap_inv;
+error:E9;
+
+func:count = int32(int32:k) never fails {
+    int32:i = 0i32;
+    while (i < 3i32) invariant i < 2i32 + k {
+        i = i + 1i32;
+    }
+    pass i;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) - 1i32;   // 0 when run without arguments
+    exit (raw count(k));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (IntOverflow)       { exit 93i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

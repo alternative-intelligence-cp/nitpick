@@ -51,6 +51,7 @@ use "../../src/backend/ir/ir_types.npk".*;
 use "../../src/backend/ir/ir_func.npk".*;
 use "../../src/backend/ir/ir_expr.npk".*;
 use "../../src/backend/ir/ir_stmt.npk".*;
+use "../../src/backend/ir/ir_rules.npk".*;   // body_sym, req_sym (D-252, 1.5.3)
 
 // The body is a block, and `check_stmt` walks one — the same one-liner the
 // type_stmt fixture carries, for the same reason.
@@ -190,6 +191,13 @@ func:main = int32(cstring[]:_~argv) {
     string:t4 = raw emitted(@f, @it, 4i32, @st, @w4);
     if (!(raw string_eq(t4,
         "define i32 @main({ ptr, i64 } %a0) {\nentry:\n  %t0 = alloca { ptr, i64 }\n  store { ptr, i64 } %a0, ptr %t0\n  ret i32 0\n}\n\n"))) { exit 14i32; }
+
+    // --- the split symbols (D-252; 1.5.3 step 1): `.body` and `.req` go INSIDE
+    // the quotes of a D-156 symbol and plainly onto a bare one -----------------
+    if (!(raw string_eq(raw body_sym("@\"npk.m.f\""), "@\"npk.m.f.body\"")))   { exit 40i32; }
+    if (!(raw string_eq(raw body_sym("@f"), "@f.body")))                       { exit 41i32; }
+    if (!(raw string_eq(raw req_sym("@\"npk.m.f\""), "@\"npk.m.f.req\"")))     { exit 42i32; }
+    if (!(raw string_eq(raw req_sym("@f"), "@f.req")))                         { exit 43i32; }
 
     wild_release_all();
     exit 0i32;
