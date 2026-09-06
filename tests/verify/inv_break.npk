@@ -1,0 +1,43 @@
+// expect-exit: 20
+// expect-obligation: invariant discharged 2
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// A `break` IN THE BODY (L-9): the loop's exit is not a head visit, so the
+// invariant is NOT a hypothesis after it -- `100i32 / d`'s `div-zero` stays
+// `open` and keeps its guard, where `inv_while.npk`'s discharges (its
+// `div-min` needs only that 100 is not INT_MIN). The two rows of the loop
+// still discharge.
+mod:inv_break;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = 1i32;
+    int32:n = argv.len =>! int32;
+    while (n < 9i32) invariant d > 0i32 {
+        d = d + 1i32;
+        n = n + 1i32;
+        if (n == 5i32) { break; }
+    }
+    int32:q = 100i32 / d;
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

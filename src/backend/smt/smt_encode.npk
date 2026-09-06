@@ -72,6 +72,10 @@ use "./smt_kinds.npk".*;
 pub struct:SmtSym = {
     string:text;      // `|x.2|`
     bool:is_bool;     // Bool, else Int
+    // AN UNINTERPRETED FUNCTION (1.5.3 step 2, L-3): a `pure never fails`
+    // callee's symbol, declared `(declare-fun |f| <sorts> <sort>)` -- its
+    // argument sorts as one text, "" for a constant.
+    string:sorts;
 };
 
 // One hypothesis: its text and the symbols it mentions (by index into `syms`).
@@ -90,6 +94,10 @@ pub struct:SmtObl = {
     int32:site;              // the node index that identifies the site (the emitter's key) ...
     int32:space;             // ... in this id space (L-9): SITE_EXPR, SITE_STMT or SITE_DECL
     int32:ordinal;           // the k-th of its kind in this function
+    int32:ctx;               // the clause context the site was recorded under (1.5.3 step 2; `LlCtx.cur_ctx`)
+    int32:role;              // ROLE_* (1.5.3 step 2, L-13): what the row's retention keeps
+    int32:group;             // the rows one guard shares (a loop's three rows, a call's bypass rows)
+    int32:traps;             // the traps the group keeps when any of its rows is retained
     int32:line;
     int32:col;
     int32:region;            // the branch region of the site
@@ -108,6 +116,7 @@ struct:Bind = {
     int32:sym;
     int32:type_id;
     int32:rule;      // the `Rules` declaration limiting the name (1.5.2, D-251); 0 for none
+    int32:entry;     // the binding's FIRST version (1.5.3 step 2, D-243): what `old(...)` reads
 };
 
 // A term: encodable or not; when encodable, its text, sort and symbols.
@@ -149,6 +158,24 @@ pub struct:Encoder = {
     // instantiating function's: the guard is the predicate function's own,
     // and the row is recorded there, once (L-1).
     int32:quiet;
+    // THE CONTRACTS' STATE (1.5.3 step 2): `result` while an `ensures` is
+    // encoded (`term_none` outside one); `at_entry` while an `old(...)`
+    // operand is encoded, so a name reads its entry version; the function's
+    // declaration, its impl and its trait (0 outside a method), its success
+    // type, and whether it is `failsafe`; the clause context a row is
+    // recorded under (0 outside a clause); and the loop stack a `continue`
+    // resolves against -- each loop's statement, label and invariant.
+    Term:result;
+    bool:at_entry;
+    int32:fn_decl;
+    int32:impl_decl;
+    int32:trait_ty;
+    int32:ret_type;
+    bool:is_failsafe;
+    int32:clause_ctx;
+    List<int32>:loop_sids;
+    List<int32>:loop_labels;
+    List<int32>:loop_invs;
 };
 
 // Branch regions (the dominance rule): a then-arm, an else-arm, a loop body,
@@ -195,7 +222,12 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   escaped: raw list_init::<int32>(4i64),
                   anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
                   region_parent: move(rp), cur_region: 0i32,
-                  subject: raw term_none(), quiet: 0i32 };
+                  subject: raw term_none(), quiet: 0i32,
+                  result: raw term_none(), at_entry: false, fn_decl: 0i32, impl_decl: 0i32,
+                  trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
+                  loop_sids: raw list_init::<int32>(4i64),
+                  loop_labels: raw list_init::<int32>(4i64),
+                  loop_invs: raw list_init::<int32>(4i64) };
 };
 
 // --- types -----------------------------------------------------------------------------
@@ -228,7 +260,7 @@ func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
 // Declare a constant; an integer one gets its range axiom as a hypothesis.
 func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
     bool:b = raw is_bool(e, ty);
-    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b };
+    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b, sorts: "" };
     drop list_push(@e.syms, move(s));
     int32:idx = (e.syms.count - 1i64) =>! int32;
     if (raw is_int(e, ty)) {
@@ -242,6 +274,27 @@ func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
 
 func:sym_text = string(Encoder->:e, int32:idx) never fails {
     pass (string_concat(e.syms.items[idx => int64].text, ""));
+};
+
+// A declared symbol by its text, or -1.
+func:sym_find = int32(Encoder->:e, string:text) never fails {
+    for (int64:i in 0i64...e.syms.count) {
+        if (string_equals(e.syms.items[i].text, text)) { pass (i =>! int32); }
+    }
+    pass 0i32 - 1i32;
+};
+
+// AN UNINTERPRETED FUNCTION SYMBOL (1.5.3 step 2, L-3): declared once per
+// text, with its argument sorts and its result sort; a function symbol rides
+// in a term's symbol list like a constant, so the cone closure declares it
+// where an application appears.
+func:sym_new_fun = int32(Encoder->:e, string:text, string:sorts, bool:ret_bool) never fails {
+    int32:have = raw sym_find(e, text);
+    if (have >= 0i32) { pass have; }
+    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: ret_bool,
+                       sorts: string_concat(sorts, "") };
+    drop list_push(@e.syms, move(s));
+    pass ((e.syms.count - 1i64) =>! int32);
 };
 
 // A fresh anonymous opaque symbol of an int or bool type, as a term.
@@ -342,7 +395,7 @@ func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule) ne
             drop hyp_push(e, raw smt_app2("=", nm, t.text), raw syms_union(one, t.syms));
         }
     }
-    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule };
+    Bind:b = Bind{ name: name, sym: sym, type_id: ty, rule: rule, entry: sym };
     drop list_push(@e.binds, move(b));
     pass NIL;
 };
@@ -417,6 +470,16 @@ func:scope_release = NIL(Encoder->:e, int64:mark) never fails { e.binds.count = 
 
 func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:space,
                   int32:site, Span:at, bool:encoded) never fails {
+    drop record_at(e, kind, goal, syms, space, site, at, encoded, raw ROLE_GUARD(), site, 1i32);
+    pass NIL;
+};
+
+// THE FULL ROW (1.5.3 step 2, L-13): its role, the group it shares a guard
+// with, and the traps that guard keeps when any row of the group is
+// retained -- what the runners' belts read from `rows.txt`.
+func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:space,
+                     int32:site, Span:at, bool:encoded, int32:role, int32:group,
+                     int32:traps) never fails {
     if (e.quiet > 0i32) { pass NIL; }
     int32:ord = e.ordinals.items[kind => int64] + 1i32;
     e.ordinals.items[kind => int64] = ord;
@@ -424,6 +487,7 @@ func:record = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int32:
     for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
     SmtObl:o = SmtObl{ kind: kind, goal: string_concat(goal, ""), syms: move(copy),
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
+                       ctx: e.clause_ctx, role: role, group: group, traps: traps,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
@@ -611,31 +675,43 @@ func:after_write = NIL(Encoder->:e, int32:name, int32:space, int32:site, Span:at
     pass NIL;
 };
 
-// A CALL's `limit-subsume` ROW (L-10): the receiver or callee expression and
-// every argument encoded once (their sites recorded, their terms kept); then,
-// for a callee the checker recorded whose declaration has limited
-// parameters, ONE row per call site -- the conjunction over those parameters
-// of their rules over the argument terms, with the caller's cone as the
-// hypotheses (a limited-binding argument brings its rule: the spec's "one
-// `Rules` implies another at a boundary"). An argument the encoder cannot
-// name is opaque (the row is `open`); one whose type is outside the fragment
-// makes the row `unencoded`. A `dyn` or function-value call has no recorded
-// declaration and no row, and a coroutine callee has none either: their
-// entry checks cover them (L-3, D-252). The row's elision is `none` until
-// D-252's bypass (step 4).
-func:record_subsume = NIL(Encoder->:e, ExprId:id, ExprNode:n) never fails {
-    if (n.a != 0i32) { Term:rcv = raw enc_expr(e, ExprId{ index: n.a }); }
+// A CALL, ENCODED ONCE (1.5.2 step 3, L-10; 1.5.3 step 2): the receiver or
+// callee expression and every argument (their sites recorded, their terms
+// kept), and the callee the checker recorded -- a method call's declaration
+// (`exprtypes_set_callee`), a free call's identifier's symbol as `emit_call`
+// resolves it; a local or parameter holding a function value is an indirect
+// call and has no rows (its entry check covers it). `terms`/`types`/`names`
+// are per PARAMETER position: the receiver is parameter 0 when the method
+// takes one more parameter than the call passes arguments.
+struct:CallEnc = {
+    int32:cd;              // the callee's declaration, 0 for none usable
+    bool:coroutine;        // `async` or `thread`: the entry check runs at state 0, never bypassed
+    bool:through_dyn;      // the receiver is a `dyn`: the vtable's target is the entry, never bypassed
+    List<int32>:names;
+    List<int32>:types;
+    List<Term>:terms;
+};
+
+func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
+    Term:rcv = raw term_none();
+    int32:rty = 0i32;
+    if (n.a != 0i32) {
+        rcv = raw enc_expr(e, ExprId{ index: n.a });
+        rty = raw ty_of(e, ExprId{ index: n.a });
+    }
     int32:g = 0i32;
     if (n.kind == ExprKind.ExprCallExpr) { g = raw expr_generic_count(n); }
     int32:argc = n.c - g;
-    List<Term>:terms = raw list_init::<Term>((argc => int64) + 1i64);
+    List<Term>:args = raw list_init::<Term>((argc => int64) + 1i64);
+    List<int32>:atys = raw list_init::<int32>((argc => int64) + 1i64);
     for (int32:i in 0i32...argc) {
-        drop list_push(@terms, raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, n.b, g + i) }));
+        ExprId:aid = ExprId{ index: raw ast_id_at(e.ast, n.b, g + i) };
+        drop list_push(@args, raw enc_expr(e, aid));
+        drop list_push(@atys, raw ty_of(e, aid));
     }
-    // THE CALLEE: a method call's declaration is the one the checker recorded
-    // (`exprtypes_set_callee`); a free call's is its identifier's symbol, as
-    // `emit_call` resolves it -- a local or parameter holding a function value
-    // is an indirect call and has no row (its entry check covers it).
+    CallEnc:none = CallEnc{ cd: 0i32, coroutine: false, through_dyn: false,
+                            names: raw list_init::<int32>(1i64), types: raw list_init::<int32>(1i64),
+                            terms: raw list_init::<Term>(1i64) };
     int32:cd = raw exprtypes_callee(e.et, id);
     if ((cd == 0i32) && (n.kind == ExprKind.ExprCallExpr) && (n.a != 0i32)) {
         ExprNode:cn = raw ast_expr(e.ast, ExprId{ index: n.a });
@@ -644,38 +720,77 @@ func:record_subsume = NIL(Encoder->:e, ExprId:id, ExprNode:n) never fails {
             if (cs.origin_kind == (raw SYM_DECL())) { cd = cs.origin; }
         }
     }
-    if (cd == 0i32) { pass NIL; }
+    if (cd == 0i32) { pass none; }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
-    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
-    // A COROUTINE CALLEE HAS NO ROW (D-252): its parameters arrive in a frame
-    // the await site builds and its check runs at state 0 -- nothing at the
-    // call site could ever elide it, so a row here would be evidence of a
-    // narrowing no build can use.
-    if (raw decl_has(cdn, raw DECL_ASYNC())) { pass NIL; }
-    if (raw decl_has(cdn, raw DECL_THREAD())) { pass NIL; }
+    if (cdn.kind != DeclKind.DeclFunctionDecl) { pass none; }
+    if (!(raw decl_is_none(raw fn_variadic(e.ast, cdn)))) { pass none; }
     int32:pc = raw fn_param_count(e.ast, cdn);
     int32:off = 0i32;
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         if (pc == (argc + 1i32)) { off = 1i32; }
-        else { if (pc != argc) { pass NIL; } }
+        else { if (pc != argc) { pass none; } }
     } else {
-        if (pc != argc) { pass NIL; }
+        if (pc != argc) { pass none; }
     }
+    List<int32>:names = raw list_init::<int32>((pc => int64) + 1i64);
+    List<int32>:types = raw list_init::<int32>((pc => int64) + 1i64);
+    List<Term>:terms = raw list_init::<Term>((pc => int64) + 1i64);
+    for (int32:p in 0i32...pc) {
+        DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, cdn, p));
+        drop list_push(@names, raw decl_name(pd));
+        if ((off == 1i32) && (p == 0i32)) {
+            drop list_push(@types, rty);
+            drop list_push(@terms, raw term_copy(rcv));
+        } else {
+            int64:ai = (p - off) => int64;
+            drop list_push(@types, atys.items[ai]);
+            drop list_push(@terms, raw term_copy(args.items[ai]));
+        }
+    }
+    bool:co = (raw decl_has(cdn, raw DECL_ASYNC())) || (raw decl_has(cdn, raw DECL_THREAD()));
+    bool:dy = false;
+    if (rty != 0i32) { if ((raw type_kind(e.types, rty)) == (raw TY_DYN())) { dy = true; } }
+    pass CallEnc{ cd: cd, coroutine: co, through_dyn: dy, names: move(names),
+                  types: move(types), terms: move(terms) };
+};
+
+// The two call-site rows of a recorded callee (L-10, D-268): its role is
+// `bypass` at a direct sync call -- discharged with every other bypass row of
+// the call, the call names the body -- and `held` at an `await` or through a
+// `dyn`, where the guard is the callee's own entry and no build can remove it.
+func:record_call_rows = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce) never fails {
+    if (ce.cd == 0i32) { pass NIL; }
+    int32:role = raw ROLE_BYPASS();
+    if (ce.coroutine || ce.through_dyn) { role = raw ROLE_HELD(); }
+    drop record_subsume_ce(e, id, n, ce, role);
+    drop record_requires(e, id, n, ce, role);
+    pass NIL;
+};
+
+// A CALL's `limit-subsume` ROW (L-10): for a callee whose declaration has
+// limited parameters, ONE row per call site -- the conjunction over those
+// parameters of their rules over the argument terms, with the caller's cone
+// as the hypotheses (a limited-binding argument brings its rule: the spec's
+// "one `Rules` implies another at a boundary"). An argument the encoder
+// cannot name is opaque (the row is `open`); one whose type is outside the
+// fragment makes the row `unencoded`. A `dyn` call's trait method has no
+// limited parameter (TYPE-064), and a coroutine callee's row is `held`
+// (D-268 amending D-252): recorded, never elided.
+func:record_subsume_ce = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int32:role) never fails {
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
+    int32:pc = raw fn_param_count(e.ast, cdn);
     Term:acc = raw term_none();
     bool:first = true;
     bool:has_limited = false;
     bool:broken = false;
-    for (int32:i2 in off...pc) {
+    for (int32:i2 in 0i32...pc) {
         DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, cdn, i2));
         VerifyId:pl = raw param_limit(pd);
         if (raw verify_is_none(pl)) { continue; }
         has_limited = true;
         int32:rule = (raw limit_target(raw ast_verify(e.ast, pl))).index;
-        int64:ai = (i2 - off) => int64;
-        Term:a = raw term_copy(terms.items[ai]);
-        if (!a.ok) {
-            a = raw term_opaque(e, raw ty_of(e, ExprId{ index: raw ast_id_at(e.ast, n.b, g + (i2 - off)) }));
-        }
+        Term:a = raw term_copy(ce.terms.items[i2 => int64]);
+        if (!a.ok) { a = raw term_opaque(e, ce.types.items[i2 => int64]); }
         if (!a.ok) { broken = true; continue; }
         Term:c = raw enc_rule(e, rule, a, 64i32);
         if (!c.ok) { broken = true; continue; }
@@ -685,10 +800,472 @@ func:record_subsume = NIL(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     if (!has_limited) { pass NIL; }
     if (broken) {
         List<int32>:none = raw list_init::<int32>(1i64);
-        drop record(e, raw OK_LIMIT_SUBSUME(), "", none, raw SITE_EXPR(), id.index, n.span, false);
+        drop record_at(e, raw OK_LIMIT_SUBSUME(), "", none, raw SITE_EXPR(), id.index, n.span, false,
+                       role, id.index, 0i32);
         pass NIL;
     }
-    drop record(e, raw OK_LIMIT_SUBSUME(), acc.text, acc.syms, raw SITE_EXPR(), id.index, n.span, true);
+    drop record_at(e, raw OK_LIMIT_SUBSUME(), acc.text, acc.syms, raw SITE_EXPR(), id.index, n.span, true,
+                   role, id.index, 0i32);
+    pass NIL;
+};
+
+// A CALL's `requires` ROW (1.5.3 step 2; L-7, D-268): the callee's clauses
+// conjoined over the argument terms -- the parameters bound to them by
+// position (the receiver first), QUIET, since a guard inside a clause is
+// the callee's own (L-5). ONE row per call, whatever the callee's kind: the
+// only place the call is ever proven.
+func:record_requires = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int32:role) never fails {
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
+    if ((raw contract_count(e, cdn, raw CONTRACT_REQUIRES())) == 0i32) { pass NIL; }
+    Term:g = raw enc_under(e, ce.names, ce.types, ce.terms, cdn, raw CONTRACT_REQUIRES(), false,
+                           raw term_none());
+    if (!g.ok) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record_at(e, raw OK_REQUIRES(), "", none, raw SITE_EXPR(), id.index, n.span, false,
+                       role, id.index, 0i32);
+        pass NIL;
+    }
+    drop record_at(e, raw OK_REQUIRES(), g.text, g.syms, raw SITE_EXPR(), id.index, n.span, true,
+                   role, id.index, 0i32);
+    pass NIL;
+};
+
+// THE CALLEE'S `ensures` AS KNOWLEDGE (L-4): under the arguments and the
+// unwrapped value, quiet; the clauses the encoder cannot express are
+// dropped (assuming less is sound), the rest one hypothesis.
+func:push_callee_ensures = NIL(Encoder->:e, CallEnc:ce, Term:val) never fails {
+    if (ce.cd == 0i32) { pass NIL; }
+    if (!val.ok) { pass NIL; }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
+    if ((raw contract_count(e, cdn, raw CONTRACT_ENSURES())) == 0i32) { pass NIL; }
+    Term:h = raw enc_under(e, ce.names, ce.types, ce.terms, cdn, raw CONTRACT_ENSURES(), true,
+                           raw term_copy(val));
+    if (h.ok) { drop hyp_push(e, h.text, h.syms); }
+    pass NIL;
+};
+
+// A `pure never fails` CALLEE'S VALUE (L-3): the application of its
+// uninterpreted function to the argument terms -- `|uf.<name>.<decl>|`, one
+// symbol per declaration -- when every argument and the result are in the
+// fragment and the callee is not a coroutine; its result's range axiom is a
+// hypothesis (the value IS of that type). `term_none` otherwise.
+func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
+    if (ce.cd == 0i32) { pass (raw term_none()); }
+    if (ce.coroutine) { pass (raw term_none()); }
+    DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
+    if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
+    if (!((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    string:sorts = "(";
+    string:app = "";
+    List<int32>:syms = raw list_init::<int32>(4i64);
+    for (int64:i in 0i64...ce.terms.count) {
+        if (!ce.terms.items[i].ok) { pass (raw term_none()); }
+        int32:pt = ce.types.items[i];
+        if (!((raw is_int(e, pt)) || (raw is_bool(e, pt)))) { pass (raw term_none()); }
+        if (ce.terms.items[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
+        if (i > 0i64) { sorts = string_concat(sorts, " "); app = string_concat(app, " "); }
+        if (raw is_bool(e, pt)) { sorts = string_concat(sorts, "Bool"); }
+        else { sorts = string_concat(sorts, "Int"); }
+        app = string_concat(app, ce.terms.items[i].text);
+        syms = raw syms_union(syms, ce.terms.items[i].syms);
+    }
+    sorts = string_concat(sorts, ")");
+    string:fname = string_concat("uf.", raw intern_get(e.interns, raw decl_name(cdn)));
+    string:fsym = raw smt_sym(fname, ce.cd => int64);
+    int32:fi = raw sym_new_fun(e, fsym, sorts, raw is_bool(e, ty));
+    List<int32>:one = raw list_init::<int32>(1i64);
+    drop list_push(@one, fi);
+    syms = raw syms_union(syms, one);
+    string:text = raw smt_app1(fsym, app);
+    if (ce.terms.count == 0i64) { text = string_concat(fsym, ""); }
+    if (raw is_int(e, ty)) {
+        drop hyp_push(e, raw smt_range_axiom(text, raw type_int_bits(e.types, ty),
+                                              raw type_is_signed(e.types, ty)), syms);
+    }
+    pass Term{ ok: true, is_bool: raw is_bool(e, ty), text: move(text), syms: move(syms) };
+};
+
+// --- contracts (1.5.3 step 2; D-221, D-241, D-243, D-245, D-267, D-268) -------
+
+// The clauses of one kind on a declaration: their count, and their
+// conjunction over the current bindings -- every clause a term, or
+// `term_none` when one is not (a GOAL needs every clause; a HYPOTHESIS may
+// drop the ones it cannot express, `partial`, and asserts the rest).
+func:contract_count = int32(Encoder->:e, DeclNode:d, int32:kind) never fails {
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+    int32:n = 0i32;
+    int32:cc = raw fn_contract_count(e.ast, d);
+    for (int32:i in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, i));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) == kind) { n = n + 1i32; }
+    }
+    pass n;
+};
+
+func:fn_is_pure_never_fails = bool(Encoder->:e, DeclNode:d) never fails {
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    bool:is_pure = false;
+    bool:nf = false;
+    int32:cc = raw fn_contract_count(e.ast, d);
+    for (int32:i in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, i));
+        if (cv.kind == VerifyKind.VerifyPure) { is_pure = true; }
+        if (cv.kind == VerifyKind.VerifyNeverFails) { nf = true; }
+    }
+    pass (is_pure && nf);
+};
+
+func:contract_conj = Term(Encoder->:e, DeclNode:d, int32:kind, bool:partial) never fails {
+    Term:acc = raw term_none();
+    bool:first = true;
+    bool:saw_any = false;
+    int32:cc = raw fn_contract_count(e.ast, d);
+    for (int32:i in 0i32...cc) {
+        VerifyNode:cv = raw ast_verify(e.ast, raw fn_contract(e.ast, d, i));
+        if (cv.kind != VerifyKind.VerifyContractNode) { continue; }
+        if ((raw contract_kind(cv)) != kind) { continue; }
+        saw_any = true;
+        Term:c = raw enc_expr(e, raw contract_cond(cv));
+        if (!(c.ok && c.is_bool)) {
+            if (partial) { continue; }
+            pass (raw term_none());
+        }
+        if (first) { acc = move(c); first = false; }
+        else { acc = raw term_app2("and", acc, c, true); }
+    }
+    if (!saw_any) { pass (raw term_lit("true", true)); }
+    if (first) { pass (raw term_none()); }
+    pass acc;
+};
+
+// A loop invariant's clauses, likewise.
+func:invariant_conj = Term(Encoder->:e, VerifyId:inv, bool:partial) never fails {
+    if (raw verify_is_none(inv)) { pass (raw term_lit("true", true)); }
+    VerifyNode:v = raw ast_verify(e.ast, inv);
+    Term:acc = raw term_none();
+    bool:first = true;
+    for (int32:i in 0i32...(raw invariant_count(v))) {
+        Term:c = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, v.b, i) });
+        if (!(c.ok && c.is_bool)) {
+            if (partial) { continue; }
+            pass (raw term_none());
+        }
+        if (first) { acc = move(c); first = false; }
+        else { acc = raw term_app2("and", acc, c, true); }
+    }
+    if ((raw invariant_count(v)) == 0i32) { pass (raw term_lit("true", true)); }
+    if (first) { pass (raw term_none()); }
+    pass acc;
+};
+
+func:invariant_clauses = int32(Encoder->:e, VerifyId:inv) never fails {
+    if (raw verify_is_none(inv)) { pass 0i32; }
+    pass (raw invariant_count(raw ast_verify(e.ast, inv)));
+};
+
+// SUBSTITUTION (L-2, L-4): the declaration's contract clauses of `kind`
+// encoded with its parameters bound, by position, to the given terms -- a
+// fresh version of each name equal to its term (an inexpressible term an
+// opaque version), so a compound argument is named once -- and `result`
+// bound to `result_term`. QUIET: the clauses' own guards are the callee's
+// (L-5), never this function's sites. The bindings are released after.
+func:enc_under = Term(Encoder->:e, List<int32>:names, List<int32>:types, List<Term>:terms,
+                      DeclNode:d, int32:kind, bool:partial, Term:result_term) never fails {
+    int64:mark = raw scope_mark(e);
+    for (int64:i in 0i64...names.count) {
+        drop bind_define(e, names.items[i], types.items[i], raw term_copy(terms.items[i]), 0i32);
+    }
+    Term:saved_res = raw term_copy(e.result);
+    e.result = raw term_copy(result_term);
+    e.quiet = e.quiet + 1i32;
+    Term:t = raw contract_conj(e, d, kind, partial);
+    e.quiet = e.quiet - 1i32;
+    e.result = move(saved_res);
+    drop scope_release(e, mark);
+    pass t;
+};
+
+// THE FUNCTION'S OWN ENTRY (L-7; D-252 as amended by D-268): its `requires`
+// row -- kind `requires`, SITE_DECL the declaration, the conjunction over the
+// parameters' first versions, hypotheses the range axioms -- discharged, the
+// entry check is elided in place (the `.req` predicate stays uncalled). The
+// clauses are encoded LOUD: a guard inside one is this function's site
+// (L-5), lowered once in the predicate. Then the conjunction as a hypothesis
+// (the body may assume its precondition), after the row so the goal is never
+// in its own cone. One trap per clause in the predicate: the row's `traps`.
+pub func:enc_entry_contracts = NIL(Encoder->:e) never fails {
+    if (e.fn_decl == 0i32) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    // THE CONFORMANCE ROWS FIRST: the impl's own `requires` is their goal,
+    // and the hypothesis pushed below would prove it of itself.
+    drop enc_conformance(e, d);
+    int32:rn = raw contract_count(e, d, raw CONTRACT_REQUIRES());
+    if (rn > 0i32) {
+        Term:g = raw contract_conj(e, d, raw CONTRACT_REQUIRES(), false);
+        if (!g.ok) {
+            List<int32>:none = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_REQUIRES(), "", none, raw SITE_DECL(), e.fn_decl, d.span, false,
+                           raw ROLE_GUARD(), e.fn_decl, rn);
+            e.quiet = e.quiet + 1i32;
+            Term:h = raw contract_conj(e, d, raw CONTRACT_REQUIRES(), true);
+            e.quiet = e.quiet - 1i32;
+            if (h.ok) { drop hyp_push(e, h.text, h.syms); }
+        } else {
+            drop record_at(e, raw OK_REQUIRES(), g.text, g.syms, raw SITE_DECL(), e.fn_decl, d.span, true,
+                           raw ROLE_GUARD(), e.fn_decl, rn);
+            drop hyp_push(e, g.text, g.syms);
+        }
+    }
+    pass NIL;
+};
+
+// CONFORMANCE (L-6): an impl method against its trait's method of the same
+// name, in regions of their own so nothing leaks into the body. `requires`:
+// the trait's clauses as a hypothesis over this method's parameters, the
+// impl's own as the goal -- an impl may WEAKEN a precondition (trait implies
+// impl). `ensures`: the impl's clauses as a hypothesis over an opaque result,
+// the trait's as the goal -- an impl may STRENGTHEN a postcondition (impl
+// implies trait). Both rows `conform`: no guard, an open row is reported
+// (the impl's own entry and seam checks are the runtime), never a refusal.
+func:enc_conformance = NIL(Encoder->:e, DeclNode:d) never fails {
+    if (e.impl_decl == 0i32) { pass NIL; }
+    if (e.trait_ty == 0i32) { pass NIL; }
+    int32:tdecl = raw type_decl_of(e.types, e.trait_ty);
+    if (tdecl == 0i32) { pass NIL; }
+    DeclNode:td = raw ast_decl(e.ast, DeclId{ index: tdecl });
+    int32:tmi = 0i32;
+    int32:mn = raw item_member_count(e.ast, td);
+    for (int32:i in 0i32...mn) {
+        DeclId:mid = raw item_member(e.ast, td, i);
+        DeclNode:m = raw ast_decl(e.ast, mid);
+        if (m.kind != DeclKind.DeclFunctionDecl) { continue; }
+        if ((raw decl_name(m)) == (raw decl_name(d))) { tmi = mid.index; }
+    }
+    if (tmi == 0i32) { pass NIL; }
+    if (tmi == e.fn_decl) { pass NIL; }   // an inherited default IS the trait's method
+    DeclNode:tm = raw ast_decl(e.ast, DeclId{ index: tmi });
+    int32:pc = raw fn_param_count(e.ast, d);
+    if (pc != (raw fn_param_count(e.ast, tm))) { pass NIL; }
+    if ((pc => int64) > e.binds.count) { pass NIL; }
+    List<int32>:names = raw list_init::<int32>((pc => int64) + 1i64);
+    List<int32>:types = raw list_init::<int32>((pc => int64) + 1i64);
+    List<Term>:terms = raw list_init::<Term>((pc => int64) + 1i64);
+    for (int32:p in 0i32...pc) {
+        DeclNode:tp = raw ast_decl(e.ast, raw fn_param(e.ast, tm, p));
+        drop list_push(@names, raw decl_name(tp));
+        drop list_push(@types, e.binds.items[p => int64].type_id);
+        drop list_push(@terms, raw bind_term(e, p => int64));
+    }
+    int32:tr_n = raw contract_count(e, tm, raw CONTRACT_REQUIRES());
+    int32:im_n = raw contract_count(e, d, raw CONTRACT_REQUIRES());
+    if ((tr_n > 0i32) || (im_n > 0i32)) {
+        drop region_enter(e);
+        Term:th = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none());
+        if (th.ok) { drop hyp_push(e, th.text, th.syms); }
+        e.quiet = e.quiet + 1i32;
+        Term:ig = raw contract_conj(e, d, raw CONTRACT_REQUIRES(), false);
+        e.quiet = e.quiet - 1i32;
+        if (ig.ok) {
+            drop record_at(e, raw OK_REQUIRES(), ig.text, ig.syms, raw SITE_CONF(), e.fn_decl, d.span, true,
+                           raw ROLE_CONFORM(), e.fn_decl, 0i32);
+        } else {
+            List<int32>:none = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_REQUIRES(), "", none, raw SITE_CONF(), e.fn_decl, d.span, false,
+                           raw ROLE_CONFORM(), e.fn_decl, 0i32);
+        }
+        drop region_leave(e);
+    }
+    int32:te_n = raw contract_count(e, tm, raw CONTRACT_ENSURES());
+    int32:ie_n = raw contract_count(e, d, raw CONTRACT_ENSURES());
+    if ((te_n > 0i32) || (ie_n > 0i32)) {
+        drop region_enter(e);
+        // The trait's precondition is knowledge here too: the trait's
+        // postcondition is claimed only for calls that satisfied it.
+        Term:th2 = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none());
+        if (th2.ok) { drop hyp_push(e, th2.text, th2.syms); }
+        Term:r = raw term_opaque(e, e.ret_type);
+        Term:saved_res = raw term_copy(e.result);
+        e.result = raw term_copy(r);
+        e.quiet = e.quiet + 1i32;
+        Term:ih = raw contract_conj(e, d, raw CONTRACT_ENSURES(), true);
+        e.quiet = e.quiet - 1i32;
+        e.result = move(saved_res);
+        if (ih.ok) { drop hyp_push(e, ih.text, ih.syms); }
+        Term:tg = raw enc_under(e, names, types, terms, tm, raw CONTRACT_ENSURES(), false, raw term_copy(r));
+        if (tg.ok) {
+            drop record_at(e, raw OK_ENSURES(), tg.text, tg.syms, raw SITE_CONF(), e.fn_decl, d.span, true,
+                           raw ROLE_CONFORM(), e.fn_decl, 0i32);
+        } else {
+            List<int32>:none2 = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_ENSURES(), "", none2, raw SITE_CONF(), e.fn_decl, d.span, false,
+                           raw ROLE_CONFORM(), e.fn_decl, 0i32);
+        }
+        drop region_leave(e);
+    }
+    pass NIL;
+};
+
+// THE SEAM (L-7, L-12): at a `pass v` or a successful `return Result{...}`,
+// kind `ensures`, SITE_STMT the statement, the clauses conjoined with
+// `result` the value's term (opaque when the value has none; `term_none` for
+// a bare `pass`, where `result` is NIL) -- encoded LOUD under the seam's
+// clause context, so a guard inside a clause is this seam's own site. One
+// trap per return point: `traps` 1.
+func:record_seam = NIL(Encoder->:e, StmtId:sid, Span:at, Term:v, int32:vty, bool:has_value) never fails {
+    if (e.fn_decl == 0i32) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+    if ((raw contract_count(e, d, raw CONTRACT_ENSURES())) == 0i32) { pass NIL; }
+    Term:saved_res = raw term_copy(e.result);
+    e.result = raw term_none();
+    if (has_value) {
+        if (v.ok) { e.result = raw term_copy(v); }
+        else { e.result = raw term_opaque(e, vty); }
+    }
+    e.clause_ctx = sid.index;
+    Term:g = raw contract_conj(e, d, raw CONTRACT_ENSURES(), false);
+    e.clause_ctx = 0i32;
+    e.result = move(saved_res);
+    if (!g.ok) {
+        List<int32>:none = raw list_init::<int32>(1i64);
+        drop record_at(e, raw OK_ENSURES(), "", none, raw SITE_STMT(), sid.index, at, false,
+                       raw ROLE_GUARD(), sid.index, 1i32);
+        pass NIL;
+    }
+    drop record_at(e, raw OK_ENSURES(), g.text, g.syms, raw SITE_STMT(), sid.index, at, true,
+                   raw ROLE_GUARD(), sid.index, 1i32);
+    pass NIL;
+};
+
+// The loop frame a `continue` or `break` re-enters or leaves: the innermost
+// for an unlabelled one, the one carrying the label otherwise; -1 for none.
+func:loop_frame = int64(Encoder->:e, int32:label) never fails {
+    if (e.loop_sids.count == 0i64) { pass (0i64 - 1i64); }
+    if (label == 0i32) { pass (e.loop_sids.count - 1i64); }
+    int64:i = e.loop_sids.count;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (e.loop_labels.items[i] == label) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+// Does a `break` leave the loop whose body this is? An unlabelled one
+// directly in the body, a labelled one naming the loop anywhere in it.
+func:loop_has_break = bool(Encoder->:e, StmtId:sid, int32:label, bool:nested, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtBreakStmt) {
+        if ((raw stmt_label(s)) == 0i32) { pass (!nested); }
+        pass ((raw stmt_label(s)) == label);
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+            if (raw loop_has_break(e, ch, label, nested, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (raw loop_has_break(e, raw stmt_then(s), label, nested, fuel - 1i32)) { pass true; }
+        pass (raw loop_has_break(e, raw stmt_else(s), label, nested, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { pass (raw loop_has_break(e, raw stmt_body(e.ast, s), label, true, fuel - 1i32)); }
+    if (s.kind == StmtKind.StmtForStmt)   { pass (raw loop_has_break(e, raw stmt_for_body(e.ast, s), label, true, fuel - 1i32)); }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        pass (raw loop_has_break(e, raw stmt_counted_body(s), label, true, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        if (raw loop_has_break(e, raw stmt_when_body(e.ast, s), label, true, fuel - 1i32)) { pass true; }
+        if (raw loop_has_break(e, raw stmt_when_then(e.ast, s), label, true, fuel - 1i32)) { pass true; }
+        pass (raw loop_has_break(e, raw stmt_when_end(e.ast, s), label, true, fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            if (raw loop_has_break(e, raw arm_body(arm), label, nested, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    pass false;
+};
+
+// A LOOP (L-8, L-9): the ENTRY row -- kind `invariant`, SITE_STMT the loop
+// statement, the conjunction over the versions before any havoc, LOUD under
+// the loop's clause context (a guard inside a clause is the head's site,
+// lowered once) -- then the body's assigned names havoced, and inside the
+// body's region the invariant as a hypothesis over the havoced versions and,
+// for `while`/`when`, the condition too (both dominate only the body); at
+// the body's end the PRESERVATION row keyed at the body block, and one at
+// every `continue` that re-enters this loop (`walk_stmt`); after the loop
+// the names havoced again and, when nothing `break`s out, the invariant as a
+// hypothesis once more -- it holds at every head visit and the exit is one.
+// The condition's negation is NOT pushed (1.5.4's path condition). All of a
+// loop's rows share its group and its clause count: the head's check elides
+// only when every one is discharged, and keeps one trap per clause.
+func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:cond,
+                     int32:label) never fails {
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    List<int32>:assigned = raw list_init::<int32>(4i64);
+    drop collect_assigned(e, body, @assigned);
+    int32:nc = raw invariant_clauses(e, inv);
+    if (nc > 0i32) {
+        e.clause_ctx = sid.index;
+        Term:g0 = raw invariant_conj(e, inv, false);
+        e.clause_ctx = 0i32;
+        if (g0.ok) {
+            drop record_at(e, raw OK_INVARIANT(), g0.text, g0.syms, raw SITE_STMT(), sid.index, s.span, true,
+                           raw ROLE_GUARD(), sid.index, nc);
+        } else {
+            List<int32>:none = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_INVARIANT(), "", none, raw SITE_STMT(), sid.index, s.span, false,
+                           raw ROLE_GUARD(), sid.index, nc);
+        }
+    }
+    drop invalidate(e, assigned);
+    drop region_enter(e);
+    if (nc > 0i32) {
+        e.quiet = e.quiet + 1i32;
+        Term:h = raw invariant_conj(e, inv, true);
+        e.quiet = e.quiet - 1i32;
+        if (h.ok) { drop hyp_push(e, h.text, h.syms); }
+    }
+    if (!(raw expr_is_none(cond))) {
+        Term:wc = raw enc_expr(e, cond);
+        if (wc.ok && wc.is_bool) { drop hyp_push(e, wc.text, wc.syms); }
+    }
+    drop list_push(@e.loop_sids, sid.index);
+    drop list_push(@e.loop_labels, label);
+    drop list_push(@e.loop_invs, inv.index);
+    drop walk_block(e, body);
+    e.loop_sids.count = e.loop_sids.count - 1i64;
+    e.loop_labels.count = e.loop_labels.count - 1i64;
+    e.loop_invs.count = e.loop_invs.count - 1i64;
+    if (nc > 0i32) {
+        StmtNode:bs = raw ast_stmt(e.ast, body);
+        e.quiet = e.quiet + 1i32;
+        Term:gp = raw invariant_conj(e, inv, false);
+        e.quiet = e.quiet - 1i32;
+        if (gp.ok) {
+            drop record_at(e, raw OK_INVARIANT(), gp.text, gp.syms, raw SITE_STMT(), body.index, bs.span, true,
+                           raw ROLE_GUARD(), sid.index, nc);
+        } else {
+            List<int32>:none2 = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_INVARIANT(), "", none2, raw SITE_STMT(), body.index, bs.span, false,
+                           raw ROLE_GUARD(), sid.index, nc);
+        }
+    }
+    drop region_leave(e);
+    drop invalidate(e, assigned);
+    if (nc > 0i32) {
+        if (!(raw loop_has_break(e, body, label, false, 64i32))) {
+            e.quiet = e.quiet + 1i32;
+            Term:h2 = raw invariant_conj(e, inv, true);
+            e.quiet = e.quiet - 1i32;
+            if (h2.ok) { drop hyp_push(e, h2.text, h2.syms); }
+        }
+    }
     pass NIL;
 };
 
@@ -849,8 +1426,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         int64:bi = raw bind_find(e, n.payload =>! int32);
         if (bi >= 0i64) {
-            if (e.binds.items[bi].sym >= 0i32) {
-                int32:si = e.binds.items[bi].sym;
+            // UNDER `old(...)` (D-243): the binding's entry version.
+            int32:want = e.binds.items[bi].sym;
+            if (e.at_entry) { want = e.binds.items[bi].entry; }
+            if (want >= 0i32) {
+                int32:si = want;
                 List<int32>:one = raw list_init::<int32>(1i64);
                 drop list_push(@one, si);
                 pass Term{ ok: true, is_bool: e.syms.items[si => int64].is_bool,
@@ -962,12 +1542,67 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (e.subject.ok) { pass (raw term_copy(e.subject)); }
         pass (raw term_opaque(e, ty));
     }
-    // A CALL (1.5.2 step 3, L-10): the value is opaque (1.5.3 encodes a
-    // known callee as an uninterpreted function); the receiver and every
-    // argument are sites, encoded ONCE; and a callee with limited parameters
-    // gets its `limit-subsume` row over the argument terms.
+    // A CALL (1.5.2 step 3, L-10; 1.5.3 step 2, D-268): the receiver and
+    // every argument are sites, encoded ONCE; a callee the checker recorded
+    // gets its `limit-subsume` row and its `requires` row over the argument
+    // terms; the value -- a `Result`, or a bare value nothing unwrapped -- is
+    // opaque. The unwrap arms below are where a known callee's value becomes
+    // an uninterpreted function and its `ensures` becomes knowledge.
     if ((n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr)) {
-        drop record_subsume(e, id, n);
+        CallEnc:ce = raw enc_call(e, id, n);
+        drop record_call_rows(e, id, n, ce);
+        pass (raw term_opaque(e, ty));
+    }
+    // `result` (D-245): the value being passed, while an `ensures` is
+    // encoded at a seam; `old(e)` (D-243): the operand over the entry
+    // versions. Outside those contexts each is opaque -- and the checker
+    // admits them nowhere else.
+    if (n.kind == ExprKind.ExprResultValueExpr) {
+        if (e.result.ok) { pass (raw term_copy(e.result)); }
+        pass (raw term_opaque(e, ty));
+    }
+    if (n.kind == ExprKind.ExprOldExpr) {
+        bool:saved_entry = e.at_entry;
+        e.at_entry = true;
+        Term:ot = raw enc_expr(e, raw expr_operand(n));
+        e.at_entry = saved_entry;
+        if (ot.ok) { pass ot; }
+        pass (raw term_opaque(e, ty));
+    }
+    // AN UNWRAP THAT CONTINUES ONLY ON SUCCESS (1.5.3 step 2, L-3, L-4):
+    // `raw f(...)`, `f(...) ?! E`, `relay f(...)`, each over a plain or an
+    // awaited call. The call's rows are recorded as above; the VALUE is an
+    // uninterpreted function application when the callee is `pure never
+    // fails` over the fragment (a `raw` call: equal inputs, equal outputs,
+    // D-242), else a fresh opaque symbol; and the callee's `ensures` is
+    // pushed as a hypothesis over the arguments and that value -- sound
+    // because the callee's seam guards or proves it before any continuing
+    // execution reaches here. `?|` pushes nothing: its value may be the
+    // default.
+    if ((n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticUnwrapExpr)
+        || (n.kind == ExprKind.ExprRelayExpr)) {
+        ExprId:inner = ExprId{ index: n.a };
+        if (!(raw expr_is_none(inner))) {
+            ExprNode:inn = raw ast_expr(e.ast, inner);
+            if (inn.kind == ExprKind.ExprAwaitExpr) {
+                inner = ExprId{ index: inn.a };
+                if (!(raw expr_is_none(inner))) { inn = raw ast_expr(e.ast, inner); }
+            }
+            if ((!(raw expr_is_none(inner)))
+                && ((inn.kind == ExprKind.ExprCallExpr) || (inn.kind == ExprKind.ExprMethodCallExpr))) {
+                CallEnc:uce = raw enc_call(e, inner, inn);
+                drop record_call_rows(e, inner, inn, uce);
+                if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+                    Term:eb = raw enc_expr(e, ExprId{ index: n.b });
+                }
+                Term:val = raw term_none();
+                if (n.kind == ExprKind.ExprRawUnwrapExpr) { val = raw uf_value(e, uce, ty); }
+                if (!val.ok) { val = raw term_opaque(e, ty); }
+                drop push_callee_ensures(e, uce, val);
+                pass val;
+            }
+        }
+        drop walk_children(e, n);
         pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
@@ -1129,14 +1764,14 @@ func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
 func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
     if (p.kind == PatKind.PatStructDestructure) {
         for (int32:i in 0i32...(raw pat_bind_count(p))) {
-            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32 };
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32 };
             drop list_push(@e.binds, move(b));
         }
         pass NIL;
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
-            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32 };
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32 };
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;
@@ -1153,18 +1788,6 @@ func:walk_block = NIL(Encoder->:e, StmtId:sid) never fails {
         drop walk_stmt(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) });
     }
     drop scope_release(e, mark);
-    pass NIL;
-};
-
-// A loop body: the names it assigns are unknown at entry and after exit.
-func:walk_loop_body = NIL(Encoder->:e, StmtId:body) never fails {
-    List<int32>:assigned = raw list_init::<int32>(4i64);
-    drop collect_assigned(e, body, @assigned);
-    drop invalidate(e, assigned);
-    drop region_enter(e);
-    drop walk_block(e, body);
-    drop region_leave(e);
-    drop invalidate(e, assigned);
     pass NIL;
 };
 
@@ -1245,14 +1868,8 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     }
 
     if (s.kind == StmtKind.StmtWhileStmt) {
-        List<int32>:wa = raw list_init::<int32>(4i64);
-        drop collect_assigned(e, raw stmt_body(e.ast, s), @wa);
-        drop invalidate(e, wa);
-        drop region_enter(e);
-        Term:wc = raw enc_expr(e, raw stmt_cond(s));
-        drop walk_block(e, raw stmt_body(e.ast, s));
-        drop region_leave(e);
-        drop invalidate(e, wa);
+        drop walk_loop(e, sid, raw stmt_while_invariant(e.ast, s), raw stmt_body(e.ast, s),
+                       raw stmt_cond(s), raw stmt_label(s));
         pass NIL;
     }
 
@@ -1262,7 +1879,8 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
         int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
         drop bind_define(e, raw decl_name(bd), bt, raw term_none(), 0i32);
-        drop walk_loop_body(e, raw stmt_for_body(e.ast, s));
+        drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
+                       ExprId{ index: 0i32 }, raw stmt_label(s));
         drop scope_release(e, mark);
         pass NIL;
     }
@@ -1271,18 +1889,19 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         for (int32:ai in 0i32...(raw stmt_counted_argc(e.ast, s))) {
             Term:at = raw enc_expr(e, raw stmt_counted_arg(e.ast, s, ai));
         }
-        drop walk_loop_body(e, raw stmt_counted_body(s));
+        drop walk_loop(e, sid, raw stmt_counted_invariant(e.ast, s), raw stmt_counted_body(s),
+                       ExprId{ index: 0i32 }, raw stmt_label(s));
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtWhenStmt) {
+        // The loop half through `walk_loop`; the `then` and `end` blocks are
+        // branches after it, each seeing every name the statement assigns
+        // as unknown (the pre-1.5.3 shape, kept).
         List<int32>:ka = raw list_init::<int32>(4i64);
         drop collect_assigned(e, sid, @ka);
-        drop invalidate(e, ka);
-        drop region_enter(e);
-        Term:kc = raw enc_expr(e, raw stmt_cond(s));
-        drop walk_block(e, raw stmt_when_body(e.ast, s));
-        drop region_leave(e);
+        drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
+                       raw stmt_cond(s), raw stmt_label(s));
         drop invalidate(e, ka);
         drop region_enter(e);
         drop walk_block(e, raw stmt_when_then(e.ast, s));
@@ -1331,12 +1950,81 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         Term:x = raw enc_expr(e, raw stmt_expr(s));
         pass NIL;
     }
-    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
-        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
-        Term:v = raw enc_expr(e, raw stmt_operand(s));
+    if (s.kind == StmtKind.StmtPassStmt) {
+        ExprId:pv = raw stmt_operand(s);
+        Term:v = raw enc_expr(e, pv);
+        drop record_seam(e, sid, s.span, v, raw ty_of(e, pv), !(raw expr_is_none(pv)));
         pass NIL;
     }
-    // break, continue, fall, and anything unclassified: no sites, no definitions.
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        // THE LONG FORM (L-12): `return Result{ value: v }` is a success when
+        // its error field is absent or the literal 0; the value is `result`.
+        ExprId:ro = raw stmt_operand(s);
+        if (!(raw expr_is_none(ro))) {
+            ExprNode:rn = raw ast_expr(e.ast, ro);
+            if (rn.kind == ExprKind.ExprResultLiteralExpr) {
+                Term:rv = raw term_none();
+                bool:has_v = (rn.a != 0i32);
+                int32:vty = 0i32;
+                if (has_v) { rv = raw enc_expr(e, ExprId{ index: rn.a }); vty = raw ty_of(e, ExprId{ index: rn.a }); }
+                bool:success = true;
+                if (rn.b != 0i32) {
+                    Term:re = raw enc_expr(e, ExprId{ index: rn.b });
+                    success = false;
+                    if (re.ok) { if (string_equals(re.text, "0")) { success = true; } }
+                }
+                if (success) { drop record_seam(e, sid, s.span, rv, vty, has_v); }
+                pass NIL;
+            }
+        }
+        Term:rt = raw enc_expr(e, ro);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtExitStmt) {
+        ExprId:xo = raw stmt_operand(s);
+        Term:xv = raw enc_expr(e, xo);
+        // `failsafe`'s POSTCONDITION (L-14, D-267): the code is positive.
+        if (e.is_failsafe) {
+            if (!xv.ok) { xv = raw term_opaque(e, raw ty_of(e, xo)); }
+            if (xv.ok && (!xv.is_bool)) {
+                drop record_at(e, raw OK_FAILSAFE_POST(), raw smt_app2(">", xv.text, "0"), xv.syms,
+                               raw SITE_STMT(), sid.index, s.span, true, raw ROLE_GUARD(), sid.index, 1i32);
+            } else {
+                List<int32>:none = raw list_init::<int32>(1i64);
+                drop record_at(e, raw OK_FAILSAFE_POST(), "", none, raw SITE_STMT(), sid.index, s.span, false,
+                               raw ROLE_GUARD(), sid.index, 1i32);
+            }
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtFailStmt) {
+        Term:fv = raw enc_expr(e, raw stmt_operand(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtContinueStmt) {
+        // A HEAD VISIT (L-8): the invariant of the loop this re-enters holds
+        // here -- a preservation row keyed at the `continue`.
+        int64:fr = raw loop_frame(e, raw stmt_label(s));
+        if (fr >= 0i64) {
+            VerifyId:civ = VerifyId{ index: e.loop_invs.items[fr] };
+            int32:cnc = raw invariant_clauses(e, civ);
+            if (cnc > 0i32) {
+                e.quiet = e.quiet + 1i32;
+                Term:cg = raw invariant_conj(e, civ, false);
+                e.quiet = e.quiet - 1i32;
+                if (cg.ok) {
+                    drop record_at(e, raw OK_INVARIANT(), cg.text, cg.syms, raw SITE_STMT(), sid.index, s.span, true,
+                                   raw ROLE_GUARD(), e.loop_sids.items[fr], cnc);
+                } else {
+                    List<int32>:cnone = raw list_init::<int32>(1i64);
+                    drop record_at(e, raw OK_INVARIANT(), "", cnone, raw SITE_STMT(), sid.index, s.span, false,
+                                   raw ROLE_GUARD(), e.loop_sids.items[fr], cnc);
+                }
+            }
+        }
+        pass NIL;
+    }
+    // break, fall, and anything unclassified: no sites, no definitions.
     pass NIL;
 };
 
@@ -1394,6 +2082,22 @@ func:sym_sort = string(Encoder->:e, int32:idx) never fails {
     pass "Int";
 };
 
+// `(declare-const |x.1| Int)`, or for an uninterpreted function (L-3)
+// `(declare-fun |uf.f.7| (Int Int) Int)`.
+func:sym_declaration = string(Encoder->:e, int32:idx) never fails {
+    string:d = "(declare-const ";
+    if (e.syms.items[idx => int64].sorts.len > 0i64) { d = "(declare-fun "; }
+    d = string_concat(d, raw sym_text(e, idx));
+    d = string_concat(d, " ");
+    if (e.syms.items[idx => int64].sorts.len > 0i64) {
+        d = string_concat(d, string_from_bytes(e.syms.items[idx => int64].sorts.ptr,
+                                               e.syms.items[idx => int64].sorts.len));
+        d = string_concat(d, " ");
+    }
+    d = string_concat(d, raw sym_sort(e, idx));
+    pass (string_concat(d, ")"));
+};
+
 // Fill every obligation's cone, canonical text and hash.
 pub func:enc_finish = NIL(Encoder->:e) never fails {
     for (int64:oi in 0i64...e.obls.count) {
@@ -1446,11 +2150,7 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
         for (int64:h2 in 0i64...limit_h) { if (inc.items[h2]) { drop list_push(@hl, h2 =>! int32); } }
         SmtBuf:b = raw smtbuf_init();
         for (int64:s2 in 0i64...sorted.count) {
-            string:d = string_concat("(declare-const ", raw sym_text(e, sorted.items[s2]));
-            d = string_concat(d, " ");
-            d = string_concat(d, raw sym_sort(e, sorted.items[s2]));
-            d = string_concat(d, ")");
-            drop smtbuf_line(@b, d);
+            drop smtbuf_line(@b, raw sym_declaration(e, sorted.items[s2]));
         }
         for (int64:h3 in 0i64...hl.count) {
             drop smtbuf_line(@b, raw smt_app1("assert", string_concat(e.hyps.items[hl.items[h3] => int64].text, "")));
@@ -1513,18 +2213,24 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
         if (e.obls.items[oi].encoded) { checks = checks + 1i64; }
     }
     drop smtbuf_line(@b, string_concat("; checks ", int_to_string(checks)));
-    if (e.nonlinear) { drop smtbuf_line(@b, "(set-logic QF_NIA)"); }
-    else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); }
+    // THE LOGIC: linear or nonlinear integer arithmetic, with uninterpreted
+    // functions (L-3) the moment one is declared -- QF_LIA refuses a
+    // `declare-fun` of arity above zero.
+    bool:has_uf = false;
+    for (int64:ui in 0i64...e.syms.count) { if (e.syms.items[ui].sorts.len > 0i64) { has_uf = true; } }
+    if (e.nonlinear) {
+        if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFNIA)"); }
+        else { drop smtbuf_line(@b, "(set-logic QF_NIA)"); }
+    } else {
+        if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFLIA)"); }
+        else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); }
+    }
     if (e.uses_sdiv) {
         drop smtbuf_line(@b, "(define-fun npk_sdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (>= b 0) (div a b) (- (div a (- b)))) (ite (>= b 0) (- (div (- a) b)) (div (- a) (- b)))))");
         drop smtbuf_line(@b, "(define-fun npk_srem ((a Int) (b Int)) Int (- a (* b (npk_sdiv a b))))");
     }
     for (int64:si in 0i64...e.syms.count) {
-        string:d = string_concat("(declare-const ", raw sym_text(e, si =>! int32));
-        d = string_concat(d, " ");
-        d = string_concat(d, raw sym_sort(e, si =>! int32));
-        d = string_concat(d, ")");
-        drop smtbuf_line(@b, d);
+        drop smtbuf_line(@b, raw sym_declaration(e, si =>! int32));
     }
     for (int64:oi2 in 0i64...e.obls.count) {
         if (!e.obls.items[oi2].encoded) { continue; }

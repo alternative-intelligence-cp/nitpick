@@ -1,0 +1,38 @@
+// expect-exit: 0
+// expect-obligation: ensures discharged 1
+// expect-obligation: requires open 1
+// expect-obligation: requires discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// THE SEAM ROW (L-7, L-12): `result` is the passed value in register, and
+// `n * n >= 0` holds for every integer, so the `ensures` discharges and the
+// verified build emits no `-4113` at the seam. The entry row is `open` (the
+// callee knows nothing of `n`); the call site's row discharges on the
+// literal.
+mod:ens_result;
+error:E9;
+
+func:square = int32(int32:n) requires n < 1000i32 ensures result >= 0i32 { pass (n * n); };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:s = square(7i32) ?! E9;
+    exit (s - 49i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

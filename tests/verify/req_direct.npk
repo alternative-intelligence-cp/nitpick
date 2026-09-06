@@ -1,0 +1,48 @@
+// expect-exit: 32
+// expect-obligation: requires discharged 3
+// expect-obligation: requires open 3
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// A CALL-SITE `requires` ROW (L-7, D-268) and THE BYPASS (D-252 amended):
+// `twice`'s own precondition proves both of its calls of `half` (`m > 0`
+// gives `m > 0` and `m + 1 > 0`), and `twice(3i32)` proves itself, so those
+// three rows discharge and the verified build names `half.body` and
+// `twice.body` past the checked entries. `half(k)` with `k` from `argv` is
+// `open`: the entry check stays, and without arguments `k` is 0 -- the
+// predicate traps RequiresViolated, 32. The two entry rows are `open`: a
+// callee knows nothing of its argument.
+mod:req_direct;
+error:E9;
+
+func:half = int32(int32:n) requires n > 0i32 { pass (n / 2i32); };
+
+func:twice = int32(int32:m) requires m > 0i32 {
+    pass ((half(m) ?! E9) + (half(m + 1i32) ?! E9));
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) - 1i32;
+    int32:a = twice(3i32) ?! E9;
+    int32:b = half(k) ?! E9;
+    exit (a + b);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

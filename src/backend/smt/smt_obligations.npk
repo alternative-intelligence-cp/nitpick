@@ -25,17 +25,28 @@ use "./smt_encode.npk".*;
 // `Rules` (0 for none) and declaration ids (1.5.2 step 2, D-251).
 pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
                             List<int32>:ptypes, List<int32>:prules,
-                            List<int32>:pdecls, StmtId:body) never fails {
+                            List<int32>:pdecls, StmtId:body, DeclId:did,
+                            bool:is_failsafe, int32:ret_type) never fails {
     LlCtx->:c = x.fe.ctx;
     c.el_sites.count = 0i64;
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
+    c.el_ctxs.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
+    // THE CONTRACTS' CONTEXT (1.5.3 step 2): the declaration whose
+    // `requires`/`ensures` the walk records, its impl and trait for the
+    // conformance rows, its success type for `result`, and `failsafe`.
+    en.fn_decl = did.index;
+    en.impl_decl = x.cur_impl;
+    en.trait_ty = x.cur_trait;
+    en.ret_type = ret_type;
+    en.is_failsafe = is_failsafe;
     drop enc_prepare(@en, body);   // the escape set before any name is bound (DEF-14)
     for (int64:i in 0i64...pnames.count) {
         drop enc_param(@en, pnames.items[i], ptypes.items[i], prules.items[i], pdecls.items[i]);
     }
+    drop enc_entry_contracts(@en);   // the entry row and its hypothesis; the conformance rows
     drop enc_body(@en, body);
     drop obl_finish(x, symbol, @en);
     pass NIL;
@@ -53,6 +64,7 @@ pub func:obl_rule = NIL(ExprEmitter->:x, string:symbol, int32:subject_name,
     c.el_sites.count = 0i64;
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
+    c.el_ctxs.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_param(@en, subject_name, subject_type, 0i32, 0i32);
@@ -77,6 +89,7 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
                 drop list_push(@c.el_sites, en.obls.items[oi].site);
                 drop list_push(@c.el_kinds, en.obls.items[oi].kind);
                 drop list_push(@c.el_spaces, en.obls.items[oi].space);
+                drop list_push(@c.el_ctxs, en.obls.items[oi].ctx);
             }
         }
     }
@@ -99,6 +112,18 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
         r = string_concat(r, "\t");
         r = string_concat(r, symbol);
+        // THE SITE, THE ROLE, THE GROUP, THE TRAPS (1.5.3 step 2, L-13):
+        // what the runners' belts count sites and traps by.
+        r = string_concat(r, "\t");
+        r = string_concat(r, int_to_string(en.obls.items[oi3].space => int64));
+        r = string_concat(r, ":");
+        r = string_concat(r, int_to_string(en.obls.items[oi3].site => int64));
+        r = string_concat(r, "\t");
+        r = string_concat(r, raw role_name(en.obls.items[oi3].role));
+        r = string_concat(r, "\t");
+        r = string_concat(r, int_to_string(en.obls.items[oi3].group => int64));
+        r = string_concat(r, "\t");
+        r = string_concat(r, int_to_string(en.obls.items[oi3].traps => int64));
         drop list_push(@c.obl.rows, move(r));
     }
     pass NIL;

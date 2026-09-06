@@ -1,0 +1,40 @@
+// expect-exit: 32
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 2
+// expect-obligation: failsafe-post discharged 14
+//
+// AN `await`'s ROW (S-44, D-268): recorded like any call's and `held` -- the
+// coroutine's check runs at state 0 and nothing at the call could elide it.
+// `fetch(7i32)` is proven; `fetch(k)` with `k` from `argv` is `open`, and
+// without arguments `k` is 0: the state-0 predicate traps, 32. The entry row
+// is `open`.
+mod:req_async;
+error:E9;
+
+async func:fetch = int32(int32:v) requires v > 0i32 { pass (v + 1i32); };
+
+async func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) - 1i32;
+    int32:a = (await fetch(7i32)) ?! E9;
+    int32:b = (await fetch(k)) ?! E9;
+    exit (a + b);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DeadlineExceeded)  { exit 35i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

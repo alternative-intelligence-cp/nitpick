@@ -1,0 +1,37 @@
+// expect-exit: 0
+// expect-obligation: ensures discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// `old(n)` IS THE ENTRY VERSION (D-243, L-10): the body overwrites `n`
+// before the seam, and `result > old(n)` still names the value at entry --
+// discharged, because the seam's `result` is `n + 1` over that version.
+mod:ens_old;
+error:E9;
+
+func:bump = int32(int32:n) ensures result > old(n) {
+    int32:m = n + 1i32;
+    pass m;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = bump(41i32) ?! E9;
+    exit (v - 42i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

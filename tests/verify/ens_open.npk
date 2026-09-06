@@ -1,0 +1,38 @@
+// expect-exit: 33
+// expect-obligation: ensures open 1
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// AN `ensures` THE SOLVER CANNOT PROVE stays a guard: `n / 3i32 > 5i32` is
+// false for a small `n`, so the row is `open`, the seam keeps its check, and
+// a run with `n` 0 (no arguments) traps EnsuresViolated, 33 -- the caller
+// never sees a value that breaks the promise.
+mod:ens_open;
+error:E9;
+
+func:third = int32(int32:n) ensures result > 5i32 { pass (n / 3i32); };
+
+func:main = int32(cstring[]:argv) {
+    int32:k = (argv.len =>! int32) - 1i32;
+    int32:v = third(k) ?! E9;
+    exit (v + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

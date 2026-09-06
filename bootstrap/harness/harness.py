@@ -3048,15 +3048,28 @@ VERDICT_OF_ANSWER = {"unsat": "discharged", "sat": "open", "unknown": "budget"}
 # discharge emits nothing into the IR. Diffed against the catalogue's column
 # by `check_obligation_kinds_agree`.
 GUARDLESS_KINDS = frozenset(("exhaustive", "terminate", "stack-depth",
-                             "failsafe-post", "prove", "assert-static"))
+                             "prove", "assert-static"))
+# THE ROLE OF A ROW (1.5.3 step 2, L-13; `smt_kinds.npk`'s ROLE_*): `guard`, a
+# check in the row's own function, elided when discharged; `bypass`, a
+# call-site row whose discharge (with every other bypass row of the call)
+# lets the call name the callee's body; `held`, a call-site row whose guard is
+# the callee's own entry and is never bypassed (a coroutine's state 0, a `dyn`
+# call's vtable target) -- `retained` whatever the verdict (D-268); `conform`,
+# an impl's contracts against its trait's -- no guard, `none` (L-6).
+ROW_ROLES = ("guard", "bypass", "held", "conform")
+# The trap each guarded kind keeps when retained (the runtime's identities).
+TRAP_OF_KIND = {"div-zero": "-4097", "div-min": "-4098", "limit": "-4111",
+                "requires": "-4112", "ensures": "-4113", "failsafe-post": "-4113",
+                "invariant": "-4114"}
+BYPASS_KINDS = frozenset(("limit-subsume", "requires"))
 # The guarded kinds whose elision is ONE `llvm.assume` at the site (P-19, L-11).
 ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit"))
 
 
 def z3_verdicts(obl_dir, name):
     """Every function file under the profile, one process each; the rows of
-    rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym)] --
-    or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
+    rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym, site,
+    role, group, traps)] (the last four 1.5.3 step 2's, L-13) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
     exactly N answer lines for N encoded rows, anything else fails the run by
     name. The wall-clock net (P-13) is a hang net and never a verdict."""
     z3 = shutil.which("z3")
@@ -3068,6 +3081,11 @@ def z3_verdicts(obl_dir, name):
     except OSError as e:
         return None, ["%s: the obligation directory is unreadable: %s" % (name, e)]
     verdict = {}
+    for r in rows:
+        if len(r) != 10:
+            return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps` (%d fields)" % (name, len(r))]
+        if r[7] not in ROW_ROLES:
+            return None, ["%s: a rows.txt row names a role the runners do not know: %r" % (name, r[7])]
     for fno, sym, checks in idx:
         checks = int(checks)
         enc = [r for r in rows if r[0] == fno and r[4] == "1"]
@@ -3090,9 +3108,9 @@ def z3_verdicts(obl_dir, name):
         for row, a in zip(enc, ans):
             verdict[(fno, row[1])] = VERDICT_OF_ANSWER[a]
     full = []
-    for fno, k, kind, h, encoded, sym in rows:
+    for fno, k, kind, h, encoded, sym, site, role, group, traps in rows:
         v = verdict[(fno, k)] if encoded == "1" else "unencoded"
-        full.append((fno, k, kind, h, v, sym))
+        full.append((fno, k, kind, h, v, sym, site, role, group, int(traps)))
     return full, []
 
 
@@ -3104,14 +3122,21 @@ def manifest_text(full):
     lines = ["# nitpick.obligations v1",
              "# z3 %s sha256 %s" % (Z3_VERSION, Z3_SHA),
              "# options " + " ".join(Z3_OPTIONS)]
-    for sym, h, kind, v in sorted(set((f[5], f[3], f[2], f[4]) for f in full)):
+    for sym, h, kind, v, role in sorted(set((f[5], f[3], f[2], f[4], f[7]) for f in full)):
         tier = "-" if v == "unencoded" else "int"
-        if kind in GUARDLESS_KINDS:
-            elision = "none"
-        else:
-            elision = "elided" if v == "discharged" else "retained"
-        lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision, sym))
+        lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision_word(kind, v, role), sym))
     return "\n".join(lines) + "\n"
+
+
+def elision_word(kind, verdict, role):
+    """The manifest's elision column (P-10; 1.5.3 step 2): `none` for a
+    guard-less kind or a conformance row, `retained` for a held call-site row
+    whatever its verdict (D-268), else what the verdict did to the guard."""
+    if kind in GUARDLESS_KINDS or role == "conform":
+        return "none"
+    if role == "held":
+        return "retained"
+    return "elided" if verdict == "discharged" else "retained"
 
 
 def manifest_rows(text):
@@ -3209,14 +3234,30 @@ def elided_ir_checks(full, ir_text, name):
     got = len(re.findall(r"call void @llvm\.assume\(", ir_text))
     if got != disch:
         fails.append("%s: the verified IR holds %d `llvm.assume` for %d discharged sites" % (name, got, disch))
-    for code, kind in (("-4097", "div-zero"), ("-4098", "div-min"), ("-4111", "limit")):
-        left = sum(1 for f in full if f[2] == kind and f[4] != "discharged")
+    # THE TRAPS BY GROUP (1.5.3 step 2, L-13): the rows one guard shares -- a
+    # loop's entry, preservation and `continue` rows, a function's entry
+    # `requires` row -- carry one group and one trap count; the guard stays,
+    # with every trap it holds, while ANY row of the group is retained. A
+    # `guard` row counts; a `bypass`, `held` or `conform` row keeps no trap of
+    # its own function's (the guard it names is the callee's).
+    groups = {}
+    for f in full:
+        if f[7] != "guard" or f[2] not in TRAP_OF_KIND:
+            continue
+        key = (f[5], TRAP_OF_KIND[f[2]], f[8])
+        g = groups.setdefault(key, [False, 0])
+        g[0] = g[0] or (f[4] != "discharged")
+        g[1] = max(g[1], f[9])
+    for code in sorted(set(TRAP_OF_KIND.values())):
+        left = sum(g[1] for (sym, c, grp), g in groups.items() if c == code and g[0])
         traps = len(re.findall(r"@npk_trap\(i32 %s\)" % code, ir_text))
         if traps != left:
-            fails.append("%s: the verified IR holds %d %s traps for %d retained rows" % (name, traps, kind, left))
-    # THE BYPASS (D-252, 1.5.2 step 4): every `.body` symbol is its own define,
-    # its checked entry's tail call, or the callee of a direct call -- and the
-    # direct calls equal the discharged `limit-subsume` rows.
+            kinds = "/".join(sorted(k for k, c in TRAP_OF_KIND.items() if c == code))
+            fails.append("%s: the verified IR holds %d %s traps for %d retained (%s rows by group)" % (name, traps, code, left, kinds))
+    # THE BYPASS (D-252, 1.5.2 step 4; D-268): every `.body` symbol is its own
+    # define, its checked entry's tail call, or the callee of a direct call --
+    # and the direct calls equal the call sites whose EVERY bypass row
+    # (`limit-subsume`, `requires`) is discharged.
     bodies = len(re.findall(r'@"[^"\n]*\.body"', syms))
     bcalls = len(re.findall(r'= call [^\n]*@"[^"\n]*\.body"\(', syms))
     btails = len(re.findall(r'= tail call [^\n]*@"[^"\n]*\.body"\(', syms))
@@ -3224,9 +3265,13 @@ def elided_ir_checks(full, ir_text, name):
     if bodies != bcalls + btails + bdefs or btails != bdefs:
         fails.append("%s: a `.body` symbol appears where it may not (%d uses: %d calls, %d tail calls, %d defines)"
                      % (name, bodies, bcalls, btails, bdefs))
-    subs = sum(1 for f in full if f[2] == "limit-subsume" and f[4] == "discharged")
+    sites = {}
+    for f in full:
+        if f[7] == "bypass" and f[2] in BYPASS_KINDS:
+            sites[(f[5], f[8])] = sites.get((f[5], f[8]), True) and f[4] == "discharged"
+    subs = sum(1 for ok in sites.values() if ok)
     if bcalls != subs:
-        fails.append("%s: the verified IR holds %d bypass calls for %d discharged limit-subsume rows" % (name, bcalls, subs))
+        fails.append("%s: the verified IR holds %d bypass calls for %d call sites whose bypass rows are all discharged" % (name, bcalls, subs))
     return fails
 
 

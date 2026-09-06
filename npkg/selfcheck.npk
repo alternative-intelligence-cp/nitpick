@@ -286,26 +286,26 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
     string:vlfs = "func:failsafe = int32(Error:e) {\n    pick (e) {\n        (E9) { exit 8i32; },\n        (LimitViolated) { exit 31i32; },\n        (HeapBadRequest) { exit 9i32; },\n        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n";
     for (int64:vi in 0i64...4i64) {
         string:vname = "wrong-verdict";
-        string:vhead = "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\nmod:wrong_verdict;\n";
+        string:vhead = "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\nmod:wrong_verdict;\n";
         string:vbody = string_concat(vdiv, vfs);
         bool:vmust_fail = true;
         string:vwhy = "a verify test expecting `discharged` for an opaque divisor must fail";
         if (vi == 1i64) {
             vname = "right-verdict";
-            vhead = "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\nmod:right_verdict;\n";
+            vhead = "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\nmod:right_verdict;\n";
             vmust_fail = false;
             vwhy = "a verify test naming its rows exactly must pass";
         }
         if (vi == 2i64) {
             vname = "wrong-limit";
-            vhead = "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\nmod:wrong_limit;\n";
+            vhead = "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\nmod:wrong_limit;\n";
             vbody = string_concat(vlim, vlfs);
             vmust_fail = true;
             vwhy = "a verify test expecting `discharged` for a limited parameter's entry must fail";
         }
         if (vi == 3i64) {
             vname = "right-limit";
-            vhead = "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\nmod:right_limit;\n";
+            vhead = "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\nmod:right_limit;\n";
             vbody = string_concat(vlim, vlfs);
             vmust_fail = false;
             vwhy = "a verify test naming a limit's rows exactly must pass";
@@ -409,9 +409,11 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             bwhy = "a `.body` taken as a function value must fail";
         }
         List<VRow>:brows = raw list_init::<VRow>(2i64);
-        VRow:r1 = VRow{ fno: "0001", k: 1i64, kind: "limit", hash: "h1", encoded: true, symbol: "@\"npk.m.f\"", verdict: raw OV_OPEN() };
+        VRow:r1 = VRow{ fno: "0001", k: 1i64, kind: "limit", hash: "h1", encoded: true, symbol: "@\"npk.m.f\"", verdict: raw OV_OPEN(),
+                        site: "2:5", role: "guard", group: 5i64, traps: 1i64 };
         drop list_push(@brows, move(r1));
-        VRow:r2 = VRow{ fno: "0002", k: 1i64, kind: "limit-subsume", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED() };
+        VRow:r2 = VRow{ fno: "0002", k: 1i64, kind: "limit-subsume", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
+                        site: "0:9", role: "bypass", group: 9i64, traps: 0i64 };
         drop list_push(@brows, move(r2));
         string:btext = string_concat(string_concat(b_head, bmid), b_tail);
         List<string>:bfl = raw elided_ir_checks(brows, btext, bname);
@@ -421,6 +423,64 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         if (!bok) {
             if (bmust_fail) { drop strlist_push(@report, "      elided_ir_checks accepted it; it should not have"); }
             else { drop strlist_push(@report, string_concat("      elided_ir_checks rejected it: ", raw strlist_view(bfl, 0i64))); }
+        }
+    }
+
+    // THE CONTRACT BELTS (1.5.3 step 2, L-13): traps are counted BY GROUP -- a
+    // retained entry `requires` row keeps one trap per clause in the `.req`
+    // predicate (its `traps` column), a retained `ensures` row one at its
+    // seam -- a `held` row's discharge bypasses nothing, and a call whose
+    // bypass rows are not ALL discharged names the entry. The texts are the
+    // harness's, byte for byte.
+    string:c_ir = "define i32 @\"npk.m.g.body\"(i32 %a0) {\nentry:\n  ret i32 %a0\n}\ndefine i32 @\"npk.m.g\"(i32 %a0) {\nentry:\n  %q = call i8 @\"npk.m.g.req\"(i32 %a0)\n  %r = tail call i32 @\"npk.m.g.body\"(i32 %a0)\n  ret i32 %r\n}\ndefine i8 @\"npk.m.g.req\"(i32 %a0) {\nentry:\n  %c1 = icmp sgt i32 %a0, 0\n  br i1 %c1, label %ok1, label %bad1\nbad1:\n  call void @npk_chain_reset(i32 1)\n  call void @npk_trap(i32 -4112)\n  unreachable\nok1:\n  %c2 = icmp slt i32 %a0, 9\n  br i1 %c2, label %ok2, label %bad2\nbad2:\n  call void @npk_chain_reset(i32 2)\n  call void @npk_trap(i32 -4112)\n  unreachable\nok2:\n  ret i8 1\n}\ndefine i32 @main() {\nentry:\n  %v = call i32 @\"npk.m.g\"(i32 3)\n  %e = icmp sgt i32 %v, 0\n  br i1 %e, label %eok, label %ebad\nebad:\n  call void @npk_chain_reset(i32 3)\n  call void @npk_trap(i32 -4113)\n  unreachable\neok:\n  ret i32 %v\n}\n";
+    for (int64:ci in 0i64...4i64) {
+        string:cname = "contract-traps";
+        string:cwhy = "two `-4112` traps for a retained two-clause entry row and one `-4113` for a retained seam must pass";
+        bool:cmust_fail = false;
+        int64:entry_traps = 2i64;
+        string:ctext = string_concat(c_ir, "");
+        List<VRow>:crows = raw list_init::<VRow>(4i64);
+        if (ci == 1i64) {
+            cname = "contract-traps-missing";
+            cwhy = "a retained entry row counting one clause against a two-trap predicate must fail";
+            cmust_fail = true;
+            entry_traps = 1i64;
+        }
+        if (ci == 2i64) {
+            cname = "held-not-bypassed";
+            cwhy = "a discharged `held` row whose call names the entry must pass (nothing bypasses a held row)";
+        }
+        if (ci == 3i64) {
+            cname = "bypass-needs-all";
+            cwhy = "a call whose bypass rows are not all discharged, named by a `.body` call, must fail";
+            cmust_fail = true;
+            ctext = raw text_replace_all(c_ir, "%v = call i32 @\"npk.m.g\"(i32 3)", "%v = call i32 @\"npk.m.g.body\"(i32 3)");
+        }
+        VRow:ce = VRow{ fno: "0001", k: 1i64, kind: "requires", hash: "h1", encoded: true, symbol: "@\"npk.m.g\"", verdict: raw OV_OPEN(),
+                        site: "2:7", role: "guard", group: 7i64, traps: entry_traps };
+        drop list_push(@crows, move(ce));
+        VRow:cs = VRow{ fno: "0002", k: 1i64, kind: "ensures", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_OPEN(),
+                        site: "1:11", role: "guard", group: 11i64, traps: 1i64 };
+        drop list_push(@crows, move(cs));
+        if (ci == 3i64) {
+            VRow:cb1 = VRow{ fno: "0002", k: 2i64, kind: "limit-subsume", hash: "h3", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
+                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64 };
+            drop list_push(@crows, move(cb1));
+            VRow:cb2 = VRow{ fno: "0002", k: 3i64, kind: "requires", hash: "h4", encoded: true, symbol: "@main", verdict: raw OV_OPEN(),
+                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64 };
+            drop list_push(@crows, move(cb2));
+        } else {
+            VRow:ch = VRow{ fno: "0002", k: 2i64, kind: "requires", hash: "h3", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
+                            site: "0:13", role: "held", group: 13i64, traps: 0i64 };
+            drop list_push(@crows, move(ch));
+        }
+        List<string>:cfl = raw elided_ir_checks(crows, ctext, cname);
+        bool:cok = ((cfl.count > 0i64) == cmust_fail);
+        if (!cok) { bad = bad + 1i64; }
+        drop strlist_push(@report, raw case_line(cname, cok, cwhy));
+        if (!cok) {
+            if (cmust_fail) { drop strlist_push(@report, "      elided_ir_checks accepted it; it should not have"); }
+            else { drop strlist_push(@report, string_concat("      elided_ir_checks rejected it: ", raw strlist_view(cfl, 0i64))); }
         }
     }
 

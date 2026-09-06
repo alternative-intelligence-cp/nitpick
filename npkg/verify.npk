@@ -49,6 +49,14 @@ pub struct:VRow = {
     bool:encoded;
     string:symbol;
     int32:verdict;      // OV_* (0 until decided)
+    // THE SITE, THE ROLE, THE GROUP, THE TRAPS (1.5.3 step 2, L-13): the
+    // site's `space:index`; `guard`, `bypass`, `held` or `conform`; the rows
+    // one guard shares; the traps that guard keeps while any of them is
+    // retained -- what the belts below count by.
+    string:site;
+    string:role;
+    int64:group;
+    int64:traps;
 };
 
 // --- reading the compiler's files --------------------------------------------------------
@@ -77,13 +85,20 @@ pub func:read_rows = List<VRow>(string:dir) {
         string:ln = raw strlist_view(lines, i);
         if (ln.len == 0i64) { continue; }
         List<string>:f = raw split_tabs(ln);
-        if (f.count != 6i64) { continue; }
+        if (f.count != 10i64) { continue; }
         Result<int64>:k = text_int(raw strlist_view(f, 1i64));
         if (k.is_error) { continue; }
+        Result<int64>:grp = text_int(raw strlist_view(f, 8i64));
+        if (grp.is_error) { continue; }
+        Result<int64>:trp = text_int(raw strlist_view(f, 9i64));
+        if (trp.is_error) { continue; }
+        if ((raw role_of_name(raw strlist_view(f, 7i64))) < 0i32) { continue; }
         VRow:r = VRow{ fno: raw strlist_copy(f, 0i64), k: k.value,
                        kind: raw strlist_copy(f, 2i64), hash: raw strlist_copy(f, 3i64),
                        encoded: raw text_eq(raw strlist_view(f, 4i64), "1"),
-                       symbol: raw strlist_copy(f, 5i64), verdict: 0i32 };
+                       symbol: raw strlist_copy(f, 5i64), verdict: 0i32,
+                       site: raw strlist_copy(f, 6i64), role: raw strlist_copy(f, 7i64),
+                       group: grp.value, traps: trp.value };
         drop list_push(@rows, move(r));
     }
     pass rows;
@@ -201,13 +216,15 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
 pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
     List<string>:keys = raw list_init::<string>(rows.count + 1i64);
     for (int64:i in 0i64...rows.count) {
-        // `symbol<TAB>hash<TAB>kind<TAB>verdict` sorts by symbol, then hash
+        // `symbol<TAB>hash<TAB>kind<TAB>verdict<TAB>role` sorts by symbol, then hash
         string:k = string_concat(string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len), "\t");
         k = string_concat(k, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
         k = string_concat(k, "\t");
         k = string_concat(k, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
         k = string_concat(k, "\t");
         k = string_concat(k, raw ov_name(rows.items[i].verdict));
+        k = string_concat(k, "\t");
+        k = string_concat(k, string_from_bytes(rows.items[i].role.ptr, rows.items[i].role.len));
         drop list_push(@keys, move(k));
     }
     List<string>:sorted = raw strlist_sorted_unique(keys);
@@ -225,15 +242,24 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
         }
         string:tier = "int";
         if (v == (raw OV_UNENCODED())) { tier = "-"; }
-        string:elision = "retained";
-        if (v == (raw OV_DISCHARGED())) { elision = "elided"; }
-        // A GUARD-LESS KIND'S ROW READS `none` (1.5.2 step 3; D-218.7's column).
-        if (!(raw ok_has_guard(kind))) { elision = "none"; }
+        string:elision = raw elision_word(kind, v, raw strlist_view(f, 4i64));
         drop sink_write(@sk, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
                                          raw strlist_view(f, 0i64)));
         drop sink_write(@sk, "\n");
     }
     pass (raw sink_into_string(move(sk)));
+};
+
+// THE ELISION COLUMN (P-10; 1.5.3 step 2): `none` for a guard-less kind
+// (1.5.2 step 3; D-218.7's column) or a conformance row, `retained` for a
+// held call-site row whatever its verdict (D-268), else what the verdict did
+// to the guard. The harness's `elision_word`, byte for byte.
+func:elision_word = string(int32:kind, int32:v, string:role) never fails {
+    if (!(raw ok_has_guard(kind))) { pass "none"; }
+    if (raw text_eq(role, "conform")) { pass "none"; }
+    if (raw text_eq(role, "held")) { pass "retained"; }
+    if (v == (raw OV_DISCHARGED())) { pass "elided"; }
+    pass "retained";
 };
 
 // `hash kind verdict symbol` per row of a parsed manifest, sorted unique --
@@ -314,8 +340,31 @@ func:row_function_held = bool(StrSet:defined, string:sym) never fails {
     pass false;
 };
 
-// An `llvm.assume` per discharged SITE, a trap per retained site of each
-// guarded kind (P-12): the manifest is an inventory of guards.
+// The trap each guarded kind keeps when retained (the runtime's identities),
+// and the kinds behind one code, for the report.
+func:trap_of_kind = string(string:k) never fails {
+    if (raw text_eq(k, "div-zero"))      { pass "-4097"; }
+    if (raw text_eq(k, "div-min"))       { pass "-4098"; }
+    if (raw text_eq(k, "limit"))         { pass "-4111"; }
+    if (raw text_eq(k, "requires"))      { pass "-4112"; }
+    if (raw text_eq(k, "ensures"))       { pass "-4113"; }
+    if (raw text_eq(k, "failsafe-post")) { pass "-4113"; }
+    if (raw text_eq(k, "invariant"))     { pass "-4114"; }
+    pass "";
+};
+
+func:kinds_of_trap = string(string:code) never fails {
+    if (raw text_eq(code, "-4097")) { pass "div-zero"; }
+    if (raw text_eq(code, "-4098")) { pass "div-min"; }
+    if (raw text_eq(code, "-4111")) { pass "limit"; }
+    if (raw text_eq(code, "-4112")) { pass "requires"; }
+    if (raw text_eq(code, "-4113")) { pass "ensures/failsafe-post"; }
+    if (raw text_eq(code, "-4114")) { pass "invariant"; }
+    pass "?";
+};
+
+// An `llvm.assume` per discharged SITE, a trap per retained GROUP of each
+// guarded kind (P-12, L-13): the manifest is an inventory of guards.
 pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string:name) never fails {
     List<string>:fl = raw list_init::<string>(1i64);
     // A ROW COUNTS ONLY FOR A FUNCTION THE EMISSION HOLDS (1.5.2d, D-262 §1):
@@ -334,23 +383,68 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
     // symbol names, which the code-only text blanks (its first full run
     // counted nothing for that reason).
     string:syms = raw ir_symbol_all(ir_text);
+    // THE TRAPS BY GROUP (1.5.3 step 2, L-13): the rows one guard shares -- a
+    // loop's entry, preservation and `continue` rows, a function's entry
+    // `requires` row -- carry one group and one trap count; the guard stays,
+    // with every trap it holds, while ANY row of the group is retained. A
+    // `guard` row counts; a `bypass`, `held` or `conform` row keeps no trap
+    // of its own function's (the guard it names is the callee's). The
+    // harness's rule, byte for byte.
+    List<string>:gsyms = raw list_init::<string>(16i64);
+    List<string>:gcodes = raw list_init::<string>(16i64);
+    List<int64>:ggroups = raw list_init::<int64>(16i64);
+    List<bool>:gret = raw list_init::<bool>(16i64);
+    List<int64>:gtraps = raw list_init::<int64>(16i64);
+    List<string>:ssyms = raw list_init::<string>(8i64);
+    List<int64>:sgroups = raw list_init::<int64>(8i64);
+    List<bool>:sok = raw list_init::<bool>(8i64);
     int64:disch = 0i64;
-    int64:zero_left = 0i64;
-    int64:min_left = 0i64;
-    int64:limit_left = 0i64;
     for (int64:i in 0i64...rows.count) {
-        if (!(raw row_function_held(defined, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len)))) { continue; }
+        string:sym = string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len);
+        if (!(raw row_function_held(defined, sym))) { continue; }
         bool:d = (rows.items[i].verdict == (raw OV_DISCHARGED()));
         string:k = string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len);
+        string:role = string_from_bytes(rows.items[i].role.ptr, rows.items[i].role.len);
         // ONE `llvm.assume` PER DISCHARGED ROW OF AN ASSUME KIND (P-19, L-11):
-        // a guard-less kind's discharge emits nothing.
+        // a guard-less kind's discharge emits nothing, and a contract's
+        // discharge is the guard's removal alone (1.5.3 L-11).
         if (d) {
             bool:assume_kind = (raw text_eq(k, "div-zero")) || (raw text_eq(k, "div-min")) || (raw text_eq(k, "limit"));
             if (assume_kind) { disch = disch + 1i64; }
         }
-        if ((!d) && (raw text_eq(k, "div-zero"))) { zero_left = zero_left + 1i64; }
-        if ((!d) && (raw text_eq(k, "div-min")))  { min_left = min_left + 1i64; }
-        if ((!d) && (raw text_eq(k, "limit")))    { limit_left = limit_left + 1i64; }
+        if (raw text_eq(role, "bypass")) {
+            if ((raw text_eq(k, "limit-subsume")) || (raw text_eq(k, "requires"))) {
+                int64:sslot = 0i64 - 1i64;
+                for (int64:sj in 0i64...ssyms.count) {
+                    if ((raw text_eq(raw strlist_view(ssyms, sj), sym)) && (sgroups.items[sj] == rows.items[i].group)) { sslot = sj; }
+                }
+                if (sslot < 0i64) {
+                    drop strlist_push(@ssyms, sym);
+                    drop list_push(@sgroups, rows.items[i].group);
+                    drop list_push(@sok, d);
+                } else {
+                    if (!d) { sok.items[sslot] = false; }
+                }
+            }
+        }
+        if (!(raw text_eq(role, "guard"))) { continue; }
+        string:code = raw trap_of_kind(k);
+        if (code.len == 0i64) { continue; }
+        int64:slot = 0i64 - 1i64;
+        for (int64:j in 0i64...gsyms.count) {
+            if ((raw text_eq(raw strlist_view(gsyms, j), sym)) && (raw text_eq(raw strlist_view(gcodes, j), code))
+                && (ggroups.items[j] == rows.items[i].group)) { slot = j; }
+        }
+        if (slot < 0i64) {
+            drop strlist_push(@gsyms, sym);
+            drop strlist_push(@gcodes, code);
+            drop list_push(@ggroups, rows.items[i].group);
+            drop list_push(@gret, !d);
+            drop list_push(@gtraps, rows.items[i].traps);
+        } else {
+            if (!d) { gret.items[slot] = true; }
+            if (rows.items[i].traps > gtraps.items[slot]) { gtraps.items[slot] = rows.items[i].traps; }
+        }
     }
     int64:assumes = raw count_of(ir, "call void @llvm.assume(");
     if (assumes != disch) {
@@ -361,37 +455,39 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         m = string_concat(m, " discharged sites");
         drop list_push(@fl, move(m));
     }
-    int64:z = raw count_of(ir, "@npk_trap(i32 -4097)");
-    if (z != zero_left) {
-        string:m1 = string_concat(name, ": the verified IR holds ");
-        m1 = string_concat(m1, int_to_string(z));
-        m1 = string_concat(m1, " div-zero traps for ");
-        m1 = string_concat(m1, int_to_string(zero_left));
-        m1 = string_concat(m1, " retained rows");
-        drop list_push(@fl, move(m1));
+    List<string>:codes = raw list_init::<string>(6i64);
+    drop strlist_push(@codes, "-4097");
+    drop strlist_push(@codes, "-4098");
+    drop strlist_push(@codes, "-4111");
+    drop strlist_push(@codes, "-4112");
+    drop strlist_push(@codes, "-4113");
+    drop strlist_push(@codes, "-4114");
+    for (int64:ci in 0i64...codes.count) {
+        string:code2 = raw strlist_view(codes, ci);
+        int64:left = 0i64;
+        for (int64:gj in 0i64...gsyms.count) {
+            if (gret.items[gj] && (raw text_eq(raw strlist_view(gcodes, gj), code2))) { left = left + gtraps.items[gj]; }
+        }
+        string:needle = string_concat("@npk_trap(i32 ", code2);
+        needle = string_concat(needle, ")");
+        int64:traps = raw count_of(ir, needle);
+        if (traps != left) {
+            string:m1 = string_concat(name, ": the verified IR holds ");
+            m1 = string_concat(m1, int_to_string(traps));
+            m1 = string_concat(m1, " ");
+            m1 = string_concat(m1, code2);
+            m1 = string_concat(m1, " traps for ");
+            m1 = string_concat(m1, int_to_string(left));
+            m1 = string_concat(m1, " retained (");
+            m1 = string_concat(m1, raw kinds_of_trap(code2));
+            m1 = string_concat(m1, " rows by group)");
+            drop list_push(@fl, move(m1));
+        }
     }
-    int64:mn = raw count_of(ir, "@npk_trap(i32 -4098)");
-    if (mn != min_left) {
-        string:m2 = string_concat(name, ": the verified IR holds ");
-        m2 = string_concat(m2, int_to_string(mn));
-        m2 = string_concat(m2, " div-min traps for ");
-        m2 = string_concat(m2, int_to_string(min_left));
-        m2 = string_concat(m2, " retained rows");
-        drop list_push(@fl, move(m2));
-    }
-    // THE LIMIT GUARDS (1.5.2 step 2, D-251): one `-4111` trap per retained row.
-    int64:lm = raw count_of(ir, "@npk_trap(i32 -4111)");
-    if (lm != limit_left) {
-        string:m3 = string_concat(name, ": the verified IR holds ");
-        m3 = string_concat(m3, int_to_string(lm));
-        m3 = string_concat(m3, " limit traps for ");
-        m3 = string_concat(m3, int_to_string(limit_left));
-        m3 = string_concat(m3, " retained rows");
-        drop list_push(@fl, move(m3));
-    }
-    // THE BYPASS (D-252, 1.5.2 step 4): every `.body` symbol is its own define,
-    // its checked entry's tail call, or the callee of a direct call -- and the
-    // direct calls equal the discharged `limit-subsume` rows.
+    // THE BYPASS (D-252, 1.5.2 step 4; D-268): every `.body` symbol is its own
+    // define, its checked entry's tail call, or the callee of a direct call --
+    // and the direct calls equal the call sites whose EVERY bypass row
+    // (`limit-subsume`, `requires`) is discharged.
     int64:bodies = raw count_of(syms, ".body\"");
     int64:bcalls = 0i64;
     int64:btails = 0i64;
@@ -418,18 +514,13 @@ pub func:elided_ir_checks = List<string>(List<VRow>:rows, string:ir_text, string
         drop list_push(@fl, move(m4));
     }
     int64:subs = 0i64;
-    for (int64:si in 0i64...rows.count) {
-        string:sk = string_from_bytes(rows.items[si].kind.ptr, rows.items[si].kind.len);
-        if (raw row_function_held(defined, string_from_bytes(rows.items[si].symbol.ptr, rows.items[si].symbol.len))) {   // a dropped function's row is not counted (D-262 §1)
-            if ((rows.items[si].verdict == (raw OV_DISCHARGED())) && (raw text_eq(sk, "limit-subsume"))) { subs = subs + 1i64; }
-        }
-    }
+    for (int64:si in 0i64...sok.count) { if (sok.items[si]) { subs = subs + 1i64; } }
     if (bcalls != subs) {
         string:m5 = string_concat(name, ": the verified IR holds ");
         m5 = string_concat(m5, int_to_string(bcalls));
         m5 = string_concat(m5, " bypass calls for ");
         m5 = string_concat(m5, int_to_string(subs));
-        m5 = string_concat(m5, " discharged limit-subsume rows");
+        m5 = string_concat(m5, " call sites whose bypass rows are all discharged");
         drop list_push(@fl, move(m5));
     }
     pass fl;

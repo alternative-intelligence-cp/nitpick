@@ -1,10 +1,14 @@
 // expect-exit: 0
+// expect-obligation: requires open 1
+// expect-obligation: requires discharged 1
+// expect-obligation: failsafe-post discharged 9
 //
 // LIVE-1's lock (0.9.0) is OPEN (1.5.3 step 1): a `requires` the backend never
 // read compiled to a function that claims a contract nothing enforces -- the
 // observed defect was this exact shape emitting a bare `sdiv`. It refused as
 // a rung from 0.9.0 to 1.5.2; the clause is checked at the entry now, and
-// this call satisfies it.
+// this call satisfies it: the call-site row discharges on the literal (2 is
+// not 0) and the entry row is `open` (the callee knows nothing of `b`).
 
 mod:contract_requires;
 error:E9;

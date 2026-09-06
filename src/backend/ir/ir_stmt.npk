@@ -1748,6 +1748,9 @@ func:emit_ensures_at = IrVal(ExprEmitter->:x, string:vref, StmtId:sid, Span:at) 
         x.fe.result_ll = string_concat(vl.text, "");
     }
     string:bad = raw irw_new_label(x.fe.w, "ctr.bad");
+    // THE CLAUSE CONTEXT (1.5.3 step 2): a guard inside a clause is this
+    // seam's site, keyed under the seam's statement.
+    x.fe.ctx.cur_ctx = sid.index;
     int32:cc = raw fn_contract_count(x.ast, d);
     for (int32:ci in 0i32...cc) {
         VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
@@ -1755,7 +1758,7 @@ func:emit_ensures_at = IrVal(ExprEmitter->:x, string:vref, StmtId:sid, Span:at) 
         if ((raw contract_kind(cv)) != (raw CONTRACT_ENSURES())) { continue; }
         int64:ctm = raw fnem_temp_mark(x.fe);
         IrVal:c = raw emit_cond(x, raw contract_cond(cv));
-        if (!(raw iv_is_ok(c))) { pass c; }
+        if (!(raw iv_is_ok(c))) { x.fe.ctx.cur_ctx = 0i32; pass c; }
         drop emit_temp_drops(x, ctm);
         drop fnem_temp_release(x.fe, ctm);
         string:nx = raw irw_new_label(x.fe.w, "ctr.ok");
@@ -1763,6 +1766,7 @@ func:emit_ensures_at = IrVal(ExprEmitter->:x, string:vref, StmtId:sid, Span:at) 
                                          string_concat(", label %", bad)));
         drop irw_label(x.fe.w, nx);
     }
+    x.fe.ctx.cur_ctx = 0i32;
     string:done = raw irw_new_label(x.fe.w, "ctr.done");
     drop irw_line(x.fe.w, raw cat3("br label %", done, ""));
     drop irw_label(x.fe.w, bad);
@@ -3481,7 +3485,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // rows by construction. It fills the elision answers the division sites
     // below consult, and the program's solver files when asked.
     drop obl_function(x, raw mangled_fn_sym(x.fe.ctx, qual, fname), obl_pn, obl_pt,
-                      obl_pr, obl_pd, raw fn_body(x.ast, d));
+                      obl_pr, obl_pd, raw fn_body(x.ast, d), did, x.fe.is_failsafe, succ);
     // THE ENTRY CHECKS (1.5.2 step 2, D-251): each limited parameter over its
     // slot -- an alloca in a sync function, the frame GEP at state 0 in a
     // coroutine (the parameters are the first bindings in both skeletons) --

@@ -1,0 +1,49 @@
+// expect-exit: 0
+// expect-obligation: ensures discharged 2
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 3
+// expect-obligation: failsafe-post discharged 13
+//
+// A `pure never fails` CALLEE IS AN UNINTERPRETED FUNCTION (L-3): `sq` in a
+// contract and `sq` in the body are one symbol, so `apply`'s `ensures result
+// < 100` follows from its own `requires (raw sq(n)) < 100`. And the callee's
+// `ensures` rides every application: `need(raw sq(n))` proves `need`'s
+// `m >= 0` from `sq`'s `result >= 0`. The entry rows of `apply` and `need` are
+// `open`; `sq`'s own seam (`n * n >= 0`) and `apply`'s discharge. `main`'s
+// call of `apply(3i32)` is `open` too: an uninterpreted function has no
+// value at 3 -- `sq(3) < 100` is true and unprovable, and the entry check
+// stays (the run satisfies it).
+mod:ens_uf;
+error:E9;
+
+func:sq = int32(int32:n) pure never fails ensures result >= 0i32 { pass (n * n); };
+
+func:apply = int32(int32:n) requires (raw sq(n)) < 100i32 ensures result < 100i32 { pass (raw sq(n)); };
+
+func:need = int32(int32:m) requires m >= 0i32 { pass (m + 1i32); };
+
+func:apply2 = int32(int32:n) { pass (need((raw sq(n))) ?! E9); };
+
+func:main = int32(cstring[]:_~argv) {
+    if ((apply(3i32) ?! E9) != 9i32)   { exit 10i32; }
+    if ((apply2(2i32) ?! E9) != 5i32)  { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

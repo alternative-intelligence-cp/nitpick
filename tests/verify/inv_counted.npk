@@ -1,0 +1,38 @@
+// expect-exit: 34
+// expect-obligation: invariant open 2
+// expect-obligation: failsafe-post discharged 14
+//
+// `$` IN AN INVARIANT is opaque outside a rule (1.5.2 L-19; 1.5.4 gives it a
+// term), so both rows are `open` and the head keeps its check -- which is
+// what makes the violating iteration (`$` reaching 3 with `k` 0) trap
+// InvariantViolated, 34: recorded, never refused, and never silently true.
+mod:inv_counted;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int64:k = argv.len - 1i64;
+    int64:acc = 0i64;
+    loop (0i64, 5i64, 1i64) invariant $ < 3i64 + k {
+        acc = acc + 1i64;
+    }
+    exit (acc =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

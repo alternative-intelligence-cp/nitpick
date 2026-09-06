@@ -458,10 +458,18 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `terminate` | a recursion or unbounded loop has a decreasing variant (D-218.7) | no | 1.5.8 |
 | `stack-depth` | the recursion depth is bounded (the audit's G-6 row) | no | 1.5.8 |
 | `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
-| `failsafe-post` | `failsafe` returns a positive value (D-014) | no | 1.5.3 |
+| `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 <!-- END obligation-catalogue -->
+
+> **[D-267, 1.5.3 step 1 (2026-09-06).]** `failsafe-post`'s guard column
+> read `no` as ratified: D-014 stated the postcondition and nothing checked
+> it. S-43's decision gave it a guard -- `failsafe`'s `exit` operand is
+> checked positive at the `exit` (EnsuresViolated, the trap route's re-entry
+> rule ending the process at 70), a literal that is not positive refused by
+> the checker (REACH-004) -- so a discharged row elides that check and the
+> column reads `yes`.
 
 > **[D-252, 1.5.2 step 4 (2026-09-04).]** `limit-subsume`'s guard column
 > read `no` as ratified. The guard a discharged row elides is the CALLEE's

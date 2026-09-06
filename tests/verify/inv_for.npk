@@ -1,0 +1,33 @@
+// expect-exit: 0
+// expect-obligation: invariant discharged 2
+// expect-obligation: failsafe-post discharged 13
+//
+// A `for` LOOP'S ROWS: the binding is opaque (as today), the invariant over
+// the accumulator holds at entry and is preserved -- both discharged, the
+// head's check elided.
+mod:inv_for;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:acc = 0i32;
+    for (int32:k in 0i32...3i32) invariant acc >= 0i32 { acc = acc + 1i32; }
+    exit (acc - 3i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

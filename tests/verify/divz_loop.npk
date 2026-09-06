@@ -1,13 +1,17 @@
 // expect-exit: 183
-// expect-obligation: div-zero open 1
+// expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 10
 //
 // A LOOP-CARRIED DIVISOR: the counter is invalidated at the body's entry
-// (its value there is any iteration's), so `100 / i` is `open` although the
-// guard `i > 0` would prove it -- loop guards and invariants are 1.5.4's
-// (1.5.2 gave a LIMITED divisor its rule across the loop instead:
-// `limit_loop.npk`). The dividend is a literal, so the INT_MIN/-1 half
-// discharges.
+// (its value there is any iteration's), and until 1.5.3 `100 / i` was `open`
+// although the guard `i > 0` would prove it. THE LOOP CONDITION HOLDS IN THE
+// BODY (1.5.3 step 2, L-8): it is a hypothesis over the havoced versions in
+// the body's region -- and nowhere after the loop, where its negation would
+// be a path condition (1.5.4, L-9) -- so the division discharges from the
+// guard alone (1.5.2 gave a LIMITED divisor its rule across the loop the
+// other way: `limit_loop.npk`). The dividend is a literal, so the INT_MIN/-1
+// half discharges.
 mod:divz_loop;
 
 func:main = int32(cstring[]:_~argv) {

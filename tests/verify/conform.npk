@@ -1,0 +1,56 @@
+// expect-exit: 32
+// expect-obligation: requires discharged 2
+// expect-obligation: requires open 3
+// expect-obligation: ensures discharged 4
+// expect-obligation: failsafe-post discharged 13
+//
+// CONFORMANCE (L-6): `Wide` weakens the trait's `requires` (`scale > -1`
+// admits what `scale > 0` admits) and strengthens its `ensures` (`result >=
+// 1` promises more than `result >= 0`): both conformance rows discharge.
+// `Narrow` demands `scale > 5`: its `requires` row is `open`, its word
+// `none`, and the program still compiles and runs -- through the trait, a
+// caller may pass what the trait admits, and `Narrow`'s own entry traps on
+// `1i32`: 32. The rows: two entry rows `open` and `Narrow`'s conformance
+// `open`; `Wide`'s two conformance rows, `Narrow`'s `ensures` conformance and
+// the two seams (literals) discharged; the one `dyn` call site's row (held,
+// inside `through`) discharged on the literal `1i32`.
+mod:conform;
+error:E9;
+
+trait:Sized = { func:size = int32(Self:self, int32:scale) requires scale > 0i32 ensures result >= 0i32; };
+struct:Wide = { int32:w; };
+struct:Narrow = { int32:w; };
+impl:Wide:Sized = {
+    func:size = int32(Wide:_~self, int32:scale) requires scale > -1i32 ensures result >= 1i32 { pass 4i32; };
+};
+impl:Narrow:Sized = {
+    func:size = int32(Narrow:_~self, int32:scale) requires scale > 5i32 ensures result >= 0i32 { pass 2i32; };
+};
+
+func:through = int32(dyn Sized:s) { pass ((s.size(1i32)) ?! E9); };
+
+func:main = int32(cstring[]:_~argv) {
+    Wide:a = Wide{ w: 3i32 };
+    Narrow:b = Narrow{ w: 3i32 };
+    if ((through(a) ?! E9) != 4i32) { exit 10i32; }
+    int32:v = through(b) ?! E9;
+    exit (v + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

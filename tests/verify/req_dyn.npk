@@ -1,0 +1,47 @@
+// expect-exit: 0
+// expect-obligation: requires discharged 2
+// expect-obligation: requires open 2
+// expect-obligation: failsafe-post discharged 13
+//
+// A `dyn` CALL'S ROW (D-268) is against the TRAIT method's `requires`, and it
+// is `held`: the vtable's target is the impl's checked entry, which no build
+// bypasses, so the manifest word is `retained` whatever the verdict. `s.size(k)`
+// with `k` a parameter is `open`; `s.size(2i32)` is `discharged`. The impl
+// restates the trait's clause, so its conformance row discharges (trait
+// implies impl), and its own entry row is `open`.
+mod:req_dyn;
+error:E9;
+
+trait:Sized = { func:size = int32(Self:self, int32:scale) requires scale > 0i32; };
+struct:Box = { int32:w; };
+impl:Box:Sized = {
+    func:size = int32(Box:self, int32:scale) requires scale > 0i32 { pass (self.w * scale); };
+};
+
+func:through = int32(dyn Sized:s, int32:k) { pass ((s.size(k)) ?! E9); };
+func:fixed_two = int32(dyn Sized:s) { pass ((s.size(2i32)) ?! E9); };
+
+func:main = int32(cstring[]:_~argv) {
+    Box:b = Box{ w: 3i32 };
+    if ((through(b, 1i32) ?! E9) != 3i32)  { exit 10i32; }
+    if ((fixed_two(b) ?! E9) != 6i32)      { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

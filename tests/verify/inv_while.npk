@@ -1,0 +1,42 @@
+// expect-exit: 20
+// expect-obligation: invariant discharged 2
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+//
+// A LOOP'S TWO ROWS (L-8) and THE POST-LOOP HYPOTHESIS (L-9): `d > 0` holds
+// at entry (`d` is 1) and is preserved (`d + 1 > 0`), so the head's check is
+// elided; and since nothing `break`s, the invariant holds after the loop --
+// `100i32 / d` discharges its `div-zero` and `div-min` through it, the second
+// cross-kind discharge after `limit_loop.npk`'s. Exits 20: 100 / 5.
+mod:inv_while;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = 1i32;
+    int32:n = argv.len =>! int32;
+    while (n < 5i32) invariant d > 0i32 {
+        d = d + 1i32;
+        n = n + 1i32;
+    }
+    int32:q = 100i32 / d;
+    exit q;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

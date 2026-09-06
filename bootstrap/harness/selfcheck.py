@@ -310,13 +310,13 @@ def main():
             "        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n"
             "        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
     for name, head, body, must_fail, why in (
-            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n",
+            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n",
              VDIV + VFS, True, "a verify test expecting `discharged` for an opaque divisor must fail"),
-            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n",
+            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n",
              VDIV + VFS, False, "a verify test naming its rows exactly must pass"),
-            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n",
+            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n",
              VLIM + VLFS, True, "a verify test expecting `discharged` for a limited parameter's entry must fail"),
-            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n",
+            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n",
              VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass")):
         # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
         # hyphen in the case name becomes an underscore in both.
@@ -423,8 +423,8 @@ def main():
               '  %r = tail call i32 @"npk.m.f.body"(i32 %a0)\n  ret i32 %r\n}\n'
               'define i32 @main() {\nentry:\n')
     B_TAIL = "  ret i32 %v\n}\n"
-    B_ROWS = [("0001", "1", "limit", "h1", "open", '@"npk.m.f"'),
-              ("0002", "1", "limit-subsume", "h2", "discharged", "@main")]
+    B_ROWS = [("0001", "1", "limit", "h1", "open", '@"npk.m.f"', "2:5", "guard", "5", 1),
+              ("0002", "1", "limit-subsume", "h2", "discharged", "@main", "0:9", "bypass", "9", 0)]
     for name, mid, must_fail, why in (
             ("bypass-counted", '  %v = call i32 @"npk.m.f.body"(i32 3) ; prose may spell @"x.body"( too\n', False,
              "a direct call naming the body, counted through the quotes, must pass"),
@@ -433,6 +433,52 @@ def main():
             ("bypass-as-value", '  %v = call i32 @"npk.m.f.body"(i32 3)\n  %fp = ptrtoint ptr @"npk.m.f.body" to i64\n', True,
              "a `.body` taken as a function value must fail")):
         fails = harness.elided_ir_checks(B_ROWS, B_HEAD + mid + B_TAIL, name)
+        ok = (bool(fails) == must_fail)
+        if not ok:
+            bad += 1
+        print("  %-26s %-4s  %s" % (name, "ok" if ok else "BAD", why))
+        if not ok:
+            if must_fail:
+                print("      elided_ir_checks accepted it; it should not have")
+            else:
+                print("      elided_ir_checks rejected it: %s" % fails[0])
+
+    # THE CONTRACT BELTS (1.5.3 step 2, L-13): traps are counted BY GROUP -- a
+    # retained entry `requires` row keeps one trap per clause in the `.req`
+    # predicate (its `traps` column), a retained `ensures` row one at its
+    # seam -- a `held` row's discharge bypasses nothing, and a call whose
+    # bypass rows are not ALL discharged names the entry. The texts are
+    # npkg's, byte for byte.
+    C_IR = ('define i32 @"npk.m.g.body"(i32 %a0) {\nentry:\n  ret i32 %a0\n}\n'
+            'define i32 @"npk.m.g"(i32 %a0) {\nentry:\n  %q = call i8 @"npk.m.g.req"(i32 %a0)\n'
+            '  %r = tail call i32 @"npk.m.g.body"(i32 %a0)\n  ret i32 %r\n}\n'
+            'define i8 @"npk.m.g.req"(i32 %a0) {\nentry:\n  %c1 = icmp sgt i32 %a0, 0\n'
+            '  br i1 %c1, label %ok1, label %bad1\nbad1:\n  call void @npk_chain_reset(i32 1)\n'
+            '  call void @npk_trap(i32 -4112)\n  unreachable\nok1:\n  %c2 = icmp slt i32 %a0, 9\n'
+            '  br i1 %c2, label %ok2, label %bad2\nbad2:\n  call void @npk_chain_reset(i32 2)\n'
+            '  call void @npk_trap(i32 -4112)\n  unreachable\nok2:\n  ret i8 1\n}\n'
+            'define i32 @main() {\nentry:\n  %v = call i32 @"npk.m.g"(i32 3)\n'
+            '  %e = icmp sgt i32 %v, 0\n  br i1 %e, label %eok, label %ebad\nebad:\n'
+            '  call void @npk_chain_reset(i32 3)\n  call void @npk_trap(i32 -4113)\n  unreachable\neok:\n'
+            '  ret i32 %v\n}\n')
+    C_ENTRY = ("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 2)
+    C_SEAM = ("0002", "1", "ensures", "h2", "open", "@main", "1:11", "guard", "11", 1)
+    C_HELD = ("0002", "2", "requires", "h3", "discharged", "@main", "0:13", "held", "13", 0)
+    for name, rows, must_fail, why in (
+            ("contract-traps", [C_ENTRY, C_SEAM, C_HELD], False,
+             "two `-4112` traps for a retained two-clause entry row and one `-4113` for a retained seam must pass"),
+            ("contract-traps-missing", [("0001", "1", "requires", "h1", "open", '@"npk.m.g"', "2:7", "guard", "7", 1), C_SEAM, C_HELD], True,
+             "a retained entry row counting one clause against a two-trap predicate must fail"),
+            ("held-not-bypassed", [C_ENTRY, C_SEAM, C_HELD], False,
+             "a discharged `held` row whose call names the entry must pass (nothing bypasses a held row)"),
+            ("bypass-needs-all", [C_ENTRY, C_SEAM,
+                                  ("0002", "2", "limit-subsume", "h3", "discharged", "@main", "0:13", "bypass", "13", 0),
+                                  ("0002", "3", "requires", "h4", "open", "@main", "0:13", "bypass", "13", 0)], True,
+             "a call whose bypass rows are not all discharged, named by a `.body` call, must fail")):
+        text = C_IR
+        if name == "bypass-needs-all":
+            text = C_IR.replace('%v = call i32 @"npk.m.g"(i32 3)', '%v = call i32 @"npk.m.g.body"(i32 3)')
+        fails = harness.elided_ir_checks(rows, text, name)
         ok = (bool(fails) == must_fail)
         if not ok:
             bad += 1

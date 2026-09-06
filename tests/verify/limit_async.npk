@@ -1,12 +1,16 @@
 // expect-exit: 31
 // expect-obligation: limit open 1
+// expect-obligation: limit-subsume open 1
+// expect-obligation: failsafe-post discharged 13
 //
 // A COROUTINE'S ENTRY (D-251): an `async` callee's limited parameter arrives
 // in a frame the await site builds, and its check runs once per task at the
 // body's start (state 0) -- the argument here is one minus five, so the first
-// resume traps before the body runs. The await's call carries NO
-// `limit-subsume` row (D-252): a coroutine's entry check can never be
-// bypassed, so there is nothing at the call site to decide.
+// resume traps before the body runs. The await's call carries a
+// `limit-subsume` row since D-268 (1.5.3 step 2; D-252 carried none): `open`
+// here, the argument being opaque, and HELD either way -- a coroutine's entry
+// check can never be bypassed, so the manifest word is `retained` whatever
+// the verdict, and the row is the one place the call is proven.
 mod:limit_async;
 error:E9;
 Rules<int32>:r_pos = { $ > 0i32 };

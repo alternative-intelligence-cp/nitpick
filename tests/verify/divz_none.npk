@@ -1,10 +1,13 @@
 // expect-exit: 0
-// expect-obligation: none
+// expect-obligation: failsafe-post discharged 11
 //
 // NO ROW WHERE NO TRAP ARMS: float division is IEEE and total (D-143) and a
 // twisted division yields ERR and continues (D-007, D-144), so neither site
 // carries a D-007 guard and neither produces an obligation. The manifest's
-// inventory is of GUARDS, and a family with none has none to list.
+// inventory is of GUARDS, and a family with none has none to list. The only
+// rows of this module are `failsafe`'s own postconditions (D-267, 1.5.3): a
+// program's `failsafe` always has them, so `expect-obligation: none` names
+// no program any more -- the runners keep the spelling for their self-checks.
 mod:divz_none;
 
 func:main = int32(cstring[]:_~argv) {

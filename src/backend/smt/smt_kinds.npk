@@ -74,7 +74,40 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     // CALLEE's entry check, at that call -- a discharged row names the body.
     if (k == 11i32) { pass true; }
     if (k == 14i32) { pass true; }
+    // `failsafe-post` (D-267, 1.5.3): the guard is the `exit`'s own check in
+    // `failsafe` -- ratified guard-less, given a guard by S-43's decision.
+    if (k == 15i32) { pass true; }
     pass false;
+};
+
+// THE ROLE OF A ROW (1.5.3 step 2, L-13): what its retention keeps in the
+// IR and what its discharge removes. `guard`: a check in the function that
+// carries the row -- elided when discharged. `bypass`: a call-site row whose
+// discharge (with every other bypass row of the call) lets the call name
+// the callee's body past its checked entry (D-252, D-268). `held`: a
+// call-site row whose guard is the callee's own entry and can never be
+// bypassed -- a coroutine's state 0, a `dyn` call's vtable target -- so the
+// manifest word is `retained` whatever the verdict (D-268). `conform`: a
+// row with no guard at all (an impl's contracts against its trait's, L-6).
+pub func:ROLE_GUARD = int32() never fails   { pass 0i32; };
+pub func:ROLE_BYPASS = int32() never fails  { pass 1i32; };
+pub func:ROLE_HELD = int32() never fails    { pass 2i32; };
+pub func:ROLE_CONFORM = int32() never fails { pass 3i32; };
+
+pub func:role_name = string(int32:r) never fails {
+    if (r == 0i32) { pass "guard"; }
+    if (r == 1i32) { pass "bypass"; }
+    if (r == 2i32) { pass "held"; }
+    if (r == 3i32) { pass "conform"; }
+    pass "?";
+};
+
+pub func:role_of_name = int32(string:s) never fails {
+    if (string_equals(s, "guard"))   { pass 0i32; }
+    if (string_equals(s, "bypass"))  { pass 1i32; }
+    if (string_equals(s, "held"))    { pass 2i32; }
+    if (string_equals(s, "conform")) { pass 3i32; }
+    pass 0i32 - 1i32;
 };
 
 // The verdict column (P-10), spelled once.

@@ -1,0 +1,44 @@
+// expect-exit: 0
+// expect-obligation: ensures discharged 4
+// expect-obligation: failsafe-post discharged 13
+//
+// A CALLEE'S `ensures` IS KNOWLEDGE (L-4): `outer` promises `result > 10`
+// and knows nothing of `inner`'s body -- only its `ensures`, pushed as a
+// hypothesis at the `?!` that continues on success. The same through `raw`
+// over a `never fails` callee. Four seams, four discharged rows: the two
+// callees' own (a literal each) and the two callers' through the hypothesis.
+mod:ens_hyp;
+error:E9;
+
+func:inner = int32(int32:_~n) ensures result > 10i32 { pass 20i32; };
+func:outer = int32(int32:n) ensures result > 10i32 {
+    int32:v = inner(n) ?! E9;
+    pass v;
+};
+
+func:nf = int32(int32:_~n) never fails ensures result >= 0i32 { pass 3i32; };
+func:outer2 = int32(int32:n) ensures result >= 0i32 { pass (raw nf(n)); };
+
+func:main = int32(cstring[]:_~argv) {
+    if ((outer(1i32) ?! E9) != 20i32) { exit 10i32; }
+    if ((outer2(1i32) ?! E9) != 3i32) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

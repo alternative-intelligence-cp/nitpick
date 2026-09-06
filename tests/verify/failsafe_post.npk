@@ -1,0 +1,36 @@
+// expect-exit: 70
+// expect-obligation: failsafe-post open 1
+// expect-obligation: failsafe-post discharged 9
+//
+// `failsafe`'s POSTCONDITION (D-267, L-14): a literal exit's row discharges
+// and its guard is elided; a COMPUTED zero's row is `open` (the encoder knows
+// `z` is 0 and the goal `z > 0` is false), the guard stays, and the run --
+// `main` trapping into the `E9` arm -- reaches it: EnsuresViolated inside
+// `failsafe` re-enters it, which the runtime ends at 70. The trap route never
+// reports success.
+mod:failsafe_post;
+error:E3;
+error:E9;
+
+func:broken = int32() { fail E3; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = broken() ?! E9;
+    exit (v + 1i32);
+};
+
+func:failsafe = int32(Error:e) {
+    int32:z = 0i32;
+    pick (e) {
+        (E9)              { exit z; },
+        (E3)              { exit 21i32; },
+        (EnsuresViolated) { exit 33i32; },
+        (IntOverflow)     { exit 93i32; },
+        (HeapBadRequest)  { exit 91i32; },
+        (HeapOom)         { exit 92i32; },
+        (Unreachable)     { exit 95i32; },
+        (WildLeak)        { exit 96i32; },
+        (*)               { exit 99i32; }
+    }
+    exit 9i32;
+};

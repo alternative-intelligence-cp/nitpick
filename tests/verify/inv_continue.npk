@@ -1,0 +1,39 @@
+// expect-exit: 0
+// expect-obligation: invariant discharged 3
+// expect-obligation: failsafe-post discharged 13
+//
+// A `continue` IS A HEAD VISIT (L-8): the invariant gets a third row keyed at
+// the `continue` statement, and the head's check elides only when all three
+// discharge -- here they do (`acc >= 0` at entry, at the body's end and at
+// the `continue`).
+mod:inv_continue;
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+    while (i < 5i32) invariant acc >= 0i32 {
+        i = i + 1i32;
+        if (i == 2i32) { continue; }
+        acc = acc + 1i32;
+    }
+    exit (acc - 4i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

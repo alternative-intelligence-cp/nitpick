@@ -333,12 +333,18 @@ pub func:callee_bypasses = bool(ExprEmitter->:x, int32:decl_index, ExprId:call) 
         DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, i));
         if (!(raw verify_is_none(raw param_limit(pd)))) { limited = true; }
     }
-    // A `requires` AT THE CALLEE (1.5.3 step 1): the bypass would skip its
-    // predicate too, and the call-site `requires` row that licenses that is
-    // step 2's -- until it exists, a required callee is never bypassed.
-    if ((raw fn_requires_count(x, d)) > 0i32) { pass false; }
-    if (!limited) { pass false; }
-    pass (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), call.index, raw OK_LIMIT_SUBSUME()));
+    // EVERY BYPASS ROW OF THE CALL DISCHARGED (1.5.3 step 2, D-268): the
+    // `limit-subsume` row when the callee has limited parameters, the
+    // `requires` row when it has clauses -- the body skips both checks.
+    bool:required = (raw fn_requires_count(x, d)) > 0i32;
+    if (!(limited || required)) { pass false; }
+    if (limited) {
+        if (!(raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), call.index, raw OK_LIMIT_SUBSUME()))) { pass false; }
+    }
+    if (required) {
+        if (!(raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), call.index, raw OK_REQUIRES()))) { pass false; }
+    }
+    pass true;
 };
 
 // THE LOCAL A PLACE IS ROOTED AT, as its index in the local table, or -1:
@@ -523,12 +529,16 @@ pub func:emit_invariant_checks = IrVal(ExprEmitter->:x, VerifyId:inv, StmtId:sid
     if (raw verify_is_none(inv)) { pass (raw iv_nil()); }
     bool:elided = raw invariant_elided(x, sid, body, label);
     VerifyNode:v = raw ast_verify(x.ast, inv);
+    // THE CLAUSE CONTEXT (1.5.3 step 2): a guard inside a clause is the
+    // head's site, keyed under the loop's statement.
+    x.fe.ctx.cur_ctx = sid.index;
     for (int32:i in 0i32...(raw invariant_count(v))) {
         ExprId:cl = ExprId{ index: raw ast_id_at(x.ast, v.b, i) };
         ExprNode:cn = raw ast_expr(x.ast, cl);
         IrVal:c = raw emit_contract_check(x, cl, "-4114", elided, cn.span);
-        if (!(raw iv_is_ok(c))) { pass c; }
+        if (!(raw iv_is_ok(c))) { x.fe.ctx.cur_ctx = 0i32; pass c; }
     }
+    x.fe.ctx.cur_ctx = 0i32;
     pass (raw iv_nil());
 };
 

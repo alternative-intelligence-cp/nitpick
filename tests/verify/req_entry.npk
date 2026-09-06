@@ -1,0 +1,36 @@
+// expect-exit: 0
+// expect-obligation: requires discharged 2
+// expect-obligation: failsafe-post discharged 13
+//
+// THE ENTRY ROW DISCHARGED IN PLACE (L-7): `n >= 0u32` over a `uint32`
+// parameter follows from the type's range axiom, so the SITE_DECL row is
+// `discharged` and the checked entry calls no predicate -- no `-4112` in the
+// verified IR. The call site's row discharges the same way (an opaque
+// `uint32` argument is in range), so the call names the body.
+mod:req_entry;
+error:E9;
+
+func:count = uint32(uint32:n) requires n >= 0u32 { pass (n + 1u32); };
+
+func:main = int32(cstring[]:argv) {
+    uint32:c = count(argv.len =>! uint32) ?! E9;
+    exit ((c =>! int32) - 2i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

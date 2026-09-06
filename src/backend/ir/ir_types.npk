@@ -123,6 +123,14 @@ pub struct:LlCtx = {
     List<int32>:el_sites;
     List<int32>:el_kinds;
     List<int32>:el_spaces;   // the site's id space (1.5.2 step 2, L-9): SITE_EXPR/STMT/DECL
+    // THE CLAUSE CONTEXT (1.5.3 step 2): a guard inside a contract clause is
+    // lowered once per place the clause is checked -- an `ensures` at every
+    // return seam -- and its node id is one, so the elision key carries the
+    // seam's statement (0 outside a clause). `cur_ctx` is the emitter's
+    // current context while it lowers a clause; the encoder recorded the
+    // row under the same number.
+    List<int32>:el_ctxs;
+    int32:cur_ctx;
 
     // THE IMPL TABLE, or NULL. The backend re-substitutes a specialization's
     // signature when it emits one, and `T.Item` becomes what the impl bound
@@ -159,6 +167,8 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      el_sites: raw list_init::<int32>(8i64),
                      el_kinds: raw list_init::<int32>(8i64),
                      el_spaces: raw list_init::<int32>(8i64),
+                     el_ctxs: raw list_init::<int32>(8i64),
+                     cur_ctx: 0i32,
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
@@ -264,6 +274,11 @@ pub func:llctx_set_obl = NIL(LlCtx->:c, wild ObTable->:t) never fails {
 pub func:SITE_EXPR = int32() never fails { pass 0i32; };
 pub func:SITE_STMT = int32() never fails { pass 1i32; };
 pub func:SITE_DECL = int32() never fails { pass 2i32; };
+// A CONFORMANCE ROW (1.5.3 step 2, L-6): an impl method's contracts against
+// its trait's, keyed by the impl method's declaration in a space of its own
+// -- the method's entry row is SITE_DECL of the same index, and the emitter
+// asks nothing about a conformance row (it has no guard).
+pub func:SITE_CONF = int32() never fails { pass 3i32; };
 
 // Did the manifest discharge the obligation of kind `kind` at `site` (a node
 // index in the id space `space`) in the function being emitted? The guard
@@ -271,7 +286,7 @@ pub func:SITE_DECL = int32() never fails { pass 2i32; };
 pub func:llctx_elided = bool(LlCtx->:c, int32:space, int32:site, int32:kind) never fails {
     for (int64:i in 0i64...c.el_sites.count) {
         if ((c.el_sites.items[i] == site) && (c.el_kinds.items[i] == kind)) {
-            if (c.el_spaces.items[i] == space) { pass true; }
+            if ((c.el_spaces.items[i] == space) && (c.el_ctxs.items[i] == c.cur_ctx)) { pass true; }
         }
     }
     pass false;
