@@ -17081,3 +17081,39 @@ do not run, exactly as at a crash, and the kernel closes the descriptors.
 > the refusal. The compiler, `npkg` and the tools use no `alloc_managed`
 > outside the prelude; every List, derive, dyn and generic program keeps its
 > exit; `nitpick.obligations` did not move.
+
+## D-264 — a bare type parameter is move-only in the body that names it — **SETTLED (user decision, 2026-09-05: "the recommendation for the new decision sounds fine to me. lets ratify it"; OPEN_DECISIONS S-40; lands at 1.5.2f step 1)**
+
+Found by the library workbench (`nitpick-time`, its O-N19) on every pin:
+inside a GENERIC body the move-only rule (D-183, TYPE-046) was never asked of
+a bare type parameter. `require_move_if_owning` asked `type_drops`, which
+answers false for an unsubstituted `T`, so `T:x = s.items[i]` at an owning `T`
+compiled, linked and ran with two owners of one heap body — the workbench's
+probe drops the first and reads the second, exit 170, the allocator's 0xAA
+poison — while the same statement with `string` written out was refused. Not a
+regression; 1.5.2d step 4 only made the consequence RUNNABLE (before it the
+same program stopped at `llc`). The workbench's own `vec_pop<T>` shipped this
+shape, reviewed and verified, because every gate a library owns is a leak gate
+and a leak gate cannot see a managed body. **The decision.** A bare type
+parameter — and `Self` in a trait's default body — is MOVE-ONLY in the body
+that names it: a generic body is checked ONCE for every type it is instantiated
+at, some of which own storage, so the only sound answer for the type it does
+not know is "owns". A copy of a `T` place is spelled `move(...)`, a plain copy
+at a scalar, or `.clone()` under a `Clone` bound — the same at every
+instantiation. This is D-183 applied to the one type a template cannot see, not
+a new rule; it changes what the checker accepts, which is why it is a decision.
+**Consequences.** A lending `pick` may not bind a payload of a bare `T` (the
+D-216 rule, the same question); the derive generator refuses a `T` payload
+under `Eq`, `Ord`, `PartialOrd` and `Clone` exactly as it refuses a `string`
+payload (DERIVE-006) — the generated lending `pick` over `Opt<T>`'s payload,
+admitted since 1.5.2c, was this hole in generated form — while `Hash`,
+`ToString` and `Debug` bind nothing and still generate for a generic enum, and
+a parameter FIELD read in place derives fine. Measured before the rule was
+written: the compiler, `npkg`, the tools and every suite but five backend
+programs and `lib/ntensor.npk` refuse nothing new; the seven sites are all a
+by-value `T:v` parameter STORED into an owning slot — a constructor payload, an
+element, a field, a channel send, two matrix cells — the second-owner hazard
+itself, each spelled `move T:v` and `move(v)` now. What this leaves open, S-41:
+a BORROWING `pick` binding form, which would let a generic enum with payloads
+derive the four again and let a program compare two `Opt<string>`s without
+consuming one.

@@ -197,7 +197,12 @@ emission holds its function.
 > non-`internal` `define`s and the `.globl` names its `module asm` block declares
 > (`_start`, `npk_clone_raw`), exactly the object's GLOBAL symbols (1.5.2d step
 > 2b, DEF-21: until then the list was every `define`, `internal` ones included,
-> and missed the two `.globl` names)
+> and missed the two `.globl` names). **Which artefact each number describes**,
+> since they travel between sessions: the allowlist is the OBJECT's 111 GLOBAL
+> symbols plus `main`, 112; the IR's 166 `define`s split 109 exported and 57
+> `internal` FUNCTIONS; the object's 217 defined symbols split those 111 globals
+> and 106 locals of every kind (internal functions, labels, constants). 57 and
+> 106 are both right, about different artefacts.
 > plus `main`, the one symbol the runtime may need because the program
 > provides it. Not `llvm-readelf`: a fourth tool outside the `[toolchain]`
 > pin, whose text output nothing checks, is a poor foundation for a rule that
