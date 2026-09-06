@@ -14494,6 +14494,12 @@ Closes C-12. D-078's claim becomes three checked facts (mechanics at
 > `llvm-config`, which ships in a `-dev` package the build does not
 > otherwise need: the version that matters is the one that will run.
 >
+> **Read with D-265 (2026-09-06).** Point 1's pin is a VERSION, asked of the
+> tools, and a version is not a binary: two builds of 20.1.2 give the same
+> emission and may give a different object and binary. The identity claim
+> that holds across machines is the emission's (`build/npkc.ll`); the ladder
+> prints every intermediate's digest so a difference names its stage.
+>
 > **Point 2's diagnosis was wrong, and the fix still landed.** `npkseed.py`
 > never embedded its argv path. `Module` is built as
 > `S.Module(items, path)`, so the path lands in the node's `path` FIELD
@@ -17127,3 +17133,45 @@ consuming one.
 > Tests: `generic_owning_copy.npk` (TYPE-046 ×3), `derive_generic_payload.npk`
 > (DERIVE-006 ×2), `generic_owning_move.npk` (exit 0 at `string` and `int32`).
 > Zero new refusals anywhere else, measured before and after.
+
+
+## D-265 — the toolchain pin is a version; the emission is the cross-machine identity claim — **SETTLED (user decision, 2026-09-06: "lets go with your recommendation on S-42 and ratify it"; OPEN_DECISIONS S-42; lands at 1.5.2g)**
+
+Found by the library workbench's first CI run (`nitpick-time`, 2026-09-06):
+the pinned compiler commit `aaffb87` built on GitHub's runner gave a
+`build/npkc` of `3c05818c…` where this machine gives `a3b0dadc…`, while
+`build/npkrt.o` is `c9ddbcff…` on both. Nothing the compiler claimed is
+contradicted — BUILD_REFERENCE §5 says the same inputs, the tools included,
+give the same bytes, and D-204's pin is the VERSION 20.1.2 asked of the
+tools — but the sentence had been read as a claim about builds of one commit
+anywhere, and a version is not a binary: two builds of 20.1.2 (this
+machine's Ubuntu `1:20.1.2-0ubuntu1~24.04.3`, the runner's apt source)
+differ in distribution patches and configure-time defaults, and `repro`
+measures one machine (working directory, `llc` twice, absolute site rows).
+**The decision.** (1) **The pin stays a version.** A tool-binary digest in
+`[toolchain]` would refuse every machine but one, for a property that belongs
+to the toolchain and not to the compiler; the LLVM tools' OUTPUT is what the
+checks hold — `repro`, the fixpoint, the zero-dependency scan on the object,
+and the translation validation the 1.6 plan names — and the evidence campaign
+attaches to the emitted IR (D-233), not to the object. This is the deliberate
+asymmetry with z3, whose binary IS digest-pinned (D-218.1): the solver's
+output is a VERDICT the tree commits and must re-decide identically, so its
+identity must be the binary's; the toolchain's output is checked bytes. (2)
+**The compiler's emission is the cross-machine identity claim.**
+`build/npkc.ll` — same source, same committed snapshot — is the same text on
+any machine (D-078, D-236: no path, time, host or environment value reaches
+it), and a difference THERE, between any two machines, is a compiler defect to
+report with the two files. The object's and the binary's identity is per
+toolchain build. (3) **The ladder reports its digests.** Every `npkg` ladder
+run — `build`, `test`, `verify` alike — prints the SHA-256 (`lib/nhash.npk`,
+the project's one hash) and byte count of each intermediate it produced
+(`builder.o`, `builder`, `npkrt.o`, `npkc.ll`, `npkc.o`, `npkc`, and
+`npkc.opt.ll` when `[build] opt-level` is 2), so the first digest that differs
+between two machines names the stage; the harness's `parity` stage
+cross-checks the printed lines against an independent SHA-256 of the same
+files, so the report cannot name the wrong file. (4) **Every pin notice
+carries the emission's digest** beside the binary's; the emission's is the
+one a consumer on another machine can expect to reproduce. (5) **The first
+cross-machine comparison of `npkc.ll`** — the workbench's runner against this
+machine — is the measurement that decides whether a compiler item exists at
+all; nothing is opened on the binary's difference alone. Mechanics at 1.5.2g.
