@@ -17069,3 +17069,15 @@ at exit, and nobody should "fix" a `Vec` that traps. Not decided here, and
 recorded as its own question if it ever matters: drops with SEMANTICS at a
 normal `exit` (a buffered writer's flush, an `OwnedFd`'s close) — today they
 do not run, exactly as at a crash, and the kernel closes the descriptors.
+
+> **LANDED (1.5.2e step 1, 2026-09-05).** As written: the `alloc_managed` row
+> (`**Prelude-only**`, generated into `builtin_prelude_only`; the hand-written
+> declare in `emit_runtime_declares` retired for the table's), `type_call`'s
+> refusal from any module but the prelude (TYPE-054), `list_init` and
+> `list_reserve` on it, `ralloc` untouched (the floor's move paths allocate
+> with the old block's role, measured). `list_in_main.npk`: a `List<string>`
+> grown past its capacity and a `Holder<string>` alive in `main` at `exit 0`
+> exit 0 where every compiler before exited 94; `prelude_only_builtin.npk`:
+> the refusal. The compiler, `npkg` and the tools use no `alloc_managed`
+> outside the prelude; every List, derive, dyn and generic program keeps its
+> exit; `nitpick.obligations` did not move.

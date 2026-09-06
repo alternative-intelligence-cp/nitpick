@@ -778,8 +778,17 @@ emitted. Found writing its test and recorded as **S-39** (the user): an owning
 `List<T>` local alive in `main` at `exit 0` is a `WildLeak` by construction --
 `exit` runs joins and defers and no drops (D-183's amendment), and a List's
 buffer is the one managed storage D-151 counts. `nitpick.obligations` never
-moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
-the map.
+moved. **1.5.2e IS COMPLETE (2026-09-05; `meta/roadmap/1.5/1.5.2e.md`; three
+landings under full harnesses).** S-39 ratified as **D-263**: the prelude's
+`List<T>` stores through `alloc_managed`, the managed heap's untracked entry,
+PRELUDE-ONLY by the reference's `**Prelude-only**` marker (generated into
+`builtin_prelude_only`; TYPE-054 from any other module, because a hand-written
+`wild` container relies on D-151's count as its enforcement of an unpaired
+free), `ralloc` keeping a block's role — a `List` alive in `main` at `exit 0`
+exits 0 where it exited 94, and the exit path stays free of the drop walk as
+D-183 decided. DEF-22 (the workbench's O-N18): `.len` on a fixed-size array
+lowers to the constant its type carries. **Next: 1.5.3 (contracts live).**
+1.5.4b (the remaining theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1017,6 +1026,11 @@ that carried them retired at the cycle close):
   cases (compiled with the builder by design) are not asked. An instrument that
   counts sites (`llvm.assume` per discharged row) counts only the functions the
   emission holds.
+- **`exit` runs joins and defers and no drops** (D-183's amendment, 1.4.4): an
+  owning local of `main` is never dropped by a program that exits, so a
+  program test with one in `main` measures the storage's REGIME under D-151,
+  not the drop (D-263 moved the prelude's `List` buffer to managed storage for
+  exactly that). Put a drop's behaviour under test in a function that RETURNS.
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open

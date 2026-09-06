@@ -35,6 +35,17 @@ measured ×3.0) pin it.
 
 ### 1.1b `List<T>` (D-247, 1.5.1b step 5)
 
+> **Its buffer is managed storage (D-263, 1.5.2e).** `list_init` and
+> `list_reserve` allocate through `alloc_managed`, the heap's UNTRACKED entry
+> (the same one a `dyn` cell and a channel's ring use), and `ralloc` keeps a
+> block's role, so a grown list stays managed and the generated drop frees it
+> with `dalloc`. Until 1.5.2e the buffer was `alloc`'s, the tracked entry, and a
+> `List` alive in `main` at `exit 0` — where `exit` runs joins and defers and no
+> drops — was the one managed value D-151's exit check counted, exit 94
+> `WildLeak`. `alloc_managed` is the PRELUDE's own (TYPE-054 elsewhere): a
+> hand-written `wild` container relies on D-151's count as its enforcement of an
+> unpaired free, and the count stays for every `wild` block.
+
 `List<T>` — `{ items: wild T->; count; cap }`, the compiler's own growable
 collection — is **compiler-known and owning**: its generated drop releases the
 `count` elements through `T`'s drop where `T` owns and hands the block back, a
@@ -176,6 +187,15 @@ pointer is a trap, never a wild load. The heap is single-threaded at this
 rung; the lock discipline lands with 1.1's executor work.
 
 ### The `<wild-live>` registry and the exit-time check (0.10.1, D-151)
+
+> **What the check counts, and what it does not (D-263, 1.5.2e).** Every block
+> from `alloc`, `aalloc`, `calloc` and a `ralloc` of one — the `wild` regime,
+> whose unpaired free is the author's — and never managed storage: a string's
+> body, a `dyn` cell, a channel's ring, and since 1.5.2e a `List<T>`'s buffer
+> (`alloc_managed`, the prelude's own entry). `exit` runs joins and defers and
+> no drops (D-183's amendment), so an owning local of `main` is never dropped
+> by a program that exits; managed storage is the kernel's at exit, and the
+> check says nothing about it.
 
 The allocator's own tables ARE the live-set — no second bookkeeping
 structure exists to drift from the first. A **wild** allocation is what the

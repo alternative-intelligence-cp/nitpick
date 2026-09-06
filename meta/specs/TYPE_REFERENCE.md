@@ -908,6 +908,11 @@ access:
   %val = load i32, ptr %elem_ptr
 ```
 
+`arr.len` is the count the type carries — an `int64` constant, no load
+(DEF-22, 1.5.2e: the checker typed it since the array kind existed and the
+emitter had no arm for it, so a local `uint8[20]` asking its length was an
+internal-defect refusal where a slice asking the same compiled).
+
 ### 9.2.1 Slices (Unsized Arrays)
 
 `T[]` is a **slice** — a non-owning view of contiguous elements (D-070).
