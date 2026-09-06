@@ -908,10 +908,11 @@ func:emit_runtime_declares = NIL(IrWriter->:w) never fails {
     drop irw_raw(w, "declare void @llvm.assume(i1)");
     // The `dyn` CELL (D-183, 1.2.4): a coercion moves the concrete value
     // into a managed heap cell the `dyn` owns — the data pointer must
-    // outlive the frame that built it, which an alloca cannot. Not a
-    // builtin a program may call; the generated dyn drop hands the cell
-    // back through `npk_dalloc` after calling vtable slot 0.
-    drop irw_raw(w, "declare ptr @npk_alloc_managed(i64)");
+    // outlive the frame that built it, which an alloca cannot. The generated
+    // dyn drop hands the cell back through `npk_dalloc` after calling vtable
+    // slot 0. Its allocator, `@npk_alloc_managed`, is the builtin
+    // `alloc_managed` since 1.5.2e (D-263, the prelude's own) and is declared
+    // by the generated table above; the hand-written line it had here is gone.
     // The origin chain's stamps (D-179, 1.1.6): not builtins a program may
     // call — `fail` resets, `relay` and `?!` push. Declared unconditionally,
     // like the trap they feed.

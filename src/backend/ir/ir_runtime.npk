@@ -60,6 +60,10 @@ pub func:rt_sig = RtSig(string:name) never fails {
         pass (raw rt("@npk_alloc", "ptr", false, "", 1i32,
                      "i64", "", "", ""));
     }
+    if (raw string_eq(name, "alloc_managed")) {
+        pass (raw rt("@npk_alloc_managed", "ptr", false, "", 1i32,
+                     "i64", "", "", ""));
+    }
     if (raw string_eq(name, "arena_alloc")) {
         pass (raw rt("@npk_arena_alloc", "{ i64, i32 }", false, "", 2i32,
                      "ptr", "i64", "", ""));
@@ -243,54 +247,55 @@ pub func:rt_sig = RtSig(string:name) never fails {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER -- the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() never fails { pass 46i32; };
+pub func:rt_count = int32() never fails { pass 47i32; };
 
 pub func:rt_name_at = string(int32:i) never fails {
     if (i == 0i32) { pass "aalloc"; }
     if (i == 1i32) { pass "alloc"; }
-    if (i == 2i32) { pass "arena_alloc"; }
-    if (i == 3i32) { pass "arena_at"; }
-    if (i == 4i32) { pass "arena_destroy"; }
-    if (i == 5i32) { pass "arena_free"; }
-    if (i == 6i32) { pass "arena_make"; }
-    if (i == 7i32) { pass "arena_reset"; }
-    if (i == 8i32) { pass "buffer_new"; }
-    if (i == 9i32) { pass "calloc"; }
-    if (i == 10i32) { pass "chain_depth"; }
-    if (i == 11i32) { pass "chain_site"; }
-    if (i == 12i32) { pass "clone_exec"; }
-    if (i == 13i32) { pass "close"; }
-    if (i == 14i32) { pass "dalloc"; }
-    if (i == 15i32) { pass "driver_retire"; }
-    if (i == 16i32) { pass "environ"; }
-    if (i == 17i32) { pass "exit"; }
-    if (i == 18i32) { pass "int_to_string"; }
-    if (i == 19i32) { pass "mcpy"; }
-    if (i == 20i32) { pass "memset"; }
-    if (i == 21i32) { pass "mmov"; }
-    if (i == 22i32) { pass "mono_now"; }
-    if (i == 23i32) { pass "open"; }
-    if (i == 24i32) { pass "path_exists"; }
-    if (i == 25i32) { pass "ralloc"; }
-    if (i == 26i32) { pass "read"; }
-    if (i == 27i32) { pass "read_file"; }
-    if (i == 28i32) { pass "read_stdin"; }
-    if (i == 29i32) { pass "sarena_bump"; }
-    if (i == 30i32) { pass "sarena_destroy"; }
-    if (i == 31i32) { pass "sarena_slot"; }
-    if (i == 32i32) { pass "shared_arena_make"; }
-    if (i == 33i32) { pass "string_concat"; }
-    if (i == 34i32) { pass "string_equals"; }
-    if (i == 35i32) { pass "string_from_bytes"; }
-    if (i == 36i32) { pass "string_slice"; }
-    if (i == 37i32) { pass "to_cstring"; }
-    if (i == 38i32) { pass "wild_live_count"; }
-    if (i == 39i32) { pass "wild_release_all"; }
-    if (i == 40i32) { pass "wildx_alloc"; }
-    if (i == 41i32) { pass "wildx_call"; }
-    if (i == 42i32) { pass "wildx_free"; }
-    if (i == 43i32) { pass "wildx_seal"; }
-    if (i == 44i32) { pass "write"; }
+    if (i == 2i32) { pass "alloc_managed"; }
+    if (i == 3i32) { pass "arena_alloc"; }
+    if (i == 4i32) { pass "arena_at"; }
+    if (i == 5i32) { pass "arena_destroy"; }
+    if (i == 6i32) { pass "arena_free"; }
+    if (i == 7i32) { pass "arena_make"; }
+    if (i == 8i32) { pass "arena_reset"; }
+    if (i == 9i32) { pass "buffer_new"; }
+    if (i == 10i32) { pass "calloc"; }
+    if (i == 11i32) { pass "chain_depth"; }
+    if (i == 12i32) { pass "chain_site"; }
+    if (i == 13i32) { pass "clone_exec"; }
+    if (i == 14i32) { pass "close"; }
+    if (i == 15i32) { pass "dalloc"; }
+    if (i == 16i32) { pass "driver_retire"; }
+    if (i == 17i32) { pass "environ"; }
+    if (i == 18i32) { pass "exit"; }
+    if (i == 19i32) { pass "int_to_string"; }
+    if (i == 20i32) { pass "mcpy"; }
+    if (i == 21i32) { pass "memset"; }
+    if (i == 22i32) { pass "mmov"; }
+    if (i == 23i32) { pass "mono_now"; }
+    if (i == 24i32) { pass "open"; }
+    if (i == 25i32) { pass "path_exists"; }
+    if (i == 26i32) { pass "ralloc"; }
+    if (i == 27i32) { pass "read"; }
+    if (i == 28i32) { pass "read_file"; }
+    if (i == 29i32) { pass "read_stdin"; }
+    if (i == 30i32) { pass "sarena_bump"; }
+    if (i == 31i32) { pass "sarena_destroy"; }
+    if (i == 32i32) { pass "sarena_slot"; }
+    if (i == 33i32) { pass "shared_arena_make"; }
+    if (i == 34i32) { pass "string_concat"; }
+    if (i == 35i32) { pass "string_equals"; }
+    if (i == 36i32) { pass "string_from_bytes"; }
+    if (i == 37i32) { pass "string_slice"; }
+    if (i == 38i32) { pass "to_cstring"; }
+    if (i == 39i32) { pass "wild_live_count"; }
+    if (i == 40i32) { pass "wild_release_all"; }
+    if (i == 41i32) { pass "wildx_alloc"; }
+    if (i == 42i32) { pass "wildx_call"; }
+    if (i == 43i32) { pass "wildx_free"; }
+    if (i == 44i32) { pass "wildx_seal"; }
+    if (i == 45i32) { pass "write"; }
     pass "write_file";
 };
 

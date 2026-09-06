@@ -1,0 +1,43 @@
+// expect-exit: 0
+//
+// A `List<T>` ALIVE IN `main` AT `exit 0` IS NOT A LEAK (D-263, 1.5.2e). `exit`
+// runs joins and defers and no drops (D-183's amendment, 1.4.4's rider), so an
+// owning local of `main` is never dropped by a program that exits -- which is
+// what every managed value already lives with, its storage being the kernel's
+// at exit. A `List`'s buffer was the one managed storage D-151 counted, because
+// the prelude spelled it `alloc` (the tracked entry): this program exited 94,
+// `WildLeak`, under every compiler before 1.5.2e, and every `List` test kept
+// its list inside a function that returns. The buffer comes from
+// `alloc_managed` now, the untracked entry; a grown list keeps the role
+// through `ralloc`; a struct holding a list is the same story. Exit 0, so
+// D-151 asserts exactly what it always did about `wild` blocks.
+mod:list_in_main;
+error:E9;
+
+struct:Holder<T> = { List<T>:items; };
+
+func:main = int32(cstring[]:_~argv) {
+    List<string>:l = raw list_init::<string>(2i64);
+    for (int32:i in 0i32...10i32) {
+        drop list_push(@l, string_concat("item-", int_to_string(i => int64)));
+    }
+    if (l.count != 10i64) { exit 2i32; }
+    if (l.cap < 10i64) { exit 3i32; }
+    Holder<string>:h = Holder{ items: raw list_init::<string>(4i64) };
+    drop list_push(@h.items, string_concat("ab", "cd"));
+    if (h.items.count != 1i64) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (IntOverflow) { exit 98i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

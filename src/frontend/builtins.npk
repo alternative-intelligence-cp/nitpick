@@ -19,6 +19,7 @@ use "./intern.npk".*;
 pub func:is_builtin_name = bool(string:name) never fails {
     if (raw string_eq(name, "aalloc")) { pass true; }
     if (raw string_eq(name, "alloc")) { pass true; }
+    if (raw string_eq(name, "alloc_managed")) { pass true; }
     if (raw string_eq(name, "arena_make")) { pass true; }
     if (raw string_eq(name, "atomic_from_ptr")) { pass true; }
     if (raw string_eq(name, "barrier")) { pass true; }
@@ -82,6 +83,7 @@ pub func:is_builtin_name = bool(string:name) never fails {
 pub func:builtin_never_fails = bool(string:name) never fails {
     if (raw string_eq(name, "aalloc")) { pass true; }
     if (raw string_eq(name, "alloc")) { pass true; }
+    if (raw string_eq(name, "alloc_managed")) { pass true; }
     if (raw string_eq(name, "arena_make")) { pass true; }
     if (raw string_eq(name, "atomic_from_ptr")) { pass true; }
     if (raw string_eq(name, "buffer_new")) { pass true; }
@@ -134,6 +136,14 @@ pub func:builtin_pure = bool(string:name) never fails {
     pass false;
 };
 
+// Which bare-name builtins the PRELUDE alone may call (D-263, 1.5.2e) -- the
+// reference's `**Prelude-only**` marker, generated; `type_call` refuses a
+// call from any other module by name (TYPE-054).
+pub func:builtin_prelude_only = bool(string:name) never fails {
+    if (raw string_eq(name, "alloc_managed")) { pass true; }
+    pass false;
+};
+
 // Which argument a bare-name builtin's result VIEWS (D-249, 1.5.1b step 2)
 // -- the reference's Views column, generated: 0 for none, else the 1-based
 // index of the argument whose storage the result aliases. The escape
@@ -166,6 +176,7 @@ pub func:builtin_sig_special = bool(string:name) never fails {
 pub func:builtin_sig_count = int32(string:name) never fails {
     if (raw string_eq(name, "aalloc")) { pass 2i32; }
     if (raw string_eq(name, "alloc")) { pass 1i32; }
+    if (raw string_eq(name, "alloc_managed")) { pass 1i32; }
     if (raw string_eq(name, "buffer_new")) { pass 1i32; }
     if (raw string_eq(name, "calloc")) { pass 2i32; }
     if (raw string_eq(name, "chain_site")) { pass 1i32; }
@@ -216,6 +227,9 @@ pub func:builtin_sig_param = string(string:name, int32:i) never fails {
         if (i == 1i32) { pass "int64"; }
     }
     if (raw string_eq(name, "alloc")) {
+        if (i == 0i32) { pass "int64"; }
+    }
+    if (raw string_eq(name, "alloc_managed")) {
         if (i == 0i32) { pass "int64"; }
     }
     if (raw string_eq(name, "buffer_new")) {
@@ -373,6 +387,7 @@ pub func:builtin_sig_param_move = bool(string:name, int32:i) never fails {
 pub func:builtin_sig_ret = string(string:name) never fails {
     if (raw string_eq(name, "aalloc")) { pass "wild int8->"; }
     if (raw string_eq(name, "alloc")) { pass "wild int8->"; }
+    if (raw string_eq(name, "alloc_managed")) { pass "wild int8->"; }
     if (raw string_eq(name, "buffer_new")) { pass "buffer"; }
     if (raw string_eq(name, "calloc")) { pass "wild int8->"; }
     if (raw string_eq(name, "chain_depth")) { pass "int32"; }
@@ -444,6 +459,7 @@ pub func:is_hash_builtin = bool(string:name) never fails {
 pub func:builtin_returns_wild = bool(string:name) never fails {
     if (raw string_eq(name, "aalloc")) { pass true; }
     if (raw string_eq(name, "alloc")) { pass true; }
+    if (raw string_eq(name, "alloc_managed")) { pass true; }
     if (raw string_eq(name, "calloc")) { pass true; }
     if (raw string_eq(name, "mcpy")) { pass true; }
     if (raw string_eq(name, "memset")) { pass true; }

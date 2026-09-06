@@ -2087,7 +2087,11 @@ pub struct:List<T> = {
 pub func:list_init<T> = List<T>(int64:cap) never fails {
     int64:n = cap;
     if (n < 1i64) { n = 1i64; }
-    wild int8->:mem = alloc(n * #size_of<T>());
+    // MANAGED STORAGE (D-263, 1.5.2e): the buffer is what the generated drop
+    // frees, so it comes from the heap's untracked entry -- a `List` alive in
+    // `main` at `exit 0` is not a leak D-151 reports, exactly as a string is
+    // not. `ralloc` keeps the role when the list grows.
+    wild int8->:mem = alloc_managed(n * #size_of<T>());
     pass List{ items: mem =>! wild T->, count: 0i64, cap: n };
 };
 
@@ -2108,7 +2112,7 @@ pub func:list_reserve<T> = NIL(List<T>->:l, int64:need) never fails {
     if (l.cap == 0i64) {
         int64:n0 = need;
         if (n0 < 1i64) { n0 = 1i64; }
-        wild int8->:fresh = alloc(n0 * #size_of<T>());
+        wild int8->:fresh = alloc_managed(n0 * #size_of<T>());   // (D-263)
         l.items = fresh =>! wild T->;
         l.cap = n0;
         l.count = 0i64;

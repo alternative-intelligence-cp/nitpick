@@ -964,6 +964,20 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     "this builtin is marked SPECIAL in the generated signature table and has no bespoke typing arm — the generator's list and `type_call` disagree (D-201)",
                     n.span));
             }
+            // A PRELUDE-ONLY BUILTIN (D-263, 1.5.2e): the reference's marker,
+            // generated into `builtin_prelude_only`; a call from any module but
+            // the prelude is refused by name, because what it hands out is the
+            // storage D-151 does not count, and only a compiler-known owner may
+            // hold that.
+            if (raw builtin_prelude_only(raw callee_builtin_name(e, n))) {
+                if ((raw module_scope_of(e, e.scope)) != e.tab.prelude_scope) {
+                    drop type_args_only(e, start, count);
+                    string:p1 = string_concat("`", raw callee_builtin_name(e, n));
+                    pass (raw te_error(e, raw TYPE_BUILTIN_ARGS(),
+                        string_concat(p1, "` is the prelude's own (D-263): it hands out storage the exit leak check does not count, which only a compiler-known owner may hold -- a container of your own spells `alloc`, and its unpaired free traps at exit as it should"),
+                        n.span));
+                }
+            }
             pass (raw type_builtin_regular(e, id, n,
                       raw callee_builtin_name(e, n), start, count));
         }
@@ -2296,6 +2310,19 @@ func:builtin_arg_fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
 // function's window. `check_args` itself cannot serve: it reads a func TYPE and
 // wraps its answer in `Result` unconditionally, and a never-fails builtin's
 // call is the BARE value (D-201 §4).
+// THE MODULE SCOPE A SCOPE SITS IN: walked up through the parents to the first
+// `SCOPE_MODULE` (the pattern `symtab_lookup` uses), 0 if none.
+func:module_scope_of = int32(ExprTyper->:e, int32:scope) never fails {
+    int32:cur = scope;
+    int32:fuel = 4096i32;
+    while ((cur != 0i32) && (fuel > 0i32)) {
+        if ((raw scope_kind(e.tab, cur)) == (raw SCOPE_MODULE())) { pass cur; }
+        cur = raw scope_parent(e.tab, cur);
+        fuel = fuel - 1i32;
+    }
+    pass 0i32;
+};
+
 func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                                   string:name, int32:start,
                                   int32:count) never fails {

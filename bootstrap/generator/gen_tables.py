@@ -176,11 +176,13 @@ class Param(object):
 
 
 class Row(object):
-    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure", "views")
+    __slots__ = ("name", "params", "ret", "never_fails", "special", "abi", "pure", "views", "prelude_only")
 
-    def __init__(self, name, params, ret, never_fails, special, abi, pure=False, views=0):
+    def __init__(self, name, params, ret, never_fails, special, abi, pure=False, views=0,
+                 prelude_only=False):
         self.pure = pure
         self.views = views
+        self.prelude_only = prelude_only
         self.name, self.params, self.ret = name, params, ret
         self.never_fails, self.special, self.abi = never_fails, special, abi
 
@@ -357,8 +359,14 @@ def builtin_rows(path):
                                 "" if special else "not "))
         if name in rows:
             raise SystemExit("BUILTIN_REFERENCE.md: %s has two rows" % where)
+        # THE PRELUDE-ONLY MARKER (1.5.2e, D-263): a row whose description
+        # carries `**Prelude-only**` is a builtin the PRELUDE alone may call;
+        # `type_call` refuses it from any other module (TYPE-054). Generated
+        # into `builtin_prelude_only` -- a table fact, never a name list in the
+        # checker.
         rows[name] = Row(name, params, ret, never, special,
-                         parse_abi(cells[3], where), purity == "pure", views_n)
+                         parse_abi(cells[3], where), purity == "pure", views_n,
+                         "**Prelude-only**" in cells[3])
     missing = sorted(SPECIALS - set(rows))
     if missing:
         raise SystemExit("the generator's SPECIALS names builtins the reference "
@@ -1276,6 +1284,20 @@ pub func:is_keyword = bool(string:text) {
     bl.append("// (TYPE-060) admit these and refuse every other builtin by name.")
     bl.append("pub func:builtin_pure = bool(string:name) {")
     for n in pu:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
+    # THE PRELUDE-ONLY ROWS (1.5.2e, D-263): the reference's `**Prelude-only**`
+    # marker, generated. `type_call` refuses such a builtin from any module but
+    # the prelude (TYPE-054): the storage `alloc_managed` hands out is what
+    # D-151 does not count, and only a compiler-known owner may hold it.
+    po = [n for n in names if rows[n].prelude_only]
+    bl.append("")
+    bl.append("// Which bare-name builtins the PRELUDE alone may call (D-263, 1.5.2e) -- the")
+    bl.append("// reference's `**Prelude-only**` marker, generated; `type_call` refuses a")
+    bl.append("// call from any other module by name (TYPE-054).")
+    bl.append("pub func:builtin_prelude_only = bool(string:name) {")
+    for n in po:
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")

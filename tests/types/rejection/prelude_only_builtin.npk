@@ -1,0 +1,16 @@
+// A PRELUDE-ONLY BUILTIN REFUSES FROM ANY OTHER MODULE (D-263, 1.5.2e).
+// `alloc_managed` hands out storage D-151's exit check does not count, which
+// only a compiler-known owner -- the prelude's `List<T>` -- may hold: a
+// container of your own spells `alloc`, and its unpaired free traps at exit,
+// which is the enforcement it relies on. The marker is the reference's
+// (`**Prelude-only**`), generated into `builtin_prelude_only`; the refusal is
+// the builtin's own call rule, TYPE-054.
+mod:prelude_only_builtin;
+
+func:main = int32(cstring[]:_~argv) {
+    // expect-error: NITPICK-TYPE-054
+    wild int8->:p = alloc_managed(16i64);
+    dalloc(p);
+    exit 0i32;
+};
+func:failsafe = int32(Error:_~e) { exit 1i32; };
