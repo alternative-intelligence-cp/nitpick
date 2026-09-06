@@ -377,11 +377,16 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 // int/bool and the term is encodable; opaque (range axiom only) when the
 // term is not; symbol-less when the type is neither -- or when the name is
 // ADDRESS-TAKEN (DEF-14: an escaped name is never named, so every read of it
-// is a fresh opaque term and no fact about it can outlive a call).
-func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule) never fails {
+// is a fresh opaque term and no fact about it can outlive a call). A
+// SUBSTITUTION binding (`enc_under`: a callee's parameter bound to an
+// argument term already computed) never consults the escaped set -- the set
+// is the CALLER's names, and a callee parameter that happened to share one
+// bound unnamed and left its call-site row `open` (DEF-27, 1.5.4 step 0).
+func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
+                       bool:substitution) never fails {
     int32:sym = 0i32 - 1i32;
     bool:named = (raw is_int(e, ty)) || (raw is_bool(e, ty));
-    if (raw is_escaped(e, name)) { named = false; }
+    if ((!substitution) && (raw is_escaped(e, name))) { named = false; }
     if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
         sym = raw sym_new(e, nm, ty);
@@ -974,7 +979,7 @@ func:enc_under = Term(Encoder->:e, List<int32>:names, List<int32>:types, List<Te
                       DeclNode:d, int32:kind, bool:partial, Term:result_term) never fails {
     int64:mark = raw scope_mark(e);
     for (int64:i in 0i64...names.count) {
-        drop bind_define(e, names.items[i], types.items[i], raw term_copy(terms.items[i]), 0i32);
+        drop bind_define(e, names.items[i], types.items[i], raw term_copy(terms.items[i]), 0i32, true);
     }
     Term:saved_res = raw term_copy(e.result);
     e.result = raw term_copy(result_term);
@@ -1156,6 +1161,14 @@ func:loop_has_break = bool(Encoder->:e, StmtId:sid, int32:label, bool:nested, in
     if (raw stmt_is_none(sid)) { pass false; }
     if (fuel <= 0i32) { pass true; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    // A `break` INSIDE A PICK EXPRESSION'S ARM (DEF-26, 1.5.4 step 0): the
+    // arms are statements inside an expression, found through the one
+    // enumeration of a statement's expressions.
+    List<int32>:xs = raw list_init::<int32>(4i64);
+    drop stmt_expr_ids(e.ast, s, @xs);
+    for (int64:xi in 0i64...xs.count) {
+        if (raw expr_has_break(e, ExprId{ index: xs.items[xi] }, label, nested, fuel - 1i32)) { pass true; }
+    }
     if (s.kind == StmtKind.StmtBreakStmt) {
         if ((raw stmt_label(s)) == 0i32) { pass (!nested); }
         pass ((raw stmt_label(s)) == label);
@@ -1187,6 +1200,27 @@ func:loop_has_break = bool(Encoder->:e, StmtId:sid, int32:label, bool:nested, in
             if (raw loop_has_break(e, raw arm_body(arm), label, nested, fuel - 1i32)) { pass true; }
         }
         pass false;
+    }
+    pass false;
+};
+
+// The `break` finder's descent into an EXPRESSION: a pick expression's arms
+// are statements (DEF-26); every other kind is searched for nested ones.
+func:expr_has_break = bool(Encoder->:e, ExprId:id, int32:label, bool:nested, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprPickExpr) {
+        for (int32:a in 0i32...n.c) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, n.b, a));
+            if (raw expr_has_break(e, raw arm_guard(arm), label, nested, fuel - 1i32)) { pass true; }
+            if (raw loop_has_break(e, raw arm_body(arm), label, nested, fuel - 1i32)) { pass true; }
+        }
+    }
+    List<int32>:kids = raw list_init::<int32>(4i64);
+    drop expr_children(e, n, @kids);
+    for (int64:i in 0i64...kids.count) {
+        if (raw expr_has_break(e, ExprId{ index: kids.items[i] }, label, nested, fuel - 1i32)) { pass true; }
     }
     pass false;
 };
@@ -1605,6 +1639,18 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop walk_children(e, n);
         pass (raw term_opaque(e, ty));
     }
+    // A PICK EXPRESSION (DEF-26, 1.5.4 step 0): the selector a site, every
+    // arm walked as the statement form's (their guard sites, their bodies'
+    // sites and definitions, in regions of their own), the names the arms
+    // assign invalidated after; the value opaque until 1.5.4 step 2.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        Term:psel = raw enc_expr(e, ExprId{ index: n.a });
+        drop walk_pick_arms(e, n.b, n.c);
+        List<int32>:pa = raw list_init::<int32>(4i64);
+        drop collect_assigned_expr(e, id, @pa, 64i32);
+        drop invalidate(e, pa);
+        pass (raw term_opaque(e, ty));
+    }
     // Everything else: the value is opaque, the children are still sites.
     drop walk_children(e, n);
     pass (raw term_opaque(e, ty));
@@ -1617,6 +1663,15 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
 func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    // THE STATEMENT'S EXPRESSIONS FIRST (DEF-26, 1.5.4 step 0): a pick
+    // EXPRESSION's arms are statements that assign, and they sit inside an
+    // initialiser, a right-hand side, an operand -- `stmt_expr_ids` is the
+    // one enumeration of where.
+    List<int32>:xs = raw list_init::<int32>(4i64);
+    drop stmt_expr_ids(e.ast, s, @xs);
+    for (int64:xi in 0i64...xs.count) {
+        drop collect_assigned_expr(e, ExprId{ index: xs.items[xi] }, out, 64i32);
+    }
     if (s.kind == StmtKind.StmtAssignStmt) {
         ExprNode:t = raw ast_expr(e.ast, raw stmt_target(s));
         if (t.kind == ExprKind.ExprIdentifierExpr) { drop list_push(out, t.payload =>! int32); }
@@ -1659,6 +1714,27 @@ func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out) never fa
     pass NIL;
 };
 
+// A PICK EXPRESSION'S ARMS assign like a statement's (DEF-26): every arm's
+// body collected, its guard and the selector searched for nested ones.
+func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprPickExpr) {
+        for (int32:a in 0i32...n.c) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, n.b, a));
+            drop collect_assigned_expr(e, raw arm_guard(arm), out, fuel - 1i32);
+            drop collect_assigned(e, raw arm_body(arm), out);
+        }
+    }
+    List<int32>:kids = raw list_init::<int32>(4i64);
+    drop expr_children(e, n, @kids);
+    for (int64:i in 0i64...kids.count) {
+        drop collect_assigned_expr(e, ExprId{ index: kids.items[i] }, out, fuel - 1i32);
+    }
+    pass NIL;
+};
+
 // The root name of a place (`x`, `x.f`, `x[i]`, …), or 0.
 func:place_root_name = int32(Encoder->:e, ExprId:id) never fails {
     ExprId:cur = id;
@@ -1687,6 +1763,14 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
         int32:root = raw place_root_name(e, raw expr_operand(n));
         if (root != 0i32) { drop list_push(@e.escaped, root); }
     }
+    // A PICK EXPRESSION's arms are statements (DEF-26): walked as a statement's.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        for (int32:a in 0i32...n.c) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, n.b, a));
+            drop collect_escaped_expr(e, raw arm_guard(arm));
+            drop collect_escaped(e, raw arm_body(arm));
+        }
+    }
     List<int32>:kids = raw list_init::<int32>(4i64);
     drop expr_children(e, n, @kids);
     for (int64:i in 0i64...kids.count) { drop collect_escaped_expr(e, ExprId{ index: kids.items[i] }); }
@@ -1696,65 +1780,42 @@ func:collect_escaped_expr = NIL(Encoder->:e, ExprId:id) never fails {
 func:collect_escaped = NIL(Encoder->:e, StmtId:sid) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    // THE EXPRESSIONS THROUGH THE ONE ENUMERATION (DEF-26), then the bodies.
+    List<int32>:xs = raw list_init::<int32>(4i64);
+    drop stmt_expr_ids(e.ast, s, @xs);
+    for (int64:xi in 0i64...xs.count) { drop collect_escaped_expr(e, ExprId{ index: xs.items[xi] }); }
     if (s.kind == StmtKind.StmtBlockStmt) {
         for (int32:i in 0i32...(raw stmt_list_count(s))) {
             drop collect_escaped(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) });
         }
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtVarDeclStmt) { drop collect_escaped_expr(e, raw stmt_decl_init(e.ast, s)); pass NIL; }
-    if (s.kind == StmtKind.StmtAssignStmt) {
-        drop collect_escaped_expr(e, raw stmt_target(s));
-        drop collect_escaped_expr(e, raw stmt_assigned(s));
-        pass NIL;
-    }
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop collect_escaped_expr(e, raw stmt_cond(s));
         drop collect_escaped(e, raw stmt_then(s));
         drop collect_escaped(e, raw stmt_else(s));
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtWhileStmt) {
-        drop collect_escaped_expr(e, raw stmt_cond(s));
-        drop collect_escaped(e, raw stmt_body(e.ast, s));
-        pass NIL;
-    }
-    if (s.kind == StmtKind.StmtForStmt) {
-        drop collect_escaped_expr(e, raw stmt_for_iter(e.ast, s));
-        drop collect_escaped(e, raw stmt_for_body(e.ast, s));
-        pass NIL;
-    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_escaped(e, raw stmt_body(e.ast, s)); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt) { drop collect_escaped(e, raw stmt_for_body(e.ast, s)); pass NIL; }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
-        for (int32:ai in 0i32...(raw stmt_counted_argc(e.ast, s))) {
-            drop collect_escaped_expr(e, raw stmt_counted_arg(e.ast, s, ai));
-        }
         drop collect_escaped(e, raw stmt_counted_body(s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
-        drop collect_escaped_expr(e, raw stmt_cond(s));
         drop collect_escaped(e, raw stmt_when_body(e.ast, s));
         drop collect_escaped(e, raw stmt_when_then(e.ast, s));
         drop collect_escaped(e, raw stmt_when_end(e.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
-        drop collect_escaped_expr(e, raw pick_selector(s));
         for (int32:a in 0i32...(raw pick_arm_count(s))) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
-            drop collect_escaped_expr(e, raw arm_guard(arm));
             drop collect_escaped(e, raw arm_body(arm));
         }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtDeferStmt) {
         drop collect_escaped(e, StmtId{ index: (raw stmt_target(s)).index });
-        pass NIL;
-    }
-    if (raw stmt_carries_expr(s.kind)) { drop collect_escaped_expr(e, raw stmt_expr(s)); pass NIL; }
-    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
-        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
-        drop collect_escaped_expr(e, raw stmt_operand(s));
         pass NIL;
     }
     pass NIL;
@@ -1775,6 +1836,28 @@ func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;
+    }
+    pass NIL;
+};
+
+// THE ARMS OF A `pick`, EITHER FORM (DEF-26, 1.5.4 step 0): each in a region
+// of its own with its pattern's names bound symbol-less, its guard a site,
+// its body walked, the bindings restored between arms. The statement form
+// had this inline since 1.5.0; the expression form's arms were never walked,
+// so a guard site inside one had no row (P-12 broken) -- one helper, both
+// spellings (1.5.2c's lesson).
+func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count) never fails {
+    List<int32>:snap = raw snapshot(e);
+    for (int32:a in 0i32...count) {
+        StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a));
+        int64:mark = raw scope_mark(e);
+        drop region_enter(e);
+        drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
+        Term:g = raw enc_expr(e, raw arm_guard(arm));
+        drop walk_block(e, raw arm_body(arm));
+        drop region_leave(e);
+        drop scope_release(e, mark);
+        drop restore(e, snap);
     }
     pass NIL;
 };
@@ -1804,7 +1887,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         Term:t = raw term_none();
         if (!(raw expr_is_none(init))) { t = raw enc_expr(e, init); }
         int32:vrule = raw limit_rule_of(e, raw stmt_decl_limit(e.ast, s));
-        drop bind_define(e, name, dty, t, vrule);
+        drop bind_define(e, name, dty, t, vrule, false);
         // THE FIRST WRITE POINT (1.5.2 step 3, D-251, L-7): after the new
         // version and its definition, the site's obligation -- the rule over
         // the version -- and THEN the rule as a hypothesis, so the goal is
@@ -1878,7 +1961,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         int64:mark = raw scope_mark(e);
         DeclNode:bd = raw ast_decl(e.ast, raw stmt_for_binding(s));
         int32:bt = raw subst_emitted_param(e.ctx, raw resolve_type(e.tr, raw param_type(bd), e.scope));
-        drop bind_define(e, raw decl_name(bd), bt, raw term_none(), 0i32);
+        drop bind_define(e, raw decl_name(bd), bt, raw term_none(), 0i32, false);
         drop walk_loop(e, sid, raw stmt_for_invariant(e.ast, s), raw stmt_for_body(e.ast, s),
                        ExprId{ index: 0i32 }, raw stmt_label(s));
         drop scope_release(e, mark);
@@ -1916,18 +1999,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 
     if (s.kind == StmtKind.StmtPickStmt) {
         Term:sel = raw enc_expr(e, raw pick_selector(s));
-        List<int32>:snap = raw snapshot(e);
-        for (int32:a in 0i32...(raw pick_arm_count(s))) {
-            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
-            int64:mark = raw scope_mark(e);
-            drop region_enter(e);
-            drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
-            Term:g = raw enc_expr(e, raw arm_guard(arm));
-            drop walk_block(e, raw arm_body(arm));
-            drop region_leave(e);
-            drop scope_release(e, mark);
-            drop restore(e, snap);
-        }
+        drop walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         List<int32>:pa = raw list_init::<int32>(4i64);
         drop collect_assigned(e, sid, @pa);
         drop invalidate(e, pa);
@@ -2035,7 +2107,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 // name from its first definition.
 pub func:enc_param = NIL(Encoder->:e, int32:name, int32:ty, int32:rule,
                          int32:decl_index) never fails {
-    drop bind_define(e, name, ty, raw term_none(), rule);
+    drop bind_define(e, name, ty, raw term_none(), rule, false);
     // THE THIRD WRITE POINT (1.5.2 step 2, D-251): a limited parameter's
     // check at the callee's entry is a row -- unencoded until step 3.
     if (rule != 0i32) {

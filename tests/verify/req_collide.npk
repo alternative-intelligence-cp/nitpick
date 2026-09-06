@@ -1,0 +1,48 @@
+// expect-exit: 2
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 2
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 14
+//
+// DEF-27 (1.5.4 step 0): a callee's parameter NAME that collides with an
+// address-taken caller local. `main` takes `@x` (so `x` is escaped in `main`
+// and never named, DEF-14) and calls `half(3i32)`, whose parameter is also
+// `x`: the substitution binding `x := 3` consulted the CALLER's escaped set,
+// bound unnamed, and the call-site `requires` row was `open` for a literal
+// argument. A substitution binding is nothing of the caller's, so the row
+// discharges and the call names `half.body`. `half(x)` with the escaped `x`
+// is `open` on the merits (its read is opaque), as is `half`'s entry row.
+mod:req_collide;
+error:E9;
+
+func:bump = int32(int32->:p) never fails { <-p = (<-p) + 1i32; pass 0i32; };
+
+func:half = int32(int32:x) requires x > 0i32 { pass (x / 2i32); };
+
+func:main = int32(cstring[]:argv) {
+    int32:x = argv.len =>! int32;
+    int32:z = raw bump(@x);
+    int32:a = half(3i32) ?! E9;
+    int32:b = half(x) ?! E9;
+    exit (a + b + z);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

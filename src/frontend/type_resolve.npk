@@ -1326,37 +1326,61 @@ func:fold_while = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fue
 // what the form says.
 func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fuel) never fails {
     int32:argc = raw stmt_counted_argc(r.ast, st);
-    if (argc < 1i32) { pass (raw flow_fail()); }
-    if (argc > 3i32) { pass (raw flow_fail()); }
 
+    // THE HEAD BY KIND (D-022; 1.5.4 step 0, DEF-29): `till(limit, step)` and
+    // `loop(start, limit, step)`, exactly what the checker admits (TYPE-068,
+    // DEF-30). Until this step the evaluator read a two-argument head as
+    // `loop(lo, hi)` and a one-argument one as `till(hi)`, so `till(limit,
+    // step)` folded as a loop from `limit` to `step`. A head the checker
+    // refused gives up quietly: one mistake, one report (D-240).
     int64:lo = 0i64;
     int64:hi = 0i64;
     int64:step = 1i64;
-
-    ConstVal:a0 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 0i32), scope, fuel);
-    if (!(raw cv_is_int(a0))) { pass (raw flow_fail()); }
-    if (argc == 1i32) { hi = a0.num; }
-    else {
+    bool:is_till = (st.kind == StmtKind.StmtTillStmt);
+    int32:want = 3i32;
+    if (is_till) { want = 2i32; }
+    if (argc != want) { r.fold_blown = true; pass (raw flow_fail()); }
+    if (is_till) {
+        ConstVal:t0 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 0i32), scope, fuel);
+        if (!(raw cv_is_int(t0))) { pass (raw flow_fail()); }
+        hi = t0.num;
+        ConstVal:t1 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 1i32), scope, fuel);
+        if (!(raw cv_is_int(t1))) { pass (raw flow_fail()); }
+        step = t1.num;
+    } else {
+        ConstVal:a0 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 0i32), scope, fuel);
+        if (!(raw cv_is_int(a0))) { pass (raw flow_fail()); }
         lo = a0.num;
         ConstVal:a1 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 1i32), scope, fuel);
         if (!(raw cv_is_int(a1))) { pass (raw flow_fail()); }
         hi = a1.num;
-        if (argc == 3i32) {
-            ConstVal:a2 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 2i32), scope, fuel);
-            if (!(raw cv_is_int(a2))) { pass (raw flow_fail()); }
-            step = a2.num;
-        }
+        ConstVal:a2 = raw fold_expr(r, raw stmt_counted_arg(r.ast, st, 2i32), scope, fuel);
+        if (!(raw cv_is_int(a2))) { pass (raw flow_fail()); }
+        step = a2.num;
     }
 
-    // A ZERO STEP NEVER ARRIVES. Refused rather than run to the fuel bound, because
-    // the fuel's sentence is "this did not finish" and the sentence this deserves is
-    // narrower than that.
-    if (step == 0i64) {
+    // A NON-POSITIVE STEP NEVER ARRIVES (D-022). Refused rather than run to
+    // the fuel bound, because the fuel's sentence is "this did not finish"
+    // and the sentence this deserves is narrower than that. A LITERAL step
+    // was refused by the checker already (TYPE-068, DEF-28): the fold gives up
+    // quietly, so one mistake has one report (D-240).
+    if (step <= 0i64) {
+        StepLit:sl = raw counted_step_literal(r.ast, st);
+        if (sl.is_lit) { r.fold_blown = true; pass (raw flow_fail()); }
         drop fold_reported(r, raw TYPE_NOT_CONSTANT(),
-            "this compile-time loop has a step of zero, so its counter never reaches its bound",
+            "this compile-time loop's step is not positive, so its counter never reaches its bound (D-022: direction is inferred from the bounds, and the step only sizes the jump)",
             st.span);
         pass (raw flow_fail());
     }
+
+    // DIRECTION IS INFERRED FROM THE BOUNDS (D-022; DEF-29), exactly as the
+    // emitter computes it once at entry: ascending while `$ < limit` when
+    // `start < limit`, descending while `$ > limit` otherwise, `start ==
+    // limit` zero iterations. The evaluator counted by the step's SIGN, so a
+    // descending `loop(10i64, 0i64, 1i64)` folded to nothing where the
+    // runtime runs ten times -- a compile-time value that differed from the
+    // same function's run-time value.
+    bool:asc = (lo < hi);
 
     bool:saved_counting = r.fold_counting;
     int64:saved_counter = r.fold_counter;
@@ -1366,7 +1390,7 @@ func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:f
     int64:i = lo;
     while (left > 0i32) {
         bool:more = (i < hi);
-        if (step < 0i64) { more = (i > hi); }
+        if (!asc) { more = (i > hi); }
         if (!more) {
             r.fold_counting = saved_counting;
             r.fold_counter = saved_counter;
@@ -1384,7 +1408,7 @@ func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:f
             r.fold_counter = saved_counter;
             pass fl;
         }
-        i = i + step;
+        if (asc) { i = i + step; } else { i = i - step; }
         left = left - 1i32;
     }
     r.fold_counting = saved_counting;

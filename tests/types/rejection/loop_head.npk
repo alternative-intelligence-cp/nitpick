@@ -1,0 +1,47 @@
+// expect-error: NITPICK-TYPE-068
+// expect-error: NITPICK-TYPE-068
+// expect-error: NITPICK-TYPE-068
+// expect-error: NITPICK-TYPE-068
+// expect-error: NITPICK-TYPE-068
+//
+// THE COUNTED LOOP'S HEAD (D-022; 1.5.4 step 0, DEF-28 and DEF-30). A step
+// the parser can read must be positive: `till(3i32, 0i32)` compiled and
+// exited 38 (`BadStep`) at run time, although D-022 calls a zero or negative
+// step a compile error. And the head's count was never checked: a
+// two-argument `loop` and a one-argument `till` typed clean and died at the
+// emitter as EMIT-002 with no span. Five refusals; the computed step is the
+// control (it is the runtime guard's, and 1.5.4 step 3's `loop-step` row),
+// and the comptime function's literal zero is reported ONCE -- the
+// evaluator gives up quietly where the checker already spoke (D-240).
+mod:loop_head;
+
+comptime func:frozen = int64(int64:n) {
+    int64:t = 0i64;
+    loop(0i64, n, 0i64) { t = t + 1i64; }
+    pass t;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:acc = 0i32;
+    int32:k = argv.len =>! int32;
+    till(3i32, 0i32) { acc = acc + 1i32; }
+    loop(0i32, 5i32, -1i32) { acc = acc + 1i32; }
+    loop(1i32, 4i32) { acc = acc + 1i32; }
+    till(3i32) { acc = acc + 1i32; }
+    loop(0i32, 5i32, k) { acc = acc + 1i32; }
+    int64:v = comptime(frozen(5i64));
+    exit acc;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (BadStep)        { exit 38i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

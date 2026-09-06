@@ -1,0 +1,59 @@
+// expect-exit: 0
+//
+// DEF-29 (1.5.4 step 0): the compile-time evaluator's counted loops disagreed
+// with D-022 -- direction followed the step's SIGN, so a descending
+// `loop(10i64, 0i64, 1i64)` folded to zero iterations where the runtime runs
+// ten; and a two-argument head was read as `loop(lo, hi)`, so `till(limit,
+// step)` folded as a loop from `limit` to `step`. A comptime function and its
+// run-time twin now agree: the sum down from 10 is 55 either way, and
+// `till(7, 2)` sums 0 + 2 + 4 + 6 = 12 either way.
+mod:comptime_counted;
+
+comptime func:sum_down = int64(int64:a, int64:b) {
+    int64:t = 0i64;
+    loop(a, b, 1i64) { t = t + $; }
+    pass t;
+};
+
+comptime func:sum_till = int64(int64:n) {
+    int64:t = 0i64;
+    till(n, 2i64) { t = t + $; }
+    pass t;
+};
+
+func:rt_down = int64(int64:a, int64:b) never fails {
+    int64:t = 0i64;
+    loop(a, b, 1i64) { t = t + $; }
+    pass t;
+};
+
+func:rt_till = int64(int64:n) never fails {
+    int64:t = 0i64;
+    till(n, 2i64) { t = t + $; }
+    pass t;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:c1 = comptime(sum_down(10i64, 0i64));
+    int64:c2 = comptime(sum_till(7i64));
+    int64:r1 = raw rt_down(10i64, 0i64);
+    int64:r2 = raw rt_till(7i64);
+    if (c1 != 55i64) { exit 1i32; }
+    if (c2 != 12i64) { exit 2i32; }
+    if (r1 != c1) { exit 3i32; }
+    if (r2 != c2) { exit 4i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (BadStep)        { exit 38i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

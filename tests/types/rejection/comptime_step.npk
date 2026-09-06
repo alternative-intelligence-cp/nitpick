@@ -3,22 +3,23 @@
 // A COUNTED LOOP WHOSE COUNTER NEVER MOVES. Refused with its own sentence rather
 // than run to the budget: "this did not finish" is true of it, and so is a narrower
 // thing the compiler can see at a glance — the step is zero, so the bound is never
-// reached however long it runs.
+// reached however long it runs. The step is a PARAMETER here (1.5.4 step 0,
+// DEF-28): a literal zero is the checker's refusal, TYPE-068, before any fold.
 //
 // The general rule is the one D-120 gives for exhaustiveness having three codes: a
 // reader told "budget exceeded" goes looking for a program that is too big, and
 // this one is not.
 mod:comptime_step;
 
-comptime func:never_advances = int64(int64:n) {
+comptime func:never_advances = int64(int64:n, int64:k) {
     int64:total = 0i64;
-    loop(0i64, n, 0i64) {
+    loop(0i64, n, k) {
         total = total + 1i64;
     }
     pass total;
 };
 
 func:main = int32(cstring[]:_~argv) {
-    int64:v = comptime(never_advances(5i64));
+    int64:v = comptime(never_advances(5i64, 0i64));
     exit 0i32;
 };

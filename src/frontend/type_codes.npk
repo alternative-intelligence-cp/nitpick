@@ -395,3 +395,14 @@ pub func:TYPE_VIEW_READ_ONLY = string() never fails { pass "NITPICK-TYPE-066"; }
 // root binding -- an assignment, a `move`, an address, a pointer-receiver
 // call, a stateful operation, a nested `pick (move(…))`.
 pub func:TYPE_PICK_FROZEN = string() never fails { pass "NITPICK-TYPE-067"; };
+// THE COUNTED LOOP'S HEAD (D-022; 1.5.4 step 0, DEF-28 and DEF-30):
+// `loop(start, limit, step)` takes three arguments and `till(limit, step)`
+// two -- the count was never checked, and a two-argument `loop` typed clean,
+// folded under the evaluator's own two-argument reading and died at the
+// emitter as EMIT-002 with no span -- and a step that is a literal, or a
+// unary minus over one, must be POSITIVE: direction is inferred from the
+// bounds, so the step only sizes the jump; a zero step never reaches the
+// bound and a negative one puts the sign in the wrong clause. A computed
+// step is the runtime guard's (`BadStep`) and, from 1.5.4 step 3, the
+// `loop-step` row's. One code, two ways to fail it (TYPE-054's convention).
+pub func:TYPE_LOOP_HEAD = string() never fails { pass "NITPICK-TYPE-068"; };

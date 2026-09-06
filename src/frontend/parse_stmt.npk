@@ -160,6 +160,103 @@ pub func:stmt_counted_arg = ExprId(Ast->:ast, StmtNode:s, int32:i) never fails {
     pass e;
 };
 
+// THE STEP AS THE PARSER READS IT (1.5.4 step 0, DEF-28; D-022): the head's
+// last argument when it is an integer literal (`is_lit`, `positive` unless it
+// is the literal zero -- a bare literal is never negative) or a unary minus
+// over one (`is_lit`, never `positive`); `is_lit` false for a computed step.
+// The checker refuses a literal that is not positive (TYPE-068), the
+// evaluator gives up on one quietly (the checker spoke), and the emitter and
+// the encoder agree through this one reader that a literal step needs no
+// guard and no row (1.5.4 step 3).
+pub struct:StepLit = { bool:is_lit; bool:positive; };
+
+pub func:counted_step_literal = StepLit(Ast->:ast, StmtNode:s) never fails {
+    int32:n = raw stmt_counted_argc(ast, s);
+    if (n < 1i32) { pass StepLit{ is_lit: false, positive: false }; }
+    ExprId:id = raw stmt_counted_arg(ast, s, n - 1i32);
+    if (raw expr_is_none(id)) { pass StepLit{ is_lit: false, positive: false }; }
+    ExprNode:x = raw ast_expr(ast, id);
+    if (x.kind == ExprKind.ExprIntLiteral) {
+        pass StepLit{ is_lit: true, positive: (x.payload != 0i64) };
+    }
+    if (x.kind == ExprKind.ExprUnaryExpr) {
+        if ((raw expr_op(x)) == TokenKind.OpMinus) {
+            ExprId:o = raw expr_operand(x);
+            if (!(raw expr_is_none(o))) {
+                ExprNode:y = raw ast_expr(ast, o);
+                if (y.kind == ExprKind.ExprIntLiteral) { pass StepLit{ is_lit: true, positive: false }; }
+            }
+        }
+    }
+    pass StepLit{ is_lit: false, positive: false };
+};
+
+// THE EXPRESSIONS A STATEMENT CARRIES, by kind -- ONE enumeration (1.5.4 step
+// 0, DEF-26) read by every walker that must see INTO a statement's
+// expressions: the encoder's escape and assignment collectors and its `break`
+// finder, the emitter's `continue` and `old` walks. A pick EXPRESSION's arms
+// are statements inside an expression, and every walker that enumerated
+// statement kinds by hand missed them; a kind not listed here carries no
+// expression, and a kind that does but is not listed is a missed site -- the
+// class DEF-26 was. Bodies (blocks, arms, loop bodies) are each walker's own.
+pub func:stmt_expr_ids = NIL(Ast->:ast, StmtNode:s, List<int32>->:out) never fails {
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = raw stmt_decl_init(ast, s);
+        if (!(raw expr_is_none(init))) { drop list_push(out, init.index); }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop list_push(out, (raw stmt_target(s)).index);
+        drop list_push(out, (raw stmt_assigned(s)).index);
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtIfStmt) || (s.kind == StmtKind.StmtWhileStmt)
+        || (s.kind == StmtKind.StmtWhenStmt)) {
+        ExprId:c = raw stmt_cond(s);
+        if (!(raw expr_is_none(c))) { drop list_push(out, c.index); }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        ExprId:it = raw stmt_for_iter(ast, s);
+        if (!(raw expr_is_none(it))) { drop list_push(out, it.index); }
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(ast, s))) {
+            ExprId:a = raw stmt_counted_arg(ast, s, ai);
+            if (!(raw expr_is_none(a))) { drop list_push(out, a.index); }
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        ExprId:sel = raw pick_selector(s);
+        if (!(raw expr_is_none(sel))) { drop list_push(out, sel.index); }
+        for (int32:pa in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, raw pick_arm_start(s), pa));
+            ExprId:g = raw arm_guard(arm);
+            if (!(raw expr_is_none(g))) { drop list_push(out, g.index); }
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        ExprId:g2 = raw arm_guard(s);
+        if (!(raw expr_is_none(g2))) { drop list_push(out, g2.index); }
+        pass NIL;
+    }
+    if (raw stmt_carries_expr(s.kind)) {
+        ExprId:x = raw stmt_expr(s);
+        if (!(raw expr_is_none(x))) { drop list_push(out, x.index); }
+        pass NIL;
+    }
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
+        ExprId:o = raw stmt_operand(s);
+        if (!(raw expr_is_none(o))) { drop list_push(out, o.index); }
+        pass NIL;
+    }
+    pass NIL;
+};
+
 // `when` always commits exactly four entries -- body, `then`, `end`, invariant --
 // so an absent block is a zero handle in a fixed slot rather than a shorter
 // window. A variable-length window would make "which block is missing" something

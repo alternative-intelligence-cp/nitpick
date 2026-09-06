@@ -46,12 +46,13 @@ comptime func:pick_bigger = int32(int32:a, int32:b) {
 };
 
 // THE LANGUAGE'S COUNTED LOOP, AND `$`. `while` is the easier shape and was written
-// first; `loop(lo, hi)` is the one `COMPTIME-001` actually uses, and `$` is its
-// counter — which is why it has a node kind of its own rather than a name, since
-// nobody declared it.
+// first; `loop(lo, hi, step)` is the one `COMPTIME-001` actually uses, and `$` is
+// its counter — which is why it has a node kind of its own rather than a name,
+// since nobody declared it. Three arguments (D-022; 1.5.4 step 0, DEF-30): the
+// two-argument head this file carried was the evaluator's own vocabulary.
 comptime func:sum_loop = int64(int64:n) {
     int64:total = 0i64;
-    loop(1i64, n + 1i64) {
+    loop(1i64, n + 1i64, 1i64) {
         total = total + $;
     }
     pass total;

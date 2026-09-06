@@ -557,6 +557,14 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
     if (raw stmt_is_none(sid)) { pass true; }
     if (fuel <= 0i32) { pass false; }
     StmtNode:s = raw ast_stmt(x.ast, sid);
+    // A `continue` INSIDE A PICK EXPRESSION'S ARM (DEF-26, 1.5.4 step 0): the
+    // arms are statements inside an expression, searched through the one
+    // enumeration of a statement's expressions (`stmt_expr_ids`).
+    List<int32>:xs = raw list_init::<int32>(4i64);
+    drop stmt_expr_ids(x.ast, s, @xs);
+    for (int64:xi in 0i64...xs.count) {
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: xs.items[xi] }, label, nested, fuel - 1i32))) { pass false; }
+    }
     if (s.kind == StmtKind.StmtContinueStmt) {
         bool:mine = false;
         if ((raw stmt_label(s)) == 0i32) {
@@ -601,6 +609,69 @@ func:continues_elided = bool(ExprEmitter->:x, StmtId:sid, int32:label, bool:nest
     }
     if (s.kind == StmtKind.StmtPickArm) {
         pass (raw continues_elided(x, raw arm_body(s), label, nested, fuel - 1i32));
+    }
+    pass true;
+};
+
+// The `continue` walk's descent into an EXPRESSION (DEF-26): a pick
+// expression's arms are statements, asked as `continues_elided` asks a
+// block's; every other kind is searched for nested ones by its shape
+// (`collect_old_expr`'s descent).
+func:pickexpr_continues_elided = bool(ExprEmitter->:x, ExprId:id, int32:label, bool:nested,
+                                      int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass true; }
+    if (fuel <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprPickExpr) {
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: n.a }, label, nested, fuel - 1i32))) { pass false; }
+        for (int32:pa in 0i32...n.c) {
+            if (!(raw continues_elided(x, raw pick_arm_at(x.ast, n.b, pa), label, nested, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        if (!(raw pickexpr_continues_elided(x, raw expr_callee(n), label, nested, fuel - 1i32))) { pass false; }
+        pass (raw pickexpr_continues_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                                            (raw expr_list_count(n)) - (raw expr_generic_count(n)),
+                                            label, nested, fuel));
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (raw pickexpr_continues_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                                            (raw expr_list_count(n)) - (raw builtin_generic_count(n)),
+                                            label, nested, fuel));
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            if (!(raw pickexpr_continues_elided(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) },
+                                                label, nested, fuel - 1i32))) { pass false; }
+            i = i + 2i32;
+        }
+        pass true;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass true; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass true; }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) { pass true; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel));
+    }
+    if (!(raw pickexpr_continues_elided(x, raw expr_lhs(n), label, nested, fuel - 1i32))) { pass false; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass true; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        pass (raw pickexpr_continues_window(x, raw expr_list_start(n), raw expr_list_count(n), label, nested, fuel));
+    }
+    if (!(raw pickexpr_continues_elided(x, raw expr_rhs(n), label, nested, fuel - 1i32))) { pass false; }
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass true; }
+    pass (raw pickexpr_continues_elided(x, raw expr_third(n), label, nested, fuel - 1i32));
+};
+
+func:pickexpr_continues_window = bool(ExprEmitter->:x, int32:start, int32:count, int32:label,
+                                      bool:nested, int32:fuel) never fails {
+    for (int32:i in 0i32...count) {
+        if (!(raw pickexpr_continues_elided(x, ExprId{ index: raw ast_id_at(x.ast, start, i) },
+                                            label, nested, fuel - 1i32))) { pass false; }
     }
     pass true;
 };
@@ -695,6 +766,14 @@ func:collect_old_expr = NIL(ExprEmitter->:x, ExprId:id, List<int32>->:out,
     ExprNode:n = raw ast_expr(x.ast, id);
     if (n.kind == ExprKind.ExprOldExpr) {
         drop list_push(out, id.index);   // never nested (D-243)
+        pass NIL;
+    }
+    // A PICK EXPRESSION (DEF-26): the selector, then the arms as statements.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop collect_old_expr(x, ExprId{ index: n.a }, out, fuel - 1i32);
+        for (int32:pa in 0i32...n.c) {
+            drop collect_old_stmt(x, raw pick_arm_at(x.ast, n.b, pa), out, fuel - 1i32);
+        }
         pass NIL;
     }
     if (n.kind == ExprKind.ExprCallExpr) {

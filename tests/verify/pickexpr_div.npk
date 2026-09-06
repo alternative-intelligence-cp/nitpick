@@ -1,0 +1,46 @@
+// expect-exit: 36
+// expect-obligation: div-zero open 3
+// expect-obligation: div-min discharged 3
+// expect-obligation: failsafe-post discharged 14
+//
+// DEF-26 (1.5.4 step 0): a division inside a PICK EXPRESSION'S ARM has a row.
+// The walk's `expr_children` listed only the selector of a value-pick, so the
+// arm's `100i32 / d` emitted its trap and recorded nothing -- three traps, two
+// rows, the manifest short of the inventory P-12 says it is. All three rows
+// are `open` here: `d` comes from `argv` and 1.5.4 step 1 is where the branch
+// conditions become hypotheses (`50i32 / d` under `d != 0i32`, `10i32 / d`
+// after the early exit). Without arguments `d` is 0 and the arm's division
+// traps DivByZero, 36. The dividends are literals, so the INT_MIN/-1 halves
+// discharge.
+mod:pickexpr_div;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    int32:s = 1i32;
+    int32:v = pick (s) { (1i32) { give 100i32 / d; }, (*) { give 0i32; } };
+    int32:w = 0i32;
+    if (d != 0i32) { w = 50i32 / d; }
+    if (d == 0i32) { exit 3i32; }
+    int32:z = 10i32 / d;
+    exit (v + w + z);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

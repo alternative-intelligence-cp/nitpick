@@ -862,9 +862,32 @@ non-positive LITERAL step of a counted loop compiles and traps at run time.**
 D-022 and CONTROL_REFERENCE §2.4: "a negative step is a compile error; so is a
 zero step". `till(3i32, 0i32) { … }` passes the checker and exits 38
 (`BadStep`): the rule was never implemented and the runtime guard is the only
-enforcement. Fix (1.5.4 step 0): `NITPICK-TYPE-068` at the literal; the
-computed step's guard becomes the `loop-step` row under S-46;
-`tests/types/rejection/loop_step.npk`.
+enforcement. Fix (1.5.4 step 0): `NITPICK-TYPE-068` at the literal (`TYPE_LOOP_HEAD`);
+the computed step's guard becomes the `loop-step` row under S-46;
+`tests/types/rejection/loop_head.npk`.
+
+**DEF-29 (found writing 1.5.4 step 0's fix, 2026-09-06) — the compile-time
+evaluator's counted loops disagreed with D-022.** `fold_counted`
+(`src/frontend/type_resolve.npk`) took a loop's DIRECTION from the step's sign
+(`i = i + step`, `i < hi` unless `step < 0`) and read a two-argument head as
+`loop(lo, hi)` and a one-argument one as `till(hi)`. So a descending
+`loop(10i64, 0i64, 1i64)` folded to ZERO iterations where the runtime runs
+ten, and `till(limit, step)` folded as a loop from `limit` to `step`: a
+`comptime func`'s value differed from the same function's run-time value.
+Invisible because a comptime function is never emitted (`emit_program.npk`
+skips `DECL_COMPTIME`) and the corpus used the evaluator's own vocabulary
+(`tests/accept/folding.npk`'s `loop(1i64, n + 1i64)`). Fix (1.5.4 step 0): the
+head read by kind, the direction from the bounds, a non-positive step refused
+with its own sentence; `tests/backend/programs/comptime_counted.npk` holds a
+comptime sum and its run-time twin equal.
+
+**DEF-30 (found with DEF-29) — the counted loop's argument COUNT was never
+checked.** `check_counted` typed however many arguments the head held; a
+two-argument `loop` and a one-argument `till` (the struck do-while reading,
+`till (i >= n)` in `tests/analysis/rejection/moves.npk`) typed clean and died
+at the emitter as EMIT-002 with no span. Fix (1.5.4 step 0): `loop` takes
+three, `till` two, TYPE-068 on the statement otherwise (DEF-28's code, its
+second way to fail).
 
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
