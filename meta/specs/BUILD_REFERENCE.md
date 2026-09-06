@@ -262,15 +262,25 @@ artifact.
   tools. A `repro` check builds twice from different working directories and
   byte-compares the emissions — reproducibility is a tested property, not a
   claim about one process on one machine.
-- **The pin is a version, and a version is not a binary** (2026-09-06, the
-  library workbench's first CI run; OPEN_DECISIONS S-42). Two builds of the
-  pinned LLVM release differ in distribution patches and configure-time
+- **The pin is a version, and a version is not a binary** (D-265, 1.5.2g;
+  the library workbench's first CI run, OPEN_DECISIONS S-42). Two builds of
+  the pinned LLVM release differ in distribution patches and configure-time
   defaults, so the linked `npkc` of one commit is byte-identical across
-  machines only when the tool BINARIES are the same; the property that holds
-  across machines is the compiler's own emission, `build/npkc.ll` — same
-  source and snapshot, same text anywhere — and a difference there is a
-  compiler defect. The ladder's six intermediates (`builder.o`, `builder`,
-  `npkrt.o`, `npkc.ll`, `npkc.o`, `npkc`) localise a difference to its stage.
+  machines only when the tool BINARIES are the same. The pin stays a version
+  by decision — a tool-binary digest would refuse every machine but one, for
+  a property that belongs to the toolchain (the asymmetry with z3's digest pin,
+  D-218.1, is deliberate: a solver's output is a committed VERDICT, a
+  toolchain's is checked bytes). **The claim that holds across machines is
+  the compiler's own emission**, `build/npkc.ll` — same source and snapshot,
+  same text anywhere — and a difference there is a compiler defect to report
+  with the two files. **Every `npkg` ladder run prints its report**: one
+  `sha256` line per intermediate it produced, in ladder order (`npkrt.o`,
+  `builder.o`, `builder`, `npkc.ll`, `npkc.opt.ll` under `opt-level = 2`,
+  `npkc.o`, `npkc`) — the SHA-256 by `lib/nhash.npk`, the byte count, the
+  root-relative path — so the first line that differs between two machines
+  names the stage; the harness's `parity` stage holds every line to an
+  independent digest of the same file. A pin notice quotes the lines and
+  names the emission's as the one another machine should reproduce.
 
 This is what lets anyone confirm that the binary they are running is the binary
 that was verified, and §6's fixpoint check is impossible without it.
@@ -400,7 +410,7 @@ even for edits at the very bottom of the language.
 
 | Command | Behaviour |
 |---|---|
-| `npkg build` | reads lock + vendored source; never resolves, never fetches |
+| `npkg build` | reads lock + vendored source; never resolves, never fetches; prints the ladder's `sha256` report — one line per intermediate, the emission's the cross-machine claim (D-265 §3) |
 | `npkg test` | builds the compiler (§6's ladder), runs the runner self-check (§7.1), then every `[[test]]` entry in manifest order — the real-parser sweep, the five rejection suites, the fixtures, the backend programs with their `opt -O2` re-run, the runtime floor's tests and the acceptance suite are entries, not code (D-238). A test's diagnostics are the child compiler's stderr, captured through the supervised spawn (`lib/nproc.npk`, D-206) and compared on codes and spans — D-075's `dyn Writer` capture was superseded by D-229 and, for a child process, by the pipe. The `cost` stage (1.5.1b step 0) spawns the compiler and the probe programs with `NPK_HEAP_STATS` added to the environment and reads the runtime's `heap:` line from the same pipe. `--only SUBSTR` narrows to the compile-stage `[[test]]` files whose path holds it and skips every other stage, saying so; `--selfcheck` runs the self-check alone; `--verdicts PATH` writes every unit's verdict, the list the parity stage diffs (D-206 §5) |
 | `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
 | `npkg verify` | the ladder, then the VERIFIED build (1.5.0; D-218, D-219): `[build] entry` is compiled with `--obligations`, every function's D-218 obligations are decided by the pinned z3 under the pinned profile (one fresh process per function, D-218.3), the rows are held to the committed `nitpick.obligations` — absent or different is a failure by name; **`--record`** writes it, on purpose, the deliberate re-baseline — then the entry is compiled again with `--elide nitpick.obligations`, every guard the manifest discharged giving way to `llvm.assume` (D-218.9), the verified IR cross-checked (an `assume` per discharged site, a trap per retained one), assembled, closed-world linked to `build/verify/npkc`, and shown to rebuild the compiler byte-identically (D-202 over the verified build). **`--explain`** adds `build/verify/explain.txt`: a model per open row, the reason per budget row, an unsat core per discharged one — never on the gate path (P-7). `[verify.nikos]` is declared and not run until 1.6.0's gate names an engine (D-217, D-233) |

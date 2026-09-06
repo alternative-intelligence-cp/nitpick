@@ -17175,3 +17175,12 @@ one a consumer on another machine can expect to reproduce. (5) **The first
 cross-machine comparison of `npkc.ll`** — the workbench's runner against this
 machine — is the measurement that decides whether a compiler item exists at
 all; nothing is opened on the binary's difference alone. Mechanics at 1.5.2g.
+
+> **LANDED (1.5.2g step 1, 2026-09-06).** `ladder_digests`/`digest_line`
+> (`npkg/build.npk`), printed by `main.npk` after the `builder` stage line on
+> every run; `check_ladder_digests` in the harness's `parity` stage over
+> `LADDER_INTERMEDIATES`. Measured: the six lines equal `sha256sum`'s digests
+> and `stat`'s counts; the check passes on the real output and fails a
+> renamed line twice and an empty output six times. The workbench re-pinned
+> to `3d15ac9` against the six digests the same night and found the floor
+> series flat (14 defines at `aaffb87` and at `3d15ac9`).

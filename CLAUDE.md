@@ -801,8 +801,20 @@ linked and ran with two owners of one heap body — a use-after-free that exited
 0. Seven sites in the tree, all a by-value `T:v` stored into an owning slot,
 say `move T:v` and `move(v)` now; nothing else refuses anew. **Left open:
 S-41**, a borrowing `pick` binding form (the user's), which would let a generic
-enum with payloads derive the four again. **Next: 1.5.3 (contracts live).**
-1.5.4b (the remaining theories) is in the map.
+enum with payloads derive the four again. **1.5.2g IS COMPLETE (2026-09-06;
+`meta/roadmap/1.5/1.5.2g.md`; two landings under full harnesses).** S-42, the
+library workbench's first CI finding — the pinned commit's `build/npkc`
+differed between this machine and GitHub's runner while `npkrt.o` did not —
+ratified as **D-265**: D-204's toolchain pin is a VERSION and stays one (a
+tool-binary digest would refuse every machine but one; z3's digest pin,
+D-218.1, is the deliberate asymmetry — a solver's output is a committed
+verdict, a toolchain's is checked bytes), the claim that holds across
+machines is the EMISSION (`build/npkc.ll`; a difference there is a compiler
+defect), every `npkg` ladder run prints one `sha256` line per intermediate
+in ladder order with the harness's `parity` stage holding each to an
+independent digest, and every pin notice quotes the lines with the
+emission's named. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining
+theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1044,6 +1056,12 @@ that carried them retired at the cycle close):
   `T:v` only as `move T:v` + `move(v)`; read an element out as
   `move(s.items[i])`; a lending `pick` cannot bind a `T` payload. `move(x)`
   spends `x` at a scalar too (MOVE-001 on a later read of `x`).
+- **The ladder prints its digests, and the emission's is the one that
+  travels** (D-265, 1.5.2g): `npkg build` ends with one `sha256` line per
+  intermediate; quote `build/npkc.ll`'s to another machine, since the object's
+  and the binary's belong to the toolchain build. An emitted `.ll`'s BYTE
+  COUNT is path-dependent (D-236's root-relative site paths), so a size
+  compared across directories is the object's.
 - **`exit` runs joins and defers and no drops** (D-183's amendment, 1.4.4): an
   owning local of `main` is never dropped by a program that exits, so a
   program test with one in `main` measures the storage's REGIME under D-151,
