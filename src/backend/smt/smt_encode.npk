@@ -46,8 +46,22 @@
 // `when`'s `then` block knows the condition held at the first head visit and
 // its `end` block that it did not and that the loop changed nothing. Each is
 // pushed in the region it is a fact of, so the cone's dominance rule keeps it
-// where it belongs. The MERGE after a construct is still a havoc here; step 2
-// makes it an `ite` and re-pushes an arm's facts guarded by its condition.
+// where it belongs.
+//
+// THE MERGE (1.5.4 step 2; L-7..L-10): a region opened for an ARM carries its
+// condition, and leaving it re-pushes every hypothesis recorded directly in
+// it into the parent as `(=> c H)` -- a fact of an arm is a fact after the
+// arm under the arm's condition (an execution past the arm with `c` true
+// fell through the arm's straight line and so passed every site of it; with
+// `c` false the implication is vacuous). A loop body's hypotheses are one
+// symbolic iteration's and are never re-pushed; a `defer`'s neither. On that
+// footing the versions after an `if`, a `when` or a `pick` MERGE: a binding
+// the arms left at different versions gets a new one defined `(ite c_1 v_1
+// (ite c_2 v_2 ... v_n))` over the arms that fall through, and a havoc only
+// where an arm has no condition term or an unnamed version. A pick
+// expression's value is the same chain over its arms' `give` terms. `&&`,
+// `||` and the ternary are arms too: the right-hand side and the two branches
+// are encoded in regions of their own under `a`, `(not a)`, `c`, `(not c)`.
 //
 // THE CONE (P-4): an obligation's canonical text is the relevance closure of
 // its goal over the hypotheses that DOMINATE it -- recorded before it, in a
@@ -164,6 +178,15 @@ pub struct:Encoder = {
     bool:uses_sdiv;            // a signed division term appeared (the define-funs are needed)
     List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
     int32:cur_region;          // the region the walk is in
+    // A REGION'S CONDITION AND ITS FIRST HYPOTHESIS (1.5.4 step 2, L-7):
+    // `term_none` for a region that is not an arm (a loop body, a `defer`,
+    // a pick arm without a pattern term); the hypothesis index the region
+    // began at, so leaving it can re-push what it recorded, guarded.
+    List<Term>:region_cond;
+    List<int64>:region_hyp0;
+    // THE LAST `give` WALKED (L-9): a pick expression's arm ends in one, and
+    // the arm's value is its term.
+    Term:last_give;
     // THE RULE'S SUBJECT (1.5.2 step 3, L-8): the term `$` stands for while a
     // `Rules` body is being instantiated by `enc_rule`; `term_none` outside.
     Term:subject;
@@ -196,13 +219,42 @@ pub struct:Encoder = {
 // a pick arm, a `when` block and a `defer` body each open a child region of
 // the one they sit in; straight-line blocks stay in their region.
 func:region_enter = NIL(Encoder->:e) never fails {
+    drop region_enter_cond(e, raw term_none());
+    pass NIL;
+};
+
+// AN ARM'S REGION (1.5.4 step 2, L-7): it carries the condition under which
+// its facts hold after it, and the hypothesis index it began at.
+func:region_enter_cond = NIL(Encoder->:e, Term:c) never fails {
     drop list_push(@e.region_parent, e.cur_region);
+    drop list_push(@e.region_cond, raw term_copy(c));
+    drop list_push(@e.region_hyp0, e.hyps.count);
     e.cur_region = (e.region_parent.count - 1i64) =>! int32;
     pass NIL;
 };
 
+// LEAVING AN ARM RE-PUSHES ITS FACTS, GUARDED (L-7): every hypothesis
+// recorded DIRECTLY in the region since it began -- a definition, a range
+// axiom, a rule, a callee's `ensures`, an inner arm's already-guarded copies
+// -- goes into the parent as `(=> c H)`. The arm's own condition is not
+// re-pushed (`(=> c c)` says nothing). A region without a condition
+// re-pushes nothing: a loop body's facts are one iteration's, a `defer`'s
+// run at an exit the straight line does not see.
 func:region_leave = NIL(Encoder->:e) never fails {
-    e.cur_region = e.region_parent.items[e.cur_region => int64];
+    int32:r = e.cur_region;
+    int32:parent = e.region_parent.items[r => int64];
+    if (e.region_cond.items[r => int64].ok) {
+        Term:c = raw term_copy(e.region_cond.items[r => int64]);
+        int64:n0 = e.hyps.count;
+        for (int64:h in e.region_hyp0.items[r => int64]...n0) {
+            if (e.hyps.items[h].region != r) { continue; }
+            if (string_equals(e.hyps.items[h].text, c.text)) { continue; }
+            string:gt = raw smt_app2("=>", c.text, e.hyps.items[h].text);
+            List<int32>:gs = raw syms_union(c.syms, e.hyps.items[h].syms);
+            drop hyp_push_in(e, gt, gs, parent);
+        }
+    }
+    e.cur_region = parent;
     pass NIL;
 };
 
@@ -225,6 +277,10 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
     for (int64:i in 0i64...(((raw OK_COUNT()) => int64) + 1i64)) { drop list_push(@ords, 0i32); }
     List<int32>:rp = raw list_init::<int32>(8i64);
     drop list_push(@rp, 0i32 - 1i32);   // the root region
+    List<Term>:rc = raw list_init::<Term>(8i64);
+    drop list_push(@rc, raw term_none());
+    List<int64>:rh = raw list_init::<int64>(8i64);
+    drop list_push(@rh, 0i64);
     pass Encoder{ ast: ast, et: et, tab: tab, types: types, interns: interns, ctx: ctx, tr: tr,
                   scope: scope, symbol: string_concat(symbol, ""),
                   syms: raw list_init::<SmtSym>(32i64),
@@ -236,6 +292,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   escaped: raw list_init::<int32>(4i64),
                   anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false,
                   region_parent: move(rp), cur_region: 0i32,
+                  region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
                   subject: raw term_none(), quiet: 0i32,
                   result: raw term_none(), at_entry: false, fn_decl: 0i32, impl_decl: 0i32,
                   trait_ty: 0i32, ret_type: 0i32, is_failsafe: false, clause_ctx: 0i32,
@@ -264,9 +321,16 @@ func:is_bool = bool(Encoder->:e, int32:ty) never fails {
 // --- symbols and hypotheses --------------------------------------------------------------
 
 func:hyp_push = NIL(Encoder->:e, string:text, List<int32>:syms) never fails {
+    drop hyp_push_in(e, text, syms, e.cur_region);
+    pass NIL;
+};
+
+// A hypothesis in a NAMED region (1.5.4 step 2): the guarded re-push writes
+// into the parent of the region it is leaving.
+func:hyp_push_in = NIL(Encoder->:e, string:text, List<int32>:syms, int32:region) never fails {
     List<int32>:copy = raw list_init::<int32>(syms.count + 1i64);
     for (int64:i in 0i64...syms.count) { drop list_push(@copy, syms.items[i]); }
-    SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: move(copy), region: e.cur_region };
+    SmtHyp:h = SmtHyp{ text: string_concat(text, ""), syms: move(copy), region: region };
     drop list_push(@e.hyps, move(h));
     pass NIL;
 };
@@ -539,7 +603,7 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
 
 // A `limit` write point whose rule the encoder does not yet express (1.5.2
 // step 2; P-12): the row exists from the first commit that emits the guard,
-// so the manifest stays an inventory of guards; step 3 gives it a goal.
+// so the manifest stays an inventory of guards; step 3 give_terms it a goal.
 func:record_limit_unencoded = NIL(Encoder->:e, int32:space, int32:site, Span:at) never fails {
     List<int32>:none = raw list_init::<int32>(1i64);
     drop record(e, raw OK_LIMIT(), "", none, space, site, at, false);
@@ -1500,7 +1564,24 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprBinaryExpr) {
         TokenKind:op = raw expr_op(n);
         Term:a = raw enc_expr(e, raw expr_lhs(n));
-        Term:b = raw enc_expr(e, raw expr_rhs(n));
+        // THE RIGHT-HAND SIDE OF `&&`/`||` IS AN ARM (1.5.4 step 2, L-10): it
+        // runs only when the left decided nothing, so its sites and its
+        // symbols live under `a` (or `(not a)`), in a region of their own
+        // whose facts come back guarded.
+        Term:b = raw term_none();
+        if (((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) && a.ok && a.is_bool) {
+            Term:ac = raw term_copy(a);
+            if (op == TokenKind.OpOrOr) {
+                ac = Term{ ok: true, is_bool: true, text: raw smt_app1("not", a.text),
+                           syms: raw syms_union(a.syms, raw list_init::<int32>(1i64)) };
+            }
+            drop region_enter_cond(e, ac);
+            drop hyp_push(e, ac.text, ac.syms);
+            b = raw enc_expr(e, raw expr_rhs(n));
+            drop region_leave(e);
+        } else {
+            b = raw enc_expr(e, raw expr_rhs(n));
+        }
         int32:lt = raw ty_of(e, raw expr_lhs(n));
         if ((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr)) {
             if (a.ok && b.ok && a.is_bool && b.is_bool) {
@@ -1570,9 +1651,21 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         pass (raw term_opaque(e, ty));
     }
     if (n.kind == ExprKind.ExprTernaryExpr) {
+        // THE TWO BRANCHES ARE ARMS (L-10): each under its condition, in a
+        // region of its own (the emitter runs only the taken one, D-145).
         Term:c = raw enc_expr(e, ExprId{ index: n.a });
+        bool:tc = c.ok && c.is_bool;
+        Term:nc = raw term_none();
+        if (tc) {
+            nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
+                       syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
+        }
+        if (tc) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
         Term:t1 = raw enc_expr(e, ExprId{ index: n.b });
+        drop region_leave(e);
+        if (tc) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
         Term:t2 = raw enc_expr(e, ExprId{ index: n.c });
+        drop region_leave(e);
         if (c.ok && t1.ok && t2.ok && c.is_bool && (t1.is_bool == t2.is_bool)) {
             pass Term{ ok: true, is_bool: t1.is_bool,
                        text: raw smt_app3("ite", c.text, t1.text, t2.text),
@@ -1669,10 +1762,8 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     // assign invalidated after; the value opaque until 1.5.4 step 2.
     if (n.kind == ExprKind.ExprPickExpr) {
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
-        drop walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }));
-        List<int32>:pa = raw list_init::<int32>(4i64);
-        drop collect_assigned_expr(e, id, @pa, 64i32);
-        drop invalidate(e, pa);
+        Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
+        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
         pass (raw term_opaque(e, ty));
     }
     // Everything else: the value is opaque, the children are still sites.
@@ -1882,7 +1973,7 @@ func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
 // pushed -- a guarded arm's failure is not something the patterns alone
 // express -- and when a `fall` sits anywhere in the pick, no arm gets a
 // condition at all: a target arm is entered from another arm.
-func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count, Term:sel, int32:sel_ty) never fails {
+func:walk_pick_arms = Term(Encoder->:e, int32:start, int32:count, Term:sel, int32:sel_ty, bool:want_value) never fails {
     bool:any_guard = false;
     bool:any_fall = false;
     for (int32:a0 in 0i32...count) {
@@ -1904,10 +1995,22 @@ func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count, Term:sel, int32
         drop list_push(@conds, move(ci));
     }
     List<int32>:snap = raw snapshot(e);
+    // THE MERGE'S INPUTS (L-8, L-9): each arm's end versions, whether it
+    // completes (falls through -- for a pick expression, to its trailing
+    // `give`), and the `give` term of a completing arm. A `give` anywhere
+    // but as an arm's last statement leaves the arm through a nested
+    // construct: the versions and the value are then a havoc and opaque.
+    List<List<int32>>:snaps = raw list_init::<List<int32>>((count => int64) + 1i64);
+    List<bool>:fts = raw list_init::<bool>((count => int64) + 1i64);
+    List<Term>:give_terms = raw list_init::<Term>((count => int64) + 1i64);
+    bool:nested_give = false;
     for (int32:a in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a));
+        StmtId:body = raw arm_body(arm);
         int64:mark = raw scope_mark(e);
-        drop region_enter(e);
+        Term:region_c = raw term_none();
+        if (conds.items[a => int64].ok && (!any_guard)) { region_c = raw term_copy(conds.items[a => int64]); }
+        if (region_c.ok) { drop region_enter_cond(e, region_c); } else { drop region_enter(e); }
         drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
         if (conds.items[a => int64].ok) {
             drop hyp_push(e, conds.items[a => int64].text, conds.items[a => int64].syms);
@@ -1921,10 +2024,211 @@ func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count, Term:sel, int32
         }
         Term:g = raw enc_expr(e, raw arm_guard(arm));
         if (g.ok && g.is_bool && (!any_fall)) { drop hyp_push(e, g.text, g.syms); }
-        drop walk_block(e, raw arm_body(arm));
+        e.last_give = raw term_none();
+        drop walk_block(e, body);
         drop region_leave(e);
         drop scope_release(e, mark);
+        drop list_push(@snaps, raw snapshot(e));
+        bool:trailing = raw block_ends_in_give(e, body);
+        if (raw stmt_has_nested_give(e, body, 64i32)) { nested_give = true; }
+        if (trailing) {
+            drop list_push(@fts, raw block_reaches_last(e, body));
+            drop list_push(@give_terms, raw term_copy(e.last_give));
+        } else {
+            drop list_push(@fts, raw stmt_falls_through(e, body, 64i32));
+            drop list_push(@give_terms, raw term_none());
+        }
         drop restore(e, snap);
+    }
+    e.last_give = raw term_none();
+    // THE MERGE (L-8): every arm's condition a term (a wildcard's is the
+    // negation of the ones before it), no guard, no `fall`, no nested
+    // `give`; else the havoc the walk did before this step.
+    bool:mergeable = all_ok && (!any_guard) && (!any_fall) && (!nested_give);
+    if (nested_give) {
+        List<int32>:pa = raw list_init::<int32>(4i64);
+        for (int32:a2 in 0i32...count) {
+            StmtNode:arm2 = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a2));
+            drop collect_assigned(e, raw arm_body(arm2), @pa);
+        }
+        drop invalidate(e, pa);
+        pass (raw term_none());
+    }
+    drop merge_arms(e, conds, snaps, fts, snap, mergeable);
+    // THE VALUE (L-9): the chain over the completing arms' `give` terms.
+    if (!(want_value && mergeable)) { pass (raw term_none()); }
+    Term:val = raw term_none();
+    bool:have = false;
+    int32:k = count;
+    while (k > 0i32) {
+        k = k - 1i32;
+        if (!fts.items[k => int64]) { continue; }
+        Term:gk = raw term_copy(give_terms.items[k => int64]);
+        if (!gk.ok) { pass (raw term_none()); }
+        if (!have) { val = move(gk); have = true; continue; }
+        if (gk.is_bool != val.is_bool) { pass (raw term_none()); }
+        val = Term{ ok: true, is_bool: val.is_bool,
+                    text: raw smt_app3("ite", conds.items[k => int64].text, gk.text, val.text),
+                    syms: raw syms_union(conds.items[k => int64].syms, raw syms_union(gk.syms, val.syms)) };
+    }
+    if (!have) { pass (raw term_none()); }
+    pass val;
+};
+
+// Does a block's last statement `give`? The shape a pick expression's arm
+// takes when its value is the arm's own (L-9).
+func:block_ends_in_give = bool(Encoder->:e, StmtId:body) never fails {
+    if (raw stmt_is_none(body)) { pass false; }
+    StmtNode:s = raw ast_stmt(e.ast, body);
+    if (s.kind == StmtKind.StmtGiveStmt) { pass true; }
+    if (s.kind != StmtKind.StmtBlockStmt) { pass false; }
+    int32:n = raw stmt_list_count(s);
+    if (n == 0i32) { pass false; }
+    StmtNode:last = raw ast_stmt(e.ast, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), n - 1i32) });
+    pass (last.kind == StmtKind.StmtGiveStmt);
+};
+
+// Does every statement of a block BEFORE its trailing `give` fall through?
+// Then the arm completes with that give's value (L-9).
+func:block_reaches_last = bool(Encoder->:e, StmtId:body) never fails {
+    StmtNode:s = raw ast_stmt(e.ast, body);
+    if (s.kind != StmtKind.StmtBlockStmt) { pass true; }
+    int32:n = raw stmt_list_count(s);
+    for (int32:i in 0i32...(n - 1i32)) {
+        StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+        if (!(raw stmt_falls_through(e, ch, 64i32))) { pass false; }
+    }
+    pass true;
+};
+
+// A `give` anywhere in a block other than as its last statement -- nested in
+// an `if`, a loop, a pick statement -- leaves the arm from inside a
+// construct, which the merge does not follow (L-9).
+func:stmt_has_nested_give = bool(Encoder->:e, StmtId:body, int32:fuel) never fails {
+    if (raw stmt_is_none(body)) { pass false; }
+    StmtNode:s = raw ast_stmt(e.ast, body);
+    if (s.kind != StmtKind.StmtBlockStmt) { pass (raw stmt_has_give(e, body, fuel)); }
+    int32:n = raw stmt_list_count(s);
+    for (int32:i in 0i32...n) {
+        StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+        StmtNode:c = raw ast_stmt(e.ast, ch);
+        if ((i == (n - 1i32)) && (c.kind == StmtKind.StmtGiveStmt)) { continue; }
+        if (raw stmt_has_give(e, ch, fuel - 1i32)) { pass true; }
+    }
+    pass false;
+};
+
+func:stmt_has_give = bool(Encoder->:e, StmtId:sid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtGiveStmt) { pass true; }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+            if (raw stmt_has_give(e, ch, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (raw stmt_has_give(e, raw stmt_then(s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_has_give(e, raw stmt_else(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { pass (raw stmt_has_give(e, raw stmt_body(e.ast, s), fuel - 1i32)); }
+    if (s.kind == StmtKind.StmtForStmt)   { pass (raw stmt_has_give(e, raw stmt_for_body(e.ast, s), fuel - 1i32)); }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        pass (raw stmt_has_give(e, raw stmt_counted_body(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        if (raw stmt_has_give(e, raw stmt_when_body(e.ast, s), fuel - 1i32)) { pass true; }
+        if (raw stmt_has_give(e, raw stmt_when_then(e.ast, s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_has_give(e, raw stmt_when_end(e.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            if (raw stmt_has_give(e, raw arm_body(arm), fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        pass (raw stmt_has_give(e, StmtId{ index: (raw stmt_target(s)).index }, fuel - 1i32));
+    }
+    pass false;
+};
+
+// THE MERGE OF THE ARMS' VERSIONS (L-8). Over the bindings that existed
+// before the construct: the arms that complete contribute their end
+// versions; a binding they agree on keeps that version; one they differ on
+// gets a new version `(ite c_1 v_1 (ite c_2 v_2 ... v_n))` -- the last
+// completing arm the default -- when `mergeable` (every condition a term)
+// and every contributing version is named, else a fresh opaque version. One
+// completing arm: its versions are adopted and its condition is a fact of
+// the parent (the others never fall through). None: nothing after is
+// reachable, and nothing is said.
+func:merge_arms = NIL(Encoder->:e, List<Term>:conds, List<List<int32>>:snaps, List<bool>:fts,
+                      List<int32>:pre, bool:mergeable) never fails {
+    int64:arms = fts.count;
+    int64:completing = 0i64;
+    int64:only = 0i64 - 1i64;
+    for (int64:i in 0i64...arms) {
+        if (fts.items[i]) { completing = completing + 1i64; only = i; }
+    }
+    if (completing == 0i64) { pass NIL; }
+    if (completing == 1i64) {
+        drop adopt_versions(e, snaps.items[only]);
+        if (mergeable && conds.items[only].ok) { drop hyp_push(e, conds.items[only].text, conds.items[only].syms); }
+        pass NIL;
+    }
+    int64:n = pre.count;
+    if (e.binds.count < n) { n = e.binds.count; }
+    for (int64:i2 in 0i64...arms) { if (snaps.items[i2].count < n) { n = snaps.items[i2].count; } }
+    for (int64:b in 0i64...n) {
+        bool:same = true;
+        int32:first = 0i32 - 1i32;
+        bool:seen = false;
+        bool:named = true;
+        for (int64:a in 0i64...arms) {
+            if (!fts.items[a]) { continue; }
+            int32:v = snaps.items[a].items[b];
+            if (v < 0i32) { named = false; }
+            if (!seen) { first = v; seen = true; }
+            else { if (v != first) { same = false; } }
+        }
+        if (same) { e.binds.items[b].sym = first; continue; }
+        int32:name = e.binds.items[b].name;
+        if (!(mergeable && named)) {
+            List<int32>:one = raw list_init::<int32>(1i64);
+            drop list_push(@one, name);
+            drop invalidate(e, one);
+            continue;
+        }
+        // The chain from the last completing arm backwards.
+        Term:t = raw term_none();
+        bool:have = false;
+        int64:k = arms;
+        bool:broken = false;
+        while (k > 0i64) {
+            k = k - 1i64;
+            if (!fts.items[k]) { continue; }
+            int32:vk = snaps.items[k].items[b];
+            Term:tk = Term{ ok: true, is_bool: e.syms.items[vk => int64].is_bool, text: raw sym_text(e, vk),
+                            syms: raw list_init::<int32>(1i64) };
+            drop list_push(@tk.syms, vk);
+            if (!have) { t = move(tk); have = true; continue; }
+            if (!conds.items[k].ok) { broken = true; break; }
+            t = Term{ ok: true, is_bool: t.is_bool,
+                      text: raw smt_app3("ite", conds.items[k].text, tk.text, t.text),
+                      syms: raw syms_union(conds.items[k].syms, raw syms_union(tk.syms, t.syms)) };
+        }
+        if (broken) {
+            List<int32>:one2 = raw list_init::<int32>(1i64);
+            drop list_push(@one2, name);
+            drop invalidate(e, one2);
+            continue;
+        }
+        drop bind_assign(e, name, t);
+        drop assert_rule(e, b);
     }
     pass NIL;
 };
@@ -2167,46 +2471,38 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         // path.
         Term:c = raw enc_expr(e, raw stmt_cond(s));
         bool:has_c = c.ok && c.is_bool;
+        Term:nc = raw term_none();
+        if (has_c) {
+            nc = Term{ ok: true, is_bool: true, text: raw smt_app1("not", c.text),
+                       syms: raw syms_union(c.syms, raw list_init::<int32>(1i64)) };
+        }
         StmtId:then_s = raw stmt_then(s);
         StmtId:else_s = raw stmt_else(s);
-        bool:then_ft = raw stmt_falls_through(e, then_s, 64i32);
-        bool:else_ft = raw stmt_falls_through(e, else_s, 64i32);
         List<int32>:snap = raw snapshot(e);
-        drop region_enter(e);
-        if (has_c) { drop hyp_push(e, c.text, c.syms); }
+        if (has_c) { drop region_enter_cond(e, c); drop hyp_push(e, c.text, c.syms); } else { drop region_enter(e); }
         drop walk_block(e, then_s);
         drop region_leave(e);
         List<int32>:snap_then = raw snapshot(e);
         drop restore(e, snap);
-        drop region_enter(e);
-        if (has_c) { drop hyp_push(e, raw smt_app1("not", c.text), c.syms); }
+        if (has_c) { drop region_enter_cond(e, nc); drop hyp_push(e, nc.text, nc.syms); } else { drop region_enter(e); }
         drop walk_block(e, else_s);
         drop region_leave(e);
         List<int32>:snap_else = raw snapshot(e);
         drop restore(e, snap);
-        // AFTER THE `if` (L-2): an arm that never falls through -- ends in a
-        // syntactic terminator -- contributes nothing to what follows, so the
-        // bindings keep the OTHER arm's end versions and the other arm's
-        // condition is a fact of the parent region. When both fall through
-        // the merge is a havoc (step 2 makes it an `ite`); when neither, the
-        // code after is unreachable and nothing is said of it.
-        if (then_ft && else_ft) {
-            List<int32>:assigned = raw list_init::<int32>(4i64);
-            drop collect_assigned(e, then_s, @assigned);
-            drop collect_assigned(e, else_s, @assigned);
-            drop invalidate(e, assigned);
-            pass NIL;
-        }
-        if (then_ft) {
-            drop adopt_versions(e, snap_then);
-            if (has_c) { drop hyp_push(e, c.text, c.syms); }
-            pass NIL;
-        }
-        if (else_ft) {
-            drop adopt_versions(e, snap_else);
-            if (has_c) { drop hyp_push(e, raw smt_app1("not", c.text), c.syms); }
-            pass NIL;
-        }
+        // AFTER THE `if` (L-2, L-8): the two arms merge -- an arm that never
+        // falls through contributes nothing; a binding the arms left at
+        // different versions is `(ite c then else)` when both are named and
+        // the condition has a term, a havoc otherwise.
+        List<Term>:conds = raw list_init::<Term>(2i64);
+        drop list_push(@conds, raw term_copy(c));
+        drop list_push(@conds, raw term_copy(nc));
+        List<List<int32>>:snaps = raw list_init::<List<int32>>(2i64);
+        drop list_push(@snaps, move(snap_then));
+        drop list_push(@snaps, move(snap_else));
+        List<bool>:fts = raw list_init::<bool>(2i64);
+        drop list_push(@fts, raw stmt_falls_through(e, then_s, 64i32));
+        drop list_push(@fts, raw stmt_falls_through(e, else_s, 64i32));
+        drop merge_arms(e, conds, snaps, fts, snap, has_c);
         pass NIL;
     }
 
@@ -2255,13 +2551,17 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
                        raw stmt_cond(s), raw stmt_label(s));
         List<int32>:snap_post = raw snapshot(e);
-        drop region_enter(e);
-        if (has_pre) { drop hyp_push(e, cpre.text, cpre.syms); }
+        Term:npre = raw term_none();
+        if (has_pre) {
+            npre = Term{ ok: true, is_bool: true, text: raw smt_app1("not", cpre.text),
+                         syms: raw syms_union(cpre.syms, raw list_init::<int32>(1i64)) };
+        }
+        if (has_pre) { drop region_enter_cond(e, cpre); drop hyp_push(e, cpre.text, cpre.syms); } else { drop region_enter(e); }
         drop walk_block(e, raw stmt_when_then(e.ast, s));
         drop region_leave(e);
+        List<int32>:snap_then = raw snapshot(e);
         drop restore(e, snap_post);
-        drop region_enter(e);
-        if (has_pre) { drop hyp_push(e, raw smt_app1("not", cpre.text), cpre.syms); }
+        if (has_pre) { drop region_enter_cond(e, npre); drop hyp_push(e, npre.text, npre.syms); } else { drop region_enter(e); }
         int64:np = snap_post.count;
         if (snap_pre.count < np) { np = snap_pre.count; }
         for (int64:bi in 0i64...np) {
@@ -2276,17 +2576,26 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         }
         drop walk_block(e, raw stmt_when_end(e.ast, s));
         drop region_leave(e);
+        List<int32>:snap_end = raw snapshot(e);
         drop restore(e, snap_post);
-        drop invalidate(e, ka);
+        // THE MERGE (L-8): `then` and `end` are the two arms of "did the body
+        // run", the body's own names already havoced by the loop.
+        List<Term>:wconds = raw list_init::<Term>(2i64);
+        drop list_push(@wconds, raw term_copy(cpre));
+        drop list_push(@wconds, raw term_copy(npre));
+        List<List<int32>>:wsnaps = raw list_init::<List<int32>>(2i64);
+        drop list_push(@wsnaps, move(snap_then));
+        drop list_push(@wsnaps, move(snap_end));
+        List<bool>:wfts = raw list_init::<bool>(2i64);
+        drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_then(e.ast, s), 64i32));
+        drop list_push(@wfts, raw stmt_falls_through(e, raw stmt_when_end(e.ast, s), 64i32));
+        drop merge_arms(e, wconds, wsnaps, wfts, snap_post, has_pre);
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtPickStmt) {
         Term:sel = raw enc_expr(e, raw pick_selector(s));
-        drop walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)));
-        List<int32>:pa = raw list_init::<int32>(4i64);
-        drop collect_assigned(e, sid, @pa);
-        drop invalidate(e, pa);
+        Term:pv = raw walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)), false);
         pass NIL;
     }
 
@@ -2302,6 +2611,11 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         pass NIL;
     }
 
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        // THE ARM'S VALUE (L-9): remembered for the pick expression's chain.
+        e.last_give = raw enc_expr(e, raw stmt_expr(s));
+        pass NIL;
+    }
     if (raw stmt_carries_expr(s.kind)) {
         Term:x = raw enc_expr(e, raw stmt_expr(s));
         pass NIL;

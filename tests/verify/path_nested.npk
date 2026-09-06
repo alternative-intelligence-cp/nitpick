@@ -1,0 +1,44 @@
+// expect-exit: 0
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 14
+//
+// NESTED ARMS COMPOSE (1.5.4 step 2, L-7): an inner arm's facts reach the
+// outer arm guarded by the inner condition, and the outer arm's reach the
+// function guarded by both -- `(=> c1 (=> c2 (= |d.3| 4)))`. The divisor
+// after both `if`s is `(ite c1 (ite c2 4 |d.1|) |d.1|)` with `d` 2 at the
+// start: never zero, both divisions discharge. Exits 0 for every argv.
+mod:path_nested;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    bool:c1 = argv.len > 2i64;
+    bool:c2 = argv.len > 4i64;
+    int32:d = 2i32;
+    if (c1) {
+        if (c2) { d = 4i32; }
+        int32:inner = 100i32 / d;
+        d = d + inner - inner;
+    }
+    int32:q = 100i32 / d;
+    exit (q - q);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

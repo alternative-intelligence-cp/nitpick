@@ -1,13 +1,14 @@
 // expect-exit: 20
-// expect-obligation: div-zero open 1
+// expect-obligation: div-zero discharged 1
 // expect-obligation: div-min discharged 1
 // expect-obligation: failsafe-post discharged 10
 //
-// PINNED CONSERVATIVE (1.5.0): both arms assign a nonzero divisor, but
-// 1.5.0's walk has no path conditions -- after the `if` the name is a fresh
-// opaque version and the obligation is `open`. 1.5.4 adds the branch guards
-// as hypotheses; when it lands, this expectation changes to `discharged`,
-// and that change is the visible measure of the improvement.
+// THE 1.5.0 PROMISE KEPT (1.5.4 step 2, L-7, L-8): both arms assign a
+// nonzero divisor. 1.5.0's walk had no path conditions, so after the `if`
+// the name was a fresh opaque version and the row was pinned `open` with a
+// note saying which subcycle would flip it. The merge is `(ite c |d.2|
+// |d.3|)` now, each arm's definition available under its condition, and the
+// row discharges -- the visible measure of the improvement.
 mod:divz_after_branch;
 
 func:main = int32(cstring[]:argv) {

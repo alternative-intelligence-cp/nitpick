@@ -1,0 +1,41 @@
+// expect-exit: 0
+// expect-obligation: div-zero discharged 3
+// expect-obligation: div-min discharged 3
+// expect-obligation: failsafe-post discharged 14
+//
+// EXPRESSION-LEVEL ARMS (1.5.4 step 2, L-10): the right-hand side of `&&`
+// runs only when the left held, of `||` only when it failed, and a ternary's
+// branch only when chosen (the emitter's lazy lowering, D-145) -- each is a
+// region under its condition, so `d != 0 && 100 / d > 1`, `d == 0 || 100 /
+// d > 1` and `is (d == 0) : 0 : 100 / d` all discharge. Without arguments
+// `d` is 0: every guard is elided and the program answers 0.
+mod:path_expr;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    int32:acc = 0i32;
+    if (d != 0i32 && 100i32 / d > 1i32) { acc = acc + 1i32; }
+    if (d == 0i32 || 100i32 / d > 1i32) { acc = acc + 2i32; }
+    int32:t = is (d == 0i32) : 0i32 : 100i32 / d;
+    exit (acc + t - 2i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
