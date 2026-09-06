@@ -17037,3 +17037,35 @@ IR at `0dfddac`; the landing notice carries its after-value.
 > by the workbench meanwhile (DEF-21): the undefined-symbol allowlist is the
 > runtime's EXPORTS. `nitpick.obligations` never moved. The workbench's canary
 > reads about 50 KB after the landing.
+
+## D-263 — the prelude's `List<T>` stores through the managed heap's untracked entry; D-151 keeps counting every `wild` block — **SETTLED (user decision, 2026-09-05: "i am fine with your recommendation"; OPEN_DECISIONS S-39; lands at 1.5.2e step 1)**
+
+Found at 1.5.2d's close writing `generic_move_out.npk`: an owning `List<T>`
+local alive in `main` at `exit 0` is reported by D-151 as `WildLeak` (exit 94),
+under the 1.5.2c-close compiler as well; every `List` test in the tree kept its
+list inside a function that RETURNS, which is why it stayed latent. Two settled
+decisions meet: D-183's amendment keeps the scope-drop walk off the `exit` path
+("walking the entire live program state to free it on the way out adds failure
+modes to exactly the path that exists to have none"; 1.4.4's rider — `exit`
+runs joins and defers and nothing else), and D-151 counts every WILD allocation
+alive at `exit 0`. A `List<T>` is MANAGED by D-247 — owning, move-only, dropped
+at scope exit — but its buffer was spelled `wild` in the prelude (`alloc` in
+`list_init`/`list_reserve`), making it the one managed value D-151 counted; a
+string leaked the same way is invisible, since the managed heap is not the
+tracked one. **The decision.** The prelude's `List<T>` allocates its buffer
+through the managed heap's untracked entry — the floor's `@npk_alloc_managed`,
+the same entry the emitter's own managed cells and a channel's ring use (D-183
+1.2.5b: managed storage the kernel reclaims at exit and D-151 never counted) —
+spelled in the prelude as the builtin `alloc_managed`, and `ralloc` keeps a
+block's role (the floor's `npk_ralloc` allocates the moved block with the old
+block's role, measured), so a grown list stays managed. The exit path stays
+free of the drop walk as D-183 decided; a `List` in `main` at `exit 0` is what
+every other managed value already is. **Scoped.** `alloc_managed` is the
+PRELUDE's own: a call from any other module refuses (TYPE-054, the builtin's
+own call rule, generated from the reference's `**Prelude-only**` marker),
+because D-151's count IS the enforcement a hand-written `wild` container relies
+on — the library workbench's `Vec<T>` chose `wild` so an unpaired free traps
+at exit, and nobody should "fix" a `Vec` that traps. Not decided here, and
+recorded as its own question if it ever matters: drops with SEMANTICS at a
+normal `exit` (a buffered writer's flush, an `OwnedFd`'s close) — today they
+do not run, exactly as at a crash, and the kernel closes the descriptors.
