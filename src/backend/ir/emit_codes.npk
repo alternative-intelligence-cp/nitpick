@@ -17,3 +17,11 @@ pub func:RUNG_UNSUPPORTED = string() never fails { pass "NITPICK-RUNG-001"; };
 // kind nobody classified is a hole in Phase B's coverage of that promise. A
 // distinct code so it can never be mistaken for the program's fault.
 pub func:EMIT_INTERNAL = string() never fails { pass "NITPICK-EMIT-002"; };
+
+// THE VERIFIED BUILD REFUSES AN UNPROVEN CLAIM (1.5.4 step 4; S-45, L-16;
+// VERIFICATION §1.2): under `--elide`, a `prove` whose row the manifest does
+// not discharge -- `open`, `budget`, `unencoded`, or absent -- has no guard
+// to retain (D-218.7: guard `no`), so the only honest outcome for a verified
+// artifact is to refuse it. The plain build lowers `prove` to nothing and
+// claims nothing. A distinct family: it is neither a rung nor a defect.
+pub func:VERIFY_UNPROVEN = string() never fails { pass "NITPICK-VERIFY-001"; };

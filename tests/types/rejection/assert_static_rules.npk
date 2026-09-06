@@ -1,0 +1,36 @@
+// expect-error: NITPICK-TYPE-069
+// expect-error-at: 20
+// expect-error: NITPICK-TYPE-069
+// expect-error-at: 21
+// expect-error: NITPICK-TYPE-069
+// expect-error-at: 16
+//
+// `assert_static` IS THE FRONTEND'S (1.5.4 step 4, L-17, L-18; VERIFICATION
+// §1.1): a proposition that reads a run-time value does not fold and is
+// refused (a `prove` is the claim about a run-time value); one that folds to
+// `false` halts compilation; and in a `comptime` body a `prove` is evaluated
+// over the call's values, a false one a counterexample reported ONCE at the
+// call (the fold gives up after its sentence).
+mod:assert_static_rules;
+
+comptime func:low = int32(int32:n) { prove(n > 5i32); pass n; };
+
+func:main = int32(cstring[]:argv) {
+    int32:d = argv.len =>! int32;
+    assert_static(d > 0i32);
+    assert_static(1i32 == 2i32);
+    assert_static(2i32 == 2i32);
+    int32:v = comptime(low(3i32));
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

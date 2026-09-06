@@ -1,26 +1,21 @@
-// expect-exit: 20
-// expect-obligation: div-zero discharged 1
-// expect-obligation: div-zero open 1
-// expect-obligation: div-min discharged 2
+// expect-error: NITPICK-VERIFY-001
+// expect-obligation: prove open 1
 // expect-obligation: failsafe-post discharged 14
 // expect-obligation: exhaustive checker 1
 //
-// A LOOP'S CONDITION IS FALSE AFTER IT (1.5.4 step 1, L-4) when nothing
-// `break`s: after `while (d == 0i32) { d = 5i32; }` the exit was a head
-// visit that found `d != 0`, so `100 / d` discharges. The control loop holds
-// a `break`, so its exit is not a head visit and the same division after it
-// stays `open`. Exits 20 (100 / 5) either way.
-mod:path_while;
+// AN UNPROVEN `prove` REFUSES THE VERIFIED BUILD (S-45, 1.5.4 step 4, L-16):
+// `d` comes from `argv`, so `d != 0` is `open` -- the solver has a model --
+// and the plain `--obligations` build compiles while the `--elide` build
+// refuses with NITPICK-VERIFY-001 at the statement, naming the row's word.
+// A verified artifact carries no unproven claim; the unit ends at the
+// refusal (L-21).
+mod:prove_open;
 error:E9;
 
 func:main = int32(cstring[]:argv) {
     int32:d = (argv.len =>! int32) - 1i32;
-    while (d == 0i32) { d = 5i32; }
-    int32:q = 100i32 / d;
-    int32:k = 0i32;
-    while (k == 0i32) { k = 5i32; if (k > 0i32) { break; } }
-    int32:r = 100i32 / k;
-    exit (q + r - 20i32);
+    prove(d != 0i32);
+    exit 0i32;
 };
 
 func:failsafe = int32(Error:e) {

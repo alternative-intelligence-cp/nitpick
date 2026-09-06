@@ -49,6 +49,7 @@ pub struct:VRow = {
     bool:encoded;
     string:symbol;
     int32:verdict;      // OV_* (0 until decided)
+    bool:checker;       // a `c` row: the frontend decided it (1.5.4 step 4, L-20)
     // THE SITE, THE ROLE, THE GROUP, THE TRAPS (1.5.3 step 2, L-13): the
     // site's `space:index`; `guard`, `bypass`, `held` or `conform`; the rows
     // one guard shares; the traps that guard keeps while any of them is
@@ -97,6 +98,7 @@ pub func:read_rows = List<VRow>(string:dir) {
                        kind: raw strlist_copy(f, 2i64), hash: raw strlist_copy(f, 3i64),
                        encoded: raw text_eq(raw strlist_view(f, 4i64), "1"),
                        symbol: raw strlist_copy(f, 5i64), verdict: 0i32,
+                       checker: raw text_eq(raw strlist_view(f, 4i64), "c"),
                        site: raw strlist_copy(f, 6i64), role: raw strlist_copy(f, 7i64),
                        group: grp.value, traps: trp.value };
         drop list_push(@rows, move(r));
@@ -204,7 +206,10 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
         }
     }
     for (int64:ri2 in 0i64...rows.count) {
-        if (!rows.items[ri2].encoded) { rows.items[ri2].verdict = raw OV_UNENCODED(); }
+        if (!rows.items[ri2].encoded) {
+            if (rows.items[ri2].checker) { rows.items[ri2].verdict = raw OV_CHECKER(); }
+            else { rows.items[ri2].verdict = raw OV_UNENCODED(); }
+        }
     }
     pass NIL;
 };
@@ -241,7 +246,7 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
             if (raw text_eq(raw ok_name(kk), raw strlist_view(f, 2i64))) { kind = kk; }
         }
         string:tier = "int";
-        if (v == (raw OV_UNENCODED())) { tier = "-"; }
+        if ((v == (raw OV_UNENCODED())) || (v == (raw OV_CHECKER()))) { tier = "-"; }
         string:elision = raw elision_word(kind, v, raw strlist_view(f, 4i64));
         drop sink_write(@sk, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
                                          raw strlist_view(f, 0i64)));
@@ -537,19 +542,21 @@ pub async func:compile_args = Run(Ctx->:c, string:compiler, List<string>:args, D
 };
 
 func:verdict_counts = string(List<VRow>:rows) never fails {
-    int64:d = 0i64; int64:o = 0i64; int64:b = 0i64; int64:u = 0i64;
+    int64:d = 0i64; int64:o = 0i64; int64:b = 0i64; int64:u = 0i64; int64:ck = 0i64;
     for (int64:i in 0i64...rows.count) {
         int32:v = rows.items[i].verdict;
         if (v == (raw OV_DISCHARGED())) { d = d + 1i64; }
         if (v == (raw OV_OPEN()))       { o = o + 1i64; }
         if (v == (raw OV_BUDGET()))     { b = b + 1i64; }
         if (v == (raw OV_UNENCODED()))  { u = u + 1i64; }
+        if (v == (raw OV_CHECKER()))    { ck = ck + 1i64; }
     }
     string:s = string_concat(int_to_string(rows.count), " obligation(s): ");
     s = string_concat(s, int_to_string(d)); s = string_concat(s, " discharged, ");
     s = string_concat(s, int_to_string(o)); s = string_concat(s, " open, ");
     s = string_concat(s, int_to_string(b)); s = string_concat(s, " budget, ");
-    s = string_concat(s, int_to_string(u)); s = string_concat(s, " unencoded");
+    s = string_concat(s, int_to_string(u)); s = string_concat(s, " unencoded, ");
+    s = string_concat(s, int_to_string(ck)); s = string_concat(s, " checker");
     pass s;
 };
 

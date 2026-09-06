@@ -889,6 +889,22 @@ at the emitter as EMIT-002 with no span. Fix (1.5.4 step 0): `loop` takes
 three, `till` two, TYPE-068 on the statement otherwise (DEF-28's code, its
 second way to fail).
 
+**DEF-31 (found at 1.5.4 step 4, 2026-09-06, by the rung suite's retirement;
+owner: the user — a language question) — an inline module's members cannot be
+reached from the module that declares it.** MODULE_REFERENCE §1 says modules
+"can be defined inline" and nested (`mod:core = { mod:math = { … }; };`) with
+`pub` visibility, and the checker has a sentence for the qualified spelling
+(`hidden.fetch(3i32)` is TYPE-007 "`hidden` is a module, not a value"), but no
+spelling resolves: `use hidden.*;` and `use hidden.fetch;` are RESOLVE-002
+("cannot find `fetch` in this scope") and the qualified access is refused. An
+inline module's code is emitted (the descent 0.7.7's audit hole was about) and
+unreachable. Found because `tests/rejection/inline_mod.npk` — which observed
+the descent through a rung refusal — became a positive program that wanted
+to CALL the function. Which spelling should reach it (the qualified
+`hidden.fetch`, a logical-path `use hidden.*;`, both) is the user's; the
+resolver and the checker then implement it, and `inline_mod.npk` exits
+through the call.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |

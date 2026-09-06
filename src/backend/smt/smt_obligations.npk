@@ -32,6 +32,8 @@ pub func:obl_function = NIL(ExprEmitter->:x, string:symbol, List<int32>:pnames,
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
     c.el_ctxs.count = 0i64;
+    c.pv_sites.count = 0i64;
+    c.pv_hashes.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     // THE CONTRACTS' CONTEXT (1.5.3 step 2): the declaration whose
@@ -65,6 +67,8 @@ pub func:obl_rule = NIL(ExprEmitter->:x, string:symbol, int32:subject_name,
     c.el_kinds.count = 0i64;
     c.el_spaces.count = 0i64;
     c.el_ctxs.count = 0i64;
+    c.pv_sites.count = 0i64;
+    c.pv_hashes.count = 0i64;
     if (c.obl == NULL) { pass NIL; }
     Encoder:en = raw enc_init(x.ast, x.et, x.tab, c.types, x.interns, c, x.tr, x.scope, symbol);
     drop enc_param(@en, subject_name, subject_type, 0i32, 0i32);
@@ -82,6 +86,14 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
     LlCtx->:c = x.fe.ctx;
     drop enc_finish(en);
     if (en.obls.count == 0i64) { pass NIL; }
+    // THE `prove` ROWS' HASHES (1.5.4 step 4, L-16): what the emitter's
+    // refusal looks up in the manifest to name the verdict.
+    for (int64:pi in 0i64...en.obls.count) {
+        if (en.obls.items[pi].kind == (raw OK_PROVE())) {
+            drop list_push(@c.pv_sites, en.obls.items[pi].site);
+            drop list_push(@c.pv_hashes, string_concat(en.obls.items[pi].hash, ""));
+        }
+    }
     if (c.obl.elide.count > 0i64) {
         drop enc_mark_discharged(en, c.obl.elide);
         for (int64:oi in 0i64...en.obls.count) {
@@ -109,7 +121,10 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         r = string_concat(r, string_from_bytes(en.obls.items[oi3].hash.ptr, en.obls.items[oi3].hash.len));
         r = string_concat(r, "\t");
         if (en.obls.items[oi3].encoded) { r = string_concat(r, "1"); c.obl.encoded_rows = c.obl.encoded_rows + 1i64; }
-        else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
+        else {
+            if (en.obls.items[oi3].checker) { r = string_concat(r, "c"); c.obl.checker_rows = c.obl.checker_rows + 1i64; }
+            else { r = string_concat(r, "0"); c.obl.unencoded_rows = c.obl.unencoded_rows + 1i64; }
+        }
         r = string_concat(r, "\t");
         r = string_concat(r, symbol);
         // THE SITE, THE ROLE, THE GROUP, THE TRAPS (1.5.3 step 2, L-13):

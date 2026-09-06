@@ -239,6 +239,30 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
     }
     if (s.kind == StmtKind.StmtAssertStaticStmt) {
         drop check_proposition(e, raw stmt_expr(s), raw CTX_PROVE());
+        // THE FOLD (1.5.4 step 4, L-17; VERIFICATION §1.1): the proposition
+        // must fold to a constant `bool` through 0.6's evaluator, and a
+        // `false` halts compilation. Asked only of a proposition the rule
+        // above typed `bool` (one mistake, one report, D-240), and not in a
+        // `comptime` body, where the evaluator folds it per call (L-18) and
+        // a parameter has no value yet.
+        ExprId:ax = raw stmt_expr(s);
+        if ((raw type_of_expr(e, ax)) != e.types.t_bool) { pass NIL; }
+        if (e.fn_comptime) { pass NIL; }
+        TypeResolver:r = raw etyper_resolver(e);
+        ConstVal:cv = raw fold_const(@r, ax, e.scope);
+        if (!(raw cv_folded(cv)) || (cv.kind != (raw CV_BOOL()))) {
+            if (!(raw fold_gave_up(@r))) {
+                discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
+                    "an `assert_static` proposition must fold to a constant at compile time, and this one reads a value the evaluator cannot see -- `prove` is the claim about a run-time value, decided by the solver in the verified build",
+                    s.span));
+            }
+            pass NIL;
+        }
+        if (cv.num == 0i64) {
+            discard(raw te_error(e, raw TYPE_ASSERT_STATIC(),
+                "this `assert_static` is false: its proposition folds to `false` at compile time",
+                s.span));
+        }
         pass NIL;
     }
 

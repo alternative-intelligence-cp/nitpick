@@ -142,6 +142,8 @@ async func:main = int32(cstring[]:argv) {
         if (et.is_error) { await diag_say("npkc: --elide: the manifest cannot be read") ?| NIL; exit 2i32; }
         ObManifest:man = raw man_parse(et.value);
         if (!man.ok) { await diag_say(string_concat("npkc: --elide: ", man.problem)) ?| NIL; exit 2i32; }
+        obl.elide_given = true;
+        drop man_rows_flat(@man, @obl.man_hashes, @obl.man_words);
         obl.elide = raw man_discharged(move(man));
     }
 

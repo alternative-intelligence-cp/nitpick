@@ -1,0 +1,38 @@
+// expect-exit: 0
+//
+// The audit's fourth Theme-A hole, inverted into its own test: emit_all used
+// to neither descend into an inline `mod` nor refuse it, so declared code was
+// SILENTLY SHED -- this file compiled clean while its function vanished. From
+// 0.7.7 to 1.5.4 it lived in tests/rejection/ carrying whatever construct
+// still rung (an `async` function, then a `requires`, then a `prove`): the
+// walk reached the construct and refused it by name, which proved the descent.
+// The last rung fell at 1.5.4 step 4 (S-47), so this is a positive program
+// now: the inline module and its function compile and the program runs. It
+// cannot CALL the function -- no spelling reaches an inline module's member
+// from its parent today (`use hidden.*;` is RESOLVE-002, `hidden.fetch(...)`
+// is TYPE-007 "a module, not a value"), recorded as DEF-31 -- so the descent
+// is observed by compiling, not by an answer, until DEF-31 gives a program
+// a way to reach the function and this test can exit through it.
+mod:inline_mod;
+mod:hidden = {
+    pub func:fetch = int32(int32:v) {
+        prove(v == v);
+        pass (v + 4i32);
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 1i32; },
+        (HeapOom)        { exit 1i32; },
+        (Unreachable)    { exit 1i32; },
+        (WildLeak)       { exit 1i32; },
+        (*)              { exit 1i32; }
+    }
+    exit 1i32;
+};

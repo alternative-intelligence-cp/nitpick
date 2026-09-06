@@ -1094,6 +1094,38 @@ pub async func:check_verify = List<string>(Ctx->:c, string:path, string:name, Ex
     Result<Run>:r2 = await compile_args(c, compiler, a2, raw duration_secs(300i64));
     if (r2.is_error) { fail r2.err; }
     Run:run2 = move(r2.value);
+    // THE VERIFIED BUILD MAY BE EXPECTED TO REFUSE (1.5.4 step 4, L-21; S-45):
+    // a test naming `expect-error` codes says the `--elide` run refuses with
+    // exactly that set -- an undischarged `prove` -- and the unit ends there.
+    // The harness's rule, byte for byte.
+    if (exp.errors.count > 0i64) {
+        int64:rc2 = run2.x.status;
+        if (!run2.x.exited) { rc2 = 0i64 - run2.x.signal; }
+        if (rc2 == 0i64) {
+            string:mr = string_concat(name, ": expected the verified build to refuse with ");
+            mr = string_concat(mr, raw expect_codes(exp.errors));
+            mr = string_concat(mr, ", but it compiled");
+            drop list_push(@fl, move(mr));
+            pass fl;
+        }
+        if (rc2 == 3i64) {
+            drop strlist_push(@fl, string_concat(name, ": the compiler TRAPPED under --elide -- a defect in it, not in this file"));
+            pass fl;
+        }
+        List<Finding>:got2 = raw findings_of(run2.x.err);
+        for (int64:g2 in 0i64...got2.count) {
+            if (got2.items[g2].derived) {
+                string:dm2 = string_concat(name, ": reported ");
+                dm2 = string_concat(dm2, string_from_bytes(got2.items[g2].code.ptr, got2.items[g2].code.len));
+                dm2 = string_concat(dm2, " at a `<derived-N>` line nobody wrote (D-259)");
+                drop list_push(@fl, move(dm2));
+            }
+        }
+        drop match_channel(@fl, name, exp.errors, got2, false);
+        drop match_channel(@fl, name, exp.notes, got2, true);
+        drop unexpected_codes(@fl, name, exp.errors, got2);
+        pass fl;
+    }
     if (!(run2.x.exited && (run2.x.status == 0i64))) {
         drop strlist_push(@fl, string_concat(name, string_concat(": the --elide run refused: ", raw text_head(raw text_trim(run2.x.err), 300i64))));
         pass fl;

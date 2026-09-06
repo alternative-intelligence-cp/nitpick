@@ -1,26 +1,23 @@
-// expect-exit: 20
+// expect-exit: 0
+// expect-obligation: prove discharged 1
 // expect-obligation: div-zero discharged 1
-// expect-obligation: div-zero open 1
-// expect-obligation: div-min discharged 2
+// expect-obligation: div-min discharged 1
 // expect-obligation: failsafe-post discharged 14
 // expect-obligation: exhaustive checker 1
 //
-// A LOOP'S CONDITION IS FALSE AFTER IT (1.5.4 step 1, L-4) when nothing
-// `break`s: after `while (d == 0i32) { d = 5i32; }` the exit was a head
-// visit that found `d != 0`, so `100 / d` discharges. The control loop holds
-// a `break`, so its exit is not a head visit and the same division after it
-// stays `open`. Exits 20 (100 / 5) either way.
-mod:path_while;
+// A DISCHARGED `prove` IS KNOWLEDGE AFTER ITS SITE (S-48, 1.5.4 step 4): the
+// claim `d * d + 1 > 0` is nonlinear for the encoder's fragment only in the
+// sense that z3 must prove it (QF_NIA), and once proven it is a hypothesis
+// -- the division `100 / (d * d + 1)` after it discharges THROUGH the
+// proof outline rather than by a second nonlinear query of its own.
+mod:prove_lemma;
 error:E9;
 
 func:main = int32(cstring[]:argv) {
     int32:d = (argv.len =>! int32) - 1i32;
-    while (d == 0i32) { d = 5i32; }
-    int32:q = 100i32 / d;
-    int32:k = 0i32;
-    while (k == 0i32) { k = 5i32; if (k > 0i32) { break; } }
-    int32:r = 100i32 / k;
-    exit (q + r - 20i32);
+    prove(d * d + 1i32 > 0i32);
+    int32:q = 100i32 / (d * d + 1i32);
+    exit (q - 100i32);
 };
 
 func:failsafe = int32(Error:e) {

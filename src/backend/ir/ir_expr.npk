@@ -100,6 +100,15 @@ pub func:iv_rung = IrVal(move string:what, move string:rung, Span:at) never fail
     pass v;
 };
 
+// THE VERIFIED BUILD'S REFUSAL (1.5.4 step 4, L-16): the sentence rides in
+// `what`; `emit_program`'s `refuse` gives it its code.
+pub func:iv_verify = IrVal(move string:what, Span:at) never fails {
+    IrVal:v = IrVal{ state: raw LL_VERIFY(), rung: "", what: move(what), at: at,
+                     ll: "", ref: "",
+                     type_id: 0i32, wrapped: false, inner: "" };
+    pass v;
+};
+
 pub func:iv_broken = IrVal(Span:at) never fails {
     IrVal:v = IrVal{ state: raw LL_BROKEN(), rung: "", what: "", at: at,
                      ll: "", ref: "",

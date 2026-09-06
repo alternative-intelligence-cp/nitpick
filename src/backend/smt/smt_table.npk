@@ -7,15 +7,19 @@
 //   <dir>/index.txt   NNNN<TAB>symbol<TAB>checks
 //   <dir>/rows.txt    NNNN<TAB>k<TAB>kind<TAB>hash<TAB>encoded<TAB>symbol<TAB>space:site<TAB>role<TAB>group<TAB>traps
 //
+// `encoded` is `1` for a row with a `(check-sat)`, `0` for an `unencoded`
+// row, and `c` for a row THE FRONTEND DECIDED (1.5.4 step 4, L-20): an
+// `exhaustive` row at a `pick` (the 0.5 analysis refused every uncovered
+// one), an `assert-static` row (the fold) -- no query, verdict `checker`.
+//
 // The last four (1.5.3 step 2, L-13): the site's id space and index, the
 // row's role (`guard`, `bypass`, `held`, `conform`), the group of rows one
 // guard shares, and the traps that guard keeps while any row of the group is
 // retained -- what the runners' belts count by.
 //
 // `k` is the obligation's 1-based index within its function (the file's
-// `o<k>` comment), `encoded` is 1 for a row with a `(check-sat)` and 0 for an
-// `unencoded` row (P-12), and the runner maps the file's answers to its
-// encoded rows in order.
+// `o<k>` comment), and the runner maps the file's answers to its encoded
+// rows in order.
 
 mod:smt_table;
 
@@ -24,22 +28,33 @@ use "../../frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
 pub struct:ObTable = {
     bool:want_files;         // --obligations DIR was given
     List<string>:elide;      // --elide FILE's discharged hashes ("" count when absent)
+    // THE MANIFEST'S EVERY ROW (1.5.4 step 4, L-16): `--elide` was given at
+    // all (a manifest with no discharged row is still a manifest), and each
+    // row's hash with its verdict word, so a `prove` the manifest does not
+    // discharge can say which verdict it carries.
+    bool:elide_given;
+    List<string>:man_hashes;
+    List<string>:man_words;
     List<string>:files;      // each function's .smt2 text, in emission order
     List<string>:file_syms;  // its symbol
     List<int64>:file_checks; // its `(check-sat)` count
     List<string>:rows;       // rows.txt lines
     int64:encoded_rows;      // totals for the driver's report line
     int64:unencoded_rows;
+    int64:checker_rows;
 };
 
 pub func:obtable_init = ObTable(bool:want_files) never fails {
     pass ObTable{ want_files: want_files,
                   elide: raw list_init::<string>(8i64),
+                  elide_given: false,
+                  man_hashes: raw list_init::<string>(8i64),
+                  man_words: raw list_init::<string>(8i64),
                   files: raw list_init::<string>(16i64),
                   file_syms: raw list_init::<string>(16i64),
                   file_checks: raw list_init::<int64>(16i64),
                   rows: raw list_init::<string>(32i64),
-                  encoded_rows: 0i64, unencoded_rows: 0i64 };
+                  encoded_rows: 0i64, unencoded_rows: 0i64, checker_rows: 0i64 };
 };
 
 // `NNNN`, four digits, 1-based.

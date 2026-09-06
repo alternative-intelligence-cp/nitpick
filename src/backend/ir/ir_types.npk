@@ -47,6 +47,9 @@ use "../../frontend/type_generic.npk".*;
 pub func:LL_OK = int32() never fails     { pass 0i32; };
 pub func:LL_RUNG = int32() never fails   { pass 1i32; };
 pub func:LL_BROKEN = int32() never fails { pass 2i32; };
+// THE VERIFIED BUILD'S REFUSAL (1.5.4 step 4, L-16): a `prove` the manifest
+// handed to `--elide` does not discharge -- neither a rung nor a defect.
+pub func:LL_VERIFY = int32() never fails { pass 3i32; };
 
 pub struct:LlType = {
     int32:state;
@@ -131,6 +134,11 @@ pub struct:LlCtx = {
     // row under the same number.
     List<int32>:el_ctxs;
     int32:cur_ctx;
+    // THE `prove` ROWS' HASHES for the function being emitted (1.5.4 step 4,
+    // L-16), by statement index: what the refusal looks up in the manifest
+    // to name the verdict the claim carries.
+    List<int32>:pv_sites;
+    List<string>:pv_hashes;
 
     // THE IMPL TABLE, or NULL. The backend re-substitutes a specialization's
     // signature when it emits one, and `T.Item` becomes what the impl bound
@@ -169,6 +177,8 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
                      el_spaces: raw list_init::<int32>(8i64),
                      el_ctxs: raw list_init::<int32>(8i64),
                      cur_ctx: 0i32,
+                     pv_sites: raw list_init::<int32>(2i64),
+                     pv_hashes: raw list_init::<string>(2i64),
                      vt_self: raw list_init::<int32>(vn),
                      vt_trait: raw list_init::<int32>(vn),
                      vt_sym: raw list_init::<int32>(vn),
@@ -290,6 +300,22 @@ pub func:llctx_elided = bool(LlCtx->:c, int32:space, int32:site, int32:kind) nev
         }
     }
     pass false;
+};
+
+// THE VERDICT WORD a `prove` at `site` carries in the manifest `--elide` was
+// given (1.5.4 step 4): the row's hash looked up among the manifest's rows;
+// "absent from the manifest" when it names no such row.
+pub func:llctx_prove_word = string(LlCtx->:c, int32:site) never fails {
+    if (c.obl == NULL) { pass "absent from the manifest"; }
+    for (int64:i in 0i64...c.pv_sites.count) {
+        if (c.pv_sites.items[i] != site) { continue; }
+        for (int64:j in 0i64...c.obl.man_hashes.count) {
+            if (string_equals(c.obl.man_hashes.items[j], c.pv_hashes.items[i])) {
+                pass (string_concat(c.obl.man_words.items[j], ""));
+            }
+        }
+    }
+    pass "absent from the manifest";
 };
 
 pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) never fails {

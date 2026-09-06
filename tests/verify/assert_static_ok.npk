@@ -1,20 +1,22 @@
-// expect-exit: 3
-// expect-obligation: div-zero discharged 1
-// expect-obligation: div-min discharged 1
+// expect-exit: 0
+// expect-obligation: assert-static checker 2
 // expect-obligation: failsafe-post discharged 14
-// expect-obligation: exhaustive checker 2
+// expect-obligation: exhaustive checker 1
 //
-// A PICK EXPRESSION'S ARM HAS ITS CONDITION TOO (1.5.4 step 1, L-3; the row
-// itself is step 0's DEF-26): the wildcard arm of `pick (d)` after a `(0i32)`
-// arm knows `d != 0`, so its `100 / d` discharges. Without arguments `d` is 0
-// and the first arm gives 3.
-mod:path_pickexpr;
+// `assert_static` FOLDS AT THE FRONTEND (L-17; VERIFICATION §1.1): each
+// proposition is a constant the evaluator decides -- a literal comparison, a
+// `comptime` function's answer -- and its row is the catalogue's `checker`
+// entry: no query, no guard, an inventory line. The statement lowers to
+// nothing.
+mod:assert_static_ok;
 error:E9;
 
-func:main = int32(cstring[]:argv) {
-    int32:d = (argv.len =>! int32) - 1i32;
-    int32:v = pick (d) { (0i32) { give 3i32; }, (*) { give 100i32 / d; } };
-    exit v;
+comptime func:sq = int32(int32:n) { pass (n * n); };
+
+func:main = int32(cstring[]:_~argv) {
+    assert_static(1i32 + 1i32 == 2i32);
+    assert_static(comptime(sq(3i32)) == 9i32);
+    exit 0i32;
 };
 
 func:failsafe = int32(Error:e) {

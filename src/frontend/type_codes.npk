@@ -406,3 +406,10 @@ pub func:TYPE_PICK_FROZEN = string() never fails { pass "NITPICK-TYPE-067"; };
 // step is the runtime guard's (`BadStep`) and, from 1.5.4 step 3, the
 // `loop-step` row's. One code, two ways to fail it (TYPE-054's convention).
 pub func:TYPE_LOOP_HEAD = string() never fails { pass "NITPICK-TYPE-068"; };
+// `assert_static` IS THE FRONTEND'S (1.5.4 step 4, L-17; VERIFICATION §1.1):
+// its proposition must FOLD to a constant through 0.6's evaluator -- one
+// that reads a value the evaluator cannot see is refused -- and a
+// proposition that folds to `false` halts compilation. In a `comptime` body
+// (L-18) the fold evaluates it per call, and a false `prove` there is a
+// counterexample reported under the same code. One code, its ways named.
+pub func:TYPE_ASSERT_STATIC = string() never fails { pass "NITPICK-TYPE-069"; };

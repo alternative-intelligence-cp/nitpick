@@ -189,6 +189,17 @@ func:view_copy = string(List<string>:l, int64:i) never fails {
     pass (string_concat(string_from_bytes(l.items[i].ptr, l.items[i].len), ""));
 };
 
+// EVERY ROW'S HASH AND VERDICT WORD (1.5.4 step 4, L-16), borrowed: what the
+// emitter's `prove` refusal names. Read before `man_discharged` consumes the
+// manifest.
+pub func:man_rows_flat = NIL(ObManifest->:m, List<string>->:hashes, List<string>->:words) never fails {
+    for (int64:i in 0i64...m.rows.count) {
+        drop list_push(hashes, string_concat(string_from_bytes(m.rows.items[i].hash.ptr, m.rows.items[i].hash.len), ""));
+        drop list_push(words, string_concat(raw ov_name(m.rows.items[i].verdict), ""));
+    }
+    pass NIL;
+};
+
 // The discharged hashes of a parsed manifest -- what `--elide` needs. CONSUMES
 // the manifest (D-004's conservative rule: a borrow would taint the list).
 pub func:man_discharged = List<string>(move ObManifest:m) never fails {

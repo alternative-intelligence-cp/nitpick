@@ -31,10 +31,12 @@ rather than to a target: every source in every suite, and everything in
 tests/grammar/, is fed to the REAL parser via tools/parse_check.npk and must come
 back with no diagnostics.
 
-That check is what makes tests/rejection/ mean what D-085 says. Its files must
-PARSE and be refused later -- and until 0.2.7 that was asserted against the seed's
-parser, the throwaway one, while the rule was written about the real one. A suite
-that tests the wrong parser tests nothing.
+That check is what made tests/rejection/ mean what D-085 says while a rung
+existed (the suite retired at 1.5.4 step 4 when the last construct lowered; the
+parser-never-restricts half of D-085 is this sweep's). Its files had to PARSE
+and be refused later -- and until 0.2.7 that was asserted against the seed's
+parser, the throwaway one, while the rule was written about the real one. A
+suite that tests the wrong parser tests nothing.
 
 Expectations live in the file, next to the code, so a test and its expectation
 cannot drift apart:
@@ -567,6 +569,12 @@ UNTESTED_CODES = {
 
     # OPEN -- a question, not an omission.
     "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
+
+    # NO RUNG LEFT (1.5.4 step 4, S-47): the last construct that rung lowered
+    # and tests/rejection/ retired with it; the code and its `refuse` branch
+    # stay for the next rung a cycle adds, whose test comes with it
+    # (`check_rung_names_open_cycle` holds the naming rule meanwhile).
+    "NITPICK-RUNG-001":    "no rung left -- the suite that asserted it retired at 1.5.4 (S-47); the code stays for the next rung",
 
     # BUILD-MODE -- emitted only under `--extra-picky=no-wildx`, which the
     # flagless rejection suites do not pass. Exercised directly against npkc
@@ -1524,13 +1532,13 @@ KIND_STATUS = {
     "ExprPostfixExpr": "inert: `++`/`--` struck at parse (D-174, PARSE-010); the backend guard is a defensive confession",
     "ExprPipeExpr": "lowered",   # 1.0.9c
     "ExprRangeExpr": "lowered",   # 0.9.6
-    "ExprSpreadExpr": "rung",
+    "ExprSpreadExpr": "inert: consumed by the variadic call emitters (1.1.13-close); reaching the node is a broken promise",
     "ExprTernaryExpr": "lowered",  # 0.9.6 — lazy, branch-based
     "ExprIsErrExpr": "lowered",  # 0.9.5
-    "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "lowered",  # 1.0.9c — folded at check time
+    "ExprSafeNavExpr": "lowered", "ExprComptimeExpr": "lowered",  # 1.0.9c — folded at check time
     "ExprSafeUnwrapExpr": "lowered",   # the `?|` Result fallback (D-175 restored the spelling)
     "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
-    "ExprNullCoalesceExpr": "rung",
+    "ExprNullCoalesceExpr": "lowered",
     "ExprDefaultsExpr": "inert: a bare `?` and the word `defaults` struck at parse (D-175, PARSE-011); the backend guard is a defensive confession",
     "ExprVectorCtorExpr": "lowered",  # 1.3.1 — simd<T, N> construction (D-194)
     "ExprAwaitExpr": "lowered",  # 1.1.4 — the machines compose; positional rungs remain until D/E
@@ -1550,8 +1558,8 @@ KIND_STATUS = {
     "StmtDeferStmt": "lowered", "StmtDiscardStmt": "lowered",
     "StmtForStmt": "lowered", "StmtLoopStmt": "lowered", "StmtTillStmt": "lowered",  # 0.9.7
     "StmtWhenStmt": "lowered",  # 0.9.7
-    "StmtProveStmt": "rung",
-    "StmtAssertStaticStmt": "rung",
+    "StmtProveStmt": "lowered",         # to nothing: the encoder's row (1.5.4 step 4)
+    "StmtAssertStaticStmt": "lowered",  # to nothing: the frontend's fold (1.5.4 step 4)
     "StmtFallStmt": "lowered", "StmtGiveStmt": "lowered",  # 0.9.7
     "StmtPickArm": "inert: walked inside its pick, never dispatched alone",
     # --- DeclKind ---------------------------------------------------------
@@ -1873,7 +1881,15 @@ def check_module_rejection(binary, path, name, exp):
     # identifiers, wording stays free to improve.
     # Diagnostics arrive on STDERR since 0.8.5 (D-141): stdout is the product
     # channel, and the report must survive a redirect of it.
-    got, notes, derived = parse_findings(r.stderr.decode("utf-8", "replace"))
+    return match_findings(name, exp, r.stderr.decode("utf-8", "replace"))
+
+
+def match_findings(name, exp, stderr_text):
+    """The expectations against what a refusal reported (D-237, D-259): every
+    expected code (at its line when one is named), every expected note, and
+    NOTHING the expectations do not name. Shared by the module rejections and
+    the verify stage's refusal of an unproven `prove` (1.5.4 step 4)."""
+    got, notes, derived = parse_findings(stderr_text)
 
     fails = []
     # A LINE NOBODY WROTE FAILS THE UNIT (D-259, 1.5.2b step 4): a finding at
@@ -1943,8 +1959,9 @@ def check_type_rejection(binary, path, name, exp):
       tests/modules/rejection/  refused by the LOADER -- never reaches a checker
       tests/types/rejection/    refused HERE -- it loads and resolves, and a type
                                 rule says no
-      tests/rejection/          refused by the BACKEND -- it is a correct program
-                                at a rung that cannot lower it yet (D-085)
+      (tests/rejection/         refused by the BACKEND at a rung that could not
+                                lower it yet -- retired at 1.5.4 step 4, D-085's
+                                last rung gone)
 
     Collapsing any two of them would make "correctly refused" mean less, because
     a file that stops early would satisfy a test written about a later stage.
@@ -3109,8 +3126,10 @@ def z3_verdicts(obl_dir, name):
         for row, a in zip(enc, ans):
             verdict[(fno, row[1])] = VERDICT_OF_ANSWER[a]
     full = []
+    # `c` IS A ROW THE FRONTEND DECIDED (1.5.4 step 4, L-20): no answer
+    # consumed, verdict `checker`.
     for fno, k, kind, h, encoded, sym, site, role, group, traps in rows:
-        v = verdict[(fno, k)] if encoded == "1" else "unencoded"
+        v = verdict[(fno, k)] if encoded == "1" else ("checker" if encoded == "c" else "unencoded")
         full.append((fno, k, kind, h, v, sym, site, role, group, int(traps)))
     return full, []
 
@@ -3124,7 +3143,7 @@ def manifest_text(full):
              "# z3 %s sha256 %s" % (Z3_VERSION, Z3_SHA),
              "# options " + " ".join(Z3_OPTIONS)]
     for sym, h, kind, v, role in sorted(set((f[5], f[3], f[2], f[4], f[7]) for f in full)):
-        tier = "-" if v == "unencoded" else "int"
+        tier = "-" if v in ("unencoded", "checker") else "int"
         lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision_word(kind, v, role), sym))
     return "\n".join(lines) + "\n"
 
@@ -3322,6 +3341,16 @@ def check_verify_program(path, name, exp, tmp):
         fh.write(manifest_text(full))
     r = subprocess.run([COMPILER, path, "--elide", man, "--obligations", obl + "2", "-o", base + ".v.ll"],
                        capture_output=True, text=True, timeout=300)
+    # THE VERIFIED BUILD MAY BE EXPECTED TO REFUSE (1.5.4 step 4, L-21; S-45):
+    # a test naming `expect-error` codes says the `--elide` run refuses with
+    # exactly that set -- an undischarged `prove` -- and the unit ends there.
+    if exp.errors:
+        if r.returncode == 0:
+            return ["%s: expected the verified build to refuse with %s, but it compiled"
+                    % (name, sorted(set(c for c, _, _ in exp.errors)))]
+        if r.returncode == 3:
+            return ["%s: the compiler TRAPPED under --elide -- a defect in it, not in this file" % name]
+        return match_findings(name, exp, r.stderr)
     if r.returncode != 0:
         return ["%s: the --elide run refused: %s" % (name, r.stderr.strip()[:300])]
     with open(os.path.join(obl, "rows.txt"), encoding="utf-8") as fa, open(os.path.join(obl + "2", "rows.txt"), encoding="utf-8") as fb:

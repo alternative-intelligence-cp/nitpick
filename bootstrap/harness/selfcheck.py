@@ -64,8 +64,15 @@ MAIN_OK = "func:main = int32(cstring[]:_~argv) { exit 0i32; };\n"
 # 1.5.4's rung -- the LAST verification rung to retire (1.5.2 step 1 moved the
 # cases off `limit<Rules>`, which it lowers, so the example moves exactly once
 # more, when 1.5.4 chooses the permanent one).
+# THE NEGATIVE CONSTRUCT: a type mismatch, refused by the frontend with
+# TYPE-007 (1.5.4 step 4). It was a `prove` until 1.5.4 lowered that, a
+# `requires` before 1.5.3, an `async` function before 1.1.4: the last
+# construct that rung fell with this subcycle, so the runner's rules about a
+# negative test are exercised on a frontend refusal now -- one the SNAPSHOT
+# (which compiles these cases, 1.4.6) and the compiler under test report
+# identically, which a rule added this cycle would not be.
 RUNG = """func:build = int32(int32:seed) {
-    prove(seed > 0i32);
+    bool:flag = seed;
     pass seed;
 };
 """
@@ -95,7 +102,7 @@ def _case(name, kind, directives, body, must_fail, why):
 CASES = [
     # (name, kind, source, must_fail, why)
     _case("correct_expectation", "negative",
-          "// expect-error: NITPICK-RUNG-001\n", RUNG + MAIN_OK + FAILSAFE,
+          "// expect-error: NITPICK-TYPE-007\n", RUNG + MAIN_OK + FAILSAFE,
           False, "a correct expectation must pass"),
 
     _case("wrong_code", "negative",
@@ -103,14 +110,14 @@ CASES = [
           True, "expecting the wrong code must fail"),
 
     _case("compiles_anyway", "negative",
-          "// expect-error: NITPICK-RUNG-001\n", MAIN_OK + FAILSAFE,
+          "// expect-error: NITPICK-TYPE-007\n", MAIN_OK + FAILSAFE,
           True, "a negative test that compiles must fail"),
 
     _case("no_expectation", "negative", "", RUNG + MAIN_OK + FAILSAFE,
           True, "a negative test with no expect-error must fail"),
 
     _case("wrong_line", "negative",
-          "// expect-error: NITPICK-RUNG-001\n// expect-error-at: 99:1\n",
+          "// expect-error: NITPICK-TYPE-007\n// expect-error-at: 99:1\n",
           RUNG + MAIN_OK + FAILSAFE,
           True, "expecting the wrong line must fail"),
 
@@ -304,20 +311,34 @@ def main():
             "func:main = int32(cstring[]:argv) {\n"
             "    int32:v = limited(argv.len =>! int32) ?! E9;\n    exit (v - 1i32);\n};\n"
             "error:E9;\n")
+    VPROVE = ("func:main = int32(cstring[]:argv) {\n    int32:d = (argv.len =>! int32) - 1i32;\n"
+              "    prove(d != 0i32);\n    exit 0i32;\n};\n")
     VLFS = ("func:failsafe = int32(Error:e) {\n    pick (e) {\n        (E9) { exit 8i32; },\n"
             "        (LimitViolated) { exit 31i32; },\n        (HeapBadRequest) { exit 9i32; },\n"
             "        (HeapOom) { exit 9i32; },\n        (IntOverflow) { exit 9i32; },\n"
             "        (Unreachable) { exit 9i32; },\n        (WildLeak) { exit 9i32; },\n"
             "        (*) { exit 9i32; }\n    }\n    exit 9i32;\n};\n")
     for name, head, body, must_fail, why in (
-            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n",
+            ("wrong-verdict", "// expect-exit: 21\n// expect-obligation: div-zero discharged 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, True, "a verify test expecting `discharged` for an opaque divisor must fail"),
-            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n",
+            ("right-verdict", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n// expect-obligation: exhaustive checker 1\n",
              VDIV + VFS, False, "a verify test naming its rows exactly must pass"),
-            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n",
+            ("wrong-limit", "// expect-exit: 0\n// expect-obligation: limit discharged 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n// expect-obligation: exhaustive checker 1\n",
              VLIM + VLFS, True, "a verify test expecting `discharged` for a limited parameter's entry must fail"),
-            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n",
-             VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass")):
+            ("right-limit", "// expect-exit: 0\n// expect-obligation: limit open 1\n// expect-obligation: limit-subsume open 1\n// expect-obligation: failsafe-post discharged 9\n// expect-obligation: exhaustive checker 1\n",
+             VLIM + VLFS, False, "a verify test naming a limit's rows exactly must pass"),
+            # AN UNPROVEN `prove` REFUSES THE VERIFIED BUILD (1.5.4 step 4, L-21;
+            # S-45): a unit whose `prove` is `open` and names no error must
+            # FAIL (the `--elide` run refused); the same unit naming
+            # NITPICK-VERIFY-001 passes -- the refusal is the expectation. And
+            # a `checker` row is read as one: an `exhaustive` row named
+            # `discharged` must fail. The texts are npkg's, byte for byte.
+            ("prove-open", "// expect-obligation: prove open 1\n// expect-obligation: failsafe-post discharged 10\n// expect-obligation: exhaustive checker 1\n",
+             VPROVE + VFS, True, "a verify unit whose `prove` is open and names no refusal must fail"),
+            ("prove-open-named", "// expect-error: NITPICK-VERIFY-001\n// expect-obligation: prove open 1\n// expect-obligation: failsafe-post discharged 10\n// expect-obligation: exhaustive checker 1\n",
+             VPROVE + VFS, False, "a verify unit naming the verified build's refusal of its open `prove` must pass"),
+            ("checker-row", "// expect-exit: 21\n// expect-obligation: div-zero open 1\n// expect-obligation: div-min discharged 1\n// expect-obligation: failsafe-post discharged 10\n// expect-obligation: exhaustive discharged 1\n",
+             VDIV + VFS, True, "a verify test naming a `checker` row `discharged` must fail")):
         # THE FILE'S BASENAME MUST MATCH ITS `mod:` NAME (RESOLVE-005), so the
         # hyphen in the case name becomes an underscore in both.
         modname = name.replace("-", "_")

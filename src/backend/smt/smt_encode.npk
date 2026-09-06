@@ -144,6 +144,7 @@ pub struct:SmtObl = {
     int32:col;
     int32:region;            // the branch region of the site
     bool:encoded;            // false: an `unencoded` row (P-12)
+    bool:checker;            // THE FRONTEND DECIDED IT (1.5.4 step 4, L-20): no query, verdict `checker`
     List<int32>:cone_syms;   // filled by finish: symbols in the cone, ascending
     List<int32>:cone_hyps;   // filled by finish: hypotheses in the cone, in order
     string:canon;            // filled by finish: the canonical text
@@ -604,6 +605,27 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: role, group: group, traps: traps,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
+                       checker: false,
+                       cone_syms: raw list_init::<int32>(1i64),
+                       cone_hyps: raw list_init::<int32>(1i64),
+                       canon: "", hash: "", discharged: false };
+    drop list_push(@e.obls, move(o));
+    pass NIL;
+};
+
+// A ROW THE FRONTEND DECIDED (1.5.4 step 4, L-19, L-20): an `exhaustive` row
+// at a `pick` (the 0.5 analysis refused every uncovered one before the
+// backend ran), an `assert-static` row (the fold, TYPE-069). No query, no
+// guard, verdict `checker` -- the catalogue's inventory entry.
+func:record_checker = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span:at) never fails {
+    if (e.quiet > 0i32) { pass NIL; }
+    int32:ord = e.ordinals.items[kind => int64] + 1i32;
+    e.ordinals.items[kind => int64] = ord;
+    SmtObl:o = SmtObl{ kind: kind, goal: "", syms: raw list_init::<int32>(1i64),
+                       hyps: e.hyps.count, site: site, space: space, ordinal: ord,
+                       ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
+                       line: at.line, col: at.col, region: e.cur_region, encoded: false,
+                       checker: true,
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
                        canon: "", hash: "", discharged: false };
@@ -1994,6 +2016,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     // sites and definitions, in regions of their own), the names the arms
     // assign invalidated after; the value opaque until 1.5.4 step 2.
     if (n.kind == ExprKind.ExprPickExpr) {
+        drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
         if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_int(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
@@ -2909,6 +2932,7 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     }
 
     if (s.kind == StmtKind.StmtPickStmt) {
+        drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_STMT(), sid.index, s.span);
         Term:sel = raw enc_expr(e, raw pick_selector(s));
         Term:pv = raw walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)), false);
         pass NIL;
@@ -2926,6 +2950,38 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
         pass NIL;
     }
 
+    // `prove(e)` (1.5.4 step 4, L-15; S-48): a guard-less row over the
+    // proposition, walked QUIET -- nothing executes, so a division inside is
+    // not a site and SMT's total `div` keeps the proof sound whatever value it
+    // takes; `unencoded` when the proposition is outside the fragment. THEN
+    // the proposition is a hypothesis (L-7's order: never in its own cone):
+    // a proven claim is knowledge for every site after it -- sound because
+    // the verified build refuses an undischarged `prove` and the plain build
+    // elides nothing.
+    if (s.kind == StmtKind.StmtProveStmt) {
+        e.quiet = e.quiet + 1i32;
+        Term:pv = raw enc_expr(e, raw stmt_expr(s));
+        e.quiet = e.quiet - 1i32;
+        if (pv.ok && pv.is_bool) {
+            drop record_at(e, raw OK_PROVE(), pv.text, pv.syms, raw SITE_STMT(), sid.index, s.span, true,
+                           raw ROLE_GUARD(), sid.index, 0i32);
+            drop hyp_push(e, pv.text, pv.syms);
+        } else {
+            List<int32>:pnone = raw list_init::<int32>(1i64);
+            drop record_at(e, raw OK_PROVE(), "", pnone, raw SITE_STMT(), sid.index, s.span, false,
+                           raw ROLE_GUARD(), sid.index, 0i32);
+        }
+        pass NIL;
+    }
+    // `assert_static(e)` (L-17, L-20): the frontend folded it; the row is the
+    // inventory's, `checker`; the proposition walked QUIET (nothing executes).
+    if (s.kind == StmtKind.StmtAssertStaticStmt) {
+        e.quiet = e.quiet + 1i32;
+        Term:av = raw enc_expr(e, raw stmt_expr(s));
+        e.quiet = e.quiet - 1i32;
+        drop record_checker(e, raw OK_ASSERT_STATIC(), raw SITE_STMT(), sid.index, s.span);
+        pass NIL;
+    }
     if (s.kind == StmtKind.StmtGiveStmt) {
         // THE ARM'S VALUE (L-9): remembered for the pick expression's chain.
         e.last_give = raw enc_expr(e, raw stmt_expr(s));
@@ -3094,7 +3150,9 @@ func:sym_declaration = string(Encoder->:e, int32:idx) never fails {
 pub func:enc_finish = NIL(Encoder->:e) never fails {
     for (int64:oi in 0i64...e.obls.count) {
         if (!e.obls.items[oi].encoded) {
-            string:u = string_concat("(unencoded ", raw ok_name(e.obls.items[oi].kind));
+            string:uhead = "(unencoded ";
+            if (e.obls.items[oi].checker) { uhead = "(checker "; }
+            string:u = string_concat(uhead, raw ok_name(e.obls.items[oi].kind));
             u = string_concat(u, " ");
             u = string_concat(u, int_to_string(e.obls.items[oi].ordinal => int64));
             u = string_concat(u, ")");
@@ -3200,7 +3258,10 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
         c = string_concat(c, int_to_string(e.obls.items[oi].line => int64));
         c = string_concat(c, ":");
         c = string_concat(c, int_to_string(e.obls.items[oi].col => int64));
-        if (!e.obls.items[oi].encoded) { c = string_concat(c, " unencoded"); }
+        if (!e.obls.items[oi].encoded) {
+            if (e.obls.items[oi].checker) { c = string_concat(c, " checker"); }
+            else { c = string_concat(c, " unencoded"); }
+        }
         drop smtbuf_line(@b, c);
         if (e.obls.items[oi].encoded) { checks = checks + 1i64; }
     }

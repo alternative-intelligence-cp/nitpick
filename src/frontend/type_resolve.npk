@@ -1286,6 +1286,22 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
     if (st.kind == StmtKind.StmtLoopStmt) { pass (raw fold_counted(r, st, scope, f)); }
     if (st.kind == StmtKind.StmtTillStmt) { pass (raw fold_counted(r, st, scope, f)); }
 
+    // `prove` AND `assert_static` IN A `comptime` BODY (1.5.4 step 4, L-18):
+    // evaluated over the call's concrete values -- the compiler verifies by
+    // evaluation where it evaluates -- and a false one is a counterexample,
+    // reported once and ending the fold.
+    if ((st.kind == StmtKind.StmtProveStmt) || (st.kind == StmtKind.StmtAssertStaticStmt)) {
+        ConstVal:pv = raw fold_expr(r, ExprId{ index: st.a }, scope, f);
+        if (pv.kind != (raw CV_BOOL())) { pass (raw flow_fail()); }
+        if (pv.num == 0i64) {
+            drop fold_reported(r, raw TYPE_ASSERT_STATIC(),
+                "this compile-time proposition is false: a `prove` or `assert_static` in a `comptime` body is evaluated over the call's values, and this call is a counterexample",
+                st.span);
+            pass (raw flow_fail());
+        }
+        pass (raw flow_none());
+    }
+
     if (st.kind == StmtKind.StmtDiscardStmt) {
         // Evaluated for nothing, which is what `discard` means. It still has to
         // FOLD: a discard of something the evaluator cannot run is a body it has

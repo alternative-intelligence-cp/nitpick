@@ -65,6 +65,13 @@ func:refuse = NIL(DiagList->:diags, IrVal:v) never fails {
                            string_concat(m1, v.rung), v.at));
         pass NIL;
     }
+    // THE VERIFIED BUILD'S REFUSAL (1.5.4 step 4, L-16): the sentence is the
+    // emitter's, the code this family's own.
+    if (v.state == (raw LL_VERIFY())) {
+        string:vm = string_concat(v.what, "");
+        drop diaglist_push(diags, raw diag_error(raw VERIFY_UNPROVEN(), move(vm), v.at));
+        pass NIL;
+    }
     // EVERY `iv_broken` ARRIVES HERE, not only an unclassified kind — a
     // pattern with no variant, a slot nothing opened. What they share is that
     // the frontend promised this program valid and the emitter could not keep

@@ -625,11 +625,26 @@ func:emit_stmt_kind = IrVal(ExprEmitter->:x, StmtId:sid) never fails {
 
     if (s.kind == StmtKind.StmtGiveStmt) { pass (raw emit_give(x, s)); }
     if (s.kind == StmtKind.StmtFallStmt) { pass (raw emit_fall(x, s)); }
+    // `prove(e)` LOWERS TO NOTHING (1.5.4 step 4, L-15; D-218.7: guard `no`):
+    // the claim is the encoder's row, decided by the solver in the verified
+    // build. Under `--elide` a row the manifest does not discharge REFUSES
+    // (S-45, L-16, VERIFY-001): a verified artifact carries no unproven
+    // claim. `assert_static(e)` lowers to nothing too: the frontend folded it
+    // (TYPE-069) and the encoder's `checker` row is its inventory entry.
     if (s.kind == StmtKind.StmtProveStmt) {
-        pass (raw iv_rung("`prove`", "1.5", s.span));
+        LlCtx->:pc = x.fe.ctx;
+        if (pc.obl != NULL) {
+            if (pc.obl.elide_given && (!(raw llctx_elided(pc, raw SITE_STMT(), sid.index, raw OK_PROVE())))) {
+                string:pw = raw llctx_prove_word(pc, sid.index);
+                string:pm = string_concat("this `prove` is not discharged by the manifest the verified build was given (its row is ", pw);
+                pm = string_concat(pm, "): a verified build refuses an unproven claim (VERIFICATION §1.2) -- `npkg verify --explain` writes the model of an `open` row, a `budget` row needs a smaller claim, and an `unencoded` one is outside the encoder's fragment");
+                pass (raw iv_verify(move(pm), s.span));
+            }
+        }
+        pass (raw iv_nil());
     }
     if (s.kind == StmtKind.StmtAssertStaticStmt) {
-        pass (raw iv_rung("`assert_static`", "1.5", s.span));
+        pass (raw iv_nil());
     }
 
     // FAIL CLOSED — StmtNone, a bare PickArm, or a kind nobody classified.
