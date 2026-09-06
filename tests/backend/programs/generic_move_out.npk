@@ -1,0 +1,76 @@
+// expect-exit: 0
+//
+// A GENERIC FUNCTION MOVES OUT OF AN INDEXED ELEMENT AT AN OWNING `T` (1.5.2e;
+// the library workbench's O-N17, found at the 1.5.2c close). `take<T>` reads
+// `move(h.items.items[i])` with `T = string`: the element's recorded type in
+// the template is `T`, and while `ll_type` substituted it for the load and the
+// store, the vacant helper's SYMBOL was built from the raw type id -- a
+// `@"npk.vacant.<T's id>"` the drop registry could never define, so `llc`
+// refused a module npkc had accepted. The three controls the workbench
+// measured are here too: the concrete move-out, the generic scalar element and
+// the generic move-IN all linked before; the four link together now, and the
+// drop-body emitter says aloud when a registered type cannot be lowered instead
+// of emitting nothing. Exit 0, so D-151 asserts the moved-out strings and the
+// vacant slots left behind them leak nothing.
+mod:generic_move_out;
+error:E9;
+
+struct:Holder<T> = { List<T>:items; };
+
+func:take<T> = T(Holder<T>->:h, int64:i) never fails {
+    pass (move(h.items.items[i]));
+};
+
+func:take_str = string(Holder<string>->:h, int64:i) never fails {
+    pass (move(h.items.items[i]));
+};
+
+func:read_at<T> = T(Holder<T>->:h, int64:i) never fails {
+    pass h.items.items[i];
+};
+
+func:put<T> = NIL(Holder<T>->:h, move T:v) {
+    discard(list_push(@h.items, move(v)) ?! E9);
+    pass NIL;
+};
+
+func:run = int32() {
+    Holder<string>:h = Holder{ items: list_init::<string>(4i64) ?! E9 };
+    discard(list_push(@h.items, string_concat("ab", "cd")) ?! E9);
+    discard(list_push(@h.items, string_concat("efg", "h")) ?! E9);
+    put::<string>(@h, string_concat("ij", "klm")) ?! E9;
+    // the generic move-out, the case that did not link
+    string:s0 = raw take::<string>(@h, 0i64);
+    if (s0.len != 4i64) { pass 2i32; }
+    // the concrete move-out
+    string:s1 = raw take_str(@h, 1i64);
+    if (s1.len != 4i64) { pass 3i32; }
+    // a generic scalar element read
+    Holder<int32>:n = Holder{ items: list_init::<int32>(2i64) ?! E9 };
+    put::<int32>(@n, 7i32) ?! E9;
+    if ((raw read_at::<int32>(@n, 0i64)) != 7i32) { pass 4i32; }
+    // the third element is still owned by the holder and drops with it
+    if (h.items.count != 3i64) { pass 5i32; }
+    pass 0i32;
+};
+
+// The holders live in `run`, which RETURNS: `exit` runs joins and defers and
+// not the scope drops (1.4.4's rider), so an owning local alive in `main` at
+// `exit 0` is what D-151 reports -- OPEN_DECISIONS S-39 asks whether `exit`
+// should run `main`'s unwind first.
+func:main = int32(cstring[]:_~argv) {
+    exit (run() ?! E9);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (OutOfBounds) { exit 97i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

@@ -823,14 +823,21 @@ pub func:emit_move_out = IrVal(ExprEmitter->:x, ExprId:vid) never fails {
             if (raw type_drops(x.tr, vt, x.scope, 64i32)) {
                 PlaceVal:place = raw addr_of(x, vid);
                 if (place.state == (raw LL_OK())) {
-                    LlType:ll = raw ll_type(x.fe.ctx, place.type_id);
+                    // THE PLACE'S TYPE THROUGH THE SPECIALIZATION (1.5.2e, the
+                    // workbench's O-N17): inside `take<T>` the element's recorded
+                    // type is `T`; `ll_type` substitutes it on its own, but the
+                    // vacant helper's SYMBOL was built from the raw id, naming a
+                    // body the drop registry could never emit -- `llc` refused
+                    // the module where npkc had accepted it.
+                    int32:pty = raw subst_emitted_type(x.fe.ctx, place.type_id);
+                    LlType:ll = raw ll_type(x.fe.ctx, pty);
                     if (raw ll_is_ok(ll)) {
                         string:t = raw irw_temp(x.fe.w);
                         drop irw_line(x.fe.w, raw cat5(t, " = load ", ll.text, ", ptr ", place.addr));
                         drop irw_line(x.fe.w, raw cat5("store ", ll.text, " zeroinitializer, ptr ", place.addr, ""));
-                        drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, place.type_id),
+                        drop irw_line(x.fe.w, raw cat5("call void ", raw vacant_fn_sym(x.fe.ctx, pty),
                                           "(ptr ", place.addr, ")"));
-                        pass (raw iv(string_concat(ll.text, ""), move(t), place.type_id));
+                        pass (raw iv(string_concat(ll.text, ""), move(t), pty));
                     }
                 }
             }

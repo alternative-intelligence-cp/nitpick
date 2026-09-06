@@ -1315,6 +1315,19 @@ func:emit_drop_bodies = NIL(IrWriter->:w, LlCtx->:c, TypeResolver->:tr,
     int64:i = 0i64;
     while (i < (raw drop_type_count(c))) {
         int32:dty = raw drop_type_at(c, i);
+        // A REGISTERED TYPE THE EMITTER CANNOT LOWER IS A DEFECT SAID ALOUD
+        // (1.5.2e, O-N17): `emit_one_drop` and `emit_one_vacant` used to emit
+        // NOTHING for one -- an unsubstituted parameter that reached the
+        // registry through a symbol built from a raw type id -- and the module
+        // carried a call to a body that did not exist, refused by `llc` where
+        // npkc had said yes. Absent and false spelled the same (D-227's class).
+        if (!(raw ll_is_ok(raw ll_type(c, dty)))) {
+            drop diaglist_push(diags, raw diag_error(raw EMIT_INTERNAL(),
+                string_concat("a drop body was requested for a type the emitter cannot lower (type id ",
+                    string_concat(int_to_string(dty => int64),
+                        "): a symbol was built from an unsubstituted type -- a defect in the compiler rather than in this program")),
+                raw span_none()));
+        }
         drop emit_one_drop(w, c, tr, ast, tab, diags, dty);
         drop emit_one_vacant(w, c, tr, ast, tab, dty);
         i = i + 1i64;
