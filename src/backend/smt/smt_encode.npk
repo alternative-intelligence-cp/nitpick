@@ -32,8 +32,22 @@
 // same value", and a call handed the address falsifies it: `int32:a = x +
 // 1i32; raw bump(@x); 100i32 / (x - a)` kept `|a.1| = |x.1| + 1` across the
 // call, z3 proved the divisor -1, and the elided build divided by zero where
-// the plain build reached `failsafe`. Path conditions are 1.5.4's; contracts
-// as hypotheses 1.5.3's.
+// the plain build reached `failsafe`. Contracts as hypotheses are 1.5.3's.
+//
+// PATH CONDITIONS (1.5.4 step 1; L-1..L-6 in meta/roadmap/1.5/1.5.4.md): a
+// branch condition is a fact INSIDE the arm it guards and its negation a fact
+// where the arm cannot have been taken -- an `if`'s condition in its then-arm
+// and `(not c)` in its else-arm; a `pick` arm's pattern (`(= sel v)`, a
+// range) and the negations of the arms before it, its `where` guard once
+// inside; after an arm that never falls through (a syntactic terminator:
+// `pass`, `fail`, `return`, `exit`, `trap`, `break`, `continue`, `give`, and
+// blocks, `if`s and `pick`s made only of those) the OTHER arm's condition
+// holds; after a loop nothing `break`s out of, its condition is false; a
+// `when`'s `then` block knows the condition held at the first head visit and
+// its `end` block that it did not and that the loop changed nothing. Each is
+// pushed in the region it is a fact of, so the cone's dominance rule keeps it
+// where it belongs. The MERGE after a construct is still a havoc here; step 2
+// makes it an `ite` and re-pushes an arm's facts guarded by its condition.
 //
 // THE CONE (P-4): an obligation's canonical text is the relevance closure of
 // its goal over the hypotheses that DOMINATE it -- recorded before it, in a
@@ -1292,13 +1306,23 @@ func:walk_loop = NIL(Encoder->:e, StmtId:sid, VerifyId:inv, StmtId:body, ExprId:
     }
     drop region_leave(e);
     drop invalidate(e, assigned);
+    bool:no_break = !(raw loop_has_break(e, body, label, false, 64i32));
     if (nc > 0i32) {
-        if (!(raw loop_has_break(e, body, label, false, 64i32))) {
+        if (no_break) {
             e.quiet = e.quiet + 1i32;
             Term:h2 = raw invariant_conj(e, inv, true);
             e.quiet = e.quiet - 1i32;
             if (h2.ok) { drop hyp_push(e, h2.text, h2.syms); }
         }
+    }
+    // THE CONDITION IS FALSE AFTER A LOOP NOTHING `break`s OUT OF (L-4): the
+    // exit is a head visit that found it false, over the post-havoc versions.
+    // Encoded QUIET: its sites were recorded once, inside the body region.
+    if (no_break && (!(raw expr_is_none(cond)))) {
+        e.quiet = e.quiet + 1i32;
+        Term:wc2 = raw enc_expr(e, cond);
+        e.quiet = e.quiet - 1i32;
+        if (wc2.ok && wc2.is_bool) { drop hyp_push(e, raw smt_app1("not", wc2.text), wc2.syms); }
     }
     pass NIL;
 };
@@ -1645,7 +1669,7 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
     // assign invalidated after; the value opaque until 1.5.4 step 2.
     if (n.kind == ExprKind.ExprPickExpr) {
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
-        drop walk_pick_arms(e, n.b, n.c);
+        drop walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }));
         List<int32>:pa = raw list_init::<int32>(4i64);
         drop collect_assigned_expr(e, id, @pa, 64i32);
         drop invalidate(e, pa);
@@ -1846,18 +1870,222 @@ func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
 // had this inline since 1.5.0; the expression form's arms were never walked,
 // so a guard site inside one had no row (P-12 broken) -- one helper, both
 // spellings (1.5.2c's lesson).
-func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count) never fails {
+//
+// THE ARMS' CONDITIONS (1.5.4 step 1, L-3): a value pattern is `(= sel v)`,
+// a range `(and (<= lo sel) (< sel hi))` (`<=` when inclusive), a wildcard
+// the negation of every arm before it when each has a condition; a
+// destructure, an ERR pattern, a selector outside the fragment: none. Inside
+// arm i's region its own condition holds and, since arms are tried in
+// order, so does the negation of every earlier arm's. A `where` guard is a
+// fact inside its arm once encoded there (it ran only when the pattern
+// matched). When ANY arm carries a guard, only each arm's own pattern is
+// pushed -- a guarded arm's failure is not something the patterns alone
+// express -- and when a `fall` sits anywhere in the pick, no arm gets a
+// condition at all: a target arm is entered from another arm.
+func:walk_pick_arms = NIL(Encoder->:e, int32:start, int32:count, Term:sel, int32:sel_ty) never fails {
+    bool:any_guard = false;
+    bool:any_fall = false;
+    for (int32:a0 in 0i32...count) {
+        StmtNode:arm0 = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a0));
+        if (!(raw expr_is_none(raw arm_guard(arm0)))) { any_guard = true; }
+        if (raw stmt_has_fall(e, raw arm_body(arm0), 64i32)) { any_fall = true; }
+    }
+    bool:sel_ok = sel.ok;
+    if (any_fall) { sel_ok = false; }
+    // The pattern conditions, in the PARENT region (a pattern's value is a
+    // constant the selector is compared with on every path), one per arm.
+    List<Term>:conds = raw list_init::<Term>((count => int64) + 1i64);
+    bool:all_ok = true;
+    for (int32:a1 in 0i32...count) {
+        StmtNode:arm1 = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a1));
+        Term:ci = raw term_none();
+        if (sel_ok) { ci = raw pattern_cond(e, raw ast_pat(e.ast, raw arm_pattern(arm1)), sel, sel_ty, conds, all_ok); }
+        if (!ci.ok) { all_ok = false; }
+        drop list_push(@conds, move(ci));
+    }
     List<int32>:snap = raw snapshot(e);
     for (int32:a in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, a));
         int64:mark = raw scope_mark(e);
         drop region_enter(e);
         drop bind_pattern(e, raw ast_pat(e.ast, raw arm_pattern(arm)));
+        if (conds.items[a => int64].ok) {
+            drop hyp_push(e, conds.items[a => int64].text, conds.items[a => int64].syms);
+        }
+        if (!any_guard) {
+            for (int32:j in 0i32...a) {
+                if (conds.items[j => int64].ok) {
+                    drop hyp_push(e, raw smt_app1("not", conds.items[j => int64].text), conds.items[j => int64].syms);
+                }
+            }
+        }
         Term:g = raw enc_expr(e, raw arm_guard(arm));
+        if (g.ok && g.is_bool && (!any_fall)) { drop hyp_push(e, g.text, g.syms); }
         drop walk_block(e, raw arm_body(arm));
         drop region_leave(e);
         drop scope_release(e, mark);
         drop restore(e, snap);
+    }
+    pass NIL;
+};
+
+// One arm's PATTERN as a condition on the selector's term (L-3), or
+// `term_none`: a wildcard is the negation of the conditions before it when
+// every one of them exists (`prior_ok`), and `true` -- no fact -- when it is
+// the first arm.
+func:pattern_cond = Term(Encoder->:e, PatNode:p, Term:sel, int32:sel_ty, List<Term>:prior, bool:prior_ok) never fails {
+    if (!sel.ok) { pass (raw term_none()); }
+    if (p.kind == PatKind.PatValue) {
+        Term:v = raw enc_pattern_value(e, raw pat_value(p), sel_ty);
+        if (!(v.ok && (v.is_bool == sel.is_bool))) { pass (raw term_none()); }
+        pass (raw term_app2("=", sel, v, true));
+    }
+    if (p.kind == PatKind.PatRange) {
+        if (sel.is_bool) { pass (raw term_none()); }
+        Term:lo = raw enc_pattern_value(e, raw pat_range_lo(p), sel_ty);
+        Term:hi = raw enc_pattern_value(e, raw pat_range_hi(p), sel_ty);
+        if (!(lo.ok && hi.ok && (!lo.is_bool) && (!hi.is_bool))) { pass (raw term_none()); }
+        Term:ge = raw term_app2("<=", lo, sel, true);
+        Term:lt = raw term_app2("<", sel, hi, true);
+        if (raw pat_range_inclusive(p)) { lt = raw term_app2("<=", sel, hi, true); }
+        pass (raw term_app2("and", ge, lt, true));
+    }
+    if (p.kind == PatKind.PatWildcard) {
+        if (!prior_ok) { pass (raw term_none()); }
+        if (prior.count == 0i64) { pass (raw term_lit("true", true)); }
+        Term:acc = raw term_none();
+        bool:first = true;
+        for (int64:i in 0i64...prior.count) {
+            if (!prior.items[i].ok) { pass (raw term_none()); }
+            if (first) { acc = raw term_copy(prior.items[i]); first = false; }
+            else { acc = raw term_app2("or", acc, prior.items[i], true); }
+        }
+        pass Term{ ok: true, is_bool: true, text: raw smt_app1("not", acc.text),
+                   syms: raw syms_union(acc.syms, raw list_init::<int32>(1i64)) };
+    }
+    pass (raw term_none());
+};
+
+// A PATTERN'S VALUE (L-3): the checker compares a pattern with the selector
+// and records no type on the pattern's own literal (a pattern is not an
+// expression it types for its own sake), so a literal is encoded here under
+// the SELECTOR's type -- the checker made it fit -- and a negated literal
+// likewise; anything else, a named constant, goes through `enc_expr`.
+func:enc_pattern_value = Term(Encoder->:e, ExprId:id, int32:sel_ty) never fails {
+    if (raw expr_is_none(id)) { pass (raw term_none()); }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIntLiteral) {
+        if (!(raw is_int(e, sel_ty))) { pass (raw term_none()); }
+        if (raw type_is_signed(e.types, sel_ty)) { pass (raw term_lit(raw smt_int(n.payload), false)); }
+        pass (raw term_lit(raw u64_decimal(n.payload =>! uint64), false));
+    }
+    if (n.kind == ExprKind.ExprBoolLiteral) {
+        if (!(raw is_bool(e, sel_ty))) { pass (raw term_none()); }
+        if (n.payload != 0i64) { pass (raw term_lit("true", true)); }
+        pass (raw term_lit("false", true));
+    }
+    if (n.kind == ExprKind.ExprUnaryExpr) {
+        if ((raw expr_op(n)) == TokenKind.OpMinus) {
+            ExprNode:o = raw ast_expr(e.ast, raw expr_operand(n));
+            if ((o.kind == ExprKind.ExprIntLiteral) && (raw is_int(e, sel_ty)) && (o.payload >= 0i64)) {
+                pass (raw term_lit(raw smt_int(0i64 - o.payload), false));
+            }
+        }
+    }
+    pass (raw enc_expr(e, id));
+};
+
+// Is there a `fall` anywhere under this statement? Conservative in the
+// direction that matters: a `fall` found means no arm of the pick gets a
+// condition (L-3).
+func:stmt_has_fall = bool(Encoder->:e, StmtId:sid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass false; }
+    if (fuel <= 0i32) { pass true; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (s.kind == StmtKind.StmtFallStmt) { pass true; }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+            if (raw stmt_has_fall(e, ch, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (raw stmt_has_fall(e, raw stmt_then(s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_has_fall(e, raw stmt_else(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { pass (raw stmt_has_fall(e, raw stmt_body(e.ast, s), fuel - 1i32)); }
+    if (s.kind == StmtKind.StmtForStmt)   { pass (raw stmt_has_fall(e, raw stmt_for_body(e.ast, s), fuel - 1i32)); }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        pass (raw stmt_has_fall(e, raw stmt_counted_body(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        if (raw stmt_has_fall(e, raw stmt_when_body(e.ast, s), fuel - 1i32)) { pass true; }
+        if (raw stmt_has_fall(e, raw stmt_when_then(e.ast, s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_has_fall(e, raw stmt_when_end(e.ast, s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            if (raw stmt_has_fall(e, raw arm_body(arm), fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        pass (raw stmt_has_fall(e, StmtId{ index: (raw stmt_target(s)).index }, fuel - 1i32));
+    }
+    pass false;
+};
+
+// DOES A STATEMENT FALL THROUGH TO WHAT FOLLOWS IT (L-2)? False only for a
+// syntactic terminator -- `pass`, `fail`, `return`, `exit`, `trap`, `break`,
+// `continue`, `give` -- and for a block holding one, an `if` whose two arms
+// hold one each, a `pick` whose every arm does. Everything else falls through
+// as far as this walk claims: a loop, a `when`, a `defer`, a call, a `fall`,
+// `#unreachable()`. Exact in the direction that matters, because the claim
+// "never falls through" becomes a hypothesis after the construct.
+func:stmt_falls_through = bool(Encoder->:e, StmtId:sid, int32:fuel) never fails {
+    if (raw stmt_is_none(sid)) { pass true; }
+    if (fuel <= 0i32) { pass true; }
+    StmtNode:s = raw ast_stmt(e.ast, sid);
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)
+        || (s.kind == StmtKind.StmtTrapStmt) || (s.kind == StmtKind.StmtBreakStmt)
+        || (s.kind == StmtKind.StmtContinueStmt) || (s.kind == StmtKind.StmtGiveStmt)) {
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        for (int32:i in 0i32...(raw stmt_list_count(s))) {
+            StmtId:ch = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) };
+            if (!(raw stmt_falls_through(e, ch, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (raw stmt_falls_through(e, raw stmt_then(s), fuel - 1i32)) { pass true; }
+        pass (raw stmt_falls_through(e, raw stmt_else(s), fuel - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        for (int32:a in 0i32...(raw pick_arm_count(s))) {
+            StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, raw pick_arm_start(s), a));
+            if (raw stmt_falls_through(e, raw arm_body(arm), fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    pass true;
+};
+
+// ADOPT an arm's end versions as the current ones (L-2): the other arm never
+// falls through, so what follows sees exactly this arm's state. A limited
+// name whose version changed gets its rule re-asserted in this region, as a
+// merge's havoc would (1.5.2 L-7).
+func:adopt_versions = NIL(Encoder->:e, List<int32>:vers) never fails {
+    int64:n = vers.count;
+    if (e.binds.count < n) { n = e.binds.count; }
+    for (int64:i in 0i64...n) {
+        bool:changed = (e.binds.items[i].sym != vers.items[i]);
+        e.binds.items[i].sym = vers.items[i];
+        if (changed) { drop assert_rule(e, i); }
     }
     pass NIL;
 };
@@ -1933,20 +2161,52 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     }
 
     if (s.kind == StmtKind.StmtIfStmt) {
+        // THE CONDITION IS A FACT IN THE ARM IT GUARDS (L-1): `c` in the
+        // then-region, `(not c)` in the else-region; nothing when it is
+        // outside the fragment. Encoded LOUD in the parent: it runs on every
+        // path.
         Term:c = raw enc_expr(e, raw stmt_cond(s));
+        bool:has_c = c.ok && c.is_bool;
+        StmtId:then_s = raw stmt_then(s);
+        StmtId:else_s = raw stmt_else(s);
+        bool:then_ft = raw stmt_falls_through(e, then_s, 64i32);
+        bool:else_ft = raw stmt_falls_through(e, else_s, 64i32);
         List<int32>:snap = raw snapshot(e);
         drop region_enter(e);
-        drop walk_block(e, raw stmt_then(s));
+        if (has_c) { drop hyp_push(e, c.text, c.syms); }
+        drop walk_block(e, then_s);
         drop region_leave(e);
+        List<int32>:snap_then = raw snapshot(e);
         drop restore(e, snap);
         drop region_enter(e);
-        drop walk_block(e, raw stmt_else(s));
+        if (has_c) { drop hyp_push(e, raw smt_app1("not", c.text), c.syms); }
+        drop walk_block(e, else_s);
         drop region_leave(e);
+        List<int32>:snap_else = raw snapshot(e);
         drop restore(e, snap);
-        List<int32>:assigned = raw list_init::<int32>(4i64);
-        drop collect_assigned(e, raw stmt_then(s), @assigned);
-        drop collect_assigned(e, raw stmt_else(s), @assigned);
-        drop invalidate(e, assigned);
+        // AFTER THE `if` (L-2): an arm that never falls through -- ends in a
+        // syntactic terminator -- contributes nothing to what follows, so the
+        // bindings keep the OTHER arm's end versions and the other arm's
+        // condition is a fact of the parent region. When both fall through
+        // the merge is a havoc (step 2 makes it an `ite`); when neither, the
+        // code after is unreachable and nothing is said of it.
+        if (then_ft && else_ft) {
+            List<int32>:assigned = raw list_init::<int32>(4i64);
+            drop collect_assigned(e, then_s, @assigned);
+            drop collect_assigned(e, else_s, @assigned);
+            drop invalidate(e, assigned);
+            pass NIL;
+        }
+        if (then_ft) {
+            drop adopt_versions(e, snap_then);
+            if (has_c) { drop hyp_push(e, c.text, c.syms); }
+            pass NIL;
+        }
+        if (else_ft) {
+            drop adopt_versions(e, snap_else);
+            if (has_c) { drop hyp_push(e, raw smt_app1("not", c.text), c.syms); }
+            pass NIL;
+        }
         pass NIL;
     }
 
@@ -1978,28 +2238,52 @@ pub func:walk_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
     }
 
     if (s.kind == StmtKind.StmtWhenStmt) {
-        // The loop half through `walk_loop`; the `then` and `end` blocks are
-        // branches after it, each seeing every name the statement assigns
-        // as unknown (the pre-1.5.3 shape, kept).
+        // The loop half through `walk_loop`; then `then` and `end` as the two
+        // arms of "did the body run" (L-5, D-027): the body ran at least once
+        // exactly when the condition held at the FIRST head visit, over the
+        // pre-loop versions. `then` knows that; `end` knows its negation and
+        // that the loop changed nothing -- every name the body havoced equals
+        // its pre-loop version. The condition over the pre-loop versions is
+        // encoded QUIET (its sites are the body region's, once).
         List<int32>:ka = raw list_init::<int32>(4i64);
         drop collect_assigned(e, sid, @ka);
+        e.quiet = e.quiet + 1i32;
+        Term:cpre = raw enc_expr(e, raw stmt_cond(s));
+        e.quiet = e.quiet - 1i32;
+        bool:has_pre = cpre.ok && cpre.is_bool;
+        List<int32>:snap_pre = raw snapshot(e);
         drop walk_loop(e, sid, raw stmt_when_invariant(e.ast, s), raw stmt_when_body(e.ast, s),
                        raw stmt_cond(s), raw stmt_label(s));
-        drop invalidate(e, ka);
+        List<int32>:snap_post = raw snapshot(e);
         drop region_enter(e);
+        if (has_pre) { drop hyp_push(e, cpre.text, cpre.syms); }
         drop walk_block(e, raw stmt_when_then(e.ast, s));
         drop region_leave(e);
-        drop invalidate(e, ka);
+        drop restore(e, snap_post);
         drop region_enter(e);
+        if (has_pre) { drop hyp_push(e, raw smt_app1("not", cpre.text), cpre.syms); }
+        int64:np = snap_post.count;
+        if (snap_pre.count < np) { np = snap_pre.count; }
+        for (int64:bi in 0i64...np) {
+            int32:post = snap_post.items[bi];
+            int32:pre = snap_pre.items[bi];
+            if ((post != pre) && (post >= 0i32) && (pre >= 0i32)) {
+                List<int32>:two = raw list_init::<int32>(2i64);
+                drop list_push(@two, post);
+                drop list_push(@two, pre);
+                drop hyp_push(e, raw smt_app2("=", raw sym_text(e, post), raw sym_text(e, pre)), two);
+            }
+        }
         drop walk_block(e, raw stmt_when_end(e.ast, s));
         drop region_leave(e);
+        drop restore(e, snap_post);
         drop invalidate(e, ka);
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtPickStmt) {
         Term:sel = raw enc_expr(e, raw pick_selector(s));
-        drop walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
+        drop walk_pick_arms(e, raw pick_arm_start(s), raw pick_arm_count(s), sel, raw ty_of(e, raw pick_selector(s)));
         List<int32>:pa = raw list_init::<int32>(4i64);
         drop collect_assigned(e, sid, @pa);
         drop invalidate(e, pa);

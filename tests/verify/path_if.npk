@@ -1,0 +1,46 @@
+// expect-exit: 3
+// expect-obligation: div-zero discharged 3
+// expect-obligation: div-min discharged 3
+// expect-obligation: failsafe-post discharged 14
+//
+// A BRANCH CONDITION IS A FACT IN ITS ARM (1.5.4 step 1, L-1, L-2): `d != 0`
+// proves `100 / d` in a then-arm; `d == 0` in a then-arm proves
+// `100 / (d + 1)` (in the ELSE arm it would not: `d` can be -1, and the
+// first draft of this test learned that from z3's model); and after
+// `if (d == 0i32) { exit 3i32; }` -- an arm that never falls through -- its
+// negation proves `10 / d`. All three discharge where 1.5.3's
+// path-insensitive walk left them open. Without arguments `d` is 0 and the
+// early exit answers 3; the guards are gone from the verified build and it
+// answers the same.
+mod:path_if;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    int32:q = 0i32;
+    if (d != 0i32) { q = 100i32 / d; }
+    int32:r = 0i32;
+    if (d == 0i32) { r = 100i32 / (d + 1i32); } else { r = 0i32; }
+    if (d == 0i32) { exit 3i32; }
+    int32:z = 10i32 / d;
+    exit (q + r + z);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

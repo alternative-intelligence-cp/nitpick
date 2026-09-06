@@ -1,0 +1,59 @@
+// expect-exit: 20
+// expect-obligation: div-zero discharged 3
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 4
+// expect-obligation: failsafe-post discharged 14
+//
+// A `pick` ARM'S CONDITION (1.5.4 step 1, L-3): the wildcard arm knows the
+// value arm's negation (`d != 0`), a range arm knows its bounds, a `where`
+// guard is a fact inside its arm -- three divisions discharge. The fourth is
+// the control: a pick holding a `fall` gives no arm a condition, and its
+// wildcard's `100 / d` stays `open`. The run: `d` is 1 (the program's own
+// name), every pick takes its non-zero path and the four divisions sum to
+// 400; 400 - 380 is the exit code, 20.
+mod:path_pick;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = argv.len =>! int32;
+    int32:a = 0i32;
+    pick (d) {
+        (0i32) { a = 1i32; },
+        (*)    { a = 100i32 / d; }
+    }
+    int32:b = 0i32;
+    pick (d) {
+        (1i32..9i32) { b = 100i32 / d; },
+        (*)          { b = 2i32; }
+    }
+    int32:c = 0i32;
+    pick (d) {
+        (*) where (d > 0i32) { c = 100i32 / d; },
+        (*)                  { c = 3i32; }
+    }
+    int32:f = 0i32;
+    pick (d) {
+        one: (0i32) { fall two; },
+        two: (*)    { f = 100i32 / d; }
+    }
+    exit (a + b + c + f - 380i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

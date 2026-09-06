@@ -1,0 +1,46 @@
+// expect-exit: 25
+// expect-obligation: div-zero discharged 2
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 14
+//
+// `when`'S TWO BLOCKS (1.5.4 step 1, L-5; D-027): `end` runs only when the
+// condition was false at the first head visit and the body never ran, so in
+// `end` `d != 0` holds over the PRE-loop version and the post-loop version
+// equals it -- `100 / d` there discharges. In `then` the body ran and, with
+// no `break`, the loop's condition is false at exit: `d != 0` again, and the
+// division there discharges too. Without arguments `d` is 0: the body runs,
+// `then` answers 20; with `d` 4 (three arguments) `end` answers 25.
+mod:path_when;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    int32:q = 0i32;
+    when (d == 0i32) {
+        d = 5i32;
+    } then {
+        q = 100i32 / d;
+    } end {
+        q = 100i32 / d + 5i32;
+    }
+    exit (q + 5i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

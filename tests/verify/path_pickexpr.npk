@@ -1,0 +1,36 @@
+// expect-exit: 3
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 14
+//
+// A PICK EXPRESSION'S ARM HAS ITS CONDITION TOO (1.5.4 step 1, L-3; the row
+// itself is step 0's DEF-26): the wildcard arm of `pick (d)` after a `(0i32)`
+// arm knows `d != 0`, so its `100 / d` discharges. Without arguments `d` is 0
+// and the first arm gives 3.
+mod:path_pickexpr;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    int32:v = pick (d) { (0i32) { give 3i32; }, (*) { give 100i32 / d; } };
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

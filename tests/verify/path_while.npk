@@ -1,0 +1,42 @@
+// expect-exit: 20
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: div-min discharged 2
+// expect-obligation: failsafe-post discharged 14
+//
+// A LOOP'S CONDITION IS FALSE AFTER IT (1.5.4 step 1, L-4) when nothing
+// `break`s: after `while (d == 0i32) { d = 5i32; }` the exit was a head
+// visit that found `d != 0`, so `100 / d` discharges. The control loop holds
+// a `break`, so its exit is not a head visit and the same division after it
+// stays `open`. Exits 20 (100 / 5) either way.
+mod:path_while;
+error:E9;
+
+func:main = int32(cstring[]:argv) {
+    int32:d = (argv.len =>! int32) - 1i32;
+    while (d == 0i32) { d = 5i32; }
+    int32:q = 100i32 / d;
+    int32:k = 0i32;
+    while (k == 0i32) { k = 5i32; if (k > 0i32) { break; } }
+    int32:r = 100i32 / k;
+    exit (q + r - 20i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (BadStep)           { exit 38i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

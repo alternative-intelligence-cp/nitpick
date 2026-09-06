@@ -1,17 +1,18 @@
 // expect-exit: 36
-// expect-obligation: div-zero open 3
+// expect-obligation: div-zero open 1
+// expect-obligation: div-zero discharged 2
 // expect-obligation: div-min discharged 3
 // expect-obligation: failsafe-post discharged 14
 //
 // DEF-26 (1.5.4 step 0): a division inside a PICK EXPRESSION'S ARM has a row.
 // The walk's `expr_children` listed only the selector of a value-pick, so the
 // arm's `100i32 / d` emitted its trap and recorded nothing -- three traps, two
-// rows, the manifest short of the inventory P-12 says it is. All three rows
-// are `open` here: `d` comes from `argv` and 1.5.4 step 1 is where the branch
-// conditions become hypotheses (`50i32 / d` under `d != 0i32`, `10i32 / d`
-// after the early exit). Without arguments `d` is 0 and the arm's division
-// traps DivByZero, 36. The dividends are literals, so the INT_MIN/-1 halves
-// discharge.
+// rows, the manifest short of the inventory P-12 says it is. The arm's row is
+// `open` (`d` comes from `argv`, and the arm `(1i32)` of `pick (s)` says
+// nothing of `d`); the other two discharge since step 1 gave them their path
+// conditions (`50i32 / d` under `d != 0i32`, `10i32 / d` after the early
+// exit). Without arguments `d` is 0 and the arm's division traps DivByZero,
+// 36. The dividends are literals, so the INT_MIN/-1 halves discharge.
 mod:pickexpr_div;
 error:E9;
 
