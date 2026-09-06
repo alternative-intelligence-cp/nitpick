@@ -262,6 +262,15 @@ artifact.
   tools. A `repro` check builds twice from different working directories and
   byte-compares the emissions — reproducibility is a tested property, not a
   claim about one process on one machine.
+- **The pin is a version, and a version is not a binary** (2026-09-06, the
+  library workbench's first CI run; OPEN_DECISIONS S-42). Two builds of the
+  pinned LLVM release differ in distribution patches and configure-time
+  defaults, so the linked `npkc` of one commit is byte-identical across
+  machines only when the tool BINARIES are the same; the property that holds
+  across machines is the compiler's own emission, `build/npkc.ll` — same
+  source and snapshot, same text anywhere — and a difference there is a
+  compiler defect. The ladder's six intermediates (`builder.o`, `builder`,
+  `npkrt.o`, `npkc.ll`, `npkc.o`, `npkc`) localise a difference to its stage.
 
 This is what lets anyone confirm that the binary they are running is the binary
 that was verified, and §6's fixpoint check is impossible without it.
