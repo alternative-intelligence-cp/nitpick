@@ -769,9 +769,17 @@ compiler under test emits and NOT on the snapshot's (the tools, `npkg build`'s
 `npkc.ll`, the runner self-check's cases). Step 2b (DEF-21, the workbench's
 finding): the undefined-symbol allowlist is the runtime's EXPORTS — the 57
 `internal` defines out, the `module asm`'s two `.globl` names in. Step 3: the
-docs; `self.toml`'s ceiling tightened to the new peak. `nitpick.obligations`
-never moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories)
-is in the map.
+docs; `self.toml`'s ceiling tightened to the new peak. Step 4 (the workbench's
+O-N17, found during the subcycle): a generic function moving OUT of an indexed
+element at an owning `T` links -- `emit_move_out` builds the vacant helper's
+symbol from the place's type THROUGH the specialization, and a registered drop
+type the emitter cannot lower is EMIT-002 instead of a body silently not
+emitted. Found writing its test and recorded as **S-39** (the user): an owning
+`List<T>` local alive in `main` at `exit 0` is a `WildLeak` by construction --
+`exit` runs joins and defers and no drops (D-183's amendment), and a List's
+buffer is the one managed storage D-151 counts. `nitpick.obligations` never
+moved. **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining theories) is in
+the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
