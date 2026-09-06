@@ -197,6 +197,11 @@ async func:main = int32(cstring[]:argv) {
     if (s2.is_error) { drop say_err("npkg: the compiler could not be built (a spawn failed)"); exit 2i32; }
     if (!s2.value.ok) { drop say_err(s2.value.text); exit 1i32; }
     drop say(raw stage_text("builder", "snapshot -> builder -> npkc (D-205)"));
+    // The ladder's digests on every run (D-265 §3): the emission's is the claim
+    // that holds across machines; the harness's `parity` stage holds each line
+    // to an independent digest of the same file.
+    List<string>:dg = raw ladder_digests(@c);
+    for (int64:i in 0i64...dg.count) { drop say(raw strlist_view(dg, i)); }
     if (is_build) {
         drop say(string_concat("\nok  built ", raw rel_to_root(@c, s2.value.text)));
         wild_release_all();

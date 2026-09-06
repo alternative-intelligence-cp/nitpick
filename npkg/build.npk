@@ -25,6 +25,7 @@ use "../src/frontend/diagnostics.npk".*;   // Sink (1.5.1b step 3)
 use "../lib/nfs.npk".*;
 use "../lib/nio.npk".*;
 use "../lib/nproc.npk".*;
+use "../lib/nhash.npk".*;     // the ladder's digests (D-265 §3)
 use "./text.npk".*;
 use "./manifest.npk".*;
 use "./toolchain.npk".*;
@@ -119,6 +120,47 @@ pub func:stage_text = string(string:label, string:rest) never fails {
     string:s = string_concat("  ", raw text_pad_right(label, 11i64));
     s = string_concat(s, " ");
     pass (string_concat(s, rest));
+};
+
+// --- the ladder's report (D-265 §3, 1.5.2g) -----------------------------------------
+
+// One line for one intermediate: `  sha256      <64 hex>  <bytes> B  <path>`,
+// the digest by the project's one hash (`lib/nhash.npk`) over the file's bytes,
+// the count the file's length, the path relative to the root. A file that
+// cannot be read back is a line NAMING it, never an omission (1.5.2g L-3):
+// the consumer compares two machines, and a shorter list on one side reads
+// as a different ladder, which is the wrong diagnosis.
+func:digest_line = string(Ctx->:c, string:abs) never fails {
+    string:rel = raw rel_to_root(c, abs);
+    Result<cstring>:pc = to_cstring(abs);
+    if (pc.is_error) { pass (raw stage_text("sha256", string_concat("unreadable (not a path)  ", rel))); }
+    Result<string>:bytes = read_file(pc.value);
+    if (bytes.is_error) { pass (raw stage_text("sha256", string_concat("unreadable  ", rel))); }
+    string:s = string_concat(raw sha256_hex(bytes.value), "  ");
+    s = string_concat(s, int_to_string(bytes.value.len));
+    s = string_concat(s, " B  ");
+    s = string_concat(s, rel);
+    pass (raw stage_text("sha256", s));
+};
+
+// The report: every intermediate the ladder produced, in ladder order -- the
+// floor's object, the builder's object and binary, the emission (and the
+// optimised text when `[build] opt-level` is 2, L-4), the object, the artifact.
+// Printed on EVERY ladder run -- `build`, `test`, `verify` alike (L-1): the
+// emission's digest is the identity claim that holds across machines, the
+// object's and the binary's are the toolchain's, and the first line that
+// differs between two machines names the stage.
+pub func:ladder_digests = List<string>(Ctx->:c) never fails {
+    List<string>:out = raw list_init::<string>(8i64);
+    string:base = raw path_join(string_from_bytes(c.bdir.ptr, c.bdir.len), "npkc");
+    drop strlist_push(@out, raw digest_line(c, string_from_bytes(c.rt_obj.ptr, c.rt_obj.len)));
+    drop strlist_push(@out, raw digest_line(c, string_concat(string_from_bytes(c.builder.ptr, c.builder.len), ".o")));
+    drop strlist_push(@out, raw digest_line(c, string_from_bytes(c.builder.ptr, c.builder.len)));
+    drop strlist_push(@out, raw digest_line(c, string_concat(base, ".ll")));
+    if (c.m.opt_level == 2i64) { drop strlist_push(@out, raw digest_line(c, string_concat(base, ".opt.ll"))); }
+    drop strlist_push(@out, raw digest_line(c, string_concat(base, ".o")));
+    drop strlist_push(@out, raw digest_line(c, string_from_bytes(c.npkc.ptr, c.npkc.len)));
+    pass out;
 };
 
 // --- directories -------------------------------------------------------------------

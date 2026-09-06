@@ -4537,6 +4537,52 @@ def main(argv):
     return 0
 
 
+# The intermediates every ladder run produces, by their root-relative paths
+# (D-265 §3); `build/npkc.opt.ll` joins them only under `[build] opt-level = 2`.
+LADDER_INTERMEDIATES = ["build/npkrt.o", "build/builder.o", "build/builder",
+                        "build/npkc.ll", "build/npkc.o", "build/npkc"]
+
+
+def check_ladder_digests(stdout):
+    """D-265 §3 (1.5.2g): every `  sha256  <hex>  <n> B  <path>` line `npkg`
+    printed for its ladder is held to hashlib over the same file under the
+    root; every intermediate the ladder produces must have a line; a line
+    for a file the ladder does not produce is a failure too."""
+    import hashlib
+    fails = []
+    seen = {}
+    for line in stdout.splitlines():
+        if not line.startswith("  sha256 "):
+            continue
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] == "unreadable":
+            fails.append("parity: the ladder could not read back %s for its digest" % parts[-1])
+            continue
+        if len(parts) != 5 or parts[3] != "B" or len(parts[1]) != 64:
+            fails.append("parity: the ladder's digest line is not `sha256 <hex> <n> B <path>`: %r" % line)
+            continue
+        seen[parts[4]] = (parts[1], parts[2])
+    for rel in LADDER_INTERMEDIATES:
+        if rel not in seen:
+            fails.append("parity: `npkg` printed no sha256 line for %s (D-265 §3)" % rel)
+            continue
+        hexd, n = seen[rel]
+        path = os.path.join(ROOT, rel)
+        if not os.path.exists(path):
+            fails.append("parity: the ladder reported %s and left no such file" % rel)
+            continue
+        with open(path, "rb") as fh:
+            data = fh.read()
+        want = hashlib.sha256(data).hexdigest()
+        if hexd != want or n != str(len(data)):
+            fails.append("parity: the ladder's report of %s (%s..., %s B) differs from the file (%s..., %d B)"
+                         % (rel, hexd[:16], n, want[:16], len(data)))
+    for rel in sorted(seen):
+        if rel not in LADDER_INTERMEDIATES and rel != "build/npkc.opt.ll":
+            fails.append("parity: the ladder reported a digest for %s, which is not an intermediate it produces" % rel)
+    return fails
+
+
 def check_parity(tmp, tools):
     """Both runners over the full tree, verdicts diffed run-for-run, and the
     artifact byte-compared (1.4.8 acceptance). Every difference is a named
@@ -4620,6 +4666,11 @@ def check_parity(tmp, tools):
         with open(built, "rb") as fa, open(COMPILER, "rb") as fb:
             if fa.read() != fb.read():
                 fails.append("parity: build/npkc (npkg's) differs from the harness's npkc -- same inputs, same flags, different bytes (D-204/D-206)")
+    # THE LADDER'S REPORT (D-265 §3, 1.5.2g): `npkg` prints one `  sha256 ` line
+    # per intermediate its ladder produced; each is held to an independent
+    # SHA-256 of the same file, so the report cannot name the wrong file or the
+    # wrong bytes, and a missing line is a failure by name.
+    fails.extend(check_ladder_digests(r.stdout))
     # THE VERIFIED BUILD TOO (1.5.0): `npkg verify` from the manifest root, held
     # to the committed nitpick.obligations exactly as this run's verify stage
     # was, and its verified compiler byte-compared with this run's.
