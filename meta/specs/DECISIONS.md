@@ -17312,3 +17312,43 @@ the rule and traps nothing (exit 7), while `drop bump(@p);` is refused at the
 > Measured before the harnesses: all 215 backend programs compile, and every
 > rejection file reports the same code set under the step 0 checker and the
 > step 1 checker except the three that flipped by design and the new file.
+
+## D-267 — `failsafe`'s postcondition has a runtime guard — **SETTLED (user decision, 2026-09-06: "ratify both as recommended"; OPEN_DECISIONS S-43; lands at 1.5.3 steps 0–2)**
+
+D-014 §3.3: a `failsafe` that returns 0 — conventionally success — is a
+contradiction, and D-014 gave it a natural implementation, a
+compiler-injected `ensures result > 0i32`. D-218's catalogue ratified the
+kind `failsafe-post` with guard `no`, a static row only. Measured on
+`fe42dba` while planning 1.5.3: an empty `failsafe` body is refused already
+(REACH-001), and `exit 0i32` inside `failsafe` compiles and ships. **The
+decision.** (1) A non-positive LITERAL exit in `failsafe` is refused by the
+reach analysis, REACH-004 — no solver for what the parser can read. (2) A
+computed exit is the kind's row (`failsafe-post`, keyed at the `exit`) AND a
+runtime guard: `<code> > 0` or trap −4113 (`EnsuresViolated` — the injected
+postcondition is an `ensures`, the compiler's), which the trap route's
+re-entry rule turns into exit 70, uncatchable: a failed program never reports
+success to its operator, whatever path computed the code. One compare per
+`exit` in one function. (3) The catalogue's guard column for `failsafe-post`
+reads `yes` from 1.5.3; a discharged row elides the compare. Mechanics at
+1.5.3 steps 0 (REACH-004), 1 (the guard) and 2 (the row).
+
+## D-268 — a `requires` row at every call with a recorded callee; D-252 amended so `limit-subsume` at an `await` is recorded too — **SETTLED (user decision, 2026-09-06: "ratify both as recommended"; OPEN_DECISIONS S-44; lands at 1.5.3 step 2)**
+
+D-252 recorded no `limit-subsume` row at a coroutine callee's call: its
+parameters arrive in a frame the await site builds and its check runs at
+state 0, so nothing at the call site could elide it — "evidence of a
+narrowing no build can use". A `requires` row at an `await` or at a `dyn`
+call changes no build either, but it is the only place the program's
+correctness at that call is ever PROVEN: without it a program's `dyn` and
+`async` calls are never verified against their callees' preconditions, only
+trapped. **The decision.** A `requires` row is recorded at every call whose
+callee the checker recorded — a direct sync call (the D-252 bypass its
+elision), a `dyn` or bound call (against the TRAIT method's `requires`), an
+`await` of an `async` or `thread` callee — with the manifest word
+`retained` where no bypass exists: the guard is the callee's entry check.
+And D-252 is amended to match: a `limit-subsume` row is recorded at an
+`await` the same way, `retained`. One rule for the two kinds: a row is a
+proof of the call, and the elision column says what the build did with it.
+
+> **[D-268, 2026-09-06]** amends D-252's "a coroutine callee has no row":
+> it has one, `retained`.
