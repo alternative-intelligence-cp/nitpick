@@ -1,40 +1,30 @@
 // A MEMBER NO DERIVED COMPARISON CAN BE WRITTEN FOR refuses at the user's
 // declaration, by name (D-250, 1.5.1b step 3b) -- never as a type error at
-// a `<derived-1>` line nobody wrote. An owning payload cannot be bound by the
-// `pick` a payload comparison needs without consuming it (D-216's is the only
-// binding form); an array has no `==`; a `List` owns.
+// a `<derived-1>` line nobody wrote. An array has no `==`; a `List` owns. A
+// `string` PAYLOAD derives since D-266 (1.5.2h): the generated lending
+// `pick` binds it as a VIEW -- `derive_payload_view.npk` runs the four over
+// one; until then it was refused here as a copy no binding could take.
 mod:payload_owning;
 
 // expect-error: NITPICK-DERIVE-006
-// expect-error-at: 10:1
-#[derive(Eq)]
-enum:Msg = { Text(string); Quit; };
-
-// expect-error: NITPICK-DERIVE-006
-// expect-error-at: 15:1
+// expect-error-at: 11:1
 #[derive(Ord)]
 struct:Row = { int32[4]:cells; int32:n; };
 
 // expect-error: NITPICK-DERIVE-006
-// expect-error-at: 20:1
+// expect-error-at: 16:1
 #[derive(PartialOrd)]
 struct:Bag = { List<int32>:items; };
 
-// THE RULE IS EVERY DERIVE'S (D-258, 1.5.2b step 3): a `Clone` cannot rebuild
-// an owning payload it cannot bind; a pointer has identity and nothing else,
-// so `Hash` over one refuses (`Eq` and `Clone` derive over it); an `Optional`
-// field is a spelling no derived body can be written for.
+// THE RULE IS EVERY DERIVE'S (D-258, 1.5.2b step 3): a pointer has identity
+// and nothing else, so `Hash` over one refuses (`Eq` and `Clone` derive over
+// it); an `Optional` field is a spelling no derived body can be written for.
 // expect-error: NITPICK-DERIVE-006
-// expect-error-at: 29:1
-#[derive(Clone)]
-enum:Owned = { Text(string); Quit; };
-
-// expect-error: NITPICK-DERIVE-006
-// expect-error-at: 34:1
+// expect-error-at: 24:1
 #[derive(Hash)]
 struct:Ref = { int32->:p; };
 
 // expect-error: NITPICK-DERIVE-006
-// expect-error-at: 39:1
+// expect-error-at: 29:1
 #[derive(Eq)]
 struct:Maybe = { int32?:m; };

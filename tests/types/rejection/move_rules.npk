@@ -107,7 +107,9 @@ async func:writes_through_a_read = NIL(RwLock<int32, 3i32>->:r) {
 
 enum:MrRes = { Note(string); Blank; };
 
-// expect-error: NITPICK-TYPE-046
+// A LENDING BIND IS A VIEW NOW (D-266, 1.5.2h): the payload in place, read
+// through the binding, no copy -- ACCEPTED (a control; it refused TYPE-046
+// from 1.4.3b until D-266). `pick_view_rules.npk` holds what a view refuses.
 func:mr_lending_bind = int64(MrRes:r) never fails {
     pick (r) {
         (MrRes.Note(s)) { pass s.len; },

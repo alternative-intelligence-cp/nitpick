@@ -1725,6 +1725,25 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
 
     int32:name = n.payload =>! int32;
 
+    // A STATEFUL KIND'S OPERATIONS WRITE THROUGH THE RECEIVER'S ADDRESS
+    // (D-266, 1.5.2h): an arena, a lock, a guard, an atomic, a channel, a
+    // `dyn` -- intercepted below and in the kinds' own typers before any impl
+    // lookup, so the one question a view or a frozen selector asks of every
+    // write path is asked here, once, ahead of them. Not when the receiver
+    // expression is a pointer: that write is the pointee's.
+    if (raw type_kind_stateful(raw type_kind(e.types, recv))) {
+        int32:rxt0 = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+        bool:rx0_ptr = false;
+        if (rxt0 != 0i32) {
+            if ((raw type_kind(e.types, rxt0)) == (raw TY_POINTER())) { rx0_ptr = true; }
+        }
+        if (!rx0_ptr) {
+            if (raw refuse_write_path(e, raw expr_operand(n), "operation on a stateful value", n.span)) {
+                pass 0i32;
+            }
+        }
+    }
+
     // THE ARENA'S OWN OPERATIONS (D-017, D-152) — six methods the TYPE
     // carries, dispatched before any impl lookup the way a slice's `.len` is
     // a fact about slices: no impl block could lawfully claim these names on
@@ -2102,6 +2121,11 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
                 discard(raw te_error(e, raw TYPE_LIMIT_ADDRESS(),
                     "a limited binding has no address (D-251), and a method whose receiver is a pointer takes one: a write through `Self->` would be one no rule sees -- call a by-value receiver, or read the fields",
                     n.span));
+                pass 0i32;
+            }
+            // A VIEW HAS NO ADDRESS EITHER, AND A FROZEN SELECTOR LENDS ITS
+            // (D-266, 1.5.2h): the same implicit address, the same question.
+            if (raw refuse_write_path(e, raw expr_operand(n), "call through a pointer receiver", n.span)) {
                 pass 0i32;
             }
         }

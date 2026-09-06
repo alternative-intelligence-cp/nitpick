@@ -127,7 +127,8 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
                                            raw pick_arm_start(s),
                                            raw pick_arm_count(s), s.span);
         if (!pr.ok) { pass NIL; }
-        drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
+        drop check_arms(e, raw pick_selector(s), pr.consuming,
+                        raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickArm) {
@@ -322,24 +323,18 @@ func:stmt_is_release_all = bool(ExprTyper->:e, StmtId:id) never fails {
     pass (raw string_eq(raw intern_get(e.interns, cal.payload =>! int32), "wild_release_all"));
 };
 
-// AN ARM MAY NOT BIND AN OWNING PAYLOAD UNLESS THE PICK CONSUMES (D-216).
-//
-// The binding is a COPY of the payload — the emitter stores the whole
-// `{ptr, len, cap}`, cap included — so it is a second owner of one body. It
-// was never dropped, which is the only reason it was not a double free; what
-// it WAS, and what an executed probe confirmed at 1.4.3b, is a live
-// use-after-free: the arm's binding outlives the enum whenever it escapes, and
-// reading it afterwards reads the allocator's 0xAA poison.
-//
-// D-216 recorded this as already refused by TYPE-046. It was not: the
-// move-only rule fires on reading an owning PLACE in a value position, and a
-// pattern binding is not a read of a place. The rule is stated here, where the
-// binding is made.
-//
-// `pick (move(v))` is the way to bind one, and the message says so — a refusal
-// with no legal alternative is a wall, not a rule.
-func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
-                                   int32:start, int32:count) never fails {
+// A LENDING `pick`'S BINDING IS A VIEW (D-266, 1.5.2h): the payload in place,
+// read-only, typed as itself. Nothing is copied at the bind, so an owning
+// payload -- a `string`, a `List`, a bare `T` (D-264) -- binds as freely as a
+// scalar: the second-owner hazard that made 1.4.3b refuse the bind (a binding
+// that was a bitwise COPY, `cap` included, outliving its enum) has no copy to
+// ride. What a view cannot be is a value whose EVERY operation writes through
+// its address -- an arena, a lock, a guard, an atomic, a channel, a `dyn`
+// (`type_kind_stateful`) -- since a view has no address to write through;
+// `pick (move(v))` is the form for those. `_` binds nothing and views
+// nothing. The consuming form owns its bindings and is not asked.
+func:check_pick_view_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
+                                 int32:start, int32:count) never fails {
     if (consuming) { pass NIL; }
     if (selt == 0i32) { pass NIL; }
     int32:i = 0i32;
@@ -348,9 +343,8 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
         PatId:pid3 = raw arm_pattern(arm);
         if (!(raw pat_is_none(pid3))) {
             PatNode:pn3 = raw ast_pat(e.ast, pid3);
-            // The binding-type window the pick's own `type_pick_bindings`
-            // just recorded on the pattern (1.0.9c), read the way `type_ident`
-            // reads it back.
+            // The binding-type window `type_pick_bindings` just recorded on
+            // the pattern (1.0.9c), read the way `type_ident` reads it back.
             int32:bw = pn3.payload =>! int32;
             int32:bn = 0i32;
             if (pn3.kind == PatKind.PatEnumDestructure) {
@@ -361,9 +355,6 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
             }
             for (int32:b in 0i32...bn) {
                 int32:bt = raw ast_id_at(e.ast, bw, b);
-                // `_` BINDS NOTHING, so it takes no copy and owns nothing —
-                // `(Res.Note(_))` is the spelling for "this variant, whatever
-                // it carries", and it stays legal in a lending pick.
                 int32:bnm = 0i32;
                 if (pn3.kind == PatKind.PatEnumDestructure) {
                     bnm = raw pat_enum_bind(e.ast, pn3, b);
@@ -377,12 +368,10 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
                     }
                 }
                 if (bt != 0i32) {
-                    // A payload of a bare type parameter is owning here too
-                    // (D-264, 1.5.2f): the same question as every copy's.
-                    if (raw type_owns_for_move(e, bt)) {
+                    if (raw type_kind_stateful(raw type_kind(e.types, bt))) {
                         drop diaglist_push(e.diags, raw diag_error(
-                            raw TYPE_MOVE_REQUIRED(),
-                            "this arm binds a payload whose type OWNS heap storage, and the binding is a COPY of it (D-183): two owners of one body, and the binding outlives the value it was taken from. Consume the value instead — `pick (move(v))` (D-216) hands the payload to the arm, which then owns and drops it — or bind nothing and read what you need through the selector",
+                            raw TYPE_VIEW_READ_ONLY(),
+                            "this arm would bind a VIEW of a payload whose every operation writes through its address -- an arena, a lock, a guard, an atomic, a channel or a `dyn` (D-266) -- and a view has no address: consume the value with `pick (move(v))`, or bind nothing and read through the selector",
                             arm.span));
                     }
                 }
@@ -391,6 +380,26 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
         i = i + 1i32;
     }
     pass NIL;
+};
+
+// DOES THIS ARM BIND A NAME? `_` binds nothing (D-266: it views nothing and
+// freezes nothing). Read by both spellings' arm walks and by the freeze.
+pub func:arm_binds_name = bool(ExprTyper->:e, StmtNode:arm) never fails {
+    PatId:apid = raw arm_pattern(arm);
+    if (raw pat_is_none(apid)) { pass false; }
+    PatNode:pn = raw ast_pat(e.ast, apid);
+    int32:bn = 0i32;
+    if (pn.kind == PatKind.PatEnumDestructure) { bn = raw pat_enum_bind_count(e.ast, pn); }
+    if (pn.kind == PatKind.PatStructDestructure) { bn = raw pat_bind_count(pn); }
+    for (int32:b in 0i32...bn) {
+        int32:bnm = 0i32;
+        if (pn.kind == PatKind.PatEnumDestructure) { bnm = raw pat_enum_bind(e.ast, pn, b); }
+        if (pn.kind == PatKind.PatStructDestructure) { bnm = raw ast_id_at(e.ast, raw pat_bind_start(pn), b); }
+        if (bnm != 0i32) {
+            if (!(raw string_eq(raw intern_get(e.interns, bnm), "_"))) { pass true; }
+        }
+    }
+    pass false;
 };
 
 // One binding, one payload, one recorded type. A variant carrying MORE than one
@@ -499,7 +508,7 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
         }
     }
     drop type_pick_bindings(e, selt, start, count);
-    drop check_pick_owning_binds(e, selt, consuming, start, count);
+    drop check_pick_view_binds(e, selt, consuming, start, count);
     pass (PickRules{ ok: true, consuming: consuming });
 };
 
@@ -577,9 +586,24 @@ func:type_struct_bindings = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn,
     pass NIL;
 };
 
-func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) never fails {
+// THE SELECTOR IS FROZEN INSIDE AN ARM THAT BINDS A VIEW (D-266, 1.5.2h): its
+// root -- through views, so `pick (s.kind)` freezes `s` -- is pushed for the
+// arm's guard and body and popped after; every write path asks `place_frozen`.
+// An arm that binds nothing lends nothing and pushes nothing; a selector with
+// no root (a temporary) has nothing to freeze. The consuming form owns.
+func:check_arms = NIL(ExprTyper->:e, ExprId:sel, bool:consuming, int32:start,
+                      int32:count) never fails {
+    int32:froot = 0i32;
+    if (!consuming) { froot = raw root_sym_through_views(e, sel, 64i32); }
     for (int32:i in 0i32...count) {
-        drop check_stmt(e, raw pick_arm_at(e.ast, start, i));
+        StmtId:aid = raw pick_arm_at(e.ast, start, i);
+        bool:frz = false;
+        if (froot != 0i32) {
+            if (raw arm_binds_name(e, raw ast_stmt(e.ast, aid))) { frz = true; }
+        }
+        if (frz) { drop list_push(@e.frozen, froot); }
+        drop check_stmt(e, aid);
+        if (frz) { e.frozen.count = e.frozen.count - 1i64; }
     }
     pass NIL;
 };
@@ -994,6 +1018,9 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     int32:want = raw type_of_expr(e, target);
     drop require_place(e, target, s.span);
+    // A WRITE INTO A VIEW OR A FROZEN SELECTOR (D-266, 1.5.2h): the compound
+    // spelling routes through here too.
+    if (raw refuse_write_path(e, target, "assignment", s.span)) { pass NIL; }
     // A `pure` BODY STORES ONLY INTO ITS OWN LOCALS (1.5.1, D-221): a store
     // through a pointer, a borrow, a slice, a handle — anything rooted
     // outside this frame — is the effect the caller can see. Asked after the

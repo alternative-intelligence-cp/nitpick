@@ -1,0 +1,56 @@
+// expect-exit: 0
+//
+// A `string` PAYLOAD DERIVES ALL SEVEN (D-266, 1.5.2h): the generated `Eq`,
+// `Ord`, `PartialOrd` and `Clone` bodies bind the payloads of equal tags as
+// VIEWS in a lending `pick` -- refused as DERIVE-006 from D-250 until D-266,
+// when a binding was a copy and a copy of a string a second owner. `Hash` is
+// the tag's, `ToString`/`Debug` the variant's name, as before.
+mod:derive_payload_view;
+
+error:E9;
+
+#[derive(Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug)]
+enum:Msg = { Text(string); Quit; };
+
+func:run = int32() {
+    Msg:a = Msg.Text(string_concat("hel", "lo"));
+    Msg:b = Msg.Text(string_concat("hell", "o"));
+    Msg:c = Msg.Text(string_concat("help", ""));
+    Msg:q = Msg.Quit;
+    if (!(a.eq(b) ?! E9)) { pass 10i32; }
+    if (a.eq(c) ?! E9) { pass 11i32; }
+    if (a.eq(q) ?! E9) { pass 12i32; }
+    pick (a.cmp(c) ?! E9) { (Ordering.Less) { }, (*) { pass 20i32; } }
+    pick (c.cmp(a) ?! E9) { (Ordering.Greater) { }, (*) { pass 21i32; } }
+    // the tag first, in declaration order: `Text` before `Quit`
+    pick (a.cmp(q) ?! E9) { (Ordering.Less) { }, (*) { pass 22i32; } }
+    pick ((a.partial_cmp(b) ?! E9) ?? Ordering.Less) { (Ordering.Equal) { }, (*) { pass 23i32; } }
+    Msg:d = a.clone() ?! E9;
+    if (!(d.eq(a) ?! E9)) { pass 30i32; }
+    pick (d) { (Msg.Text(t)) { if (t.len != 5i64) { pass 31i32; } }, (Msg.Quit) { pass 32i32; } }
+    if ((a.hash() ?! E9) != (b.hash() ?! E9)) { pass 40i32; }
+    string:s = a.to_string() ?! E9;
+    if (s.len == 0i64) { pass 41i32; }
+    string:dbg = q.debug() ?! E9;
+    if (dbg.len == 0i64) { pass 42i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:rc = run() ?! E9;
+    exit rc;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,137 @@
+// expect-exit: 0
+//
+// A LENDING `pick` BINDS VIEWS (D-266, 1.5.2h): each binding is the payload
+// IN PLACE -- read-only, typed as itself, no copy at the bind, no drop of its
+// own -- so an OWNING payload binds as freely as a scalar and the selector
+// stays whole. Every shape below refused TYPE-046 (or DERIVE-006) until D-266.
+// The string payloads drop exactly once each at `run`'s exit: a second owner
+// would meet the allocator's poison, and the D-151 count runs at `exit 0`.
+mod:pick_view;
+
+error:E9;
+
+#[derive(Eq, Ord, PartialOrd, Clone)]
+enum:Opt = { Some(string); None; };
+enum:Pair = { Both(string, string); Neither; };
+struct:Named = { string:name; int32:count; };
+enum:Wrap<T> = { Some(T); None; };
+enum:Nest = { Inner(Opt); Empty; };
+
+// A view passed BY VALUE is the lend D-065 already allows.
+func:len_of = int64(string:s) never fails { pass s.len; };
+
+// A view of a bare `T` (D-264: move-only in this body), compared through
+// the bound with a by-value `T` -- both lends -- at `string` and at `int32`.
+func:peek<T: Eq> = bool(Wrap<T>:w, T:probe) {
+    pick (w) {
+        (Wrap.Some(t)) { pass (t.eq(probe) ?! E9); },
+        (Wrap.None)    { pass false; }
+    }
+    pass false;
+};
+
+async func:tick = int32() { pass 1i32; };
+
+// A VIEW ACROSS AN `await` (D-266 §5): the selector is frame-resident, so the
+// view read after the suspension is the same payload it was before.
+async func:across = int64(Opt:o) {
+    int64:acc = 0i64;
+    pick (o) {
+        (Opt.Some(t)) {
+            acc = t.len;
+            Result<int32>:kr = await tick();
+            if (kr.is_error) { pass 0i64 - 1i64; }
+            acc = acc + t.len + (kr.value => int64);
+        },
+        (Opt.None) { pass 0i64; }
+    }
+    pass acc;
+};
+
+func:run = int32() {
+    // 1. a view of an owning payload: a field read, a by-value pass; the
+    //    selector is whole afterwards
+    Opt:o = Opt.Some(string_concat("ab", "c"));
+    int64:total = 0i64;
+    pick (o) {
+        (Opt.Some(t)) { total = t.len + (raw len_of(t)); },
+        (Opt.None)    { pass 10i32; }
+    }
+    if (total != 6i64) { pass 11i32; }
+    pick (o) { (Opt.Some(u)) { if (u.len != 3i64) { pass 12i32; } }, (Opt.None) { pass 13i32; } }
+
+    // 2. two views at once
+    Pair:p = Pair.Both(string_concat("x", "y"), string_concat("z", ""));
+    pick (p) {
+        (Pair.Both(a, b)) { if ((a.len + b.len) != 3i64) { pass 20i32; } },
+        (Pair.Neither)    { pass 21i32; }
+    }
+
+    // 3. a struct destructure: views of an owning struct's fields
+    Named:nm = Named{ name: string_concat("nine", ""), count: 9i32 };
+    pick (nm) {
+        (Named{ name, count }) {
+            if (name.len != 4i64) { pass 30i32; }
+            if (count != 9i32) { pass 31i32; }
+        }
+    }
+
+    // 4. a nested lending pick: a view of a view
+    Nest:ne = Nest.Inner(Opt.Some(string_concat("qq", "")));
+    pick (ne) {
+        (Nest.Inner(io)) {
+            pick (io) {
+                (Opt.Some(s2)) { if (s2.len != 2i64) { pass 40i32; } },
+                (Opt.None)     { pass 41i32; }
+            }
+        },
+        (Nest.Empty) { pass 42i32; }
+    }
+
+    // 5. the expression form
+    int64:m = pick (o) { (Opt.Some(t2)) { give t2.len; }, (Opt.None) { give 0i64; } };
+    if (m != 3i64) { pass 50i32; }
+
+    // 6. a view of a `T`, at `string` and at `int32`
+    Wrap<string>:ws = Wrap.Some(string_concat("gen", ""));
+    Wrap<int32>:wi = Wrap.Some(7i32);
+    if (!(peek(ws, string_concat("g", "en")) ?! E9)) { pass 60i32; }
+    if (!(peek(wi, 7i32) ?! E9)) { pass 61i32; }
+    if (peek(wi, 8i32) ?! E9) { pass 62i32; }
+
+    // 7. the derived four over a `string` payload: the generator's own
+    //    lending picks, binding views of both operands
+    Opt:oc = o.clone() ?! E9;
+    if (!(o.eq(oc) ?! E9)) { pass 70i32; }
+    Opt:od = Opt.Some(string_concat("abd", ""));
+    if (o.eq(od) ?! E9) { pass 71i32; }
+    pick (o.cmp(od) ?! E9) { (Ordering.Less) { }, (*) { pass 72i32; } }
+    pick ((o.partial_cmp(oc) ?! E9) ?? Ordering.Less) { (Ordering.Equal) { }, (*) { pass 73i32; } }
+    Opt:onone = Opt.None;
+    pick (onone.cmp(o) ?! E9) { (Ordering.Greater) { }, (*) { pass 74i32; } }
+    pass 0i32;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:rc = run() ?! E9;
+    if (rc != 0i32) { exit rc; }
+    Opt:o2 = Opt.Some(string_concat("wxyz", ""));
+    int64:v = await across(o2) ?! E9;
+    if (v != 9i64) { exit 80i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (DeadlineExceeded) { exit 97i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

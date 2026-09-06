@@ -1822,14 +1822,93 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
 // emitter is looking at it, and a recorded bit would be a second place for the
 // same fact to be wrong.
 func:pick_is_consuming = bool(ExprEmitter->:x, StmtNode:s) never fails {
-    ExprId:sid2 = raw pick_selector(s);
-    if (raw expr_is_none(sid2)) { pass false; }
-    pass ((raw ast_expr(x.ast, sid2)).kind == ExprKind.ExprMoveExpr);
+    pass (raw sel_is_consuming(x, raw pick_selector(s)));
+};
+
+// The same question of a SELECTOR (both spellings hand one in).
+func:sel_is_consuming = bool(ExprEmitter->:x, ExprId:sel_id) never fails {
+    if (raw expr_is_none(sel_id)) { pass false; }
+    pass ((raw ast_expr(x.ast, sel_id)).kind == ExprKind.ExprMoveExpr);
+};
+
+// DOES ANY ARM BIND A NAME? `_` binds nothing -- the checker's rule, mirrored.
+// Read by the selector-address decision and by the scan that registers the
+// spill slot, so the two agree by construction.
+func:arms_bind_any = bool(ExprEmitter->:x, int32:arm_start, int32:arm_count) never fails {
+    for (int32:i in 0i32...arm_count) {
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, arm_start, i));
+        PatId:apid = raw arm_pattern(arm);
+        if (!(raw pat_is_none(apid))) {
+            PatNode:pn = raw ast_pat(x.ast, apid);
+            int32:bn = 0i32;
+            if (pn.kind == PatKind.PatEnumDestructure) { bn = raw pat_enum_bind_count(x.ast, pn); }
+            if (pn.kind == PatKind.PatStructDestructure) { bn = raw pat_bind_count(pn); }
+            for (int32:b in 0i32...bn) {
+                int32:nm = 0i32;
+                if (pn.kind == PatKind.PatEnumDestructure) { nm = raw pat_enum_bind(x.ast, pn, b); }
+                if (pn.kind == PatKind.PatStructDestructure) { nm = raw ast_id_at(x.ast, raw pat_bind_start(pn), b); }
+                if (nm != 0i32) {
+                    if (!(raw string_eq(raw intern_get(x.interns, nm), "_"))) { pass true; }
+                }
+            }
+        }
+    }
+    pass false;
+};
+
+// THE SELECTOR OF A LENDING PICK WHOSE ARMS BIND (D-266, 1.5.2h): its VALUE
+// for the discriminant and its ADDRESS for the views. A place is addressed and
+// the value loaded through the address -- one evaluation; a temporary is
+// evaluated and spilled: to an entry-block alloca in a sync body, to the
+// frame slot the scan registered at role 3 on the FIRST ARM's statement in a
+// coroutine (an alloca dies at a suspension, and a view may live across one
+// -- L-6). The consuming form, and a lending pick that binds nothing,
+// evaluate the value and address nothing: `addr` is "" and the arms bind as
+// they always did.
+pub struct:SelAddr = { IrVal:val; string:addr; };
+
+pub func:pick_selector_address = SelAddr(ExprEmitter->:x, ExprId:sel_id, int32:sel_tid,
+                                         int32:arm_start, int32:arm_count) never fails {
+    if (raw sel_is_consuming(x, sel_id)) {
+        pass SelAddr{ val: raw emit_expr(x, sel_id), addr: "" };
+    }
+    if (!(raw arms_bind_any(x, arm_start, arm_count))) {
+        pass SelAddr{ val: raw emit_expr(x, sel_id), addr: "" };
+    }
+    Span:at = (raw ast_expr(x.ast, sel_id)).span;
+    LlType:sll = raw ll_type(x.fe.ctx, sel_tid);
+    if (!(raw ll_is_ok(sll))) {
+        pass SelAddr{ val: raw iv_from_ll_at(x, sll, sel_tid, at), addr: "" };
+    }
+    if (raw expr_is_place(x.ast, sel_id, raw BORROW_FUEL())) {
+        PlaceVal:pa = raw addr_of(x, sel_id);
+        if (pa.state != (raw LL_OK())) {
+            pass SelAddr{ val: raw iv_from_place(move(pa)), addr: "" };
+        }
+        string:lv = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(lv, " = load ", sll.text, ", ptr ", pa.addr));
+        pass SelAddr{ val: raw iv(string_concat(sll.text, ""), move(lv), sel_tid),
+                      addr: string_concat(pa.addr, "") };
+    }
+    IrVal:tv = raw emit_expr(x, sel_id);
+    if (!(raw iv_is_ok(tv))) { pass SelAddr{ val: move(tv), addr: "" }; }
+    string:spill = "";
+    if (x.fe.is_async) {
+        StmtId:first = raw pick_arm_at(x.ast, arm_start, 0i32);
+        int64:ci = raw fnem_cross_find(x.fe, first.index, 3i32);
+        if (ci < 0i64) { pass SelAddr{ val: raw iv_broken(at), addr: "" }; }
+        spill = raw fnem_cross_gep(x.fe, ci);
+    } else {
+        spill = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, spill, sll.text);
+    }
+    drop irw_line(x.fe.w, raw cat5("store ", tv.ll, " ", tv.ref, string_concat(", ptr ", spill)));
+    pass SelAddr{ val: move(tv), addr: move(spill) };
 };
 
 func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                           IrVal:sel, int32:arm_idx, Span:at,
-                          bool:consuming) never fails {
+                          bool:consuming, string:sel_addr) never fails {
     // A CONSUMING ARM THAT BINDS NOTHING STILL TOOK THE VALUE APART (D-216).
     // `move(v)` cleared the selector's drop flag, so the enum's own scope drop
     // will not run; an arm that binds no payload therefore owns it and nobody
@@ -1858,6 +1937,18 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             }
         }
     }
+    // A LENDING PICK BINDS VIEWS (D-266, 1.5.2h): each name's slot holds the
+    // ADDRESS of its payload or field inside the selector's own storage --
+    // `sel_addr`, which `pick_selector_address` produced for exactly this
+    // case -- and nothing is copied. A lending arm that binds with no address
+    // to bind from is a defect in the two functions' agreement, not a rung.
+    bool:view = !consuming;
+    if (view) {
+        bool:binds_any = false;
+        if (pn.kind == PatKind.PatStructDestructure) { if ((raw pat_bind_count(pn)) > 0i32) { binds_any = true; } }
+        if (pn.kind == PatKind.PatEnumDestructure) { if ((raw pat_enum_bind_count(x.ast, pn)) > 0i32) { binds_any = true; } }
+        if (binds_any) { if (sel_addr.len == 0i64) { pass (raw iv_broken(at)); } }
+    }
     // A STRUCT DESTRUCTURE BINDS EACH NAMED FIELD (1.0.9c): `(Point{ x, y })`
     // reads `x` and `y` out of the selector by field. The pattern is
     // irrefutable, so the arm always runs; this is the binding half of that.
@@ -1872,15 +1963,28 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
             if (!(raw ll_is_ok(fll))) {
                 pass (raw iv_from_ll_at(x, fll, fi.type_id, at));
             }
-            string:fv = raw irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, raw cat5(fv, " = extractvalue ", sel.ll, " ",
-                              raw cat3(sel.ref, ", ",
-                                  int_to_string(fi.index => int64))));
-            string:fslot = raw pick_bind_slot(x, arm_idx, si, fname,
-                                              fi.type_id, fll.text, consuming);
-            if (fslot.len == 0i64) { pass (raw iv_broken(at)); }
-            drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
-                              string_concat(", ptr ", fslot)));
+            if (view) {
+                // The field's address in the selector's storage, held in a
+                // `ptr` slot the reads load through.
+                string:fp = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(fp, " = getelementptr ", sel.ll,
+                                  ", ptr ", raw cat3(sel_addr, ", i32 0, i32 ",
+                                      int_to_string(fi.index => int64))));
+                string:vslot = raw pick_bind_slot(x, arm_idx, si, fname,
+                                                  fi.type_id, "ptr", false, true);
+                if (vslot.len == 0i64) { pass (raw iv_broken(at)); }
+                drop irw_line(x.fe.w, raw cat5("store ptr ", fp, ", ptr ", vslot, ""));
+            } else {
+                string:fv = raw irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, raw cat5(fv, " = extractvalue ", sel.ll, " ",
+                                  raw cat3(sel.ref, ", ",
+                                      int_to_string(fi.index => int64))));
+                string:fslot = raw pick_bind_slot(x, arm_idx, si, fname,
+                                                  fi.type_id, fll.text, consuming, false);
+                if (fslot.len == 0i64) { pass (raw iv_broken(at)); }
+                drop irw_line(x.fe.w, raw cat5("store ", fll.text, " ", fv,
+                                  string_concat(", ptr ", fslot)));
+            }
         }
         pass (raw iv_nil());
     }
@@ -1909,6 +2013,19 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // pointer under the old shape). Kept byte-identical (1.0.9c wraps it in the
     // count guard and adds the multi case below).
     if ((raw pat_enum_bind_count(x.ast, pn)) == 1i32) {
+        if (view) {
+            // THE VIEW (D-266): the payload's address in the selector's own
+            // storage, held in a `ptr` slot; no copy, no drop flag.
+            string:vpp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(vpp, " = getelementptr ", sel.ll,
+                              ", ptr ", string_concat(sel_addr, ", i32 0, i32 1")));
+            string:vslot1 = raw pick_bind_slot(x, arm_idx, 0i32,
+                                raw pat_enum_bind(x.ast, pn, 0i32), pty, "ptr",
+                                false, true);
+            if (vslot1.len == 0i64) { pass (raw iv_broken(at)); }
+            drop irw_line(x.fe.w, raw cat5("store ptr ", vpp, ", ptr ", vslot1, ""));
+            pass (raw iv_nil());
+        }
         string:tmp = raw irw_temp(x.fe.w);
         drop irw_alloca(x.fe.w, tmp, sel.ll);
         drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
@@ -1921,7 +2038,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                           string_concat(pp, "")));
         string:slot = raw pick_bind_slot(x, arm_idx, 0i32,
                           raw pat_enum_bind(x.ast, pn, 0i32), pty, pll.text,
-                          consuming);
+                          consuming, false);
         if (slot.len == 0i64) { pass (raw iv_broken(at)); }
         drop irw_line(x.fe.w, raw cat5("store ", pll.text, " ", val,
                           string_concat(", ptr ", slot)));
@@ -1933,10 +2050,17 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // checker holds the counts equal — and `variant_payload_slot` gives each
     // one's type and offset, the same source of truth the constructor used, so
     // the two cannot drift.
-    string:mtmp = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, mtmp, sel.ll);
-    drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
-                      string_concat(", ptr ", mtmp)));
+    // The multi-payload base: the selector's own storage for a view, a spill
+    // of its value for a consuming copy (D-266).
+    string:mtmp = "";
+    if (view) {
+        mtmp = string_concat(sel_addr, "");
+    } else {
+        mtmp = raw irw_temp(x.fe.w);
+        drop irw_alloca(x.fe.w, mtmp, sel.ll);
+        drop irw_line(x.fe.w, raw cat5("store ", sel.ll, " ", sel.ref,
+                          string_concat(", ptr ", mtmp)));
+    }
     int32:vn2 = raw pat_enum_segment(x.ast, pn, segs - 1i32);
     int32:bc = raw pat_enum_bind_count(x.ast, pn);
     for (int32:bi in 0i32...bc) {
@@ -1956,15 +2080,23 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
                               bbase, ", i64 ", int_to_string(bs.offset)));
             bpp = move(bpp2);
         }
-        string:bval = raw irw_temp(x.fe.w);
-        drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
-                          string_concat(bpp, "")));
-        string:bslot = raw pick_bind_slot(x, arm_idx, bi,
-                          raw pat_enum_bind(x.ast, pn, bi), bs.type_id,
-                          bpll.text, consuming);
-        if (bslot.len == 0i64) { pass (raw iv_broken(at)); }
-        drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
-                          string_concat(", ptr ", bslot)));
+        if (view) {
+            string:bvslot = raw pick_bind_slot(x, arm_idx, bi,
+                                raw pat_enum_bind(x.ast, pn, bi), bs.type_id,
+                                "ptr", false, true);
+            if (bvslot.len == 0i64) { pass (raw iv_broken(at)); }
+            drop irw_line(x.fe.w, raw cat5("store ptr ", bpp, ", ptr ", bvslot, ""));
+        } else {
+            string:bval = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(bval, " = load ", bpll.text, ", ptr ",
+                              string_concat(bpp, "")));
+            string:bslot = raw pick_bind_slot(x, arm_idx, bi,
+                              raw pat_enum_bind(x.ast, pn, bi), bs.type_id,
+                              bpll.text, consuming, false);
+            if (bslot.len == 0i64) { pass (raw iv_broken(at)); }
+            drop irw_line(x.fe.w, raw cat5("store ", bpll.text, " ", bval,
+                              string_concat(", ptr ", bslot)));
+        }
     }
     pass (raw iv_nil());
 };
@@ -2027,8 +2159,13 @@ pub func:pick_sel_tid = int32(ExprEmitter->:x, ExprId:sel) never fails {
 func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     ExprId:sel_id = raw pick_selector(s);
     int32:sel_tid = raw pick_sel_tid(x, sel_id);
-    IrVal:sel = raw emit_expr(x, sel_id);
-    if (!(raw iv_is_ok(sel))) { pass sel; }
+    // THE SELECTOR'S VALUE, AND ITS ADDRESS WHEN THE ARMS BIND VIEWS (D-266,
+    // 1.5.2h): one evaluation either way.
+    SelAddr:sa = raw pick_selector_address(x, sel_id, sel_tid,
+                                           raw pick_arm_start(s), raw pick_arm_count(s));
+    if (!(raw iv_is_ok(sa.val))) { pass (move(sa.val)); }
+    IrVal:sel = raw iv(string_concat(sa.val.ll, ""), string_concat(sa.val.ref, ""), sa.val.type_id);
+    string:sel_addr = string_concat(sa.addr, "");
     // A CONSUMING PICK TAKES ITS SELECTOR (D-216, D-246): the arms own the
     // payloads they bind and drop them at their exits; a borrowing pick's
     // selector stays the statement's, dropped after the arms.
@@ -2069,7 +2206,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (chain) {
         pass (raw emit_pick_chain(x, sel, sel_tid, disc, move(disc_ll),
                   raw pick_arm_start(s), count, "", "", 0i32,
-                  raw pick_is_consuming(x, s)));
+                  raw pick_is_consuming(x, s), move(sel_addr)));
     }
 
     int32:seq = raw fnem_next_pick_seq(x.fe);
@@ -2118,7 +2255,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         int64:mark = raw fnem_mark(x.fe);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
         IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span,
-                                    raw pick_is_consuming(x, s));
+                                    raw pick_is_consuming(x, s), sel_addr);
         if (!(raw iv_is_ok(bp))) { pass bp; }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
         if (!(raw iv_is_ok(b))) { pass b; }
@@ -2136,11 +2273,13 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // EXPRESSION pick, whose arms `give` into the slot. Bindings happen before the
 // guard, because a guard's whole point is to read them. Exhaustiveness was
 // proven statically (0.5), so the fall-off end is `unreachable`.
+// `sel_addr` (D-266, 1.5.2h): the selector's address when the arms bind views,
+// "" otherwise -- `pick_selector_address` is the one place that decides.
 pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
                                  string:disc, move string:disc_ll, int32:start,
                                  int32:count, move string:give_slot,
                                  move string:give_ll, int32:give_tid,
-                                 bool:consuming) never fails {
+                                 bool:consuming, move string:sel_addr) never fails {
     int32:seq = raw fnem_next_pick_seq(x.fe);
     string:done_l = raw pk_named(seq, ".done");
     drop fnem_pick_push(x.fe, string_concat(done_l, ""), move(give_slot), move(give_ll), give_tid, start, count,
@@ -2270,7 +2409,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
             }
             drop s_start(x, prep_l);
             IrVal:gb = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span,
-                                        consuming);
+                                        consuming, sel_addr);
             if (!(raw iv_is_ok(gb))) { pass gb; }
             // A guard's suspension would kill the chain's selector value —
             // the next arm's test re-reads it — so `await` rungs inside a
@@ -2288,7 +2427,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         drop s_start(x, body_l);
         if (raw expr_is_none(g)) {
             IrVal:bp = raw bind_payload(x, pn, sel_tid, sel, armid.index, arm.span,
-                                        consuming);
+                                        consuming, sel_addr);
             if (!(raw iv_is_ok(bp))) { pass bp; }
         }
         IrVal:b = raw emit_stmt(x, raw arm_body(arm));
@@ -2405,9 +2544,13 @@ func:loop_reread = string(ExprEmitter->:x, string:slot, string:ll) never fails {
 // survives a suspension inside the arm. The scan registered it by mirroring
 // the same field/payload resolution the emitter makes below — a miss here is
 // drift between the two, and it fails closed as broken IR.
+// `view` (D-266, 1.5.2h): the slot holds the payload's ADDRESS (`ll` is then
+// `"ptr"`, and the scan registered the frame slot as `ptr` too), the binding
+// is marked so `emit_ident` and `addr_of` load through it, and no flag is
+// ever attached.
 func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
                              int32:name, int32:bind_tid, string:ll,
-                             bool:consuming) never fails {
+                             bool:consuming, bool:view) never fails {
     string:slot = "";
     if (x.fe.is_async) {
         int64:ci = raw fnem_cross_find(x.fe, arm_idx, 7i32 + ordinal);
@@ -2417,6 +2560,7 @@ func:pick_bind_slot = string(ExprEmitter->:x, int32:arm_idx, int32:ordinal,
     } else {
         slot = raw fnem_local(x.fe, name, bind_tid, ll);
     }
+    if (view) { drop fnem_view_last(x.fe); }
     // A CONSUMING PICK'S BINDING OWNS WHAT IT BOUND (D-216, 1.4.3b), so it
     // carries a drop flag and drops at the arm's scope exit like any owner.
     //
@@ -2653,8 +2797,22 @@ func:scan_counted_slots = NIL(ExprEmitter->:x, StmtId:sid) never fails {
 // field, an enum destructure its payload(s). Role 7+ordinal on the ARM's
 // stmt index. `bind_payload` fails closed on a miss, so a drift between
 // this mirror and the emitter is loud.
-func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
-                           int32:arm_count) never fails {
+// A LENDING PICK'S BINDINGS ARE `ptr` SLOTS (D-266, 1.5.2h) -- they hold the
+// payload's address -- and its selector, when an arm binds, gets a spill slot
+// at role 3 on the FIRST ARM's statement: `pick_selector_address` fills it
+// for a temporary selector, and a place selector leaves it unused.
+func:scan_pick_binds = NIL(ExprEmitter->:x, ExprId:sel_id, int32:sel_tid,
+                           int32:arm_start, int32:arm_count) never fails {
+    bool:view = !(raw sel_is_consuming(x, sel_id));
+    if (view) {
+        if (raw arms_bind_any(x, arm_start, arm_count)) {
+            LlType:spll = raw ll_type(x.fe.ctx, sel_tid);
+            if (raw ll_is_ok(spll)) {
+                StmtId:first = raw pick_arm_at(x.ast, arm_start, 0i32);
+                drop fnem_cross_add(x.fe, first.index, 3i32, sel_tid, move(spll.text));
+            }
+        }
+    }
     for (int32:i in 0i32...arm_count) {
         StmtId:armid = raw pick_arm_at(x.ast, arm_start, i);
         StmtNode:arm = raw ast_stmt(x.ast, armid);
@@ -2668,8 +2826,10 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                 if (fi.found) {
                     LlType:fll = raw ll_type(x.fe.ctx, fi.type_id);
                     if (raw ll_is_ok(fll)) {
+                        string:fslot_ll = string_concat(fll.text, "");
+                        if (view) { fslot_ll = "ptr"; }
                         drop fnem_cross_add(x.fe, armid.index, 7i32 + si,
-                                            fi.type_id, move(fll.text));
+                                            fi.type_id, move(fslot_ll));
                     }
                 }
             }
@@ -2689,8 +2849,10 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                             int32:pty = bs0.type_id;
                             LlType:pll = raw ll_type(x.fe.ctx, pty);
                             if (raw ll_is_ok(pll)) {
+                                string:pslot_ll = string_concat(pll.text, "");
+                                if (view) { pslot_ll = "ptr"; }
                                 drop fnem_cross_add(x.fe, armid.index, 7i32,
-                                                    pty, move(pll.text));
+                                                    pty, move(pslot_ll));
                             }
                         }
                     } else {
@@ -2702,8 +2864,10 @@ func:scan_pick_binds = NIL(ExprEmitter->:x, int32:sel_tid, int32:arm_start,
                             if (bs.ok) {
                                 LlType:bpll = raw ll_type(x.fe.ctx, bs.type_id);
                                 if (raw ll_is_ok(bpll)) {
+                                    string:bslot_ll = string_concat(bpll.text, "");
+                                    if (view) { bslot_ll = "ptr"; }
                                     drop fnem_cross_add(x.fe, armid.index,
-                                        7i32 + bi, bs.type_id, move(bpll.text));
+                                        7i32 + bi, bs.type_id, move(bslot_ll));
                                 }
                             }
                         }
@@ -2729,7 +2893,8 @@ func:scan_expr = IrVal(ExprEmitter->:x, ExprId:id, int32:fuel) never fails {
                                      a: n.a, b: n.b, c: n.c, payload: 0i64 };
         IrVal:sr = raw scan_expr(x, raw pick_selector(as_stmt), fuel - 1i32);
         if (!(raw iv_is_ok(sr))) { pass sr; }
-        drop scan_pick_binds(x, raw pick_sel_tid(x, raw pick_selector(as_stmt)),
+        drop scan_pick_binds(x, raw pick_selector(as_stmt),
+                             raw pick_sel_tid(x, raw pick_selector(as_stmt)),
                              raw pick_arm_start(as_stmt),
                              raw pick_arm_count(as_stmt));
         int32:j = 0i32;
@@ -2964,7 +3129,8 @@ func:scan_crossing = IrVal(ExprEmitter->:x, StmtId:sid, int32:fuel) never fails 
     if (s.kind == StmtKind.StmtPickStmt) {
         IrVal:rs = raw scan_expr(x, raw pick_selector(s), fuel - 1i32);
         if (!(raw iv_is_ok(rs))) { pass rs; }
-        drop scan_pick_binds(x, raw pick_sel_tid(x, raw pick_selector(s)),
+        drop scan_pick_binds(x, raw pick_selector(s),
+                             raw pick_sel_tid(x, raw pick_selector(s)),
                              raw pick_arm_start(s), raw pick_arm_count(s));
         int32:j = 0i32;
         while (j < (raw pick_arm_count(s))) {

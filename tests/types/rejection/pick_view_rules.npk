@@ -1,0 +1,165 @@
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 66
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 70
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 74
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 78
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 82
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 86
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 90
+// expect-error: NITPICK-TYPE-066
+// expect-error-at: 94
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 101
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 106
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 111
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 116
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 121
+// expect-error: NITPICK-TYPE-067
+// expect-error-at: 126
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 132
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 136
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 140
+//
+// WHAT A VIEW REFUSES (D-266, 1.5.2h). A lending `pick`'s binding is a
+// read-only VIEW of the payload in place: the language has one pointer type
+// and it carries no mutability, so every address of a view is a write path
+// into a lent value -- an assignment or compound assignment to it or a part
+// of it, `@`, `$$i`, `$$m`, a call whose receiver is a pointer (the implicit
+// address), and binding a view of a kind whose every operation writes (an
+// atomic here) -- TYPE-066. THE SELECTOR IS FROZEN inside an arm that binds:
+// no assignment to it or a part, no `move`, no `@`, no pointer-receiver call,
+// no nested `pick (move(…))` -- TYPE-067. A copy of an owning view is the
+// copy it always was (TYPE-046); a `move` of one, or a `pass` of one out of
+// the function, moves a lent value (TYPE-047, the non-`move` parameter's
+// rule). The controls at the end are accepted: an arm that binds `_` or
+// nothing lends nothing and may write the selector, a copyable view is read
+// and given, a by-value receiver is the lend.
+mod:pick_view_rules;
+
+error:E9;
+
+enum:Opt = { Some(string); None; };
+enum:OptI = { Some(int32); None; };
+struct:Box = { string:s; int32:n; };
+enum:Holder = { Has(Box); Empty; };
+enum:Cell = { Live(atomic<int32>); Dead; };
+
+func:touch = NIL(string->:_~p) never fails { pass NIL; };
+func:touch_opt = NIL(Opt->:_~p) never fails { pass NIL; };
+func:by_value = int64(string:s) never fails { pass s.len; };
+
+// --- TYPE-066: the view is read-only and has no address ---------------------
+func:assign_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { t = string_concat("x", ""); }, (Opt.None) { } }
+    pass NIL;
+};
+func:compound_view = NIL(OptI:o) never fails {
+    pick (o) { (OptI.Some(k)) { k += 1i32; }, (OptI.None) { } }
+    pass NIL;
+};
+func:addr_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { string->:p = @t; }, (Opt.None) { } }
+    pass NIL;
+};
+func:borrow_imm_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { string->:p = $$i t; }, (Opt.None) { } }
+    pass NIL;
+};
+func:borrow_mut_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { string->:p = $$m t; }, (Opt.None) { } }
+    pass NIL;
+};
+func:receiver_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { drop t.touch(); }, (Opt.None) { } }
+    pass NIL;
+};
+func:field_of_view = NIL(Holder:h) never fails {
+    pick (h) { (Holder.Has(bx)) { bx.n = 5i32; }, (Holder.Empty) { } }
+    pass NIL;
+};
+func:stateful_view = NIL(Cell:c) never fails {
+    pick (c) { (Cell.Live(_a)) { }, (Cell.Dead) { } }
+    pass NIL;
+};
+
+// --- TYPE-067: the selector is frozen while a view is live --------------------
+func:assign_selector = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_t)) { o = Opt.None; }, (Opt.None) { } }
+    pass NIL;
+};
+func:move_selector = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_t)) { Opt:m = move(o); }, (Opt.None) { } }
+    pass NIL;
+};
+func:addr_selector = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_t)) { Opt->:p = @o; }, (Opt.None) { } }
+    pass NIL;
+};
+func:receiver_selector = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_t)) { drop o.touch_opt(); }, (Opt.None) { } }
+    pass NIL;
+};
+func:nested_consume = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_t)) { pick (move(o)) { (Opt.Some(u)) { int64:n2 = raw by_value(u); }, (Opt.None) { } } }, (Opt.None) { } }
+    pass NIL;
+};
+func:field_of_selector = NIL() never fails {
+    Box:b = Box{ s: string_concat("a", ""), n: 1i32 };
+    pick (b) { (Box{ s, n }) { b.n = n + 1i32; } }
+    pass NIL;
+};
+
+// --- the copy and the move of an owning view ---------------------------------
+func:copy_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { string:c = t; }, (Opt.None) { } }
+    pass NIL;
+};
+func:pass_view = string(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { pass t; }, (Opt.None) { } }
+    pass "";
+};
+func:move_view = NIL(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { string:mv = move(t); }, (Opt.None) { } }
+    pass NIL;
+};
+
+// --- controls: accepted ----------------------------------------------------------
+func:wildcard_writes_selector = NIL() never fails {
+    Opt:o = Opt.Some(string_concat("a", ""));
+    pick (o) { (Opt.Some(_)) { o = Opt.None; }, (Opt.None) { } }
+    pass NIL;
+};
+func:bare_arm_writes_selector = NIL() never fails {
+    Opt:o = Opt.None;
+    pick (o) { (Opt.Some(_)) { }, (Opt.None) { o = Opt.Some(string_concat("b", "")); } }
+    pass NIL;
+};
+func:copyable_view = int32(OptI:o) never fails {
+    int32:v = pick (o) { (OptI.Some(k)) { int32:c2 = k; give c2 + k; }, (OptI.None) { give 0i32; } };
+    pass v;
+};
+func:by_value_receiver = int64(Opt:o) never fails {
+    pick (o) { (Opt.Some(t)) { pass (raw t.by_value()); }, (Opt.None) { } }
+    pass 0i64;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

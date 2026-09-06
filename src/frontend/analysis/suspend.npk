@@ -183,6 +183,48 @@ func:reg_add = int64(Suspend->:x, int32:stmt_index, int64:at) never fails {
 // suspension after the first `@x` was then positioned past the function's
 // end, and nothing declared before it ever crossed again (1.1.13-close —
 // found when the range-view rule below inherited the slam).
+// A LENDING PICK'S VIEWS ADDRESS THE SELECTOR (D-266, 1.5.2h): an arm that
+// binds takes the selector's storage by address, so the selector's root --
+// through views, to the name that is not one -- lives to the function's end,
+// exactly as `@x` extends `x` below. The one address the source does not
+// spell. A selector with no root (a temporary) is spilled to a frame slot by
+// the emitter and needs nothing here; the consuming form copies and needs
+// nothing either.
+func:suspend_pick_views = NIL(Suspend->:x, ExprId:sel, int32:start, int32:count) never fails {
+    if (raw expr_is_none(sel)) { pass NIL; }
+    if ((raw ast_expr(x.ast, sel)).kind == ExprKind.ExprMoveExpr) { pass NIL; }
+    bool:binds = false;
+    for (int32:i in 0i32...count) {
+        StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        PatId:apid = raw arm_pattern(arm);
+        if (!(raw pat_is_none(apid))) {
+            PatNode:pn = raw ast_pat(x.ast, apid);
+            if (pn.kind == PatKind.PatEnumDestructure) {
+                if ((raw pat_enum_bind_count(x.ast, pn)) > 0i32) { binds = true; }
+            }
+            if (pn.kind == PatKind.PatStructDestructure) {
+                if ((raw pat_bind_count(pn)) > 0i32) { binds = true; }
+            }
+        }
+    }
+    if (!binds) { pass NIL; }
+    ExprId:cur = sel;
+    for (int32:hop in 0i32...(raw SUSPEND_DEPTH())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw SUSPEND_DEPTH());
+        if (r.exhausted) { pass NIL; }
+        if (raw expr_is_none(r.id)) { pass NIL; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+        if (rn.a == 0i32) { pass NIL; }
+        if (!(raw sym_is_view(x.tab, x.ast, rn.a))) {
+            drop reg_extend(x, rn.a, x.fn_end);
+            pass NIL;
+        }
+        cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+    }
+    pass NIL;
+};
+
 func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
@@ -460,6 +502,8 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
     if (s.kind == StmtKind.StmtPickStmt) {
         drop check_first_eval(x, raw pick_selector(s));
         drop suspend_expr(x, raw pick_selector(s), fuel - 1i32);
+        drop suspend_pick_views(x, raw pick_selector(s), raw pick_arm_start(s),
+                                raw pick_arm_count(s));
         drop suspend_window(x, raw pick_arm_start(s), raw pick_arm_count(s), fuel);
         pass NIL;
     }
@@ -701,6 +745,8 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
                                      a: n.a, b: n.b, c: n.c, payload: 0i64 };
         drop suspend_expr(x, raw pick_selector(as_stmt), fuel - 1i32);
+        drop suspend_pick_views(x, raw pick_selector(as_stmt),
+                                raw pick_arm_start(as_stmt), raw pick_arm_count(as_stmt));
         drop suspend_window(x, raw pick_arm_start(as_stmt),
                             raw pick_arm_count(as_stmt), fuel);
         pass NIL;

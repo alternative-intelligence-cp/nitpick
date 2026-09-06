@@ -256,7 +256,7 @@ func:resolve_expr_inner = NIL(Resolver->:r, ExprId:id, int32:scope) never fails 
     // An expression-`pick` (D-059) carries statements, so it hands back.
     if (e.kind == ExprKind.ExprPickExpr) {
         drop resolve_expr(r, raw pickx_selector(e), scope);
-        drop resolve_arms(r, raw pickx_arm_start(e), raw pickx_arm_count(e), scope);
+        drop resolve_arms(r, raw pickx_selector(e), raw pickx_arm_start(e), raw pickx_arm_count(e), scope);
         pass NIL;
     }
 
@@ -420,7 +420,7 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) never fails {
 
     if (s.kind == StmtKind.StmtPickStmt) {
         drop resolve_expr(r, raw pick_selector(s), scope);
-        drop resolve_arms(r, raw pick_arm_start(s), raw pick_arm_count(s), scope);
+        drop resolve_arms(r, raw pick_selector(s), raw pick_arm_start(s), raw pick_arm_count(s), scope);
         pass NIL;
     }
 
@@ -464,14 +464,16 @@ func:resolve_stmt_window = NIL(Resolver->:r, int32:start, int32:count, int32:sco
 
 // --- `pick` arms -------------------------------------------------------------------------
 
-func:resolve_arms = NIL(Resolver->:r, int32:start, int32:count, int32:scope) never fails {
+// `sel` is the pick's SELECTOR: every name a pattern declares is linked to it
+// (D-266, 1.5.2h), which is how a binding knows it is a VIEW.
+func:resolve_arms = NIL(Resolver->:r, ExprId:sel, int32:start, int32:count, int32:scope) never fails {
     for (int32:i in 0i32...count) {
         StmtId:armId = raw pick_arm_at(r.ast, start, i);
         StmtNode:arm = raw ast_stmt(r.ast, armId);
 
         // EACH ARM IS ITS OWN SCOPE, so two arms may bind the same name.
         int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
-        drop resolve_pattern(r, raw arm_pattern(arm), inner);
+        drop resolve_pattern(r, raw arm_pattern(arm), sel, inner);
         // The guard sees the pattern's bindings: `(Pair(a, b)) where (a > b)`.
         drop resolve_expr(r, raw arm_guard(arm), inner);
         drop resolve_stmt(r, raw arm_body(arm), inner);
@@ -481,7 +483,7 @@ func:resolve_arms = NIL(Resolver->:r, int32:start, int32:count, int32:scope) nev
 
 // A pattern BINDS names rather than referring to them, which is the whole
 // difference between a pattern and an expression.
-func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
+func:resolve_pattern = NIL(Resolver->:r, PatId:id, ExprId:sel, int32:scope) never fails {
     if (raw pat_is_none(id)) {
         pass NIL;
     }
@@ -497,7 +499,7 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
         pass NIL;
     }
     if (p.kind == PatKind.PatStructDestructure) {
-        drop bind_pattern_names(r, id, raw pat_bind_start(p),
+        drop bind_pattern_names(r, id, sel, raw pat_bind_start(p),
                                 raw pat_bind_count(p), scope);
         pass NIL;
     }
@@ -505,8 +507,9 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
         int32:n = raw pat_enum_bind_count(r.ast, p);
         for (int32:i in 0i32...n) {
             int32:nm = raw pat_enum_bind(r.ast, p, i);
-            discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
-                                raw SYM_PAT(), id.index, 0i32));
+            int32:psym = raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                                            raw SYM_PAT(), id.index, 0i32);
+            drop symtab_set_link(r.tab, psym, sel.index);
         }
         pass NIL;
     }
@@ -514,12 +517,13 @@ func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) never fails {
     pass NIL;
 };
 
-func:bind_pattern_names = NIL(Resolver->:r, PatId:id, int32:start,
+func:bind_pattern_names = NIL(Resolver->:r, PatId:id, ExprId:sel, int32:start,
                               int32:count, int32:scope) never fails {
     for (int32:i in 0i32...count) {
         int32:nm = raw ast_id_at(r.ast, start, i);
-        discard(raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
-                            raw SYM_PAT(), id.index, 0i32));
+        int32:fsym = raw symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                                        raw SYM_PAT(), id.index, 0i32);
+        drop symtab_set_link(r.tab, fsym, sel.index);
     }
     pass NIL;
 };

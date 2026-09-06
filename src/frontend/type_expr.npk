@@ -195,6 +195,10 @@ pub struct:ExprTyper = {
     // half, and until 0.4.8 nothing set it because no `impl` method body was ever
     // walked.
     int32:self_type;
+    // THE ROOT SYMBOLS FROZEN BY THE LENDING-`pick` ARMS BEING TYPED (D-266,
+    // 1.5.2h): pushed around an arm that binds a view, popped after; every
+    // write path asks `place_frozen`.
+    List<int32>:frozen;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
@@ -216,6 +220,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              enclosing: raw generic_scope_none(),
                              instances: instances, fninsts: fninsts,
                              self_type: 0i32, self_trait: 0i32,
+                             frozen: raw list_init::<int32>(8i64),
                              expr_types: expr_types };
     pass e;
 };
@@ -339,6 +344,76 @@ pub func:refuse_move_out_of_limited = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     pass NIL;
 };
 
+// --- D-266 (1.5.2h): VIEWS AND THE FROZEN SELECTOR --------------------------------
+//
+// THE ROOT SYMBOL OF A PLACE, FOLLOWED THROUGH VIEWS: a lending `pick`'s binding
+// stands in for its selector's root, so `pick (s.kind)`'s view is rooted at
+// `s`, and a view of a view at the outer selector. 0 when the place has no
+// named root (a temporary, a call) or the walk exhausts.
+pub func:root_sym_through_views = int32(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    ExprId:cur = id;
+    for (int32:hop in 0i32...fuel) {
+        PlaceRoot:r = raw place_root(e.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass 0i32; }
+        if (raw expr_is_none(r.id)) { pass 0i32; }
+        ExprNode:rn = raw ast_expr(e.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (rn.a == 0i32) { pass 0i32; }
+        if (!(raw sym_is_view(e.tab, e.ast, rn.a))) { pass rn.a; }
+        cur = ExprId{ index: (raw symtab_get(e.tab, rn.a)).link };
+    }
+    pass 0i32;
+};
+
+// IS THIS PLACE A VIEW, OR A PART OF ONE?
+pub func:place_is_view = bool(ExprTyper->:e, ExprId:id) never fails {
+    PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
+    if (r.exhausted) { pass false; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = raw ast_expr(e.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    pass (raw sym_is_view(e.tab, e.ast, rn.a));
+};
+
+// IS THIS PLACE ROOTED AT A FROZEN SELECTOR -- the root of a lending `pick`
+// one of whose binding arms is being typed?
+pub func:place_frozen = bool(ExprTyper->:e, ExprId:id) never fails {
+    int32:root = raw root_sym_through_views(e, id, 64i32);
+    if (root == 0i32) { pass false; }
+    for (int64:i in 0i64...e.frozen.count) {
+        if (e.frozen.items[i] == root) { pass true; }
+    }
+    pass false;
+};
+
+// A WRITE PATH INTO A FROZEN SELECTOR (TYPE-067), asked where the view's own
+// rule has not already spoken: a view is a part of its selector, and one
+// mistake gets one report (D-240). True when reported.
+pub func:refuse_frozen = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    if (raw place_is_view(e, place)) { pass false; }
+    if (!(raw place_frozen(e, place))) { pass false; }
+    string:m1 = string_concat("the selector of a lending `pick` is FROZEN while an arm's view of it is live (D-266), and this ", what);
+    discard(raw te_error(e, raw TYPE_PICK_FROZEN(),
+        string_concat(m1, " reaches the value the arm's binding views in place -- write after the `pick`, or bind nothing in this arm"),
+        at));
+    pass true;
+};
+
+// A WRITE PATH INTO A VIEW (TYPE-066) OR A FROZEN SELECTOR (TYPE-067): the one
+// question every write asks -- an assignment, an address, a borrow, a
+// pointer-receiver call, a stateful operation. True when reported; the caller
+// then types as invalid and says nothing more (D-240).
+pub func:refuse_write_path = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    if (raw place_is_view(e, place)) {
+        string:m1 = string_concat("a lending `pick`'s binding is a read-only VIEW of the payload in place (D-266), and this ", what);
+        discard(raw te_error(e, raw TYPE_VIEW_READ_ONLY(),
+            string_concat(m1, " would write through it -- read it, pass it by value, or consume the value with `pick (move(v))`"),
+            at));
+        pass true;
+    }
+    pass (raw refuse_frozen(e, place, what, at));
+};
+
 pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                    Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
@@ -351,6 +426,15 @@ pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     ExprNode:rn = raw ast_expr(e.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
+    // A VIEW WAS LENT BY ITS `pick` (D-266, 1.5.2h): the binding is the payload
+    // in the selector's storage, so there is no ownership here to move on --
+    // the parameter rule below, for the one other binding that is a lend.
+    if (raw sym_is_view(e.tab, e.ast, rn.a)) {
+        discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
+            "this binding is a lending `pick`'s VIEW of its payload (D-266): the value was lent, not given, so there is no ownership here to move on -- consume the selector with `pick (move(v))`, or `.clone()` the part",
+            at));
+        pass NIL;
+    }
     Symbol:sy = raw symtab_get(e.tab, rn.a);
     if (sy.origin_kind != (raw SYM_DECL())) { pass NIL; }
     DeclNode:pd = raw ast_decl(e.ast, DeclId{ index: sy.origin });
@@ -2731,15 +2815,23 @@ func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:want = raw expected_value(e);
     int32:given = want;
 
+    // THE SELECTOR IS FROZEN INSIDE AN ARM THAT BINDS A VIEW (D-266, 1.5.2h) --
+    // the statement form's `check_arms` rule, for this spelling.
+    int32:froot = 0i32;
+    if (!pr.consuming) { froot = raw root_sym_through_views(e, raw pickx_selector(n), 64i32); }
     for (int32:i in 0i32...cnt) {
         StmtId:arm = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         StmtNode:a = raw ast_stmt(e.ast, arm);
+        bool:frz = false;
+        if (froot != 0i32) { if (raw arm_binds_name(e, a)) { frz = true; } }
+        if (frz) { drop list_push(@e.frozen, froot); }
         discard(raw type_of_expr(e, raw arm_guard(a)));
 
         // EVERY ARM IS WALKED AS A STATEMENT, so a mistake anywhere in its body is
         // reported; the `give` is then looked for on top of that rather than
         // instead of it.
         drop check_stmt(e, raw arm_body(a));
+        if (frz) { e.frozen.count = e.frozen.count - 1i64; }
         given = raw arm_give_type(e, raw arm_body(a), given, n.span);
     }
 
@@ -3394,8 +3486,13 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // (D-058) — bare calls are refused by `type_call`.
         int32:sp_saved = e.await_operand;
         e.await_operand = dopid.index;
-        discard(raw type_unwrap(e, n, "drop"));
+        int32:dres = raw type_unwrap(e, n, "drop");
         e.await_operand = sp_saved;
+        // A REFUSED OPERAND ANSWERED WITH ITS OWN SENTENCE (D-240): the `raw`
+        // arm's rule since 1.5.2b step 4, and `drop`'s since 1.5.2h, where a
+        // pointer-receiver call refused at its receiver (TYPE-066/067) was
+        // then reported "unlicensed" -- a callee the refusal never resolved.
+        if (dres == 0i32) { pass 0i32; }
         if (raw unwrap_callee_is_async(e, dopn, dopid)) {
             // THE SPAWN FORM (D-058/D-177). Legal only inside an `async`
             // function: the D-062 join lives in the enclosing frame, and a
@@ -3607,6 +3704,8 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                 n.span));
             pass 0i32;
         }
+        // A VIEW HAS NO ADDRESS, AND A FROZEN SELECTOR LENDS ITS (D-266, 1.5.2h).
+        if (raw refuse_write_path(e, raw expr_operand(n), "address (`@`)", n.span)) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
     }
     if (n.kind == ExprKind.ExprDerefExpr) {
@@ -3628,6 +3727,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
                 n.span));
             pass 0i32;
         }
+        if (raw refuse_write_path(e, raw expr_operand(n), "borrow (`$$i`/`$$m`)", n.span)) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
     }
 
@@ -3646,6 +3746,10 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     if (n.kind == ExprKind.ExprMoveExpr) {
         drop require_place_operand(e, raw expr_operand(n), "move");
         int32:mvt = raw type_of_expr(e, raw expr_operand(n));
+        // A `move` OF A FROZEN SELECTOR OR ANY PART OF IT (D-266, 1.5.2h) --
+        // the nested `pick (move(v))` included, whose selector is typed here.
+        // A view's own `move` is the lent-binding rule's below (TYPE-047).
+        if (raw refuse_frozen(e, raw expr_operand(n), "`move`", n.span)) { pass 0i32; }
         drop refuse_move_of_borrowed(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
         pass mvt;

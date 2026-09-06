@@ -75,6 +75,10 @@ pub struct:Symbol = {
     int32:origin;        // index into the array `origin_kind` names
     int32:flags;
     int32:next;          // next symbol in the SAME scope, or 0
+    // D-266 (1.5.2h): for a `SYM_PAT` symbol, the ExprId index of its pick's
+    // SELECTOR, so "is this binding a view" is read off the selector's own
+    // spelling (`sym_is_view`) and no flag can drift from it. 0 elsewhere.
+    int32:link;
 
     // THE SCOPE THIS NAME OPENS, for a symbol that names a NAMESPACE — a nested
     // `mod:name = { … }`. Zero for everything else.
@@ -162,7 +166,7 @@ pub func:symtab_init = SymbolTable() never fails {
     // handle is a well-defined absence rather than a silent reference to whatever
     // was created first.
     Symbol:none = Symbol{ name: 0i32, scope: 0i32, origin_kind: 0i32,
-                          origin: 0i32, flags: 0i32, next: 0i32, inner: 0i32 };
+                          origin: 0i32, flags: 0i32, next: 0i32, inner: 0i32, link: 0i32 };
     drop list_push(@t.syms, none);
 
     Scope:root = Scope{ parent: 0i32, kind: 0i32, first: 0i32 };
@@ -262,6 +266,32 @@ pub func:symtab_set_local_ord = NIL(SymbolTable->:t, int32:sym, int32:ord) never
     }
     t.local_ord.items[sym => int64] = ord;
     pass NIL;
+};
+
+// A PATTERN BINDING'S SELECTOR (D-266, 1.5.2h): written by the resolver as it
+// declares the names of a `pick` arm's pattern; read by `sym_is_view`.
+pub func:symtab_set_link = NIL(SymbolTable->:t, int32:sym, int32:link) never fails {
+    if (sym <= 0i32) { pass NIL; }
+    if ((sym => int64) >= t.syms.count) { pass NIL; }
+    Symbol:s = t.syms.items[sym => int64];
+    s.link = link;
+    t.syms.items[sym => int64] = s;
+    pass NIL;
+};
+
+// IS THIS BINDING A VIEW (D-266, 1.5.2h)? A `pick` arm's pattern binding whose
+// pick LENDS its selector -- the selector not spelled `move(v)` -- binds the
+// payload in place, read-only. One fact, derived from the selector's spelling
+// through the link the resolver wrote; the checker, the analyses and the
+// emitter all ask here. A pattern symbol with no link is a defect (the
+// resolver links every pattern) and answers `false`, never a guess.
+pub func:sym_is_view = bool(SymbolTable->:t, Ast->:ast, int32:sym) never fails {
+    if (sym <= 0i32) { pass false; }
+    if ((sym => int64) >= t.syms.count) { pass false; }
+    Symbol:s = t.syms.items[sym => int64];
+    if (s.origin_kind != (raw SYM_PAT())) { pass false; }
+    if (s.link == 0i32) { pass false; }
+    pass ((raw ast_expr(ast, ExprId{ index: s.link })).kind != ExprKind.ExprMoveExpr);
 };
 
 pub func:symtab_local_ord = int32(SymbolTable->:t, int32:sym) never fails {
@@ -428,7 +458,7 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     }
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
-                       flags: flags, next: t.scopes.items[scope => int64].first, inner: 0i32 };
+                       flags: flags, next: t.scopes.items[scope => int64].first, inner: 0i32, link: 0i32 };
     int32:id = raw symtab_id(t.syms.count);   // BEFORE the push
     drop list_push(@t.syms, s);
 
@@ -479,7 +509,7 @@ pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
                        flags: flags | (raw SYM_IMPORTED()),
-                       next: t.scopes.items[scope => int64].first, inner: 0i32 };
+                       next: t.scopes.items[scope => int64].first, inner: 0i32, link: 0i32 };
     int32:id = raw symtab_id(t.syms.count);   // BEFORE the push
     drop list_push(@t.syms, s);
     Scope:sc = t.scopes.items[scope => int64];

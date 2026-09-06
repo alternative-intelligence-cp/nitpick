@@ -804,6 +804,14 @@ func:view_root = ViewRoot(Escape->:x, ExprId:place) never fails {
         }
         if (rn.kind != ExprKind.ExprIdentifierExpr)    { pass ViewRoot{ id: raw expr_none(), kind: 2i32 }; }   // a temporary, or `<-p`: fails closed
         if (rn.a == 0i32) { pass ViewRoot{ id: r.id, kind: 1i32 }; }
+        // A VIEW BINDING STANDS IN FOR ITS SELECTOR (D-266, 1.5.2h): what a
+        // view of the binding aliases is the selector's storage -- a local's
+        // (frame), a parameter's (may travel up one frame), a temporary's
+        // (refused: it dies with the `pick` statement).
+        if (raw sym_is_view(x.tab, x.ast, rn.a)) {
+            cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+            continue;
+        }
         int32:ty = raw exprtypes_get(x.etypes, r.id);
         int32:k = raw type_kind(x.types, ty);
         if (k == (raw TY_POINTER())) { pass ViewRoot{ id: r.id, kind: 0i32 }; }
@@ -874,13 +882,22 @@ func:root_is_param = bool(Escape->:x, ExprId:id) never fails {
 };
 
 // The SYMBOL at a place's root, or 0 — `f.g.ast` roots at `f`.
+// THROUGH VIEWS (D-266, 1.5.2h): a lending `pick`'s binding is the payload IN
+// the selector's storage, so a place rooted at one is rooted where the
+// selector is -- a parameter's, a local's, or another view's, followed until
+// a name that is not a view. Fuel-bounded like every walk here.
 func:root_symbol = int32(Escape->:x, ExprId:id) never fails {
-    PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
-    if (r.exhausted) { pass 0i32; }
-    if (raw expr_is_none(r.id)) { pass 0i32; }
-    ExprNode:rn = raw ast_expr(x.ast, r.id);
-    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
-    pass rn.a;
+    ExprId:cur = id;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw place_root(x.ast, cur, raw BORROW_FUEL());
+        if (r.exhausted) { pass 0i32; }
+        if (raw expr_is_none(r.id)) { pass 0i32; }
+        ExprNode:rn = raw ast_expr(x.ast, r.id);
+        if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass rn.a; }
+        cur = ExprId{ index: (raw symtab_get(x.tab, rn.a)).link };
+    }
+    pass 0i32;
 };
 
 func:root_is = bool(Escape->:x, ExprId:id, int32:sym) never fails {

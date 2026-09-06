@@ -23,9 +23,10 @@ func:store_copy<T> = NIL(Holder<T>->:h, T:v) never fails {
     pass NIL;
 };
 
-// A lending `pick` may not bind a payload of a bare `T` either (D-216, D-264).
+// A lending `pick` BINDS A VIEW of a bare `T` payload (D-266, 1.5.2h): in
+// place, no copy, so the rule above has nothing to refuse -- ACCEPTED, a
+// control (D-264 refused it at 1.5.2f, when a binding was still a copy).
 enum:Wrap<T> = { Some(T); None; };
-// expect-error: NITPICK-TYPE-046
 func:peek<T> = int32(Wrap<T>:w) never fails {
     pick (w) { (Wrap.Some(t)) { pass 1i32; }, (Wrap.None) { pass 0i32; } }
     pass 2i32;

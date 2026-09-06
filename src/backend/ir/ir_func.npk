@@ -88,6 +88,9 @@ pub struct:FnEmitter = {
     // declaration's index, 0 for none -- parallel to the four above; read by
     // every write point rooted at the binding (`emit_limit_check`).
     List<int32>:lrules;
+    // D-266 (1.5.2h): true for a lending pick's VIEW binding -- its slot holds
+    // the payload's address, and a read loads through it.
+    List<bool>:lviews;
 
     // Which parameters are `move` (consuming) — parallel to pnames. A lent
     // parameter is the CALLER's to drop; a `move` one is this function's, at
@@ -287,6 +290,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         ltypes: raw list_init::<int32>(32i64),
         lflags: raw list_init::<string>(32i64),
         lrules: raw list_init::<int32>(32i64),
+        lviews: raw list_init::<bool>(32i64),
         dstmts: raw list_init::<int32>(16i64),
         dframes: raw list_init::<int64>(16i64),
         dlmarks: raw list_init::<int64>(16i64),
@@ -370,6 +374,7 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
     fe.ltypes.count = 0i64;
     fe.lflags.count = 0i64;
     fe.lrules.count = 0i64;
+    fe.lviews.count = 0i64;
     fe.terminated = false;
     fe.dstmts.count = 0i64;
     fe.dframes.count = 0i64;
@@ -914,7 +919,20 @@ pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, move string:slot, int32:typ
     drop list_push(@fe.ltypes, type_id);
     drop list_push(@fe.lflags, "");
     drop list_push(@fe.lrules, 0i32);
+    drop list_push(@fe.lviews, false);
     pass NIL;
+};
+
+// A VIEW BINDING (D-266, 1.5.2h): the slot holds the payload's ADDRESS, one
+// `ptr`, and every read loads through it (`emit_ident`, `addr_of`). No drop
+// flag, ever -- the selector owns what the view reads. Attached to the most
+// recent binding, the way a drop flag or a rule is.
+pub func:fnem_view_last = NIL(FnEmitter->:fe) never fails {
+    fe.lviews.items[(fe.lnames.count - 1i64) => int64] = true;
+    pass NIL;
+};
+pub func:fnem_local_is_view_at = bool(FnEmitter->:fe, int64:i) never fails {
+    pass fe.lviews.items[i => int64];
 };
 
 // A local: its alloca HOISTED to the entry block (D-173), bound from here to the
@@ -958,6 +976,7 @@ pub func:fnem_release = NIL(FnEmitter->:fe, int64:mark) never fails {
     fe.ltypes.count = mark;
     fe.lflags.count = mark;
     fe.lrules.count = mark;
+    fe.lviews.count = mark;
     pass NIL;
 };
 

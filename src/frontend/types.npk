@@ -2118,3 +2118,26 @@ pub func:type_decl_of = int32(TypeTable->:t, int32:id) never fails {
     if (k == (raw TY_ASSOC()))  { pass ((raw tt_get(t, id)).b); }
     pass 0i32;
 };
+
+// THE KINDS WHOSE EVERY OPERATION WRITES THROUGH THE RECEIVER'S ADDRESS
+// (D-266, 1.5.2h): an arena and a shared arena (alloc/put/free/reset/destroy
+// change the store), the sync primitives and their guards (a lock word), an
+// atomic (its cell), a channel (its ring), a `dyn` (a method receives the
+// cell pointer). A lending `pick` may not bind a VIEW of one -- a view has no
+// address to write through -- and an operation on one rooted at a frozen
+// selector is a write to the selector. One list, read by the bind check and
+// by the method-call typer; a new stateful kind joins it here.
+pub func:type_kind_stateful = bool(int32:kind) never fails {
+    if (kind == (raw TY_ARENA()))        { pass true; }
+    if (kind == (raw TY_SHARED_ARENA())) { pass true; }
+    if (kind == (raw TY_MUTEX()))        { pass true; }
+    if (kind == (raw TY_GUARD()))        { pass true; }
+    if (kind == (raw TY_RWLOCK()))       { pass true; }
+    if (kind == (raw TY_RGUARD()))       { pass true; }
+    if (kind == (raw TY_CONDVAR()))      { pass true; }
+    if (kind == (raw TY_BARRIER()))      { pass true; }
+    if (kind == (raw TY_ATOMIC()))       { pass true; }
+    if (kind == (raw TY_CHANNEL()))      { pass true; }
+    if (kind == (raw TY_DYN()))          { pass true; }
+    pass false;
+};

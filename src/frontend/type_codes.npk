@@ -381,3 +381,17 @@ pub func:TYPE_LIMIT_NO_WRITE_POINT = string() never fails { pass "NITPICK-TYPE-0
 // DEF-19): a frac and a complex are refused here by name, and now so is an
 // `Optional`. Both the statement form and the expression form.
 pub func:TYPE_PICK_OPTIONAL = string() never fails { pass "NITPICK-TYPE-065"; };
+
+// A LENDING `pick`'S BINDING IS A READ-ONLY VIEW of the payload in place
+// (D-266, 1.5.2h): the language has one pointer type and it carries no
+// mutability, so every address of a view is a write path into a lent value.
+// Refused: an assignment or compound assignment to the view or any part of
+// it, `@`, `$$i`, `$$m`, a call whose receiver is a pointer (the implicit
+// address), an operation of a stateful kind (an arena, a lock, an atomic, a
+// channel, a `dyn`), and binding a view of such a kind at all.
+pub func:TYPE_VIEW_READ_ONLY = string() never fails { pass "NITPICK-TYPE-066"; };
+// THE SELECTOR OF A LENDING `pick` IS FROZEN while an arm's view of it is
+// live (D-266): inside an arm that binds, no write may reach the selector's
+// root binding -- an assignment, a `move`, an address, a pointer-receiver
+// call, a stateful operation, a nested `pick (move(…))`.
+pub func:TYPE_PICK_FROZEN = string() never fails { pass "NITPICK-TYPE-067"; };

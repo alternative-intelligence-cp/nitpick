@@ -1334,8 +1334,11 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         if (!(raw ll_is_ok(pll2))) { pass (raw iv_from_ll_at(x, pll2, ptid, n.span)); }
         ExprId:psel = ExprId{ index: n.a };
         int32:pstid = raw exprtypes_get(x.et, psel);
-        IrVal:psv = raw emit_expr(x, psel);
-        if (!(raw iv_is_ok(psv))) { pass psv; }
+        // A LENDING PICK'S VIEWS BIND FROM THE SELECTOR'S ADDRESS (D-266,
+        // 1.5.2h): the statement form's rule, for this spelling.
+        SelAddr:psa = raw pick_selector_address(x, psel, pstid, n.b, n.c);
+        if (!(raw iv_is_ok(psa.val))) { pass (move(psa.val)); }
+        IrVal:psv = raw iv(string_concat(psa.val.ll, ""), string_concat(psa.val.ref, ""), psa.val.type_id);
         string:pdisc = string_concat(psv.ref, "");
         string:pdll = string_concat(psv.ll, "");
         if ((raw type_kind(x.fe.ctx.types, pstid)) == (raw TY_ENUM())) {
@@ -1359,7 +1362,7 @@ func:emit_expr_kind = IrVal(ExprEmitter->:x, ExprId:id) never fails {
         }
         IrVal:pc2 = raw emit_pick_chain(x, psv, pstid, pdisc, move(pdll),
                         n.b, n.c, string_concat(pslot, ""), string_concat(pll2.text, ""), ptid,
-                        pcons);
+                        pcons, string_concat(psa.addr, ""));
         if (!(raw iv_is_ok(pc2))) { pass pc2; }
         string:pout = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat5(pout, " = load ", pll2.text, ", ptr ",
@@ -1622,9 +1625,17 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     if (!(raw ll_is_ok(t))) {
         pass (raw iv_from_ll_at(x, t, sty, n.span));
     }
+    // A VIEW READS THROUGH ITS SLOT (D-266, 1.5.2h): the slot holds the
+    // payload's address in the selector's storage; the value is one load
+    // further, and the same at every instantiation.
+    string:src = raw fnem_local_slot_at(x.fe, si);
+    if (raw fnem_local_is_view_at(x.fe, si)) {
+        string:vp = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(vp, " = load ptr, ptr ", src));
+        src = move(vp);
+    }
     string:r = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat5(r, " = load ", t.text, ", ptr ",
-                      raw fnem_local_slot_at(x.fe, si)));
+    drop irw_line(x.fe.w, raw cat5(r, " = load ", t.text, ", ptr ", src));
     pass (raw iv(move(t.text), move(r), sty));
 };
 
@@ -8843,6 +8854,16 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             // The checker refuses an unknown name, so anything else here is a
             // defect, not a rung.
             pass (raw pv_broken(n.span));
+        }
+        // A VIEW'S PLACE IS THE PAYLOAD IT VIEWS (D-266, 1.5.2h): the address
+        // loaded from its slot. The checker refuses every user-spelled address
+        // of a view; this arm serves the emitter's own paths -- an element
+        // read, a by-address receiver the checker admitted (none today).
+        if (raw fnem_local_is_view_at(x.fe, si)) {
+            string:vp = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat3(vp, " = load ptr, ptr ",
+                              raw fnem_local_slot_at(x.fe, si)));
+            pass (raw pv(move(vp), raw fnem_local_type_at(x.fe, si)));
         }
         pass (raw pv(raw fnem_local_slot_at(x.fe, si),
                      raw fnem_local_type_at(x.fe, si)));

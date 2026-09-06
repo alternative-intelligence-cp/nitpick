@@ -448,27 +448,14 @@ func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
     if (cls == (raw DVC_REFUSED())) {
         pass "no derived body can be written for that spelling -- an owning or erased type is compared, hashed, rendered or copied by a rule only its author can choose";
     }
-    if (cls == (raw DVC_STRING())) {
-        if (payload) {
-            if (comparison || is_clone) {
-                pass "a `pick` cannot bind an owning payload without consuming it (D-216's is the only binding form)";
-            }
-        }
-        pass "";
-    }
-    // A PAYLOAD OF A BARE TYPE PARAMETER (D-264, 1.5.2f): move-only in the
-    // body that names it, since the body is checked once for every type it is
-    // instantiated at -- so the four derives that bind a payload refuse it
-    // exactly as they refuse a `string`'s. A parameter FIELD is read in place
-    // (`self.v.eq(other.v)`) and derives fine; only a bound payload copies.
-    if (cls == (raw DVC_PARAM())) {
-        if (payload) {
-            if (comparison || is_clone) {
-                pass "a payload of a type parameter is move-only in the body that names it (D-264), and a `pick` cannot bind an owning payload without consuming it (D-216's is the only binding form)";
-            }
-        }
-        pass "";
-    }
+    // A `string` PAYLOAD AND A BARE-`T` PAYLOAD BIND AS VIEWS (D-266, 1.5.2h):
+    // the generated lending `pick` reads each in place, and `eq`, `cmp`,
+    // `partial_cmp` and `clone` take their operands by value -- the lend. Until
+    // D-266 both classes were refused under `Eq`, `Ord`, `PartialOrd` and
+    // `Clone` (D-250; D-264, 1.5.2f), since a lending binding was a COPY and a
+    // copy of an owning payload a second owner.
+    if (cls == (raw DVC_STRING())) { pass ""; }
+    if (cls == (raw DVC_PARAM()))  { pass ""; }
     if (cls == (raw DVC_POINTER())) {
         if (which == (raw DERIVE_EQ())) { pass ""; }
         if (is_clone) { pass ""; }
@@ -880,8 +867,9 @@ func:gen_clone_struct = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
 
 // A DERIVED ENUM CLONE REBUILDS THE VARIANT (D-258): a `pick` per variant,
 // each payload through its class; a payload-less enum keeps `pass self`,
-// byte for byte (the tag is the value). An owning payload is refused before
-// this is written, as under `Eq` (the `pick` rule).
+// byte for byte (the tag is the value). The `pick` LENDS `self` (D-266,
+// 1.5.2h), so an owning payload is read in place and `.clone()`d by value;
+// a payload no derived body can rebuild is refused before this is written.
 func:gen_clone_enum = NIL(Ast->:ast, InternTable->:interns, DeclNode:d,
                           string:tn, string:bare, string:head, DvSink->:out) never fails {
     drop dv_put(out, raw dvc5(head, tn, ":Clone = { pub func:clone = ", tn, "("));
