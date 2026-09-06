@@ -36,7 +36,7 @@ func:list_make<T> = Growable<T>(int64:cap) {
     pass Growable{ items: mem =>! wild T->, count: 0i64, cap: cap };
 };
 
-func:growable_push<T> = NIL(Growable<T>->:l, T:v) {
+func:growable_push<T> = NIL(Growable<T>->:l, move T:v) {
     if (l.count >= l.cap) {
         int64:newcap = l.cap * 2i64;
         wild int8->:bigger = ralloc(l.items =>! wild int8->,
@@ -44,7 +44,7 @@ func:growable_push<T> = NIL(Growable<T>->:l, T:v) {
         l.items = bigger =>! wild T->;
         l.cap = newcap;
     }
-    l.items[l.count] = v;
+    l.items[l.count] = move(v);   // a `T` is move-only in its body (D-264)
     l.count = l.count + 1i64;
     pass NIL;
 };
@@ -65,10 +65,10 @@ func:growable_get<T> = T?(Growable<T>->:l, int64:i) {
 
 // A generic struct built inside a generic body and RETURNED, at a type no
 // annotation in this program names (`Growable<int64>` appears only here).
-func:pair_of<T> = Growable<T>(T:a, T:b) {
+func:pair_of<T> = Growable<T>(move T:a, move T:b) {
     Growable<T>:l = list_make::<T>(1i64) ?! E9;
-    growable_push(@l, a) ?! E9;
-    growable_push(@l, b) ?! E9;
+    growable_push(@l, move(a)) ?! E9;   // a `T` is move-only in its body (D-264)
+    growable_push(@l, move(b)) ?! E9;
     pass l;
 };
 

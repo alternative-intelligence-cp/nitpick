@@ -29,9 +29,13 @@ struct:Point = { int32:x; int32:y; };
 #[derive(Eq, Ord, PartialOrd, Clone, Hash, ToString, Debug)]
 struct:Box<T> = { T:v; };
 
-// A GENERIC ENUM (D-261, 1.5.2c step 1): the same family form, the derived
-// bodies picking over `self` and `other` with the instance's payload bound.
-#[derive(Eq, Ord, PartialOrd, Clone)]
+// A GENERIC ENUM (D-261, 1.5.2c step 1) derives what binds no payload: `Hash`
+// is the tag's and `ToString`/`Debug` the variant's name. Under `Eq`, `Ord`,
+// `PartialOrd` and `Clone` a payload of a bare `T` is refused (D-264, 1.5.2f:
+// move-only in the body that names it, and a `pick` cannot bind an owning
+// payload without consuming it -- `tests/derive/rejection/
+// derive_generic_payload.npk`), exactly as a `string` payload is.
+#[derive(Hash, ToString, Debug)]
 enum:Opt<T> = { Some(T); None; };
 
 #[derive(Eq, Ord, Clone, Hash)]
@@ -88,23 +92,16 @@ func:main = int32(cstring[]:_~argv) {
     if (!(r3.eq(r1) ?! E9)) { exit 32i32; }
     if ((r1.hash() ?! E9) == (r2.hash() ?! E9)) { exit 33i32; }
 
-    // Opt<int32> under Eq/Ord/PartialOrd/Clone (D-261; DEF-20 closed): variants
-    // order by declaration, so `None.cmp(Some(3))` is Greater
+    // Opt<int32> under Hash/ToString/Debug (D-261; the four that bind a payload
+    // refuse a `T` payload since D-264): the hash is the tag's, the rendering the
+    // variant's name
     Opt<int32>:o1 = Opt.Some(3i32);
-    Opt<int32>:o2 = Opt.Some(4i32);
     Opt<int32>:o3 = Opt.None;
-    if (o1.eq(o2) ?! E9) { exit 40i32; }
-    if (!(o1.eq(o1) ?! E9)) { exit 41i32; }
-    pick (o1.cmp(o2) ?! E9) { (Ordering.Less) { }, (*) { exit 43i32; } }
-    pick (o3.cmp(o1) ?! E9) { (Ordering.Greater) { }, (*) { exit 44i32; } }
-    pick ((o2.partial_cmp(o1) ?! E9) ?? Ordering.Less) { (Ordering.Greater) { }, (*) { exit 45i32; } }
-    Opt<int32>:o4 = o1.clone() ?! E9;
-    if (!(o4.eq(o1) ?! E9)) { exit 46i32; }
-    // Opt<string>: an OWNING instance cloned -- two payloads, the clone's
-    // consumed by the pick and dropped at the arm's end, the original at exit
-    Opt<string>:os = Opt.Some(string_concat("ab", "c"));
-    Opt<string>:oc = os.clone() ?! E9;
-    pick (move(oc)) { (Opt.Some(t)) { if (t.len != 3i64) { exit 47i32; } }, (Opt.None) { exit 48i32; } }
+    if ((o1.hash() ?! E9) == (o3.hash() ?! E9)) { exit 40i32; }
+    string:otext = o3.to_string() ?! E9;   // (`on` is a keyword)
+    if (otext.len == 0i64) { exit 41i32; }
+    string:od = o1.debug() ?! E9;
+    if (od.len == 0i64) { exit 43i32; }
 
     // Box<flt64>: nan has no order, and the answer lives in the prelude
     flt64:zero = 0.0f64;

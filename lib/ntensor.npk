@@ -46,12 +46,12 @@ impl:<T>:matrix<T> = {
         if (c >= self.cols)    { fail BadIndex; }
         pass (<-(#ptr_add<T>(self.cells.ptr, (r * self.cols) + c)));
     };
-    func:set = NIL(matrix<T>->:self, int64:r, int64:c, T:v) {
+    func:set = NIL(matrix<T>->:self, int64:r, int64:c, move T:v) {
         if (r < 0i64)          { fail BadIndex; }
         if (r >= self.rows)    { fail BadIndex; }
         if (c < 0i64)          { fail BadIndex; }
         if (c >= self.cols)    { fail BadIndex; }
-        <-(#ptr_add<T>(self.cells.ptr, (r * self.cols) + c)) = v;
+        <-(#ptr_add<T>(self.cells.ptr, (r * self.cols) + c)) = move(v);   // a `T` is move-only in its body (D-264)
         pass NIL;
     };
 };
@@ -102,9 +102,9 @@ impl:<T>:tensor<T> = {
         int64:off = relay tensor_offset::<T>(self, idx);
         pass (<-(#ptr_add<T>(self.cells.ptr, off)));
     };
-    func:set = NIL(tensor<T>->:self, int64[]:idx, T:v) {
+    func:set = NIL(tensor<T>->:self, int64[]:idx, move T:v) {
         int64:off = relay tensor_offset::<T>(self, idx);
-        <-(#ptr_add<T>(self.cells.ptr, off)) = v;
+        <-(#ptr_add<T>(self.cells.ptr, off)) = move(v);   // (D-264)
         pass NIL;
     };
 };

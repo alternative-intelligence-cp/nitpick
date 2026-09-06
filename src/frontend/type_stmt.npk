@@ -377,8 +377,9 @@ func:check_pick_owning_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
                     }
                 }
                 if (bt != 0i32) {
-                    TypeResolver:br = raw etyper_resolver(e);
-                    if (raw type_drops(@br, bt, e.scope, 64i32)) {
+                    // A payload of a bare type parameter is owning here too
+                    // (D-264, 1.5.2f): the same question as every copy's.
+                    if (raw type_owns_for_move(e, bt)) {
                         drop diaglist_push(e.diags, raw diag_error(
                             raw TYPE_MOVE_REQUIRED(),
                             "this arm binds a payload whose type OWNS heap storage, and the binding is a COPY of it (D-183): two owners of one body, and the binding outlives the value it was taken from. Consume the value instead — `pick (move(v))` (D-216) hands the payload to the arm, which then owns and drops it — or bind nothing and read what you need through the selector",
@@ -956,6 +957,10 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // permits beyond equality.
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
+        // ONE MISTAKE, ONE REPORT (D-240): a mismatched initialiser is refused
+        // here, and the move rule is not asked of a value that will never be
+        // stored -- under D-264 a `T:z = y` with `y: U` reported both.
+        pass NIL;
     }
     // D-183 §4: an owning value copied out of a place leaves two owners.
     drop require_move_if_owning(e, init, got, s.span);
@@ -1127,10 +1132,11 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         pass NIL;
     }
 
-    drop require_move_if_owning(e, value, got, s.span);
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
+        pass NIL;   // one mistake, one report (D-240): a mismatched value is never stored
     }
+    drop require_move_if_owning(e, value, got, s.span);
     pass NIL;
 };
 

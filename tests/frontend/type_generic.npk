@@ -285,8 +285,10 @@ func:main = int32(cstring[]:_~argv) {
     // parameter. It resolves from the DECLARATION rather than from a scope,
     // which is what lets it work here at all: the walk holds the module scope,
     // and `T` was never declared into it.
+    // (The case read `T:y = x; y.show()` until 1.5.2f: a copy of a `T` place is
+    // TYPE-046 under D-264, and the bound resolves on `x` just the same.)
     Gx:v10 = raw gx(
-        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { T:y = x; discard(raw y.show()); pass NIL; };",
+        "trait:Printable = { func:show = string(Self:self) never fails; }; func:f<T: Printable> = NIL(T:x) never fails { discard(raw x.show()); pass NIL; };",
         @it);
     if (raw errs(@v10) != 0i64)                                 { exit 25i32; }
 

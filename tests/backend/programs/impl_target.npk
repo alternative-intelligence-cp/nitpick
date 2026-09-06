@@ -33,7 +33,7 @@ impl:N:Base = { func:base = int32(N:self) { pass self.v; }; };
 // INHERENT FAMILY, with a mutating method through a pointer receiver.
 struct:Box<T> = { T:v; };
 impl:<T>:Box<T> = {
-    func:set = NIL(Box<T>->:self, T:v) never fails { self.v = v; pass NIL; };
+    func:set = NIL(Box<T>->:self, move T:v) never fails { self.v = move(v); pass NIL; };   // D-264
     func:get = T(Box<T>:self) never fails          { pass self.v; };
 };
 

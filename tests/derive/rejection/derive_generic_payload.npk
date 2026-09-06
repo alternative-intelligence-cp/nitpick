@@ -1,0 +1,20 @@
+// A DERIVE THAT BINDS A PAYLOAD OF A BARE TYPE PARAMETER IS REFUSED (D-264,
+// 1.5.2f), exactly as one that binds a `string` payload (`payload_owning.npk`):
+// a `T` is move-only in the body that names it, since the body is checked once
+// for every type it is instantiated at, and a `pick` cannot bind an owning
+// payload without consuming it (D-216's is the only binding form). Until 1.5.2f
+// the generated lending `pick` over `Opt<T>`'s payload was admitted -- the same
+// copy of a `T` the checker now refuses in hand-written code. The derives that
+// bind nothing (`Hash`, `ToString`, `Debug`) still generate for a generic enum.
+mod:derive_generic_payload;
+
+// expect-error: NITPICK-DERIVE-006
+#[derive(Eq)]
+enum:Opt<T> = { Some(T); None; };
+
+// expect-error: NITPICK-DERIVE-006
+#[derive(Clone)]
+enum:Box<T> = { Held(T); Empty; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

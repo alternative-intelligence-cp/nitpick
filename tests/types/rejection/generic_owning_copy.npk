@@ -1,0 +1,35 @@
+// A BARE TYPE PARAMETER IS MOVE-ONLY IN THE BODY THAT NAMES IT (D-264, 1.5.2f;
+// the library workbench's O-N19). A generic body is checked ONCE for every type
+// it is instantiated at, some of which own storage, so a copy of a `T` place is
+// the second owner D-183 forbids -- spelled `move(...)`, a plain copy at a
+// scalar, or `.clone()` under a `Clone` bound. Until 1.5.2f the rule asked
+// `type_drops`, which answers false for an unsubstituted `T`: `T:x = s.items[i]`
+// at `T = string` compiled, linked and ran with two owners of one heap body, a
+// use-after-free that exited 0 (170 when the poison was read). The concrete
+// spelling of the same statement was refused all along (`move_rules.npk`).
+mod:generic_owning_copy;
+
+struct:Holder<T> = { List<T>:items; };
+
+// expect-error: NITPICK-TYPE-046
+func:take_copy<T> = T(Holder<T>->:h, int64:i) never fails {
+    T:x = h.items.items[i];
+    pass x;
+};
+
+// expect-error: NITPICK-TYPE-046
+func:store_copy<T> = NIL(Holder<T>->:h, T:v) never fails {
+    h.items.items[0i64] = v;
+    pass NIL;
+};
+
+// A lending `pick` may not bind a payload of a bare `T` either (D-216, D-264).
+enum:Wrap<T> = { Some(T); None; };
+// expect-error: NITPICK-TYPE-046
+func:peek<T> = int32(Wrap<T>:w) never fails {
+    pick (w) { (Wrap.Some(t)) { pass 1i32; }, (Wrap.None) { pass 0i32; } }
+    pass 2i32;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

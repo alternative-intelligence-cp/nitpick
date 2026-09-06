@@ -1,0 +1,58 @@
+// expect-exit: 0
+//
+// THE SPELLING D-264 ASKS FOR, AT AN OWNING `T` AND AT A SCALAR (1.5.2f). A
+// generic body moves a `T` out of an element (`move(h.items.items[i])`), stores
+// a `move T:v` parameter with `move(v)`, and reads a scalar element by copy
+// through the same generic -- one body, two instantiations, no second owner.
+// `take` vacates the slot it moves from (S-26), so the holder drops what it
+// still owns and nothing twice; exit 0 under D-151. The workbench's `vec_pop`
+// is `take`.
+mod:generic_owning_move;
+error:E9;
+
+struct:Holder<T> = { List<T>:items; };
+
+func:take<T> = T(Holder<T>->:h, int64:i) never fails {
+    pass (move(h.items.items[i]));
+};
+
+func:put<T> = NIL(Holder<T>->:h, move T:v) never fails {
+    drop list_push(@h.items, move(v));
+    pass NIL;
+};
+
+func:last<T> = T(Holder<T>->:h) never fails {
+    pass (move(h.items.items[h.items.count - 1i64]));
+};
+
+func:run = int32() {
+    Holder<string>:hs = Holder{ items: raw list_init::<string>(2i64) };
+    drop put::<string>(@hs, string_concat("ab", "cd"));
+    drop put::<string>(@hs, string_concat("efg", "h"));
+    string:first = raw take::<string>(@hs, 0i64);
+    if (first.len != 4i64) { pass 2i32; }
+    string:second = raw last::<string>(@hs);
+    if (second.len != 4i64) { pass 3i32; }
+    Holder<int32>:hi = Holder{ items: raw list_init::<int32>(2i64) };
+    int32:n = 41i32;
+    drop put::<int32>(@hi, move(n));   // a `move` of a scalar is its copy; `n` is spent (MOVE-001)
+    int32:back = raw take::<int32>(@hi, 0i64);
+    if (back != 41i32) { pass 5i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) { exit (run() ?! E9); };
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (OutOfBounds) { exit 97i32; },
+        (IntOverflow) { exit 98i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};

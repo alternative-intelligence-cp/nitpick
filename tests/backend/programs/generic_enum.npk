@@ -28,7 +28,7 @@ enum:Either<L, R> = { Left(L); Right(R); };
 enum:Tag<T> = { A; B; };
 struct:Box<T> = { Opt<T>:inner; int32:n; };
 
-func:wrapg<T> = Opt<T>(T:v) { pass Opt.Some(v); };
+func:wrapg<T> = Opt<T>(move T:v) { pass Opt.Some(move(v)); };   // a `T` is move-only in its body (D-264)
 
 func:main = int32(cstring[]:_~argv) {
     // from the annotation, both variants

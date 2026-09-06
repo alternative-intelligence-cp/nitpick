@@ -401,14 +401,44 @@ func:expr_is_variant_ctor = bool(ExprTyper->:e, ExprId:id) never fails {
               == DeclKind.DeclEnumDecl);
 };
 
+// DOES A VALUE OF THIS TYPE OWN, FOR THE MOVE-ONLY RULE (D-183 as amended by
+// D-264, 1.5.2f)? What drops owns; and a BARE TYPE PARAMETER -- or `Self` in a
+// trait's default body -- owns too, because the body it stands in is checked
+// ONCE for every type it will be instantiated at, some of which own storage.
+// Until 1.5.2f `type_drops` alone decided, it answers false for an
+// unsubstituted `T`, and `T:x = s[i]` at an owning `T` compiled, linked and ran
+// with two owners of one heap body -- a use-after-free that exited 0, found by
+// the library workbench (O-N19) at every pin. A `move` of a scalar is its copy,
+// so the spelling the rule asks for costs nothing where nothing owns.
+pub func:type_owns_for_move = bool(ExprTyper->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    if (raw type_is_invalid(e.types, ty)) { pass false; }
+    TypeResolver:mr = raw etyper_resolver(e);
+    if (raw type_drops(@mr, ty, e.scope, 64i32)) { pass true; }
+    int32:k = raw type_kind(e.types, ty);
+    if (k == (raw TY_PARAM())) { pass true; }
+    if (k == (raw TY_SELF())) { pass true; }
+    pass false;
+};
+
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
-    TypeResolver:mr = raw etyper_resolver(e);
-    if (!(raw type_drops(@mr, ty, e.scope, 64i32))) { pass NIL; }
+    if (!(raw type_owns_for_move(e, ty))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
     if (raw expr_is_variant_ctor(e, id)) { pass NIL; }
+    // A BARE TYPE PARAMETER'S copy is refused for the reason a parameter has,
+    // not a string's (D-264, 1.5.2f).
+    int32:mk = raw type_kind(e.types, ty);
+    if ((mk == (raw TY_PARAM())) || (mk == (raw TY_SELF()))) {
+        string:p1 = string_concat("`",
+                        raw type_display(e.types, e.interns, ty));
+        drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
+            string_concat(p1, "` is a type parameter, and this body is checked once for every type it is instantiated at -- some of which own storage (D-264): a copy here would leave two owners at those. Write `move(...)` to transfer it, which is a plain copy at a scalar, or `.clone()` under a `Clone` bound"),
+            at));
+        pass NIL;
+    }
     string:m1 = string_concat("`",
                     raw type_display(e.types, e.interns, ty));
     // AN ERROR SINCE THE SWEEP CLOSED (1.2.2): it landed reporting, measured

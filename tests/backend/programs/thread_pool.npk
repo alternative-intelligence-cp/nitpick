@@ -50,8 +50,8 @@ func:pool_create<J> = ThreadPool<J>() gives {
     // it is built into, which here is the declared return type.
     pass ThreadPool{ jobs: ch };
 };
-async func:pool_submit<J> = NIL(ThreadPool<J>:pool, J:job, Duration:within) {
-    await pool.jobs.send(job, within) ?! E1;
+async func:pool_submit<J> = NIL(ThreadPool<J>:pool, move J:job, Duration:within) {
+    await pool.jobs.send(move(job), within) ?! E1;   // a `J` is move-only in its body (D-264)
     pass NIL;
 };
 func:pool_close<J> = NIL(ThreadPool<J>:pool) {

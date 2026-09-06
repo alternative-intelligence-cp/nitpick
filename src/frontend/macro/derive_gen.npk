@@ -456,6 +456,19 @@ func:dv_refusal = string(Ast->:ast, int32:cls, TypeId:t, int32:which,
         }
         pass "";
     }
+    // A PAYLOAD OF A BARE TYPE PARAMETER (D-264, 1.5.2f): move-only in the
+    // body that names it, since the body is checked once for every type it is
+    // instantiated at -- so the four derives that bind a payload refuse it
+    // exactly as they refuse a `string`'s. A parameter FIELD is read in place
+    // (`self.v.eq(other.v)`) and derives fine; only a bound payload copies.
+    if (cls == (raw DVC_PARAM())) {
+        if (payload) {
+            if (comparison || is_clone) {
+                pass "a payload of a type parameter is move-only in the body that names it (D-264), and a `pick` cannot bind an owning payload without consuming it (D-216's is the only binding form)";
+            }
+        }
+        pass "";
+    }
     if (cls == (raw DVC_POINTER())) {
         if (which == (raw DERIVE_EQ())) { pass ""; }
         if (is_clone) { pass ""; }
