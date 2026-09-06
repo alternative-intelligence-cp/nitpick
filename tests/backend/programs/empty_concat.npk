@@ -1,0 +1,34 @@
+// expect-exit: 0
+//
+// DEF-25 (1.5.2i): 200 000 concatenations of two empties, each result bound and
+// dropped at its iteration's end. Run on its own it exits 0 either way; under
+// NPK_HEAP_STATS (`tests/cost/empty_concat.toml`) the empty loop's peak is
+// held to the one-byte loop's -- before the fix the empty result was a real
+// 16-byte block with cap 0, which its drop never freed.
+mod:empty_concat;
+
+error:E9;
+
+func:main = int32(cstring[]:_~argv) {
+    int64:acc = 0i64;
+    for (int64:i in 0i64...200000i64) {
+        string:s = string_concat("", "");
+        acc = acc + s.len;
+    }
+    if (acc < 0i64) { exit 3i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 90i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

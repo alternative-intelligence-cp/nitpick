@@ -1,0 +1,13 @@
+# DEF-25 (1.5.2i): `string_concat` of two empties, measured. `empty_concat.npk`
+# concatenates "" and "" 200 000 times, each result bound and dropped at its
+# iteration's end; `empty_concat_one.npk` does the same with "" and "a". Under
+# NPK_HEAP_STATS the empty loop's peak_live is held to `bound` times the
+# one-byte loop's. Before the fix the empty result was a real 16-byte block
+# (D-150's answer to a zero request) returned with cap 0, which its drop never
+# freed: peak_live 3 200 000 against 1 (allocated 3 200 000, count 200 000), a
+# factor of millions; after it the empty loop allocates nothing at all.
+kind    = "probe"
+program = "tests/backend/programs/empty_concat.npk"
+against = "tests/backend/programs/empty_concat_one.npk"
+bound   = 4
+expect  = "pass"

@@ -6412,6 +6412,24 @@ qtrap:
   unreachable
 qok:
   %n = add i64 %al, %bl
+  ; AN EMPTY RESULT ALLOCATES NOTHING (DEF-25, 1.5.2i) -- the branch
+  ; `npk_string_slice` has carried since D-186. `npk_alloc_internal(0)` hands
+  ; out a real 16-byte block (D-150's answer to a zero request), and a result
+  ; of cap 0 gives the drop nothing to free, so `string_concat("", "")` leaked
+  ; one block per call -- the prelude's `string:Clone` of an empty string and
+  ; the compiler's own `string_concat(x, "")` copy idiom included. The first
+  ; operand's pointer rides, as the slice's source's does: len 0 is never
+  ; dereferenced.
+  %none = icmp eq i64 %n, 0
+  br i1 %none, label %cempty, label %ccopy
+cempty:
+  %cz0 = insertvalue { ptr, i64, i64 } zeroinitializer, ptr %ap, 0
+  %cz1 = insertvalue { ptr, i64, i64 } %cz0, i64 0, 1
+  %cz2 = insertvalue { ptr, i64, i64 } %cz1, i64 0, 2
+  %czr0 = insertvalue { { ptr, i64, i64 }, i32 } zeroinitializer, { ptr, i64, i64 } %cz2, 0
+  %czr1 = insertvalue { { ptr, i64, i64 }, i32 } %czr0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %czr1
+ccopy:
   %p = call ptr @npk_alloc_internal(i64 %n)
   call ptr @memcpy(ptr %p, ptr %ap, i64 %al)
   %tail = getelementptr i8, ptr %p, i64 %al
