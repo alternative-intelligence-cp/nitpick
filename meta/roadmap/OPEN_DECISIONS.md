@@ -812,7 +812,7 @@ class). Fix: the receiver-address decision asks what `@` asks
 (`place_limited`), TYPE-063; `limit_receiver.npk` holds both spellings and
 the by-value control.
 
-**DEF-25 — OPEN, scheduled as 1.5.2i step 1 (reported 2026-09-06 by the
+**DEF-25 — FIXED at 1.5.2i step 1 (2026-09-06; reported the same day by the
 library workbench, `nitpick-regex`'s cycle-0.0 audit).** `string_concat` of
 two empty strings leaks one block per call: `@npk_string_concat`
 (`runtime/npkrt.ll`) allocates `n = al + bl` unconditionally, `@npk_alloc_impl`

@@ -831,6 +831,15 @@ not the implicit address a pointer-receiver method call takes — a limited
 struct written through `Self->` with no trap — fixed at step 0, the site views
 then mirror. Found on the way: `drop` over a refused operand reported TYPE-042
 as a second sentence; it has the `raw` arm's D-240 short-circuit now.
+**1.5.2i IS COMPLETE (2026-09-06; `meta/roadmap/1.5/1.5.2i.md`; two landings
+under full harnesses).** DEF-25, the library workbench's report: `string_concat`
+of two empties allocated a real 16-byte block (D-150's answer to a zero
+request) and returned it with cap 0, so its drop never freed it — 16 bytes per
+empty call since the primitive was written, the prelude's `string:Clone` of an
+empty string and the compiler's own `string_concat(x, "")` copy idiom
+included; the runtime's concat takes the branch `string_slice` has carried
+since D-186, and `tests/cost/empty_concat.toml` holds the empty loop's peak to
+the one-byte loop's (a factor of millions on the old runtime).
 **Next: 1.5.3 (contracts live).** 1.5.4b (the remaining
 theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
@@ -1089,6 +1098,12 @@ that carried them retired at the cycle close):
   kind (an arena, a lock, an atomic, a channel, a `dyn`) cannot be viewed at
   all. `drop` over a refused operand stays silent (D-240), as `raw` has since
   1.5.2b — a second sentence there is the checker's defect, not the program's.
+- **A primitive's empty case is the runtime's to handle, and its neighbour is
+  the model** (DEF-25, 1.5.2i): `string_slice` allocated nothing for an empty
+  result since D-186 while `string_concat` beside it allocated a real block
+  and returned cap 0. When one floor primitive handles an edge, read its
+  siblings for the same edge; a leak of managed storage is invisible to D-151
+  (which counts `wild` blocks) and shows only in `NPK_HEAP_STATS`.
 - **`exit` runs joins and defers and no drops** (D-183's amendment, 1.4.4): an
   owning local of `main` is never dropped by a program that exits, so a
   program test with one in `main` measures the storage's REGIME under D-151,

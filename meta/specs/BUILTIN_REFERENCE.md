@@ -214,7 +214,7 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 
 | Built-in | Signature | Notes | Fails | Pure | Views |
 |---|---|---|---|---|---|
-| `string_concat` | `(string, string) → string` | The one string operation the compiler is built out of (~1,800 call sites in `src/` at 1.4.2); also comptime-folds. **ABI:** envelope | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) | effect | — |
+| `string_concat` | `(string, string) → string` | The one string operation the compiler is built out of (~1,800 call sites in `src/` at 1.4.2); also comptime-folds. An empty result allocates nothing (DEF-25, 1.5.2i: until then a length-0 result was a real block with cap 0, which its drop never freed). **ABI:** envelope | **never fails** (audited at 1.1.1: the IR body only ever writes error 0 — OOM traps, D-150) | effect | — |
 | `int_to_string` | `int64 → string` | Decimal rendering. **ABI:** envelope | **never fails** (audited at 1.1.1: one return, error always 0; OOM traps) | effect | — |
 | `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open — **an OWNED COPY** (D-186): a view here made `x = string_slice(x, …)` a silent use-after-free. An empty slice allocates nothing. `string_bytes`/`string_from_bytes` are the explicit view primitives. | `Result` — may fail | effect | — |
 | `string_bytes` | `string → uint8[]` | **The string→slice bridge** (D-185, 1.1.12c): the bytes as a borrowed VIEW — same pointer, same length, no copy. The slice is a borrow (D-070), so everything that stops a borrow escaping stops this one. **ABI:** inline | **never fails** | pure | 1 |
