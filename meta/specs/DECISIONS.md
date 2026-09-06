@@ -17184,3 +17184,77 @@ all; nothing is opened on the binary's difference alone. Mechanics at 1.5.2g.
 > renamed line twice and an empty output six times. The workbench re-pinned
 > to `3d15ac9` against the six digests the same night and found the floor
 > series flat (14 defines at `aaffb87` and at `3d15ac9`).
+
+## D-266 — a lending `pick` binds views; the selector is frozen while a view is live — **SETTLED (user decision, 2026-09-06: "yes, ratify it as stated with the frozen-selector rule"; OPEN_DECISIONS S-41; lands at 1.5.2h)**
+
+The question D-264 left. A `pick` binds a payload to a name in its arm, and
+the language had two forms: the lending `pick (v)`, whose binding was a
+bitwise COPY of the payload — refused outright when the payload owns
+(TYPE-046, 1.4.3b: a copy is a second owner of one body) — and the consuming
+`pick (move(v))` (D-216), whose binding OWNS. Under D-264 a bare `T` counts as
+owning, so a generic enum with a payload could not bind it without consuming
+the value, no program could compare two `Opt<string>`s without destroying one,
+and the derive generator — whose `Eq`, `Ord`, `PartialOrd` and `Clone` bodies
+are lending picks over both operands — refused those four over a `T` payload
+(DERIVE-006) as it always had over a `string`'s. Measured before the decision
+(2026-09-06, `0ba21ef`): the compiler, `lib/`, `npkg/` and `tools/` hold 17
+lending picks and not one binds a payload; the suites hold 433, 27 of which
+bind (34 names, every one copyable; none assigned, addressed or moved; 14
+passed or given); the library workbench 122 and 8 (32 names); no pick in any
+tree writes its selector inside its own arms. The borrow machinery exists —
+`@x`, `$$i x`, `$$m x` are parsed, typed and tracked by the escape, bindings
+and suspend analyses — and BORROW-005 (a borrow across an `await`) has never
+been emitted: the suspend walk makes an address-taken local frame-resident to
+the function's end instead, so that crossing is made safe, not refused.
+
+**The decision.** (1) **A lending `pick` binds VIEWS.** `pick (v)` — the
+selector not spelled `move(v)` — binds each pattern name, enum payload or
+destructured field, as a read-only view of the payload IN PLACE, in the
+selector's own storage: nothing is copied at the bind, nothing is consumed,
+the selector stays live and owns what it owned. The consuming form keeps its
+meaning: its bindings own. The selector's spelling says which; no new syntax.
+(2) **A view is typed as its payload and read by value**: a scalar's value, a
+field, an element, a plain by-value argument (D-065's lend), interpolation,
+`give`/`pass` of a copyable value. A view of an OWNING type is a place of an
+owning type, so a copy of it is TYPE-046 as everywhere (`.clone()` under a
+bound is the copy), and `move(x)` of a view is TYPE-047 (the value was lent by
+the `pick`, not given — the non-`move` parameter's sibling). (3) **A view is
+read-only and has no address.** The language has one pointer type and it
+carries no mutability, so every address of a view is a write path into a lent
+value: an assignment or compound assignment to the view or any part of it,
+`@`, `$$i`, `$$m`, `.destroy()`, and the IMPLICIT address a method or UFCS
+call takes for a pointer-typed receiver are refused, TYPE-066. A by-value
+receiver borrows the bits as any plain argument does. (4) **The selector is
+frozen while a view of it is live.** Inside an arm that binds at least one
+name — its guard and its body — no write may reach the selector's ROOT
+binding (through views: `pick (s.kind)` freezes `s`, a view's selector's root
+is the outer selector's root): an assignment to it or any part, a `move` of
+it or any part, `@`/`$$i`/`$$m` of it or any part, `.destroy()`, a
+pointer-receiver call on it, a nested `pick (move(…))` over it — TYPE-067. An
+arm that binds nothing (`_`, or a payload-less variant) lends nothing and is
+not frozen. A selector with no root — a temporary — has nothing to freeze and
+lives to its statement's end (D-246), which contains the arms. (5) **A view
+across an `await` is sound by residency**, exactly as `@x` is: the suspend
+walk extends the selector's root to the function's end when an arm binds, a
+temporary selector's spill is a frame slot, and the binding's slot — which
+holds the payload's ADDRESS, in a sync body and a coroutine alike — is
+frame-resident where the arm's copies were. BORROW-005 stays as it is. (6)
+**The derive generator's lending picks are sound as written**: `Eq`, `Ord`,
+`PartialOrd` and `Clone` generate over `string` and bare-`T` payloads (the
+D-250 and D-264 refusals for those two classes lift; DERIVE-006's other
+classes stand). (7) **One fact, recorded once**: the resolver links a pattern
+symbol to its pick's selector, and "is a view" is derived from the selector's
+spelling by one predicate the checker, the analyses and the emitter read.
+
+**What this is not.** A read-only pointer type is not proposed: a view's
+address is refused, not postponed. Views read by value, and the four derives
+and every measured use need no address; a method that must write a payload in
+place is written against the consuming form or a by-value receiver.
+
+**Found by planning — DEF-24.** TYPE-063 (D-251) refused `@`, `$$i` and `$$m`
+on a limited binding but not the implicit address a method call takes for a
+pointer-typed receiver: `drop p.bump();` with `bump = NIL(Pt->:p)` writing
+`p.x = -5` under `Rules<Pt>:r_px = { $.x > 0i32 }` compiles, runs, violates
+the rule and traps nothing (exit 7), while `drop bump(@p);` is refused at the
+`@`. Fixed at 1.5.2h step 0 — the site that then refuses a view its address
+(rule 3) is the same site. Mechanics at 1.5.2h.
