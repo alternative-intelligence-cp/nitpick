@@ -286,3 +286,9 @@ pub func:REACH_UNNAMED = string() never fails  { pass "NITPICK-REACH-002"; };
 // early with no handler, so the whole arm contract (REACH-002) was discharged by
 // DELETING the handler. Refused at `main`, naming what the absent handler owes.
 pub func:REACH_NO_FAILSAFE = string() never fails { pass "NITPICK-REACH-003"; };
+// 1.5.3 step 0 (D-014 §3.3, D-267): `failsafe` exits with a LITERAL that is not
+// positive -- `exit 0i32`, `exit -1i32`. Reaching `failsafe` means something
+// failed, and 0 is the operating system's "success"; negative values are the
+// `Result.err` convention's. A computed operand is the `failsafe-post` row's
+// and the guard's (1.5.3 steps 1-2), never this rule's.
+pub func:REACH_FAILSAFE_EXIT = string() never fails { pass "NITPICK-REACH-004"; };

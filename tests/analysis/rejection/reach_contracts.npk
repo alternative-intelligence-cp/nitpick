@@ -1,0 +1,44 @@
+// expect-error: NITPICK-REACH-002
+// expect-error: NITPICK-REACH-002
+// expect-error: NITPICK-REACH-002
+//
+// THE CONTRACT FAMILY IS ARMED (1.5.3 step 0, D-221): a function declaring a
+// `requires` traps `RequiresViolated` at its entry, one declaring an
+// `ensures` traps `EnsuresViolated` at its return seam, a loop carrying an
+// `invariant` traps `InvariantViolated` at its head -- so a `failsafe` that
+// names none of the three owes three arms, exactly as it owes `LimitViolated`
+// for a `limit` (D-179's arm contract, REACH-002 per unnamed error).
+mod:reach_contracts;
+
+error:E9;
+
+func:half = int32(int32:n) requires n >= 0i32 { pass (n / 2i32); };
+
+func:bump = int32(int32:n) ensures result > 0i32 { pass (n + 1i32); };
+
+func:count = int32(int32:n) {
+    int32:i = 0i32;
+    while (i < n) invariant i >= 0i32 { i = i + 1i32; }
+    pass i;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = half(4i32) ?! E9;
+    int32:b = bump(a) ?! E9;
+    exit (count(b) ?! E9) - 3i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 80i32; },
+        (DivByZero)      { exit 81i32; },
+        (DivOverflow)    { exit 82i32; },
+        (IntOverflow)    { exit 83i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

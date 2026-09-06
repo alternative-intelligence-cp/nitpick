@@ -2834,6 +2834,14 @@ ok:
 ;                            rule refuses, at any of its write points -- its
 ;                            initialiser, an assignment to it or to a part of
 ;                            it, the callee's entry (D-220, D-251; 1.5.2)
+;   -4112  REQUIRES_VIOLATED a `requires` clause false at the callee's entry
+;                            (D-221; 1.5.3)
+;   -4113  ENSURES_VIOLATED  an `ensures` clause false at the return seam, or
+;                            failsafe's injected `> 0` at its exit (D-221,
+;                            D-267; 1.5.3 -- inside failsafe the re-entry rule
+;                            makes it exit 70)
+;   -4114  INVARIANT_VIOLATED a loop `invariant` false at the loop head (D-221;
+;                            1.5.3)
 ;   -4110  INT_OVERFLOW      a plain-integer + - * overflowed its width (D-210,
 ;                            1.4.2b). The DEFAULT integer is the checked one:
 ;                            wrapping was the Therac-255->0 shape sitting under

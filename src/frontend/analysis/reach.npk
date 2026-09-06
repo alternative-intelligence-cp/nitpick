@@ -68,6 +68,16 @@ pub struct:Reach = {
     bool:saw_arena;
     bool:saw_deadline;
     bool:saw_limit;          // a write point of a limited binding (1.5.2, D-251)
+    // THE CONTRACT FAMILY (1.5.3 step 0, D-221): a function declaring a
+    // `requires` (its entry check traps in every caller), one declaring an
+    // `ensures` (its seam check), a loop carrying an `invariant` (its head
+    // check). `failsafe`'s own injected `> 0` (D-267) is NOT armed: a trap
+    // inside `failsafe` re-enters and exits 70, and never reaches the pick.
+    bool:saw_requires;
+    bool:saw_ensures;
+    bool:saw_invariant;
+    // Walking `failsafe`'s own body (REACH-004 asks it of every `exit`).
+    bool:in_failsafe;
 
     // Where failsafe is, once found; and the prelude's own scope, where the
     // system family's symbols live (the pipeline hands it in).
@@ -88,6 +98,8 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
                      saw_limit: false,
+                     saw_requires: false, saw_ensures: false, saw_invariant: false,
+                     in_failsafe: false,
                      failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
     pass x;
 };
@@ -167,7 +179,28 @@ func:reach_decl = NIL(Reach->:x, DeclId:id) never fails {
                                 raw REACH_DEPTH());
             }
         }
+        // A CONTRACT IS A CHECK (1.5.3 step 0, D-221): a `requires` traps at
+        // the callee's entry, an `ensures` at its return seam, so each arms
+        // its identity where it is declared -- a trait method's included,
+        // since every impl's entry checks the clauses the caller relied on.
+        // The clauses' own arms (a division inside one) are walked as the
+        // function's expressions, as a rule's are.
+        int32:cn = raw fn_contract_count(x.ast, d);
+        for (int32:ci in 0i32...cn) {
+            VerifyNode:cv = raw ast_verify(x.ast, raw fn_contract(x.ast, d, ci));
+            if (cv.kind == VerifyKind.VerifyContractNode) {
+                int32:ck = raw contract_kind(cv);
+                if (ck == (raw CONTRACT_REQUIRES())) { x.saw_requires = true; }
+                if (ck == (raw CONTRACT_ENSURES()))  { x.saw_ensures = true; }
+                if ((ck == (raw CONTRACT_REQUIRES())) || (ck == (raw CONTRACT_ENSURES()))) {
+                    drop reach_expr(x, ExprId{ index: cv.b }, raw REACH_DEPTH());
+                }
+            }
+        }
+        bool:was_failsafe = x.in_failsafe;
+        x.in_failsafe = (x.failsafe_decl == id.index);
         drop reach_stmt(x, raw fn_body(x.ast, d), raw REACH_DEPTH());
+        x.in_failsafe = was_failsafe;
         pass NIL;
     }
     if (d.kind == DeclKind.DeclModuleDecl) {
@@ -288,11 +321,13 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhileStmt) {
+        drop reach_invariant(x, raw stmt_while_invariant(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
+        drop reach_invariant(x, raw stmt_when_invariant(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
@@ -300,16 +335,19 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
+        drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
         x.saw_counted = true;
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtTillStmt) {
+        drop reach_invariant(x, raw stmt_counted_invariant(x.ast, s), fuel - 1i32);
         x.saw_counted = true;
         drop reach_counted(x, s, fuel);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
+        drop reach_invariant(x, raw stmt_for_invariant(x.ast, s), fuel - 1i32);
         drop reach_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
         drop reach_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
         pass NIL;
@@ -346,10 +384,49 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtExitStmt) {
+        // `failsafe` EXITS POSITIVE (D-014 §3.3, D-267; 1.5.3 step 0): a
+        // LITERAL that is 0, or a negated literal, is refused here by name;
+        // a computed operand is the `failsafe-post` row's and the guard's.
+        if (x.in_failsafe) {
+            if (raw exit_literal_nonpositive(x, raw stmt_expr(s))) {
+                drop diaglist_push(x.diags, raw diag_error(raw REACH_FAILSAFE_EXIT(),
+                    "`failsafe` exits with a value that is not positive (D-014): reaching it means something failed, 0 is the operating system's success and a negative value is the `Result.err` convention's -- exit with a positive code",
+                    s.span));
+            }
+        }
         drop reach_expr(x, raw stmt_expr(s), fuel - 1i32);
         pass NIL;
     }
     pass NIL;
+};
+
+// A LOOP'S INVARIANT (1.5.3 step 0, D-221): its head check traps, so the
+// identity is armed where the loop is, and every conjunct is walked for its
+// own arms as the loop's expressions.
+func:reach_invariant = NIL(Reach->:x, VerifyId:inv, int32:fuel) never fails {
+    if (raw verify_is_none(inv)) { pass NIL; }
+    x.saw_invariant = true;
+    VerifyNode:v = raw ast_verify(x.ast, inv);
+    for (int32:i in 0i32...(raw invariant_count(v))) {
+        drop reach_expr(x, ExprId{ index: raw ast_id_at(x.ast, v.b, i) }, fuel);
+    }
+    pass NIL;
+};
+
+// Is this `exit` operand a literal 0 or a negated literal? The parser's
+// literal is never negative (D-147: every literal begins with a digit), so
+// `-1i32` is a unary minus over `1i32`; `0i32 - 1i32` is a computed value.
+func:exit_literal_nonpositive = bool(Reach->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprIntLiteral) { pass (n.payload == 0i64); }
+    if (n.kind == ExprKind.ExprUnaryExpr) {
+        if ((raw expr_op(n)) == TokenKind.OpMinus) {
+            ExprNode:o = raw ast_expr(x.ast, raw expr_operand(n));
+            pass (o.kind == ExprKind.ExprIntLiteral);
+        }
+    }
+    pass false;
 };
 
 func:reach_operand_expr = NIL(Reach->:x, StmtNode:s, int32:fuel) never fails {
@@ -550,6 +627,9 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
     if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
     if (x.saw_limit)    { drop reach_add_system(x, "LimitViolated"); }
+    if (x.saw_requires)  { drop reach_add_system(x, "RequiresViolated"); }
+    if (x.saw_ensures)   { drop reach_add_system(x, "EnsuresViolated"); }
+    if (x.saw_invariant) { drop reach_add_system(x, "InvariantViolated"); }
 
     if (x.failsafe_decl == 0i32) {
         // NO HANDLER (DEF-5, 1.5.1b step 1b; D-013): a root that declares

@@ -1,0 +1,27 @@
+// expect-error: NITPICK-REACH-004
+// expect-error: NITPICK-REACH-004
+//
+// `failsafe` EXITS POSITIVE (D-014 §3.3, D-267; 1.5.3 step 0): reaching it means
+// something failed, 0 is the operating system's success and a negative value
+// is the `Result.err` convention's. A LITERAL 0 and a negated literal are
+// refused here by name; the computed `0i32 - 1i32` in the last arm is the
+// `failsafe-post` obligation's and the runtime guard's (steps 1-2), not this
+// rule's -- the control.
+mod:failsafe_exit;
+
+error:E9;
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)             { exit 0i32; },
+        (HeapBadRequest) { exit -1i32; },
+        (HeapOom)        { exit 92i32; },
+        (IntOverflow)    { exit 93i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 0i32 - 1i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

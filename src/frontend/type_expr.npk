@@ -83,6 +83,9 @@ pub struct:ExprTyper = {
     // there is nothing — which is the whole reason those two are excepted from
     // D-013 rather than an oversight.
     int32:fn_success;
+    // THE ENCLOSING FUNCTION'S DECLARATION (1.5.3 step 0): `old(...)` names its
+    // parameters and nothing else, and a `for` binding is parameter-shaped.
+    int32:fn_decl;
     bool:fn_terminal;
     // D-163: the enclosing function declared `never fails` — its body may not
     // `fail`, `relay`, or `return Result{…}`.
@@ -210,7 +213,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
-                             fn_success: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
+                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
@@ -412,6 +415,75 @@ pub func:refuse_write_path = bool(ExprTyper->:e, ExprId:place, string:what, Span
         pass true;
     }
     pass (raw refuse_frozen(e, place, what, at));
+};
+
+// DOES THIS `old` OPERAND NAME PARAMETERS ONLY (1.5.3 step 0, D-243)? Every
+// identifier in it resolves to a `DeclParamDecl`; `$` and `result` are out
+// (a counter has no entry value; `result` is refused by context already); a
+// call's callee is a function name and is not asked, its arguments are; a
+// struct literal or a `pick` inside an `old` is refused outright -- a value
+// built at the postcondition is not a value at entry. Shape-driven like the
+// resolver's walk, so an unclassified kind is refused, never guessed at.
+pub func:old_over_params = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass true; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass false; }
+        Symbol:sy = raw symtab_get(e.tab, n.a);
+        if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+        // THE ENCLOSING FUNCTION'S OWN PARAMETER, by identity: a `for`
+        // binding is a `DeclParamDecl` too, and has no entry value.
+        if (e.fn_decl == 0i32) { pass false; }
+        DeclNode:fdecl = raw ast_decl(e.ast, DeclId{ index: e.fn_decl });
+        for (int32:pi in 0i32...(raw fn_param_count(e.ast, fdecl))) {
+            if ((raw fn_param(e.ast, fdecl, pi)).index == sy.origin) { pass true; }
+        }
+        DeclId:vs = raw fn_variadic(e.ast, fdecl);
+        if (!(raw decl_is_none(vs))) { if (vs.index == sy.origin) { pass true; } }
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprIterationVarExpr) { pass false; }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:gc = raw expr_generic_count(n);
+        for (int32:i in gc...(raw expr_list_count(n))) {
+            if (!(raw old_over_params(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), i) }, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bgc = raw builtin_generic_count(n);
+        for (int32:j in bgc...(raw expr_list_count(n))) {
+            if (!(raw old_over_params(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), j) }, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass true; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        for (int32:k in 0i32...(raw expr_list_count(n))) {
+            if (!(raw old_over_params(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), k) }, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass (raw old_over_params(e, raw expr_lhs(n), fuel - 1i32)); }
+    if (shape == (raw EXPR_SHAPE_TWO())) {
+        if (!(raw old_over_params(e, raw expr_lhs(n), fuel - 1i32))) { pass false; }
+        pass (raw old_over_params(e, raw expr_rhs(n), fuel - 1i32));
+    }
+    if (shape == (raw EXPR_SHAPE_THREE())) {
+        if (!(raw old_over_params(e, raw expr_lhs(n), fuel - 1i32))) { pass false; }
+        if (!(raw old_over_params(e, raw expr_rhs(n), fuel - 1i32))) { pass false; }
+        pass (raw old_over_params(e, ExprId{ index: n.c }, fuel - 1i32));
+    }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        if (!(raw old_over_params(e, raw expr_lhs(n), fuel - 1i32))) { pass false; }
+        for (int32:m in 0i32...(raw expr_list_count(n))) {
+            if (!(raw old_over_params(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), m) }, fuel - 1i32))) { pass false; }
+        }
+        pass true;
+    }
+    pass false;
 };
 
 pub func:refuse_move_of_borrowed = NIL(ExprTyper->:e, ExprId:id, int32:ty,
@@ -3360,6 +3432,17 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
             string:o2 = string_concat(o1,
                 "` is not one (D-221): it owns storage or carries an address — snapshot the scalar you mean (a length, a count, a field)");
             pass (raw te_error(e, raw TYPE_CONTRACT_RULES(), move(o2), n.span));
+        }
+        // ...AND IT NAMES PARAMETERS ONLY (1.5.3 step 0, D-243 read literally):
+        // the value at the function's entry exists for a parameter and for
+        // nothing else -- a local is not declared yet, a loop binding has no
+        // value there, a module binding has no "entry". The emitter snapshots
+        // at the body's start and the encoder names entry versions; both need
+        // this to be so.
+        if (!(raw old_over_params(e, raw expr_operand(n), 64i32))) {
+            pass (raw te_error(e, raw TYPE_CONTRACT_RULES(),
+                "`old(…)` is the value at the function's ENTRY (D-243), and only a parameter has one: this operand names something declared later, or a loop's `$` -- snapshot the parameter the value was computed from",
+                n.span));
         }
         pass ot;
     }

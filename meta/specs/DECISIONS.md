@@ -9931,6 +9931,15 @@ width (0.9.3's `i128`) cannot silently ship an unguarded `INT_MIN/-1`.
 > −4110) and this one live in the two registries every build reads: the
 > prelude's `error:` block and `runtime/npkrt.ll`'s table.
 
+> **[1.5.3 step 0, 2026-09-06; D-221, D-267]** −4112 `RequiresViolated` — a
+> `requires` clause false at the callee's entry (the checked entry of a sync
+> function, state 0 of a coroutine); −4113 `EnsuresViolated` — an `ensures`
+> clause false at the return seam, and `failsafe`'s injected `> 0` at its
+> `exit` (D-267; inside `failsafe` the re-entry rule makes it exit 70);
+> −4114 `InvariantViolated` — a loop `invariant` false at the loop head.
+> Reserved by 1.5.2, registered here; the prelude declares the three names
+> and REACH arms each where its construct is declared.
+
 ## D-143 — The float family's final form — **SETTLED**
 
 Cycle 0.9.4, resolving the audit's two open float decisions plus the shape of
