@@ -16,7 +16,7 @@ type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists*
 `src/npkc.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
 **172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
-since 1.3.8) and asserts 1 `NITPICK-RUNG-001` rejection on every full run (4 until 1.5.3 lowered the three contract cases; 6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
+since 1.3.8) and, since 1.5.4 retired the rung suite, asserts NO `NITPICK-RUNG-001` rejection (1 until 1.5.4 lowered `prove`/`assert_static`; 4 until 1.5.3 lowered the three contract cases; 6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
 OWED-8 moved the two channel-element cases to the type checker as `TYPE-057`), and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
 
@@ -872,8 +872,47 @@ spell the manifest word by role; `nitpick.obligations` re-recorded at 178 rows
 way: the rung test `inline_mod.npk`'s hidden construct was a `requires` (a
 `prove` now); every verify test names its `failsafe`'s rows, since every
 `failsafe` has them (`expect-obligation: none` names no program any more).
-**Next: 1.5.4 (`prove`/`assert_static`, path conditions).** 1.5.4b (the
-remaining theories) is in the map.
+**1.5.4 (path conditions, the counters, `prove`/`assert_static`) IS COMPLETE
+(2026-09-06; `meta/roadmap/1.5/1.5.4.md`; six landings, each a cumulative
+prefix under a full harness, D-228; S-45…S-48 landed under their
+recommendations and await the user's ratification).** Step 0 fixed five
+findings: DEF-26 (a division inside a pick EXPRESSION's arm had no
+obligation row since 1.5.0 — the arms were never walked; one enumeration,
+`stmt_expr_ids`, now feeds every walker that must see into a statement's
+expressions), DEF-27 (a callee parameter sharing a name with an address-taken
+caller local bound unnamed in the contract substitution), DEF-28/DEF-30 (the
+counted loop's head: a literal zero step compiled and trapped at run time
+where D-022 promised a compile error, and the argument count was never
+checked — `NITPICK-TYPE-068`), DEF-29 (the compile-time evaluator's counted
+loops took their direction from the step's SIGN and read `till(limit, step)`
+as `loop(lo, hi)`: a comptime descending sum was 0 where its run-time twin is
+55). Step 1: PATH CONDITIONS — a branch condition is a hypothesis in its arm,
+its negation after an arm that never falls through, a `pick` arm's pattern
+(encoded under the SELECTOR's type: the checker types no pattern for its own
+sake) and guard, a loop's negated condition after it, `when`'s two blocks; 13
+of the compiler's 21 open rows discharged. Step 2: THE MERGE — an arm's facts
+survive it guarded by its condition, versions merge as `ite` after `if`/
+`when`/`pick`, a pick expression's value is its arms' `give` chain, `&&`/`||`
+/ternary arms; `divz_after_branch.npk` keeps 1.5.0's promise; the walk 31.7 →
+34.9 s on the compiler's own build. Step 3: THE COUNTERS — `$` and a range
+`for`'s binding as terms (start, in-range body symbol with the residue class
+of a numeral step, incremented at the preservation rows, the exit value after)
+and the new kind `loop-step` for a computed step (S-46), a literal step
+getting neither compare nor row. Step 4: `prove` lowers to nothing and is a
+guard-less row that becomes a hypothesis after its site (S-48), the VERIFIED
+build refusing an undischarged one with `NITPICK-VERIFY-001` (S-45);
+`assert_static` folds at the frontend (`NITPICK-TYPE-069`); every `pick` and
+`assert_static` is a `checker` row (`c` in `rows.txt`, tier `-`, word `none`);
+a verify test's `expect-error` means the verified build refuses; the rung
+suite retired (S-47) and both runner self-checks' negative construct became a
+type mismatch the snapshot and the compiler under test refuse alike. Step 5:
+the docs. `nitpick.obligations` at 184 rows (six `exhaustive checker`), 15 of
+24 open rows discharged, none moved the other way. **Recorded for the user:**
+DEF-31 — an inline module's members cannot be reached from the module that
+declares it (`use hidden.*;` is RESOLVE-002, `hidden.fetch(...)` is
+TYPE-007), found when the rung file became a positive program; which
+spelling should reach them is a language question. **Next: 1.5.4b (the
+remaining theories).**
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1154,6 +1193,28 @@ that carried them retired at the cycle close):
   REACH-004, a computed one traps to 70. Clauses repeat their keyword
   (`requires a requires b`), never a comma; `use` is a keyword, so no function
   is named `use`.
+- **A `prove` is refused by the VERIFIED build only** (1.5.4, S-45): the plain
+  build lowers it to nothing; `npkc --elide`, and so `npkg verify`, refuses an
+  undischarged one with `NITPICK-VERIFY-001` naming the row's verdict. A
+  discharged `prove` is a hypothesis for what follows (S-48). `assert_static`
+  needs a proposition that folds (TYPE-069) and, in a `comptime` body, is
+  evaluated per call — as is a `prove` there. A `bool` proposition always has
+  at least an opaque term, so a `prove` row is `open`, never `unencoded`.
+- **The counted loop's head is checked** (1.5.4, D-022): `loop(start, limit,
+  step)`, `till(limit, step)`, a literal step positive — TYPE-068; a computed
+  step is the `loop-step` row and keeps its compare. The compile-time
+  evaluator agrees with the emitter on direction now (DEF-29), and `tests/`
+  carried the evaluator's old two-argument vocabulary in three places.
+- **The encoder is path-sensitive** (1.5.4): a branch condition is a fact in
+  its arm, the versions after an `if` merge as `ite`, `$` and a range `for`'s
+  binding are terms. A pattern's literal is encoded under the SELECTOR's type
+  (the checker records no type on a pattern's own literal). Every `pick` is an
+  `exhaustive checker` row a verify test must name — one per `pick`, both
+  spellings, counted in CODE lines (a comment's `pick (` is not one).
+- **A runner's negative self-check case runs under the SNAPSHOT** (1.4.6), so
+  its construct must be refused identically by the snapshot and the compiler
+  under test: a rule added this cycle cannot be it (1.5.4 step 4's first
+  npkg self-check said `RUNG-001` where the new compiler said `TYPE-069`).
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open
@@ -1224,11 +1285,12 @@ bootstrap/    # seed/ — THE COMMITTED SNAPSHOT: stage1.ll + STAMP + README (D-
 runtime/      # npkrt.ll — the runtime FLOOR, hand-written LLVM IR, PERMANENT
               #   (D-203). In every artifact; re-homed out of bootstrap/ at 1.4.6
 tools/        # check/resolve_check/parse_check — the real frontend, for the harness
-tests/        # SIX rejection suites, named by the stage that refuses:
+tests/        # FIVE rejection suites, named by the stage that refuses:
               #   modules/rejection/ (loader), types/rejection/ (type checker),
               #   analysis/rejection/ (a static analysis), expansion/rejection/
-              #   (macro expansion), derive/rejection/ (the derive reader),
-              #   rejection/ (backend rung); nitpick.toml's [[test]] table is
+              #   (macro expansion), derive/rejection/ (the derive reader);
+              #   the backend-rung suite retired at 1.5.4 when the last rung
+              #   fell (S-47); nitpick.toml's [[test]] table is
               #   the one list of suites both runners read (D-238)
               #   accept/ is ONE suite for all of them — silence has no stage
               #   conformance/ (subset 1 compiles and runs), frontend/, grammar/

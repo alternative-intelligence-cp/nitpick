@@ -1523,6 +1523,17 @@ and magnitude in others.
   `LOOP_STMT`/`TILL_STMT` operand slots, and `OP_REFERENCE.md` §8, which defines
   `$` as "bound inside `till` and `loop`" — `$` only has meaning for counted loops.
 
+> **[1.5.4 steps 0 and 3 (2026-09-06).]** The compile error this decision
+> promised for a zero or negative step was never implemented until DEF-28 (a
+> literal `0i32` step compiled and trapped `BadStep`); the head's argument
+> count was never checked (DEF-30: a two-argument `loop` died at the emitter
+> with no span); and the compile-time evaluator counted by the step's SIGN
+> and read `till(limit, step)` as `loop(lo, hi)` (DEF-29: a descending
+> comptime loop folded to nothing). All three are as decided now:
+> `NITPICK-TYPE-068` at the checker, the evaluator reading the head by kind
+> with the direction from the bounds, and a computed step's compare the
+> `loop-step` row's guard (S-46), elided when the manifest discharges it.
+
 ---
 
 ## D-023 — `for` is range-form only, with a typed binding — **SETTLED**
@@ -5924,6 +5935,14 @@ fixpoint, with diverse double-compilation as the mitigation if ever required.
 That limit is **smaller now than under D-079**, and worth noting as a second
 benefit: a purpose-built seed of a few thousand readable lines can actually be
 audited, where a 26,000-file C++ prototype cannot.
+
+> **[1.5.4 step 4 (2026-09-06).]** The rung suite `tests/rejection/`
+> retired (S-47): after `prove` and `assert_static` lowered, no construct in
+> the language rungs — `ll_rung` has no caller. The parser-never-restricts
+> half of this decision is the grammar sweep's (every source through the
+> real parser, `expect-no-parse-error` still honoured); the backend's
+> `NITPICK-RUNG-001` and `check_rung_names_open_cycle` stay for a rung a
+> later cycle adds.
 
 ---
 
@@ -15031,6 +15050,16 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > `failsafe`'s 37 postconditions, and `npk_gcd256`'s `div-zero` discharged
 > through its loop's condition.
 
+> **[1.5.4 (2026-09-06).]** The encoder is PATH-SENSITIVE: branch
+> conditions are hypotheses in their arms, an arm's facts survive it guarded
+> by its condition, versions merge as `ite`, and the counters are terms
+> (`meta/roadmap/1.5/1.5.4.md`, L-1…L-14). The catalogue's `exhaustive`,
+> `assert-static` (both `checker`) and `prove` rows exist, and `loop-step`
+> joined the table (S-46). A `prove` is the one kind whose non-discharge
+> refuses the verified build (S-45). The compiler's own set is 184 rows (six
+> `exhaustive checker`), with 15 of its 24 open rows discharged through their
+> paths and none moved the other way.
+
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 
 Elision is a property of the VERIFIED BUILD recorded in the manifest —
@@ -15040,6 +15069,13 @@ obligation retains its runtime guard; the binary differs only with the
 manifest saying so, and D-218.2 makes the verdicts themselves
 machine-independent — D-039's timeout-dependent-binary hazard is
 impossible by construction.
+
+> **[1.5.4 step 4 (2026-09-06).]** One obligation has no guard to retain
+> and cannot ship undischarged: a `prove` (D-218.7, guard `no`). The
+> verified build REFUSES it (`NITPICK-VERIFY-001`, S-45) rather than
+> carrying an unproven claim; the plain build lowers it to nothing. "An
+> undischarged obligation retains its guard" is unchanged for every guarded
+> kind.
 
 ## D-220 — `limit<Rules>` placement, typing, subsumption — **SETTLED (user-ratified early; C-15)**
 
@@ -15945,6 +15981,12 @@ further loops on the converted tree.
 §5); an index loop is therefore three dots. A `for` whose body needs the counter
 after the loop, advances it conditionally, or reads it as a search result is not
 a plain iteration and stays `while` — the record lists each class with its count.
+
+> **[1.5.4 step 3 (2026-09-06).]** The encoder mirrors the capture: a range
+> `for`'s bounds and a counted loop's start, limit and step are captured at
+> entry as fresh symbols equal to their terms, so what the body assigns
+> cannot move them — the fact the emitter's slots hold, stated once more for
+> the solver.
 
 ## D-235 — every kind is decided as a channel element: a simd vector and a function value ride, the sync primitives, atomics and arenas refuse permanently — **SETTLED (user decision, 2026-09-01)**
 

@@ -454,7 +454,7 @@ paths = ["tests/backend/programs", "tests/conformance"]
 | `fixture` | the compiler under test | built like a program and never run; its uppercased stem becomes an `// argv:` token (a `.c` here is a reference driver built with the system C compiler — test tooling outside the TCB, D-149) |
 | `program` | the compiler under test | emitted, scanned, assembled, linked, run at -O0 and again through `opt -O2`, the same exit required |
 | `runtime` | `llc` + `ld.lld` | a hand-written `.ll` assembled, linked against the floor, run, its `expect-exit:` met |
-| `verify` | the compiler under test, z3 | (1.5.0, D-218) compiled with `--obligations`, its rows decided by the pinned z3 under the pinned profile, the (kind, verdict) counts of the test's OWN module equal to its `expect-obligation:` lines exactly, then the VERIFIED build emitted with that run's manifest, cross-checked, linked and run at -O0 and under opt -O2 with `expect-exit:` met both times |
+| `verify` | the compiler under test, z3 | (1.5.0, D-218; 1.5.4: a test carrying `expect-error:` lines says the VERIFIED build refuses with exactly that set — an undischarged `prove` — and ends there) compiled with `--obligations`, its rows decided by the pinned z3 under the pinned profile, the (kind, verdict) counts of the test's OWN module equal to its `expect-obligation:` lines exactly, then the VERIFIED build emitted with that run's manifest, cross-checked, linked and run at -O0 and under opt -O2 with `expect-exit:` met both times |
 | `cost` | the compiler under test, the runtime's `NPK_HEAP_STATS` | (1.5.1b step 0) each `.toml` unit under the entry's paths is measured by the ALLOCATOR'S OWN NUMBERS — bytes requested in total, the peak of bytes live, allocations, which the runtime prints as `heap: allocated=<n> peak_live=<n> count=<n>` on fd 2 at exit when the environment carries `NPK_HEAP_STATS` — and held to the bound the unit states; wall-clock is printed as colour and is never a verdict. A `recipe` unit regenerates one of DEF-1's three shapes at `n` and `n * scale` and holds both ratios to `bound`; a `probe` unit compiles, links and RUNS `program` and `against` and holds the first's peak to `bound` times the second's; a `self` unit compiles `entry` and reports, held to `ceiling` bytes of peak when non-zero. `expect = "fail"` is the negative control: the bound must be VIOLATED until the commit named in `until` lands, and a unit that holds early fails until its row is removed. Every compile and run must exit 0 — a fast failure looks like a fast compile |
 
 Membership stays with the stage: a `resolve`/`check` file with no `expect-error`
@@ -568,12 +568,29 @@ first full run counted no `.body` use anywhere for that reason). Both
 runners hold all of it, and both self-checks hold `bypass-counted`,
 `bypass-missing` and `bypass-as-value` from one IR text, and
 `contract-traps`, `contract-traps-missing`, `held-not-bypassed` and
-`bypass-needs-all` from another (1.5.3).
+`bypass-needs-all` from another (1.5.3). Since 1.5.4 (step 4) both hold
+`prove-open`, `prove-open-named` and `checker-row`: a verify unit whose
+`prove` is `open` fails unless it names `NITPICK-VERIFY-001` — the verified
+build's refusal is then the expectation — and a `checker` row named
+`discharged` fails; and their NEGATIVE construct is a type mismatch, one the
+snapshot (which compiles those cases, 1.4.6) and the compiler under test
+refuse identically, since the last construct that rung fell at 1.5.4.
 
 **`expect-no-parse-error` is the load-bearing one.** It asserts that a file
 reached the *backend* to be rejected, rather than tripping the parser. That is
 D-085's rule — the parser never restricts, the backend does — made checkable, and
 it is what stops the grammar being quietly made partial.
+
+> **The suite it was written for retired at 1.5.4 step 4 (S-47).**
+> `tests/rejection/` held the correct programs the BACKEND refused at a rung
+> that could not lower them yet, shrinking as rungs fell; after `prove` and
+> `assert_static` lowered, no construct in the language rungs (`ll_rung` has
+> no caller) and the last file became a positive program
+> (`tests/backend/programs/inline_mod.npk`, whose hidden function is called).
+> The marker stays for any negative test that wants it; the
+> parser-never-restricts half of D-085 is the `parse` stage's, over every
+> source in the tree; `check_rung_names_open_cycle` stays for a rung a later
+> cycle adds.
 
 **The harness is itself tested.** A suite that only ever agrees with what it is
 handed is worse than no suite, because it reports green while checking nothing.

@@ -228,6 +228,20 @@ loop(10i32, 0i32, 1i32) {
 `till` and `loop` are **not redundant**: `till` ascends from zero only, while
 `loop` handles arbitrary start points and both directions.
 
+> **The head is checked since 1.5.4 (steps 0 and 3; DEF-28, DEF-29, DEF-30;
+> S-46).** `loop` takes three arguments and `till` two, and a step written as
+> a literal or a negated literal must be positive — `NITPICK-TYPE-068`. The
+> compile error the table above promised was never implemented before: a
+> `till(3i32, 0i32)` compiled and trapped `BadStep` at run time, and a
+> two-argument `loop` died at the emitter with no span. A computed step keeps
+> the run-time check, which is the manifest's `loop-step` row's guard,
+> elided when the row is discharged. The compile-time evaluator's counted
+> loops agreed with none of this until 1.5.4 (direction by the step's SIGN,
+> a two-argument head read as `loop(lo, hi)`, `till(limit, step)` read as a
+> loop from `limit` to `step`); they read the head by kind and take the
+> direction from the bounds now, exactly as the emitter does, so a `comptime`
+> function's value is its run-time twin's.
+
 **There is no `loop { }` infinite form and no do-while construct.** `while (true)`
 is the idiom for an unbounded loop. `FORMAL_DRAFT` 05 §5.4.3–5.4.4 defines `till`
 as do-while and `loop` as infinite; that reading is **struck** (D-022).
@@ -317,6 +331,14 @@ Two checks that the compiler enforces aggressively:
     axioms first. If the solver finds a counterexample, **compilation fails**.
 *   **`assert_static(cond);`** — compile-time constant evaluation; halts
     compilation if false.
+
+> **Live since 1.5.4.** `prove` is a row the solver decides under the path
+> conditions the encoder accumulates (VERIFICATION §1.2 lists them); its
+> failure is the VERIFIED build's refusal, `NITPICK-VERIFY-001` (the plain
+> build lowers it to nothing), and a discharged `prove` is knowledge for
+> what follows. `assert_static` is folded by the frontend:
+> `NITPICK-TYPE-069` when it does not fold to a constant or folds to
+> `false`; in a `comptime` body both statements are evaluated per call.
 
 > `FORMAL_DRAFT` 05 §5.8 calls `prove` "a **runtime** assertion" that "panics
 > immediately". **That is wrong** and is struck — it contradicts

@@ -26,6 +26,16 @@ The `assert_static` builtin allows developers to encode compile-time logic check
 assert_static(1i32 == 1i32);
 ```
 
+> **Live since 1.5.4 (L-17, L-18; `meta/roadmap/1.5/1.5.4.md`).** The
+> proposition must FOLD to a constant `bool` through 0.6's evaluator: one
+> that reads a value the evaluator cannot see is refused
+> (`NITPICK-TYPE-069` — `prove` is the claim about a run-time value), and
+> one that folds to `false` halts compilation under the same code. In a
+> `comptime` body the evaluator folds it per call, and a false `prove` there
+> is a counterexample reported once. The statement lowers to nothing; its
+> row in the manifest is the catalogue's `checker` entry (§7b, §8) — an
+> inventory line, no query, no guard.
+
 ### 1.2 `prove`
 The `prove` keyword interacts directly with the Z3 verification backend (when the `--verify` compiler flag is set). It forces the SMT solver to construct a mathematical proof that the subsequent expression holds true across all possible control flows and variable states. 
 
@@ -40,6 +50,39 @@ if (x > 0i32) {
 
 **Path Condition Accumulation:**
 The `prove` keyword is path-condition-aware. Branch guards from enclosing `if`, `while`, and other control flow are accumulated and asserted as Z3 axioms before checking the proof obligation. This means `prove(x != 0i32)` inside `if (x > 0i32)` automatically benefits from the guard `x > 0i32`.
+
+> **Live since 1.5.4 (L-1…L-16; S-45, S-48; `meta/roadmap/1.5/1.5.4.md`).**
+> THE PATH CONDITIONS the encoder accumulates, for every obligation and not
+> only a `prove`'s: an `if`'s condition inside its then-arm and its negation
+> inside the else-arm; after an arm that never falls through (a syntactic
+> terminator — `pass`, `fail`, `return`, `exit`, `trap`, `break`, `continue`,
+> `give` — or a block, `if` or `pick` made only of those) the other arm's
+> condition; a `pick` arm's pattern (a value, a range, a wildcard as the
+> negation of the arms before it), the negations of the earlier arms and its
+> `where` guard — none when a `fall` sits in the pick, only the pattern when
+> any arm carries a guard; a loop's negated condition after a loop nothing
+> `break`s out of; `when`'s `then` and `end` on whether the body ran; the
+> right-hand side of `&&`/`||` and a ternary's branches under theirs. An
+> arm's facts survive it guarded by its condition, so the versions after an
+> `if`, a `when` or a `pick` MERGE as `(ite c v_then v_else)` and a pick
+> expression's value is the chain of its arms' `give` terms (L-7…L-10). A
+> counted loop's `$` and a range `for`'s binding are terms with their bounds
+> (§4).
+>
+> **`prove(e)` is a row of kind `prove`** — guard-less, its proposition over
+> those hypotheses, walked quiet (nothing executes, so a division inside it
+> is not a site) — and, once discharged, **knowledge for every site after
+> it** (S-48): a proof outline in source. The plain build lowers the
+> statement to nothing and claims nothing. **The VERIFIED build refuses an
+> unproven claim** (S-45): under `--elide`, a `prove` whose row the manifest
+> does not discharge — `open`, `budget`, `unencoded`, or absent — is
+> `NITPICK-VERIFY-001` at the statement, naming the row's word; a verified
+> artifact carries no unproven claim, and `npkg verify --explain` writes the
+> model of an open one. A `bool` proposition always has at least an opaque
+> term, so a `prove` row is `open` rather than `unencoded` when the encoder
+> cannot express it. The `--verify` and `--prove-report` flags above are the
+> pre-D-219 spelling: the verified build is `npkg verify`'s, and the report
+> is `--explain`'s.
 
 ---
 
@@ -333,10 +376,22 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 > for `while`/`when`, the condition are hypotheses over the havoced versions
 > (a divisor guarded by `while (i > 0)` proves); after a loop nothing
 > `break`s out of, the invariant is a hypothesis again (the exit is a head
-> visit) — the condition's negation is not (1.5.4's path condition). A
-> counted loop's `$` and a `for` binding are opaque outside a rule until
-> 1.5.4, so an invariant naming them is `open`: recorded and checked, never
-> refused, never silently true.
+> visit) AND the condition's negation (1.5.4, L-4).
+>
+> **The counters are terms (1.5.4 step 3, L-11, L-12).** A counted loop's
+> `$`: its start at the entry row; in the body a fresh symbol inside `start
+> <= $ < limit` (descending, `limit < $ <= start`) and, for a numeral step,
+> in its residue class; the incremented value at the preservation and
+> `continue` rows (the head sees it); after a loop nothing `break`s out of,
+> the exit value — past the limit by less than a numeral step, past the
+> start. A range `for`'s binding likewise, its bounds captured at entry
+> (D-234) and its post-loop version exactly at its bound. The bounds and the
+> step are captured as the emitter's slots hold them, so a body that assigns
+> a name a bound mentions moves nothing. A COMPUTED step's positivity is the
+> `loop-step` row (S-46): the compare at the loop's entry is its guard,
+> elided when discharged; a literal step is the checker's (TYPE-068, D-022)
+> and has neither. An invariant naming `$` or the binding is decided on the
+> merits now, where until 1.5.4 it was `open` because the counter was opaque.
 
 ---
 
@@ -546,6 +601,15 @@ elide (D-219); the subcycle column says where its rows are produced.
 > define, the wrapper's tail call, or the callee of a direct call, and the
 > direct calls equal the discharged rows.
 
+> **[1.5.4 (2026-09-06).]** Three more kinds produce rows. `exhaustive` (one
+> per `pick`, both spellings) and `assert-static` (one per statement) carry
+> the verdict `checker`: the 0.5 exhaustiveness analysis and the frontend's
+> fold decided them, so the row is an inventory line — `c` in `rows.txt`, no
+> query, tier `-`, word `none`. `prove` is decided by z3 like a guarded kind
+> and is the ONE kind whose non-discharge refuses the verified build (S-45),
+> since it has no guard to retain. `loop-step` joined the table at step 3
+> (S-46): a computed step's compare, a literal step being the checker's.
+
 The verdict column is `discharged` (unsat), `open` (sat — a counterexample
 exists under the encoding's hypotheses; not a refutation of the program, a
 guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`
@@ -579,6 +643,13 @@ column is `elided`, `retained`, or `none` for a kind with no guard.
 > discharged and `retained` otherwise; a `held` row reads `retained` whatever
 > its verdict (D-268); a `conform` row and a guard-less kind read `none`.
 > Both runners derive the word from the row, never from the kind alone.
+
+> **[1.5.4 (2026-09-06).]** `rows.txt`'s fifth column is `1` (a row with a
+> `(check-sat)`), `0` (`unencoded`) or `c` (a row the frontend decided:
+> verdict `checker`, tier `-`, word `none` — no answer consumed). The
+> verified build refuses an undischarged `prove` (`NITPICK-VERIFY-001`): the
+> one row whose retention is a refusal, since a `prove` has no guard; a
+> verify test names that refusal with `expect-error:` and ends there.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot
