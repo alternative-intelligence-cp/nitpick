@@ -225,6 +225,52 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 > store that reaches memory the caller can see, no manufactured view. An
 > impl keeps its trait method's `pure`. Purity never rides a function type.
 
+> **Live since 1.5.3 (D-221, D-267, D-268; `meta/roadmap/1.5/1.5.3.md`).**
+> A contract violation is a TRAP: `RequiresViolated` (−4112),
+> `EnsuresViolated` (−4113), `InvariantViolated` (−4114), through the D-142
+> route with the origin chain restarted at the clause that failed, reaching
+> `failsafe` like every trap. **A `requires` is checked at the CALLEE's
+> entry** in a generated predicate `<symbol>.req` over the function's
+> parameters (the `Rules` shape: one trap per clause, the clause's own site
+> in the chain), called from the checked entry of a sync function — which
+> therefore splits into `<symbol>.body` and its ordinary symbol exactly as a
+> limited parameter makes it (D-252) — or at state 0 of a coroutine with the
+> parameters loaded from the frame; so every caller is covered, direct,
+> indirect, through `dyn` and through `await`. **An `ensures` is checked at
+> every return seam** (`pass v`, and `return Result{…}` when its error field
+> is 0), before the value is stored: `result` is the value in register,
+> `old(e)` a snapshot taken once at the body's start (an alloca, or a frame
+> slot in a coroutine), one trap per return point. **`failsafe`'s own
+> postcondition** (D-014 §3.3) is the compiler's `ensures`: `<code> > 0` at
+> every `exit`, a literal that is not positive refused by the checker
+> (REACH-004), a computed one guarded and trapping `EnsuresViolated` —
+> which, inside `failsafe`, re-enters it and ends the process at 70 (§4.6).
+>
+> **The obligations.** One `requires` row per CALL with a recorded callee —
+> the callee's clauses over the argument terms: `bypass` at a direct sync
+> call (discharged with every other bypass row of the call, the call names
+> `.body` past the checked entry), `held` at an `await` or through a `dyn`
+> (recorded; the word `retained` whatever the verdict, since the guard is
+> the callee's own entry and no build bypasses it; D-268) — and one per
+> function ENTRY, the conjunction over the parameters under their range
+> axioms: discharged, the predicate is uncalled, and the precondition is the
+> body's first hypothesis either way. One `ensures` row per return point,
+> `result` the value's term and `old(…)` the entry version — discharged, the
+> seam's check is elided. A callee's `ensures` is KNOWLEDGE at every unwrap
+> that continues only on success (`raw f(…)`, `f(…) ?! E`, `relay f(…)`,
+> plain or awaited; never at `?|`), and a `pure never fails` callee is an
+> UNINTERPRETED FUNCTION `|uf.<name>.<decl>|` (equal inputs, equal outputs —
+> D-242's purity is exactly the soundness condition), so `sq` in a contract
+> and `sq` in the body are one symbol while `sq(3)` has no value.
+> CONFORMANCE is two rows per impl method whose trait method carries a
+> contract, in a space of their own with no guard (`none`): the trait's
+> `requires` implies the impl's (an impl may weaken), the impl's `ensures`
+> implies the trait's (an impl may strengthen) — an open row is reported,
+> never a refusal: the impl's own entry traps the argument the trait admits.
+> A guard inside a clause (a division in a `requires`) is the function's own
+> site, lowered once in the predicate; inside an `ensures` it is keyed under
+> the seam it is checked at, since the clause is lowered at every seam.
+
 ### 3.1 The `Result<T>` Intercept
 
 > **Dead by D-221 (ratified for 1.5, recorded 1.5.0):** a contract violation
@@ -232,7 +278,7 @@ When you compile with the `--verify-contracts` flag, the compiler translates the
 > route (distinct D-141-space codes for `requires`/`ensures`/`invariant`),
 > reaching `failsafe` like every trap, never a `Result`. The paragraphs below
 > describe the pre-D-084 framing and stay as the record of what was replaced;
-> 1.5.3 implements the trap route.
+> 1.5.3 implemented the trap route (the note above §3.1).
 
 One of the most powerful features of Nitpick's DbC implementation is how it interacts with the type system. If a function declares a `requires` clause, **Nitpick implicitly ensures its return type is wrapped in a `Result<T>`**. 
 
@@ -274,8 +320,23 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 > **Typed since 1.5.1:** each conjunct is a `bool` under §3's contract
 > rules; a counted loop's invariant may name `$`, and an invariant may name
 > `old(expr)` — the value at the FUNCTION's entry (D-243), the textbook
-> relation between a running total and the bound it started from. The
-> inductive obligation is 1.5.3's.
+> relation between a running total and the bound it started from.
+>
+> **Live since 1.5.3.** The invariant is CHECKED AT THE LOOP HEAD, before
+> the condition, in every build — at entry and after every iteration, one
+> trap per clause (`InvariantViolated`, −4114) — for every loop form (a
+> counted loop's frame is pushed before its head so `$` reads the counter).
+> Its rows: the ENTRY row at the loop statement over the versions before the
+> loop, the PRESERVATION row at the body block over the versions at its end,
+> and one per `continue` that re-enters the loop; the head's check is elided
+> only when all of them are discharged. Inside the body the invariant and,
+> for `while`/`when`, the condition are hypotheses over the havoced versions
+> (a divisor guarded by `while (i > 0)` proves); after a loop nothing
+> `break`s out of, the invariant is a hypothesis again (the exit is a head
+> visit) — the condition's negation is not (1.5.4's path condition). A
+> counted loop's `$` and a `for` binding are opaque outside a rule until
+> 1.5.4, so an invariant naming them is `open`: recorded and checked, never
+> refused, never silently true.
 
 ---
 
@@ -505,6 +566,18 @@ column is `elided`, `retained`, or `none` for a kind with no guard.
 > `checker`, the elision `elided`/`retained`/`none`. Rows sort by symbol then
 > hash. The v1 sketch below is superseded; its rule — divergence is
 > detectable and fatal, never silent — is unchanged.
+
+> **The elision word by ROLE since 1.5.3 (L-13):** the compiler's
+> `rows.txt` (`--obligations`) names each row's site (`space:index`), its
+> ROLE — `guard` (a check in the row's own function), `bypass` (a call-site
+> row), `held` (a call-site row whose guard is the callee's own entry: a
+> coroutine's state 0, a `dyn` call's vtable target), `conform` (no guard) —
+> the GROUP of rows one guard shares (a loop's three rows, a function's entry
+> row, a call's bypass rows), and the TRAPS that guard keeps while any row of
+> the group is retained. A `guard` or `bypass` row reads `elided` when
+> discharged and `retained` otherwise; a `held` row reads `retained` whatever
+> its verdict (D-268); a `conform` row and a guard-less kind read `none`.
+> Both runners derive the word from the row, never from the kind alone.
 
 `--smt-opt` is the only verification flag that changes generated code: where Z3
 **proves** a runtime check unnecessary, the check is removed; where it cannot

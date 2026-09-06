@@ -319,8 +319,13 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 
 **PERMITTED operations:**
 - Concatenation: `string:c = a + b;` → allocates new buffer, copies both
-- Comparison: `==`, `!=` → byte-by-byte comparison
-- Ordering: `<`, `>`, `<=`, `>=` → lexicographic comparison
+- Comparison: `a.eq(b)` (the prelude's `string: Eq`) or `string_eq(a, b)` →
+  byte-by-byte. **`==` and `!=` are REFUSED on a `string`** (`NITPICK-TYPE-034`;
+  D-169, D-250: an owning or named type compares by call, never by operator) —
+  the table read `==` here until 1.5.3's doc-sync, found by the library
+  workbench (`nitpick-time`, 2026-09-05).
+- Ordering: `a.cmp(b)` (the prelude's `string: Ord`, D-257) → lexicographic;
+  the operators are refused as `==` is.
 - Indexing: `char8:c = s[0];` → returns the char at that index (bounds-checked)
 - Length: `int64:len = s.length;` → field access
 

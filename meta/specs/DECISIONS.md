@@ -1045,6 +1045,12 @@ dangerous case directly.
 
 ---
 
+> **[D-267, 1.5.3 (2026-09-06).]** §3.3 is enforced: a `failsafe` `exit`
+> whose literal is not positive is REACH-004 (step 0); a computed code is
+> checked `> 0` at the `exit` and traps `EnsuresViolated` (the compiler's
+> `ensures`), which the re-entry rule ends at 70 (step 1); a discharged
+> `failsafe-post` row elides the compare (step 2).
+
 ## D-015 — Runtime symbols start as hand-written LLVM IR — **SETTLED**
 
 The D-011 symbol set is implemented as **hand-written LLVM IR at an early rung of
@@ -15016,6 +15022,15 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > 40 functions, 116 discharged, and the verified compiler rebuilds itself
 > byte-identically.
 
+> **[1.5.3 (2026-09-06).]** The catalogue's `failsafe-post` guard column
+> reads `yes` (D-267). `rows.txt` carries each row's site, role, group and
+> traps, and the manifest's elision word follows the ROLE — a `held` row
+> reads `retained` whatever its verdict, a `conform` row `none`
+> (VERIFICATION_REFERENCE §8; L-13 in `meta/roadmap/1.5/1.5.3.md`). The
+> compiler's own set is 178 obligations, 154 discharged: 141 + its
+> `failsafe`'s 37 postconditions, and `npk_gcd256`'s `div-zero` discharged
+> through its loop's condition.
+
 ## D-219 — elision ownership — **SETTLED (user-ratified early; C-14)**
 
 Elision is a property of the VERIFIED BUILD recorded in the manifest —
@@ -15089,6 +15104,18 @@ implemented at 1.5.3.
 > and `failsafe` carry no contract (D-244); `never fails` may carry a
 > contract (D-241). The trap route, the D-014 injection and the obligations
 > are 1.5.3's.
+
+> **LANDED (1.5.3, 2026-09-06; `meta/roadmap/1.5/1.5.3.md`).** The trap
+> route as decided: −4112/−4113/−4114 through D-142's route, the chain
+> restarted at the failing clause. A `requires` runs in the callee's `.req`
+> predicate from its checked entry (a sync function with one splits, D-252)
+> or at state 0 (a coroutine); an `ensures` at every return seam with
+> `result` in register and `old(…)` an entry snapshot; an `invariant` at
+> every loop head. The rows and hypotheses are L-1…L-14's: a `requires` row
+> per call (D-268) and per entry, an `ensures` row per return point, a
+> loop's entry, preservation and `continue` rows, conformance rows without
+> a guard, a callee's `ensures` as knowledge at every success-only unwrap,
+> a `pure never fails` callee an uninterpreted function. LIVE-1 closes.
 
 ## D-222 — `const` retires; `fixed` is the one immutability keyword — **SETTLED (user decision, 2026-08-29)**
 
@@ -16217,6 +16244,12 @@ address-bearing (`type_holds_address`, the layout table's pointer predicate
 made public). Its type is its operand's. Measured before adding: two locals
 named `old` in the tree, both renamed. Landed at 1.5.1 step 3.
 
+> **[1.5.3 step 0 (2026-09-06).]** Read literally: `old(expr)` names the
+> enclosing function's own PARAMETERS — a local, a `for` binding and `$`
+> have no value at entry — and is `NITPICK-TYPE-060` otherwise; the checker
+> had admitted a local. The snapshot is taken once at the body's start,
+> after the entry checks, into an alloca or a coroutine frame slot.
+
 ## D-244 — `main` and `failsafe` carry no contract — **SETTLED (user decision, 2026-09-03; 1.5.1 S-17)**
 
 Nobody calls them, so a `requires` has no caller to hold to it and its
@@ -16583,6 +16616,12 @@ grep.
 > assumes, where the manifest discharged the entry row) and `tail call`s the
 > body; `thread` functions keep one symbol with `async` ones; the belt in
 > both runners counts defines, tail calls and direct calls.
+
+> **[D-268, 1.5.3 step 2 (2026-09-06).]** A `limit-subsume` row is recorded
+> at an `await` too, `held` (`retained` whatever its verdict — the guard is
+> state 0's), and a direct call names the body only when EVERY bypass row
+> of the call — `limit-subsume` and `requires` — is discharged; the belts
+> count call sites, not rows.
 
 ## D-253 — derived comparisons over a generic-parameter field take the method form under a synthesized bound; the prelude implements `Eq`/`Ord`/`PartialOrd` for every scalar — **SETTLED (user decision, 2026-09-04; 1.5.1b S-24; scheduled as 1.5.2b)**
 
@@ -17341,6 +17380,12 @@ success to its operator, whatever path computed the code. One compare per
 reads `yes` from 1.5.3; a discharged row elides the compare. Mechanics at
 1.5.3 steps 0 (REACH-004), 1 (the guard) and 2 (the row).
 
+> **LANDED (1.5.3, 2026-09-06).** REACH-004 at step 0, the guard at step 1
+> (`emit_exit` in `failsafe`), the row at step 2 (`failsafe-post` over the
+> exit's term, `open` for a computed zero, one per `exit`); `failsafe_post.npk`
+> exits 70, `failsafe_exit_trap.npk` likewise; every verify test names its
+> `failsafe`'s rows, since every `failsafe` has them.
+
 ## D-268 — a `requires` row at every call with a recorded callee; D-252 amended so `limit-subsume` at an `await` is recorded too — **SETTLED (user decision, 2026-09-06: "ratify both as recommended"; OPEN_DECISIONS S-44; lands at 1.5.3 step 2)**
 
 D-252 recorded no `limit-subsume` row at a coroutine callee's call: its
@@ -17361,3 +17406,8 @@ proof of the call, and the elision column says what the build did with it.
 
 > **[D-268, 2026-09-06]** amends D-252's "a coroutine callee has no row":
 > it has one, `retained`.
+
+> **LANDED (1.5.3 step 2, 2026-09-06).** A `requires` row at every call with
+> a recorded callee — `bypass` at a direct sync call, `held` at an `await` or
+> through a `dyn` (against the trait method's clauses) — and `limit-subsume`
+> at an `await`, `held`; `req_dyn.npk`, `req_async.npk`, `limit_async.npk`.

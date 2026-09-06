@@ -543,20 +543,32 @@ failing test. The verdicts are `discharged`, `open`, `budget` and
 `unencoded` (VERIFICATION_REFERENCE §7b), and `expect-exit:` is met by the
 VERIFIED binary at -O0 and under opt -O2.
 
-**The elided IR is an inventory** (P-12; extended at 1.5.2): per guarded
-kind, one trap per retained row (`-4097` div-zero, `-4098` div-min, `-4111`
-limit); one `llvm.assume` per discharged row of an ASSUME kind (`div-zero`,
-`div-min`, `limit` — a guard-less kind's discharge emits nothing and its
-row's elision reads `none`); and the bypass belt (D-252): every `.body`
-symbol in the emission is its own define, its checked entry's `tail call`,
-or the callee of a direct `call`, tail calls equal defines, and direct calls
-equal the discharged `limit-subsume` rows — counted over the emission's
+**The elided IR is an inventory** (P-12; extended at 1.5.2 and 1.5.3): the
+traps are counted BY GROUP — `rows.txt` gives every row its site, its role,
+the group of rows one guard shares and the traps that guard keeps, and the
+guard stays with all of them while ANY row of its group is retained: one
+`-4097`/`-4098` per division row, one `-4111` per `limit` row, one `-4112`
+per clause of a function whose entry `requires` row is retained (the `.req`
+predicate's), one `-4113` per retained `ensures` row and per retained
+`failsafe-post` row, one `-4114` per clause of a loop with any `invariant`
+row retained (its entry, preservation and `continue` rows share the loop's
+group); a `bypass`, `held` or `conform` row keeps no trap of its own
+function's. One `llvm.assume` per discharged row of an ASSUME kind
+(`div-zero`, `div-min`, `limit` — a contract's discharge is the guard's
+removal alone, 1.5.3's L-11, and a guard-less kind's discharge emits
+nothing). And the bypass belt (D-252, D-268): every `.body` symbol in the
+emission is its own define, its checked entry's `tail call`, or the callee
+of a direct `call`, tail calls equal defines, and direct calls equal the
+CALL SITES whose every bypass row (`limit-subsume`, `requires`) is
+discharged — counted over the emission's
 SYMBOL text (the comment stripped, only a `c"…"` constant's contents
 blanked), never the code-only text the trap and assume counts read, whose
 filter blanks every quoted span and a D-156 symbol with it (1.5.2 step 4's
 first full run counted no `.body` use anywhere for that reason). Both
 runners hold all of it, and both self-checks hold `bypass-counted`,
-`bypass-missing` and `bypass-as-value` from one IR text.
+`bypass-missing` and `bypass-as-value` from one IR text, and
+`contract-traps`, `contract-traps-missing`, `held-not-bypassed` and
+`bypass-needs-all` from another (1.5.3).
 
 **`expect-no-parse-error` is the load-bearing one.** It asserts that a file
 reached the *backend* to be rejected, rather than tripping the parser. That is

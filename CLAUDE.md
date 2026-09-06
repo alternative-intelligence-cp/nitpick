@@ -16,7 +16,7 @@ type lowering, the memory allocator, and generics/traits/`dyn`. **`npkc` exists*
 `src/npkc.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
 `tools/check.npk` is a thin wrapper over it) and `src/backend/`. The harness runs
 **172 real-backend programs** (each also re-run through `opt -O2` + `llc -O2`
-since 1.3.8) and asserts 4 `NITPICK-RUNG-001` rejections on every full run (6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
+since 1.3.8) and asserts 1 `NITPICK-RUNG-001` rejection on every full run (4 until 1.5.3 lowered the three contract cases; 6 until 1.5.2 lowered the two `limit<Rules>` cases; 8 until 1.4.7's
 OWED-8 moved the two channel-element cases to the type checker as `TYPE-057`), and **stage 1 rebuilds itself byte-identically** — the fixpoint has held
 through every cycle since 0.8.
 
@@ -840,8 +840,40 @@ empty string and the compiler's own `string_concat(x, "")` copy idiom
 included; the runtime's concat takes the branch `string_slice` has carried
 since D-186, and `tests/cost/empty_concat.toml` holds the empty loop's peak to
 the one-byte loop's (a factor of millions on the old runtime).
-**Next: 1.5.3 (contracts live).** 1.5.4b (the remaining
-theories) is in the map.
+**1.5.3 (contracts live) IS COMPLETE (2026-09-06; `meta/roadmap/1.5/1.5.3.md`;
+S-43 and S-44 ratified the same day as D-267 and D-268; four landings, each a
+cumulative prefix under a full harness, D-228).** Step 0: the three trap
+identities (`RequiresViolated` −4112, `EnsuresViolated` −4113,
+`InvariantViolated` −4114), REACH arms each where its construct is declared,
+a `failsafe` `exit` whose literal is not positive is REACH-004, `old(...)`
+names the enclosing function's own parameters (D-243 read literally). Step 1:
+CONTRACTS ARE CHECKED IN EVERY BUILD — a `requires` in the callee's `.req`
+predicate (the function's parameter list verbatim, one trap per clause at the
+clause's site), called from the checked entry of a sync function, which now
+splits for a `requires` as it does for a limited parameter, or at state 0 of a
+coroutine; an `ensures` at every return seam (`pass`, and the long form on a
+success) with `result` the value in register and `old(...)` a snapshot at the
+body's start (an alloca, or a frame slot at role 60+k); a loop `invariant` at
+every head of every loop shape; `failsafe`'s exit code held positive at the
+`exit` (the re-entry rule ending the process at 70); LIVE-1's four rungs
+retired. Step 2: CONTRACTS ARE PROVEN WHERE THEY CAN BE — a `requires` row at
+every call with a recorded callee (`bypass` at a direct sync call, `held` at an
+`await` or through a `dyn`: recorded, never elided) and at every function's
+entry, an `ensures` row per return point, a loop's entry, preservation and
+`continue` rows with the invariant and the condition hypotheses inside the
+body and the invariant a hypothesis after a loop nothing `break`s (the
+prelude's `npk_gcd256` division discharged through its guard), `failsafe`'s
+postcondition per `exit`, conformance rows in a space of their own, a `pure
+never fails` callee an uninterpreted function and a callee's `ensures`
+knowledge at every success-only unwrap; `rows.txt` carries each row's site,
+role, group and traps, both runners' belts count sites and traps BY GROUP and
+spell the manifest word by role; `nitpick.obligations` re-recorded at 178 rows
+(the compiler's own 37 `failsafe-post` rows). Step 3: the docs. Found on the
+way: the rung test `inline_mod.npk`'s hidden construct was a `requires` (a
+`prove` now); every verify test names its `failsafe`'s rows, since every
+`failsafe` has them (`expect-obligation: none` names no program any more).
+**Next: 1.5.4 (`prove`/`assert_static`, path conditions).** 1.5.4b (the
+remaining theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
 vacant value (D-225 — `OwnedFd`'s vacant is −1, not zero); the index type
@@ -1109,6 +1141,19 @@ that carried them retired at the cycle close):
   program test with one in `main` measures the storage's REGIME under D-151,
   not the drop (D-263 moved the prelude's `List` buffer to managed storage for
   exactly that). Put a drop's behaviour under test in a function that RETURNS.
+- **A contract is a check in every build and a row in the manifest** (1.5.3):
+  `old(...)` names the enclosing function's PARAMETERS only (D-243 read
+  literally — a local has no value at entry), `result` is the success value at
+  the seam, a contract's call is `raw f(…)` of a `pure never fails` function
+  (an uninterpreted function to the solver: `sq(3)` has no value, so a row
+  over it is `open` unless the callee's `ensures` says enough). A function
+  with a `requires` SPLITS like one with a limited parameter (`.body` plus the
+  checked entry, which calls `<sym>.req`), so a belt over its symbols counts
+  the predicate; a coroutine's check runs at state 0 and its call-site rows
+  are `held`. `failsafe`'s `exit` must be positive: a literal that is not is
+  REACH-004, a computed one traps to 70. Clauses repeat their keyword
+  (`requires a requires b`), never a comma; `use` is a keyword, so no function
+  is named `use`.
 - **Measure before attributing a cost** (1.5.2d): the prelude's +0.75 s per
   program read as the price of D-257's 348 impls and was, to five sixths, the
   bindings analysis sizing its state by the whole program. `perf` cannot open
