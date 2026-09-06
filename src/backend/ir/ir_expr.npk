@@ -9441,6 +9441,18 @@ func:emit_member_from = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     int32:idx = 0i32 - 1i32;
     int32:fty = raw exprtypes_get(x.et, id);
     string:fll = "";
+    // A FIXED-SIZE ARRAY'S LENGTH (DEF-22, 1.5.2e; the library workbench's
+    // O-N18): the constant the TYPE carries -- no load, no extract. The
+    // checker typed `.len` on `T[N]` since the array kind existed and the
+    // emitter had no arm for it, so a local `uint8[20]` asking its length was
+    // EMIT-002 where a slice asking the same compiled.
+    if (bkind == (raw TY_ARRAY())) {
+        if (raw string_eq(raw intern_get(x.interns, n.payload =>! int32), "len")) {
+            pass (raw iv("i64",
+                     int_to_string((raw type_array_count(x.fe.ctx.types, btid)) => int64),
+                     fty));
+        }
+    }
     if (bkind == (raw TY_STRING())) {
         idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
         fll = "i64";

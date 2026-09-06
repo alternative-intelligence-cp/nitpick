@@ -1,0 +1,46 @@
+// expect-exit: 0
+//
+// `.len` ON A FIXED-SIZE ARRAY LOWERS TO ITS CONSTANT (DEF-22, 1.5.2e; the
+// library workbench's O-N18). The checker typed `T[N].len` as an `int64` since
+// the array kind existed and the emitter had no arm for it: a local `uint8[20]`
+// asking its length was `NITPICK-EMIT-002` -- "a defect in the compiler rather
+// than in this program" -- at both storage classes, while a slice `uint8[]`
+// asking `.len` and an array indexed without `.len` compiled. The three shapes
+// here: a module `fixed` array, a local (initialised -- D-010 reads no
+// unassigned binding) and an array of structs; each `.len` is the count the
+// type carries, and the count is what the loops below are bounded by.
+mod:fixed_array_len;
+
+fixed uint8[3]:TABLE = [ 7u8, 8u8, 9u8 ];
+struct:Pt = { int32:x; int32:y; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (TABLE.len != 3i64) { exit 2i32; }
+    uint8[20]:buf = [ 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8 ];
+    if (buf.len != 20i64) { exit 3i32; }
+    int64:sum = 0i64;
+    for (int64:i in 0i64...buf.len) { sum = sum + (buf[i] => int64); }
+    if (sum != 0i64) { exit 4i32; }
+    Pt[4]:pts = [ Pt{ x: 1i32, y: 2i32 }, Pt{ x: 3i32, y: 4i32 }, Pt{ x: 5i32, y: 6i32 }, Pt{ x: 7i32, y: 8i32 } ];
+    if (pts.len != 4i64) { exit 5i32; }
+    int32:acc = 0i32;
+    for (int64:j in 0i64...pts.len) { acc = acc + pts[j].x; }
+    if (acc != 16i32) { exit 6i32; }
+    int64:t = 0i64;
+    for (int64:k in 0i64...TABLE.len) { t = t + (TABLE[k] => int64); }
+    if (t != 24i64) { exit 7i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 93i32; },
+        (WildLeak) { exit 94i32; },
+        (IntOverflow) { exit 98i32; },
+        (OutOfBounds) { exit 97i32; },
+        (*) { exit 95i32; }
+    }
+    exit 96i32;
+};
