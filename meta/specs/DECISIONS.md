@@ -17117,3 +17117,13 @@ itself, each spelled `move T:v` and `move(v)` now. What this leaves open, S-41:
 a BORROWING `pick` binding form, which would let a generic enum with payloads
 derive the four again and let a program compare two `Opt<string>`s without
 consuming one.
+
+> **LANDED (1.5.2f step 1, 2026-09-05).** `type_owns_for_move`
+> (`type_expr.npk`): drops, or `TY_PARAM`, or `TY_SELF`; `require_move_if_owning`
+> and the lending-pick binding check ask it; the parameter case has its own
+> TYPE-046 text. `dv_refusal` refuses a `DVC_PARAM` payload under the four
+> binding traits (DERIVE-006). The seven sites respelled `move T:v`/`move(v)`;
+> `derive_generic.npk`'s `Opt<T>` section derives `Hash`/`ToString`/`Debug`.
+> Tests: `generic_owning_copy.npk` (TYPE-046 ×3), `derive_generic_payload.npk`
+> (DERIVE-006 ×2), `generic_owning_move.npk` (exit 0 at `string` and `int32`).
+> Zero new refusals anywhere else, measured before and after.

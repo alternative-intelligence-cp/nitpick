@@ -267,11 +267,15 @@ All seven generate for a struct and for an enum (D-123, D-250, D-258): a
 struct's derives read its fields; an enum's `Eq`, `Ord`, `PartialOrd` and
 `Clone` compare or rebuild the payloads of equal tags through a `pick` per
 variant (the tag first, in declaration order), its `Hash` is the tag's and its
-`ToString`/`Debug` the variant's name. **A generic enum derives as a generic
-struct does** (D-261, 1.5.2c): `#[derive(Eq)] enum:Opt<T> = { Some(T); None; }`
-writes `impl:<T: Eq>:Opt<T>:Eq`, whose picks read the payload with the
-instance's arguments bound — `Opt<int32>` compares through the prelude's
-`int32:Eq`, `Opt<string>.clone()` owns a second string. What refuses, by name
+`ToString`/`Debug` the variant's name. **A generic enum derives what binds no
+payload** (D-261 as narrowed by D-264, 1.5.2f): `Hash`, `ToString` and `Debug`
+generate for `enum:Opt<T> = { Some(T); None; }` as for any enum; `Eq`, `Ord`,
+`PartialOrd` and `Clone` bind the payload in a lending `pick`, and a `T` payload
+is move-only in the body that names it, so those four refuse a `T` payload
+(DERIVE-006) exactly as they refuse a `string`'s — the generated `pick` was the
+same copy the checker refuses in hand-written code. A parameter FIELD is read in
+place and derives all seven. What would lift this is a borrowing `pick` binding
+form, OPEN_DECISIONS S-41. What refuses, by name
 at the user's declaration:
 
 - **DERIVE-005** — a `simd` field under anything but `Eq` (which collapses the
@@ -459,6 +463,18 @@ Two values are two arguments and therefore two types: `Mutex<T, 2>` and
 `Mutex<T, 3>` are different lock levels, which is what D-056 exists to keep apart.
 
 ### 3.2 Checking happens at the definition
+
+> **A bare type parameter is move-only in the body that names it (D-264,
+> 1.5.2f).** A generic body is checked once for every type it will be
+> instantiated at, some of which own storage, so the move-only rule (D-183,
+> TYPE-046) treats a `T` — and `Self` in a trait's default body — as owning: a
+> copy of a `T` place is spelled `move(...)`, a plain copy at a scalar, or
+> `.clone()` under a `Clone` bound, the same at every instantiation. A by-value
+> `T:v` parameter stored into an element, a field, a payload or a channel is
+> the second owner the rule exists to refuse; the spelling is `move T:v` and
+> `move(v)`. Until 1.5.2f the rule asked what drops, which nothing knows of an
+> unsubstituted `T`, and `T:x = s[i]` at an owning `T` compiled into two owners
+> of one heap body (the library workbench's O-N19).
 
 **A generic body is type-checked once**, treating each parameter as an opaque type
 satisfying exactly its declared bounds and nothing else. Instantiation checks only

@@ -787,7 +787,21 @@ PRELUDE-ONLY by the reference's `**Prelude-only**` marker (generated into
 free), `ralloc` keeping a block's role — a `List` alive in `main` at `exit 0`
 exits 0 where it exited 94, and the exit path stays free of the drop walk as
 D-183 decided. DEF-22 (the workbench's O-N18): `.len` on a fixed-size array
-lowers to the constant its type carries. **Next: 1.5.3 (contracts live).**
+lowers to the constant its type carries. **1.5.2f IS COMPLETE (2026-09-05;
+`meta/roadmap/1.5/1.5.2f.md`; two landings under full harnesses).** S-40, the
+workbench's O-N19, ratified as **D-264**: a bare type parameter — and `Self` in
+a trait's default body — is MOVE-ONLY in the body that names it, because a
+generic body is checked once for every type it is instantiated at;
+`type_owns_for_move` is the one predicate, `require_move_if_owning`, the
+lending-pick binding check and the derive generator ask it (TYPE-046 with the
+parameter's own reason; DERIVE-006 for a `T` payload under `Eq`/`Ord`/
+`PartialOrd`/`Clone`, as for a `string`'s — `Hash`/`ToString`/`Debug` bind
+nothing and still generate). Before it, `T:x = s[i]` at an owning `T` compiled,
+linked and ran with two owners of one heap body — a use-after-free that exited
+0. Seven sites in the tree, all a by-value `T:v` stored into an owning slot,
+say `move T:v` and `move(v)` now; nothing else refuses anew. **Left open:
+S-41**, a borrowing `pick` binding form (the user's), which would let a generic
+enum with payloads derive the four again. **Next: 1.5.3 (contracts live).**
 1.5.4b (the remaining theories) is in the map.
 **The decisions this cycle settled: D-224…D-233.** `exit` is process exit in
 every body (D-224); declared-uninitialised managed storage holds its canonical
@@ -1026,6 +1040,10 @@ that carried them retired at the cycle close):
   cases (compiled with the builder by design) are not asked. An instrument that
   counts sites (`llvm.assume` per discharged row) counts only the functions the
   emission holds.
+- **A `T` is move-only in a generic body** (D-264, 1.5.2f): store a by-value
+  `T:v` only as `move T:v` + `move(v)`; read an element out as
+  `move(s.items[i])`; a lending `pick` cannot bind a `T` payload. `move(x)`
+  spends `x` at a scalar too (MOVE-001 on a later read of `x`).
 - **`exit` runs joins and defers and no drops** (D-183's amendment, 1.4.4): an
   owning local of `main` is never dropped by a program that exits, so a
   program test with one in `main` measures the storage's REGIME under D-151,
