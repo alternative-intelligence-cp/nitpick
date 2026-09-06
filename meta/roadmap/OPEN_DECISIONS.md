@@ -812,6 +812,22 @@ class). Fix: the receiver-address decision asks what `@` asks
 (`place_limited`), TYPE-063; `limit_receiver.npk` holds both spellings and
 the by-value control.
 
+**DEF-25 — OPEN, scheduled as 1.5.2i step 1 (reported 2026-09-06 by the
+library workbench, `nitpick-regex`'s cycle-0.0 audit).** `string_concat` of
+two empty strings leaks one block per call: `@npk_string_concat`
+(`runtime/npkrt.ll`) allocates `n = al + bl` unconditionally, `@npk_alloc_impl`
+hands a real 16-byte block for a zero request (D-150), and the result
+`{p, 0, 0}` carries cap 0 — the not-mine bit — so its drop frees nothing.
+`@npk_string_slice` has carried the empty branch since D-186. Measured on
+`c81efa5`: `string_concat("", "")` in a bare loop under `ulimit -v 65536` exits
+92 (`HeapOom`) at 8,000,000 calls where `string_concat("", "a")` exits 0; under
+`NPK_HEAP_STATS` at 1,000,000 calls, `allocated=16000000 peak_live=16000000`
+against `allocated=1000000 peak_live=1`. The prelude's `impl:string:Clone`
+(`string_concat(self, "")`) and the compiler's own copy idiom (234 sites in
+`src/`) leak the same way on an empty operand. Fix: the slice's branch in the
+concat; `tests/cost/empty_concat.toml` holds the empty loop's peak to the
+one-byte loop's.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
