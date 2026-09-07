@@ -17541,3 +17541,41 @@ fact the encoder forgets one line later.
 
 > **LANDED (1.5.4 step 4, 2026-09-06).** `prove_lemma.npk` discharges a
 > nonlinear division through the outline.
+
+---
+
+## D-273 — a module symbol means one thing wherever it stands: qualified with `.`, imported with `use` — an inline module, an alias and a nested path alike — **SETTLED (user decision, 2026-09-07: "I agree with your recommendation so ratify that"; OPEN_DECISIONS DEF-31; lands at 1.5.4c)**
+
+MODULE_REFERENCE §1.1 defines inline and nested modules and §2.1 the alias
+import (`use "./m.npk" as math;`), and the checker's `namespace_member` was
+written for `math.sqrt` — a module symbol's member resolved through the scope
+its name opened. At 1.5.4's close (DEF-31) no spelling could CALL such a
+member: `m.f(x)` parses as a method call whose receiver is typed as a value
+(TYPE-007 before the namespace is asked), the alias import shares the hole
+and no test calls through it, and a logical `use hidden.*;` binds nothing
+because logical paths are left to the driver as the standard library's.
+Symbol names already nest (`@"npk.file.a.go"`). **The decision.**
+(1) A call whose base names a module — an inline module, an alias, a nested
+path `core.math.f(x)` — is a DIRECT call of that member: the checker records
+the member as the callee and the emitter lowers it with no receiver; a `pure
+never fails` member is admissible in a contract as any named function is,
+and its `requires`/`limit-subsume` rows are recorded as at any direct call.
+(2) A `use` path whose first segment names a module symbol in scope binds
+that module's public names in every form the file forms have (`use
+hidden.*;`, `use hidden.{f, Point};`, `use hidden.f;`, `use core.math.*;`)
+— the only way an inline module's TYPES are named from outside; a path whose
+first segment names no module symbol in scope stays the standard library's,
+and `std` joins the names a program cannot declare as a module (D-239's
+table, RESOLVE-001). (3) A private member is RESOLVE-004's "private to" from
+either spelling; a `pub mod` is an exported symbol a file's wildcard import
+binds with its scope, so the qualified call works across files. (4) An
+alias symbol carries the scope of the file it names, as an inline module's
+symbol carries the scope its name opened — one field, `inner`, read by one
+lookup. The alternative — strike the inline form (D-248's "a module is a
+file") — cost the alias fix all the same, deleted ~21 walker arms and seven
+tests' subjects, and removed the one namespace construct D-088 kept.
+Measured at planning: seven test files hold inline modules, none for the
+namespace's sake; the library workbench has none in 170 `mod` uses.
+
+> Lands at **1.5.4c** (`meta/roadmap/1.5/1.5.4c.md`); `inline_mod.npk` exits
+> through the call.
