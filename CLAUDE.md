@@ -875,7 +875,7 @@ way: the rung test `inline_mod.npk`'s hidden construct was a `requires` (a
 **1.5.4 (path conditions, the counters, `prove`/`assert_static`) IS COMPLETE
 (2026-09-06; `meta/roadmap/1.5/1.5.4.md`; six landings, each a cumulative
 prefix under a full harness, D-228; S-45…S-48 landed under their
-recommendations and await the user's ratification).** Step 0 fixed five
+recommendations and were ratified 2026-09-07 as D-269…D-272).** Step 0 fixed five
 findings: DEF-26 (a division inside a pick EXPRESSION's arm had no
 obligation row since 1.5.0 — the arms were never walked; one enumeration,
 `stmt_expr_ids`, now feeds every walker that must see into a statement's
@@ -1193,7 +1193,7 @@ that carried them retired at the cycle close):
   REACH-004, a computed one traps to 70. Clauses repeat their keyword
   (`requires a requires b`), never a comma; `use` is a keyword, so no function
   is named `use`.
-- **A `prove` is refused by the VERIFIED build only** (1.5.4, S-45): the plain
+- **A `prove` is refused by the VERIFIED build only** (1.5.4, S-45/D-269): the plain
   build lowers it to nothing; `npkc --elide`, and so `npkg verify`, refuses an
   undischarged one with `NITPICK-VERIFY-001` naming the row's verdict. A
   discharged `prove` is a hypothesis for what follows (S-48). `assert_static`
@@ -1290,7 +1290,7 @@ tests/        # FIVE rejection suites, named by the stage that refuses:
               #   analysis/rejection/ (a static analysis), expansion/rejection/
               #   (macro expansion), derive/rejection/ (the derive reader);
               #   the backend-rung suite retired at 1.5.4 when the last rung
-              #   fell (S-47); nitpick.toml's [[test]] table is
+              #   fell (S-47, D-271); nitpick.toml's [[test]] table is
               #   the one list of suites both runners read (D-238)
               #   accept/ is ONE suite for all of them — silence has no stage
               #   conformance/ (subset 1 compiles and runs), frontend/, grammar/

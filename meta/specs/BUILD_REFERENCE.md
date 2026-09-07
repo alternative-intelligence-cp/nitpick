@@ -581,7 +581,7 @@ reached the *backend* to be rejected, rather than tripping the parser. That is
 D-085's rule — the parser never restricts, the backend does — made checkable, and
 it is what stops the grammar being quietly made partial.
 
-> **The suite it was written for retired at 1.5.4 step 4 (S-47).**
+> **The suite it was written for retired at 1.5.4 step 4 (S-47, D-271).**
 > `tests/rejection/` held the correct programs the BACKEND refused at a rung
 > that could not lower them yet, shrinking as rungs fell; after `prove` and
 > `assert_static` lowered, no construct in the language rungs (`ll_rung` has

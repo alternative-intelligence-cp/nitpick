@@ -229,7 +229,7 @@ loop(10i32, 0i32, 1i32) {
 `loop` handles arbitrary start points and both directions.
 
 > **The head is checked since 1.5.4 (steps 0 and 3; DEF-28, DEF-29, DEF-30;
-> S-46).** `loop` takes three arguments and `till` two, and a step written as
+> S-46, D-270).** `loop` takes three arguments and `till` two, and a step written as
 > a literal or a negated literal must be positive — `NITPICK-TYPE-068`. The
 > compile error the table above promised was never implemented before: a
 > `till(3i32, 0i32)` compiled and trapped `BadStep` at run time, and a

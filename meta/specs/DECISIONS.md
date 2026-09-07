@@ -1532,7 +1532,7 @@ and magnitude in others.
 > comptime loop folded to nothing). All three are as decided now:
 > `NITPICK-TYPE-068` at the checker, the evaluator reading the head by kind
 > with the direction from the bounds, and a computed step's compare the
-> `loop-step` row's guard (S-46), elided when the manifest discharges it.
+> `loop-step` row's guard (S-46, D-270), elided when the manifest discharges it.
 
 ---
 
@@ -5937,7 +5937,7 @@ benefit: a purpose-built seed of a few thousand readable lines can actually be
 audited, where a 26,000-file C++ prototype cannot.
 
 > **[1.5.4 step 4 (2026-09-06).]** The rung suite `tests/rejection/`
-> retired (S-47): after `prove` and `assert_static` lowered, no construct in
+> retired (S-47, D-271): after `prove` and `assert_static` lowered, no construct in
 > the language rungs — `ll_rung` has no caller. The parser-never-restricts
 > half of this decision is the grammar sweep's (every source through the
 > real parser, `expect-no-parse-error` still honoured); the backend's
@@ -15055,7 +15055,7 @@ in `meta/specs/TCB.md` (r8 Lesson 2).
 > by its condition, versions merge as `ite`, and the counters are terms
 > (`meta/roadmap/1.5/1.5.4.md`, L-1…L-14). The catalogue's `exhaustive`,
 > `assert-static` (both `checker`) and `prove` rows exist, and `loop-step`
-> joined the table (S-46). A `prove` is the one kind whose non-discharge
+> joined the table (S-46, D-270). A `prove` is the one kind whose non-discharge
 > refuses the verified build (S-45). The compiler's own set is 184 rows (six
 > `exhaustive checker`), with 15 of its 24 open rows discharged through their
 > paths and none moved the other way.
@@ -15072,7 +15072,7 @@ impossible by construction.
 
 > **[1.5.4 step 4 (2026-09-06).]** One obligation has no guard to retain
 > and cannot ship undischarged: a `prove` (D-218.7, guard `no`). The
-> verified build REFUSES it (`NITPICK-VERIFY-001`, S-45) rather than
+> verified build REFUSES it (`NITPICK-VERIFY-001`, S-45, D-269) rather than
 > carrying an unproven claim; the plain build lowers it to nothing. "An
 > undischarged obligation retains its guard" is unchanged for every guarded
 > kind.
@@ -17453,3 +17453,91 @@ proof of the call, and the elision column says what the build did with it.
 > a recorded callee — `bypass` at a direct sync call, `held` at an `await` or
 > through a `dyn` (against the trait method's clauses) — and `limit-subsume`
 > at an `await`, `held`; `req_dyn.npk`, `req_async.npk`, `limit_async.npk`.
+
+---
+
+## D-269 — an undischarged `prove` refuses the VERIFIED build; the plain build lowers `prove` to nothing — **SETTLED (user decision, 2026-09-07: "I'm good with your recommendations for those questions"; OPEN_DECISIONS S-45; landed at 1.5.4 step 4)**
+
+VERIFICATION_REFERENCE §1.2 and CONTROL_REFERENCE §4.4 say a `prove` whose
+proposition the solver refutes fails compilation; D-218.7 ratified `prove`
+with guard `no`; C-14/D-219 say an undischarged obligation RETAINS its
+runtime guard so that the binary differs only with the manifest saying so.
+A `prove` has no guard to retain. So a verified artifact with an unproven
+claim in it has exactly one honest outcome: refusal. **The decision.** Under
+`--elide` a `prove` whose row is not discharged — `open`, `budget`,
+`unencoded`, or absent from the manifest — is `NITPICK-VERIFY-001` at the
+statement, naming the row's verdict word; `npkg verify` fails through it;
+the plain build is untouched (no check, no trap: guard `no` as ratified),
+and `prove` lowers to nothing there. The alternative gave `prove` a runtime
+guard in every build — an amendment to D-218.7's column, a new trap identity,
+and a `prove` that behaves like an `ensures`, a second spelling of a check
+the language already has. Measured at planning (`b2f7d94`): zero `prove` in
+`src/`, `lib/`, `npkg/`; seven test files mention it.
+
+> **LANDED (1.5.4 step 4, 2026-09-06).** `prove_open.npk` expects the
+> refusal (`expect-error: NITPICK-VERIFY-001`, the verify test's error
+> line); the refusal carries the manifest's every row beside the discharged
+> hashes so it can name the word; both runner self-checks hold `prove-open`
+> and `prove-open-named`.
+
+---
+
+## D-270 — a counted loop's COMPUTED step is the `loop-step` obligation kind; a literal step is the checker's — **SETTLED (user decision, 2026-09-07: "I'm good with your recommendations for those questions"; OPEN_DECISIONS S-46; landed at 1.5.4 step 3, TYPE-068 at step 0)**
+
+D-022 says a non-literal step is "a proof obligation, falling back to a
+runtime check that traps to `failsafe`". The runtime check existed (`-4101`,
+`BadStep`, at every counted loop's entry) and no obligation kind named it,
+so the manifest was not the inventory of guards P-12 says it is. **The
+decision.** `loop-step` joins D-218.7's catalogue — goal `step > 0`, guard
+`yes`, trap `-4101`, kind 18 — as an amendment to a list whose own rule is
+"every carried obligation appears or the manifest has holes"; every runner's
+trap table carries it. A LITERAL step is the checker's: `NITPICK-TYPE-068`
+refuses a literal that is not positive (DEF-28: `0i32` compiled and exited
+38), and a literal step has neither compare nor row. The alternative left
+the guard row-less and stated the hole in §7b. Measured at planning: three
+counted loops in `src/`, all literal steps.
+
+> **LANDED (1.5.4 steps 0 and 3, 2026-09-06).** `loop_step.npk` holds the
+> row; the elided build removes a discharged step's compare; `loop_head.npk`
+> refuses the literal.
+
+---
+
+## D-271 — the rung suite retires; `NITPICK-RUNG-001` stays a defined code with no test — **SETTLED (user decision, 2026-09-07: "I'm good with your recommendations for those questions"; OPEN_DECISIONS S-47; landed at 1.5.4 step 4)**
+
+After `prove` and `assert_static` lowered, `ll_rung` had no caller and no
+construct in the language rungs (measured on `b2f7d94`: every remaining
+`iv_rung`/`pv_rung` is reached only through an `LlType` state nothing
+constructs). `tests/rejection/`'s README said the directory shrinking
+measures subset 1 disappearing; this is that measurement's last step. **The
+decision.** The directory and its `[[test]]` entry retire; `inline_mod.npk`
+stays as a positive program in `tests/backend/programs/` (its original hole —
+declared code silently shed — is caught by compiling; DEF-31 records that
+no spelling can call the function yet); `check_rung_names_open_cycle` stays
+for a rung a later cycle adds; `NITPICK-RUNG-001` stays defined, listed in
+the harness's `UNTESTED_CODES` with its reason, and is removed only by a
+decision; D-085's rule ("the parser never restricts, the backend does")
+re-homes to BUILD_REFERENCE §7.1, where the grammar sweep enforces the
+first half. The alternative kept an empty suite both runners must
+special-case, asserting nothing.
+
+> **LANDED (1.5.4 step 4, 2026-09-06).** 52 harness suites where there were
+> 53; both runners read the one `[[test]]` table.
+
+---
+
+## D-272 — a discharged `prove` is knowledge after its site: a lemma — **SETTLED (user decision, 2026-09-07: "I'm good with your recommendations for those questions"; OPEN_DECISIONS S-48; landed at 1.5.4 step 4)**
+
+VERIFICATION_REFERENCE §1.2 says the solver "constructs a mathematical proof
+that the expression holds", and a proven proposition is a fact of every
+execution that passes the statement. **The decision.** The encoder pushes a
+`prove`'s proposition as a hypothesis after its row (L-7's order), so a
+`prove` states an intermediate fact later obligations use — a proof outline
+in source, which is what the safety story wants authors writing. Sound
+because a verified build refuses an undischarged `prove` (D-269) and a plain
+build elides nothing: a later row discharged through an unproven claim ships
+in no artifact. The alternative kept `prove` a documentation-only check whose
+fact the encoder forgets one line later.
+
+> **LANDED (1.5.4 step 4, 2026-09-06).** `prove_lemma.npk` discharges a
+> nonlinear division through the outline.
