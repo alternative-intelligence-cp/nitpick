@@ -906,6 +906,47 @@ to CALL the function. Which spelling should reach it (the qualified
 resolver and the checker then implement it, and `inline_mod.npk` exits
 through the call.
 
+> **Measured and recommended (2026-09-07, `da1f911`; `nitpick-compiler_s2`).**
+> The qualified spelling is the DESIGNED one and is half-built: the checker's
+> `namespace_member` (`type_members.npk`) already resolves `m.name` through
+> the scope a module symbol opened — a function member types as its function
+> type, a global as its type — and the resolver's comment says `math.sqrt`
+> was to be told apart from `p.x` there. What fails is the CALL: `m.f(x)`
+> parses as a METHOD call, whose typer types the receiver as a value, so
+> `hidden` reports TYPE-007 before the namespace is asked. **The alias form
+> has the same hole**: `use "./lib.npk" as lib;` binds `lib` as a module
+> symbol (MODULE_REFERENCE §2.1's canonical "Namespace (Alias)" import), and
+> no test calls through it — `lib.f(x)` is refused exactly as `hidden.f(x)`
+> is. `use hidden.*;` is a logical path, which the loader leaves to the
+> driver as the standard library's business, so nothing binds. Symbol names
+> already nest (`@"npk.two_inline.a.go"`, `.b.go`, `.go` for three `go`s in
+> one file — measured, compiles and links), so no naming work is owed. Uses
+> in the tree: none outside seven test files (macro-scope semantics, D-239's
+> owned names inside modules, RESOLVE-013's inline half, the emission
+> descent); the library workbench has none in 170 `mod` uses.
+> **Recommendation:** finish the designed spelling, as one subcycle (1.5.4c),
+> and make a module symbol mean one thing wherever it stands: (1) a call
+> whose base names a module — an inline module, an alias, a nested path
+> `core.math.f(x)` — is a DIRECT call of that member, recorded as the callee
+> and lowered with no receiver (the method-call node's receiver is a
+> namespace), a `pure never fails` member admissible in a contract as any
+> named function is; (2) a `use` path whose first segment names a module
+> symbol in scope binds that module's public names in every form the file
+> forms have (`use hidden.*;`, `use hidden.{f, Point};`, `use hidden.f;`,
+> `use core.math.*;`), which is the only way an inline module's TYPES are
+> named from outside; a path whose first segment names no module symbol
+> stays the standard library's (`std.…`), and `std` joins the names a
+> program cannot declare as a module (D-239's table); (3) a private member is
+> RESOLVE-004's "private to" from either spelling, and a `pub mod` is an
+> exported symbol a file's wildcard import binds, so the qualified call
+> works across files too; (4) `inline_mod.npk` exits through the call. The
+> alternative — strike the inline form and keep `mod:` meaning exactly
+> "this file is" or "load that file" (D-248's "a module is a file") — costs
+> the alias path's (1) all the same, deletes ~21 walker arms and rewrites
+> seven tests, and removes the one namespace construct D-088 kept when it
+> struck `Type:Name = { }`; nothing in the tree would miss it today, which
+> is the only argument for it. Owner: the user.
+
 ## 3. ~~Decisions blocking 1.4 (self-hosting)~~ ALL SETTLED — cycle 1.4 closed 2026-09-02 (1.4.9, `done/1.4/`)
 
 | # | Proposed | Item | Blocks | Source |
