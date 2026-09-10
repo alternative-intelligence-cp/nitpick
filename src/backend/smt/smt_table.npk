@@ -39,6 +39,11 @@ pub struct:ObTable = {
     List<string>:file_syms;  // its symbol
     List<int64>:file_checks; // its `(check-sat)` count
     List<string>:rows;       // rows.txt lines
+    // THE TIER-2 TWINS (D-281, 1.5.4b step 3): `NNNN.t2.smt2` texts by file
+    // number, and `index.t2.txt`'s lines (`NNNN<TAB>count<TAB>k1,k2,...`).
+    List<string>:t2_names;
+    List<string>:t2_texts;
+    List<string>:t2_index;
     int64:encoded_rows;      // totals for the driver's report line
     int64:unencoded_rows;
     int64:checker_rows;
@@ -54,6 +59,9 @@ pub func:obtable_init = ObTable(bool:want_files) never fails {
                   file_syms: raw list_init::<string>(16i64),
                   file_checks: raw list_init::<int64>(16i64),
                   rows: raw list_init::<string>(32i64),
+                  t2_names: raw list_init::<string>(4i64),
+                  t2_texts: raw list_init::<string>(4i64),
+                  t2_index: raw list_init::<string>(4i64),
                   encoded_rows: 0i64, unencoded_rows: 0i64, checker_rows: 0i64 };
 };
 
@@ -77,6 +85,15 @@ pub func:obl_index_text = string(ObTable->:t) never fails {
         drop sink_write(@s, string_from_bytes(t.file_syms.items[i].ptr, t.file_syms.items[i].len));
         drop sink_write(@s, "\t");
         drop sink_write(@s, int_to_string(t.file_checks.items[i]));
+        drop sink_write(@s, "\n");
+    }
+    pass (raw sink_into_string(move(s)));
+};
+
+pub func:obl_t2_index_text = string(ObTable->:t) never fails {
+    Sink:s = raw sink_to_buffer(1024i64);
+    for (int64:i in 0i64...t.t2_index.count) {
+        drop sink_write(@s, string_from_bytes(t.t2_index.items[i].ptr, t.t2_index.items[i].len));
         drop sink_write(@s, "\n");
     }
     pass (raw sink_into_string(move(s)));

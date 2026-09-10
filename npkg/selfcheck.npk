@@ -435,10 +435,10 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
         }
         List<VRow>:brows = raw list_init::<VRow>(2i64);
         VRow:r1 = VRow{ fno: "0001", k: 1i64, kind: "limit", hash: "h1", encoded: true, symbol: "@\"npk.m.f\"", verdict: raw OV_OPEN(),
-                        site: "2:5", role: "guard", group: 5i64, traps: 1i64, checker: false };
+                        site: "2:5", role: "guard", group: 5i64, traps: 1i64, checker: false, tier: "int" };
         drop list_push(@brows, move(r1));
         VRow:r2 = VRow{ fno: "0002", k: 1i64, kind: "limit-subsume", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
-                        site: "0:9", role: "bypass", group: 9i64, traps: 0i64, checker: false };
+                        site: "0:9", role: "bypass", group: 9i64, traps: 0i64, checker: false, tier: "int" };
         drop list_push(@brows, move(r2));
         string:btext = string_concat(string_concat(b_head, bmid), b_tail);
         List<string>:bfl = raw elided_ir_checks(brows, btext, bname);
@@ -482,21 +482,21 @@ pub async func:selfcheck_run = int64(Ctx->:c, bool:verbose) {
             ctext = raw text_replace_all(c_ir, "%v = call i32 @\"npk.m.g\"(i32 3)", "%v = call i32 @\"npk.m.g.body\"(i32 3)");
         }
         VRow:ce = VRow{ fno: "0001", k: 1i64, kind: "requires", hash: "h1", encoded: true, symbol: "@\"npk.m.g\"", verdict: raw OV_OPEN(),
-                        site: "2:7", role: "guard", group: 7i64, traps: entry_traps, checker: false };
+                        site: "2:7", role: "guard", group: 7i64, traps: entry_traps, checker: false, tier: "int" };
         drop list_push(@crows, move(ce));
         VRow:cs = VRow{ fno: "0002", k: 1i64, kind: "ensures", hash: "h2", encoded: true, symbol: "@main", verdict: raw OV_OPEN(),
-                        site: "1:11", role: "guard", group: 11i64, traps: 1i64, checker: false };
+                        site: "1:11", role: "guard", group: 11i64, traps: 1i64, checker: false, tier: "int" };
         drop list_push(@crows, move(cs));
         if (ci == 3i64) {
             VRow:cb1 = VRow{ fno: "0002", k: 2i64, kind: "limit-subsume", hash: "h3", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
-                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64, checker: false };
+                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64, checker: false, tier: "int" };
             drop list_push(@crows, move(cb1));
             VRow:cb2 = VRow{ fno: "0002", k: 3i64, kind: "requires", hash: "h4", encoded: true, symbol: "@main", verdict: raw OV_OPEN(),
-                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64, checker: false };
+                             site: "0:13", role: "bypass", group: 13i64, traps: 0i64, checker: false, tier: "int" };
             drop list_push(@crows, move(cb2));
         } else {
             VRow:ch = VRow{ fno: "0002", k: 2i64, kind: "requires", hash: "h3", encoded: true, symbol: "@main", verdict: raw OV_DISCHARGED(),
-                            site: "0:13", role: "held", group: 13i64, traps: 0i64, checker: false };
+                            site: "0:13", role: "held", group: 13i64, traps: 0i64, checker: false, tier: "int" };
             drop list_push(@crows, move(ch));
         }
         List<string>:cfl = raw elided_ir_checks(crows, ctext, cname);

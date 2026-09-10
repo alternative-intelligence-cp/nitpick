@@ -1,0 +1,40 @@
+// expect-exit: 0
+// expect-obligation: limit discharged 2
+// expect-obligation: limit open 1
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// A `limit` OVER A FLOAT SUBJECT ENCODES (D-281): the rule's `$` is the
+// float term, so a write point is a row with a goal where until 1.5.4b step
+// 3 it was `unencoded`. The local's literal (`1.5`) and its decrement
+// (`1.5 - 0.25`, computed exactly by `fp.sub`) discharge; the parameter's
+// entry is `open` (opaque first version); the call passes a limited value
+// whose rule is the callee's, so its `limit-subsume` row discharges.
+mod:flt_limit;
+
+Rules<flt64>:r_unit = { $ >= 1.0f64, $ <= 2.0f64 };
+
+func:take = flt64(limit<r_unit> flt64:v) never fails { pass v; };
+
+func:main = int32(cstring[]:_~argv) {
+    limit<r_unit> flt64:x = 1.5f64;
+    x = x - 0.25f64;
+    flt64:y = raw take(x);
+    if (y < 1.2f64) { exit 1i32; }
+    if (y > 1.3f64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 25i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

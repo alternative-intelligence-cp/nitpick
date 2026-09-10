@@ -1,0 +1,35 @@
+// expect-error: NITPICK-VERIFY-001
+// expect-obligation: prove budget 1
+// expect-obligation: failsafe-post discharged 7
+// expect-obligation: exhaustive checker 1
+//
+// TIER 2 NEEDS BOUNDS (D-281, condition (i)): the same square-root claim
+// over UNBOUNDED inputs is `unknown` at tier 1 and has no twin -- an input
+// no hypothesis bounds may be NaN or infinite, which the Real abstraction
+// cannot speak of -- so the row stays `budget` and the verified build
+// refuses the `prove` (D-269).
+mod:flt_unbounded;
+
+func:hyp = flt64(flt64:a, flt64:b) never fails {
+    flt64:s = #sqrt(a * a + b * b);
+    prove(s >= 0.0f64);
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:h = raw hyp(1.5f64, 2.0f64);
+    if (h < 2.4f64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

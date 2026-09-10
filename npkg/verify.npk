@@ -58,9 +58,24 @@ pub struct:VRow = {
     string:role;
     int64:group;
     int64:traps;
+    string:tier;        // THE TIER (D-281, 1.5.4b step 3): the encoder's word for the cone's theory
 };
 
 // --- reading the compiler's files --------------------------------------------------------
+
+// `k1,k2,...` of `index.t2.txt` (D-281): the ordinals a twin file decides.
+func:split_commas = List<string>(string:line) never fails {
+    List<string>:out = raw list_init::<string>(4i64);
+    int64:start = 0i64;
+    for (int64:i in 0i64...line.len) {
+        if (line.ptr[i] == 44u8) {
+            drop strlist_push(@out, raw text_slice(line, start, i));
+            start = i + 1i64;
+        }
+    }
+    drop strlist_push(@out, raw text_slice(line, start, line.len));
+    pass out;
+};
 
 func:split_tabs = List<string>(string:line) never fails {
     List<string>:out = raw list_init::<string>(6i64);
@@ -86,7 +101,7 @@ pub func:read_rows = List<VRow>(string:dir) {
         string:ln = raw strlist_view(lines, i);
         if (ln.len == 0i64) { continue; }
         List<string>:f = raw split_tabs(ln);
-        if (f.count != 10i64) { continue; }
+        if (f.count != 11i64) { continue; }
         Result<int64>:k = text_int(raw strlist_view(f, 1i64));
         if (k.is_error) { continue; }
         Result<int64>:grp = text_int(raw strlist_view(f, 8i64));
@@ -100,7 +115,7 @@ pub func:read_rows = List<VRow>(string:dir) {
                        symbol: raw strlist_copy(f, 5i64), verdict: 0i32,
                        checker: raw text_eq(raw strlist_view(f, 4i64), "c"),
                        site: raw strlist_copy(f, 6i64), role: raw strlist_copy(f, 7i64),
-                       group: grp.value, traps: trp.value };
+                       group: grp.value, traps: trp.value, tier: raw strlist_copy(f, 10i64) };
         drop list_push(@rows, move(r));
     }
     pass rows;
@@ -205,6 +220,82 @@ pub async func:z3_decide = NIL(Ctx->:c, string:z3, string:dir, List<VRow>->:rows
             pass NIL;
         }
     }
+    // TIER 2 (D-281, 1.5.4b step 3): a `budget` row with a twin in
+    // `NNNN.t2.smt2` is asked once more there; `unsat` discharges it, tier
+    // `real`. The harness's pass, line for line.
+    Result<cstring>:t2c = to_cstring(raw path_join(dir, "index.t2.txt"));
+    if (t2c.is_error) { fail t2c.err; }
+    if (path_exists(t2c.value)) {
+        Result<string>:t2t = read_file(t2c.value);
+        if (t2t.is_error) { fail t2t.err; }
+        List<string>:t2l = raw text_lines(t2t.value);
+        for (int64:li in 0i64...t2l.count) {
+            string:ln = raw strlist_view(t2l, li);
+            if (ln.len == 0i64) { continue; }
+            List<string>:f = raw split_tabs(ln);
+            if (f.count != 3i64) {
+                drop list_push(fl, string_concat(name, ": an index.t2.txt line is not `NNNN count k1,k2,...`"));
+                pass NIL;
+            }
+            string:fno2 = raw strlist_copy(f, 0i64);
+            Result<int64>:cnt = text_int(raw strlist_view(f, 1i64));
+            if (cnt.is_error) { drop list_push(fl, string_concat(name, ": index.t2.txt: a count is not a number")); pass NIL; }
+            List<string>:kts = raw split_commas(raw strlist_view(f, 2i64));
+            if (kts.count != cnt.value) {
+                drop list_push(fl, string_concat(name, ": index.t2.txt lists a different number of ordinals than its count"));
+                pass NIL;
+            }
+            // the rows named, by (file, k); any budget among them?
+            List<int64>:idx = raw list_init::<int64>(4i64);
+            bool:any_budget = false;
+            for (int64:ki in 0i64...kts.count) {
+                Result<int64>:kv = text_int(raw strlist_view(kts, ki));
+                if (kv.is_error) { drop list_push(fl, string_concat(name, ": index.t2.txt: an ordinal is not a number")); pass NIL; }
+                int64:found = 0i64 - 1i64;
+                for (int64:ri in 0i64...rows.count) {
+                    if ((rows.items[ri].k == kv.value) && (raw text_eq(string_from_bytes(rows.items[ri].fno.ptr, rows.items[ri].fno.len), fno2))) { found = ri; }
+                }
+                drop list_push(@idx, found);
+                if (found >= 0i64) { if (rows.items[found].verdict == (raw OV_BUDGET())) { any_budget = true; } }
+            }
+            if (!any_budget) { continue; }
+            List<string>:args2 = raw strlist_clone(c.m.z3_options);
+            drop strlist_push(@args2, "-smt2");
+            drop strlist_push(@args2, raw path_join(dir, string_concat(fno2, ".t2.smt2")));
+            Result<Run>:r2 = await run_argv(z3, args2, c.t.env, raw duration_secs(120i64 + (10i64 * cnt.value)));
+            if (r2.is_error) { fail r2.err; }
+            Run:run2 = move(r2.value);
+            if (run2.timed_out) {
+                drop list_push(fl, string_concat(name, ": z3 exceeded the wall-clock net on a tier-2 twin -- not a verdict (P-13)"));
+                pass NIL;
+            }
+            List<string>:ans2 = raw text_lines(run2.x.out);
+            int64:got2 = 0i64;
+            for (int64:ai in 0i64...ans2.count) {
+                string:a2 = raw text_trim(raw strlist_view(ans2, ai));
+                if (a2.len == 0i64) { continue; }
+                bool:known = (raw text_eq(a2, "unsat")) || (raw text_eq(a2, "sat")) || (raw text_eq(a2, "unknown"));
+                if (!known) {
+                    drop list_push(fl, string_concat(name, ": z3 said something other than a verdict on a tier-2 twin"));
+                    pass NIL;
+                }
+                if (got2 < idx.count) {
+                    int64:ri3 = idx.items[got2];
+                    if (ri3 >= 0i64) {
+                        if ((rows.items[ri3].verdict == (raw OV_BUDGET())) && (raw text_eq(a2, "unsat"))) {
+                            rows.items[ri3].verdict = raw OV_DISCHARGED();
+                            rows.items[ri3].tier = "real";
+                        }
+                    }
+                }
+                got2 = got2 + 1i64;
+            }
+            if (got2 != cnt.value) {
+                drop list_push(fl, string_concat(name, ": z3 answered a different number of times than the tier-2 twin's count"));
+                pass NIL;
+            }
+        }
+    }
     for (int64:ri2 in 0i64...rows.count) {
         if (!rows.items[ri2].encoded) {
             if (rows.items[ri2].checker) { rows.items[ri2].verdict = raw OV_CHECKER(); }
@@ -230,6 +321,8 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
         k = string_concat(k, raw ov_name(rows.items[i].verdict));
         k = string_concat(k, "\t");
         k = string_concat(k, string_from_bytes(rows.items[i].role.ptr, rows.items[i].role.len));
+        k = string_concat(k, "\t");
+        k = string_concat(k, string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len));
         drop list_push(@keys, move(k));
     }
     List<string>:sorted = raw strlist_sorted_unique(keys);
@@ -245,7 +338,7 @@ pub func:manifest_of = string(Ctx->:c, List<VRow>:rows) never fails {
         for (int32:kk in 1i32...((raw OK_COUNT()) + 1i32)) {
             if (raw text_eq(raw ok_name(kk), raw strlist_view(f, 2i64))) { kind = kk; }
         }
-        string:tier = "int";
+        string:tier = raw strlist_copy(f, 5i64);
         if ((v == (raw OV_UNENCODED())) || (v == (raw OV_CHECKER()))) { tier = "-"; }
         string:elision = raw elision_word(kind, v, raw strlist_view(f, 4i64));
         drop sink_write(@sk, raw man_row(raw strlist_view(f, 1i64), kind, tier, v, elision,
@@ -770,6 +863,20 @@ async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, Li
                 if (rows.items[j].encoded) { kth = kth + 1i64; }
             }
         }
+        // A ROW TIER 2 DECIDED (D-281): tier 1 answered `unknown` there, so
+        // its core is the twin's business; the report says which tier decided.
+        if (raw text_eq(string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len), "real")) {
+            report = string_concat(report, "== ");
+            report = string_concat(report, string_from_bytes(rows.items[i].symbol.ptr, rows.items[i].symbol.len));
+            report = string_concat(report, " ");
+            report = string_concat(report, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
+            report = string_concat(report, " discharged real ");
+            report = string_concat(report, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
+            report = string_concat(report, "\n   decided at tier 2 (the Real-interval twin, `");
+            report = string_concat(report, fno);
+            report = string_concat(report, ".t2.smt2`); tier 1 answered unknown under the profile\n");
+            continue;
+        }
         string:q = "(set-option :produce-models true)\n(set-option :produce-unsat-cores true)\n";
         q = string_concat(q, raw file_base(ft.value));
         q = string_concat(q, "(push)\n");
@@ -796,6 +903,8 @@ async func:explain_run = NIL(Ctx->:c, string:z3, string:dir, List<VRow>:rows, Li
         report = string_concat(report, string_from_bytes(rows.items[i].kind.ptr, rows.items[i].kind.len));
         report = string_concat(report, " ");
         report = string_concat(report, raw ov_name(v));
+        report = string_concat(report, " ");
+        report = string_concat(report, string_from_bytes(rows.items[i].tier.ptr, rows.items[i].tier.len));
         report = string_concat(report, " ");
         report = string_concat(report, string_from_bytes(rows.items[i].hash.ptr, rows.items[i].hash.len));
         report = string_concat(report, "\n");

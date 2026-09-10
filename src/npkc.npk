@@ -261,6 +261,21 @@ func:obl_write_dir = bool(string:dir, ObTable->:t) never fails {
     if (rc.is_error) { pass false; }
     Result<NIL>:rw = write_file(rc.value, raw obl_rows_text(t));
     if (rw.is_error) { pass false; }
+    // THE TIER-2 TWINS (D-281, 1.5.4b step 3): `NNNN.t2.smt2` and
+    // `index.t2.txt`, written only where a row qualified.
+    for (int64:j in 0i64...t.t2_names.count) {
+        string:tn = string_concat(string_from_bytes(t.t2_names.items[j].ptr, t.t2_names.items[j].len), ".t2.smt2");
+        Result<cstring>:tc = to_cstring(raw path_join(abs, tn));
+        if (tc.is_error) { pass false; }
+        Result<NIL>:tw = write_file(tc.value, string_from_bytes(t.t2_texts.items[j].ptr, t.t2_texts.items[j].len));
+        if (tw.is_error) { pass false; }
+    }
+    if (t.t2_index.count > 0i64) {
+        Result<cstring>:xc = to_cstring(raw path_join(abs, "index.t2.txt"));
+        if (xc.is_error) { pass false; }
+        Result<NIL>:xw = write_file(xc.value, raw obl_t2_index_text(t));
+        if (xw.is_error) { pass false; }
+    }
     pass true;
 };
 

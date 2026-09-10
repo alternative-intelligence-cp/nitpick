@@ -1,0 +1,33 @@
+// expect-error: NITPICK-VERIFY-001
+// expect-obligation: prove open 1
+// expect-obligation: failsafe-post discharged 7
+// expect-obligation: exhaustive checker 1
+//
+// A FALSE FLOAT PROPOSITION IS `open` (D-281): `a + b > a` fails for a
+// non-positive `b` and for NaN alike, and QF_FP finds the countermodel at
+// once -- `sat` at tier 1 is a countermodel in the real semantics, never
+// retried at tier 2. The verified build refuses the `prove` (D-269).
+mod:flt_open;
+
+func:grows = flt64(flt64:a, flt64:b) never fails {
+    prove(a + b > a);
+    pass (a + b);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:s = raw grows(1.0f64, 2.0f64);
+    if (s < 2.9f64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,46 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 1
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// FLOATS, TIER 2 (D-281, 1.5.4b step 3): `#sqrt(a*a + b*b) >= 0.0` under
+// bounded `a` and `b` is `unknown` to QF_FP at the rlimit (the bit-blasted
+// multiplies), and its twin -- every float a Real, every operation a fresh
+// Real within `eps*|v| + eta` of the exact result, the square root
+// `r >= 0` with `r^2` inside `v*(1 -+ eps)^2`, the goal conjoined with
+// "no operation overflows and no root's argument is negative" -- is `unsat`
+// in milliseconds: `discharged`, tier `real` in the manifest. The three
+// soundness conditions hold: both inputs are bounded by the rule's literal
+// comparisons, every intermediate's magnitude is part of what is proven,
+// and the goal is one comparison.
+mod:flt_tier2;
+
+Rules<flt64>:r_unit = { $ >= 1.0f64, $ <= 2.0f64 };
+
+func:hyp = flt64(limit<r_unit> flt64:a, limit<r_unit> flt64:b) never fails {
+    flt64:s = #sqrt(a * a + b * b);
+    prove(s >= 0.0f64);
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:h = raw hyp(1.5f64, 2.0f64);
+    if (h < 2.4f64) { exit 1i32; }
+    if (h > 2.6f64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 25i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

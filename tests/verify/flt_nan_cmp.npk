@@ -1,0 +1,33 @@
+// expect-error: NITPICK-VERIFY-001
+// expect-obligation: prove open 1
+// expect-obligation: failsafe-post discharged 7
+// expect-obligation: exhaustive checker 1
+//
+// `==` IS `fp.eq` (D-281): a NaN is not equal to itself, as `fcmp oeq` says,
+// and a float parameter may be NaN, so `prove(a == a)` is `open` -- the
+// encoding reads the emitter's predicates, NaN and all, and no Real
+// abstraction is asked (condition (iii): `fp.eq` stays tier 1). The
+// verified build refuses the `prove` (D-269).
+mod:flt_nan_cmp;
+
+func:same = bool(flt64:a) never fails {
+    prove(a == a);
+    pass (a == a);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if (!(raw same(1.5f64))) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

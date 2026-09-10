@@ -1,0 +1,45 @@
+// expect-exit: 0
+// expect-obligation: prove discharged 1
+// expect-obligation: limit open 2
+// expect-obligation: limit-subsume discharged 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+//
+// FLOATS, TIER 1 (D-281, 1.5.4b step 3): a `flt64` is a term of the IEEE
+// sort and every operation the emitter's instruction under SMT-LIB's IEEE
+// semantics. The rule's two clauses are facts about each parameter, the
+// quotient is `fp.div RNE`, and the `prove` discharges in QF_FP -- the row's
+// tier reads `fp`. The two entry write points are `open` (an opaque first
+// version, as an integer's would be); `main` passes literals, so the call's
+// `limit-subsume` row discharges.
+mod:flt_tier1;
+
+Rules<flt64>:r_unit = { $ >= 1.0f64, $ <= 2.0f64 };
+
+func:ratio = flt64(limit<r_unit> flt64:a, limit<r_unit> flt64:b) never fails {
+    flt64:q = a / b;
+    prove(q >= 0.5f64);
+    pass q;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:q = raw ratio(1.5f64, 2.0f64);
+    if (q < 0.7f64) { exit 1i32; }
+    if (q > 0.8f64) { exit 2i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (LimitViolated)  { exit 25i32; },
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

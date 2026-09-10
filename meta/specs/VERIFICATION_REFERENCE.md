@@ -641,6 +641,45 @@ elide (D-219); the subcycle column says where its rows are produced.
 > an `invariant` at a head): the check that runs the guard is what that
 > row's discharge removes (DEF-33).
 
+> **[D-281, 1.5.4b step 3 (2026-09-10).]** FLOATS ARE TERMS IN TWO TIERS, and
+> the manifest's tier column is fed by the encoder. Tier 1: a `flt32`/`flt64`
+> value is a term of the IEEE sort (`(_ FloatingPoint 8 24)` / `(_
+> FloatingPoint 11 53)`) and every operation is the emitter's instruction
+> under SMT-LIB's IEEE semantics — `fp.add`/`sub`/`mul`/`div` under RNE,
+> `fp.neg`, `#sqrt` as `fp.sqrt RNE`, the ORDERED predicates the emitter's
+> `fcmp` writes (`==` is `fp.eq`, `!=` its negation, so NaN compares as the
+> machine does), a literal `to_fp RNE` of the exact rational its decimal
+> text denotes (a `flt32` literal rounded twice, as the emitter's double-then-
+> `fptrunc` road does), an integer entering `to_fp RNE (to_real x)`, a
+> widening exact, a narrowing `=>!` rounded; `%` (`frem`) and a float LEAVING
+> to an integer stay opaque (1.5.8's `cast-range`); `flt128` is storage
+> (D-143) and has no term. Every float value is NAMED and its definition
+> recorded, so the twin below reads a flat list. Floats never trap: no row
+> is theirs — what the terms buy is that a `limit`, a contract, an
+> `invariant`, a `prove` and a `TbbErr` guard over a float entering `tbb` or
+> a ternary kind are encoded rows. THE TIER COLUMN: `rows.txt`'s eleventh
+> field, `int` for a cone in Int/Bool, `bv` where a bit-vector crossing is in
+> it, `fp` where a float sort is, `-` for an unencoded or checker row; both
+> runners carry it into the manifest. TIER 2, the Real-interval abstraction
+> (D-218 (5)): for every `fp` row the encoder also writes a twin query
+> (`NNNN.t2.smt2`, `index.t2.txt` naming its rows) in which every float is a
+> Real — an operation a fresh Real within `eps·|v| + eta` of its exact
+> result (`2^-53`/`2^-1074`, `2^-24`/`2^-149`), a square root `r >= 0` with
+> `r²` inside `v·(1 ∓ eps)²`, negation and widening exact — under THREE
+> CONDITIONS, else no twin: (i) every float symbol no hypothesis defines is
+> bounded below and above by comparisons against literals (a rule, a
+> `requires`, a path condition — false for NaN and, both together, for the
+> infinities); (ii) every operation's magnitude within the normal range, a
+> divisor nonzero, a root's argument non-negative, CONJOINED to the goal, so
+> `unsat` proves no overflow, infinity or NaN arises along with the property;
+> (iii) the goal a comparison or a Boolean combination of comparisons — an
+> `fp.eq`, with its NaN reading, stays tier 1. The runner asks tier 1 first
+> and, for a `budget` row with a twin, the twin once under the same profile:
+> `unsat` discharges it and the tier reads `real`; a tier-1 `sat` is a
+> countermodel and is never retried. `flt_tier2.npk` is the shape D-218 (5)
+> was written for: `#sqrt(a*a + b*b) >= 0.0` under bounded `a`, `b` —
+> `unknown` in QF_FP at the rlimit, `unsat` in the twin in milliseconds.
+
 The verdict column is `discharged` (unsat), `open` (sat — a counterexample
 exists under the encoding's hypotheses; not a refutation of the program, a
 guard that stays), `budget` (unknown under the pinned `rlimit`), `unencoded`

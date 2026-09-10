@@ -119,6 +119,11 @@ pub struct:SmtSym = {
     // callee's symbol, declared `(declare-fun |f| <sorts> <sort>)` -- its
     // argument sorts as one text, "" for a constant.
     string:sorts;
+    // A FLOAT SYMBOL'S SORT (1.5.4b step 3, D-281): `(_ FloatingPoint 8 24)`
+    // or `(_ FloatingPoint 11 53)`; "" for an Int or a Bool. No range axiom:
+    // a float symbol may be any value of its sort, NaN and the infinities
+    // included, and the goal's own conditions say otherwise where they do.
+    string:fsort;
 };
 
 // One hypothesis: its text and the symbols it mentions (by index into `syms`).
@@ -146,6 +151,7 @@ pub struct:SmtObl = {
     int32:region;            // the branch region of the site
     bool:encoded;            // false: an `unencoded` row (P-12)
     bool:checker;            // THE FRONTEND DECIDED IT (1.5.4 step 4, L-20): no query, verdict `checker`
+    string:tier;             // filled by finish (D-281): `int`, `bv`, `fp`; `-` for an unencoded or checker row
     List<int32>:cone_syms;   // filled by finish: symbols in the cone, ascending
     List<int32>:cone_hyps;   // filled by finish: hypotheses in the cone, in order
     string:canon;            // filled by finish: the canonical text
@@ -171,6 +177,22 @@ struct:Term = {
     List<int32>:syms;
 };
 
+// A FLOAT OPERATION'S DEFINITION (1.5.4b step 3, D-281): every float value
+// the walk builds is NAMED -- a fresh symbol of the float sort defined equal
+// to the operation -- and recorded here by shape, so the tier-2 translation
+// (the Real-interval abstraction) reads a flat list of `sym = op(a, b)`
+// rather than parsing nested terms. `op`: `lit` (a = the exact rational of
+// the literal's decimal text), `add`/`sub`/`mul`/`div` (a, b symbols),
+// `neg`, `sqrt`, `int` (a = an Int term, `to_real` of it), `widen`/`narrow`
+// (a = the float symbol crossing widths).
+pub struct:FpDef = {
+    string:sym;
+    string:op;
+    string:a;
+    string:b;
+    int32:ty;
+};
+
 pub struct:Encoder = {
     Ast->:ast;
     ExprTypes->:et;
@@ -193,6 +215,8 @@ pub struct:Encoder = {
     bool:nonlinear;            // a non-literal `*` or a non-literal divisor appeared
     bool:uses_sdiv;            // a signed division term appeared (the define-funs are needed)
     bool:uses_bv;              // a bit-vector crossing appeared (D-280): the logic is `ALL`
+    bool:uses_fp;              // a float term appeared (D-281): the logic is `ALL`
+    List<FpDef>:fpdefs;        // the float definitions, in order (tier 2 reads them)
     List<int32>:region_parent; // branch regions: each one's parent (the root's is -1)
     int32:cur_region;          // the region the walk is in
     // A REGION'S CONDITION AND ITS FIRST HYPOTHESIS (1.5.4 step 2, L-7):
@@ -331,7 +355,7 @@ pub func:enc_init = Encoder(Ast->:ast, ExprTypes->:et, SymbolTable->:tab, TypeTa
                   ver_name: raw list_init::<int32>(16i64),
                   ver_next: raw list_init::<int32>(16i64),
                   escaped: raw list_init::<int32>(4i64),
-                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false,
+                  anon: 0i32, ordinals: move(ords), nonlinear: false, uses_sdiv: false, uses_bv: false, uses_fp: false, fpdefs: raw list_init::<FpDef>(4i64),
                   region_parent: move(rp), cur_region: 0i32,
                   region_cond: move(rc), region_hyp0: move(rh), last_give: raw term_none(),
                   dollars: raw list_init::<Term>(4i64),
@@ -403,6 +427,49 @@ func:is_twisted = bool(Encoder->:e, int32:ty) never fails {
 func:is_scalar = bool(Encoder->:e, int32:ty) never fails {
     if (raw is_word(e, ty)) { pass true; }
     pass (raw is_twisted(e, ty));
+};
+
+// A FLOAT WITH A TERM (1.5.4b step 3, D-281): `flt32` and `flt64`, the two
+// widths that compute -- `flt128` is a storage format (D-143) with no
+// arithmetic and no comparison, and gets no term. `is_termed` is everything
+// that gets a symbol: a word, a twisted value, a bool, a float.
+func:is_float = bool(Encoder->:e, int32:ty) never fails {
+    if (ty == 0i32) { pass false; }
+    if ((raw type_kind(e.types, ty)) != (raw TY_FLOAT())) { pass false; }
+    int32:fb = raw type_int_bits(e.types, ty);
+    pass ((fb == 32i32) || (fb == 64i32));
+};
+
+func:fp_sort = string(Encoder->:e, int32:ty) never fails {
+    if (!(raw is_float(e, ty))) { pass ""; }
+    if ((raw type_int_bits(e.types, ty)) == 32i32) { pass "(_ FloatingPoint 8 24)"; }
+    pass "(_ FloatingPoint 11 53)";
+};
+
+// `eb sb` -- the `to_fp` indices of the width.
+func:fp_eb_sb = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_int_bits(e.types, ty)) == 32i32) { pass "8 24"; }
+    pass "11 53";
+};
+
+func:is_termed = bool(Encoder->:e, int32:ty) never fails {
+    if (raw is_scalar(e, ty)) { pass true; }
+    if (raw is_bool(e, ty)) { pass true; }
+    pass (raw is_float(e, ty));
+};
+
+// Does `s` contain `needle`? (The tier of a row is read off its canonical text.)
+func:has_sub = bool(string:s, string:needle) never fails {
+    if (needle.len == 0i64) { pass true; }
+    if (s.len < needle.len) { pass false; }
+    for (int64:i in 0i64..(s.len - needle.len)) {
+        bool:same = true;
+        for (int64:j in 0i64...needle.len) {
+            if (s.ptr[i + j] != needle.ptr[j]) { same = false; break; }
+        }
+        if (same) { pass true; }
+    }
+    pass false;
 };
 
 // THE SENTINEL AND THE VALID BOUNDS of a twisted type: ERR is the carrier's
@@ -509,7 +576,7 @@ func:hyp_push_in = NIL(Encoder->:e, string:text, List<int32>:syms, int32:region)
 // Declare a constant; an integer one gets its range axiom as a hypothesis.
 func:sym_new = int32(Encoder->:e, string:text, int32:ty) never fails {
     bool:b = raw is_bool(e, ty);
-    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b, sorts: "" };
+    SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: b, sorts: "", fsort: raw fp_sort(e, ty) };
     drop list_push(@e.syms, move(s));
     int32:idx = (e.syms.count - 1i64) =>! int32;
     if (raw is_word(e, ty)) {
@@ -542,18 +609,19 @@ func:sym_find = int32(Encoder->:e, string:text) never fails {
 // text, with its argument sorts and its result sort; a function symbol rides
 // in a term's symbol list like a constant, so the cone closure declares it
 // where an application appears.
-func:sym_new_fun = int32(Encoder->:e, string:text, string:sorts, bool:ret_bool) never fails {
+func:sym_new_fun = int32(Encoder->:e, string:text, string:sorts, bool:ret_bool,
+                         string:ret_fsort) never fails {
     int32:have = raw sym_find(e, text);
     if (have >= 0i32) { pass have; }
     SmtSym:s = SmtSym{ text: string_concat(text, ""), is_bool: ret_bool,
-                       sorts: string_concat(sorts, "") };
+                       sorts: string_concat(sorts, ""), fsort: string_concat(ret_fsort, "") };
     drop list_push(@e.syms, move(s));
     pass ((e.syms.count - 1i64) =>! int32);
 };
 
 // A fresh anonymous opaque symbol of an int or bool type, as a term.
 func:term_opaque = Term(Encoder->:e, int32:ty) never fails {
-    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!(raw is_termed(e, ty))) { pass (raw term_none()); }
     e.anon = e.anon + 1i32;
     string:nm = raw smt_sym("_", e.anon => int64);
     int32:idx = raw sym_new(e, nm, ty);
@@ -571,11 +639,11 @@ func:term_none = Term() never fails {
 // three times, and the raw result may lie OUTSIDE the type's range -- that
 // is what the test decides -- so a typed symbol's axiom would be a false
 // hypothesis. Int-sorted; never a Bool.
-func:term_name = Term(Encoder->:e, Term:t) never fails {
+func:term_name = Term(Encoder->:e, Term:t, string:fsort) never fails {
     if (!(t.ok && (!t.is_bool))) { pass (raw term_none()); }
     e.anon = e.anon + 1i32;
     string:nm = raw smt_sym("_", e.anon => int64);
-    SmtSym:s = SmtSym{ text: string_concat(nm, ""), is_bool: false, sorts: "" };
+    SmtSym:s = SmtSym{ text: string_concat(nm, ""), is_bool: false, sorts: "", fsort: string_concat(fsort, "") };
     drop list_push(@e.syms, move(s));
     int32:idx = (e.syms.count - 1i64) =>! int32;
     List<int32>:one = raw list_init::<int32>(1i64);
@@ -657,7 +725,7 @@ func:is_escaped = bool(Encoder->:e, int32:name) never fails {
 func:bind_define = NIL(Encoder->:e, int32:name, int32:ty, Term:t, int32:rule,
                        bool:substitution) never fails {
     int32:sym = 0i32 - 1i32;
-    bool:named = (raw is_scalar(e, ty)) || (raw is_bool(e, ty));   // a flag word (D-279) and a twisted value (D-278) are named too
+    bool:named = raw is_termed(e, ty);   // a flag word (D-279), a twisted value (D-278) and a float (D-281) are named too
     if ((!substitution) && (raw is_escaped(e, name))) { named = false; }
     if (named) {
         string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
@@ -683,7 +751,7 @@ func:bind_assign = NIL(Encoder->:e, int32:name, Term:t) never fails {
     int64:i = raw bind_find(e, name);
     if (i < 0i64) { pass NIL; }
     int32:ty = e.binds.items[i].type_id;
-    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass NIL; }
+    if (!(raw is_termed(e, ty))) { pass NIL; }
     if (raw is_escaped(e, name)) { pass NIL; }
     string:nm = raw smt_sym(raw intern_get(e.interns, name), raw version_next(e, name));
     int32:sym = raw sym_new(e, nm, ty);
@@ -706,7 +774,7 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         int64:i = raw bind_find(e, names.items[k]);
         if (i < 0i64) { continue; }
         int32:ty = e.binds.items[i].type_id;
-        if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { continue; }
+        if (!(raw is_termed(e, ty))) { continue; }
         if (raw is_escaped(e, names.items[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names.items[k]),
                                 raw version_next(e, names.items[k]));
@@ -766,7 +834,7 @@ func:record_at = NIL(Encoder->:e, int32:kind, string:goal, List<int32>:syms, int
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: role, group: group, traps: traps,
                        line: at.line, col: at.col, region: e.cur_region, encoded: encoded,
-                       checker: false,
+                       checker: false, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
                        canon: "", hash: "", discharged: false };
@@ -786,7 +854,7 @@ func:record_checker = NIL(Encoder->:e, int32:kind, int32:space, int32:site, Span
                        hyps: e.hyps.count, site: site, space: space, ordinal: ord,
                        ctx: e.clause_ctx, role: raw ROLE_GUARD(), group: site, traps: 0i32,
                        line: at.line, col: at.col, region: e.cur_region, encoded: false,
-                       checker: true,
+                       checker: true, tier: "",
                        cone_syms: raw list_init::<int32>(1i64),
                        cone_hyps: raw list_init::<int32>(1i64),
                        canon: "", hash: "", discharged: false };
@@ -906,7 +974,7 @@ func:tw_taint = Term(Encoder->:e, int32:ty, Term:a, Term:b) never fails {
 
 // `(ite bad MIN v)` with `v` named once.
 func:tw_pick = Term(Encoder->:e, int32:ty, Term:bad, Term:v) never fails {
-    Term:nv = raw term_name(e, v);
+    Term:nv = raw term_name(e, v, "");
     if (!nv.ok) { pass (raw term_none()); }
     pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", bad.text, raw tw_min(e, ty), nv.text),
                syms: raw syms_union(bad.syms, nv.syms) };
@@ -915,7 +983,7 @@ func:tw_pick = Term(Encoder->:e, int32:ty, Term:bad, Term:v) never fails {
 // The saturation: ERR when tainted or when the named raw value leaves the
 // type's valid range.
 func:tw_sat = Term(Encoder->:e, int32:ty, Term:taint, Term:v) never fails {
-    Term:nv = raw term_name(e, v);
+    Term:nv = raw term_name(e, v, "");
     if (!nv.ok) { pass (raw term_none()); }
     Term:lo = raw term_lit(raw tw_lo(e, ty), false);
     Term:hi = raw term_lit(raw tw_hi(e, ty), false);
@@ -1017,12 +1085,12 @@ func:twisted_text_literal = Term(Encoder->:e, string:text, int32:ty) never fails
 func:wrap_word = Term(Encoder->:e, int32:to, Term:v, int32:need) never fails {
     int32:wb = raw word_bits(e, to);
     if ((raw word_signed(e, to)) && (wb >= need)) { pass (raw term_copy(v)); }
-    Term:nv = raw term_name(e, v);
+    Term:nv = raw term_name(e, v, "");
     if (!nv.ok) { pass (raw term_none()); }
     string:full = raw pow2_decimal(wb => int64);
     Term:m = raw term_app2("mod", nv, raw term_lit(string_concat(full, ""), false), false);
     if (!(raw word_signed(e, to))) { pass m; }
-    Term:nm = raw term_name(e, m);
+    Term:nm = raw term_name(e, m, "");
     if (!nm.ok) { pass (raw term_none()); }
     string:half = raw pow2_decimal((wb => int64) - 1i64);
     pass Term{ ok: true, is_bool: false,
@@ -1152,8 +1220,48 @@ func:twisted_cast = Term(Encoder->:e, Term:t, int32:from, int32:to, bool:uncheck
     }
     if (sk == (raw TY_FLOAT())) {
         bool:absorbs = ((dk == (raw TY_TFP())) || (dk == (raw TY_DIM())));
-        if ((!unchecked) && (!absorbs)) { drop record_unencoded_err_exit(e, site, at); }
-        pass (raw term_opaque(e, to));
+        if (absorbs) { pass (raw term_opaque(e, to)); }
+        // A FLOAT ENTERING `tbb` OR A TERNARY KIND (D-281 over step 2's
+        // handoff): the emitter compares in DOUBLE against strict bounds --
+        // `fcmp ogt`/`olt`, false for NaN -- traps under `=>` and absorbs to
+        // ERR under `=>!`; the value is the double truncated toward zero.
+        // A `flt32` widens first, as the emitter's `fpext` does.
+        bool:fok = a.ok && (raw is_float(e, from));
+        if (!fok) {
+            if (!unchecked) { drop record_unencoded_err_exit(e, site, at); }
+            pass (raw term_opaque(e, to));
+        }
+        int32:t64 = raw tt_float(e.types, 64i32);
+        Term:f = raw term_copy(a);
+        if ((raw type_int_bits(e.types, from)) == 32i32) {
+            f = raw fp_make(e, "widen", t64, a.text, "", raw smt_app1("(_ to_fp 11 53) RNE", a.text), a.syms);
+        }
+        string:mag = "";
+        if (dk == (raw TY_TBB())) {
+            mag = string_concat(raw pow2_decimal(((raw type_int_bits(e.types, to)) => int64) - 1i64), ".0");
+        } else {
+            mag = string_concat(int_to_string((raw tw_bound(e, to)) + 1i64), ".0");
+        }
+        string:nmag = raw smt_app1("-", mag);
+        Term:hi = raw fp_make(e, "lit", t64, mag, "", raw smt_app1("(_ to_fp 11 53) RNE", mag), raw list_init::<int32>(1i64));
+        Term:lo = raw fp_make(e, "lit", t64, nmag, "", raw smt_app1("(_ to_fp 11 53) RNE", nmag), raw list_init::<int32>(1i64));
+        if (!(f.ok && hi.ok && lo.ok)) {
+            if (!unchecked) { drop record_unencoded_err_exit(e, site, at); }
+            pass (raw term_opaque(e, to));
+        }
+        Term:inr = raw term_app2("and", raw term_app2("fp.gt", f, lo, true), raw term_app2("fp.lt", f, hi, true), true);
+        string:r = raw smt_app1("fp.to_real", f.text);
+        string:tz = raw smt_app3("ite", raw smt_app2(">=", r, "0.0"), raw smt_app1("to_int", r),
+                                 raw smt_app2("-", "0", raw smt_app1("to_int", raw smt_app2("-", "0.0", r))));
+        Term:val = raw term_name(e, Term{ ok: true, is_bool: false, text: move(tz),
+                                          syms: raw syms_union(f.syms, raw list_init::<int32>(1i64)) }, "");
+        if (!val.ok) { pass (raw term_opaque(e, to)); }
+        if (!unchecked) {
+            drop record_err_exit(e, inr.text, inr.syms, site, at);
+            pass val;
+        }
+        pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", inr.text, val.text, raw tw_min(e, to)),
+                   syms: raw syms_union(inr.syms, val.syms) };
     }
     if (!(raw is_int(e, from))) { pass (raw term_none()); }
     if (!a.ok) { pass (raw term_opaque(e, to)); }
@@ -1185,6 +1293,520 @@ func:twisted_cast = Term(Encoder->:e, Term:t, int32:from, int32:to, bool:uncheck
     }
     pass Term{ ok: true, is_bool: false, text: raw smt_app3("ite", oor2.text, mnd, a.text),
                syms: raw syms_union(oor2.syms, a.syms) };
+};
+
+// --- floats, tier 1 (D-281, 1.5.4b step 3) ----------------------------------------------
+//
+// A `flt32`/`flt64` value is a term of the IEEE sort, and every operation is
+// the emitter's instruction under SMT-LIB's IEEE semantics: `fadd`/`fsub`/
+// `fmul`/`fdiv` are `fp.add`/`fp.sub`/`fp.mul`/`fp.div` under RNE (LLVM's
+// default rounding), `fneg` is `fp.neg`, `#sqrt` is `fp.sqrt RNE`, `frem` is
+// not `fp.rem` (a truncated fmod against IEEE's remainder) and stays opaque;
+// the comparisons are the ORDERED predicates the emitter writes -- `oeq` is
+// `fp.eq`, `une` its negation (NaN != NaN is true, as `fcmp une` says),
+// `olt`/`ole`/`ogt`/`oge` are `fp.lt`/`fp.leq`/`fp.gt`/`fp.geq`, each false
+// on a NaN operand. A literal is `to_fp RNE` of the EXACT rational its
+// decimal text denotes -- what LLVM's own parser rounds from, so the two
+// agree by IEEE's correct-rounding rule -- and a `flt32` literal takes the
+// emitter's road (a double, then `fptrunc`): two roundings, spelled twice.
+// An integer entering a float is `to_fp RNE (to_real x)` (`sitofp`/
+// `uitofp`); a widening `flt32 => flt64` is exact, a narrowing `=>!` rounds;
+// a float LEAVING to an integer stays opaque until 1.5.8's `cast-range`.
+// Every float value is NAMED (`fp_make`) and its definition recorded
+// (`fpdefs`) for the tier-2 translation. Floats never trap (D-007): no row
+// is recorded here; what these terms buy is that a `limit`, a contract, an
+// `invariant` and a `prove` over floats are encoded rows.
+
+// The exact rational a decimal literal denotes: `(/ N 10^k)` or `(* N 10^k)`
+// from the digits and the exponent, the type suffix cut.
+func:decimal_to_real = string(string:txt) never fails {
+    string:digits = "";
+    int64:frac = 0i64;
+    int64:ex = 0i64;
+    bool:negex = false;
+    int32:st = 0i32;   // 0 whole, 1 fraction, 2 exponent
+    for (int64:i in 0i64...txt.len) {
+        uint8:c = txt.ptr[i];
+        if (c == 102u8) { break; }                      // 'f': the suffix
+        if (c == 46u8) { st = 1i32; continue; }           // '.'
+        if ((c == 101u8) || (c == 69u8)) { st = 2i32; continue; }   // 'e' / 'E'
+        if (c == 45u8) { negex = true; continue; }        // '-'
+        if (c == 43u8) { continue; }                      // '+'
+        if ((c < 48u8) || (c > 57u8)) { continue; }
+        if (st == 2i32) { ex = ex * 10i64 + ((c - 48u8) => int64); continue; }
+        if (st == 1i32) { frac = frac + 1i64; }
+        if ((digits.len == 0i64) && (c == 48u8)) { continue; }   // leading zeros
+        digits = string_concat(digits, raw slice_proven(txt, i, i + 1i64));
+    }
+    if (digits.len == 0i64) { digits = "0"; }
+    if (negex) { ex = 0i64 - ex; }
+    int64:scale = ex - frac;
+    if (scale == 0i64) { pass (string_concat(digits, ".0")); }
+    string:p = "1";
+    int64:mag = scale;
+    if (mag < 0i64) { mag = 0i64 - mag; }
+    for (int64:z in 0i64...mag) { p = string_concat(p, "0"); }
+    if (scale > 0i64) { pass (raw smt_app2("*", string_concat(digits, ".0"), string_concat(p, ".0"))); }
+    pass (raw smt_app2("/", string_concat(digits, ".0"), string_concat(p, ".0")));
+};
+
+// A float value, named and recorded.
+func:fp_make = Term(Encoder->:e, string:op, int32:ty, string:a, string:b, string:text,
+                    List<int32>:syms) never fails {
+    e.uses_fp = true;
+    Term:raw_t = Term{ ok: true, is_bool: false, text: string_concat(text, ""),
+                       syms: raw syms_union(syms, raw list_init::<int32>(1i64)) };
+    Term:nm = raw term_name(e, raw_t, raw fp_sort(e, ty));
+    if (!nm.ok) { pass (raw term_none()); }
+    FpDef:d = FpDef{ sym: string_concat(nm.text, ""), op: string_concat(op, ""),
+                     a: string_concat(a, ""), b: string_concat(b, ""), ty: ty };
+    drop list_push(@e.fpdefs, move(d));
+    pass nm;
+};
+
+func:fp_literal = Term(Encoder->:e, string:txt, int32:ty) never fails {
+    string:r = raw decimal_to_real(txt);
+    List<int32>:none = raw list_init::<int32>(1i64);
+    string:d64 = raw smt_app1("(_ to_fp 11 53) RNE", r);
+    if ((raw type_int_bits(e.types, ty)) == 64i32) { pass (raw fp_make(e, "lit", ty, r, "", d64, none)); }
+    // `flt32`: the emitter parses a double and truncates it (D-143).
+    int32:t64 = raw tt_float(e.types, 64i32);
+    Term:wide = raw fp_make(e, "lit", t64, r, "", d64, none);
+    if (!wide.ok) { pass (raw term_none()); }
+    pass (raw fp_make(e, "narrow", ty, wide.text, "", raw smt_app1("(_ to_fp 8 24) RNE", wide.text), wide.syms));
+};
+
+func:enc_float_binary = Term(Encoder->:e, TokenKind:op, int32:lt, int32:ty, Term:a, Term:b) never fails {
+    Term:ta = raw term_copy(a);
+    Term:tb = raw term_copy(b);
+    if (!ta.ok) { ta = raw term_opaque(e, lt); }
+    if (!tb.ok) { tb = raw term_opaque(e, lt); }
+    if (!(ta.ok && tb.ok)) { pass (raw term_opaque(e, ty)); }
+    if (ta.is_bool || tb.is_bool) { pass (raw term_opaque(e, ty)); }
+    e.uses_fp = true;
+    if (op == TokenKind.OpEqEq)  { pass (raw term_app2("fp.eq", ta, tb, true)); }
+    if (op == TokenKind.OpNotEq) { pass (raw term_not(raw term_app2("fp.eq", ta, tb, true))); }
+    if (op == TokenKind.OpLt)    { pass (raw term_app2("fp.lt", ta, tb, true)); }
+    if (op == TokenKind.OpLtEq)  { pass (raw term_app2("fp.leq", ta, tb, true)); }
+    if (op == TokenKind.OpGt)    { pass (raw term_app2("fp.gt", ta, tb, true)); }
+    if (op == TokenKind.OpGtEq)  { pass (raw term_app2("fp.geq", ta, tb, true)); }
+    string:fop = "";
+    if (op == TokenKind.OpPlus)  { fop = "add"; }
+    if (op == TokenKind.OpMinus) { fop = "sub"; }
+    if (op == TokenKind.OpStar)  { fop = "mul"; }
+    if (op == TokenKind.OpSlash) { fop = "div"; }
+    if (fop.len == 0i64) { pass (raw term_opaque(e, ty)); }
+    string:text = raw smt_app3(string_concat("fp.", fop), "RNE", ta.text, tb.text);
+    pass (raw fp_make(e, fop, lt, ta.text, tb.text, text, raw syms_union(ta.syms, tb.syms)));
+};
+
+// A CAST TOUCHING A FLOAT: `term_none` when it is not one of the three
+// shapes with a term.
+func:float_cast = Term(Encoder->:e, Term:t, int32:from, int32:to) never fails {
+    if ((from == 0i32) || (to == 0i32)) { pass (raw term_none()); }
+    bool:ff = raw is_float(e, from);
+    bool:ft = raw is_float(e, to);
+    if (!(ff || ft)) { pass (raw term_none()); }
+    Term:a = raw term_copy(t);
+    if (!(a.ok && (!a.is_bool))) {
+        a = raw term_none();
+        if (raw is_termed(e, from)) { a = raw term_opaque(e, from); }
+    }
+    if (!a.ok) { pass (raw term_none()); }
+    string:head = string_concat("(_ to_fp ", raw fp_eb_sb(e, to));
+    head = string_concat(head, ") RNE");
+    if (ff && ft) {
+        int32:sb = raw type_int_bits(e.types, from);
+        int32:db = raw type_int_bits(e.types, to);
+        if (sb == db) { pass a; }
+        string:op = "widen";
+        if (db < sb) { op = "narrow"; }
+        pass (raw fp_make(e, op, to, a.text, "", raw smt_app1(head, a.text), a.syms));
+    }
+    if (ft && (raw is_word(e, from))) {
+        pass (raw fp_make(e, "int", to, a.text, "", raw smt_app1(head, raw smt_app1("to_real", a.text)), a.syms));
+    }
+    pass (raw term_none());
+};
+
+// --- floats, tier 2: the Real-interval abstraction (D-281, 1.5.4b step 3) ----------------
+//
+// D-218 (5) verbatim: "Real-interval abstraction for heavy non-linear ...
+// undischarged = retained runtime guard". For every encoded row whose tier
+// is `fp` the encoder ALSO writes a twin query into `NNNN.t2.smt2` -- the
+// runner asks it only when tier 1 answered `unknown`, and only `unsat` there
+// discharges (tier `real`). In the twin every float is a Real: an input
+// symbol is a free Real; a NAMED operation (`fpdefs`) is a fresh Real `r`
+// with the axiom `|r - v| <= eps*|v| + eta`, `v` the exact Real of the
+// operation over its operands' Reals -- the standard model of a correctly
+// rounded operation, `eps = 2^-53` / `2^-24`, `eta = 2^-1074` / `2^-149`
+// covering the subnormals; a `fp.sqrt` is `r >= 0` and `r^2` within
+// `v*(1 -+ eps)^2`; a negation and a widening are exact; a comparison is the
+// Real comparison. THREE CONDITIONS make it sound, checked here, and no
+// twin is written where one fails: (i) every float symbol in the cone that
+// no hypothesis DEFINES is bounded below AND above by hypotheses that are
+// float comparisons against literals (a `limit` rule, a `requires` clause,
+// a path condition) -- such a hypothesis is false for NaN and, with both
+// bounds, for the infinities, so the abstraction's "inputs are finite
+// reals" premise is the hypotheses' own; (ii) every operation's magnitude
+// is within the normal range -- `|v| <= MAX_NORMAL` per operation, a
+// divisor nonzero, a square root's argument non-negative -- CONJOINED TO
+// THE GOAL, so an `unsat` proves no overflow, no infinity and no NaN arise
+// along with the property; (iii) the goal is a comparison or a Boolean
+// combination of comparisons, the fragment the translation preserves (an
+// `fp.eq`, with its NaN reading, stays tier 1 only). A negated comparison
+// is not a bound (it holds of NaN); an uninterpreted function in the cone
+// excludes the row (its float sorts have no Real twin).
+
+// A small s-expression reader over the encoder's own texts: atoms (quoted
+// symbols read to their closing bar) and lists, flat in two tables.
+struct:SxNode = { bool:atom; string:text; int64:kid0; int64:nkids; };
+pub struct:SxP = { string:s; int64:pos; List<SxNode>:nodes; List<int64>:kids; };
+
+func:sxp_init = SxP(string:s) never fails {
+    pass SxP{ s: string_concat(s, ""), pos: 0i64,
+              nodes: raw list_init::<SxNode>(16i64), kids: raw list_init::<int64>(16i64) };
+};
+
+func:sx_skip = NIL(SxP->:p) never fails {
+    while (p.pos < p.s.len) {
+        if (p.s.ptr[p.pos] != 32u8) { break; }
+        p.pos = p.pos + 1i64;
+    }
+    pass NIL;
+};
+
+// Parse the node at the cursor; its index, or -1 at the end of the text.
+func:sx_node = int64(SxP->:p) never fails {
+    drop sx_skip(p);
+    if (p.pos >= p.s.len) { pass (0i64 - 1i64); }
+    uint8:c = p.s.ptr[p.pos];
+    if (c == 40u8) {
+        p.pos = p.pos + 1i64;
+        List<int64>:mine = raw list_init::<int64>(4i64);
+        bool:go = true;
+        while (go) {
+            drop sx_skip(p);
+            if (p.pos >= p.s.len) { go = false; continue; }
+            if (p.s.ptr[p.pos] == 41u8) { p.pos = p.pos + 1i64; go = false; continue; }
+            int64:k = raw sx_node(p);
+            if (k < 0i64) { go = false; continue; }
+            drop list_push(@mine, k);
+        }
+        int64:k0 = p.kids.count;
+        for (int64:i in 0i64...mine.count) { drop list_push(@p.kids, mine.items[i]); }
+        drop list_push(@p.nodes, SxNode{ atom: false, text: "", kid0: k0, nkids: mine.count });
+        pass (p.nodes.count - 1i64);
+    }
+    int64:start = p.pos;
+    if (c == 124u8) {
+        p.pos = p.pos + 1i64;
+        bool:go2 = true;
+        while (go2) {
+            if (p.pos >= p.s.len) { go2 = false; continue; }
+            uint8:d = p.s.ptr[p.pos];
+            p.pos = p.pos + 1i64;
+            if (d == 124u8) { go2 = false; }
+        }
+    } else {
+        while (p.pos < p.s.len) {
+            uint8:d2 = p.s.ptr[p.pos];
+            if ((d2 == 32u8) || (d2 == 40u8) || (d2 == 41u8)) { break; }
+            p.pos = p.pos + 1i64;
+        }
+    }
+    drop list_push(@p.nodes, SxNode{ atom: true, text: raw slice_proven(p.s, start, p.pos), kid0: 0i64, nkids: 0i64 });
+    pass (p.nodes.count - 1i64);
+};
+
+func:sx_kid = int64(SxP:p, int64:k, int64:i) never fails {
+    pass p.kids.items[p.nodes.items[k].kid0 + i];
+};
+
+func:sx_is = bool(SxP:p, int64:k, string:text) never fails {
+    if (k < 0i64) { pass false; }
+    if (!p.nodes.items[k].atom) { pass false; }
+    pass (string_equals(p.nodes.items[k].text, text));
+};
+
+func:sx_text = string(SxP:p, int64:k) never fails {
+    pass (string_concat(p.nodes.items[k].text, ""));
+};
+
+// The head of a list node as an atom text, or "" for an atom or a list head.
+func:sx_head = string(SxP:p, int64:k) never fails {
+    if (p.nodes.items[k].atom) { pass ""; }
+    if (p.nodes.items[k].nkids == 0i64) { pass ""; }
+    int64:h = raw sx_kid(p, k, 0i64);
+    if (!p.nodes.items[h].atom) { pass ""; }
+    pass (raw sx_text(p, h));
+};
+
+// The float definition a symbol text names, as its index in `fpdefs`, or -1.
+func:fpdef_of = int64(Encoder->:e, string:sym) never fails {
+    for (int64:i in 0i64...e.fpdefs.count) {
+        if (string_equals(e.fpdefs.items[i].sym, sym)) { pass i; }
+    }
+    pass (0i64 - 1i64);
+};
+
+func:fpsym_is = bool(Encoder->:e, string:text) never fails {
+    int32:si = raw sym_find(e, text);
+    if (si < 0i32) { pass false; }
+    pass (e.syms.items[si => int64].fsort.len > 0i64);
+};
+
+// The error model's constants per width: eps, eta, MAX_NORMAL as Reals.
+func:t2_eps = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_int_bits(e.types, ty)) == 32i32) { pass "(/ 1.0 16777216.0)"; }
+    pass "(/ 1.0 9007199254740992.0)";
+};
+func:t2_eta = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_int_bits(e.types, ty)) == 32i32) { pass (raw smt_app2("/", "1.0", string_concat(raw pow2_decimal(149i64), ".0"))); }
+    pass (raw smt_app2("/", "1.0", string_concat(raw pow2_decimal(1074i64), ".0")));
+};
+func:t2_maxn = string(Encoder->:e, int32:ty) never fails {
+    if ((raw type_int_bits(e.types, ty)) == 32i32) { pass (raw smt_app2("*", string_concat(raw pow2_decimal(104i64), ".0"), "16777215.0")); }
+    pass (raw smt_app2("*", string_concat(raw pow2_decimal(971i64), ".0"), "9007199254740991.0"));
+};
+
+// The translation's state for one row: the side conditions gathered from
+// the definitions, and whether every text was in the fragment.
+struct:T2 = { bool:ok; List<string>:sides; };
+
+// A term's Real twin: the float comparisons and operations to their Real
+// forms, `to_fp` to its argument, everything else verbatim over its twins.
+func:t2_term = string(Encoder->:e, SxP:p, T2->:t, int64:k) never fails {
+    if (p.nodes.items[k].atom) { pass (raw sx_text(p, k)); }
+    int64:nk = p.nodes.items[k].nkids;
+    if (nk == 0i64) { pass "()"; }
+    int64:h = raw sx_kid(p, k, 0i64);
+    if (!p.nodes.items[h].atom) {
+        // ((_ to_fp E S) RNE X): the argument's own Real.
+        if ((raw sx_is(p, raw sx_kid(p, h, 0i64), "_")) && (raw sx_is(p, raw sx_kid(p, h, 1i64), "to_fp")) && (nk == 3i64)) {
+            pass (raw t2_term(e, p, t, raw sx_kid(p, k, 2i64)));
+        }
+        t.ok = false;
+        pass "false";
+    }
+    string:head = raw sx_text(p, h);
+    string:nh = string_concat(head, "");
+    int64:from = 1i64;
+    if (string_equals(head, "fp.lt"))  { nh = "<"; }
+    if (string_equals(head, "fp.leq")) { nh = "<="; }
+    if (string_equals(head, "fp.gt"))  { nh = ">"; }
+    if (string_equals(head, "fp.geq")) { nh = ">="; }
+    if (string_equals(head, "fp.eq"))  { nh = "="; }
+    if (string_equals(head, "fp.add")) { nh = "+"; from = 2i64; }
+    if (string_equals(head, "fp.sub")) { nh = "-"; from = 2i64; }
+    if (string_equals(head, "fp.mul")) { nh = "*"; from = 2i64; }
+    if (string_equals(head, "fp.div")) { nh = "/"; from = 2i64; }
+    if (string_equals(head, "fp.neg")) { nh = "-"; }
+    if (string_equals(head, "fp.sqrt")) { t.ok = false; pass "false"; }
+    if (string_equals(head, "fp.isNaN")) { t.ok = false; pass "false"; }
+    string:out = string_concat("(", nh);
+    for (int64:i in from...nk) {
+        out = string_concat(out, " ");
+        out = string_concat(out, raw t2_term(e, p, t, raw sx_kid(p, k, i)));
+    }
+    pass (string_concat(out, ")"));
+};
+
+// A hypothesis's twin: a float DEFINITION `(= SYM rhs)` becomes the error
+// model's axiom (and its side conditions), anything else its Real twin.
+func:t2_hyp = string(Encoder->:e, T2->:t, string:text) never fails {
+    SxP:p = raw sxp_init(text);
+    int64:root = raw sx_node(@p);
+    if (root < 0i64) { t.ok = false; pass "false"; }
+    if ((raw sx_head(p, root)).len > 0i64) {
+        if ((raw sx_is(p, raw sx_kid(p, root, 0i64), "=")) && (p.nodes.items[root].nkids == 3i64)) {
+            int64:sk = raw sx_kid(p, root, 1i64);
+            if (p.nodes.items[sk].atom) {
+                string:sym = raw sx_text(p, sk);
+                if (raw fpsym_is(e, sym)) {
+                    int64:rhs = raw sx_kid(p, root, 2i64);
+                    int64:di = raw fpdef_of(e, sym);
+                    if (di < 0i64) {
+                        pass (raw smt_app2("=", sym, raw t2_term(e, p, t, rhs)));
+                    }
+                    string:op = string_concat(e.fpdefs.items[di].op, "");
+                    int32:ty = e.fpdefs.items[di].ty;
+                    if ((string_equals(op, "neg")) || (string_equals(op, "widen"))) {
+                        pass (raw smt_app2("=", sym, raw t2_term(e, p, t, rhs)));
+                    }
+                    string:eps = raw t2_eps(e, ty);
+                    if (string_equals(op, "sqrt")) {
+                        // (fp.sqrt RNE X): X is kid 2
+                        string:v = raw t2_term(e, p, t, raw sx_kid(p, rhs, 2i64));
+                        drop list_push(@t.sides, raw smt_app2(">=", v, "0.0"));
+                        string:km = raw smt_app2("*", raw smt_app2("-", "1.0", eps), raw smt_app2("-", "1.0", eps));
+                        string:kp = raw smt_app2("*", raw smt_app2("+", "1.0", eps), raw smt_app2("+", "1.0", eps));
+                        string:sq = raw smt_app2("*", sym, sym);
+                        pass (raw smt_app3("and", raw smt_app2(">=", sym, "0.0"),
+                                           raw smt_app2(">=", sq, raw smt_app2("*", v, km)),
+                                           raw smt_app2("<=", sq, raw smt_app2("*", v, kp))));
+                    }
+                    string:v2 = raw t2_term(e, p, t, rhs);
+                    drop list_push(@t.sides, raw smt_app2("<=", raw smt_app1("absr", v2), raw t2_maxn(e, ty)));
+                    if (string_equals(op, "div")) {
+                        string:b = raw t2_term(e, p, t, raw sx_kid(p, rhs, 3i64));
+                        drop list_push(@t.sides, raw smt_app2("distinct", b, "0.0"));
+                    }
+                    string:err = raw smt_app1("absr", raw smt_app2("-", sym, v2));
+                    string:bound = raw smt_app2("+", raw smt_app2("*", eps, raw smt_app1("absr", v2)), raw t2_eta(e, ty));
+                    pass (raw smt_app2("<=", err, bound));
+                }
+            }
+        }
+    }
+    pass (raw t2_term(e, p, t, root));
+};
+
+// (iii): comparisons and their Boolean combinations, over symbols and the
+// Int fragment; no `fp.eq`, no predicate on NaN, no raw float operation.
+func:t2_goal_ok = bool(Encoder->:e, SxP:p, int64:k) never fails {
+    if (p.nodes.items[k].atom) { pass true; }
+    string:h = raw sx_head(p, k);
+    if (h.len == 0i64) { pass false; }
+    bool:known = false;
+    if (string_equals(h, "fp.lt") || string_equals(h, "fp.leq") || string_equals(h, "fp.gt") || string_equals(h, "fp.geq")) { known = true; }
+    if (string_equals(h, "and") || string_equals(h, "or") || string_equals(h, "not") || string_equals(h, "ite")) { known = true; }
+    if (string_equals(h, "<") || string_equals(h, "<=") || string_equals(h, ">") || string_equals(h, ">=")) { known = true; }
+    if (string_equals(h, "+") || string_equals(h, "-") || string_equals(h, "*") || string_equals(h, "div") || string_equals(h, "mod")) { known = true; }
+    if (string_equals(h, "npk_sdiv") || string_equals(h, "npk_srem") || string_equals(h, "to_real")) { known = true; }
+    if (string_equals(h, "=") || string_equals(h, "distinct")) {
+        known = true;
+        for (int64:i in 1i64...p.nodes.items[k].nkids) {
+            int64:c = raw sx_kid(p, k, i);
+            if (p.nodes.items[c].atom) { if (raw fpsym_is(e, raw sx_text(p, c))) { pass false; } }
+        }
+    }
+    if (!known) { pass false; }
+    for (int64:i2 in 1i64...p.nodes.items[k].nkids) {
+        if (!(raw t2_goal_ok(e, p, raw sx_kid(p, k, i2)))) { pass false; }
+    }
+    pass true;
+};
+
+// (i): the bounds of an undefined float symbol among a hypothesis's
+// top-level conjuncts -- `lo`/`hi` set where a comparison against a
+// literal-defined symbol bounds it from that side.
+func:t2_bounds_in = int32(Encoder->:e, SxP:p, int64:k, string:sym) never fails {
+    string:h = raw sx_head(p, k);
+    if (h.len == 0i64) { pass 0i32; }
+    if (string_equals(h, "and")) {
+        int32:acc = 0i32;
+        for (int64:i in 1i64...p.nodes.items[k].nkids) { acc = acc | (raw t2_bounds_in(e, p, raw sx_kid(p, k, i), sym)); }
+        pass acc;
+    }
+    if (p.nodes.items[k].nkids != 3i64) { pass 0i32; }
+    int64:a = raw sx_kid(p, k, 1i64);
+    int64:b = raw sx_kid(p, k, 2i64);
+    if (!(p.nodes.items[a].atom && p.nodes.items[b].atom)) { pass 0i32; }
+    bool:ge = (string_equals(h, "fp.geq")) || (string_equals(h, "fp.gt"));
+    bool:le = (string_equals(h, "fp.leq")) || (string_equals(h, "fp.lt"));
+    if (!(ge || le)) { pass 0i32; }
+    bool:a_sym = raw sx_is(p, a, sym);
+    bool:b_sym = raw sx_is(p, b, sym);
+    int64:da = raw fpdef_of(e, raw sx_text(p, a));
+    int64:db = raw fpdef_of(e, raw sx_text(p, b));
+    bool:a_lit = false;
+    bool:b_lit = false;
+    if (da >= 0i64) { a_lit = string_equals(e.fpdefs.items[da].op, "lit"); }
+    if (db >= 0i64) { b_lit = string_equals(e.fpdefs.items[db].op, "lit"); }
+    int32:m = 0i32;
+    if (a_sym && b_lit) { if (ge) { m = m | 1i32; } else { m = m | 2i32; } }
+    if (b_sym && a_lit) { if (ge) { m = m | 2i32; } else { m = m | 1i32; } }
+    pass m;
+};
+
+// The twin file for this function -- "" when no row qualifies; `ks` the
+// 1-based ordinals of the rows it decides, in file order.
+pub func:enc_t2_text = string(Encoder->:e, List<int64>->:ks) never fails {
+    List<string>:blocks = raw list_init::<string>(4i64);
+    List<int32>:decl = raw list_init::<int32>(8i64);
+    for (int64:oi in 0i64...e.obls.count) {
+        if (!e.obls.items[oi].encoded) { continue; }
+        if (!(string_equals(e.obls.items[oi].tier, "fp"))) { continue; }
+        // (iii) the goal's shape
+        SxP:gp = raw sxp_init(e.obls.items[oi].goal);
+        int64:groot = raw sx_node(@gp);
+        if (groot < 0i64) { continue; }
+        if (!(raw t2_goal_ok(e, gp, groot))) { continue; }
+        // the cone's hypotheses, parsed once
+        List<SxP>:hp = raw list_init::<SxP>(8i64);
+        List<int64>:hr = raw list_init::<int64>(8i64);
+        for (int64:hi in 0i64...e.obls.items[oi].cone_hyps.count) {
+            SxP:one = raw sxp_init(e.hyps.items[e.obls.items[oi].cone_hyps.items[hi] => int64].text);
+            int64:r1 = raw sx_node(@one);
+            drop list_push(@hr, r1);
+            drop list_push(@hp, move(one));
+        }
+        // (i) every float symbol defined or bounded; no uninterpreted function
+        bool:elig = true;
+        for (int64:ci in 0i64...e.obls.items[oi].cone_syms.count) {
+            int32:si = e.obls.items[oi].cone_syms.items[ci];
+            if (e.syms.items[si => int64].sorts.len > 0i64) { elig = false; }
+            if (e.syms.items[si => int64].fsort.len == 0i64) { continue; }
+            string:st = raw sym_text(e, si);
+            bool:defined = false;
+            int32:bm = 0i32;
+            for (int64:hj in 0i64...hp.count) {
+                int64:root = hr.items[hj];
+                if (root < 0i64) { continue; }
+                if ((raw sx_is(hp.items[hj], raw sx_kid(hp.items[hj], root, 0i64), "=")) && (hp.items[hj].nodes.items[root].nkids == 3i64)) {
+                    if (raw sx_is(hp.items[hj], raw sx_kid(hp.items[hj], root, 1i64), st)) { defined = true; }
+                }
+                bm = bm | (raw t2_bounds_in(e, hp.items[hj], root, st));
+            }
+            if (!(defined || (bm == 3i32))) { elig = false; }
+        }
+        if (!elig) { continue; }
+        // the translation
+        T2:t = T2{ ok: true, sides: raw list_init::<string>(4i64) };
+        SmtBuf:blk = raw smtbuf_init();
+        drop smtbuf_line(@blk, "(push)");
+        for (int64:hk in 0i64...e.obls.items[oi].cone_hyps.count) {
+            string:tw = raw t2_hyp(e, @t, e.hyps.items[e.obls.items[oi].cone_hyps.items[hk] => int64].text);
+            if (!t.ok) { break; }
+            drop smtbuf_line(@blk, raw smt_app1("assert", tw));
+        }
+        if (!t.ok) { continue; }
+        string:goal_r = raw t2_term(e, gp, @t, groot);
+        if (!t.ok) { continue; }
+        string:conj = string_concat(goal_r, "");
+        for (int64:sd in 0i64...t.sides.count) { conj = raw smt_app2("and", raw strlist_view_enc(t.sides, sd), conj); }
+        drop smtbuf_line(@blk, raw smt_app1("assert", raw smt_app1("not", conj)));
+        drop smtbuf_line(@blk, "(check-sat)");
+        drop smtbuf_line(@blk, "(pop)");
+        drop list_push(@blocks, raw smtbuf_text(move(blk)));
+        drop list_push(ks, oi + 1i64);
+        for (int64:ci2 in 0i64...e.obls.items[oi].cone_syms.count) {
+            int32:s2 = e.obls.items[oi].cone_syms.items[ci2];
+            if (!(raw has_sym(decl, s2))) { drop list_push(@decl, s2); }
+        }
+    }
+    if (blocks.count == 0i64) { pass ""; }
+    SmtBuf:out = raw smtbuf_init();
+    drop smtbuf_line(@out, string_concat("; t2 ", e.symbol));
+    drop smtbuf_line(@out, "(set-logic ALL)");
+    drop smtbuf_line(@out, "(define-fun absr ((t Real)) Real (ite (>= t 0.0) t (- t)))");
+    for (int64:si2 in 0i64...e.syms.count) {
+        if (!(raw has_sym(decl, si2 =>! int32))) { continue; }
+        if (e.syms.items[si2].fsort.len > 0i64) {
+            drop smtbuf_line(@out, raw smt_app2("declare-const", raw sym_text(e, si2 =>! int32), "Real"));
+        } else {
+            drop smtbuf_line(@out, raw sym_declaration(e, si2 =>! int32));
+        }
+    }
+    string:text = raw smtbuf_text(move(out));
+    for (int64:bi in 0i64...blocks.count) { text = string_concat(text, raw strlist_view_enc(blocks, bi)); }
+    pass text;
+};
+
+// A list element viewed without a copy (the string's bytes, borrowed).
+func:strlist_view_enc = string(List<string>:l, int64:i) never fails {
+    pass (string_from_bytes(l.items[i].ptr, l.items[i].len));
 };
 
 // --- bitwise operations: the Int forms and the bounded crossing (D-279, D-280) ------------
@@ -1738,25 +2360,26 @@ func:uf_value = Term(Encoder->:e, CallEnc:ce, int32:ty) never fails {
     if (ce.coroutine) { pass (raw term_none()); }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if (!(raw fn_is_pure_never_fails(e, cdn))) { pass (raw term_none()); }
-    if (!((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass (raw term_none()); }
+    if (!(raw is_termed(e, ty))) { pass (raw term_none()); }
     string:sorts = "(";
     string:app = "";
     List<int32>:syms = raw list_init::<int32>(4i64);
     for (int64:i in 0i64...ce.terms.count) {
         if (!ce.terms.items[i].ok) { pass (raw term_none()); }
         int32:pt = ce.types.items[i];
-        if (!((raw is_scalar(e, pt)) || (raw is_bool(e, pt)))) { pass (raw term_none()); }
+        if (!(raw is_termed(e, pt))) { pass (raw term_none()); }
         if (ce.terms.items[i].is_bool != (raw is_bool(e, pt))) { pass (raw term_none()); }
         if (i > 0i64) { sorts = string_concat(sorts, " "); app = string_concat(app, " "); }
         if (raw is_bool(e, pt)) { sorts = string_concat(sorts, "Bool"); }
-        else { sorts = string_concat(sorts, "Int"); }
+        else { if (raw is_float(e, pt)) { sorts = string_concat(sorts, raw fp_sort(e, pt)); }
+               else { sorts = string_concat(sorts, "Int"); } }
         app = string_concat(app, ce.terms.items[i].text);
         syms = raw syms_union(syms, ce.terms.items[i].syms);
     }
     sorts = string_concat(sorts, ")");
     string:fname = string_concat("uf.", raw intern_get(e.interns, raw decl_name(cdn)));
     string:fsym = raw smt_sym(fname, ce.cd => int64);
-    int32:fi = raw sym_new_fun(e, fsym, sorts, raw is_bool(e, ty));
+    int32:fi = raw sym_new_fun(e, fsym, sorts, raw is_bool(e, ty), raw fp_sort(e, ty));
     List<int32>:one = raw list_init::<int32>(1i64);
     drop list_push(@one, fi);
     syms = raw syms_union(syms, one);
@@ -2594,6 +3217,9 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (raw is_twisted(e, ty)) {
             pass (raw twisted_text_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
         }
+        if (raw is_float(e, ty)) {
+            pass (raw fp_literal(e, raw intern_get(e.interns, n.payload =>! int32), ty));
+        }
         pass (raw term_none());
     }
     // `ERR` (D-008) at a twisted type is the sentinel; `NIL`, `NULL` and an
@@ -2671,6 +3297,11 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
                 pass (raw term_opaque(e, ty));
             }
         }
+        // A FLOAT OPERAND (D-281): the IEEE operations and the ordered
+        // predicates, no row (floats never trap).
+        if (raw is_float(e, lt)) {
+            pass (raw enc_float_binary(e, op, lt, ty, a, b));
+        }
         // A TWISTED OPERAND (D-278): the operations as the emitter's `ite`
         // shapes, a comparison the `err-exit` row.
         if (raw is_twisted(e, lt)) {
@@ -2744,6 +3375,10 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if ((uop == TokenKind.OpMinus) && (raw is_int(e, ty)) && (!o.is_bool)) {
             pass (raw term_app2("-", raw term_lit("0", false), o, false));
         }
+        // A float negation is `fneg` (D-143): `fp.neg`, exact.
+        if ((uop == TokenKind.OpMinus) && (raw is_float(e, ty)) && (!o.is_bool)) {
+            pass (raw fp_make(e, "neg", ty, o.text, "", raw smt_app1("fp.neg", o.text), o.syms));
+        }
         // A twisted negation (D-008): ERR in, ERR out; `0 - x` is in range
         // for every valid `x`, the valid range being symmetric.
         if ((uop == TokenKind.OpMinus) && (raw is_twisted(e, ty)) && (!o.is_bool)) {
@@ -2803,6 +3438,8 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (fw.ok) { pass fw; }
         Term:tw = raw twisted_cast(e, ct, st, ty, false, id.index, n.span);
         if (tw.ok) { pass tw; }
+        Term:fc = raw float_cast(e, ct, st, ty);
+        if (fc.ok) { pass fc; }
         pass (raw term_opaque(e, ty));
     }
     // `=>!` (1.5.4b step 1): a flag word and its `int32` carrier are one bit
@@ -2815,6 +3452,8 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         if (fw2.ok) { pass fw2; }
         Term:tw2 = raw twisted_cast(e, ut, ust, ty, true, id.index, n.span);
         if (tw2.ok) { pass tw2; }
+        Term:fc2 = raw float_cast(e, ut, ust, ty);
+        if (fc2.ok) { pass fc2; }
         pass (raw term_opaque(e, ty));
     }
     // `is_err(x)` (D-008 section 5) on a twisted value is `(= x MIN)`; on a
@@ -2917,8 +3556,21 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
         drop record_checker(e, raw OK_EXHAUSTIVE(), raw SITE_EXPR(), id.index, n.span);
         Term:psel = raw enc_expr(e, ExprId{ index: n.a });
         Term:pval = raw walk_pick_arms(e, n.b, n.c, psel, raw ty_of(e, ExprId{ index: n.a }), true);
-        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && ((raw is_scalar(e, ty)) || (raw is_bool(e, ty)))) { pass pval; }
+        if (pval.ok && (pval.is_bool == (raw is_bool(e, ty))) && (raw is_termed(e, ty))) { pass pval; }
         pass (raw term_opaque(e, ty));
+    }
+    // `#sqrt(x)` (D-200) is the instruction, `fp.sqrt RNE` (D-281); every
+    // other builtin's value is opaque, its arguments sites.
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        string:bname = raw intern_get(e.interns, raw builtin_name(n));
+        if ((raw string_eq(bname, "sqrt")) && (raw is_float(e, ty)) && (n.c > (raw builtin_generic_count(n)))) {
+            Term:sq = raw enc_expr(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), raw builtin_generic_count(n)) });
+            if (!sq.ok) { sq = raw term_opaque(e, ty); }
+            if (sq.ok && (!sq.is_bool)) {
+                pass (raw fp_make(e, "sqrt", ty, sq.text, "", raw smt_app2("fp.sqrt", "RNE", sq.text), sq.syms));
+            }
+            pass (raw term_opaque(e, ty));
+        }
     }
     // Everything else: the value is opaque, the children are still sites.
     drop walk_children(e, n);
@@ -4066,6 +4718,9 @@ func:has_sym = bool(List<int32>:l, int32:s) never fails {
 };
 
 func:sym_sort = string(Encoder->:e, int32:idx) never fails {
+    if (e.syms.items[idx => int64].fsort.len > 0i64) {
+        pass (string_from_bytes(e.syms.items[idx => int64].fsort.ptr, e.syms.items[idx => int64].fsort.len));
+    }
     if (e.syms.items[idx => int64].is_bool) { pass "Bool"; }
     pass "Int";
 };
@@ -4103,6 +4758,7 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
             hu = string_concat(hu, raw ok_name(e.obls.items[oi].kind));
             hu = string_concat(hu, "\n");
             e.obls.items[oi].hash = raw sha256_hex(hu);
+            e.obls.items[oi].tier = "-";
             continue;
         }
         // The relevance closure over hypotheses [0, hyps).
@@ -4152,6 +4808,13 @@ pub func:enc_finish = NIL(Encoder->:e) never fails {
         hin = string_concat(hin, raw ok_name(e.obls.items[oi].kind));
         hin = string_concat(hin, "\n");
         e.obls.items[oi].hash = raw sha256_hex(hin);
+        // THE TIER (D-281): what the cone's theory is -- `fp` where a float
+        // sort is in it, `bv` where a bit-vector crossing is, else `int`.
+        string:tier = "int";
+        if (raw has_sub(canon, "int2bv")) { tier = "bv"; }
+        if (raw has_sub(canon, "FloatingPoint")) { tier = "fp"; }
+        if (raw has_sub(canon, "(fp.")) { tier = "fp"; }
+        e.obls.items[oi].tier = move(tier);
         e.obls.items[oi].canon = move(canon);
         e.obls.items[oi].cone_syms = move(sorted);
         e.obls.items[oi].cone_hyps = move(hl);
@@ -4211,7 +4874,10 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
     // `declare-fun` of arity above zero.
     bool:has_uf = false;
     for (int64:ui in 0i64...e.syms.count) { if (e.syms.items[ui].sorts.len > 0i64) { has_uf = true; } }
-    if (e.nonlinear) {
+    // A FLOAT SORT IN THE FILE (D-281): `ALL`, since every file carries Int
+    // symbols beside the float ones (a parameter's range axiom at least).
+    if (e.uses_fp) { drop smtbuf_line(@b, "(set-logic ALL)"); }
+    else { if (e.nonlinear) {
         if (e.uses_bv) { drop smtbuf_line(@b, "(set-logic ALL)"); }
         else { if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFNIA)"); }
         else { drop smtbuf_line(@b, "(set-logic QF_NIA)"); } }
@@ -4219,7 +4885,7 @@ pub func:enc_file_text = string(Encoder->:e) never fails {
         if (e.uses_bv) { drop smtbuf_line(@b, "(set-logic ALL)"); }
         else { if (has_uf) { drop smtbuf_line(@b, "(set-logic QF_UFLIA)"); }
         else { drop smtbuf_line(@b, "(set-logic QF_LIA)"); } }
-    }
+    } }
     if (e.uses_sdiv) {
         drop smtbuf_line(@b, "(define-fun npk_sdiv ((a Int) (b Int)) Int (ite (>= a 0) (ite (>= b 0) (div a b) (- (div a (- b)))) (ite (>= b 0) (- (div (- a) b)) (div (- a) (- b)))))");
         drop smtbuf_line(@b, "(define-fun npk_srem ((a Int) (b Int)) Int (- a (* b (npk_sdiv a b))))");

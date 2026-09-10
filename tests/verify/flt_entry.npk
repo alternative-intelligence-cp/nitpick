@@ -1,0 +1,44 @@
+// expect-exit: 7
+// expect-obligation: err-exit discharged 3
+// expect-obligation: err-exit open 1
+// expect-obligation: failsafe-post discharged 10
+// expect-obligation: exhaustive checker 1
+//
+// A FLOAT ENTERING `tbb` (D-144 as amended; D-281 over step 2's handoff):
+// `flt64 => tbb32` traps `TbbErr` unless the double lies strictly inside
+// +-2^31 -- `fcmp ogt`/`olt`, false for NaN -- and the row is that guard's
+// condition over the float term: discharged where the branch bounds the
+// value (`in_ranged`), `open` bare (`in_loose`). The value entering is the
+// double truncated toward zero, an Int the twisted terms read; `main`'s two
+// casts back out discharge under their `is_err` test.
+mod:flt_entry;
+
+func:in_ranged = tbb32(flt64:x) never fails {
+    if ((x > -100.0f64) && (x < 100.0f64)) { pass (x => tbb32); }
+    pass 0tbb32;
+};
+
+func:in_loose = tbb32(flt64:x) never fails { pass (x => tbb32); };
+
+func:main = int32(cstring[]:argv) {
+    flt64:v = ((argv.len =>! int32) => flt64) * 3.5f64;   // 3.5 at run time
+    tbb32:a = raw in_ranged(v);                   // 3
+    tbb32:b = raw in_loose(v + 1.0f64);           // 4
+    if (is_err(a) || is_err(b)) { exit 20i32; }
+    exit ((a => int32) + (b => int32));           // 7
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (TbbErr)         { exit 24i32; },
+        (DivByZero)      { exit 36i32; },
+        (DivOverflow)    { exit 37i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

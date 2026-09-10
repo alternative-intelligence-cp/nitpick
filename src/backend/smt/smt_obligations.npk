@@ -113,6 +113,22 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
     drop list_push(@c.obl.file_syms, string_concat(symbol, ""));
     drop list_push(@c.obl.file_checks, checks);
     string:fno = raw file_number(c.obl.files.count);
+    // THE TIER-2 TWIN (D-281): the rows the Real-interval abstraction may
+    // decide, in a file of their own beside the tier-1 file.
+    List<int64>:t2ks = raw list_init::<int64>(4i64);
+    string:t2 = raw enc_t2_text(en, @t2ks);
+    if (t2ks.count > 0i64) {
+        drop list_push(@c.obl.t2_names, string_concat(fno, ""));
+        drop list_push(@c.obl.t2_texts, move(t2));
+        string:ix = string_concat(fno, "\t");
+        ix = string_concat(ix, int_to_string(t2ks.count));
+        ix = string_concat(ix, "\t");
+        for (int64:ti in 0i64...t2ks.count) {
+            if (ti > 0i64) { ix = string_concat(ix, ","); }
+            ix = string_concat(ix, int_to_string(t2ks.items[ti]));
+        }
+        drop list_push(@c.obl.t2_index, move(ix));
+    }
     for (int64:oi3 in 0i64...en.obls.count) {
         string:r = string_concat(fno, "\t");
         r = string_concat(r, int_to_string(oi3 + 1i64));
@@ -140,6 +156,9 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         r = string_concat(r, int_to_string(en.obls.items[oi3].group => int64));
         r = string_concat(r, "\t");
         r = string_concat(r, int_to_string(en.obls.items[oi3].traps => int64));
+        // THE TIER (D-281, 1.5.4b step 3): the eleventh field.
+        r = string_concat(r, "\t");
+        r = string_concat(r, string_from_bytes(en.obls.items[oi3].tier.ptr, en.obls.items[oi3].tier.len));
         drop list_push(@c.obl.rows, move(r));
     }
     pass NIL;

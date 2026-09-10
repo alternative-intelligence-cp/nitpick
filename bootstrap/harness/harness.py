@@ -3108,7 +3108,7 @@ ASSUME_KINDS = frozenset(("div-zero", "div-min", "limit", "shift-range", "err-ex
 def z3_verdicts(obl_dir, name):
     """Every function file under the profile, one process each; the rows of
     rows.txt with their verdicts -- [(fno, k, kind, hash, verdict, sym, site,
-    role, group, traps)] (the last four 1.5.3 step 2's, L-13) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
+    role, group, traps, tier)] (the four after `site` 1.5.3 step 2's, L-13; the tier 1.5.4b step 3's, D-281) -- or a failure. The verdict pass asks `(check-sat)` and nothing else (P-7):
     exactly N answer lines for N encoded rows, anything else fails the run by
     name. The wall-clock net (P-13) is a hang net and never a verdict."""
     z3 = shutil.which("z3")
@@ -3121,8 +3121,8 @@ def z3_verdicts(obl_dir, name):
         return None, ["%s: the obligation directory is unreadable: %s" % (name, e)]
     verdict = {}
     for r in rows:
-        if len(r) != 10:
-            return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps` (%d fields)" % (name, len(r))]
+        if len(r) != 11:
+            return None, ["%s: a rows.txt line is not `NNNN k kind hash encoded symbol space:site role group traps tier` (%d fields)" % (name, len(r))]
         if r[7] not in ROW_ROLES:
             return None, ["%s: a rows.txt row names a role the runners do not know: %r" % (name, r[7])]
     for fno, sym, checks in idx:
@@ -3146,12 +3146,47 @@ def z3_verdicts(obl_dir, name):
             return None, ["%s: z3 answered %d times for the %d obligations of %s (%s)" % (name, len(ans), checks, fno, sym)]
         for row, a in zip(enc, ans):
             verdict[(fno, row[1])] = VERDICT_OF_ANSWER[a]
+    # TIER 2 (D-281, 1.5.4b step 3): a row tier 1 could not decide (`budget`)
+    # with a twin in `NNNN.t2.smt2` is asked once more there, under the same
+    # profile; `unsat` discharges it and its tier reads `real`. A `sat` at
+    # tier 1 is a countermodel in the real semantics and is never retried.
+    tier2 = set()
+    t2path = os.path.join(obl_dir, "index.t2.txt")
+    if os.path.exists(t2path):
+        for line in open(t2path, encoding="utf-8"):
+            if not line.strip():
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) != 3:
+                return None, ["%s: an index.t2.txt line is not `NNNN count k1,k2,...`" % name]
+            fno, count, ks = parts[0], int(parts[1]), parts[2].split(",")
+            if len(ks) != count:
+                return None, ["%s: index.t2.txt lists %d ordinals for a count of %d (%s)" % (name, len(ks), count, fno)]
+            if not any(verdict.get((fno, k)) == "budget" for k in ks):
+                continue
+            try:
+                r = subprocess.run([z3] + Z3_OPTIONS + ["-smt2", os.path.join(obl_dir, fno + ".t2.smt2")],
+                                   capture_output=True, text=True, timeout=120 + 10 * count)
+            except subprocess.TimeoutExpired:
+                return None, ["%s: z3 exceeded the wall-clock net on the tier-2 twin %s -- not a verdict (P-13)" % (name, fno)]
+            ans = [l for l in r.stdout.splitlines() if l.strip()]
+            bad = [l for l in ans if l not in VERDICT_OF_ANSWER]
+            if bad:
+                return None, ["%s: z3 said something other than a verdict on the tier-2 twin %s: %r" % (name, fno, bad[0][:160])]
+            if len(ans) != count:
+                return None, ["%s: z3 answered %d times for the %d tier-2 rows of %s" % (name, len(ans), count, fno)]
+            for k, a in zip(ks, ans):
+                if verdict.get((fno, k)) == "budget" and a == "unsat":
+                    verdict[(fno, k)] = "discharged"
+                    tier2.add((fno, k))
     full = []
     # `c` IS A ROW THE FRONTEND DECIDED (1.5.4 step 4, L-20): no answer
     # consumed, verdict `checker`.
-    for fno, k, kind, h, encoded, sym, site, role, group, traps in rows:
+    # THE TIER (D-281, 1.5.4b step 3): the encoder's word for the cone's
+    # theory, the eleventh field, carried into the manifest's column.
+    for fno, k, kind, h, encoded, sym, site, role, group, traps, tier in rows:
         v = verdict[(fno, k)] if encoded == "1" else ("checker" if encoded == "c" else "unencoded")
-        full.append((fno, k, kind, h, v, sym, site, role, group, int(traps)))
+        full.append((fno, k, kind, h, v, sym, site, role, group, int(traps), "real" if (fno, k) in tier2 else tier))
     return full, []
 
 
@@ -3163,8 +3198,8 @@ def manifest_text(full):
     lines = ["# nitpick.obligations v1",
              "# z3 %s sha256 %s" % (Z3_VERSION, Z3_SHA),
              "# options " + " ".join(Z3_OPTIONS)]
-    for sym, h, kind, v, role in sorted(set((f[5], f[3], f[2], f[4], f[7]) for f in full)):
-        tier = "-" if v in ("unencoded", "checker") else "int"
+    for sym, h, kind, v, role, tier in sorted(set((f[5], f[3], f[2], f[4], f[7], f[10]) for f in full)):
+        tier = "-" if v in ("unencoded", "checker") else tier
         lines.append("%s %s %s %s %s %s" % (h, kind, tier, v, elision_word(kind, v, role), sym))
     return "\n".join(lines) + "\n"
 
