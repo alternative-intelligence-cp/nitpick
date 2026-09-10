@@ -413,3 +413,10 @@ pub func:TYPE_LOOP_HEAD = string() never fails { pass "NITPICK-TYPE-068"; };
 // (L-18) the fold evaluates it per call, and a false `prove` there is a
 // counterexample reported under the same code. One code, its ways named.
 pub func:TYPE_ASSERT_STATIC = string() never fails { pass "NITPICK-TYPE-069"; };
+// A SHIFT BY A KNOWN AMOUNT OUTSIDE `0..width-1` (D-277, 1.5.4b step 0): a
+// literal, or an expression the folder folds, at or past the width or
+// negative -- the machine defines no such shift (LLVM: poison) and the
+// language refuses it where it can see it; a computed amount is guarded at
+// run time (`ShiftRange`, the `shift-range` row). Both spellings, `<<=`/`>>=`
+// included; a `simd` shift's amount is a vector and is always the guard's.
+pub func:TYPE_SHIFT_RANGE = string() never fails { pass "NITPICK-TYPE-070"; };

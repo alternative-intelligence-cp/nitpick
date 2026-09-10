@@ -1,0 +1,42 @@
+// expect-exit: 10
+// expect-obligation: shift-range open 1
+// expect-obligation: shift-range discharged 2
+// expect-obligation: failsafe-post discharged 8
+// expect-obligation: exhaustive checker 1
+//
+// THE `shift-range` ROW (D-277, 1.5.4b step 0): a computed amount nothing
+// bounds is `open` (`loose`); the same shift under a path condition that
+// bounds the amount is `discharged` (`bounded`: the branch's facts, 1.5.4's
+// path sensitivity); a shift by a `fixed` constant the folder knows is a
+// numeral goal, `discharged` at once (`fixed_amount`). A discharged row's
+// guard is one `llvm.assume`; an open row keeps its trap. Every literal
+// amount has no row: the checker held it (TYPE-070).
+mod:shift_range;
+fixed int32:S = 2i32;
+
+func:loose = int32(int32:x, int32:n) never fails { pass (x << n); };
+
+func:bounded = int32(int32:x, int32:n) never fails {
+    if ((n >= 0i32) && (n < 32i32)) { pass (x << n); }
+    pass 0i32;
+};
+
+func:fixed_amount = int32(int32:x) never fails { pass (x << S); };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                    // 1
+    exit ((raw loose(1i32, n)) + (raw bounded(1i32, n)) + (raw fixed_amount(n)) + (1i32 << 1i32));   // 2 + 2 + 4 + 2
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 3i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

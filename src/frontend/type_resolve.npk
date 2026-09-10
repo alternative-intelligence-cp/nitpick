@@ -1099,15 +1099,20 @@ func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fue
     // A SHIFT BY A SILLY DISTANCE IS UNDEFINED IN THE MACHINE AND SO IT IS HERE.
     // Folding it to whatever this host happens to produce would make the compiler's
     // answer depend on the compiler's own build, which is the one thing a
-    // constant must never do.
-    if (op == TokenKind.OpShl) {
+    // constant must never do. THE BOUND IS THE TYPE'S WIDTH (D-277, 1.5.4b
+    // step 0): it was 64 for every width, so an `int32` by 40 folded to 2^40
+    // -- the checker refuses the amount (TYPE-070) before this is reached,
+    // and the folder agrees with it and with the run-time guard (DEF-29's
+    // lesson: every evaluator of one operation says the same thing).
+    if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+        int64:sw = 64i64;
+        if (ty != 0i32) {
+            int32:tb = raw type_int_bits(r.types, ty);
+            if (tb > 0i32) { sw = tb => int64; }
+        }
         if (rr.num < 0i64) { pass (raw cv_none()); }
-        if (rr.num >= 64i64) { pass (raw cv_none()); }
-        pass (raw cv_int(ty, l.num << rr.num));
-    }
-    if (op == TokenKind.OpShr) {
-        if (rr.num < 0i64) { pass (raw cv_none()); }
-        if (rr.num >= 64i64) { pass (raw cv_none()); }
+        if (rr.num >= sw) { pass (raw cv_none()); }
+        if (op == TokenKind.OpShl) { pass (raw cv_int(ty, l.num << rr.num)); }
         pass (raw cv_int(ty, l.num >> rr.num));
     }
 

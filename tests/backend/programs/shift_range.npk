@@ -1,0 +1,37 @@
+// expect-exit: 20
+//
+// A SHIFT BY A COMPUTED AMOUNT IS GUARDED (D-277, 1.5.4b step 0): one
+// unsigned compare `n <u width` before the `shl`/`ashr`/`lshr`, both
+// operators, both signednesses, both spellings (`<<=` too). Every amount here
+// is in range, so every guard passes and the values are the shifts':
+// `3 << 1` = 6, `-8 >> 1` = -4 (arithmetic on a signed value), `16u64 >> 1`
+// = 8 (logical on an unsigned one), `5 <<= 1` = 10. The reach analysis arms
+// `ShiftRange` for `failsafe` because a computed shift exists.
+mod:shift_range;
+
+func:shl32 = int32(int32:x, int32:n) never fails { pass (x << n); };
+func:shr32 = int32(int32:x, int32:n) never fails { pass (x >> n); };
+func:shru64 = uint64(uint64:x, uint64:n) never fails { pass (x >> n); };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                 // 1
+    int32:a = raw shl32(3i32, n);                 // 6
+    int32:b = raw shr32(0i32 - 8i32, n);          // -4
+    uint64:c = raw shru64(16u64, n =>! uint64);   // 8
+    int32:d = 5i32;
+    d <<= n;                                      // 10
+    exit (a + b + (c =>! int32) + d);             // 20
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 3i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

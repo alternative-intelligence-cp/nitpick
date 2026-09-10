@@ -1584,6 +1584,40 @@ pub func:is_bitwise_op = bool(TokenKind:op) never fails {
     pass (op == TokenKind.OpShr);
 };
 
+// A SHIFT'S AMOUNT IS DEFINED FOR `0 <= n < width` AND NOTHING ELSE (D-277,
+// 1.5.4b step 0): the operands unify as any bitwise pair does, and then the
+// amount is asked. An amount the compiler KNOWS -- a literal, or an
+// expression the folder folds (a `fixed` constant, a negated literal) --
+// outside the range is refused here, TYPE-070; one it does not know is
+// guarded at run time (`ShiftRange`, the `shift-range` row). Until this
+// rule `x << 40i32` on an `int32` passed and reached LLVM as a bare `shl`,
+// poison for any amount at or past the width. A `simd` shift's amount is a
+// vector: the folder folds none, the emitter guards every lane.
+func:type_shift = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) never fails {
+    int32:st = raw type_bitwise(e, n.span, lt, rt);
+    drop check_shift_amount(e, raw expr_rhs(n), st, n.span);
+    pass st;
+};
+
+pub func:check_shift_amount = NIL(ExprTyper->:e, ExprId:amount, int32:st, Span:at) never fails {
+    if (st == 0i32) { pass NIL; }
+    if ((raw type_kind(e.types, st)) != (raw TY_INT())) { pass NIL; }
+    TypeResolver:r = raw etyper_resolver(e);
+    ConstVal:cv = raw fold_const(@r, amount, e.scope);
+    if (cv.kind != (raw CV_INT())) { pass NIL; }
+    int32:w = raw type_int_bits(e.types, st);
+    if ((cv.num >= 0i64) && (cv.num < (w => int64))) { pass NIL; }
+    string:m1 = string_concat("a shift by ", int_to_string(cv.num));
+    string:m2 = string_concat(m1, " on a `");
+    string:m3 = string_concat(m2, raw type_display(e.types, e.interns, st));
+    string:m4 = string_concat(m3, "` is outside `0..");
+    string:m5 = string_concat(m4, int_to_string((w - 1i32) => int64));
+    discard(raw te_error(e, raw TYPE_SHIFT_RANGE(),
+        string_concat(m5, "` (D-277): the machine defines no such shift, so a known amount is refused here and a computed one traps `ShiftRange` at run time"),
+        at));
+    pass NIL;
+};
+
 // FLAG SETS (D-044/D-230, 1.4.8): `&` and `|` combine and test WITHIN ONE
 // FAMILY and yield it; `~` is the complement (unary, in `type_unary`); `^`
 // and the shifts do not exist for the kind — a flag set is a set of named
@@ -3988,8 +4022,8 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         pass (raw type_bitwise(e, n.span, lt, rt));
     }
     if (op == TokenKind.OpCaret) { pass (raw type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpShl)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
-    if (op == TokenKind.OpShr)   { pass (raw type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpShl)   { pass (raw type_shift(e, n, lt, rt)); }
+    if (op == TokenKind.OpShr)   { pass (raw type_shift(e, n, lt, rt)); }
 
     pass 0i32;
 };

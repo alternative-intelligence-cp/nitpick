@@ -655,6 +655,39 @@ func:record_division = NIL(Encoder->:e, int32:lt, Term:a, Term:b, int32:site,
     pass NIL;
 };
 
+// A SHIFT BY A COMPUTED AMOUNT (D-277, 1.5.4b step 0): the `shift-range` row
+// is the guard's own condition, the amount inside `0..width-1`. A literal
+// amount records nothing (the checker held it in range and the emitter
+// guards nothing); an amount the folder knows -- a `fixed` constant -- is a
+// numeral goal, discharged at once and its guard elided; any other amount's
+// term, opaque or not, is the goal's. The fact is a hypothesis after the
+// site: every continuing path passed the compare, as `div-zero`'s does not
+// need saying because a division's value is defined by its own guard.
+func:record_shift = NIL(Encoder->:e, int32:lt, Term:b, ExprId:amount, int32:site,
+                        Span:at) never fails {
+    ExprNode:an = raw ast_expr(e.ast, amount);
+    if (an.kind == ExprKind.ExprIntLiteral) { pass NIL; }
+    Term:tb = raw term_copy(b);
+    if (!(tb.ok && (raw term_is_numeral(tb)))) {
+        ConstVal:cv = raw fold_const(e.tr, amount, e.scope);
+        if (cv.kind == (raw CV_INT())) { tb = raw term_lit(raw smt_int(cv.num), false); }
+    }
+    if (!tb.ok) { tb = raw term_opaque(e, lt); }
+    string:w = int_to_string((raw type_int_bits(e.types, lt)) => int64);
+    string:goal = raw smt_app2("and", raw smt_app2(">=", tb.text, "0"),
+                               raw smt_app2("<", tb.text, w));
+    drop record(e, raw OK_SHIFT_RANGE(), goal, tb.syms, raw SITE_EXPR(), site, at, true);
+    drop hyp_push(e, goal, tb.syms);
+    pass NIL;
+};
+
+// A `simd` shift's any-lane guard: its row, `unencoded` until step 4 (P-12).
+func:record_unencoded_shift = NIL(Encoder->:e, int32:site, Span:at) never fails {
+    List<int32>:none = raw list_init::<int32>(1i64);
+    drop record(e, raw OK_SHIFT_RANGE(), "", none, raw SITE_EXPR(), site, at, false);
+    pass NIL;
+};
+
 // A `limit` write point whose rule the encoder does not yet express (1.5.2
 // step 2; P-12): the row exists from the first commit that emits the guard,
 // so the manifest stays an inventory of guards; step 3 give_terms it a goal.
@@ -1660,6 +1693,12 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     int32:lt = 0i32;
     if (bi >= 0i64) { lt = e.binds.items[bi].type_id; }
     if (!(raw is_int(e, lt))) { drop bind_assign(e, name, raw term_none()); pass NIL; }
+    // `x <<= n` records its amount's row (D-277); the value is opaque here.
+    if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
+        drop record_shift(e, lt, rhs, raw stmt_assigned(s), target.index, s.span);
+        drop bind_assign(e, name, raw term_none());
+        pass NIL;
+    }
     if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
         drop record_division(e, lt, prior, rhs, target.index, s.span);
         if (!(prior.ok && rhs.ok)) { drop bind_assign(e, name, raw term_none()); pass NIL; }
@@ -1853,6 +1892,10 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             pass (raw term_opaque(e, ty));
         }
         if (raw is_int(e, lt)) {
+            if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+                drop record_shift(e, lt, b, raw expr_rhs(n), id.index, n.span);
+                pass (raw term_opaque(e, ty));
+            }
             bool:divlike = ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent));
             if (divlike) {
                 drop record_division(e, lt, a, b, id.index, n.span);
@@ -1894,6 +1937,9 @@ pub func:enc_expr = Term(Encoder->:e, ExprId:id) never fails {
             if ((raw type_kind(e.types, lt)) == (raw TY_SIMD())) {
                 if ((op == TokenKind.OpSlash) || (op == TokenKind.OpPercent)) {
                     drop record_unencoded_division(e, raw type_elem(e.types, lt), id.index, n.span);
+                }
+                if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+                    drop record_unencoded_shift(e, id.index, n.span);
                 }
             }
         }

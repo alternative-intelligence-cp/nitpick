@@ -1,0 +1,41 @@
+// expect-error: NITPICK-TYPE-070
+// expect-error: NITPICK-TYPE-070
+// expect-error: NITPICK-TYPE-070
+// expect-error: NITPICK-TYPE-070
+// expect-error: NITPICK-TYPE-070
+//
+// A SHIFT BY A KNOWN AMOUNT OUTSIDE `0..width-1` IS REFUSED (D-277, 1.5.4b
+// step 0): the width itself (`<< 32i32` on an `int32`), past it (`>> 64u64`
+// on a `uint64`), a negated literal (the folder knows it), the compound
+// spelling (`<<= 40i32`), and a `fixed` constant the folder folds (`1i32 <<
+// S` with `S = 40i32`). The machine defines no such shift -- LLVM's `shl`
+// by an amount at or past the width is poison -- and until this rule every
+// one of these passed the checker and reached it. A computed amount is the
+// run-time guard's (`ShiftRange`); `shift_range.npk` and `shift_trap.npk`
+// hold that side.
+mod:shift_literal;
+fixed int32:S = 40i32;
+
+func:main = int32(cstring[]:argv) {
+    int32:x = argv.len =>! int32;
+    uint64:y = argv.len =>! uint64;
+    int32:a = x << 32i32;
+    uint64:b = y >> 64u64;
+    int32:c = x << -1i32;
+    int32:d = x;
+    d <<= 40i32;
+    int32:g = 1i32 << S;
+    exit (a + c + d + g + (b =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,28 @@
+// expect-exit: 5
+//
+// ONE LANE AT THE WIDTH TRAPS THE WHOLE SHIFT (D-277, any-lane): lanes 0..2
+// shift by 1 and lane 3 by 32 on `int32` elements, so the any-lane compare
+// fires and `failsafe`'s `(ShiftRange)` arm exits 5.
+mod:simd_shift_trap;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                 // 1
+    simd<int32, 4>:v = simd(1i32, 2i32, 3i32, 4i32);
+    simd<int32, 4>:s = simd(n, n, n, n + 31i32);
+    simd<int32, 4>:r = v << s;
+    exit (r[0i64]);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 5i32; },
+        (OutOfBounds)    { exit 6i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

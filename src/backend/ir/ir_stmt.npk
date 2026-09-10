@@ -995,6 +995,15 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(v))) { pass v; }
     IrVal:lhsv = raw iv(string_concat(ll.text, ""),
                         string_concat(cur, ""), place.type_id);
+    // `x <<= n` guards its computed amount as the expression form does (D-277).
+    if (((raw compound_op(op)) == TokenKind.OpShl) || ((raw compound_op(op)) == TokenKind.OpShr)) {
+        if ((raw type_kind(x.fe.ctx.types, place.type_id)) == (raw TY_INT())) {
+            if ((raw ast_expr(x.ast, raw stmt_assigned(s))).kind != ExprKind.ExprIntLiteral) {
+                drop emit_shift_guard(x, v, raw type_int_bits(x.fe.ctx.types, place.type_id),
+                                      (raw stmt_target(s)).index, s.span);
+            }
+        }
+    }
     IrVal:res = raw emit_arith_value(x, raw compound_op(op), place.type_id,
                                      lhsv, v, place.type_id, s.span,
                                      (raw stmt_target(s)).index);

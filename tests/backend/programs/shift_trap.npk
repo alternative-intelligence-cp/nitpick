@@ -1,0 +1,27 @@
+// expect-exit: 3
+//
+// A SHIFT BY A COMPUTED AMOUNT AT THE WIDTH TRAPS `ShiftRange` (D-277,
+// 1.5.4b step 0): `n` is 32 on an `int32`, the guard's `n <u 32` fails, the
+// trap reaches `failsafe`'s `(ShiftRange)` arm and the program exits 3.
+// Before the guard LLVM received `shl i32 %x, 32` -- poison.
+mod:shift_trap;
+
+func:shl32 = int32(int32:x, int32:n) never fails { pass (x << n); };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = (argv.len =>! int32) + 31i32;       // 32
+    exit (raw shl32(1i32, n));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 3i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

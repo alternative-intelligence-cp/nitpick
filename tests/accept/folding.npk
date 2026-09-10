@@ -19,6 +19,7 @@ error:E9;
 
 fixed int32:BASE = 5i32;
 fixed int32:DERIVED = BASE * 2i32 + 1i32;      // a fixed reading another const
+fixed int32:SHIFTED = BASE << 1i32;            // a folded shift in range (D-277): 10
 
 struct:Big = { int64:a; int64:b; };
 
@@ -69,6 +70,7 @@ comptime func:greet_len = int64() { pass string_byte_length(GREET); };
 struct:Holder = {
     int32[comptime(sum_to(10i32))]:summed;             // 55
     int32[DERIVED]:derived;                            // 11
+    int32[SHIFTED]:shifted;                            // 10
     int32[comptime(add_one(double(10i32)))]:nested;    // 21
     int32[comptime(pick_bigger(3i32, 7i32))]:chosen;   // 7
     int32[#size_of<Big>()]:sized;                      // 16

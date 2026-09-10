@@ -1353,6 +1353,11 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         }
         if (raw is_bitwise_assign(op)) {
             discard(raw type_bitwise(e, s.span, want, got));
+            // `x <<= n` IS `x = x << n` (D-277): the amount rule of the
+            // expression form, through the one function.
+            if ((op == TokenKind.OpShlAssign) || (op == TokenKind.OpShrAssign)) {
+                drop check_shift_amount(e, raw stmt_assigned(s), want, s.span);
+            }
         } else {
             discard(raw type_arithmetic(e, s.span, want, got));
         }

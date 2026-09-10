@@ -1,0 +1,27 @@
+// expect-exit: 4
+//
+// A NEGATIVE COMPUTED AMOUNT TRAPS THE SAME WAY (D-277): the one unsigned
+// compare reads `-1` as huge, so `x >> n` with `n = -1` reaches
+// `failsafe`'s `(ShiftRange)` arm, exit 4 -- where LLVM's `ashr` by a
+// negative amount was poison.
+mod:shift_trap_neg;
+
+func:shr32 = int32(int32:x, int32:n) never fails { pass (x >> n); };
+
+func:main = int32(cstring[]:argv) {
+    int32:n = 0i32 - (argv.len =>! int32);        // -1
+    exit (raw shr32(64i32, n));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 4i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -41,7 +41,12 @@ pub func:OK_ASSERT_STATIC = int32() never fails { pass 17i32; };
 // kind, so the manifest was not the inventory P-12 says it is. A literal
 // step is the checker's (TYPE-068) and carries neither guard nor row.
 pub func:OK_LOOP_STEP = int32() never fails     { pass 18i32; };
-pub func:OK_COUNT = int32() never fails         { pass 18i32; };
+// `shift-range` (D-277, 1.5.4b step 0): a shift's COMPUTED amount is inside
+// `0..width-1` -- the compare before the shift (`ShiftRange`, -4115), which
+// had no guard and no kind while LLVM's poison sat under it. A known amount
+// is the checker's (TYPE-070) and carries neither guard nor row.
+pub func:OK_SHIFT_RANGE = int32() never fails   { pass 19i32; };
+pub func:OK_COUNT = int32() never fails         { pass 19i32; };
 
 // The manifest spelling of a kind (P-10's `kind` column).
 pub func:ok_name = string(int32:k) never fails {
@@ -63,6 +68,7 @@ pub func:ok_name = string(int32:k) never fails {
     if (k == 16i32) { pass "prove"; }
     if (k == 17i32) { pass "assert-static"; }
     if (k == 18i32) { pass "loop-step"; }
+    if (k == 19i32) { pass "shift-range"; }
     pass "?";
 };
 
@@ -85,6 +91,8 @@ pub func:ok_has_guard = bool(int32:k) never fails {
     if (k == 15i32) { pass true; }
     // `loop-step` (S-46, 1.5.4 step 3): the compare at the counted loop's entry.
     if (k == 18i32) { pass true; }
+    // `shift-range` (D-277, 1.5.4b step 0): the compare before the shift.
+    if (k == 19i32) { pass true; }
     pass false;
 };
 

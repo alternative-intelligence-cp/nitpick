@@ -2264,6 +2264,35 @@ func:ovf_family_of = int32(TokenKind:op, bool:signed) never fails {
     pass (base + 1i32);
 };
 
+// A SHIFT'S AMOUNT IS CHECKED (D-277, 1.5.4b step 0): `icmp ult n, W` on the
+// amount's carrier -- ONE unsigned compare, which reads a negative amount as
+// huge -- traps `ShiftRange` (-4115) on the false branch, or is an
+// `llvm.assume` when the manifest discharged the site's `shift-range` row.
+// Called by both spellings before the `shl`/`lshr`/`ashr`; a literal amount
+// is the checker's (TYPE-070) and gets neither. Until this guard the amount
+// reached LLVM unchecked: poison for any amount at or past the width.
+pub func:emit_shift_guard = NIL(ExprEmitter->:x, IrVal:amount, int32:bits,
+                                int32:site, Span:at) never fails {
+    string:c = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(c, " = icmp ult ", amount.ll, " ",
+                      raw cat3(amount.ref, ", ", int_to_string(bits => int64))));
+    if (raw llctx_elided(x.fe.ctx, raw SITE_EXPR(), site, raw OK_SHIFT_RANGE())) {
+        drop irw_line(x.fe.w, raw cat3("call void @llvm.assume(i1 ", c, ")"));
+        pass NIL;
+    }
+    string:tl = raw irw_new_label(x.fe.w, "sh.range");
+    string:ol = raw irw_new_label(x.fe.w, "sh.ok");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", c, ", label %", ol,
+                      string_concat(", label %", tl)));
+    drop irw_label(x.fe.w, tl);
+    drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                      int_to_string((raw x_site(x, at)) => int64), ")"));
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4115)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ol);
+    pass NIL;
+};
+
 pub func:emit_arith_value = IrVal(ExprEmitter->:x, TokenKind:op, int32:lt,
                               IrVal:lhs, IrVal:rhs, int32:out_tid,
                               Span:at, int32:site) never fails {
@@ -3071,6 +3100,15 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw iv("i8", string_concat(z, ""), 0i32));
     }
 
+    // A computed shift amount is guarded before the shift (D-277).
+    if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_INT())) {
+            if ((raw ast_expr(x.ast, raw expr_rhs(n))).kind != ExprKind.ExprIntLiteral) {
+                drop emit_shift_guard(x, rhs, raw type_int_bits(x.fe.ctx.types, lt),
+                                      id.index, n.span);
+            }
+        }
+    }
     pass (raw emit_arith_value(x, op, lt, lhs, rhs,
                                raw exprtypes_get(x.et, id), n.span, id.index));
 };
@@ -4974,6 +5012,44 @@ func:emit_simd_binop = IrVal(ExprEmitter->:x, ExprNode:n, TokenKind:op,
         }
     }
     if (ins.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    // A SHIFT'S AMOUNT, ANY-LANE (D-277, 1.5.4b step 0): a lane's amount at
+    // or past the element width is poison in LLVM; one unsigned compare per
+    // lane, folded to "any", traps `ShiftRange`. A vector amount is never a
+    // literal, so every `simd` shift is guarded; its row is `unencoded`
+    // until the lanes have terms (step 4), so the guard is never elided.
+    if (!isflt) {
+        if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+            LlType:sel = raw ll_type(x.fe.ctx, elem);
+            if (!(raw ll_is_ok(sel))) { pass (raw iv_broken(n.span)); }
+            string:wtext = int_to_string((raw type_int_bits(x.fe.ctx.types, elem)) => int64);
+            string:wsp = "<";
+            for (int32:wi in 0i32...lanes) {
+                if (wi > 0i32) { wsp = string_concat(wsp, ", "); }
+                wsp = raw cat3(wsp, sel.text, string_concat(" ", wtext));
+            }
+            wsp = string_concat(wsp, ">");
+            string:sl = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(sl, " = icmp uge ", lhs.ll, " ",
+                              raw cat3(rhs.ref, ", ", wsp)));
+            string:sb = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(sb, " = bitcast <", lanestr, " x i1> ",
+                              raw cat5(sl, " to i", lanestr, "", "")));
+            string:sany = raw irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, raw cat5(sany, " = icmp ne i", lanestr, " ",
+                              string_concat(sb, ", 0")));
+            string:st_l = raw irw_new_label(x.fe.w, "vsh.range");
+            string:sok_l = raw irw_new_label(x.fe.w, "vsh.ok");
+            drop irw_line(x.fe.w, raw cat5("br i1 ", sany, ", label %", st_l,
+                              string_concat(", label %", sok_l)));
+            drop irw_label(x.fe.w, st_l);
+            drop irw_line(x.fe.w, raw cat3("call void @npk_chain_reset(i32 ",
+                              int_to_string((raw x_site(x, n.span)) => int64), ")"));
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4115)");
+            drop irw_line(x.fe.w, "unreachable");
+            drop irw_label(x.fe.w, sok_l);
+        }
+    }
 
     // The D-007 guards, any-lane (integer division only).
     bool:divlike = false;

@@ -71,6 +71,7 @@ pub struct:Reach = {
     bool:saw_arena;
     bool:saw_deadline;
     bool:saw_limit;          // a write point of a limited binding (1.5.2, D-251)
+    bool:saw_shift;          // a shift by a computed amount (D-277, 1.5.4b step 0): the compare before it traps
     // THE CONTRACT FAMILY (1.5.3 step 0, D-221): a function declaring a
     // `requires` (its entry check traps in every caller), one declaring an
     // `ensures` (its seam check), a loop carrying an `invariant` (its head
@@ -99,7 +100,7 @@ pub func:reach_init = Reach(Ast->:ast, SymbolTable->:tab, InternTable->:interns,
                      saw_div: false, saw_ovf: false, saw_index: false,
                      saw_tbb: false,
                      saw_counted: false, saw_arena: false, saw_deadline: false,
-                     saw_limit: false,
+                     saw_limit: false, saw_shift: false,
                      saw_requires: false, saw_ensures: false, saw_invariant: false,
                      in_failsafe: false,
                      failsafe_decl: 0i32, main_decl: 0i32, prelude_scope: 0i32 };
@@ -313,6 +314,12 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
                     != (raw TY_INT())) { aovf = false; }
         }
         if (aovf) { x.saw_ovf = true; }
+        // ...and a compound `<<=`/`>>=` IS the shift (D-277), guarded the same.
+        if ((aop == TokenKind.OpShlAssign) || (aop == TokenKind.OpShrAssign)) {
+            if ((raw ast_expr(x.ast, raw stmt_assigned(s))).kind != ExprKind.ExprIntLiteral) {
+                x.saw_shift = true;
+            }
+        }
         drop reach_expr(x, raw stmt_target(s), fuel - 1i32);
         drop reach_expr(x, raw stmt_assigned(s), fuel - 1i32);
         pass NIL;
@@ -507,6 +514,15 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
                     != (raw TY_INT())) { ovflike = false; }
         }
         if (ovflike) { x.saw_ovf = true; }
+        // A SHIFT BY A COMPUTED AMOUNT (D-277, 1.5.4b step 0) is guarded and
+        // traps `ShiftRange`; a literal amount is the checker's (TYPE-070)
+        // and has no guard. A `simd` shift's amount is a vector, never a
+        // literal, so it is always guarded (any-lane).
+        if ((op == TokenKind.OpShl) || (op == TokenKind.OpShr)) {
+            if ((raw ast_expr(x.ast, raw expr_rhs(n))).kind != ExprKind.ExprIntLiteral) {
+                x.saw_shift = true;
+            }
+        }
     }
     if (n.kind == ExprKind.ExprIndexExpr) { x.saw_index = true; }
     int32:ntid = raw exprtypes_get(x.ets, id);
@@ -652,6 +668,7 @@ pub func:reach_settle = NIL(Reach->:x) never fails {
     if (x.saw_index)    { drop reach_add_system(x, "OutOfBounds"); }
     if (x.saw_tbb)      { drop reach_add_system(x, "TbbErr"); }
     if (x.saw_counted)  { drop reach_add_system(x, "BadStep"); }
+    if (x.saw_shift)    { drop reach_add_system(x, "ShiftRange"); }
     if (x.saw_arena)    { drop reach_add_system(x, "StaleHandle"); }
     if (x.saw_deadline) { drop reach_add_system(x, "DeadlineExceeded"); }
     if (x.saw_limit)    { drop reach_add_system(x, "LimitViolated"); }

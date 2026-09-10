@@ -576,6 +576,7 @@ elide (D-219); the subcycle column says where its rows are produced.
 | `err-exit` | a twisted-family value leaving its family is not ERR (D-144) | yes | 1.5.8 |
 | `failsafe-post` | `failsafe` returns a positive value (D-014) | yes | 1.5.3 |
 | `loop-step` | a counted loop's computed step is positive (D-022): the compare at the loop's entry, `BadStep`; a literal step is the checker's (TYPE-068) and has no row | yes | 1.5.4 |
+| `shift-range` | a shift's COMPUTED amount is inside `0..width-1` (D-277): the compare before the shift, `ShiftRange`; a known amount is the checker's (TYPE-070) and has no row | yes | 1.5.4b |
 | `prove` | a `prove(...)` holds under its path conditions | no | 1.5.4 |
 | `assert-static` | an `assert_static(...)` folds to true (the frontend) | no | 1.5.4 |
 <!-- END obligation-catalogue -->

@@ -1,0 +1,29 @@
+// expect-exit: 20
+//
+// A `simd` SHIFT IS GUARDED ANY-LANE (D-277, 1.5.4b step 0): a vector amount
+// is never a literal, so every lane's amount is compared against the element
+// width and the shift proceeds only when all pass. Here every lane is 1:
+// `(1, 2, 3, 4) << (1, 1, 1, 1)` = (2, 4, 6, 8), summed by lane reads, 20.
+mod:simd_shift;
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;                 // 1
+    simd<int32, 4>:v = simd(1i32, 2i32, 3i32, 4i32);
+    simd<int32, 4>:s = simd(n);
+    simd<int32, 4>:r = v << s;
+    exit (r[0i64] + r[1i64] + r[2i64] + r[3i64]);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (ShiftRange)     { exit 5i32; },
+        (OutOfBounds)    { exit 6i32; },
+        (IntOverflow)    { exit 93i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
