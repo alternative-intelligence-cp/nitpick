@@ -17746,3 +17746,144 @@ wrong state.
 > exits 32 through the three file forms, a `mod:ii_other;` and a `pub use`
 > re-export inside one inline module.
 
+## D-277 — a shift's amount is defined for `0 ≤ n < width` and nothing else: a known amount outside it is refused, a computed one traps `ShiftRange` — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-52; lands at 1.5.4b step 0)**
+
+Found planning 1.5.4b (2026-09-10, on `12a6a78`). `x << n` with `n = 40`
+on an `int32` passed the checker (`type_bitwise` unifies the operands and
+asks nothing of the amount) and the emitter wrote a bare `shl i32` — POISON
+in LLVM for any amount at or past the width; the run exited 0 by
+coincidence. No guard, no row, no reach arming; the constant folder refused
+a distance `< 0 || >= 64` for every width (an `int32` by 40 folded to
+`2^40`); the specification defined the operation and said nothing of the
+amount (OP_REFERENCE §4; D-210: shifts "unchanged"); the prototype carried
+the same hole under a NIKOS warning. **The decision.** `x << n` and `x >> n`
+are defined for `0 ≤ n < width(x)` and for no other amount. An amount the
+compiler KNOWS — a literal, or an expression the folder folds — outside the
+range is `NITPICK-TYPE-070` at the shift, both spellings (`<<=`/`>>=`
+included); an amount it does not know is checked at run time by ONE unsigned
+compare on the amount's carrier (`n <u width`, which reads a negative amount
+as huge), the false branch trapping `ShiftRange` (`-4115`, the prelude's
+`pub error:ShiftRange = 4115i32;`); the reach analysis arms it where a
+computed shift exists; `shift-range` is a guarded obligation kind (19) whose
+discharge elides the compare into one `llvm.assume`. The folder's bound is
+the TYPE's width in both directions, and every evaluator of a shift agrees
+(DEF-29's lesson). The value of an in-range shift is unchanged (a bit
+operation, no overflow trap — D-210). Masking (`n mod width`) and saturating
+(`0`, or `−1` for a signed right shift) were rejected: each silently
+performs a different shift than the author wrote.
+
+> Lands at **1.5.4b step 0** (`meta/roadmap/1.5/1.5.4b.md` §2).
+
+## D-278 — the twisted kinds' ERR is a value the obligations carry; `err-exit` is the row at every `TbbErr` guard; a twisted division has no row — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-53; lands at 1.5.4b step 2)**
+
+The skeleton asked whether the ERR sentinel needs an obligation kind per
+twisted operation. Counted at planning: the only twisted-kind trap is
+`-4100` (`TbbErr`), at a comparison on a twisted operand and at a cast out
+of the family under either spelling (D-144 as amended); a twisted division
+never traps (a zero divisor is ERR); the prelude's `tbb` has no arithmetic,
+`tfp` 91 arithmetic sites and 70 compares, `dim256` 725 generated compares.
+**The decision.** No new kind. A `tbb`/`tfp`/`dim256`/ternary expression is
+an unbounded-`Int` term in the carrier's range with ERR = `MIN(width)` as a
+distinguished VALUE (D-008: ERR is a value), every operation an `ite` in the
+emitter's exact shape — saturate-to-ERR on add/sub/negate/`%`, the `tfp`
+floor multiply (`div (* a b) 2^F`) and truncating divide (`npk_sdiv (* a 2^F)
+b`) with the round-trip narrow, a zero divisor ERR — `dim256` as `tfp256`,
+the ternary kinds with their balanced bounds; `err-exit` (kind 14, in the
+catalogue since 1.5.0 as 1.5.8's) is the row at every `-4100` guard, its
+goal "neither operand is ERR" at a compare and "the operand is not ERR" at a
+cast out, elided into `llvm.assume` when discharged; a twisted division
+records no row; both runners' trap table stays a function of the kind.
+
+> Lands at **1.5.4b step 2**.
+
+## D-279 — every bitwise operation is encoded: pure-Int forms wherever an operand is a numeral, the bit-vector crossing otherwise — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-54; lands at 1.5.4b step 1)**
+
+D-218 (4) said bitwise operations cross into QF_BV with explicit crossing
+casts. Measured at planning: the shapes the tree writes at the wide widths
+— a shift by a literal, a low-bits mask, a single-bit test, `~` — are pure
+Int arithmetic (`*`, `div`, `mod` by a power of two) and cost 504–1,287
+rlimit at ANY width, 2048 included; the crossing is a different matter
+(D-280). **The decision.** All five operators and `~`, and the flag
+families' `|`/`&`/`~` (D-230), are encoded — the Int forms FIRST: `~x` is
+`(- (- x) 1)` signed and `(- (2^W − 1) x)` unsigned; `x << k` by a numeral
+is `(mod (* x 2^k) 2^W)` with the signed wrap `(ite (>= s 2^(W−1)) (- s 2^W)
+s)`; `x >> k` by a numeral is `(div x 2^k)` (floor: `ashr` signed, `lshr`
+unsigned); `x & (2^j − 1)` is `(mod x 2^j)`; `x & 2^j` is `(* (mod (div x
+2^j) 2) 2^j)`; `x & ~(2^j − 1)` is `(- x (mod x 2^j))`; every other shape is
+the crossing of D-280. A crossing the encoder does not take is an `open` row
+an author cannot close; an Int form is not a crossing at all.
+
+> Lands at **1.5.4b step 1**.
+
+## D-280 — the Int-to-bit-vector crossing is taken at widths up to 64 bits and no wider; no discharged row may regress — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-55; lands at 1.5.4b step 1)**
+
+Measured 2026-09-10 under the determinism profile with `(_ int2bv w)`/
+`bv2nat` under `(set-logic ALL)`, a masked-divisor row: 191 rlimit at 32
+and 64 bits, 883,930 at 128 (4% of the budget), 3,591,364 at 256 (18%),
+and the budget exhausted at 2048 (`unknown`, 21.9 s, 403 MB) — the
+skeleton's "the exact width is affordable" (s3's §4b) held for the
+bit-vector theory alone; a bit test with an OPAQUE mask read by an Int
+inequality exhausts the budget even at 32 bits. **The decision.**
+`BV_CROSS_MAX_BITS = 64`, one named constant with the measurements beside
+it: `& | ^` and a non-numeral shift on operands of at most 64 bits cross
+(`bv2nat (bvop (int2bv a) (int2bv b))`, re-signed for a signed result;
+`int2bv` of a negative Int is its two's-complement pattern, so the crossing
+is exact); a wider general operation stays opaque (safe, unproven), the Int
+forms of D-279 covering the wide widths' real shapes; and THE GATE: every
+row of `nitpick.obligations` discharged before the crossing is discharged
+after it — a term newly in a cone can only add facts, and a `budget` where a
+`discharged` was is a regression the step reverts. A `budget` verdict on a
+hard shape is a recorded limit (`bv_budget.npk` pins one). Moving the
+constant later is a measurement, not a decision.
+
+> Lands at **1.5.4b step 1**.
+
+## D-281 — floats: tier 1 as QF_FP terms, the manifest's tier column fed by the encoder, tier 2 as the Real-interval abstraction under three soundness conditions — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-56; lands at 1.5.4b step 3)**
+
+D-218 (5) is ratified ("floats two-tier — Z3 QF_FP for tier-1 obligations,
+Real-interval abstraction for heavy non-linear, the manifest recording which
+tier discharged what, undischarged = retained runtime guard"); this settles
+its design. **Tier 1:** `flt32`/`flt64` as `(_ FloatingPoint 8 24)`/`(11
+53)`, a literal as its exact IEEE bit pattern from the emitter's own folded
+bits (never a decimal the solver rounds), `+ − * /` and `#sqrt` under RNE,
+the comparisons with the emitter's own `fcmp` NaN behaviour per operator,
+`frem` (a truncated fmod, not SMT-LIB's IEEE `fp.rem`) and every cast OUT of
+a float opaque until 1.5.8's `cast-range` rows; no new row kind — floats
+never trap (D-007) — so what tier 1 buys is that a `limit`, a contract
+clause, an `invariant` or a `prove` over floats is an encoded row (measured:
+4.35M rlimit, 0.77 s, for a bounded-quotient row beside an Int hypothesis).
+**The tier column** (P-10, a constant `int` in both runners until now) is
+fed from the encoder — `int`, `bv`, `fp`, `-` — and `real` is written by
+the runner for a tier-2 discharge. **Tier 2:** for every row whose cone
+holds a float, the encoder writes a second query in which every float term
+is a Real under the standard rounding model `|r − v| ≤ ε·|v| + η` per
+operation (`sqrt` included; `ε` = 2^−53/2^−24, `η` = 2^−1074/2^−149), and
+the runner asks it only when tier 1 answers `unknown`; it is written at all
+only under THREE conditions, else the row stays `budget`: (i) every float
+symbol in the cone is bounded below AND above by float-comparison
+hypotheses against numerals (which exclude NaN and, with both bounds, the
+infinities — the "inputs are finite reals" premise is the hypotheses'
+own); (ii) every intermediate's magnitude is proven within the normal range
+by conjoining `|v| ≤ MAX_NORMAL` per operation to the goal, so an `unsat`
+proves no overflow along with the property; (iii) the goal is a comparison
+or a Boolean combination of comparisons (an `fp.isNaN`, an equality under
+`fp.eq`'s NaN reading, stays tier 1 only). Measured: 4,252 rlimit for the
+sqrt shape that exhausts tier 1's budget. Both runners implement the same
+two passes; parity diffs the verdicts.
+
+> Lands at **1.5.4b step 3**.
+
+## D-282 — `simd` values are per-lane terms, and a `simd` division is one row over its lanes — **SETTLED (user decision, 2026-09-10: "ratify as recommended"; OPEN_DECISIONS S-57; lands at 1.5.4b step 4)**
+
+A `simd<T, N>` expression (N ≤ 16 by D-194) is N scalar terms — the
+constructor's arguments, a splat's term N times, elementwise operations and
+comparisons lane-wise under the scalar rules, a numeral-index lane, `.any()`
+as the disjunction, `.len` as N, the ordered reductions folded in the
+emitter's order, anything else opaque per lane — and a `simd` division's
+any-lane guard is ONE `div-zero` row over the lane conjunction (one
+`div-min` for a signed element), the emitter's one trap per site. This
+retires `record_unencoded_division`; the `unencoded` verdict's one remaining
+producer is a `limit` over a subject no theory covers (a struct), named as
+P-12's residue.
+
+> Lands at **1.5.4b step 4**.
