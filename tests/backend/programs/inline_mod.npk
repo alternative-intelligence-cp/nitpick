@@ -1,4 +1,4 @@
-// expect-exit: 0
+// expect-exit: 7
 //
 // The audit's fourth Theme-A hole, inverted into its own test: emit_all used
 // to neither descend into an inline `mod` nor refuse it, so declared code was
@@ -6,14 +6,14 @@
 // 0.7.7 to 1.5.4 it lived in tests/rejection/ carrying whatever construct
 // still rung (an `async` function, then a `requires`, then a `prove`): the
 // walk reached the construct and refused it by name, which proved the descent.
-// The last rung fell at 1.5.4 step 4 (S-47), so this is a positive program
-// now: the inline module and its function compile and the program runs. It
-// cannot CALL the function -- no spelling reaches an inline module's member
-// from its parent today (`use hidden.*;` is RESOLVE-002, `hidden.fetch(...)`
-// is TYPE-007 "a module, not a value"), recorded as DEF-31 -- so the descent
-// is observed by compiling, not by an answer, until DEF-31 gives a program
-// a way to reach the function and this test can exit through it.
+// The last rung fell at 1.5.4 step 4 (S-47), and until 1.5.4c no spelling
+// reached the function from its parent (DEF-31): `use hidden.*;` was
+// RESOLVE-002 and `hidden.fetch(...)` TYPE-007, "a module, not a value".
+// D-273 made the qualified call a DIRECT call of the member, so the descent
+// is observed by an ANSWER: `hidden.fetch(3i32)` is 7, and the program exits
+// through it.
 mod:inline_mod;
+error:Boom;
 mod:hidden = {
     pub func:fetch = int32(int32:v) {
         prove(v == v);
@@ -22,11 +22,13 @@ mod:hidden = {
 };
 
 func:main = int32(cstring[]:_~argv) {
-    exit 0i32;
+    int32:r = hidden.fetch(3i32) ?! Boom;
+    exit r;
 };
 
 func:failsafe = int32(Error:e) {
     pick (e) {
+        (Boom)           { exit 2i32; },
         (IntOverflow)    { exit 93i32; },
         (HeapBadRequest) { exit 1i32; },
         (HeapOom)        { exit 1i32; },

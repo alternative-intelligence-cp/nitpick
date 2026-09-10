@@ -120,6 +120,17 @@ func:reach_add_decl = NIL(Reach->:x, int32:decl_index, int32:qual) never fails {
 func:reach_operand = NIL(Reach->:x, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     ExprNode:n = raw ast_expr(x.ast, id);
+    // AN ERROR CONSTANT THROUGH A MODULE PATH (D-273, 1.5.4c): `m.E` -- the
+    // declaration the checker recorded for the path, so the qualified
+    // spelling arms `failsafe` exactly as the bare one does.
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:nsd = raw exprtypes_ns_decl(x.ets, id);
+        if (nsd == 0i32) { pass NIL; }
+        DeclNode:nd = raw ast_decl(x.ast, DeclId{ index: nsd });
+        if (nd.kind != DeclKind.DeclErrorDecl) { pass NIL; }
+        drop reach_add_decl(x, nsd, x.cur_module);
+        pass NIL;
+    }
     if (n.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (n.a == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, n.a);
@@ -537,6 +548,22 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
                             }
                         }
                     }
+                }
+            }
+        }
+        // A METHOD SPAWN -- `drop job.run()` through an impl, a bound or a
+        // `dyn` (D-182), and since D-273 `drop m.run()` through a module --
+        // reads the declaration the checker recorded (1.5.4c step 0, found
+        // on the way: the arm above saw only an identifier callee, so an
+        // async METHOD spawn armed no `DeadlineExceeded` while the direct
+        // form did, and `failsafe` compiled without the arm the join's
+        // deadline can reach).
+        if (dn.kind == ExprKind.ExprMethodCallExpr) {
+            int32:dmd = raw exprtypes_callee(x.ets, raw expr_operand(n));
+            if (dmd != 0i32) {
+                DeclNode:dmn = raw ast_decl(x.ast, DeclId{ index: dmd });
+                if (dmn.kind == DeclKind.DeclFunctionDecl) {
+                    if (raw decl_has(dmn, raw DECL_ASYNC())) { x.saw_deadline = true; }
                 }
             }
         }

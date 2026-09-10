@@ -1,0 +1,67 @@
+// expect-exit: 42
+//
+// THE QUALIFIED CALL IS A DIRECT CALL (D-273, 1.5.4c): a module symbol means
+// one thing wherever it stands. `hidden.fetch(3i32)` calls an inline module's
+// member with no receiver; `core.math.sq(3i32)` walks a nested path through a
+// `pub mod`; `lib.f()` calls through an alias (`use "./mod_qualified_lib.npk"
+// as lib;` -- the alias carries the file's scope, D-273 §4) and `lib.K` reads
+// its binding; `hidden.MAX` reads an inline module's binding; `await
+// hidden.tick(2i32)` drives an `async` member and `drop hidden.idle()` spawns
+// one (the join's deadline is armed, so `failsafe` names `DeadlineExceeded`);
+// `raw hidden.pos(n)` stands in a `requires` as any `pure never fails`
+// function does; and `?! hidden.Boom` names an error constant through the
+// path -- the reach analysis reads the recorded declaration, and the arm is
+// the file-qualified spelling D-179 gives every constant declared in this
+// file, inline module or not.
+mod:mod_qualified;
+use "./mod_qualified_lib.npk" as lib;
+
+mod:hidden = {
+    error:Boom;
+    pub fixed int32:MAX = 11i32;
+    pub func:fetch = int32(int32:v) never fails { pass (v + 4i32); };
+    pub func:pos = bool(int32:v) pure never fails { pass (v > 0i32); };
+    pub async func:tick = int32(int32:v) { pass (v * 2i32); };
+    pub async func:idle = NIL() { pass NIL; };
+    pub func:boom = int32(int32:v) {
+        if (v > 100i32) { fail Boom; }
+        pass v;
+    };
+};
+
+mod:core = {
+    pub mod:math = {
+        pub func:sq = int32(int32:v) never fails { pass (v * v); };
+    };
+};
+
+func:half = int32(int32:n) requires raw hidden.pos(n) { pass (n / 2i32); };
+
+async func:main = int32(cstring[]:_~argv) {
+    int32:a = raw hidden.fetch(3i32);              // 7
+    int32:b = raw core.math.sq(3i32);              // 9
+    int32:c = raw lib.f();                         // 5
+    int32:d = hidden.MAX + lib.K;                  // 12
+    int32:e = await hidden.tick(2i32) ?| 0i32;     // 4
+    drop hidden.idle();
+    int32:f = half(8i32) ?| 0i32;                  // 4
+    int32:g = hidden.boom(1i32) ?! hidden.Boom;    // 1
+    exit (a + b + c + d + e + f + g);              // 42
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (mod_qualified.Boom) { exit 2i32; },
+        (RequiresViolated)   { exit 32i32; },
+        (DeadlineExceeded)   { exit 40i32; },
+        (DivByZero)          { exit 36i32; },
+        (DivOverflow)        { exit 37i32; },
+        (IntOverflow)        { exit 93i32; },
+        (HeapBadRequest)     { exit 91i32; },
+        (HeapOom)            { exit 92i32; },
+        (Unreachable)        { exit 95i32; },
+        (WildLeak)           { exit 96i32; },
+        (*)                  { exit 99i32; }
+    }
+    exit 9i32;
+};

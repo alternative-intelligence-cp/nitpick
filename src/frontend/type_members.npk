@@ -20,6 +20,7 @@ use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./type_codes.npk".*;
+use "./resolve_codes.npk".*;   // RESOLVE_PRIVATE: a private member is one code from either spelling (D-273, D-240)
 use "./types.npk".*;
 use "./parser.npk".*;   // QUAL_MOVE (D-183)
 use "./type_names.npk".*;
@@ -44,15 +45,20 @@ use "./builtins.npk".*;   // the generated signature table (D-201)
 // puzzle for whoever writes the next one.
 pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (raw type_member_access(e, n, false));
+        pass (raw type_member_access(e, id, n, false));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
-        pass (raw type_member_access(e, n, true));
+        pass (raw type_member_access(e, id, n, true));
     }
     if (n.kind == ExprKind.ExprIndexExpr)      { pass (raw type_index(e, n)); }
     if (n.kind == ExprKind.ExprCallExpr)       { pass (raw type_call(e, id, n)); }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         int32:mt = raw type_method_call(e, id, n);
+        // A NAMESPACE CALL IS THE NAMED CALL IT IS (D-273, 1.5.4c): its
+        // contract and purity rules were asked by `type_direct_call`, the
+        // direct call's, and the method rules below would ask a second
+        // question about a receiver that is not a value (D-240).
+        if ((raw exprtypes_ns_decl(e.expr_types, id)) != 0i32) { pass mt; }
         // INSIDE A CONTRACT the call rule is asked once the receiver's type
         // and the resolved method are recorded (1.5.1, D-221); inside a
         // `pure` body the purity rule, the same way (step 4).
@@ -97,7 +103,7 @@ pub func:access_base = int32(ExprTyper->:e, int32:t, Span:at) never fails {
 
 // --- member access ---------------------------------------------------------------------
 
-pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) never fails {
+pub func:type_member_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n, bool:safe_nav) never fails {
     // A BASE THAT NAMES A NAMESPACE RATHER THAN A VALUE — `Net.Disconnect` and
     // `math.sqrt`. These are the SAME NODE as `p.x` in the AST, and 0.3.5 left
     // them alone precisely because telling them apart needs the base's meaning,
@@ -108,7 +114,7 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) ne
     // value" — correct in general and wrong here, where a type name is exactly
     // what belongs.
     if (!safe_nav) {
-        NsAccess:ns = raw namespace_member(e, n);
+        NsAccess:ns = raw namespace_member(e, id, n);
         if (ns.handled) { pass (ns.type_id); }
     }
 
@@ -170,10 +176,168 @@ pub struct:NsAccess = { bool:handled; int32:type_id; };
 func:ns_no = NsAccess() never fails { NsAccess:r = NsAccess{ handled: false, type_id: 0i32 }; pass r; };
 func:ns_yes = NsAccess(int32:t) never fails { NsAccess:r = NsAccess{ handled: true, type_id: t }; pass r; };
 
+// --- namespace paths (D-273, 1.5.4c) -----------------------------------------------
+//
+// A MODULE SYMBOL MEANS ONE THING WHEREVER IT STANDS. `m.f(x)` parses as a
+// method call whose receiver is `m`, `m.MAX` as a member access on it, and
+// `core.math.sq(3i32)` as a method call whose receiver is the member access
+// `core.math`; when the base names a MODULE -- an inline `mod:m = { … };`,
+// an alias `use "./m.npk" as m;`, a nested path -- none of those is a value,
+// and the checker has to know before it types the base as one. One walk
+// answers: `namespace_path` follows identifiers and member accesses through
+// the scopes module symbols open (`Symbol.inner`, D-115's rule: nothing
+// searches for a scope) and hands back the LAST module's symbol. What is
+// then done with the member -- called (`type_namespace_call`), read
+// (`namespace_member`) -- is the caller's; the visibility rule is the walk's,
+// at every hop taken from outside (MODULE_REFERENCE §3): the resolver's own
+// code, so one mistake has one code from either spelling (D-240).
+//
+// WHETHER IT IS ONE AND WHICH ARE TWO ANSWERS (the `NsAccess` shape): a path
+// whose hop was refused is still a path -- the caller must not go on to type
+// the base as a value and report a second thing -- so `is_ns` says "stop"
+// and `sym` 0 says "already reported". A PROBE (`report` false) reports
+// nothing: the await typer asks before it types a receiver, and the call
+// typer asks again with reporting on, so one mistake is reported once.
+pub struct:NsPath = { bool:is_ns; int32:sym; };
+
+func:nsp_no = NsPath() never fails { NsPath:r = NsPath{ is_ns: false, sym: 0i32 }; pass r; };
+func:nsp_yes = NsPath(int32:sym) never fails { NsPath:r = NsPath{ is_ns: true, sym: sym }; pass r; };
+
+// The scope a MODULE symbol's name opened, or 0 for any other symbol -- and
+// for a module symbol with none, which is not a namespace here.
+func:module_symbol_scope = int32(ExprTyper->:e, int32:sym) never fails {
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(e.tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: s.origin });
+    if (d.kind != DeclKind.DeclModuleDecl) { pass 0i32; }
+    pass s.inner;
+};
+
+// Is member `m` of module `owner` reachable from the current scope? From
+// inside the module everything is; from outside, what it exports.
+func:ns_visible = bool(ExprTyper->:e, int32:owner, int32:m) never fails {
+    if (raw scope_is_inside(e.tab, e.scope, raw module_symbol_scope(e, owner))) { pass true; }
+    pass (raw symbol_is_exported(raw symtab_get(e.tab, m)));
+};
+
+// "`f` is private to `m`" -- the loader's sentence and code for the `use`
+// spelling (`bind_named`), with its note at the declaration.
+func:ns_private_error = NIL(ExprTyper->:e, int32:owner, int32:m, Span:at) never fails {
+    Symbol:os = raw symtab_get(e.tab, owner);
+    Symbol:ms = raw symtab_get(e.tab, m);
+    string:p1 = string_concat("`", raw intern_get(e.interns, ms.name));
+    string:p2 = string_concat(p1, "` is private to `");
+    string:p3 = string_concat(p2, raw intern_get(e.interns, os.name));
+    discard(raw te_error(e, raw RESOLVE_PRIVATE(), string_concat(p3, "`"), at));
+    drop diaglist_push(e.diags, raw diag_note(raw RESOLVE_PRIVATE(), "declared here",
+                                              raw symbol_span(e.ast, e.tab, m)));
+    pass NIL;
+};
+
+// The member `name` of module `owner`: its symbol, or 0 after reporting --
+// "module `m` has no member `x`" (TYPE-019, the absent-member code) or the
+// private-member refusal above.
+func:ns_member_symbol = int32(ExprTyper->:e, int32:owner, int32:name, Span:at) never fails {
+    Symbol:os = raw symtab_get(e.tab, owner);
+    int32:m = raw scope_lookup_local(e.tab, raw module_symbol_scope(e, owner), name);
+    if (m == 0i32) {
+        string:m1 = string_concat("module `", raw intern_get(e.interns, os.name));
+        string:m2 = string_concat(m1, "` has no member `");
+        string:m3 = string_concat(m2, raw intern_get(e.interns, name));
+        discard(raw te_error(e, raw TYPE_NO_METHOD(), string_concat(m3, "`"), at));
+        pass 0i32;
+    }
+    if (!(raw ns_visible(e, owner, m))) {
+        drop ns_private_error(e, owner, m, at);
+        pass 0i32;
+    }
+    pass m;
+};
+
+pub func:namespace_path = NsPath(ExprTyper->:e, ExprId:id, bool:report) never fails {
+    pass (raw namespace_path_in(e, id, report, 64i32));
+};
+
+func:namespace_path_in = NsPath(ExprTyper->:e, ExprId:id, bool:report, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass (raw nsp_no()); }
+    if (raw expr_is_none(id)) { pass (raw nsp_no()); }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if (n.a == 0i32) { pass (raw nsp_no()); }
+        if ((raw module_symbol_scope(e, n.a)) == 0i32) { pass (raw nsp_no()); }
+        pass (raw nsp_yes(n.a));
+    }
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass (raw nsp_no()); }
+    NsPath:base = raw namespace_path_in(e, raw expr_operand(n), report, fuel - 1i32);
+    if (!base.is_ns) { pass (raw nsp_no()); }
+    if (base.sym == 0i32) { pass (raw nsp_yes(0i32)); }
+    // THE PATH CONTINUES ONLY THROUGH A MODULE. A function or a global here
+    // makes the whole expression a VALUE -- `namespace_member` types it --
+    // and a name the module lacks, or one private to it, ends the path with
+    // the report (once, on the reporting walk).
+    int32:name = n.payload =>! int32;
+    int32:m = raw scope_lookup_local(e.tab, raw module_symbol_scope(e, base.sym), name);
+    if (m == 0i32) {
+        if (report) { discard(raw ns_member_symbol(e, base.sym, name, n.span)); }
+        pass (raw nsp_yes(0i32));
+    }
+    if ((raw module_symbol_scope(e, m)) == 0i32) { pass (raw nsp_no()); }
+    if (!(raw ns_visible(e, base.sym, m))) {
+        if (report) { drop ns_private_error(e, base.sym, m, n.span); }
+        pass (raw nsp_yes(0i32));
+    }
+    pass (raw nsp_yes(m));
+};
+
 // `Net.Disconnect` or `math.sqrt`.
-func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
+func:namespace_member = NsAccess(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     ExprId:b = raw expr_operand(n);
     if (raw expr_is_none(b)) { pass (raw ns_no()); }
+    int32:name = n.payload =>! int32;
+    TypeResolver:r = raw etyper_resolver(e);
+
+    // A MODULE MEMBER (D-273, 1.5.4c): the base is a namespace path -- an
+    // inline module, an alias, `core.math` -- and the member is what the
+    // last module's scope holds. Asked before the enum arm, since a nested
+    // path is a member access the value path would try to type.
+    NsPath:np = raw namespace_path(e, b, true);
+    if (np.is_ns) {
+        if (np.sym == 0i32) { pass (raw ns_yes(0i32)); }   // a hop reported
+        int32:m = raw ns_member_symbol(e, np.sym, name, n.span);
+        if (m == 0i32) { pass (raw ns_yes(0i32)); }
+        Symbol:ms = raw symtab_get(e.tab, m);
+        DeclId:mdid = DeclId{ index: ms.origin };
+        DeclNode:md = raw ast_decl(e.ast, mdid);
+        // THE MEMBER IS RECORDED (`ns_decl`): the emitter lowers the read
+        // and the reach analysis registers an error constant from the
+        // record, never from a second walk of the path.
+        drop exprtypes_set_ns_decl(e.expr_types, id, ms.origin);
+        if (md.kind == DeclKind.DeclFunctionDecl) {
+            pass (raw ns_yes(raw fn_type(@r, mdid, ms.name, e.scope)));
+        }
+        if (md.kind == DeclKind.DeclGlobalDecl) {
+            TypeId:ty = TypeId{ index: md.a };
+            pass (raw ns_yes(raw resolve_type(@r, ty, e.scope)));
+        }
+        // AN ERROR CONSTANT IS A VALUE OF TYPE `Error` (D-179), qualified as
+        // it is bare.
+        if (md.kind == DeclKind.DeclErrorDecl) {
+            pass (raw ns_yes(e.types.t_error));
+        }
+        // ANYTHING ELSE SAYS WHAT IT IS -- the identifier arm's sentence, so
+        // a module, a struct, a trait or a macro reached through a path
+        // reports exactly what its bare name reports. Until 1.5.4c this
+        // answered the invalid type WITHOUT a diagnostic: `int32:v =
+        // hidden.P;` passed the frontend and died as EMIT-002.
+        string:t1 = string_concat("`", raw intern_get(e.interns, ms.name));
+        string:t2 = string_concat(t1, "` is ");
+        string:t3 = string_concat(t2, raw decl_kind_article(md));
+        discard(raw te_error(e, raw TYPE_MISMATCH(),
+                      string_concat(t3, ", not a value"), n.span));
+        pass (raw ns_yes(0i32));
+    }
+
     ExprNode:bnode = raw ast_expr(e.ast, b);
     if (bnode.kind != ExprKind.ExprIdentifierExpr) { pass (raw ns_no()); }
     if (bnode.a == 0i32) { pass (raw ns_no()); }
@@ -182,8 +346,6 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
     if (s.origin_kind != (raw SYM_DECL())) { pass (raw ns_no()); }
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = raw ast_decl(e.ast, did);
-    int32:name = n.payload =>! int32;
-    TypeResolver:r = raw etyper_resolver(e);
 
     if (d.kind == DeclKind.DeclEnumDecl) {
         int32:bare = raw tt_enum(e.types, did.index, s.name, 0i64, 1i32);
@@ -202,33 +364,6 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) never fails {
         pass (raw ns_yes(0i32));
     }
 
-    // A MODULE MEMBER. The symbol carries the scope its name opened, because a
-    // `Scope` records only its parent and walking the tree for a child would
-    // find every sibling block as well.
-    if (d.kind == DeclKind.DeclModuleDecl) {
-        if (s.inner == 0i32) { pass (raw ns_no()); }
-        int32:m = raw scope_lookup_local(e.tab, s.inner, name);
-        if (m == 0i32) {
-            string:m1 = string_concat("module `",
-                                            raw intern_get(e.interns, s.name));
-            string:m2 = string_concat(m1, "` has no member `");
-            string:m3 = string_concat(m2, raw intern_get(e.interns, name));
-            discard(raw te_error(e, raw TYPE_NO_METHOD(),
-                          string_concat(m3, "`"), n.span));
-            pass (raw ns_yes(0i32));
-        }
-        Symbol:ms = raw symtab_get(e.tab, m);
-        DeclId:mdid = DeclId{ index: ms.origin };
-        DeclNode:md = raw ast_decl(e.ast, mdid);
-        if (md.kind == DeclKind.DeclFunctionDecl) {
-            pass (raw ns_yes(raw fn_type(@r, mdid, ms.name, e.scope)));
-        }
-        if (md.kind == DeclKind.DeclGlobalDecl) {
-            TypeId:ty = TypeId{ index: md.a };
-            pass (raw ns_yes(raw resolve_type(@r, ty, e.scope)));
-        }
-        pass (raw ns_yes(0i32));
-    }
     pass (raw ns_no());
 };
 
@@ -573,8 +708,15 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
     // The receiver is argument 0, matched against the method's receiver
     // parameter like any other — no `skip`.
-    drop check_gives_call_position(e, id, n);
-    pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
+    // THE CALLEE'S DECLARATION RIDES ALONG (1.5.4c step 0, found on the way):
+    // until then this passed `callee_decl_index(e, n)`, which reads the
+    // node's slot `a` -- the TRAIT'S name here -- and answered 0, so
+    // `check_args` never asked which parameters are `move`. `Eat.eat(d, t)`
+    // against `move string:s` was accepted bare where `d.eat(t)` refuses
+    // TYPE-046: the callee dropped `t`'s body at its exit and the caller
+    // dropped it again at its own.
+    drop check_gives_call_position(e, id, n, mdecl);
+    pass (raw check_args(e, ft, start, count, 0i32, n.span, mdecl));
 };
 
 
@@ -586,8 +728,7 @@ func:type_trait_qualified_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
 // caller); anywhere else would scope the reclaim to THIS frame while the
 // value's life belongs to the caller's, and the channels would die under
 // whoever received them.
-func:check_gives_call_position = NIL(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
-    int32:cd = raw callee_decl_index(e, n);
+func:check_gives_call_position = NIL(ExprTyper->:e, ExprId:id, ExprNode:n, int32:cd) never fails {
     if (cd == 0i32) { pass NIL; }
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: cd });
     // Only a FUNCTION has a contracts window — a callee resolving to any
@@ -603,60 +744,106 @@ func:check_gives_call_position = NIL(ExprTyper->:e, ExprId:id, ExprNode:n) never
     pass NIL;
 };
 
+// A DIRECT CALL OF A KNOWN FUNCTION SYMBOL -- `f(x)`, and since D-273
+// (1.5.4c) the qualified `m.f(x)`, `lib.f()`, `core.math.sq(3i32)`: ONE
+// implementation of the call rule for both spellings (a second one is the
+// 1.3.3 `op=` mistake). `sym` is the function's symbol, `callee` its type as
+// the identifier arm reads it, `gcount` the turbofish count (0 on a
+// method-call node, whose payload is the member's name) and the window the
+// value arguments.
+func:type_direct_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:sym,
+                              int32:callee, int32:gcount, int32:start,
+                              int32:count) never fails {
+    Symbol:s = raw symtab_get(e.tab, sym);
+    int32:cd = s.origin;
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cd });
+    // A CALL INSIDE A CONTRACT (1.5.1, D-221): a NAMED callee under `raw`
+    // (its call is a `Result`; `raw` is the licensed unwrap, and the licence
+    // is what checks `never fails`), declared `pure` -- the obligation walk
+    // encodes a call it can NAME as an uninterpreted function per known
+    // symbol, which is sound.
+    if (e.contract_ctx != 0i32) {
+        if (raw contract_call_refused(e, id, n, d)) { pass 0i32; }
+    }
+    // A CALL INSIDE A `pure` BODY (1.5.1 step 4, D-221): a `pure` callee,
+    // else refused by name -- and typed anyway, so the licence and the
+    // argument checks see what they always see (one report). A contract's
+    // own calls are the contract rule's, above.
+    if (e.fn_pure) {
+        if (e.contract_ctx == 0i32) { drop pure_call_rules(e, n, d); }
+    }
+    // AN `async` CALLEE HAS NO DIRECT SYMBOL (D-177): the machine runs only
+    // under `await`, or as the spawn form `drop f(…)` (D-058). A bare call
+    // would be an implicit await -- a suspension the reader cannot see --
+    // and the blueprint rule is that nothing suspends silently.
+    if (raw decl_has(d, raw DECL_ASYNC())) {
+        if (id.index != e.await_operand) {
+            discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
+                "an `async` function is called under `await` or spawned with `drop` (D-058/D-177): a bare call would suspend where nothing says so",
+                n.span));
+        }
+    }
+    // A GENERIC CALL IS SUBSTITUTED BEFORE IT IS CHECKED. The generic
+    // arguments were parsed, stored, and SKIPPED -- `start` steps over them
+    // -- so `extract::<int32>(c)` checked as though the turbofish were not
+    // there and `extract(c)` returned `T` rather than the type it was called
+    // with.
+    IdSpan:gp = raw decl_generic_window(e.ast, d);
+    if (gp.count > 0i32) {
+        pass (raw type_generic_call(e, id, n, d, cd, gp, callee, gcount, start, count));
+    }
+    // NOT GENERIC AND GIVEN ARGUMENTS ANYWAY. The turbofish names type
+    // arguments, so a function with no type parameters has nowhere to put
+    // them -- and silently ignoring them is how this behaved until now.
+    if (gcount > 0i32) {
+        discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
+            "this function is not generic, so it takes no type arguments",
+            n.span));
+    }
+    // A SIGNATURE THE RESOLVER REFUSED types as nothing: its own diagnostic
+    // stands, and the arguments are still typed so a mistake inside one is
+    // not hidden by it.
+    if (callee == 0i32) { drop type_args_only(e, start, count); pass 0i32; }
+    if (raw type_is_invalid(e.types, callee)) { pass 0i32; }
+    // THE SIGNATURE TRAVELS ON THE CALL (1.0.6e): whatever `check_args`
+    // measures the arguments against, the emitter fits them to. THE CALLEE'S
+    // DECL RIDES ALONG so `check_args` can ask which parameters are `move`
+    // (D-183): hardcoding 0 made the consuming-parameter rule silently dead
+    // -- `lex_all` handed its LENT `text` to `lexer_init`, which consumes,
+    // and stage 1 freed the source out from under its own lexer.
+    drop exprtypes_set_callee_ft(e.expr_types, id, callee);
+    drop check_gives_call_position(e, id, n, cd);
+    pass (raw check_args(e, callee, start, count, 0i32, n.span, cd));
+};
+
 pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:callee = raw type_of_expr(e, raw expr_callee(n));
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;
 
-    // A GENERIC CALL IS SUBSTITUTED BEFORE IT IS CHECKED. The generic arguments
-    // were parsed, stored, and SKIPPED -- `start` steps over them -- so
-    // `extract::<int32>(c)` checked as though the turbofish were not there and
-    // `extract(c)` returned `T` rather than the type it was called with.
     DeclNode:d = raw callee_decl(e, n);
-    // A CALL INSIDE A CONTRACT (1.5.1, D-221): a NAMED callee only — a user
-    // function under `raw` (its call is a `Result`; `raw` is the licensed
-    // unwrap, and the licence is what checks `never fails`), or a never-fails
-    // builtin bare (D-201). A function value, a field, a `dyn`: refused,
-    // because the obligation walk encodes a call it can NAME as an
-    // uninterpreted function per known symbol, which is sound, and a call to
-    // "whatever this pointer is" is not.
-    if (e.contract_ctx != 0i32) {
-        if (raw contract_call_refused(e, id, n, d)) { pass 0i32; }
-    }
-    // A CALL INSIDE A `pure` BODY (1.5.1 step 4, D-221): a NAMED `pure` callee
-    // or a `pure` builtin, else refused by name — and typed anyway, so the
-    // licence and the argument checks see what they always see (one report).
-    // A contract's own calls are the contract rule's, above.
-    if (e.fn_pure) {
-        if (e.contract_ctx == 0i32) { drop pure_call_rules(e, n, d); }
-    }
     if (d.kind == DeclKind.DeclFunctionDecl) {
-        // AN `async` CALLEE HAS NO DIRECT SYMBOL (D-177): the machine runs
-        // only under `await`, or as the spawn form `drop f(…)` (D-058). A
-        // bare call would be an implicit await — a suspension the reader
-        // cannot see — and the blueprint rule is that nothing suspends
-        // silently.
-        if (raw decl_has(d, raw DECL_ASYNC())) {
-            if (id.index != e.await_operand) {
-                discard(raw te_error(e, raw TYPE_AWAIT_RULES(),
-                    "an `async` function is called under `await` or spawned with `drop` (D-058/D-177): a bare call would suspend where nothing says so",
-                    n.span));
-            }
-        }
-        IdSpan:gp = raw decl_generic_window(e.ast, d);
-        if (gp.count > 0i32) {
-            pass (raw type_generic_call(e, id, n, d, gp, callee, gcount, start, count));
-        }
-        // NOT GENERIC AND GIVEN ARGUMENTS ANYWAY. The turbofish names type
-        // arguments, so a function with no type parameters has nowhere to put
-        // them -- and silently ignoring them is how this behaved until now.
-        if (gcount > 0i32) {
-            discard(raw te_error(e, raw TYPE_GENERIC_ARITY(),
-                "this function is not generic, so it takes no type arguments",
-                n.span));
-        }
+        // A NAMED FUNCTION IS A DIRECT CALL -- the one rule for `f(x)` and,
+        // since D-273 (1.5.4c), for the qualified `m.f(x)`.
+        ExprNode:cnode = raw ast_expr(e.ast, raw expr_callee(n));
+        pass (raw type_direct_call(e, id, n, cnode.a, callee, gcount, start, count));
     } else {
+        // A CALL INSIDE A CONTRACT (1.5.1, D-221): a NAMED callee only — a
+        // user function under `raw` (the direct call's rule above), or a
+        // never-fails builtin bare (D-201). A function value, a field, a
+        // `dyn`: refused, because the obligation walk encodes a call it can
+        // NAME as an uninterpreted function per known symbol, which is
+        // sound, and a call to "whatever this pointer is" is not.
+        if (e.contract_ctx != 0i32) {
+            if (raw contract_call_refused(e, id, n, d)) { pass 0i32; }
+        }
+        // A CALL INSIDE A `pure` BODY (1.5.1 step 4, D-221): a `pure`
+        // builtin, else refused by name — and typed anyway, so the licence
+        // and the argument checks see what they always see (one report).
+        if (e.fn_pure) {
+            if (e.contract_ctx == 0i32) { drop pure_call_rules(e, n, d); }
+        }
         // A FUNCTION VALUE HAS NO TYPE PARAMETERS (1.0.9): an instantiation
         // and a code address is one body (D-018, D-087), so a turbofish on a
         // call through a local, a parameter or a field names nothing. This
@@ -1018,7 +1205,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // then freed the source out from under its own lexer. A genuinely
     // indirect call (a function-typed value) still passes 0, and its
     // parameters cannot be `move` at this rung.
-    drop check_gives_call_position(e, id, n);
+    drop check_gives_call_position(e, id, n, raw callee_decl_index(e, n));
     pass (raw check_args(e, callee, start, count, 0i32, n.span,
                          raw callee_decl_index(e, n)));
 };
@@ -1441,7 +1628,7 @@ func:pure_method_rules = NIL(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
 //      NOT re-checked -- it was checked once at its definition -- so what happens
 //      here is only that the arguments satisfy the bounds and fill the parameters.
 func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
-                               DeclNode:d, IdSpan:gp, int32:generic_ft,
+                               DeclNode:d, int32:cd, IdSpan:gp, int32:generic_ft,
                                int32:gcount, int32:start, int32:count) never fails {
     if (gcount > gp.count) {
         string:m1 = string_concat("this call supplies ",
@@ -1514,15 +1701,15 @@ func:type_generic_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
     // checked by here, and the window is committed into the AST's id pool, so it
     // outlives this call — which is what lets the emitter walk the set. Deduped
     // by (declaration, arguments), D-108's rule applied to functions.
-    drop fninst_record(e.fninsts, e.ast, raw callee_decl_index(e, n),
+    drop fninst_record(e.fninsts, e.ast, cd,
                        args.start, args.count, gp.start, gp.count, 0i32, ft,
                        n.span);
 
     // The SUBSTITUTED signature is the one the emitter must fit arguments to —
     // and the one `fninst_for_call` matches the specialization by (1.0.6e).
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
-    drop check_gives_call_position(e, id, n);
-    pass (raw check_args(e, ft, start, count, 0i32, n.span, raw callee_decl_index(e, n)));
+    drop check_gives_call_position(e, id, n, cd);
+    pass (raw check_args(e, ft, start, count, 0i32, n.span, cd));
 };
 
 // SOLVE WHAT THE ARGUMENTS SAY, and nothing else.
@@ -1670,7 +1857,55 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
 // in the AST (0.2.8), which is what makes this a LOOKUP rather than a rewrite:
 // the method name is resolved as an ordinary function and the receiver becomes
 // its first argument.
+// A CALL WHOSE BASE NAMES A MODULE (D-273, 1.5.4c): `m.f(x)`, `lib.f()`,
+// `core.math.sq(3i32)` -- a DIRECT call of the member. The parser folds
+// `.name(` into a method-call node, so it arrives with the namespace as its
+// receiver; the member is looked up in the module's scope (present, visible,
+// a function), recorded as the callee and as the node's `ns_decl`, and typed
+// through the SAME path a direct call of a known function takes.
+func:type_namespace_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:msym) never fails {
+    int32:name = n.payload =>! int32;
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    int32:m = raw ns_member_symbol(e, msym, name, n.span);
+    if (m == 0i32) { drop type_args_only(e, start, count); pass 0i32; }
+    Symbol:ms = raw symtab_get(e.tab, m);
+    DeclNode:md = raw ast_decl(e.ast, DeclId{ index: ms.origin });
+    if (md.kind != DeclKind.DeclFunctionDecl) {
+        drop type_args_only(e, start, count);
+        Symbol:owner = raw symtab_get(e.tab, msym);
+        string:m1 = string_concat("`", raw intern_get(e.interns, owner.name));
+        string:m2 = string_concat(m1, ".");
+        string:m3 = string_concat(m2, raw intern_get(e.interns, ms.name));
+        string:m4 = string_concat(m3, "` is ");
+        string:m5 = string_concat(m4, raw decl_kind_article(md));
+        pass (raw te_error(e, raw TYPE_MISMATCH(),
+                  string_concat(m5, ", not a function"), n.span));
+    }
+    // RECORDED BEFORE THE RULES RUN: `callee`, which every reader of a
+    // method call's callee already reads (the licence, the emitter, the
+    // await site, the encoder), and `ns_decl`, which tells every reader of
+    // its RECEIVER that there is none.
+    drop exprtypes_set_callee(e.expr_types, id, ms.origin);
+    drop exprtypes_set_ns_decl(e.expr_types, id, ms.origin);
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:ft = raw fn_type(@r, DeclId{ index: ms.origin }, ms.name, e.scope);
+    pass (raw type_direct_call(e, id, n, m, ft, 0i32, start, count));
+};
+
 pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    // A RECEIVER THAT NAMES A MODULE (D-273, 1.5.4c): the call is a direct
+    // call of the member. Asked first -- the receiver is a namespace, and
+    // typing it as a value reports "`m` is a module, not a value" before the
+    // namespace is asked, which is what DEF-31 found.
+    NsPath:np = raw namespace_path(e, raw expr_operand(n), true);
+    if (np.is_ns) {
+        if (np.sym == 0i32) {
+            drop type_args_only(e, raw expr_list_start(n), raw expr_list_count(n));
+            pass 0i32;
+        }
+        pass (raw type_namespace_call(e, id, n, np.sym));
+    }
     // `Trait.method(recv, …)` PARSES AS A METHOD CALL whose operand is the
     // trait name (D-172): the method resolved for the receiver's type through
     // the named trait, which chooses the one of two same-named traits D-102

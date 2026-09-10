@@ -1051,6 +1051,20 @@ func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
         DeclId:srcRoot = DeclId{ index: src.root };
         drop bind_or_report(g, scope, alias, raw SYM_DECL(), srcRoot.index,
                             extra, d.span, target, report);
+        // THE ALIAS CARRIES THE FILE'S SCOPE (D-273 §4, 1.5.4c): the one
+        // `inner` field, read by the one lookup -- `lib.f(x)` and `lib.MAX`
+        // resolve through it exactly as an inline module's members do.
+        // Idempotent under the fixed-point loop: the same symbol, the same
+        // scope, every round.
+        int32:asym = raw scope_lookup_local(@g.tab, scope, alias);
+        if (asym != 0i32) {
+            Symbol:asy = raw symtab_get(@g.tab, asym);
+            if (asy.origin_kind == (raw SYM_DECL())) {
+                if (asy.origin == srcRoot.index) {
+                    drop symtab_set_inner(@g.tab, asym, src.scope);
+                }
+            }
+        }
         pass NIL;
     }
 

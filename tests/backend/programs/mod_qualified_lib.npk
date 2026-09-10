@@ -1,0 +1,8 @@
+// A FIXTURE for mod_qualified.npk, which imports it as `use
+// "./mod_qualified_lib.npk" as lib;`: the alias `lib` carries this file's scope
+// (D-273 §4, 1.5.4c), so `lib.f()` and `lib.K` resolve through it exactly as
+// an inline module's members do. Not a test of its own.
+mod:mod_qualified_lib;
+pub func:f = int32() never fails { pass 5i32; };
+pub fixed int32:K = 1i32;
+func:private_here = int32() never fails { pass 0i32; };

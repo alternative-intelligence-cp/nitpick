@@ -1,0 +1,33 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-019
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-007
+// expect-error: NITPICK-TYPE-019
+//
+// A MODULE IS NOT A VALUE, AND ITS MEMBERS ARE WHAT THEY ARE (D-273, 1.5.4c).
+// `hidden` in value position says so (TYPE-007, the identifier arm); a member
+// the module lacks is TYPE-019, "module `hidden` has no member `nosuch`",
+// through a call or a nested path alike; a global called, a struct or a
+// module read as a value, each says what the name is -- the same sentence the
+// bare name gets. Until this step a struct read through a module was accepted
+// with NO diagnostic and died in the emitter (EMIT-002). One function per
+// mistake, so no report cascades into another.
+mod:mod_not_value;
+
+mod:hidden = {
+    pub fixed int32:MAX = 3i32;
+    pub struct:P = { int32:x; };
+    pub mod:inner = { pub func:g = int32() never fails { pass 1i32; }; };
+    pub func:f = int32(int32:v) never fails { pass v; };
+};
+
+func:module_as_value = int32() never fails { int32:x = hidden; pass x; };
+func:no_such_member = int32() never fails { pass (raw hidden.nosuch(1i32)); };
+func:global_called = int32() never fails { pass (raw hidden.MAX(1i32)); };
+func:struct_as_value = int32() never fails { int32:v = hidden.P; pass v; };
+func:module_member_as_value = int32() never fails { int32:w = hidden.inner; pass w; };
+func:nested_no_such = int32() never fails { pass (raw hidden.nosuch2.g()); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

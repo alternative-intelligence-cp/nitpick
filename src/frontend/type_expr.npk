@@ -3690,7 +3690,14 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
             // typed yet the first time an `await` asks, and a check that
             // depends on whether some earlier expression happened to record
             // it is a check that answers differently in the same program.
-            int32:awrt = raw type_of_expr(e, raw expr_operand(awn));
+            // UNLESS THE RECEIVER NAMES A MODULE (D-273, 1.5.4c): `await
+            // m.run()` is a direct call of the member, and its receiver is a
+            // namespace no value typer may see -- the probe reports nothing,
+            // and the call's own typer reports a bad path once.
+            int32:awrt = 0i32;
+            if (!((raw namespace_path(e, raw expr_operand(awn), false)).is_ns)) {
+                awrt = raw type_of_expr(e, raw expr_operand(awn));
+            }
             if (awrt != 0i32) {
                 if ((raw type_kind(e.types, awrt)) == (raw TY_CHANNEL())) {
                     string:awm = raw intern_get(e.interns, awn.payload =>! int32);

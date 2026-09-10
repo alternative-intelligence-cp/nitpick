@@ -300,7 +300,13 @@ func:sync_wait_level = int32(Locks->:x, ExprNode:n) never fails {
     pass (raw LOCK_NONE_MIN());
 };
 
-func:call_target = int32(Locks->:x, ExprNode:n) never fails {
+func:call_target = int32(Locks->:x, ExprId:id, ExprNode:n) never fails {
+    // A NAMESPACE CALL (D-273, 1.5.4c) is the direct call the checker
+    // recorded: its receiver names a module, not a value, and re-finding a
+    // method on it would find nothing -- the callee's `acquires` summary
+    // would never be followed.
+    int32:nsd = raw exprtypes_ns_decl(x.etypes, id);
+    if (nsd != 0i32) { pass nsd; }
     if (n.kind == ExprKind.ExprCallExpr) {
         ExprId:c = raw expr_callee(n);
         if (raw expr_is_none(c)) { pass 0i32; }
@@ -605,7 +611,7 @@ func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) never fails {
     if (depth <= 0i32)         { pass (raw LOCK_NONE_MIN()); }
     ExprNode:n = raw ast_expr(x.ast, id);
 
-    int32:target = raw call_target(x, n);
+    int32:target = raw call_target(x, id, n);
     if (target != 0i32) {
         if (x.table.has_bound[target => int64]) {
             pass (x.table.bound[target => int64]);
@@ -661,7 +667,7 @@ func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:dept
     }
     int32:d = depth - 1i32;
 
-    int32:target = raw call_target(x, n);
+    int32:target = raw call_target(x, id, n);
     if (target != 0i32) {
         drop locks_call(x, caller, target, held, n.span);
     }

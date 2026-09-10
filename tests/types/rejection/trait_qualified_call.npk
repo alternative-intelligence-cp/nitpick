@@ -1,4 +1,4 @@
-// `Trait.method(recv, …)` — the two ways it is refused (D-172, 1.0.9b).
+// `Trait.method(recv, …)` — the three ways it is refused (D-172, 1.0.9b).
 //
 //   * QUALIFIED ON A TYPE THAT DOES NOT IMPLEMENT THE TRAIT. `Ta.name(q)` asks
 //     for `Ta`'s `name` specialised to `Q`, and `Q` implements no `Ta`, so
@@ -7,22 +7,36 @@
 //     between `Ta`'s and `Tb`'s `name` (D-102, no meaning-by-position); the
 //     diagnostic now names the qualified form as the fix rather than telling the
 //     author to give a method up.
+//   * A `move` PARAMETER TAKES `move(...)` THROUGH THE QUALIFIED SPELLING TOO
+//     (1.5.4c step 0, found on the way to D-273): `Eat.eat(p, t)` against
+//     `move string:s` was accepted bare where `p.eat(t)` refuses TYPE-046 --
+//     the call passed no callee to the argument check, so the `move` rule
+//     never asked -- and the callee dropped `t`'s body at its exit while the
+//     caller dropped it again at its own.
 mod:trait_qualified_call;
 error:E9;
 
 trait:Ta = { func:name = int32(Self:self); };
 trait:Tb = { func:name = int32(Self:self); };
+trait:Eat = { func:eat = int32(Self:self, move string:s) never fails; };
 
 struct:Q = { int32:v; };
 struct:P = { int32:v; };
 impl:P:Ta = { func:name = int32(P:self) { pass 1i32; }; };
 impl:P:Tb = { func:name = int32(P:self) { pass 2i32; }; };
+impl:P:Eat = { func:eat = int32(P:self, move string:s) never fails { pass ((s.len =>! int32) + self.v); }; };
 
 // expect-error: NITPICK-TYPE-019
 func:on_a_non_implementor = int32(Q:q) never fails { pass (Ta.name(q) ?! E9); };
 
 // expect-error: NITPICK-TYPE-020
 func:still_ambiguous_unqualified = int32(P:p) never fails { pass (p.name() ?! E9); };
+
+// expect-error: NITPICK-TYPE-046
+func:qualified_move_param = int32(P:p) never fails {
+    string:t = string_concat("ab", "cd");
+    pass (raw Eat.eat(p, t));
+};
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(Error:_~e) { exit 1i32; };

@@ -1414,7 +1414,12 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         pass ra;
     }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
-        pass (raw escape_call_like(x, id, raw expr_operand(n),
+        // A NAMESPACE CALL (D-273, 1.5.4c) has no receiver to walk: its base
+        // names a module, and the call is the direct call the checker
+        // recorded.
+        ExprId:erecv = raw expr_operand(n);
+        if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { erecv = raw expr_none(); }
+        pass (raw escape_call_like(x, id, erecv,
                                      raw expr_list_start(n),
                                      raw expr_list_count(n),
                                      raw expr_none(), d));

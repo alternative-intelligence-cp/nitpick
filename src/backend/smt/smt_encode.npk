@@ -832,7 +832,14 @@ struct:CallEnc = {
 func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     Term:rcv = raw term_none();
     int32:rty = 0i32;
-    if (n.a != 0i32) {
+    // A NAMESPACE CALL (D-273, 1.5.4c): the receiver names a module -- no
+    // site, no term, no parameter -- and the call is the direct call the
+    // checker recorded, its rows the direct call's.
+    bool:ns_call = false;
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        if ((raw exprtypes_ns_decl(e.et, id)) != 0i32) { ns_call = true; }
+    }
+    if ((n.a != 0i32) && (!ns_call)) {
         rcv = raw enc_expr(e, ExprId{ index: n.a });
         rty = raw ty_of(e, ExprId{ index: n.a });
     }
@@ -863,7 +870,7 @@ func:enc_call = CallEnc(Encoder->:e, ExprId:id, ExprNode:n) never fails {
     if (!(raw decl_is_none(raw fn_variadic(e.ast, cdn)))) { pass none; }
     int32:pc = raw fn_param_count(e.ast, cdn);
     int32:off = 0i32;
-    if (n.kind == ExprKind.ExprMethodCallExpr) {
+    if ((n.kind == ExprKind.ExprMethodCallExpr) && (!ns_call)) {
         if (pc == (argc + 1i32)) { off = 1i32; }
         else { if (pc != argc) { pass none; } }
     } else {
@@ -1741,6 +1748,12 @@ func:expr_children = NIL(Encoder->:e, ExprNode:n, List<int32>->:out) never fails
         pass NIL;
     }
     if (k == ExprKind.ExprMethodCallExpr) {
+        // A NAMESPACE CALL'S RECEIVER (D-273, 1.5.4c) names a module and is
+        // still pushed: a walk for SITES finds none in an identifier or in a
+        // path of member accesses, and the term is discarded. (Threading the
+        // node's id through here to skip it moved this function's own
+        // `div-min` row in `nitpick.obligations` -- a parameter is a symbol
+        // of the encoding -- which 1.5.4c must not do.)
         if (n.a != 0i32) { drop list_push(out, n.a); }
         for (int32:i2 in 0i32...n.c) { drop list_push(out, raw ast_id_at(e.ast, n.b, i2)); }
         pass NIL;

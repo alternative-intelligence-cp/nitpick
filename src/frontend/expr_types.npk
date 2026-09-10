@@ -99,6 +99,21 @@ pub struct:ExprTypes = {
     // parameter `fits` read. An indirect call records the value's own function
     // type; a variant constructor records 0 and reads the payload instead.
     wild int32->:callee_ft;
+
+    // THE DECLARATION A NAMESPACE PATH RESOLVED THIS NODE TO (D-273,
+    // 1.5.4c), or 0. `m.f(x)` parses as a METHOD call whose receiver is
+    // `m`, and `m.MAX` as a member access on it; when `m` names a MODULE --
+    // an inline module, an alias, a nested path `core.math` -- the receiver
+    // is a namespace, not a value, and this slot records what the path
+    // named: on a method-call node the member CALLED (the call is a direct
+    // call of it, with no receiver), on a member-access node the member READ
+    // (a global, a function value, an error constant). Every reader of a
+    // method call's receiver asks this first and skips the receiver when it
+    // is set; the emitter and the reach analysis lower a namespace value by
+    // reading it rather than walking the path a second time. The walk
+    // (`namespace_path`) is the checker's, once; recording its answer is what
+    // keeps it one.
+    wild int32->:ns_decl;
     int32:count;
 
     // LOCALS LIVE ACROSS A SUSPENSION (D-177, 1.1.4). The suspend walk marks
@@ -126,6 +141,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
     wild int8->:cim = alloc(size * #size_of<int32>());
     wild int8->:ctr = alloc(size * #size_of<int32>());
     wild int8->:cft = alloc(size * #size_of<int32>());
+    wild int8->:nsd = alloc(size * #size_of<int32>());
 
     ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
                              known: flags =>! wild bool->,
@@ -133,6 +149,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              callee_sym: cim =>! wild int32->,
                              callee_trait: ctr =>! wild int32->,
                              callee_ft: cft =>! wild int32->,
+                             ns_decl: nsd =>! wild int32->,
                              count: size =>! int32,
                              cross: raw list_init::<int32>(16i64),
                              odecl: raw list_init::<int32>(16i64) };
@@ -143,6 +160,7 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
         t.callee_sym[i] = 0i32;
         t.callee_trait[i] = 0i32;
         t.callee_ft[i] = 0i32;
+        t.ns_decl[i] = 0i32;
     }
     pass t;
 };
@@ -236,6 +254,22 @@ pub func:exprtypes_callee_ft = int32(ExprTypes->:t, ExprId:id) never fails {
     if (id.index < 0i32) { pass 0i32; }
     if (id.index >= t.count) { pass 0i32; }
     pass (t.callee_ft[id.index => int64]);
+};
+
+// The declaration a namespace path resolved a node to (D-273, 1.5.4c), or 0:
+// a method call's callee when its receiver names a module, a member access's
+// member when its base does. See the field.
+pub func:exprtypes_set_ns_decl = NIL(ExprTypes->:t, ExprId:id, int32:decl) never fails {
+    if (id.index < 0i32) { !!! BoundsId; }
+    if (id.index >= t.count) { !!! BoundsId; }
+    t.ns_decl[id.index => int64] = decl;
+    pass NIL;
+};
+
+pub func:exprtypes_ns_decl = int32(ExprTypes->:t, ExprId:id) never fails {
+    if (id.index < 0i32) { pass 0i32; }
+    if (id.index >= t.count) { pass 0i32; }
+    pass (t.ns_decl[id.index => int64]);
 };
 
 pub func:exprtypes_count = int32(ExprTypes->:t) never fails { pass t.count; };

@@ -689,7 +689,8 @@ SLOT_SITE_PAIRS = {
     "check_var_decl":      {"emit_vardecl"},
     "check_assign":        {"emit_assign"},
     "check_pass":          {"emit_pass"},
-    "check_args":          {"emit_call", "emit_indirect_call", "emit_method_call",
+    "check_args":          {"emit_direct_call",       # `f(x)` and the qualified `m.f(x)`: the one direct-call emitter (D-273, 1.5.4c)
+                            "emit_indirect_call", "emit_method_call",
                             "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)
                             "emit_field_call",        # `s.f(x)` through a fn-valued field (1.0.9c)
                             "emit_child_frame",       # await/spawn args, stored into the frame (1.1.4)

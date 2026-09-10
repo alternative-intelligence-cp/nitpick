@@ -390,6 +390,23 @@ pub func:scope_lookup = int32(SymbolTable->:t, int32:scope, int32:name) never fa
     pass 0i32;
 };
 
+// IS `scope` INSIDE `target` -- the same scope, or one of its descendants
+// (D-273, 1.5.4c)? The visibility question a qualified path asks at every
+// hop: a member reached from inside its module is reachable whatever its
+// flag, and one reached from outside must be exported. Walks the parent
+// chain, bounded like every walk over program structure.
+pub func:scope_is_inside = bool(SymbolTable->:t, int32:scope, int32:target) never fails {
+    if (target == 0i32) { pass false; }
+    int32:cur = scope;
+    int32:fuel = 4096i32;
+    while ((cur != 0i32) && (fuel > 0i32)) {
+        if (cur == target) { pass true; }
+        cur = raw scope_parent(t, cur);
+        fuel = fuel - 1i32;
+    }
+    pass false;
+};
+
 // Where a symbol was declared. Read THROUGH the origin rather than stored, so
 // there is one span for one declaration and it cannot go stale.
 pub func:symbol_span = Span(Ast->:ast, SymbolTable->:t, int32:id) never fails {

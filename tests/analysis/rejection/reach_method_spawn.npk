@@ -1,0 +1,32 @@
+// expect-error: NITPICK-REACH-002
+//
+// AN ASYNC METHOD SPAWN ARMS THE JOIN'S DEADLINE (1.5.4c step 0, found on the
+// way to D-273): `drop j.run()` through an impl -- D-182's trait-method spawn
+// -- reaches `DeadlineExceeded` exactly as `drop run(3i32)` does, and until
+// this step the reach analysis saw only an identifier callee, so the method
+// form compiled with a `failsafe` that never named the error the join's
+// deadline can hand it. The direct form was refused all along; this file holds
+// the method form to the same rule, through the callee the checker recorded
+// -- the read the namespace form `drop m.run()` shares.
+mod:reach_method_spawn;
+
+trait:Work = { async func:run = NIL(Self:self); };
+struct:Job = { int32:n; };
+impl:Job:Work = { async func:run = NIL(Job:self) { pass NIL; }; };
+
+async func:main = int32(cstring[]:_~argv) {
+    Job:j = Job{ n: 3i32 };
+    drop j.run();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

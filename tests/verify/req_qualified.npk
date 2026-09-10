@@ -1,0 +1,43 @@
+// expect-exit: 3
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 1
+// expect-obligation: div-zero discharged 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: failsafe-post discharged 13
+// expect-obligation: exhaustive checker 1
+//
+// A `requires` ON A MEMBER CALLED QUALIFIED (D-273, 1.5.4c): `m.half(6i32)`
+// is a direct call of the inline module's member, so its call-site
+// `requires` row is recorded as at any direct call (L-7, D-268) -- `6 > 0`
+// discharges, the role is `bypass`, and the verified build names `half.body`
+// past the checked entry (D-252). The entry row is `open`: a callee knows
+// nothing of its argument. The division's two rows are the literal's.
+mod:req_qualified;
+error:E9;
+
+mod:m = {
+    pub func:half = int32(int32:n) requires n > 0i32 { pass (n / 2i32); };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = m.half(6i32) ?! E9;
+    exit a;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (InvariantViolated) { exit 34i32; },
+        (DivByZero)         { exit 36i32; },
+        (DivOverflow)       { exit 37i32; },
+        (IntOverflow)       { exit 93i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

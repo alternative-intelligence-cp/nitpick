@@ -1590,46 +1590,57 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) never fails {
     pass (raw iv("{ ptr, i64, i64 }", move(c), 0i32));
 };
 
+// A DECLARATION READ AS A VALUE -- by its bare name (`emit_ident`) or through
+// a module path (`emit_member`, D-273, 1.5.4c): a function is its symbol, an
+// error constant its code, a module-level binding a load from its global.
+// Anything else is a defect: the checker names what is not a value.
+func:emit_decl_value = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:decl,
+                             int32:name) never fails {
+    DeclNode:fdecl = raw ast_decl(x.ast, DeclId{ index: decl });
+    // A FUNCTION USED AS A VALUE (0.9.6, D-087): one machine word, the
+    // symbol itself — closures are gone (D-018), so there is no
+    // environment to capture and nothing to allocate.
+    if (fdecl.kind == DeclKind.DeclFunctionDecl) {
+        string:fnm = raw intern_get(x.interns, name);
+        pass (raw iv("ptr",
+                     raw mangled_fn_sym(x.fe.ctx, decl, fnm),
+                     raw exprtypes_get(x.et, id)));
+    }
+    // A DECLARED ERROR CONSTANT IS ITS ASSIGNED CODE (D-179):
+    // resolve wrote it into slot `c`, and the constant lowers
+    // inline — no symbol, no load, four bytes that are not a
+    // number.
+    if (fdecl.kind == DeclKind.DeclErrorDecl) {
+        pass (raw iv("i32", int_to_string(fdecl.c => int64),
+                     raw exprtypes_get(x.et, id)));
+    }
+    // A MODULE-LEVEL BINDING IS LOADED FROM ITS GLOBAL (D-165,
+    // 1.0.9d): the value the constant/global holds, under D-156's
+    // symbol — the same one `emit_one_global` wrote.
+    if (fdecl.kind == DeclKind.DeclGlobalDecl) {
+        int32:gtid = raw exprtypes_get(x.et, id);
+        LlType:gll = raw node_ll(x, id);
+        if (gll.state != (raw LL_OK())) {
+            pass (raw iv_from_ll_at(x, gll, gtid, at));
+        }
+        string:gsym = raw mangled_fn_sym(x.fe.ctx, decl,
+                          raw intern_get(x.interns, name));
+        string:gr = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat5(gr, " = load ", gll.text,
+                          ", ptr ", gsym));
+        pass (raw iv(move(gll.text), move(gr), gtid));
+    }
+    pass (raw iv_broken(at));
+};
+
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     int64:si = raw fnem_lookup_idx(x.fe, n.payload =>! int32);
     if (si < 0i64) {
-        // A FUNCTION USED AS A VALUE (0.9.6, D-087): one machine word, the
-        // symbol itself — closures are gone (D-018), so there is no
-        // environment to capture and nothing to allocate.
+        // A DECLARATION AS A VALUE: a function, an error constant, a global.
         if (n.a != 0i32) {
             Symbol:fsym = raw symtab_get(x.tab, n.a);
             if (fsym.origin_kind == (raw SYM_DECL())) {
-                DeclNode:fdecl = raw ast_decl(x.ast, DeclId{ index: fsym.origin });
-                if (fdecl.kind == DeclKind.DeclFunctionDecl) {
-                    string:fnm = raw intern_get(x.interns, fsym.name);
-                    pass (raw iv("ptr",
-                                 raw mangled_fn_sym(x.fe.ctx, fsym.origin, fnm),
-                                 raw exprtypes_get(x.et, id)));
-                }
-                // A DECLARED ERROR CONSTANT IS ITS ASSIGNED CODE (D-179):
-                // resolve wrote it into slot `c`, and the constant lowers
-                // inline — no symbol, no load, four bytes that are not a
-                // number.
-                if (fdecl.kind == DeclKind.DeclErrorDecl) {
-                    pass (raw iv("i32", int_to_string(fdecl.c => int64),
-                                 raw exprtypes_get(x.et, id)));
-                }
-                // A MODULE-LEVEL BINDING IS LOADED FROM ITS GLOBAL (D-165,
-                // 1.0.9d): the value the constant/global holds, under D-156's
-                // symbol — the same one `emit_one_global` wrote.
-                if (fdecl.kind == DeclKind.DeclGlobalDecl) {
-                    int32:gtid = raw exprtypes_get(x.et, id);
-                    LlType:gll = raw node_ll(x, id);
-                    if (gll.state != (raw LL_OK())) {
-                        pass (raw iv_from_ll_at(x, gll, gtid, n.span));
-                    }
-                    string:gsym = raw mangled_fn_sym(x.fe.ctx, fsym.origin,
-                                      raw intern_get(x.interns, fsym.name));
-                    string:gr = raw irw_temp(x.fe.w);
-                    drop irw_line(x.fe.w, raw cat5(gr, " = load ", gll.text,
-                                      ", ptr ", gsym));
-                    pass (raw iv(move(gll.text), move(gr), gtid));
-                }
+                pass (raw emit_decl_value(x, id, n.span, fsym.origin, fsym.name));
             }
         }
         // Not a local, a function or a global: the checker refuses an unknown
@@ -4576,7 +4587,13 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     // for an ordinary method call — `self` is a parameter, and the only thing
     // unusual about it here is that it is not in the argument window.
     int32:base = 0i32;
+    // A NAMESPACE CALL (D-273, 1.5.4c) has no receiver: `await m.run(x)`
+    // seeds the frame from its window alone, as a direct await does.
+    bool:cf_ns = false;
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
+        if ((raw exprtypes_ns_decl(x.et, cid)) != 0i32) { cf_ns = true; }
+    }
+    if ((cn.kind == ExprKind.ExprMethodCallExpr) && (!cf_ns)) {
         // A POINTER RECEIVER IS PASSED BY ADDRESS (1.0.9b's rule, ported to
         // the awaited form at 1.1.12b): a method `read = int64(Self->:self,…)`
         // awaited as `r.read(…)` seeds slot 12 with `@r`, not with the value
@@ -4676,7 +4693,14 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
     // trait's method for a call through a bound, the trait's default for an
     // inherited one -- and its module is the trait's, which is the impl's only
     // while the two share one. Each method path asks the table.
+    // A NAMESPACE CALL (D-273, 1.5.4c) is a free function's: its name is
+    // the declaration's, its module the declaration's, the specialization
+    // matched as a direct call's below.
+    bool:ac_ns = false;
     if (cn.kind == ExprKind.ExprMethodCallExpr) {
+        if ((raw exprtypes_ns_decl(x.et, cid)) != 0i32) { ac_ns = true; }
+    }
+    if ((cn.kind == ExprKind.ExprMethodCallExpr) && (!ac_ns)) {
         string:mn = raw intern_get(x.interns, raw decl_name(cdecl));
         // SUBSTITUTION OUTRANKS THE RECORDED SYMBOL (1.1.12c). The checker
         // records what it resolved AT CHECK TIME — for a call on a generic
@@ -4741,9 +4765,14 @@ func:async_callee_name = AsyncCallee(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         }
         pass AsyncCallee{ name: "", qual: cdi };
     }
-    ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
-    Symbol:cs = raw symtab_get(x.tab, cnode.a);
-    string:fname = raw intern_get(x.interns, cs.name);
+    string:fname = "";
+    if (ac_ns) {
+        fname = raw intern_get(x.interns, raw decl_name(cdecl));
+    } else {
+        ExprNode:cnode = raw ast_expr(x.ast, raw expr_callee(cn));
+        Symbol:cs = raw symtab_get(x.tab, cnode.a);
+        fname = raw intern_get(x.interns, cs.name);
+    }
     if ((raw decl_generic_window(x.ast, cdecl)).count == 0i32) {
         pass AsyncCallee{ name: move(fname), qual: cdi };
     }
@@ -6676,6 +6705,22 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         pass (raw call_builtin(x, id, n, cnode, start, count));
     }
 
+    // A user function: the symbol names the declaration, and the declaration
+    // names the function -- the direct call, ONE emitter for `f(x)` and the
+    // qualified `m.f(x)` alike (D-273, 1.5.4c).
+    Symbol:s = raw symtab_get(x.tab, cnode.a);
+    pass (raw emit_direct_call(x, id, n, s.origin, s.name, start, count));
+};
+
+// A DIRECT CALL OF A KNOWN FUNCTION, `decl` by declaration and `name` by
+// intern: the arguments of `n`'s window from `start`, each fit to its
+// parameter under the signature the checker recorded on the call; the
+// symbol (the specialization's for a generic callee, the body's past a
+// discharged entry, D-252); the call; the `Result` envelope. `f(x)` reaches
+// it from `emit_call` and `m.f(x)` from `emit_method_call` (D-273, 1.5.4c) --
+// a second emitter for one call shape is the 1.3.3 `op=` mistake.
+func:emit_direct_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, int32:decl,
+                              int32:name, int32:start, int32:count) never fails {
     // Arguments in source order, each FIT TO ITS PARAMETER (1.0.6e). This loop
     // used to say "no `want` coercion anywhere: D-092 has no implicit widening,
     // so the checker already made every argument EXACTLY its parameter's type"
@@ -6707,10 +6752,9 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
         args = raw cat3(args, "{ ptr, i64 }", string_concat(" ", tv.ref));
     }
 
-    // A user function: the symbol names the declaration, the declaration names
-    // the function, and the call's own recorded type is the full `Result<T>`.
-    Symbol:s = raw symtab_get(x.tab, cnode.a);
-    string:fname = raw intern_get(x.interns, s.name);
+    // A user function: the declaration names the function, and the call's own
+    // recorded type is the full `Result<T>`.
+    string:fname = raw intern_get(x.interns, name);
 
     // A GENERIC CALL NAMES ITS SPECIALIZATION (1.0.2b). The declaration is a
     // template; what this call reaches is the body emitted for ITS argument set.
@@ -6724,19 +6768,19 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
     // declaration differ in their substituted signature, so the arguments that
     // reached this call say which one it is — and where a program has only one
     // instantiation of a function (the common case) the first match is it.
-    string:sym = raw mangled_fn_sym(x.fe.ctx, s.origin, fname);
-    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: s.origin });
+    string:sym = raw mangled_fn_sym(x.fe.ctx, decl, fname);
+    DeclNode:cdecl = raw ast_decl(x.ast, DeclId{ index: decl });
     if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
-        int32:spec = raw fninst_for_call(x, s.origin, id);
+        int32:spec = raw fninst_for_call(x, decl, id);
         if (spec != 0i32) {
-            sym = raw mangled_fn_sym(x.fe.ctx, s.origin,
+            sym = raw mangled_fn_sym(x.fe.ctx, decl,
                       raw intern_get(x.interns, spec));
         }
     }
     // THE CALLER-SIDE BYPASS (D-252, 1.5.2 step 4): a direct call whose
     // `limit-subsume` row the manifest discharged names the callee's BODY,
     // past its checked entry; every other call names the entry.
-    if (raw callee_bypasses(x, s.origin, id)) { sym = raw body_sym(sym); }
+    if (raw callee_bypasses(x, decl, id)) { sym = raw body_sym(sym); }
     LlType:ret = raw node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
         pass (raw iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
@@ -8467,6 +8511,16 @@ func:emit_field_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
 };
 
 func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // A NAMESPACE CALL (D-273, 1.5.4c): `m.f(x)` -- the receiver names a
+    // module, the checker recorded the member as the callee, and the call
+    // lowers as the direct call it is, with no receiver, through the one
+    // direct-call emitter.
+    int32:nsd = raw exprtypes_ns_decl(x.et, id);
+    if (nsd != 0i32) {
+        DeclNode:nsdn = raw ast_decl(x.ast, DeclId{ index: nsd });
+        pass (raw emit_direct_call(x, id, n, nsd, raw decl_name(nsdn),
+                                   raw expr_list_start(n), raw expr_list_count(n)));
+    }
     int32:decl = raw exprtypes_callee(x.et, id);
     if (decl == 0i32) {
         // No method decl, but a call all the same: `s.f(x)` through a
@@ -8891,6 +8945,19 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
     }
 
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        // A MODULE-LEVEL BINDING'S PLACE THROUGH A MODULE PATH (D-273,
+        // 1.5.4c): `m.MAX` -- its global's symbol, as the identifier arm
+        // answers for the bare name.
+        int32:nsd = raw exprtypes_ns_decl(x.et, id);
+        if (nsd != 0i32) {
+            DeclNode:nsdn = raw ast_decl(x.ast, DeclId{ index: nsd });
+            if (nsdn.kind == DeclKind.DeclGlobalDecl) {
+                string:nss = raw mangled_fn_sym(x.fe.ctx, nsd,
+                                 raw intern_get(x.interns, raw decl_name(nsdn)));
+                pass (raw pv(move(nss), raw exprtypes_get(x.et, id)));
+            }
+            pass (raw pv_broken(n.span));
+        }
         ExprId:base_id = raw expr_operand(n);
         PlaceVal:base = raw addr_of(x, base_id);
         if (base.state != (raw LL_OK())) { pass base; }
@@ -9450,6 +9517,15 @@ func:emit_safe_nav = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
 };
 
 func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // A MODULE MEMBER READ (D-273, 1.5.4c): `m.MAX`, `lib.f`, `core.E` -- the
+    // declaration the checker recorded for the path, lowered as its bare name
+    // is. Until this step the checker typed the read and the emitter died on
+    // it (EMIT-002: no arm knew a base that is not a value).
+    int32:nsd = raw exprtypes_ns_decl(x.et, id);
+    if (nsd != 0i32) {
+        DeclNode:nsdn = raw ast_decl(x.ast, DeclId{ index: nsd });
+        pass (raw emit_decl_value(x, id, n.span, nsd, raw decl_name(nsdn)));
+    }
     if ((raw member_enum_decl(x, n)) != 0i32) {
         pass (raw emit_variant_ref(x, id, n));
     }

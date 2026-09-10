@@ -1204,6 +1204,13 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     // comment above `callee_frees` forbids carrying over).
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         ExprId:recv = raw expr_operand(n);
+        // A NAMESPACE CALL (D-273, 1.5.4c): the receiver names a module,
+        // not a binding, and is no read.
+        if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) {
+            drop assign_expr_window(x, st, raw expr_list_start(n),
+                                    raw expr_list_count(n), d);
+            pass NIL;
+        }
         drop assign_expr(x, st, recv, d);
         drop assign_expr_window(x, st, raw expr_list_start(n),
                                 raw expr_list_count(n), d);
