@@ -1,0 +1,47 @@
+// A float division is IEEE and TOTAL (D-143): `/` and `%` on `flt32`/`flt64`
+// yield inf or NaN and never trap, and the emitter writes a bare `fdiv`/`frem`
+// with no guard -- so the reach analysis demands no `DivByZero`/`DivOverflow`
+// arm for one (DEF-37, 1.5.4b step 4b; the twisted families' rule since
+// 1.3.2, which the float family had been left out of: this `failsafe` was
+// REACH-002 twice before). A `simd` division rides its ELEMENT's rule
+// (D-194): float lanes are total too, integer lanes keep the any-lane guard
+// and the arm (`rejection/reach_simd_div.npk`). Silence is the assertion.
+mod:float_total;
+
+func:ratio = flt64(flt64:a, flt64:b) never fails {
+    flt64:q = a / b;
+    flt64:r = a % b;
+    q /= 2.0f64;
+    r %= 3.0f64;
+    pass (q + r);
+};
+
+func:narrow = flt32(flt32:a, flt32:b) never fails {
+    pass ((a / b) % 1.5f32);
+};
+
+func:lanes = flt64(simd<flt64, 4>:a, simd<flt64, 4>:b) never fails {
+    simd<flt64, 4>:q = a / b;
+    pass q.sum();
+};
+
+func:main = int32(cstring[]:_~argv) {
+    flt64:x = raw ratio(1.0f64, 0.0f64);
+    flt32:y = raw narrow(1.0f32, 0.0f32);
+    simd<flt64, 4>:v = simd(1.0f64, 2.0f64, 3.0f64, 4.0f64);
+    simd<flt64, 4>:z = simd(0.0f64);
+    flt64:s = raw lanes(v, z);
+    if ((x < 1.0f64) || (y < 1.0f32) || (s < 1.0f64)) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

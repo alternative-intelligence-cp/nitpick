@@ -296,6 +296,12 @@ func:reach_stmt = NIL(Reach->:x, StmtId:id, int32:fuel) never fails {
         if (adiv) {
             int32:atid = raw exprtypes_get(x.ets, raw stmt_target(s));
             int32:ak2 = raw type_kind(x.types, atid);
+            // The element's rule for a `simd` target and no arm for a float
+            // one, as at the expression site (DEF-37, 1.5.4b step 4b).
+            if (ak2 == (raw TY_SIMD())) {
+                ak2 = raw type_kind(x.types, raw type_elem(x.types, atid));
+            }
+            if (ak2 == (raw TY_FLOAT())) { adiv = false; }
             if (ak2 == (raw TY_TBB())) { adiv = false; }
             if (ak2 == (raw TY_TFP())) { adiv = false; }
             if (ak2 == (raw TY_DIM())) { adiv = false; }
@@ -490,6 +496,17 @@ func:reach_expr = NIL(Reach->:x, ExprId:id, int32:fuel) never fails {
             // DivByZero for it would demand an arm nothing can enter.
             int32:dtid = raw exprtypes_get(x.ets, id);
             int32:dk2 = raw type_kind(x.types, dtid);
+            // A `simd` division rides its ELEMENT's rule (D-194: elementwise
+            // under the scalar rules): integer lanes carry D-007 as the
+            // any-lane guard and arm; float lanes are total and arm nothing.
+            if (dk2 == (raw TY_SIMD())) {
+                dk2 = raw type_kind(x.types, raw type_elem(x.types, dtid));
+            }
+            // A FLOAT division is IEEE and total (D-143): the emitter writes
+            // a bare `fdiv`/`frem` -- inf or NaN, never a trap -- so arming
+            // DivByZero for it demanded an arm nothing can enter, the
+            // twisted case exactly (DEF-37, 1.5.4b step 4b).
+            if (dk2 == (raw TY_FLOAT())) { divlike = false; }
             if (dk2 == (raw TY_TBB())) { divlike = false; }
             if (dk2 == (raw TY_TFP())) { divlike = false; }
             if (dk2 == (raw TY_DIM())) { divlike = false; }

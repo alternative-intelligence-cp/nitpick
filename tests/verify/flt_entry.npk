@@ -1,7 +1,7 @@
 // expect-exit: 7
 // expect-obligation: err-exit discharged 3
 // expect-obligation: err-exit open 1
-// expect-obligation: failsafe-post discharged 10
+// expect-obligation: failsafe-post discharged 8
 // expect-obligation: exhaustive checker 1
 //
 // A FLOAT ENTERING `tbb` (D-144 as amended; D-281 over step 2's handoff):
@@ -31,8 +31,6 @@ func:main = int32(cstring[]:argv) {
 func:failsafe = int32(Error:e) {
     pick (e) {
         (TbbErr)         { exit 24i32; },
-        (DivByZero)      { exit 36i32; },
-        (DivOverflow)    { exit 37i32; },
         (IntOverflow)    { exit 93i32; },
         (HeapBadRequest) { exit 91i32; },
         (HeapOom)        { exit 92i32; },

@@ -1,5 +1,5 @@
 // expect-exit: 0
-// expect-obligation: failsafe-post discharged 11
+// expect-obligation: failsafe-post discharged 9
 // expect-obligation: exhaustive checker 1
 //
 // NO ROW WHERE NO TRAP ARMS: float division is IEEE and total (D-143) and a
@@ -9,6 +9,10 @@
 // rows of this module are `failsafe`'s own postconditions (D-267, 1.5.3): a
 // program's `failsafe` always has them, so `expect-obligation: none` names
 // no program any more -- the runners keep the spelling for their self-checks.
+// And no ARM where no trap arms (DEF-37, 1.5.4b step 4b): the reach analysis
+// demands `DivByZero`/`DivOverflow` for neither site, so this `failsafe`
+// names neither -- it did until step 4b, because the float family had been
+// left out of the suppression the twisted families got at 1.3.2.
 mod:divz_none;
 
 func:main = int32(cstring[]:_~argv) {
@@ -21,8 +25,6 @@ func:main = int32(cstring[]:_~argv) {
 
 func:failsafe = int32(Error:e) {
     pick (e) {
-        (DivByZero) { exit 21i32; },
-        (DivOverflow) { exit 22i32; },
         (HeapBadRequest) { exit 9i32; },
         (HeapOom) { exit 9i32; },
         (IntOverflow) { exit 23i32; },

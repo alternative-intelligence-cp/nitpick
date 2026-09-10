@@ -1,0 +1,30 @@
+// expect-error: NITPICK-REACH-002
+// expect-error: NITPICK-REACH-002
+//
+// A `simd` division rides its ELEMENT's rule (D-194: elementwise under the
+// scalar rules; DEF-37, 1.5.4b step 4b): integer lanes carry D-007 as the
+// any-lane guard -- a zero lane traps `DivByZero`, an `INT_MIN / -1` lane
+// `DivOverflow` -- so a `failsafe` that names neither refuses twice. The
+// counterweight to `accept/float_total.npk`, whose float lanes arm nothing:
+// the element's kind decides, never the vector's.
+mod:reach_simd_div;
+
+func:main = int32(cstring[]:argv) {
+    int32:k = argv.len =>! int32;
+    simd<int32, 4>:a = simd(8i32, 6i32, 4i32, 2i32);
+    simd<int32, 4>:b = simd(k);
+    simd<int32, 4>:q = a / b;
+    exit q[0];
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};
